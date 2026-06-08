@@ -1,6 +1,7 @@
 ## Central
 
-
+> [!WARNING]
+> This project is currently **experimental** with the intention of making it usable in production.
 
 Central is the global control plane and front door(console) of Frappe Cloud. It holds the mission control: it decides who you are, which team you act for, and what you are allowed to do before Atlas touches a VM. 
 
