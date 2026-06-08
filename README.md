@@ -1,59 +1,165 @@
-### Central
+## Central
 
-The one stop console for Frappe Cloud
 
-### IAM slice
 
-Central currently owns the IAM authority layer:
+Central is the console of Frappe Cloud. It holds the mission control: it decides who you are, which team you act for, and what you are allowed to do before Atlas touches a VM. 
 
-- `Capability` is the append-only action catalog.
-- `Team Role` bundles capabilities. System roles ship as fixtures: `Owner`,
-  `Admin`, `Developer`, `Viewer`, and `Billing`.
-- `Team` owns `Team Member` rows. A user's effective grants resolve only through
-  `Team Member -> Team Role -> Role Capability -> Capability`.
-- New enabled users are bootstrapped with `Central User`, one default
-  team, and an active `Owner` team membership.
-- `fc_teams` is added to Frappe OAuth/OpenID userinfo by `central.oauth`.
-- `IAM Permission Probe` lets an operator test a `(user, team, capability)` tuple
-  from Desk before Atlas enforcement is wired.
+Central's duty is to be the IAM authority and Asset Registry for Frappe Cloud. It owns identity, teams, roles, capabilities, OAuth claims etc. Atlas consumes those claims and enforces them locally to apply changes.
 
-Atlas UI and lifecycle enforcement are intentionally deferred. Atlas should read
-`fc_teams` into the session on SSO, add `Virtual Machine.team`, use
-`/dashboard/t/<team>/...` routes, and gate VM methods from the local session.
 
-### Installation
 
-You can install this app using the [bench](https://github.com/frappe/bench) CLI:
+Atlas repo - [https://github.com/adityahase/atlas](https://github.com/adityahase/atlas)
 
-```bash
-cd $PATH_TO_YOUR_BENCH
-bench get-app $URL_OF_THIS_REPO --branch develop
-bench install-app central
+## Architecture
+
+```mermaid
+flowchart LR
+	User["User"]
+	CentralDesk["Central Desk"]
+	CentralIAM["Central IAM<br/>Teams, Roles, Capabilities"]
+	OAuth["Central OAuth/OIDC<br/>fc_teams claim"]
+	Atlas["Atlas"]
+	AtlasSession["Atlas Session<br/>team grants"]
+	VMs["VM Actions"]
+
+	User --> CentralDesk
+	CentralDesk --> CentralIAM
+	CentralIAM --> OAuth
+	User --> OAuth
+	OAuth --> Atlas
+	Atlas --> AtlasSession
+	AtlasSession --> VMs
+
+	Atlas -. "does not edit IAM" .-> CentralIAM
 ```
 
-### Contributing
 
-This app uses `pre-commit` for code formatting and linting. Please [install pre-commit](https://pre-commit.com/#installation) and enable it for this repository:
 
-```bash
-cd apps/central
-pre-commit install
+Central writes authority. Atlas reads authority.
+
+```mermaid
+sequenceDiagram
+	participant User
+	participant Central
+	participant Atlas
+	participant VM
+
+	User->>Central: Sign in
+	Central->>Central: Resolve Team Member -> Team Role -> Capabilities
+	Central-->>Atlas: OAuth userinfo / token with fc_teams
+	Atlas->>Atlas: Store team grants in session
+	User->>Atlas: Request VM action
+	Atlas->>Atlas: Check capability from session
+	Atlas-->>VM: Allow only if capability matches
 ```
 
-Pre-commit is configured to use the following tools for checking and formatting your code:
-
-- ruff
-- eslint
-- prettier
-- pyupgrade
-### CI
-
-This app can use GitHub Actions for CI. The following workflows are configured:
-
-- CI: Installs this app and runs unit tests on every push to `develop` branch.
-- Linters: Runs [Frappe Semgrep Rules](https://github.com/frappe/semgrep-rules) and [pip-audit](https://pypi.org/project/pip-audit/) on every pull request.
 
 
-### License
+## What Works
+
+- Desk workspace for `Team`, `Team Role`, `Capability`, and `IAM Permission Probe`.
+- Fixture-backed capability catalog.
+- System team roles: `Owner`, `Admin`, `Developer`, `Viewer`, `Billing`.
+- New enabled `User` records get `Central User`, one default team, and active
+`Owner` membership.
+- Team-scoped permission resolution through `Team Member -> Team Role -> Capability`.
+- OAuth/OpenID userinfo includes the `fc_teams` claim for Atlas.
+- Probe DocType can test `(user, team, capability)` from Desk.
+
+## Not Yet
+
+- Central frontend/team switcher.
+- Atlas VM enforcement using `fc_teams`. Scoped VM (granular) permissions.
+- Invite workflow UI and email flow.
+- Partner/support access flows.
+
+## Installation
+
+From a bench:
+
+```bash
+bench get-app central <repo-url>
+bench --site <site-name> install-app central
+bench --site <site-name> migrate
+```
+
+For local development:
+
+```bash
+bench set-config -g developer_mode 1
+bench --site central.site migrate
+bench start
+```
+
+Open Desk at:
+
+```text
+http://central.site:8000/app
+```
+
+## Test Teams
+
+1. Log in as `Administrator`.
+2. Create or open a `User`.
+3. Save the user. Central creates that user's default `Team` automatically.
+4. Open `Team` and confirm:
+  - `owner_user` is the new user.
+  - Members has the same user as `Owner` and `Active`.
+5. Add another user as `Viewer`, `Developer`, or `Admin`.
+
+The user's effective permissions are always resolved from team membership. The
+`owner_user` field is ownership metadata, not a permission bypass.
+
+## Test Probe
+
+Open:
+
+```text
+/app/iam-permission-probe/new
+```
+
+Set:
+
+- `User`: the user to test.
+- `Team`: the team they belong to.
+- `Capability`: for example `vm:view` or `vm:terminate`.
+
+Save the document. `Allowed` and `Resolved Grants` are filled automatically.
+
+Good checks:
+
+- `Viewer` + `vm:view` -> allowed.
+- `Viewer` + `vm:terminate` -> denied.
+- `Developer` + `vm:terminate` -> allowed.
+
+## Atlas
+
+Central already emits Atlas-ready IAM data through OAuth/OpenID:
+
+```json
+{
+  "fc_teams": {
+    "TEAM-00001": [
+      {
+        "role": "Viewer",
+        "source": "member",
+        "scope": "*",
+        "caps": ["asset:view", "vm:view"]
+      }
+    ]
+  }
+}
+```
+
+Atlas should read `fc_teams` during SSO, store it in the session, and enforce VM
+actions from that session. Atlas must not edit teams, roles, or capabilities.
+
+## Tests
+
+```bash
+bench --site central.site run-tests --app central
+```
+
+## License
 
 agpl-3.0
