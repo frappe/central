@@ -2,6 +2,25 @@
 
 The one stop console for Frappe Cloud
 
+### IAM slice
+
+Central currently owns the IAM authority layer:
+
+- `Capability` is the append-only action catalog.
+- `Team Role` bundles capabilities. System roles ship as fixtures: `Owner`,
+  `Admin`, `Developer`, `Viewer`, and `Billing`.
+- `Team` owns `Team Member` rows. A user's effective grants resolve only through
+  `Team Member -> Team Role -> Role Capability -> Capability`.
+- New enabled users are bootstrapped with `Central User`, one default
+  team, and an active `Owner` team membership.
+- `fc_teams` is added to Frappe OAuth/OpenID userinfo by `central.oauth`.
+- `IAM Permission Probe` lets an operator test a `(user, team, capability)` tuple
+  from Desk before Atlas enforcement is wired.
+
+Atlas UI and lifecycle enforcement are intentionally deferred. Atlas should read
+`fc_teams` into the session on SSO, add `Virtual Machine.team`, use
+`/dashboard/t/<team>/...` routes, and gate VM methods from the local session.
+
 ### Installation
 
 You can install this app using the [bench](https://github.com/frappe/bench) CLI:
