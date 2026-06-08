@@ -5,6 +5,12 @@ app_description = "The one stop console for Frappe Cloud"
 app_email = "prathamesh@frappe.io"
 app_license = "agpl-3.0"
 
+fixtures = [
+	"Capability",
+	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
+	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
+]
+
 # Apps
 # ------------------
 
@@ -138,13 +144,11 @@ app_license = "agpl-3.0"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"User": {
+		"after_insert": "central.users.bootstrap_user_team",
+	}
+}
 
 # Scheduled Tasks
 # ---------------
@@ -205,7 +209,7 @@ app_license = "agpl-3.0"
 
 # Request Events
 # ----------------
-# before_request = ["central.utils.before_request"]
+before_request = ["central.oauth.install_oauth_claim_patch"]
 # after_request = ["central.utils.after_request"]
 
 # Job Events
@@ -238,6 +242,20 @@ app_license = "agpl-3.0"
 # ]
 
 # Authentication and authorization
+
+permission_query_conditions = {
+	"Team": "central.permissions.team_query_conditions",
+	"Team Role": "central.permissions.team_role_query_conditions",
+}
+
+has_permission = {
+	"Team": "central.permissions.team_has_permission",
+	"Team Role": "central.permissions.team_role_has_permission",
+}
+
+override_whitelisted_methods = {
+	"frappe.integrations.oauth2.openid_profile": "central.oauth.openid_profile",
+}
 # --------------------------------
 
 # auth_hooks = [
@@ -258,4 +276,3 @@ require_type_annotated_api_methods = True
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

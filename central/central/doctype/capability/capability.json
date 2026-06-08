@@ -1,0 +1,77 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:capability",
+ "creation": "2026-06-08 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "capability",
+  "plane",
+  "resource",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "capability",
+   "fieldtype": "Data",
+   "in_global_search": 1,
+   "in_list_view": 1,
+   "label": "Capability",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "plane",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Plane",
+   "options": "central\natlas",
+   "reqd": 1
+  },
+  {
+   "fieldname": "resource",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Resource",
+   "reqd": 1
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Capability",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
+  }
+ ],
+ "sort_field": "name",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "capability"
+}

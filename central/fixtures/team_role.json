@@ -1,0 +1,159 @@
+[
+ {
+  "capabilities": [
+   {
+    "capability": "asset:view"
+   },
+   {
+    "capability": "billing:manage"
+   },
+   {
+    "capability": "billing:view"
+   },
+   {
+    "capability": "team:delete"
+   },
+   {
+    "capability": "team:edit"
+   },
+   {
+    "capability": "team:manage_members"
+   },
+   {
+    "capability": "vm:create"
+   },
+   {
+    "capability": "vm:resize"
+   },
+   {
+    "capability": "vm:start"
+   },
+   {
+    "capability": "vm:stop"
+   },
+   {
+    "capability": "vm:terminate"
+   },
+   {
+    "capability": "vm:view"
+   }
+  ],
+  "docstatus": 0,
+  "doctype": "Team Role",
+  "is_system": 1,
+  "modified": "2026-06-08 19:52:59.358564",
+  "name": "Owner",
+  "role_name": "Owner",
+  "team": null
+ },
+ {
+  "capabilities": [
+   {
+    "capability": "asset:view"
+   },
+   {
+    "capability": "team:edit"
+   },
+   {
+    "capability": "team:manage_members"
+   },
+   {
+    "capability": "vm:create"
+   },
+   {
+    "capability": "vm:resize"
+   },
+   {
+    "capability": "vm:start"
+   },
+   {
+    "capability": "vm:stop"
+   },
+   {
+    "capability": "vm:terminate"
+   },
+   {
+    "capability": "vm:view"
+   }
+  ],
+  "docstatus": 0,
+  "doctype": "Team Role",
+  "is_system": 1,
+  "modified": "2026-06-08 19:52:59.364091",
+  "name": "Admin",
+  "role_name": "Admin",
+  "team": null
+ },
+ {
+  "capabilities": [
+   {
+    "capability": "asset:view"
+   },
+   {
+    "capability": "vm:create"
+   },
+   {
+    "capability": "vm:resize"
+   },
+   {
+    "capability": "vm:start"
+   },
+   {
+    "capability": "vm:stop"
+   },
+   {
+    "capability": "vm:terminate"
+   },
+   {
+    "capability": "vm:view"
+   }
+  ],
+  "docstatus": 0,
+  "doctype": "Team Role",
+  "is_system": 1,
+  "modified": "2026-06-08 19:52:59.368634",
+  "name": "Developer",
+  "role_name": "Developer",
+  "team": null
+ },
+ {
+  "capabilities": [
+   {
+    "capability": "asset:view"
+   },
+   {
+    "capability": "vm:view"
+   }
+  ],
+  "docstatus": 0,
+  "doctype": "Team Role",
+  "is_system": 1,
+  "modified": "2026-06-08 19:52:59.373695",
+  "name": "Viewer",
+  "role_name": "Viewer",
+  "team": null
+ },
+ {
+  "capabilities": [
+   {
+    "capability": "asset:view"
+   },
+   {
+    "capability": "billing:manage"
+   },
+   {
+    "capability": "billing:view"
+   },
+   {
+    "capability": "vm:view"
+   }
+  ],
+  "docstatus": 0,
+  "doctype": "Team Role",
+  "is_system": 1,
+  "modified": "2026-06-08 19:52:59.378909",
+  "name": "Billing",
+  "role_name": "Billing",
+  "team": null
+ }
+]
