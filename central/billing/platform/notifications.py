@@ -1,0 +1,88 @@
+# Copyright (c) 2026, Frappe and contributors
+# For license information, please see license.txt
+"""Notification suite — Cloud Billing is the sole sender (issue #20).
+
+v1 sent duplicate emails from both Press and the gateway. v2 routes every
+customer-facing billing notification through this one module: it records a
+Notification Log per team, honours the team's preferences, and is the only thing
+that sends. Gateways never email the customer.
+
+Each call also drops an Info comment on the referenced doc (Desk audit trail);
+email dispatch is via frappe.sendmail in production (stubbed here — the
+Notification Log is the record of intent).
+"""
+
+import frappe
+
+# event_type -> default (subject, body template). Body is .format(**context)-ed.
+_TEMPLATES = {
+	"payment_success": ("Payment received", "Payment received for invoice {invoice}."),
+	"payment_failure": ("Payment failed", "Payment for invoice {invoice} failed: {reason}."),
+	"payment_retry": ("Payment retry failed", "Payment retry for invoice {invoice} failed: {reason}."),
+	"invoice_overdue": ("Invoice overdue", "Invoice {invoice} is overdue. Please settle it to avoid suspension."),
+	"credit_low": ("Credit balance low", "Your credit balance is low (projected use {utilisation}). Top up to avoid interruption."),
+	"card_expiry": ("Card expired", "Your card {label} has expired. Please add a new payment method."),
+	"mandate_reauth": ("Mandate re-authorisation needed", "Your UPI Autopay mandate needs re-authorisation for the new limit."),
+	"trial_expiring": ("Trial ending", "Your trial is ending. Add a payment method to keep your resources running."),
+}
+
+
+def _preference_enabled(team: str, event_type: str) -> bool:
+	"""A team's opt-out for an event; absent preference doc = all enabled."""
+	if not frappe.db.exists("Notification Preference", team):
+		return True
+	value = frappe.db.get_value("Notification Preference", team, f"notify_{event_type}")
+	return value is None or bool(value)
+
+
+def notify(
+	team: str,
+	event_type: str,
+	context: dict | None = None,
+	message: str | None = None,
+	reference_doctype: str | None = None,
+	reference_name: str | None = None,
+) -> dict:
+	"""Emit one notification, the single sender for all billing events.
+
+	Suppressed (by preference) events are still logged — as `suppressed` — so the
+	suppression itself is auditable, but nothing is sent.
+	"""
+	context = context or {}
+	subject, template = _TEMPLATES.get(event_type, (event_type, message or event_type))
+	body = message or template.format(**context)
+
+	enabled = _preference_enabled(team, event_type)
+	log = frappe.get_doc(
+		{
+			"doctype": "Billing Notification Log",
+			"team": team,
+			"event_type": event_type,
+			"channel": "email",
+			"status": "sent" if enabled else "suppressed",
+			"subject": subject,
+			"message": body,
+			"reference_doctype": reference_doctype,
+			"reference_name": reference_name,
+			"sent_at": frappe.utils.now_datetime() if enabled else None,
+		}
+	).insert(ignore_permissions=True)
+
+	if not enabled:
+		return {"sent": False, "reason": "suppressed", "log": log.name}
+
+	if reference_doctype and reference_name:
+		try:
+			frappe.get_doc(reference_doctype, reference_name).add_comment("Info", body)
+		except Exception:  # noqa: BLE001 — audit comment is best-effort
+			pass
+	_send_email(team, subject, body)
+	return {"sent": True, "log": log.name}
+
+
+def _send_email(team: str, subject: str, body: str):
+	"""Dispatch to the customer. Production wires frappe.sendmail to the team's
+	billing contact; left as a guarded hook here (the Notification Log is the SOR
+	for what was sent)."""
+	# frappe.sendmail(recipients=[billing_contact(team)], subject=subject, message=body, delayed=True)
+	return

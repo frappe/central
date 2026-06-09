@@ -1,0 +1,102 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-08 00:00:00.000000",
+ "description": "Team-level fixed-bundle spend floor held for a term, in exchange for a discount on each monthly-in-arrears invoice. Resource-agnostic; decoupled from the price-lock. Dropping below the floor before term-end triggers a clawback (issue #31).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "status",
+  "column_break_terms",
+  "floor",
+  "currency",
+  "discount_pct",
+  "section_break_term",
+  "started_at",
+  "term_months"
+ ],
+ "fields": [
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Team",
+   "reqd": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nCompleted\nBreached"
+  },
+  {
+   "fieldname": "column_break_terms",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "floor",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Monthly Fixed-Bundle Spend Floor",
+   "description": "Minimum monthly fixed-bundle spend the team commits to; measured on bundle lines only",
+   "reqd": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "discount_pct",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Discount %",
+   "description": "Applied to fixed-bundle lines while the floor is met"
+  },
+  {
+   "fieldname": "section_break_term",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Date",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "term_months",
+   "fieldtype": "Int",
+   "label": "Term (months)"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-08 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Commitment",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

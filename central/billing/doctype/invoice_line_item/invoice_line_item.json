@@ -1,0 +1,94 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "Invoice line, generated once and never updated. Day-weighted from an event-log time window x the locked price.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "istable": 1,
+ "field_order": [
+  "subscription_resource",
+  "plan",
+  "cluster",
+  "resource_type",
+  "unit",
+  "column_break_calc",
+  "quantity",
+  "rate",
+  "days",
+  "amount"
+ ],
+ "fields": [
+  {
+   "fieldname": "subscription_resource",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Resource",
+   "description": "resource_id / Price Lock that sourced the locked rate"
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Plan"
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Data",
+   "label": "Cluster"
+  },
+  {
+   "fieldname": "resource_type",
+   "fieldtype": "Data",
+   "label": "Resource Type"
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit"
+  },
+  {
+   "fieldname": "column_break_calc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "label": "Quantity"
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Rate",
+   "description": "Locked price copied at generation"
+  },
+  {
+   "fieldname": "days",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Days",
+   "description": "Whole units active in the period (with max-1 floor)"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "description": "days x (rate / units_in_period)"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Invoice Line Item",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,182 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "A team's payment method. Cards (off-session, any amount) and UPI Autopay mandates (ceiling = trust-tier cap).",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "gateway",
+  "method_type",
+  "column_break_flags",
+  "status",
+  "is_default",
+  "priority",
+  "reauth_required",
+  "section_break_gateway",
+  "gateway_method_id",
+  "gateway_customer_id",
+  "setup_reference",
+  "display_label",
+  "section_break_card",
+  "expiry_month",
+  "expiry_year",
+  "column_break_mandate",
+  "mandate_max_amount",
+  "mandate_currency",
+  "validated_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Team",
+   "description": "Team identifier (Link -> Team in the real Central; Team is core/IAM)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "gateway",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Gateway",
+   "options": "Payment Gateway",
+   "reqd": 1
+  },
+  {
+   "fieldname": "method_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Method Type",
+   "options": "card\nupi_autopay\nprepaid_credits",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "pending_validation",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "pending_validation\nactive\npaused\ncancelled\nexpired\nfailed"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_default",
+   "fieldtype": "Check",
+   "label": "Is Default",
+   "description": "Mirror of priority == 0 (the primary)."
+  },
+  {
+   "default": "0",
+   "fieldname": "priority",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Priority",
+   "description": "Fallback order: 0 = primary, 1 = first backup, ... (team-scoped, dense)."
+  },
+  {
+   "default": "0",
+   "fieldname": "reauth_required",
+   "fieldtype": "Check",
+   "label": "Re-authorisation Required",
+   "description": "Trust-tier cap rose above this mandate's ceiling; team held at the old ceiling until the customer re-consents."
+  },
+  {
+   "fieldname": "section_break_gateway",
+   "fieldtype": "Section Break",
+   "label": "Gateway References"
+  },
+  {
+   "fieldname": "gateway_method_id",
+   "fieldtype": "Data",
+   "label": "Gateway Method ID",
+   "description": "Stripe pm_xxx / Razorpay mandate (token) id"
+  },
+  {
+   "fieldname": "gateway_customer_id",
+   "fieldtype": "Data",
+   "label": "Gateway Customer ID",
+   "description": "Gateway-side customer reference (Stripe cus_xxx / Razorpay cust_xxx) — used by both cards and mandates"
+  },
+  {
+   "fieldname": "setup_reference",
+   "fieldtype": "Data",
+   "label": "Setup Reference",
+   "description": "Gateway setup handle (Stripe SetupIntent id) captured at initiation, for reconcile"
+  },
+  {
+   "fieldname": "display_label",
+   "fieldtype": "Data",
+   "label": "Display Label",
+   "description": "e.g. Visa ····4242"
+  },
+  {
+   "fieldname": "section_break_card",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "expiry_month",
+   "fieldtype": "Int",
+   "label": "Expiry Month"
+  },
+  {
+   "fieldname": "expiry_year",
+   "fieldtype": "Int",
+   "label": "Expiry Year"
+  },
+  {
+   "fieldname": "column_break_mandate",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mandate_max_amount",
+   "fieldtype": "Currency",
+   "label": "Mandate Max Amount",
+   "description": "Mandate ceiling = team's trust-tier cap at authorisation time."
+  },
+  {
+   "default": "INR",
+   "fieldname": "mandate_currency",
+   "fieldtype": "Data",
+   "label": "Mandate Currency"
+  },
+  {
+   "fieldname": "validated_at",
+   "fieldtype": "Datetime",
+   "label": "Validated At"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Payment Method",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

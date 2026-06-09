@@ -1,0 +1,139 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "prompt",
+ "creation": "2026-06-02 00:00:00.000000",
+ "description": "One row per configured gateway. Secrets are encrypted; the adapter is resolved by adapter_key.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "adapter_key",
+  "currency",
+  "column_break_flags",
+  "is_enabled",
+  "is_default_for_currency",
+  "supports_mandates",
+  "section_break_secrets",
+  "api_key",
+  "api_secret",
+  "credentials_validated_at",
+  "column_break_secrets",
+  "webhook_secret",
+  "webhook_endpoint_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "adapter_key",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Adapter",
+   "options": "stripe\nrazorpay\npaypal",
+   "reqd": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Settlement Currency",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Enabled"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_default_for_currency",
+   "fieldtype": "Check",
+   "label": "Is Default for Currency"
+  },
+  {
+   "default": "0",
+   "fieldname": "supports_mandates",
+   "fieldtype": "Check",
+   "label": "Supports Mandates"
+  },
+  {
+   "fieldname": "section_break_secrets",
+   "fieldtype": "Section Break",
+   "label": "Credentials"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "label": "API Key"
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret"
+  },
+  {
+   "description": "Set when the credentials last validated against the gateway. Cleared when the keys change.",
+   "fieldname": "credentials_validated_at",
+   "fieldtype": "Datetime",
+   "label": "Credentials Validated At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_secrets",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Auto-filled when the gateway can self-register its webhook. Enter manually only if the field is editable.",
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret",
+   "read_only_depends_on": "eval:doc.webhook_endpoint_id"
+  },
+  {
+   "description": "The gateway's id for the registered webhook endpoint. Used to rotate/de-register it.",
+   "fieldname": "webhook_endpoint_id",
+   "fieldtype": "Data",
+   "label": "Webhook Endpoint ID",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Payment Gateway",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

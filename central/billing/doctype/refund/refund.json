@@ -1,0 +1,140 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "A post-payment correction linked to the original Payment Attempt. Full dispute -> source (invoice stays Paid); partial overcharge -> wallet credit. Never flips the invoice to a 'refunded' state (preserves GST immutability).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "payment_attempt",
+  "invoice",
+  "team",
+  "column_break_amount",
+  "amount",
+  "currency",
+  "destination",
+  "section_break_result",
+  "status",
+  "gateway_refund_id",
+  "column_break_result",
+  "created_at",
+  "completed_at",
+  "section_break_reason",
+  "reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "payment_attempt",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Payment Attempt",
+   "options": "Payment Attempt",
+   "reqd": 1,
+   "description": "The original charge being corrected"
+  },
+  {
+   "fieldname": "invoice",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Invoice",
+   "options": "Invoice",
+   "description": "Stays Paid (no 'refunded' state)"
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "label": "Team"
+  },
+  {
+   "fieldname": "column_break_amount",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency"
+  },
+  {
+   "fieldname": "destination",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Destination",
+   "options": "source\nwallet",
+   "description": "source = gateway (full dispute); wallet = credit ledger (partial overcharge)"
+  },
+  {
+   "fieldname": "section_break_result",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "initiated",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "initiated\ncompleted\nfailed"
+  },
+  {
+   "fieldname": "gateway_refund_id",
+   "fieldtype": "Data",
+   "label": "Gateway Refund ID",
+   "description": "Set for source refunds; blank for wallet credits"
+  },
+  {
+   "fieldname": "column_break_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "created_at",
+   "fieldtype": "Datetime",
+   "label": "Created At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "fieldname": "section_break_reason",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Refund",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

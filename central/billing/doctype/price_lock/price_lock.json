@@ -1,0 +1,156 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "Append-only grandfathering lock keyed by resource_id. Captures the rate shown at provision (= Agent shown_rate); billing reads it forever. A destroy+reprovision yields a new lock.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "resource_id",
+  "team",
+  "plan",
+  "column_break_rate",
+  "currency",
+  "locked_rate",
+  "cluster",
+  "billing_interval",
+  "section_break_window",
+  "started_at",
+  "ended_at",
+  "column_break_source",
+  "source_event_id",
+  "event_type",
+  "section_break_discrepancy",
+  "discrepancy",
+  "central_rate",
+  "discrepancy_note"
+ ],
+ "fields": [
+  {
+   "fieldname": "resource_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Resource ID",
+   "description": "Stable physical resource identity (from the Agent event) — the lock key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "label": "Team"
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Plan",
+   "options": "Plan"
+  },
+  {
+   "fieldname": "column_break_rate",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency"
+  },
+  {
+   "fieldname": "locked_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Locked Rate",
+   "description": "Locked at provision = Agent shown_rate"
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Data",
+   "label": "Cluster"
+  },
+  {
+   "fieldname": "billing_interval",
+   "fieldtype": "Data",
+   "label": "Billing Interval"
+  },
+  {
+   "fieldname": "section_break_window",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "ended_at",
+   "fieldtype": "Datetime",
+   "label": "Ended At",
+   "description": "Null = active lock"
+  },
+  {
+   "fieldname": "column_break_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "source_event_id",
+   "fieldtype": "Data",
+   "label": "Source Event ID",
+   "description": "Agent Plan Subscription Log name — dedupes repeated pushes",
+   "unique": 1
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "label": "Source Event Type"
+  },
+  {
+   "fieldname": "section_break_discrepancy",
+   "fieldtype": "Section Break",
+   "label": "Discrepancy"
+  },
+  {
+   "default": "0",
+   "fieldname": "discrepancy",
+   "fieldtype": "Check",
+   "label": "Has Discrepancy",
+   "description": "shown_rate differed from Central's currently-resolved rate at lock time"
+  },
+  {
+   "fieldname": "central_rate",
+   "fieldtype": "Currency",
+   "label": "Central Rate at Lock"
+  },
+  {
+   "fieldname": "discrepancy_note",
+   "fieldtype": "Small Text",
+   "label": "Discrepancy Note"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Price Lock",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

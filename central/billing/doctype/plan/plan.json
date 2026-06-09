@@ -1,0 +1,90 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "prompt",
+ "creation": "2026-06-02 00:00:00.000000",
+ "description": "A flat-rate bundle with one immutable identity forever. The rate is the price; a rate change never forks a new plan.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "is_active",
+  "column_break_head",
+  "billing_cycle",
+  "annual_discount_pct",
+  "section_break_includes",
+  "includes"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "monthly",
+   "fieldname": "billing_cycle",
+   "fieldtype": "Select",
+   "label": "Billing Cycle",
+   "options": "monthly\nannual",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "annual_discount_pct",
+   "fieldtype": "Float",
+   "label": "Annual Discount %"
+  },
+  {
+   "fieldname": "section_break_includes",
+   "fieldtype": "Section Break",
+   "label": "Includes"
+  },
+  {
+   "fieldname": "includes",
+   "fieldtype": "Table",
+   "label": "Includes",
+   "options": "Plan Includes"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Plan",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

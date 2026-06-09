@@ -156,8 +156,28 @@ doc_events = {
 scheduler_events = {
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
+		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
+		# gateway reconciliation, and pruning Payment Attempt / Webhook Event logs.
+		"central.billing.revenue.dunning.run_dunning",
+		"central.billing.payments.reconciliation.run_reconciliation",
+		"central.billing.payments.charges.cleanup_payment_logs",
+	],
+	"hourly": [
+		# Billing: ERPNext sync retries whose backoff window has elapsed.
+		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
+	],
+	"monthly": [
+		# Billing: cards expire at the end of their printed month; flip lapsed ones.
+		"central.billing.payments.payments.expire_payment_methods",
 	],
 }
+
+# Billing (module): ensure roles + the User->team link field exist after migrate.
+# Transitional compat shim — retired by issues #42/#43.
+after_migrate = [
+	"central.billing.platform.security.ensure_billing_roles",
+	"central.billing.api.dashboard.ensure_billing_team_field",
+]
 
 # Testing
 # -------
@@ -185,6 +205,9 @@ scheduler_events = {
 # override_doctype_dashboards = {
 # 	"Task": "central.task.get_dashboard_data"
 # }
+override_doctype_dashboards = {
+	"Currency": "central.billing.api.dashboard_overrides.currency_dashboard",
+}
 
 # exempt linked doctypes from being automatically cancelled
 #

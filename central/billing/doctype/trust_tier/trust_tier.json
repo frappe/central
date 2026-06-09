@@ -1,0 +1,131 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:team",
+ "creation": "2026-06-02 00:00:00.000000",
+ "description": "Per-team trust tier (the entitlement cap), computed by Central from billing history.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "level",
+  "tier",
+  "manual_override",
+  "column_break_caps",
+  "max_spend",
+  "max_resource_count",
+  "section_break_allow",
+  "allowed_plans",
+  "allowed_clusters",
+  "allowed_resource_types",
+  "section_break_audit",
+  "promoted_at",
+  "promotion_basis"
+ ],
+ "fields": [
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Team",
+   "description": "Team identifier (Link -> Team in the real Central; Team is core/IAM)",
+   "unique": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "level",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Tier Level",
+   "options": "Trust Tier Level"
+  },
+  {
+   "fieldname": "tier",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tier",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "manual_override",
+   "fieldtype": "Check",
+   "label": "Manual Override",
+   "description": "Admin-set; exempt from auto-demotion and auto-promotion"
+  },
+  {
+   "fieldname": "column_break_caps",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "max_spend",
+   "fieldtype": "Currency",
+   "label": "Max Monthly Spend"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_resource_count",
+   "fieldtype": "Int",
+   "label": "Max Resource Count"
+  },
+  {
+   "fieldname": "section_break_allow",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "allowed_plans",
+   "fieldtype": "JSON",
+   "label": "Allowed Plans"
+  },
+  {
+   "fieldname": "allowed_clusters",
+   "fieldtype": "JSON",
+   "label": "Allowed Clusters"
+  },
+  {
+   "fieldname": "allowed_resource_types",
+   "fieldtype": "JSON",
+   "label": "Allowed Resource Types"
+  },
+  {
+   "fieldname": "section_break_audit",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "promoted_at",
+   "fieldtype": "Datetime",
+   "label": "Promoted At"
+  },
+  {
+   "fieldname": "promotion_basis",
+   "fieldtype": "Small Text",
+   "label": "Promotion Basis"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Trust Tier",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,48 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:team",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "Per-team notification opt-outs. Absent = all enabled.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "notify_payment_success",
+  "notify_payment_failure",
+  "notify_payment_retry",
+  "notify_invoice_overdue",
+  "column_break_prefs",
+  "notify_credit_low",
+  "notify_card_expiry",
+  "notify_mandate_reauth",
+  "notify_trial_expiring"
+ ],
+ "fields": [
+  {"fieldname": "team", "fieldtype": "Data", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
+  {"default": "1", "fieldname": "notify_payment_success", "fieldtype": "Check", "label": "Payment Success"},
+  {"default": "1", "fieldname": "notify_payment_failure", "fieldtype": "Check", "label": "Payment Failure"},
+  {"default": "1", "fieldname": "notify_payment_retry", "fieldtype": "Check", "label": "Payment Retry"},
+  {"default": "1", "fieldname": "notify_invoice_overdue", "fieldtype": "Check", "label": "Invoice Overdue"},
+  {"fieldname": "column_break_prefs", "fieldtype": "Column Break"},
+  {"default": "1", "fieldname": "notify_credit_low", "fieldtype": "Check", "label": "Credit Low"},
+  {"default": "1", "fieldname": "notify_card_expiry", "fieldtype": "Check", "label": "Card Expiry"},
+  {"default": "1", "fieldname": "notify_mandate_reauth", "fieldtype": "Check", "label": "Mandate Re-auth"},
+  {"default": "1", "fieldname": "notify_trial_expiring", "fieldtype": "Check", "label": "Trial Expiring"}
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Notification Preference",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

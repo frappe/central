@@ -1,0 +1,105 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:team",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "Per-team tax treatment: additive output tax (GST/VAT), zero-rating with a compliance reason (SEZ/export), and the TDS withholding declaration.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "output_tax_type",
+  "output_tax_rate",
+  "column_break_zero",
+  "zero_rated",
+  "zero_rating_reason",
+  "section_break_tds",
+  "tds_applicable",
+  "tds_rate"
+ ],
+ "fields": [
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Team",
+   "unique": 1,
+   "reqd": 1
+  },
+  {
+   "default": "none",
+   "fieldname": "output_tax_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Output Tax Type",
+   "options": "none\nGST\nVAT"
+  },
+  {
+   "default": "0",
+   "fieldname": "output_tax_rate",
+   "fieldtype": "Float",
+   "label": "Output Tax Rate %"
+  },
+  {
+   "fieldname": "column_break_zero",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "zero_rated",
+   "fieldtype": "Check",
+   "label": "Zero Rated",
+   "description": "SEZ-LUT / export — output tax 0 but a reason is mandatory"
+  },
+  {
+   "fieldname": "zero_rating_reason",
+   "fieldtype": "Select",
+   "label": "Zero-Rating Reason",
+   "options": "\nsez_lut\nexport"
+  },
+  {
+   "fieldname": "section_break_tds",
+   "fieldtype": "Section Break",
+   "label": "Withholding (TDS)"
+  },
+  {
+   "default": "0",
+   "fieldname": "tds_applicable",
+   "fieldtype": "Check",
+   "label": "TDS Applicable",
+   "description": "Customer self-declares (has TAN). 0 at launch."
+  },
+  {
+   "default": "0",
+   "fieldname": "tds_rate",
+   "fieldtype": "Float",
+   "label": "TDS Rate %"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Tax Profile",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

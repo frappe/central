@@ -1,0 +1,164 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "One charge attempt against an invoice. idempotency_key = its own name, so a retry reuses the key and the gateway dedupes. Paid is set on the webhook, never on the charge response.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "invoice",
+  "team",
+  "gateway",
+  "payment_method",
+  "column_break_amount",
+  "amount",
+  "currency",
+  "idempotency_key",
+  "retry_number",
+  "section_break_result",
+  "status",
+  "gateway_transaction_id",
+  "resolved_by",
+  "column_break_result",
+  "initiated_at",
+  "completed_at",
+  "section_break_failure",
+  "failure_code",
+  "failure_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "invoice",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Invoice",
+   "options": "Invoice",
+   "reqd": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "label": "Team"
+  },
+  {
+   "fieldname": "gateway",
+   "fieldtype": "Link",
+   "label": "Gateway",
+   "options": "Payment Gateway"
+  },
+  {
+   "fieldname": "payment_method",
+   "fieldtype": "Link",
+   "label": "Payment Method",
+   "options": "Payment Method"
+  },
+  {
+   "fieldname": "column_break_amount",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency"
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "unique": 1,
+   "description": "= the attempt's own name; drives gateway dedupe on retry"
+  },
+  {
+   "default": "0",
+   "fieldname": "retry_number",
+   "fieldtype": "Int",
+   "label": "Retry Number",
+   "description": "0 = first attempt"
+  },
+  {
+   "fieldname": "section_break_result",
+   "fieldtype": "Section Break"
+  },
+  {
+   "default": "initiated",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "initiated\nauthorised\ncaptured\nfailed\nrefunded"
+  },
+  {
+   "fieldname": "gateway_transaction_id",
+   "fieldtype": "Data",
+   "label": "Gateway Transaction ID"
+  },
+  {
+   "fieldname": "resolved_by",
+   "fieldtype": "Select",
+   "label": "Resolved By",
+   "options": "\nwebhook\nreconciliation",
+   "description": "How the terminal state was reached — audit provenance (#21)"
+  },
+  {
+   "fieldname": "column_break_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "initiated_at",
+   "fieldtype": "Datetime",
+   "label": "Initiated At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "fieldname": "section_break_failure",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "failure_code",
+   "fieldtype": "Data",
+   "label": "Failure Code"
+  },
+  {
+   "fieldname": "failure_reason",
+   "fieldtype": "Small Text",
+   "label": "Failure Reason"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Payment Attempt",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

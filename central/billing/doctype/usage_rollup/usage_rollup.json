@@ -1,0 +1,144 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "Central's stored metered rollup (NOT raw samples) — one per (resource_id, meter_type, period). A re-push replaces the quantity; the locked allowance + rate are stamped once at first receipt (grandfathered).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "resource_id",
+  "team",
+  "cluster",
+  "resource_type",
+  "meter_type",
+  "column_break_period",
+  "period_start",
+  "period_end",
+  "quantity",
+  "unit",
+  "section_break_locked",
+  "currency",
+  "locked_allowance",
+  "locked_rate",
+  "column_break_key",
+  "idempotency_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "resource_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Resource ID",
+   "reqd": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "label": "Team"
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Data",
+   "label": "Cluster"
+  },
+  {
+   "fieldname": "resource_type",
+   "fieldtype": "Data",
+   "label": "Resource Type"
+  },
+  {
+   "fieldname": "meter_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Meter Type",
+   "options": "counter\ngauge"
+  },
+  {
+   "fieldname": "column_break_period",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Datetime",
+   "label": "Period Start"
+  },
+  {
+   "fieldname": "period_end",
+   "fieldtype": "Datetime",
+   "label": "Period End"
+  },
+  {
+   "default": "0",
+   "fieldname": "quantity",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Quantity"
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit"
+  },
+  {
+   "fieldname": "section_break_locked",
+   "fieldtype": "Section Break",
+   "label": "Locked Billing Terms"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency"
+  },
+  {
+   "default": "0",
+   "fieldname": "locked_allowance",
+   "fieldtype": "Float",
+   "label": "Locked Allowance",
+   "description": "Included baseline (from the locked plan's includes) — overage is measured against this"
+  },
+  {
+   "fieldname": "locked_rate",
+   "fieldtype": "Currency",
+   "label": "Locked Rate",
+   "description": "Per-unit overage rate, locked at first receipt"
+  },
+  {
+   "fieldname": "column_break_key",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "unique": 1,
+   "description": "(resource_id, meter_type, period) — re-push replaces, never adds"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Usage Rollup",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -1,0 +1,92 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-05 00:00:00.000000",
+ "description": "One standalone rate (ERPNext Item Price style) for a Plan or Add-on, per cluster x currency. Linked via a Dynamic Link; the rate is the price for a bundle and per-unit for an add-on.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "priced_doctype",
+  "priced_for",
+  "column_break_head",
+  "cluster",
+  "currency",
+  "rate"
+ ],
+ "fields": [
+  {
+   "fieldname": "priced_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Priced Doctype",
+   "options": "DocType",
+   "reqd": 1,
+   "description": "Plan or Add-on"
+  },
+  {
+   "fieldname": "priced_for",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Priced For",
+   "options": "priced_doctype",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Cluster",
+   "description": "Blank = global default; else a region/cluster key (e.g. ap-south-1)"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Currency",
+   "options": "Currency",
+   "reqd": 1
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Rate",
+   "description": "Plan: the flat rate. Add-on: the per-unit rate.",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Catalog Rate",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

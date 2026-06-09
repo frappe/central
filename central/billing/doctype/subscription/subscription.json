@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "The customer's subscription INTENT/contract on Central — not billing truth. Carries ONLY the Central-owned account_standing axis; operational state (running/stopped/terminated) is Agent-owned and lives nowhere here.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "cluster",
+  "plan",
+  "billing_cycle",
+  "column_break_state",
+  "account_standing",
+  "start_date",
+  "section_break_payment",
+  "default_payment_method",
+  "gateway"
+ ],
+ "fields": [
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Team",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Cluster"
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Plan",
+   "options": "Plan",
+   "description": "Requested plan (intent)"
+  },
+  {
+   "fieldname": "billing_cycle",
+   "fieldtype": "Select",
+   "label": "Billing Cycle",
+   "options": "monthly\nannual"
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "current",
+   "fieldname": "account_standing",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Account Standing",
+   "options": "current\npast_due\nsuspended",
+   "description": "Central-owned financial axis, derived from payment. Orthogonal to the Agent-owned operational axis — never one combined enum."
+  },
+  {
+   "fieldname": "start_date",
+   "fieldtype": "Date",
+   "label": "Start Date"
+  },
+  {
+   "fieldname": "section_break_payment",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "default_payment_method",
+   "fieldtype": "Link",
+   "label": "Default Payment Method",
+   "options": "Payment Method"
+  },
+  {
+   "fieldname": "gateway",
+   "fieldtype": "Link",
+   "label": "Gateway",
+   "options": "Payment Gateway"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Subscription",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

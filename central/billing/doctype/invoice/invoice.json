@@ -1,0 +1,289 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "Postpaid, in-arrears invoice for a billing month. Immutable once issued; corrected by state (cancel+reissue / refund / wallet credit), never by mutation.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "subscription",
+  "invoice_type",
+  "column_break_head",
+  "status",
+  "period_start",
+  "period_end",
+  "due_date",
+  "section_break_items",
+  "items",
+  "section_break_totals",
+  "currency",
+  "subtotal",
+  "commitment_discount",
+  "commitment_clawback",
+  "output_tax_type",
+  "output_tax_rate",
+  "output_tax_amount",
+  "zero_rating_reason",
+  "total",
+  "column_break_totals",
+  "tds_applicable",
+  "tds_rate",
+  "tds_amount",
+  "tds_certificate_received",
+  "credit_applied",
+  "expected_collection",
+  "amount_paid",
+  "section_break_ext",
+  "erpnext_invoice",
+  "erpnext_sync_status",
+  "erpnext_sync_attempts",
+  "erpnext_next_retry_at",
+  "erpnext_sync_error",
+  "pdf_url"
+ ],
+ "fields": [
+  {
+   "fieldname": "team",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Team",
+   "reqd": 1
+  },
+  {
+   "fieldname": "subscription",
+   "fieldtype": "Link",
+   "label": "Subscription",
+   "options": "Subscription"
+  },
+  {
+   "default": "billable",
+   "fieldname": "invoice_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Invoice Type",
+   "options": "billable\ncost_report",
+   "description": "cost_report = free/trial true-cost (compute, don't charge)"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nOpen\nPaid\nOverdue\nWaived\nCancelled"
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Date",
+   "label": "Period Start"
+  },
+  {
+   "fieldname": "period_end",
+   "fieldtype": "Date",
+   "label": "Period End"
+  },
+  {
+   "fieldname": "due_date",
+   "fieldtype": "Date",
+   "label": "Due Date"
+  },
+  {
+   "fieldname": "section_break_items",
+   "fieldtype": "Section Break",
+   "label": "Line Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Invoice Line Item"
+  },
+  {
+   "fieldname": "section_break_totals",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Data",
+   "label": "Currency"
+  },
+  {
+   "fieldname": "subtotal",
+   "fieldtype": "Currency",
+   "label": "Subtotal"
+  },
+  {
+   "fieldname": "commitment_discount",
+   "fieldtype": "Currency",
+   "label": "Commitment Discount",
+   "description": "Discount applied to fixed-bundle lines under an active Commitment (issue #30); reduces the taxable base. 0 when no commitment or floor not met."
+  },
+  {
+   "fieldname": "commitment_clawback",
+   "fieldtype": "Currency",
+   "label": "Commitment Clawback",
+   "description": "Discount repaid when the team dropped below its Commitment floor before term-end (issue #31); added to the taxable base. 0 otherwise."
+  },
+  {
+   "default": "none",
+   "fieldname": "output_tax_type",
+   "fieldtype": "Select",
+   "label": "Output Tax Type",
+   "options": "none\nGST\nVAT",
+   "description": "Additive output tax (added to total)"
+  },
+  {
+   "default": "0",
+   "fieldname": "output_tax_rate",
+   "fieldtype": "Float",
+   "label": "Output Tax Rate %"
+  },
+  {
+   "default": "0",
+   "fieldname": "output_tax_amount",
+   "fieldtype": "Currency",
+   "label": "Output Tax Amount",
+   "description": "Added to total"
+  },
+  {
+   "fieldname": "zero_rating_reason",
+   "fieldtype": "Select",
+   "label": "Zero-Rating Reason",
+   "options": "\nsez_lut\nexport",
+   "description": "Why output tax is 0 (compliance reason \u2014 never blank when zero-rated)"
+  },
+  {
+   "fieldname": "total",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Total",
+   "description": "subtotal + output_tax_amount (the gross; mandate ceiling uses this)"
+  },
+  {
+   "fieldname": "column_break_totals",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "tds_applicable",
+   "fieldtype": "Check",
+   "label": "TDS Applicable",
+   "description": "Customer self-declares (has TAN)"
+  },
+  {
+   "default": "0",
+   "fieldname": "tds_rate",
+   "fieldtype": "Float",
+   "label": "TDS Rate %"
+  },
+  {
+   "default": "0",
+   "fieldname": "tds_amount",
+   "fieldtype": "Currency",
+   "label": "TDS Amount",
+   "description": "Withheld \u2014 reduces collected, NOT total. 0 at launch"
+  },
+  {
+   "default": "0",
+   "fieldname": "tds_certificate_received",
+   "fieldtype": "Check",
+   "label": "TDS Certificate Received",
+   "description": "Gate for closing a withheld invoice"
+  },
+  {
+   "default": "0",
+   "fieldname": "credit_applied",
+   "fieldtype": "Currency",
+   "label": "Credit Applied"
+  },
+  {
+   "fieldname": "expected_collection",
+   "fieldtype": "Currency",
+   "label": "Expected Collection",
+   "description": "total - credit_applied - tds (auto-charge target)"
+  },
+  {
+   "default": "0",
+   "fieldname": "amount_paid",
+   "fieldtype": "Currency",
+   "label": "Amount Paid"
+  },
+  {
+   "fieldname": "section_break_ext",
+   "fieldtype": "Section Break",
+   "label": "ERPNext Sync (one-way, async)"
+  },
+  {
+   "fieldname": "erpnext_invoice",
+   "fieldtype": "Data",
+   "label": "ERPNext Invoice",
+   "read_only": 1,
+   "description": "Sales Invoice name in ERPNext (statutory SOR); set on successful sync"
+  },
+  {
+   "default": "pending",
+   "fieldname": "erpnext_sync_status",
+   "fieldtype": "Select",
+   "label": "ERPNext Sync Status",
+   "options": "pending\nsynced\nfailed",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "erpnext_sync_attempts",
+   "fieldtype": "Int",
+   "label": "ERPNext Sync Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "erpnext_next_retry_at",
+   "fieldtype": "Datetime",
+   "label": "ERPNext Next Retry At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "erpnext_sync_error",
+   "fieldtype": "Small Text",
+   "label": "ERPNext Sync Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pdf_url",
+   "fieldtype": "Data",
+   "label": "PDF URL"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Invoice",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

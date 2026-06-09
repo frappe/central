@@ -1,0 +1,56 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-06-03 00:00:00.000000",
+ "description": "One row per notification Cloud Billing emits. Cloud Billing is the SOLE sender (no gateway-sent duplicates).",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "event_type",
+  "channel",
+  "status",
+  "column_break_main",
+  "reference_doctype",
+  "reference_name",
+  "sent_at",
+  "section_break_body",
+  "subject",
+  "message"
+ ],
+ "fields": [
+  {"fieldname": "team", "fieldtype": "Data", "in_list_view": 1, "label": "Team", "reqd": 1},
+  {
+   "fieldname": "event_type", "fieldtype": "Select", "in_list_view": 1, "label": "Event Type",
+   "options": "payment_success\npayment_failure\npayment_retry\ninvoice_overdue\ncredit_low\ncard_expiry\nmandate_reauth\ntrial_expiring"
+  },
+  {"default": "email", "fieldname": "channel", "fieldtype": "Data", "label": "Channel"},
+  {
+   "default": "sent", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1,
+   "label": "Status", "options": "sent\nsuppressed"
+  },
+  {"fieldname": "column_break_main", "fieldtype": "Column Break"},
+  {"fieldname": "reference_doctype", "fieldtype": "Data", "label": "Reference DocType"},
+  {"fieldname": "reference_name", "fieldtype": "Data", "label": "Reference Name"},
+  {"fieldname": "sent_at", "fieldtype": "Datetime", "label": "Sent At"},
+  {"fieldname": "section_break_body", "fieldtype": "Section Break"},
+  {"fieldname": "subject", "fieldtype": "Data", "label": "Subject"},
+  {"fieldname": "message", "fieldtype": "Small Text", "label": "Message"}
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing Notification Log",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

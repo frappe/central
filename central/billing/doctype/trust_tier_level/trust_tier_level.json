@@ -1,0 +1,127 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "prompt",
+ "creation": "2026-06-02 00:00:00.000000",
+ "description": "An admin-defined rung of the trust-tier ladder. Promotion picks the highest rung a team's paid history qualifies for.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "tier",
+  "sequence",
+  "is_default",
+  "column_break_caps",
+  "max_spend",
+  "max_resource_count",
+  "section_break_promo",
+  "min_paid_invoices",
+  "min_cumulative_paid",
+  "column_break_allow",
+  "allowed_plans",
+  "allowed_clusters",
+  "allowed_resource_types"
+ ],
+ "fields": [
+  {
+   "fieldname": "tier",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Tier",
+   "description": "Ladder key, e.g. t0 / t1 / t2",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "sequence",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Sequence",
+   "description": "Order on the ladder (higher = more trusted)",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_default",
+   "fieldtype": "Check",
+   "label": "Is Default (entry tier)"
+  },
+  {
+   "fieldname": "column_break_caps",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "max_spend",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Max Monthly Spend"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_resource_count",
+   "fieldtype": "Int",
+   "label": "Max Resource Count"
+  },
+  {
+   "fieldname": "section_break_promo",
+   "fieldtype": "Section Break",
+   "label": "Promotion Thresholds"
+  },
+  {
+   "default": "0",
+   "fieldname": "min_paid_invoices",
+   "fieldtype": "Int",
+   "label": "Min Consecutive Paid Invoices"
+  },
+  {
+   "default": "0",
+   "fieldname": "min_cumulative_paid",
+   "fieldtype": "Currency",
+   "label": "Min Cumulative Paid"
+  },
+  {
+   "fieldname": "column_break_allow",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "allowed_plans",
+   "fieldtype": "JSON",
+   "label": "Allowed Plans"
+  },
+  {
+   "fieldname": "allowed_clusters",
+   "fieldtype": "JSON",
+   "label": "Allowed Clusters"
+  },
+  {
+   "fieldname": "allowed_resource_types",
+   "fieldtype": "JSON",
+   "label": "Allowed Resource Types"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Trust Tier Level",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "sequence",
+ "sort_order": "ASC",
+ "states": []
+}
