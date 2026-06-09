@@ -106,7 +106,7 @@ class Team(Document):
 	def _validate_unique_members(self) -> None:
 		users = [row.user for row in self.members if row.user]
 		if len(users) != len(set(users)):
-			frappe.throw("A user can appear only once in a team.")
+			frappe.throw(_("A user can appear only once in a team."))
 
 	def _validate_owner_membership(self) -> None:
 		if not self.owner_user:
@@ -116,7 +116,7 @@ class Team(Document):
 		if len(owners) == 1 and owners[0].user == self.owner_user and owners[0].status == "Active":
 			return
 
-		frappe.throw("A team must have exactly one active Owner member matching Owner User.")
+		frappe.throw(_("A team must have exactly one active Owner member matching Owner User."))
 
 	def _validate_role_scope(self) -> None:
 		for member in self.members:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import frappe
 from frappe.utils import today
+from frappe import _
 
 from central.iam import get_user_team_names
 
@@ -17,7 +18,7 @@ def bootstrap_user_team(doc, method: str | None = None) -> None:
 	_ensure_central_user_role(doc)
 
 	if not frappe.db.exists("Team Role", DEFAULT_TEAM_ROLE):
-		frappe.throw("Cannot bootstrap user team because the Owner Team Role fixture is missing.")
+		frappe.throw(_("Cannot bootstrap user team because the Owner Team Role fixture is missing."))
 
 	if not get_user_team_names(doc.name):
 		team = frappe.get_doc(

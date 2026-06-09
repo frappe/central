@@ -70,12 +70,32 @@
   "resource": "virtual machine"
  },
  {
+  "capability": "vm:rebuild",
+  "description": "Rebuild virtual machines and restore snapshots in Atlas.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-09 00:00:00.000000",
+  "name": "vm:rebuild",
+  "plane": "atlas",
+  "resource": "virtual machine"
+ },
+ {
   "capability": "vm:resize",
   "description": "Resize virtual machines in Atlas.",
   "docstatus": 0,
   "doctype": "Capability",
   "modified": "2026-06-08 19:52:59.280375",
   "name": "vm:resize",
+  "plane": "atlas",
+  "resource": "virtual machine"
+ },
+ {
+  "capability": "vm:snapshot",
+  "description": "Create, clone, and delete virtual machine snapshots in Atlas.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-09 00:00:00.000000",
+  "name": "vm:snapshot",
   "plane": "atlas",
   "resource": "virtual machine"
  },

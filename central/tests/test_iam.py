@@ -47,13 +47,20 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		self.assertEqual(frappe.db.count("Capability"), 12)
+		self.assertEqual(frappe.db.count("Capability"), 14)
 
 		owner_caps = set(frappe.get_all("Role Capability", {"parent": "Owner"}, pluck="capability"))
+		admin_caps = set(frappe.get_all("Role Capability", {"parent": "Admin"}, pluck="capability"))
+		developer_caps = set(frappe.get_all("Role Capability", {"parent": "Developer"}, pluck="capability"))
 		viewer_caps = set(frappe.get_all("Role Capability", {"parent": "Viewer"}, pluck="capability"))
+		billing_caps = set(frappe.get_all("Role Capability", {"parent": "Billing"}, pluck="capability"))
 
-		self.assertIn("vm:terminate", owner_caps)
+		for caps in (owner_caps, admin_caps, developer_caps):
+			self.assertIn("vm:snapshot", caps)
+			self.assertIn("vm:rebuild", caps)
 		self.assertEqual(viewer_caps, {"asset:view", "vm:view"})
+		self.assertNotIn("vm:snapshot", billing_caps)
+		self.assertNotIn("vm:rebuild", billing_caps)
 
 	def test_user_claim_is_team_scoped(self):
 		team_a = self.make_team("IAM Team A", self.viewer, "Viewer")

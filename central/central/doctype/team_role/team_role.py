@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -24,10 +25,10 @@ class TeamRole(Document):
 
 	def validate(self):
 		if self.is_system and self.team:
-			frappe.throw("System Team Roles must not be tied to a team.")
+			frappe.throw(_("System Team Roles must not be tied to a team."))
 		if not self.is_system and not self.team:
-			frappe.throw("Custom Team Roles must be tied to one team.")
+			frappe.throw(_("Custom Team Roles must be tied to one team."))
 
 	def on_trash(self):
 		if self.is_system:
-			frappe.throw("System Team Roles cannot be deleted.")
+			frappe.throw(_("System Team Roles cannot be deleted."))
