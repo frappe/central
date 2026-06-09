@@ -153,23 +153,11 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"central.tasks.all"
-# 	],
-# 	"daily": [
-# 		"central.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"central.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"central.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"central.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
+	],
+}
 
 # Testing
 # -------
@@ -245,11 +233,13 @@ before_request = ["central.oauth.install_oauth_claim_patch"]
 
 permission_query_conditions = {
 	"Team": "central.permissions.team_query_conditions",
+	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
 }
 
 has_permission = {
 	"Team": "central.permissions.team_has_permission",
+	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
 }
 

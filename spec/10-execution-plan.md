@@ -43,7 +43,7 @@ the declarative Frappe way — *not* an imperative seed function.
 |---|---|
 | The five DocTypes: `Team`, `Team Member` (child), `Team Role`, `Role Capability` (child), `Capability`; `Team Member.role` = required `Link → Team Role`; `track_changes` on `Team`/`Team Role` | Central |
 | **Fixtures**: the `Capability` catalog (central + atlas planes, no bench) + the system `Team Role`s `Owner/Admin/Developer/Viewer/Billing` (`is_system=1`) with their capability bundles | Central |
-| Signup bootstrap: new enabled non-system Users get native `Central User`, a default Team, and an active Owner `Team Member` row | Central |
+| Signup bootstrap: new enabled Users get native `Central User`, a default Team, and an active Owner `Team Member` row | Central |
 
 **Ships:** the data model exists and an admin can assign real roles to members.
 **Done bar:** a clean `bench migrate` on a fresh site re-creates every record
@@ -66,6 +66,16 @@ Atlas session capture is still deferred.
 **Ships:** Atlas *has* the user's capabilities in-session and can log/inspect
 them — but doesn't gate on them yet. This isolates the riskiest integration (the
 custom claim end-to-end) in one small, observable step.
+
+### Central operational IAM
+
+**Status:** implemented.
+
+- Team edits, member management, deletion, and ownership transfer are checked
+  against Central capabilities.
+- `Team Invitation` supports existing and future users, role assignment,
+  acceptance, revocation, email delivery, and expiry.
+- Users cannot change their own membership or gain `Owner` through an invite.
 
 ## Phase 3 — team attribution, team-in-path & enforcement (the payoff)
 

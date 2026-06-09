@@ -80,11 +80,14 @@
    "write": 1
   },
   {
+   "create": 1,
+   "delete": 1,
    "export": 1,
    "read": 1,
    "report": 1,
    "role": "Central User",
-   "share": 0
+   "share": 0,
+   "write": 1
   }
  ],
  "sort_field": "modified",

@@ -5,7 +5,6 @@ from typing import Any
 
 import frappe
 
-
 OPERATOR_BYPASS_ROLE = "System Manager"
 
 
@@ -48,6 +47,15 @@ def get_user_team_names(user: str) -> list[str]:
 	).run(as_dict=True)
 
 	return [row.name for row in rows]
+
+
+def get_user_team_names_with_capability(user: str, capability: str) -> list[str]:
+	grants = resolve_user_grants(user)
+	return sorted(
+		team
+		for team, team_grants in grants.items()
+		if any(capability in grant.get("caps", []) for grant in team_grants)
+	)
 
 
 def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
@@ -100,7 +108,7 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 					"scope": "*",
 					"caps": caps,
 				}
-		)
+			)
 		return dict(grants_by_team)
 
 	grants_by_key = {}

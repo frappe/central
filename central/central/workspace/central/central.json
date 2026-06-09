@@ -1,7 +1,7 @@
 {
  "app": "central",
  "charts": [],
- "content": "[{\"id\":\"central_team\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Team\",\"col\":3}},{\"id\":\"central_team_role\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Team Role\",\"col\":3}},{\"id\":\"central_capability\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Capability\",\"col\":3}},{\"id\":\"central_iam_probe\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"IAM Permission Probe\",\"col\":3}}]",
+ "content": "[{\"id\":\"central_team\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Team\",\"col\":3}},{\"id\":\"central_team_invitation\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Team Invitation\",\"col\":3}},{\"id\":\"central_team_role\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Team Role\",\"col\":3}},{\"id\":\"central_capability\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Capability\",\"col\":3}},{\"id\":\"central_iam_probe\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"IAM Permission Probe\",\"col\":3}}]",
  "creation": "2026-06-08 00:00:00.000000",
  "custom_blocks": [],
  "docstatus": 0,
@@ -13,8 +13,9 @@
  "is_hidden": 0,
  "label": "Central",
  "links": [
-  {"hidden": 0, "is_query_report": 0, "label": "IAM", "link_count": 4, "onboard": 0, "type": "Card Break"},
+  {"hidden": 0, "is_query_report": 0, "label": "IAM", "link_count": 5, "onboard": 0, "type": "Card Break"},
   {"hidden": 0, "is_query_report": 0, "label": "Team", "link_count": 0, "link_to": "Team", "link_type": "DocType", "onboard": 0, "type": "Link"},
+  {"hidden": 0, "is_query_report": 0, "label": "Team Invitation", "link_count": 0, "link_to": "Team Invitation", "link_type": "DocType", "onboard": 0, "type": "Link"},
   {"hidden": 0, "is_query_report": 0, "label": "Team Role", "link_count": 0, "link_to": "Team Role", "link_type": "DocType", "onboard": 0, "type": "Link"},
   {"hidden": 0, "is_query_report": 0, "label": "Capability", "link_count": 0, "link_to": "Capability", "link_type": "DocType", "onboard": 0, "type": "Link"},
   {"hidden": 0, "is_query_report": 0, "label": "IAM Permission Probe", "link_count": 0, "link_to": "IAM Permission Probe", "link_type": "DocType", "onboard": 0, "type": "Link"}
@@ -33,6 +34,7 @@
  "sequence_id": 1.0,
  "shortcuts": [
   {"color": "Grey", "doc_view": "List", "label": "Team", "link_to": "Team", "type": "DocType"},
+  {"color": "Grey", "doc_view": "List", "label": "Team Invitation", "link_to": "Team Invitation", "type": "DocType"},
   {"color": "Grey", "doc_view": "List", "label": "Team Role", "link_to": "Team Role", "type": "DocType"},
   {"color": "Grey", "doc_view": "List", "label": "Capability", "link_to": "Capability", "type": "DocType"},
   {"color": "Grey", "doc_view": "List", "label": "IAM Permission Probe", "link_to": "IAM Permission Probe", "type": "DocType"}

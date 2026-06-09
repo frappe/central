@@ -62,14 +62,18 @@ only by the `Team Member` row. `Team.owner_user` is legal/billing ownership
 metadata and is kept consistent with the initial Owner member, but it is not an
 authorization bypass.
 
-Flow for an invited user is a future extension:
+Flow for an invited user:
 
 1. An invitation records `email -> team -> role`.
-2. On signup/login, Central consumes the invite and creates the corresponding
-   `Team Member` row.
-3. If product wants every user to also have a personal team, Central can create
-   that as a separate Owner membership. The invited-team grant still remains a
+2. Existing users accept the invitation from Desk. If the email does not have a
+   User yet, Central consumes the pending invitation when that User is created.
+3. Acceptance creates the corresponding active `Team Member` row.
+4. The user's personal team remains separate. The invited-team grant is another
    normal `Team Member` row.
+
+Only a member with `team:manage_members` can create or revoke an invitation.
+Invitations cannot assign `Owner`; ownership transfer is an explicit owner-only
+operation. Pending invitations expire after their configured lifetime.
 
 The implementation is a `User.after_insert` hook. Every enabled User created
 after Central is installed is bootstrapped this way; install/migrate-time fixture
@@ -231,8 +235,12 @@ The current Central app implements the authority side only:
 - Fixtures: `Capability`, system `Team Role`s, and native `Central User`.
   `Capability` remains the append-only action catalog; role bundles are data,
   not code constants.
-- User bootstrap: a new enabled non-system `User` receives `Central User`, one
+- User bootstrap: a new enabled `User` receives `Central User`, one
   default `Team`, and an active `Owner` membership in that team.
+- Team operations: capabilities gate metadata edits, member management, deletion,
+  and ownership transfer. Members cannot change their own membership.
+- Invitations: `Team Invitation` handles Desk notification, best-effort email,
+  expiry, acceptance/revocation, and signup-time acceptance for a matching email.
 - Resolver: `central.iam.resolve_user_grants(user)` reads only the canonical
   chain `Team Member -> Team Role -> Role Capability -> Capability`.
 - OAuth layer: Central patches Frappe's OpenID userinfo generation to include

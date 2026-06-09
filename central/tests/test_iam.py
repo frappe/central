@@ -20,12 +20,13 @@ def ensure_user(email: str) -> str:
 			"roles": [{"role": "Central User"}],
 		}
 	)
-	user.insert(ignore_permissions=True)
+	user.insert()
 	return email
 
 
 class TestCentralIAM(IntegrationTestCase):
 	def setUp(self):
+		frappe.set_user("Administrator")
 		self.owner = ensure_user("iam.owner@example.test")
 		self.viewer = ensure_user("iam.viewer@example.test")
 		self.developer = ensure_user("iam.developer@example.test")
@@ -42,7 +43,7 @@ class TestCentralIAM(IntegrationTestCase):
 				],
 			}
 		)
-		team.insert(ignore_permissions=True)
+		team.insert()
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
@@ -117,7 +118,7 @@ class TestCentralIAM(IntegrationTestCase):
 				"send_welcome_email": 0,
 			}
 		)
-		user.insert(ignore_permissions=True)
+		user.insert()
 
 		user.reload()
 		teams = frappe.get_all(

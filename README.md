@@ -63,6 +63,9 @@ sequenceDiagram
 - System team roles: `Owner`, `Admin`, `Developer`, `Viewer`, `Billing`.
 - New enabled `User` records get `Central User`, one default team, and active
 `Owner` membership.
+- Owners and Admins can invite, suspend, remove, and change member roles.
+- Invitations support Desk notifications, best-effort email delivery, expiry,
+  acceptance, and signup-time acceptance for users who do not exist yet.
 - Team-scoped permission resolution through `Team Member -> Team Role -> Capability`.
 - OAuth/OpenID userinfo includes the `fc_teams` claim for Atlas.
 - Probe DocType can test `(user, team, capability)` from Desk.
@@ -71,7 +74,6 @@ sequenceDiagram
 
 - Central frontend/team switcher.
 - Atlas VM enforcement using `fc_teams`. Scoped VM (granular) permissions.
-- Invite workflow UI and email flow.
 - Partner/support access flows.
 
 ## Installation
@@ -107,6 +109,15 @@ http://central.site:8000/app
   - `owner_user` is the new user.
   - Members has the same user as `Owner` and `Active`.
 5. Add another user as `Viewer`, `Developer`, or `Admin`.
+
+To test invitations:
+
+1. Open a Team and click `Invite Member`.
+2. Choose an email and role. `Owner` must be assigned through ownership transfer,
+   not an invitation.
+3. Log in as the invited user and open `Team Invitation`.
+4. Click `Accept`.
+5. Confirm the user appears in the Team's Members table.
 
 The user's effective permissions are always resolved from team membership. The
 `owner_user` field is ownership metadata, not a permission bypass.

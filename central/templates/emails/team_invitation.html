@@ -1,0 +1,71 @@
+<table
+	width="100%"
+	cellpadding="0"
+	cellspacing="0"
+	role="presentation"
+	style="border-collapse: collapse; color: #171717; font-family: Georgia, 'Times New Roman', serif;"
+>
+	<tr>
+		<td style="padding: 8px 0 28px;">
+			<div style="font-family: Helvetica, Arial, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: uppercase;">
+				Central
+			</div>
+		</td>
+	</tr>
+	<tr>
+		<td style="border-top: 1px solid #d4d4d4; padding: 32px 0 0;">
+			<h1 style="font-size: 28px; font-weight: 400; line-height: 1.25; margin: 0 0 16px;">
+				{{ _("Join {0}").format(team_name) | e }}
+			</h1>
+			<p style="font-family: Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6; margin: 0 0 24px;">
+				{{ _("{0} invited you to join their team in Central.").format(invited_by) | e }}
+			</p>
+		</td>
+	</tr>
+	<tr>
+		<td style="padding: 0 0 28px;">
+			<table
+				width="100%"
+				cellpadding="0"
+				cellspacing="0"
+				role="presentation"
+				style="border-collapse: collapse; border-bottom: 1px solid #d4d4d4; border-top: 1px solid #d4d4d4; font-family: Helvetica, Arial, sans-serif;"
+			>
+				<tr>
+					<td style="color: #737373; font-size: 12px; padding: 14px 0; text-transform: uppercase;">
+						{{ _("Role") }}
+					</td>
+					<td align="right" style="font-size: 14px; font-weight: 600; padding: 14px 0;">
+						{{ role | e }}
+					</td>
+				</tr>
+				<tr>
+					<td style="border-top: 1px solid #e5e5e5; color: #737373; font-size: 12px; padding: 14px 0; text-transform: uppercase;">
+						{{ _("Expires") }}
+					</td>
+					<td align="right" style="border-top: 1px solid #e5e5e5; font-size: 14px; padding: 14px 0;">
+						{{ expires_on | e }}
+					</td>
+				</tr>
+			</table>
+		</td>
+	</tr>
+	<tr>
+		<td style="padding: 0 0 28px;">
+			<a
+				href="{{ invitation_url | e }}"
+				style="background: #171717; border: 1px solid #171717; color: #ffffff; display: inline-block; font-family: Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 600; padding: 12px 18px; text-decoration: none;"
+			>
+				{{ _("View invitation") }}
+			</a>
+		</td>
+	</tr>
+	<tr>
+		<td style="color: #737373; font-family: Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.6;">
+			{{ _("If the button does not work, open this link:") }}<br />
+			<a href="{{ invitation_url | e }}" style="color: #404040; word-break: break-all;">
+				{{ invitation_url | e }}
+			</a>
+		</td>
+	</tr>
+</table>

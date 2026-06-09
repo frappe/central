@@ -1,42 +1,54 @@
 from __future__ import annotations
 
 import frappe
+from frappe.utils import today
 
 from central.iam import get_user_team_names
-
 
 CENTRAL_USER_ROLE = "Central User"
 DEFAULT_TEAM_ROLE = "Owner"
 
 
 def bootstrap_user_team(doc, method: str | None = None) -> None:
-	"""Give a newly-created Central user a first Team through the normal IAM path."""
+	"""Provision Central access for a newly created user."""
 	if _should_skip_bootstrap(doc):
 		return
 
-	_ensure_central_user_role(doc.name)
-
-	if get_user_team_names(doc.name):
-		return
+	_ensure_central_user_role(doc)
 
 	if not frappe.db.exists("Team Role", DEFAULT_TEAM_ROLE):
 		frappe.throw("Cannot bootstrap user team because the Owner Team Role fixture is missing.")
 
-	team = frappe.get_doc(
-		{
-			"doctype": "Team",
-			"team_name": _default_team_name(doc),
-			"owner_user": doc.name,
-			"members": [
-				{
-					"user": doc.name,
-					"role": DEFAULT_TEAM_ROLE,
-					"status": "Active",
-				}
-			],
-		}
-	)
-	team.insert(ignore_permissions=True)
+	if not get_user_team_names(doc.name):
+		team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": _default_team_name(doc),
+				"owner_user": doc.name,
+				"members": [
+					{
+						"user": doc.name,
+						"role": DEFAULT_TEAM_ROLE,
+						"status": "Active",
+					}
+				],
+			}
+		)
+		team.flags.from_user_bootstrap = True
+		# User.after_insert can run as Guest during self-signup.
+		team.insert(ignore_permissions=True)
+
+	_accept_pending_invitations(doc.name)
+
+
+def _accept_pending_invitations(user: str) -> None:
+	for name in frappe.get_all(
+		"Team Invitation",
+		filters={"email": user, "status": "Pending", "expires_on": [">=", today()]},
+		pluck="name",
+		order_by="creation asc",
+	):
+		frappe.get_doc("Team Invitation", name).accept_for_user(user)
 
 
 def _should_skip_bootstrap(doc) -> bool:
@@ -49,13 +61,11 @@ def _should_skip_bootstrap(doc) -> bool:
 	return False
 
 
-def _ensure_central_user_role(user: str) -> None:
-	user_doc = frappe.get_doc("User", user)
-	if CENTRAL_USER_ROLE in {row.role for row in user_doc.roles}:
+def _ensure_central_user_role(user) -> None:
+	if CENTRAL_USER_ROLE in {row.role for row in user.roles}:
 		return
 
-	user_doc.append_roles(CENTRAL_USER_ROLE)
-	user_doc.save(ignore_permissions=True)
+	user.add_roles(CENTRAL_USER_ROLE)
 
 
 def _default_team_name(doc) -> str:
