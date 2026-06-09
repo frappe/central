@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 from central.iam import can, get_effective_permissions, get_fc_teams_claim
 
 
 def _assert_can_inspect(user: str) -> None:
 	if frappe.session.user != user and "System Manager" not in frappe.get_roles():
-		frappe.throw("Only System Manager can inspect another user's permissions", frappe.PermissionError)
+		frappe.throw(_("Only System Manager can inspect another user's permissions"), frappe.PermissionError)
 
 
 @frappe.whitelist(methods=["GET"])

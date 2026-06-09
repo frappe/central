@@ -23,7 +23,13 @@
     "capability": "vm:create"
    },
    {
+    "capability": "vm:rebuild"
+   },
+   {
     "capability": "vm:resize"
+   },
+   {
+    "capability": "vm:snapshot"
    },
    {
     "capability": "vm:start"
@@ -61,7 +67,13 @@
     "capability": "vm:create"
    },
    {
+    "capability": "vm:rebuild"
+   },
+   {
     "capability": "vm:resize"
+   },
+   {
+    "capability": "vm:snapshot"
    },
    {
     "capability": "vm:start"
@@ -93,7 +105,13 @@
     "capability": "vm:create"
    },
    {
+    "capability": "vm:rebuild"
+   },
+   {
     "capability": "vm:resize"
+   },
+   {
+    "capability": "vm:snapshot"
    },
    {
     "capability": "vm:start"
