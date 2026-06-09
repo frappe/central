@@ -71,10 +71,7 @@ TEAMS = [
 
 
 def seed_all() -> dict:
-	from central.billing.api.dashboard import ensure_billing_team_field
-
 	_wipe_all()
-	ensure_billing_team_field()
 	_tiers()
 	_catalog()
 	_gateways()
@@ -87,8 +84,8 @@ def seed_all() -> dict:
 	from central.billing.demo.demo import _ensure_workspace
 
 	_ensure_workspace()
-	# So an admin browsing the portal lands on a rich team by default.
-	frappe.db.set_value("User", "Administrator", "billing_team", "acme-corp")
+	# Administrator is a System Manager (operator) — they browse any team and
+	# _default_team() lands them on a team with data; no per-user team link needed.
 	frappe.db.commit()
 	return results
 

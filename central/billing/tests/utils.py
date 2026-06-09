@@ -63,3 +63,31 @@ def make_addon(name, rates=None, **kwargs):
 	doc.insert(ignore_permissions=True)
 	set_catalog_rates("Add-on", doc.name, rates if rates is not None else DEFAULT_ADDON_RATES)
 	return doc.name
+
+
+def make_user(email=None):
+	"""Create (or reuse) a plain user with no platform roles — stands in for a
+	customer or the role-less Agent key."""
+	email = email or f"cust-{frappe.generate_hash(6)}@example.com"
+	if not frappe.db.exists("User", email):
+		frappe.get_doc(
+			{"doctype": "User", "email": email, "first_name": "Cust", "send_welcome_email": 0}
+		).insert(ignore_permissions=True)
+	return email
+
+
+def make_billing_team(user, role="Billing", team_name=None):
+	"""A Central `Team` with `user` as an active member under `role`. The team's
+	Owner is a separate throwaway user (a Team must have exactly one Owner), so
+	`user` carries exactly `role`'s capabilities — `Billing`/`Owner` grant
+	`billing:view` + `billing:manage`; `Viewer`/`Developer` grant neither.
+	Returns the Team doc; `team.name` is the slug to pass to the billing APIs."""
+	owner = make_user(f"owner-{frappe.generate_hash(6)}@example.com")
+	return frappe.get_doc(
+		{
+			"doctype": "Team",
+			"team_name": team_name or f"Billing {frappe.generate_hash(5)}",
+			"owner_user": owner,
+			"members": [{"user": user, "role": role, "status": "Active"}],
+		}
+	).insert(ignore_permissions=True)

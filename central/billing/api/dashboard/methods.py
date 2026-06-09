@@ -6,8 +6,13 @@ setup, and fallback-order management. Gateway secrets are never returned.
 
 import frappe
 
-from central.billing.platform.security import require_team_access
-from central.billing.api.dashboard._shared import _add_method_gateway, _resolve_team, _team_currency
+from central.billing import authz
+from central.billing.api.dashboard._shared import (
+	_add_method_gateway,
+	_require_manage,
+	_resolve_team,
+	_team_currency,
+)
 
 
 @frappe.whitelist()
@@ -54,7 +59,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> dict:
 	"""Begin adding a card (gateway SetupIntent → client_secret). Real PAN is
 	collected client-side by the gateway SDK (PCI), never by our server."""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	from central.billing.payments import payments
 
 	return payments.initiate_payment_method_setup(team, gateway)
@@ -68,7 +73,7 @@ def confirm_card(payment_method: str | None = None, gateway_method_id: str | Non
 	from central.billing.payments import payments
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
-	require_team_access(team)
+	_require_manage(team)
 	method = payments.confirm_payment_method(
 		payment_method, gateway_method_id=gateway_method_id, display_label=display_label,
 		expiry_month=expiry_month, expiry_year=expiry_year)
@@ -81,7 +86,7 @@ def add_demo_card(team: str | None = None, gateway: str | None = None,
 				  expiry_year: int = 2030) -> dict:
 	"""Demo convenience: register an active card without a live gateway round-trip.
 	(Production uses initiate_card_setup + confirm_card with the gateway SDK.)"""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	from central.billing.payments import payments
 
 	name = frappe.get_doc({
@@ -100,7 +105,7 @@ def setup_payment_method_order(team: str | None = None, gateway: str | None = No
 	"""Begin adding a Razorpay recurring method — UPI Autopay mandate (ceiling =
 	trust-tier cap) or a card token. Returns the order handles the UI runs
 	Razorpay Checkout against (#08)."""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	gw = gateway or _add_method_gateway(_team_currency(team)).get("name")
 	from central.billing.payments import mandates
 
@@ -116,7 +121,7 @@ def confirm_payment_method_order(payment_method: str | None = None, razorpay_pay
 	"""Confirm the Razorpay Checkout callback — verifies the signature, activates
 	the mandate. Real gateway verification, not a stub."""
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
-	require_team_access(team)
+	_require_manage(team)
 	from central.billing.payments import mandates
 
 	method = mandates.confirm_mandate(payment_method, {
@@ -130,7 +135,7 @@ def confirm_payment_method_order(payment_method: str | None = None, razorpay_pay
 def remove_payment_method(payment_method: str | None = None) -> dict:
 	"""Remove a card/mandate; promotes another active method to default."""
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
-	require_team_access(team)
+	_require_manage(team)
 	from central.billing.payments import payments
 
 	return payments.delete_payment_method(payment_method)
@@ -139,7 +144,7 @@ def remove_payment_method(payment_method: str | None = None) -> dict:
 @frappe.whitelist()
 def set_default_payment_method(payment_method: str | None = None) -> dict:
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
-	require_team_access(team)
+	_require_manage(team)
 	from central.billing.payments import payments
 
 	doc = payments.set_default_payment_method(payment_method)
@@ -149,7 +154,7 @@ def set_default_payment_method(payment_method: str | None = None) -> dict:
 @frappe.whitelist()
 def reorder_payment_methods(team: str | None = None, ordered: list | str | None = None) -> dict:
 	"""Set the team's fallback order (primary→backups) from a top-first list."""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	from central.billing.payments import payments
 
 	return payments.reorder_payment_methods(team, ordered)

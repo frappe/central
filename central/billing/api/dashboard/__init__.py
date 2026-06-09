@@ -2,17 +2,17 @@
 # For license information, please see license.txt
 """Customer dashboard endpoints (issues #26, #18).
 
-Every endpoint is auto-scoped to the caller's team via require_team_access — a
-Billing User only ever sees their own team, and passing another team's name is
-rejected (never silently widened). Admin-only data lives on the admin dashboard
-(#19) behind require_billing_admin.
+Every endpoint is auto-scoped to the caller's team via Central's capability IAM
+(ADR 0004): reads require `billing:view`, mutations `billing:manage`. A member
+without the capability — including the cluster Agent key — is rejected, and
+passing another team's name is never silently widened. Cross-team admin data
+lives on the admin dashboard (#19) behind the operator (System Manager) bypass.
 
 Split into domain modules (account / invoices / methods) with shared helpers;
 this package re-exports the public API so every `billing.api.dashboard.*` path
-(whitelisted endpoints + the after_migrate hook) stays stable.
+stays stable.
 """
 
-from central.billing.api.dashboard._shared import ensure_billing_team_field
 from central.billing.api.dashboard.account import (
 	get_billing_profile,
 	get_billing_settings,
@@ -50,7 +50,6 @@ from central.billing.api.dashboard.methods import (
 )
 
 __all__ = [
-	"ensure_billing_team_field",
 	"whoami", "get_billing_profile", "save_billing_profile", "get_billing_settings",
 	"save_billing_settings", "get_team_overview", "get_trust_tier", "list_switchable_teams",
 	"get_forecast", "list_subscriptions", "list_invoices", "get_invoice", "list_payment_attempts",

@@ -6,7 +6,6 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.api import admin
-from central.billing.platform import security
 from central.billing.tests.utils import make_plan
 
 PLAN = "bundle-admin-test"
@@ -16,7 +15,6 @@ TEAM_B = "team-admin-b"
 
 class AdminTestBase(IntegrationTestCase):
 	def setUp(self):
-		security.ensure_billing_roles()
 		make_plan(PLAN)
 		self._purge()
 

@@ -6,7 +6,7 @@ trend chart, spend breakdowns, payment success rates, aging, and trial subsidy.
 
 import frappe
 
-from central.billing.platform.security import require_billing_admin
+from central.billing.authz import require_operator
 from central.billing.api.admin._shared import (
 	AGING_BUCKETS,
 	_FX_TO_INR,
@@ -19,7 +19,7 @@ from central.billing.api.admin._shared import (
 @frappe.whitelist()
 def get_summary(from_date: str | None = None, to_date: str | None = None) -> dict:
 	"""Total billed / collected / outstanding across all teams (INR-equivalent)."""
-	require_billing_admin()
+	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
 		filters=[["invoice_type", "=", "billable"]] + _period_filter("period_start", from_date, to_date),
@@ -51,7 +51,7 @@ def get_revenue_trend(months: int = 12) -> list[dict]:
 	Invoices carry mixed currencies, so each is converted to INR at a flat demo FX
 	rate before bucketing by billing month, giving one comparable revenue axis.
 	"""
-	require_billing_admin()
+	require_operator()
 	buckets = {}
 	for inv in frappe.get_all(
 		"Invoice",
@@ -80,7 +80,7 @@ def get_revenue_trend(months: int = 12) -> list[dict]:
 @frappe.whitelist()
 def get_cluster_breakdown(from_date: str | None = None, to_date: str | None = None) -> list[dict]:
 	"""Spend by cluster, from the billable invoices' line items."""
-	require_billing_admin()
+	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
 		filters=[["invoice_type", "=", "billable"]] + _period_filter("period_start", from_date, to_date),
@@ -99,7 +99,7 @@ def get_cluster_breakdown(from_date: str | None = None, to_date: str | None = No
 @frappe.whitelist()
 def get_team_breakdown(from_date: str | None = None, to_date: str | None = None) -> list[dict]:
 	"""Spend by team (billable invoice totals)."""
-	require_billing_admin()
+	require_operator()
 	totals = {}
 	for i in frappe.get_all(
 		"Invoice",
@@ -114,7 +114,7 @@ def get_team_breakdown(from_date: str | None = None, to_date: str | None = None)
 @frappe.whitelist()
 def get_payment_analytics(from_date: str | None = None, to_date: str | None = None) -> dict:
 	"""Attempt → success rate by gateway + failure-reason tally."""
-	require_billing_admin()
+	require_operator()
 	attempts = frappe.get_all(
 		"Payment Attempt",
 		filters=_period_filter("initiated_at", from_date, to_date),
@@ -137,7 +137,7 @@ def get_payment_analytics(from_date: str | None = None, to_date: str | None = No
 @frappe.whitelist()
 def get_overdue_aging(now: str | None = None) -> dict:
 	"""Outstanding Open/Overdue invoices bucketed by days overdue."""
-	require_billing_admin()
+	require_operator()
 	today = frappe.utils.getdate(now)
 	buckets = {label: {"count": 0, "amount": 0.0} for label, _lo, _hi in AGING_BUCKETS}
 	for inv in frappe.get_all(
@@ -162,7 +162,7 @@ def get_overdue_aging(now: str | None = None) -> dict:
 @frappe.whitelist()
 def get_free_trial_costs(from_date: str | None = None, to_date: str | None = None) -> dict:
 	"""Free/trial subsidy (true cost) — cost_report invoices by cluster and plan."""
-	require_billing_admin()
+	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
 		filters=[["invoice_type", "=", "cost_report"]] + _period_filter("period_start", from_date, to_date),
@@ -193,7 +193,7 @@ def list_all_invoices(status: str = None, team: str = None, limit: int = 500) ->
 	`status` accepts a literal Invoice status (Paid/Open/Overdue/Draft/…) or the
 	pseudo-filters `outstanding` (Open+Overdue) and `paid`.
 	"""
-	require_billing_admin()
+	require_operator()
 	filters = {"invoice_type": "billable"}
 	if team:
 		filters["team"] = team

@@ -8,12 +8,14 @@ Top-ups credit the wallet only after the gateway confirms the money moved
 
 import frappe
 
+from central.billing import authz
 from central.billing.revenue import credits, invoicing, metering
 from central.billing.revenue.tax import resolve_tax
-from central.billing.platform.security import require_team_access
 from central.billing.api.dashboard._shared import (
 	_describe_line,
 	_gateway_for_currency,
+	_require_manage,
+	_require_view,
 	_resolve_team,
 	_team_clusters,
 	_team_currency,
@@ -93,7 +95,7 @@ def list_invoices(team: str | None = None) -> list[dict]:
 def get_invoice(name: str) -> dict:
 	"""One invoice with line items + tax block, scoped to the caller's team."""
 	team = frappe.db.get_value("Invoice", name, "team")
-	require_team_access(team)
+	_require_view(team)
 	doc = frappe.get_doc("Invoice", name)
 	return {
 		"name": doc.name, "team": doc.team, "status": doc.status, "invoice_type": doc.invoice_type,
@@ -149,7 +151,7 @@ def purchase_credits(team: str | None = None, amount: float | None = None,
 					 payment_method: str | None = None) -> dict:
 	"""Top up the prepaid wallet. (The card charge that funds it is the payment
 	flow's concern; this books the resulting advance-liability credit.)"""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
@@ -160,7 +162,7 @@ def purchase_credits(team: str | None = None, amount: float | None = None,
 def pay_invoice(invoice: str | None = None) -> dict:
 	"""Postpaid one-off settlement of an outstanding invoice (team-scoped)."""
 	team = frappe.db.get_value("Invoice", invoice, "team")
-	require_team_access(team)
+	_require_manage(team)
 	from central.billing.payments import charges
 
 	return charges.pay_invoice(invoice)
@@ -172,7 +174,7 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 	"""Start a wallet top-up by creating a real gateway order. The UI opens the
 	gateway's checkout against it; the wallet is credited only after the gateway
 	confirms (verify in confirm_topup) — never magically."""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
@@ -209,7 +211,7 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 	retrieving the hosted Checkout session and checking it was paid (and credits
 	the server-confirmed amount, not a client-supplied one). The wallet is credited
 	in the team's own currency — never assumed INR."""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	currency = _team_currency(team)
 	amount = frappe.utils.flt(amount)
 	from central.billing.gateways.registry import get_adapter

@@ -6,7 +6,7 @@ cluster/plan run-rate consumption, and trial→paid conversion analysis.
 
 import frappe
 
-from central.billing.platform.security import require_billing_admin
+from central.billing.authz import require_operator
 from central.billing.api.admin._shared import _active_locks, _plan_monthly_inr, _to_inr
 
 
@@ -14,7 +14,7 @@ from central.billing.api.admin._shared import _active_locks, _plan_monthly_inr, 
 def get_catalog() -> dict:
 	"""Products & infrastructure: plans (with INR base rate), add-ons, and the
 	clusters teams run in (with active resource counts)."""
-	require_billing_admin()
+	require_operator()
 	plans = []
 	for p in frappe.get_all("Plan", fields=["name", "title", "billing_cycle", "is_active"], order_by="name asc"):
 		plans.append({
@@ -40,7 +40,7 @@ def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> 
 	"""Price management: change a plan's Catalog Rate. Existing price-locks are
 	untouched (they copied the rate at provision) — only new provisions lock the
 	new rate. Zero new plans."""
-	require_billing_admin()
+	require_operator()
 	if not frappe.db.exists("Plan", plan):
 		frappe.throw(f"Plan {plan!r} does not exist.")
 	cluster = cluster or None
@@ -74,7 +74,7 @@ def get_cluster_consumption() -> list[dict]:
 	Run-rate is normalised to INR (via each plan's INR catalog rate) so regions
 	billed in EUR/USD are comparable on one axis.
 	"""
-	require_billing_admin()
+	require_operator()
 	out = {}
 	for lock in _active_locks():
 		c = out.setdefault(lock.cluster or "global", {"cluster": lock.cluster or "global", "resources": 0, "monthly": 0.0, "currency": "INR"})
@@ -86,7 +86,7 @@ def get_cluster_consumption() -> list[dict]:
 @frappe.whitelist()
 def get_plan_consumption() -> list[dict]:
 	"""Plan-wise consumption analysis (INR-normalised monthly run-rate)."""
-	require_billing_admin()
+	require_operator()
 	out = {}
 	for lock in _active_locks():
 		p = out.setdefault(lock.plan or "—", {"plan": lock.plan or "—", "resources": 0, "monthly": 0.0, "currency": "INR"})
@@ -98,7 +98,7 @@ def get_plan_consumption() -> list[dict]:
 @frappe.whitelist()
 def get_conversion() -> dict:
 	"""Trial → paid conversion."""
-	require_billing_admin()
+	require_operator()
 	from central.billing.catalog.trials import entry_tier
 
 	entry = entry_tier()
@@ -116,7 +116,7 @@ def get_trial_detail() -> dict:
 	"""Trial subsidy analysis with full provenance: how many teams are still on
 	trial, the per-team subsidy, and the exact cost_report invoices the total is
 	summed from (so 'where does ₹X come from?' is answerable)."""
-	require_billing_admin()
+	require_operator()
 	from central.billing.catalog.trials import entry_tier
 
 	entry = entry_tier()
@@ -155,7 +155,7 @@ def get_trial_detail() -> dict:
 @frappe.whitelist()
 def get_trial_costs_detail() -> dict:
 	"""Trial subsidy split: still-on-trial (unconverted) vs converted-to-paid."""
-	require_billing_admin()
+	require_operator()
 	from central.billing.catalog.trials import entry_tier
 
 	entry = entry_tier()

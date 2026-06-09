@@ -2,16 +2,13 @@
 # For license information, please see license.txt
 """Customer dashboard endpoints + forecast (issues #26, #18)."""
 
-from unittest.mock import patch
-
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.revenue import credits
 from central.billing.api import dashboard
-from central.billing.platform import security
 from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import make_billing_team, make_plan, make_user
 
 TEAM = "team-cust"
 CLUSTER = "ap-south-1"
@@ -23,10 +20,10 @@ class TestDashboardSmoke(IntegrationTestCase):
 		out = dashboard.whoami()
 		self.assertEqual(out["user"], frappe.session.user)
 		self.assertIn("team", out)
-		self.assertIn("is_billing_admin", out)
+		self.assertIn("is_operator", out)
 
-	def test_whoami_admin_flag_for_administrator(self):
-		self.assertTrue(dashboard.whoami()["is_billing_admin"])
+	def test_whoami_operator_flag_for_administrator(self):
+		self.assertTrue(dashboard.whoami()["is_operator"])
 
 
 class CustomerDataBase(IntegrationTestCase):
@@ -119,19 +116,31 @@ class TestCustomerReads(CustomerDataBase):
 
 
 class TestTeamScoping(CustomerDataBase):
-	def test_customer_cannot_read_another_team(self):
-		user = f"cust-{frappe.generate_hash(6)}@example.com"
-		frappe.get_doc(
-			{"doctype": "User", "email": user, "first_name": "Cust", "send_welcome_email": 0}
-		).insert(ignore_permissions=True)
+	def test_customer_scoped_to_their_capable_team(self):
+		"""A billing-capable member reads their own team (resolved as the default)
+		but is rejected for any team they're not a member of — never widened."""
+		user = make_user()
+		team = make_billing_team(user)  # Billing role → billing:view + billing:manage
 		frappe.set_user(user)
 		try:
-			with patch("central.billing.api.dashboard._shared.get_user_team", return_value=TEAM), patch(
-				"central.billing.platform.security.get_user_team", return_value=TEAM
-			):
-				dashboard.list_invoices()  # own team — ok
-				with self.assertRaises(frappe.PermissionError):
-					dashboard.list_invoices("some-other-team")  # rejected, not widened
+			dashboard.list_invoices()  # no arg → their own team, ok
+			dashboard.list_invoices(team.name)  # own team by name, ok
+			with self.assertRaises(frappe.PermissionError):
+				dashboard.list_invoices("some-other-team")  # not a member → rejected
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_member_without_billing_capability_is_denied(self):
+		"""A team member whose role carries no billing capability (e.g. Viewer) —
+		standing in for the role-less Agent key — gets a 403, view or mutate."""
+		user = make_user()
+		team = make_billing_team(user, role="Viewer")
+		frappe.set_user(user)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				dashboard.list_invoices(team.name)
+			with self.assertRaises(frappe.PermissionError):
+				dashboard.save_billing_settings(team=team.name, billing_mode="prepaid")
 		finally:
 			frappe.set_user("Administrator")
 

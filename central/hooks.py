@@ -172,12 +172,8 @@ scheduler_events = {
 	],
 }
 
-# Billing (module): ensure roles + the User->team link field exist after migrate.
-# Transitional compat shim — retired by issues #42/#43.
-after_migrate = [
-	"central.billing.platform.security.ensure_billing_roles",
-	"central.billing.api.dashboard.ensure_billing_team_field",
-]
+# Billing (module): authorisation is Central's capability IAM (ADR 0004) — no
+# billing-owned roles or User->team field to provision, so no after_migrate shim.
 
 # Testing
 # -------

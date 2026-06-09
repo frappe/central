@@ -13,8 +13,9 @@ import stripe
 from frappe.tests import IntegrationTestCase
 
 from central import billing
-from central.billing.platform import security
+from central.billing import authz
 from central.billing.catalog import subscriptions
+from central.billing.tests.utils import make_billing_team, make_user
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.payments.webhooks import process_webhook
 
@@ -55,34 +56,41 @@ def run_threads(n, fn):
 
 
 class TestPermissionGuards(IntegrationTestCase):
+	"""Authorisation is Central's capability IAM (ADR 0004): no billing roles of
+	our own. The cluster Agent key holds no billing capability and is not an
+	operator, so it is denied every customer/admin endpoint."""
+
 	def setUp(self):
-		security.ensure_billing_roles()
-		# A unique user per test — role grants must not leak across tests.
-		self.user = f"hardening-{frappe.generate_hash(6)}@example.com"
-		frappe.get_doc(
-			{"doctype": "User", "email": self.user, "first_name": "Hardening", "send_welcome_email": 0}
-		).insert(ignore_permissions=True)
+		# A unique user per test — grants must not leak across tests.
+		self.user = make_user(f"hardening-{frappe.generate_hash(6)}@example.com")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
-	def test_non_admin_is_denied_admin_endpoint(self):
-		# A user with no billing role (stands in for the Agent API key) → 403.
+	def test_non_operator_is_denied_admin_endpoint(self):
+		# A user with no operator bypass (stands in for the Agent API key) → 403.
 		frappe.set_user(self.user)
 		with self.assertRaises(frappe.PermissionError):
-			security.require_billing_admin()
+			authz.require_operator()
 
-	def test_billing_admin_is_allowed(self):
-		frappe.get_doc("User", self.user).add_roles(security.BILLING_ADMIN)
+	def test_operator_is_allowed(self):
+		frappe.get_doc("User", self.user).add_roles("System Manager")
 		frappe.set_user(self.user)
-		security.require_billing_admin()  # no raise
+		authz.require_operator()  # no raise
 
 	def test_team_scoping_rejects_other_team(self):
+		team = make_billing_team(self.user)  # Billing role → billing:view
 		frappe.set_user(self.user)
-		with patch("central.billing.platform.security.get_user_team", return_value="team-self"):
-			security.require_team_access("team-self")  # own team ok
-			with self.assertRaises(frappe.PermissionError):
-				security.require_team_access("team-other")  # never silently widened
+		authz.require_billing_view(team.name)  # own team ok
+		with self.assertRaises(frappe.PermissionError):
+			authz.require_billing_view("team-other")  # never silently widened
+
+	def test_member_without_capability_is_denied(self):
+		# A team member whose role carries no billing capability → 403.
+		team = make_billing_team(self.user, role="Viewer")
+		frappe.set_user(self.user)
+		with self.assertRaises(frappe.PermissionError):
+			authz.require_billing_view(team.name)
 
 
 # --- no raw SQL string interpolation -----------------------------------------

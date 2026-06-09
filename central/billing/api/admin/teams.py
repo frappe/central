@@ -7,7 +7,7 @@ rollups, the team table, and the delinquency / payment-failure drill-downs.
 import frappe
 
 from central.billing.revenue import credits
-from central.billing.platform.security import require_billing_admin
+from central.billing.authz import require_operator
 from central.billing.api.admin._shared import (
 	_STANDING_RANK,
 	_active_locks,
@@ -24,7 +24,7 @@ def get_team_billing(team: str) -> dict:
 	Amounts here are in the team's OWN billing currency (not INR-normalised) —
 	this is the record-level view, so €/$ teams read in their real currency.
 	"""
-	require_billing_admin()
+	require_operator()
 	currency = _team_currency(team)
 	return {
 		"team": team,
@@ -48,7 +48,7 @@ def get_retention() -> dict:
 	"""Customer retention snapshot: active vs at-risk vs churned, and a retention
 	rate. A team is churned when its only standing is suspended; at-risk when
 	past_due; retained otherwise."""
-	require_billing_admin()
+	require_operator()
 	standing = {}
 	for s in frappe.get_all("Subscription", fields=["team", "account_standing"]):
 		cur = standing.get(s.team, "current")
@@ -72,7 +72,7 @@ def get_retention() -> dict:
 @frappe.whitelist()
 def get_metrics() -> dict:
 	"""Headline reports: team counts, on-time vs delinquent, failures, MRR."""
-	require_billing_admin()
+	require_operator()
 	subs = frappe.get_all(
 		"Subscription", fields=["team", "plan", "cluster", "account_standing", "billing_cycle"]
 	)
@@ -99,7 +99,7 @@ def get_metrics() -> dict:
 @frappe.whitelist()
 def list_teams() -> list[dict]:
 	"""Per-team rollup: standing, tier, MRR, resources, open invoices, credit."""
-	require_billing_admin()
+	require_operator()
 	teams = {}
 	for s in frappe.get_all("Subscription", fields=["team", "plan", "cluster", "account_standing", "billing_cycle"]):
 		t = teams.setdefault(s.team, {"team": s.team, "standing": "current", "mrr": 0.0, "subscriptions": 0, "resources": 0})
@@ -128,7 +128,7 @@ def list_teams() -> list[dict]:
 @frappe.whitelist()
 def get_payment_failures(limit: int = 50) -> list[dict]:
 	"""Drill-down: which charges are failing and why."""
-	require_billing_admin()
+	require_operator()
 	return frappe.get_all(
 		"Payment Attempt", filters={"status": "failed"},
 		fields=["name", "team", "invoice", "amount", "currency", "gateway", "failure_code", "failure_reason", "creation"],
@@ -138,7 +138,7 @@ def get_payment_failures(limit: int = 50) -> list[dict]:
 @frappe.whitelist()
 def get_delinquent_teams() -> list[dict]:
 	"""Drill-down: who is past_due/suspended + their outstanding invoices."""
-	require_billing_admin()
+	require_operator()
 	seen, rows = set(), []
 	for s in frappe.get_all("Subscription", filters=[["account_standing", "in", ["past_due", "suspended"]]],
 			fields=["team", "account_standing"]):

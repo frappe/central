@@ -3,8 +3,10 @@
 """Admin dashboard endpoints (issue #19).
 
 Cost-Explorer-style aggregates + drill-down, plus the operational panels. Every
-endpoint requires the Billing Admin role — a customer (or the Agent API key)
-gets a 403. None of these are team-scoped: an admin sees across all teams.
+endpoint requires Central's operator bypass (System Manager) — a customer (or
+the Agent API key) gets a 403. None of these are team-scoped: an operator sees
+across all teams. (A dedicated `billing:operate` capability is deferred — ADR
+0004 §3.)
 
 Split into domain modules (revenue / teams / catalog) over shared helpers; this
 package re-exports the public API so every `billing.api.admin.*` path holds.

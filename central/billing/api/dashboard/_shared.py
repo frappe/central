@@ -8,7 +8,7 @@ humaniser. Endpoint modules (account/invoices/methods) build on these.
 
 import frappe
 
-from central.billing.platform.security import get_user_team, is_billing_admin, require_team_access
+from central.billing import authz
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
 # so a EUR/USD team sees a coherent cap-vs-spend comparison.
@@ -16,20 +16,35 @@ _FX_TO_INR = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
 
 
 def _default_team() -> str | None:
-	"""The team to show by default: the caller's own, or — for an admin browsing
+	"""The team to show by default: the caller's own, or — for an operator browsing
 	without a team — any team with data, so the portal is never empty/broken."""
-	team = get_user_team()
-	if not team and is_billing_admin():
+	team = authz.get_user_team()
+	if not team and authz.is_operator():
 		team = frappe.db.get_value("Subscription", {}, "team")
 	return team
 
 
-def _resolve_team(team: str | None) -> str:
-	"""The team to serve: the caller's own (default), gated by access."""
+def _resolve_team(team: str | None, require: str = authz.VIEW) -> str:
+	"""The team to serve: the caller's own (default), gated by capability.
+
+	Reads require `billing:view` (the default); pass `require=authz.MANAGE` on a
+	mutation endpoint that takes a `team` argument."""
 	team = team or _default_team()
 	if not team:
 		frappe.throw("No billing team in context.", frappe.ValidationError)
-	require_team_access(team)
+	authz.require_capability(team, require)
+	return team
+
+
+def _require_view(team: str) -> str:
+	"""Gate a read endpoint whose team is derived from a record (e.g. an invoice)."""
+	authz.require_billing_view(team)
+	return team
+
+
+def _require_manage(team: str) -> str:
+	"""Gate a mutation whose team is derived from a record (e.g. a payment method)."""
+	authz.require_billing_manage(team)
 	return team
 
 
@@ -114,12 +129,3 @@ def _describe_line(team: str, li) -> dict:
 		else:
 			row["detail"] = f"{frappe.utils.flt(li.quantity):g} {unit} metered"
 	return row
-
-
-def ensure_billing_team_field():
-	"""A User field linking a Billing User to their team (run from after_migrate)."""
-	if not frappe.db.exists("Custom Field", "User-billing_team"):
-		frappe.get_doc({
-			"doctype": "Custom Field", "dt": "User", "fieldname": "billing_team",
-			"label": "Billing Team", "fieldtype": "Data", "insert_after": "username",
-		}).insert(ignore_permissions=True)

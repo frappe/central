@@ -6,7 +6,7 @@ team header, and trust-tier progress.
 
 import frappe
 
-from central.billing.platform.security import is_billing_admin
+from central.billing import authz
 from central.billing.api.dashboard._shared import (
 	_FX_TO_INR,
 	_default_team,
@@ -23,7 +23,7 @@ def whoami() -> dict:
 	return {
 		"user": frappe.session.user,
 		"team": _default_team(),
-		"is_billing_admin": is_billing_admin(),
+		"is_operator": authz.is_operator(),
 	}
 
 
@@ -38,7 +38,7 @@ def get_billing_profile(team: str | None = None) -> dict:
 @frappe.whitelist()
 def save_billing_profile(team: str | None = None, **fields) -> dict:
 	"""Create/update the team's billing identity (GSTIN validated in the controller)."""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	allowed = ("legal_name", "email", "phone", "gstin", "address_line1", "address_line2",
 			   "city", "state", "country", "pincode")
 	values = {k: v for k, v in fields.items() if k in allowed}
@@ -67,7 +67,7 @@ def save_billing_settings(team: str | None = None, billing_mode: str | None = No
 						  min_balance: float | None = None,
 						  spend_alert_threshold: float | None = None) -> dict:
 	"""Mode changes take effect next billing period (presentation toggle)."""
-	team = _resolve_team(team)
+	team = _resolve_team(team, authz.MANAGE)
 	if frappe.db.exists("Billing Profile", team):
 		doc = frappe.get_doc("Billing Profile", team)
 	else:
