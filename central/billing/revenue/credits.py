@@ -160,14 +160,19 @@ def adjust_credits(team: str, amount: float, entry_type: str, currency: str = "I
 
 @frappe.whitelist()
 def get_balance(team: str, currency: str | None = None) -> dict:
-	"""Current wallet balance = the latest entry's running balance (0 if none).
+	"""Current wallet balance for the team, optionally filtered to one currency.
 
-	A plain read (no lock); equals the ledger sum by the running-balance
-	invariant.
+	When `currency` is supplied only entries in that currency are scanned —
+	useful once a team holds credits in multiple currencies. When omitted the
+	overall balance across all currencies is returned (backward-compatible while
+	teams are single-currency).
 	"""
+	filters = {"team": team}
+	if currency:
+		filters["currency"] = currency
 	balance = frappe.db.get_value(
 		"Credit Ledger Entry",
-		{"team": team},
+		filters,
 		"running_balance",
 		order_by="creation desc, name desc",
 	)

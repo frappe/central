@@ -17,7 +17,9 @@ def _new_gateway(name="GW-Setup-Test", **overrides):
 		frappe.delete_doc("Payment Gateway", name, force=True)
 	values = {
 		"doctype": "Payment Gateway", "__newname": name, "title": "Stripe (Setup)",
-		"adapter_key": "stripe", "currency": "USD", "api_secret": "sk_live_xyz",
+		"adapter_key": "stripe",
+		"currencies": [{"currency": "USD", "is_default": 1}],
+		"api_secret": "sk_live_xyz",
 		**overrides,
 	}
 	doc = frappe.get_doc(values)
@@ -120,7 +122,7 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 			doc.insert(ignore_permissions=True)
 
 		# Edit a non-secret field; the secret field now holds the '*****' mask.
-		doc.is_default_for_currency = 1
+		doc.title = "Stripe (Setup) updated"
 		with patch.object(StripeAdapter, "validate_credentials") as vc:
 			doc.save(ignore_permissions=True)
 		vc.assert_not_called()

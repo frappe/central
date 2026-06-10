@@ -10,11 +10,11 @@
  "field_order": [
   "title",
   "adapter_key",
-  "currency",
   "column_break_flags",
   "is_enabled",
-  "is_default_for_currency",
   "supports_mandates",
+  "section_break_currencies",
+  "currencies",
   "section_break_secrets",
   "api_key",
   "api_secret",
@@ -40,13 +40,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "currency",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Settlement Currency",
-   "reqd": 1
-  },
-  {
    "fieldname": "column_break_flags",
    "fieldtype": "Column Break"
   },
@@ -59,15 +52,21 @@
   },
   {
    "default": "0",
-   "fieldname": "is_default_for_currency",
-   "fieldtype": "Check",
-   "label": "Is Default for Currency"
-  },
-  {
-   "default": "0",
    "fieldname": "supports_mandates",
    "fieldtype": "Check",
    "label": "Supports Mandates"
+  },
+  {
+   "fieldname": "section_break_currencies",
+   "fieldtype": "Section Break",
+   "label": "Currencies"
+  },
+  {
+   "fieldname": "currencies",
+   "fieldtype": "Table",
+   "label": "Currencies",
+   "options": "Payment Gateway Currency",
+   "description": "Currencies this gateway can settle. Mark is_default on a row to make this the default gateway for that currency."
   },
   {
    "fieldname": "section_break_secrets",

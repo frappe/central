@@ -112,12 +112,22 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 
 
 def _resolve_method(inv, payment_method, gateway):
-	"""Method + gateway for the charge: explicit args, else the subscription default."""
+	"""Method + gateway for the charge: explicit args, then subscription default,
+	then currency-based gateway lookup via the resolver."""
 	if payment_method and gateway:
 		return payment_method, gateway
 	sub = frappe.get_doc("Subscription", inv.subscription) if inv.subscription else None
 	method_name = payment_method or (sub and sub.default_payment_method)
 	gateway_name = gateway or (sub and sub.gateway)
+
+	if not gateway_name and inv.currency:
+		from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
+
+		try:
+			gateway_name = resolve_gateway_for_currency(inv.currency)
+		except GatewayNotFound:
+			pass
+
 	if not method_name or not gateway_name:
 		frappe.throw(f"No payment method/gateway resolved for {inv.name}", frappe.ValidationError)
 	return method_name, gateway_name

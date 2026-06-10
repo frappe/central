@@ -58,37 +58,52 @@ def _team_currency(team: str) -> str:
 
 
 def _gateway_for_currency(currency: str) -> str:
-	"""Pick the enabled gateway that settles in this currency (e.g. EUR → Stripe,
-	INR → Razorpay), preferring the one flagged default-for-currency. A team must
-	never be sent to a gateway that can't take its currency."""
-	gw = (frappe.db.get_value("Payment Gateway",
-			{"currency": currency, "is_enabled": 1, "is_default_for_currency": 1}, "name")
-		or frappe.db.get_value("Payment Gateway",
-			{"currency": currency, "is_enabled": 1}, "name"))
-	if not gw:
+	"""Pick the enabled gateway that is the default for this currency.
+
+	Delegates to the canonical resolver so config (is_default row in the
+	Payment Gateway Currency child table) is the single source of truth."""
+	from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
+
+	try:
+		return resolve_gateway_for_currency(currency)
+	except GatewayNotFound:
 		frappe.throw(f"No payment gateway configured for {currency} top-ups.", frappe.ValidationError)
-	return gw
 
 
 def _add_method_gateway(currency: str):
 	"""Gateway to add a payment method in this currency.
 
-	A Razorpay gateway (if one exists for the currency) wins, because only
-	Razorpay carries UPI Autopay — picking by *adapter* not by
-	`is_default_for_currency`, since the demo flags a Stripe-INR gateway as the
-	INR default which must not hide UPI. Otherwise the currency's gateway
-	(Stripe = card only)."""
+	Resolves the default gateway for the currency. A Razorpay gateway (adapter_key
+	= razorpay) wins over any other default because only Razorpay carries UPI
+	Autopay; the adapter drives what rails are shown, not a separate flag."""
+	from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
+
+	try:
+		gw_name = resolve_gateway_for_currency(currency)
+	except GatewayNotFound:
+		return frappe._dict()
+
+	gw = frappe.db.get_value("Payment Gateway", gw_name, ["name", "adapter_key"], as_dict=True)
+	if gw and gw.adapter_key == "razorpay":
+		return gw
+
+	# The default gateway is not Razorpay — but if an enabled Razorpay gateway
+	# also handles this currency (non-default), prefer it for UPI.
 	rzp = frappe.db.get_value(
 		"Payment Gateway",
-		{"currency": currency, "adapter_key": "razorpay", "is_enabled": 1},
-		["name", "adapter_key"], as_dict=True, order_by="is_default_for_currency desc",
+		{"adapter_key": "razorpay", "is_enabled": 1},
+		["name", "adapter_key"],
+		as_dict=True,
+		order_by="creation asc",
 	)
 	if rzp:
-		return rzp
-	return frappe.db.get_value(
-		"Payment Gateway", {"currency": currency, "is_enabled": 1},
-		["name", "adapter_key"], as_dict=True, order_by="is_default_for_currency desc",
-	) or frappe._dict()
+		rzp_currencies = frappe.get_all(
+			"Payment Gateway Currency", {"parent": rzp.name, "currency": currency}, pluck="name"
+		)
+		if rzp_currencies:
+			return rzp
+
+	return gw or frappe._dict()
 
 
 def _from_inr(amount: float, currency: str) -> float:

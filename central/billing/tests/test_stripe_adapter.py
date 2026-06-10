@@ -24,7 +24,7 @@ def make_stripe_gateway(name="GW-Test-Stripe"):
 			"__newname": name,
 			"title": "Stripe (Test)",
 			"adapter_key": "stripe",
-			"currency": "USD",
+			"currencies": [{"currency": "USD", "is_default": 1}],
 			"api_secret": "sk_test_123",
 			"webhook_secret": "whsec_test_123",
 			"is_enabled": 1,

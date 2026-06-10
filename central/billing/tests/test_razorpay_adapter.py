@@ -22,7 +22,7 @@ def make_razorpay_gateway(name="GW-Test-Razorpay"):
 			"__newname": name,
 			"title": "Razorpay (Test)",
 			"adapter_key": "razorpay",
-			"currency": "INR",
+			"currencies": [{"currency": "INR", "is_default": 1}],
 			"api_key": "rzp_test_key",
 			"api_secret": "rzp_test_secret",
 			"webhook_secret": "rzp_whsec",
