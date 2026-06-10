@@ -93,7 +93,7 @@ class StripeAdapter(GatewayAdapter):
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(
 				amount=50,
-				currency=(self.gateway.currency or "usd").lower(),
+				currency=(self.default_currency() or "usd").lower(),
 				customer=payment_method.get("gateway_customer_id"),
 				payment_method=payment_method.gateway_method_id,
 				confirm=True,

@@ -120,8 +120,10 @@ class TestLedgerBasics(CreditTestBase):
 	def test_get_balance_filtered_by_currency(self):
 		credits.purchase(TEAM, 500, "INR")
 		credits.purchase(TEAM, 100, "USD")
+		credits.purchase(TEAM, 100, "INR")
 
-		# Currency-filtered reads return the correct per-currency balance.
+		# A currency-filtered read sums only that currency's entries and excludes
+		# the others (here the USD top-up does not leak into the INR balance).
 		self.assertEqual(credits.get_balance(TEAM, currency="INR")["balance"], 600)
 		self.assertEqual(credits.get_balance(TEAM, currency="USD")["balance"], 100)
 
@@ -177,3 +179,39 @@ class TestConcurrency(CreditTestBase):
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
 		balances = frappe.get_all("Credit Ledger Entry", {"team": TEAM}, pluck="running_balance")
 		self.assertTrue(all(b >= 0 for b in balances))  # never negative
+
+	def test_cross_team_bookings_do_not_deadlock(self):
+		"""Concurrent bookings for DIFFERENT teams must not deadlock. Each booking
+		locks only its own wallet anchor (a single PK row, no gap locks) and reads
+		the balance off it, so bookings never contend on the shared ledger index.
+		Regression guard for the `creation`-index gap-lock deadlock that earlier
+		struck cross-team bookings despite each holding its own wallet lock."""
+		teams = [f"{TEAM}-x{i}" for i in range(8)]
+		for t in teams:
+			ensure_team(t)
+			frappe.db.delete("Credit Ledger Entry", {"team": t})
+			frappe.db.delete("Credit Wallet", {"team": t})
+			credits.purchase(t, 1000, "INR")
+		frappe.db.commit()  # make the seeds visible to the worker connections
+
+		try:
+			# Several rounds of all teams booking at once — high cross-team contention.
+			for rnd in range(5):
+				results = run_workers(
+					len(teams),
+					lambda i, rnd=rnd: credits.apply_credit(
+						teams[i], 10, "INR", reference_name=f"INV-x{i}-{rnd}"
+					),
+				)
+				self.assertTrue(all(v == "ok" for v in results.values()), results)
+
+			frappe.db.rollback()  # refresh the main connection's snapshot
+			for t in teams:
+				# 1000 seed − 5×10 debited; anchor and ledger agree.
+				self.assertEqual(credits.get_balance(t)["balance"], 950)
+				self.assertEqual(frappe.db.get_value("Credit Wallet", t, "balance"), 950)
+		finally:
+			for t in teams:
+				frappe.db.delete("Credit Ledger Entry", {"team": t})
+				frappe.db.delete("Credit Wallet", {"team": t})
+			frappe.db.commit()

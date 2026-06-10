@@ -2,16 +2,20 @@
 # For license information, please see license.txt
 """Credit ledger — the customer's prepaid wallet (issue #06).
 
-Every credit movement is an append-only Credit Ledger Entry. The balance is the
-running sum, never a scalar on Team. Bookings serialise on a per-team Credit
-Wallet anchor row via `SELECT ... FOR UPDATE`: a concurrent booking blocks on
-that single primary-key row until the prior transaction commits, then reads the
-now-current latest balance — closing the v1 concurrent double-spend race.
+Every credit movement is an append-only Credit Ledger Entry (the audit trail).
+Bookings serialise on a per-team Credit Wallet anchor row via `SELECT ... FOR
+UPDATE`: a concurrent booking for the same team blocks on that single
+primary-key row until the prior transaction commits — closing the concurrent
+double-spend race.
 
-The lock is taken on the wallet anchor (a stable PK lookup) rather than on
-"the latest ledger row": locking a moving `ORDER BY ... LIMIT 1` target while
-others insert into the same index gap deadlocks under InnoDB next-key locking.
-The anchor row carries no balance — the balance is still purely the ledger sum.
+The balance is read and written ON the locked anchor row, not via a `FOR UPDATE`
+on the ledger. An earlier version read the latest balance with
+`... ORDER BY creation DESC LIMIT 1 FOR UPDATE`, which took a next-key lock on
+the HEAD of the global `creation` index — the gap every team's INSERT lands in —
+so bookings for *different* teams deadlocked there despite each holding only its
+own wallet lock. Locking a single PK row (per team) takes no gap locks, so
+cross-team bookings never contend. The anchor's `balance` stays in lockstep with
+the newest ledger entry's `running_balance`; the ledger remains the audit truth.
 """
 
 import frappe
@@ -33,34 +37,19 @@ def _ensure_wallet(team: str, currency: str | None = None):
 		pass  # a concurrent booking created it first — fine
 
 
-def _lock_wallet(team: str):
-	"""Take the per-team serialization lock (held until the caller commits)."""
-	frappe.db.sql("SELECT name FROM `tabCredit Wallet` WHERE team = %s FOR UPDATE", team)
+def _lock_and_read_balance(team: str) -> float:
+	"""Lock the team's wallet anchor and return its current balance.
 
-
-def _current_balance(team: str):
-	"""Latest running balance (0 if none), as a *current* read.
-
-	Must run after `_lock_wallet`. A locking read (`FOR UPDATE`) is used rather
-	than a plain SELECT so it reads the latest committed row instead of this
-	transaction's REPEATABLE-READ snapshot (which was fixed earlier, before the
-	wallet lock was held, and would otherwise miss a prior booking's commit).
-	The wallet lock has already serialised bookings, so this row lock is
-	contention-free — no deadlock.
+	A locking read (`FOR UPDATE`) on the single PK row: it both takes the per-team
+	serialization lock (held until the caller commits) AND reads the *latest
+	committed* balance, bypassing this transaction's REPEATABLE-READ snapshot
+	(which a concurrent prior booking has since moved past). Because it targets one
+	primary-key row it takes no gap locks, so different teams never contend.
 	"""
 	rows = frappe.db.sql(
-		"""
-		SELECT running_balance
-		FROM `tabCredit Ledger Entry`
-		WHERE team = %s
-		ORDER BY creation DESC, name DESC
-		LIMIT 1
-		FOR UPDATE
-		""",
-		team,
-		as_dict=True,
+		"SELECT balance FROM `tabCredit Wallet` WHERE team = %s FOR UPDATE", team, as_dict=True
 	)
-	return frappe.utils.flt(rows[0].running_balance) if rows else 0.0
+	return frappe.utils.flt(rows[0].balance) if rows else 0.0
 
 
 def _book_entry(
@@ -78,14 +67,16 @@ def _book_entry(
 		frappe.throw("Credit amount must be positive.", frappe.ValidationError)
 
 	_ensure_wallet(team, currency)
-	_lock_wallet(team)
-	balance = _current_balance(team)
+	balance = _lock_and_read_balance(team)
 	new_balance = balance + (amount if entry_type == "credit" else -amount)
 	if new_balance < 0:
 		raise InsufficientCredits(
 			f"Debit of {amount} exceeds wallet balance {balance} for {team}."
 		)
 
+	# Advance the authoritative balance on the locked anchor, then append the
+	# immutable ledger entry mirroring it. Both commit together under the lock.
+	frappe.db.set_value("Credit Wallet", team, "balance", new_balance, update_modified=False)
 	entry = frappe.get_doc(
 		{
 			"doctype": "Credit Ledger Entry",
@@ -162,17 +153,30 @@ def adjust_credits(team: str, amount: float, entry_type: str, currency: str = "I
 def get_balance(team: str, currency: str | None = None) -> dict:
 	"""Current wallet balance for the team, optionally filtered to one currency.
 
-	When `currency` is supplied only entries in that currency are scanned —
-	useful once a team holds credits in multiple currencies. When omitted the
-	overall balance across all currencies is returned (backward-compatible while
-	teams are single-currency).
+	When `currency` is supplied only entries in that currency are summed — useful
+	once a team holds credits in multiple currencies. `running_balance` is a
+	single currency-blind cumulative, so a per-currency read must sum that
+	currency's signed amounts rather than read the newest matching row's
+	`running_balance` (which carries the team's overall balance at that point).
+	When omitted the overall balance is the newest entry's running_balance
+	(backward-compatible while teams are single-currency).
 	"""
-	filters = {"team": team}
 	if currency:
-		filters["currency"] = currency
+		balance = frappe.db.sql(
+			"""
+			SELECT COALESCE(
+				SUM(CASE WHEN entry_type = 'credit' THEN amount ELSE -amount END), 0
+			)
+			FROM `tabCredit Ledger Entry`
+			WHERE team = %s AND currency = %s
+			""",
+			(team, currency),
+		)[0][0]
+		return {"balance": frappe.utils.flt(balance), "currency": currency}
+
 	balance = frappe.db.get_value(
 		"Credit Ledger Entry",
-		filters,
+		{"team": team},
 		"running_balance",
 		order_by="creation desc, name desc",
 	)

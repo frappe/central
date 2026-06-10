@@ -24,3 +24,7 @@ central.billing.patches.v05_billing_workspace.reload_billing_workspace
 # Migrate Payment Gateway single `currency` column to the new Payment Gateway
 # Currency child table (is_default row per currency) — issue #46.
 central.billing.patches.v06_payment_gateway_currency.migrate_gateway_currencies
+# Backfill the new Credit Wallet `balance` from the ledger sum; the anchor now
+# holds the authoritative balance so bookings no longer FOR UPDATE the ledger
+# (which gap-locked the creation index and deadlocked cross-team bookings) — #06.
+central.billing.patches.v07_credit_wallet_balance.backfill_wallet_balance

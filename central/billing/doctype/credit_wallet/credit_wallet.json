@@ -3,13 +3,14 @@
  "allow_rename": 0,
  "autoname": "field:team",
  "creation": "2026-06-03 00:00:00.000000",
- "description": "Per-team lock anchor for credit-ledger bookings. Deliberately holds NO balance scalar — the balance is always the ledger sum; this row exists only so concurrent bookings serialise on a single primary-key row (no gap-lock deadlocks).",
+ "description": "Per-team lock anchor for credit-ledger bookings. Carries the authoritative running balance, maintained under the row's FOR UPDATE lock so a booking reads/writes the balance on this single primary-key row — no FOR UPDATE on the ledger, so cross-team bookings never gap-lock each other. The append-only Credit Ledger Entry remains the audit trail; balance is the running sum and stays in lockstep with the newest entry's running_balance.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
   "team",
-  "currency"
+  "currency",
+  "balance"
  ],
  "fields": [
   {
@@ -25,6 +26,13 @@
    "fieldname": "currency",
    "fieldtype": "Data",
    "label": "Currency"
+  },
+  {
+   "fieldname": "balance",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Balance",
+   "description": "Authoritative running balance, maintained under this row's lock. Equals the signed ledger sum."
   }
  ],
  "index_web_pages_for_search": 1,
