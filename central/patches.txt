@@ -15,3 +15,6 @@ central.billing.patches.v01_rates_to_standalone.migrate_rate_children_to_standal
 central.billing.patches.v02_payment_method_priority.backfill_priority
 # Guard: every billing `team` is now a valid Link → Team, no orphans (#43).
 central.billing.patches.v03_team_link_to_central_team.validate_team_links
+# Delete the orphan Billing Admin / Billing User roles left by the retired
+# ensure_billing_roles bootstrap; authz is Central capability IAM now (#44).
+central.billing.patches.v04_drop_orphan_billing_roles.drop_billing_roles
