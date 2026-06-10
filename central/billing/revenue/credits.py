@@ -18,7 +18,15 @@ cross-team bookings never contend. The anchor's `balance` stays in lockstep with
 the newest ledger entry's `running_balance`; the ledger remains the audit truth.
 """
 
+import random
+import time
+
 import frappe
+
+# Bookings serialise on the wallet lock, but a busy InnoDB can still surface a
+# transient cross-transaction deadlock; the loser rolls back and retries.
+_DEADLOCK_RETRIES = 6
+_DEADLOCK_BACKOFF = 0.05  # seconds; scaled by attempt + jitter
 
 
 class InsufficientCredits(frappe.ValidationError):
@@ -69,11 +77,44 @@ def _book_entry(
 	reference_name: str | None = None,
 	note: str | None = None,
 ):
-	"""Append one ledger entry under the per-team lock and return (doc, new_balance)."""
+	"""Append one ledger entry under the per-team lock, retrying on deadlock.
+
+	The wallet FOR UPDATE serialises same-team bookings, but a busy InnoDB can
+	still raise a transient deadlock (`QueryDeadlockError`) under heavy
+	cross-transaction contention — InnoDB picks a victim and rolls its
+	transaction back. The canonical remedy is to roll back and retry: each retry
+	re-locks the wallet and re-reads the now-current balance, so the
+	double-spend / InsufficientCredits guards still hold. `InsufficientCredits`
+	and bad-amount errors are NOT retried — they are deterministic outcomes.
+	"""
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw("Credit amount must be positive.", frappe.ValidationError)
 
+	for attempt in range(_DEADLOCK_RETRIES):
+		try:
+			return _book_entry_once(
+				team, entry_type, amount, currency, reference_type, reference_name, note
+			)
+		except frappe.QueryDeadlockError:
+			# The transaction is already rolled back by InnoDB; sync Frappe's state
+			# and back off (jittered) so retriers don't re-collide in lockstep.
+			frappe.db.rollback()
+			if attempt == _DEADLOCK_RETRIES - 1:
+				raise
+			time.sleep(_DEADLOCK_BACKOFF * (attempt + 1) + random.uniform(0, _DEADLOCK_BACKOFF))
+
+
+def _book_entry_once(
+	team: str,
+	entry_type: str,
+	amount: float,
+	currency: str,
+	reference_type: str | None,
+	reference_name: str | None,
+	note: str | None,
+):
+	"""One booking attempt under the per-team lock; returns (doc, new_balance)."""
 	_ensure_wallet(team, currency)
 	balance = _lock_and_read_balance(team)
 	new_balance = balance + (amount if entry_type == "credit" else -amount)
