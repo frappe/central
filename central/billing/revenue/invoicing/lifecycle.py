@@ -31,8 +31,13 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	fires from `Draft`, so parallel workers never process the same invoice
 	twice — the loser sees a non-Draft status and returns.
 	"""
-	rows = frappe.db.sql(
-		"SELECT status FROM `tabInvoice` WHERE name = %s FOR UPDATE", invoice, as_dict=True
+	invoice_tbl = frappe.qb.DocType("Invoice")
+	rows = (
+		frappe.qb.from_(invoice_tbl)
+		.select(invoice_tbl.status)
+		.where(invoice_tbl.name == invoice)
+		.for_update()
+		.run(as_dict=True)
 	)
 	if not rows or rows[0].status != "Draft":
 		return {"invoice": invoice, "claimed": False}

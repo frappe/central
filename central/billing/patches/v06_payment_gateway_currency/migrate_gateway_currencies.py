@@ -25,10 +25,14 @@ def execute():
 		# Read the old column directly — the field may have been removed from the
 		# DocType JSON but the column survives in the DB until explicitly dropped.
 		try:
-			currency = frappe.db.sql(
-				"SELECT currency FROM `tabPayment Gateway` WHERE name = %s", gw.name
+			gateway = frappe.qb.DocType("Payment Gateway")
+			rows = (
+				frappe.qb.from_(gateway)
+				.select(gateway.currency)
+				.where(gateway.name == gw.name)
+				.run(pluck=True)
 			)
-			currency = currency[0][0] if currency and currency[0][0] else None
+			currency = rows[0] if rows and rows[0] else None
 		except Exception:
 			currency = None
 

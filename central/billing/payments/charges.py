@@ -52,7 +52,10 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 	in flight and return without starting a second charge. The invoice is never
 	marked Paid here — that waits for the webhook.
 	"""
-	frappe.db.sql("SELECT name FROM `tabInvoice` WHERE name = %s FOR UPDATE", invoice)
+	invoice_tbl = frappe.qb.DocType("Invoice")
+	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
+		invoice_tbl.name == invoice
+	).for_update().run()
 	inv = frappe.get_doc("Invoice", invoice)
 
 	if inv.status != "Open":
@@ -208,7 +211,10 @@ def apply_webhook(event_name: str) -> dict:
 
 def _settle_invoice(attempt) -> bool:
 	"""Mark the attempt's invoice Paid (idempotent, under a row lock)."""
-	frappe.db.sql("SELECT name FROM `tabInvoice` WHERE name = %s FOR UPDATE", attempt.invoice)
+	invoice_tbl = frappe.qb.DocType("Invoice")
+	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
+		invoice_tbl.name == attempt.invoice
+	).for_update().run()
 	inv = frappe.get_doc("Invoice", attempt.invoice)
 	if inv.status == "Paid":
 		return False  # a duplicate webhook — already settled

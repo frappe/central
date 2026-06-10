@@ -12,19 +12,16 @@ Idempotent: recomputes from the ledger each run.
 """
 
 import frappe
+from frappe.query_builder import Case
+from frappe.query_builder.functions import Sum
 
 
 def execute():
+	cle = frappe.qb.DocType("Credit Ledger Entry")
+	signed = Case().when(cle.entry_type == "credit", cle.amount).else_(-cle.amount)
 	for team in frappe.get_all("Credit Wallet", pluck="name"):
-		balance = frappe.db.sql(
-			"""
-			SELECT COALESCE(
-				SUM(CASE WHEN entry_type = 'credit' THEN amount ELSE -amount END), 0
-			)
-			FROM `tabCredit Ledger Entry`
-			WHERE team = %s
-			""",
-			team,
+		balance = (
+			frappe.qb.from_(cle).select(Sum(signed)).where(cle.team == team).run()
 		)[0][0]
 		frappe.db.set_value(
 			"Credit Wallet", team, "balance", frappe.utils.flt(balance), update_modified=False

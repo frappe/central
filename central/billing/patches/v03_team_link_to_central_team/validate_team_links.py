@@ -21,16 +21,18 @@ def execute() -> None:
 		if field.fieldtype != "Link" or field.options != "Team":
 			frappe.throw(f"{doctype}.team is not a Link → Team (got {field.fieldtype}).")
 
-		orphans = frappe.db.sql(
-			f"""
-			SELECT DISTINCT child.team
-			FROM `tab{doctype}` child
-			LEFT JOIN `tabTeam` team ON team.name = child.team
-			WHERE child.team IS NOT NULL AND child.team != '' AND team.name IS NULL
-			"""
+		child = frappe.qb.DocType(doctype)
+		team = frappe.qb.DocType("Team")
+		orphans = (
+			frappe.qb.from_(child)
+			.left_join(team)
+			.on(team.name == child.team)
+			.select(child.team)
+			.distinct()
+			.where(child.team.isnotnull() & (child.team != "") & team.name.isnull())
+			.run(pluck=True)
 		)
 		if orphans:
 			frappe.throw(
-				f"{doctype} has {len(orphans)} team value(s) linking to no Team: "
-				f"{[row[0] for row in orphans]}"
+				f"{doctype} has {len(orphans)} team value(s) linking to no Team: {orphans}"
 			)

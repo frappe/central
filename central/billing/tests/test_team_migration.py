@@ -5,8 +5,8 @@
 The live `bench migrate` exercised the plain-rewrite path on real Subscription /
 Invoice data. This proves the two paths that need a populated table to show:
 the `field:team` rename (so `name == team` survives) and re-runnability — by
-planting a legacy `Data` slug via raw SQL (simulating un-migrated data) and
-running the patch helpers, then running them again.
+planting a legacy `Data` slug with a direct query-builder UPDATE (simulating
+un-migrated data) and running the patch helpers, then running them again.
 """
 
 import frappe
@@ -45,13 +45,14 @@ class TestTeamMigration(IntegrationTestCase):
 
 		# Plant un-migrated state: a free-text slug on both the plain row and the
 		# field:team-named row (its `name` is the slug too).
-		frappe.db.sql(
-			"UPDATE `tabSubscription` SET team = %s WHERE name = %s", (self.slug, sub.name)
-		)
-		frappe.db.sql(
-			"UPDATE `tabTrust Tier` SET name = %s, team = %s WHERE name = %s",
-			(self.slug, self.slug, real_team),
-		)
+		subscription = frappe.qb.DocType("Subscription")
+		frappe.qb.update(subscription).set(subscription.team, self.slug).where(
+			subscription.name == sub.name
+		).run()
+		trust_tier = frappe.qb.DocType("Trust Tier")
+		frappe.qb.update(trust_tier).set(trust_tier.name, self.slug).set(
+			trust_tier.team, self.slug
+		).where(trust_tier.name == real_team).run()
 		self.sub = sub.name
 
 	def test_slug_is_repointed_to_a_real_team(self):
@@ -90,9 +91,10 @@ class TestTeamMigration(IntegrationTestCase):
 			sub = frappe.get_doc(
 				{"doctype": "Subscription", "team": make_billing_team(make_user()).name}
 			).insert(ignore_permissions=True)
-			frappe.db.sql(
-				"UPDATE `tabSubscription` SET team = %s WHERE name = %s", (slug, sub.name)
-			)
+			subscription = frappe.qb.DocType("Subscription")
+			frappe.qb.update(subscription).set(subscription.team, slug).where(
+				subscription.name == sub.name
+			).run()
 			subs[slug] = sub.name
 
 		_run_migration()
