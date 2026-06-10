@@ -84,10 +84,15 @@ def _distinct_team_slugs() -> set[str]:
 	"""Every non-empty `team` value across the 16 tables (raw SQL — still Data)."""
 	slugs: set[str] = set()
 	for doctype in TEAM_DOCTYPES:
-		rows = frappe.db.sql(
-			f"SELECT DISTINCT team FROM `tab{doctype}` WHERE team IS NOT NULL AND team != ''"
+		table = frappe.qb.DocType(doctype)
+		rows = (
+			frappe.qb.from_(table)
+			.select(table.team)
+			.distinct()
+			.where(table.team.isnotnull() & (table.team != ""))
+			.run(pluck=True)
 		)
-		slugs.update(row[0] for row in rows)
+		slugs.update(rows)
 	return slugs
 
 
@@ -99,10 +104,12 @@ def _legacy_billing_access() -> dict[str, list[str]]:
 	if not _billing_team_column_exists():
 		return {}
 	access: dict[str, list[str]] = defaultdict(list)
-	rows = frappe.db.sql(
-		"SELECT name, billing_team FROM `tabUser` "
-		"WHERE billing_team IS NOT NULL AND billing_team != ''",
-		as_dict=True,
+	user = frappe.qb.DocType("User")
+	rows = (
+		frappe.qb.from_(user)
+		.select(user.name, user.billing_team)
+		.where(user.billing_team.isnotnull() & (user.billing_team != ""))
+		.run(as_dict=True)
 	)
 	for row in rows:
 		access[row.billing_team].append(row.name)
@@ -169,22 +176,27 @@ def _snapshot_team_counts() -> dict[str, Counter]:
 	round-trip proof that no row changes team ownership."""
 	snapshot: dict[str, Counter] = {}
 	for doctype in TEAM_DOCTYPES:
-		rows = frappe.db.sql(
-			f"SELECT team FROM `tab{doctype}` WHERE team IS NOT NULL AND team != ''"
+		table = frappe.qb.DocType(doctype)
+		rows = (
+			frappe.qb.from_(table)
+			.select(table.team)
+			.where(table.team.isnotnull() & (table.team != ""))
+			.run(pluck=True)
 		)
-		snapshot[doctype] = Counter(row[0] for row in rows)
+		snapshot[doctype] = Counter(rows)
 	return snapshot
 
 
 def _rewrite_team_values(mapping: dict[str, str]) -> None:
-	"""Slug → Team.name on every table (raw SQL, before the Link constraint)."""
+	"""Slug → Team.name on every table (direct UPDATE, before the Link constraint)."""
 	for doctype in TEAM_DOCTYPES:
+		table = frappe.qb.DocType(doctype)
 		for slug, team_name in mapping.items():
 			if slug == team_name:
 				continue
-			frappe.db.sql(
-				f"UPDATE `tab{doctype}` SET team = %s WHERE team = %s", (team_name, slug)
-			)
+			frappe.qb.update(table).set(table.team, team_name).where(
+				table.team == slug
+			).run()
 
 
 def _rename_field_team_docs(mapping: dict[str, str]) -> None:
@@ -211,11 +223,12 @@ def _assert_round_trip(before: dict[str, Counter], mapping: dict[str, str]) -> N
 		expected: Counter = Counter()
 		for slug, count in before[doctype].items():
 			expected[mapping[slug]] += count
+		table = frappe.qb.DocType(doctype)
 		actual = Counter(
-			row[0]
-			for row in frappe.db.sql(
-				f"SELECT team FROM `tab{doctype}` WHERE team IS NOT NULL AND team != ''"
-			)
+			frappe.qb.from_(table)
+			.select(table.team)
+			.where(table.team.isnotnull() & (table.team != ""))
+			.run(pluck=True)
 		)
 		if expected != actual:
 			frappe.throw(

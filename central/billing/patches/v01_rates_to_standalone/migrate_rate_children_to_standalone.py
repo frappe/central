@@ -22,6 +22,7 @@ Self-guarding + idempotent:
 """
 
 import frappe
+from pypika import Table
 
 from central.billing.patches.v01_rates_to_standalone.snapshot_legacy_rate_children import (
 	raw_table_exists,
@@ -55,9 +56,12 @@ def execute():
 		if not raw_table_exists(scratch):
 			continue
 
-		rows = frappe.db.sql(
-			f"SELECT `parent`, `cluster`, `currency`, `rate` FROM `{scratch}`",
-			as_dict=True,
+		# A plain scratch table (no `tab` prefix), so reference it directly.
+		scratch_tbl = Table(scratch)
+		rows = (
+			frappe.qb.from_(scratch_tbl)
+			.select(scratch_tbl.parent, scratch_tbl.cluster, scratch_tbl.currency, scratch_tbl.rate)
+			.run(as_dict=True)
 		)
 		for row in rows:
 			_migrate_row(priced_doctype, row)

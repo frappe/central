@@ -22,6 +22,8 @@ import random
 import time
 
 import frappe
+from frappe.query_builder import Case
+from frappe.query_builder.functions import Sum
 
 # Bookings serialise on the wallet lock, but a busy InnoDB can still surface a
 # transient cross-transaction deadlock; the loser rolls back and retries.
@@ -62,10 +64,15 @@ def _lock_and_read_balance(team: str) -> float:
 	InnoDB versions deadlock on. Locking the clustered record directly keeps every
 	path on one lock in one order.
 	"""
-	rows = frappe.db.sql(
-		"SELECT balance FROM `tabCredit Wallet` WHERE name = %s FOR UPDATE", team, as_dict=True
+	wallet = frappe.qb.DocType("Credit Wallet")
+	rows = (
+		frappe.qb.from_(wallet)
+		.select(wallet.balance)
+		.where(wallet.name == team)
+		.for_update()
+		.run(pluck=True)
 	)
-	return frappe.utils.flt(rows[0].balance) if rows else 0.0
+	return frappe.utils.flt(rows[0]) if rows else 0.0
 
 
 def _book_entry(
@@ -211,15 +218,13 @@ def get_balance(team: str, currency: str | None = None) -> dict:
 	(backward-compatible while teams are single-currency).
 	"""
 	if currency:
-		balance = frappe.db.sql(
-			"""
-			SELECT COALESCE(
-				SUM(CASE WHEN entry_type = 'credit' THEN amount ELSE -amount END), 0
-			)
-			FROM `tabCredit Ledger Entry`
-			WHERE team = %s AND currency = %s
-			""",
-			(team, currency),
+		cle = frappe.qb.DocType("Credit Ledger Entry")
+		signed = Case().when(cle.entry_type == "credit", cle.amount).else_(-cle.amount)
+		balance = (
+			frappe.qb.from_(cle)
+			.select(Sum(signed))
+			.where((cle.team == team) & (cle.currency == currency))
+			.run()
 		)[0][0]
 		return {"balance": frappe.utils.flt(balance), "currency": currency}
 

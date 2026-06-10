@@ -47,10 +47,5 @@ def scratch_table(doctype: str) -> str:
 
 def raw_table_exists(table_name: str) -> bool:
 	"""Existence check for a plain (non-DocType) table, e.g. a scratch table."""
-	return bool(
-		frappe.db.sql(
-			"SELECT 1 FROM information_schema.tables "
-			"WHERE table_schema = DATABASE() AND table_name = %s LIMIT 1",
-			table_name,
-		)
-	)
+	# Uncached: the scratch table may have just been created/dropped this run.
+	return table_name in frappe.db.get_tables(cached=False)
