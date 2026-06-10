@@ -1,0 +1,63 @@
+// Whitelisted method paths, one place. `m(path)` builds the v2 method URL.
+//
+// ✅ billing.* — existing, grounded endpoints (central.billing.api.dashboard.*).
+// ✅ central.* — team/identity (central.iam / central.api).
+// 🟡 atlas.*   — PROPOSED endpoints; no DocType/API specced yet. The Atlas screens
+//    fall back to dummy data (src/pages/atlas/mock.js) until these land.
+
+export function m(method) {
+  return `/api/v2/method/${method}`
+}
+
+const D = 'central.billing.api.dashboard'
+
+export const API = {
+  // ── Capability IAM / team scope (central-owned) ──
+  myCapabilities: `central.iam.my_capabilities`,
+  whoami: `${D}.whoami`,
+  switchableTeams: `${D}.list_switchable_teams`,
+
+  // ── Billing: reads ──
+  teamOverview: `${D}.get_team_overview`,
+  forecast: `${D}.get_forecast`,
+  trustTier: `${D}.get_trust_tier`,
+  creditBalance: `${D}.get_credit_balance`,
+  creditLedger: `${D}.credit_ledger`,
+  invoices: `${D}.list_invoices`,
+  invoice: `${D}.get_invoice`,
+  paymentAttempts: `${D}.list_payment_attempts`,
+  paymentMethods: `${D}.list_payment_methods`,
+  paymentMethodOptions: `${D}.get_payment_method_options`,
+  subscriptions: `${D}.list_subscriptions`,
+  billingProfile: `${D}.get_billing_profile`,
+  billingSettings: `${D}.get_billing_settings`,
+
+  // ── Billing: mutations (billing:manage) ──
+  payInvoice: `${D}.pay_invoice`,
+  createTopupOrder: `${D}.create_topup_order`,
+  confirmTopup: `${D}.confirm_topup`,
+  initiateCardSetup: `${D}.initiate_card_setup`,
+  confirmCard: `${D}.confirm_card`,
+  setupPaymentMethodOrder: `${D}.setup_payment_method_order`,
+  confirmPaymentMethodOrder: `${D}.confirm_payment_method_order`,
+  setDefaultPaymentMethod: `${D}.set_default_payment_method`,
+  reorderPaymentMethods: `${D}.reorder_payment_methods`,
+  removePaymentMethod: `${D}.remove_payment_method`,
+  saveBillingProfile: `${D}.save_billing_profile`,
+  saveBillingSettings: `${D}.save_billing_settings`,
+
+  // ── Team & identity (central.iam — confirm exact slugs) ──
+  listTeamMembers: `central.iam.list_team_members`,
+  inviteMember: `central.iam.invite_member`,
+  assignRole: `central.iam.assign_role`,
+  removeMember: `central.iam.remove_member`,
+  listRoles: `central.iam.list_team_roles`,
+  listCapabilities: `central.iam.list_capabilities`,
+  makeCustomRole: `central.iam.make_custom_role_team`,
+
+  // ── Atlas (🟡 proposed; mocked) ──
+  atlasRegistry: `central.atlas.registry`,
+  atlasVms: `central.atlas.list_vms`,
+  atlasRegion: `central.atlas.current_region`,
+  atlasAccessRequests: `central.atlas.list_access_requests`,
+}

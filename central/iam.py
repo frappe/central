@@ -139,6 +139,22 @@ def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]
 	return resolve_user_grants(user)
 
 
+@frappe.whitelist(methods=["GET"])
+def my_capabilities(team: str | None = None) -> list[str]:
+	"""Capabilities the signed-in user carries on a team (or any team, if omitted).
+
+	The single source the Central console UI gates every screen on: reads behind
+	`*:view`, mutations behind `*:manage`. Always the session user — never another
+	user's — so it is safe to expose to any logged-in member.
+	"""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		return []
+	grants = resolve_user_grants(user)
+	team_grants = grants.get(team, []) if team else [g for gs in grants.values() for g in gs]
+	return sorted({cap for grant in team_grants for cap in grant.get("caps", [])})
+
+
 def can(user: str, team: str, capability: str) -> bool:
 	if not frappe.db.exists("Capability", capability):
 		return False
