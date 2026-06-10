@@ -23,6 +23,33 @@ class PaymentGateway(Document):
 		if self._should_validate_credentials():
 			self._validate_credentials()
 		self._guard_enable()
+		if self.is_enabled:
+			self._enforce_default_uniqueness()
+
+	def _enforce_default_uniqueness(self):
+		"""At most one enabled gateway may have is_default = True per currency.
+
+		When this gateway sets is_default = True on a currency row, clear that flag
+		on every other enabled gateway's row for the same currency. This mirrors
+		radio-button semantics scoped per currency."""
+		for row in self.currencies or []:
+			if not row.is_default:
+				continue
+			# Find any other gateway currency row with is_default for the same currency.
+			others = frappe.db.get_all(
+				"Payment Gateway Currency",
+				filters={
+					"currency": row.currency,
+					"is_default": 1,
+					"parent": ["!=", self.name],
+				},
+				fields=["name", "parent"],
+			)
+			for other in others:
+				if frappe.db.get_value("Payment Gateway", other.parent, "is_enabled"):
+					frappe.db.set_value(
+						"Payment Gateway Currency", other.name, "is_default", 0, update_modified=False
+					)
 
 	# --- credential validation + webhook auto-registration -------------------
 

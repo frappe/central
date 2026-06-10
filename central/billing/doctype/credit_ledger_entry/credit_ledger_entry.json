@@ -52,8 +52,10 @@
   },
   {
    "fieldname": "currency",
-   "fieldtype": "Data",
-   "label": "Currency"
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Currency",
+   "options": "Currency"
   },
   {
    "fieldname": "running_balance",

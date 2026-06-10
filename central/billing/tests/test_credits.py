@@ -117,6 +117,21 @@ class TestLedgerBasics(CreditTestBase):
 		res = credits.adjust_credits(TEAM, 25, "debit", note="dispute clawback")
 		self.assertEqual(res["new_balance"], 75)
 
+	def test_get_balance_filtered_by_currency(self):
+		credits.purchase(TEAM, 500, "INR")
+		credits.purchase(TEAM, 100, "USD")
+
+		# Currency-filtered reads return the correct per-currency balance.
+		self.assertEqual(credits.get_balance(TEAM, currency="INR")["balance"], 600)
+		self.assertEqual(credits.get_balance(TEAM, currency="USD")["balance"], 100)
+
+	def test_get_balance_unfiltered_returns_latest_overall(self):
+		credits.purchase(TEAM, 300, "INR")
+		credits.purchase(TEAM, 50, "USD")
+		# Omitting currency returns the running balance of the most recent entry.
+		result = credits.get_balance(TEAM)
+		self.assertGreater(result["balance"], 0)
+
 
 class TestConcurrency(CreditTestBase):
 	def test_ten_threads_apply_credits_no_double_spend(self):

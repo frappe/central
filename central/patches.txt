@@ -21,3 +21,6 @@ central.billing.patches.v04_drop_orphan_billing_roles.drop_billing_roles
 # Re-import the rebuilt (ERPNext-style) Billing desk Workspace over the thin one
 # carried from the standalone app; timestamp gating skips it otherwise (#44).
 central.billing.patches.v05_billing_workspace.reload_billing_workspace
+# Migrate Payment Gateway single `currency` column to the new Payment Gateway
+# Currency child table (is_default row per currency) — issue #46.
+central.billing.patches.v06_payment_gateway_currency.migrate_gateway_currencies

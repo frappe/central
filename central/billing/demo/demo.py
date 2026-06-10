@@ -135,11 +135,10 @@ def _gateway():
 		{
 			"title": "Stripe (Demo)",
 			"adapter_key": "stripe",
-			"currency": "INR",
+			"currencies": [{"currency": "INR", "is_default": 1}],
 			"api_secret": "sk_test_demo",
 			"webhook_secret": "whsec_demo",
 			"is_enabled": 1,
-			"is_default_for_currency": 1,
 		},
 	)
 
