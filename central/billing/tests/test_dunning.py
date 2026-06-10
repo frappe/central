@@ -13,7 +13,7 @@ from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
 from central.billing.catalog.signing import generate_keypair
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-dunning"
 CLUSTER = "ap-south-1"
@@ -38,6 +38,7 @@ def day(n):
 
 class DunningTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._priv, self._pub = generate_keypair()

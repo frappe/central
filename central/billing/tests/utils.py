@@ -76,6 +76,27 @@ def make_user(email=None):
 	return email
 
 
+def ensure_team(slug, owner=None):
+	"""Ensure a Central `Team` whose `name` *is* `slug` exists, bypassing the
+	`TEAM-#####` series via `flags.name_set`.
+
+	`team` is now a `Link → Team` (#43), so tests can no longer insert a billing
+	doc with a free-text slug. Forcing the Team's name to the slug keeps the
+	readable identifier valid as a link with no churn to the test bodies.
+	Idempotent; returns `slug`."""
+	if frappe.db.exists("Team", slug):
+		return slug
+	# One shared owner across all ensure_team() teams — a fresh user per team
+	# would trip Frappe's user-creation throttle in the load test (hundreds of
+	# teams). Owning many teams is fine; these teams exist only to satisfy the link.
+	owner = owner or make_user("billing-test-team-owner@example.com")
+	doc = frappe.get_doc({"doctype": "Team", "team_name": slug, "owner_user": owner})
+	doc.flags.name_set = True
+	doc.name = slug
+	doc.insert(ignore_permissions=True)
+	return slug
+
+
 def make_billing_team(user, role="Billing", team_name=None):
 	"""A Central `Team` with `user` as an active member under `role`. The team's
 	Owner is a separate throwaway user (a Team must have exactly one Owner), so

@@ -13,7 +13,7 @@ from central.billing.payments import refunds
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import RefundResult
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-refund"
 CLUSTER = "ap-south-1"
@@ -33,6 +33,7 @@ def stub_refund(success=True, refund_id="rfnd_1"):
 
 class RefundTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._purge()

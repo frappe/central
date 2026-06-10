@@ -24,10 +24,10 @@
  "fields": [
   {
    "fieldname": "team",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
+   "options": "Team",
    "in_list_view": 1,
    "label": "Team",
-   "description": "Team identifier (Link -> Team in the real Central; Team is core/IAM)",
    "reqd": 1
   },
   {

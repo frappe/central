@@ -7,6 +7,8 @@ import threading
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.billing.tests.utils import ensure_team
+
 from central.billing.revenue import credits
 from central.billing.revenue.credits import InsufficientCredits
 
@@ -44,6 +46,7 @@ def run_workers(n: int, fn):
 
 class CreditTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		self._purge()
 
 	def tearDown(self):

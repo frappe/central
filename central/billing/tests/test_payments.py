@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.billing.tests.utils import ensure_team
+
 from central.billing.payments import payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
@@ -30,6 +32,7 @@ def stub_adapter(validate=True):
 
 class CardTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_stripe_gateway(GATEWAY)
 		for name in frappe.get_all("Payment Method", filters={"team": TEAM}, pluck="name"):
 			frappe.delete_doc("Payment Method", name, force=True)

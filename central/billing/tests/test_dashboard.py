@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue import credits
 from central.billing.api import dashboard
 from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import make_billing_team, make_plan, make_user
+from central.billing.tests.utils import ensure_team, make_billing_team, make_plan, make_user
 
 TEAM = "team-cust"
 CLUSTER = "ap-south-1"
@@ -28,6 +28,7 @@ class TestDashboardSmoke(IntegrationTestCase):
 
 class CustomerDataBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		self._purge()
 		self.today = frappe.utils.getdate()

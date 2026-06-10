@@ -11,7 +11,7 @@ from central.billing.catalog.entitlements import recompute_trust_tier
 from central.billing.catalog.signing import generate_keypair
 from central.billing.platform.sync import receive_usage_events
 from central.billing.tests.test_entitlements import make_ladder
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-trial"
 CLUSTER = "ap-south-1"
@@ -39,6 +39,7 @@ def provision(resource="srv-trial", rate=1000, start="2026-06-01 00:00:00"):
 
 class TrialTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_ladder()  # t0 (entry, default) / t1 / t2
 		make_plan(PLAN)
 		self._purge()

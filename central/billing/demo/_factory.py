@@ -125,12 +125,12 @@ def _tax(team, currency):
 	_upsert("Tax Profile", team, {"team": team, "output_tax_type": tax_type, "output_tax_rate": rate})
 
 
-def _profile(team, currency, cluster, prepaid):
-	region = next(label for slug, label, _c in CLUSTERS if slug == cluster)
+def _profile(team, slug, currency, cluster, prepaid):
+	region = next(label for s, label, _c in CLUSTERS if s == cluster)
 	india = currency == "INR"
 	_upsert("Billing Profile", team, {
-		"team": team, "legal_name": f"{team.replace('-', ' ').title()} Ltd",
-		"email": f"billing@{team}.example",
+		"team": team, "legal_name": f"{slug.replace('-', ' ').title()} Ltd",
+		"email": f"billing@{slug}.example",
 		"gstin": "27AAPFU0939F1ZV" if india else None,
 		"address_line1": "1 Demo Street", "city": region.split("—")[-1].strip(),
 		"state": "Maharashtra" if india else "", "country": "India" if india else region.split("—")[0].strip(),
@@ -139,16 +139,16 @@ def _profile(team, currency, cluster, prepaid):
 	})
 
 
-def _payment_setup(team, currency, state):
+def _payment_setup(team, slug, currency, state):
 	"""Return (gateway, payment_method) for the team's terminal state."""
 	if state in ("credits", "trial"):
 		return None, None  # prepaid wallet / unpaid trial — no card
-	if currency == "INR" and team == "wayne-ent":
+	if currency == "INR" and slug == "wayne-ent":
 		# An INR team on UPI Autopay (mandate ceiling = tier cap).
 		pm = frappe.get_doc({
 			"doctype": "Payment Method", "team": team, "gateway": RAZORPAY,
 			"method_type": "upi_autopay", "status": "active", "display_label": "UPI Autopay",
-			"gateway_method_id": f"token_{team}", "gateway_customer_id": f"cust_{team}",
+			"gateway_method_id": f"token_{slug}", "gateway_customer_id": f"cust_{slug}",
 			"mandate_max_amount": 200000, "mandate_currency": "INR", "is_default": 1,
 			"validated_at": frappe.utils.now_datetime(),
 		}).insert(ignore_permissions=True).name
@@ -156,8 +156,8 @@ def _payment_setup(team, currency, state):
 	gateway = STRIPE[currency]
 	pm = frappe.get_doc({
 		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "card",
-		"status": "active", "display_label": "Visa ····4242", "gateway_method_id": f"pm_{team}",
-		"gateway_customer_id": f"cus_{team}", "expiry_month": 11, "expiry_year": 2030,
+		"status": "active", "display_label": "Visa ····4242", "gateway_method_id": f"pm_{slug}",
+		"gateway_customer_id": f"cus_{slug}", "expiry_month": 11, "expiry_year": 2030,
 		"is_default": 1, "validated_at": frappe.utils.now_datetime(),
 	}).insert(ignore_permissions=True).name
 	return gateway, pm
@@ -210,6 +210,28 @@ def _ensure_signing_key():
 		frappe.installer.update_site_config("entitlement_public_key", pub)
 	except Exception:  # noqa: BLE001 — in-memory conf is enough for the seed run
 		pass
+
+
+def _ensure_demo_team(slug):
+	"""Resolve a demo slug to a real Central `Team` (idempotent by `team_name`).
+
+	`team` is now a `Link → Team`, so the seed can no longer pass a free-text
+	slug. Each scenario gets one Team — named after the slug, owned by a
+	per-team demo user — and the returned `Team.name` is what every billing
+	record stores. Re-runnable: `_wipe_all` leaves Teams intact, so a re-seed
+	reuses them."""
+	existing = frappe.db.get_value("Team", {"team_name": slug}, "name")
+	if existing:
+		return existing
+	owner = f"owner-{slug}@example.com"
+	if not frappe.db.exists("User", owner):
+		frappe.get_doc({
+			"doctype": "User", "email": owner, "send_welcome_email": 0,
+			"first_name": slug.replace("-", " ").title(),
+		}).insert(ignore_permissions=True)
+	return frappe.get_doc({
+		"doctype": "Team", "team_name": slug, "owner_user": owner,
+	}).insert(ignore_permissions=True).name
 
 
 def _wipe_all():

@@ -7,11 +7,13 @@ from frappe.tests import IntegrationTestCase
 from central.billing.catalog.entitlements import issue_token, recompute_trust_tier
 from central.billing.catalog.signing import generate_keypair, verify_payload
 from central.billing.tests.test_entitlements import make_ladder
+from central.billing.tests.utils import ensure_team
 
 
 class TestIssueToken(IntegrationTestCase):
 	def setUp(self):
 		make_ladder()
+		ensure_team("team-token")
 		if frappe.db.exists("Trust Tier", "team-token"):
 			frappe.delete_doc("Trust Tier", "team-token", force=True)
 		# Central holds the private key; the public key goes to the cluster.

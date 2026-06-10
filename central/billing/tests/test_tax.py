@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue import invoicing, tax
 from central.billing.catalog import subscriptions
 from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-tax"
 CLUSTER = "ap-south-1"
@@ -42,6 +42,7 @@ def provision(rate=1000):
 
 class TaxTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		self._purge()
 		provision()  # full-month fixed line = 1000

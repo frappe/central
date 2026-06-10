@@ -5,6 +5,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.entitlements import evaluate_tier, get_ladder, recompute_trust_tier
+from central.billing.tests.utils import ensure_team
 
 LADDER = [
 	{"tier": "t0", "sequence": 0, "is_default": 1, "max_spend": 100, "max_resource_count": 1,
@@ -44,6 +45,7 @@ class TestEvaluateTier(IntegrationTestCase):
 class TestRecomputeTrustTier(IntegrationTestCase):
 	def setUp(self):
 		make_ladder()
+		ensure_team("team-entitle")
 		if frappe.db.exists("Trust Tier", "team-entitle"):
 			frappe.delete_doc("Trust Tier", "team-entitle", force=True)
 

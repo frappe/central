@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue import invoicing, metering
 from central.billing.catalog import subscriptions
 from central.billing.platform.sync import receive_meter_rollups, receive_usage_events
-from central.billing.tests.utils import make_addon, make_plan
+from central.billing.tests.utils import ensure_team, make_addon, make_plan
 
 TEAM = "team-meter"
 CLUSTER = "ap-south-1"
@@ -51,6 +51,7 @@ def provision(rate=1000):
 
 class MeteringTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		# Plan includes a 100 GB transfer allowance; metered Add-on bills 0.5/GB overage.
 		make_plan(
 			PLAN,

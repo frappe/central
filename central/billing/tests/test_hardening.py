@@ -162,10 +162,12 @@ class TestLoadTwoPhase(IntegrationTestCase):
 	PLAN = "bundle-load-test"
 
 	def setUp(self):
-		from central.billing.tests.utils import make_plan
+		from central.billing.tests.utils import ensure_team, make_plan
 
 		make_plan(self.PLAN)
 		self._teams = [f"team-load-{i}" for i in range(self.N)]
+		for team in self._teams:
+			ensure_team(team)
 		self._purge()
 
 	def tearDown(self):

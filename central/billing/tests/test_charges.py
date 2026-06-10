@@ -14,7 +14,7 @@ from central.billing.payments import charges, webhooks
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-charge"
 CLUSTER = "ap-south-1"
@@ -63,6 +63,7 @@ def stub_adapter(success=True, txn_id="pi_x"):
 
 class ChargeTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._purge()

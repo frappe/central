@@ -8,9 +8,10 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue.pricelock import get_locked_rate
 from central.billing.catalog.pricing import set_catalog_rates
 from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 PLAN = "bundle-lock-test"
+TEAM = "team-lock"
 
 
 def event(event_id, resource_id, rate, event_type="subscribed", cluster=None, currency="USD"):
@@ -31,6 +32,7 @@ def event(event_id, resource_id, rate, event_type="subscribed", cluster=None, cu
 class PriceLockTestBase(IntegrationTestCase):
 	def setUp(self):
 		# Global USD rate = 40, INR = 3200.
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		for name in frappe.get_all("Price Lock", filters={"team": "team-lock"}, pluck="name"):
 			frappe.delete_doc("Price Lock", name, force=True)

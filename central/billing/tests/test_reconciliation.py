@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.billing.tests.utils import ensure_team
+
 from central.billing.payments import reconciliation
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
@@ -25,6 +27,7 @@ def gateway_status(status):
 
 class ReconTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_stripe_gateway(GATEWAY)
 		self._purge()
 

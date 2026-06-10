@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.billing.tests.utils import ensure_team
+
 from central.billing.payments import mandates
 from central.billing.catalog.entitlements import recompute_trust_tier
 from central.billing.tests.test_entitlements import make_ladder
@@ -58,6 +60,7 @@ def stub_adapter(signature_ok=True):
 
 class MandateTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_ladder()
 		make_gateway()
 		for name in frappe.get_all(
@@ -177,6 +180,7 @@ class TestUpiRecurringLimit(MandateTestBase):
 	"""UPI Autopay is blocked above the Rs. 1,00,000 recurring limit (#08/#28)."""
 
 	def setUp(self):
+		ensure_team(TEAM)
 		super().setUp()
 		frappe.db.delete("Invoice", {"team": TEAM})
 

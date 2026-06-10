@@ -28,7 +28,7 @@
   "spend_alert_threshold"
  ],
  "fields": [
-  {"fieldname": "team", "fieldtype": "Data", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
+  {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
   {"fieldname": "legal_name", "fieldtype": "Data", "in_list_view": 1, "label": "Legal Name", "reqd": 1},
   {"fieldname": "email", "fieldtype": "Data", "label": "Billing Email", "options": "Email"},
   {"fieldname": "phone", "fieldtype": "Data", "label": "Phone"},

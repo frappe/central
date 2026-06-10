@@ -20,7 +20,7 @@
   "notify_trial_expiring"
  ],
  "fields": [
-  {"fieldname": "team", "fieldtype": "Data", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
+  {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
   {"default": "1", "fieldname": "notify_payment_success", "fieldtype": "Check", "label": "Payment Success"},
   {"default": "1", "fieldname": "notify_payment_failure", "fieldtype": "Check", "label": "Payment Failure"},
   {"default": "1", "fieldname": "notify_payment_retry", "fieldtype": "Check", "label": "Payment Retry"},

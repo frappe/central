@@ -5,6 +5,8 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.billing.tests.utils import ensure_team
+
 from central.billing.platform import notifications
 from central.billing.payments import settlement
 
@@ -13,6 +15,7 @@ TEAM = "team-notify"
 
 class NotificationTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		self._purge()
 
 	def tearDown(self):

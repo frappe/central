@@ -22,7 +22,8 @@
  "fields": [
   {
    "fieldname": "team",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
+   "options": "Team",
    "in_list_view": 1,
    "label": "Team",
    "reqd": 1

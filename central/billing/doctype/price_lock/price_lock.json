@@ -38,7 +38,8 @@
   },
   {
    "fieldname": "team",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
+   "options": "Team",
    "label": "Team"
   },
   {

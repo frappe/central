@@ -12,7 +12,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.payments import charges, collection, payments
 from central.billing.gateways.base import PaymentResult
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-fallback"
 PLAN = "bundle-fallback-test"
@@ -41,6 +41,7 @@ def stub_charges(results):
 
 class FallbackTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._purge()

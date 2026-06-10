@@ -4,8 +4,14 @@
 # Snapshot legacy Plan Rate / Add-on Rate child rows before they are merged into
 # the single Catalog Rate DocType (Item Price style, Dynamic Link).
 central.billing.patches.v01_rates_to_standalone.snapshot_legacy_rate_children
+# Re-point billing `team` (Data slug) at the real Central `Team`: ensure a Team
+# per slug, rewrite values, backfill Team Members, drop User.billing_team. Runs
+# while `team` is still Data, before the Link field-type flip is synced (#43).
+central.billing.patches.v03_team_link_to_central_team.migrate_team_to_central_team
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 central.billing.patches.v01_rates_to_standalone.migrate_rate_children_to_standalone
 central.billing.patches.v02_payment_method_priority.backfill_priority
+# Guard: every billing `team` is now a valid Link → Team, no orphans (#43).
+central.billing.patches.v03_team_link_to_central_team.validate_team_links

@@ -7,7 +7,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.catalog.subscriptions import InvalidTransition
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 PLAN = "bundle-sub-test"
 PLAN_B = "bundle-sub-test-b"
@@ -23,6 +23,7 @@ def changes_for(sub, change_type=None):
 
 class SubscriptionTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		make_plan(PLAN_B)
 		for name in frappe.get_all("Subscription", filters={"team": TEAM}, pluck="name"):

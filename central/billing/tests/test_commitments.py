@@ -14,7 +14,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue import invoicing
 from central.billing.catalog import subscriptions
 from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import make_plan
+from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-commitment"
 CLUSTER = "ap-south-1"
@@ -58,6 +58,7 @@ def make_commitment(team, floor, discount_pct, started_at="2026-06-01", term_mon
 
 class CommitmentTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_plan(PLAN)
 		self._purge()
 		self.sub = subscriptions.create_subscription(

@@ -15,7 +15,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue import metering
 from central.billing.catalog.pricing import set_catalog_rates
 from central.billing.platform.sync import receive_meter_rollups
-from central.billing.tests.utils import make_addon
+from central.billing.tests.utils import ensure_team, make_addon
 
 TEAM = "team-live"
 CLUSTER = "ap-south-1"
@@ -39,6 +39,7 @@ def snapshot_meter(resource_id, qty, currency="INR"):
 
 class LivePricingTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		make_addon(
 			"addon-snapshot",
 			resource_type="snapshot",

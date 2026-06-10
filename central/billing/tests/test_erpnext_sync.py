@@ -8,6 +8,8 @@ import frappe
 import requests
 from frappe.tests import IntegrationTestCase
 
+from central.billing.tests.utils import ensure_team
+
 from central.billing.revenue import erpnext_sync
 
 TEAM = "team-erp"
@@ -28,6 +30,7 @@ def err_response():
 
 class ErpnextSyncTestBase(IntegrationTestCase):
 	def setUp(self):
+		ensure_team(TEAM)
 		frappe.conf.erpnext_url = "https://erp.example"
 		self._purge()
 

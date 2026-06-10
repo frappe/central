@@ -32,6 +32,7 @@ from central.billing.demo._factory import (
 	ANCHOR,
 	PLAN_SIZES,
 	_catalog,
+	_ensure_demo_team,
 	_ensure_signing_key,
 	_failed_attempt,
 	_gateways,
@@ -78,8 +79,11 @@ def seed_all() -> dict:
 	_ensure_signing_key()
 
 	results = {}
-	for team, tier, currency, months, state, resources in TEAMS:
-		results[team] = _build_team(team, tier, currency, months, state, resources)
+	for slug, tier, currency, months, state, resources in TEAMS:
+		# `team` is now a Link → Team: mint/resolve a real Team and store its name
+		# on every record; the slug stays for human-readable labels.
+		team = _ensure_demo_team(slug)
+		results[slug] = _build_team(team, slug, tier, currency, months, state, resources)
 
 	from central.billing.demo.demo import _ensure_workspace
 
@@ -93,13 +97,13 @@ def seed_all() -> dict:
 # --- per-team build ---------------------------------------------------------
 
 
-def _build_team(team, tier, currency, months, state, resources):
+def _build_team(team, slug, tier, currency, months, state, resources):
 	from collections import OrderedDict
 
 	_tier(team, tier)
 	_tax(team, currency)
-	_profile(team, currency, resources[0][0], prepaid=(state == "credits"))
-	gateway, pm = _payment_setup(team, currency, state)
+	_profile(team, slug, currency, resources[0][0], prepaid=(state == "credits"))
+	gateway, pm = _payment_setup(team, slug, currency, state)
 
 	periods = _month_periods(months)
 	first_start = periods[0][0] if periods else ANCHOR
@@ -114,11 +118,11 @@ def _build_team(team, tier, currency, months, state, resources):
 	for cluster, plans in by_cluster.items():
 		for plan in plans:
 			idx += 1
-			resource = f"srv-{team}-{idx}"
+			resource = f"srv-{slug}-{idx}"
 			catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 			rate = round(catalog * 0.78, 2) if (state == "grandfathered" and idx == 1) else catalog
 			receive_usage_events([{
-				"event_id": f"ev-{team}-{idx}", "team": team, "resource_id": resource,
+				"event_id": f"ev-{slug}-{idx}", "team": team, "resource_id": resource,
 				"cluster": cluster, "plan": plan, "shown_rate": rate, "currency": currency,
 				"event_type": "subscribed", "effective_from": f"{first_start} 00:00:00", "effective_to": None,
 			}])
