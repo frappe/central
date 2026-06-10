@@ -51,20 +51,20 @@ from central.billing.demo._factory import (
 #                 style: any plan in any region, capped by the tier. A team bills
 #                 in ONE currency regardless of where its instances run.
 TEAMS = [
-	("acme-corp", "t3", "INR", 9, "grandfathered", [
+	("acme-corp", "t3", "INR", 9, "Grandfathered", [
 		("in-mumbai", "plan-8vcpu"), ("in-mumbai", "plan-2vcpu"),
 		("eu-frankfurt", "plan-4vcpu"), ("me-dubai", "plan-1vcpu")]),
-	("globex", "t3", "EUR", 9, "active", [
+	("globex", "t3", "EUR", 9, "Active", [
 		("eu-frankfurt", "plan-16vcpu"), ("eu-frankfurt", "plan-4vcpu"),
 		("in-mumbai", "plan-2vcpu")]),
-	("initech", "t2", "USD", 5, "active", [
+	("initech", "t2", "USD", 5, "Active", [
 		("me-dubai", "plan-4vcpu"), ("me-dubai", "plan-1vcpu"), ("eu-frankfurt", "plan-2vcpu")]),
-	("umbrella", "t2", "INR", 5, "active", [            # INR billing, EU + India
+	("umbrella", "t2", "INR", 5, "Active", [            # INR billing, EU + India
 		("eu-frankfurt", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu")]),
-	("wayne-ent", "t2", "INR", 5, "active", [           # INR billing, ME + India
+	("wayne-ent", "t2", "INR", 5, "Active", [           # INR billing, ME + India
 		("me-dubai", "plan-2vcpu"), ("in-mumbai", "plan-1vcpu")]),
 	("stark-ind", "t1", "INR", 1, "overdue", [("in-mumbai", "plan-2vcpu")]),
-	("cyberdyne", "t1", "EUR", 1, "suspended", [("eu-frankfurt", "plan-2vcpu")]),
+	("cyberdyne", "t1", "EUR", 1, "Suspended", [("eu-frankfurt", "plan-2vcpu")]),
 	("hooli", "t1", "INR", 1, "credits", [("in-mumbai", "plan-1vcpu")]),
 	("soylent", "t1", "USD", 1, "refund", [("me-dubai", "plan-2vcpu")]),
 	("piedpiper", "t0", "INR", 0, "trial", [("in-mumbai", "plan-1vcpu")]),
@@ -120,17 +120,17 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 			idx += 1
 			resource = f"srv-{slug}-{idx}"
 			catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
-			rate = round(catalog * 0.78, 2) if (state == "grandfathered" and idx == 1) else catalog
+			rate = round(catalog * 0.78, 2) if (state == "Grandfathered" and idx == 1) else catalog
 			receive_usage_events([{
 				"event_id": f"ev-{slug}-{idx}", "team": team, "resource_id": resource,
 				"cluster": cluster, "plan": plan, "shown_rate": rate, "currency": currency,
 				"event_type": "subscribed", "effective_from": f"{first_start} 00:00:00", "effective_to": None,
 			}])
 			# A metered bandwidth overage on the first active instance.
-			if idx == 1 and state in ("grandfathered", "active", "credits"):
+			if idx == 1 and state in ("Grandfathered", "Active", "credits"):
 				allowance = next(p[5] for p in PLAN_SIZES if p[0] == plan)
 				receive_meter_rollups([{
-					"resource_id": resource, "resource_type": "transfer", "meter_type": "counter",
+					"resource_id": resource, "resource_type": "Transfer", "meter_type": "Counter",
 					"period_start": f"{ANCHOR} 00:00:00", "period_end": "2026-06-30 23:59:59",
 					"quantity": round(allowance * 1.25), "unit": "GB",
 					"idempotency_key": f"{resource}:counter:{ANCHOR}", "status": "closed",
@@ -143,7 +143,7 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 	subs = []
 	for cluster, plans in by_cluster.items():
 		subs.append(subscriptions.create_subscription(
-			team=team, cluster=cluster, plan=plans[0], billing_cycle="monthly",
+			team=team, cluster=cluster, plan=plans[0], billing_cycle="Monthly",
 			default_payment_method=pm, gateway=gateway,
 		).name)
 	primary_sub = subs[0]
@@ -181,31 +181,31 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 
 	if state == "overdue":
 		frappe.db.set_value("Invoice", inv, {"status": "Overdue", "due_date": "2026-06-01", "amount_paid": 0})
-		_set_team_standing(team, "past_due")
+		_set_team_standing(team, "Past Due")
 		for n in range(3):
 			_failed_attempt(team, inv, pm, gateway, n)
-			notifications.notify(team, "payment_retry",
+			notifications.notify(team, "Payment Retry",
 				message=f"Payment retry {n + 1} for {inv} failed: card_declined",
 				reference_doctype="Invoice", reference_name=inv)
-		notifications.notify(team, "invoice_overdue", context={"invoice": inv},
+		notifications.notify(team, "Invoice Overdue", context={"invoice": inv},
 			reference_doctype="Invoice", reference_name=inv)
 		return "Overdue + past_due + 3 failed retries"
 
-	if state == "suspended":
+	if state == "Suspended":
 		frappe.db.set_value("Invoice", inv, {"status": "Overdue", "due_date": "2026-05-20", "amount_paid": 0})
-		_set_team_standing(team, "past_due")
+		_set_team_standing(team, "Past Due")
 		# Suspension follows EXHAUSTED dunning — the card on file was charged and
 		# declined on each retry. Those attempts are non-negotiable history.
 		for n in range(3):
 			_failed_attempt(team, inv, pm, gateway, n)
-			notifications.notify(team, "payment_retry",
+			notifications.notify(team, "Payment Retry",
 				message=f"Payment retry {n + 1} for {inv} failed: card_declined",
 				reference_doctype="Invoice", reference_name=inv)
-		_set_team_standing(team, "suspended")
+		_set_team_standing(team, "Suspended")
 		from central.billing.catalog.entitlements import issue_token
 
 		issue_token(team, {}, suspend=True)
-		notifications.notify(team, "invoice_overdue", context={"invoice": inv},
+		notifications.notify(team, "Invoice Overdue", context={"invoice": inv},
 			reference_doctype="Invoice", reference_name=inv)
 		return "Suspended + 3 failed retries + cap-0 suspend token"
 
@@ -220,13 +220,13 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 		frappe.db.set_value("Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": "2026-07-07"})
 		attempt = frappe.get_doc({
 			"doctype": "Payment Attempt", "invoice": inv, "team": team, "gateway": gateway,
-			"payment_method": pm, "amount": total, "currency": currency, "status": "captured",
-			"gateway_transaction_id": f"pi_{team}", "resolved_by": "webhook",
+			"payment_method": pm, "amount": total, "currency": currency, "status": "Captured",
+			"gateway_transaction_id": f"pi_{team}", "resolved_by": "Webhook",
 		}).insert(ignore_permissions=True).name
 		frappe.get_doc({
 			"doctype": "Refund", "payment_attempt": attempt, "invoice": inv, "team": team,
-			"amount": round(total * 0.1, 2), "currency": currency, "destination": "wallet",
-			"status": "completed", "reason": "Partial overcharge",
+			"amount": round(total * 0.1, 2), "currency": currency, "destination": "Wallet",
+			"status": "Completed", "reason": "Partial overcharge",
 			"created_at": frappe.utils.now_datetime(), "completed_at": frappe.utils.now_datetime(),
 		}).insert(ignore_permissions=True)
 		credits.refund_to_wallet(team, round(total * 0.1, 2), currency=currency,
@@ -235,4 +235,4 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 
 	# active / grandfathered
 	frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": "2026-07-07"})
-	return "grandfathered (locked launch rate)" if state == "grandfathered" else "active, open current invoice"
+	return "grandfathered (locked launch rate)" if state == "Grandfathered" else "active, open current invoice"

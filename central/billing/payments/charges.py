@@ -15,7 +15,7 @@ import frappe
 from central.billing.gateways.base import GatewayTimeout
 
 # An attempt occupying the invoice — a second charge must not start beside it.
-_IN_FLIGHT = ("initiated", "authorised", "captured")
+_IN_FLIGHT = ("Initiated", "Authorised", "Captured")
 
 # Gateway event types the Payment Attempt listens to. An attempt's status is
 # advanced ONLY by the respective callback for its transaction:
@@ -33,7 +33,7 @@ _FAILURE_EVENTS = {"payment_intent.payment_failed", "charge.failed", "payment.fa
 # Logs (Payment Attempt + Webhook Event) are kept on a rolling window and pruned
 # daily; site-config `payment_log_retention_days` overrides the default.
 LOG_RETENTION_DEFAULT_DAYS = 90  # ~3 months
-_TERMINAL_ATTEMPT = ("captured", "failed", "refunded")
+_TERMINAL_ATTEMPT = ("Captured", "Failed", "Refunded")
 _UNSETTLED_INVOICE = ("Open", "Overdue")
 
 
@@ -81,7 +81,7 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 			"payment_method": method_name,
 			"amount": inv.expected_collection,
 			"currency": inv.currency,
-			"status": "initiated",
+			"status": "Initiated",
 			"initiated_at": frappe.utils.now_datetime(),
 			"retry_number": frappe.db.count("Payment Attempt", {"invoice": invoice}),
 		}
@@ -103,9 +103,9 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 
 	attempt.gateway_transaction_id = result.gateway_transaction_id
 	if result.success:
-		attempt.status = "captured"  # gateway captured; invoice Paid waits on webhook
+		attempt.status = "Captured"  # gateway captured; invoice Paid waits on webhook
 	else:
-		attempt.status = "failed"
+		attempt.status = "Failed"
 		attempt.failure_code = result.failure_code
 		attempt.failure_reason = result.failure_reason
 		attempt.completed_at = frappe.utils.now_datetime()
@@ -156,23 +156,23 @@ def apply_webhook(event_name: str) -> dict:
 	is_failure = event.event_type in _FAILURE_EVENTS
 
 	if not txn_id or not (is_authorised or is_success or is_failure):
-		_mark_event(event, "ignored")
+		_mark_event(event, "Ignored")
 		return {"handled": False, "reason": "not_a_charge_event"}
 
 	attempt_name = frappe.db.get_value("Payment Attempt", {"gateway_transaction_id": txn_id}, "name")
 	if not attempt_name:
-		_mark_event(event, "ignored")
+		_mark_event(event, "Ignored")
 		return {"handled": False, "reason": "no_matching_attempt"}
 
 	attempt = frappe.get_doc("Payment Attempt", attempt_name)
 	if is_authorised:
 		# Funds held, capture pending. Advance only from initiated — never walk a
 		# terminal attempt backwards if the capture/fail webhook arrived first.
-		if attempt.status == "initiated":
-			attempt.status = "authorised"
+		if attempt.status == "Initiated":
+			attempt.status = "Authorised"
 			attempt.save(ignore_permissions=True)
-		_mark_event(event, "processed")
-		return {"handled": True, "result": "authorised", "attempt": attempt_name}
+		_mark_event(event, "Processed")
+		return {"handled": True, "result": "Authorised", "attempt": attempt_name}
 
 	if is_failure:
 		fell_back = None
@@ -180,14 +180,14 @@ def apply_webhook(event_name: str) -> dict:
 		# invoice (a sync `captured` attempt isn't final: Paid lands on the success
 		# webhook). Gate on invoice status, not attempt status, and act once.
 		inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
-		if inv_status != "Paid" and attempt.status not in ("failed", "refunded"):
-			attempt.status = "failed"
+		if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
+			attempt.status = "Failed"
 			attempt.completed_at = frappe.utils.now_datetime()
 			attempt.save(ignore_permissions=True)
 			from central.billing.platform import notifications
 
 			notifications.notify(
-				attempt.team, "payment_failure",
+				attempt.team, "Payment Failure",
 				context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
 				reference_doctype="Invoice", reference_name=attempt.invoice,
 			)
@@ -197,15 +197,15 @@ def apply_webhook(event_name: str) -> dict:
 				from central.billing.payments import collection
 
 				fell_back = collection.collect_invoice(attempt.invoice)
-		_mark_event(event, "processed")
-		return {"handled": True, "result": "failed", "attempt": attempt_name, "fell_back": fell_back}
+		_mark_event(event, "Processed")
+		return {"handled": True, "result": "Failed", "attempt": attempt_name, "fell_back": fell_back}
 
 	settled = _settle_invoice(attempt)
-	attempt.status = "captured"
+	attempt.status = "Captured"
 	attempt.completed_at = frappe.utils.now_datetime()
-	attempt.resolved_by = "webhook"
+	attempt.resolved_by = "Webhook"
 	attempt.save(ignore_permissions=True)
-	_mark_event(event, "processed")
+	_mark_event(event, "Processed")
 	return {"handled": True, "result": "paid", "invoice": attempt.invoice, "settled": settled}
 
 
@@ -225,7 +225,7 @@ def _settle_invoice(attempt) -> bool:
 	from central.billing.platform import notifications
 
 	notifications.notify(
-		inv.team, "payment_success",
+		inv.team, "Payment Success",
 		message=f"Invoice {inv.name} paid ({inv.amount_paid} {inv.currency or ''}).",
 		reference_doctype="Invoice", reference_name=inv.name,
 	)
@@ -287,7 +287,7 @@ def _prune_webhook_events(cutoff) -> int:
 	yet handled (received/failed) so a stuck event stays visible for triage."""
 	stale = frappe.get_all(
 		"Webhook Event",
-		filters={"status": ["in", ("processed", "ignored")], "creation": ["<", cutoff]},
+		filters={"status": ["in", ("Processed", "Ignored")], "creation": ["<", cutoff]},
 		pluck="name",
 	)
 	for name in stale:
@@ -297,9 +297,9 @@ def _prune_webhook_events(cutoff) -> int:
 
 def _extract_transaction_id(adapter_key: str, payload: dict):
 	"""Pull the gateway transaction id out of a parsed webhook body."""
-	if adapter_key == "stripe":
+	if adapter_key == "Stripe":
 		return ((payload.get("data") or {}).get("object") or {}).get("id")
-	if adapter_key == "razorpay":
+	if adapter_key == "Razorpay":
 		payment = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
 		return payment.get("id")
 	return None

@@ -124,7 +124,7 @@ def _book_entry_once(
 	"""One booking attempt under the per-team lock; returns (doc, new_balance)."""
 	_ensure_wallet(team, currency)
 	balance = _lock_and_read_balance(team)
-	new_balance = balance + (amount if entry_type == "credit" else -amount)
+	new_balance = balance + (amount if entry_type == "Credit" else -amount)
 	if new_balance < 0:
 		raise InsufficientCredits(
 			f"Debit of {amount} exceeds wallet balance {balance} for {team}."
@@ -160,7 +160,7 @@ def purchase(team: str, amount: float, currency: str = "INR", payment_method: st
 	"""
 	entry, new_balance = _book_entry(
 		team,
-		"credit",
+		"Credit",
 		amount,
 		currency,
 		reference_type="Payment Method" if payment_method else "Top-up",
@@ -180,7 +180,7 @@ def apply_credit(
 	is the locked primitive it builds on.
 	"""
 	entry, new_balance = _book_entry(
-		team, "debit", amount, currency, reference_type, reference_name, note
+		team, "Debit", amount, currency, reference_type, reference_name, note
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -188,7 +188,7 @@ def apply_credit(
 def refund_to_wallet(team, amount, currency="INR", reference_type=None, reference_name=None, note=None) -> dict:
 	"""Book a credit entry for a partial-overcharge / gateway refund to wallet."""
 	entry, new_balance = _book_entry(
-		team, "credit", amount, currency, reference_type, reference_name, note or "Refund to wallet"
+		team, "Credit", amount, currency, reference_type, reference_name, note or "Refund to wallet"
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -197,8 +197,8 @@ def refund_to_wallet(team, amount, currency="INR", reference_type=None, referenc
 def adjust_credits(team: str, amount: float, entry_type: str, currency: str = "INR",
 				   note: str | None = None) -> dict:
 	"""Admin manual correction — a credit or debit entry with an audit note."""
-	if entry_type not in ("credit", "debit"):
-		frappe.throw("entry_type must be 'credit' or 'debit'.", frappe.ValidationError)
+	if entry_type not in ("Credit", "Debit"):
+		frappe.throw("entry_type must be 'Credit' or 'Debit'.", frappe.ValidationError)
 	entry, new_balance = _book_entry(
 		team, entry_type, amount, currency, reference_type="Admin", note=note or "Admin adjustment"
 	)
@@ -219,7 +219,7 @@ def get_balance(team: str, currency: str | None = None) -> dict:
 	"""
 	if currency:
 		cle = frappe.qb.DocType("Credit Ledger Entry")
-		signed = Case().when(cle.entry_type == "credit", cle.amount).else_(-cle.amount)
+		signed = Case().when(cle.entry_type == "Credit", cle.amount).else_(-cle.amount)
 		balance = (
 			frappe.qb.from_(cle)
 			.select(Sum(signed))

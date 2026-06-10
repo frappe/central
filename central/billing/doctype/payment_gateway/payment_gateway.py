@@ -105,7 +105,7 @@ class PaymentGateway(Document):
 			self.webhook_secret = secret
 
 	def webhook_callback_url(self) -> str:
-		return f"{get_url()}/api/method/central.billing.payments.webhooks.{self.adapter_key}"
+		return f"{get_url()}/api/method/central.billing.payments.webhooks.{self.adapter_key.lower()}"
 
 	def _guard_enable(self):
 		"""A gateway only goes live once its keys have proven out — otherwise an

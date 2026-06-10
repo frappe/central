@@ -37,7 +37,7 @@ class TestGetPlanPricing(IntegrationTestCase):
 
 		includes = pricing["includes"]
 		self.assertEqual(len(includes), 3)
-		self.assertEqual(includes[0]["resource_type"], "compute")
+		self.assertEqual(includes[0]["resource_type"], "Compute")
 		# composition rows carry quantity/unit but no price/rate
 		self.assertNotIn("rate", includes[0])
 		self.assertNotIn("price_per_unit", includes[0])

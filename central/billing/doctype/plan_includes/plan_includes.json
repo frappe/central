@@ -16,7 +16,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Resource Type",
-   "options": "compute\nmemory\ndisk\ntransfer\nip\nsnapshot",
+   "options": "Compute\nMemory\nDisk\nTransfer\nIP\nSnapshot",
    "reqd": 1
   },
   {

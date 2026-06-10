@@ -75,19 +75,19 @@ def _catalog():
 				rate = round(base_inr * CLUSTER_MULT[cslug] / FX[currency], 2)
 				rates.append({"cluster": cslug, "currency": currency, "rate": rate})
 		plan = _upsert("Plan", slug, {
-			"title": title, "billing_cycle": "monthly", "is_active": 1,
+			"title": title, "billing_cycle": "Monthly", "is_active": 1,
 			"includes": [
-				{"resource_type": "compute", "quantity": vcpu, "unit": "vCPU"},
-				{"resource_type": "memory", "quantity": ram, "unit": "GB"},
-				{"resource_type": "disk", "quantity": disk, "unit": "GB"},
-				{"resource_type": "transfer", "quantity": transfer, "unit": "GB"},
+				{"resource_type": "Compute", "quantity": vcpu, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": ram, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": disk, "unit": "GB"},
+				{"resource_type": "Transfer", "quantity": transfer, "unit": "GB"},
 			],
 		}, newname=True)
 		set_catalog_rates("Plan", plan, rates)
 
 	addon = _upsert("Add-on", ADDON, {
-		"title": "Bandwidth Overage", "resource_type": "transfer", "unit": "GB",
-		"billing_type": "metered", "billing_interval": "monthly",
+		"title": "Bandwidth Overage", "resource_type": "Transfer", "unit": "GB",
+		"billing_type": "Metered", "billing_interval": "Monthly",
 	}, newname=True)
 	set_catalog_rates(
 		"Add-on", addon, [{"cluster": "", "currency": c, "rate": ADDON_RATE[c]} for c in CURRENCIES]
@@ -100,12 +100,12 @@ def _gateways():
 	seed = {"skip_credential_validation": True}
 	for currency, name in STRIPE.items():
 		_upsert("Payment Gateway", name, {
-			"title": f"Stripe ({currency})", "adapter_key": "stripe",
+			"title": f"Stripe ({currency})", "adapter_key": "Stripe",
 			"api_secret": "sk_test_demo", "webhook_secret": "whsec_demo", "is_enabled": 1,
 			"currencies": [{"currency": currency, "is_default": 1}],
 		}, newname=True, flags=seed)
 	_upsert("Payment Gateway", RAZORPAY, {
-		"title": "Razorpay (India)", "adapter_key": "razorpay",
+		"title": "Razorpay (India)", "adapter_key": "Razorpay",
 		"api_key": "rzp_test", "api_secret": "rzp_secret", "webhook_secret": "rzp_whsec",
 		"is_enabled": 1, "supports_mandates": 1,
 		"currencies": [{"currency": "INR", "is_default": 1}],
@@ -136,7 +136,7 @@ def _profile(team, slug, currency, cluster, prepaid):
 		"address_line1": "1 Demo Street", "city": region.split("—")[-1].strip(),
 		"state": "Maharashtra" if india else "", "country": "India" if india else region.split("—")[0].strip(),
 		"pincode": "400001" if india else "",
-		"billing_mode": "prepaid" if prepaid else "postpaid",
+		"billing_mode": "Prepaid" if prepaid else "Postpaid",
 	})
 
 
@@ -148,7 +148,7 @@ def _payment_setup(team, slug, currency, state):
 		# An INR team on UPI Autopay (mandate ceiling = tier cap).
 		pm = frappe.get_doc({
 			"doctype": "Payment Method", "team": team, "gateway": RAZORPAY,
-			"method_type": "upi_autopay", "status": "active", "display_label": "UPI Autopay",
+			"method_type": "UPI Autopay", "status": "Active", "display_label": "UPI Autopay",
 			"gateway_method_id": f"token_{slug}", "gateway_customer_id": f"cust_{slug}",
 			"mandate_max_amount": 200000, "mandate_currency": "INR", "is_default": 1,
 			"validated_at": frappe.utils.now_datetime(),
@@ -156,8 +156,8 @@ def _payment_setup(team, slug, currency, state):
 		return RAZORPAY, pm
 	gateway = STRIPE[currency]
 	pm = frappe.get_doc({
-		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "card",
-		"status": "active", "display_label": "Visa ····4242", "gateway_method_id": f"pm_{slug}",
+		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
+		"status": "Active", "display_label": "Visa ····4242", "gateway_method_id": f"pm_{slug}",
 		"gateway_customer_id": f"cus_{slug}", "expiry_month": 11, "expiry_year": 2030,
 		"is_default": 1, "validated_at": frappe.utils.now_datetime(),
 	}).insert(ignore_permissions=True).name
@@ -168,7 +168,7 @@ def _failed_attempt(team, invoice, pm, gateway, retry):
 	frappe.get_doc({
 		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
 		"payment_method": pm, "amount": frappe.db.get_value("Invoice", invoice, "expected_collection"),
-		"currency": frappe.db.get_value("Invoice", invoice, "currency"), "status": "failed",
+		"currency": frappe.db.get_value("Invoice", invoice, "currency"), "status": "Failed",
 		"failure_code": "card_declined", "failure_reason": "Your card was declined.",
 		"retry_number": retry, "completed_at": frappe.utils.now_datetime(),
 	}).insert(ignore_permissions=True)

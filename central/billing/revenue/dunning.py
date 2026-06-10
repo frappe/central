@@ -44,11 +44,11 @@ def retry_payment(invoice_name: str) -> dict:
 	)
 	if last:
 		attempt = frappe.get_doc("Payment Attempt", last[0])
-		if attempt.status == "failed":
+		if attempt.status == "Failed":
 			n = frappe.db.count("Payment Attempt", {"invoice": invoice_name})
 			reason = attempt.failure_reason or attempt.failure_code or "declined"
 			notifications.notify(
-				attempt.team, "payment_retry",
+				attempt.team, "Payment Retry",
 				message=f"Payment retry {n} for invoice {invoice_name} failed: {reason}",
 				reference_doctype="Invoice", reference_name=invoice_name,
 			)
@@ -83,8 +83,8 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	re-issue a directive already in force.
 	"""
 	inv = frappe.get_doc("Invoice", invoice_name)
-	if inv.invoice_type != "billable":
-		return {"invoice": invoice_name, "skipped": "cost_report"}
+	if inv.invoice_type != "Billable":
+		return {"invoice": invoice_name, "skipped": "Cost Report"}
 	if inv.status not in ("Open", "Overdue") or frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"invoice": invoice_name, "skipped": "nothing_due"}
 	if not inv.due_date:
@@ -119,16 +119,16 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			from central.billing.platform import notifications
 
 			notifications.notify(
-				inv.team, "invoice_overdue", context={"invoice": invoice_name},
+				inv.team, "Invoice Overdue", context={"invoice": invoice_name},
 				reference_doctype="Invoice", reference_name=invoice_name,
 			)
 		if sub:
-			standing = _advance_standing(inv.subscription, "past_due")
+			standing = _advance_standing(inv.subscription, "Past Due")
 
 	# --- Day 14: suspend directive -> Agent stops --------------------------
 	if days >= SUSPEND_AFTER_DAYS and sub:
-		standing = _advance_standing(inv.subscription, "suspended")
-		if standing == "suspended" and not _active_directive(sub.team, "suspend"):
+		standing = _advance_standing(inv.subscription, "Suspended")
+		if standing == "Suspended" and not _active_directive(sub.team, "suspend"):
 			issue_token(sub.team, {}, suspend=True)
 			_notify(inv, f"Suspended for non-payment (day {days}); resource stopped, data preserved.")
 			actions.append("suspend")
@@ -147,7 +147,7 @@ def run_dunning(now=None) -> list[dict]:
 	invoices = frappe.get_all(
 		"Invoice",
 		filters=[
-			["invoice_type", "=", "billable"],
+			["invoice_type", "=", "Billable"],
 			["status", "in", ["Open", "Overdue"]],
 			["expected_collection", ">", 0],
 		],

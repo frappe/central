@@ -129,7 +129,7 @@ class StripeAdapter(GatewayAdapter):
 		except stripe.error.CardError as e:
 			return PaymentResult(
 				success=False,
-				status="failed",
+				status="Failed",
 				failure_code=getattr(e, "code", None),
 				failure_reason=getattr(e, "user_message", None) or str(e),
 				raw=getattr(e, "json_body", None) or {},
@@ -140,7 +140,7 @@ class StripeAdapter(GatewayAdapter):
 		succeeded = intent.get("status") == "succeeded"
 		return PaymentResult(
 			success=succeeded,
-			status="captured" if succeeded else intent.get("status"),
+			status="Captured" if succeeded else intent.get("status"),
 			gateway_transaction_id=intent.get("id"),
 			raw=intent,
 		)
@@ -159,7 +159,7 @@ class StripeAdapter(GatewayAdapter):
 		completed = refund.get("status") in ("succeeded", "pending")
 		return RefundResult(
 			success=completed,
-			status="completed" if completed else refund.get("status"),
+			status="Completed" if completed else refund.get("status"),
 			gateway_refund_id=refund.get("id"),
 			raw=refund,
 		)

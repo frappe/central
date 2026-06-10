@@ -36,11 +36,11 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "monthly",
+   "default": "Monthly",
    "fieldname": "billing_cycle",
    "fieldtype": "Select",
    "label": "Billing Cycle",
-   "options": "monthly\nannual",
+   "options": "Monthly\nAnnual",
    "reqd": 1
   },
   {

@@ -44,7 +44,7 @@ def get_forecast(team: str | None = None) -> dict:
 	tax = resolve_tax(team, subtotal)
 	projected_total = frappe.utils.flt(subtotal + tax["output_tax_amount"], 2)
 	credit_balance = frappe.utils.flt(credits.get_balance(team)["balance"])
-	mode = frappe.db.get_value("Billing Profile", team, "billing_mode") or "postpaid"
+	mode = frappe.db.get_value("Billing Profile", team, "billing_mode") or "Postpaid"
 	shortfall = max(0.0, frappe.utils.flt(projected_total - credit_balance, 2))
 	currency = frappe.db.get_value("Price Lock", {"team": team}, "currency") or "INR"
 
@@ -61,7 +61,7 @@ def get_forecast(team: str | None = None) -> dict:
 		"billing_mode": mode,
 		"currency": currency,
 		# On prepaid, warn when the projected bill outruns the wallet.
-		"credit_alert": mode == "prepaid" and shortfall > 0,
+		"credit_alert": mode == "Prepaid" and shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
 		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
 	}
@@ -186,7 +186,7 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 	adapter = get_adapter(gw_doc)
 	receipt = f"topup-{team}-{frappe.generate_hash(8)}"
 	notes = {"team": team, "purpose": "wallet_topup"}
-	if gw_doc.adapter_key == "stripe":
+	if gw_doc.adapter_key == "Stripe":
 		# Hosted Stripe Checkout: the SPA redirects out and returns to /billing/credits,
 		# which confirms the session. Stripe fills in {CHECKOUT_SESSION_ID}.
 		from urllib.parse import quote
@@ -218,7 +218,7 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 
 	gw_doc = frappe.get_doc("Payment Gateway", gateway)
 	adapter = get_adapter(gw_doc)
-	if gw_doc.adapter_key == "razorpay":
+	if gw_doc.adapter_key == "Razorpay":
 		ok = adapter.verify_payment_signature({
 			"razorpay_order_id": razorpay_order_id,
 			"razorpay_payment_id": razorpay_payment_id,

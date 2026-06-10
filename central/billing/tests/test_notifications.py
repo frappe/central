@@ -38,37 +38,37 @@ class NotificationTestBase(IntegrationTestCase):
 
 class TestNotify(NotificationTestBase):
 	def test_default_sends_and_logs(self):
-		out = notifications.notify(TEAM, "payment_success", context={"invoice": "INV-1"})
+		out = notifications.notify(TEAM, "Payment Success", context={"invoice": "INV-1"})
 		self.assertTrue(out["sent"])
-		logs = self._logs("payment_success")
-		self.assertEqual(logs[0]["status"], "sent")
+		logs = self._logs("Payment Success")
+		self.assertEqual(logs[0]["status"], "Sent")
 		self.assertIn("INV-1", logs[0]["message"])
 
 	def test_template_renders_with_context(self):
-		notifications.notify(TEAM, "payment_failure", context={"invoice": "INV-2", "reason": "card_declined"})
-		msg = self._logs("payment_failure")[0]["message"]
+		notifications.notify(TEAM, "Payment Failure", context={"invoice": "INV-2", "reason": "card_declined"})
+		msg = self._logs("Payment Failure")[0]["message"]
 		self.assertIn("INV-2", msg)
 		self.assertIn("card_declined", msg)
 
 	def test_explicit_message_overrides_template(self):
-		notifications.notify(TEAM, "payment_success", message="Custom paid message")
-		self.assertEqual(self._logs("payment_success")[0]["message"], "Custom paid message")
+		notifications.notify(TEAM, "Payment Success", message="Custom paid message")
+		self.assertEqual(self._logs("Payment Success")[0]["message"], "Custom paid message")
 
 	def test_preference_suppresses_but_still_logs(self):
 		frappe.get_doc(
 			{"doctype": "Notification Preference", "team": TEAM, "notify_payment_retry": 0}
 		).insert(ignore_permissions=True)
 
-		out = notifications.notify(TEAM, "payment_retry", context={"invoice": "INV-3", "reason": "x"})
+		out = notifications.notify(TEAM, "Payment Retry", context={"invoice": "INV-3", "reason": "x"})
 		self.assertFalse(out["sent"])
-		log = self._logs("payment_retry")[0]
-		self.assertEqual(log["status"], "suppressed")  # the suppression itself is auditable
+		log = self._logs("Payment Retry")[0]
+		self.assertEqual(log["status"], "Suppressed")  # the suppression itself is auditable
 
 	def test_other_events_unaffected_by_one_opt_out(self):
 		frappe.get_doc(
 			{"doctype": "Notification Preference", "team": TEAM, "notify_payment_retry": 0}
 		).insert(ignore_permissions=True)
-		out = notifications.notify(TEAM, "payment_success", context={"invoice": "INV-4"})
+		out = notifications.notify(TEAM, "Payment Success", context={"invoice": "INV-4"})
 		self.assertTrue(out["sent"])
 
 
@@ -79,11 +79,11 @@ class TestWiredEvents(NotificationTestBase):
 		credits.purchase(TEAM, 100, "INR")
 		# Projected spend at 80% of balance → the credit_low notification fires.
 		settlement.credit_forecast(TEAM, 80, notify=True)
-		self.assertTrue(self._logs("credit_low"))
+		self.assertTrue(self._logs("Credit Low"))
 
 	def test_credit_low_does_not_fire_below_threshold(self):
 		from central.billing.revenue import credits
 
 		credits.purchase(TEAM, 100, "INR")
 		settlement.credit_forecast(TEAM, 50, notify=True)
-		self.assertFalse(self._logs("credit_low"))
+		self.assertFalse(self._logs("Credit Low"))

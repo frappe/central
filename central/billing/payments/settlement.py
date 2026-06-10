@@ -18,7 +18,7 @@ import frappe
 
 from central.billing.revenue import credits
 
-AUTOPAY_METHODS = ("card", "upi_autopay")
+AUTOPAY_METHODS = ("Card", "UPI Autopay")
 FORECAST_NOTIFY_RATIO = 0.8
 
 
@@ -27,7 +27,7 @@ def settlement_sources(team: str) -> dict:
 	has_autopay = bool(
 		frappe.get_all(
 			"Payment Method",
-			filters={"team": team, "method_type": ["in", AUTOPAY_METHODS], "status": "active"},
+			filters={"team": team, "method_type": ["in", AUTOPAY_METHODS], "status": "Active"},
 			limit=1,
 		)
 	)
@@ -105,7 +105,7 @@ def _notify_top_up(team: str, balance, projected, utilisation):
 	"""Emit the credit-low top-up prompt through the notification suite (#20)."""
 	from central.billing.platform import notifications
 
-	notifications.notify(team, "credit_low", context={"utilisation": f"{utilisation:.0%}"})
+	notifications.notify(team, "Credit Low", context={"utilisation": f"{utilisation:.0%}"})
 	frappe.publish_realtime(
 		"billing_top_up_prompt",
 		{"team": team, "balance": balance, "projected_spend": projected, "utilisation": utilisation},

@@ -46,19 +46,19 @@
    "fieldname": "billing_cycle",
    "fieldtype": "Select",
    "label": "Billing Cycle",
-   "options": "monthly\nannual"
+   "options": "Monthly\nAnnual"
   },
   {
    "fieldname": "column_break_state",
    "fieldtype": "Column Break"
   },
   {
-   "default": "current",
+   "default": "Current",
    "fieldname": "account_standing",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Account Standing",
-   "options": "current\npast_due\nsuspended",
+   "options": "Current\nPast Due\nSuspended",
    "description": "Central-owned financial axis, derived from payment. Orthogonal to the Agent-owned operational axis — never one combined enum."
   },
   {

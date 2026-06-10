@@ -25,16 +25,16 @@ class InvalidTransition(frappe.ValidationError):
 # past_due (grace) — never a direct current -> suspended jump; reactivation
 # returns to current from either past_due or suspended.
 _STANDING_TRANSITIONS = {
-	"current": {"past_due"},
-	"past_due": {"current", "suspended"},
-	"suspended": {"current"},
+	"Current": {"Past Due"},
+	"Past Due": {"Current", "Suspended"},
+	"Suspended": {"Current"},
 }
 
 # The Subscription Change type that records a move *into* a standing.
 _STANDING_CHANGE_TYPE = {
-	"past_due": "past_due",
-	"suspended": "suspended",
-	"current": "reactivated",
+	"Past Due": "Past Due",
+	"Suspended": "Suspended",
+	"Current": "Reactivated",
 }
 
 
@@ -57,7 +57,7 @@ def create_subscription(
 	team: str,
 	cluster: str,
 	plan: str,
-	billing_cycle: str = "monthly",
+	billing_cycle: str = "Monthly",
 	start_date=None,
 	default_payment_method: str | None = None,
 	gateway: str | None = None,
@@ -73,14 +73,14 @@ def create_subscription(
 			"cluster": cluster,
 			"plan": plan,
 			"billing_cycle": billing_cycle,
-			"account_standing": "current",
+			"account_standing": "Current",
 			"start_date": start_date or frappe.utils.nowdate(),
 			"default_payment_method": default_payment_method,
 			"gateway": gateway,
 		}
 	).insert(ignore_permissions=True)
 
-	_record_change(doc.name, "created", new_value=plan, changed_by=changed_by)
+	_record_change(doc.name, "Created", new_value=plan, changed_by=changed_by)
 	return doc
 
 
@@ -93,7 +93,7 @@ def change_plan(subscription: str, new_plan: str, changed_by: str | None = None)
 		return doc
 	doc.plan = new_plan
 	doc.save(ignore_permissions=True)
-	_record_change(subscription, "plan_changed", old_plan, new_plan, changed_by)
+	_record_change(subscription, "Plan Changed", old_plan, new_plan, changed_by)
 	return doc
 
 
@@ -102,7 +102,7 @@ def change_payment_method(subscription: str, new_method: str, changed_by: str | 
 	old_method = doc.default_payment_method
 	doc.default_payment_method = new_method
 	doc.save(ignore_permissions=True)
-	_record_change(subscription, "payment_method_changed", old_method, new_method, changed_by)
+	_record_change(subscription, "Payment Method Changed", old_method, new_method, changed_by)
 	return doc
 
 
@@ -110,7 +110,7 @@ def cancel_subscription(subscription: str, changed_by: str | None = None):
 	"""Cancel the subscription intent. The contract record is kept; the
 	cancellation is logged. Stopping/terminating running resources is a separate
 	operational concern owned by the Agent."""
-	_record_change(subscription, "cancelled", changed_by=changed_by)
+	_record_change(subscription, "Cancelled", changed_by=changed_by)
 	return frappe.get_doc("Subscription", subscription)
 
 

@@ -4,7 +4,7 @@
 
   - Additive output tax (GST/VAT) — added to `total`; the customer pays more.
   - Zero-rating with reason (SEZ-LUT/export) — tax 0 *plus* a compliance reason
-    code (never a bare "none" — an auditor will ask).
+    code (never a bare "None" — an auditor will ask).
   - Withholding (TDS) — reduces what is *collected*, not `total`; the customer
     pays less and supplies a certificate.
 
@@ -20,7 +20,7 @@ is 0 at launch (no team self-declares yet).
 import frappe
 
 _ZERO_BLOCK = {
-	"output_tax_type": "none",
+	"output_tax_type": "None",
 	"output_tax_rate": 0,
 	"output_tax_amount": 0,
 	"zero_rating_reason": None,
@@ -42,7 +42,7 @@ def resolve_tax(team: str, subtotal) -> dict:
 
 	p = frappe.get_doc("Tax Profile", team)
 	block = dict(_ZERO_BLOCK)
-	block["output_tax_type"] = p.output_tax_type or "none"
+	block["output_tax_type"] = p.output_tax_type or "None"
 	block["output_tax_rate"] = frappe.utils.flt(p.output_tax_rate)
 
 	if p.zero_rated:

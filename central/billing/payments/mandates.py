@@ -14,8 +14,8 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 
 import frappe
 
-MANDATE_METHOD = "upi_autopay"
-CARD_METHOD = "card"
+MANDATE_METHOD = "UPI Autopay"
+CARD_METHOD = "Card"
 
 # UPI Autopay recurring ceiling (merchant-category-code limit): a recurring UPI
 # payment for this MCC cannot exceed Rs. 1,00,000. Above this the mandate would
@@ -91,7 +91,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 			"team": team,
 			"gateway": gateway,
 			"method_type": MANDATE_METHOD,
-			"status": "pending_validation",
+			"status": "Pending Validation",
 			"mandate_max_amount": cap,
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
@@ -119,7 +119,7 @@ def setup_card(team: str, gateway: str, customer_id: str | None = None) -> dict:
 			"team": team,
 			"gateway": gateway,
 			"method_type": CARD_METHOD,
-			"status": "pending_validation",
+			"status": "Pending Validation",
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
 		}
@@ -140,12 +140,12 @@ def confirm_mandate(payment_method: str, callback: dict):
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		method.status = "failed"
+		method.status = "Failed"
 		method.save(ignore_permissions=True)
 		frappe.throw("Mandate authorisation signature invalid", frappe.ValidationError)
 
 	method.gateway_method_id = callback.get("razorpay_token_id") or callback.get("token_id")
-	method.status = "active"
+	method.status = "Active"
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
 	method.save(ignore_permissions=True)
@@ -169,7 +169,7 @@ def cancel_mandate(payment_method: str):
 		_adapter(method.gateway).cancel_mandate(
 			method.gateway_method_id, customer_reference=method.gateway_customer_id
 		)
-	method.status = "cancelled"
+	method.status = "Cancelled"
 	method.save(ignore_permissions=True)
 	return method
 
@@ -191,7 +191,7 @@ def active_mandate_ceiling(team: str):
 	"""Highest ceiling among a team's active mandates (None if none active)."""
 	ceilings = frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "method_type": MANDATE_METHOD, "status": "active"},
+		filters={"team": team, "method_type": MANDATE_METHOD, "status": "Active"},
 		pluck="mandate_max_amount",
 	)
 	return max(ceilings) if ceilings else None
@@ -217,7 +217,7 @@ def reauth_pending(team: str) -> bool:
 			filters={
 				"team": team,
 				"method_type": MANDATE_METHOD,
-				"status": "active",
+				"status": "Active",
 				"reauth_required": 1,
 			},
 			limit=1,
@@ -237,7 +237,7 @@ def reconcile_mandates_to_cap(team: str):
 	flagged = []
 	for method in frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "method_type": MANDATE_METHOD, "status": "active"},
+		filters={"team": team, "method_type": MANDATE_METHOD, "status": "Active"},
 		fields=["name", "mandate_max_amount"],
 	):
 		needs = cap > (method.mandate_max_amount or 0)
@@ -256,7 +256,7 @@ def _retire_superseded_mandates(new_method):
 			"team": new_method.team,
 			"gateway": new_method.gateway,
 			"method_type": MANDATE_METHOD,
-			"status": "active",
+			"status": "Active",
 			"name": ["!=", new_method.name],
 		},
 		pluck="name",

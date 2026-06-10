@@ -33,7 +33,7 @@ def seed():
 	_tier_and_tax()
 	card = _payment_method()
 	sub = subscriptions.create_subscription(
-		team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly"
+		team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
 	).name
 
 	# Runtime from 1 May: a full May (paid) and a partial-changed June (open).
@@ -79,8 +79,8 @@ def _event(event_id, resource_id, rate, effective_from, event_type):
 def _meter(qty):
 	return {
 		"resource_id": RESOURCE,
-		"resource_type": "transfer",
-		"meter_type": "counter",
+		"resource_type": "Transfer",
+		"meter_type": "Counter",
 		"period_start": "2026-06-01 00:00:00",
 		"period_end": "2026-06-30 23:59:59",
 		"quantity": qty,
@@ -96,13 +96,13 @@ def _catalog():
 		PLAN,
 		{
 			"title": "2 vCPU Bundle",
-			"billing_cycle": "monthly",
+			"billing_cycle": "Monthly",
 			"is_active": 1,
 			"includes": [
-				{"resource_type": "compute", "quantity": 2, "unit": "vCPU"},
-				{"resource_type": "memory", "quantity": 4, "unit": "GB"},
-				{"resource_type": "disk", "quantity": 80, "unit": "GB"},
-				{"resource_type": "transfer", "quantity": 100, "unit": "GB"},
+				{"resource_type": "Compute", "quantity": 2, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 4, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 80, "unit": "GB"},
+				{"resource_type": "Transfer", "quantity": 100, "unit": "GB"},
 			],
 		},
 	)
@@ -119,10 +119,10 @@ def _catalog():
 		ADDON,
 		{
 			"title": "Bandwidth Overage",
-			"resource_type": "transfer",
+			"resource_type": "Transfer",
 			"unit": "GB",
-			"billing_type": "metered",
-			"billing_interval": "monthly",
+			"billing_type": "Metered",
+			"billing_interval": "Monthly",
 		},
 	)
 	set_catalog_rates("Add-on", addon, [{"cluster": "", "currency": "INR", "rate": 0.8}])
@@ -134,7 +134,7 @@ def _gateway():
 		GATEWAY,
 		{
 			"title": "Stripe (Demo)",
-			"adapter_key": "stripe",
+			"adapter_key": "Stripe",
 			"currencies": [{"currency": "INR", "is_default": 1}],
 			"api_secret": "sk_test_demo",
 			"webhook_secret": "whsec_demo",
@@ -178,8 +178,8 @@ def _payment_method():
 		"doctype": "Payment Method",
 		"team": TEAM,
 		"gateway": GATEWAY,
-		"method_type": "card",
-		"status": "active",
+		"method_type": "Card",
+		"status": "Active",
 		"display_label": "Visa ····4242",
 		"gateway_method_id": "pm_demo",
 		"gateway_customer_id": "cus_demo",
@@ -273,7 +273,7 @@ def _ensure_workspace():
 	for label, _dt, _color in shortcuts:
 		content.append({"type": "shortcut", "data": {"shortcut_name": label, "col": 3}})
 	for card_name in cards:
-		content.append({"type": "card", "data": {"card_name": card_name, "col": 4}})
+		content.append({"type": "Card", "data": {"card_name": card_name, "col": 4}})
 
 	frappe.get_doc(
 		{

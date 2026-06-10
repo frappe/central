@@ -32,7 +32,7 @@ def make_gateway():
 			"doctype": "Payment Gateway",
 			"__newname": GATEWAY,
 			"title": "Razorpay (Mandate Test)",
-			"adapter_key": "razorpay",
+			"adapter_key": "Razorpay",
 			"currency": "INR",
 			"api_key": "rzp_test_key",
 			"api_secret": "rzp_test_secret",
@@ -83,8 +83,8 @@ class TestMandateSetup(MandateTestBase):
 		self.assertEqual(args[1]["max_amount"], 100)
 
 		method = frappe.get_doc("Payment Method", result["payment_method"])
-		self.assertEqual(method.method_type, "upi_autopay")
-		self.assertEqual(method.status, "pending_validation")
+		self.assertEqual(method.method_type, "UPI Autopay")
+		self.assertEqual(method.status, "Pending Validation")
 		self.assertEqual(method.mandate_max_amount, 100)
 		self.assertIn("order_id", result)
 
@@ -95,7 +95,7 @@ class TestMandateSetup(MandateTestBase):
 				result["payment_method"],
 				{"razorpay_token_id": "token_live", "razorpay_signature": "s"},
 			)
-		self.assertEqual(method.status, "active")
+		self.assertEqual(method.status, "Active")
 		self.assertEqual(method.gateway_method_id, "token_live")
 		self.assertTrue(method.validated_at)
 
@@ -105,7 +105,7 @@ class TestMandateSetup(MandateTestBase):
 			with self.assertRaises(frappe.ValidationError):
 				mandates.confirm_mandate(result["payment_method"], {"razorpay_signature": "bad"})
 		method = frappe.get_doc("Payment Method", result["payment_method"])
-		self.assertEqual(method.status, "failed")
+		self.assertEqual(method.status, "Failed")
 
 
 class TestMandateReauthorisation(MandateTestBase):
@@ -145,7 +145,7 @@ class TestMandateReauthorisation(MandateTestBase):
 
 		# Old mandate retired, new ceiling effective, no outstanding re-auth.
 		self.assertEqual(mandates.effective_cap(TEAM), 300)
-		self.assertEqual(frappe.db.get_value("Payment Method", pm, "status"), "cancelled")
+		self.assertEqual(frappe.db.get_value("Payment Method", pm, "status"), "Cancelled")
 		self.assertFalse(mandates.reauth_pending(TEAM))
 
 	def test_demotion_below_ceiling_needs_no_reauth(self):
@@ -172,7 +172,7 @@ class TestMandateCancel(MandateTestBase):
 			)
 		self.assertEqual(
 			frappe.db.get_value("Payment Method", result["payment_method"], "status"),
-			"cancelled",
+			"Cancelled",
 		)
 
 
@@ -187,7 +187,7 @@ class TestUpiRecurringLimit(MandateTestBase):
 	def _invoice(self, total):
 		return frappe.get_doc(
 			{
-				"doctype": "Invoice", "team": TEAM, "invoice_type": "billable", "status": "Open",
+				"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Open",
 				"period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
 				"subtotal": total, "total": total, "expected_collection": total, "amount_paid": 0,
 			}
@@ -220,15 +220,15 @@ class TestRazorpayCardSetup(MandateTestBase):
 		# Adapter asked for the card rail, not UPI.
 		self.assertEqual(adapter.setup_payment_method.call_args.args[1]["method"], "card")
 		method = frappe.get_doc("Payment Method", result["payment_method"])
-		self.assertEqual(method.method_type, "card")
-		self.assertEqual(method.status, "pending_validation")
+		self.assertEqual(method.method_type, "Card")
+		self.assertEqual(method.status, "Pending Validation")
 
 	def test_card_setup_works_even_when_upi_is_blocked(self):
 		frappe.db.set_value("Trust Tier", TEAM, "max_spend", mandates.UPI_RECURRING_MAX)
 		with stub_adapter():
 			result = mandates.setup_card(TEAM, GATEWAY)  # no exception
 		self.assertEqual(
-			frappe.db.get_value("Payment Method", result["payment_method"], "method_type"), "card"
+			frappe.db.get_value("Payment Method", result["payment_method"], "method_type"), "Card"
 		)
 
 
@@ -244,19 +244,19 @@ class TestAddMethodGatewayResolution(IntegrationTestCase):
 			"doctype": "Payment Gateway", "__newname": name, "title": name,
 			"adapter_key": adapter, "api_key": "k", "api_secret": "s",
 			"webhook_secret": "w", "is_enabled": 1,
-			"supports_mandates": 1 if adapter == "razorpay" else 0,
+			"supports_mandates": 1 if adapter == "Razorpay" else 0,
 			"currencies": [{"currency": currency, "is_default": default}],
 		}).insert(ignore_permissions=True)
 
 	def test_razorpay_wins_over_default_stripe_for_inr(self):
 		from central.billing.api import dashboard
 
-		self._gw("GW-Res-Stripe-INR", "stripe", "INR", default=1)
-		self._gw("GW-Res-RZP-INR", "razorpay", "INR", default=0)
-		self.assertEqual(dashboard._shared._add_method_gateway("INR").adapter_key, "razorpay")
+		self._gw("GW-Res-Stripe-INR", "Stripe", "INR", default=1)
+		self._gw("GW-Res-RZP-INR", "Razorpay", "INR", default=0)
+		self.assertEqual(dashboard._shared._add_method_gateway("INR").adapter_key, "Razorpay")
 
 	def test_stripe_when_no_razorpay_for_currency(self):
 		from central.billing.api import dashboard
 
-		self._gw("GW-Res-Stripe-EUR", "stripe", "EUR", default=1)
-		self.assertEqual(dashboard._shared._add_method_gateway("EUR").adapter_key, "stripe")
+		self._gw("GW-Res-Stripe-EUR", "Stripe", "EUR", default=1)
+		self.assertEqual(dashboard._shared._add_method_gateway("EUR").adapter_key, "Stripe")

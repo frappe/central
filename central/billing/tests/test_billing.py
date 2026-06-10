@@ -67,7 +67,7 @@ class BillingTestBase(IntegrationTestCase):
 		make_plan(PLAN)
 		self._purge()
 		self.sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly"
+			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
 		).name
 
 	def tearDown(self):
@@ -106,7 +106,7 @@ class TestDraftGeneration(BillingTestBase):
 	def test_same_day_provision_destroy_floors_to_one_day(self):
 		# Provisioned and cancelled on the same day → 1 day, not 0.
 		push_event("e1", "R2", 1000, "2026-06-05 00:00:00", "subscribed")
-		push_event("e2", "R2", 1000, "2026-06-05 00:00:00", "cancelled")
+		push_event("e2", "R2", 1000, "2026-06-05 00:00:00", "Cancelled")
 
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
@@ -173,6 +173,6 @@ class TestOpenAndCollect(BillingTestBase):
 		# One debit entry for the invoice — no duplicate debit.
 		debits = frappe.get_all(
 			"Credit Ledger Entry",
-			{"team": TEAM, "entry_type": "debit", "reference_name": name},
+			{"team": TEAM, "entry_type": "Debit", "reference_name": name},
 		)
 		self.assertEqual(len(debits), 1)

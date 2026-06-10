@@ -51,7 +51,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Method Type",
-   "options": "card\nupi_autopay\nprepaid_credits",
+   "options": "Card\nUPI Autopay\nPrepaid Credits",
    "reqd": 1
   },
   {
@@ -59,12 +59,12 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "pending_validation",
+   "default": "Pending Validation",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "pending_validation\nactive\npaused\ncancelled\nexpired\nfailed"
+   "options": "Pending Validation\nActive\nPaused\nCancelled\nExpired\nFailed"
   },
   {
    "default": "0",

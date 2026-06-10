@@ -121,7 +121,7 @@ def get_trial_detail() -> dict:
 
 	entry = entry_tier()
 	invoices = frappe.get_all(
-		"Invoice", filters={"invoice_type": "cost_report"},
+		"Invoice", filters={"invoice_type": "Cost Report"},
 		fields=["name", "team", "subtotal", "currency", "period_start", "period_end"],
 		order_by="period_start desc",
 	)
@@ -160,7 +160,7 @@ def get_trial_costs_detail() -> dict:
 
 	entry = entry_tier()
 	unconverted, converted = 0.0, 0.0
-	for inv in frappe.get_all("Invoice", filters={"invoice_type": "cost_report"}, fields=["team", "subtotal"]):
+	for inv in frappe.get_all("Invoice", filters={"invoice_type": "Cost Report"}, fields=["team", "subtotal"]):
 		tier = frappe.db.get_value("Trust Tier", inv.team, "tier")
 		if tier == entry:
 			unconverted += frappe.utils.flt(inv.subtotal)

@@ -98,7 +98,7 @@ class PayPalAdapter(GatewayAdapter):
 		completed = capture.get("status") == "COMPLETED"
 		return PaymentResult(
 			success=completed,
-			status="captured" if completed else "failed",
+			status="Captured" if completed else "Failed",
 			gateway_transaction_id=capture.get("id"),
 			failure_code=capture.get("failure_code"),
 			failure_reason=capture.get("failure_reason"),
@@ -119,7 +119,7 @@ class PayPalAdapter(GatewayAdapter):
 		done = refund.get("status") in ("COMPLETED", "PENDING")
 		return RefundResult(
 			success=done,
-			status="completed" if done else refund.get("status"),
+			status="Completed" if done else refund.get("status"),
 			gateway_refund_id=refund.get("id"),
 			raw=dict(refund),
 		)

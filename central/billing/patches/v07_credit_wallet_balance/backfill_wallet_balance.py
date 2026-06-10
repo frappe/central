@@ -18,7 +18,7 @@ from frappe.query_builder.functions import Sum
 
 def execute():
 	cle = frappe.qb.DocType("Credit Ledger Entry")
-	signed = Case().when(cle.entry_type == "credit", cle.amount).else_(-cle.amount)
+	signed = Case().when(cle.entry_type == "Credit", cle.amount).else_(-cle.amount)
 	for team in frappe.get_all("Credit Wallet", pluck="name"):
 		balance = (
 			frappe.qb.from_(cle).select(Sum(signed)).where(cle.team == team).run()

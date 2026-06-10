@@ -23,7 +23,7 @@ def make_stripe_gateway(name="GW-Test-Stripe"):
 			"doctype": "Payment Gateway",
 			"__newname": name,
 			"title": "Stripe (Test)",
-			"adapter_key": "stripe",
+			"adapter_key": "Stripe",
 			"currencies": [{"currency": "USD", "is_default": 1}],
 			"api_secret": "sk_test_123",
 			"webhook_secret": "whsec_test_123",
@@ -70,7 +70,7 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 
 	@contextmanager
 	def charge_declines(self, code="card_declined"):
-		err = stripe.error.CardError("Your card was declined.", "card", code)
+		err = stripe.error.CardError("Your card was declined.", "Card", code)
 		with patch.object(stripe.PaymentIntent, "create", side_effect=err) as m:
 			self._last_create = m
 			yield
@@ -174,8 +174,8 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 
 	def test_get_mandate_status(self):
 		adapter = self.make_adapter()
-		with patch.object(stripe.Mandate, "retrieve", return_value=frappe._dict(status="active")):
-			self.assertEqual(adapter.get_mandate_status("mandate_x"), "active")
+		with patch.object(stripe.Mandate, "retrieve", return_value=frappe._dict(status="Active")):
+			self.assertEqual(adapter.get_mandate_status("mandate_x"), "Active")
 
 	def test_verify_payment_signature_is_unsupported(self):
 		adapter = self.make_adapter()

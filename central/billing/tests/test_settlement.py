@@ -33,7 +33,7 @@ def stub_adapter(success=True, txn_id="pi_x"):
 	adapter = MagicMock()
 	adapter.charge.return_value = PaymentResult(
 		success=success,
-		status="captured" if success else "failed",
+		status="Captured" if success else "Failed",
 		gateway_transaction_id=txn_id if success else None,
 		failure_code=None if success else "card_declined",
 	)
@@ -78,8 +78,8 @@ class SettlementTestBase(IntegrationTestCase):
 				"doctype": "Payment Method",
 				"team": TEAM,
 				"gateway": GATEWAY,
-				"method_type": "card",
-				"status": "active",
+				"method_type": "Card",
+				"status": "Active",
 				"gateway_method_id": "pm_card",
 				"gateway_customer_id": "cus_1",
 				"is_default": 1,
@@ -92,7 +92,7 @@ class SettlementTestBase(IntegrationTestCase):
 			team=TEAM,
 			cluster=CLUSTER,
 			plan=PLAN,
-			billing_cycle="monthly",
+			billing_cycle="Monthly",
 			default_payment_method=method,
 			gateway=GATEWAY if with_card else None,
 		).name
@@ -131,7 +131,7 @@ class TestWaterfall(SettlementTestBase):
 		self.assertEqual(adapter.charge.call_args.args[0].amount, 600.0)
 		attempt = frappe.get_doc("Payment Attempt", result["charge"]["attempt"])
 		self.assertEqual(attempt.amount, 600.0)
-		self.assertEqual(attempt.status, "captured")
+		self.assertEqual(attempt.status, "Captured")
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
 
 	def test_credits_cover_in_full_settles_without_charge(self):
@@ -157,10 +157,10 @@ class TestWaterfall(SettlementTestBase):
 		# Declined remainder: invoice stays Open for dunning (#14), not stopped.
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
 		self.assertEqual(
-			frappe.db.get_value("Subscription", sub, "account_standing"), "current"
+			frappe.db.get_value("Subscription", sub, "account_standing"), "Current"
 		)
 		attempt = frappe.get_all("Payment Attempt", {"invoice": inv}, ["status"])[0]
-		self.assertEqual(attempt.status, "failed")
+		self.assertEqual(attempt.status, "Failed")
 
 
 class TestSettlementSources(SettlementTestBase):

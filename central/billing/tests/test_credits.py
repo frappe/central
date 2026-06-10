@@ -76,7 +76,7 @@ class TestLedgerBasics(CreditTestBase):
 		entries = frappe.get_all(
 			"Credit Ledger Entry", {"team": TEAM}, ["entry_type", "amount"]
 		)
-		signed = sum((e.amount if e.entry_type == "credit" else -e.amount) for e in entries)
+		signed = sum((e.amount if e.entry_type == "Credit" else -e.amount) for e in entries)
 		self.assertEqual(signed, 410)
 		# Balance read equals the ledger sum — it is never a stored scalar.
 		self.assertEqual(credits.get_balance(TEAM)["balance"], signed)
@@ -87,7 +87,7 @@ class TestLedgerBasics(CreditTestBase):
 		self.assertEqual(res["new_balance"], 300)
 		latest = frappe.get_all(
 			"Credit Ledger Entry",
-			{"team": TEAM, "entry_type": "debit"},
+			{"team": TEAM, "entry_type": "Debit"},
 			pluck="running_balance",
 		)
 		self.assertEqual(latest, [300])
@@ -114,7 +114,7 @@ class TestLedgerBasics(CreditTestBase):
 
 	def test_admin_adjustment_books_an_entry(self):
 		credits.purchase(TEAM, 100)
-		res = credits.adjust_credits(TEAM, 25, "debit", note="dispute clawback")
+		res = credits.adjust_credits(TEAM, 25, "Debit", note="dispute clawback")
 		self.assertEqual(res["new_balance"], 75)
 
 	def test_get_balance_filtered_by_currency(self):
@@ -155,7 +155,7 @@ class TestConcurrency(CreditTestBase):
 		# running_balance is the exact cumulative ladder — no gaps, no negatives.
 		debit_balances = sorted(
 			frappe.get_all(
-				"Credit Ledger Entry", {"team": TEAM, "entry_type": "debit"}, pluck="running_balance"
+				"Credit Ledger Entry", {"team": TEAM, "entry_type": "Debit"}, pluck="running_balance"
 			)
 		)
 		self.assertEqual(debit_balances, [0, 10, 20, 30, 40, 50, 60, 70, 80, 90])

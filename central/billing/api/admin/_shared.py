@@ -13,7 +13,7 @@ _BILLABLE_LIVE = ("Open", "Paid", "Overdue")
 # Teams bill in mixed currencies; normalise revenue to INR for one comparable axis.
 _FX_TO_INR = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-_STANDING_RANK = {"current": 0, "past_due": 1, "suspended": 2}
+_STANDING_RANK = {"Current": 0, "Past Due": 1, "Suspended": 2}
 
 
 def _period_filter(field, from_date, to_date):

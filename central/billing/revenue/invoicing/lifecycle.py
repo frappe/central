@@ -46,7 +46,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	# Free/trial: a cost_report is computed, never collected — no credits, no
 	# charge. It is opened as a record of the subsidy cost.
-	if doc.invoice_type == "cost_report":
+	if doc.invoice_type == "Cost Report":
 		doc.credit_applied = 0
 		doc.expected_collection = 0
 		doc.status = "Open"

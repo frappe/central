@@ -17,7 +17,7 @@ def _new_gateway(name="GW-Setup-Test", **overrides):
 		frappe.delete_doc("Payment Gateway", name, force=True)
 	values = {
 		"doctype": "Payment Gateway", "__newname": name, "title": "Stripe (Setup)",
-		"adapter_key": "stripe",
+		"adapter_key": "Stripe",
 		"currencies": [{"currency": "USD", "is_default": 1}],
 		"api_secret": "sk_live_xyz",
 		**overrides,

@@ -41,7 +41,7 @@ class ErpnextSyncTestBase(IntegrationTestCase):
 		frappe.db.delete("Invoice", {"team": TEAM})
 		frappe.db.commit()
 
-	def _paid_invoice(self, status="Paid", invoice_type="billable"):
+	def _paid_invoice(self, status="Paid", invoice_type="Billable"):
 		return frappe.get_doc(
 			{
 				"doctype": "Invoice", "team": TEAM, "invoice_type": invoice_type, "status": status,
@@ -64,7 +64,7 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 		self.assertEqual(out["synced"], "SINV-9")
 		doc = frappe.get_doc("Invoice", inv)
 		self.assertEqual(doc.erpnext_invoice, "SINV-9")
-		self.assertEqual(doc.erpnext_sync_status, "synced")
+		self.assertEqual(doc.erpnext_sync_status, "Synced")
 		# Payload carries the Sales Invoice shape + a back-reference.
 		payload = post.call_args.kwargs["json"]
 		self.assertEqual(payload["doctype"], "Sales Invoice")
@@ -73,14 +73,14 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 
 	def test_already_synced_is_idempotent(self):
 		inv = self._paid_invoice()
-		frappe.db.set_value("Invoice", inv, {"erpnext_invoice": "SINV-1", "erpnext_sync_status": "synced"})
+		frappe.db.set_value("Invoice", inv, {"erpnext_invoice": "SINV-1", "erpnext_sync_status": "Synced"})
 		with patch("central.billing.revenue.erpnext_sync.requests.post") as post:
 			out = erpnext_sync.sync_invoice(inv)
 			post.assert_not_called()
 		self.assertEqual(out["skipped"], "already_synced")
 
 	def test_cost_report_and_unpaid_are_skipped(self):
-		cost = self._paid_invoice(invoice_type="cost_report")
+		cost = self._paid_invoice(invoice_type="Cost Report")
 		draft = self._paid_invoice(status="Open")
 		with patch("central.billing.revenue.erpnext_sync.requests.post") as post:
 			self.assertEqual(erpnext_sync.sync_invoice(cost)["skipped"], "not_billable")
@@ -97,7 +97,7 @@ class TestFailureIsolation(ErpnextSyncTestBase):
 		self.assertTrue(out["retry_scheduled"])
 		doc = frappe.get_doc("Invoice", inv)
 		self.assertEqual(doc.status, "Paid")  # never rolled back
-		self.assertEqual(doc.erpnext_sync_status, "pending")
+		self.assertEqual(doc.erpnext_sync_status, "Pending")
 		self.assertEqual(doc.erpnext_sync_attempts, 1)
 		self.assertTrue(doc.erpnext_next_retry_at)  # backoff scheduled
 		self.assertFalse(doc.erpnext_invoice)
@@ -114,7 +114,7 @@ class TestFailureIsolation(ErpnextSyncTestBase):
 		self.assertEqual(a3.get("failed") is not None, True)
 		doc = frappe.get_doc("Invoice", inv)
 		self.assertEqual(doc.status, "Paid")
-		self.assertEqual(doc.erpnext_sync_status, "failed")
+		self.assertEqual(doc.erpnext_sync_status, "Failed")
 		self.assertEqual(doc.erpnext_sync_attempts, 3)
 		# Ops alerted (not the customer).
 		comments = frappe.get_all(
@@ -133,7 +133,7 @@ class TestFailureIsolation(ErpnextSyncTestBase):
 			erpnext_sync.retry_failed_syncs(now=future)
 
 		doc = frappe.get_doc("Invoice", inv)
-		self.assertEqual(doc.erpnext_sync_status, "synced")
+		self.assertEqual(doc.erpnext_sync_status, "Synced")
 		self.assertEqual(doc.erpnext_invoice, "SINV-RETRY")
 
 

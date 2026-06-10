@@ -45,7 +45,7 @@ class TestResolveGatewayForCurrency(IntegrationTestCase):
 				frappe.delete_doc("Payment Gateway", name, force=True)
 
 	def test_returns_gateway_with_is_default_for_currency(self):
-		_make_gateway("GW-USD-A", "stripe", [("USD", 1)])
+		_make_gateway("GW-USD-A", "Stripe", [("USD", 1)])
 		self.assertEqual(resolve_gateway_for_currency("USD"), "GW-USD-A")
 
 	def test_raises_gateway_not_found_when_none_configured(self):
@@ -53,17 +53,17 @@ class TestResolveGatewayForCurrency(IntegrationTestCase):
 			resolve_gateway_for_currency("JPY")
 
 	def test_raises_gateway_not_found_when_gateway_disabled(self):
-		_make_gateway("GW-USD-A", "stripe", [("USD", 1)], is_enabled=0)
+		_make_gateway("GW-USD-A", "Stripe", [("USD", 1)], is_enabled=0)
 		with self.assertRaises(GatewayNotFound):
 			resolve_gateway_for_currency("USD")
 
 	def test_raises_gateway_not_found_when_no_is_default_row(self):
-		_make_gateway("GW-USD-A", "stripe", [("USD", 0)])
+		_make_gateway("GW-USD-A", "Stripe", [("USD", 0)])
 		with self.assertRaises(GatewayNotFound):
 			resolve_gateway_for_currency("USD")
 
 	def test_gateway_with_multiple_currencies(self):
-		_make_gateway("GW-EUR-A", "stripe", [("EUR", 1), ("USD", 1)])
+		_make_gateway("GW-EUR-A", "Stripe", [("EUR", 1), ("USD", 1)])
 		self.assertEqual(resolve_gateway_for_currency("EUR"), "GW-EUR-A")
 		self.assertEqual(resolve_gateway_for_currency("USD"), "GW-EUR-A")
 
@@ -82,11 +82,11 @@ class TestIsDefaultInvariant(IntegrationTestCase):
 				frappe.delete_doc("Payment Gateway", name, force=True)
 
 	def test_setting_is_default_clears_previous_default(self):
-		_make_gateway("GW-USD-A", "stripe", [("USD", 1)])
+		_make_gateway("GW-USD-A", "Stripe", [("USD", 1)])
 		self.assertEqual(resolve_gateway_for_currency("USD"), "GW-USD-A")
 
 		# GW-USD-B now claims the USD default.
-		_make_gateway("GW-USD-B", "stripe", [("USD", 1)])
+		_make_gateway("GW-USD-B", "Stripe", [("USD", 1)])
 		self.assertEqual(resolve_gateway_for_currency("USD"), "GW-USD-B")
 
 		# GW-USD-A's row should have been cleared.
@@ -98,8 +98,8 @@ class TestIsDefaultInvariant(IntegrationTestCase):
 		self.assertEqual(row, 0)
 
 	def test_different_currencies_do_not_interfere(self):
-		_make_gateway("GW-USD-A", "stripe", [("USD", 1)])
-		_make_gateway("GW-INR-A", "razorpay", [("INR", 1)])
+		_make_gateway("GW-USD-A", "Stripe", [("USD", 1)])
+		_make_gateway("GW-INR-A", "Razorpay", [("INR", 1)])
 
 		# Each owns its currency independently.
 		self.assertEqual(resolve_gateway_for_currency("USD"), "GW-USD-A")

@@ -56,8 +56,8 @@ class TestSetupAndConfirm(CardTestBase):
 			result = payments.initiate_payment_method_setup(TEAM, GATEWAY)
 		self.assertEqual(result["client_secret"], "seti_secret_123")
 		method = frappe.get_doc("Payment Method", result["payment_method"])
-		self.assertEqual(method.method_type, "card")
-		self.assertEqual(method.status, "pending_validation")
+		self.assertEqual(method.method_type, "Card")
+		self.assertEqual(method.status, "Pending Validation")
 		self.assertEqual(method.setup_reference, "seti_123")
 
 	def test_confirm_with_successful_microcharge_activates(self):
@@ -67,7 +67,7 @@ class TestSetupAndConfirm(CardTestBase):
 				setup["payment_method"], gateway_method_id="pm_live", display_label="Visa ····4242"
 			)
 		adapter.validate_payment_method.assert_called_once()  # micro-charge ran
-		self.assertEqual(method.status, "active")
+		self.assertEqual(method.status, "Active")
 		self.assertEqual(method.gateway_method_id, "pm_live")
 		self.assertTrue(method.validated_at)
 		self.assertTrue(method.is_default)  # first active method becomes default
@@ -76,7 +76,7 @@ class TestSetupAndConfirm(CardTestBase):
 		with stub_adapter(validate=False):
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
 			method = payments.confirm_payment_method(setup["payment_method"], gateway_method_id="pm_bad")
-		self.assertEqual(method.status, "failed")
+		self.assertEqual(method.status, "Failed")
 		self.assertFalse(method.is_default)
 
 
@@ -126,16 +126,16 @@ class TestExpiry(CardTestBase):
 
 		payments.expire_payment_methods(now="2026-06-03")
 
-		self.assertEqual(frappe.db.get_value("Payment Method", stale, "status"), "expired")
-		self.assertEqual(frappe.db.get_value("Payment Method", fresh, "status"), "active")
+		self.assertEqual(frappe.db.get_value("Payment Method", stale, "status"), "Expired")
+		self.assertEqual(frappe.db.get_value("Payment Method", fresh, "status"), "Active")
 
 	def test_card_valid_through_end_of_expiry_month(self):
 		# Expires 06/2026 — still valid on a day within June 2026.
 		card = self.add_active_card(expiry_month=6, expiry_year=2026)
 		payments.expire_payment_methods(now="2026-06-30")
-		self.assertEqual(frappe.db.get_value("Payment Method", card, "status"), "active")
+		self.assertEqual(frappe.db.get_value("Payment Method", card, "status"), "Active")
 		payments.expire_payment_methods(now="2026-07-01")
-		self.assertEqual(frappe.db.get_value("Payment Method", card, "status"), "expired")
+		self.assertEqual(frappe.db.get_value("Payment Method", card, "status"), "Expired")
 
 
 class TestStripeTestModeIntegration(CardTestBase):
@@ -152,7 +152,7 @@ class TestStripeTestModeIntegration(CardTestBase):
 		self.assertEqual(setup["client_secret"], "seti_secret")
 		self.assertEqual(
 			frappe.db.get_value("Payment Method", setup["payment_method"], "status"),
-			"pending_validation",
+			"Pending Validation",
 		)
 
 		# Confirm: the micro-charge succeeds and is auto-refunded -> active.
@@ -168,5 +168,5 @@ class TestStripeTestModeIntegration(CardTestBase):
 			)
 
 		refund_create.assert_called_once()  # micro-charge refunded
-		self.assertEqual(method.status, "active")
+		self.assertEqual(method.status, "Active")
 		self.assertTrue(method.is_default)

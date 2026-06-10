@@ -24,8 +24,8 @@ CLUSTER = "ap-south-1"
 def snapshot_meter(resource_id, qty, currency="INR"):
 	return {
 		"resource_id": resource_id,
-		"resource_type": "snapshot",
-		"meter_type": "gauge",
+		"resource_type": "Snapshot",
+		"meter_type": "Gauge",
 		"period_start": "2026-06-01 00:00:00",
 		"period_end": "2026-06-30 23:59:59",
 		"quantity": qty,
@@ -42,9 +42,9 @@ class LivePricingTestBase(IntegrationTestCase):
 		ensure_team(TEAM)
 		make_addon(
 			"addon-snapshot",
-			resource_type="snapshot",
-			billing_type="metered",
-			pricing_mode="live",
+			resource_type="Snapshot",
+			billing_type="Metered",
+			pricing_mode="Live",
 			rates=[{"cluster": "", "currency": "INR", "rate": 0.10}],
 		)
 		self._purge()

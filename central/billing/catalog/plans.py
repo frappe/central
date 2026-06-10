@@ -27,9 +27,9 @@ def configure_includes(vcpu: float, ratio: str = "1:2", disk_gb: float = 0, memo
 		frappe.throw(f"Unknown memory ratio {ratio!r}; expected one of {sorted(RATIO_FACTORS)}.")
 	memory = frappe.utils.flt(memory_gb) if memory_gb is not None else frappe.utils.flt(vcpu * RATIO_FACTORS[ratio])
 	return [
-		{"resource_type": "compute", "quantity": vcpu, "unit": "vCPU"},
-		{"resource_type": "memory", "quantity": memory, "unit": "GB"},
-		{"resource_type": "disk", "quantity": frappe.utils.flt(disk_gb), "unit": "GB"},
+		{"resource_type": "Compute", "quantity": vcpu, "unit": "vCPU"},
+		{"resource_type": "Memory", "quantity": memory, "unit": "GB"},
+		{"resource_type": "Disk", "quantity": frappe.utils.flt(disk_gb), "unit": "GB"},
 	]
 
 
@@ -41,7 +41,7 @@ def create_configured_plan(
 	ratio: str = "1:2",
 	disk_gb: float = 0,
 	memory_gb: float | None = None,
-	billing_cycle: str = "monthly",
+	billing_cycle: str = "Monthly",
 ) -> str:
 	"""Create a bundle Plan from configurator inputs; return its name.
 

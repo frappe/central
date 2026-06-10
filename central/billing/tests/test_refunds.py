@@ -25,7 +25,7 @@ GATEWAY = "GW-Test-Stripe"
 def stub_refund(success=True, refund_id="rfnd_1"):
 	adapter = MagicMock()
 	adapter.refund.return_value = RefundResult(
-		success=success, status="completed" if success else "failed", gateway_refund_id=refund_id
+		success=success, status="Completed" if success else "Failed", gateway_refund_id=refund_id
 	)
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
@@ -53,7 +53,7 @@ class RefundTestBase(IntegrationTestCase):
 	def _paid_invoice_with_attempt(self, total=1000):
 		inv = frappe.get_doc(
 			{
-				"doctype": "Invoice", "team": TEAM, "invoice_type": "billable", "status": "Paid",
+				"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Paid",
 				"period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
 				"subtotal": total, "total": total, "expected_collection": total, "amount_paid": total,
 			}
@@ -61,7 +61,7 @@ class RefundTestBase(IntegrationTestCase):
 		attempt = frappe.get_doc(
 			{
 				"doctype": "Payment Attempt", "invoice": inv, "team": TEAM, "gateway": GATEWAY,
-				"amount": total, "currency": "INR", "status": "captured",
+				"amount": total, "currency": "INR", "status": "Captured",
 				"gateway_transaction_id": "pi_paid",
 			}
 		).insert(ignore_permissions=True).name
@@ -75,24 +75,24 @@ class TestFullDispute(RefundTestBase):
 			refund = refunds.full_dispute(attempt, reason="fraud dispute")
 
 		adapter.refund.assert_called_once()
-		self.assertEqual(refund.destination, "source")
+		self.assertEqual(refund.destination, "Source")
 		self.assertEqual(refund.amount, 1000.0)
-		self.assertEqual(refund.status, "completed")
+		self.assertEqual(refund.status, "Completed")
 		self.assertEqual(refund.gateway_refund_id, "rfnd_full")
-		# Invoice stays Paid (no 'refunded' state); the attempt is marked refunded.
+		# Invoice stays Paid (no 'Refunded' state); the attempt is marked refunded.
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
-		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "refunded")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Refunded")
 
 	def test_failed_gateway_refund_is_recorded(self):
 		inv, attempt = self._paid_invoice_with_attempt(1000)
 		with stub_refund(success=False):
 			refund = refunds.full_dispute(attempt)
-		self.assertEqual(refund.status, "failed")
-		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "captured")
+		self.assertEqual(refund.status, "Failed")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Captured")
 
 	def test_refund_only_on_captured_charge(self):
 		inv, attempt = self._paid_invoice_with_attempt(1000)
-		frappe.db.set_value("Payment Attempt", attempt, "status", "failed")
+		frappe.db.set_value("Payment Attempt", attempt, "status", "Failed")
 		with self.assertRaises(frappe.ValidationError):
 			refunds.full_dispute(attempt)
 
@@ -105,8 +105,8 @@ class TestPartialOvercharge(RefundTestBase):
 			refund = refunds.partial_overcharge(attempt, amount=150, reason="overcharge")
 			adapter.refund.assert_not_called()
 
-		self.assertEqual(refund.destination, "wallet")
-		self.assertEqual(refund.status, "completed")
+		self.assertEqual(refund.destination, "Wallet")
+		self.assertEqual(refund.status, "Completed")
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 150)
 		# The credit is sourced from the Refund and applies next cycle.
 		entry = frappe.get_all(
@@ -114,7 +114,7 @@ class TestPartialOvercharge(RefundTestBase):
 			{"team": TEAM, "reference_type": "Refund", "reference_name": refund.name},
 			["entry_type", "amount"],
 		)
-		self.assertEqual(entry[0]["entry_type"], "credit")
+		self.assertEqual(entry[0]["entry_type"], "Credit")
 		self.assertEqual(entry[0]["amount"], 150)
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
 
@@ -123,7 +123,7 @@ class TestPartialOvercharge(RefundTestBase):
 		with stub_refund(success=True, refund_id="rfnd_part") as adapter:
 			refund = refunds.partial_overcharge(attempt, amount=150, to_source=True)
 			adapter.refund.assert_called_once()
-		self.assertEqual(refund.destination, "source")
+		self.assertEqual(refund.destination, "Source")
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)  # not wallet
 
 
@@ -149,7 +149,7 @@ class TestPrePaymentCorrection(RefundTestBase):
 			  "effective_from": "2026-06-01 00:00:00", "effective_to": None}]
 		)
 		sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly"
+			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
 		).name
 		first = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
 

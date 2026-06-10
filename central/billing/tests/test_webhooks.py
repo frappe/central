@@ -42,7 +42,7 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 
 	def test_valid_signed_event_is_stored_and_enqueued(self):
 		with signature(valid=True), patch("frappe.enqueue") as enqueue:
-			process_webhook("stripe", PAYLOAD, HEADERS)
+			process_webhook("Stripe", PAYLOAD, HEADERS)
 
 		self.assertEqual(frappe.local.response.http_status_code, 200)
 		self.assertEqual(self._events(), 1)
@@ -50,7 +50,7 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 
 	def test_invalid_signature_returns_400_with_zero_db_writes(self):
 		with signature(valid=False), patch("frappe.enqueue") as enqueue:
-			process_webhook("stripe", PAYLOAD, HEADERS)
+			process_webhook("Stripe", PAYLOAD, HEADERS)
 
 		self.assertEqual(frappe.local.response.http_status_code, 400)
 		self.assertEqual(self._events(), 0)
@@ -63,13 +63,13 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 			with patch(
 				"central.billing.gateways.stripe_adapter.StripeAdapter.parse_webhook_event"
 			) as parse:
-				process_webhook("stripe", PAYLOAD, HEADERS)
+				process_webhook("Stripe", PAYLOAD, HEADERS)
 		parse.assert_not_called()
 
 	def test_replayed_event_is_deduped(self):
 		with signature(valid=True), patch("frappe.enqueue") as enqueue:
-			process_webhook("stripe", PAYLOAD, HEADERS)
-			process_webhook("stripe", PAYLOAD, HEADERS)
+			process_webhook("Stripe", PAYLOAD, HEADERS)
+			process_webhook("Stripe", PAYLOAD, HEADERS)
 
 		self.assertEqual(frappe.local.response.http_status_code, 200)
 		self.assertEqual(self._events(), 1)  # no duplicate
@@ -108,7 +108,7 @@ class TestRazorpayWebhookReceiver(IntegrationTestCase):
 
 	def test_valid_signed_event_is_stored_and_enqueued(self):
 		with razorpay_signature(valid=True), patch("frappe.enqueue") as enqueue:
-			process_webhook("razorpay", R_PAYLOAD, R_HEADERS)
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
 
 		self.assertEqual(frappe.local.response.http_status_code, 200)
 		self.assertEqual(self._events(), 1)
@@ -116,7 +116,7 @@ class TestRazorpayWebhookReceiver(IntegrationTestCase):
 
 	def test_invalid_signature_returns_400_with_zero_db_writes(self):
 		with razorpay_signature(valid=False), patch("frappe.enqueue") as enqueue:
-			process_webhook("razorpay", R_PAYLOAD, R_HEADERS)
+			process_webhook("Razorpay", R_PAYLOAD, R_HEADERS)
 
 		self.assertEqual(frappe.local.response.http_status_code, 400)
 		self.assertEqual(self._events(), 0)

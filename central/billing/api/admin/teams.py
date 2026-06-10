@@ -51,12 +51,12 @@ def get_retention() -> dict:
 	require_operator()
 	standing = {}
 	for s in frappe.get_all("Subscription", fields=["team", "account_standing"]):
-		cur = standing.get(s.team, "current")
+		cur = standing.get(s.team, "Current")
 		standing[s.team] = s.account_standing if _STANDING_RANK.get(s.account_standing, 0) > _STANDING_RANK.get(cur, 0) else cur
 	total = len(standing)
-	active = sum(1 for v in standing.values() if v == "current")
-	at_risk = sum(1 for v in standing.values() if v == "past_due")
-	churned = sum(1 for v in standing.values() if v == "suspended")
+	active = sum(1 for v in standing.values() if v == "Current")
+	at_risk = sum(1 for v in standing.values() if v == "Past Due")
+	churned = sum(1 for v in standing.values() if v == "Suspended")
 	rows = [{"team": t, "standing": v} for t, v in sorted(standing.items())]
 	return {
 		"total_teams": total,
@@ -79,18 +79,18 @@ def get_metrics() -> dict:
 	teams, mrr = {}, 0.0
 	for s in subs:
 		rate = _plan_monthly_inr(s.plan, s.cluster)
-		mrr += rate / 12 if s.billing_cycle == "annual" else rate
-		cur = teams.get(s.team, "current")
+		mrr += rate / 12 if s.billing_cycle == "Annual" else rate
+		cur = teams.get(s.team, "Current")
 		teams[s.team] = s.account_standing if _STANDING_RANK.get(s.account_standing, 0) > _STANDING_RANK.get(cur, 0) else cur
 
-	on_time = sum(1 for st in teams.values() if st == "current")
+	on_time = sum(1 for st in teams.values() if st == "Current")
 	team_count = len(teams)
 	return {
 		"team_count": team_count,
 		"paying_on_time": on_time,
 		"delinquent": team_count - on_time,            # past_due or suspended
-		"suspended": sum(1 for st in teams.values() if st == "suspended"),
-		"payment_failures": frappe.db.count("Payment Attempt", {"status": "failed"}),
+		"suspended": sum(1 for st in teams.values() if st == "Suspended"),
+		"payment_failures": frappe.db.count("Payment Attempt", {"status": "Failed"}),
 		"mrr": frappe.utils.flt(mrr, 2),
 		"active_subscriptions": len(subs),
 	}
@@ -102,9 +102,9 @@ def list_teams() -> list[dict]:
 	require_operator()
 	teams = {}
 	for s in frappe.get_all("Subscription", fields=["team", "plan", "cluster", "account_standing", "billing_cycle"]):
-		t = teams.setdefault(s.team, {"team": s.team, "standing": "current", "mrr": 0.0, "subscriptions": 0, "resources": 0})
+		t = teams.setdefault(s.team, {"team": s.team, "standing": "Current", "mrr": 0.0, "subscriptions": 0, "resources": 0})
 		rate = _plan_monthly_inr(s.plan, s.cluster)
-		t["mrr"] += rate / 12 if s.billing_cycle == "annual" else rate
+		t["mrr"] += rate / 12 if s.billing_cycle == "Annual" else rate
 		t["subscriptions"] += 1
 		if _STANDING_RANK.get(s.account_standing, 0) > _STANDING_RANK.get(t["standing"], 0):
 			t["standing"] = s.account_standing
@@ -130,7 +130,7 @@ def get_payment_failures(limit: int = 50) -> list[dict]:
 	"""Drill-down: which charges are failing and why."""
 	require_operator()
 	return frappe.get_all(
-		"Payment Attempt", filters={"status": "failed"},
+		"Payment Attempt", filters={"status": "Failed"},
 		fields=["name", "team", "invoice", "amount", "currency", "gateway", "failure_code", "failure_reason", "creation"],
 		order_by="creation desc", limit=limit)
 
@@ -140,7 +140,7 @@ def get_delinquent_teams() -> list[dict]:
 	"""Drill-down: who is past_due/suspended + their outstanding invoices."""
 	require_operator()
 	seen, rows = set(), []
-	for s in frappe.get_all("Subscription", filters=[["account_standing", "in", ["past_due", "suspended"]]],
+	for s in frappe.get_all("Subscription", filters=[["account_standing", "in", ["Past Due", "Suspended"]]],
 			fields=["team", "account_standing"]):
 		if s.team in seen:
 			continue
