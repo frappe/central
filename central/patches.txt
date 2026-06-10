@@ -18,3 +18,6 @@ central.billing.patches.v03_team_link_to_central_team.validate_team_links
 # Delete the orphan Billing Admin / Billing User roles left by the retired
 # ensure_billing_roles bootstrap; authz is Central capability IAM now (#44).
 central.billing.patches.v04_drop_orphan_billing_roles.drop_billing_roles
+# Re-import the rebuilt (ERPNext-style) Billing desk Workspace over the thin one
+# carried from the standalone app; timestamp gating skips it otherwise (#44).
+central.billing.patches.v05_billing_workspace.reload_billing_workspace
