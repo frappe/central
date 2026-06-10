@@ -1,0 +1,16 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div id="app"></div>
+{% endblock %}
+
+{% block script %}
+{% if not dev_server %}
+{% for path in css_files %}
+<link rel="stylesheet" href="{{ path }}">
+{% endfor %}
+{% for path in js_files %}
+<script type="module" src="{{ path }}"></script>
+{% endfor %}
+{% endif %}
+{% endblock %}

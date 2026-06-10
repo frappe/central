@@ -11,6 +11,11 @@ fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
 ]
 
+# Central Console SPA (frappe-ui) — all client routes resolve to the www/dashboard page.
+website_route_rules = [
+	{"from_route": "/dashboard/<path:app_path>", "to_route": "dashboard"},
+]
+
 # Apps
 # ------------------
 

@@ -1,0 +1,11 @@
+@import 'frappe-ui/style.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Standard Frappe reading-width container; applied to scrollable page bodies. */
+  .body-container {
+    @apply mx-auto w-full max-w-[960px] px-3 sm:px-5;
+  }
+}
