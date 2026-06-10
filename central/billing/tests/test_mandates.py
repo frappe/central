@@ -242,9 +242,10 @@ class TestAddMethodGatewayResolution(IntegrationTestCase):
 			frappe.delete_doc("Payment Gateway", name, force=True)
 		frappe.get_doc({
 			"doctype": "Payment Gateway", "__newname": name, "title": name,
-			"adapter_key": adapter, "currency": currency, "api_key": "k", "api_secret": "s",
-			"webhook_secret": "w", "is_enabled": 1, "is_default_for_currency": default,
+			"adapter_key": adapter, "api_key": "k", "api_secret": "s",
+			"webhook_secret": "w", "is_enabled": 1,
 			"supports_mandates": 1 if adapter == "razorpay" else 0,
+			"currencies": [{"currency": currency, "is_default": default}],
 		}).insert(ignore_permissions=True)
 
 	def test_razorpay_wins_over_default_stripe_for_inr(self):

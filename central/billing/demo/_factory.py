@@ -100,14 +100,15 @@ def _gateways():
 	seed = {"skip_credential_validation": True}
 	for currency, name in STRIPE.items():
 		_upsert("Payment Gateway", name, {
-			"title": f"Stripe ({currency})", "adapter_key": "stripe", "currency": currency,
-			"api_secret": "sk_test_demo", "webhook_secret": "whsec_demo",
-			"is_enabled": 1, "is_default_for_currency": 1,
+			"title": f"Stripe ({currency})", "adapter_key": "stripe",
+			"api_secret": "sk_test_demo", "webhook_secret": "whsec_demo", "is_enabled": 1,
+			"currencies": [{"currency": currency, "is_default": 1}],
 		}, newname=True, flags=seed)
 	_upsert("Payment Gateway", RAZORPAY, {
-		"title": "Razorpay (India)", "adapter_key": "razorpay", "currency": "INR",
+		"title": "Razorpay (India)", "adapter_key": "razorpay",
 		"api_key": "rzp_test", "api_secret": "rzp_secret", "webhook_secret": "rzp_whsec",
 		"is_enabled": 1, "supports_mandates": 1,
+		"currencies": [{"currency": "INR", "is_default": 1}],
 	}, newname=True, flags=seed)
 
 

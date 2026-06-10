@@ -28,7 +28,8 @@
    "options": "Team",
    "in_list_view": 1,
    "label": "Team",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "entry_type",

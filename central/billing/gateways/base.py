@@ -88,7 +88,21 @@ class GatewayAdapter(ABC):
 			value = frappe.conf.get(conf_key)
 			if value:
 				return value
-		return self.gateway.get_password(field)
+		# A credential that is neither in site config nor stored on the doc returns
+		# None rather than raising: a non-secret field (e.g. Stripe's publishable
+		# key) may simply be unconfigured, and a checkout flow must not die on a
+		# ValidationError deep in the gateway.
+		return self.gateway.get_password(field, raise_exception=False)
+
+	def default_currency(self) -> str | None:
+		"""The gateway's default settlement currency (ISO code), or None.
+
+		Resolved from the Payment Gateway Currency child table (issue #46 replaced
+		the old scalar `currency` field): the row flagged is_default, else the first
+		configured currency."""
+		rows = self.gateway.get("currencies") or []
+		default = next((r for r in rows if r.get("is_default")), None) or (rows[0] if rows else None)
+		return (default.currency if default else None) or None
 
 	# --- gateway setup (universal) ------------------------------------------
 
