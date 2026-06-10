@@ -1,0 +1,370 @@
+{
+ "app": "central",
+ "charts": [],
+ "content": "[{\"id\": \"billing_title\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Billing</b></span>\", \"col\": 12}}, {\"id\": \"billing_invoices_sc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Invoices\", \"col\": 3}}, {\"id\": \"billing_subscriptions_sc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Subscriptions\", \"col\": 3}}, {\"id\": \"billing_payment_methods_sc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Payment Methods\", \"col\": 3}}, {\"id\": \"billing_credit_ledger_sc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Credit Ledger\", \"col\": 3}}, {\"id\": \"billing_plans_sc\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Plans\", \"col\": 3}}, {\"id\": \"billing_revenue_credits_hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Revenue & Credits</b></span>\", \"col\": 12}}, {\"id\": \"billing_revenue_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Revenue\", \"col\": 4}}, {\"id\": \"billing_credits_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Credits\", \"col\": 4}}, {\"id\": \"billing_subscriptions_usage_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Subscriptions & Usage\", \"col\": 4}}, {\"id\": \"billing_catalog_payments_hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Catalog & Payments</b></span>\", \"col\": 12}}, {\"id\": \"billing_catalog_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Catalog\", \"col\": 4}}, {\"id\": \"billing_payments_gateways_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Payments & Gateways\", \"col\": 4}}, {\"id\": \"billing_trust_entitlements_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Trust & Entitlements\", \"col\": 4}}, {\"id\": \"billing_configuration_hdr\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Configuration</b></span>\", \"col\": 12}}, {\"id\": \"billing_customer_configuration_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Customer Configuration\", \"col\": 4}}, {\"id\": \"billing_notifications_card\", \"type\": \"card\", \"data\": {\"card_name\": \"Notifications\", \"col\": 4}}]",
+ "creation": "2026-06-03 12:27:21.372328",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "hide_custom": 0,
+ "icon": "money-coin-1",
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "Billing",
+ "link_type": "DocType",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Revenue",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Invoice",
+   "link_count": 0,
+   "link_to": "Invoice",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Attempt",
+   "link_count": 0,
+   "link_to": "Payment Attempt",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Refund",
+   "link_count": 0,
+   "link_to": "Refund",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Credits",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Credit Ledger Entry",
+   "link_count": 0,
+   "link_to": "Credit Ledger Entry",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Credit Wallet",
+   "link_count": 0,
+   "link_to": "Credit Wallet",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Subscriptions & Usage",
+   "link_count": 5,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Subscription",
+   "link_count": 0,
+   "link_to": "Subscription",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Subscription Change",
+   "link_count": 0,
+   "link_to": "Subscription Change",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Usage Rollup",
+   "link_count": 0,
+   "link_to": "Usage Rollup",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Price Lock",
+   "link_count": 0,
+   "link_to": "Price Lock",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Commitment",
+   "link_count": 0,
+   "link_to": "Commitment",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Catalog",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Plan",
+   "link_count": 0,
+   "link_to": "Plan",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Add-on",
+   "link_count": 0,
+   "link_to": "Add-on",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Catalog Rate",
+   "link_count": 0,
+   "link_to": "Catalog Rate",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payments & Gateways",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Method",
+   "link_count": 0,
+   "link_to": "Payment Method",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Gateway",
+   "link_count": 0,
+   "link_to": "Payment Gateway",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Webhook Event",
+   "link_count": 0,
+   "link_to": "Webhook Event",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Trust & Entitlements",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Trust Tier",
+   "link_count": 0,
+   "link_to": "Trust Tier",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Trust Tier Level",
+   "link_count": 0,
+   "link_to": "Trust Tier Level",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Entitlement Token",
+   "link_count": 0,
+   "link_to": "Entitlement Token",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Customer Configuration",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Billing Profile",
+   "link_count": 0,
+   "link_to": "Billing Profile",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Tax Profile",
+   "link_count": 0,
+   "link_to": "Tax Profile",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Notifications",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Billing Notification Log",
+   "link_count": 0,
+   "link_to": "Billing Notification Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Notification Preference",
+   "link_count": 0,
+   "link_to": "Notification Preference",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-06-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing",
+ "number_cards": [],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 2.0,
+ "shortcuts": [
+  {
+   "color": "Blue",
+   "doc_view": "",
+   "label": "Invoices",
+   "link_to": "Invoice",
+   "type": "DocType"
+  },
+  {
+   "color": "Purple",
+   "doc_view": "",
+   "label": "Subscriptions",
+   "link_to": "Subscription",
+   "type": "DocType"
+  },
+  {
+   "color": "Green",
+   "doc_view": "",
+   "label": "Payment Methods",
+   "link_to": "Payment Method",
+   "type": "DocType"
+  },
+  {
+   "color": "Orange",
+   "doc_view": "",
+   "label": "Credit Ledger",
+   "link_to": "Credit Ledger Entry",
+   "type": "DocType"
+  },
+  {
+   "color": "Cyan",
+   "doc_view": "",
+   "label": "Plans",
+   "link_to": "Plan",
+   "type": "DocType"
+  }
+ ],
+ "title": "Billing",
+ "type": "Workspace"
+}

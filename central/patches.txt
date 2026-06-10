@@ -1,6 +1,23 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://docs.frappe.io/framework/user/en/database-migrations
+# Snapshot legacy Plan Rate / Add-on Rate child rows before they are merged into
+# the single Catalog Rate DocType (Item Price style, Dynamic Link).
+central.billing.patches.v01_rates_to_standalone.snapshot_legacy_rate_children
+# Re-point billing `team` (Data slug) at the real Central `Team`: ensure a Team
+# per slug, rewrite values, backfill Team Members, drop User.billing_team. Runs
+# while `team` is still Data, before the Link field-type flip is synced (#43).
+central.billing.patches.v03_team_link_to_central_team.migrate_team_to_central_team
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+central.billing.patches.v01_rates_to_standalone.migrate_rate_children_to_standalone
+central.billing.patches.v02_payment_method_priority.backfill_priority
+# Guard: every billing `team` is now a valid Link → Team, no orphans (#43).
+central.billing.patches.v03_team_link_to_central_team.validate_team_links
+# Delete the orphan Billing Admin / Billing User roles left by the retired
+# ensure_billing_roles bootstrap; authz is Central capability IAM now (#44).
+central.billing.patches.v04_drop_orphan_billing_roles.drop_billing_roles
+# Re-import the rebuilt (ERPNext-style) Billing desk Workspace over the thin one
+# carried from the standalone app; timestamp gating skips it otherwise (#44).
+central.billing.patches.v05_billing_workspace.reload_billing_workspace

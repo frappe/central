@@ -1,0 +1,96 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "prompt",
+ "creation": "2026-06-02 00:00:00.000000",
+ "description": "A per-unit item billed on top of a bundle (overage, extra storage, snapshots, IPs). rate x quantity applies.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "resource_type",
+  "unit",
+  "column_break_head",
+  "billing_type",
+  "pricing_mode",
+  "billing_interval"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "resource_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Resource Type",
+   "options": "compute\nmemory\ndisk\ntransfer\nip\nsnapshot",
+   "reqd": 1
+  },
+  {
+   "fieldname": "unit",
+   "fieldtype": "Data",
+   "label": "Unit",
+   "description": "GB / unit"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "metered",
+   "fieldname": "billing_type",
+   "fieldtype": "Select",
+   "label": "Billing Type",
+   "options": "fixed\nmetered",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pricing_mode",
+   "fieldtype": "Select",
+   "label": "Pricing Mode",
+   "options": "grandfathered\nlive",
+   "default": "grandfathered",
+   "description": "grandfathered = rate locked at provision (like bundles). live = rate read from the current Catalog Rate each period, no allowance (depreciating storage, e.g. snapshot). See ADR 0002."
+  },
+  {
+   "default": "monthly",
+   "fieldname": "billing_interval",
+   "fieldtype": "Select",
+   "label": "Billing Interval",
+   "options": "hourly\ndaily\nmonthly",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-02 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Add-on",
+ "naming_rule": "Set by user",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

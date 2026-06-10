@@ -1,0 +1,251 @@
+# Copyright (c) 2026, Frappe and contributors
+# For license information, please see license.txt
+"""Demo data shape + record builders for the billing seed (see demo_scenarios).
+
+The catalog constants (clusters, plan sizes, tiers, gateways) and the idempotent
+`_upsert`-based builders that turn them into Plans / Trust Tier Levels / Payment
+Gateways / per-team config. The orchestration that wires teams together lives in
+demo_scenarios.
+"""
+
+import frappe
+
+from central.billing.catalog.pricing import set_catalog_rates
+
+# --- catalog shape ----------------------------------------------------------
+
+# (slug, label, billing currency of the region)
+CLUSTERS = [
+	("in-mumbai", "India — Mumbai", "INR"),
+	("eu-frankfurt", "Europe — Frankfurt", "EUR"),
+	("me-dubai", "Middle East — Dubai", "USD"),
+]
+CURRENCIES = ["INR", "EUR", "USD"]
+# 1 unit of currency = N INR (rough FX, demo only).
+FX = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
+# Regional cost multiplier on the INR base price.
+CLUSTER_MULT = {"in-mumbai": 1.0, "eu-frankfurt": 1.25, "me-dubai": 1.15}
+
+# (slug, title, vcpu, ram_gb, disk_gb, transfer_gb_included, base_inr_monthly)
+PLAN_SIZES = [
+	("plan-1vcpu", "Starter · 1 vCPU / 2 GB", 1, 2, 25, 100, 1500),
+	("plan-2vcpu", "Basic · 2 vCPU / 4 GB", 2, 4, 50, 200, 3000),
+	("plan-4vcpu", "Standard · 4 vCPU / 8 GB", 4, 8, 100, 400, 6000),
+	("plan-8vcpu", "Pro · 8 vCPU / 16 GB", 8, 16, 200, 800, 12000),
+	("plan-16vcpu", "Enterprise · 16 vCPU / 32 GB", 16, 32, 400, 1600, 24000),
+]
+
+# Metered bandwidth overage, priced per GB per currency (cluster-agnostic).
+ADDON = "addon-transfer"
+ADDON_RATE = {"INR": 0.80, "EUR": 0.009, "USD": 0.010}
+
+# (level, sequence, is_default, max_spend_inr, max_resources, min_invoices, min_paid_inr)
+TIERS = [
+	("t0", 0, 1, 5000, 3, 0, 0),
+	("t1", 1, 0, 50000, 25, 1, 3000),
+	("t2", 2, 0, 200000, 100, 6, 50000),
+	("t3", 3, 0, 1000000, 500, 10, 500000),
+]
+
+# Output tax follows the customer's billing currency (place of supply).
+TAX_BY_CURRENCY = {"INR": ("GST", 18), "EUR": ("VAT", 19), "USD": ("VAT", 5)}
+
+STRIPE = {"INR": "GW-Stripe-INR", "EUR": "GW-Stripe-EUR", "USD": "GW-Stripe-USD"}
+RAZORPAY = "GW-Razorpay"
+ANCHOR = "2026-06-01"  # the current (open) billing month
+
+
+# --- catalog / config builders ----------------------------------------------
+
+
+def _tiers():
+	for level, seq, default, cap, res, inv, paid in TIERS:
+		_upsert("Trust Tier Level", level, {
+			"tier": level, "sequence": seq, "is_default": default,
+			"max_spend": cap, "max_resource_count": res,
+			"min_paid_invoices": inv, "min_cumulative_paid": paid,
+		}, newname=True)
+
+
+def _catalog():
+	for slug, title, vcpu, ram, disk, transfer, base_inr in PLAN_SIZES:
+		rates = []
+		for cslug, _label, _cur in CLUSTERS:
+			for currency in CURRENCIES:
+				rate = round(base_inr * CLUSTER_MULT[cslug] / FX[currency], 2)
+				rates.append({"cluster": cslug, "currency": currency, "rate": rate})
+		plan = _upsert("Plan", slug, {
+			"title": title, "billing_cycle": "monthly", "is_active": 1,
+			"includes": [
+				{"resource_type": "compute", "quantity": vcpu, "unit": "vCPU"},
+				{"resource_type": "memory", "quantity": ram, "unit": "GB"},
+				{"resource_type": "disk", "quantity": disk, "unit": "GB"},
+				{"resource_type": "transfer", "quantity": transfer, "unit": "GB"},
+			],
+		}, newname=True)
+		set_catalog_rates("Plan", plan, rates)
+
+	addon = _upsert("Add-on", ADDON, {
+		"title": "Bandwidth Overage", "resource_type": "transfer", "unit": "GB",
+		"billing_type": "metered", "billing_interval": "monthly",
+	}, newname=True)
+	set_catalog_rates(
+		"Add-on", addon, [{"cluster": "", "currency": c, "rate": ADDON_RATE[c]} for c in CURRENCIES]
+	)
+
+
+def _gateways():
+	# Demo keys are placeholders — skip live credential validation / webhook
+	# auto-registration so the seed runs offline.
+	seed = {"skip_credential_validation": True}
+	for currency, name in STRIPE.items():
+		_upsert("Payment Gateway", name, {
+			"title": f"Stripe ({currency})", "adapter_key": "stripe", "currency": currency,
+			"api_secret": "sk_test_demo", "webhook_secret": "whsec_demo",
+			"is_enabled": 1, "is_default_for_currency": 1,
+		}, newname=True, flags=seed)
+	_upsert("Payment Gateway", RAZORPAY, {
+		"title": "Razorpay (India)", "adapter_key": "razorpay", "currency": "INR",
+		"api_key": "rzp_test", "api_secret": "rzp_secret", "webhook_secret": "rzp_whsec",
+		"is_enabled": 1, "supports_mandates": 1,
+	}, newname=True, flags=seed)
+
+
+def _tier(team, level):
+	cap = next(t[3] for t in TIERS if t[0] == level)
+	res = next(t[4] for t in TIERS if t[0] == level)
+	_upsert("Trust Tier", team, {
+		"team": team, "level": level, "tier": level,
+		"max_spend": cap, "max_resource_count": res, "manual_override": 1,
+	})
+
+
+def _tax(team, currency):
+	tax_type, rate = TAX_BY_CURRENCY[currency]
+	_upsert("Tax Profile", team, {"team": team, "output_tax_type": tax_type, "output_tax_rate": rate})
+
+
+def _profile(team, slug, currency, cluster, prepaid):
+	region = next(label for s, label, _c in CLUSTERS if s == cluster)
+	india = currency == "INR"
+	_upsert("Billing Profile", team, {
+		"team": team, "legal_name": f"{slug.replace('-', ' ').title()} Ltd",
+		"email": f"billing@{slug}.example",
+		"gstin": "27AAPFU0939F1ZV" if india else None,
+		"address_line1": "1 Demo Street", "city": region.split("—")[-1].strip(),
+		"state": "Maharashtra" if india else "", "country": "India" if india else region.split("—")[0].strip(),
+		"pincode": "400001" if india else "",
+		"billing_mode": "prepaid" if prepaid else "postpaid",
+	})
+
+
+def _payment_setup(team, slug, currency, state):
+	"""Return (gateway, payment_method) for the team's terminal state."""
+	if state in ("credits", "trial"):
+		return None, None  # prepaid wallet / unpaid trial — no card
+	if currency == "INR" and slug == "wayne-ent":
+		# An INR team on UPI Autopay (mandate ceiling = tier cap).
+		pm = frappe.get_doc({
+			"doctype": "Payment Method", "team": team, "gateway": RAZORPAY,
+			"method_type": "upi_autopay", "status": "active", "display_label": "UPI Autopay",
+			"gateway_method_id": f"token_{slug}", "gateway_customer_id": f"cust_{slug}",
+			"mandate_max_amount": 200000, "mandate_currency": "INR", "is_default": 1,
+			"validated_at": frappe.utils.now_datetime(),
+		}).insert(ignore_permissions=True).name
+		return RAZORPAY, pm
+	gateway = STRIPE[currency]
+	pm = frappe.get_doc({
+		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "card",
+		"status": "active", "display_label": "Visa ····4242", "gateway_method_id": f"pm_{slug}",
+		"gateway_customer_id": f"cus_{slug}", "expiry_month": 11, "expiry_year": 2030,
+		"is_default": 1, "validated_at": frappe.utils.now_datetime(),
+	}).insert(ignore_permissions=True).name
+	return gateway, pm
+
+
+def _failed_attempt(team, invoice, pm, gateway, retry):
+	frappe.get_doc({
+		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
+		"payment_method": pm, "amount": frappe.db.get_value("Invoice", invoice, "expected_collection"),
+		"currency": frappe.db.get_value("Invoice", invoice, "currency"), "status": "failed",
+		"failure_code": "card_declined", "failure_reason": "Your card was declined.",
+		"retry_number": retry, "completed_at": frappe.utils.now_datetime(),
+	}).insert(ignore_permissions=True)
+
+
+# --- helpers ----------------------------------------------------------------
+
+
+def _month_periods(n):
+	"""The n closed month windows immediately before ANCHOR, oldest first."""
+	anchor = frappe.utils.getdate(ANCHOR)
+	out = []
+	for i in range(n, 0, -1):
+		start = frappe.utils.add_months(anchor, -i)
+		out.append((str(start), str(frappe.utils.get_last_day(start))))
+	return out
+
+
+def _upsert(doctype, name, values, newname=False, flags=None):
+	if frappe.db.exists(doctype, name):
+		frappe.delete_doc(doctype, name, force=True)
+	data = {"doctype": doctype, **values}
+	if newname:
+		data["__newname"] = name
+	doc = frappe.get_doc(data)
+	if flags:
+		doc.flags.update(flags)
+	return doc.insert(ignore_permissions=True).name
+
+
+def _ensure_signing_key():
+	if frappe.conf.get("entitlement_private_key"):
+		return
+	from central.billing.catalog.signing import generate_keypair
+
+	priv, pub = generate_keypair()
+	frappe.conf.entitlement_private_key = priv
+	try:
+		frappe.installer.update_site_config("entitlement_private_key", priv)
+		frappe.installer.update_site_config("entitlement_public_key", pub)
+	except Exception:  # noqa: BLE001 — in-memory conf is enough for the seed run
+		pass
+
+
+def _ensure_demo_team(slug):
+	"""Resolve a demo slug to a real Central `Team` (idempotent by `team_name`).
+
+	`team` is now a `Link → Team`, so the seed can no longer pass a free-text
+	slug. Each scenario gets one Team — named after the slug, owned by a
+	per-team demo user — and the returned `Team.name` is what every billing
+	record stores. Re-runnable: `_wipe_all` leaves Teams intact, so a re-seed
+	reuses them."""
+	existing = frappe.db.get_value("Team", {"team_name": slug}, "name")
+	if existing:
+		return existing
+	owner = f"owner-{slug}@example.com"
+	if not frappe.db.exists("User", owner):
+		frappe.get_doc({
+			"doctype": "User", "email": owner, "send_welcome_email": 0,
+			"first_name": slug.replace("-", " ").title(),
+		}).insert(ignore_permissions=True)
+	return frappe.get_doc({
+		"doctype": "Team", "team_name": slug, "owner_user": owner,
+	}).insert(ignore_permissions=True).name
+
+
+def _wipe_all():
+	"""Drop every billing record so the demo is the only data present."""
+	children = ("Catalog Rate", "Plan Includes", "Invoice Line Item",
+				"Subscription Change")
+	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Price Lock",
+					 "Usage Rollup", "Credit Ledger Entry", "Credit Wallet", "Billing Notification Log",
+					 "Entitlement Token", "Webhook Event", "Subscription")
+	config = ("Trust Tier", "Tax Profile", "Billing Profile")
+	catalog = ("Plan", "Add-on", "Payment Gateway", "Trust Tier Level")
+	for dt in children + transactional + config + catalog:
+		try:
+			frappe.db.delete(dt)
+		except Exception:  # noqa: BLE001 — some doctypes may not exist on older sites
+			pass
+	frappe.db.commit()

@@ -1,0 +1,89 @@
+# Copyright (c) 2026, Frappe and contributors
+# For license information, please see license.txt
+"""Notification suite — sole sender (issue #20)."""
+
+import frappe
+from frappe.tests import IntegrationTestCase
+
+from central.billing.tests.utils import ensure_team
+
+from central.billing.platform import notifications
+from central.billing.payments import settlement
+
+TEAM = "team-notify"
+
+
+class NotificationTestBase(IntegrationTestCase):
+	def setUp(self):
+		ensure_team(TEAM)
+		self._purge()
+
+	def tearDown(self):
+		self._purge()
+
+	def _purge(self):
+		frappe.db.delete("Billing Notification Log", {"team": TEAM})
+		if frappe.db.exists("Notification Preference", TEAM):
+			frappe.db.delete("Notification Preference", {"team": TEAM})
+		frappe.db.delete("Credit Ledger Entry", {"team": TEAM})
+		frappe.db.delete("Credit Wallet", {"team": TEAM})
+		frappe.db.commit()
+
+	def _logs(self, event_type=None):
+		filters = {"team": TEAM}
+		if event_type:
+			filters["event_type"] = event_type
+		return frappe.get_all("Billing Notification Log", filters, ["event_type", "status", "message"])
+
+
+class TestNotify(NotificationTestBase):
+	def test_default_sends_and_logs(self):
+		out = notifications.notify(TEAM, "payment_success", context={"invoice": "INV-1"})
+		self.assertTrue(out["sent"])
+		logs = self._logs("payment_success")
+		self.assertEqual(logs[0]["status"], "sent")
+		self.assertIn("INV-1", logs[0]["message"])
+
+	def test_template_renders_with_context(self):
+		notifications.notify(TEAM, "payment_failure", context={"invoice": "INV-2", "reason": "card_declined"})
+		msg = self._logs("payment_failure")[0]["message"]
+		self.assertIn("INV-2", msg)
+		self.assertIn("card_declined", msg)
+
+	def test_explicit_message_overrides_template(self):
+		notifications.notify(TEAM, "payment_success", message="Custom paid message")
+		self.assertEqual(self._logs("payment_success")[0]["message"], "Custom paid message")
+
+	def test_preference_suppresses_but_still_logs(self):
+		frappe.get_doc(
+			{"doctype": "Notification Preference", "team": TEAM, "notify_payment_retry": 0}
+		).insert(ignore_permissions=True)
+
+		out = notifications.notify(TEAM, "payment_retry", context={"invoice": "INV-3", "reason": "x"})
+		self.assertFalse(out["sent"])
+		log = self._logs("payment_retry")[0]
+		self.assertEqual(log["status"], "suppressed")  # the suppression itself is auditable
+
+	def test_other_events_unaffected_by_one_opt_out(self):
+		frappe.get_doc(
+			{"doctype": "Notification Preference", "team": TEAM, "notify_payment_retry": 0}
+		).insert(ignore_permissions=True)
+		out = notifications.notify(TEAM, "payment_success", context={"invoice": "INV-4"})
+		self.assertTrue(out["sent"])
+
+
+class TestWiredEvents(NotificationTestBase):
+	def test_credit_low_uses_forecast_threshold(self):
+		from central.billing.revenue import credits
+
+		credits.purchase(TEAM, 100, "INR")
+		# Projected spend at 80% of balance → the credit_low notification fires.
+		settlement.credit_forecast(TEAM, 80, notify=True)
+		self.assertTrue(self._logs("credit_low"))
+
+	def test_credit_low_does_not_fire_below_threshold(self):
+		from central.billing.revenue import credits
+
+		credits.purchase(TEAM, 100, "INR")
+		settlement.credit_forecast(TEAM, 50, notify=True)
+		self.assertFalse(self._logs("credit_low"))
