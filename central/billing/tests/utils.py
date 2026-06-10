@@ -112,3 +112,32 @@ def make_billing_team(user, role="Billing", team_name=None):
 			"members": [{"user": user, "role": role, "status": "Active"}],
 		}
 	).insert(ignore_permissions=True)
+
+
+def make_custom_role_team(user, capabilities, team_name=None):
+	"""A Central `Team` whose `user` member carries a *custom* (non-system) Team
+	Role granting exactly `capabilities` — for capability combinations the stock
+	system roles don't offer (notably `billing:view` WITHOUT `billing:manage`,
+	which no system role has). The Owner is a separate throwaway user so `user`
+	holds only the custom grant. Returns the Team doc."""
+	owner = make_user(f"owner-{frappe.generate_hash(6)}@example.com")
+	team = frappe.get_doc(
+		{
+			"doctype": "Team",
+			"team_name": team_name or f"Custom {frappe.generate_hash(5)}",
+			"owner_user": owner,
+		}
+	).insert(ignore_permissions=True)
+	# A custom Team Role must be tied to exactly one team (its scope).
+	role = frappe.get_doc(
+		{
+			"doctype": "Team Role",
+			"role_name": f"Custom {frappe.generate_hash(5)}",
+			"is_system": 0,
+			"team": team.name,
+			"capabilities": [{"capability": c} for c in capabilities],
+		}
+	).insert(ignore_permissions=True)
+	team.append("members", {"user": user, "role": role.name, "status": "Active"})
+	team.save(ignore_permissions=True)
+	return team

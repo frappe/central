@@ -80,3 +80,26 @@ class TestTeamMigration(IntegrationTestCase):
 		teams = frappe.get_all("Team", filters={"team_name": self.slug}, pluck="name")
 		self.assertEqual(teams, [first])
 		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "team"), first)
+
+	def test_distinct_slugs_keep_distinct_ownership(self):
+		"""Two un-migrated rows on two different slugs must land on two different
+		Teams — the migration never collapses or cross-wires ownership."""
+		slug_a, slug_b = f"{self.slug}-a", f"{self.slug}-b"
+		subs = {}
+		for slug in (slug_a, slug_b):
+			sub = frappe.get_doc(
+				{"doctype": "Subscription", "team": make_billing_team(make_user()).name}
+			).insert(ignore_permissions=True)
+			frappe.db.sql(
+				"UPDATE `tabSubscription` SET team = %s WHERE name = %s", (slug, sub.name)
+			)
+			subs[slug] = sub.name
+
+		_run_migration()
+
+		team_a = frappe.db.get_value("Subscription", subs[slug_a], "team")
+		team_b = frappe.db.get_value("Subscription", subs[slug_b], "team")
+		# Each row points at the Team minted for ITS slug — and the two differ.
+		self.assertEqual(frappe.db.get_value("Team", team_a, "team_name"), slug_a)
+		self.assertEqual(frappe.db.get_value("Team", team_b, "team_name"), slug_b)
+		self.assertNotEqual(team_a, team_b)

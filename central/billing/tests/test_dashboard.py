@@ -8,7 +8,13 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue import credits
 from central.billing.api import dashboard
 from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import ensure_team, make_billing_team, make_plan, make_user
+from central.billing.tests.utils import (
+	ensure_team,
+	make_billing_team,
+	make_custom_role_team,
+	make_plan,
+	make_user,
+)
 
 TEAM = "team-cust"
 CLUSTER = "ap-south-1"
@@ -132,16 +138,58 @@ class TestTeamScoping(CustomerDataBase):
 			frappe.set_user("Administrator")
 
 	def test_member_without_billing_capability_is_denied(self):
-		"""A team member whose role carries no billing capability (e.g. Viewer) —
-		standing in for the role-less Agent key — gets a 403, view or mutate."""
+		"""A team member whose role carries no billing capability — Viewer or
+		Developer, standing in for the role-less Agent key — gets a 403, whether
+		reading or mutating."""
+		for role in ("Viewer", "Developer"):
+			with self.subTest(role=role):
+				user = make_user()
+				team = make_billing_team(user, role=role)
+				frappe.set_user(user)
+				try:
+					with self.assertRaises(frappe.PermissionError):
+						dashboard.list_invoices(team.name)
+					with self.assertRaises(frappe.PermissionError):
+						dashboard.save_billing_settings(team=team.name, billing_mode="prepaid")
+				finally:
+					frappe.set_user("Administrator")
+
+	def test_billing_capable_roles_can_read_and_manage(self):
+		"""The system roles that carry both capabilities — Owner and Billing — can
+		read and run a manage mutation on their own team. (Owner is the team's
+		sole owner_user; Billing is a separate member.)"""
 		user = make_user()
-		team = make_billing_team(user, role="Viewer")
+		owner_team = frappe.get_doc(
+			{"doctype": "Team", "team_name": f"Owned {frappe.generate_hash(5)}", "owner_user": user}
+		).insert(ignore_permissions=True)  # user becomes the sole active Owner member
+		billing_user = make_user()
+		billing_team = make_billing_team(billing_user, role="Billing")
+
+		cases = {"Owner": (user, owner_team.name), "Billing": (billing_user, billing_team.name)}
+		for role, (member, team_name) in cases.items():
+			with self.subTest(role=role):
+				frappe.set_user(member)
+				try:
+					dashboard.list_invoices(team_name)  # read ok
+					dashboard.save_billing_settings(team=team_name, billing_mode="prepaid")  # manage ok
+				finally:
+					frappe.set_user("Administrator")
+					frappe.db.delete("Billing Profile", {"team": team_name})
+
+	def test_view_only_member_reads_but_cannot_manage(self):
+		"""A member whose (custom) role grants `billing:view` WITHOUT
+		`billing:manage` — a split no system role offers — may read every customer
+		endpoint but is denied manage mutations."""
+		user = make_user()
+		team = make_custom_role_team(user, ["billing:view"])
 		frappe.set_user(user)
 		try:
-			with self.assertRaises(frappe.PermissionError):
-				dashboard.list_invoices(team.name)
+			dashboard.list_invoices(team.name)  # read ok
+			dashboard.get_credit_balance(team.name)  # read ok
 			with self.assertRaises(frappe.PermissionError):
 				dashboard.save_billing_settings(team=team.name, billing_mode="prepaid")
+			with self.assertRaises(frappe.PermissionError):
+				dashboard.purchase_credits(team=team.name, amount=100)
 		finally:
 			frappe.set_user("Administrator")
 

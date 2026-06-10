@@ -15,7 +15,7 @@ from frappe.tests import IntegrationTestCase
 from central import billing
 from central.billing import authz
 from central.billing.catalog import subscriptions
-from central.billing.tests.utils import make_billing_team, make_user
+from central.billing.tests.utils import make_billing_team, make_custom_role_team, make_user
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.payments.webhooks import process_webhook
 
@@ -91,6 +91,15 @@ class TestPermissionGuards(IntegrationTestCase):
 		frappe.set_user(self.user)
 		with self.assertRaises(frappe.PermissionError):
 			authz.require_billing_view(team.name)
+
+	def test_view_only_capability_gates_manage(self):
+		# A custom role granting billing:view WITHOUT billing:manage: the view gate
+		# passes, the manage gate is denied — the split the system roles don't have.
+		team = make_custom_role_team(self.user, ["billing:view"])
+		frappe.set_user(self.user)
+		authz.require_billing_view(team.name)  # view ok
+		with self.assertRaises(frappe.PermissionError):
+			authz.require_billing_manage(team.name)  # manage denied
 
 
 # --- no raw SQL string interpolation -----------------------------------------
