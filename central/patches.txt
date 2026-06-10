@@ -28,3 +28,6 @@ central.billing.patches.v06_payment_gateway_currency.migrate_gateway_currencies
 # holds the authoritative balance so bookings no longer FOR UPDATE the ledger
 # (which gap-locked the creation index and deadlocked cross-team bookings) — #06.
 central.billing.patches.v07_credit_wallet_balance.backfill_wallet_balance
+# Title-case every billing Select field's stored values (past_due -> Past Due,
+# stripe -> Stripe, …) to match the field option lists now rendered Title Case.
+central.billing.patches.v08_titlecase_select_options.titlecase_options

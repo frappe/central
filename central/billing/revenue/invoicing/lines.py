@@ -30,7 +30,7 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 		filters={
 			"team": team,
 			"cluster": cluster,
-			"event_type": ["!=", "cancelled"],
+			"event_type": ["!=", "Cancelled"],
 		},
 		fields=["name", "resource_id", "plan", "locked_rate", "started_at", "ended_at"],
 		order_by="started_at asc",

@@ -45,7 +45,7 @@ class TrialTestBase(IntegrationTestCase):
 		self._purge()
 		recompute_trust_tier(TEAM, paid_invoice_count=0, cumulative_paid=0)  # entry tier t0
 		self.sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly"
+			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
 		).name
 
 	def tearDown(self):
@@ -69,7 +69,7 @@ class TestCostReportGeneration(TrialTestBase):
 		self.assertTrue(trials.is_trial_team(TEAM))
 		provision()
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
-		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "cost_report")
+		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "Cost Report")
 
 	def test_cost_report_is_computed_but_not_charged(self):
 		provision()
@@ -92,20 +92,20 @@ class TestConversion(TrialTestBase):
 		provision()
 		# June: trial → cost_report.
 		june = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
-		self.assertEqual(frappe.db.get_value("Invoice", june, "invoice_type"), "cost_report")
+		self.assertEqual(frappe.db.get_value("Invoice", june, "invoice_type"), "Cost Report")
 
 		trials.convert_to_paid(TEAM)
 		self.assertFalse(trials.is_trial_team(TEAM))
 
 		# July invoice is billable; the resource's lock is untouched (still running).
 		july = invoicing.generate_draft_invoice(self.sub, "2026-07-01", "2026-07-31")
-		self.assertEqual(frappe.db.get_value("Invoice", july, "invoice_type"), "billable")
+		self.assertEqual(frappe.db.get_value("Invoice", july, "invoice_type"), "Billable")
 		active_locks = frappe.get_all(
 			"Price Lock", {"team": TEAM, "resource_id": "srv-trial", "ended_at": ["is", "not set"]}
 		)
 		self.assertEqual(len(active_locks), 1)
 		self.assertEqual(
-			frappe.db.get_value("Subscription", self.sub, "account_standing"), "current"
+			frappe.db.get_value("Subscription", self.sub, "account_standing"), "Current"
 		)
 
 
@@ -115,7 +115,7 @@ class TestSubsidyAndExpiry(TrialTestBase):
 		provision("srv-a", rate=1000, start="2099-01-01 00:00:00")
 		provision("srv-b", rate=2000, start="2099-01-01 00:00:00")
 		name = invoicing.generate_draft_invoice(self.sub, "2099-01-01", "2099-01-31")
-		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "cost_report")
+		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "Cost Report")
 
 		subsidy = trials.subsidy_total("2099-01-01", "2099-01-31")
 		self.assertEqual(subsidy, 3000.0)  # 1000 + 2000, full month

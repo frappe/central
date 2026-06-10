@@ -56,9 +56,9 @@ def get_billing_settings(team: str | None = None) -> dict:
 	"""Payment mode + thresholds (wireframe: Billing Settings)."""
 	team = _resolve_team(team)
 	if not frappe.db.exists("Billing Profile", team):
-		return {"team": team, "billing_mode": "postpaid", "min_balance": 0, "spend_alert_threshold": 0}
+		return {"team": team, "billing_mode": "Postpaid", "min_balance": 0, "spend_alert_threshold": 0}
 	p = frappe.get_doc("Billing Profile", team)
-	return {"team": team, "billing_mode": p.billing_mode or "postpaid",
+	return {"team": team, "billing_mode": p.billing_mode or "Postpaid",
 			"min_balance": p.min_balance, "spend_alert_threshold": p.spend_alert_threshold}
 
 
@@ -87,8 +87,8 @@ def get_team_overview(team: str | None = None) -> dict:
 	"""Team header: trust tier, account standing, payment mode, resource count."""
 	team = _resolve_team(team)
 	tier = frappe.db.get_value("Trust Tier", team, ["tier", "max_spend"], as_dict=True) or {}
-	standing = frappe.db.get_value("Subscription", {"team": team}, "account_standing") or "current"
-	mode = frappe.db.get_value("Billing Profile", team, "billing_mode") or "postpaid"
+	standing = frappe.db.get_value("Subscription", {"team": team}, "account_standing") or "Current"
+	mode = frappe.db.get_value("Billing Profile", team, "billing_mode") or "Postpaid"
 	resources = frappe.db.count("Price Lock", {"team": team, "ended_at": ["is", "not set"]})
 	clusters = len(_team_clusters(team))
 	currency = _team_currency(team)
@@ -123,8 +123,8 @@ def get_trust_tier(team: str | None = None) -> dict:
 
 	# Progress signals toward the next level.
 	resources_used = frappe.db.count("Price Lock", {"team": team, "ended_at": ["is", "not set"]})
-	paid_invoices = frappe.db.count("Invoice", {"team": team, "status": "Paid", "invoice_type": "billable"})
-	paid_rows = frappe.get_all("Invoice", {"team": team, "status": "Paid", "invoice_type": "billable"},
+	paid_invoices = frappe.db.count("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"})
+	paid_rows = frappe.get_all("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"},
 							   ["amount_paid", "currency"])
 	cumulative_paid_inr = sum(frappe.utils.flt(r.amount_paid) * _FX_TO_INR.get(r.currency, 1.0) for r in paid_rows)
 
@@ -161,5 +161,5 @@ def list_switchable_teams() -> list[dict]:
 	out = []
 	for t in teams:
 		out.append({"team": t, "tier": frappe.db.get_value("Trust Tier", t, "tier"),
-					"standing": frappe.db.get_value("Subscription", {"team": t}, "account_standing") or "current"})
+					"standing": frappe.db.get_value("Subscription", {"team": t}, "account_standing") or "Current"})
 	return out

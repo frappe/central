@@ -62,7 +62,7 @@ class CommitmentTestBase(IntegrationTestCase):
 		make_plan(PLAN)
 		self._purge()
 		self.sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly"
+			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
 		).name
 
 	def tearDown(self):
@@ -111,7 +111,7 @@ class TestCommitmentDiscount(CommitmentTestBase):
 				"team": TEAM,
 				"cluster": CLUSTER,
 				"resource_type": resource_type,
-				"meter_type": "counter",
+				"meter_type": "Counter",
 				"period_start": "2026-06-01",
 				"period_end": "2026-06-30",
 				"quantity": quantity,
@@ -126,7 +126,7 @@ class TestCommitmentDiscount(CommitmentTestBase):
 	def test_discount_base_is_fixed_bundle_only(self):
 		# Bundle 1000 (discountable) + metered transfer 300 (billed at list).
 		push_event("e1", "R1", 1000, "2026-06-01 00:00:00", "subscribed")
-		self._metered_rollup("R-transfer", "transfer", quantity=300, rate=1)
+		self._metered_rollup("R-transfer", "Transfer", quantity=300, rate=1)
 		make_commitment(TEAM, floor=800, discount_pct=20)
 
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
@@ -157,7 +157,7 @@ class TestCommitmentClawback(CommitmentTestBase):
 		self.assertEqual(frappe.get_doc("Invoice", june).commitment_discount, 200.0)
 
 		# July: resource terminated Jul16 -> 15 days, spend < 800 floor -> breach.
-		push_event("e2", "R1", 1000, "2026-07-16 00:00:00", "cancelled")
+		push_event("e2", "R1", 1000, "2026-07-16 00:00:00", "Cancelled")
 		july = invoicing.generate_draft_invoice(self.sub, "2026-07-01", "2026-07-31")
 		inv = frappe.get_doc("Invoice", july)
 
@@ -184,7 +184,7 @@ class TestCommitmentClawback(CommitmentTestBase):
 		commitment = make_commitment(TEAM, floor=800, discount_pct=20, started_at="2026-06-01")
 		push_event("e1", "R1", 1000, "2026-06-01 00:00:00", "subscribed")
 		invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
-		push_event("e2", "R1", 1000, "2026-07-16 00:00:00", "cancelled")
+		push_event("e2", "R1", 1000, "2026-07-16 00:00:00", "Cancelled")
 
 		first = invoicing.generate_draft_invoice(self.sub, "2026-07-01", "2026-07-31")
 		second = invoicing.generate_draft_invoice(self.sub, "2026-07-01", "2026-07-31")

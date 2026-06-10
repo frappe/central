@@ -16,14 +16,14 @@ import frappe
 
 # event_type -> default (subject, body template). Body is .format(**context)-ed.
 _TEMPLATES = {
-	"payment_success": ("Payment received", "Payment received for invoice {invoice}."),
-	"payment_failure": ("Payment failed", "Payment for invoice {invoice} failed: {reason}."),
-	"payment_retry": ("Payment retry failed", "Payment retry for invoice {invoice} failed: {reason}."),
-	"invoice_overdue": ("Invoice overdue", "Invoice {invoice} is overdue. Please settle it to avoid suspension."),
-	"credit_low": ("Credit balance low", "Your credit balance is low (projected use {utilisation}). Top up to avoid interruption."),
-	"card_expiry": ("Card expired", "Your card {label} has expired. Please add a new payment method."),
-	"mandate_reauth": ("Mandate re-authorisation needed", "Your UPI Autopay mandate needs re-authorisation for the new limit."),
-	"trial_expiring": ("Trial ending", "Your trial is ending. Add a payment method to keep your resources running."),
+	"Payment Success": ("Payment received", "Payment received for invoice {invoice}."),
+	"Payment Failure": ("Payment failed", "Payment for invoice {invoice} failed: {reason}."),
+	"Payment Retry": ("Payment retry failed", "Payment retry for invoice {invoice} failed: {reason}."),
+	"Invoice Overdue": ("Invoice overdue", "Invoice {invoice} is overdue. Please settle it to avoid suspension."),
+	"Credit Low": ("Credit balance low", "Your credit balance is low (projected use {utilisation}). Top up to avoid interruption."),
+	"Card Expiry": ("Card expired", "Your card {label} has expired. Please add a new payment method."),
+	"Mandate Reauth": ("Mandate re-authorisation needed", "Your UPI Autopay mandate needs re-authorisation for the new limit."),
+	"Trial Expiring": ("Trial ending", "Your trial is ending. Add a payment method to keep your resources running."),
 }
 
 
@@ -31,7 +31,8 @@ def _preference_enabled(team: str, event_type: str) -> bool:
 	"""A team's opt-out for an event; absent preference doc = all enabled."""
 	if not frappe.db.exists("Notification Preference", team):
 		return True
-	value = frappe.db.get_value("Notification Preference", team, f"notify_{event_type}")
+	fieldname = "notify_" + event_type.lower().replace(" ", "_")
+	value = frappe.db.get_value("Notification Preference", team, fieldname)
 	return value is None or bool(value)
 
 
@@ -59,7 +60,7 @@ def notify(
 			"team": team,
 			"event_type": event_type,
 			"channel": "email",
-			"status": "sent" if enabled else "suppressed",
+			"status": "Sent" if enabled else "Suppressed",
 			"subject": subject,
 			"message": body,
 			"reference_doctype": reference_doctype,

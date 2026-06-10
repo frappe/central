@@ -38,7 +38,7 @@ def sync_invoice(invoice: str) -> dict:
 	status — the sync state lives in its own fields.
 	"""
 	inv = frappe.get_doc("Invoice", invoice)
-	if inv.invoice_type != "billable":
+	if inv.invoice_type != "Billable":
 		return {"skipped": "not_billable"}  # cost_report is not a statutory sale
 	if inv.status != "Paid":
 		return {"skipped": "not_paid"}
@@ -56,7 +56,7 @@ def sync_invoice(invoice: str) -> dict:
 		invoice,
 		{
 			"erpnext_invoice": erpnext_name,
-			"erpnext_sync_status": "synced",
+			"erpnext_sync_status": "Synced",
 			"erpnext_sync_attempts": attempt,
 			"erpnext_sync_error": None,
 			"erpnext_next_retry_at": None,
@@ -70,14 +70,14 @@ def _handle_failure(invoice: str, attempt: int, error: str) -> dict:
 	customer invoice is never rolled back — it stays Paid."""
 	values = {"erpnext_sync_attempts": attempt, "erpnext_sync_error": error[:140]}
 	if attempt >= MAX_ATTEMPTS:
-		values["erpnext_sync_status"] = "failed"
+		values["erpnext_sync_status"] = "Failed"
 		values["erpnext_next_retry_at"] = None
 		frappe.db.set_value("Invoice", invoice, values)
 		_alert_ops(invoice, error)
 		return {"failed": error, "attempts": attempt}
 
 	backoff = BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
-	values["erpnext_sync_status"] = "pending"
+	values["erpnext_sync_status"] = "Pending"
 	values["erpnext_next_retry_at"] = frappe.utils.add_to_date(
 		frappe.utils.now_datetime(), seconds=backoff
 	)
@@ -91,7 +91,7 @@ def retry_failed_syncs(now=None) -> list:
 	due = frappe.get_all(
 		"Invoice",
 		filters=[
-			["erpnext_sync_status", "=", "pending"],
+			["erpnext_sync_status", "=", "Pending"],
 			["erpnext_next_retry_at", "is", "set"],
 			["erpnext_next_retry_at", "<=", now],
 		],

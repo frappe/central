@@ -47,7 +47,7 @@ class TaxTestBase(IntegrationTestCase):
 		self._purge()
 		provision()  # full-month fixed line = 1000
 		self.sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly"
+			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
 		).name
 
 	def tearDown(self):
@@ -71,7 +71,7 @@ class TaxTestBase(IntegrationTestCase):
 class TestOutputTax(TaxTestBase):
 	def test_no_profile_is_untaxed(self):
 		inv = self._invoice()
-		self.assertEqual(inv.output_tax_type, "none")
+		self.assertEqual(inv.output_tax_type, "None")
 		self.assertEqual(inv.output_tax_amount, 0)
 		self.assertEqual(inv.total, 1000.0)
 		self.assertEqual(inv.expected_collection, 1000.0)
@@ -86,10 +86,10 @@ class TestOutputTax(TaxTestBase):
 
 class TestZeroRating(TaxTestBase):
 	def test_sez_is_zero_with_a_reason_code(self):
-		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="sez_lut")
+		set_tax_profile(output_tax_type="GST", output_tax_rate=18, zero_rated=1, zero_rating_reason="SEZ LUT")
 		inv = self._invoice()
 		self.assertEqual(inv.output_tax_amount, 0)  # zero-rated
-		self.assertEqual(inv.zero_rating_reason, "sez_lut")  # ... but with a reason
+		self.assertEqual(inv.zero_rating_reason, "SEZ LUT")  # ... but with a reason
 		self.assertEqual(inv.total, 1000.0)
 
 	def test_zero_rated_profile_requires_a_reason(self):

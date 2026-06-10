@@ -84,14 +84,14 @@ def _add_method_gateway(currency: str):
 		return frappe._dict()
 
 	gw = frappe.db.get_value("Payment Gateway", gw_name, ["name", "adapter_key"], as_dict=True)
-	if gw and gw.adapter_key == "razorpay":
+	if gw and gw.adapter_key == "Razorpay":
 		return gw
 
 	# The default gateway is not Razorpay — but if an enabled Razorpay gateway
 	# also handles this currency (non-default), prefer it for UPI.
 	rzp = frappe.db.get_value(
 		"Payment Gateway",
-		{"adapter_key": "razorpay", "is_enabled": 1},
+		{"adapter_key": "Razorpay", "is_enabled": 1},
 		["name", "adapter_key"],
 		as_dict=True,
 		order_by="creation asc",

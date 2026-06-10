@@ -42,7 +42,7 @@ class ReconTestBase(IntegrationTestCase):
 	def _open_invoice(self, total=1000):
 		return frappe.get_doc(
 			{
-				"doctype": "Invoice", "team": TEAM, "invoice_type": "billable", "status": "Open",
+				"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Open",
 				"period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
 				"subtotal": total, "total": total, "expected_collection": total,
 			}
@@ -52,7 +52,7 @@ class ReconTestBase(IntegrationTestCase):
 		name = frappe.get_doc(
 			{
 				"doctype": "Payment Attempt", "invoice": invoice, "team": TEAM, "gateway": GATEWAY,
-				"amount": 1000, "currency": "INR", "status": "initiated",
+				"amount": 1000, "currency": "INR", "status": "Initiated",
 				"gateway_transaction_id": txn,
 			}
 		).insert(ignore_permissions=True).name
@@ -72,15 +72,15 @@ class TestReconcile(ReconTestBase):
 
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
 		a = frappe.get_doc("Payment Attempt", attempt)
-		self.assertEqual(a.status, "captured")
-		self.assertEqual(a.resolved_by, "reconciliation")
+		self.assertEqual(a.status, "Captured")
+		self.assertEqual(a.resolved_by, "Reconciliation")
 
 	def test_gateway_failure_fails_attempt_invoice_stays_open(self):
 		inv = self._open_invoice()
 		attempt = self._ambiguous_attempt(inv)
 		with gateway_status("failed"):
 			reconciliation.reconcile_attempt(attempt)
-		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "failed")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
 
 	def test_missing_gateway_txn_is_failed_safely(self):
@@ -90,7 +90,7 @@ class TestReconcile(ReconTestBase):
 		with gateway_status("succeeded") as adapter:
 			reconciliation.reconcile_attempt(attempt)
 			adapter.get_transaction_status.assert_not_called()
-		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "failed")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Failed")
 
 	def test_pending_recent_is_left_unresolved(self):
 		inv = self._open_invoice()
@@ -98,13 +98,13 @@ class TestReconcile(ReconTestBase):
 		with gateway_status("requires_action"):
 			out = reconciliation.reconcile_attempt(attempt, now=frappe.utils.now_datetime())
 		self.assertEqual(out["unresolved"], "requires_action")
-		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "initiated")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Initiated")
 
 	def test_pending_aged_out_alerts_ops(self):
 		inv = self._open_invoice()
 		attempt = self._ambiguous_attempt(inv, minutes_old=60)
 		future = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=30)
-		with gateway_status("pending"):
+		with gateway_status("Pending"):
 			out = reconciliation.reconcile_attempt(attempt, now=future)
 		self.assertTrue(out["alerted"])
 		comments = frappe.get_all(
@@ -120,11 +120,11 @@ class TestScan(ReconTestBase):
 		with gateway_status("succeeded"):
 			results = reconciliation.run_reconciliation()
 		self.assertNotIn(fresh, [r.get("attempt") for r in results])
-		self.assertEqual(frappe.db.get_value("Payment Attempt", fresh, "status"), "initiated")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", fresh, "status"), "Initiated")
 
 	def test_scan_resolves_aged_ambiguous(self):
 		inv = self._open_invoice()
 		old = self._ambiguous_attempt(inv, minutes_old=60)
 		with gateway_status("succeeded"):
 			reconciliation.run_reconciliation()
-		self.assertEqual(frappe.db.get_value("Payment Attempt", old, "status"), "captured")
+		self.assertEqual(frappe.db.get_value("Payment Attempt", old, "status"), "Captured")

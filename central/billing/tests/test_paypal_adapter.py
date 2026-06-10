@@ -19,7 +19,7 @@ def make_paypal_gateway(name="GW-Test-PayPal"):
 	return frappe.get_doc(
 		{
 			"doctype": "Payment Gateway", "__newname": name, "title": "PayPal (Test)",
-			"adapter_key": "paypal", "currency": "USD", "api_key": "pp_client",
+			"adapter_key": "Paypal", "currency": "USD", "api_key": "pp_client",
 			"api_secret": "pp_secret", "webhook_secret": "WH-ID-1", "is_enabled": 1,
 		}
 	).insert(ignore_permissions=True)

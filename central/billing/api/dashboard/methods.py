@@ -21,7 +21,7 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 	team = _resolve_team(team)
 	return frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": ["!=", "cancelled"]},
+		filters={"team": team, "status": ["!=", "Cancelled"]},
 		fields=["name", "method_type", "status", "display_label", "is_default", "priority",
 				"reauth_required", "expiry_month", "expiry_year"],
 		order_by="priority asc, creation asc",
@@ -37,21 +37,21 @@ def get_payment_method_options(team: str | None = None) -> dict:
 	currency = _team_currency(team)
 	gw = _add_method_gateway(currency)
 
-	if gw.get("adapter_key") == "razorpay":
+	if gw.get("adapter_key") == "Razorpay":
 		from central.billing.payments import mandates
 
 		elig = mandates.upi_eligibility(team)
-		return {"gateway": gw.name, "adapter_key": "razorpay", "currency": currency,
-				"methods": ["card", "upi_autopay"], "allow_upi": elig["eligible"],
+		return {"gateway": gw.name, "adapter_key": "Razorpay", "currency": currency,
+				"methods": ["Card", "UPI Autopay"], "allow_upi": elig["eligible"],
 				"upi_block_reason": elig["reason"], "upi_limit": elig["limit"]}
 
 	publishable_key = None
-	if gw.get("adapter_key") == "stripe":
+	if gw.get("adapter_key") == "Stripe":
 		from central.billing.gateways.registry import get_adapter
 
 		publishable_key = get_adapter(frappe.get_doc("Payment Gateway", gw.name)).get_credential("api_key")
 	return {"gateway": gw.get("name"), "adapter_key": gw.get("adapter_key"), "currency": currency,
-			"methods": ["card"], "allow_upi": False, "upi_block_reason": None, "upi_limit": None,
+			"methods": ["Card"], "allow_upi": False, "upi_block_reason": None, "upi_limit": None,
 			"publishable_key": publishable_key}
 
 
@@ -90,18 +90,18 @@ def add_demo_card(team: str | None = None, gateway: str | None = None,
 	from central.billing.payments import payments
 
 	name = frappe.get_doc({
-		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "card",
-		"status": "active", "display_label": display_label, "gateway_method_id": f"pm_{frappe.generate_hash(6)}",
+		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
+		"status": "Active", "display_label": display_label, "gateway_method_id": f"pm_{frappe.generate_hash(6)}",
 		"gateway_customer_id": f"cus_{team}", "expiry_month": expiry_month, "expiry_year": expiry_year,
 		"validated_at": frappe.utils.now_datetime(),
 	}).insert(ignore_permissions=True).name
 	payments.densify_priorities(team)  # append at the end of the fallback order
-	return {"payment_method": name, "status": "active"}
+	return {"payment_method": name, "status": "Active"}
 
 
 @frappe.whitelist()
 def setup_payment_method_order(team: str | None = None, gateway: str | None = None,
-							   method_type: str = "upi_autopay") -> dict:
+							   method_type: str = "UPI Autopay") -> dict:
 	"""Begin adding a Razorpay recurring method — UPI Autopay mandate (ceiling =
 	trust-tier cap) or a card token. Returns the order handles the UI runs
 	Razorpay Checkout against (#08)."""
@@ -109,7 +109,7 @@ def setup_payment_method_order(team: str | None = None, gateway: str | None = No
 	gw = gateway or _add_method_gateway(_team_currency(team)).get("name")
 	from central.billing.payments import mandates
 
-	if method_type == "card":
+	if method_type == "Card":
 		return mandates.setup_card(team, gw)
 	return mandates.setup_mandate(team, gw)
 

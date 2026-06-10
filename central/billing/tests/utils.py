@@ -17,9 +17,9 @@ DEFAULT_ADDON_RATES = [
 ]
 
 DEFAULT_INCLUDES = [
-	{"resource_type": "compute", "quantity": 2, "unit": "vCPU"},
-	{"resource_type": "memory", "quantity": 4, "unit": "GB"},
-	{"resource_type": "disk", "quantity": 80, "unit": "GB"},
+	{"resource_type": "Compute", "quantity": 2, "unit": "vCPU"},
+	{"resource_type": "Memory", "quantity": 4, "unit": "GB"},
+	{"resource_type": "Disk", "quantity": 80, "unit": "GB"},
 ]
 
 
@@ -33,7 +33,7 @@ def make_plan(name, rates=None, includes=None, **kwargs):
 			"doctype": "Plan",
 			"__newname": name,
 			"title": kwargs.get("title", name),
-			"billing_cycle": kwargs.get("billing_cycle", "monthly"),
+			"billing_cycle": kwargs.get("billing_cycle", "Monthly"),
 			"is_active": kwargs.get("is_active", 1),
 			"includes": includes if includes is not None else DEFAULT_INCLUDES,
 		}
@@ -53,11 +53,11 @@ def make_addon(name, rates=None, **kwargs):
 			"doctype": "Add-on",
 			"__newname": name,
 			"title": kwargs.get("title", name),
-			"resource_type": kwargs.get("resource_type", "transfer"),
+			"resource_type": kwargs.get("resource_type", "Transfer"),
 			"unit": kwargs.get("unit", "GB"),
-			"billing_type": kwargs.get("billing_type", "metered"),
-			"billing_interval": kwargs.get("billing_interval", "monthly"),
-			"pricing_mode": kwargs.get("pricing_mode", "grandfathered"),
+			"billing_type": kwargs.get("billing_type", "Metered"),
+			"billing_interval": kwargs.get("billing_interval", "Monthly"),
+			"pricing_mode": kwargs.get("pricing_mode", "Grandfathered"),
 		}
 	)
 	doc.insert(ignore_permissions=True)

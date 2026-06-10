@@ -78,7 +78,7 @@ class TestForecast(CustomerDataBase):
 class TestCustomerReads(CustomerDataBase):
 	def _invoice(self):
 		return frappe.get_doc(
-			{"doctype": "Invoice", "team": TEAM, "invoice_type": "billable", "status": "Paid",
+			{"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Paid",
 			 "period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
 			 "subtotal": 1000, "output_tax_type": "GST", "output_tax_amount": 180, "total": 1180,
 			 "amount_paid": 1180,
@@ -104,8 +104,8 @@ class TestCustomerReads(CustomerDataBase):
 
 		gw = make_stripe_gateway("GW-Cust-Stripe").name
 		frappe.get_doc(
-			{"doctype": "Payment Method", "team": TEAM, "gateway": gw, "method_type": "card",
-			 "status": "active", "display_label": "Visa ····4242", "gateway_method_id": "pm_secret",
+			{"doctype": "Payment Method", "team": TEAM, "gateway": gw, "method_type": "Card",
+			 "status": "Active", "display_label": "Visa ····4242", "gateway_method_id": "pm_secret",
 			 "is_default": 1}
 		).insert(ignore_permissions=True)
 		rows = dashboard.list_payment_methods(TEAM)
@@ -119,7 +119,7 @@ class TestCustomerReads(CustomerDataBase):
 		credits.purchase(TEAM, 500, "INR")
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 500)
 		ledger = dashboard.credit_ledger(TEAM)
-		self.assertEqual(ledger[0]["entry_type"], "credit")
+		self.assertEqual(ledger[0]["entry_type"], "Credit")
 
 
 class TestTeamScoping(CustomerDataBase):
@@ -150,7 +150,7 @@ class TestTeamScoping(CustomerDataBase):
 					with self.assertRaises(frappe.PermissionError):
 						dashboard.list_invoices(team.name)
 					with self.assertRaises(frappe.PermissionError):
-						dashboard.save_billing_settings(team=team.name, billing_mode="prepaid")
+						dashboard.save_billing_settings(team=team.name, billing_mode="Prepaid")
 				finally:
 					frappe.set_user("Administrator")
 
@@ -171,7 +171,7 @@ class TestTeamScoping(CustomerDataBase):
 				frappe.set_user(member)
 				try:
 					dashboard.list_invoices(team_name)  # read ok
-					dashboard.save_billing_settings(team=team_name, billing_mode="prepaid")  # manage ok
+					dashboard.save_billing_settings(team=team_name, billing_mode="Prepaid")  # manage ok
 				finally:
 					frappe.set_user("Administrator")
 					frappe.db.delete("Billing Profile", {"team": team_name})
@@ -187,7 +187,7 @@ class TestTeamScoping(CustomerDataBase):
 			dashboard.list_invoices(team.name)  # read ok
 			dashboard.get_credit_balance(team.name)  # read ok
 			with self.assertRaises(frappe.PermissionError):
-				dashboard.save_billing_settings(team=team.name, billing_mode="prepaid")
+				dashboard.save_billing_settings(team=team.name, billing_mode="Prepaid")
 			with self.assertRaises(frappe.PermissionError):
 				dashboard.purchase_credits(team=team.name, amount=100)
 		finally:
@@ -216,14 +216,14 @@ class TestCustomerActions(CustomerDataBase):
 
 
 	def test_billing_settings_roundtrip(self):
-		dashboard.save_billing_settings(team=TEAM, billing_mode="prepaid", min_balance=5000)
+		dashboard.save_billing_settings(team=TEAM, billing_mode="Prepaid", min_balance=5000)
 		s = dashboard.get_billing_settings(TEAM)
-		self.assertEqual(s["billing_mode"], "prepaid")
+		self.assertEqual(s["billing_mode"], "Prepaid")
 		self.assertEqual(s["min_balance"], 5000)
 
 	def test_admin_without_team_falls_back(self):
 		from central.billing.catalog import subscriptions
-		subscriptions.create_subscription(team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly")
+		subscriptions.create_subscription(team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly")
 		invoices = dashboard.list_invoices()  # no team arg, as admin
 		self.assertIsInstance(invoices, list)
 
@@ -274,7 +274,7 @@ class TestGatewayTopUp(CustomerDataBase):
 			"payment_status": "paid", "payment_intent": "pi_x", "amount_total": 500000, "currency": "eur"}
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			order = dashboard.create_topup_order(team=TEAM, amount=5000, gateway=gw)
-			self.assertEqual(order["adapter_key"], "stripe")
+			self.assertEqual(order["adapter_key"], "Stripe")
 			self.assertEqual(order["checkout_url"], "https://stripe.test/cs")  # redirect, not a Razorpay order
 			adapter.create_checkout_session.assert_called_once()
 			self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)  # not credited yet

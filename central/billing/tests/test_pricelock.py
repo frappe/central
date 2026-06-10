@@ -92,6 +92,6 @@ class TestReceiveUsageEvents(PriceLockTestBase):
 
 	def test_cancelled_closes_the_active_lock(self):
 		receive_usage_events([event("evt-1", "srv-A", 40)])
-		receive_usage_events([event("evt-2", "srv-A", 40, event_type="cancelled")])
+		receive_usage_events([event("evt-2", "srv-A", 40, event_type="Cancelled")])
 
 		self.assertIsNone(get_locked_rate("srv-A"))  # nothing active

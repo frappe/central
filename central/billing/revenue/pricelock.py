@@ -50,7 +50,7 @@ def lock_from_event(event: dict) -> str | None:
 	effective = event.get("effective_from")
 
 	# A plan change or cancellation closes the resource's current open lock.
-	if event_type in ("changed", "cancelled"):
+	if event_type in ("changed", "Cancelled"):
 		prior = _open_lock(resource_id)
 		if prior:
 			frappe.db.set_value("Price Lock", prior, "ended_at", event.get("effective_to") or effective)
@@ -79,7 +79,7 @@ def lock_from_event(event: dict) -> str | None:
 			"cluster": cluster,
 			"started_at": effective,
 			# A cancellation opens no live lock — it is a closed terminal marker.
-			"ended_at": (event.get("effective_to") or effective) if event_type == "cancelled" else None,
+			"ended_at": (event.get("effective_to") or effective) if event_type == "Cancelled" else None,
 			"source_event_id": event_id,
 			"event_type": event_type,
 			"discrepancy": 1 if discrepancy else 0,

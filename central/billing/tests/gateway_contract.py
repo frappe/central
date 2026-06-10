@@ -121,7 +121,7 @@ class GatewayAdapterContract:
 		with self.charge_succeeds(txn_id="txn_ok"):
 			result = adapter.charge(invoice, method, key)
 		self.assertTrue(result.success)
-		self.assertEqual(result.status, "captured")
+		self.assertEqual(result.status, "Captured")
 		self.assertEqual(result.gateway_transaction_id, "txn_ok")
 
 	def test_declined_charge_is_a_failure_not_an_exception(self):
@@ -130,7 +130,7 @@ class GatewayAdapterContract:
 		with self.charge_declines(code="card_declined"):
 			result = adapter.charge(invoice, method, key)
 		self.assertFalse(result.success)
-		self.assertEqual(result.status, "failed")
+		self.assertEqual(result.status, "Failed")
 		self.assertEqual(result.failure_code, "card_declined")
 
 	def test_timeout_raises_gateway_timeout_and_forwards_idempotency_key(self):
@@ -150,7 +150,7 @@ class GatewayAdapterContract:
 		with self.refund_succeeds(refund_id="rfnd_ok"):
 			result = adapter.refund(payment_attempt, amount, reason)
 		self.assertTrue(result.success)
-		self.assertEqual(result.status, "completed")
+		self.assertEqual(result.status, "Completed")
 		self.assertEqual(result.gateway_refund_id, "rfnd_ok")
 
 	def test_parse_webhook_event_normalises_id_and_type(self):

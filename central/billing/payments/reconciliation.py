@@ -20,7 +20,7 @@ Terminal-state model (the resolved HITL decision — see issue #21):
 
 import frappe
 
-_AMBIGUOUS = ("initiated", "authorised")
+_AMBIGUOUS = ("Initiated", "Authorised")
 _GATEWAY_SUCCESS = {"succeeded", "captured", "paid", "completed"}
 _GATEWAY_FAILED = {"failed", "canceled", "cancelled", "declined", "expired", "voided"}
 
@@ -44,7 +44,7 @@ def reconcile_attempt(attempt_name: str, now=None) -> dict:
 		# The charge never reached the gateway — fail it safely (retryable), never
 		# leave it dangling.
 		_resolve_failed(attempt, "no gateway transaction id")
-		return {"attempt": attempt_name, "resolved": "failed", "reason": "no_txn"}
+		return {"attempt": attempt_name, "resolved": "Failed", "reason": "no_txn"}
 
 	status = (_adapter(attempt.gateway).get_transaction_status(attempt.gateway_transaction_id) or "").lower()
 
@@ -53,7 +53,7 @@ def reconcile_attempt(attempt_name: str, now=None) -> dict:
 		return {"attempt": attempt_name, "resolved": "paid", "gateway_status": status}
 	if status in _GATEWAY_FAILED:
 		_resolve_failed(attempt, f"gateway:{status}")
-		return {"attempt": attempt_name, "resolved": "failed", "gateway_status": status}
+		return {"attempt": attempt_name, "resolved": "Failed", "gateway_status": status}
 
 	# Still pending/unknown at the gateway — escalate if it has aged out.
 	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
@@ -81,17 +81,17 @@ def _resolve_paid(attempt):
 	"""Settle through the same idempotent path a webhook uses; tag provenance."""
 	from central.billing.payments import charges
 
-	attempt.status = "captured"
+	attempt.status = "Captured"
 	attempt.completed_at = frappe.utils.now_datetime()
-	attempt.resolved_by = "reconciliation"
+	attempt.resolved_by = "Reconciliation"
 	attempt.save(ignore_permissions=True)
 	charges._settle_invoice(attempt)  # idempotent: a duplicate webhook would no-op too
 
 
 def _resolve_failed(attempt, reason: str):
-	attempt.status = "failed"
+	attempt.status = "Failed"
 	attempt.completed_at = frappe.utils.now_datetime()
-	attempt.resolved_by = "reconciliation"
+	attempt.resolved_by = "Reconciliation"
 	attempt.failure_reason = reason[:140]
 	attempt.save(ignore_permissions=True)
 

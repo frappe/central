@@ -31,7 +31,7 @@ class AdminTestBase(IntegrationTestCase):
 			frappe.db.delete("Credit Wallet", {"team": team})
 		frappe.db.commit()
 
-	def _invoice(self, team, total, status="Paid", itype="billable", cluster="ap-south-1",
+	def _invoice(self, team, total, status="Paid", itype="Billable", cluster="ap-south-1",
 				 due_date=None, paid=None):
 		return frappe.get_doc(
 			{"doctype": "Invoice", "team": team, "invoice_type": itype, "status": status,
@@ -70,7 +70,7 @@ class TestAggregates(AdminTestBase):
 		self.assertEqual(teams[TEAM_A], 1000)
 
 	def test_free_trial_subsidy_by_cluster_and_plan(self):
-		self._invoice(TEAM_A, 800, itype="cost_report", cluster="ap-south-1")
+		self._invoice(TEAM_A, 800, itype="Cost Report", cluster="ap-south-1")
 		out = admin.get_free_trial_costs("2099-01-01", "2099-01-31")
 		self.assertEqual(out["total_subsidy"], 800)
 		self.assertEqual(out["by_cluster"]["ap-south-1"], 800)
@@ -80,7 +80,7 @@ class TestAggregates(AdminTestBase):
 class TestPanels(AdminTestBase):
 	def test_payment_analytics_success_rate_and_reasons(self):
 		inv = self._invoice(TEAM_A, 100, status="Open", paid=0)
-		for status, code in [("captured", None), ("captured", None), ("failed", "card_declined")]:
+		for status, code in [("Captured", None), ("Captured", None), ("Failed", "card_declined")]:
 			frappe.get_doc(
 				{"doctype": "Payment Attempt", "team": TEAM_A, "invoice": inv, "gateway": None,
 				 "amount": 100, "status": status, "failure_code": code,
@@ -130,9 +130,9 @@ class TestMetricsReports(AdminTestBase):
 	def test_metrics_counts_and_mrr(self):
 		from central.billing.catalog import subscriptions
 
-		subscriptions.create_subscription(team=TEAM_A, cluster="ap-south-1", plan=PLAN, billing_cycle="monthly")
-		sub_b = subscriptions.create_subscription(team=TEAM_B, cluster="ap-south-1", plan=PLAN, billing_cycle="monthly")
-		subscriptions.set_standing(sub_b.name, "past_due")
+		subscriptions.create_subscription(team=TEAM_A, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly")
+		sub_b = subscriptions.create_subscription(team=TEAM_B, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly")
+		subscriptions.set_standing(sub_b.name, "Past Due")
 
 		m = admin.get_metrics()
 		self.assertGreaterEqual(m["team_count"], 2)
@@ -141,7 +141,7 @@ class TestMetricsReports(AdminTestBase):
 		self.assertIn("payment_failures", m)
 
 		teams = {t["team"]: t for t in admin.list_teams()}
-		self.assertEqual(teams[TEAM_B]["standing"], "past_due")
+		self.assertEqual(teams[TEAM_B]["standing"], "Past Due")
 		self.assertGreater(teams[TEAM_A]["mrr"], 0)
 		for team in (TEAM_A, TEAM_B):
 			for sub in frappe.get_all("Subscription", {"team": team}, pluck="name"):

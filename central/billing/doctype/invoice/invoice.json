@@ -60,12 +60,12 @@
    "options": "Subscription"
   },
   {
-   "default": "billable",
+   "default": "Billable",
    "fieldname": "invoice_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Invoice Type",
-   "options": "billable\ncost_report",
+   "options": "Billable\nCost Report",
    "description": "cost_report = free/trial true-cost (compute, don't charge)"
   },
   {
@@ -134,11 +134,11 @@
    "description": "Discount repaid when the team dropped below its Commitment floor before term-end (issue #31); added to the taxable base. 0 otherwise."
   },
   {
-   "default": "none",
+   "default": "None",
    "fieldname": "output_tax_type",
    "fieldtype": "Select",
    "label": "Output Tax Type",
-   "options": "none\nGST\nVAT",
+   "options": "None\nGST\nVAT",
    "description": "Additive output tax (added to total)"
   },
   {
@@ -158,8 +158,8 @@
    "fieldname": "zero_rating_reason",
    "fieldtype": "Select",
    "label": "Zero-Rating Reason",
-   "options": "\nsez_lut\nexport",
-   "description": "Why output tax is 0 (compliance reason \u2014 never blank when zero-rated)"
+   "options": "\nSEZ LUT\nExport",
+   "description": "Why output tax is 0 (compliance reason — never blank when zero-rated)"
   },
   {
    "fieldname": "total",
@@ -190,7 +190,7 @@
    "fieldname": "tds_amount",
    "fieldtype": "Currency",
    "label": "TDS Amount",
-   "description": "Withheld \u2014 reduces collected, NOT total. 0 at launch"
+   "description": "Withheld — reduces collected, NOT total. 0 at launch"
   },
   {
    "default": "0",
@@ -230,11 +230,11 @@
    "description": "Sales Invoice name in ERPNext (statutory SOR); set on successful sync"
   },
   {
-   "default": "pending",
+   "default": "Pending",
    "fieldname": "erpnext_sync_status",
    "fieldtype": "Select",
    "label": "ERPNext Sync Status",
-   "options": "pending\nsynced\nfailed",
+   "options": "Pending\nSynced\nFailed",
    "read_only": 1
   },
   {

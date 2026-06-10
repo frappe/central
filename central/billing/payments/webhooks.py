@@ -15,7 +15,7 @@ import frappe
 @frappe.whitelist(allow_guest=True)
 def stripe() -> dict:
 	return process_webhook(
-		"stripe",
+		"Stripe",
 		frappe.request.get_data(),
 		dict(frappe.request.headers),
 	)
@@ -24,7 +24,7 @@ def stripe() -> dict:
 @frappe.whitelist(allow_guest=True)
 def razorpay() -> dict:
 	return process_webhook(
-		"razorpay",
+		"Razorpay",
 		frappe.request.get_data(),
 		dict(frappe.request.headers),
 	)
@@ -74,7 +74,7 @@ def _store_and_enqueue(gateway, event, payload: bytes):
 				"gateway_event_id": event.gateway_event_id,
 				"event_type": event.event_type,
 				"raw_payload": payload.decode() if isinstance(payload, bytes) else payload,
-				"status": "received",
+				"status": "Received",
 			}
 		).insert(ignore_permissions=True)
 	except frappe.DuplicateEntryError:

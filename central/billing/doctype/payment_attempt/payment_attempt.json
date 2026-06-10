@@ -89,12 +89,12 @@
    "fieldtype": "Section Break"
   },
   {
-   "default": "initiated",
+   "default": "Initiated",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "initiated\nauthorised\ncaptured\nfailed\nrefunded"
+   "options": "Initiated\nAuthorised\nCaptured\nFailed\nRefunded"
   },
   {
    "fieldname": "gateway_transaction_id",
@@ -105,7 +105,7 @@
    "fieldname": "resolved_by",
    "fieldtype": "Select",
    "label": "Resolved By",
-   "options": "\nwebhook\nreconciliation",
+   "options": "\nWebhook\nReconciliation",
    "description": "How the terminal state was reached — audit provenance (#21)"
   },
   {

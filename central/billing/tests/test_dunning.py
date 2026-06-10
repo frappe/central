@@ -26,7 +26,7 @@ DUE = "2026-06-01"
 def declining_gateway():
 	adapter = MagicMock()
 	adapter.charge.return_value = PaymentResult(
-		success=False, status="failed", failure_code="card_declined", failure_reason="Card declined"
+		success=False, status="Failed", failure_code="card_declined", failure_reason="Card declined"
 	)
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
@@ -69,14 +69,14 @@ class DunningTestBase(IntegrationTestCase):
 		return frappe.get_doc(
 			{
 				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY,
-				"method_type": "card", "status": "active",
+				"method_type": "Card", "status": "Active",
 				"gateway_method_id": "pm_x", "gateway_customer_id": "cus_x", "is_default": 1,
 			}
 		).insert(ignore_permissions=True).name
 
 	def _subscription(self, with_card=True):
 		return subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly",
+			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly",
 			default_payment_method=self._card() if with_card else None,
 			gateway=GATEWAY if with_card else None,
 		).name
@@ -84,7 +84,7 @@ class DunningTestBase(IntegrationTestCase):
 	def _open_invoice(self, sub, total=1000):
 		return frappe.get_doc(
 			{
-				"doctype": "Invoice", "team": TEAM, "subscription": sub, "invoice_type": "billable",
+				"doctype": "Invoice", "team": TEAM, "subscription": sub, "invoice_type": "Billable",
 				"status": "Open", "period_start": "2026-05-01", "period_end": "2026-05-31",
 				"currency": "INR", "subtotal": total, "total": total,
 				"expected_collection": total, "due_date": DUE,
@@ -129,7 +129,7 @@ class TestRetrySchedule(DunningTestBase):
 		frappe.get_doc(
 			{
 				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY,
-				"method_type": "card", "status": "active", "gateway_method_id": "pm_y",
+				"method_type": "Card", "status": "Active", "gateway_method_id": "pm_y",
 				"gateway_customer_id": "cus_x", "priority": 1,
 			}
 		).insert(ignore_permissions=True)
@@ -162,7 +162,7 @@ class TestStagedEscalation(DunningTestBase):
 		self._run_through(inv, sub, last_day=7)
 
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
-		self.assertEqual(self._standing(sub), "past_due")  # grace
+		self.assertEqual(self._standing(sub), "Past Due")  # grace
 		self.assertFalse(self._has_directive("suspend"))  # not stopped — still running
 
 	def test_day14_suspend_directive_on_token_channel(self):
@@ -170,7 +170,7 @@ class TestStagedEscalation(DunningTestBase):
 		inv = self._open_invoice(sub)
 		self._run_through(inv, sub, last_day=14)
 
-		self.assertEqual(self._standing(sub), "suspended")
+		self.assertEqual(self._standing(sub), "Suspended")
 		self.assertTrue(self._has_directive("suspend"))  # cap-0 + suspend rides the token
 
 	def test_day44_terminate_directive(self):
@@ -183,9 +183,9 @@ class TestStagedEscalation(DunningTestBase):
 	def test_cost_report_invoice_is_not_dunned(self):
 		sub = self._subscription()
 		inv = self._open_invoice(sub)
-		frappe.db.set_value("Invoice", inv, "invoice_type", "cost_report")
+		frappe.db.set_value("Invoice", inv, "invoice_type", "Cost Report")
 		out = dunning.process_invoice_dunning(inv, now=day(14))
-		self.assertEqual(out["skipped"], "cost_report")
+		self.assertEqual(out["skipped"], "Cost Report")
 		self.assertEqual(self._attempts(inv), 0)
 
 
@@ -197,4 +197,4 @@ class TestCreditsOnlyDunning(DunningTestBase):
 			dunning.process_invoice_dunning(inv, now=day(d))
 
 		self.assertEqual(self._attempts(inv), 0)  # nothing to retry against
-		self.assertEqual(self._standing(sub), "suspended")  # but still escalates
+		self.assertEqual(self._standing(sub), "Suspended")  # but still escalates

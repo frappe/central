@@ -24,12 +24,12 @@
   {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "reqd": 1},
   {
    "fieldname": "event_type", "fieldtype": "Select", "in_list_view": 1, "label": "Event Type",
-   "options": "payment_success\npayment_failure\npayment_retry\ninvoice_overdue\ncredit_low\ncard_expiry\nmandate_reauth\ntrial_expiring"
+   "options": "Payment Success\nPayment Failure\nPayment Retry\nInvoice Overdue\nCredit Low\nCard Expiry\nMandate Reauth\nTrial Expiring"
   },
   {"default": "email", "fieldname": "channel", "fieldtype": "Data", "label": "Channel"},
   {
-   "default": "sent", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1,
-   "label": "Status", "options": "sent\nsuppressed"
+   "default": "Sent", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1,
+   "label": "Status", "options": "Sent\nSuppressed"
   },
   {"fieldname": "column_break_main", "fieldtype": "Column Break"},
   {"fieldname": "reference_doctype", "fieldtype": "Data", "label": "Reference DocType"},

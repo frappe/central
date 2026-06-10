@@ -22,7 +22,7 @@ def get_summary(from_date: str | None = None, to_date: str | None = None) -> dic
 	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
-		filters=[["invoice_type", "=", "billable"]] + _period_filter("period_start", from_date, to_date),
+		filters=[["invoice_type", "=", "Billable"]] + _period_filter("period_start", from_date, to_date),
 		fields=["status", "total", "amount_paid", "currency"],
 	)
 	billed = sum(_to_inr(i.total, i.currency) for i in invoices)
@@ -55,7 +55,7 @@ def get_revenue_trend(months: int = 12) -> list[dict]:
 	buckets = {}
 	for inv in frappe.get_all(
 		"Invoice",
-		filters={"invoice_type": "billable"},
+		filters={"invoice_type": "Billable"},
 		fields=["period_start", "total", "amount_paid", "currency"],
 	):
 		if not inv.period_start:
@@ -83,7 +83,7 @@ def get_cluster_breakdown(from_date: str | None = None, to_date: str | None = No
 	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
-		filters=[["invoice_type", "=", "billable"]] + _period_filter("period_start", from_date, to_date),
+		filters=[["invoice_type", "=", "Billable"]] + _period_filter("period_start", from_date, to_date),
 		pluck="name",
 	)
 	if not invoices:
@@ -103,7 +103,7 @@ def get_team_breakdown(from_date: str | None = None, to_date: str | None = None)
 	totals = {}
 	for i in frappe.get_all(
 		"Invoice",
-		filters=[["invoice_type", "=", "billable"]] + _period_filter("period_start", from_date, to_date),
+		filters=[["invoice_type", "=", "Billable"]] + _period_filter("period_start", from_date, to_date),
 		fields=["team", "total"],
 	):
 		totals[i.team] = totals.get(i.team, 0) + frappe.utils.flt(i.total)
@@ -125,9 +125,9 @@ def get_payment_analytics(from_date: str | None = None, to_date: str | None = No
 	for a in attempts:
 		g = by_gateway.setdefault(a.gateway or "unknown", {"total": 0, "captured": 0})
 		g["total"] += 1
-		if a.status == "captured":
+		if a.status == "Captured":
 			g["captured"] += 1
-		elif a.status == "failed":
+		elif a.status == "Failed":
 			failure_reasons[a.failure_code or "unknown"] = failure_reasons.get(a.failure_code or "unknown", 0) + 1
 	for g in by_gateway.values():
 		g["success_rate"] = round(g["captured"] / g["total"], 3) if g["total"] else 0
@@ -142,7 +142,7 @@ def get_overdue_aging(now: str | None = None) -> dict:
 	buckets = {label: {"count": 0, "amount": 0.0} for label, _lo, _hi in AGING_BUCKETS}
 	for inv in frappe.get_all(
 		"Invoice",
-		filters=[["status", "in", ["Open", "Overdue"]], ["invoice_type", "=", "billable"]],
+		filters=[["status", "in", ["Open", "Overdue"]], ["invoice_type", "=", "Billable"]],
 		fields=["total", "amount_paid", "due_date"],
 	):
 		if not inv.due_date:
@@ -165,7 +165,7 @@ def get_free_trial_costs(from_date: str | None = None, to_date: str | None = Non
 	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
-		filters=[["invoice_type", "=", "cost_report"]] + _period_filter("period_start", from_date, to_date),
+		filters=[["invoice_type", "=", "Cost Report"]] + _period_filter("period_start", from_date, to_date),
 		fields=["name", "subtotal"],
 	)
 	total = sum(frappe.utils.flt(i.subtotal) for i in invoices)
@@ -194,7 +194,7 @@ def list_all_invoices(status: str = None, team: str = None, limit: int = 500) ->
 	pseudo-filters `outstanding` (Open+Overdue) and `paid`.
 	"""
 	require_operator()
-	filters = {"invoice_type": "billable"}
+	filters = {"invoice_type": "Billable"}
 	if team:
 		filters["team"] = team
 	if status == "outstanding":

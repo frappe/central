@@ -147,15 +147,15 @@ class TestWebhookHardening(IntegrationTestCase):
 
 	def test_replay_is_idempotent_no_second_job(self):
 		with valid_signature(), patch("frappe.enqueue") as enqueue:
-			process_webhook("stripe", FLOOD_PAYLOAD, dict({"Stripe-Signature": "x"}))
-			process_webhook("stripe", FLOOD_PAYLOAD, dict({"Stripe-Signature": "x"}))  # replay
+			process_webhook("Stripe", FLOOD_PAYLOAD, dict({"Stripe-Signature": "x"}))
+			process_webhook("Stripe", FLOOD_PAYLOAD, dict({"Stripe-Signature": "x"}))  # replay
 		self.assertEqual(self._count(), 1)  # one row
 		self.assertEqual(enqueue.call_count, 1)  # one job — replay had no side effect
 
 	def test_concurrent_flood_stores_exactly_one(self):
 		def deliver(_i):
 			with patch.object(stripe.Webhook, "construct_event", return_value={"id": FLOOD_EVENT}):
-				process_webhook("stripe", FLOOD_PAYLOAD, {"Stripe-Signature": "x"})
+				process_webhook("Stripe", FLOOD_PAYLOAD, {"Stripe-Signature": "x"})
 
 		run_threads(10, deliver)  # 10 simultaneous deliveries of the same event
 		frappe.db.rollback()
@@ -202,7 +202,7 @@ class TestLoadTwoPhase(IntegrationTestCase):
 				  "event_type": "subscribed", "effective_from": "2026-06-01 00:00:00", "effective_to": None}]
 			)
 			subscriptions.create_subscription(
-				team=team, cluster=self.CLUSTER, plan=self.PLAN, billing_cycle="monthly"
+				team=team, cluster=self.CLUSTER, plan=self.PLAN, billing_cycle="Monthly"
 			)
 
 		drafts = invoicing.generate_draft_invoices("2026-06-01", "2026-06-30")

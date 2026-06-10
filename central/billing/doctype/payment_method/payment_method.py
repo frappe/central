@@ -12,14 +12,14 @@ class PaymentMethod(Document):
 	def _reject_duplicate_card(self):
 		"""A team can't register the same card twice. Using one card as both the
 		primary and a backup gives no real fallback, so it is disallowed."""
-		if not self.gateway_method_id or self.status == "cancelled":
+		if not self.gateway_method_id or self.status == "Cancelled":
 			return
 		dup = frappe.get_all(
 			"Payment Method",
 			filters={
 				"team": self.team,
 				"gateway_method_id": self.gateway_method_id,
-				"status": ["!=", "cancelled"],
+				"status": ["!=", "Cancelled"],
 				"name": ["!=", self.name or ""],
 			},
 			limit=1,

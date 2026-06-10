@@ -32,7 +32,7 @@ def is_trial_team(team: str) -> bool:
 
 def invoice_type_for(team: str) -> str:
 	"""`cost_report` for entry-tier teams, `billable` otherwise."""
-	return "cost_report" if is_trial_team(team) else "billable"
+	return "Cost Report" if is_trial_team(team) else "Billable"
 
 
 def convert_to_paid(team: str, level: str | None = None):
@@ -89,7 +89,7 @@ def expire_trial(team: str, cluster_slices: dict | None = None) -> dict:
 	from central.billing.platform import notifications
 	from central.billing.catalog.entitlements import issue_token
 
-	notifications.notify(team, "trial_expiring", context={})
+	notifications.notify(team, "Trial Expiring", context={})
 	return issue_token(team, cluster_slices or {}, suspend=True)
 
 
@@ -99,7 +99,7 @@ def subsidy_total(from_date=None, to_date=None) -> float:
 	The true cost-to-company of non-paying teams; surfaced on the admin
 	dashboard (#19).
 	"""
-	filters = [["invoice_type", "=", "cost_report"]]
+	filters = [["invoice_type", "=", "Cost Report"]]
 	if from_date:
 		filters.append(["period_start", ">=", from_date])
 	if to_date:

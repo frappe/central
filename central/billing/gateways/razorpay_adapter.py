@@ -142,7 +142,7 @@ class RazorpayAdapter(GatewayAdapter):
 		except razorpay.errors.BadRequestError as e:
 			return PaymentResult(
 				success=False,
-				status="failed",
+				status="Failed",
 				failure_code=getattr(e, "code", None),
 				failure_reason=str(e),
 			)
@@ -152,7 +152,7 @@ class RazorpayAdapter(GatewayAdapter):
 		captured = payment.get("status") == "captured"
 		return PaymentResult(
 			success=captured,
-			status="captured" if captured else payment.get("status"),
+			status="Captured" if captured else payment.get("status"),
 			gateway_transaction_id=payment.get("id"),
 			raw=dict(payment),
 		)
@@ -170,7 +170,7 @@ class RazorpayAdapter(GatewayAdapter):
 		done = refund.get("status") in ("processed", "pending")
 		return RefundResult(
 			success=done,
-			status="completed" if done else refund.get("status"),
+			status="Completed" if done else refund.get("status"),
 			gateway_refund_id=refund.get("id"),
 			raw=dict(refund),
 		)

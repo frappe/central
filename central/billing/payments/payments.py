@@ -19,7 +19,7 @@ adapter through the registry, keeping the gateway seam intact.
 import frappe
 from frappe.model.document import Document
 
-CARD_METHOD = "card"
+CARD_METHOD = "Card"
 
 
 def _adapter(gateway: str):
@@ -43,7 +43,7 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 			"team": team,
 			"gateway": gateway,
 			"method_type": CARD_METHOD,
-			"status": "pending_validation",
+			"status": "Pending Validation",
 			"gateway_customer_id": gateway_customer_id,
 			"setup_reference": handles.get("setup_intent_id"),
 		}
@@ -81,11 +81,11 @@ def confirm_payment_method(
 	method.save(ignore_permissions=True)
 
 	if not _adapter(method.gateway).validate_payment_method(method):
-		method.status = "failed"
+		method.status = "Failed"
 		method.save(ignore_permissions=True)
 		return method
 
-	method.status = "active"
+	method.status = "Active"
 	method.validated_at = frappe.utils.now_datetime()
 	method.save(ignore_permissions=True)
 	densify_priorities(method.team)
@@ -99,7 +99,7 @@ def densify_priorities(team: str):
 	fallback order; idempotent."""
 	names = frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": ["!=", "cancelled"]},
+		filters={"team": team, "status": ["!=", "Cancelled"]},
 		order_by="priority asc, creation asc",
 		pluck="name",
 	)
@@ -116,7 +116,7 @@ def densify_priorities(team: str):
 def set_default_payment_method(payment_method: str) -> Document:
 	"""Make this the team's primary (priority 0). Only an active method can be."""
 	method = frappe.get_doc("Payment Method", payment_method)
-	if method.status != "active":
+	if method.status != "Active":
 		frappe.throw("Only an active payment method can be the primary.", frappe.ValidationError)
 	# Sort it ahead of everyone, then re-densify resolves the rest.
 	frappe.db.set_value("Payment Method", method.name, "priority", -1, update_modified=False)
@@ -146,7 +146,7 @@ def delete_payment_method(payment_method: str) -> dict:
 	frappe.delete_doc("Payment Method", method.name, ignore_permissions=True)
 	densify_priorities(team)
 	new_default = frappe.db.get_value(
-		"Payment Method", {"team": team, "priority": 0, "status": "active"}, "name"
+		"Payment Method", {"team": team, "priority": 0, "status": "Active"}, "name"
 	)
 	return {"deleted": payment_method, "new_default": new_default}
 
@@ -163,17 +163,17 @@ def expire_payment_methods(now=None) -> dict:
 	expired = []
 	for m in frappe.get_all(
 		"Payment Method",
-		filters={"method_type": CARD_METHOD, "status": "active"},
+		filters={"method_type": CARD_METHOD, "status": "Active"},
 		fields=["name", "team", "display_label", "expiry_month", "expiry_year"],
 	):
 		if not m.expiry_year or not m.expiry_month:
 			continue
 		month_start = frappe.utils.getdate(f"{int(m.expiry_year):04d}-{int(m.expiry_month):02d}-01")
 		if frappe.utils.get_last_day(month_start) < today:
-			frappe.db.set_value("Payment Method", m.name, "status", "expired")
+			frappe.db.set_value("Payment Method", m.name, "status", "Expired")
 			expired.append(m.name)
 			notifications.notify(
-				m.team, "card_expiry", context={"label": m.display_label or "card"},
+				m.team, "Card Expiry", context={"label": m.display_label or "Card"},
 				reference_doctype="Payment Method", reference_name=m.name,
 			)
 	return {"expired": expired}

@@ -42,7 +42,7 @@
   {"default": "India", "fieldname": "country", "fieldtype": "Data", "label": "Country"},
   {"fieldname": "pincode", "fieldtype": "Data", "label": "Pincode"},
   {"fieldname": "section_break_settings", "fieldtype": "Section Break", "label": "Billing Settings"},
-  {"default": "postpaid", "fieldname": "billing_mode", "fieldtype": "Select", "label": "Payment Mode", "options": "postpaid\nprepaid", "description": "prepaid = wallet-first; postpaid = invoice in arrears"},
+  {"default": "Postpaid", "fieldname": "billing_mode", "fieldtype": "Select", "label": "Payment Mode", "options": "Postpaid\nPrepaid", "description": "prepaid = wallet-first; postpaid = invoice in arrears"},
   {"default": "0", "fieldname": "min_balance", "fieldtype": "Currency", "label": "Minimum Balance (prepaid)"},
   {"fieldname": "column_break_settings", "fieldtype": "Column Break"},
   {"default": "0", "fieldname": "spend_alert_threshold", "fieldtype": "Currency", "label": "Spend Alert Threshold (postpaid)"}

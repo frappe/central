@@ -38,7 +38,7 @@ def _resolve_terms(meter: dict):
 	  active price-lock (skipped when there is no active lock).
 	"""
 	addon = _addon_for(meter.get("resource_type"))
-	if addon and addon.pricing_mode == "live":
+	if addon and addon.pricing_mode == "Live":
 		return {
 			"team": meter.get("team"),
 			"cluster": meter.get("cluster"),
@@ -162,7 +162,7 @@ def metered_line_items(team: str, cluster: str, period_start, period_end) -> lis
 		# A live add-on (e.g. snapshot) reads the CURRENT catalog rate and has no
 		# allowance; a grandfathered add-on uses the terms locked at ingest.
 		addon = _addon_for(r.resource_type)
-		if addon and addon.pricing_mode == "live":
+		if addon and addon.pricing_mode == "Live":
 			rate = frappe.utils.flt(resolve_rate(get_catalog_rates("Add-on", addon.name), r.currency, cluster))
 			allowance = 0.0
 		else:

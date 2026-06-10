@@ -54,7 +54,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Meter Type",
-   "options": "counter\ngauge"
+   "options": "Counter\nGauge"
   },
   {
    "fieldname": "column_break_period",

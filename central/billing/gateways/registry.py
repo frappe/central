@@ -33,9 +33,9 @@ def get_adapter(gateway) -> GatewayAdapter:
 	from central.billing.gateways.stripe_adapter import StripeAdapter
 
 	adapters = {
-		"stripe": StripeAdapter,
-		"razorpay": RazorpayAdapter,
-		"paypal": PayPalAdapter,
+		"Stripe": StripeAdapter,
+		"Razorpay": RazorpayAdapter,
+		"Paypal": PayPalAdapter,
 	}
 
 	adapter_class = adapters.get(gateway.adapter_key)

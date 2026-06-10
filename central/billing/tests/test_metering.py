@@ -16,7 +16,7 @@ PLAN = "bundle-meter-test"
 RESOURCE = "srv-meter-1"
 
 
-def meter(key_suffix, qty, resource_type="transfer", meter_type="counter"):
+def meter(key_suffix, qty, resource_type="Transfer", meter_type="Counter"):
 	return {
 		"resource_id": RESOURCE,
 		"resource_type": resource_type,
@@ -55,12 +55,12 @@ class MeteringTestBase(IntegrationTestCase):
 		# Plan includes a 100 GB transfer allowance; metered Add-on bills 0.5/GB overage.
 		make_plan(
 			PLAN,
-			includes=[{"resource_type": "transfer", "quantity": 100, "unit": "GB"}],
+			includes=[{"resource_type": "Transfer", "quantity": 100, "unit": "GB"}],
 		)
 		make_addon(
 			"addon-transfer-meter",
-			resource_type="transfer",
-			billing_type="metered",
+			resource_type="Transfer",
+			billing_type="Metered",
 			rates=[{"cluster": "", "currency": "INR", "rate": 0.5}],
 		)
 		self._purge()
@@ -122,13 +122,13 @@ class TestMeteredLineItems(MeteringTestBase):
 	def test_draft_invoice_includes_fixed_and_metered_lines(self):
 		receive_meter_rollups([meter("a", 150)])
 		sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="monthly"
+			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
 		).name
 		name = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 
 		resource_types = sorted(li.resource_type for li in inv.items)
-		self.assertIn("transfer", resource_types)  # metered line present
+		self.assertIn("Transfer", resource_types)  # metered line present
 		self.assertIn("bundle", resource_types)  # fixed line present
 		# subtotal = fixed (full month 1000) + metered overage (25)
 		self.assertEqual(inv.subtotal, 1025.0)

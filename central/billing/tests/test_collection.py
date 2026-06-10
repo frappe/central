@@ -22,7 +22,7 @@ GATEWAY = "GW-Fallback-Stripe"
 def _result(success, txn_id):
 	return PaymentResult(
 		success=success,
-		status="captured" if success else "failed",
+		status="Captured" if success else "Failed",
 		gateway_transaction_id=txn_id if success else None,
 		failure_code=None if success else "card_declined",
 		failure_reason=None if success else "declined",
@@ -63,7 +63,7 @@ class FallbackTestBase(IntegrationTestCase):
 		return frappe.get_doc(
 			{
 				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY,
-				"method_type": "card", "status": "active", "display_label": label,
+				"method_type": "Card", "status": "Active", "display_label": label,
 				"gateway_method_id": gw_id, "gateway_customer_id": "cus_1",
 				"priority": priority, "is_default": 1 if priority == 0 else 0,
 				"reauth_required": reauth,
@@ -87,7 +87,7 @@ class FallbackTestBase(IntegrationTestCase):
 			{
 				"doctype": "Webhook Event", "gateway": GATEWAY, "gateway_event_id": f"evt_{txn_id}",
 				"event_type": "payment_intent.payment_failed", "raw_payload": json.dumps(payload),
-				"status": "received",
+				"status": "Received",
 			}
 		).insert(ignore_permissions=True).name
 
@@ -109,8 +109,8 @@ class TestSyncFallback(FallbackTestBase):
 		self.assertEqual(adapter.charge.call_count, 2)  # primary then backup
 		attempts = self._attempts()
 		self.assertEqual([a.payment_method for a in attempts], [self.primary, self.backup])
-		self.assertEqual(attempts[0].status, "failed")
-		self.assertEqual(attempts[1].status, "captured")  # awaiting webhook, but charged
+		self.assertEqual(attempts[0].status, "Failed")
+		self.assertEqual(attempts[1].status, "Captured")  # awaiting webhook, but charged
 
 	def test_all_methods_fail_leaves_invoice_open_without_repeat(self):
 		inv = self._open_invoice()
@@ -147,7 +147,7 @@ class TestWebhookFallback(FallbackTestBase):
 		self.assertIn("pi_backup", attempts)
 		self.assertEqual(attempts["pi_backup"].payment_method, self.backup)
 		primary_attempt = next(a for a in self._attempts() if a.payment_method == self.primary)
-		self.assertEqual(primary_attempt.status, "failed")
+		self.assertEqual(primary_attempt.status, "Failed")
 
 
 class TestMethodOrdering(FallbackTestBase):

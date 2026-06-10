@@ -36,7 +36,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Adapter",
-   "options": "stripe\nrazorpay\npaypal",
+   "options": "Stripe\nRazorpay\nPaypal",
    "reqd": 1
   },
   {

@@ -30,7 +30,7 @@ def ordered_methods(team: str) -> list:
 	whose mandate needs re-authorisation."""
 	return frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": "active", "reauth_required": 0},
+		filters={"team": team, "status": "Active", "reauth_required": 0},
 		order_by="priority asc, creation asc",
 		fields=["name", "gateway", "priority"],
 	)
@@ -41,7 +41,7 @@ def _failed_methods_for(invoice: str) -> set:
 	return set(
 		frappe.get_all(
 			"Payment Attempt",
-			filters={"invoice": invoice, "status": "failed"},
+			filters={"invoice": invoice, "status": "Failed"},
 			pluck="payment_method",
 		)
 	)
@@ -83,7 +83,7 @@ def collect_invoice(invoice: str) -> dict:
 		result = charges.pay_invoice(invoice, method.name, method.gateway)
 
 		# A synchronous decline: rotate to the next method now (immediate fallback).
-		if result.get("status") == "failed":
+		if result.get("status") == "Failed":
 			continue
 		# Captured (awaiting webhook), in-flight, or a transient timeout: stop here.
 		return result

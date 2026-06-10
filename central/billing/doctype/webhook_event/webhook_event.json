@@ -41,12 +41,12 @@
    "label": "Event Type"
   },
   {
-   "default": "received",
+   "default": "Received",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "received\nprocessed\nfailed\nignored"
+   "options": "Received\nProcessed\nFailed\nIgnored"
   },
   {
    "fieldname": "column_break_main",

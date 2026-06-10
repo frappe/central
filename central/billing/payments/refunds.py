@@ -6,7 +6,7 @@ Two destinations, two mechanics:
 
   - **Full dispute -> source.** Refund the captured amount through the gateway
     (`adapter.refund`, symmetric across Stripe/Razorpay). The invoice **stays
-    Paid** with a linked Refund — there is no "refunded" state, which preserves
+    Paid** with a linked Refund — there is no "Refunded" state, which preserves
     GST immutability; the statutory credit note is issued in ERPNext (#17).
   - **Partial overcharge -> wallet.** Add the difference to the customer's
     wallet as a credit ledger entry, applied on the next invoice. No gateway
@@ -27,14 +27,14 @@ def _adapter(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
-def issue_refund(payment_attempt: str, amount=None, destination: str = "source", reason: str | None = None):
+def issue_refund(payment_attempt: str, amount=None, destination: str = "Source", reason: str | None = None):
 	"""Refund (part of) a captured Payment Attempt to source or to the wallet.
 
 	`amount` defaults to the full captured amount (a full dispute). The invoice
 	is never moved off Paid.
 	"""
 	attempt = frappe.get_doc("Payment Attempt", payment_attempt)
-	if attempt.status not in ("captured", "refunded"):
+	if attempt.status not in ("Captured", "Refunded"):
 		frappe.throw(
 			f"Only a captured charge can be refunded (attempt is {attempt.status}).",
 			frappe.ValidationError,
@@ -54,12 +54,12 @@ def issue_refund(payment_attempt: str, amount=None, destination: str = "source",
 			"currency": attempt.currency,
 			"destination": destination,
 			"reason": reason,
-			"status": "initiated",
+			"status": "Initiated",
 			"created_at": frappe.utils.now_datetime(),
 		}
 	).insert(ignore_permissions=True)
 
-	if destination == "wallet":
+	if destination == "Wallet":
 		_to_wallet(refund, attempt)
 	else:
 		_to_source(refund, attempt, reason)
@@ -69,14 +69,14 @@ def issue_refund(payment_attempt: str, amount=None, destination: str = "source",
 
 def full_dispute(payment_attempt: str, reason: str | None = None):
 	"""Refund the whole charge to source; the invoice stays Paid + linked Refund."""
-	return issue_refund(payment_attempt, amount=None, destination="source", reason=reason)
+	return issue_refund(payment_attempt, amount=None, destination="Source", reason=reason)
 
 
 def partial_overcharge(payment_attempt: str, amount, reason: str | None = None, to_source: bool = False):
 	"""Correct a partial overcharge: to the wallet by default (active customers),
 	to source for churning customers (`to_source=True`)."""
 	return issue_refund(
-		payment_attempt, amount=amount, destination="source" if to_source else "wallet", reason=reason
+		payment_attempt, amount=amount, destination="Source" if to_source else "Wallet", reason=reason
 	)
 
 
@@ -90,7 +90,7 @@ def _to_wallet(refund, attempt):
 		reference_name=refund.name,
 		note=refund.reason or f"Overcharge refund for {attempt.invoice}",
 	)
-	refund.status = "completed"
+	refund.status = "Completed"
 	refund.completed_at = frappe.utils.now_datetime()
 	refund.save(ignore_permissions=True)
 	return refund
@@ -100,11 +100,11 @@ def _to_source(refund, attempt, reason):
 	"""Refund to the gateway via the adapter (symmetric across gateways)."""
 	result = _adapter(attempt.gateway).refund(attempt, refund.amount, reason or "")
 	refund.gateway_refund_id = result.gateway_refund_id
-	refund.status = "completed" if result.success else "failed"
+	refund.status = "Completed" if result.success else "Failed"
 	if result.success:
 		refund.completed_at = frappe.utils.now_datetime()
 		# A full refund marks the attempt refunded (the invoice still stays Paid).
 		if frappe.utils.flt(refund.amount) >= frappe.utils.flt(attempt.amount):
-			frappe.db.set_value("Payment Attempt", attempt.name, "status", "refunded")
+			frappe.db.set_value("Payment Attempt", attempt.name, "status", "Refunded")
 	refund.save(ignore_permissions=True)
 	return refund

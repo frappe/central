@@ -29,12 +29,12 @@
    "reqd": 1
   },
   {
-   "default": "none",
+   "default": "None",
    "fieldname": "output_tax_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Output Tax Type",
-   "options": "none\nGST\nVAT"
+   "options": "None\nGST\nVAT"
   },
   {
    "default": "0",
@@ -57,7 +57,7 @@
    "fieldname": "zero_rating_reason",
    "fieldtype": "Select",
    "label": "Zero-Rating Reason",
-   "options": "\nsez_lut\nexport"
+   "options": "\nSEZ LUT\nExport"
   },
   {
    "fieldname": "section_break_tds",

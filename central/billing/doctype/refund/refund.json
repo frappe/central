@@ -68,7 +68,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Destination",
-   "options": "source\nwallet",
+   "options": "Source\nWallet",
    "description": "source = gateway (full dispute); wallet = credit ledger (partial overcharge)"
   },
   {
@@ -76,12 +76,12 @@
    "fieldtype": "Section Break"
   },
   {
-   "default": "initiated",
+   "default": "Initiated",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "initiated\ncompleted\nfailed"
+   "options": "Initiated\nCompleted\nFailed"
   },
   {
    "fieldname": "gateway_refund_id",
