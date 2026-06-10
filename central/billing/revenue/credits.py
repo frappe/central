@@ -45,9 +45,17 @@ def _lock_and_read_balance(team: str) -> float:
 	committed* balance, bypassing this transaction's REPEATABLE-READ snapshot
 	(which a concurrent prior booking has since moved past). Because it targets one
 	primary-key row it takes no gap locks, so different teams never contend.
+
+	The lock is taken on the PRIMARY KEY (`name`, which equals `team` under the
+	`field:team` autoname), NOT the secondary unique `team` index. A secondary-index
+	locking read locks the index record then the clustered record, the OPPOSITE
+	order from the INSERT that creates the wallet (clustered then unique index) and
+	from the `set_value` UPDATE (clustered only) — an opposite-order cycle some
+	InnoDB versions deadlock on. Locking the clustered record directly keeps every
+	path on one lock in one order.
 	"""
 	rows = frappe.db.sql(
-		"SELECT balance FROM `tabCredit Wallet` WHERE team = %s FOR UPDATE", team, as_dict=True
+		"SELECT balance FROM `tabCredit Wallet` WHERE name = %s FOR UPDATE", team, as_dict=True
 	)
 	return frappe.utils.flt(rows[0].balance) if rows else 0.0
 
