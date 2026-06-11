@@ -28,7 +28,7 @@ const routes = [
       {
         path: 'team',
         component: GroupGate,
-        props: { capability: 'team:view', roles: 'Owner or Admin' },
+        props: { requireMember: true, roles: 'any team member' },
         children: [
           { path: '', redirect: '/team/members' },
           { path: 'members', name: 'Members', component: () => import('@/pages/team/Members.vue') },
@@ -41,7 +41,7 @@ const routes = [
       {
         path: 'atlas',
         component: GroupGate,
-        props: { capability: 'atlas:view', roles: 'Owner or Admin' },
+        props: { capability: 'vm:view', roles: 'Developer, Admin or Owner' },
         children: [
           { path: '', name: 'AtlasRegistry', component: () => import('@/pages/atlas/Registry.vue') },
           { path: 'vms', name: 'AtlasVMs', component: () => import('@/pages/atlas/VirtualMachines.vue') },

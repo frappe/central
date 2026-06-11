@@ -4,16 +4,20 @@ import { LoadingText } from 'frappe-ui'
 import NoAccess from '@/components/NoAccess.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 
-// Gate a whole sidebar group at the shell: while caps load show a skeleton;
-// if the view capability is absent, the group resolves to one no-access page
-// (don't mount the child routes the API would 403).
+// Gate a whole sidebar group at the shell: while caps load show a skeleton; if
+// the gate fails, the group resolves to one no-access page (don't mount the
+// child routes the API would 403). Gate either on a single `capability`, or on
+// `requireMember` (any capability on the active team = belongs to it).
 const props = defineProps({
-  capability: { type: String, required: true },
+  capability: { type: String, default: '' },
+  requireMember: { type: Boolean, default: false },
   roles: { type: String, default: 'Owner or Billing' },
 })
 
-const { caps, has } = useCapabilities()
-const allowed = computed(() => has(props.capability))
+const { caps, has, isMember } = useCapabilities()
+const allowed = computed(() =>
+  props.requireMember ? isMember.value : has(props.capability),
+)
 const loading = computed(() => caps.loading && !caps.data)
 </script>
 

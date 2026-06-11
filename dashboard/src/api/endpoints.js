@@ -46,14 +46,15 @@ export const API = {
   saveBillingProfile: `${D}.save_billing_profile`,
   saveBillingSettings: `${D}.save_billing_settings`,
 
-  // ── Team & identity (central.iam — confirm exact slugs) ──
+  // ── Team & identity (central.iam) ──
   listTeamMembers: `central.iam.list_team_members`,
-  inviteMember: `central.iam.invite_member`,
-  assignRole: `central.iam.assign_role`,
-  removeMember: `central.iam.remove_member`,
   listRoles: `central.iam.list_team_roles`,
   listCapabilities: `central.iam.list_capabilities`,
-  makeCustomRole: `central.iam.make_custom_role_team`,
+  inviteMember: `central.iam.invite_team_member`,
+  setMemberRole: `central.iam.set_team_member_role`,
+  setMemberStatus: `central.iam.set_team_member_status`,
+  removeMember: `central.iam.remove_team_member`,
+  createCustomRole: `central.iam.create_custom_role`,
 
   // ── Atlas (🟡 proposed; mocked) ──
   atlasRegistry: `central.atlas.registry`,
