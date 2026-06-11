@@ -1,12 +1,15 @@
 <script setup>
 import { ref, watch } from 'vue'
-import { TextInput, TabButtons } from 'frappe-ui'
+import { TextInput, Select } from 'frappe-ui'
 
-// Standard list toolbar: debounced search (left) + status TabButtons (right).
+// Standard list toolbar: debounced search (left) + a compact status filter
+// dropdown (right). A dropdown — not a tab strip — so the filter costs one
+// control's width instead of one-per-status, leaving the row to the list.
+//
 // The search updates `search` (v-model) after a 250ms idle so we don't refilter
-// on every keystroke. `tabs` is [{label, value}]; `status` is v-model.
+// on every keystroke. `statuses` is [{label, value}]; `status` is v-model.
 const props = defineProps({
-  tabs: { type: Array, default: () => [] },
+  statuses: { type: Array, default: () => [] },
   placeholder: { type: String, default: 'Search…' },
 })
 const search = defineModel('search', { type: String, default: '' })
@@ -32,6 +35,11 @@ watch(raw, (v) => {
         <span class="lucide-search size-4 text-ink-gray-5" />
       </template>
     </TextInput>
-    <TabButtons v-if="tabs.length" v-model="status" :buttons="tabs" />
+    <Select
+      v-if="statuses.length"
+      v-model="status"
+      :options="statuses"
+      class="w-full sm:w-36"
+    />
   </div>
 </template>

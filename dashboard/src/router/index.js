@@ -17,11 +17,20 @@ const routes = [
         children: [
           { path: '', name: 'Overview', component: () => import('@/pages/billing/Overview.vue') },
           { path: 'invoices', name: 'Invoices', component: () => import('@/pages/billing/Invoices.vue') },
-          { path: 'methods', name: 'PaymentMethods', component: () => import('@/pages/billing/PaymentMethods.vue') },
           { path: 'credits', name: 'Credits', component: () => import('@/pages/billing/Credits.vue') },
           { path: 'subscriptions', name: 'Subscriptions', component: () => import('@/pages/billing/Subscriptions.vue') },
+        ],
+      },
+
+      {
+        path: 'settings',
+        component: GroupGate,
+        props: { capability: 'billing:view', roles: 'Owner or Billing' },
+        children: [
+          { path: '', redirect: '/settings/address' },
+          { path: 'address', name: 'Address', component: () => import('@/pages/billing/Settings.vue') },
+          { path: 'methods', name: 'PaymentMethods', component: () => import('@/pages/billing/PaymentMethods.vue') },
           { path: 'notifications', name: 'Notifications', component: () => import('@/pages/billing/Notifications.vue') },
-          { path: 'settings', name: 'Settings', component: () => import('@/pages/billing/Settings.vue') },
         ],
       },
 

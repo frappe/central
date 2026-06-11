@@ -10,22 +10,20 @@ import { useTeam } from '@/composables/useTeam'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayInvoice } from '@/composables/usePayInvoice'
 import { money } from '@/utils/money'
+import { billingPeriod, shortDate } from '@/utils/date'
 import { invoiceTheme } from '@/utils/status'
 
 const { currentTeam } = useTeam()
 const { canManage } = useCapabilities()
 
-const invoices = useCall({
-  url: m(API.invoices),
-  params: () => ({ team: currentTeam.value }),
-  refetch: true,
-})
+const params = () => ({ team: currentTeam.value })
+const invoices = useCall({ url: m(API.invoices), params, refetch: true })
 
 // ── Filtering ──
 const search = ref('')
 const status = ref('all')
-const tabs = [
-  { label: 'All', value: 'all' },
+const statuses = [
+  { label: 'All statuses', value: 'all' },
   { label: 'Open', value: 'open' },
   { label: 'Paid', value: 'paid' },
   { label: 'Overdue', value: 'overdue' },
@@ -85,7 +83,7 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
         <ListToolbar
           v-model:search="search"
           v-model:status="status"
-          :tabs="tabs"
+          :statuses="statuses"
           placeholder="Search invoices…"
         />
         <div v-if="invoices.loading && !invoices.data" class="space-y-3 p-4">
@@ -98,25 +96,20 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
           <li
             v-for="inv in rows"
             :key="inv.name"
-            class="flex cursor-pointer items-center gap-4 px-4 py-3 hover:bg-surface-gray-1"
+            class="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-surface-gray-1"
             :class="selected?.name === inv.name && 'bg-surface-gray-2'"
             @click="selectRow(inv)"
           >
-            <div class="min-w-0 flex-1 sm:flex-none sm:w-56">
-              <p class="truncate text-sm text-ink-gray-8">{{ inv.name }}</p>
-              <!-- Compact (detail open): period sits under the id. -->
-              <p v-if="detailOpen" class="text-p-sm text-ink-gray-5">
-                {{ inv.period_start }} → {{ inv.period_end }}
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium text-ink-gray-8">{{ inv.name }}</p>
+              <p class="truncate text-p-sm text-ink-gray-5">
+                {{ billingPeriod(inv.period_start, inv.period_end) }}
               </p>
             </div>
-            <!-- Full-width (detail closed): period as its own column. -->
-            <p v-if="!detailOpen" class="hidden flex-1 text-p-sm text-ink-gray-5 sm:block">
-              {{ inv.period_start }} → {{ inv.period_end }}
-            </p>
-            <div class="ml-auto flex items-center gap-3 sm:ml-0">
-              <span class="text-sm text-ink-gray-7">{{ money(inv.total, inv.currency) }}</span>
-              <Badge :theme="invoiceTheme(inv.status)" :label="inv.status" />
-            </div>
+            <span class="shrink-0 text-sm tabular-nums text-ink-gray-7">
+              {{ money(inv.total, inv.currency) }}
+            </span>
+            <Badge :theme="invoiceTheme(inv.status)" :label="inv.status" class="shrink-0" />
           </li>
         </ul>
       </template>
@@ -133,11 +126,11 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
               <Badge :theme="invoiceTheme(detail.data.status)" :label="detail.data.status" />
             </div>
             <p class="text-p-sm text-ink-gray-5">
-              {{ detail.data.invoice_type }} · {{ detail.data.period_start }} →
-              {{ detail.data.period_end }}
+              {{ detail.data.invoice_type }} ·
+              {{ billingPeriod(detail.data.period_start, detail.data.period_end) }}
             </p>
             <p v-if="detail.data.due_date" class="text-p-sm text-ink-gray-5">
-              Due {{ detail.data.due_date }}
+              Due {{ shortDate(detail.data.due_date) }}
             </p>
           </header>
 

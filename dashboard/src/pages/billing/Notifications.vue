@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, watch, ref, computed } from 'vue'
 import { useCall } from 'frappe-ui'
-import { Badge, Button, Switch, LoadingText } from 'frappe-ui'
+import { Badge, Button, Switch, FormControl, LoadingText } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import { API, m } from '@/api/endpoints'
 import { useTeam } from '@/composables/useTeam'
@@ -17,6 +17,7 @@ const { canManage } = useCapabilities()
 const params = () => ({ team: currentTeam.value })
 const feed = useCall({ url: m(API.notifications), params, refetch: true })
 const prefs = useCall({ url: m(API.notificationPreferences), params, refetch: true })
+const settings = useCall({ url: m(API.billingSettings), params, refetch: true })
 
 // Each toggle, in display order, paired with its preference key.
 const PREF_FIELDS = [
@@ -27,7 +28,6 @@ const PREF_FIELDS = [
   { key: 'notify_credit_low', label: 'Low credit balance' },
   { key: 'notify_card_expiry', label: 'Card expiry' },
   { key: 'notify_mandate_reauth', label: 'Mandate re-authorisation' },
-  { key: 'notify_trial_expiring', label: 'Trial expiring' },
 ]
 
 const form = reactive({})
@@ -52,15 +52,64 @@ async function submit() {
     errorToast(e)
   }
 }
+
+// ── Spend alert threshold ──
+// Notify the team once projected spend crosses this amount (0 = off). Stored on
+// the Billing Profile; saved on its own so it doesn't touch payment mode.
+const spendAlert = ref(0)
+watch(
+  () => settings.data,
+  (d) => {
+    if (d) spendAlert.value = d.spend_alert_threshold ?? 0
+  },
+  { immediate: true },
+)
+
+const saveAlert = useCall({ url: m(API.saveBillingSettings), immediate: false })
+async function submitAlert() {
+  try {
+    await saveAlert.submit({ team: currentTeam.value, spend_alert_threshold: spendAlert.value })
+    successToast('Spend alert saved.')
+    settings.reload()
+  } catch (e) {
+    errorToast(e)
+  }
+}
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :items="[{ label: 'Billing' }, { label: 'Notifications' }]" />
+    <PageHeader :items="[{ label: 'Settings' }, { label: 'Notifications' }]" />
 
     <div class="body-container space-y-8 pb-40 pt-5">
-      <!-- Preferences -->
+      <!-- Spend alert -->
       <section class="space-y-3">
+        <div>
+          <h2 class="text-base text-ink-gray-9">Spend alert</h2>
+          <p class="text-p-sm text-ink-gray-5">
+            Notify the team once projected spend crosses this amount. Set 0 to turn it off.
+          </p>
+        </div>
+        <div class="flex items-end gap-3">
+          <FormControl
+            v-model="spendAlert"
+            type="number"
+            label="Threshold"
+            class="w-48"
+            :disabled="!canManage"
+          />
+          <Button
+            v-if="canManage"
+            variant="solid"
+            label="Save alert"
+            :loading="saveAlert.loading"
+            @click="submitAlert"
+          />
+        </div>
+      </section>
+
+      <!-- Preferences -->
+      <section class="space-y-3 border-t border-outline-gray-1 pt-8">
         <div>
           <h2 class="text-base text-ink-gray-9">Notification preferences</h2>
           <p class="text-p-sm text-ink-gray-5">Choose which billing events notify your team.</p>

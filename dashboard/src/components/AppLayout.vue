@@ -10,13 +10,15 @@ const { canView, canViewTeam, canViewAtlas } = useCapabilities()
 const drawerOpen = ref(false)
 
 const billing = [
-  { to: '/billing', label: 'Overview', icon: 'lucide-layout-dashboard' },
+  { to: '/billing', label: 'Usage', icon: 'lucide-layout-dashboard' },
   { to: '/billing/invoices', label: 'Invoices', icon: 'lucide-file-text' },
-  { to: '/billing/methods', label: 'Payment Methods', icon: 'lucide-credit-card' },
   { to: '/billing/credits', label: 'Credits', icon: 'lucide-wallet' },
   { to: '/billing/subscriptions', label: 'Subscriptions', icon: 'lucide-repeat' },
-  { to: '/billing/notifications', label: 'Notifications', icon: 'lucide-bell' },
-  { to: '/billing/settings', label: 'Settings', icon: 'lucide-settings' },
+]
+const settings = [
+  { to: '/settings/address', label: 'Address', icon: 'lucide-map-pin' },
+  { to: '/settings/methods', label: 'Payment Methods', icon: 'lucide-credit-card' },
+  { to: '/settings/notifications', label: 'Notifications', icon: 'lucide-bell' },
 ]
 const team = [
   { to: '/team/members', label: 'Members & Roles', icon: 'lucide-users' },
@@ -56,6 +58,13 @@ const atlas = [
           <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Billing</p>
           <div class="space-y-0.5">
             <NavLink v-for="i in billing" :key="i.to" v-bind="i" />
+          </div>
+        </div>
+
+        <div v-if="canView">
+          <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Settings</p>
+          <div class="space-y-0.5">
+            <NavLink v-for="i in settings" :key="i.to" v-bind="i" />
           </div>
         </div>
 

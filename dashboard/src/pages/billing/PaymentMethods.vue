@@ -82,7 +82,7 @@ function methodIcon(type) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :items="[{ label: 'Billing' }, { label: 'Payment Methods' }]">
+    <PageHeader :items="[{ label: 'Settings' }, { label: 'Payment Methods' }]">
       <template #actions>
         <Button v-if="canManage" variant="solid" label="Add method" @click="showAdd = true" />
       </template>

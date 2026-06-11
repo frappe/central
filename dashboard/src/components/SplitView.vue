@@ -4,6 +4,8 @@
 // actions. On mobile the detail slides over the list full-screen.
 //
 // `open` (v-model) tracks whether a row is selected, so the parent can clear it.
+// The panel owns its own dismiss control: "← Back" on mobile, a close (✕) on
+// desktop — the list underneath stays put, so closing is always one click away.
 const open = defineModel('open', { type: Boolean, default: false })
 </script>
 
@@ -22,8 +24,18 @@ const open = defineModel('open', { type: Boolean, default: false })
       v-if="open"
       class="flex w-full shrink-0 flex-col overflow-y-auto border-outline-gray-1 sm:w-[480px] sm:border-l"
     >
-      <div class="flex items-center justify-between border-b border-outline-gray-1 px-4 py-3 sm:hidden">
-        <button class="text-p-sm text-ink-gray-6" @click="open = false">← Back</button>
+      <div class="flex items-center justify-between border-b border-outline-gray-1 px-4 py-2.5">
+        <button class="text-p-sm text-ink-gray-6 sm:hidden" @click="open = false">← Back</button>
+        <span class="hidden text-p-sm font-medium uppercase tracking-wide text-ink-gray-5 sm:inline">
+          Details
+        </span>
+        <button
+          class="ml-auto grid size-6 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
+          aria-label="Close details"
+          @click="open = false"
+        >
+          <span class="lucide-x size-4" />
+        </button>
       </div>
       <slot name="detail" />
     </aside>
