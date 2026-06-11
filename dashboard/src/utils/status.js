@@ -17,7 +17,10 @@ export function operationalTheme(s) {
 
 // Invoice status: Paid / Unpaid / Overdue / Void.
 export function invoiceTheme(s) {
-  return pick({ paid: 'green', unpaid: 'orange', overdue: 'red', void: 'gray', draft: 'gray' }, s)
+  return pick(
+    { paid: 'green', open: 'orange', unpaid: 'orange', overdue: 'red', void: 'gray', draft: 'gray' },
+    s,
+  )
 }
 
 // Payment attempt / charge result.
