@@ -341,7 +341,7 @@ def _settle(name, card, due_date, with_failure=False):
 	_attempt(
 		name, card, inv.expected_collection, "Captured",
 		frappe.utils.add_to_date(now, minutes=20), retry,
-		gateway_transaction_id=f"pi_{frappe.generate_hash(12)}", resolved_by="Webhook",
+		gateway_transaction_id=f"pi_{frappe.generate_hash(length=24)}", resolved_by="Webhook",
 	)
 
 	inv.amount_paid = inv.expected_collection

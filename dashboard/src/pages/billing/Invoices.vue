@@ -193,8 +193,13 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
 
           <!-- Activity: the invoice's full lifecycle as a timeline (finalised →
                credits applied → card attempts incl. failures → settled). -->
-          <section v-if="detail.data.activity?.length">
-            <p class="mb-3 text-p-sm font-medium text-ink-gray-6">Activity</p>
+          <section
+            v-if="detail.data.activity?.length"
+            class="border-t border-outline-gray-2 pt-5"
+          >
+            <p class="mb-3 text-p-sm font-medium uppercase tracking-wide text-ink-gray-5">
+              Activity
+            </p>
             <ol class="space-y-0">
               <li
                 v-for="(ev, idx) in detail.data.activity"
@@ -214,7 +219,7 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
                       {{ money(ev.amount, ev.currency || detail.data.currency) }}
                     </span>
                   </div>
-                  <p v-if="ev.detail" class="text-p-sm text-ink-gray-5">{{ ev.detail }}</p>
+                  <p v-if="ev.detail" class="break-words text-p-sm text-ink-gray-5">{{ ev.detail }}</p>
                   <p class="text-p-sm text-ink-gray-4">{{ ev.at }}</p>
                 </div>
               </li>
