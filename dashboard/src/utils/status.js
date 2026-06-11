@@ -44,3 +44,8 @@ export function paymentTheme(s) {
 export function requestTheme(s) {
   return pick({ pending: 'orange', approved: 'green', declined: 'red' }, s)
 }
+
+// Notification delivery: Sent / Suppressed (by preference or dedupe).
+export function notificationTheme(s) {
+  return pick({ sent: 'green', suppressed: 'gray' }, s)
+}

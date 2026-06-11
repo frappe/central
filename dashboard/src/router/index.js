@@ -21,6 +21,7 @@ const routes = [
           { path: 'credits', name: 'Credits', component: () => import('@/pages/billing/Credits.vue') },
           { path: 'payments', name: 'PaymentHistory', component: () => import('@/pages/billing/PaymentHistory.vue') },
           { path: 'subscriptions', name: 'Subscriptions', component: () => import('@/pages/billing/Subscriptions.vue') },
+          { path: 'notifications', name: 'Notifications', component: () => import('@/pages/billing/Notifications.vue') },
           { path: 'settings', name: 'Settings', component: () => import('@/pages/billing/Settings.vue') },
         ],
       },

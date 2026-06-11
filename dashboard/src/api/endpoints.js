@@ -31,6 +31,8 @@ export const API = {
   subscriptions: `${D}.list_subscriptions`,
   billingProfile: `${D}.get_billing_profile`,
   billingSettings: `${D}.get_billing_settings`,
+  notifications: `${D}.list_notifications`,
+  notificationPreferences: `${D}.get_notification_preferences`,
 
   // ── Billing: mutations (billing:manage) ──
   payInvoice: `${D}.pay_invoice`,
@@ -45,6 +47,7 @@ export const API = {
   removePaymentMethod: `${D}.remove_payment_method`,
   saveBillingProfile: `${D}.save_billing_profile`,
   saveBillingSettings: `${D}.save_billing_settings`,
+  saveNotificationPreferences: `${D}.save_notification_preferences`,
 
   // ── Team & identity (central.iam) ──
   listTeamMembers: `central.iam.list_team_members`,
