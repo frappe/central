@@ -33,7 +33,6 @@ const routes = [
         children: [
           { path: '', redirect: '/team/members' },
           { path: 'members', name: 'Members', component: () => import('@/pages/team/Members.vue') },
-          { path: 'roles', name: 'Roles', component: () => import('@/pages/team/Roles.vue') },
           { path: 'roles/new', name: 'NewRole', component: () => import('@/pages/team/RoleBuilder.vue') },
           { path: 'trust-tier', name: 'TrustTier', component: () => import('@/pages/team/TrustTier.vue') },
         ],

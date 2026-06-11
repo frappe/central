@@ -49,7 +49,7 @@ async function save() {
       capabilities: [...selected.value],
     })
     successToast('Custom role created.')
-    router.push({ name: 'Roles' })
+    router.push({ name: 'Members' })
   } catch (e) {
     errorToast(e, 'Could not create the role.')
   }
@@ -60,7 +60,7 @@ async function save() {
   <div class="flex h-full flex-col">
     <PageHeader :items="[{ label: 'Team' }, { label: 'Roles' }, { label: 'New' }]">
       <template #actions>
-        <Button variant="ghost" label="Cancel" @click="router.push({ name: 'Roles' })" />
+        <Button variant="ghost" label="Cancel" @click="router.push({ name: 'Members' })" />
         <Button
           v-if="canManageTeam"
           variant="solid"

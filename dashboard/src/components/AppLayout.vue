@@ -19,8 +19,7 @@ const billing = [
   { to: '/billing/settings', label: 'Settings', icon: 'lucide-settings' },
 ]
 const team = [
-  { to: '/team/members', label: 'Members', icon: 'lucide-user' },
-  { to: '/team/roles', label: 'Roles', icon: 'lucide-shield' },
+  { to: '/team/members', label: 'Members & Roles', icon: 'lucide-users' },
   { to: '/team/trust-tier', label: 'Trust Tier', icon: 'lucide-star' },
 ]
 const atlas = [
