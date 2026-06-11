@@ -163,3 +163,55 @@ def list_switchable_teams() -> list[dict]:
 		out.append({"team": t, "tier": frappe.db.get_value("Trust Tier", t, "tier"),
 					"standing": frappe.db.get_value("Subscription", {"team": t}, "account_standing") or "Current"})
 	return out
+
+
+# ── Notifications (#20) ──────────────────────────────────────────────────────
+# The team's billing notification feed and per-event-type delivery preferences.
+# The feed is the Billing Notification Log (what we actually sent or suppressed);
+# preferences toggle which event types reach the team.
+
+_NOTIFY_PREFS = (
+	"notify_payment_success", "notify_payment_failure", "notify_payment_retry",
+	"notify_invoice_overdue", "notify_credit_low", "notify_card_expiry",
+	"notify_mandate_reauth", "notify_trial_expiring",
+)
+
+
+@frappe.whitelist()
+def list_notifications(team: str | None = None, limit: int = 50) -> list[dict]:
+	"""Recent billing notifications sent to (or suppressed for) the team."""
+	team = _resolve_team(team)
+	return frappe.get_all(
+		"Billing Notification Log",
+		filters={"team": team},
+		fields=["name", "event_type", "channel", "status", "subject", "message",
+				"reference_doctype", "reference_name", "sent_at"],
+		order_by="sent_at desc",
+		limit=limit,
+	)
+
+
+@frappe.whitelist()
+def get_notification_preferences(team: str | None = None) -> dict:
+	"""Per-event-type delivery toggles. Absent = everything on by default."""
+	team = _resolve_team(team)
+	prefs = {p: 1 for p in _NOTIFY_PREFS}
+	if frappe.db.exists("Notification Preference", team):
+		doc = frappe.get_doc("Notification Preference", team)
+		prefs = {p: int(doc.get(p) or 0) for p in _NOTIFY_PREFS}
+	prefs["team"] = team
+	return prefs
+
+
+@frappe.whitelist()
+def save_notification_preferences(team: str | None = None, **prefs) -> dict:
+	"""Update which event types notify the team (billing:manage)."""
+	team = _resolve_team(team, authz.MANAGE)
+	values = {p: int(frappe.utils.cint(prefs.get(p))) for p in _NOTIFY_PREFS if p in prefs}
+	if frappe.db.exists("Notification Preference", team):
+		doc = frappe.get_doc("Notification Preference", team)
+		doc.update(values)
+	else:
+		doc = frappe.get_doc({"doctype": "Notification Preference", "team": team, **values})
+	doc.save(ignore_permissions=True)
+	return {"saved": True, "team": team}

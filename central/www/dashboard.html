@@ -1,0 +1,34 @@
+{% extends "templates/web.html" %}
+
+{# Full-bleed SPA: strip the website navbar/footer/breadcrumbs so the Vue app
+   owns the whole viewport. Assets are injected from the Vite manifest by
+   dashboard.py (always — this page renders the built bundle, not a dev server). #}
+
+{% block title %}Central{% endblock %}
+
+{% block head %}
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body { background: #fff; }
+  #app { height: 100vh; }
+  /* Hide any residual website chrome that slips through. */
+  .navbar, .web-footer, footer.web-footer { display: none !important; }
+</style>
+{% for path in css_files %}
+<link rel="stylesheet" href="{{ path }}">
+{% endfor %}
+{% endblock %}
+
+{% block banner %}{% endblock %}
+{% block navbar %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block content %}
+<div id="app"></div>
+{% endblock %}
+
+{% block script %}
+{% for path in js_files %}
+<script type="module" src="{{ path }}"></script>
+{% endfor %}
+{% endblock %}

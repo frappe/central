@@ -28,6 +28,7 @@ RESOURCE = "srv-demo-web-1"
 def seed():
 	"""Build (or rebuild) the demo team end to end."""
 	_wipe()
+	_team_and_members()
 	_catalog()
 	_gateway()
 	_tier_and_tax()
@@ -46,8 +47,15 @@ def seed():
 	# Wallet: a 5,000 top-up.
 	credits.purchase(TEAM, 5000, "INR", note="Demo top-up")
 
-	_paid_invoice(sub)
-	_open_invoice(sub, card)
+	# Settle both months through the real credits-then-card waterfall (#11):
+	#  - May (~3,776) is fully covered by the wallet → Paid from credits, no card.
+	#  - June (~5,018) exhausts the remaining credits, the card covers the rest.
+	may = invoicing.generate_draft_invoice(sub, "2026-05-01", "2026-05-31")
+	_settle(may, card, due_date="2026-06-07")
+	june = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
+	# June's card is declined once, then captured on retry — a richer timeline.
+	_settle(june, card, due_date="2026-07-07", with_failure=True)
+	_notifications()
 	_ensure_workspace()
 
 	frappe.db.commit()
@@ -59,6 +67,76 @@ def seed():
 
 
 # --- building blocks --------------------------------------------------------
+
+# The roster the merged Members & Roles screen renders: an Owner plus members on
+# the stock system roles, including a suspended one so status variety shows.
+OWNER = "demo-owner@example.com"
+OWNER_PASSWORD = "Central-Demo-2026!"
+MEMBERS = [
+	("finance@demo.example.com", "Priya Finance", "Billing", "Active"),
+	("dev@demo.example.com", "Dev Kumar", "Developer", "Active"),
+	("viewer@demo.example.com", "Sam Viewer", "Viewer", "Active"),
+	("contractor@demo.example.com", "Contractor Singh", "Developer", "Suspended"),
+]
+
+
+def _demo_user_emails():
+	return [OWNER] + [m[0] for m in MEMBERS]
+
+
+def _ensure_user(email, full_name):
+	"""Create the user DISABLED so the after_insert hook doesn't bootstrap a
+	personal team (central.users.bootstrap_user_team skips disabled users). They
+	join the `demo` team explicitly, then get enabled — a save, not an insert, so
+	the bootstrap never fires."""
+	if frappe.db.exists("User", email):
+		return email
+	first, _, last = full_name.partition(" ")
+	doc = frappe.get_doc({
+		"doctype": "User",
+		"email": email,
+		"first_name": first,
+		"last_name": last or None,
+		"send_welcome_email": 0,
+		"enabled": 0,
+	})
+	doc.insert(ignore_permissions=True)
+	return email
+
+
+def _team_and_members():
+	"""Create Team `demo` with an Owner + members on system roles. Created before
+	any billing data so the team Link resolves (team is Link(Team), #43)."""
+	names = {OWNER: "Demo Owner", **{e: n for e, n, _r, _s in MEMBERS}}
+	for email, full_name in names.items():
+		_ensure_user(email, full_name)
+
+	team = frappe.get_doc({
+		"doctype": "Team",
+		"team_name": TEAM,
+		"owner_user": OWNER,
+		"status": "Active",
+	})
+	# Force the readable name (bypass the TEAM-##### series) so `team` Links resolve
+	# to "demo" — same trick the test util uses (tests.utils.ensure_team).
+	team.flags.name_set = True
+	team.name = TEAM
+	# before_validate auto-appends the owner as the Owner member.
+	for email, _name, role, status in MEMBERS:
+		team.append("members", {"user": email, "role": role, "status": status})
+	team.insert(ignore_permissions=True)
+
+	# Now enable the accounts (save → no bootstrap). The owner can log in to view
+	# the customer dashboard; members are roster-only.
+	for email in _demo_user_emails():
+		u = frappe.get_doc("User", email)
+		u.enabled = 1
+		u.user_type = "System User" if email == OWNER else "Website User"
+		if email == OWNER:
+			u.new_password = OWNER_PASSWORD
+			u.flags.ignore_password_policy = True
+		u.save(ignore_permissions=True)
+	return team.name
 
 
 def _event(event_id, resource_id, rate, effective_from, event_type):
@@ -129,18 +207,22 @@ def _catalog():
 
 
 def _gateway():
-	_replace(
-		"Payment Gateway",
-		GATEWAY,
-		{
-			"title": "Stripe (Demo)",
-			"adapter_key": "Stripe",
-			"currencies": [{"currency": "INR", "is_default": 1}],
-			"api_secret": "sk_test_demo",
-			"webhook_secret": "whsec_demo",
-			"is_enabled": 1,
-		},
-	)
+	# The demo settles invoices directly (no live charge), so skip the credential
+	# check + webhook auto-registration that would otherwise call Stripe.
+	if frappe.db.exists("Payment Gateway", GATEWAY):
+		frappe.delete_doc("Payment Gateway", GATEWAY, force=True)
+	doc = frappe.get_doc({
+		"doctype": "Payment Gateway",
+		"__newname": GATEWAY,
+		"title": "Stripe (Demo)",
+		"adapter_key": "Stripe",
+		"currencies": [{"currency": "INR", "is_default": 1}],
+		"api_secret": "sk_test_demo",
+		"webhook_secret": "whsec_demo",
+		"is_enabled": 1,
+	})
+	doc.flags.skip_credential_validation = True
+	doc.insert(ignore_permissions=True)
 
 
 def _tier_and_tax():
@@ -193,28 +275,77 @@ def _payment_method():
 	return frappe.get_doc(values).insert(ignore_permissions=True).name
 
 
-def _paid_invoice(sub):
-	name = invoicing.generate_draft_invoice(sub, "2026-05-01", "2026-05-31")
+def _attempt(name, card, amount, status, when, retry, **extra):
+	frappe.get_doc({
+		"doctype": "Payment Attempt",
+		"invoice": name,
+		"team": TEAM,
+		"gateway": GATEWAY,
+		"payment_method": card,
+		"amount": amount,
+		"currency": "INR",
+		"status": status,
+		"initiated_at": when,
+		"completed_at": when,
+		"retry_number": retry,
+		**extra,
+	}).insert(ignore_permissions=True)
+
+
+def _settle(name, card, due_date, with_failure=False):
+	"""Settle an invoice through the real credits-then-card waterfall (#11),
+	mirroring invoicing.open_and_collect without a live gateway round-trip:
+
+	  1. Apply wallet credits first, up to the collectable amount.
+	  2. If credits cover it in full → Paid, no card charge.
+	  3. Otherwise capture the remainder on the card. `with_failure` adds a first
+	     declined attempt, then captures on retry — a richer payment timeline.
+
+	Card attempts are stamped a few minutes after the invoice/credit records so
+	the per-invoice activity timeline stays in order (the wallet ledger is never
+	backdated — that would break its running-balance anchor).
+	"""
 	if not name:
 		return
-	# Settle May fully (demo: mark paid directly, no live gateway round-trip).
 	inv = frappe.get_doc("Invoice", name)
-	inv.status = "Paid"
+
+	collectable = frappe.utils.flt(inv.total) - frappe.utils.flt(inv.get("tds_amount") or 0)
+	balance = credits.get_balance(TEAM)["balance"]
+	applied = min(frappe.utils.flt(balance), collectable) if collectable > 0 else 0.0
+	if applied > 0:
+		credits.apply_credit(
+			TEAM, applied, "INR",
+			reference_type="Invoice", reference_name=name, note=f"Credit applied to {name}",
+		)
+	inv.credit_applied = applied
+	inv.expected_collection = frappe.utils.flt(collectable - applied, 2)
+	inv.due_date = due_date
+
+	# Credits cover it in full — settled with no card charge.
+	if inv.expected_collection <= 0:
+		inv.amount_paid = 0
+		inv.status = "Paid"
+		inv.save(ignore_permissions=True)
+		return
+
+	# Charge the remainder on the card (simulated capture — no live gateway).
+	now = frappe.utils.now_datetime()
+	retry = 0
+	if with_failure:
+		_attempt(
+			name, card, inv.expected_collection, "Failed",
+			frappe.utils.add_to_date(now, minutes=10), 0,
+			failure_code="card_declined", failure_reason="Your card was declined by the bank.",
+		)
+		retry = 1
+	_attempt(
+		name, card, inv.expected_collection, "Captured",
+		frappe.utils.add_to_date(now, minutes=20), retry,
+		gateway_transaction_id=f"pi_{frappe.generate_hash(length=24)}", resolved_by="Webhook",
+	)
+
 	inv.amount_paid = inv.expected_collection
-	inv.due_date = "2026-06-07"
-	inv.save(ignore_permissions=True)
-
-
-def _open_invoice(sub, card):
-	name = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
-	if not name:
-		return
-	# Leave June outstanding (no credits drawn) so the demo shows a funded wallet
-	# AND an open invoice — the postpaid "outstanding" wireframe. The credits-then
-	# -card waterfall itself is covered by the test suite.
-	inv = frappe.get_doc("Invoice", name)
-	inv.status = "Open"
-	inv.due_date = "2026-07-07"
+	inv.status = "Paid"
 	inv.save(ignore_permissions=True)
 
 
@@ -240,13 +371,43 @@ def _wipe():
 		frappe.db.delete("Subscription Change", {"subscription": sub})
 	for dt in (
 		"Invoice", "Payment Attempt", "Payment Method", "Price Lock", "Usage Rollup",
-		"Credit Ledger Entry", "Subscription",
+		"Credit Ledger Entry", "Subscription", "Billing Notification Log",
 	):
 		frappe.db.delete(dt, {"team": TEAM})
-	for dt in ("Credit Wallet", "Trust Tier", "Tax Profile"):
+	for dt in ("Credit Wallet", "Trust Tier", "Tax Profile", "Notification Preference"):
 		if frappe.db.exists(dt, TEAM):
 			frappe.delete_doc(dt, TEAM, force=True)
+	for inv in frappe.get_all("Team Invitation", {"team": TEAM}, pluck="name"):
+		frappe.delete_doc("Team Invitation", inv, force=True)
+	if frappe.db.exists("Team", TEAM):
+		frappe.delete_doc("Team", TEAM, force=True)
+	# Drop any personal teams a prior run's bootstrap created for the demo users,
+	# so the owner's default team resolves cleanly to `demo`.
+	for email in _demo_user_emails():
+		for t in frappe.get_all("Team", {"owner_user": email}, pluck="name"):
+			frappe.delete_doc("Team", t, force=True)
 	frappe.db.commit()
+
+
+def _notifications():
+	"""A few sent/suppressed entries so the Notifications feed isn't empty."""
+	rows = [
+		("Payment Success", "Sent", "Payment received", "We received ₹4,956.00 for invoice May."),
+		("Invoice Overdue", "Sent", "Invoice overdue", "Invoice June is past its due date."),
+		("Credit Low", "Suppressed", "Low wallet balance", "Your wallet is running low."),
+		("Card Expiry", "Sent", "Card expiring soon", "Visa ····4242 expires 11/2030."),
+	]
+	for i, (event, status, subject, message) in enumerate(rows):
+		frappe.get_doc({
+			"doctype": "Billing Notification Log",
+			"team": TEAM,
+			"event_type": event,
+			"channel": "Email",
+			"status": status,
+			"subject": subject,
+			"message": message,
+			"sent_at": frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-i),
+		}).insert(ignore_permissions=True)
 
 
 def _ensure_workspace():

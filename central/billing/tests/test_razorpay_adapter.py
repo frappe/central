@@ -157,6 +157,9 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		sent = c.webhook.create.call_args.args[0]
 		self.assertEqual(sent["secret"], result["secret"])
 		self.assertEqual(sent["url"], "https://site/api/method/central.billing.payments.webhooks.razorpay")
+		# Razorpay wants events as {name: 1}, not a list — see register_webhook.
+		self.assertIsInstance(sent["events"], dict)
+		self.assertTrue(all(v == 1 for v in sent["events"].values()))
 
 	def test_create_customer_returns_id(self):
 		adapter = self.make_adapter()

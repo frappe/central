@@ -142,8 +142,8 @@ def _profile(team, slug, currency, cluster, prepaid):
 
 def _payment_setup(team, slug, currency, state):
 	"""Return (gateway, payment_method) for the team's terminal state."""
-	if state in ("credits", "trial"):
-		return None, None  # prepaid wallet / unpaid trial — no card
+	if state in ("credits", "credits_full", "free_credits", "trial"):
+		return None, None  # settled from wallet / free credits — no card needed
 	if currency == "INR" and slug == "wayne-ent":
 		# An INR team on UPI Autopay (mandate ceiling = tier cap).
 		pm = frappe.get_doc({
@@ -164,14 +164,36 @@ def _payment_setup(team, slug, currency, state):
 	return gateway, pm
 
 
-def _failed_attempt(team, invoice, pm, gateway, retry):
+def _failed_attempt(team, invoice, pm, gateway, retry, when=None):
+	when = when or frappe.utils.now_datetime()
 	frappe.get_doc({
 		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
 		"payment_method": pm, "amount": frappe.db.get_value("Invoice", invoice, "expected_collection"),
 		"currency": frappe.db.get_value("Invoice", invoice, "currency"), "status": "Failed",
 		"failure_code": "card_declined", "failure_reason": "Your card was declined.",
-		"retry_number": retry, "completed_at": frappe.utils.now_datetime(),
+		"retry_number": retry, "initiated_at": when, "completed_at": when,
 	}).insert(ignore_permissions=True)
+
+
+def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
+	"""Dunning-then-settle trail on a paid invoice: `retries` failed card attempts
+	(declined), each a day apart from the invoice's period end, followed by a
+	successful capture that settles it. This is what the invoice Activity shows."""
+	period_end = frappe.db.get_value("Invoice", invoice, "period_end")
+	base = frappe.utils.get_datetime(f"{period_end} 09:00:00")
+	for n in range(retries):
+		_failed_attempt(team, invoice, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
+	captured_at = frappe.utils.add_to_date(base, days=retries)
+	frappe.get_doc({
+		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
+		"payment_method": pm, "amount": amount, "currency": currency, "status": "Captured",
+		"retry_number": retries, "gateway_transaction_id": f"pi_{invoice}",
+		"resolved_by": "Webhook", "initiated_at": captured_at, "completed_at": captured_at,
+	}).insert(ignore_permissions=True)
+	frappe.db.set_value("Invoice", invoice, {
+		"status": "Paid", "amount_paid": amount,
+		"due_date": frappe.utils.add_days(period_end, 7),
+	})
 
 
 # --- helpers ----------------------------------------------------------------
@@ -214,22 +236,27 @@ def _ensure_signing_key():
 
 
 def _ensure_demo_team(slug):
-	"""Resolve a demo slug to a real Central `Team` (idempotent by `team_name`).
+	"""Resolve a demo slug to a real Central `Team`, ONE per owner.
 
-	`team` is now a `Link → Team`, so the seed can no longer pass a free-text
-	slug. Each scenario gets one Team — named after the slug, owned by a
-	per-team demo user — and the returned `Team.name` is what every billing
-	record stores. Re-runnable: `_wipe_all` leaves Teams intact, so a re-seed
-	reuses them."""
-	existing = frappe.db.get_value("Team", {"team_name": slug}, "name")
+	Creating the owner user fires `bootstrap_user_team` (User.after_insert),
+	which already provisions that user's default Team *with* proper Owner
+	membership. We reuse that team rather than minting a second, member-less one
+	(which is what produced two teams per email). Idempotent by `owner_user`:
+	`_wipe_all` leaves Teams intact, so a re-seed reuses the same team."""
+	owner = f"owner-{slug}@example.com"
+	existing = frappe.db.get_value("Team", {"owner_user": owner}, "name")
 	if existing:
 		return existing
-	owner = f"owner-{slug}@example.com"
 	if not frappe.db.exists("User", owner):
 		frappe.get_doc({
 			"doctype": "User", "email": owner, "send_welcome_email": 0,
 			"first_name": slug.replace("-", " ").title(),
 		}).insert(ignore_permissions=True)
+	# bootstrap_user_team should have created the team on user insert; fall back
+	# to an explicit one only if bootstrap was skipped.
+	team = frappe.db.get_value("Team", {"owner_user": owner}, "name")
+	if team:
+		return team
 	return frappe.get_doc({
 		"doctype": "Team", "team_name": slug, "owner_user": owner,
 	}).insert(ignore_permissions=True).name

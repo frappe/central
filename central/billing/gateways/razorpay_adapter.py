@@ -68,10 +68,12 @@ class RazorpayAdapter(GatewayAdapter):
 		"""Create a Razorpay webhook. Razorpay takes a caller-chosen secret, so we
 		generate a strong one server-side, register it, and return it to store."""
 		secret = frappe.generate_hash(length=32)
+		# Razorpay wants events as an object {name: 1}, not a list — a list is
+		# serialised positionally and the API rejects it ("Invalid event name/names: 1, 2, 3").
 		webhook = self._client().webhook.create({
 			"url": callback_url,
 			"secret": secret,
-			"events": events or RAZORPAY_WEBHOOK_EVENTS,
+			"events": {name: 1 for name in (events or RAZORPAY_WEBHOOK_EVENTS)},
 		})
 		return {"endpoint_id": webhook.get("id"), "secret": secret}
 

@@ -106,7 +106,99 @@ def get_invoice(name: str) -> dict:
 		"credit_applied": doc.credit_applied, "expected_collection": doc.expected_collection,
 		"amount_paid": doc.amount_paid, "due_date": str(doc.due_date) if doc.due_date else None,
 		"items": [_describe_line(doc.team, li) for li in doc.items],
+		"activity": _invoice_activity(doc),
 	}
+
+
+_PAYMENT_TITLES = {
+	"Captured": "Card payment captured",
+	"Failed": "Card payment failed",
+	"Initiated": "Card payment initiated",
+	"Authorised": "Card payment authorised",
+	"Refunded": "Payment refunded",
+}
+
+
+def _invoice_activity(doc) -> list[dict]:
+	"""Full lifecycle of one invoice as a timeline: finalised → credits applied →
+	card attempts (incl. failed retries) → settled. This is the per-invoice
+	payment history shown inside the invoice (no separate tab)."""
+	events = [{
+		"at": str(doc.creation),
+		"kind": "issued",
+		"title": "Invoice finalised",
+		"detail": f"{doc.invoice_type} · {doc.period_start} → {doc.period_end}",
+		"amount": frappe.utils.flt(doc.total),
+		"currency": doc.currency,
+		"theme": "gray",
+	}]
+
+	for e in frappe.get_all(
+		"Credit Ledger Entry",
+		filters={"reference_type": "Invoice", "reference_name": doc.name, "entry_type": "Debit"},
+		fields=["amount", "currency", "created_at", "creation", "note"],
+		order_by="creation asc",
+	):
+		events.append({
+			"at": str(e.created_at or e.creation),
+			"kind": "credit",
+			"title": "Credits applied",
+			"detail": "Drawn from wallet balance",
+			"amount": frappe.utils.flt(e.amount),
+			"currency": e.currency,
+			"theme": "blue",
+		})
+
+	for p in frappe.get_all(
+		"Payment Attempt",
+		filters={"invoice": doc.name},
+		fields=["status", "amount", "currency", "gateway", "gateway_transaction_id",
+				"failure_code", "failure_reason", "retry_number",
+				"initiated_at", "completed_at", "creation"],
+		order_by="creation asc",
+	):
+		failed = p.status == "Failed"
+		detail = p.failure_reason if failed else (
+			f"Txn {p.gateway_transaction_id}" if p.gateway_transaction_id else p.gateway
+		)
+		if p.retry_number:
+			detail = f"{detail or ''} · retry #{p.retry_number}".strip(" ·")
+		events.append({
+			"at": str(p.completed_at or p.initiated_at or p.creation),
+			"kind": "payment",
+			"title": _PAYMENT_TITLES.get(p.status, f"Card payment {str(p.status).lower()}"),
+			"detail": detail,
+			"amount": frappe.utils.flt(p.amount),
+			"currency": p.currency,
+			"theme": "green" if p.status == "Captured" else ("red" if failed else "orange"),
+		})
+
+	events.sort(key=lambda x: x["at"])
+
+	# Closure marker, pinned to the last real event so it always reads last.
+	if doc.status == "Paid":
+		events.append({
+			"at": events[-1]["at"] if events else str(doc.creation),
+			"kind": "paid",
+			"title": "Invoice settled",
+			"detail": None,
+			"amount": frappe.utils.flt(doc.total),
+			"currency": doc.currency,
+			"theme": "green",
+		})
+
+	for e in events:
+		e["at"] = _fmt_when(e["at"])
+	return events
+
+
+def _fmt_when(dt) -> str | None:
+	if not dt:
+		return None
+	try:
+		return frappe.utils.get_datetime(dt).strftime("%d %b %Y, %H:%M")
+	except Exception:
+		return str(dt)
 
 
 @frappe.whitelist()

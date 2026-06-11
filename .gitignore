@@ -53,3 +53,7 @@ jspm_packages/
 
 # Aider AI Chat
 .aider*
+
+# Built Central Console SPA (produced by `cd dashboard && yarn build`)
+central/public/dashboard/
+central/public/node_modules

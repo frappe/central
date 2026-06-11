@@ -39,11 +39,17 @@ from central.billing.demo._factory import (
 	_month_periods,
 	_payment_setup,
 	_profile,
+	_settle_with_retries,
 	_tax,
 	_tier,
 	_tiers,
 	_wipe_all,
 )
+
+# Card teams: which historical month indices show a failed-then-settled trail in
+# the invoice Activity (month index → failed retries before the capture). A few
+# months fail once, a few fail twice, then settle.
+_RETRY_HISTORY = {1: 1, 2: 2, 4: 1, 5: 2}
 
 # (team, tier, currency, paid_months, state, resources)
 #   paid_months = closed Paid invoices per cluster before the current (June) month.
@@ -94,6 +100,79 @@ def seed_all() -> dict:
 	return results
 
 
+# --- focused feature demo ---------------------------------------------------
+
+# A compact dataset where every settlement path is exercised at least once
+# (no trial tier — trials were retired; tier-0 now runs the free-credits model):
+#   * northwind — USD, top tier (t3), long paid history, card on file. CURRENT
+#     invoice left Open → exercises card "Pay Now".
+#   * daybreak  — INR, starter tier (t1), card on file. CURRENT invoice Open →
+#     card "Pay Now" in the other currency.
+#   * harbor    — USD, prepaid wallet funded ABOVE the bill → FULL settlement
+#     via credits (Paid, no card touched).
+#   * rivulet   — INR, prepaid wallet under-funded → PARTIAL settlement via
+#     credits; the remainder stays Open for Pay Now.
+#   * seedling  — INR, tier 0, granted FREE credits → its normal invoice settles
+#     from those free credits (Paid).
+# The most mature team runs a 24-instance fleet (8 per region, varied sizes).
+# One line item per instance, so its monthly invoice carries 20+ line items
+# plus a metered overage — exercises the invoice line-item table.
+_FLEET = [
+	(cluster, plan)
+	for cluster in ("in-mumbai", "eu-frankfurt", "me-dubai")
+	for plan in ("plan-1vcpu", "plan-2vcpu", "plan-1vcpu", "plan-4vcpu",
+				 "plan-2vcpu", "plan-1vcpu", "plan-8vcpu", "plan-2vcpu")
+]
+
+DEMO_TEAMS = [
+	# Most mature tier (t3): large fleet → invoice with 20+ line items, long
+	# paid history, card on file → current invoice Open (card Pay Now).
+	("northwind", "t3", "USD", 8, "Active", _FLEET),
+	("daybreak", "t1", "INR", 3, "Active", [
+		("in-mumbai", "plan-2vcpu")]),
+	("harbor", "t2", "USD", 3, "credits_full", [
+		("eu-frankfurt", "plan-2vcpu"), ("me-dubai", "plan-1vcpu")]),
+	("rivulet", "t1", "INR", 1, "credits_partial", [
+		("in-mumbai", "plan-2vcpu")]),
+	("seedling", "t0", "INR", 0, "free_credits", [
+		("in-mumbai", "plan-1vcpu")]),
+]
+
+
+def seed_demo() -> dict:
+	"""Wipe billing data, then seed the feature-coverage teams in DEMO_TEAMS.
+
+	    bench --site central.local execute central.billing.demo.demo_scenarios.seed_demo
+	"""
+	_wipe_all()
+	_drop_stray_demo_teams()
+	_tiers()
+	_catalog()
+	_gateways()
+	_ensure_signing_key()
+
+	results = {}
+	for slug, tier, currency, months, state, resources in DEMO_TEAMS:
+		team = _ensure_demo_team(slug)
+		results[slug] = _build_team(team, slug, tier, currency, months, state, resources)
+
+	from central.billing.demo.demo import _ensure_workspace
+
+	_ensure_workspace()
+	frappe.db.commit()
+	return results
+
+
+def _drop_stray_demo_teams() -> None:
+	"""Remove the member-less, slug-named teams an earlier seed created alongside
+	each owner's bootstrapped default team (two-teams-per-email cleanup). The
+	bootstrap teams — named "<Owner>'s Team" — are kept and reused."""
+	slugs = [t[0] for t in DEMO_TEAMS]
+	for name in frappe.get_all("Team", filters={"team_name": ["in", slugs]}, pluck="name"):
+		frappe.delete_doc("Team", name, force=True, ignore_permissions=True)
+	frappe.db.commit()
+
+
 # --- per-team build ---------------------------------------------------------
 
 
@@ -102,7 +181,8 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 
 	_tier(team, tier)
 	_tax(team, currency)
-	_profile(team, slug, currency, resources[0][0], prepaid=(state == "credits"))
+	_profile(team, slug, currency, resources[0][0],
+			 prepaid=state in ("credits", "credits_full", "credits_partial"))
 	gateway, pm = _payment_setup(team, slug, currency, state)
 
 	periods = _month_periods(months)
@@ -148,10 +228,17 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 		).name)
 	primary_sub = subs[0]
 
-	for start, end in periods:
+	for i, (start, end) in enumerate(periods):
 		inv = invoicing.generate_team_invoice(team, start, end, subscription=primary_sub)
-		if inv:
-			total = frappe.db.get_value("Invoice", inv, "expected_collection")
+		if not inv:
+			continue
+		total = frappe.db.get_value("Invoice", inv, "expected_collection")
+		# Card teams get a dunning-then-settle trail on a few months; everyone
+		# else (and the clean months) just settles straight to Paid.
+		retries = _RETRY_HISTORY.get(i, 0) if pm else 0
+		if retries:
+			_settle_with_retries(team, inv, pm, gateway, retries, total, currency)
+		else:
 			frappe.db.set_value("Invoice", inv, {
 				"status": "Paid", "amount_paid": total, "due_date": frappe.utils.add_days(end, 7),
 			})
@@ -232,6 +319,33 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 		credits.refund_to_wallet(team, round(total * 0.1, 2), currency=currency,
 			reference_type="Refund", reference_name=f"{team}-partial", note="Partial overcharge")
 		return "Paid + partial refund → wallet"
+
+	if state == "credits_full":
+		# Prepaid wallet funded ABOVE the bill — the whole invoice settles from
+		# credits, no card touched (the waterfall's leg-1 covers it in full).
+		total = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "total"))
+		credits.purchase(team, round(total + 500, 2), currency, note="Wallet top-up")
+		invoicing.open_and_collect(inv)  # credits cover in full → Paid
+		return "prepaid wallet — full settlement via credits"
+
+	if state == "credits_partial":
+		# Wallet funded to ~40% of the bill: credits cover part, the remainder is
+		# left Open for the customer to clear (Pay Now / dunning) — collect=False
+		# so we don't auto-charge the card-on-file here.
+		total = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "total"))
+		credits.purchase(team, round(total * 0.4, 2), currency, note="Wallet top-up")
+		invoicing.open_and_collect(inv, collect=False)  # partial credit, remainder Open
+		return "partial settlement via credits + Open remainder"
+
+	if state == "free_credits":
+		# Free-credits model (replaces the trial cost-report): a tier-0 team is
+		# granted promotional credits, and its NORMAL invoice settles from them.
+		frappe.db.set_value("Invoice", inv, "invoice_type", "Billable")
+		total = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "total"))
+		credits.adjust_credits(team, round(total + 200, 2), "Credit", currency,
+			note="Free credits — welcome grant")
+		invoicing.open_and_collect(inv)  # settled from free credits → Paid
+		return "tier-0 free credits granted + settled from free credits"
 
 	# active / grandfathered
 	frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": "2026-07-07"})
