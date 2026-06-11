@@ -106,7 +106,35 @@ def get_invoice(name: str) -> dict:
 		"credit_applied": doc.credit_applied, "expected_collection": doc.expected_collection,
 		"amount_paid": doc.amount_paid, "due_date": str(doc.due_date) if doc.due_date else None,
 		"items": [_describe_line(doc.team, li) for li in doc.items],
+		"payments": _invoice_payments(name),
 	}
+
+
+def _invoice_payments(invoice: str) -> list[dict]:
+	"""Captured charges that settled this invoice — the payment provenance shown
+	on a paid invoice (method, gateway transaction id, settlement time)."""
+	out = []
+	for p in frappe.get_all(
+		"Payment Attempt",
+		filters={"invoice": invoice, "status": "Captured"},
+		fields=["gateway", "payment_method", "amount", "currency",
+				"gateway_transaction_id", "completed_at", "resolved_by"],
+		order_by="completed_at asc",
+	):
+		method = frappe.db.get_value(
+			"Payment Method", p.payment_method, ["display_label", "method_type"], as_dict=True
+		) if p.payment_method else None
+		out.append({
+			"gateway": p.gateway,
+			"method_label": (method or {}).get("display_label"),
+			"method_type": (method or {}).get("method_type"),
+			"amount": p.amount,
+			"currency": p.currency,
+			"gateway_transaction_id": p.gateway_transaction_id,
+			"settled_at": str(p.completed_at) if p.completed_at else None,
+			"resolved_by": p.resolved_by,
+		})
+	return out
 
 
 @frappe.whitelist()

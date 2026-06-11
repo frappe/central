@@ -176,6 +176,51 @@ const { run: payInvoice, loading: paying } = usePayInvoice({
             </div>
           </dl>
 
+          <!-- Payment provenance (paid invoices): how it settled. -->
+          <section
+            v-if="detail.data.status === 'Paid' && (detail.data.payments?.length || detail.data.credit_applied)"
+            class="rounded border border-outline-gray-1"
+          >
+            <header class="border-b border-outline-gray-1 px-3 py-2">
+              <p class="text-p-sm font-medium text-ink-gray-6">Payment</p>
+            </header>
+            <ul class="divide-y divide-outline-gray-1">
+              <li
+                v-if="detail.data.credit_applied"
+                class="flex items-start justify-between gap-3 px-3 py-2.5"
+              >
+                <div class="min-w-0">
+                  <p class="text-sm text-ink-gray-8">Wallet credits</p>
+                  <p class="text-p-sm text-ink-gray-5">Applied from balance</p>
+                </div>
+                <span class="text-sm text-ink-gray-8">
+                  {{ money(detail.data.credit_applied, detail.data.currency) }}
+                </span>
+              </li>
+              <li
+                v-for="(p, idx) in detail.data.payments"
+                :key="idx"
+                class="flex items-start justify-between gap-3 px-3 py-2.5"
+              >
+                <div class="min-w-0">
+                  <p class="text-sm text-ink-gray-8">
+                    {{ p.method_type || 'Card' }}<span v-if="p.method_label"> · {{ p.method_label }}</span>
+                  </p>
+                  <p class="text-p-sm text-ink-gray-5">
+                    <span v-if="p.gateway">{{ p.gateway }}</span>
+                    <span v-if="p.settled_at"> · settled {{ p.settled_at }}</span>
+                  </p>
+                  <p v-if="p.gateway_transaction_id" class="text-p-sm text-ink-gray-5">
+                    Txn {{ p.gateway_transaction_id }}
+                  </p>
+                </div>
+                <span class="shrink-0 text-sm text-ink-gray-8">
+                  {{ money(p.amount, p.currency || detail.data.currency) }}
+                </span>
+              </li>
+            </ul>
+          </section>
+
           <Button
             v-if="canPay"
             variant="solid"

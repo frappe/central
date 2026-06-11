@@ -23,18 +23,23 @@ export function invoiceTheme(s) {
   )
 }
 
-// Payment attempt / charge result.
+// Payment attempt / charge result (Payment Attempt statuses: Initiated /
+// Authorised / Captured / Failed / Refunded).
 export function paymentTheme(s) {
   return pick(
     {
+      captured: 'green',
       succeeded: 'green',
       success: 'green',
       paid: 'green',
-      failed: 'red',
+      authorised: 'blue',
+      processing: 'blue',
+      initiated: 'orange',
+      pending: 'orange',
       'retry scheduled': 'orange',
       scheduled: 'orange',
-      pending: 'orange',
-      processing: 'blue',
+      failed: 'red',
+      refunded: 'gray',
     },
     s,
   )

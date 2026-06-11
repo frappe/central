@@ -25,7 +25,7 @@ const search = ref('')
 const status = ref('all')
 const tabs = [
   { label: 'All', value: 'all' },
-  { label: 'Succeeded', value: 'succeeded' },
+  { label: 'Succeeded', value: 'captured' },
   { label: 'Failed', value: 'failed' },
 ]
 const rows = computed(() => {

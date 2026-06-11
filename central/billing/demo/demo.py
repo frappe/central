@@ -47,7 +47,7 @@ def seed():
 	# Wallet: a 5,000 top-up.
 	credits.purchase(TEAM, 5000, "INR", note="Demo top-up")
 
-	_paid_invoice(sub)
+	_paid_invoice(sub, card)
 	_open_invoice(sub, card)
 	_notifications()
 	_ensure_workspace()
@@ -269,12 +269,40 @@ def _payment_method():
 	return frappe.get_doc(values).insert(ignore_permissions=True).name
 
 
-def _paid_invoice(sub):
+def _paid_invoice(sub, card):
 	name = invoicing.generate_draft_invoice(sub, "2026-05-01", "2026-05-31")
 	if not name:
 		return
-	# Settle May fully (demo: mark paid directly, no live gateway round-trip).
 	inv = frappe.get_doc("Invoice", name)
+
+	# Settle May from two sources so the demo shows real provenance:
+	#  - part drawn from the wallet (a Credit Ledger debit), and
+	#  - the remainder captured on the card (a Captured Payment Attempt with a
+	#    gateway transaction id + settlement time → shows in Payment History).
+	credit_used = frappe.utils.flt(inv.output_tax_amount, 2)  # cover the GST from credits
+	credits.apply_credit(
+		TEAM, credit_used, "INR",
+		reference_type="Invoice", reference_name=name, note=f"Applied to invoice {name}",
+	)
+	inv.credit_applied = credit_used
+	inv.expected_collection = frappe.utils.flt(inv.total - credit_used, 2)
+
+	frappe.get_doc({
+		"doctype": "Payment Attempt",
+		"invoice": name,
+		"team": TEAM,
+		"gateway": GATEWAY,
+		"payment_method": card,
+		"amount": inv.expected_collection,
+		"currency": "INR",
+		"status": "Captured",
+		"gateway_transaction_id": f"pi_{frappe.generate_hash(12)}",
+		"resolved_by": "Webhook",
+		"initiated_at": "2026-06-05 10:00:00",
+		"completed_at": "2026-06-05 10:00:06",
+		"retry_number": 0,
+	}).insert(ignore_permissions=True)
+
 	inv.status = "Paid"
 	inv.amount_paid = inv.expected_collection
 	inv.due_date = "2026-06-07"
