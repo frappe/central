@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import NavLink from '@/components/NavLink.vue'
+import TeamSwitcher from '@/components/TeamSwitcher.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 
 const { canView, canViewTeam, canViewAtlas } = useCapabilities()
@@ -44,10 +45,12 @@ const atlas = [
       class="fixed inset-y-0 left-0 z-30 flex w-60 shrink-0 flex-col border-r border-outline-gray-1 bg-surface-gray-1 px-3 py-3 transition-transform sm:static sm:translate-x-0"
       :class="drawerOpen ? 'translate-x-0' : '-translate-x-full'"
     >
-      <div class="mb-4 flex items-center gap-2 px-1">
+      <div class="mb-3 flex items-center gap-2 px-1">
         <span class="lucide-circle-gauge size-5 text-ink-gray-8" aria-hidden="true" />
         <span class="text-lg font-medium text-ink-gray-9">Central</span>
       </div>
+
+      <TeamSwitcher class="mb-4" />
 
       <nav class="flex-1 space-y-5 overflow-y-auto" @click="drawerOpen = false">
         <div v-if="canView">

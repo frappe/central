@@ -160,6 +160,49 @@ def my_capabilities(team: str | None = None) -> list[str]:
 	return sorted({cap for grant in team_grants for cap in grant.get("caps", [])})
 
 
+@frappe.whitelist(methods=["GET"])
+def my_teams() -> list[dict[str, Any]]:
+	"""Teams the signed-in user can switch between in the console — the teams they
+	are an active member of, each with a display label + the owner email."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		return []
+	out = []
+	for t in get_user_team_names(user):
+		r = frappe.db.get_value("Team", t, ["team_name", "owner_user"], as_dict=True) or {}
+		out.append({
+			"name": t,
+			"label": r.get("team_name") or r.get("owner_user") or t,
+			"owner": r.get("owner_user"),
+		})
+	return out
+
+
+@frappe.whitelist(methods=["GET"])
+def search_teams(query: str = "", limit: int = 20) -> list[dict[str, Any]]:
+	"""Operator-only: any active team, for impersonation in the team switcher.
+	Mirrors the IAM rule that a System Manager bypasses team membership."""
+	if not user_has_operator_bypass(frappe.session.user):
+		return []
+	q = (query or "").strip()
+	or_filters = None
+	if q:
+		like = f"%{q}%"
+		or_filters = {"name": ["like", like], "team_name": ["like", like], "owner_user": ["like", like]}
+	rows = frappe.get_all(
+		"Team",
+		filters={"status": "Active"},
+		or_filters=or_filters,
+		fields=["name", "team_name", "owner_user"],
+		order_by="modified desc",
+		limit=limit,
+	)
+	return [
+		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user}
+		for r in rows
+	]
+
+
 def can(user: str, team: str, capability: str) -> bool:
 	if not frappe.db.exists("Capability", capability):
 		return False

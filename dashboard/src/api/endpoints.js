@@ -15,7 +15,8 @@ export const API = {
   // ── Capability IAM / team scope (central-owned) ──
   myCapabilities: `central.iam.my_capabilities`,
   whoami: `${D}.whoami`,
-  switchableTeams: `${D}.list_switchable_teams`,
+  myTeams: `central.iam.my_teams`,
+  searchTeams: `central.iam.search_teams`,
 
   // ── Billing: reads ──
   teamOverview: `${D}.get_team_overview`,
