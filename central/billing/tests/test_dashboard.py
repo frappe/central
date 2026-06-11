@@ -235,11 +235,16 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		gw = make_razorpay_gateway("GW-Cust-RZP").name
 		adapter = MagicMock()
-		adapter.create_order.return_value = {"order_id": "order_x", "key_id": "rzp_test", "amount": 500000}
+		adapter.create_order.return_value = {
+			"order_id": "order_x", "key_id": "rzp_test", "amount_in_subunits": 500000}
 		adapter.verify_payment_signature.return_value = True
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			order = dashboard.create_topup_order(team=TEAM, amount=5000, gateway=gw)
 			self.assertEqual(order["order_id"], "order_x")  # a real gateway order was created
+			self.assertEqual(order["key_id"], "rzp_test")  # checkout `key` reaches the client
+			# Human-currency amount survives the handles spread (paise lives under
+			# amount_in_subunits) — this is what the client echoes to confirm_topup.
+			self.assertEqual(order["amount"], 5000)
 			adapter.create_order.assert_called_once()
 			# Wallet is NOT credited yet — only after the gateway confirms.
 			self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)

@@ -21,7 +21,9 @@ export async function openRazorpayCheckout(order, { name = 'Central', descriptio
   await loadScript('https://checkout.razorpay.com/v1/checkout.js')
   return new Promise((resolve, reject) => {
     const rzp = new window.Razorpay({
-      key: order.key || order.razorpay_key,
+      // Backend (create_order / setup_payment_method) returns the publishable
+      // key id as `key_id`; keep the older aliases as fallbacks.
+      key: order.key_id || order.key || order.razorpay_key,
       order_id: order.order_id || order.razorpay_order_id || order.id,
       amount: order.amount_in_subunits || undefined,
       currency: order.currency,

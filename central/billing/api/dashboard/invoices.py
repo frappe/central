@@ -276,7 +276,7 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 
 	gw_doc = frappe.get_doc("Payment Gateway", gw)
 	adapter = get_adapter(gw_doc)
-	receipt = f"topup-{team}-{frappe.generate_hash(8)}"
+	receipt = f"topup-{team}-{frappe.generate_hash(length=8)}"
 	notes = {"team": team, "purpose": "wallet_topup"}
 	if gw_doc.adapter_key == "Stripe":
 		# Hosted Stripe Checkout: the SPA redirects out and returns to /billing/credits,

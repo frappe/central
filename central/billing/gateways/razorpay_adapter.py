@@ -207,8 +207,12 @@ class RazorpayAdapter(GatewayAdapter):
 			"receipt": receipt,
 			"notes": notes or {},
 		})
+		# `amount_in_subunits` (paise) is what Razorpay Checkout reads; it is kept
+		# distinct from the human-currency `amount` create_topup_order returns, so
+		# the spread of these handles never clobbers the rupee amount confirm_topup
+		# credits the wallet with.
 		return {"order_id": order.get("id"), "key_id": self.get_credential("api_key"),
-				"amount": order.get("amount"), "currency": (currency or "INR").upper()}
+				"amount_in_subunits": order.get("amount"), "currency": (currency or "INR").upper()}
 
 	def create_customer(self, team) -> str:
 		customer = self._client().customer.create(
