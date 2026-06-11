@@ -28,6 +28,7 @@ RESOURCE = "srv-demo-web-1"
 def seed():
 	"""Build (or rebuild) the demo team end to end."""
 	_wipe()
+	_team_and_members()
 	_catalog()
 	_gateway()
 	_tier_and_tax()
@@ -48,6 +49,7 @@ def seed():
 
 	_paid_invoice(sub)
 	_open_invoice(sub, card)
+	_notifications()
 	_ensure_workspace()
 
 	frappe.db.commit()
@@ -59,6 +61,76 @@ def seed():
 
 
 # --- building blocks --------------------------------------------------------
+
+# The roster the merged Members & Roles screen renders: an Owner plus members on
+# the stock system roles, including a suspended one so status variety shows.
+OWNER = "demo-owner@example.com"
+OWNER_PASSWORD = "Central-Demo-2026!"
+MEMBERS = [
+	("finance@demo.example.com", "Priya Finance", "Billing", "Active"),
+	("dev@demo.example.com", "Dev Kumar", "Developer", "Active"),
+	("viewer@demo.example.com", "Sam Viewer", "Viewer", "Active"),
+	("contractor@demo.example.com", "Contractor Singh", "Developer", "Suspended"),
+]
+
+
+def _demo_user_emails():
+	return [OWNER] + [m[0] for m in MEMBERS]
+
+
+def _ensure_user(email, full_name):
+	"""Create the user DISABLED so the after_insert hook doesn't bootstrap a
+	personal team (central.users.bootstrap_user_team skips disabled users). They
+	join the `demo` team explicitly, then get enabled — a save, not an insert, so
+	the bootstrap never fires."""
+	if frappe.db.exists("User", email):
+		return email
+	first, _, last = full_name.partition(" ")
+	doc = frappe.get_doc({
+		"doctype": "User",
+		"email": email,
+		"first_name": first,
+		"last_name": last or None,
+		"send_welcome_email": 0,
+		"enabled": 0,
+	})
+	doc.insert(ignore_permissions=True)
+	return email
+
+
+def _team_and_members():
+	"""Create Team `demo` with an Owner + members on system roles. Created before
+	any billing data so the team Link resolves (team is Link(Team), #43)."""
+	names = {OWNER: "Demo Owner", **{e: n for e, n, _r, _s in MEMBERS}}
+	for email, full_name in names.items():
+		_ensure_user(email, full_name)
+
+	team = frappe.get_doc({
+		"doctype": "Team",
+		"team_name": TEAM,
+		"owner_user": OWNER,
+		"status": "Active",
+	})
+	# Force the readable name (bypass the TEAM-##### series) so `team` Links resolve
+	# to "demo" — same trick the test util uses (tests.utils.ensure_team).
+	team.flags.name_set = True
+	team.name = TEAM
+	# before_validate auto-appends the owner as the Owner member.
+	for email, _name, role, status in MEMBERS:
+		team.append("members", {"user": email, "role": role, "status": status})
+	team.insert(ignore_permissions=True)
+
+	# Now enable the accounts (save → no bootstrap). The owner can log in to view
+	# the customer dashboard; members are roster-only.
+	for email in _demo_user_emails():
+		u = frappe.get_doc("User", email)
+		u.enabled = 1
+		u.user_type = "System User" if email == OWNER else "Website User"
+		if email == OWNER:
+			u.new_password = OWNER_PASSWORD
+			u.flags.ignore_password_policy = True
+		u.save(ignore_permissions=True)
+	return team.name
 
 
 def _event(event_id, resource_id, rate, effective_from, event_type):
@@ -129,18 +201,22 @@ def _catalog():
 
 
 def _gateway():
-	_replace(
-		"Payment Gateway",
-		GATEWAY,
-		{
-			"title": "Stripe (Demo)",
-			"adapter_key": "Stripe",
-			"currencies": [{"currency": "INR", "is_default": 1}],
-			"api_secret": "sk_test_demo",
-			"webhook_secret": "whsec_demo",
-			"is_enabled": 1,
-		},
-	)
+	# The demo settles invoices directly (no live charge), so skip the credential
+	# check + webhook auto-registration that would otherwise call Stripe.
+	if frappe.db.exists("Payment Gateway", GATEWAY):
+		frappe.delete_doc("Payment Gateway", GATEWAY, force=True)
+	doc = frappe.get_doc({
+		"doctype": "Payment Gateway",
+		"__newname": GATEWAY,
+		"title": "Stripe (Demo)",
+		"adapter_key": "Stripe",
+		"currencies": [{"currency": "INR", "is_default": 1}],
+		"api_secret": "sk_test_demo",
+		"webhook_secret": "whsec_demo",
+		"is_enabled": 1,
+	})
+	doc.flags.skip_credential_validation = True
+	doc.insert(ignore_permissions=True)
 
 
 def _tier_and_tax():
@@ -240,13 +316,43 @@ def _wipe():
 		frappe.db.delete("Subscription Change", {"subscription": sub})
 	for dt in (
 		"Invoice", "Payment Attempt", "Payment Method", "Price Lock", "Usage Rollup",
-		"Credit Ledger Entry", "Subscription",
+		"Credit Ledger Entry", "Subscription", "Billing Notification Log",
 	):
 		frappe.db.delete(dt, {"team": TEAM})
-	for dt in ("Credit Wallet", "Trust Tier", "Tax Profile"):
+	for dt in ("Credit Wallet", "Trust Tier", "Tax Profile", "Notification Preference"):
 		if frappe.db.exists(dt, TEAM):
 			frappe.delete_doc(dt, TEAM, force=True)
+	for inv in frappe.get_all("Team Invitation", {"team": TEAM}, pluck="name"):
+		frappe.delete_doc("Team Invitation", inv, force=True)
+	if frappe.db.exists("Team", TEAM):
+		frappe.delete_doc("Team", TEAM, force=True)
+	# Drop any personal teams a prior run's bootstrap created for the demo users,
+	# so the owner's default team resolves cleanly to `demo`.
+	for email in _demo_user_emails():
+		for t in frappe.get_all("Team", {"owner_user": email}, pluck="name"):
+			frappe.delete_doc("Team", t, force=True)
 	frappe.db.commit()
+
+
+def _notifications():
+	"""A few sent/suppressed entries so the Notifications feed isn't empty."""
+	rows = [
+		("Payment Success", "Sent", "Payment received", "We received ₹4,956.00 for invoice May."),
+		("Invoice Overdue", "Sent", "Invoice overdue", "Invoice June is past its due date."),
+		("Credit Low", "Suppressed", "Low wallet balance", "Your wallet is running low."),
+		("Card Expiry", "Sent", "Card expiring soon", "Visa ····4242 expires 11/2030."),
+	]
+	for i, (event, status, subject, message) in enumerate(rows):
+		frappe.get_doc({
+			"doctype": "Billing Notification Log",
+			"team": TEAM,
+			"event_type": event,
+			"channel": "Email",
+			"status": status,
+			"subject": subject,
+			"message": message,
+			"sent_at": frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-i),
+		}).insert(ignore_permissions=True)
 
 
 def _ensure_workspace():
