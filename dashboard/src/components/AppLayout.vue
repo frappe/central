@@ -14,7 +14,6 @@ const billing = [
   { to: '/billing/invoices', label: 'Invoices', icon: 'lucide-file-text' },
   { to: '/billing/methods', label: 'Payment Methods', icon: 'lucide-credit-card' },
   { to: '/billing/credits', label: 'Credits', icon: 'lucide-wallet' },
-  { to: '/billing/payments', label: 'Payment History', icon: 'lucide-receipt' },
   { to: '/billing/subscriptions', label: 'Subscriptions', icon: 'lucide-repeat' },
   { to: '/billing/notifications', label: 'Notifications', icon: 'lucide-bell' },
   { to: '/billing/settings', label: 'Settings', icon: 'lucide-settings' },

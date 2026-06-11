@@ -63,6 +63,16 @@ const { run: payInvoice, loading: paying } = usePayInvoice({
     if (selected.value) detail.submit({ name: selected.value.name })
   },
 })
+
+// Timeline dot colour per event theme.
+const DOTS = {
+  green: 'bg-surface-green-5',
+  red: 'bg-surface-red-5',
+  blue: 'bg-surface-blue-5',
+  orange: 'bg-surface-amber-5',
+  gray: 'bg-surface-gray-4',
+}
+const dotClass = (theme) => DOTS[theme] || DOTS.gray
 </script>
 
 <template>
@@ -88,17 +98,22 @@ const { run: payInvoice, loading: paying } = usePayInvoice({
           <li
             v-for="inv in rows"
             :key="inv.name"
-            class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 hover:bg-surface-gray-1"
+            class="flex cursor-pointer items-center gap-4 px-4 py-3 hover:bg-surface-gray-1"
             :class="selected?.name === inv.name && 'bg-surface-gray-2'"
             @click="selectRow(inv)"
           >
-            <div class="min-w-0">
+            <div class="min-w-0 flex-1 sm:flex-none sm:w-56">
               <p class="truncate text-sm text-ink-gray-8">{{ inv.name }}</p>
-              <p class="text-p-sm text-ink-gray-5">
+              <!-- Compact (detail open): period sits under the id. -->
+              <p v-if="detailOpen" class="text-p-sm text-ink-gray-5">
                 {{ inv.period_start }} → {{ inv.period_end }}
               </p>
             </div>
-            <div class="flex items-center gap-3">
+            <!-- Full-width (detail closed): period as its own column. -->
+            <p v-if="!detailOpen" class="hidden flex-1 text-p-sm text-ink-gray-5 sm:block">
+              {{ inv.period_start }} → {{ inv.period_end }}
+            </p>
+            <div class="ml-auto flex items-center gap-3 sm:ml-0">
               <span class="text-sm text-ink-gray-7">{{ money(inv.total, inv.currency) }}</span>
               <Badge :theme="invoiceTheme(inv.status)" :label="inv.status" />
             </div>
@@ -176,49 +191,34 @@ const { run: payInvoice, loading: paying } = usePayInvoice({
             </div>
           </dl>
 
-          <!-- Payment provenance (paid invoices): how it settled. -->
-          <section
-            v-if="detail.data.status === 'Paid' && (detail.data.payments?.length || detail.data.credit_applied)"
-            class="rounded border border-outline-gray-1"
-          >
-            <header class="border-b border-outline-gray-1 px-3 py-2">
-              <p class="text-p-sm font-medium text-ink-gray-6">Payment</p>
-            </header>
-            <ul class="divide-y divide-outline-gray-1">
+          <!-- Activity: the invoice's full lifecycle as a timeline (finalised →
+               credits applied → card attempts incl. failures → settled). -->
+          <section v-if="detail.data.activity?.length">
+            <p class="mb-3 text-p-sm font-medium text-ink-gray-6">Activity</p>
+            <ol class="space-y-0">
               <li
-                v-if="detail.data.credit_applied"
-                class="flex items-start justify-between gap-3 px-3 py-2.5"
-              >
-                <div class="min-w-0">
-                  <p class="text-sm text-ink-gray-8">Wallet credits</p>
-                  <p class="text-p-sm text-ink-gray-5">Applied from balance</p>
-                </div>
-                <span class="text-sm text-ink-gray-8">
-                  {{ money(detail.data.credit_applied, detail.data.currency) }}
-                </span>
-              </li>
-              <li
-                v-for="(p, idx) in detail.data.payments"
+                v-for="(ev, idx) in detail.data.activity"
                 :key="idx"
-                class="flex items-start justify-between gap-3 px-3 py-2.5"
+                class="relative flex gap-3 pb-4 last:pb-0"
               >
-                <div class="min-w-0">
-                  <p class="text-sm text-ink-gray-8">
-                    {{ p.method_type || 'Card' }}<span v-if="p.method_label"> · {{ p.method_label }}</span>
-                  </p>
-                  <p class="text-p-sm text-ink-gray-5">
-                    <span v-if="p.gateway">{{ p.gateway }}</span>
-                    <span v-if="p.settled_at"> · settled {{ p.settled_at }}</span>
-                  </p>
-                  <p v-if="p.gateway_transaction_id" class="text-p-sm text-ink-gray-5">
-                    Txn {{ p.gateway_transaction_id }}
-                  </p>
+                <!-- connector line -->
+                <span
+                  v-if="idx < detail.data.activity.length - 1"
+                  class="absolute left-[5px] top-3 h-full w-px bg-outline-gray-2"
+                />
+                <span class="relative mt-1 size-2.5 shrink-0 rounded-full" :class="dotClass(ev.theme)" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <p class="text-sm text-ink-gray-8">{{ ev.title }}</p>
+                    <span v-if="ev.amount" class="shrink-0 text-sm text-ink-gray-7">
+                      {{ money(ev.amount, ev.currency || detail.data.currency) }}
+                    </span>
+                  </div>
+                  <p v-if="ev.detail" class="text-p-sm text-ink-gray-5">{{ ev.detail }}</p>
+                  <p class="text-p-sm text-ink-gray-4">{{ ev.at }}</p>
                 </div>
-                <span class="shrink-0 text-sm text-ink-gray-8">
-                  {{ money(p.amount, p.currency || detail.data.currency) }}
-                </span>
               </li>
-            </ul>
+            </ol>
           </section>
 
           <Button

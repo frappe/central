@@ -51,9 +51,10 @@ def seed():
 	#  - May (~3,776) is fully covered by the wallet → Paid from credits, no card.
 	#  - June (~5,018) exhausts the remaining credits, the card covers the rest.
 	may = invoicing.generate_draft_invoice(sub, "2026-05-01", "2026-05-31")
-	_settle(may, card, settled_at="2026-06-05 10:00:06", due_date="2026-06-07")
+	_settle(may, card, due_date="2026-06-07")
 	june = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
-	_settle(june, card, settled_at="2026-07-05 10:00:06", due_date="2026-07-07")
+	# June's card is declined once, then captured on retry — a richer timeline.
+	_settle(june, card, due_date="2026-07-07", with_failure=True)
 	_notifications()
 	_ensure_workspace()
 
@@ -274,14 +275,35 @@ def _payment_method():
 	return frappe.get_doc(values).insert(ignore_permissions=True).name
 
 
-def _settle(name, card, settled_at, due_date):
+def _attempt(name, card, amount, status, when, retry, **extra):
+	frappe.get_doc({
+		"doctype": "Payment Attempt",
+		"invoice": name,
+		"team": TEAM,
+		"gateway": GATEWAY,
+		"payment_method": card,
+		"amount": amount,
+		"currency": "INR",
+		"status": status,
+		"initiated_at": when,
+		"completed_at": when,
+		"retry_number": retry,
+		**extra,
+	}).insert(ignore_permissions=True)
+
+
+def _settle(name, card, due_date, with_failure=False):
 	"""Settle an invoice through the real credits-then-card waterfall (#11),
 	mirroring invoicing.open_and_collect without a live gateway round-trip:
 
 	  1. Apply wallet credits first, up to the collectable amount.
 	  2. If credits cover it in full → Paid, no card charge.
-	  3. Otherwise capture the remainder on the card (a Captured Payment Attempt
-	     with a gateway transaction id + settlement time → shows in Payment History).
+	  3. Otherwise capture the remainder on the card. `with_failure` adds a first
+	     declined attempt, then captures on retry — a richer payment timeline.
+
+	Card attempts are stamped a few minutes after the invoice/credit records so
+	the per-invoice activity timeline stays in order (the wallet ledger is never
+	backdated — that would break its running-balance anchor).
 	"""
 	if not name:
 		return
@@ -307,21 +329,20 @@ def _settle(name, card, settled_at, due_date):
 		return
 
 	# Charge the remainder on the card (simulated capture — no live gateway).
-	frappe.get_doc({
-		"doctype": "Payment Attempt",
-		"invoice": name,
-		"team": TEAM,
-		"gateway": GATEWAY,
-		"payment_method": card,
-		"amount": inv.expected_collection,
-		"currency": "INR",
-		"status": "Captured",
-		"gateway_transaction_id": f"pi_{frappe.generate_hash(12)}",
-		"resolved_by": "Webhook",
-		"initiated_at": settled_at,
-		"completed_at": settled_at,
-		"retry_number": 0,
-	}).insert(ignore_permissions=True)
+	now = frappe.utils.now_datetime()
+	retry = 0
+	if with_failure:
+		_attempt(
+			name, card, inv.expected_collection, "Failed",
+			frappe.utils.add_to_date(now, minutes=10), 0,
+			failure_code="card_declined", failure_reason="Your card was declined by the bank.",
+		)
+		retry = 1
+	_attempt(
+		name, card, inv.expected_collection, "Captured",
+		frappe.utils.add_to_date(now, minutes=20), retry,
+		gateway_transaction_id=f"pi_{frappe.generate_hash(12)}", resolved_by="Webhook",
+	)
 
 	inv.amount_paid = inv.expected_collection
 	inv.status = "Paid"
