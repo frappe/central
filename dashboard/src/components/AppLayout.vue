@@ -54,6 +54,20 @@ const atlas = [
       <TeamSwitcher class="mb-4" />
 
       <nav class="flex-1 space-y-5 overflow-y-auto" @click="drawerOpen = false">
+        <div v-if="canViewAtlas">
+          <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Atlas</p>
+          <div class="space-y-0.5">
+            <NavLink v-for="i in atlas" :key="i.to" v-bind="i" />
+          </div>
+        </div>
+
+        <div v-if="canViewTeam">
+          <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Team</p>
+          <div class="space-y-0.5">
+            <NavLink v-for="i in team" :key="i.to" v-bind="i" />
+          </div>
+        </div>
+
         <div v-if="canView">
           <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Billing</p>
           <div class="space-y-0.5">
@@ -65,20 +79,6 @@ const atlas = [
           <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Settings</p>
           <div class="space-y-0.5">
             <NavLink v-for="i in settings" :key="i.to" v-bind="i" />
-          </div>
-        </div>
-
-        <div v-if="canViewTeam">
-          <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Team</p>
-          <div class="space-y-0.5">
-            <NavLink v-for="i in team" :key="i.to" v-bind="i" />
-          </div>
-        </div>
-
-        <div v-if="canViewAtlas">
-          <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Atlas</p>
-          <div class="space-y-0.5">
-            <NavLink v-for="i in atlas" :key="i.to" v-bind="i" />
           </div>
         </div>
       </nav>

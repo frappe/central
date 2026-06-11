@@ -23,7 +23,7 @@ const invoices = useCall({ url: m(API.invoices), params, refetch: true })
 const search = ref('')
 const status = ref('all')
 const statuses = [
-  { label: 'All statuses', value: 'all' },
+  { label: 'All', value: 'all' },
   { label: 'Open', value: 'open' },
   { label: 'Paid', value: 'paid' },
   { label: 'Overdue', value: 'overdue' },
@@ -92,26 +92,38 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
         <div v-else-if="!rows.length" class="px-4 py-12 text-center text-p-sm text-ink-gray-5">
           No invoices match.
         </div>
-        <ul v-else class="divide-y divide-outline-gray-1">
-          <li
-            v-for="inv in rows"
-            :key="inv.name"
-            class="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-surface-gray-1"
-            :class="selected?.name === inv.name && 'bg-surface-gray-2'"
-            @click="selectRow(inv)"
+        <template v-else>
+          <!-- Column titles -->
+          <div
+            class="flex items-center gap-3 border-b border-outline-gray-1 px-4 py-2 text-p-sm font-medium uppercase tracking-wide text-ink-gray-5"
           >
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-medium text-ink-gray-8">{{ inv.name }}</p>
-              <p class="truncate text-p-sm text-ink-gray-5">
-                {{ billingPeriod(inv.period_start, inv.period_end) }}
-              </p>
-            </div>
-            <span class="shrink-0 text-sm tabular-nums text-ink-gray-7">
-              {{ money(inv.total, inv.currency) }}
-            </span>
-            <Badge :theme="invoiceTheme(inv.status)" :label="inv.status" class="shrink-0" />
-          </li>
-        </ul>
+            <span class="flex-1">Invoice</span>
+            <span class="w-28 shrink-0 text-right">Amount</span>
+            <span class="w-20 shrink-0">Status</span>
+          </div>
+          <ul class="divide-y divide-outline-gray-1">
+            <li
+              v-for="inv in rows"
+              :key="inv.name"
+              class="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-surface-gray-1"
+              :class="selected?.name === inv.name && 'bg-surface-gray-2'"
+              @click="selectRow(inv)"
+            >
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-medium text-ink-gray-8">{{ inv.name }}</p>
+                <p class="truncate text-p-sm text-ink-gray-5">
+                  {{ billingPeriod(inv.period_start, inv.period_end) }}
+                </p>
+              </div>
+              <span class="w-28 shrink-0 text-right text-sm tabular-nums text-ink-gray-7">
+                {{ money(inv.total, inv.currency) }}
+              </span>
+              <span class="w-20 shrink-0">
+                <Badge :theme="invoiceTheme(inv.status)" :label="inv.status" />
+              </span>
+            </li>
+          </ul>
+        </template>
       </template>
 
       <!-- DETAIL -->
@@ -134,27 +146,37 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
             </p>
           </header>
 
-          <!-- Line items -->
-          <div class="rounded border border-outline-gray-1">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="border-b border-outline-gray-1 text-left text-p-sm text-ink-gray-5">
-                  <th class="px-3 py-2 font-normal">Item</th>
-                  <th class="px-3 py-2 text-right font-normal">Amount</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-outline-gray-1">
-                <tr v-for="(li, idx) in detail.data.items" :key="idx">
-                  <td class="px-3 py-2">
-                    <p class="text-ink-gray-8">{{ li.item }}</p>
-                    <p v-if="li.detail" class="text-p-sm text-ink-gray-5">{{ li.detail }}</p>
-                  </td>
-                  <td class="px-3 py-2 text-right text-ink-gray-8">
-                    {{ money(li.amount, detail.data.currency) }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- Line items. A long fleet can run to dozens of rows, so the list
+               gets its own bounded scroll (sticky header) — the totals and Pay
+               action below stay reachable without scrolling past every row. -->
+          <div>
+            <div class="mb-1.5 flex items-center justify-between">
+              <p class="text-p-sm font-medium uppercase tracking-wide text-ink-gray-5">Line items</p>
+              <span class="text-p-sm text-ink-gray-5">
+                {{ detail.data.items.length }} item{{ detail.data.items.length === 1 ? '' : 's' }}
+              </span>
+            </div>
+            <div class="max-h-80 overflow-y-auto rounded border border-outline-gray-1">
+              <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-surface-white">
+                  <tr class="border-b border-outline-gray-1 text-left text-p-sm text-ink-gray-5">
+                    <th class="px-3 py-2 font-normal">Item</th>
+                    <th class="px-3 py-2 text-right font-normal">Amount</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-outline-gray-1">
+                  <tr v-for="(li, idx) in detail.data.items" :key="idx">
+                    <td class="px-3 py-2">
+                      <p class="text-ink-gray-8">{{ li.item }}</p>
+                      <p v-if="li.detail" class="text-p-sm text-ink-gray-5">{{ li.detail }}</p>
+                    </td>
+                    <td class="px-3 py-2 text-right text-ink-gray-8">
+                      {{ money(li.amount, detail.data.currency) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <!-- Totals -->
@@ -219,14 +241,20 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
             </ol>
           </section>
 
-          <Button
+          <!-- Pinned to the panel bottom so the pay action is always reachable,
+               however long the line-item list runs. -->
+          <div
             v-if="canPay"
-            variant="solid"
-            :label="`Pay ${money(detail.data.expected_collection, detail.data.currency)}`"
-            :loading="paying"
-            class="w-full"
-            @click="payInvoice(detail.data.name)"
-          />
+            class="sticky bottom-0 -mx-4 -mb-4 border-t border-outline-gray-1 bg-surface-white px-4 py-3"
+          >
+            <Button
+              variant="solid"
+              :label="`Pay ${money(detail.data.expected_collection, detail.data.currency)}`"
+              :loading="paying"
+              class="w-full"
+              @click="payInvoice(detail.data.name)"
+            />
+          </div>
         </div>
       </template>
     </SplitView>
