@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
-import { Badge, Button, Dropdown, LoadingText } from 'frappe-ui'
+import { Badge, Button, Dropdown, Select, LoadingText } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import InviteMemberDialog from '@/components/InviteMemberDialog.vue'
 import { API, m } from '@/api/endpoints'
@@ -50,26 +50,22 @@ async function removeMember(mem) {
   }
 }
 
-// Owner is immutable from here (backend enforces a single Owner).
+// Role is changed inline (the explicit member→role control); the ⋯ menu carries
+// only status/remove. Owner is immutable here (backend enforces a single Owner).
 function rowActions(mem) {
   if (mem.is_owner) return []
-  const actions = (roles.data || [])
-    .filter((r) => r.name !== mem.role)
-    .map((r) => ({
-      label: `Make ${r.role_name || r.name}`,
-      onClick: () => changeRole(mem, r.name),
-    }))
-  actions.push({
-    label: mem.status === 'Active' ? 'Suspend' : 'Activate',
-    onClick: () => toggleStatus(mem),
-  })
-  actions.push({ label: 'Remove', onClick: () => removeMember(mem) })
-  return actions
+  return [
+    { label: mem.status === 'Active' ? 'Suspend' : 'Activate', onClick: () => toggleStatus(mem) },
+    { label: 'Remove', onClick: () => removeMember(mem) },
+  ]
 }
 
 const showInvite = ref(false)
 const roleLabel = (name) =>
   (roles.data || []).find((r) => r.name === name)?.role_name || name
+const roleOptions = computed(() =>
+  (roles.data || []).map((r) => ({ label: r.role_name || r.name, value: r.name })),
+)
 </script>
 
 <template>
@@ -102,8 +98,21 @@ const roleLabel = (name) =>
               <Badge v-if="mem.is_owner" theme="green" label="Owner" />
               <Badge v-if="mem.status !== 'Active'" theme="orange" :label="mem.status" />
             </div>
-            <p class="text-p-sm text-ink-gray-5">{{ roleLabel(mem.role) }}</p>
           </div>
+
+          <!-- Explicit member → role control. -->
+          <div class="flex items-center gap-1">
+            <span class="hidden text-p-sm text-ink-gray-5 sm:inline">Role</span>
+            <Select
+              v-if="canManageTeam && !mem.is_owner"
+              :modelValue="mem.role"
+              :options="roleOptions"
+              :disabled="busy"
+              @update:modelValue="(v) => changeRole(mem, v)"
+            />
+            <Badge v-else theme="gray" :label="roleLabel(mem.role)" />
+          </div>
+
           <Dropdown
             v-if="canManageTeam && !mem.is_owner"
             :options="rowActions(mem)"

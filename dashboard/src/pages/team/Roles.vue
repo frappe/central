@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCall } from 'frappe-ui'
 import { Badge, Button, LoadingText } from 'frappe-ui'
@@ -35,6 +35,15 @@ const grouped = computed(() => {
 function grants(role, capName) {
   return (role.capabilities || []).includes(capName)
 }
+
+// Plane groups collapse — the capability list can get long.
+const collapsed = ref(new Set())
+function toggle(plane) {
+  const next = new Set(collapsed.value)
+  next.has(plane) ? next.delete(plane) : next.add(plane)
+  collapsed.value = next
+}
+const isOpen = (plane) => !collapsed.value.has(plane)
 </script>
 
 <template>
@@ -73,16 +82,26 @@ function grants(role, capName) {
         </thead>
         <tbody>
           <template v-for="group in grouped" :key="group.plane">
-            <tr class="bg-surface-gray-1">
+            <tr
+              class="cursor-pointer bg-surface-gray-1 hover:bg-surface-gray-2"
+              @click="toggle(group.plane)"
+            >
               <td
                 :colspan="(roles.data?.length || 0) + 1"
                 class="px-4 py-1.5 text-p-sm font-medium uppercase tracking-wide text-ink-gray-5"
               >
-                {{ group.plane }}
+                <span class="inline-flex items-center gap-1.5">
+                  <span
+                    class="lucide-chevron-right size-3.5 transition-transform"
+                    :class="isOpen(group.plane) && 'rotate-90'"
+                  />
+                  {{ group.plane }}
+                  <span class="text-ink-gray-4">({{ group.caps.length }})</span>
+                </span>
               </td>
             </tr>
             <tr
-              v-for="cap in group.caps"
+              v-for="cap in (isOpen(group.plane) ? group.caps : [])"
               :key="cap.name"
               class="border-b border-outline-gray-1"
             >
