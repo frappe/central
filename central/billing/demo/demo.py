@@ -47,8 +47,13 @@ def seed():
 	# Wallet: a 5,000 top-up.
 	credits.purchase(TEAM, 5000, "INR", note="Demo top-up")
 
-	_paid_invoice(sub, card)
-	_open_invoice(sub, card)
+	# Settle both months through the real credits-then-card waterfall (#11):
+	#  - May (~3,776) is fully covered by the wallet → Paid from credits, no card.
+	#  - June (~5,018) exhausts the remaining credits, the card covers the rest.
+	may = invoicing.generate_draft_invoice(sub, "2026-05-01", "2026-05-31")
+	_settle(may, card, settled_at="2026-06-05 10:00:06", due_date="2026-06-07")
+	june = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
+	_settle(june, card, settled_at="2026-07-05 10:00:06", due_date="2026-07-07")
 	_notifications()
 	_ensure_workspace()
 
@@ -269,24 +274,39 @@ def _payment_method():
 	return frappe.get_doc(values).insert(ignore_permissions=True).name
 
 
-def _paid_invoice(sub, card):
-	name = invoicing.generate_draft_invoice(sub, "2026-05-01", "2026-05-31")
+def _settle(name, card, settled_at, due_date):
+	"""Settle an invoice through the real credits-then-card waterfall (#11),
+	mirroring invoicing.open_and_collect without a live gateway round-trip:
+
+	  1. Apply wallet credits first, up to the collectable amount.
+	  2. If credits cover it in full → Paid, no card charge.
+	  3. Otherwise capture the remainder on the card (a Captured Payment Attempt
+	     with a gateway transaction id + settlement time → shows in Payment History).
+	"""
 	if not name:
 		return
 	inv = frappe.get_doc("Invoice", name)
 
-	# Settle May from two sources so the demo shows real provenance:
-	#  - part drawn from the wallet (a Credit Ledger debit), and
-	#  - the remainder captured on the card (a Captured Payment Attempt with a
-	#    gateway transaction id + settlement time → shows in Payment History).
-	credit_used = frappe.utils.flt(inv.output_tax_amount, 2)  # cover the GST from credits
-	credits.apply_credit(
-		TEAM, credit_used, "INR",
-		reference_type="Invoice", reference_name=name, note=f"Applied to invoice {name}",
-	)
-	inv.credit_applied = credit_used
-	inv.expected_collection = frappe.utils.flt(inv.total - credit_used, 2)
+	collectable = frappe.utils.flt(inv.total) - frappe.utils.flt(inv.get("tds_amount") or 0)
+	balance = credits.get_balance(TEAM)["balance"]
+	applied = min(frappe.utils.flt(balance), collectable) if collectable > 0 else 0.0
+	if applied > 0:
+		credits.apply_credit(
+			TEAM, applied, "INR",
+			reference_type="Invoice", reference_name=name, note=f"Credit applied to {name}",
+		)
+	inv.credit_applied = applied
+	inv.expected_collection = frappe.utils.flt(collectable - applied, 2)
+	inv.due_date = due_date
 
+	# Credits cover it in full — settled with no card charge.
+	if inv.expected_collection <= 0:
+		inv.amount_paid = 0
+		inv.status = "Paid"
+		inv.save(ignore_permissions=True)
+		return
+
+	# Charge the remainder on the card (simulated capture — no live gateway).
 	frappe.get_doc({
 		"doctype": "Payment Attempt",
 		"invoice": name,
@@ -298,27 +318,13 @@ def _paid_invoice(sub, card):
 		"status": "Captured",
 		"gateway_transaction_id": f"pi_{frappe.generate_hash(12)}",
 		"resolved_by": "Webhook",
-		"initiated_at": "2026-06-05 10:00:00",
-		"completed_at": "2026-06-05 10:00:06",
+		"initiated_at": settled_at,
+		"completed_at": settled_at,
 		"retry_number": 0,
 	}).insert(ignore_permissions=True)
 
-	inv.status = "Paid"
 	inv.amount_paid = inv.expected_collection
-	inv.due_date = "2026-06-07"
-	inv.save(ignore_permissions=True)
-
-
-def _open_invoice(sub, card):
-	name = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
-	if not name:
-		return
-	# Leave June outstanding (no credits drawn) so the demo shows a funded wallet
-	# AND an open invoice — the postpaid "outstanding" wireframe. The credits-then
-	# -card waterfall itself is covered by the test suite.
-	inv = frappe.get_doc("Invoice", name)
-	inv.status = "Open"
-	inv.due_date = "2026-07-07"
+	inv.status = "Paid"
 	inv.save(ignore_permissions=True)
 
 
