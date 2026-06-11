@@ -150,6 +150,11 @@ def my_capabilities(team: str | None = None) -> list[str]:
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return []
+	# Operators (System Manager) bypass team membership everywhere in Central IAM,
+	# so the console must reflect that — otherwise the UI gates hide screens the
+	# API would happily serve.
+	if user_has_operator_bypass(user):
+		return get_all_capabilities()
 	grants = resolve_user_grants(user)
 	team_grants = grants.get(team, []) if team else [g for gs in grants.values() for g in gs]
 	return sorted({cap for grant in team_grants for cap in grant.get("caps", [])})
