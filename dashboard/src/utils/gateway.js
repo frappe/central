@@ -32,6 +32,8 @@ export async function openRazorpayCheckout(order, { name = 'Central', descriptio
           razorpay_order_id: resp.razorpay_order_id,
           razorpay_payment_id: resp.razorpay_payment_id,
           razorpay_signature: resp.razorpay_signature,
+          // Present for recurring (UPI Autopay / card mandate) setups.
+          razorpay_token_id: resp.razorpay_token_id,
         }),
       modal: { ondismiss: () => reject(new Error('cancelled')) },
     })
