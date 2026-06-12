@@ -216,12 +216,16 @@ class RazorpayAdapter(GatewayAdapter):
 
 	def create_customer(self, team) -> str:
 		# Team.owner_user is a Link to User, whose name IS the email address.
+		# fail_existing must be the STRING "0", not int 0: Razorpay treats a falsy/
+		# absent value as the default (1 = fail) and raises "Customer already exists
+		# for the merchant" when one with the same email already exists. "0" makes it
+		# return the existing customer instead — idempotent re-setup.
 		customer = self._client().customer.create(
 			{
 				"name": getattr(team, "name", None),
 				"email": team.get("owner_user") if hasattr(team, "get") else None,
 				"contact": team.get("phone") if hasattr(team, "get") else None,
-				"fail_existing": 0,
+				"fail_existing": "0",
 			}
 		)
 		return customer.get("id")

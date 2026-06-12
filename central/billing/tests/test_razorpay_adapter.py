@@ -167,7 +167,11 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 			c.customer.create.return_value = {"id": "cust_new"}
 			cid = adapter.create_customer(frappe._dict(name="Team-1", owner_user="a@b.com", phone="+91"))
 		self.assertEqual(cid, "cust_new")
-		self.assertEqual(c.customer.create.call_args.args[0]["email"], "a@b.com")
+		payload = c.customer.create.call_args.args[0]
+		self.assertEqual(payload["email"], "a@b.com")
+		# Must be the string "0" so Razorpay returns an existing customer rather
+		# than erroring "Customer already exists for the merchant".
+		self.assertEqual(payload["fail_existing"], "0")
 
 	def test_verify_payment_signature_valid(self):
 		adapter = self.make_adapter()
