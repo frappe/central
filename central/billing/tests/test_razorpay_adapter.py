@@ -167,7 +167,11 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 			c.customer.create.return_value = {"id": "cust_new"}
 			cid = adapter.create_customer(frappe._dict(name="Team-1", owner_user="a@b.com", phone="+91"))
 		self.assertEqual(cid, "cust_new")
-		self.assertEqual(c.customer.create.call_args.args[0]["email"], "a@b.com")
+		payload = c.customer.create.call_args.args[0]
+		self.assertEqual(payload["email"], "a@b.com")
+		# No gateway idempotency flag — ensure_gateway_customer stores the id so
+		# create is only ever called once per (team, gateway).
+		self.assertNotIn("fail_existing", payload)
 
 	def test_verify_payment_signature_valid(self):
 		adapter = self.make_adapter()

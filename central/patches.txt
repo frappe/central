@@ -34,3 +34,10 @@ central.billing.patches.v08_titlecase_select_options.titlecase_options
 # Billing Profile gains an explicit user-set `currency` (backfilled from the
 # team's price lock); the unused prepaid/postpaid `billing_mode` column is dropped.
 central.billing.patches.v09_billing_currency.billing_currency
+# Per-(team, gateway) Gateway Customer store — seed it from the customer ids
+# already recorded on Payment Methods so existing teams reuse, not re-mint.
+central.billing.patches.v10_gateway_customer.backfill_gateway_customers
+# Front-load a Gateway Customer for every team that already has a billing profile
+# (resolve the gateway from the profile currency). Live gateway calls; per-team
+# isolated + idempotent.
+central.billing.patches.v11_provision_gateway_customers.provision_gateway_customers

@@ -37,6 +37,7 @@ class CardTestBase(IntegrationTestCase):
 		make_stripe_gateway(GATEWAY)
 		for name in frappe.get_all("Payment Method", filters={"team": TEAM}, pluck="name"):
 			frappe.delete_doc("Payment Method", name, force=True)
+		frappe.db.delete("Gateway Customer", {"team": TEAM})
 
 	def add_active_card(self, label="Visa ····4242", expiry_month=12, expiry_year=2030):
 		with stub_adapter(validate=True):

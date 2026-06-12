@@ -68,6 +68,7 @@ class MandateTestBase(IntegrationTestCase):
 			"Payment Method", filters={"team": TEAM}, pluck="name"
 		):
 			frappe.delete_doc("Payment Method", name, force=True)
+		frappe.db.delete("Gateway Customer", {"team": TEAM})
 		if frappe.db.exists("Trust Tier", TEAM):
 			frappe.delete_doc("Trust Tier", TEAM, force=True)
 		# Entry tier: t0 cap = 100.
@@ -257,6 +258,29 @@ class TestRazorpayCardSetup(MandateTestBase):
 			self.assertEqual(
 				adapter.setup_payment_method.call_args.args[1]["customer_id"], "cust_created"
 			)
+
+	def test_customer_stored_before_order_so_failure_does_not_orphan(self):
+		# The customer is stored the instant it's minted, BEFORE the order — so an
+		# order that fails afterwards can't orphan it, and a retry reuses it.
+		with stub_adapter() as adapter:
+			adapter.setup_payment_method.side_effect = RuntimeError("order failed")
+			with self.assertRaises(RuntimeError):
+				mandates.setup_card(TEAM, GATEWAY)
+
+			# Minted + stored despite no Payment Method ever being created.
+			self.assertEqual(
+				frappe.db.get_value(
+					"Gateway Customer", {"team": TEAM, "gateway": GATEWAY}, "gateway_customer_id"
+				),
+				"cust_created",
+			)
+			self.assertFalse(frappe.db.exists("Payment Method", {"team": TEAM}))
+
+			# Retry succeeds and reuses the stored customer — no second mint.
+			adapter.create_customer.reset_mock()
+			adapter.setup_payment_method.side_effect = None
+			mandates.setup_card(TEAM, GATEWAY)
+			adapter.create_customer.assert_not_called()
 
 
 class TestAddMethodGatewayResolution(IntegrationTestCase):
