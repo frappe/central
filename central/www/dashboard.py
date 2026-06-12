@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import frappe
+from frappe.sessions import get_csrf_token
 
 no_cache = 1
 
@@ -20,6 +21,12 @@ def get_context(context):
 	context.no_cache = 1
 	context.css_files = []
 	context.js_files = []
+
+	# The SPA's API calls are POST (state-changing), which Frappe guards with CSRF.
+	# frappe-ui reads window.csrf_token and sends it as X-Frappe-CSRF-Token; inject
+	# it here (the page is per-session, no_cache=1) so writes aren't rejected. Set
+	# before any early return so the shell always carries a real token.
+	context.csrf_token = get_csrf_token()
 
 	manifest_path = frappe.get_app_path("central", "public", "dashboard", ".vite", "manifest.json")
 	try:

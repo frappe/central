@@ -28,6 +28,11 @@
 {% endblock %}
 
 {% block script %}
+{# CSRF token for the SPA's POST API calls. frappe-ui reads window.csrf_token
+   and sends it as X-Frappe-CSRF-Token; it ignores the value if it still equals
+   the literal "{{ csrf_token }}" placeholder, so this must render server-side.
+   Plain (non-module) script runs before the deferred module entry below. #}
+<script>window.csrf_token = "{{ csrf_token }}";</script>
 {% for path in js_files %}
 <script type="module" src="{{ path }}"></script>
 {% endfor %}
