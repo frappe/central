@@ -32,32 +32,36 @@ def whoami() -> dict:
 
 @frappe.whitelist()
 def get_billing_profile(team: str | None = None) -> dict:
-	team = _resolve_team(team)
-	if not frappe.db.exists("Billing Profile", team):
-		return {"team": team}
-	return frappe.get_doc("Billing Profile", team).as_dict()
+	"""The team's billing profile, plus the derived setup state the dashboard
+	gates on:
 
+	- `complete` — required fields (currency + legal name + address) all filled;
+	  the gate for top-ups / buying credits / adding a payment method.
+	- `missing` — required fields still blank.
+	- `currency_locked` — true once a wallet credit, payment method, or invoice
+	  exists, so the UI disables the currency picker.
+	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
+	  profile).
 
-@frappe.whitelist()
-def get_billing_setup(team: str | None = None) -> dict:
-	"""Profile-completeness + currency state the dashboard gates money movement on.
-
-	`complete` is the gate for top-ups / buying credits / adding a payment method.
-	`currency_locked` is true once a wallet credit, payment method, or invoice
-	exists, so the UI can disable the currency picker. `supported_currencies` is
-	the allowed set (gateway-backed)."""
+	The stored fields (currency, legal name, address, GSTIN, …) come straight off
+	the doc for the edit forms; the derived fields drive routing and locking.
+	"""
 	from central.billing.gateways.registry import supported_currencies
 
 	team = _resolve_team(team)
+	profile = (
+		frappe.get_doc("Billing Profile", team).as_dict()
+		if frappe.db.exists("Billing Profile", team)
+		else {"team": team}
+	)
 	missing = _missing_profile_fields(team)
-	return {
-		"team": team,
+	profile.update({
 		"complete": not missing,
 		"missing": missing,
-		"currency": frappe.db.get_value("Billing Profile", team, "currency"),
 		"currency_locked": _has_money_activity(team),
 		"supported_currencies": supported_currencies(),
-	}
+	})
+	return profile
 
 
 def _validate_currency(team: str, currency: str | None):

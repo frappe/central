@@ -220,12 +220,12 @@ class TestCustomerActions(CustomerDataBase):
 		# No profile yet → top-up / credits / payment-method setup are refused.
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.purchase_credits(team=TEAM, amount=1500)
-		setup = dashboard.get_billing_setup(TEAM)
+		setup = dashboard.get_billing_profile(TEAM)
 		self.assertFalse(setup["complete"])
 		self.assertIn("currency", setup["missing"])
 		# Once the profile is complete, the same call succeeds.
 		complete_billing_profile(TEAM)
-		self.assertTrue(dashboard.get_billing_setup(TEAM)["complete"])
+		self.assertTrue(dashboard.get_billing_profile(TEAM)["complete"])
 		self.assertEqual(dashboard.purchase_credits(team=TEAM, amount=1500)["new_balance"], 1500)
 
 	def test_billing_settings_roundtrip(self):
@@ -261,10 +261,10 @@ class TestBillingCurrency(CustomerDataBase):
 
 		make_razorpay_gateway("GW-Cur-Lock")
 		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
-		self.assertFalse(dashboard.get_billing_setup(TEAM)["currency_locked"])
+		self.assertFalse(dashboard.get_billing_profile(TEAM)["currency_locked"])
 
 		credits.purchase(TEAM, 100, "INR")  # first money activity locks currency
-		self.assertTrue(dashboard.get_billing_setup(TEAM)["currency_locked"])
+		self.assertTrue(dashboard.get_billing_profile(TEAM)["currency_locked"])
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.save_billing_profile(TEAM, currency="USD")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")

@@ -28,7 +28,7 @@ export async function fetchBillingSetup(team, { force = false } = {}) {
     inflight = (async () => {
       state.loading = true
       try {
-        const base = m(API.billingSetup)
+        const base = m(API.billingProfile)
         const url = key ? `${base}?team=${encodeURIComponent(key)}` : base
         const r = await fetch(url, {
           credentials: 'same-origin',
