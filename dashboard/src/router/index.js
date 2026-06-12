@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import GroupGate from '@/components/GroupGate.vue'
+import { fetchBillingSetup } from '@/data/billingSetup'
+import { useTeam, whoReady } from '@/composables/useTeam'
 
 // The SPA is mounted under /dashboard (central/hooks.py website_route_rules).
 const routes = [
@@ -9,6 +11,10 @@ const routes = [
     component: AppLayout,
     children: [
       { path: '', redirect: '/billing' },
+
+      // First-run billing setup — rendered inside the shell (sidebar stays, its
+      // billing/settings options stay locked until the profile is complete).
+      { path: 'onboarding', name: 'Onboarding', component: () => import('@/pages/Onboarding.vue') },
 
       {
         path: 'billing',
@@ -64,4 +70,25 @@ const routes = [
 export const router = createRouter({
   history: createWebHistory('/dashboard/'),
   routes,
+})
+
+// Onboarding gate. Until the billing profile is complete, EVERY route funnels to
+// /onboarding — any click or refresh lands there and nowhere else. A set-up team
+// is conversely kept off /onboarding. The check is awaited before the route paints
+// (and the app mounts only after router.isReady()), so a hard refresh is
+// deterministic and never flashes onboarding away. Cached → one request per
+// session (invalidated on save). Fail-open: if the check errors, navigation
+// proceeds rather than trapping the user.
+router.beforeEach(async (to) => {
+  // Resolve identity first so we gate on the active team, not an empty/default one.
+  await whoReady
+  const { currentTeam } = useTeam()
+  const setup = await fetchBillingSetup(currentTeam.value)
+  const incomplete = setup && setup.complete === false
+
+  if (to.path === '/onboarding') {
+    // A set-up team has no business on onboarding — send it on to its target.
+    return incomplete ? true : to.query.redirect || '/billing'
+  }
+  return incomplete ? { path: '/onboarding', query: { redirect: to.fullPath } } : true
 })

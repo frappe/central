@@ -5,12 +5,16 @@ import { Badge, Button, Dropdown, LoadingText } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import { API, m } from '@/api/endpoints'
+import { useRouter } from 'vue-router'
 import { useTeam } from '@/composables/useTeam'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { successToast, errorToast } from '@/utils/toast'
 
+const router = useRouter()
 const { currentTeam } = useTeam()
 const { canManage } = useCapabilities()
+const { complete: setupComplete } = useBillingSetup()
 
 const methods = useCall({
   url: m(API.paymentMethods),
@@ -84,11 +88,27 @@ function methodIcon(type) {
   <div class="flex h-full flex-col">
     <PageHeader :items="[{ label: 'Settings' }, { label: 'Payment Methods' }]">
       <template #actions>
-        <Button v-if="canManage" variant="solid" label="Add method" @click="showAdd = true" />
+        <Button
+          v-if="canManage"
+          variant="solid"
+          label="Add method"
+          :disabled="!setupComplete"
+          @click="showAdd = true"
+        />
       </template>
     </PageHeader>
 
     <div class="body-container space-y-4 pb-40 pt-5">
+      <div
+        v-if="canManage && !setupComplete"
+        class="flex items-center justify-between gap-3 rounded border border-outline-amber-2 bg-surface-amber-1 px-4 py-3"
+      >
+        <p class="text-p-sm text-ink-amber-3">
+          Set your billing currency and address before adding a payment method.
+        </p>
+        <Button variant="subtle" label="Go to Settings" @click="router.push({ name: 'Address' })" />
+      </div>
+
       <div v-if="methods.loading && !methods.data" class="space-y-3">
         <LoadingText :lines="4" />
       </div>

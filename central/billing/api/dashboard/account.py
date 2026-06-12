@@ -11,6 +11,9 @@ from central.billing.api.dashboard._shared import (
 	_FX_TO_INR,
 	_default_team,
 	_from_inr,
+	_has_money_activity,
+	_missing_profile_fields,
+	_profile_complete,
 	_resolve_team,
 	_team_clusters,
 	_team_currency,
@@ -29,57 +32,107 @@ def whoami() -> dict:
 
 @frappe.whitelist()
 def get_billing_profile(team: str | None = None) -> dict:
+	"""The team's billing profile, plus the derived setup state the dashboard
+	gates on:
+
+	- `complete` — required fields (currency + legal name + address) all filled;
+	  the gate for top-ups / buying credits / adding a payment method.
+	- `missing` — required fields still blank.
+	- `currency_locked` — true once a wallet credit, payment method, or invoice
+	  exists, so the UI disables the currency picker.
+	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
+	  profile).
+
+	The stored fields (currency, legal name, address, GSTIN, …) come straight off
+	the doc for the edit forms; the derived fields drive routing and locking.
+	"""
+	from central.billing.gateways.registry import supported_currencies
+
 	team = _resolve_team(team)
-	if not frappe.db.exists("Billing Profile", team):
-		return {"team": team}
-	return frappe.get_doc("Billing Profile", team).as_dict()
+	profile = (
+		frappe.get_doc("Billing Profile", team).as_dict()
+		if frappe.db.exists("Billing Profile", team)
+		else {"team": team}
+	)
+	missing = _missing_profile_fields(team)
+	profile.update({
+		"complete": not missing,
+		"missing": missing,
+		"currency_locked": _has_money_activity(team),
+		"supported_currencies": supported_currencies(),
+	})
+	return profile
+
+
+def _validate_currency(team: str, currency: str | None):
+	"""Currency must be gateway-supported, and is locked once money has moved."""
+	if not currency:
+		return
+	from central.billing.gateways.registry import supported_currencies
+
+	supported = supported_currencies()
+	if currency not in supported:
+		frappe.throw(
+			f"{currency} is not a supported billing currency. "
+			f"Choose one of: {', '.join(supported) or 'none configured'}.",
+			frappe.ValidationError,
+		)
+	current = frappe.db.get_value("Billing Profile", team, "currency")
+	if current and current != currency and _has_money_activity(team):
+		frappe.throw(
+			f"Billing currency is locked to {current}: this team already has a wallet, "
+			"payment method, or invoice, so it can't be changed.",
+			frappe.ValidationError,
+		)
 
 
 @frappe.whitelist(methods=["POST"])
 def save_billing_profile(team: str | None = None, **fields) -> dict:
-	"""Create/update the team's billing identity (GSTIN validated in the controller)."""
+	"""Create/update the team's billing identity: currency, legal name, address,
+	GSTIN (validated in the controller). Currency is constrained to gateway-
+	supported values and locked once the team has money activity."""
 	team = _resolve_team(team, authz.MANAGE)
-	allowed = ("legal_name", "email", "phone", "gstin", "address_line1", "address_line2",
-			   "city", "state", "country", "pincode")
+	allowed = ("currency", "legal_name", "email", "phone", "gstin", "address_line1",
+			   "address_line2", "city", "state", "country", "pincode")
 	values = {k: v for k, v in fields.items() if k in allowed}
+	_validate_currency(team, values.get("currency"))
 	if frappe.db.exists("Billing Profile", team):
 		doc = frappe.get_doc("Billing Profile", team)
 		doc.update(values)
 	else:
 		doc = frappe.get_doc({"doctype": "Billing Profile", "team": team, **values})
 	doc.save(ignore_permissions=True)
-	return {"saved": True, "team": team, "gstin": doc.gstin}
+	return {"saved": True, "team": team, "gstin": doc.gstin, "currency": doc.currency,
+			"setup_complete": _profile_complete(team)}
 
 
 @frappe.whitelist()
 def get_billing_settings(team: str | None = None) -> dict:
-	"""Payment mode + thresholds (wireframe: Billing Settings)."""
+	"""Alert thresholds. (Payment mode was removed — billing is credits-first-then-
+	card for every team, so there is no prepaid/postpaid switch.)"""
 	team = _resolve_team(team)
 	if not frappe.db.exists("Billing Profile", team):
-		return {"team": team, "billing_mode": "Postpaid", "min_balance": 0, "spend_alert_threshold": 0}
+		return {"team": team, "min_balance": 0, "spend_alert_threshold": 0}
 	p = frappe.get_doc("Billing Profile", team)
-	return {"team": team, "billing_mode": p.billing_mode or "Postpaid",
-			"min_balance": p.min_balance, "spend_alert_threshold": p.spend_alert_threshold}
+	return {"team": team, "min_balance": p.min_balance,
+			"spend_alert_threshold": p.spend_alert_threshold}
 
 
 @frappe.whitelist(methods=["POST"])
-def save_billing_settings(team: str | None = None, billing_mode: str | None = None,
-						  min_balance: float | None = None,
+def save_billing_settings(team: str | None = None, min_balance: float | None = None,
 						  spend_alert_threshold: float | None = None) -> dict:
-	"""Mode changes take effect next billing period (presentation toggle)."""
+	"""Update the low-balance / spend alert thresholds."""
 	team = _resolve_team(team, authz.MANAGE)
 	if frappe.db.exists("Billing Profile", team):
 		doc = frappe.get_doc("Billing Profile", team)
 	else:
-		doc = frappe.get_doc({"doctype": "Billing Profile", "team": team, "legal_name": team})
-	if billing_mode:
-		doc.billing_mode = billing_mode
+		doc = frappe.get_doc({"doctype": "Billing Profile", "team": team})
 	if min_balance is not None:
 		doc.min_balance = frappe.utils.flt(min_balance)
 	if spend_alert_threshold is not None:
 		doc.spend_alert_threshold = frappe.utils.flt(spend_alert_threshold)
 	doc.save(ignore_permissions=True)
-	return {"saved": True, "billing_mode": doc.billing_mode}
+	return {"saved": True}
 
 
 @frappe.whitelist()
@@ -88,13 +141,12 @@ def get_team_overview(team: str | None = None) -> dict:
 	team = _resolve_team(team)
 	tier = frappe.db.get_value("Trust Tier", team, ["tier", "max_spend"], as_dict=True) or {}
 	standing = frappe.db.get_value("Subscription", {"team": team}, "account_standing") or "Current"
-	mode = frappe.db.get_value("Billing Profile", team, "billing_mode") or "Postpaid"
 	resources = frappe.db.count("Price Lock", {"team": team, "ended_at": ["is", "not set"]})
 	clusters = len(_team_clusters(team))
 	currency = _team_currency(team)
 	return {"team": team, "tier": tier.get("tier"),
 			"max_spend": _from_inr(tier.get("max_spend"), currency),
-			"standing": standing, "billing_mode": mode, "resources": resources, "clusters": clusters,
+			"standing": standing, "resources": resources, "clusters": clusters,
 			"currency": currency}
 
 

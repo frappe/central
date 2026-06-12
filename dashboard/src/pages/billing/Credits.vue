@@ -9,6 +9,7 @@ import TopupDialog from '@/components/TopupDialog.vue'
 import { API, m } from '@/api/endpoints'
 import { useTeam } from '@/composables/useTeam'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { money, signedMoney } from '@/utils/money'
 import { successToast, errorToast, infoToast } from '@/utils/toast'
 
@@ -16,6 +17,7 @@ const route = useRoute()
 const router = useRouter()
 const { currentTeam } = useTeam()
 const { canManage } = useCapabilities()
+const { complete: setupComplete } = useBillingSetup()
 
 const params = () => ({ team: currentTeam.value })
 const balance = useCall({ url: m(API.creditBalance), params, refetch: true })
@@ -72,7 +74,13 @@ function clearQuery() {
   <div class="flex h-full flex-col">
     <PageHeader :items="[{ label: 'Billing' }, { label: 'Credits' }]">
       <template #actions>
-        <Button v-if="canManage" variant="solid" label="Top up" @click="showTopup = true" />
+        <Button
+          v-if="canManage"
+          variant="solid"
+          label="Top up"
+          :disabled="!setupComplete"
+          @click="showTopup = true"
+        />
       </template>
     </PageHeader>
 
@@ -82,6 +90,16 @@ function clearQuery() {
       </div>
 
       <template v-else>
+        <div
+          v-if="canManage && !setupComplete"
+          class="flex items-center justify-between gap-3 rounded border border-outline-amber-2 bg-surface-amber-1 px-4 py-3"
+        >
+          <p class="text-p-sm text-ink-amber-3">
+            Set your billing currency and address before topping up your wallet.
+          </p>
+          <Button variant="subtle" label="Go to Settings" @click="router.push({ name: 'Address' })" />
+        </div>
+
         <StatTile
           label="Wallet balance"
           :value="money(balance.data?.balance ?? 0, currency)"

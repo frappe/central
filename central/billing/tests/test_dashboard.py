@@ -9,6 +9,7 @@ from central.billing.revenue import credits
 from central.billing.api import dashboard
 from central.billing.platform.sync import receive_usage_events
 from central.billing.tests.utils import (
+	complete_billing_profile,
 	ensure_team,
 	make_billing_team,
 	make_custom_role_team,
@@ -150,7 +151,7 @@ class TestTeamScoping(CustomerDataBase):
 					with self.assertRaises(frappe.PermissionError):
 						dashboard.list_invoices(team.name)
 					with self.assertRaises(frappe.PermissionError):
-						dashboard.save_billing_settings(team=team.name, billing_mode="Prepaid")
+						dashboard.save_billing_settings(team=team.name, min_balance=5000)
 				finally:
 					frappe.set_user("Administrator")
 
@@ -171,7 +172,7 @@ class TestTeamScoping(CustomerDataBase):
 				frappe.set_user(member)
 				try:
 					dashboard.list_invoices(team_name)  # read ok
-					dashboard.save_billing_settings(team=team_name, billing_mode="Prepaid")  # manage ok
+					dashboard.save_billing_settings(team=team_name, min_balance=5000)  # manage ok
 				finally:
 					frappe.set_user("Administrator")
 					frappe.db.delete("Billing Profile", {"team": team_name})
@@ -187,7 +188,7 @@ class TestTeamScoping(CustomerDataBase):
 			dashboard.list_invoices(team.name)  # read ok
 			dashboard.get_credit_balance(team.name)  # read ok
 			with self.assertRaises(frappe.PermissionError):
-				dashboard.save_billing_settings(team=team.name, billing_mode="Prepaid")
+				dashboard.save_billing_settings(team=team.name, min_balance=5000)
 			with self.assertRaises(frappe.PermissionError):
 				dashboard.purchase_credits(team=team.name, amount=100)
 		finally:
@@ -208,17 +209,28 @@ class TestCustomerActions(CustomerDataBase):
 
 
 	def test_purchase_credits(self):
+		complete_billing_profile(TEAM)
 		out = dashboard.purchase_credits(team=TEAM, amount=1500)
 		self.assertEqual(out["new_balance"], 1500)
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 1500)
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.purchase_credits(team=TEAM, amount=0)
 
+	def test_money_movement_blocked_until_profile_complete(self):
+		# No profile yet → top-up / credits / payment-method setup are refused.
+		with self.assertRaises(frappe.ValidationError):
+			dashboard.purchase_credits(team=TEAM, amount=1500)
+		setup = dashboard.get_billing_profile(TEAM)
+		self.assertFalse(setup["complete"])
+		self.assertIn("currency", setup["missing"])
+		# Once the profile is complete, the same call succeeds.
+		complete_billing_profile(TEAM)
+		self.assertTrue(dashboard.get_billing_profile(TEAM)["complete"])
+		self.assertEqual(dashboard.purchase_credits(team=TEAM, amount=1500)["new_balance"], 1500)
 
 	def test_billing_settings_roundtrip(self):
-		dashboard.save_billing_settings(team=TEAM, billing_mode="Prepaid", min_balance=5000)
+		dashboard.save_billing_settings(team=TEAM, min_balance=5000)
 		s = dashboard.get_billing_settings(TEAM)
-		self.assertEqual(s["billing_mode"], "Prepaid")
 		self.assertEqual(s["min_balance"], 5000)
 
 	def test_admin_without_team_falls_back(self):
@@ -228,12 +240,43 @@ class TestCustomerActions(CustomerDataBase):
 		self.assertIsInstance(invoices, list)
 
 
+class TestBillingCurrency(CustomerDataBase):
+	def tearDown(self):
+		if frappe.db.exists("Billing Profile", TEAM):
+			frappe.db.delete("Billing Profile", {"team": TEAM})
+		super().tearDown()
+
+	def test_currency_must_be_gateway_supported(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		make_razorpay_gateway("GW-Cur-INR")  # makes INR a supported currency
+		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
+		with self.assertRaises(frappe.ValidationError):
+			dashboard.save_billing_profile(TEAM, currency="XYZ")  # no gateway → rejected
+
+	def test_currency_locks_after_money_activity(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+		from central.billing.revenue import credits
+
+		make_razorpay_gateway("GW-Cur-Lock")
+		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
+		self.assertFalse(dashboard.get_billing_profile(TEAM)["currency_locked"])
+
+		credits.purchase(TEAM, 100, "INR")  # first money activity locks currency
+		self.assertTrue(dashboard.get_billing_profile(TEAM)["currency_locked"])
+		with self.assertRaises(frappe.ValidationError):
+			dashboard.save_billing_profile(TEAM, currency="USD")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
+
+
 class TestGatewayTopUp(CustomerDataBase):
 	def test_topup_goes_through_gateway_and_verifies(self):
 		from unittest.mock import MagicMock, patch
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		gw = make_razorpay_gateway("GW-Cust-RZP").name
+		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.create_order.return_value = {
 			"order_id": "order_x", "key_id": "rzp_test", "amount_in_subunits": 500000}
@@ -273,6 +316,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
 		gw = make_stripe_gateway("GW-Cust-Stripe-T").name
+		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.create_checkout_session.return_value = {"checkout_url": "https://stripe.test/cs", "session_id": "cs_x"}
 		adapter.get_checkout_session.return_value = {

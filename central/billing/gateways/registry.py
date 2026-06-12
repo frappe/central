@@ -26,6 +26,18 @@ def resolve_gateway_for_currency(currency: str) -> str:
 	)
 
 
+def supported_currencies() -> list[str]:
+	"""Currencies a team can actually be billed in — every currency that an
+	enabled Payment Gateway is the default for. These are the only choices the
+	billing-profile currency picker offers, so a team can never select a currency
+	it can't be charged or topped up in."""
+	rows = frappe.get_all(
+		"Payment Gateway Currency", filters={"is_default": 1}, fields=["currency", "parent"]
+	)
+	enabled = set(frappe.get_all("Payment Gateway", {"is_enabled": 1}, pluck="name"))
+	return sorted({r.currency for r in rows if r.parent in enabled and r.currency})
+
+
 def get_adapter(gateway) -> GatewayAdapter:
 	"""Return the adapter instance for a Payment Gateway doc, keyed by adapter_key."""
 	from central.billing.gateways.paypal_adapter import PayPalAdapter

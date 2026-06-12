@@ -9,6 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "team",
+  "currency",
   "legal_name",
   "email",
   "phone",
@@ -22,14 +23,14 @@
   "country",
   "pincode",
   "section_break_settings",
-  "billing_mode",
   "min_balance",
   "column_break_settings",
   "spend_alert_threshold"
  ],
  "fields": [
   {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
-  {"fieldname": "legal_name", "fieldtype": "Data", "in_list_view": 1, "label": "Legal Name", "reqd": 1},
+  {"fieldname": "currency", "fieldtype": "Link", "options": "Currency", "in_list_view": 1, "label": "Billing Currency", "description": "The single currency this team is billed and pays in. Locked once a wallet credit, payment method, or invoice exists."},
+  {"fieldname": "legal_name", "fieldtype": "Data", "in_list_view": 1, "label": "Legal Name"},
   {"fieldname": "email", "fieldtype": "Data", "label": "Billing Email", "options": "Email"},
   {"fieldname": "phone", "fieldtype": "Data", "label": "Phone"},
   {"fieldname": "gstin", "fieldtype": "Data", "label": "GSTIN", "description": "15-char GST identifier (India); validated on save"},
@@ -42,10 +43,9 @@
   {"default": "India", "fieldname": "country", "fieldtype": "Data", "label": "Country"},
   {"fieldname": "pincode", "fieldtype": "Data", "label": "Pincode"},
   {"fieldname": "section_break_settings", "fieldtype": "Section Break", "label": "Billing Settings"},
-  {"default": "Postpaid", "fieldname": "billing_mode", "fieldtype": "Select", "label": "Payment Mode", "options": "Postpaid\nPrepaid", "description": "prepaid = wallet-first; postpaid = invoice in arrears"},
-  {"default": "0", "fieldname": "min_balance", "fieldtype": "Currency", "label": "Minimum Balance (prepaid)"},
+  {"default": "0", "fieldname": "min_balance", "fieldtype": "Currency", "label": "Low Balance Alert"},
   {"fieldname": "column_break_settings", "fieldtype": "Column Break"},
-  {"default": "0", "fieldname": "spend_alert_threshold", "fieldtype": "Currency", "label": "Spend Alert Threshold (postpaid)"}
+  {"default": "0", "fieldname": "spend_alert_threshold", "fieldtype": "Currency", "label": "Spend Alert Threshold"}
  ],
  "index_web_pages_for_search": 1,
  "links": [],

@@ -53,8 +53,58 @@ def _team_clusters(team: str) -> list[str]:
 
 
 def _team_currency(team: str) -> str:
-	"""A team bills in a single currency — read it off any of its price-locks."""
-	return frappe.db.get_value("Price Lock", {"team": team}, "currency") or "INR"
+	"""A team bills in a single currency: the one set on its Billing Profile.
+
+	Falls back to a price-lock currency (legacy teams whose profile predates the
+	currency field) then INR, so reads never break before a profile exists."""
+	return (
+		frappe.db.get_value("Billing Profile", team, "currency")
+		or frappe.db.get_value("Price Lock", {"team": team}, "currency")
+		or "INR"
+	)
+
+
+# A team must complete its billing profile — currency + legal name + a billing
+# address — before any money moves (top-up, buy credits, add a payment method).
+# Currency is the load-bearing field: wallet, payment methods and invoices are
+# all denominated in it, so it must be chosen first and then held fixed.
+_REQUIRED_PROFILE_FIELDS = (
+	"currency", "legal_name", "address_line1", "city", "state", "country", "pincode",
+)
+
+
+def _missing_profile_fields(team: str) -> list[str]:
+	"""Required billing-profile fields the team has not filled in yet."""
+	if not frappe.db.exists("Billing Profile", team):
+		return list(_REQUIRED_PROFILE_FIELDS)
+	doc = frappe.get_doc("Billing Profile", team)
+	return [f for f in _REQUIRED_PROFILE_FIELDS if not str(doc.get(f) or "").strip()]
+
+
+def _profile_complete(team: str) -> bool:
+	return not _missing_profile_fields(team)
+
+
+def _require_billing_setup(team: str):
+	"""Server-side backstop: refuse money movement until the profile is complete.
+	The dashboard also blocks these actions; this guarantees it can't be bypassed."""
+	if _missing_profile_fields(team):
+		frappe.throw(
+			"Complete your billing profile (currency, legal name and address) in "
+			"Settings before adding credits or a payment method.",
+			frappe.ValidationError,
+		)
+
+
+def _has_money_activity(team: str) -> bool:
+	"""True once anything denominated in the team's currency exists — a credit
+	ledger entry, a payment method, or an invoice. Currency is locked thereafter,
+	so a wallet can't end up holding mixed-currency value."""
+	return bool(
+		frappe.db.exists("Credit Ledger Entry", {"team": team})
+		or frappe.db.exists("Payment Method", {"team": team})
+		or frappe.db.exists("Invoice", {"team": team})
+	)
 
 
 def _gateway_for_currency(currency: str) -> str:

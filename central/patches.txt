@@ -31,3 +31,6 @@ central.billing.patches.v07_credit_wallet_balance.backfill_wallet_balance
 # Title-case every billing Select field's stored values (past_due -> Past Due,
 # stripe -> Stripe, …) to match the field option lists now rendered Title Case.
 central.billing.patches.v08_titlecase_select_options.titlecase_options
+# Billing Profile gains an explicit user-set `currency` (backfilled from the
+# team's price lock); the unused prepaid/postpaid `billing_mode` column is dropped.
+central.billing.patches.v09_billing_currency.billing_currency

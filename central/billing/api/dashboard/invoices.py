@@ -14,6 +14,7 @@ from central.billing.revenue.tax import resolve_tax
 from central.billing.api.dashboard._shared import (
 	_describe_line,
 	_gateway_for_currency,
+	_require_billing_setup,
 	_require_manage,
 	_require_view,
 	_resolve_team,
@@ -44,9 +45,8 @@ def get_forecast(team: str | None = None) -> dict:
 	tax = resolve_tax(team, subtotal)
 	projected_total = frappe.utils.flt(subtotal + tax["output_tax_amount"], 2)
 	credit_balance = frappe.utils.flt(credits.get_balance(team)["balance"])
-	mode = frappe.db.get_value("Billing Profile", team, "billing_mode") or "Postpaid"
 	shortfall = max(0.0, frappe.utils.flt(projected_total - credit_balance, 2))
-	currency = frappe.db.get_value("Price Lock", {"team": team}, "currency") or "INR"
+	currency = _team_currency(team)
 
 	return {
 		"period_start": str(month_start),
@@ -58,10 +58,9 @@ def get_forecast(team: str | None = None) -> dict:
 		"credit_balance": credit_balance,
 		"shortfall": shortfall,
 		"days_remaining": (month_end - today).days,
-		"billing_mode": mode,
 		"currency": currency,
-		# On prepaid, warn when the projected bill outruns the wallet.
-		"credit_alert": mode == "Prepaid" and shortfall > 0,
+		# Warn when the projected bill outruns the wallet (a top-up may be due).
+		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
 		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
 	}
@@ -244,10 +243,12 @@ def purchase_credits(team: str | None = None, amount: float | None = None,
 	"""Top up the prepaid wallet. (The card charge that funds it is the payment
 	flow's concern; this books the resulting advance-liability credit.)"""
 	team = _resolve_team(team, authz.MANAGE)
+	_require_billing_setup(team)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
-	return credits.purchase(team, amount, "INR", payment_method=payment_method, note="Wallet top-up")
+	return credits.purchase(team, amount, _team_currency(team),
+							payment_method=payment_method, note="Wallet top-up")
 
 
 @frappe.whitelist(methods=["POST"])
@@ -267,6 +268,7 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 	gateway's checkout against it; the wallet is credited only after the gateway
 	confirms (verify in confirm_topup) — never magically."""
 	team = _resolve_team(team, authz.MANAGE)
+	_require_billing_setup(team)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)

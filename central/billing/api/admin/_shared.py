@@ -32,7 +32,13 @@ def _to_inr(amount, currency) -> float:
 
 
 def _team_currency(team: str) -> str:
-	return frappe.db.get_value("Price Lock", {"team": team}, "currency") or "INR"
+	# Billing Profile currency is the source of truth; fall back to a price-lock
+	# currency (legacy teams) then INR.
+	return (
+		frappe.db.get_value("Billing Profile", team, "currency")
+		or frappe.db.get_value("Price Lock", {"team": team}, "currency")
+		or "INR"
+	)
 
 
 def _plan_monthly_inr(plan: str, cluster: str | None) -> float:
