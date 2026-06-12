@@ -1,7 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
-import { Dialog, Button, LoadingText } from 'frappe-ui'
+import { Dialog, Button, FormControl, LoadingText } from 'frappe-ui'
 import { API, m } from '@/api/endpoints'
 import { useTeam } from '@/composables/useTeam'
 import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
@@ -13,11 +13,9 @@ const open = defineModel({ type: Boolean, default: false })
 const emit = defineEmits(['done'])
 const { currentTeam } = useTeam()
 
-const options = useCall({
-  url: m(API.paymentMethodOptions),
-  params: () => ({ team: currentTeam.value }),
-  refetch: true,
-})
+const params = () => ({ team: currentTeam.value })
+const options = useCall({ url: m(API.paymentMethodOptions), params, refetch: true })
+const profile = useCall({ url: m(API.billingProfile), params, refetch: true })
 
 const { run, loading } = useAddPaymentMethod({
   onDone: (res) => {
@@ -27,6 +25,22 @@ const { run, loading } = useAddPaymentMethod({
 })
 
 const upiBlocked = computed(() => options.data && !options.data.allow_upi)
+
+// A Razorpay card mandate needs a customer contact; phone is optional on the
+// profile, so collect it inline here when it's missing.
+const cardNeedsPhone = computed(
+  () => options.data?.adapter_key === 'Razorpay' && !String(profile.data?.phone || '').trim(),
+)
+const askPhone = ref(false)
+const phone = ref('')
+
+function onCard() {
+  if (cardNeedsPhone.value && !phone.value.trim()) {
+    askPhone.value = true
+    return
+  }
+  run('Card', phone.value.trim() || undefined)
+}
 </script>
 
 <template>
@@ -40,7 +54,7 @@ const upiBlocked = computed(() => options.data && !options.data.allow_upi)
           v-if="options.data.methods.includes('Card')"
           class="flex w-full items-center justify-between rounded border border-outline-gray-2 px-4 py-3 text-left hover:border-outline-gray-3 disabled:opacity-50"
           :disabled="loading"
-          @click="run('Card')"
+          @click="onCard"
         >
           <div>
             <p class="text-sm text-ink-gray-8">Card</p>
@@ -50,6 +64,23 @@ const upiBlocked = computed(() => options.data && !options.data.allow_upi)
           </div>
           <span class="lucide-credit-card size-5 text-ink-gray-5" />
         </button>
+
+        <div v-if="askPhone" class="space-y-2 rounded border border-outline-gray-2 px-4 py-3">
+          <FormControl
+            v-model="phone"
+            type="text"
+            label="Phone number"
+            placeholder="Mobile number"
+            description="Razorpay requires a contact for recurring card payments. Saved to your billing profile."
+          />
+          <Button
+            variant="solid"
+            label="Continue"
+            :loading="loading"
+            :disabled="!phone.trim()"
+            @click="run('Card', phone.trim())"
+          />
+        </div>
 
         <button
           v-if="options.data.methods.includes('UPI Autopay')"

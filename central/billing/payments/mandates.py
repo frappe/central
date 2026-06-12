@@ -76,26 +76,34 @@ def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None =
 	return payments.ensure_gateway_customer(team, gateway, adapter, customer_id)
 
 
-def _require_recurring_contact(team: str, gateway: str, adapter, customer_id: str):
-	"""Razorpay recurring orders require the customer to carry a contact (phone) —
-	without it the order fails with "The contact field is required for recurring
-	links". Pull name/email/phone from the billing profile, refuse clearly if the
-	phone is missing, and sync them onto the (possibly reused or older) customer so
-	a contactless one is fixed in place."""
+def _require_card_contact(team: str, gateway: str, adapter, customer_id: str, contact: str | None = None):
+	"""A Razorpay *card* mandate order needs the customer to carry a contact (phone)
+	— without it Razorpay errors "The contact field is required for recurring links".
+	(UPI Autopay does not need one, so this is only called from the card path.)
+
+	The phone is optional on the billing profile, so the dashboard collects it inline
+	at card setup when missing and passes it here. Use the inline `contact` else the
+	profile's phone; persist an inline one back to the profile (asked once); sync
+	name/email/contact onto the (possibly reused / older, contactless) customer.
+	"""
 	if frappe.db.get_value("Payment Gateway", gateway, "adapter_key") != "Razorpay":
 		return
 	p = (
 		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
 		or frappe._dict()
 	)
-	if not str(p.phone or "").strip():
+	contact = str(contact or "").strip()
+	phone = contact or str(p.phone or "").strip()
+	if not phone:
 		frappe.throw(
-			"Add a phone number to your billing profile before setting up a recurring "
-			"payment method.",
+			"A phone number is required to set up a recurring card payment with Razorpay.",
 			frappe.ValidationError,
 		)
+	# An inline-provided phone is saved to the profile so it's collected only once.
+	if contact and contact != str(p.phone or ""):
+		frappe.db.set_value("Billing Profile", team, "phone", contact)
 	adapter.update_customer(
-		customer_id, {"name": p.legal_name or team, "email": p.email, "contact": p.phone}
+		customer_id, {"name": p.legal_name or team, "email": p.email, "contact": phone}
 	)
 
 
@@ -115,7 +123,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 	cap = team_cap(team)
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
-	_require_recurring_contact(team, gateway, adapter, customer_id)
+	# UPI Autopay carries no customer contact — no phone needed here.
 	handles = adapter.setup_payment_method(
 		team, {"method": "upi", "max_amount": cap, "customer_id": customer_id}
 	)
@@ -137,16 +145,17 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 	return {**handles, "payment_method": method.name}
 
 
-def setup_card(team: str, gateway: str, customer_id: str | None = None) -> dict:
+def setup_card(team: str, gateway: str, customer_id: str | None = None, contact: str | None = None) -> dict:
 	"""Begin a Razorpay recurring-card authorisation (no UPI MCC limit).
 
 	Same Checkout → token → recurring-charge machinery as a UPI mandate, but on
-	the card rail. Returns the client-side handles plus the pending Payment
-	Method name.
+	the card rail. A Razorpay card mandate needs the customer to have a contact;
+	`contact` is the phone the dashboard collects inline when the profile has none.
+	Returns the client-side handles plus the pending Payment Method name.
 	"""
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
-	_require_recurring_contact(team, gateway, adapter, customer_id)
+	_require_card_contact(team, gateway, adapter, customer_id, contact=contact)
 	handles = adapter.setup_payment_method(
 		team, {"method": "card", "max_amount": CARD_TOKEN_MAX, "customer_id": customer_id}
 	)

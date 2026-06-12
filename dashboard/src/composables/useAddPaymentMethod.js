@@ -20,9 +20,13 @@ export function useAddPaymentMethod({ onDone } = {}) {
   const setup = useCall({ url: m(API.setupPaymentMethodOrder), method: 'POST', immediate: false })
   const confirm = useCall({ url: m(API.confirmPaymentMethodOrder), method: 'POST', immediate: false })
 
-  async function run(methodType) {
+  async function run(methodType, contact) {
     try {
-      const order = await setup.submit({ team: currentTeam.value, method_type: methodType })
+      const params = { team: currentTeam.value, method_type: methodType }
+      // A Razorpay card mandate needs a customer contact; the dialog collects it
+      // inline when the billing profile has no phone.
+      if (contact) params.contact = contact
+      const order = await setup.submit(params)
       const handles = await openRazorpayCheckout(order, {
         name: 'Central',
         description: methodType === 'Card' ? 'Save card' : 'Set up UPI Autopay',
