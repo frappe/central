@@ -54,6 +54,7 @@ def stub_adapter(signature_ok=True):
 	}
 	adapter.verify_payment_signature.return_value = signature_ok
 	adapter.cancel_mandate.return_value = True
+	adapter.create_customer.return_value = "cust_created"
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
 
@@ -230,6 +231,32 @@ class TestRazorpayCardSetup(MandateTestBase):
 		self.assertEqual(
 			frappe.db.get_value("Payment Method", result["payment_method"], "method_type"), "Card"
 		)
+
+	def test_setup_without_customer_mints_and_persists_one(self):
+		# Regression: Razorpay rejects a token order with no customer_id ("Customer
+		# Id is required with token field"). When the caller supplies none, setup
+		# must mint a gateway customer, put it on the order, and store it.
+		with stub_adapter() as adapter:
+			result = mandates.setup_card(TEAM, GATEWAY)  # no customer_id
+
+		adapter.create_customer.assert_called_once()
+		self.assertEqual(adapter.setup_payment_method.call_args.args[1]["customer_id"], "cust_created")
+		self.assertEqual(
+			frappe.db.get_value("Payment Method", result["payment_method"], "gateway_customer_id"),
+			"cust_created",
+		)
+
+	def test_setup_reuses_existing_team_customer(self):
+		# A customer minted once for the team+gateway is reused, not recreated.
+		with stub_adapter() as adapter:
+			mandates.setup_card(TEAM, GATEWAY)
+			adapter.create_customer.reset_mock()
+			mandates.setup_card(TEAM, GATEWAY)
+
+			adapter.create_customer.assert_not_called()
+			self.assertEqual(
+				adapter.setup_payment_method.call_args.args[1]["customer_id"], "cust_created"
+			)
 
 
 class TestAddMethodGatewayResolution(IntegrationTestCase):

@@ -67,6 +67,26 @@ def _adapter(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
+def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None = None) -> str:
+	"""A gateway customer id for the team — Razorpay rejects any order that carries
+	a recurring `token` without one ("Customer Id is required with token field").
+
+	Reuse a customer already minted for this team+gateway so a fresh one isn't
+	created on every setup attempt; otherwise create one through the adapter,
+	keeping the gateway SDK behind the seam (this module never calls it directly).
+	"""
+	if customer_id:
+		return customer_id
+	existing = frappe.db.get_value(
+		"Payment Method",
+		{"team": team, "gateway": gateway, "gateway_customer_id": ["is", "set"]},
+		"gateway_customer_id",
+	)
+	if existing:
+		return existing
+	return adapter.create_customer(frappe.get_doc("Team", team))
+
+
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:
 	"""Begin UPI Autopay authorisation.
 
@@ -81,7 +101,9 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 		frappe.throw(elig["reason"], frappe.ValidationError)
 
 	cap = team_cap(team)
-	handles = _adapter(gateway).setup_payment_method(
+	adapter = _adapter(gateway)
+	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
+	handles = adapter.setup_payment_method(
 		team, {"method": "upi", "max_amount": cap, "customer_id": customer_id}
 	)
 
@@ -109,7 +131,9 @@ def setup_card(team: str, gateway: str, customer_id: str | None = None) -> dict:
 	the card rail. Returns the client-side handles plus the pending Payment
 	Method name.
 	"""
-	handles = _adapter(gateway).setup_payment_method(
+	adapter = _adapter(gateway)
+	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
+	handles = adapter.setup_payment_method(
 		team, {"method": "card", "max_amount": CARD_TOKEN_MAX, "customer_id": customer_id}
 	)
 
