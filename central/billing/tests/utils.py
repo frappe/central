@@ -104,7 +104,8 @@ def complete_billing_profile(team, currency="INR"):
 	which gateways a given test has configured."""
 	values = {
 		"doctype": "Billing Profile", "team": team, "currency": currency,
-		"legal_name": f"{team} Ltd", "address_line1": "1 Test Street", "city": "Pune",
+		"legal_name": f"{team} Ltd", "email": "billing@test.example", "phone": "9999999999",
+		"address_line1": "1 Test Street", "city": "Pune",
 		"state": "Maharashtra", "country": "India", "pincode": "411001",
 	}
 	if frappe.db.exists("Billing Profile", team):

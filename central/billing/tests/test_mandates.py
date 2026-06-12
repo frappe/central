@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.tests.utils import ensure_team
+from central.billing.tests.utils import complete_billing_profile, ensure_team
 
 from central.billing.payments import mandates
 from central.billing.catalog.entitlements import recompute_trust_tier
@@ -69,6 +69,7 @@ class MandateTestBase(IntegrationTestCase):
 		):
 			frappe.delete_doc("Payment Method", name, force=True)
 		frappe.db.delete("Gateway Customer", {"team": TEAM})
+		complete_billing_profile(TEAM)  # carries a phone — Razorpay recurring needs a contact
 		if frappe.db.exists("Trust Tier", TEAM):
 			frappe.delete_doc("Trust Tier", TEAM, force=True)
 		# Entry tier: t0 cap = 100.
@@ -281,6 +282,22 @@ class TestRazorpayCardSetup(MandateTestBase):
 			adapter.setup_payment_method.side_effect = None
 			mandates.setup_card(TEAM, GATEWAY)
 			adapter.create_customer.assert_not_called()
+
+	def test_recurring_setup_requires_a_phone(self):
+		# Razorpay recurring needs the customer to carry a contact; refuse clearly
+		# (before any order) when the billing profile has no phone.
+		frappe.db.set_value("Billing Profile", TEAM, "phone", "")
+		with stub_adapter():
+			with self.assertRaises(frappe.ValidationError):
+				mandates.setup_card(TEAM, GATEWAY)
+
+	def test_recurring_setup_syncs_contact_onto_customer(self):
+		# The profile's name/email/phone are pushed onto the (possibly reused)
+		# customer, so a contactless one is fixed before the recurring order.
+		with stub_adapter() as adapter:
+			mandates.setup_card(TEAM, GATEWAY)
+			adapter.update_customer.assert_called()
+			self.assertEqual(adapter.update_customer.call_args.args[1]["contact"], "9999999999")
 
 
 class TestAddMethodGatewayResolution(IntegrationTestCase):

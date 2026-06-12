@@ -216,17 +216,29 @@ class RazorpayAdapter(GatewayAdapter):
 
 	def create_customer(self, team) -> str:
 		# Team.owner_user is a Link to User, whose name IS the email address.
-		# Idempotency is ours, not the gateway's: ensure_gateway_customer stores the
-		# id per (team, gateway) before the order runs, so create is only ever called
-		# once per team+gateway — no fail_existing flag needed.
+		# Primary idempotency is ours — ensure_gateway_customer stores the id per
+		# (team, gateway) before the order runs. fail_existing="0" is a backstop (as
+		# in press): if a customer with this email already exists at Razorpay (a
+		# pre-store orphan), return it instead of erroring "Customer already exists".
+		# Must be the STRING "0"; int 0 is treated as the default (1 = fail).
 		customer = self._client().customer.create(
 			{
 				"name": getattr(team, "name", None),
 				"email": team.get("owner_user") if hasattr(team, "get") else None,
 				"contact": team.get("phone") if hasattr(team, "get") else None,
+				"fail_existing": "0",
 			}
 		)
 		return customer.get("id")
+
+	def update_customer(self, customer_id: str, info: dict) -> None:
+		"""Sync name/email/contact onto an existing customer. Razorpay requires a
+		contact on the customer before a recurring order, and a customer minted
+		earlier (or by an older flow) may not have one — so we set it here, idempotently.
+		Only non-empty values are sent."""
+		fields = {k: info.get(k) for k in ("name", "email", "contact") if info.get(k)}
+		if fields:
+			self._client().customer.edit(customer_id, fields)
 
 	def verify_payment_signature(self, data: dict) -> bool:
 		"""Verify a Razorpay Checkout callback (payment_id + order_id + signature).
