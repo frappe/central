@@ -103,9 +103,11 @@ def add_demo_card(team: str | None = None, gateway: str | None = None,
 
 @frappe.whitelist(methods=["POST"])
 def setup_payment_method_order(team: str | None = None, gateway: str | None = None,
-							   method_type: str = "UPI Autopay") -> dict:
+							   method_type: str = "UPI Autopay", contact: str | None = None) -> dict:
 	"""Begin adding a Razorpay recurring method — UPI Autopay mandate (ceiling =
-	trust-tier cap) or a card token. Returns the order handles the UI runs
+	trust-tier cap) or a card token. `contact` is the phone the UI collects inline
+	for a card mandate when the billing profile has none (Razorpay requires a
+	customer contact for recurring cards). Returns the order handles the UI runs
 	Razorpay Checkout against (#08)."""
 	team = _resolve_team(team, authz.MANAGE)
 	_require_billing_setup(team)
@@ -113,7 +115,7 @@ def setup_payment_method_order(team: str | None = None, gateway: str | None = No
 	from central.billing.payments import mandates
 
 	if method_type == "Card":
-		return mandates.setup_card(team, gw)
+		return mandates.setup_card(team, gw, contact=contact)
 	return mandates.setup_mandate(team, gw)
 
 

@@ -283,21 +283,36 @@ class TestRazorpayCardSetup(MandateTestBase):
 			mandates.setup_card(TEAM, GATEWAY)
 			adapter.create_customer.assert_not_called()
 
-	def test_recurring_setup_requires_a_phone(self):
-		# Razorpay recurring needs the customer to carry a contact; refuse clearly
-		# (before any order) when the billing profile has no phone.
+	def test_card_setup_requires_a_phone_when_none_available(self):
+		# A Razorpay card mandate needs a contact; with no profile phone AND none
+		# supplied inline, refuse clearly (before any order).
 		frappe.db.set_value("Billing Profile", TEAM, "phone", "")
 		with stub_adapter():
 			with self.assertRaises(frappe.ValidationError):
 				mandates.setup_card(TEAM, GATEWAY)
 
-	def test_recurring_setup_syncs_contact_onto_customer(self):
-		# The profile's name/email/phone are pushed onto the (possibly reused)
-		# customer, so a contactless one is fixed before the recurring order.
+	def test_card_setup_uses_inline_phone_persists_and_syncs(self):
+		# Phone is optional on the profile: collected inline at card setup, saved
+		# back to the profile (asked once), and synced onto the customer.
+		frappe.db.set_value("Billing Profile", TEAM, "phone", "")
+		with stub_adapter() as adapter:
+			mandates.setup_card(TEAM, GATEWAY, contact="8888888888")
+			self.assertEqual(adapter.update_customer.call_args.args[1]["contact"], "8888888888")
+			self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "phone"), "8888888888")
+
+	def test_card_setup_syncs_profile_contact_onto_customer(self):
+		# With a profile phone present, it's synced onto the (possibly reused,
+		# contactless) customer before the recurring order.
 		with stub_adapter() as adapter:
 			mandates.setup_card(TEAM, GATEWAY)
-			adapter.update_customer.assert_called()
 			self.assertEqual(adapter.update_customer.call_args.args[1]["contact"], "9999999999")
+
+	def test_upi_setup_needs_no_phone(self):
+		# UPI Autopay carries no customer contact — setup works with no phone.
+		frappe.db.set_value("Billing Profile", TEAM, "phone", "")
+		with stub_adapter():
+			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
+		self.assertTrue(result["payment_method"])
 
 
 class TestAddMethodGatewayResolution(IntegrationTestCase):
