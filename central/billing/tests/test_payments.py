@@ -26,6 +26,7 @@ def stub_adapter(validate=True):
 		"setup_intent_id": "seti_123",
 	}
 	adapter.validate_payment_method.return_value = validate
+	adapter.create_customer.return_value = "cus_created"
 	with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 		yield adapter
 
@@ -145,8 +146,11 @@ class TestStripeTestModeIntegration(CardTestBase):
 	def test_add_validate_active_via_stripe_adapter(self):
 		import stripe
 
-		with patch.object(stripe.SetupIntent, "create") as setup_create:
+		with patch.object(stripe.SetupIntent, "create") as setup_create, patch.object(
+			stripe.Customer, "create"
+		) as customer_create:
 			setup_create.return_value = {"client_secret": "seti_secret", "id": "seti_1"}
+			customer_create.return_value = {"id": "cus_1"}  # off-session SetupIntent needs a customer
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
 
 		self.assertEqual(setup["client_secret"], "seti_secret")

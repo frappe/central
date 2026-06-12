@@ -68,23 +68,12 @@ def _adapter(gateway: str):
 
 
 def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None = None) -> str:
-	"""A gateway customer id for the team — Razorpay rejects any order that carries
-	a recurring `token` without one ("Customer Id is required with token field").
+	"""Reuse-or-create a gateway customer for a mandate setup. Recurring orders
+	need a customer (see payments.ensure_gateway_customer for the why); shared so
+	the card-lifecycle (#05) and mandate (#08) paths provision identically."""
+	from central.billing.payments import payments
 
-	Reuse a customer already minted for this team+gateway so a fresh one isn't
-	created on every setup attempt; otherwise create one through the adapter,
-	keeping the gateway SDK behind the seam (this module never calls it directly).
-	"""
-	if customer_id:
-		return customer_id
-	existing = frappe.db.get_value(
-		"Payment Method",
-		{"team": team, "gateway": gateway, "gateway_customer_id": ["is", "set"]},
-		"gateway_customer_id",
-	)
-	if existing:
-		return existing
-	return adapter.create_customer(frappe.get_doc("Team", team))
+	return payments.ensure_gateway_customer(team, gateway, adapter, customer_id)
 
 
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:

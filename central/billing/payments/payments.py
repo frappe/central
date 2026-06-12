@@ -28,6 +28,27 @@ def _adapter(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
+def ensure_gateway_customer(team: str, gateway: str, adapter, customer_id: str | None = None) -> str:
+	"""A gateway customer id for the team — every recurring / off-session setup
+	needs one. Razorpay rejects an order carrying a `token` without a customer
+	("Customer Id is required with token field"); Stripe can save a card under an
+	off-session SetupIntent but then can't charge it off-session unless it's
+	attached to a customer. Reuse a customer already minted for this team+gateway
+	so a fresh one isn't created on every attempt; otherwise create one through
+	the adapter, keeping the gateway SDK behind the seam.
+	"""
+	if customer_id:
+		return customer_id
+	existing = frappe.db.get_value(
+		"Payment Method",
+		{"team": team, "gateway": gateway, "gateway_customer_id": ["is", "set"]},
+		"gateway_customer_id",
+	)
+	if existing:
+		return existing
+	return adapter.create_customer(frappe.get_doc("Team", team))
+
+
 @frappe.whitelist()
 def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: str | None = None) -> dict:
 	"""Begin adding a card: open a SetupIntent and a pending Payment Method.
@@ -35,7 +56,9 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 	Returns the client secret the frontend confirms the card against. No money
 	moves here and the method is not yet usable.
 	"""
-	handles = _adapter(gateway).setup_payment_method(team, {"customer_id": gateway_customer_id})
+	adapter = _adapter(gateway)
+	gateway_customer_id = ensure_gateway_customer(team, gateway, adapter, gateway_customer_id)
+	handles = adapter.setup_payment_method(team, {"customer_id": gateway_customer_id})
 
 	method = frappe.get_doc(
 		{
