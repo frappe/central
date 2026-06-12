@@ -169,9 +169,10 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		self.assertEqual(cid, "cust_new")
 		payload = c.customer.create.call_args.args[0]
 		self.assertEqual(payload["email"], "a@b.com")
-		# No gateway idempotency flag — ensure_gateway_customer stores the id so
-		# create is only ever called once per (team, gateway).
-		self.assertNotIn("fail_existing", payload)
+		# fail_existing="0" is the backstop alongside the Gateway Customer store:
+		# the STRING "0" makes Razorpay return a pre-existing customer instead of
+		# erroring (int 0 is treated as the default 1 = fail).
+		self.assertEqual(payload["fail_existing"], "0")
 
 	def test_update_customer_edits_contact(self):
 		adapter = self.make_adapter()

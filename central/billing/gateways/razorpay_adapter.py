@@ -216,14 +216,17 @@ class RazorpayAdapter(GatewayAdapter):
 
 	def create_customer(self, team) -> str:
 		# Team.owner_user is a Link to User, whose name IS the email address.
-		# Idempotency is ours, not the gateway's: ensure_gateway_customer stores the
-		# id per (team, gateway) before the order runs, so create is only ever called
-		# once per team+gateway — no fail_existing flag needed.
+		# Primary idempotency is ours — ensure_gateway_customer stores the id per
+		# (team, gateway) before the order runs. fail_existing="0" is a backstop (as
+		# in press): if a customer with this email already exists at Razorpay (a
+		# pre-store orphan), return it instead of erroring "Customer already exists".
+		# Must be the STRING "0"; int 0 is treated as the default (1 = fail).
 		customer = self._client().customer.create(
 			{
 				"name": getattr(team, "name", None),
 				"email": team.get("owner_user") if hasattr(team, "get") else None,
 				"contact": team.get("phone") if hasattr(team, "get") else None,
+				"fail_existing": "0",
 			}
 		)
 		return customer.get("id")
