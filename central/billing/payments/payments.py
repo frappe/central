@@ -30,23 +30,46 @@ def _adapter(gateway: str):
 
 def ensure_gateway_customer(team: str, gateway: str, adapter, customer_id: str | None = None) -> str:
 	"""A gateway customer id for the team — every recurring / off-session setup
-	needs one. Razorpay rejects an order carrying a `token` without a customer
-	("Customer Id is required with token field"); Stripe can save a card under an
-	off-session SetupIntent but then can't charge it off-session unless it's
-	attached to a customer. Reuse a customer already minted for this team+gateway
-	so a fresh one isn't created on every attempt; otherwise create one through
-	the adapter, keeping the gateway SDK behind the seam.
+	needs one. Razorpay rejects an order carrying a `token` without a customer;
+	Stripe can save a card under an off-session SetupIntent but then can't charge
+	it off-session unless it's attached to a customer.
+
+	The id is stored per (team, gateway) in a Gateway Customer row and **committed
+	the instant the customer is minted, before the order/SetupIntent that follows**.
+	So if that later step fails (or the request rolls back) the customer is never
+	orphaned and the next attempt reuses it — no gateway "fail/return existing"
+	flag needed. A team can hold one row per gateway (multi-gateway fallback).
 	"""
 	if customer_id:
 		return customer_id
+
 	existing = frappe.db.get_value(
-		"Payment Method",
-		{"team": team, "gateway": gateway, "gateway_customer_id": ["is", "set"]},
-		"gateway_customer_id",
+		"Gateway Customer", {"team": team, "gateway": gateway}, "gateway_customer_id"
 	)
 	if existing:
 		return existing
-	return adapter.create_customer(frappe.get_doc("Team", team))
+
+	cid = adapter.create_customer(frappe.get_doc("Team", team))  # external side-effect
+	try:
+		frappe.get_doc({
+			"doctype": "Gateway Customer",
+			"team": team,
+			"gateway": gateway,
+			"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
+			"gateway_customer_id": cid,
+		}).insert(ignore_permissions=True)
+	except frappe.DuplicateEntryError:
+		# A concurrent setup minted+stored one first — use the stored id (and let
+		# the just-created duplicate at the gateway lie idle; harmless).
+		return frappe.db.get_value(
+			"Gateway Customer", {"team": team, "gateway": gateway}, "gateway_customer_id"
+		)
+
+	# Persist immediately so a failure in the rest of the request can't lose the id
+	# (skipped under tests, where the row stays visible within the test transaction).
+	if not frappe.in_test:
+		frappe.db.commit()
+	return cid
 
 
 @frappe.whitelist()

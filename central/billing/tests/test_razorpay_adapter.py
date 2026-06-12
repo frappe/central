@@ -169,9 +169,9 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		self.assertEqual(cid, "cust_new")
 		payload = c.customer.create.call_args.args[0]
 		self.assertEqual(payload["email"], "a@b.com")
-		# Must be the string "0" so Razorpay returns an existing customer rather
-		# than erroring "Customer already exists for the merchant".
-		self.assertEqual(payload["fail_existing"], "0")
+		# No gateway idempotency flag — ensure_gateway_customer stores the id so
+		# create is only ever called once per (team, gateway).
+		self.assertNotIn("fail_existing", payload)
 
 	def test_verify_payment_signature_valid(self):
 		adapter = self.make_adapter()
