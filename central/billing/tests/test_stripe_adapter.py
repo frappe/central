@@ -168,9 +168,10 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 
 	def test_create_customer_returns_id(self):
 		adapter = self.make_adapter()
-		with patch.object(stripe.Customer, "create", return_value=frappe._dict(id="cus_new")):
-			cid = adapter.create_customer(frappe._dict(name="Team-1", user="a@b.com"))
+		with patch.object(stripe.Customer, "create", return_value=frappe._dict(id="cus_new")) as create:
+			cid = adapter.create_customer(frappe._dict(name="Team-1", owner_user="a@b.com"))
 		self.assertEqual(cid, "cus_new")
+		self.assertEqual(create.call_args.kwargs["email"], "a@b.com")
 
 	def test_get_mandate_status(self):
 		adapter = self.make_adapter()

@@ -215,10 +215,11 @@ class RazorpayAdapter(GatewayAdapter):
 				"amount_in_subunits": order.get("amount"), "currency": (currency or "INR").upper()}
 
 	def create_customer(self, team) -> str:
+		# Team.owner_user is a Link to User, whose name IS the email address.
 		customer = self._client().customer.create(
 			{
 				"name": getattr(team, "name", None),
-				"email": team.get("user") if hasattr(team, "get") else None,
+				"email": team.get("owner_user") if hasattr(team, "get") else None,
 				"contact": team.get("phone") if hasattr(team, "get") else None,
 				"fail_existing": 0,
 			}

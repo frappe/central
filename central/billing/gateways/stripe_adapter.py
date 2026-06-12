@@ -225,9 +225,10 @@ class StripeAdapter(GatewayAdapter):
 
 	def create_customer(self, team) -> str:
 		self._configure()
+		# Team.owner_user is a Link to User, whose name IS the email address.
 		customer = _to_dict(stripe.Customer.create(
 			name=getattr(team, "name", None),
-			email=team.get("user") if hasattr(team, "get") else None,
+			email=team.get("owner_user") if hasattr(team, "get") else None,
 		))
 		return customer.get("id")
 
