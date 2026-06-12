@@ -37,7 +37,7 @@ function isCredit(entry) {
 // ── Stripe hosted-checkout return ──
 // Stripe redirects back here with ?topup=success&gateway&session — finish the
 // purchase by confirming server-side (confirm_topup verifies the session paid).
-const confirmTopup = useCall({ url: m(API.confirmTopup), immediate: false })
+const confirmTopup = useCall({ url: m(API.confirmTopup), method: 'POST', immediate: false })
 
 onMounted(async () => {
   const q = route.query

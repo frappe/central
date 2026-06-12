@@ -13,6 +13,7 @@ import { successToast, infoToast, errorToast } from '@/utils/toast'
 export function usePayInvoice({ onDone } = {}) {
   const pay = useCall({
     url: m(API.payInvoice),
+    method: 'POST',
     immediate: false,
     onError: (e) => errorToast(e, 'Could not start the payment.'),
   })

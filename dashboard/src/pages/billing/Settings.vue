@@ -29,7 +29,7 @@ watch(
   { immediate: true },
 )
 
-const saveProfile = useCall({ url: m(API.saveBillingProfile), immediate: false })
+const saveProfile = useCall({ url: m(API.saveBillingProfile), method: 'POST', immediate: false })
 async function submitProfile() {
   try {
     await saveProfile.submit({ team: currentTeam.value, ...form })

@@ -40,7 +40,7 @@ watch(
   { immediate: true },
 )
 
-const save = useCall({ url: m(API.saveNotificationPreferences), immediate: false })
+const save = useCall({ url: m(API.saveNotificationPreferences), method: 'POST', immediate: false })
 async function submit() {
   try {
     const payload = { team: currentTeam.value }
@@ -65,7 +65,7 @@ watch(
   { immediate: true },
 )
 
-const saveAlert = useCall({ url: m(API.saveBillingSettings), immediate: false })
+const saveAlert = useCall({ url: m(API.saveBillingSettings), method: 'POST', immediate: false })
 async function submitAlert() {
   try {
     await saveAlert.submit({ team: currentTeam.value, spend_alert_threshold: spendAlert.value })

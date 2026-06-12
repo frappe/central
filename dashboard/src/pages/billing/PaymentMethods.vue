@@ -22,9 +22,9 @@ const methods = useCall({
 // order is primary → backups; reorder pushes a new top-first list to the server.
 const ordered = computed(() => methods.data || [])
 
-const setDefault = useCall({ url: m(API.setDefaultPaymentMethod), immediate: false })
-const remove = useCall({ url: m(API.removePaymentMethod), immediate: false })
-const reorder = useCall({ url: m(API.reorderPaymentMethods), immediate: false })
+const setDefault = useCall({ url: m(API.setDefaultPaymentMethod), method: 'POST', immediate: false })
+const remove = useCall({ url: m(API.removePaymentMethod), method: 'POST', immediate: false })
+const reorder = useCall({ url: m(API.reorderPaymentMethods), method: 'POST', immediate: false })
 
 async function makeDefault(pm) {
   try {

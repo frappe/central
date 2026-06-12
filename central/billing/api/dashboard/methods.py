@@ -55,7 +55,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 			"publishable_key": publishable_key}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> dict:
 	"""Begin adding a card (gateway SetupIntent → client_secret). Real PAN is
 	collected client-side by the gateway SDK (PCI), never by our server."""
@@ -65,7 +65,7 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 	return payments.initiate_payment_method_setup(team, gateway)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def confirm_card(payment_method: str | None = None, gateway_method_id: str | None = None,
 				 display_label: str | None = None, expiry_month: int | None = None,
 				 expiry_year: int | None = None) -> dict:
@@ -80,7 +80,7 @@ def confirm_card(payment_method: str | None = None, gateway_method_id: str | Non
 	return {"payment_method": method.name, "status": method.status}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_demo_card(team: str | None = None, gateway: str | None = None,
 				  display_label: str = "Visa ····4242", expiry_month: int = 12,
 				  expiry_year: int = 2030) -> dict:
@@ -99,7 +99,7 @@ def add_demo_card(team: str | None = None, gateway: str | None = None,
 	return {"payment_method": name, "status": "Active"}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def setup_payment_method_order(team: str | None = None, gateway: str | None = None,
 							   method_type: str = "UPI Autopay") -> dict:
 	"""Begin adding a Razorpay recurring method — UPI Autopay mandate (ceiling =
@@ -114,7 +114,7 @@ def setup_payment_method_order(team: str | None = None, gateway: str | None = No
 	return mandates.setup_mandate(team, gw)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def confirm_payment_method_order(payment_method: str | None = None, razorpay_payment_id: str | None = None,
 								 razorpay_order_id: str | None = None, razorpay_signature: str | None = None,
 								 razorpay_token_id: str | None = None) -> dict:
@@ -131,7 +131,7 @@ def confirm_payment_method_order(payment_method: str | None = None, razorpay_pay
 	return {"payment_method": method.name, "status": method.status}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def remove_payment_method(payment_method: str | None = None) -> dict:
 	"""Remove a card/mandate; promotes another active method to default."""
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
@@ -141,7 +141,7 @@ def remove_payment_method(payment_method: str | None = None) -> dict:
 	return payments.delete_payment_method(payment_method)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def set_default_payment_method(payment_method: str | None = None) -> dict:
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
@@ -151,7 +151,7 @@ def set_default_payment_method(payment_method: str | None = None) -> dict:
 	return {"payment_method": doc.name, "is_default": doc.is_default, "priority": doc.priority}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def reorder_payment_methods(team: str | None = None, ordered: list | str | None = None) -> dict:
 	"""Set the team's fallback order (primary→backups) from a top-first list."""
 	team = _resolve_team(team, authz.MANAGE)

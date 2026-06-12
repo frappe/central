@@ -37,7 +37,7 @@ function toggle(name) {
   selected.value = next
 }
 
-const create = useCall({ url: m(API.createCustomRole), immediate: false })
+const create = useCall({ url: m(API.createCustomRole), method: 'POST', immediate: false })
 const canSave = computed(() => roleName.value.trim() && selected.value.size > 0)
 
 async function save() {

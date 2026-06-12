@@ -17,8 +17,8 @@ import { successToast, infoToast, errorToast } from '@/utils/toast'
 
 export function useTopup({ onDone } = {}) {
   const { currentTeam } = useTeam()
-  const createOrder = useCall({ url: m(API.createTopupOrder), immediate: false })
-  const confirm = useCall({ url: m(API.confirmTopup), immediate: false })
+  const createOrder = useCall({ url: m(API.createTopupOrder), method: 'POST', immediate: false })
+  const confirm = useCall({ url: m(API.confirmTopup), method: 'POST', immediate: false })
 
   async function run(amount) {
     try {

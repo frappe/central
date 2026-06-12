@@ -238,7 +238,7 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 	)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def purchase_credits(team: str | None = None, amount: float | None = None,
 					 payment_method: str | None = None) -> dict:
 	"""Top up the prepaid wallet. (The card charge that funds it is the payment
@@ -250,7 +250,7 @@ def purchase_credits(team: str | None = None, amount: float | None = None,
 	return credits.purchase(team, amount, "INR", payment_method=payment_method, note="Wallet top-up")
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def pay_invoice(invoice: str | None = None) -> dict:
 	"""Postpaid one-off settlement of an outstanding invoice (team-scoped)."""
 	team = frappe.db.get_value("Invoice", invoice, "team")
@@ -260,7 +260,7 @@ def pay_invoice(invoice: str | None = None) -> dict:
 	return charges.pay_invoice(invoice)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_topup_order(team: str | None = None, amount: float | None = None,
 					   gateway: str | None = None) -> dict:
 	"""Start a wallet top-up by creating a real gateway order. The UI opens the
@@ -294,7 +294,7 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 			"amount": amount, "currency": currency, "receipt": receipt, **handles}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def confirm_topup(team: str | None = None, amount: float | None = None, gateway: str | None = None,
 				  razorpay_order_id: str | None = None, razorpay_payment_id: str | None = None,
 				  razorpay_signature: str | None = None, session: str | None = None) -> dict:

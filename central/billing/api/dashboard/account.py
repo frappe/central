@@ -35,7 +35,7 @@ def get_billing_profile(team: str | None = None) -> dict:
 	return frappe.get_doc("Billing Profile", team).as_dict()
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def save_billing_profile(team: str | None = None, **fields) -> dict:
 	"""Create/update the team's billing identity (GSTIN validated in the controller)."""
 	team = _resolve_team(team, authz.MANAGE)
@@ -62,7 +62,7 @@ def get_billing_settings(team: str | None = None) -> dict:
 			"min_balance": p.min_balance, "spend_alert_threshold": p.spend_alert_threshold}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def save_billing_settings(team: str | None = None, billing_mode: str | None = None,
 						  min_balance: float | None = None,
 						  spend_alert_threshold: float | None = None) -> dict:
@@ -203,7 +203,7 @@ def get_notification_preferences(team: str | None = None) -> dict:
 	return prefs
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def save_notification_preferences(team: str | None = None, **prefs) -> dict:
 	"""Update which event types notify the team (billing:manage)."""
 	team = _resolve_team(team, authz.MANAGE)

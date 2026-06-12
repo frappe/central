@@ -299,3 +299,38 @@ class TestGatewayTopUp(CustomerDataBase):
 			with self.assertRaises(frappe.ValidationError):
 				dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw, session="cs_y")
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)  # no magic credit
+
+
+class TestWriteEndpointsRejectGet(IntegrationTestCase):
+	"""Every state-changing dashboard endpoint must be POST-only.
+
+	A whitelisted method called over GET is NOT committed — Frappe's
+	`sync_database()` rolls back any write unless the HTTP method is unsafe
+	(POST/PUT/DELETE/PATCH). A wallet top-up confirmed over GET therefore booked
+	a Credit Ledger Entry, returned 200 (the UI showed a success toast), then had
+	the insert silently rolled back at end-of-request. Declaring these endpoints
+	`methods=["POST"]` makes a stray GET fail loud (405) instead of losing money.
+	This guards the whole write surface so the regression can't creep back in.
+	"""
+
+	def test_write_endpoints_are_post_only(self):
+		from central.billing.api.dashboard import invoices, methods, account
+
+		write_fns = [
+			invoices.purchase_credits, invoices.pay_invoice,
+			invoices.create_topup_order, invoices.confirm_topup,
+			methods.initiate_card_setup, methods.confirm_card, methods.add_demo_card,
+			methods.setup_payment_method_order, methods.confirm_payment_method_order,
+			methods.remove_payment_method, methods.set_default_payment_method,
+			methods.reorder_payment_methods,
+			account.save_billing_profile, account.save_billing_settings,
+			account.save_notification_preferences,
+		]
+		allowed = frappe.allowed_http_methods_for_whitelisted_func
+		for fn in write_fns:
+			with self.subTest(fn=fn.__name__):
+				self.assertIn(fn, allowed, f"{fn.__name__} is not whitelisted")
+				self.assertEqual(
+					allowed[fn], ["POST"],
+					f"{fn.__name__} must be methods=['POST'] so a GET cannot silently roll back its writes",
+				)

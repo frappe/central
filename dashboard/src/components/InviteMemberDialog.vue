@@ -22,7 +22,7 @@ const roleOptions = computed(() =>
   props.roles.map((r) => ({ label: r.role_name || r.name, value: r.name })),
 )
 
-const invite = useCall({ url: m(API.inviteMember), immediate: false })
+const invite = useCall({ url: m(API.inviteMember), method: 'POST', immediate: false })
 
 async function submit() {
   if (!email.value || !role.value) return

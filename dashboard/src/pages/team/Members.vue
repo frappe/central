@@ -25,9 +25,9 @@ const roles = useCall({ url: m(API.listRoles), params, refetch: true })
 const capabilities = useCall({ url: m(API.listCapabilities), refetch: true })
 
 // ── Mutations ──
-const setRole = useCall({ url: m(API.setMemberRole), immediate: false })
-const setStatus = useCall({ url: m(API.setMemberStatus), immediate: false })
-const remove = useCall({ url: m(API.removeMember), immediate: false })
+const setRole = useCall({ url: m(API.setMemberRole), method: 'POST', immediate: false })
+const setStatus = useCall({ url: m(API.setMemberStatus), method: 'POST', immediate: false })
+const remove = useCall({ url: m(API.removeMember), method: 'POST', immediate: false })
 const busy = computed(() => setRole.loading || setStatus.loading || remove.loading)
 
 async function changeRole(mem, role) {

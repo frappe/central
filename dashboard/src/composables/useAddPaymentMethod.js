@@ -17,8 +17,8 @@ import { successToast, errorToast } from '@/utils/toast'
 
 export function useAddPaymentMethod({ onDone } = {}) {
   const { currentTeam } = useTeam()
-  const setup = useCall({ url: m(API.setupPaymentMethodOrder), immediate: false })
-  const confirm = useCall({ url: m(API.confirmPaymentMethodOrder), immediate: false })
+  const setup = useCall({ url: m(API.setupPaymentMethodOrder), method: 'POST', immediate: false })
+  const confirm = useCall({ url: m(API.confirmPaymentMethodOrder), method: 'POST', immediate: false })
 
   async function run(methodType) {
     try {
