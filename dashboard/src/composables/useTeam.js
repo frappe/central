@@ -17,6 +17,12 @@ const STORAGE_KEY = 'central.activeTeam' // { user, team }
 
 const who = useCall({ url: m(API.whoami) })
 
+// The initial whoami request; resolves once identity (and thus currentTeam) is
+// known. The router guard awaits this so it gates billing setup on the ACTIVE
+// team, not an empty/default one. Holds a stable reference to the first promise,
+// which stays resolved — awaiting it later is a no-op.
+export const whoReady = who.promise
+
 function loadOverride() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')

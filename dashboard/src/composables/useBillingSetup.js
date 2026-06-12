@@ -1,32 +1,30 @@
-// Billing-profile completeness gate.
+// Billing-profile completeness gate, for components.
 //
 // A team must complete its billing profile — currency + legal name + address —
-// before any money moves (top-up, buy credits, add a payment method). Currency
-// is the load-bearing field and is locked once a wallet credit, payment method,
-// or invoice exists. The dashboard uses this to block those actions and steer
-// the customer to Settings; the backend enforces the same gate as a backstop.
+// before any money moves and before the sidebar's options unlock. This wraps the
+// shared reactive store (data/billingSetup.js) the router guard also reads, scoped
+// to the ACTIVE team: it (re)fetches whenever the team switcher changes teams, so
+// the shell, pages, and guard always reflect the team currently in view.
 
-import { computed } from 'vue'
-import { useCall } from 'frappe-ui'
-import { API, m } from '@/api/endpoints'
+import { computed, watch } from 'vue'
+import { billingSetupState, fetchBillingSetup } from '@/data/billingSetup'
 import { useTeam } from '@/composables/useTeam'
 
 export function useBillingSetup() {
+  const state = billingSetupState()
   const { currentTeam } = useTeam()
-  const setup = useCall({
-    url: m(API.billingSetup),
-    params: () => ({ team: currentTeam.value }),
-    refetch: true,
-  })
+
+  // Fetch for the active team; refetch when it changes. Cached, so this is a
+  // no-op once the guard has already fetched the same team.
+  watch(currentTeam, (t) => { if (t) fetchBillingSetup(t) }, { immediate: true })
 
   return {
-    setup,
-    reload: () => setup.reload(),
-    complete: computed(() => !!setup.data?.complete),
-    missing: computed(() => setup.data?.missing || []),
-    currency: computed(() => setup.data?.currency || null),
-    currencyLocked: computed(() => !!setup.data?.currency_locked),
-    supportedCurrencies: computed(() => setup.data?.supported_currencies || []),
-    loading: computed(() => setup.loading),
+    complete: computed(() => !!state.data?.complete),
+    missing: computed(() => state.data?.missing || []),
+    currency: computed(() => state.data?.currency || null),
+    currencyLocked: computed(() => !!state.data?.currency_locked),
+    supportedCurrencies: computed(() => state.data?.supported_currencies || []),
+    loading: computed(() => state.loading),
+    reload: () => fetchBillingSetup(currentTeam.value, { force: true }),
   }
 }
