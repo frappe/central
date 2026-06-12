@@ -16,7 +16,7 @@ const billing = [
   { to: '/billing/subscriptions', label: 'Subscriptions', icon: 'lucide-repeat' },
 ]
 const settings = [
-  { to: '/settings/address', label: 'Address', icon: 'lucide-map-pin' },
+  { to: '/settings/address', label: 'Billing profile', icon: 'lucide-map-pin' },
   { to: '/settings/methods', label: 'Payment Methods', icon: 'lucide-credit-card' },
   { to: '/settings/notifications', label: 'Notifications', icon: 'lucide-bell' },
 ]

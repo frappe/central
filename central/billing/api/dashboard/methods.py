@@ -9,6 +9,7 @@ import frappe
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
 	_add_method_gateway,
+	_require_billing_setup,
 	_require_manage,
 	_resolve_team,
 	_team_currency,
@@ -60,6 +61,7 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 	"""Begin adding a card (gateway SetupIntent → client_secret). Real PAN is
 	collected client-side by the gateway SDK (PCI), never by our server."""
 	team = _resolve_team(team, authz.MANAGE)
+	_require_billing_setup(team)
 	from central.billing.payments import payments
 
 	return payments.initiate_payment_method_setup(team, gateway)
@@ -106,6 +108,7 @@ def setup_payment_method_order(team: str | None = None, gateway: str | None = No
 	trust-tier cap) or a card token. Returns the order handles the UI runs
 	Razorpay Checkout against (#08)."""
 	team = _resolve_team(team, authz.MANAGE)
+	_require_billing_setup(team)
 	gw = gateway or _add_method_gateway(_team_currency(team)).get("name")
 	from central.billing.payments import mandates
 

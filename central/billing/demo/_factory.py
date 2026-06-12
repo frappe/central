@@ -126,17 +126,18 @@ def _tax(team, currency):
 	_upsert("Tax Profile", team, {"team": team, "output_tax_type": tax_type, "output_tax_rate": rate})
 
 
-def _profile(team, slug, currency, cluster, prepaid):
+def _profile(team, slug, currency, cluster):
 	region = next(label for s, label, _c in CLUSTERS if s == cluster)
 	india = currency == "INR"
 	_upsert("Billing Profile", team, {
-		"team": team, "legal_name": f"{slug.replace('-', ' ').title()} Ltd",
+		"team": team, "currency": currency,
+		"legal_name": f"{slug.replace('-', ' ').title()} Ltd",
 		"email": f"billing@{slug}.example",
 		"gstin": "27AAPFU0939F1ZV" if india else None,
 		"address_line1": "1 Demo Street", "city": region.split("—")[-1].strip(),
-		"state": "Maharashtra" if india else "", "country": "India" if india else region.split("—")[0].strip(),
-		"pincode": "400001" if india else "",
-		"billing_mode": "Prepaid" if prepaid else "Postpaid",
+		"state": "Maharashtra" if india else region.split("—")[-1].strip(),
+		"country": "India" if india else region.split("—")[0].strip(),
+		"pincode": "400001" if india else "00000",
 	})
 
 

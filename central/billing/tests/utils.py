@@ -97,6 +97,25 @@ def ensure_team(slug, owner=None):
 	return slug
 
 
+def complete_billing_profile(team, currency="INR"):
+	"""A minimal *complete* Billing Profile (currency + legal name + address) so the
+	money-movement gate (_require_billing_setup) passes. Saves the doc directly,
+	bypassing the API's gateway-supported-currency check, so it works regardless of
+	which gateways a given test has configured."""
+	values = {
+		"doctype": "Billing Profile", "team": team, "currency": currency,
+		"legal_name": f"{team} Ltd", "address_line1": "1 Test Street", "city": "Pune",
+		"state": "Maharashtra", "country": "India", "pincode": "411001",
+	}
+	if frappe.db.exists("Billing Profile", team):
+		doc = frappe.get_doc("Billing Profile", team)
+		doc.update(values)
+	else:
+		doc = frappe.get_doc(values)
+	doc.save(ignore_permissions=True)
+	return team
+
+
 def make_billing_team(user, role="Billing", team_name=None):
 	"""A Central `Team` with `user` as an active member under `role`. The team's
 	Owner is a separate throwaway user (a Team must have exactly one Owner), so

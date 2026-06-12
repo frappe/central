@@ -9,16 +9,17 @@ import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import { API, m } from '@/api/endpoints'
 import { useTeam } from '@/composables/useTeam'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { money } from '@/utils/money'
 import { billingPeriod } from '@/utils/date'
 
 const router = useRouter()
 const { currentTeam } = useTeam()
 const { canManage } = useCapabilities()
+const { complete: setupComplete } = useBillingSetup()
 
 const params = () => ({ team: currentTeam.value })
 const overview = useCall({ url: m(API.teamOverview), params, refetch: true })
-const settings = useCall({ url: m(API.billingSettings), params, refetch: true })
 const forecast = useCall({ url: m(API.forecast), params, refetch: true })
 const credit = useCall({ url: m(API.creditBalance), params, refetch: true })
 const methods = useCall({ url: m(API.paymentMethods), params, refetch: true })
@@ -48,10 +49,11 @@ const estRequired = computed(() =>
   Number(fc.value.shortfall ?? Math.max(0, projected.value - creditBalance.value)),
 )
 
-// ── Prepaid spend alert ──────────────────────────────────────────────────
-const isPrepaid = computed(() => settings.data?.billing_mode === 'Prepaid')
+// ── Low-wallet alert ─────────────────────────────────────────────────────
+// Warn whenever the projected bill is within 20% of (or above) the wallet, so
+// the team can top up in time. Applies to any team holding credits.
 const eightyPctAlert = computed(
-  () => isPrepaid.value && creditBalance.value > 0 && projected.value >= 0.8 * creditBalance.value,
+  () => creditBalance.value > 0 && projected.value >= 0.8 * creditBalance.value,
 )
 
 // ── Usage by project (grouped by subscription's plan) ────────────────────
@@ -98,9 +100,10 @@ function onToppedUp() {
       <template #actions>
         <span v-if="cycleLabel" class="hidden text-p-sm text-ink-gray-5 sm:inline">{{ cycleLabel }}</span>
         <Button
-          v-if="canManage && isPrepaid"
+          v-if="canManage"
           variant="solid"
           label="Top up"
+          :disabled="!setupComplete"
           @click="showTopup = true"
         />
       </template>

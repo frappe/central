@@ -181,8 +181,7 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 
 	_tier(team, tier)
 	_tax(team, currency)
-	_profile(team, slug, currency, resources[0][0],
-			 prepaid=state in ("credits", "credits_full", "credits_partial"))
+	_profile(team, slug, currency, resources[0][0])
 	gateway, pm = _payment_setup(team, slug, currency, state)
 
 	periods = _month_periods(months)
