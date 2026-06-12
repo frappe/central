@@ -173,6 +173,14 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		# create is only ever called once per (team, gateway).
 		self.assertNotIn("fail_existing", payload)
 
+	def test_update_customer_edits_contact(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			adapter.update_customer("cust_x", {"name": "Acme", "email": "a@b.com", "contact": "9999999999"})
+		cid, fields = c.customer.edit.call_args.args
+		self.assertEqual(cid, "cust_x")
+		self.assertEqual(fields["contact"], "9999999999")
+
 	def test_verify_payment_signature_valid(self):
 		adapter = self.make_adapter()
 		data = {"razorpay_payment_id": "p", "razorpay_order_id": "o", "razorpay_signature": "s"}

@@ -228,6 +228,15 @@ class RazorpayAdapter(GatewayAdapter):
 		)
 		return customer.get("id")
 
+	def update_customer(self, customer_id: str, info: dict) -> None:
+		"""Sync name/email/contact onto an existing customer. Razorpay requires a
+		contact on the customer before a recurring order, and a customer minted
+		earlier (or by an older flow) may not have one — so we set it here, idempotently.
+		Only non-empty values are sent."""
+		fields = {k: info.get(k) for k in ("name", "email", "contact") if info.get(k)}
+		if fields:
+			self._client().customer.edit(customer_id, fields)
+
 	def verify_payment_signature(self, data: dict) -> bool:
 		"""Verify a Razorpay Checkout callback (payment_id + order_id + signature).
 

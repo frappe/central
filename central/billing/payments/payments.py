@@ -28,6 +28,23 @@ def _adapter(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
+def gateway_customer_info(team: str) -> "frappe._dict":
+	"""Customer details for the gateway, sourced from the team's Billing Profile
+	(name, email, phone) — NOT the Team doc, which carries no phone. The keys
+	mirror what the adapters read off a Team-like object (`name` / `owner_user` /
+	`phone`), so create_customer needs no change. Phone matters: Razorpay rejects a
+	recurring order whose customer has no contact."""
+	p = (
+		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
+		or frappe._dict()
+	)
+	return frappe._dict(
+		name=p.legal_name or team,
+		owner_user=p.email or frappe.db.get_value("Team", team, "owner_user"),
+		phone=p.phone,
+	)
+
+
 def ensure_gateway_customer(team: str, gateway: str, adapter, customer_id: str | None = None) -> str:
 	"""A gateway customer id for the team — every recurring / off-session setup
 	needs one. Razorpay rejects an order carrying a `token` without a customer;
@@ -49,7 +66,7 @@ def ensure_gateway_customer(team: str, gateway: str, adapter, customer_id: str |
 	if existing:
 		return existing
 
-	cid = adapter.create_customer(frappe.get_doc("Team", team))  # external side-effect
+	cid = adapter.create_customer(gateway_customer_info(team))  # external side-effect
 	try:
 		frappe.get_doc({
 			"doctype": "Gateway Customer",

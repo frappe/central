@@ -76,6 +76,29 @@ def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None =
 	return payments.ensure_gateway_customer(team, gateway, adapter, customer_id)
 
 
+def _require_recurring_contact(team: str, gateway: str, adapter, customer_id: str):
+	"""Razorpay recurring orders require the customer to carry a contact (phone) —
+	without it the order fails with "The contact field is required for recurring
+	links". Pull name/email/phone from the billing profile, refuse clearly if the
+	phone is missing, and sync them onto the (possibly reused or older) customer so
+	a contactless one is fixed in place."""
+	if frappe.db.get_value("Payment Gateway", gateway, "adapter_key") != "Razorpay":
+		return
+	p = (
+		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
+		or frappe._dict()
+	)
+	if not str(p.phone or "").strip():
+		frappe.throw(
+			"Add a phone number to your billing profile before setting up a recurring "
+			"payment method.",
+			frappe.ValidationError,
+		)
+	adapter.update_customer(
+		customer_id, {"name": p.legal_name or team, "email": p.email, "contact": p.phone}
+	)
+
+
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:
 	"""Begin UPI Autopay authorisation.
 
@@ -92,6 +115,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 	cap = team_cap(team)
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
+	_require_recurring_contact(team, gateway, adapter, customer_id)
 	handles = adapter.setup_payment_method(
 		team, {"method": "upi", "max_amount": cap, "customer_id": customer_id}
 	)
@@ -122,6 +146,7 @@ def setup_card(team: str, gateway: str, customer_id: str | None = None) -> dict:
 	"""
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
+	_require_recurring_contact(team, gateway, adapter, customer_id)
 	handles = adapter.setup_payment_method(
 		team, {"method": "card", "max_amount": CARD_TOKEN_MAX, "customer_id": customer_id}
 	)
