@@ -159,6 +159,18 @@ def apply_webhook(event_name: str) -> dict:
 		_mark_event(event, "Ignored")
 		return {"handled": False, "reason": "not_a_charge_event"}
 
+	# Wallet top-ups carry no Payment Attempt — they're settled by crediting the
+	# wallet directly. The browser's confirm callback normally does it; this is the
+	# server-authoritative backstop for when that callback never lands. Idempotent
+	# on the gateway payment id, so it never double-credits beside confirm_topup.
+	topup = _extract_topup(adapter_key, payload)
+	if topup:
+		if not is_success:
+			# Authorised/failed top-up callback: nothing to credit yet (or ever).
+			_mark_event(event, "Ignored")
+			return {"handled": False, "reason": "topup_not_captured"}
+		return _credit_topup(event, topup)
+
 	attempt_name = frappe.db.get_value("Payment Attempt", {"gateway_transaction_id": txn_id}, "name")
 	if not attempt_name:
 		_mark_event(event, "Ignored")
@@ -303,6 +315,60 @@ def _extract_transaction_id(adapter_key: str, payload: dict):
 		payment = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
 		return payment.get("id")
 	return None
+
+
+def _extract_topup(adapter_key: str, payload: dict):
+	"""If this event is a wallet top-up (`purpose=wallet_topup` in the gateway
+	notes/metadata set at create_topup_order), return its credit-able fields;
+	else None. Amount is converted minor->major to match the credits ledger,
+	mirroring confirm_topup's own `amount_total / 100`."""
+	if adapter_key == "Razorpay":
+		entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
+		notes = entity.get("notes") or {}
+		if notes.get("purpose") != "wallet_topup":
+			return None
+		minor = entity.get("amount")
+		return {
+			"payment_id": entity.get("id"),
+			"team": notes.get("team"),
+			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+			"currency": (entity.get("currency") or "").upper() or None,
+		}
+	if adapter_key == "Stripe":
+		obj = ((payload.get("data") or {}).get("object")) or {}
+		notes = obj.get("metadata") or {}
+		if notes.get("purpose") != "wallet_topup":
+			return None
+		minor = obj.get("amount_total") or obj.get("amount_received") or obj.get("amount")
+		return {
+			"payment_id": obj.get("payment_intent") or obj.get("id"),
+			"team": notes.get("team"),
+			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+			"currency": (obj.get("currency") or "").upper() or None,
+		}
+	return None
+
+
+def _credit_topup(event, topup: dict) -> dict:
+	"""Book the wallet credit for a captured top-up, idempotent on the payment id.
+
+	A malformed top-up (missing team/payment id/amount) is Ignored rather than
+	crediting a guess — top-ups never magically credit."""
+	if not (topup.get("team") and topup.get("payment_id") and topup.get("amount")):
+		_mark_event(event, "Ignored")
+		return {"handled": False, "reason": "topup_incomplete"}
+
+	from central.billing.revenue import credits
+
+	result = credits.purchase(
+		topup["team"], topup["amount"], topup["currency"] or "INR",
+		reference_name=topup["payment_id"],
+		note=f"Wallet top-up ({topup['payment_id']})",
+		gateway_payment_id=topup["payment_id"],
+	)
+	_mark_event(event, "Processed")
+	return {"handled": True, "result": "topup_credited", "team": topup["team"],
+			"payment_id": topup["payment_id"], "ledger_entry": result["ledger_entry"]}
 
 
 def _mark_event(event, status: str):

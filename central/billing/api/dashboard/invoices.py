@@ -330,4 +330,5 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 	if not ok:
 		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
 	return credits.purchase(team, amount, currency,
-		reference_name=reference, note=f"Wallet top-up ({reference})")
+		reference_name=reference, note=f"Wallet top-up ({reference})",
+		gateway_payment_id=reference)

@@ -83,6 +83,7 @@ def _book_entry(
 	reference_type: str | None = None,
 	reference_name: str | None = None,
 	note: str | None = None,
+	gateway_payment_id: str | None = None,
 ):
 	"""Append one ledger entry under the per-team lock, retrying on deadlock.
 
@@ -93,6 +94,14 @@ def _book_entry(
 	re-locks the wallet and re-reads the now-current balance, so the
 	double-spend / InsufficientCredits guards still hold. `InsufficientCredits`
 	and bad-amount errors are NOT retried — they are deterministic outcomes.
+
+	`gateway_payment_id` (top-ups) makes the booking idempotent on the gateway
+	payment: the synchronous confirm callback and the async webhook race to credit
+	the SAME payment, so exactly one must win. The per-team wallet lock serialises
+	them and the under-lock pre-check in `_book_entry_once` skips the duplicate;
+	the unique index on the column is the belt-and-braces backstop — if a second
+	insert still reaches the DB it raises DuplicateEntryError, which we treat as
+	"already credited" and return the winning entry rather than double-booking.
 	"""
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
@@ -101,7 +110,8 @@ def _book_entry(
 	for attempt in range(_DEADLOCK_RETRIES):
 		try:
 			return _book_entry_once(
-				team, entry_type, amount, currency, reference_type, reference_name, note
+				team, entry_type, amount, currency, reference_type, reference_name, note,
+				gateway_payment_id,
 			)
 		except frappe.QueryDeadlockError:
 			# The transaction is already rolled back by InnoDB; sync Frappe's state
@@ -110,6 +120,13 @@ def _book_entry(
 			if attempt == _DEADLOCK_RETRIES - 1:
 				raise
 			time.sleep(_DEADLOCK_BACKOFF * (attempt + 1) + random.uniform(0, _DEADLOCK_BACKOFF))
+		except frappe.DuplicateEntryError:
+			# Lost the race on the gateway_payment_id unique key — the other path
+			# (confirm callback or a replayed webhook) already credited this exact
+			# payment. Roll back our half-built entry (balance bump included) and
+			# return the winner; the payment books exactly one credit.
+			frappe.db.rollback()
+			return _existing_payment_entry(gateway_payment_id)
 
 
 def _book_entry_once(
@@ -120,10 +137,23 @@ def _book_entry_once(
 	reference_type: str | None,
 	reference_name: str | None,
 	note: str | None,
+	gateway_payment_id: str | None = None,
 ):
 	"""One booking attempt under the per-team lock; returns (doc, new_balance)."""
 	_ensure_wallet(team, currency)
 	balance = _lock_and_read_balance(team)
+
+	# Idempotency for top-ups: the wallet FOR UPDATE above serialises the confirm
+	# callback and the webhook for this (same-team) payment, and a consistent read
+	# taken AFTER acquiring the lock sees the winner's committed row — so if this
+	# payment is already credited, return that entry instead of booking a second.
+	if gateway_payment_id:
+		existing = frappe.db.get_value(
+			"Credit Ledger Entry", {"gateway_payment_id": gateway_payment_id}, "name"
+		)
+		if existing:
+			return frappe.get_doc("Credit Ledger Entry", existing), balance
+
 	new_balance = balance + (amount if entry_type == "Credit" else -amount)
 	if new_balance < 0:
 		raise InsufficientCredits(
@@ -143,6 +173,7 @@ def _book_entry_once(
 			"running_balance": new_balance,
 			"reference_type": reference_type,
 			"reference_name": reference_name,
+			"gateway_payment_id": gateway_payment_id,
 			"note": note,
 			"created_at": frappe.utils.now_datetime(),
 		}
@@ -150,13 +181,31 @@ def _book_entry_once(
 	return entry, new_balance
 
 
+def _existing_payment_entry(gateway_payment_id: str | None):
+	"""Return (entry, balance) for an already-booked gateway payment — the winner
+	of a confirm-vs-webhook race. Used when our own insert lost the unique key."""
+	name = gateway_payment_id and frappe.db.get_value(
+		"Credit Ledger Entry", {"gateway_payment_id": gateway_payment_id}, "name"
+	)
+	if not name:
+		# Duplicate fired but the row is gone (or no id) — nothing to return to.
+		frappe.throw("Credit booking conflicted but no prior entry found.", frappe.ValidationError)
+	entry = frappe.get_doc("Credit Ledger Entry", name)
+	return entry, frappe.utils.flt(frappe.db.get_value("Credit Wallet", entry.team, "balance"))
+
+
 @frappe.whitelist()
 def purchase(team: str, amount: float, currency: str = "INR", payment_method: str | None = None,
-			 reference_name: str | None = None, note: str | None = None) -> dict:
+			 reference_name: str | None = None, note: str | None = None,
+			 gateway_payment_id: str | None = None) -> dict:
 	"""Top-up: book a credit entry for purchased credits.
 
 	(The card charge that funds the top-up is the payment flow's concern; this
 	books the resulting advance-liability credit.)
+
+	`gateway_payment_id` dedupes a gateway-order top-up: the synchronous confirm
+	callback and the async `payment.captured` webhook both call this for the same
+	payment, and the unique-key + under-lock guard ensure it books one credit.
 	"""
 	entry, new_balance = _book_entry(
 		team,
@@ -166,6 +215,7 @@ def purchase(team: str, amount: float, currency: str = "INR", payment_method: st
 		reference_type="Payment Method" if payment_method else "Top-up",
 		reference_name=payment_method or reference_name,
 		note=note or "Credit top-up",
+		gateway_payment_id=gateway_payment_id,
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 

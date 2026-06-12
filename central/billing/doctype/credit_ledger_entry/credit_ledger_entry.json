@@ -17,6 +17,7 @@
   "section_break_ref",
   "reference_type",
   "reference_name",
+  "gateway_payment_id",
   "column_break_ref",
   "created_at",
   "note"
@@ -78,6 +79,15 @@
    "fieldname": "reference_name",
    "fieldtype": "Data",
    "label": "Reference Name"
+  },
+  {
+   "fieldname": "gateway_payment_id",
+   "fieldtype": "Data",
+   "label": "Gateway Payment ID",
+   "description": "Gateway payment id this credit settles (wallet top-ups). Unique — dedupes the synchronous confirm callback against the async webhook so one payment books exactly one credit.",
+   "read_only": 1,
+   "unique": 1,
+   "search_index": 1
   },
   {
    "fieldname": "column_break_ref",
