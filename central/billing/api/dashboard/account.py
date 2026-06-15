@@ -19,7 +19,6 @@ from central.billing.api.dashboard._shared import (
 	_team_currency,
 )
 
-
 @frappe.whitelist()
 def whoami() -> dict:
 	"""Smoke endpoint: who the SPA is talking as, and their team scope."""
@@ -96,13 +95,11 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 			   "address_line2", "city", "state", "country", "pincode")
 	values = {k: v for k, v in fields.items() if k in allowed}
 	_validate_currency(team, values.get("currency"))
-	if frappe.db.exists("Billing Profile", team):
-		doc = frappe.get_doc("Billing Profile", team)
-		doc.update(values)
-	else:
-		doc = frappe.get_doc({"doctype": "Billing Profile", "team": team, **values})
-	doc.save(ignore_permissions=True)
-	return {"saved": True, "team": team, "gstin": doc.gstin, "currency": doc.currency,
+
+	from central.billing.payments import profile
+	profile = profile.create_or_update_billing_profile(team, **values)
+	
+	return {"saved": True, "team": team, "gstin": profile.gstin, "currency": profile.currency,
 			"setup_complete": _profile_complete(team)}
 
 

@@ -45,7 +45,7 @@ class CustomerDataBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Price Lock", "Credit Ledger Entry"):
+		for dt in ("Invoice", "Price Lock", "Credit Ledger Entry", "Gateway Customer"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		frappe.db.commit()
@@ -278,6 +278,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		gw = make_razorpay_gateway("GW-Cust-RZP").name
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
+		adapter.create_customer.return_value = "cus_topup"
 		adapter.create_order.return_value = {
 			"order_id": "order_x", "key_id": "rzp_test", "amount_in_subunits": 500000}
 		adapter.verify_payment_signature.return_value = True
@@ -289,6 +290,13 @@ class TestGatewayTopUp(CustomerDataBase):
 			# amount_in_subunits) — this is what the client echoes to confirm_topup.
 			self.assertEqual(order["amount"], 5000)
 			adapter.create_order.assert_called_once()
+			# The top-up minted + stored the team's gateway customer and passed it to
+			# the order, so future transactions reuse the same id.
+			self.assertEqual(adapter.create_order.call_args.kwargs["customer"], "cus_topup")
+			self.assertEqual(
+				frappe.db.get_value("Gateway Customer", {"team": TEAM, "gateway": gw}, "gateway_customer_id"),
+				"cus_topup",
+			)
 			# Wallet is NOT credited yet — only after the gateway confirms.
 			self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)
 
@@ -296,6 +304,25 @@ class TestGatewayTopUp(CustomerDataBase):
 				razorpay_order_id="order_x", razorpay_payment_id="pay_x", razorpay_signature="sig")
 			adapter.verify_payment_signature.assert_called_once()
 			self.assertEqual(out["new_balance"], 5000)
+
+	def test_second_topup_reuses_the_same_gateway_customer(self):
+		"""A team's customer is minted once and reused — the second top-up (or any
+		later charge / payment-method setup) never mints a fresh one."""
+		from unittest.mock import MagicMock, patch
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		gw = make_razorpay_gateway("GW-Cust-RZP-Reuse").name
+		complete_billing_profile(TEAM)
+		adapter = MagicMock()
+		adapter.create_customer.return_value = "cus_once"
+		adapter.create_order.return_value = {
+			"order_id": "o", "key_id": "rzp_test", "amount_in_subunits": 100000}
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			dashboard.create_topup_order(team=TEAM, amount=1000, gateway=gw)
+			adapter.create_customer.reset_mock()
+			dashboard.create_topup_order(team=TEAM, amount=1000, gateway=gw)
+			adapter.create_customer.assert_not_called()  # reused, not re-minted
+			self.assertEqual(adapter.create_order.call_args.kwargs["customer"], "cus_once")
 
 	def test_topup_rejects_bad_signature(self):
 		from unittest.mock import MagicMock, patch
@@ -318,6 +345,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		gw = make_stripe_gateway("GW-Cust-Stripe-T").name
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
+		adapter.create_customer.return_value = "cus_stripe"
 		adapter.create_checkout_session.return_value = {"checkout_url": "https://stripe.test/cs", "session_id": "cs_x"}
 		adapter.get_checkout_session.return_value = {
 			"payment_status": "paid", "payment_intent": "pi_x", "amount_total": 500000, "currency": "eur"}
@@ -326,6 +354,8 @@ class TestGatewayTopUp(CustomerDataBase):
 			self.assertEqual(order["adapter_key"], "Stripe")
 			self.assertEqual(order["checkout_url"], "https://stripe.test/cs")  # redirect, not a Razorpay order
 			adapter.create_checkout_session.assert_called_once()
+			# The hosted session is bound to the team's reused gateway customer.
+			self.assertEqual(adapter.create_checkout_session.call_args.kwargs["customer"], "cus_stripe")
 			self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)  # not credited yet
 
 			out = dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw, session="cs_x")

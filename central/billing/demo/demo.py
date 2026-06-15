@@ -73,10 +73,10 @@ def seed():
 OWNER = "demo-owner@example.com"
 OWNER_PASSWORD = "Central-Demo-2026!"
 MEMBERS = [
-	("finance@demo.example.com", "Priya Finance", "Billing", "Active"),
-	("dev@demo.example.com", "Dev Kumar", "Developer", "Active"),
-	("viewer@demo.example.com", "Sam Viewer", "Viewer", "Active"),
-	("contractor@demo.example.com", "Contractor Singh", "Developer", "Suspended"),
+	("finance@demo.example.com", "Finance User", "Billing", "Active"),
+	("dev@demo.example.com", "Dev User", "Developer", "Active"),
+	("viewer@demo.example.com", "Viewer", "Viewer", "Active"),
+	("contractor@demo.example.com", "Contractor User", "Developer", "Suspended"),
 ]
 
 

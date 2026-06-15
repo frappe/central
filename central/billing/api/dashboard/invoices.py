@@ -278,6 +278,13 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 
 	gw_doc = frappe.get_doc("Payment Gateway", gw)
 	adapter = get_adapter(gw_doc)
+	# Mint-or-reuse the team's customer at this gateway *before* the order, so the
+	# top-up attaches to the one customer every later charge reuses (the card #05 and
+	# mandate #08 paths share this same Gateway Customer row). ensure_gateway_customer
+	# commits the row the instant it mints, so a failed order can't orphan it.
+	from central.billing.payments.payments import ensure_gateway_customer
+
+	customer_id = ensure_gateway_customer(team, gw, adapter)
 	receipt = f"topup-{team}-{frappe.generate_hash(length=8)}"
 	notes = {"team": team, "purpose": "wallet_topup"}
 	if gw_doc.adapter_key == "Stripe":
@@ -289,9 +296,10 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 		success_url = (f"{base}/billing/credits?topup=success&gateway={quote(gw)}"
 					   f"&team={quote(team)}&session={{CHECKOUT_SESSION_ID}}")
 		cancel_url = f"{base}/billing/credits?topup=cancelled"
-		handles = adapter.create_checkout_session(amount, currency, receipt, success_url, cancel_url, notes=notes)
+		handles = adapter.create_checkout_session(
+			amount, currency, receipt, success_url, cancel_url, notes=notes, customer=customer_id)
 	else:
-		handles = adapter.create_order(amount, currency, receipt, notes=notes)
+		handles = adapter.create_order(amount, currency, receipt, notes=notes, customer=customer_id)
 	return {"gateway": gw, "adapter_key": gw_doc.adapter_key,
 			"amount": amount, "currency": currency, "receipt": receipt, **handles}
 

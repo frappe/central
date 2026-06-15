@@ -186,22 +186,30 @@ class StripeAdapter(GatewayAdapter):
 		self._configure()
 		return _to_dict(stripe.PaymentIntent.retrieve(gateway_txn_id)).get("status")
 
-	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None) -> dict:
-		"""A PaymentIntent the UI confirms with Stripe.js for a wallet top-up."""
+	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None,
+					 customer: str | None = None) -> dict:
+		"""A PaymentIntent the UI confirms with Stripe.js for a wallet top-up.
+		Attaching `customer` lets Stripe save the method on the customer for later
+		off-session charges (the same customer id every later charge reuses)."""
 		self._configure()
-		intent = _to_dict(stripe.PaymentIntent.create(amount=int(round((amount or 0) * 100)),
-			currency=(currency or "usd").lower(), metadata={"receipt": receipt, **(notes or {})}))
+		params = dict(amount=int(round((amount or 0) * 100)),
+			currency=(currency or "usd").lower(), metadata={"receipt": receipt, **(notes or {})})
+		if customer:
+			params["customer"] = customer
+		intent = _to_dict(stripe.PaymentIntent.create(**params))
 		return {"client_secret": intent.get("client_secret"), "payment_intent_id": intent.get("id"),
 				"amount": intent.get("amount"), "publishable_key": self.get_credential("api_key"),
 				"currency": (currency or "usd").upper()}
 
 	def create_checkout_session(self, amount, currency: str, receipt: str,
-								success_url: str, cancel_url: str, notes: dict | None = None) -> dict:
+								success_url: str, cancel_url: str, notes: dict | None = None,
+								customer: str | None = None) -> dict:
 		"""A hosted Stripe Checkout session for a wallet top-up; the UI redirects to
-		`checkout_url`. Stripe substitutes {CHECKOUT_SESSION_ID} into success_url."""
+		`checkout_url`. Stripe substitutes {CHECKOUT_SESSION_ID} into success_url.
+		Binding `customer` keeps the session under the team's reused customer id."""
 		self._configure()
 		meta = {"receipt": receipt, **(notes or {})}
-		session = _to_dict(stripe.checkout.Session.create(
+		params = dict(
 			mode="payment",
 			success_url=success_url,
 			cancel_url=cancel_url,
@@ -215,7 +223,10 @@ class StripeAdapter(GatewayAdapter):
 			}],
 			metadata=meta,
 			payment_intent_data={"metadata": meta},
-		))
+		)
+		if customer:
+			params["customer"] = customer
+		session = _to_dict(stripe.checkout.Session.create(**params))
 		return {"checkout_url": session.get("url"), "session_id": session.get("id"),
 				"publishable_key": self.get_credential("api_key")}
 
