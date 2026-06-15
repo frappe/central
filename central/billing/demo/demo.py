@@ -32,6 +32,7 @@ def seed():
 	_catalog()
 	_gateway()
 	_tier_and_tax()
+	_billing_profile()
 	card = _payment_method()
 	sub = subscriptions.create_subscription(
 		team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
@@ -254,6 +255,29 @@ def _tier_and_tax():
 	)
 
 
+def _billing_profile():
+	"""A complete Billing Profile for the demo team. It is mandatory before any money
+	moves (top-up / payment method) and gates the dashboard, so without it the demo
+	team's UI is unreachable. Currency is INR — matching its wallet, card and invoices."""
+	_replace(
+		"Billing Profile",
+		TEAM,
+		{
+			"team": TEAM,
+			"currency": "INR",
+			"legal_name": "Demo Cloud Pvt Ltd",
+			"email": OWNER,
+			"phone": "+919900000000",
+			"gstin": "27AAPFU0939F1ZV",
+			"address_line1": "1 Demo Street",
+			"city": "Mumbai",
+			"state": "Maharashtra",
+			"country": "India",
+			"pincode": "400001",
+		},
+	)
+
+
 def _payment_method():
 	name = frappe.db.get_value("Payment Method", {"team": TEAM, "gateway": GATEWAY}, "name")
 	values = {
@@ -272,7 +296,24 @@ def _payment_method():
 	}
 	if name:
 		frappe.delete_doc("Payment Method", name, force=True)
-	return frappe.get_doc(values).insert(ignore_permissions=True).name
+	pm = frappe.get_doc(values).insert(ignore_permissions=True).name
+	# Mirror the Gateway Customer store: the card and any later top-up / charge reuse
+	# this one (team, gateway) customer id.
+	_gateway_customer(TEAM, GATEWAY, "cus_demo")
+	return pm
+
+
+def _gateway_customer(team, gateway, customer_id):
+	"""One (team, gateway)→customer_id row, the id every setup, charge and wallet
+	top-up reuses (the state the v10 backfill leaves)."""
+	existing = frappe.db.get_value("Gateway Customer", {"team": team, "gateway": gateway}, "name")
+	if existing:
+		frappe.delete_doc("Gateway Customer", existing, force=True)
+	frappe.get_doc({
+		"doctype": "Gateway Customer", "team": team, "gateway": gateway,
+		"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
+		"gateway_customer_id": customer_id,
+	}).insert(ignore_permissions=True)
 
 
 def _attempt(name, card, amount, status, when, retry, **extra):
@@ -370,11 +411,11 @@ def _wipe():
 	for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 		frappe.db.delete("Subscription Change", {"subscription": sub})
 	for dt in (
-		"Invoice", "Payment Attempt", "Payment Method", "Price Lock", "Usage Rollup",
-		"Credit Ledger Entry", "Subscription", "Billing Notification Log",
+		"Invoice", "Payment Attempt", "Payment Method", "Gateway Customer", "Price Lock",
+		"Usage Rollup", "Credit Ledger Entry", "Subscription", "Billing Notification Log",
 	):
 		frappe.db.delete(dt, {"team": TEAM})
-	for dt in ("Credit Wallet", "Trust Tier", "Tax Profile", "Notification Preference"):
+	for dt in ("Credit Wallet", "Trust Tier", "Tax Profile", "Notification Preference", "Billing Profile"):
 		if frappe.db.exists(dt, TEAM):
 			frappe.delete_doc(dt, TEAM, force=True)
 	for inv in frappe.get_all("Team Invitation", {"team": TEAM}, pluck="name"):

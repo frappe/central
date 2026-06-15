@@ -154,6 +154,7 @@ def _payment_setup(team, slug, currency, state):
 			"mandate_max_amount": 200000, "mandate_currency": "INR", "is_default": 1,
 			"validated_at": frappe.utils.now_datetime(),
 		}).insert(ignore_permissions=True).name
+		_gateway_customer(team, RAZORPAY, f"cust_{slug}")
 		return RAZORPAY, pm
 	gateway = STRIPE[currency]
 	pm = frappe.get_doc({
@@ -162,7 +163,23 @@ def _payment_setup(team, slug, currency, state):
 		"gateway_customer_id": f"cus_{slug}", "expiry_month": 11, "expiry_year": 2030,
 		"is_default": 1, "validated_at": frappe.utils.now_datetime(),
 	}).insert(ignore_permissions=True).name
+	_gateway_customer(team, gateway, f"cus_{slug}")
 	return gateway, pm
+
+
+def _gateway_customer(team, gateway, customer_id):
+	"""Mirror the production Gateway Customer store: one (team, gateway)→customer_id
+	row, the id every payment-method setup, recurring charge AND wallet top-up reuses.
+	The demo Payment Methods carry the same id, so the store stays consistent — the
+	state the v10 backfill leaves."""
+	existing = frappe.db.get_value("Gateway Customer", {"team": team, "gateway": gateway}, "name")
+	if existing:
+		frappe.delete_doc("Gateway Customer", existing, force=True)
+	frappe.get_doc({
+		"doctype": "Gateway Customer", "team": team, "gateway": gateway,
+		"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
+		"gateway_customer_id": customer_id,
+	}).insert(ignore_permissions=True)
 
 
 def _failed_attempt(team, invoice, pm, gateway, retry, when=None):
@@ -267,9 +284,9 @@ def _wipe_all():
 	"""Drop every billing record so the demo is the only data present."""
 	children = ("Catalog Rate", "Plan Includes", "Invoice Line Item",
 				"Subscription Change")
-	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Price Lock",
-					 "Usage Rollup", "Credit Ledger Entry", "Credit Wallet", "Billing Notification Log",
-					 "Entitlement Token", "Webhook Event", "Subscription")
+	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Gateway Customer",
+					 "Price Lock", "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
+					 "Billing Notification Log", "Entitlement Token", "Webhook Event", "Subscription")
 	config = ("Trust Tier", "Tax Profile", "Billing Profile")
 	catalog = ("Plan", "Add-on", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:
