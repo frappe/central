@@ -96,6 +96,9 @@ class RazorpayAdapter(GatewayAdapter):
 				"method": method,
 				"customer_id": setup_data.get("customer_id"),
 				"receipt": receipt,
+				# Auto-capture the registration auth; without it the payment stays
+				# "authorized" (manual capture) and Checkout reports the mandate failed.
+				"payment_capture": 1,
 				"token": {"max_amount": max_amount * 100},
 				"notes": {"team": team},
 			}
@@ -128,6 +131,7 @@ class RazorpayAdapter(GatewayAdapter):
 					"amount": amount_paise,
 					"currency": currency,
 					"receipt": idempotency_key,
+					"payment_capture": 1,  # settle the charge, don't leave it authorized
 					"notes": {"invoice": invoice.get("name")},
 				}
 			)
@@ -206,6 +210,7 @@ class RazorpayAdapter(GatewayAdapter):
 			"amount": int(round((amount or 0) * 100)),
 			"currency": (currency or "INR").upper(),
 			"receipt": receipt,
+			"payment_capture": 1,  # auto-capture so the top-up settles + the webhook fires
 			"notes": notes or {},
 		})
 		# `amount_in_subunits` (paise) is what Razorpay Checkout reads; it is kept
