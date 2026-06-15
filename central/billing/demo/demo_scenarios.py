@@ -46,11 +46,31 @@ from central.billing.demo._factory import (
 	_tier,
 	_tiers,
 	_wipe_all,
+	arm_emandate,
+	set_collection_mode,
 )
 
 # Wallet-top-up states: no card on file, but the team funds its wallet through a
 # gateway top-up — which now mints a reusable Gateway Customer (the new top-up path).
 _TOPUP_STATES = ("credits", "credits_full", "credits_partial")
+
+# Collection mode per demo team (ADR 0005, #50), to cover the spectrum on screen:
+#   stripe_auto      — international postpaid card (default for non-INR)
+#   emandate         — INR auto-debit; arm_emandate then trips it to action_required
+#                      if the bill > ₹15k (acme-corp, daybreak) or arms a pre-debit
+#                      notice if it stays under (wayne-ent)
+#   manual_checkout  — INR, pays each invoice on-session (umbrella, stark-ind, rivulet)
+#   prepaid          — wallet-funded (hooli, piedpiper, harbor, seedling)
+# Unlisted INR teams default to prepaid; unlisted non-INR to stripe_auto.
+_COLLECTION_MODES = {
+	"acme-corp": "emandate", "wayne-ent": "emandate", "daybreak": "emandate",
+	"umbrella": "manual_checkout", "stark-ind": "manual_checkout", "rivulet": "manual_checkout",
+	"hooli": "prepaid", "piedpiper": "prepaid", "harbor": "prepaid", "seedling": "prepaid",
+}
+
+
+def _collection_mode_for(slug, currency):
+	return _COLLECTION_MODES.get(slug) or ("stripe_auto" if currency != "INR" else "prepaid")
 
 # Card teams: which historical month indices show a failed-then-settled trail in
 # the invoice Activity (month index → failed retries before the capture). A few
@@ -134,8 +154,10 @@ DEMO_TEAMS = [
 	# Most mature tier (t3): large fleet → invoice with 20+ line items, long
 	# paid history, card on file → current invoice Open (card Pay Now).
 	("northwind", "t3", "USD", 8, "Active", _FLEET),
+	# INR fleet that bills > ₹15,000 — its e-mandate trips to Action Required, so the
+	# dashboard banner shows the manual-vs-prepaid choice with real numbers (#50).
 	("daybreak", "t1", "INR", 3, "Active", [
-		("in-mumbai", "plan-2vcpu")]),
+		("in-mumbai", "plan-8vcpu"), ("in-mumbai", "plan-4vcpu")]),
 	("harbor", "t2", "USD", 3, "credits_full", [
 		("eu-frankfurt", "plan-2vcpu"), ("me-dubai", "plan-1vcpu")]),
 	("rivulet", "t1", "INR", 1, "credits_partial", [
@@ -253,7 +275,15 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 			})
 
 	note = _finish_current_month(team, primary_sub, currency, state, pm, gateway)
-	return f"{len(resources)} instances across {len(by_cluster)} region(s) — {note}"
+
+	# Collection mode (ADR 0005, #50): set after the current invoice exists so an
+	# e-mandate team runs the real trip/pre-debit flow against its actual bill.
+	mode = _collection_mode_for(slug, currency)
+	set_collection_mode(team, mode)
+	if mode == "emandate":
+		arm_emandate(team)
+	final_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
+	return f"{len(resources)} instances across {len(by_cluster)} region(s) — {note} [{final_mode}]"
 
 
 def _set_team_standing(team, standing, changed_by="dunning"):

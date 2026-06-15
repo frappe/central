@@ -214,6 +214,33 @@ def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
 	})
 
 
+# --- collection mode (ADR 0005, #50) ----------------------------------------
+
+
+def set_collection_mode(team, mode):
+	"""Set how this team's invoices are collected (drives the dashboard banner)."""
+	frappe.db.set_value("Billing Profile", team, "collection_mode", mode)
+
+
+def arm_emandate(team):
+	"""Run the real e-mandate flow on the team's open invoice: trip Action Required
+	if it's over the ₹15,000 silent ceiling, else send the pre-debit notice. Using
+	the live logic means the banner shows true numbers and a genuine notification."""
+	from central.billing.payments import collection_mode, emandate
+
+	open_inv = frappe.db.get_value(
+		"Invoice", {"team": team, "status": "Open"}, ["name", "expected_collection"], as_dict=True
+	)
+	if not open_inv:
+		return
+	st = collection_mode.evaluate(
+		team, projected_amount=frappe.utils.flt(open_inv.expected_collection),
+		reason="invoice_over_threshold",
+	)
+	if not st["action_required"]:
+		emandate.schedule_predebit(open_inv.name)
+
+
 # --- helpers ----------------------------------------------------------------
 
 
