@@ -9,6 +9,7 @@ import { API, m } from '@/api/endpoints'
 import { useTeam } from '@/composables/useTeam'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayInvoice } from '@/composables/usePayInvoice'
+import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
 import { money } from '@/utils/money'
 import { billingPeriod, shortDate } from '@/utils/date'
 import { invoiceTheme } from '@/utils/status'
@@ -55,12 +56,21 @@ const canPay = computed(
   () => canManage.value && String(detail.data?.status).toLowerCase() === 'open',
 )
 
-const { run: payInvoice, loading: paying } = usePayInvoice({
-  onDone: () => {
-    invoices.reload?.()
-    if (selected.value) detail.submit({ name: selected.value.name })
-  },
-})
+const refresh = () => {
+  invoices.reload?.()
+  if (selected.value) detail.submit({ name: selected.value.name })
+}
+const { run: payInvoice, loading: paying } = usePayInvoice({ onDone: refresh })
+const { run: payCheckout, loading: payingCheckout } = usePayInvoiceCheckout({ onDone: refresh })
+
+// manual_checkout teams settle on-session (any amount, no ₹15k limit); everyone
+// else uses the off-session charge against their saved method.
+const collection = useCall({ url: m(API.collectionStatus), params, refetch: true })
+const manualMode = computed(() => collection.data?.collection_mode === 'manual_checkout')
+const payBusy = computed(() => paying.value || payingCheckout.value)
+function pay(name) {
+  return manualMode.value ? payCheckout(name) : payInvoice(name)
+}
 
 // Timeline dot colour per event theme.
 const DOTS = {
@@ -250,9 +260,9 @@ const dotClass = (theme) => DOTS[theme] || DOTS.gray
             <Button
               variant="solid"
               :label="`Pay ${money(detail.data.expected_collection, detail.data.currency)}`"
-              :loading="paying"
+              :loading="payBusy"
               class="w-full"
-              @click="payInvoice(detail.data.name)"
+              @click="pay(detail.data.name)"
             />
           </div>
         </div>

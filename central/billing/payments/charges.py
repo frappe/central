@@ -126,6 +126,86 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 	return {"charged": result.success, "attempt": attempt.name, "status": attempt.status}
 
 
+# --- on-session manual checkout (collection_mode = manual_checkout) ----------
+# A customer-present payment of an open invoice. On-session carries NO ₹15,000
+# silent-debit limit (that's an off-session rule), so any amount is payable
+# (ADR 0005, #50). It reuses the Payment Attempt + capture-webhook settlement
+# path, so the invoice is marked Paid only by the webhook — never on confirm.
+
+
+def create_invoice_payment_order(invoice: str, gateway: str | None = None) -> dict:
+	"""Open a gateway order for an Open invoice the customer pays on-session, and
+	record an Initiated Payment Attempt to settle against. Returns the checkout
+	handles; the invoice is not touched here."""
+	invoice_tbl = frappe.qb.DocType("Invoice")
+	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
+		invoice_tbl.name == invoice
+	).for_update().run()
+	inv = frappe.get_doc("Invoice", invoice)
+
+	if inv.status not in ("Open", "Overdue"):
+		return {"created": False, "reason": "not_open"}
+	if frappe.utils.flt(inv.expected_collection) <= 0:
+		return {"created": False, "reason": "nothing_due"}
+	in_flight = frappe.get_all(
+		"Payment Attempt", {"invoice": invoice, "status": ["in", _IN_FLIGHT]}, pluck="name"
+	)
+	if in_flight:
+		return {"created": False, "reason": "attempt_in_flight", "attempt": in_flight[0]}
+
+	gateway_name = gateway or _gateway_for_invoice(inv)
+	gw_doc = frappe.get_doc("Payment Gateway", gateway_name)
+	adapter = _adapter_for(gateway_name)
+	amount = frappe.utils.flt(inv.expected_collection)
+	receipt = f"inv-{invoice}-{frappe.generate_hash(length=8)}"
+	handles = adapter.create_order(
+		amount, inv.currency, receipt, notes={"invoice": invoice, "purpose": "invoice_payment"}
+	)
+	attempt = frappe.get_doc(
+		{
+			"doctype": "Payment Attempt",
+			"invoice": invoice,
+			"team": inv.team,
+			"gateway": gateway_name,
+			"amount": amount,
+			"currency": inv.currency,
+			"status": "Initiated",
+			"initiated_at": frappe.utils.now_datetime(),
+			"retry_number": frappe.db.count("Payment Attempt", {"invoice": invoice}),
+		}
+	).insert(ignore_permissions=True)
+	return {"created": True, "attempt": attempt.name, "gateway": gateway_name,
+			"adapter_key": gw_doc.adapter_key, "amount": amount, "currency": inv.currency,
+			"receipt": receipt, **handles}
+
+
+def confirm_invoice_payment(attempt: str, razorpay_order_id: str | None = None,
+							razorpay_payment_id: str | None = None,
+							razorpay_signature: str | None = None) -> dict:
+	"""Verify the on-session checkout callback and stamp the attempt with the gateway
+	payment id. The invoice flips to Paid on the capture webhook (webhook-truth),
+	not here — so a faked callback can never mark an invoice paid on its own."""
+	att = frappe.get_doc("Payment Attempt", attempt)
+	ok = _adapter_for(att.gateway).verify_payment_signature({
+		"razorpay_order_id": razorpay_order_id,
+		"razorpay_payment_id": razorpay_payment_id,
+		"razorpay_signature": razorpay_signature,
+	})
+	if not ok:
+		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
+	att.gateway_transaction_id = razorpay_payment_id
+	att.status = "Captured"  # gateway captured; invoice Paid waits on the webhook
+	att.save(ignore_permissions=True)
+	return {"confirmed": True, "attempt": att.name, "status": att.status}
+
+
+def _gateway_for_invoice(inv) -> str:
+	"""The gateway that settles this invoice's currency (on-session top-up rail)."""
+	from central.billing.gateways.registry import resolve_gateway_for_currency
+
+	return resolve_gateway_for_currency(inv.currency)
+
+
 def _resolve_method(inv, payment_method, gateway):
 	"""Method + gateway for the charge: explicit args, then subscription default,
 	then currency-based gateway lookup via the resolver."""

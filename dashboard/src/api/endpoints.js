@@ -38,6 +38,8 @@ export const API = {
 
   // ── Billing: mutations (billing:manage) ──
   payInvoice: `${D}.pay_invoice`,
+  payInvoiceCheckout: `${D}.pay_invoice_checkout`,
+  confirmInvoiceCheckout: `${D}.confirm_invoice_checkout`,
   createTopupOrder: `${D}.create_topup_order`,
   confirmTopup: `${D}.confirm_topup`,
   initiateCardSetup: `${D}.initiate_card_setup`,

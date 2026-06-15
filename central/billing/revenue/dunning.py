@@ -32,6 +32,20 @@ def _notify(invoice, message: str):
 	invoice.add_comment("Info", message)
 
 
+def _collection_mode(team: str) -> str | None:
+	"""The team's collection mode (ADR 0005), or None for a team with no profile."""
+	return frappe.db.get_value("Billing Profile", team, "collection_mode")
+
+
+def _overdue_message(invoice: str, mode: str | None) -> str:
+	"""Mode-aware overdue copy: tell the customer the action that settles it."""
+	if mode == "manual_checkout":
+		return f"Invoice {invoice} is overdue — pay it now to avoid suspension."
+	if mode == "prepaid":
+		return f"Invoice {invoice} is overdue — top up your wallet to settle it and avoid suspension."
+	return f"Invoice {invoice} is overdue. Please settle it to avoid suspension."
+
+
 def retry_payment(invoice_name: str) -> dict:
 	"""One dunning retry: charge the next untried method (primary→backup, #28),
 	notified with the reason on failure."""
@@ -102,7 +116,13 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# stages below escalate. Credits-only teams (no methods) skip straight there.
 	from central.billing.payments import collection
 
-	if inv.status == "Open" and collection.next_method_for(invoice_name, inv.team):
+	# Off-session retries only make sense for an auto-charge mode. manual_checkout
+	# (customer pays on-session) and action_required (paused at the ₹15k threshold)
+	# are never silently retried — dunning just escalates and asks them to act
+	# (ADR 0005, #50). prepaid/stripe_auto/emandate retry iff a method exists.
+	mode = _collection_mode(inv.team)
+	auto_charge = mode not in ("manual_checkout", "action_required")
+	if inv.status == "Open" and auto_charge and collection.next_method_for(invoice_name, inv.team):
 		retry_payment(invoice_name)
 		actions.append("retry")
 		inv.reload()
@@ -119,7 +139,8 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			from central.billing.platform import notifications
 
 			notifications.notify(
-				inv.team, "Invoice Overdue", context={"invoice": invoice_name},
+				inv.team, "Invoice Overdue", message=_overdue_message(invoice_name, mode),
+				context={"invoice": invoice_name},
 				reference_doctype="Invoice", reference_name=invoice_name,
 			)
 		if sub:

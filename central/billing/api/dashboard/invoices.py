@@ -262,6 +262,31 @@ def pay_invoice(invoice: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+def pay_invoice_checkout(invoice: str | None = None) -> dict:
+	"""Open an on-session gateway checkout to pay an invoice yourself
+	(collection_mode = manual_checkout). Any amount — on-session has no ₹15k limit."""
+	team = frappe.db.get_value("Invoice", invoice, "team")
+	_require_manage(team)
+	from central.billing.payments import charges
+
+	return charges.create_invoice_payment_order(invoice)
+
+
+@frappe.whitelist(methods=["POST"])
+def confirm_invoice_checkout(attempt: str | None = None, razorpay_order_id: str | None = None,
+							 razorpay_payment_id: str | None = None,
+							 razorpay_signature: str | None = None) -> dict:
+	"""Verify the on-session checkout callback; the invoice settles on the webhook."""
+	team = frappe.db.get_value("Payment Attempt", attempt, "team")
+	_require_manage(team)
+	from central.billing.payments import charges
+
+	return charges.confirm_invoice_payment(
+		attempt, razorpay_order_id=razorpay_order_id,
+		razorpay_payment_id=razorpay_payment_id, razorpay_signature=razorpay_signature)
+
+
+@frappe.whitelist(methods=["POST"])
 def create_topup_order(team: str | None = None, amount: float | None = None,
 					   gateway: str | None = None) -> dict:
 	"""Start a wallet top-up by creating a real gateway order. The UI opens the

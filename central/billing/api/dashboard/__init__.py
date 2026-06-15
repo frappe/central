@@ -37,8 +37,10 @@ from central.billing.api.dashboard.invoices import (
 	get_invoice,
 	list_invoices,
 	list_payment_attempts,
+	confirm_invoice_checkout,
 	list_subscriptions,
 	pay_invoice,
+	pay_invoice_checkout,
 	purchase_credits,
 )
 from central.billing.api.dashboard.methods import (
@@ -62,7 +64,7 @@ __all__ = [
 	"list_notifications", "get_notification_preferences", "save_notification_preferences",
 	"get_forecast", "list_subscriptions", "list_invoices", "get_invoice", "list_payment_attempts",
 	"get_credit_balance", "credit_ledger", "purchase_credits", "pay_invoice", "create_topup_order",
-	"confirm_topup",
+	"confirm_topup", "pay_invoice_checkout", "confirm_invoice_checkout",
 	"list_payment_methods", "get_payment_method_options", "initiate_card_setup", "confirm_card",
 	"add_demo_card", "setup_payment_method_order", "confirm_payment_method_order",
 	"remove_payment_method", "set_default_payment_method", "reorder_payment_methods",
