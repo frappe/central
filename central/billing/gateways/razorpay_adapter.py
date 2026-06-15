@@ -46,6 +46,13 @@ class RazorpayAdapter(GatewayAdapter):
 		"webhook_secret": "razorpay_webhook_secret",
 	}
 
+	# RBI caps a silent (off-session) recurring debit at ₹15,000; above it the
+	# customer must re-authenticate every cycle, so we don't auto-charge there
+	# (ADR 0005). Each debit is preceded by a pre-debit notification.
+	supports_off_session_charge = True
+	max_silent_charge = 15_00_000  # ₹15,000 in paise
+	requires_predebit_notice = True
+
 	def _client(self):
 		return razorpay.Client(
 			auth=(self.get_credential("api_key"), self.get_credential("api_secret"))
@@ -107,6 +114,9 @@ class RazorpayAdapter(GatewayAdapter):
 			"order_id": order.get("id"),
 			"customer_id": setup_data.get("customer_id"),
 			"key_id": self.get_credential("api_key"),
+			# Checkout must run in recurring mode (with the customer_id) for the token
+			# to be issued — otherwise it processes a one-time ₹1 charge that fails.
+			"recurring": 1,
 		}
 
 	def validate_payment_method(self, payment_method) -> bool:

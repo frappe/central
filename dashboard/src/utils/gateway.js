@@ -20,7 +20,7 @@ function loadScript(src) {
 export async function openRazorpayCheckout(order, { name = 'Central', description = '' } = {}) {
   await loadScript('https://checkout.razorpay.com/v1/checkout.js')
   return new Promise((resolve, reject) => {
-    const rzp = new window.Razorpay({
+    const options = {
       // Backend (create_order / setup_payment_method) returns the publishable
       // key id as `key_id`; keep the older aliases as fallbacks.
       key: order.key_id || order.key || order.razorpay_key,
@@ -38,7 +38,13 @@ export async function openRazorpayCheckout(order, { name = 'Central', descriptio
           razorpay_token_id: resp.razorpay_token_id,
         }),
       modal: { ondismiss: () => reject(new Error('cancelled')) },
-    })
+    }
+    // Associate the payment with the team's reused customer (also lets top-ups
+    // prefill it), and for a mandate setup run Checkout in recurring mode — the
+    // only way Razorpay issues the token the confirm step authorises.
+    if (order.customer_id) options.customer_id = order.customer_id
+    if (order.recurring) options.recurring = 1
+    const rzp = new window.Razorpay(options)
     rzp.open()
   })
 }
