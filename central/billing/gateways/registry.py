@@ -39,15 +39,16 @@ def supported_currencies() -> list[str]:
 
 
 def get_adapter(gateway) -> GatewayAdapter:
-	"""Return the adapter instance for a Payment Gateway doc, keyed by adapter_key."""
-	from central.billing.gateways.paypal_adapter import PayPalAdapter
+	"""Return the adapter instance for a Payment Gateway doc, keyed by adapter_key.
+
+	PayPal is intentionally not a standalone adapter (ADR 0005): it's a one-time
+	method *inside* Razorpay's international checkout, not a separate gateway."""
 	from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 	from central.billing.gateways.stripe_adapter import StripeAdapter
 
 	adapters = {
 		"Stripe": StripeAdapter,
 		"Razorpay": RazorpayAdapter,
-		"Paypal": PayPalAdapter,
 	}
 
 	adapter_class = adapters.get(gateway.adapter_key)
