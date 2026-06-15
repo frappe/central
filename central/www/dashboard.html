@@ -1,39 +1,20 @@
-{% extends "templates/web.html" %}
-
-{# Full-bleed SPA: strip the website navbar/footer/breadcrumbs so the Vue app
-   owns the whole viewport. Assets are injected from the Vite manifest by
-   dashboard.py (always — this page renders the built bundle, not a dev server). #}
-
-{% block title %}Central{% endblock %}
-
-{% block head %}
-<style>
-  html, body { margin: 0; padding: 0; height: 100%; }
-  body { background: #fff; }
-  #app { height: 100vh; }
-  /* Hide any residual website chrome that slips through. */
-  .navbar, .web-footer, footer.web-footer { display: none !important; }
-</style>
-{% for path in css_files %}
-<link rel="stylesheet" href="{{ path }}">
-{% endfor %}
-{% endblock %}
-
-{% block banner %}{% endblock %}
-{% block navbar %}{% endblock %}
-{% block footer %}{% endblock %}
-
-{% block content %}
-<div id="app"></div>
-{% endblock %}
-
-{% block script %}
-{# CSRF token for the SPA's POST API calls. frappe-ui reads window.csrf_token
-   and sends it as X-Frappe-CSRF-Token; it ignores the value if it still equals
-   the literal "{{ csrf_token }}" placeholder, so this must render server-side.
-   Plain (non-module) script runs before the deferred module entry below. #}
-<script>window.csrf_token = "{{ csrf_token }}";</script>
-{% for path in js_files %}
-<script type="module" src="{{ path }}"></script>
-{% endfor %}
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Central Console</title>
+    <script type="module" crossorigin src="/assets/central/dashboard/assets/index-CUUHX3WI.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/central/dashboard/assets/index-jUYDybV1.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  
+          <script>
+              {% for key in boot %}
+              window["{{ key }}"] = {{ boot[key] | tojson }};
+              {% endfor %}
+          </script>
+          </body>
+          
+</html>

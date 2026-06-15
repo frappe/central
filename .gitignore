@@ -56,4 +56,5 @@ jspm_packages/
 
 # Built Central Console SPA (produced by `cd dashboard && yarn build`)
 central/public/dashboard/
+central/www/dashboard.html
 central/public/node_modules

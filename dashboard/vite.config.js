@@ -3,18 +3,17 @@ import vue from '@vitejs/plugin-vue'
 import frappeui from 'frappe-ui/vite'
 import path from 'path'
 
-// Built assets are served by Frappe from central/public/dashboard at
-// /assets/central/dashboard/, and the SPA index is mounted at /dashboard
-// (see central/hooks.py website_route_rules).
 export default defineConfig({
-  base: '/assets/central/dashboard/',
   plugins: [
     frappeui({
-      // We run inside the Central bench, so keep the Frappe-specific helpers:
-      // frappeProxy auto-proxies /api to the local site during `yarn dev`.
+      frontendRoute: '/dashboard',
       frappeProxy: true,
       jinjaBootData: true,
-      buildConfig: false,
+      buildConfig: {
+        outDir: path.resolve(__dirname, '../central/public/dashboard'),
+        baseUrl: '/assets/central/dashboard/',
+        indexHtmlPath: path.resolve(__dirname, '../central/www/dashboard.html'),
+      },
     }),
     vue(),
   ],
