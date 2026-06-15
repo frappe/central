@@ -31,10 +31,12 @@ from central.billing.platform.sync import receive_meter_rollups, receive_usage_e
 from central.billing.demo._factory import (
 	ANCHOR,
 	PLAN_SIZES,
+	STRIPE,
 	_catalog,
 	_ensure_demo_team,
 	_ensure_signing_key,
 	_failed_attempt,
+	_gateway_customer,
 	_gateways,
 	_month_periods,
 	_payment_setup,
@@ -45,6 +47,10 @@ from central.billing.demo._factory import (
 	_tiers,
 	_wipe_all,
 )
+
+# Wallet-top-up states: no card on file, but the team funds its wallet through a
+# gateway top-up — which now mints a reusable Gateway Customer (the new top-up path).
+_TOPUP_STATES = ("credits", "credits_full", "credits_partial")
 
 # Card teams: which historical month indices show a failed-then-settled trail in
 # the invoice Activity (month index → failed retries before the capture). A few
@@ -183,6 +189,10 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
 	gateway, pm = _payment_setup(team, slug, currency, state)
+	# A card/UPI team already got its Gateway Customer in _payment_setup. A top-up-only
+	# team has no card, but its wallet top-up now mints + reuses a customer too.
+	if pm is None and state in _TOPUP_STATES:
+		_gateway_customer(team, STRIPE[currency], f"cus_{slug}")
 
 	periods = _month_periods(months)
 	first_start = periods[0][0] if periods else ANCHOR
