@@ -199,7 +199,8 @@ class RazorpayAdapter(GatewayAdapter):
 	def get_transaction_status(self, gateway_txn_id: str) -> str:
 		return self._client().payment.fetch(gateway_txn_id).get("status")
 
-	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None) -> dict:
+	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None,
+					 customer: str | None = None) -> dict:
 		"""A one-time Razorpay order for a wallet top-up; the UI opens Checkout against it."""
 		order = self._client().order.create({
 			"amount": int(round((amount or 0) * 100)),
@@ -210,9 +211,11 @@ class RazorpayAdapter(GatewayAdapter):
 		# `amount_in_subunits` (paise) is what Razorpay Checkout reads; it is kept
 		# distinct from the human-currency `amount` create_topup_order returns, so
 		# the spread of these handles never clobbers the rupee amount confirm_topup
-		# credits the wallet with.
+		# credits the wallet with. `customer_id` rides along (an order takes no customer
+		# server-side) so Checkout prefills the same customer reused for recurring charges.
 		return {"order_id": order.get("id"), "key_id": self.get_credential("api_key"),
-				"amount_in_subunits": order.get("amount"), "currency": (currency or "INR").upper()}
+				"amount_in_subunits": order.get("amount"), "currency": (currency or "INR").upper(),
+				"customer_id": customer}
 
 	def create_customer(self, team) -> str:
 		# Team.owner_user is a Link to User, whose name IS the email address.

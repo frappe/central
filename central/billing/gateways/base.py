@@ -161,13 +161,17 @@ class GatewayAdapter(ABC):
 		unsupported and the admin enters the secret manually."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support register_webhook")
 
-	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None) -> dict:
+	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None,
+					 customer: str | None = None) -> dict:
 		"""Create a one-time checkout order/intent the client UI completes (top-up).
-		Returns the client-side handles (order_id + key / client_secret)."""
+		`customer` is the gateway customer id the payment attaches to, so the method
+		is reusable for later off-session charges. Returns the client-side handles
+		(order_id + key / client_secret)."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support create_order")
 
 	def create_checkout_session(self, amount, currency: str, receipt: str,
-								success_url: str, cancel_url: str, notes: dict | None = None) -> dict:
+								success_url: str, cancel_url: str, notes: dict | None = None,
+								customer: str | None = None) -> dict:
 		"""Create a gateway-hosted checkout the client redirects to (Stripe Checkout).
 		Returns `{checkout_url, session_id}`. The wallet is credited only on return,
 		after the session is confirmed paid (see get_checkout_session)."""
