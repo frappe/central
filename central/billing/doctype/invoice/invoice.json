@@ -42,7 +42,9 @@
   "erpnext_sync_attempts",
   "erpnext_next_retry_at",
   "erpnext_sync_error",
-  "pdf_url"
+  "pdf_url",
+  "predebit_notified_at",
+  "predebit_charge_after"
  ],
  "fields": [
   {
@@ -260,6 +262,20 @@
    "fieldname": "pdf_url",
    "fieldtype": "Data",
    "label": "PDF URL"
+  },
+  {
+   "fieldname": "predebit_notified_at",
+   "fieldtype": "Datetime",
+   "label": "Pre-debit Notified At",
+   "read_only": 1,
+   "description": "When the RBI pre-debit notification was sent for an e-mandate off-session debit (ADR 0005)."
+  },
+  {
+   "fieldname": "predebit_charge_after",
+   "fieldtype": "Datetime",
+   "label": "Pre-debit Charge After",
+   "read_only": 1,
+   "description": "Earliest time the e-mandate off-session debit may run (notify + 24h)."
   }
  ],
  "index_web_pages_for_search": 1,
