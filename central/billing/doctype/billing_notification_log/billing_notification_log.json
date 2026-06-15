@@ -24,7 +24,7 @@
   {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "reqd": 1},
   {
    "fieldname": "event_type", "fieldtype": "Select", "in_list_view": 1, "label": "Event Type",
-   "options": "Payment Success\nPayment Failure\nPayment Retry\nInvoice Overdue\nCredit Low\nCard Expiry\nMandate Reauth\nTrial Expiring"
+   "options": "Payment Success\nPayment Failure\nPayment Retry\nInvoice Overdue\nCredit Low\nCard Expiry\nMandate Reauth\nTrial Expiring\nAction Required"
   },
   {"default": "email", "fieldname": "channel", "fieldtype": "Data", "label": "Channel"},
   {

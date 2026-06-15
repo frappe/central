@@ -16,6 +16,7 @@ stays stable.
 from central.billing.api.dashboard.account import (
 	get_billing_profile,
 	get_billing_settings,
+	get_collection_status,
 	get_notification_preferences,
 	get_team_overview,
 	get_trust_tier,
@@ -24,6 +25,7 @@ from central.billing.api.dashboard.account import (
 	save_billing_profile,
 	save_billing_settings,
 	save_notification_preferences,
+	set_collection_mode,
 	whoami,
 )
 from central.billing.api.dashboard.invoices import (
@@ -55,6 +57,7 @@ from central.billing.api.dashboard.methods import (
 __all__ = [
 	"whoami", "get_billing_profile", "save_billing_profile", "get_billing_settings",
 	"save_billing_settings", "get_team_overview", "get_trust_tier",
+	"get_collection_status", "set_collection_mode",
 	"list_switchable_teams",
 	"list_notifications", "get_notification_preferences", "save_notification_preferences",
 	"get_forecast", "list_subscriptions", "list_invoices", "get_invoice", "list_payment_attempts",

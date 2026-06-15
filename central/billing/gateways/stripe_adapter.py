@@ -48,6 +48,11 @@ class StripeAdapter(GatewayAdapter):
 		"webhook_secret": "stripe_webhook_secret",
 	}
 
+	# Off-session PaymentIntents charge any amount without re-auth (ADR 0005) —
+	# the saved-method / postpaid rail. No silent ceiling.
+	supports_off_session_charge = True
+	max_silent_charge = None
+
 	def _configure(self):
 		stripe.api_key = self.get_credential("api_secret")
 		# https://docs.stripe.com/rate-limits#object-lock-timeouts
