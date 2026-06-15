@@ -32,6 +32,7 @@ export const API = {
   subscriptions: `${D}.list_subscriptions`,
   billingProfile: `${D}.get_billing_profile`,
   billingSettings: `${D}.get_billing_settings`,
+  collectionStatus: `${D}.get_collection_status`,
   notifications: `${D}.list_notifications`,
   notificationPreferences: `${D}.get_notification_preferences`,
 
@@ -48,6 +49,7 @@ export const API = {
   removePaymentMethod: `${D}.remove_payment_method`,
   saveBillingProfile: `${D}.save_billing_profile`,
   saveBillingSettings: `${D}.save_billing_settings`,
+  setCollectionMode: `${D}.set_collection_mode`,
   saveNotificationPreferences: `${D}.save_notification_preferences`,
 
   // ── Team & identity (central.iam) ──

@@ -149,7 +149,8 @@ def get_collection_status(team: str | None = None) -> dict:
 	st = collection_mode.evaluate(team, projected_amount=projected)
 	wallet = frappe.utils.flt(credits.get_balance(team)["balance"])
 	return {**st, "projected_total": projected, "wallet_balance": wallet,
-			"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2))}
+			"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
+			"currency": _team_currency(team)}
 
 
 @frappe.whitelist(methods=["POST"])

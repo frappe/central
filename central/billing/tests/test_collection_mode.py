@@ -91,6 +91,49 @@ class TestCollectionMode(IntegrationTestCase):
 			collection_mode.choose(TEAM, "stripe_auto")
 
 
+class TestInvoiceTimeTrip(IntegrationTestCase):
+	"""pay_invoice refuses a Razorpay debit over ₹15k and trips Action Required
+	instead of attempting a doomed off-session charge (#50 item 1)."""
+
+	def setUp(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		_set_mode(TEAM, "emandate")
+		frappe.db.delete("Billing Notification Log", {"team": TEAM})
+		frappe.db.delete("Payment Attempt", {"team": TEAM})
+		frappe.db.delete("Invoice", {"team": TEAM})
+		self.gw = make_razorpay_gateway("GW-Collect-RZP").name
+		self.pm = frappe.get_doc({
+			"doctype": "Payment Method", "team": TEAM, "gateway": self.gw,
+			"method_type": "UPI Autopay", "status": "Active", "display_label": "UPI",
+			"gateway_method_id": "tok_x", "gateway_customer_id": "cus_x",
+			"mandate_max_amount": 200000, "mandate_currency": "INR", "is_default": 1,
+			"validated_at": frappe.utils.now_datetime(),
+		}).insert(ignore_permissions=True).name
+
+	def _invoice(self, amount):
+		return frappe.get_doc({
+			"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Open",
+			"period_start": "2026-06-01", "period_end": "2026-06-30", "currency": "INR",
+			"subtotal": amount, "total": amount, "expected_collection": amount,
+			"items": [{"resource_type": "bundle", "plan": "p", "rate": amount, "days": 30, "amount": amount}],
+		}).insert(ignore_permissions=True).name
+
+	def test_charge_over_15k_trips_action_required_and_does_not_attempt(self):
+		from central.billing.payments import charges
+
+		inv = self._invoice(20000)  # ₹20,000 — over the silent ceiling
+		out = charges.pay_invoice(inv, payment_method=self.pm, gateway=self.gw)
+		self.assertFalse(out["charged"])
+		self.assertEqual(out["reason"], "action_required")
+		# No Payment Attempt was created — we never hit the gateway.
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
+		self.assertEqual(
+			frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "action_required")
+
+
 class TestAdapterSilentCharge(IntegrationTestCase):
 	"""The capability flags that drive which rail may auto-charge (ADR 0005)."""
 

@@ -71,6 +71,18 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 
 	method_name, gateway_name = _resolve_method(inv, payment_method, gateway)
 	method = frappe.get_doc("Payment Method", method_name)
+	adapter = _adapter_for(gateway_name)
+
+	# A debit the gateway can't pull silently (Razorpay > ₹15,000 — an RBI off-session
+	# rule) is never attempted: it would just fail. Instead raise Action Required so
+	# the customer picks manual checkout / prepaid (ADR 0005, #50). Stripe (no silent
+	# ceiling) and sub-₹15k charges pass straight through.
+	amount_minor = int(round(frappe.utils.flt(inv.expected_collection) * 100))
+	if not adapter.can_charge_silently(amount_minor):
+		from central.billing.payments import collection_mode
+
+		collection_mode.trip(inv.team, "invoice_over_threshold")
+		return {"charged": False, "reason": "action_required", "invoice": invoice}
 
 	attempt = frappe.get_doc(
 		{
@@ -94,7 +106,7 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		name=invoice,
 	)
 	try:
-		result = _adapter_for(gateway_name).charge(charge_input, method, attempt.idempotency_key)
+		result = adapter.charge(charge_input, method, attempt.idempotency_key)
 	except GatewayTimeout as e:
 		# Transient: leave the attempt initiated so a retry reuses the same key.
 		attempt.failure_reason = str(e)[:140]
