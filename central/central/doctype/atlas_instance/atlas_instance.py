@@ -25,6 +25,8 @@ class AtlasInstance(Document):
 	@frappe.whitelist()
 	def test_connection(self) -> dict:
 		"""Operator action: ping the Atlas API and record reachability."""
+		if "System Manager" not in frappe.get_roles():
+			frappe.throw("Not permitted.", frappe.PermissionError)
 		from central.atlas_client import AtlasClient
 
 		try:
