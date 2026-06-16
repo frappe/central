@@ -1,85 +1,101 @@
 <script setup>
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { Badge, Button } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import { Badge, Button, useCall } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import StatTile from '@/components/StatTile.vue'
-import MockBanner from '@/components/MockBanner.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useTeam } from '@/composables/useTeam'
 import { operationalTheme } from '@/utils/status'
-import { MOCK_VMS, MOCK_CLUSTERS, clusterLabel } from './mock'
+import { API, m } from '@/api/endpoints'
 
-// 🟡 Mock. Single registry of everything the team has provisioned — counts by
-// status, cluster breakdown, recent assets. Each asset carries its resource_id
-// (the Agent's source-of-truth handle that reconciles with billing line items).
-const router = useRouter()
-const { canManageAtlas } = useCapabilities()
+// Live registry: the team's VMs mirrored from every Atlas cluster, grouped by
+// cluster. "Open" mints a scoped SSO assertion and redirects into that VM's bench.
+const { currentTeam } = useTeam()
+const { has } = useCapabilities()
+
+const registry = useCall({
+  url: m(API.atlasRegistry),
+  params: () => ({ team: currentTeam.value }),
+  refetch: true,
+})
+
+const assets = computed(() => registry.data?.assets ?? [])
+const stale = computed(() => registry.data?.stale ?? [])
+const canOpen = computed(() => has('vm:open'))
 
 const counts = computed(() => {
-  const c = { running: 0, stopped: 0, terminated: 0 }
-  for (const vm of MOCK_VMS) c[vm.status] = (c[vm.status] || 0) + 1
+  const c = { Running: 0, Stopped: 0, Terminated: 0 }
+  for (const a of assets.value) c[a.status] = (c[a.status] || 0) + 1
   return c
 })
 
-const byCluster = computed(() =>
-  MOCK_CLUSTERS.filter((c) => c.resources > 0).map((c) => ({
-    label: c.label,
-    resources: c.resources,
-  })),
-)
+const clusters = computed(() => {
+  const map = {}
+  for (const a of assets.value) (map[a.cluster] ||= []).push(a)
+  return Object.entries(map).map(([cluster, vms]) => ({ cluster, vms }))
+})
 
-const recent = computed(() => MOCK_VMS.filter((vm) => vm.status !== 'terminated').slice(0, 6))
+const opening = ref('')
+const openCall = useCall({ url: m(API.getBenchLink), method: 'GET', immediate: false })
+
+async function openVm(asset) {
+  opening.value = asset.resource_id
+  try {
+    const res = await openCall.submit({ asset: asset.resource_id })
+    if (res?.url) window.location.href = res.url
+  } finally {
+    opening.value = ''
+  }
+}
 </script>
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :items="[{ label: 'Atlas' }, { label: 'Registry' }]">
-      <template #actions>
-        <Button v-if="canManageAtlas" variant="solid" label="Provision resource" disabled />
-      </template>
-    </PageHeader>
+    <PageHeader :items="[{ label: 'Atlas' }, { label: 'Registry' }]" />
 
     <div class="body-container space-y-6 pb-40 pt-5">
-      <MockBanner />
+      <p v-if="stale.length" class="rounded bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3">
+        Showing last-known data — couldn't reach: {{ stale.join(', ') }}
+      </p>
 
       <div class="grid gap-4 sm:grid-cols-3">
-        <StatTile label="Running" :value="String(counts.running)" />
-        <StatTile label="Stopped" :value="String(counts.stopped)" />
-        <StatTile label="Terminated" :value="String(counts.terminated)" />
+        <StatTile label="Running" :value="String(counts.Running)" />
+        <StatTile label="Stopped" :value="String(counts.Stopped)" />
+        <StatTile label="Terminated" :value="String(counts.Terminated)" />
       </div>
 
-      <section class="rounded border border-outline-gray-1 px-4 py-3">
-        <h2 class="text-base text-ink-gray-8">By cluster</h2>
-        <ul class="mt-2 space-y-1.5">
-          <li v-for="c in byCluster" :key="c.label" class="flex items-center gap-3">
-            <span class="w-44 shrink-0 text-sm text-ink-gray-7">{{ c.label }}</span>
-            <div class="h-2 flex-1 overflow-hidden rounded bg-surface-gray-2">
-              <div class="h-full rounded bg-surface-gray-5" :style="{ width: `${c.resources * 20}%` }" />
-            </div>
-            <span class="w-6 text-right text-p-sm text-ink-gray-6">{{ c.resources }}</span>
-          </li>
-        </ul>
-      </section>
+      <p v-if="!registry.loading && !assets.length" class="text-sm text-ink-gray-5">
+        No VMs for this team yet.
+      </p>
 
-      <section class="rounded border border-outline-gray-1">
+      <section
+        v-for="group in clusters"
+        :key="group.cluster"
+        class="rounded border border-outline-gray-1"
+      >
         <header class="border-b border-outline-gray-1 px-4 py-3">
-          <h2 class="text-base text-ink-gray-8">Recent assets</h2>
+          <h2 class="text-base text-ink-gray-8">{{ group.cluster }}</h2>
         </header>
         <ul class="divide-y divide-outline-gray-1">
           <li
-            v-for="vm in recent"
+            v-for="vm in group.vms"
             :key="vm.resource_id"
             class="flex items-center justify-between gap-3 px-4 py-3"
           >
             <div class="min-w-0">
-              <p class="truncate text-sm text-ink-gray-8">{{ vm.name }}</p>
-              <p class="text-p-sm text-ink-gray-5">
-                VM · {{ clusterLabel(vm.cluster) }} · {{ vm.resource_id }}
-              </p>
+              <p class="truncate text-sm text-ink-gray-8">{{ vm.resource_id }}</p>
+              <p class="text-p-sm text-ink-gray-5">VM · {{ group.cluster }}</p>
             </div>
             <div class="flex items-center gap-3">
-              <Badge :theme="operationalTheme(vm.status)" :label="vm.status" />
-              <Button variant="ghost" label="Open" @click="router.push({ name: 'AtlasVMs' })" />
+              <Badge :theme="operationalTheme(vm.status.toLowerCase())" :label="vm.status" />
+              <Button
+                v-if="canOpen"
+                variant="ghost"
+                label="Open"
+                :loading="opening === vm.resource_id"
+                :disabled="vm.status !== 'Running' || !vm.gateway_url"
+                @click="openVm(vm)"
+              />
             </div>
           </li>
         </ul>
