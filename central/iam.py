@@ -7,6 +7,10 @@ import frappe
 
 OPERATOR_BYPASS_ROLE = "System Manager"
 
+# Bumped whenever the capability taxonomy changes. Stamped into the SSO assertion
+# (`cap_version`) so a bench can detect drift from its own `BENCH_CAPS` mirror.
+CAPABILITY_VERSION = 1
+
 
 def user_has_operator_bypass(user: str | None = None) -> bool:
 	"""The only non-team-membership bypass in Central IAM."""
