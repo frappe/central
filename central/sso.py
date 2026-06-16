@@ -94,15 +94,18 @@ def mint_bench_assertion(user: str, team: str) -> str:
 
 
 @frappe.whitelist(methods=["GET"])
-def get_bench_link(team: str | None = None, gateway_url: str | None = None) -> dict:
+def get_bench_link(asset: str | None = None, team: str | None = None, gateway_url: str | None = None) -> dict:
 	"""Mint a scoped SSO assertion and return the bench URL to redirect to.
 
-	`vm:open` on the team is the gate. The target bench is passed in (the VM's
-	gateway_url, wired in #28) or falls back to the `bench_sso_redirect` config.
-	"""
+	Pass `asset` (a VM resource_id) to open that VM's bench — its team and
+	gateway are resolved and validated (Running, has a gateway, Active cluster).
+	`vm:open` on the team is the gate. `gateway_url` is the dev path used until the
+	registry "Open" wires `asset` in (#30)."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		frappe.throw("Sign in first.", frappe.PermissionError)
+	if asset:
+		team, gateway_url = _resolve_asset_target(asset, team)
 	team = team or _only_team(user)
 	if not can(user, team, "vm:open"):
 		frappe.throw("You can't open benches for this team.", frappe.PermissionError)
@@ -110,6 +113,22 @@ def get_bench_link(team: str | None = None, gateway_url: str | None = None) -> d
 	if not target.endswith("/sso"):
 		target += "/sso"
 	return {"url": f"{target}?assertion={mint_bench_assertion(user, team)}"}
+
+
+def _resolve_asset_target(asset: str, team: str | None) -> tuple[str, str]:
+	"""Resolve a VM Asset to (team, gateway_url), refusing anything not openable.
+	get_doc enforces the team-scoped Asset read perm, so a user who can't see the
+	VM can't probe it here either."""
+	doc = frappe.get_doc("Asset", asset)
+	if team and team != doc.team:
+		frappe.throw("That VM isn't in this team.", frappe.PermissionError)
+	if doc.status != "Running":
+		frappe.throw(f"VM is {doc.status.lower()}, not running.", frappe.ValidationError)
+	if not doc.gateway_url:
+		frappe.throw("VM has no gateway yet.", frappe.ValidationError)
+	if frappe.db.get_value("Atlas Instance", doc.cluster, "status") != "Active":
+		frappe.throw("That cluster is not active.", frappe.ValidationError)
+	return doc.team, doc.gateway_url
 
 
 def _only_team(user: str) -> str:
