@@ -2,13 +2,52 @@
  {
   "capabilities": [
    {
+    "capability": "app:install"
+   },
+   {
     "capability": "asset:view"
+   },
+   {
+    "capability": "bench:config"
+   },
+   {
+    "capability": "bench:manage"
    },
    {
     "capability": "billing:manage"
    },
    {
     "capability": "billing:view"
+   },
+   {
+    "capability": "db:access"
+   },
+   {
+    "capability": "log:view"
+   },
+   {
+    "capability": "site:backup"
+   },
+   {
+    "capability": "site:config"
+   },
+   {
+    "capability": "site:create"
+   },
+   {
+    "capability": "site:delete"
+   },
+   {
+    "capability": "site:migrate"
+   },
+   {
+    "capability": "site:restore"
+   },
+   {
+    "capability": "site:view"
+   },
+   {
+    "capability": "task:run"
    },
    {
     "capability": "team:delete"
@@ -55,7 +94,46 @@
  {
   "capabilities": [
    {
+    "capability": "app:install"
+   },
+   {
     "capability": "asset:view"
+   },
+   {
+    "capability": "bench:config"
+   },
+   {
+    "capability": "bench:manage"
+   },
+   {
+    "capability": "db:access"
+   },
+   {
+    "capability": "log:view"
+   },
+   {
+    "capability": "site:backup"
+   },
+   {
+    "capability": "site:config"
+   },
+   {
+    "capability": "site:create"
+   },
+   {
+    "capability": "site:delete"
+   },
+   {
+    "capability": "site:migrate"
+   },
+   {
+    "capability": "site:restore"
+   },
+   {
+    "capability": "site:view"
+   },
+   {
+    "capability": "task:run"
    },
    {
     "capability": "team:edit"
@@ -99,7 +177,34 @@
  {
   "capabilities": [
    {
+    "capability": "app:install"
+   },
+   {
     "capability": "asset:view"
+   },
+   {
+    "capability": "db:access"
+   },
+   {
+    "capability": "log:view"
+   },
+   {
+    "capability": "site:backup"
+   },
+   {
+    "capability": "site:config"
+   },
+   {
+    "capability": "site:migrate"
+   },
+   {
+    "capability": "site:restore"
+   },
+   {
+    "capability": "site:view"
+   },
+   {
+    "capability": "task:run"
    },
    {
     "capability": "vm:create"
@@ -140,6 +245,12 @@
     "capability": "asset:view"
    },
    {
+    "capability": "log:view"
+   },
+   {
+    "capability": "site:view"
+   },
+   {
     "capability": "vm:view"
    }
   ],
@@ -161,6 +272,9 @@
    },
    {
     "capability": "billing:view"
+   },
+   {
+    "capability": "site:view"
    },
    {
     "capability": "vm:view"

@@ -28,7 +28,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Plane",
-   "options": "central\natlas",
+   "options": "central\natlas\nbench",
    "reqd": 1
   },
   {
