@@ -30,12 +30,20 @@ def supported_currencies() -> list[str]:
 	"""Currencies a team can actually be billed in — every currency that an
 	enabled Payment Gateway is the default for. These are the only choices the
 	billing-profile currency picker offers, so a team can never select a currency
-	it can't be charged or topped up in."""
+	it can't be charged or topped up in.
+
+	When no gateway is configured yet (e.g. a fresh site mid-onboarding), falls back
+	to the site's default currency so the picker isn't a dead end and onboarding can
+	complete; adding a real gateway later constrains the set to what it can charge."""
 	rows = frappe.get_all(
 		"Payment Gateway Currency", filters={"is_default": 1}, fields=["currency", "parent"]
 	)
 	enabled = set(frappe.get_all("Payment Gateway", {"is_enabled": 1}, pluck="name"))
-	return sorted({r.currency for r in rows if r.parent in enabled and r.currency})
+	currencies = sorted({r.currency for r in rows if r.parent in enabled and r.currency})
+	if currencies:
+		return currencies
+	default = frappe.db.get_default("currency")
+	return [default] if default else []
 
 
 def get_adapter(gateway) -> GatewayAdapter:
