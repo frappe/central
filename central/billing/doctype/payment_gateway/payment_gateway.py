@@ -19,6 +19,13 @@ class PaymentGateway(Document):
 
 		return get_adapter(self)
 
+	def is_paypal_via_razorpay(self) -> bool:
+		"""A PayPal gateway whose settlement is delegated to Razorpay (ADR 0005 path,
+		re-introduced as an opt-in mode). It holds no PayPal merchant account, so it
+		needs no PayPal keys/webhook of its own — the money moves through, and is
+		reconciled against, the configured Razorpay gateway."""
+		return self.adapter_key == "Paypal" and self.paypal_settlement_mode == "Via Razorpay"
+
 	def validate(self):
 		if self._should_validate_credentials():
 			self._validate_credentials()
@@ -64,7 +71,10 @@ class PaymentGateway(Document):
 
 	def _should_validate_credentials(self) -> bool:
 		"""Validate only when freshly-typed keys are present — so unrelated edits
-		don't hammer the gateway."""
+		don't hammer the gateway. A Via-Razorpay PayPal row carries no keys of its
+		own, so there is nothing to validate (settlement runs on Razorpay)."""
+		if self.is_paypal_via_razorpay():
+			return False
 		return self._validation_active() and self._credentials_entered()
 
 	def _credentials_entered(self) -> bool:
@@ -111,6 +121,11 @@ class PaymentGateway(Document):
 		"""A gateway only goes live once its keys have proven out — otherwise an
 		inbound webhook has no secret to verify against and charges can't settle."""
 		if not self._validation_active():
+			return
+		# Via-Razorpay PayPal settles on Razorpay, which carries its own validated
+		# keys — this row needs none, so don't block enabling it on a validation it
+		# can never have.
+		if self.is_paypal_via_razorpay():
 			return
 		if self.is_enabled and not self.credentials_validated_at:
 			frappe.throw(

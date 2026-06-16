@@ -17,7 +17,12 @@ function loadScript(src) {
 }
 
 // Razorpay Checkout — resolves with the payment handles to verify server-side.
-export async function openRazorpayCheckout(order, { name = 'Central', description = '' } = {}) {
+// `displayPayPal` surfaces PayPal inside the sheet (a Via-Razorpay PayPal top-up,
+// ADR 0005): PayPal is collected as a method here and settles through Razorpay.
+export async function openRazorpayCheckout(
+  order,
+  { name = 'Central', description = '', displayPayPal = false } = {},
+) {
   await loadScript('https://checkout.razorpay.com/v1/checkout.js')
   return new Promise((resolve, reject) => {
     const options = {
@@ -44,7 +49,42 @@ export async function openRazorpayCheckout(order, { name = 'Central', descriptio
     // only way Razorpay issues the token the confirm step authorises.
     if (order.customer_id) options.customer_id = order.customer_id
     if (order.recurring) options.recurring = 1
+    // Show only the PayPal block when this is a Via-Razorpay PayPal top-up, so the
+    // sheet opens straight on PayPal rather than the full method menu.
+    if (displayPayPal) {
+      options.config = {
+        display: {
+          blocks: {
+            paypal: { name: 'Pay with PayPal', instruments: [{ method: 'paypal' }] },
+          },
+          sequence: ['block.paypal'],
+          preferences: { show_default_blocks: false },
+        },
+      }
+    }
     const rzp = new window.Razorpay(options)
     rzp.open()
   })
+}
+
+// PayPal Buttons — PayPal is a directly-settled gateway (ADR 0007), so it runs its
+// own approval flow (Buttons + a PayPal-hosted popup), not the Razorpay sheet. We
+// render the buttons against the order create_topup_order already created; on
+// approval the caller captures it server-side (confirm_topup) for webhook-truth.
+export async function mountPayPalButtons(el, order, { onApprove, onError } = {}) {
+  if (!order?.client_id) throw new Error('PayPal client id missing.')
+  // PayPal's SDK is keyed by client id + currency; load it once per pair.
+  await loadScript(
+    `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(order.client_id)}` +
+      `&currency=${encodeURIComponent(order.currency)}&intent=capture`,
+  )
+  if (!window.paypal) throw new Error('PayPal SDK failed to load.')
+  return window.paypal
+    .Buttons({
+      // The order is already created server-side; hand its id to the buttons.
+      createOrder: () => order.order_id,
+      onApprove: (data) => onApprove?.(data.orderID || order.order_id),
+      onError: (e) => onError?.(e),
+    })
+    .render(el)
 }

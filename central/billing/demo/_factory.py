@@ -52,6 +52,9 @@ TAX_BY_CURRENCY = {"INR": ("GST", 18), "EUR": ("VAT", 19), "USD": ("VAT", 5)}
 
 STRIPE = {"INR": "GW-Stripe-INR", "EUR": "GW-Stripe-EUR", "USD": "GW-Stripe-USD"}
 RAZORPAY = "GW-Razorpay"
+# PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD/EUR but
+# is NOT their default — Stripe stays the card default; PayPal is the opt-in rail.
+PAYPAL = "GW-PayPal"
 ANCHOR = "2026-06-01"  # the current (open) billing month
 
 
@@ -109,6 +112,15 @@ def _gateways():
 		"api_key": "rzp_test", "api_secret": "rzp_secret", "webhook_secret": "rzp_whsec",
 		"is_enabled": 1, "supports_mandates": 1,
 		"currencies": [{"currency": "INR", "is_default": 1}],
+	}, newname=True, flags=seed)
+	# PayPal — directly-settled standalone gateway (ADR 0007). Non-default for USD/EUR
+	# so Stripe stays their card default; PayPal is the opt-in international rail whose
+	# capture ids reconcile against PayPal's own ledger.
+	_upsert("Payment Gateway", PAYPAL, {
+		"title": "PayPal (International)", "adapter_key": "Paypal",
+		"api_key": "paypal_client_id", "api_secret": "paypal_secret", "webhook_secret": "paypal_whid",
+		"is_enabled": 1,
+		"currencies": [{"currency": "USD", "is_default": 0}, {"currency": "EUR", "is_default": 0}],
 	}, newname=True, flags=seed)
 
 
