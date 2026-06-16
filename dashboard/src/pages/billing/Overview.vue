@@ -185,14 +185,13 @@ function onToppedUp() {
               <p class="truncate text-sm" :class="billingEmail ? 'text-ink-gray-8' : 'text-ink-gray-5'">
                 {{ billingEmail || 'Not set' }}
               </p>
-              <button
+              <Button
                 v-if="canManage"
-                class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
+                variant="ghost"
+                icon="lucide-pencil"
                 aria-label="Edit billing email"
                 @click="editProfile"
-              >
-                <span class="lucide-pencil size-4" />
-              </button>
+              />
             </div>
           </div>
 
@@ -227,14 +226,13 @@ function onToppedUp() {
               <p class="truncate text-sm" :class="billingAddress ? 'text-ink-gray-8' : 'text-ink-gray-5'">
                 {{ billingAddress || 'No address on file' }}
               </p>
-              <button
+              <Button
                 v-if="canManage"
-                class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
+                variant="ghost"
+                icon="lucide-pencil"
                 aria-label="Edit billing address"
                 @click="editProfile"
-              >
-                <span class="lucide-pencil size-4" />
-              </button>
+              />
             </div>
           </div>
         </section>

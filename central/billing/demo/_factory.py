@@ -138,18 +138,25 @@ def _tax(team, currency):
 	_upsert("Tax Profile", team, {"team": team, "output_tax_type": tax_type, "output_tax_rate": rate})
 
 
+# country must be a valid Country (Billing Profile.country is a Link); for India
+# the state must be a GST state whose code matches the GSTIN (27 = Maharashtra).
+_GEO_BY_CLUSTER = {
+	"in-mumbai": ("India", "Maharashtra", "Mumbai", "400001"),
+	"eu-frankfurt": ("Germany", "Hesse", "Frankfurt", "60311"),
+	"me-dubai": ("United Arab Emirates", "Dubai", "Dubai", "00000"),
+}
+
+
 def _profile(team, slug, currency, cluster):
-	region = next(label for s, label, _c in CLUSTERS if s == cluster)
 	india = currency == "INR"
+	country, state, city, pincode = _GEO_BY_CLUSTER.get(cluster, ("India", "Maharashtra", "Mumbai", "400001"))
 	_upsert("Billing Profile", team, {
 		"team": team, "currency": currency,
 		"legal_name": f"{slug.replace('-', ' ').title()} Ltd",
 		"email": f"billing@{slug}.example",
 		"gstin": "27AAPFU0939F1ZV" if india else None,
-		"address_line1": "1 Demo Street", "city": region.split("—")[-1].strip(),
-		"state": "Maharashtra" if india else region.split("—")[-1].strip(),
-		"country": "India" if india else region.split("—")[0].strip(),
-		"pincode": "400001" if india else "00000",
+		"address_line1": "1 Demo Street", "city": city,
+		"state": state, "country": country, "pincode": pincode,
 	})
 
 

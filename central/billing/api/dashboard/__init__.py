@@ -14,6 +14,7 @@ stays stable.
 """
 
 from central.billing.api.dashboard.account import (
+	get_billing_geo,
 	get_billing_profile,
 	get_billing_settings,
 	get_collection_status,
@@ -57,7 +58,7 @@ from central.billing.api.dashboard.methods import (
 )
 
 __all__ = [
-	"whoami", "get_billing_profile", "save_billing_profile", "get_billing_settings",
+	"whoami", "get_billing_profile", "get_billing_geo", "save_billing_profile", "get_billing_settings",
 	"save_billing_settings", "get_team_overview", "get_trust_tier",
 	"get_collection_status", "set_collection_mode",
 	"list_switchable_teams",

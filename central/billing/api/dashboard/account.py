@@ -63,6 +63,19 @@ def get_billing_profile(team: str | None = None) -> dict:
 	return profile
 
 
+@frappe.whitelist()
+def get_billing_geo() -> dict:
+	"""Dropdown feeds for the billing-address form: the full country list, and
+	India's GST states (the single source of truth the Billing Profile validates
+	the GSTIN against)."""
+	from central.billing.india_gst import india_state_options
+
+	return {
+		"countries": frappe.get_all("Country", pluck="name", order_by="name asc"),
+		"india_states": india_state_options(),
+	}
+
+
 def _validate_currency(team: str, currency: str | None):
 	"""Currency must be gateway-supported, and is locked once money has moved."""
 	if not currency:

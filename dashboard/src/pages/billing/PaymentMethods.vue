@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { useCall } from 'frappe-ui'
+import { useCall, confirmDialog } from 'frappe-ui'
 import { Badge, Button, Dropdown, LoadingText } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
@@ -40,14 +40,22 @@ async function makeDefault(pm) {
   }
 }
 
-async function removeMethod(pm) {
-  try {
-    await remove.submit({ payment_method: pm.name })
-    successToast('Payment method removed.')
-    methods.reload()
-  } catch (e) {
-    errorToast(e)
-  }
+function removeMethod(pm) {
+  const label = pm.brand ? `${pm.brand} •••• ${pm.last4}` : pm.name
+  confirmDialog({
+    title: 'Remove payment method',
+    message: `Remove ${label}? Invoices will fall back to your other methods, if any.`,
+    onConfirm: async ({ hideDialog }) => {
+      try {
+        await remove.submit({ payment_method: pm.name })
+        successToast('Payment method removed.')
+        methods.reload()
+        hideDialog()
+      } catch (e) {
+        errorToast(e)
+      }
+    },
+  })
 }
 
 // Move a method up/down in the fallback order, then persist the whole order.
