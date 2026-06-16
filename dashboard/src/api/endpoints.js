@@ -64,8 +64,10 @@ export const API = {
   removeMember: `central.iam.remove_team_member`,
   createCustomRole: `central.iam.create_custom_role`,
 
-  // ── Atlas (🟡 proposed; mocked) ──
+  // ── Atlas registry (✅ live: registry + SSO open-in-bench) ──
   atlasRegistry: `central.atlas.registry`,
+  getBenchLink: `central.sso.get_bench_link`,
+  // ── Atlas (🟡 proposed; still mocked) ──
   atlasVms: `central.atlas.list_vms`,
   atlasRegion: `central.atlas.current_region`,
   atlasAccessRequests: `central.atlas.list_access_requests`,
