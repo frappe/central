@@ -376,6 +376,115 @@ class TestGatewayTopUp(CustomerDataBase):
 				dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw, payment_intent="pi_y")
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)  # no magic credit
 
+	def test_topup_paypal_routes_to_paypal_gateway_and_captures(self):
+		"""A USD team whose card default is Stripe can top up via PayPal: the order is
+		routed to the PayPal gateway (directly settled, ADR 0007), and confirm captures
+		the order — crediting PayPal's server-confirmed amount and keying the wallet
+		entry on the capture id Finance reconciles against."""
+		from unittest.mock import MagicMock, patch
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		stripe_def = make_stripe_gateway("GW-USD-Stripe-Def").name  # USD card default
+		if frappe.db.exists("Payment Gateway", "GW-USD-PayPal"):
+			frappe.delete_doc("Payment Gateway", "GW-USD-PayPal", force=True)
+		pp = frappe.get_doc({
+			"doctype": "Payment Gateway", "__newname": "GW-USD-PayPal",
+			"title": "PayPal", "adapter_key": "Paypal",
+			"api_key": "pp_client", "api_secret": "pp_secret", "webhook_secret": "pp_whid",
+			"is_enabled": 1, "currencies": [{"currency": "USD", "is_default": 0}],
+		})
+		pp.flags.skip_credential_validation = True
+		pp.insert(ignore_permissions=True)
+		complete_billing_profile(TEAM, currency="USD")
+		adapter = MagicMock()
+		adapter.create_customer.return_value = "cus_pp"
+		adapter.create_order.return_value = {
+			"order_id": "PPORDER1", "approve_url": "https://paypal/approve", "client_id": "pp_client"}
+		adapter.capture_order.return_value = {
+			"id": "CAP123", "status": "COMPLETED", "amount": "5000.00", "currency": "USD"}
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			order = dashboard.create_topup_order(team=TEAM, amount=5000, method="paypal")
+			# Routed to a PayPal gateway, never the Stripe default.
+			self.assertEqual(order["adapter_key"], "Paypal")
+			self.assertNotEqual(order["gateway"], stripe_def)
+			self.assertEqual(
+				frappe.db.get_value("Payment Gateway", order["gateway"], "adapter_key"), "Paypal")
+			self.assertEqual(order["order_id"], "PPORDER1")
+			self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)  # not credited yet
+
+			out = dashboard.confirm_topup(team=TEAM, amount=5000, gateway=pp.name,
+				paypal_order_id="PPORDER1")
+			adapter.capture_order.assert_called_once_with("PPORDER1")
+			self.assertEqual(out["new_balance"], 5000)
+			# Wallet entry references the PayPal capture id (the reconcilable handle).
+			self.assertTrue(frappe.db.exists(
+				"Credit Ledger Entry", {"team": TEAM, "gateway_payment_id": "CAP123"}))
+
+	def test_topup_paypal_via_razorpay_delegates_to_razorpay(self):
+		"""A PayPal gateway in 'Via Razorpay' mode holds no PayPal merchant account: the
+		top-up is created on the currency's Razorpay gateway, the SPA is told to surface
+		the PayPal block (display_paypal), and confirm settles through Razorpay — so the
+		stored reference is the razorpay_payment_id (ADR 0005 path, opt-in)."""
+		from unittest.mock import MagicMock, patch
+
+		# create_topup_order commits (ensure_gateway_customer), so this test's gateway
+		# rows and is_enabled toggles outlive the framework rollback — undo them by
+		# hand, then commit the restoration last (addCleanup runs LIFO).
+		self.addCleanup(frappe.db.commit)
+
+		def drop(name):
+			if frappe.db.exists("Payment Gateway", name):
+				frappe.delete_doc("Payment Gateway", name, force=True)
+
+		for name in ("GW-USD-RZP", "GW-USD-PayPal-RZP"):
+			drop(name)
+			self.addCleanup(drop, name)
+		rzp = frappe.get_doc({
+			"doctype": "Payment Gateway", "__newname": "GW-USD-RZP",
+			"title": "Razorpay USD", "adapter_key": "Razorpay",
+			"api_key": "rzp_k", "api_secret": "rzp_s", "webhook_secret": "rzp_wh",
+			"is_enabled": 1, "currencies": [{"currency": "USD", "is_default": 0}],
+		})
+		rzp.flags.skip_credential_validation = True
+		rzp.insert(ignore_permissions=True)
+		# No api_key/api_secret — a Via-Razorpay PayPal row needs none.
+		pp = frappe.get_doc({
+			"doctype": "Payment Gateway", "__newname": "GW-USD-PayPal-RZP",
+			"title": "PayPal via Razorpay", "adapter_key": "Paypal",
+			"paypal_settlement_mode": "Via Razorpay",
+			"is_enabled": 1, "currencies": [{"currency": "USD", "is_default": 0}],
+		})
+		pp.insert(ignore_permissions=True)
+		# Make our Via-Razorpay row the only enabled PayPal gateway for USD, so
+		# resolution can't land on a seeded Direct PayPal gateway; re-enable the
+		# others in cleanup (set_value skips the enable-guard a re-save would hit).
+		for other in frappe.get_all("Payment Gateway",
+				{"adapter_key": "Paypal", "is_enabled": 1, "name": ["!=", pp.name]}, pluck="name"):
+			frappe.db.set_value("Payment Gateway", other, "is_enabled", 0)
+			self.addCleanup(frappe.db.set_value, "Payment Gateway", other, "is_enabled", 1)
+		self.assertTrue(pp.is_paypal_via_razorpay())
+		self.assertFalse(pp._should_validate_credentials())  # keys optional in this mode
+		complete_billing_profile(TEAM, currency="USD")
+		adapter = MagicMock()
+		adapter.create_customer.return_value = "cus_rzp"
+		adapter.create_order.return_value = {"order_id": "order_rzp1", "key_id": "rzp_k"}
+		adapter.verify_payment_signature.return_value = True
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			order = dashboard.create_topup_order(team=TEAM, amount=5000, method="paypal")
+			# Settlement runs on a Razorpay gateway; the SPA opens the sheet on the
+			# PayPal block (not PayPal Buttons, and never the PayPal row itself).
+			self.assertEqual(order["adapter_key"], "Razorpay")
+			self.assertEqual(
+				frappe.db.get_value("Payment Gateway", order["gateway"], "adapter_key"), "Razorpay")
+			self.assertTrue(order["display_paypal"])
+			out = dashboard.confirm_topup(team=TEAM, amount=5000, gateway=order["gateway"],
+				razorpay_order_id="order_rzp1", razorpay_payment_id="pay_rzp1",
+				razorpay_signature="sig")
+			self.assertEqual(out["new_balance"], 5000)
+			# Reference is the razorpay_payment_id (no PayPal capture id exists here).
+			self.assertTrue(frappe.db.exists(
+				"Credit Ledger Entry", {"team": TEAM, "gateway_payment_id": "pay_rzp1"}))
+
 
 class TestWriteEndpointsRejectGet(IntegrationTestCase):
 	"""Every state-changing dashboard endpoint must be POST-only.

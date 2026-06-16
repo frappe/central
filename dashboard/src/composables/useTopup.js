@@ -18,7 +18,7 @@ import { loadStripe } from '@stripe/stripe-js'
 import { useCall } from 'frappe-ui'
 import { API, m } from '@/api/endpoints'
 import { useTeam } from '@/composables/useTeam'
-import { openRazorpayCheckout } from '@/utils/gateway'
+import { openRazorpayCheckout, mountPayPalButtons } from '@/utils/gateway'
 import { successToast, errorToast } from '@/utils/toast'
 
 export function useTopup({ onDone } = {}) {
@@ -33,15 +33,25 @@ export function useTopup({ onDone } = {}) {
   let card = null
   let order = null
 
-  // Create the gateway order. Razorpay collects payment in its hosted sheet and
-  // resolves the whole top-up here; Stripe returns { card: true } so the dialog
-  // can mount the card Element for the order we just created.
-  async function begin(amount) {
+  // Create the gateway order, then resolve by rail:
+  //  - Stripe → { card: true }: dialog mounts the card Element.
+  //  - Paypal → { paypal: true }: dialog mounts PayPal Buttons (ADR 0007).
+  //  - Razorpay → collected in its hosted sheet, the whole top-up resolves here.
+  // `method` is 'paypal' for an international PayPal top-up. In Direct mode it routes
+  // to the PayPal gateway (PayPal Buttons, settles us directly); in Via-Razorpay mode
+  // the backend returns a Razorpay order + display_paypal, so it resolves in the sheet.
+  async function begin(amount, method) {
     try {
-      order = await createOrder.submit({ team: currentTeam.value, amount })
+      order = await createOrder.submit({ team: currentTeam.value, amount, method })
       if (order.adapter_key === 'Stripe') return { card: true }
+      if (order.adapter_key === 'Paypal') return { paypal: true }
 
-      const handles = await openRazorpayCheckout(order, { name: 'Central', description: 'Wallet top-up' })
+      const handles = await openRazorpayCheckout(order, {
+        name: 'Central',
+        description: 'Wallet top-up',
+        // A Via-Razorpay PayPal top-up settles through Razorpay; show the PayPal block.
+        displayPayPal: order.display_paypal,
+      })
       const res = await confirm.submit({
         team: currentTeam.value,
         amount: order.amount,
@@ -53,6 +63,30 @@ export function useTopup({ onDone } = {}) {
       if (e?.message !== 'cancelled') errorToast(e, 'Top-up could not be completed.') // closed sheet = no-op
     }
     return { card: false }
+  }
+
+  // Render PayPal Buttons for the order begin() created. On approval we capture the
+  // order server-side (confirm_topup) and credit what PayPal actually took.
+  async function mountPayPal(el) {
+    await mountPayPalButtons(el, order, {
+      onApprove: async (paypalOrderId) => {
+        submitting.value = true
+        try {
+          const res = await confirm.submit({
+            team: currentTeam.value,
+            amount: order.amount,
+            gateway: order.gateway,
+            paypal_order_id: paypalOrderId,
+          })
+          finish(res)
+        } catch (e) {
+          errorToast(e, 'Top-up could not be completed.')
+        } finally {
+          submitting.value = false
+        }
+      },
+      onError: (e) => errorToast(e, 'PayPal could not start.'),
+    })
   }
 
   // Mount the Stripe card Element for the order begin() created.
@@ -108,6 +142,7 @@ export function useTopup({ onDone } = {}) {
   return {
     begin,
     mountCard,
+    mountPayPal,
     pay,
     destroy,
     cardComplete,

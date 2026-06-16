@@ -10,6 +10,7 @@
  "field_order": [
   "title",
   "adapter_key",
+  "paypal_settlement_mode",
   "column_break_flags",
   "is_enabled",
   "supports_mandates",
@@ -36,8 +37,17 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Adapter",
-   "options": "Stripe\nRazorpay",
+   "options": "Stripe\nRazorpay\nPaypal",
    "reqd": 1
+  },
+  {
+   "default": "Direct",
+   "depends_on": "eval:doc.adapter_key=='Paypal'",
+   "description": "Direct: own PayPal merchant account. Via Razorpay: collected inside the Razorpay sheet (no PayPal keys needed).",
+   "fieldname": "paypal_settlement_mode",
+   "fieldtype": "Select",
+   "label": "PayPal Settlement Mode",
+   "options": "Direct\nVia Razorpay"
   },
   {
    "fieldname": "column_break_flags",

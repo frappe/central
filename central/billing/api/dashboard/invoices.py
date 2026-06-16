@@ -13,7 +13,9 @@ from central.billing.revenue import credits, invoicing, metering
 from central.billing.revenue.tax import resolve_tax
 from central.billing.api.dashboard._shared import (
 	_describe_line,
+	_enabled_gateway_for_currency,
 	_gateway_for_currency,
+	_paypal_gateway_for_currency,
 	_require_billing_setup,
 	_require_manage,
 	_require_view,
@@ -288,17 +290,41 @@ def confirm_invoice_checkout(attempt: str | None = None, razorpay_order_id: str 
 
 @frappe.whitelist(methods=["POST"])
 def create_topup_order(team: str | None = None, amount: float | None = None,
-					   gateway: str | None = None) -> dict:
+					   gateway: str | None = None, method: str | None = None) -> dict:
 	"""Start a wallet top-up by creating a real gateway order. The UI opens the
 	gateway's checkout against it; the wallet is credited only after the gateway
-	confirms (verify in confirm_topup) — never magically."""
+	confirms (verify in confirm_topup) — never magically.
+
+	`method="paypal"` routes an international top-up to the configured PayPal gateway
+	(non-INR card default stays Stripe). That gateway's `paypal_settlement_mode` then
+	picks the rail:
+	  - Direct: PayPal's own merchant account; the SPA renders PayPal Buttons and the
+	    capture id reconciles against PayPal's ledger (ADR 0007).
+	  - Via Razorpay: PayPal is collected inside the Razorpay sheet and settles through
+	    Razorpay (ADR 0005). The order is created on the currency's Razorpay gateway and
+	    `display_paypal` tells the SPA to surface the PayPal block in that sheet; the
+	    reference stored is the razorpay_payment_id."""
 	team = _resolve_team(team, authz.MANAGE)
 	_require_billing_setup(team)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
 	currency = _team_currency(team)
-	gw = gateway or _gateway_for_currency(currency)
+	display_paypal = False
+	if method == "paypal":
+		pp = frappe.get_doc("Payment Gateway", _paypal_gateway_for_currency(currency))
+		if pp.is_paypal_via_razorpay():
+			gw = _enabled_gateway_for_currency(currency, "Razorpay")
+			if not gw:
+				frappe.throw(
+					f"PayPal via Razorpay needs an enabled Razorpay gateway that handles {currency}.",
+					frappe.ValidationError,
+				)
+			display_paypal = True
+		else:
+			gw = pp.name
+	else:
+		gw = gateway or _gateway_for_currency(currency)
 	from central.billing.gateways.registry import get_adapter
 
 	gw_doc = frappe.get_doc("Payment Gateway", gw)
@@ -317,20 +343,27 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 	# (no hosted-Checkout redirect). The India-export billing address rides on the
 	# Stripe PaymentIntent from the Billing Profile, so it's never re-asked.
 	handles = adapter.create_order(amount, currency, receipt, notes=notes, customer=customer_id)
-	return {"gateway": gw, "adapter_key": gw_doc.adapter_key,
+	# The SPA branches on adapter_key: Stripe → PaymentIntent Element, Razorpay → hosted
+	# sheet, Paypal → PayPal Buttons against the returned order_id (ADR 0007). For a
+	# Via-Razorpay PayPal top-up the adapter_key is Razorpay (settlement runs there) and
+	# display_paypal asks the sheet to surface the PayPal block.
+	return {"gateway": gw, "adapter_key": gw_doc.adapter_key, "display_paypal": display_paypal,
 			"amount": amount, "currency": currency, "receipt": receipt, **handles}
 
 
 @frappe.whitelist(methods=["POST"])
 def confirm_topup(team: str | None = None, amount: float | None = None, gateway: str | None = None,
 				  razorpay_order_id: str | None = None, razorpay_payment_id: str | None = None,
-				  razorpay_signature: str | None = None, payment_intent: str | None = None) -> dict:
+				  razorpay_signature: str | None = None, payment_intent: str | None = None,
+				  paypal_order_id: str | None = None) -> dict:
 	"""Credit the wallet only after the gateway confirms the money really moved.
-	Razorpay confirms via the checkout-callback signature; Stripe confirms by
-	retrieving the PaymentIntent the SPA charged and checking it succeeded (and
-	credits the server-confirmed amount, not a client-supplied one). The wallet is
-	credited in the team's own currency — never assumed INR. Idempotent on the
-	gateway payment id, so the capture webhook crediting in parallel is a no-op."""
+	Razorpay confirms via the checkout-callback signature; Stripe by retrieving the
+	PaymentIntent the SPA charged; PayPal by capturing the approved order. Each
+	credits the server-confirmed amount/currency (never a client-supplied figure)
+	and records the gateway's own reference — for PayPal the capture id, which
+	settles directly and so reconciles against PayPal's ledger (#21, ADR 0007). The
+	wallet is credited in the team's own currency. Idempotent on the gateway payment
+	id, so a capture webhook crediting in parallel is a no-op."""
 	team = _resolve_team(team, authz.MANAGE)
 	currency = _team_currency(team)
 	amount = frappe.utils.flt(amount)
@@ -345,6 +378,16 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 			"razorpay_signature": razorpay_signature,
 		})
 		reference = razorpay_payment_id
+	elif gw_doc.adapter_key == "Paypal":
+		# Capture the order the buyer approved in PayPal Buttons; credit what PayPal
+		# actually took (major units already) and key the wallet entry on the capture id.
+		capture = adapter.capture_order(paypal_order_id)
+		ok = capture.get("status") == "COMPLETED"
+		reference = capture.get("id")
+		if capture.get("amount"):
+			amount = frappe.utils.flt(capture["amount"])
+		if capture.get("currency"):
+			currency = capture["currency"].upper()
 	else:
 		# In-app PaymentIntent (Stripe): the SPA confirmed the card with Stripe.js;
 		# trust the intent the gateway reports, including the amount/currency it
