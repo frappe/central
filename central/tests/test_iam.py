@@ -47,9 +47,10 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 27 capabilities across three planes: central (6), atlas (8), bench (13).
-		self.assertEqual(frappe.db.count("Capability"), 27)
+		# 29 capabilities across three planes: central (6), atlas (10), bench (13).
+		self.assertEqual(frappe.db.count("Capability"), 29)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 13)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 10)
 
 		owner_caps = set(frappe.get_all("Role Capability", {"parent": "Owner"}, pluck="capability"))
 		admin_caps = set(frappe.get_all("Role Capability", {"parent": "Admin"}, pluck="capability"))
@@ -66,9 +67,18 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertIn("site:create", admin_caps)
 		self.assertNotIn("site:create", developer_caps)
 		self.assertIn("site:migrate", developer_caps)
-		self.assertEqual(viewer_caps, {"asset:view", "log:view", "site:view", "vm:view"})
+		self.assertEqual(viewer_caps, {"asset:view", "cluster:view", "log:view", "site:view", "vm:view"})
 		self.assertNotIn("vm:snapshot", billing_caps)
 		self.assertNotIn("vm:rebuild", billing_caps)
+
+		# Journey cap ladder (#22): cluster:view → vm:view → vm:open. Everyone who
+		# sees VMs sees their cluster; only Owner/Admin/Developer may open a bench.
+		for caps in (owner_caps, admin_caps, developer_caps, viewer_caps, billing_caps):
+			self.assertIn("cluster:view", caps)
+		for caps in (owner_caps, admin_caps, developer_caps):
+			self.assertIn("vm:open", caps)
+		for caps in (viewer_caps, billing_caps):
+			self.assertNotIn("vm:open", caps)
 
 	def test_user_claim_is_team_scoped(self):
 		team_a = self.make_team("IAM Team A", self.viewer, "Viewer")
@@ -95,7 +105,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertEqual(effective["user"], self.viewer)
 		self.assertEqual(
 			effective["teams"][team.name]["caps"],
-			["asset:view", "log:view", "site:view", "vm:view"],
+			["asset:view", "cluster:view", "log:view", "site:view", "vm:view"],
 		)
 		self.assertEqual(effective["teams"][team.name]["grants"][0]["source"], "member")
 

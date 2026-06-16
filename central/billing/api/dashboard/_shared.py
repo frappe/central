@@ -120,6 +120,39 @@ def _gateway_for_currency(currency: str) -> str:
 		frappe.throw(f"No payment gateway configured for {currency} top-ups.", frappe.ValidationError)
 
 
+def _enabled_gateway_for_currency(currency: str, adapter_key: str) -> str | None:
+	"""Name of an enabled gateway with this adapter_key that handles this currency,
+	or None. Unlike the default-resolver, this picks by adapter regardless of the
+	is_default flag — used when a flow needs a specific rail (PayPal, or the Razorpay
+	a Via-Razorpay PayPal row delegates to)."""
+	rows = frappe.get_all(
+		"Payment Gateway Currency", filters={"currency": currency}, fields=["parent"]
+	)
+	for r in rows:
+		gw = frappe.db.get_value(
+			"Payment Gateway", r.parent, ["name", "adapter_key", "is_enabled"], as_dict=True
+		)
+		if gw and gw.is_enabled and gw.adapter_key == adapter_key:
+			return gw.name
+	return None
+
+
+def _paypal_gateway_for_currency(currency: str) -> str:
+	"""Enabled PayPal gateway that handles this currency (ADR 0007).
+
+	PayPal is a directly-settled standalone gateway — its own merchant account pays
+	us out, so a top-up carries a native PayPal capture id the reconciliation job
+	(#21) matches against PayPal's ledger. It need not be the currency default (that
+	stays Stripe, which serves card top-ups)."""
+	gw = _enabled_gateway_for_currency(currency, "Paypal")
+	if gw:
+		return gw
+	frappe.throw(
+		f"PayPal top-ups need an enabled PayPal gateway that handles {currency}.",
+		frappe.ValidationError,
+	)
+
+
 def _add_method_gateway(currency: str):
 	"""Gateway to add a payment method in this currency.
 

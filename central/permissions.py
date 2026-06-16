@@ -78,3 +78,24 @@ def team_invitation_has_permission(doc, user: str | None = None, ptype: str | No
 	if ptype == "create":
 		return can(user, doc.team, "team:manage_members")
 	return doc.email == user or can(user, doc.team, "team:manage_members")
+
+
+def asset_query_conditions(user: str | None = None) -> str:
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return ""
+	teams = get_user_team_names_with_capability(user, "vm:view")
+	if not teams:
+		return "1 = 0"
+	escaped = ", ".join(frappe.db.escape(team) for team in teams)
+	return f"`tabAsset`.`team` in ({escaped})"
+
+
+def asset_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return True
+	# Assets are a read-only mirror of Atlas; only the sync (operator) writes them.
+	if ptype in ("create", "write", "delete"):
+		return False
+	return can(user, doc.team, "vm:view")
