@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 0,
- "autoname": "format:TEAM-INV-.#####",
+ "autoname": "format:TEAM-INV-{#####}",
  "creation": "2026-06-09 00:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",

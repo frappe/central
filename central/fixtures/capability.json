@@ -60,6 +60,16 @@
   "resource": "billing"
  },
  {
+  "capability": "cluster:view",
+  "description": "View clusters (Atlas instances) the team uses.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-16 00:00:00",
+  "name": "cluster:view",
+  "plane": "atlas",
+  "resource": "cluster"
+ },
+ {
   "capability": "db:access",
   "description": "Database console and query access.",
   "docstatus": 0,
@@ -196,6 +206,16 @@
   "doctype": "Capability",
   "modified": "2026-06-08 19:52:59.278004",
   "name": "vm:create",
+  "plane": "atlas",
+  "resource": "virtual machine"
+ },
+ {
+  "capability": "vm:open",
+  "description": "Open a VM's bench site UI via signed-token SSO.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-16 00:00:00",
+  "name": "vm:open",
   "plane": "atlas",
   "resource": "virtual machine"
  },

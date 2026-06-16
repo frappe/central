@@ -20,6 +20,9 @@
     "capability": "billing:view"
    },
    {
+    "capability": "cluster:view"
+   },
+   {
     "capability": "db:access"
    },
    {
@@ -60,6 +63,9 @@
    },
    {
     "capability": "vm:create"
+   },
+   {
+    "capability": "vm:open"
    },
    {
     "capability": "vm:rebuild"
@@ -106,6 +112,9 @@
     "capability": "bench:manage"
    },
    {
+    "capability": "cluster:view"
+   },
+   {
     "capability": "db:access"
    },
    {
@@ -143,6 +152,9 @@
    },
    {
     "capability": "vm:create"
+   },
+   {
+    "capability": "vm:open"
    },
    {
     "capability": "vm:rebuild"
@@ -183,6 +195,9 @@
     "capability": "asset:view"
    },
    {
+    "capability": "cluster:view"
+   },
+   {
     "capability": "db:access"
    },
    {
@@ -208,6 +223,9 @@
    },
    {
     "capability": "vm:create"
+   },
+   {
+    "capability": "vm:open"
    },
    {
     "capability": "vm:rebuild"
@@ -245,6 +263,9 @@
     "capability": "asset:view"
    },
    {
+    "capability": "cluster:view"
+   },
+   {
     "capability": "log:view"
    },
    {
@@ -272,6 +293,9 @@
    },
    {
     "capability": "billing:view"
+   },
+   {
+    "capability": "cluster:view"
    },
    {
     "capability": "site:view"
