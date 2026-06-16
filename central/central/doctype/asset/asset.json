@@ -85,6 +85,12 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
   }
  ],
  "sort_field": "resource_id",
