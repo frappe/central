@@ -312,19 +312,11 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 	customer_id = ensure_gateway_customer(team, gw, adapter)
 	receipt = f"topup-{team}-{frappe.generate_hash(length=8)}"
 	notes = {"team": team, "purpose": "wallet_topup"}
-	if gw_doc.adapter_key == "Stripe":
-		# Hosted Stripe Checkout: the SPA redirects out and returns to /billing/credits,
-		# which confirms the session. Stripe fills in {CHECKOUT_SESSION_ID}.
-		from urllib.parse import quote
-
-		base = frappe.utils.get_url()
-		success_url = (f"{base}/billing/credits?topup=success&gateway={quote(gw)}"
-					   f"&team={quote(team)}&session={{CHECKOUT_SESSION_ID}}")
-		cancel_url = f"{base}/billing/credits?topup=cancelled"
-		handles = adapter.create_checkout_session(
-			amount, currency, receipt, success_url, cancel_url, notes=notes, customer=customer_id)
-	else:
-		handles = adapter.create_order(amount, currency, receipt, notes=notes, customer=customer_id)
+	# Both rails collect the card in-app: Razorpay in its hosted sheet over the
+	# returned order, Stripe via a PaymentIntent the SPA confirms with Stripe.js
+	# (no hosted-Checkout redirect). The India-export billing address rides on the
+	# Stripe PaymentIntent from the Billing Profile, so it's never re-asked.
+	handles = adapter.create_order(amount, currency, receipt, notes=notes, customer=customer_id)
 	return {"gateway": gw, "adapter_key": gw_doc.adapter_key,
 			"amount": amount, "currency": currency, "receipt": receipt, **handles}
 
@@ -332,12 +324,13 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 @frappe.whitelist(methods=["POST"])
 def confirm_topup(team: str | None = None, amount: float | None = None, gateway: str | None = None,
 				  razorpay_order_id: str | None = None, razorpay_payment_id: str | None = None,
-				  razorpay_signature: str | None = None, session: str | None = None) -> dict:
+				  razorpay_signature: str | None = None, payment_intent: str | None = None) -> dict:
 	"""Credit the wallet only after the gateway confirms the money really moved.
 	Razorpay confirms via the checkout-callback signature; Stripe confirms by
-	retrieving the hosted Checkout session and checking it was paid (and credits
-	the server-confirmed amount, not a client-supplied one). The wallet is credited
-	in the team's own currency — never assumed INR."""
+	retrieving the PaymentIntent the SPA charged and checking it succeeded (and
+	credits the server-confirmed amount, not a client-supplied one). The wallet is
+	credited in the team's own currency — never assumed INR. Idempotent on the
+	gateway payment id, so the capture webhook crediting in parallel is a no-op."""
 	team = _resolve_team(team, authz.MANAGE)
 	currency = _team_currency(team)
 	amount = frappe.utils.flt(amount)
@@ -353,15 +346,17 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 		})
 		reference = razorpay_payment_id
 	else:
-		# Hosted-checkout gateways (Stripe): trust the session the gateway confirms,
-		# including the amount/currency it actually charged.
-		checkout = adapter.get_checkout_session(session)
-		ok = checkout.get("payment_status") == "paid"
-		reference = checkout.get("payment_intent")
-		if checkout.get("amount_total"):
-			amount = frappe.utils.flt(checkout["amount_total"]) / 100
-		if checkout.get("currency"):
-			currency = checkout["currency"].upper()
+		# In-app PaymentIntent (Stripe): the SPA confirmed the card with Stripe.js;
+		# trust the intent the gateway reports, including the amount/currency it
+		# actually charged — never a client-supplied figure.
+		intent = adapter.get_payment_intent(payment_intent)
+		ok = intent.get("status") == "succeeded"
+		reference = intent.get("id")
+		minor = intent.get("amount_received") or intent.get("amount")
+		if minor:
+			amount = frappe.utils.flt(minor) / 100
+		if intent.get("currency"):
+			currency = intent["currency"].upper()
 	if not ok:
 		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
 	return credits.purchase(team, amount, currency,

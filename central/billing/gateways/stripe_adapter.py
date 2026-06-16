@@ -257,10 +257,23 @@ class StripeAdapter(GatewayAdapter):
 			description="Wallet top-up")
 		if customer:
 			params["customer"] = customer
+		# Carry the billing name + address from the team's Billing Profile so an
+		# in-app (on-session) top-up clears the same India-export requirement that
+		# off-session charge()/validate_payment_method() satisfy — the customer
+		# never re-enters an address the profile already holds.
+		shipping = _export_shipping((notes or {}).get("team"))
+		if shipping:
+			params["shipping"] = shipping
 		intent = _to_dict(stripe.PaymentIntent.create(**params))
 		return {"client_secret": intent.get("client_secret"), "payment_intent_id": intent.get("id"),
 				"amount": intent.get("amount"), "publishable_key": self.get_credential("api_key"),
 				"currency": (currency or "usd").upper()}
+
+	def get_payment_intent(self, payment_intent_id: str) -> dict:
+		"""Retrieve a PaymentIntent so a top-up can be confirmed from what Stripe
+		actually charged (status + amount + currency), not a client-supplied figure."""
+		self._configure()
+		return _to_dict(stripe.PaymentIntent.retrieve(payment_intent_id))
 
 	def create_checkout_session(self, amount, currency: str, receipt: str,
 								success_url: str, cancel_url: str, notes: dict | None = None,

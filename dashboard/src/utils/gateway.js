@@ -48,11 +48,3 @@ export async function openRazorpayCheckout(order, { name = 'Central', descriptio
     rzp.open()
   })
 }
-
-// Stripe hosted Checkout — a redirect; the page returns to /billing/credits,
-// which finishes via confirm_topup using the session id in the URL.
-export function redirectToStripeCheckout(order) {
-  const url = order.checkout_url || order.url
-  if (!url) throw new Error('No Stripe checkout URL returned')
-  window.location.assign(url)
-}

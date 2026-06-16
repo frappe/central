@@ -1,6 +1,6 @@
 <script setup>
-import { computed, ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCall } from 'frappe-ui'
 import { Button, LoadingText } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
@@ -11,9 +11,7 @@ import { useTeam } from '@/composables/useTeam'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { money, signedMoney } from '@/utils/money'
-import { successToast, errorToast, infoToast } from '@/utils/toast'
 
-const route = useRoute()
 const router = useRouter()
 const { currentTeam } = useTeam()
 const { canManage } = useCapabilities()
@@ -34,39 +32,6 @@ function reloadAll() {
 // Credits go up on top-up/refund, down when applied to an invoice.
 function isCredit(entry) {
   return Number(entry.amount) >= 0 && entry.entry_type !== 'Debit'
-}
-
-// ── Stripe hosted-checkout return ──
-// Stripe redirects back here with ?topup=success&gateway&session — finish the
-// purchase by confirming server-side (confirm_topup verifies the session paid).
-const confirmTopup = useCall({ url: m(API.confirmTopup), method: 'POST', immediate: false })
-
-onMounted(async () => {
-  const q = route.query
-  if (q.topup === 'cancelled') {
-    infoToast('Top-up cancelled.')
-    clearQuery()
-    return
-  }
-  if (q.topup === 'success' && q.session) {
-    try {
-      await confirmTopup.submit({
-        team: q.team || currentTeam.value,
-        gateway: q.gateway,
-        session: q.session,
-      })
-      successToast('Wallet topped up.')
-      reloadAll()
-    } catch (e) {
-      errorToast(e, 'Could not confirm the top-up.')
-    } finally {
-      clearQuery()
-    }
-  }
-})
-
-function clearQuery() {
-  router.replace({ query: {} })
 }
 </script>
 
