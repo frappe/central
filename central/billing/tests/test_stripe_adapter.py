@@ -213,3 +213,15 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk_test")
 		with patch.object(stripe.PaymentIntent, "retrieve", return_value=intent):
 			self.assertEqual(adapter.get_transaction_status("pi_x"), "succeeded")
+
+	def test_get_payment_intent_normalises_real_stripe_object(self):
+		"""confirm_topup reads the full intent (status + amount + currency) to credit
+		from what Stripe actually charged, so it must normalise a real StripeObject."""
+		adapter = self.make_adapter()
+		intent = stripe.PaymentIntent.construct_from(
+			{"id": "pi_x", "status": "succeeded", "amount_received": 5000, "currency": "eur"}, "sk_test")
+		with patch.object(stripe.PaymentIntent, "retrieve", return_value=intent):
+			out = adapter.get_payment_intent("pi_x")
+		self.assertEqual(out["status"], "succeeded")
+		self.assertEqual(out["amount_received"], 5000)
+		self.assertEqual(out["currency"], "eur")

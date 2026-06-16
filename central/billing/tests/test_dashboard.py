@@ -336,9 +336,10 @@ class TestGatewayTopUp(CustomerDataBase):
 					razorpay_order_id="o", razorpay_payment_id="p", razorpay_signature="bad")
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)  # no magic credit
 
-	def test_topup_stripe_uses_hosted_checkout_and_confirms_via_session(self):
-		"""A Stripe (e.g. EUR) team gets a hosted Checkout redirect, and the wallet
-		is credited from the server-confirmed session amount/currency — not INR."""
+	def test_topup_stripe_uses_inapp_payment_intent_and_confirms_via_intent(self):
+		"""A Stripe (e.g. EUR) team gets an in-app PaymentIntent (no hosted-Checkout
+		redirect), and the wallet is credited from the server-confirmed intent
+		amount/currency — not INR, not a client-supplied figure."""
 		from unittest.mock import MagicMock, patch
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
@@ -346,32 +347,33 @@ class TestGatewayTopUp(CustomerDataBase):
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.create_customer.return_value = "cus_stripe"
-		adapter.create_checkout_session.return_value = {"checkout_url": "https://stripe.test/cs", "session_id": "cs_x"}
-		adapter.get_checkout_session.return_value = {
-			"payment_status": "paid", "payment_intent": "pi_x", "amount_total": 500000, "currency": "eur"}
+		adapter.create_order.return_value = {
+			"client_secret": "pi_x_secret", "payment_intent_id": "pi_x", "publishable_key": "pk_test"}
+		adapter.get_payment_intent.return_value = {
+			"status": "succeeded", "id": "pi_x", "amount_received": 500000, "currency": "eur"}
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			order = dashboard.create_topup_order(team=TEAM, amount=5000, gateway=gw)
 			self.assertEqual(order["adapter_key"], "Stripe")
-			self.assertEqual(order["checkout_url"], "https://stripe.test/cs")  # redirect, not a Razorpay order
-			adapter.create_checkout_session.assert_called_once()
-			# The hosted session is bound to the team's reused gateway customer.
-			self.assertEqual(adapter.create_checkout_session.call_args.kwargs["customer"], "cus_stripe")
+			self.assertEqual(order["client_secret"], "pi_x_secret")  # in-app intent, not a redirect URL
+			adapter.create_order.assert_called_once()
+			# The intent is bound to the team's reused gateway customer.
+			self.assertEqual(adapter.create_order.call_args.kwargs["customer"], "cus_stripe")
 			self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)  # not credited yet
 
-			out = dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw, session="cs_x")
-			adapter.get_checkout_session.assert_called_once_with("cs_x")
+			out = dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw, payment_intent="pi_x")
+			adapter.get_payment_intent.assert_called_once_with("pi_x")
 			self.assertEqual(out["new_balance"], 5000)
 
-	def test_topup_stripe_rejects_unpaid_session(self):
+	def test_topup_stripe_rejects_unsucceeded_intent(self):
 		from unittest.mock import MagicMock, patch
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
 		gw = make_stripe_gateway("GW-Cust-Stripe-T2").name
 		adapter = MagicMock()
-		adapter.get_checkout_session.return_value = {"payment_status": "unpaid", "payment_intent": "pi_y"}
+		adapter.get_payment_intent.return_value = {"status": "requires_payment_method", "id": "pi_y"}
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			with self.assertRaises(frappe.ValidationError):
-				dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw, session="cs_y")
+				dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw, payment_intent="pi_y")
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)  # no magic credit
 
 
