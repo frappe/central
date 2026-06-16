@@ -59,6 +59,20 @@ class TestCentralSSO(IntegrationTestCase):
 		self.assertNotIn("vm:view", claims["caps"])
 		self.assertNotIn("vm:open", claims["caps"])
 
+	def test_production_site_refuses_shared_secret_mint(self):
+		# Fail closed: without the explicit sso_allow_insecure_hs256 opt-in (i.e. a
+		# prod site) the shared-secret mint must refuse until RS256 (#21) replaces it.
+		team = self.make_team(self.developer, "Developer")
+		original = frappe.conf.get("sso_allow_insecure_hs256")
+		frappe.conf.sso_allow_insecure_hs256 = 0
+		frappe.set_user(self.developer)
+		try:
+			with self.assertRaises(frappe.ValidationError):
+				get_bench_link(team=team.name, gateway_url="http://localhost:3030")
+		finally:
+			frappe.conf.sso_allow_insecure_hs256 = original
+			frappe.set_user("Administrator")
+
 	def test_vm_open_gates_the_handoff(self):
 		team = self.make_team(self.viewer, "Viewer")
 		frappe.set_user(self.viewer)

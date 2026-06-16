@@ -18,10 +18,37 @@ def _central_url() -> str:
 	return frappe.conf.get("central_url") or frappe.utils.get_url()
 
 
+def _insecure_hs256_allowed() -> bool:
+	"""Explicit opt-in dev switch. Default (unset) is off, so the shared-secret path
+	can never ship to prod by accident — a dev site sets `sso_allow_insecure_hs256`."""
+	return bool(frappe.conf.get("sso_allow_insecure_hs256"))
+
+
 def _bench_sso_url() -> str:
 	"""The bench's /sso endpoint. Until the Asset registry lands (#28) this is the
 	dev target; get_bench_link accepts an explicit gateway_url to override it."""
-	return frappe.conf.get("bench_sso_redirect") or "http://localhost:3030/sso"
+	configured = frappe.conf.get("bench_sso_redirect")
+	if configured:
+		return configured
+	if not _insecure_hs256_allowed():
+		frappe.throw(
+			"No bench gateway configured — pass gateway_url or set bench_sso_redirect.",
+			frappe.ValidationError,
+		)
+	return "http://localhost:3030/sso"
+
+
+def _assert_insecure_signing_allowed() -> None:
+	"""Fail closed. Until RS256/JWKS (#21) lands, the mint uses a shared HS256 secret
+	— forgeable by any bench that holds it, so it is gated on the explicit
+	`sso_allow_insecure_hs256` flag and stays broken in prod until real signing
+	replaces it."""
+	if not _insecure_hs256_allowed():
+		frappe.throw(
+			"Refusing to mint a shared-secret (HS256) SSO assertion: set "
+			"sso_allow_insecure_hs256 in dev, or land RS256 signing (#21) for prod.",
+			frappe.ValidationError,
+		)
 
 
 def _ensure_oauth_client():
@@ -50,6 +77,7 @@ def _bench_caps(user: str, team: str) -> list[str]:
 
 
 def mint_bench_assertion(user: str, team: str) -> str:
+	_assert_insecure_signing_allowed()
 	client = _ensure_oauth_client()
 	now = int(time.time())
 	payload = {
@@ -93,6 +121,7 @@ def _only_team(user: str) -> str:
 
 def print_local_bench_credentials() -> None:
 	"""Emit the bench's SSO trust config for admin/scripts/setup_sso.sh to capture."""
+	_assert_insecure_signing_allowed()
 	client = _ensure_oauth_client()
 	frappe.db.commit()
 	cfg = {
