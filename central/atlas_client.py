@@ -9,9 +9,22 @@ import requests
 
 REQUEST_TIMEOUT = 30
 
+# Frozen inventory contract Atlas fulfils (#36) and Central mirrors into Asset rows
+# (#20/#27). One dict per VM:
+INVENTORY_VM_FIELDS = ("resource_id", "status", "gateway_url")
+
 
 class AtlasError(frappe.ValidationError):
 	pass
+
+
+def stub_vm_inventory(team: str) -> list[dict]:
+	"""Canned inventory in INVENTORY_VM_FIELDS shape — used by the dev sync until
+	Atlas ships the real endpoint (#36). Keeps Central buildable against a fake."""
+	return [
+		{"resource_id": "vm-blr-1", "status": "Running", "gateway_url": "http://localhost:3030"},
+		{"resource_id": "vm-blr-2", "status": "Stopped", "gateway_url": ""},
+	]
 
 
 def get_atlas_instance(region: str):
@@ -51,3 +64,13 @@ class AtlasClient:
 	def ping(self) -> dict:
 		"""Cheap reachability + auth check against the frappe ping endpoint."""
 		return self.request("GET", "/api/method/ping")
+
+	def list_vms(self, team: str) -> list[dict]:
+		"""Inventory of a team's VMs in this cluster — the registry mirror source.
+
+		Atlas (#36) returns one dict per VM in INVENTORY_VM_FIELDS: `resource_id`,
+		`status` (Provisioning/Running/Stopped/Terminated), `gateway_url` (set only
+		when Running). The cluster/region is implied by this Atlas Instance, and
+		`team` scopes the result server-side.
+		"""
+		return self.request("GET", "/api/method/atlas.api.list_team_vms", params={"team": team})
