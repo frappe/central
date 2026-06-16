@@ -47,7 +47,9 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		self.assertEqual(frappe.db.count("Capability"), 14)
+		# 27 capabilities across three planes: central (6), atlas (8), bench (13).
+		self.assertEqual(frappe.db.count("Capability"), 27)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 13)
 
 		owner_caps = set(frappe.get_all("Role Capability", {"parent": "Owner"}, pluck="capability"))
 		admin_caps = set(frappe.get_all("Role Capability", {"parent": "Admin"}, pluck="capability"))
@@ -58,7 +60,13 @@ class TestCentralIAM(IntegrationTestCase):
 		for caps in (owner_caps, admin_caps, developer_caps):
 			self.assertIn("vm:snapshot", caps)
 			self.assertIn("vm:rebuild", caps)
-		self.assertEqual(viewer_caps, {"asset:view", "vm:view"})
+		# Bench plane: Owner/Admin manage the bench; Developer operates sites but
+		# can't create/drop them; Viewer is read-only.
+		self.assertIn("site:create", owner_caps)
+		self.assertIn("site:create", admin_caps)
+		self.assertNotIn("site:create", developer_caps)
+		self.assertIn("site:migrate", developer_caps)
+		self.assertEqual(viewer_caps, {"asset:view", "log:view", "site:view", "vm:view"})
 		self.assertNotIn("vm:snapshot", billing_caps)
 		self.assertNotIn("vm:rebuild", billing_caps)
 
@@ -85,7 +93,10 @@ class TestCentralIAM(IntegrationTestCase):
 		effective = get_effective_permissions(self.viewer, team.name)
 
 		self.assertEqual(effective["user"], self.viewer)
-		self.assertEqual(effective["teams"][team.name]["caps"], ["asset:view", "vm:view"])
+		self.assertEqual(
+			effective["teams"][team.name]["caps"],
+			["asset:view", "log:view", "site:view", "vm:view"],
+		)
 		self.assertEqual(effective["teams"][team.name]["grants"][0]["source"], "member")
 
 	def test_permission_probe_evaluates_on_save(self):

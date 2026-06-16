@@ -1,5 +1,15 @@
 [
  {
+  "capability": "app:install",
+  "description": "Install and uninstall apps on a site.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "app:install",
+  "plane": "bench",
+  "resource": "app"
+ },
+ {
   "capability": "asset:view",
   "description": "View team-owned assets in the Central registry.",
   "docstatus": 0,
@@ -8,6 +18,26 @@
   "name": "asset:view",
   "plane": "central",
   "resource": "asset"
+ },
+ {
+  "capability": "bench:config",
+  "description": "Edit bench-level config.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "bench:config",
+  "plane": "bench",
+  "resource": "bench"
+ },
+ {
+  "capability": "bench:manage",
+  "description": "Start/stop processes, run updates and upgrades.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "bench:manage",
+  "plane": "bench",
+  "resource": "bench"
  },
  {
   "capability": "billing:manage",
@@ -28,6 +58,106 @@
   "name": "billing:view",
   "plane": "central",
   "resource": "billing"
+ },
+ {
+  "capability": "db:access",
+  "description": "Database console and query access.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "db:access",
+  "plane": "bench",
+  "resource": "database"
+ },
+ {
+  "capability": "log:view",
+  "description": "View logs.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "log:view",
+  "plane": "bench",
+  "resource": "log"
+ },
+ {
+  "capability": "site:backup",
+  "description": "Trigger and download site backups.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "site:backup",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
+  "capability": "site:config",
+  "description": "Edit site config (site_config.json).",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "site:config",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
+  "capability": "site:create",
+  "description": "Create a new site.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "site:create",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
+  "capability": "site:delete",
+  "description": "Drop a site.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "site:delete",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
+  "capability": "site:migrate",
+  "description": "Run migrate and schema changes.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "site:migrate",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
+  "capability": "site:restore",
+  "description": "Restore a site from backup.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "site:restore",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
+  "capability": "site:view",
+  "description": "List sites; view site detail, logs, tasks.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "site:view",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
+  "capability": "task:run",
+  "description": "Run bench tasks and manage processes.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-15 00:00:00",
+  "name": "task:run",
+  "plane": "bench",
+  "resource": "task"
  },
  {
   "capability": "team:delete",
@@ -74,7 +204,7 @@
   "description": "Rebuild virtual machines and restore snapshots in Atlas.",
   "docstatus": 0,
   "doctype": "Capability",
-  "modified": "2026-06-09 00:00:00.000000",
+  "modified": "2026-06-09 00:00:00",
   "name": "vm:rebuild",
   "plane": "atlas",
   "resource": "virtual machine"
@@ -94,7 +224,7 @@
   "description": "Create, clone, and delete virtual machine snapshots in Atlas.",
   "docstatus": 0,
   "doctype": "Capability",
-  "modified": "2026-06-09 00:00:00.000000",
+  "modified": "2026-06-09 00:00:00",
   "name": "vm:snapshot",
   "plane": "atlas",
   "resource": "virtual machine"
