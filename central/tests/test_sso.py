@@ -1,18 +1,25 @@
-import jwt
 import frappe
+import jwt
 from frappe.tests import IntegrationTestCase
 
 from central.sso import _central_url, _ensure_oauth_client, get_bench_link
-
-from .test_iam import ensure_user
+from central.tests.test_iam import ensure_user
 
 
 class TestCentralSSO(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		# The shared-secret mint is dev-gated; enable the opt-in for these tests so
+		# they don't depend on the site's config (CI's test_site has it off).
+		self._orig_insecure = frappe.conf.get("sso_allow_insecure_hs256")
+		frappe.conf.sso_allow_insecure_hs256 = 1
 		self.owner = ensure_user("sso.owner@example.test")
 		self.developer = ensure_user("sso.developer@example.test")
 		self.viewer = ensure_user("sso.viewer@example.test")
+
+	def tearDown(self):
+		frappe.conf.sso_allow_insecure_hs256 = self._orig_insecure
+		frappe.set_user("Administrator")
 
 	def make_team(self, user: str, role: str):
 		return frappe.get_doc(
