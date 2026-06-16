@@ -22,9 +22,11 @@ CARD_METHOD = "Card"
 # fail at charge time, so we block UPI setup and steer the team to a card.
 UPI_RECURRING_MAX = 100000
 
-# Razorpay recurring-card token ceiling — cards are exempt from the UPI MCC limit
-# (off-session, effectively any bill within the team's tier cap).
-CARD_TOKEN_MAX = 1500000
+# Razorpay recurring-card token ceiling — cards are exempt from the UPI MCC limit,
+# but Razorpay still caps a token's max_amount at Rs. 10,00,000 (100,000,000 paise,
+# the value the adapter multiplies up to). Going above it makes order.create reject
+# the mandate with "The max amount may not be greater than 100000000".
+CARD_TOKEN_MAX = 1000000
 
 
 def team_cap(team: str):

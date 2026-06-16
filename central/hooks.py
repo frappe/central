@@ -166,6 +166,8 @@ scheduler_events = {
 		"central.billing.revenue.dunning.run_dunning",
 		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.charges.cleanup_payment_logs",
+		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
+		"central.billing.payments.emandate.run_emandate_cycle",
 	],
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.

@@ -17,7 +17,9 @@
   "notify_credit_low",
   "notify_card_expiry",
   "notify_mandate_reauth",
-  "notify_trial_expiring"
+  "notify_trial_expiring",
+  "notify_action_required",
+  "notify_pre_debit_notice"
  ],
  "fields": [
   {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
@@ -29,7 +31,9 @@
   {"default": "1", "fieldname": "notify_credit_low", "fieldtype": "Check", "label": "Credit Low"},
   {"default": "1", "fieldname": "notify_card_expiry", "fieldtype": "Check", "label": "Card Expiry"},
   {"default": "1", "fieldname": "notify_mandate_reauth", "fieldtype": "Check", "label": "Mandate Re-auth"},
-  {"default": "1", "fieldname": "notify_trial_expiring", "fieldtype": "Check", "label": "Trial Expiring"}
+  {"default": "1", "fieldname": "notify_trial_expiring", "fieldtype": "Check", "label": "Trial Expiring"},
+  {"default": "1", "fieldname": "notify_action_required", "fieldtype": "Check", "label": "Action Required"},
+  {"default": "1", "fieldname": "notify_pre_debit_notice", "fieldtype": "Check", "label": "Pre-debit Notice"}
  ],
  "index_web_pages_for_search": 1,
  "links": [],

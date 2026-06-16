@@ -23,6 +23,8 @@ _TEMPLATES = {
 	"Credit Low": ("Credit balance low", "Your credit balance is low (projected use {utilisation}). Top up to avoid interruption."),
 	"Card Expiry": ("Card expired", "Your card {label} has expired. Please add a new payment method."),
 	"Mandate Reauth": ("Mandate re-authorisation needed", "Your UPI Autopay mandate needs re-authorisation for the new limit."),
+	"Action Required": ("Action required — choose how to pay", "Your usage is above the ₹{threshold:,.0f} limit for automatic payments. Your services keep running — please choose to pay each invoice or prepay your wallet."),
+	"Pre-debit Notice": ("Upcoming auto-payment", "We’ll auto-debit {amount} for invoice {invoice} on {charge_on}. No action needed; this is a heads-up before the payment."),
 	"Trial Expiring": ("Trial ending", "Your trial is ending. Add a payment method to keep your resources running."),
 }
 

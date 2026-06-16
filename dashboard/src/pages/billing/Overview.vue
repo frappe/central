@@ -6,6 +6,7 @@ import { Button, LoadingText } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
+import CollectionActionBanner from '@/components/CollectionActionBanner.vue'
 import { API, m } from '@/api/endpoints'
 import { useTeam } from '@/composables/useTeam'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -110,6 +111,8 @@ function onToppedUp() {
     </PageHeader>
 
     <div class="body-container space-y-6 pb-40 pt-5">
+      <CollectionActionBanner />
+
       <div v-if="loading" class="space-y-3">
         <LoadingText :lines="6" />
       </div>

@@ -18,11 +18,15 @@ from central.billing.api.dashboard._shared import (
 
 @frappe.whitelist()
 def list_payment_methods(team: str | None = None) -> list[dict]:
-	"""Payment methods — display fields only; gateway secrets are never returned."""
+	"""Payment methods — display fields only; gateway secrets are never returned.
+
+	Hides Cancelled methods and ones still mid-setup (Pending Validation): until a
+	card clears the micro-charge it isn't usable, isn't in the charge order, and
+	would only confuse the list (it has no label/expiry yet)."""
 	team = _resolve_team(team)
 	return frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": ["!=", "Cancelled"]},
+		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
 		fields=["name", "method_type", "status", "display_label", "is_default", "priority",
 				"reauth_required", "expiry_month", "expiry_year"],
 		order_by="priority asc, creation asc",
@@ -62,6 +66,9 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 	collected client-side by the gateway SDK (PCI), never by our server."""
 	team = _resolve_team(team, authz.MANAGE)
 	_require_billing_setup(team)
+	# Default to the team's currency gateway (Stripe for USD/EUR) when the caller
+	# doesn't name one — same resolution the Razorpay setup path uses.
+	gateway = gateway or _add_method_gateway(_team_currency(team)).get("name")
 	from central.billing.payments import payments
 
 	return payments.initiate_payment_method_setup(team, gateway)

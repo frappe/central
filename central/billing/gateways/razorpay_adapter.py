@@ -46,6 +46,13 @@ class RazorpayAdapter(GatewayAdapter):
 		"webhook_secret": "razorpay_webhook_secret",
 	}
 
+	# RBI caps a silent (off-session) recurring debit at ₹15,000; above it the
+	# customer must re-authenticate every cycle, so we don't auto-charge there
+	# (ADR 0005). Each debit is preceded by a pre-debit notification.
+	supports_off_session_charge = True
+	max_silent_charge = 15_00_000  # ₹15,000 in paise
+	requires_predebit_notice = True
+
 	def _client(self):
 		return razorpay.Client(
 			auth=(self.get_credential("api_key"), self.get_credential("api_secret"))
@@ -96,6 +103,9 @@ class RazorpayAdapter(GatewayAdapter):
 				"method": method,
 				"customer_id": setup_data.get("customer_id"),
 				"receipt": receipt,
+				# Auto-capture the registration auth; without it the payment stays
+				# "authorized" (manual capture) and Checkout reports the mandate failed.
+				"payment_capture": 1,
 				"token": {"max_amount": max_amount * 100},
 				"notes": {"team": team},
 			}
@@ -104,6 +114,9 @@ class RazorpayAdapter(GatewayAdapter):
 			"order_id": order.get("id"),
 			"customer_id": setup_data.get("customer_id"),
 			"key_id": self.get_credential("api_key"),
+			# Checkout must run in recurring mode (with the customer_id) for the token
+			# to be issued — otherwise it processes a one-time ₹1 charge that fails.
+			"recurring": 1,
 		}
 
 	def validate_payment_method(self, payment_method) -> bool:
@@ -128,6 +141,7 @@ class RazorpayAdapter(GatewayAdapter):
 					"amount": amount_paise,
 					"currency": currency,
 					"receipt": idempotency_key,
+					"payment_capture": 1,  # settle the charge, don't leave it authorized
 					"notes": {"invoice": invoice.get("name")},
 				}
 			)
@@ -206,6 +220,7 @@ class RazorpayAdapter(GatewayAdapter):
 			"amount": int(round((amount or 0) * 100)),
 			"currency": (currency or "INR").upper(),
 			"receipt": receipt,
+			"payment_capture": 1,  # auto-capture so the top-up settles + the webhook fires
 			"notes": notes or {},
 		})
 		# `amount_in_subunits` (paise) is what Razorpay Checkout reads; it is kept

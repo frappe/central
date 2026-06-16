@@ -133,6 +133,36 @@ def save_billing_settings(team: str | None = None, min_balance: float | None = N
 
 
 @frappe.whitelist()
+def get_collection_status(team: str | None = None) -> dict:
+	"""Collection mode + the "Action Required" banner feed (ADR 0005, #50).
+
+	Re-checks an e-mandate team against the ₹15,000 silent-debit threshold using the
+	month-to-date forecast (so we warn before the bill lands), then returns the state
+	the banner renders from: the mode, whether action is required and why, the
+	threshold, and the numbers (projected total, wallet balance, shortfall)."""
+	team = _resolve_team(team)
+	from central.billing.payments import collection_mode
+	from central.billing.api.dashboard.invoices import get_forecast
+	from central.billing.revenue import credits
+
+	projected = frappe.utils.flt(get_forecast(team).get("projected_total"))
+	st = collection_mode.evaluate(team, projected_amount=projected)
+	wallet = frappe.utils.flt(credits.get_balance(team)["balance"])
+	return {**st, "projected_total": projected, "wallet_balance": wallet,
+			"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
+			"currency": _team_currency(team)}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_collection_mode(team: str | None = None, mode: str | None = None) -> dict:
+	"""Customer resolves Action Required (or switches) — manual_checkout / prepaid."""
+	team = _resolve_team(team, authz.MANAGE)
+	from central.billing.payments import collection_mode
+
+	return collection_mode.choose(team, mode)
+
+
+@frappe.whitelist()
 def get_team_overview(team: str | None = None) -> dict:
 	"""Team header: trust tier, account standing, payment mode, resource count."""
 	team = _resolve_team(team)

@@ -7,6 +7,7 @@ Intents, refunds, webhook signature verification) is ported from the working
 press implementation; the structure is the new adapter model.
 """
 
+import frappe
 import stripe
 
 from central.billing.gateways.base import (
@@ -28,6 +29,45 @@ STRIPE_WEBHOOK_EVENTS = [
 ]
 
 
+def _country_code(value) -> str | None:
+	"""Resolve a Billing Profile country (free-text Data) to an ISO 3166-1 alpha-2
+	code, which is what Stripe's address.country expects. Accepts a code already."""
+	if not value:
+		return None
+	v = str(value).strip()
+	if len(v) == 2:
+		return v.upper()
+	code = frappe.db.get_value("Country", v, "code")
+	return code.upper() if code else None
+
+
+def _export_shipping(team: str | None) -> dict | None:
+	"""India-exports compliance: a Stripe account based in India must send the
+	customer's name + address on every export (international) charge. We source it
+	from the team's Billing Profile — which is required complete before any money
+	moves — and pass it as a PaymentIntent `shipping` block."""
+	if not team:
+		return None
+	bp = frappe.db.get_value(
+		"Billing Profile", team,
+		["legal_name", "address_line1", "address_line2", "city", "state", "country", "pincode"],
+		as_dict=True,
+	)
+	if not bp or not bp.address_line1:
+		return None
+	return {
+		"name": bp.legal_name or team,
+		"address": {
+			"line1": bp.address_line1,
+			"line2": bp.address_line2 or None,
+			"city": bp.city,
+			"state": bp.state,
+			"postal_code": bp.pincode,
+			"country": _country_code(bp.country),
+		},
+	}
+
+
 def _to_dict(obj) -> dict:
 	"""Normalise a Stripe response to a plain dict. A StripeObject (stripe v15)
 	is not a dict and exposes neither `.get()` nor direct `dict()` conversion,
@@ -47,6 +87,11 @@ class StripeAdapter(GatewayAdapter):
 		"api_key": "stripe_publishable_key",
 		"webhook_secret": "stripe_webhook_secret",
 	}
+
+	# Off-session PaymentIntents charge any amount without re-auth (ADR 0005) —
+	# the saved-method / postpaid rail. No silent ceiling.
+	supports_off_session_charge = True
+	max_silent_charge = None
 
 	def _configure(self):
 		stripe.api_key = self.get_credential("api_secret")
@@ -90,15 +135,23 @@ class StripeAdapter(GatewayAdapter):
 	def validate_payment_method(self, payment_method) -> bool:
 		"""Micro-charge (50 minor units) + auto-refund to prove the card is live."""
 		self._configure()
+		# India-based Stripe accounts require a description AND the customer's
+		# name + address on every export (international) charge — Stripe rejects
+		# the request otherwise.
+		params = dict(
+			amount=50,
+			currency=(self.default_currency() or "usd").lower(),
+			customer=payment_method.get("gateway_customer_id"),
+			payment_method=payment_method.gateway_method_id,
+			confirm=True,
+			off_session=True,
+			description="Payment method validation",
+		)
+		shipping = _export_shipping(payment_method.get("team"))
+		if shipping:
+			params["shipping"] = shipping
 		try:
-			intent = _to_dict(stripe.PaymentIntent.create(
-				amount=50,
-				currency=(self.default_currency() or "usd").lower(),
-				customer=payment_method.get("gateway_customer_id"),
-				payment_method=payment_method.gateway_method_id,
-				confirm=True,
-				off_session=True,
-			))
+			intent = _to_dict(stripe.PaymentIntent.create(**params))
 		except stripe.error.CardError:
 			return False
 
@@ -116,16 +169,22 @@ class StripeAdapter(GatewayAdapter):
 		"""
 		self._configure()
 		amount_minor = int(round((invoice.amount or 0) * 100))
+		# Required for India-account export charges (see validate_payment_method).
+		params = dict(
+			amount=amount_minor,
+			currency=(invoice.currency or "").lower(),
+			customer=invoice.get("customer_id"),
+			payment_method=payment_method.gateway_method_id,
+			off_session=True,
+			confirm=True,
+			idempotency_key=idempotency_key,
+			description=f"Invoice {invoice.get('name') or ''}".strip(),
+		)
+		shipping = _export_shipping(invoice.get("team") or payment_method.get("team"))
+		if shipping:
+			params["shipping"] = shipping
 		try:
-			intent = _to_dict(stripe.PaymentIntent.create(
-				amount=amount_minor,
-				currency=(invoice.currency or "").lower(),
-				customer=invoice.get("customer_id"),
-				payment_method=payment_method.gateway_method_id,
-				off_session=True,
-				confirm=True,
-				idempotency_key=idempotency_key,
-			))
+			intent = _to_dict(stripe.PaymentIntent.create(**params))
 		except stripe.error.CardError as e:
 			return PaymentResult(
 				success=False,
@@ -193,7 +252,9 @@ class StripeAdapter(GatewayAdapter):
 		off-session charges (the same customer id every later charge reuses)."""
 		self._configure()
 		params = dict(amount=int(round((amount or 0) * 100)),
-			currency=(currency or "usd").lower(), metadata={"receipt": receipt, **(notes or {})})
+			currency=(currency or "usd").lower(), metadata={"receipt": receipt, **(notes or {})},
+			# Required for India-account export charges (see validate_payment_method).
+			description="Wallet top-up")
 		if customer:
 			params["customer"] = customer
 		intent = _to_dict(stripe.PaymentIntent.create(**params))
@@ -222,7 +283,8 @@ class StripeAdapter(GatewayAdapter):
 				},
 			}],
 			metadata=meta,
-			payment_intent_data={"metadata": meta},
+			# description required for India-account export charges (see validate_payment_method).
+			payment_intent_data={"metadata": meta, "description": "Wallet top-up"},
 		)
 		if customer:
 			params["customer"] = customer

@@ -24,8 +24,10 @@
   "pincode",
   "section_break_settings",
   "min_balance",
+  "collection_mode",
   "column_break_settings",
-  "spend_alert_threshold"
+  "spend_alert_threshold",
+  "collection_action_reason"
  ],
  "fields": [
   {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
@@ -44,8 +46,10 @@
   {"fieldname": "pincode", "fieldtype": "Data", "label": "Pincode"},
   {"fieldname": "section_break_settings", "fieldtype": "Section Break", "label": "Billing Settings"},
   {"default": "0", "fieldname": "min_balance", "fieldtype": "Currency", "label": "Low Balance Alert"},
+  {"default": "prepaid", "fieldname": "collection_mode", "fieldtype": "Select", "label": "Collection Mode", "options": "stripe_auto\nemandate\nmanual_checkout\nprepaid\naction_required", "description": "How this team's invoices are collected (ADR 0005). action_required is transient: an e-mandate team crossed the ₹15,000 silent-debit limit and must pick manual_checkout or prepaid."},
   {"fieldname": "column_break_settings", "fieldtype": "Column Break"},
-  {"default": "0", "fieldname": "spend_alert_threshold", "fieldtype": "Currency", "label": "Spend Alert Threshold"}
+  {"default": "0", "fieldname": "spend_alert_threshold", "fieldtype": "Currency", "label": "Spend Alert Threshold"},
+  {"fieldname": "collection_action_reason", "fieldtype": "Data", "label": "Collection Action Reason", "read_only": 1, "description": "Why the team is in action_required: forecast_over_threshold / invoice_over_threshold / mandate_failed / tier_cap."}
  ],
  "index_web_pages_for_search": 1,
  "links": [],

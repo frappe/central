@@ -76,6 +76,22 @@ class GatewayAdapter(ABC):
 	# the Payment Gateway doc (DB). Empty = always read from the doc.
 	conf_keys: dict[str, str] = {}
 
+	# Off-session (silent, customer-absent) charge capability — drives which rail
+	# the collection layer may auto-charge on (ADR 0005). `max_silent_charge` is in
+	# MINOR units (paise/cent); None = no ceiling. Razorpay caps at the RBI ₹15,000
+	# silent-debit limit; Stripe off-session has no cap. The base default is "can't
+	# charge off-session" so a new adapter opts in explicitly.
+	supports_off_session_charge: bool = False
+	max_silent_charge: int | None = 0
+	requires_predebit_notice: bool = False
+
+	def can_charge_silently(self, amount_minor: int) -> bool:
+		"""True if this adapter may pull `amount_minor` off-session without sending
+		the customer back for authentication (ADR 0005)."""
+		if not self.supports_off_session_charge:
+			return False
+		return self.max_silent_charge is None or amount_minor <= self.max_silent_charge
+
 	def __init__(self, gateway):
 		self.gateway = gateway
 

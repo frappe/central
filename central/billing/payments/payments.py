@@ -96,6 +96,7 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 	Returns the client secret the frontend confirms the card against. No money
 	moves here and the method is not yet usable.
 	"""
+	_discard_abandoned_setups(team, gateway)
 	adapter = _adapter(gateway)
 	gateway_customer_id = ensure_gateway_customer(team, gateway, adapter, gateway_customer_id)
 	handles = adapter.setup_payment_method(team, {"customer_id": gateway_customer_id})
@@ -113,6 +114,22 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 	).insert(ignore_permissions=True)
 
 	return {**handles, "payment_method": method.name}
+
+
+def _discard_abandoned_setups(team: str, gateway: str):
+	"""Delete the team's never-confirmed card setups on this gateway before a fresh
+	attempt. A Pending Validation method with no gateway_method_id is an abandoned
+	SetupIntent (dialog closed before confirm) — otherwise these pile up in the
+	store. Confirmed methods (any status) are left alone."""
+	for name in frappe.get_all(
+		"Payment Method",
+		filters={
+			"team": team, "gateway": gateway,
+			"status": "Pending Validation", "gateway_method_id": ["in", [None, ""]],
+		},
+		pluck="name",
+	):
+		frappe.delete_doc("Payment Method", name, ignore_permissions=True, force=True)
 
 
 @frappe.whitelist()
@@ -157,20 +174,40 @@ def confirm_payment_method(
 
 
 def densify_priorities(team: str):
-	"""Renumber a team's methods into dense `priority` (0,1,2,…) by current order
-	and mirror `is_default` = (priority == 0). The single place that defines the
-	fallback order; idempotent."""
-	names = frappe.get_all(
+	"""Renumber a team's **active** methods into dense `priority` (0,1,2,…) by
+	current order and mirror `is_default` = (priority == 0). The single place that
+	defines the charge fallback order; idempotent.
+
+	Only Active methods belong in the order — they're the ones billing charges
+	(see collection.ordered_methods). A method still validating (Pending
+	Validation) or that failed must never rank or be the default, so non-active
+	methods are pushed past the active ones with `is_default` cleared."""
+	active = frappe.get_all(
 		"Payment Method",
-		filters={"team": team, "status": ["!=", "Cancelled"]},
+		filters={"team": team, "status": "Active"},
 		order_by="priority asc, creation asc",
 		pluck="name",
 	)
-	for i, name in enumerate(names):
+	for i, name in enumerate(active):
 		frappe.db.set_value(
 			"Payment Method",
 			name,
 			{"priority": i, "is_default": 1 if i == 0 else 0},
+			update_modified=False,
+		)
+	# Demote everything that isn't active so it can't sit in the fallback order or
+	# masquerade as the primary; park its priority after the active tail.
+	non_active = frappe.get_all(
+		"Payment Method",
+		filters={"team": team, "status": ["not in", ["Active", "Cancelled"]]},
+		order_by="creation asc",
+		pluck="name",
+	)
+	for j, name in enumerate(non_active):
+		frappe.db.set_value(
+			"Payment Method",
+			name,
+			{"priority": len(active) + j, "is_default": 0},
 			update_modified=False,
 		)
 
