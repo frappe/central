@@ -4,7 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Central Console</title>
-    <script type="module" crossorigin src="/assets/central/dashboard/assets/index-Sly_KjFC.js"></script>
+    <!-- Stripe.js must be served from js.stripe.com (PCI; it can't be bundled).
+         Loading it here (in parallel with the app, not on dialog-open) means it's
+         already cached when the Add-card dialog needs it — so a slow connection
+         doesn't leave the card widget blank. @stripe/stripe-js reuses this tag. -->
+    <link rel="preconnect" href="https://js.stripe.com" crossorigin />
+    <script src="https://js.stripe.com/v3/" async></script>
+    <script type="module" crossorigin src="/assets/central/dashboard/assets/index-v0sIo8Qb.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/central/dashboard/assets/index-C-2n0NoW.css">
   </head>
   <body>

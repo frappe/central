@@ -1,11 +1,13 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useCall } from 'frappe-ui'
 import { Dialog, Button, FormControl, LoadingText } from 'frappe-ui'
 import { API, m } from '@/api/endpoints'
 import { useTeam } from '@/composables/useTeam'
 import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
+import { useAddStripeCard } from '@/composables/useAddStripeCard'
 import { money } from '@/utils/money'
+import { errorToast } from '@/utils/toast'
 
 // Pick a method to add, resolved from the team's billing currency. UPI Autopay
 // is offered only when eligible (recurring-limit/trust gate from the backend).
@@ -17,12 +19,12 @@ const params = () => ({ team: currentTeam.value })
 const options = useCall({ url: m(API.paymentMethodOptions), params, refetch: true })
 const profile = useCall({ url: m(API.billingProfile), params, refetch: true })
 
-const { run, loading } = useAddPaymentMethod({
-  onDone: (res) => {
-    open.value = false
-    emit('done', res)
-  },
-})
+function done(res) {
+  open.value = false
+  emit('done', res)
+}
+
+const { run, loading } = useAddPaymentMethod({ onDone: done })
 
 const upiBlocked = computed(() => options.data && !options.data.allow_upi)
 
@@ -34,13 +36,65 @@ const cardNeedsPhone = computed(
 const askPhone = ref(false)
 const phone = ref('')
 
-function onCard() {
+// Stripe card capture happens in an embedded Element (separate rail from
+// Razorpay's hosted Checkout). We swap the method picker for the card field
+// once the customer chooses Card on a Stripe gateway.
+const stripeMode = ref(false)
+const stripeLoading = ref(false) // Stripe.js + SetupIntent still loading
+const cardEl = ref(null)
+const {
+  mount: mountStripe,
+  submit: submitStripe,
+  destroy: destroyStripe,
+  complete: stripeComplete,
+  submitting: stripeSubmitting,
+} = useAddStripeCard({ onDone: done })
+
+async function startStripe() {
+  stripeLoading.value = true
+  await nextTick() // the Element needs its mount node in the DOM
+  try {
+    await mountStripe(cardEl.value, {
+      team: currentTeam.value,
+      publishableKey: options.data.publishable_key,
+    })
+  } catch (e) {
+    errorToast(e, 'Could not start Stripe card setup.')
+    cancelStripe()
+  } finally {
+    stripeLoading.value = false
+  }
+}
+
+async function onCard() {
+  if (options.data?.adapter_key === 'Stripe') {
+    stripeMode.value = true
+    await startStripe()
+    return
+  }
   if (cardNeedsPhone.value && !phone.value.trim()) {
     askPhone.value = true
     return
   }
   run('Card', phone.value.trim() || undefined)
 }
+
+function cancelStripe() {
+  destroyStripe()
+  stripeMode.value = false
+}
+
+// Tear down the Element and reset inline state whenever the dialog closes, so a
+// reopen starts on the method picker (not a stale Stripe field).
+watch(open, (isOpen) => {
+  if (!isOpen) {
+    destroyStripe()
+    stripeMode.value = false
+    stripeLoading.value = false
+    askPhone.value = false
+    phone.value = ''
+  }
+})
 </script>
 
 <template>
@@ -49,6 +103,32 @@ function onCard() {
       <div v-if="options.loading && !options.data" class="space-y-2">
         <LoadingText :lines="3" />
       </div>
+
+      <!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
+      <div v-else-if="stripeMode" class="space-y-3">
+        <p v-if="stripeLoading" class="text-p-sm text-ink-gray-5">Loading secure card field…</p>
+        <div ref="cardEl" class="rounded border border-outline-gray-2 px-3 py-3" />
+        <div class="flex gap-2">
+          <Button
+            variant="solid"
+            :label="stripeSubmitting ? 'Validating…' : 'Add card'"
+            :loading="stripeSubmitting"
+            :disabled="!stripeComplete"
+            @click="submitStripe"
+          />
+          <Button label="Cancel" :disabled="stripeSubmitting" @click="cancelStripe" />
+        </div>
+        <p class="text-p-sm text-ink-gray-5">
+          <template v-if="stripeSubmitting">
+            Validating your card with a small temporary charge that’s refunded right away. This can
+            take a few seconds — please don’t close this window.
+          </template>
+          <template v-else>
+            Card details are entered on Stripe’s secure field — we never see your card number.
+          </template>
+        </p>
+      </div>
+
       <div v-else-if="options.data" class="space-y-3">
         <button
           v-if="options.data.methods.includes('Card')"
