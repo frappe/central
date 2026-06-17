@@ -23,7 +23,7 @@ test.describe('Wallet top-up (Razorpay)', () => {
     await dialog.getByRole('button', { name: 'Continue to payment' }).click()
 
     const order = (await (await orderResp).json()).data
-    expect(order.gateway).toBe('GW-Razorpay') // INR routes to Razorpay
+    expect(order.adapter_key).toBe('Razorpay') // INR routes to a Razorpay rail
     expect(order.order_id).toMatch(/^order_/) // a genuine test-mode order id
 
     // The genuine Razorpay test sheet opens against that real order.

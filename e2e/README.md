@@ -36,6 +36,7 @@ just a new subfolder. Each domain wires its own test-only seed endpoint under
 | `emandate.spec.js` | INR e-mandate pre-debit notice + the ₹15,000 Action Required fork | **fully real** `schedule_predebit` / `collection_mode` |
 | `dunning.spec.js` | Declined card → Overdue + Past Due after the retry window | **real Stripe decline** + real dunning state machine (simulated clock) |
 | `refunds.spec.js` | Full dispute → source (invoice stays Paid); partial overcharge → wallet | **real Stripe refund** + real credit ledger |
+| `invoice-generation.spec.js` | Provision a price-lock → generate the invoice from it | **real agentless pipeline** (`provision_subscription` → `generate_draft_invoice`), no fabrication |
 
 ### INR rails (e-mandate + UPI Autopay)
 

@@ -86,10 +86,10 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 	if team and frappe.db.exists("Team", team):
 		owner = frappe.db.get_value("Team", team, "owner_user")
 		for dt in (
-			"Invoice", "Payment Attempt", "Subscription", "Payment Method",
+			"Refund", "Invoice", "Payment Attempt", "Subscription", "Payment Method",
 			"Credit Ledger Entry", "Credit Wallet", "Gateway Customer",
-			"Billing Notification Log", "Notification Preference", "Billing Profile",
-			"Trust Tier", "Tax Profile",
+			"Price Lock", "Usage Rollup", "Billing Notification Log",
+			"Notification Preference", "Billing Profile", "Trust Tier", "Tax Profile",
 		):
 			_safe(frappe.db.delete, dt, {"team": team})
 		_safe(frappe.delete_doc, "Team", team, force=True, ignore_permissions=True)
@@ -310,6 +310,31 @@ def dun(invoice: str, days: int = 7) -> dict:
 	result = dunning.process_invoice_dunning(invoice, now=now)
 	frappe.db.commit()
 	return result
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def generate_invoice(team: str, monthly_rate: float = 3000,
+					 period_start: str = "2026-06-01", period_end: str = "2026-06-30") -> dict:
+	"""Generate an invoice through the **real agentless pipeline** (no fabrication):
+	provision a subscription (which writes the price-lock at the catalog rate, ADR
+	0006) → `generate_draft_invoice` computes line items from that lock over the
+	period. Returns the Draft invoice + its computed subtotal so the spec can
+	cross-check the rendered amount."""
+	_enter_test_mode()
+	from central.billing.catalog import subscriptions
+	from central.billing.revenue import invoicing
+	from central.billing.tests.utils import make_plan
+
+	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
+	rate = frappe.utils.flt(monthly_rate)
+	plan = make_plan("e2e-gen-plan", rates=[{"cluster": "", "currency": currency, "rate": rate}])
+	prov = subscriptions.provision_subscription(team, "e2e-cluster", plan, start_date=period_start)
+	invoice = invoicing.generate_draft_invoice(prov["subscription"], period_start, period_end)
+	doc = frappe.get_doc("Invoice", invoice)
+	frappe.db.commit()
+	return {"invoice": invoice, "subscription": prov["subscription"],
+			"resource_id": prov["resource_id"], "subtotal": doc.subtotal,
+			"total": doc.total, "currency": doc.currency}
 
 
 # --- INR rails (e-mandate + UPI Autopay mandate) -----------------------------

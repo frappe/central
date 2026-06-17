@@ -64,6 +64,10 @@ export const test = base.extend({
     const makeInvoice = ({ team, total = 1180, linkCard = 0 }) =>
       backend('make_invoice', { team, total, link_card: linkCard })
     const settle = ({ team, invoice, collect = 1 }) => backend('settle', { team, invoice, collect })
+    // Generate an invoice through the real agentless pipeline (provision → price-lock
+    // → generate_draft_invoice), not by fabricating an Invoice doc.
+    const generateInvoice = ({ team, monthlyRate = 3000 }) =>
+      backend('generate_invoice', { team, monthly_rate: monthlyRate })
     const deliverWebhook = ({ attempt }) => backend('deliver_webhook', { attempt })
     // Run one day of dunning as if `days` had elapsed past the invoice due date.
     const dun = ({ invoice, days = 7 }) => backend('dun', { invoice, days })
@@ -82,7 +86,7 @@ export const test = base.extend({
 
     await use({
       seed, login, signIn, finishRazorpay,
-      addCredits, saveCard, makeInvoice, settle, deliverWebhook, dun, refund,
+      addCredits, saveCard, makeInvoice, settle, deliverWebhook, dun, refund, generateInvoice,
       setTrustTier, setCollectionMode, predebit, finishMandate,
     })
 
