@@ -47,9 +47,17 @@ const openCall = useCall({ url: m(API.getBenchLink), method: 'GET', immediate: f
 
 async function openVm(asset) {
   opening.value = asset.resource_id
+  // Open the tab synchronously (inside the click) so it isn't popup-blocked, then
+  // point it at the minted SSO URL once it resolves.
+  const tab = window.open('', '_blank')
   try {
     const res = await openCall.submit({ asset: asset.resource_id })
-    if (res?.url) window.location.href = res.url
+    if (res?.url && tab) tab.location = res.url
+    else if (res?.url) window.location.href = res.url
+    else tab?.close()
+  } catch (e) {
+    tab?.close()
+    throw e
   } finally {
     opening.value = ''
   }
