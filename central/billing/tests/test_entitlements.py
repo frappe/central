@@ -5,8 +5,9 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.entitlements import evaluate_tier, get_ladder, recompute_trust_tier
-from central.billing.tests.utils import ensure_team
+from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
+# Money limits are INR here; make_ladder seeds them as the level's INR threshold.
 LADDER = [
 	{"tier": "t0", "sequence": 0, "is_default": 1, "max_spend": 100, "max_resource_count": 1,
 	 "min_paid_invoices": 0, "min_cumulative_paid": 0},
@@ -18,12 +19,35 @@ LADDER = [
 
 
 def make_ladder():
+	"""Seed the ladder in INR. The entry tier must price every supported currency
+	(validation), so it carries INR + whatever gateways the site offers; higher
+	rungs stay INR-only — which also leaves a USD team unable to climb past entry."""
+	from central.billing.gateways.registry import supported_currencies
+
+	entry_currencies = sorted(set(supported_currencies()) | {"INR"})
 	for level in LADDER:
 		if frappe.db.exists("Trust Tier Level", level["tier"]):
 			frappe.delete_doc("Trust Tier Level", level["tier"], force=True)
-		frappe.get_doc({"doctype": "Trust Tier Level", "__newname": level["tier"], **level}).insert(
-			ignore_permissions=True
-		)
+		currencies = entry_currencies if level.get("is_default") else ["INR"]
+		frappe.get_doc(
+			{
+				"doctype": "Trust Tier Level",
+				"__newname": level["tier"],
+				"tier": level["tier"],
+				"sequence": level["sequence"],
+				"is_default": level.get("is_default", 0),
+				"max_resource_count": level["max_resource_count"],
+				"min_paid_invoices": level["min_paid_invoices"],
+				"thresholds": [
+					{
+						"currency": c,
+						"max_spend": level["max_spend"],
+						"min_cumulative_paid": level["min_cumulative_paid"],
+					}
+					for c in currencies
+				],
+			}
+		).insert(ignore_permissions=True)
 
 
 class TestEvaluateTier(IntegrationTestCase):
@@ -32,22 +56,27 @@ class TestEvaluateTier(IntegrationTestCase):
 
 	def test_picks_highest_qualifying_tier(self):
 		levels = get_ladder()
-		self.assertEqual(evaluate_tier(6, 1000, levels).tier, "t2")
-		self.assertEqual(evaluate_tier(3, 300, levels).tier, "t1")
-		self.assertEqual(evaluate_tier(0, 0, levels).tier, "t0")
+		self.assertEqual(evaluate_tier(6, 1000, "INR", levels).tier, "t2")
+		self.assertEqual(evaluate_tier(3, 300, "INR", levels).tier, "t1")
+		self.assertEqual(evaluate_tier(0, 0, "INR", levels).tier, "t0")
 
 	def test_partial_threshold_does_not_promote(self):
 		levels = get_ladder()
-		# 3 paid invoices but only $50 cumulative — t1 needs both.
-		self.assertEqual(evaluate_tier(3, 50, levels).tier, "t0")
+		# 3 paid invoices but only 50 cumulative — t1 needs both.
+		self.assertEqual(evaluate_tier(3, 50, "INR", levels).tier, "t0")
+
+	def test_currency_without_a_threshold_row_falls_to_entry(self):
+		levels = get_ladder()
+		# The ladder only prices INR; a USD team can't climb past the entry tier.
+		self.assertEqual(evaluate_tier(6, 1000, "USD", levels).tier, "t0")
 
 
 class TestRecomputeTrustTier(IntegrationTestCase):
 	def setUp(self):
 		make_ladder()
 		ensure_team("team-entitle")
-		if frappe.db.exists("Trust Tier", "team-entitle"):
-			frappe.delete_doc("Trust Tier", "team-entitle", force=True)
+		complete_billing_profile("team-entitle")  # currency = INR
+		clear_team_tier("team-entitle")
 
 	def test_promotion_fires_and_records_basis(self):
 		tier = recompute_trust_tier("team-entitle", paid_invoice_count=3, cumulative_paid=300)
@@ -58,7 +87,7 @@ class TestRecomputeTrustTier(IntegrationTestCase):
 
 	def test_manual_override_is_exempt(self):
 		recompute_trust_tier("team-entitle", paid_invoice_count=6, cumulative_paid=1000)  # t2
-		frappe.db.set_value("Trust Tier", "team-entitle", "manual_override", 1)
+		frappe.db.set_value("Billing Profile", "team-entitle", "manual_override", 1)
 
 		tier = recompute_trust_tier("team-entitle", paid_invoice_count=0, cumulative_paid=0)
 		self.assertEqual(tier.tier, "t2")  # not demoted

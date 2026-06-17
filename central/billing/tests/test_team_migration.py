@@ -39,7 +39,7 @@ class TestTeamMigration(IntegrationTestCase):
 		sub = frappe.get_doc({"doctype": "Subscription", "team": real_team}).insert(
 			ignore_permissions=True
 		)
-		frappe.get_doc({"doctype": "Trust Tier", "team": real_team}).insert(
+		frappe.get_doc({"doctype": "Tax Profile", "team": real_team}).insert(
 			ignore_permissions=True
 		)  # field:team → name == real_team
 
@@ -49,10 +49,10 @@ class TestTeamMigration(IntegrationTestCase):
 		frappe.qb.update(subscription).set(subscription.team, self.slug).where(
 			subscription.name == sub.name
 		).run()
-		trust_tier = frappe.qb.DocType("Trust Tier")
-		frappe.qb.update(trust_tier).set(trust_tier.name, self.slug).set(
-			trust_tier.team, self.slug
-		).where(trust_tier.name == real_team).run()
+		tax_profile = frappe.qb.DocType("Tax Profile")
+		frappe.qb.update(tax_profile).set(tax_profile.name, self.slug).set(
+			tax_profile.team, self.slug
+		).where(tax_profile.name == real_team).run()
 		self.sub = sub.name
 
 	def test_slug_is_repointed_to_a_real_team(self):
@@ -67,11 +67,11 @@ class TestTeamMigration(IntegrationTestCase):
 		team_name = frappe.db.get_value("Team", {"team_name": self.slug}, "name")
 
 		self.assertFalse(
-			frappe.db.exists("Trust Tier", self.slug), "slug-named tier should be gone"
+			frappe.db.exists("Tax Profile", self.slug), "slug-named tax profile should be gone"
 		)
-		self.assertTrue(frappe.db.exists("Trust Tier", team_name))
-		# the invariant code relies on: get_doc("Trust Tier", team) still works.
-		self.assertEqual(frappe.db.get_value("Trust Tier", team_name, "team"), team_name)
+		self.assertTrue(frappe.db.exists("Tax Profile", team_name))
+		# the invariant code relies on: get_doc("Tax Profile", team) still works.
+		self.assertEqual(frappe.db.get_value("Tax Profile", team_name, "team"), team_name)
 
 	def test_migration_is_idempotent(self):
 		_run_migration()

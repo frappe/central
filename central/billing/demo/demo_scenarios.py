@@ -236,9 +236,9 @@ def _drop_stray_demo_teams() -> None:
 def _build_team(team, slug, tier, currency, months, state, resources):
 	from collections import OrderedDict
 
-	_tier(team, tier)
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
+	_tier(team, tier)  # tier lives on the Billing Profile, so set it after _profile
 	_team_members(team, slug)  # members on varied system roles + a custom role
 	gateway, pm = _payment_setup(team, slug, currency, state)
 	# A card/UPI team already got its Gateway Customer in _payment_setup. A top-up-only
