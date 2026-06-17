@@ -15,6 +15,7 @@ const { has } = useCapabilities()
 
 const registry = useCall({
   url: m(API.atlasRegistry),
+  method: 'POST',
   params: () => ({ team: currentTeam.value }),
   refetch: true,
 })

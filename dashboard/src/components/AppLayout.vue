@@ -3,12 +3,8 @@ import { ref } from 'vue'
 import NavLink from '@/components/NavLink.vue'
 import TeamSwitcher from '@/components/TeamSwitcher.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { useBillingSetup } from '@/composables/useBillingSetup'
 
 const { canView, canViewTeam, canViewAtlas } = useCapabilities()
-// Until the billing profile is complete, EVERY nav option is locked and the
-// onboarding view fills the content area (the router funnels all routes there).
-const { complete: setupComplete } = useBillingSetup()
 
 // Below sm: the sidebar collapses to a toggled drawer (slides from the left).
 const drawerOpen = ref(false)
@@ -61,28 +57,28 @@ const atlas = [
         <div v-if="canViewAtlas">
           <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Atlas</p>
           <div class="space-y-0.5">
-            <NavLink v-for="i in atlas" :key="i.to" v-bind="i" :disabled="!setupComplete" />
+            <NavLink v-for="i in atlas" :key="i.to" v-bind="i" />
           </div>
         </div>
 
         <div v-if="canViewTeam">
           <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Team</p>
           <div class="space-y-0.5">
-            <NavLink v-for="i in team" :key="i.to" v-bind="i" :disabled="!setupComplete" />
+            <NavLink v-for="i in team" :key="i.to" v-bind="i" />
           </div>
         </div>
 
         <div v-if="canView">
           <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Billing</p>
           <div class="space-y-0.5">
-            <NavLink v-for="i in billing" :key="i.to" v-bind="i" :disabled="!setupComplete" />
+            <NavLink v-for="i in billing" :key="i.to" v-bind="i" />
           </div>
         </div>
 
         <div v-if="canView">
           <p class="px-2 pb-1 text-sm font-medium text-ink-gray-5">Settings</p>
           <div class="space-y-0.5">
-            <NavLink v-for="i in settings" :key="i.to" v-bind="i" :disabled="!setupComplete" />
+            <NavLink v-for="i in settings" :key="i.to" v-bind="i" />
           </div>
         </div>
       </nav>

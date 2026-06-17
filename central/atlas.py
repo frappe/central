@@ -58,12 +58,14 @@ def _resolve_team(user: str, team: str | None) -> str:
 	return teams[0]
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist(methods=["POST"])
 def registry(team: str | None = None) -> dict:
 	"""The team's asset registry (clusters → VMs), refreshed on demand from Atlas.
 
-	Gated on `cluster:view`. Returns the mirrored assets plus which clusters were
-	freshly synced vs. served stale (Atlas unreachable)."""
+	POST because it writes: the on-demand mirror upserts Asset rows, and Frappe
+	auto-commits a successful POST (a GET would roll the rows back). Gated on
+	`cluster:view`. Returns the mirrored assets plus which clusters were freshly
+	synced vs. served stale (Atlas unreachable)."""
 	user = frappe.session.user
 	team = _resolve_team(user, team)
 	if not can(user, team, "cluster:view"):
