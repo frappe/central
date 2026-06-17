@@ -74,7 +74,7 @@ async function submitProfile() {
         <Button
           v-if="canManage"
           variant="solid"
-          label="Save details"
+          label="Save"
           :loading="saveProfile.loading"
           @click="submitProfile"
         />
@@ -161,15 +161,15 @@ async function submitProfile() {
           </div>
         </div>
 
-        <!-- Tax details -->
-        <div class="space-y-3">
+        <!-- Tax details — GSTIN is India-only. -->
+        <div v-if="isIndia" class="space-y-3">
           <h3 class="text-sm font-medium text-ink-gray-8">Tax details</h3>
           <div class="grid gap-4 sm:grid-cols-2">
             <FormControl
               v-model="form.gstin"
               label="GSTIN"
               :disabled="!canManage"
-              :description="isIndia ? 'Its first two digits must match the selected state.' : ''"
+              description="Its first two digits must match the selected state."
             />
           </div>
         </div>

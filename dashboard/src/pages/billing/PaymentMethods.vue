@@ -14,7 +14,7 @@ import { successToast, errorToast } from '@/utils/toast'
 const router = useRouter()
 const { currentTeam } = useTeam()
 const { canManage } = useCapabilities()
-const { complete: setupComplete } = useBillingSetup()
+const { complete: setupComplete, requireSetup } = useBillingSetup()
 
 const methods = useCall({
   url: m(API.paymentMethods),
@@ -87,6 +87,10 @@ function rowActions(pm, index) {
 
 const showAdd = ref(false)
 
+function onAdd() {
+  if (requireSetup()) showAdd.value = true
+}
+
 function methodIcon(type) {
   return type === 'Card' ? 'lucide-credit-card' : 'lucide-smartphone'
 }
@@ -100,8 +104,7 @@ function methodIcon(type) {
           v-if="canManage"
           variant="solid"
           label="Add method"
-          :disabled="!setupComplete"
-          @click="showAdd = true"
+          @click="onAdd"
         />
       </template>
     </PageHeader>
@@ -114,7 +117,7 @@ function methodIcon(type) {
         <p class="text-p-sm text-ink-amber-3">
           Set your billing currency and address before adding a payment method.
         </p>
-        <Button variant="subtle" label="Go to Settings" @click="router.push({ name: 'Address' })" />
+        <Button variant="subtle" label="Complete setup" @click="router.push({ name: 'Onboarding' })" />
       </div>
 
       <div v-if="methods.loading && !methods.data" class="space-y-3">

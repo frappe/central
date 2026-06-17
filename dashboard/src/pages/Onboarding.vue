@@ -1,108 +1,121 @@
 <script setup>
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useCall } from 'frappe-ui'
-import { Button, FormControl, LoadingText } from 'frappe-ui'
-import { API, m } from '@/api/endpoints'
-import { useTeam } from '@/composables/useTeam'
-import { useBillingSetup } from '@/composables/useBillingSetup'
-import { successToast, errorToast } from '@/utils/toast'
+import { Button } from 'frappe-ui'
+import OnboardingSection from '@/components/onboarding/OnboardingSection.vue'
+import { ONBOARDING_STEPS } from '@/onboarding/steps'
 
-// First-run billing setup, rendered in the content area while the shell's
-// billing/settings options stay locked. The router sends a team here whenever its
-// billing profile is incomplete; once currency + legal name + address are saved
-// the options unlock and the team proceeds to the dashboard. Currency is chosen
-// here (and locks once money moves), so it can never be guessed wrong later.
+// First-run billing setup, rendered as an accordion of collapsible sections driven
+// entirely by the ONBOARDING_STEPS registry. Each section reports its own
+// completion (v-model:complete); a section stays LOCKED — collapsed and
+// non-interactive — until every preceding non-optional step is complete. The open
+// section follows the first incomplete, unlocked step unless the team manually
+// opens another. Adding a step is a registry-only change (see onboarding/steps.js).
+//
+// Navigation stays open elsewhere; money-moving actions divert here via
+// useBillingSetup.requireSetup(), passing a ?redirect= that finish() returns to.
 const route = useRoute()
 const router = useRouter()
-const { currentTeam } = useTeam()
-const { supportedCurrencies, reload: reloadSetup } = useBillingSetup()
+const steps = ONBOARDING_STEPS
 
-const profile = useCall({
-  url: m(API.billingProfile),
-  params: () => ({ team: currentTeam.value }),
-  refetch: true,
+const done = reactive(Object.fromEntries(steps.map((s) => [s.key, false])))
+
+// A step is locked until every preceding NON-optional step is complete.
+function locked(i) {
+  return steps.slice(0, i).some((s) => !s.optional && !done[s.key])
+}
+function stateOf(i) {
+  if (done[steps[i].key]) return 'complete'
+  return locked(i) ? 'locked' : 'active'
+}
+
+// The open section follows the first incomplete, unlocked step — unless the team
+// manually toggles one (manualKey), which we respect until the next advance.
+const manualKey = ref(undefined)
+const autoKey = computed(() => {
+  const i = steps.findIndex((s, idx) => !done[s.key] && !locked(idx))
+  return i === -1 ? null : steps[i].key
 })
+const openKey = computed(() => (manualKey.value !== undefined ? manualKey.value : autoKey.value))
 
-const FIELDS = [
-  'currency', 'legal_name', 'email', 'gstin',
-  'address_line1', 'address_line2', 'city', 'state', 'country', 'pincode',
-]
-const form = reactive({})
-watch(
-  () => profile.data,
-  (d) => {
-    if (!d) return
-    for (const f of FIELDS) form[f] = d[f] ?? ''
-  },
-  { immediate: true },
-)
+function toggle(i) {
+  if (locked(i)) return
+  manualKey.value = openKey.value === steps[i].key ? null : steps[i].key
+}
+function onComplete(key, val) {
+  done[key] = val
+}
+function onAdvance() {
+  manualKey.value = undefined // hand control back to autoKey → opens the next step
+}
 
-const currencyOptions = computed(() => supportedCurrencies.value.map((c) => ({ label: c, value: c })))
-const required = ['currency', 'legal_name', 'address_line1', 'city', 'state', 'country', 'pincode']
-const canSubmit = computed(() => required.every((f) => String(form[f] || '').trim()))
+const completedCount = computed(() => steps.filter((s) => done[s.key]).length)
+const requiredDone = computed(() => steps.every((s) => s.optional || done[s.key]))
+const allDone = computed(() => completedCount.value === steps.length)
 
-const save = useCall({ url: m(API.saveBillingProfile), method: 'POST', immediate: false })
-async function submit() {
-  try {
-    await save.submit({ team: currentTeam.value, ...form })
-    await reloadSetup() // refresh shared state → unlocks the sidebar options
-    successToast('Billing profile set up.')
-    router.replace(route.query.redirect || '/billing')
-  } catch (e) {
-    errorToast(e)
-  }
+// Leave the wizard for wherever the team was headed (or the dashboard).
+function finish() {
+  router.replace(route.query.redirect || '/billing')
 }
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto">
-    <div class="mx-auto w-full max-w-2xl px-5 py-8">
-      <div class="rounded-lg border border-outline-gray-1 bg-surface-white p-6">
-        <h1 class="text-lg text-ink-gray-9">Set up billing for your team</h1>
-        <p class="mt-1 text-p-sm text-ink-gray-5">
-          Choose your billing currency and add your company details to get started — this is
-          needed before you can add credits or a payment method, and it unlocks the rest of
-          billing. Your currency locks once activity begins, so pick carefully.
+  <div class="h-full overflow-y-auto bg-surface-gray-1">
+    <div class="mx-auto w-full max-w-2xl px-5 py-10">
+      <header class="mb-6">
+        <h1 class="text-xl text-ink-gray-9">Set up billing for your team</h1>
+        <p class="mt-1 text-p-base text-ink-gray-6">
+          A couple of quick steps and you’re ready to add credits, a payment method, and
+          provision resources.
         </p>
 
-        <div v-if="profile.loading && !profile.data" class="mt-6 space-y-3">
-          <LoadingText :lines="6" />
+        <div class="mt-4 flex items-center gap-3">
+          <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-gray-3">
+            <div
+              class="h-full rounded-full bg-surface-green-5 transition-all duration-500 ease-out"
+              :style="{ width: `${(completedCount / steps.length) * 100}%` }"
+            />
+          </div>
+          <span class="shrink-0 text-p-sm text-ink-gray-5">
+            {{ completedCount }} of {{ steps.length }} done
+          </span>
         </div>
+      </header>
 
-        <form v-else class="mt-6 space-y-4" @submit.prevent="submit">
-          <div class="grid gap-4 sm:grid-cols-2">
-            <FormControl
-              type="select"
-              v-model="form.currency"
-              label="Billing currency *"
-              :options="currencyOptions"
-            />
-            <div />
-            <FormControl v-model="form.legal_name" label="Legal name *" />
-            <FormControl v-model="form.gstin" label="GSTIN" />
-            <FormControl v-model="form.email" type="email" label="Billing email" />
-            <FormControl v-model="form.address_line1" label="Address line 1 *" />
-            <FormControl v-model="form.address_line2" label="Address line 2" />
-            <FormControl v-model="form.city" label="City *" />
-            <FormControl v-model="form.state" label="State *" />
-            <FormControl v-model="form.country" label="Country *" />
-            <FormControl v-model="form.pincode" label="PIN code *" />
-          </div>
+      <div class="space-y-3">
+        <OnboardingSection
+          v-for="(s, i) in steps"
+          :key="s.key"
+          :index="i"
+          :title="s.title"
+          :description="s.description"
+          :optional="s.optional"
+          :state="stateOf(i)"
+          :open="openKey === s.key"
+          @toggle="toggle(i)"
+        >
+          <component
+            :is="s.component"
+            :active="openKey === s.key"
+            :complete="done[s.key]"
+            @update:complete="onComplete(s.key, $event)"
+            @advance="onAdvance"
+          />
+        </OnboardingSection>
+      </div>
 
-          <div class="flex items-center gap-3 pt-2">
-            <Button
-              variant="solid"
-              label="Finish setup"
-              type="submit"
-              :loading="save.loading"
-              :disabled="!canSubmit"
-            />
-            <span v-if="!canSubmit" class="text-p-sm text-ink-gray-5">
-              Fill the fields marked * to continue.
-            </span>
-          </div>
-        </form>
+      <div class="mt-6 flex items-center justify-between gap-3">
+        <p class="text-p-sm text-ink-gray-5">
+          <template v-if="allDone">You’re all set.</template>
+          <template v-else-if="requiredDone">Optional steps left — head to the dashboard whenever you’re ready.</template>
+          <template v-else>Complete the required step to continue.</template>
+        </p>
+        <Button
+          variant="solid"
+          label="Go to dashboard"
+          :disabled="!requiredDone"
+          @click="finish"
+        />
       </div>
     </div>
   </div>
