@@ -43,6 +43,7 @@ from central.billing.demo._factory import (
 	_profile,
 	_settle_with_retries,
 	_tax,
+	_team_members,
 	_tier,
 	_tiers,
 	_wipe_all,
@@ -191,6 +192,34 @@ def seed_demo() -> dict:
 	return results
 
 
+def summary() -> dict:
+	"""Post-seed sanity counts — proves the demo covers each criterion.
+
+	    bench --site central.local execute central.billing.demo.demo_scenarios.summary
+	"""
+	by_currency: dict[str, int] = {}
+	for p in frappe.get_all("Billing Profile", fields=["currency"]):
+		by_currency[p.currency] = by_currency.get(p.currency, 0) + 1
+
+	line_counts = {
+		inv: frappe.db.count("Invoice Line Item", {"parent": inv})
+		for inv in frappe.get_all("Invoice", pluck="name")
+	}
+	top = max(line_counts, key=line_counts.get) if line_counts else None
+
+	return {
+		"teams_by_currency": by_currency,
+		"members": frappe.db.count("Team Member"),
+		"custom_roles": frappe.db.count("Team Role", {"is_system": 0}),
+		"failed_attempts": frappe.db.count("Payment Attempt", {"status": "Failed"}),
+		"open_invoices": frappe.db.count("Invoice", {"status": "Open"}),
+		"paid_invoices": frappe.db.count("Invoice", {"status": "Paid"}),
+		"credit_ledger_entries": frappe.db.count("Credit Ledger Entry"),
+		"largest_invoice": {"invoice": top, "line_items": line_counts.get(top)} if top else None,
+		"months_covered": sorted({str(d)[:7] for d in frappe.get_all("Invoice", pluck="period_start") if d}),
+	}
+
+
 def _drop_stray_demo_teams() -> None:
 	"""Remove the member-less, slug-named teams an earlier seed created alongside
 	each owner's bootstrapped default team (two-teams-per-email cleanup). The
@@ -210,6 +239,7 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 	_tier(team, tier)
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
+	_team_members(team, slug)  # members on varied system roles + a custom role
 	gateway, pm = _payment_setup(team, slug, currency, state)
 	# A card/UPI team already got its Gateway Customer in _payment_setup. A top-up-only
 	# team has no card, but its wallet top-up now mints + reuses a customer too.
