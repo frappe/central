@@ -59,12 +59,13 @@ class TestCentralSSO(IntegrationTestCase):
 
 		self.assertEqual(claims["sub"], self.developer)
 		self.assertEqual(claims["team"], team.name)
-		# Bench-plane caps only — never central/atlas caps, not even the vm:open gate.
+		# Bench-plane caps only — never central/atlas caps. server:view is atlas
+		# (the console-open gate lives in Central), so it never reaches the bench.
 		self.assertIn("site:view", claims["caps"])
 		self.assertIn("site:migrate", claims["caps"])
 		self.assertNotIn("billing:view", claims["caps"])
-		self.assertNotIn("vm:view", claims["caps"])
-		self.assertNotIn("vm:open", claims["caps"])
+		self.assertNotIn("server:view", claims["caps"])
+		self.assertNotIn("server:create", claims["caps"])
 
 	def test_production_site_refuses_shared_secret_mint(self):
 		# Fail closed: without the explicit sso_allow_insecure_hs256 opt-in (i.e. a
@@ -80,11 +81,22 @@ class TestCentralSSO(IntegrationTestCase):
 			frappe.conf.sso_allow_insecure_hs256 = original
 			frappe.set_user("Administrator")
 
-	def test_vm_open_gates_the_handoff(self):
-		team = self.make_team(self.viewer, "Viewer")
+	def test_server_open_gates_the_handoff(self):
+		# server:open (the old vm:open) is the console gate, distinct from server:view
+		# which only lists servers. A Developer carries it and can open; a Viewer sees
+		# servers in the inventory but cannot open the console.
+		dev_team = self.make_team(self.developer, "Developer")
+		frappe.set_user(self.developer)
+		try:
+			link = get_bench_link(team=dev_team.name, gateway_url="http://localhost:3030")
+			self.assertIn("/sso?assertion=", link["url"])
+		finally:
+			frappe.set_user("Administrator")
+
+		view_team = self.make_team(self.viewer, "Viewer")
 		frappe.set_user(self.viewer)
 		try:
 			with self.assertRaises(frappe.PermissionError):
-				get_bench_link(team=team.name, gateway_url="http://localhost:3030")
+				get_bench_link(team=view_team.name, gateway_url="http://localhost:3030")
 		finally:
 			frappe.set_user("Administrator")

@@ -84,7 +84,7 @@ def asset_query_conditions(user: str | None = None) -> str:
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return ""
-	teams = get_user_team_names_with_capability(user, "vm:view")
+	teams = get_user_team_names_with_capability(user, "server:view")
 	if not teams:
 		return "1 = 0"
 	escaped = ", ".join(frappe.db.escape(team) for team in teams)
@@ -98,4 +98,4 @@ def asset_has_permission(doc, user: str | None = None, ptype: str | None = None,
 	# Assets are a read-only mirror of Atlas; only the sync (operator) writes them.
 	if ptype in ("create", "write", "delete"):
 		return False
-	return can(user, doc.team, "vm:view")
+	return can(user, doc.team, "server:view")

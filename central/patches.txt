@@ -41,3 +41,4 @@ central.billing.patches.v10_gateway_customer.backfill_gateway_customers
 # (resolve the gateway from the profile currency). Live gateway calls; per-team
 # isolated + idempotent.
 central.billing.patches.v11_provision_gateway_customers.provision_gateway_customers
+central.patches.v01_capability_model_v2.rename_capabilities

@@ -28,7 +28,7 @@ async function refreshAssets() {
 
 const assets = computed(() => registry.data?.assets ?? [])
 const stale = computed(() => refresh.data?.stale ?? [])
-const canOpen = computed(() => has('vm:open'))
+const canOpen = computed(() => has('server:open'))
 
 const counts = computed(() => {
   const c = { Running: 0, Stopped: 0, Terminated: 0 }

@@ -49,7 +49,7 @@ const routes = [
       {
         path: 'atlas',
         component: GroupGate,
-        props: { capability: 'vm:view', roles: 'Developer, Admin or Owner' },
+        props: { capability: 'server:view', roles: 'Developer, Admin or Owner' },
         children: [
           { path: '', name: 'AtlasRegistry', component: () => import('@/pages/atlas/Registry.vue') },
           { path: 'vms', name: 'AtlasVMs', component: () => import('@/pages/atlas/VirtualMachines.vue') },

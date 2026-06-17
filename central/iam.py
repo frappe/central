@@ -9,7 +9,49 @@ OPERATOR_BYPASS_ROLE = "System Manager"
 
 # Bumped whenever the capability taxonomy changes. Stamped into the SSO assertion
 # (`cap_version`) so a bench can detect drift from its own `BENCH_CAPS` mirror.
-CAPABILITY_VERSION = 1
+# v2: vm:*/bench:* collapsed into server:*; site sub-caps renamed (app:install ->
+# site:apps, db:access -> site:db, log:view -> site:logs, task:run -> site:console).
+CAPABILITY_VERSION = 2
+
+# Capability implications: granting the key implies every cap in the value. Acting
+# on a resource is meaningless without seeing it, so we close every grant under
+# these before it is asserted or evaluated — the role builder can let a user tick
+# `site:create` without also remembering `site:view`/`server:view`, and a grant
+# hand-crafted through the API can't bypass it either. Phase 1: scope is still "*".
+CAP_IMPLICATIONS = {
+	"site:view": ("server:view",),
+	"site:create": ("site:view", "server:view"),
+	"site:delete": ("site:view", "server:view"),
+	"site:backup": ("site:view", "server:view"),
+	"site:restore": ("site:view", "server:view"),
+	"site:migrate": ("site:view", "server:view"),
+	"site:config": ("site:view", "server:view"),
+	"site:apps": ("site:view", "server:view"),
+	"site:db": ("site:view", "server:view"),
+	"site:logs": ("site:view", "server:view"),
+	"site:console": ("site:view", "server:view"),
+	"server:open": ("server:view",),
+	"server:create": ("server:view", "cluster:view"),
+	"server:terminate": ("server:view",),
+	"server:power": ("server:view",),
+	"server:resize": ("server:view",),
+	"server:snapshot": ("server:view",),
+	"server:config": ("server:view",),
+}
+
+
+def expand_capabilities(caps: list[str]) -> list[str]:
+	"""Close a capability list under CAP_IMPLICATIONS, preserving the original order
+	and appending any implied caps (sorted) that weren't already granted."""
+	have = set(caps)
+	pending = list(caps)
+	while pending:
+		for implied in CAP_IMPLICATIONS.get(pending.pop(), ()):
+			if implied not in have:
+				have.add(implied)
+				pending.append(implied)
+	extra = sorted(have.difference(caps))
+	return list(caps) + extra
 
 
 def user_has_operator_bypass(user: str | None = None) -> bool:
@@ -132,6 +174,12 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 
 		if row.capability not in grants_by_key[key]["caps"]:
 			grants_by_key[key]["caps"].append(row.capability)
+
+	# Close every grant under the implication rules so enforcement (`can`, the SSO
+	# mint, my_capabilities) always sees a self-consistent set — never site:create
+	# without the site:view/server:view it depends on.
+	for grant in grants_by_key.values():
+		grant["caps"] = expand_capabilities(grant["caps"])
 
 	return dict(grants_by_team)
 
@@ -327,9 +375,12 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 	if isinstance(capabilities, str):
 		capabilities = frappe.parse_json(capabilities)
 	valid = set(get_all_capabilities())
-	rows = [{"capability": c} for c in capabilities if c in valid]
-	if not rows:
+	picked = [c for c in capabilities if c in valid]
+	if not picked:
 		frappe.throw("Pick at least one capability.", frappe.ValidationError)
+	# Persist the implied dependencies too (e.g. site:create pulls in site:view +
+	# server:view), so the saved role is usable and matches what enforcement grants.
+	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
 	role = frappe.get_doc(
 		{
 			"doctype": "Team Role",
