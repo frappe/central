@@ -160,6 +160,64 @@ def _profile(team, slug, currency, cluster):
 	})
 
 
+# --- team roster (members + custom role) ------------------------------------
+
+# (suffix, system role, member status) — a roster with role AND status variety so
+# the Members & Roles screen shows the full spread. Roster users are created
+# DISABLED so User.after_insert never bootstraps a personal team for them; they
+# exist only as members of the demo team.
+_MEMBER_ROSTER = [
+	("admin", "Admin", "Active"),
+	("dev", "Developer", "Active"),
+	("billing", "Billing", "Active"),
+	("viewer", "Viewer", "Active"),
+	("contractor", "Developer", "Suspended"),
+	("invitee", "Viewer", "Invited"),
+]
+
+# One team-scoped CUSTOM role, to exercise the custom-role path end to end: read
+# billing and operate (start/stop) VMs, but not manage members or terminate.
+_CUSTOM_ROLE = ("Finance & Ops", ["billing:view", "billing:manage", "vm:view", "vm:start", "vm:stop"])
+
+
+def _team_members(team, slug):
+	"""Give the demo team a realistic roster — members on varied system roles with
+	status variety, plus one team-scoped custom role. Idempotent: resets the roster
+	(and the team's custom role) on every reseed, keeping only the Owner."""
+	role = _custom_role(team)
+	doc = frappe.get_doc("Team", team)
+	doc.members = [m for m in doc.members if m.user == doc.owner_user]
+	for suffix, member_role, status in _MEMBER_ROSTER + [("finance", role, "Active")]:
+		email = f"{suffix}-{slug}@example.com"
+		_ensure_member_user(email, f"{suffix.title()} ({slug})")
+		doc.append("members", {"user": email, "role": member_role, "status": status})
+	doc.save(ignore_permissions=True)
+
+
+def _custom_role(team):
+	"""(Re)create this team's single custom Team Role and return its name."""
+	for existing in frappe.get_all("Team Role", {"team": team, "is_system": 0}, pluck="name"):
+		frappe.delete_doc("Team Role", existing, force=True, ignore_permissions=True)
+	name, caps = _CUSTOM_ROLE
+	return frappe.get_doc({
+		"doctype": "Team Role", "role_name": name, "is_system": 0, "team": team,
+		"capabilities": [{"capability": c} for c in caps],
+	}).insert(ignore_permissions=True).name
+
+
+def _ensure_member_user(email, full_name):
+	"""Roster-only user, created DISABLED so the after_insert hook doesn't bootstrap
+	a personal team (central.users.bootstrap_user_team skips disabled users)."""
+	if frappe.db.exists("User", email):
+		return email
+	first, _, last = full_name.partition(" ")
+	frappe.get_doc({
+		"doctype": "User", "email": email, "first_name": first, "last_name": last or None,
+		"send_welcome_email": 0, "enabled": 0,
+	}).insert(ignore_permissions=True)
+	return email
+
+
 def _payment_setup(team, slug, currency, state):
 	"""Return (gateway, payment_method) for the team's terminal state."""
 	if state in ("credits", "credits_full", "free_credits", "trial"):
