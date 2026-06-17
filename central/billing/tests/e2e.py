@@ -86,8 +86,9 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 	if team and frappe.db.exists("Team", team):
 		owner = frappe.db.get_value("Team", team, "owner_user")
 		for dt in (
-			"Invoice", "Payment Attempt", "Payment Method", "Credit Ledger Entry",
-			"Gateway Customer", "Billing Profile", "Trust Tier", "Tax Profile",
+			"Invoice", "Payment Attempt", "Subscription", "Payment Method",
+			"Credit Ledger Entry", "Gateway Customer", "Billing Profile",
+			"Trust Tier", "Tax Profile",
 		):
 			frappe.db.delete(dt, {"team": team})
 		frappe.db.delete("Credit Wallet", {"team": team})
@@ -132,6 +133,144 @@ def finish_razorpay_topup(team: str, gateway: str, order_id: str, amount: float)
 		team=team, amount=amount, gateway=gateway,
 		razorpay_order_id=order_id, razorpay_payment_id=payment_id, razorpay_signature=signature,
 	)
+
+
+# --- settlement helpers (invoice charge + credits waterfall) -----------------
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def add_credits(team: str, amount: float, currency: str | None = None) -> dict:
+	"""Fund the team's wallet through the real credit ledger (credits.purchase) —
+	the same append-only Credit Ledger Entry a confirmed top-up books. Lets a
+	settlement spec arrange a known balance without driving a gateway top-up."""
+	_enter_test_mode()
+	from central.billing.revenue import credits
+
+	currency = currency or frappe.db.get_value("Billing Profile", team, "currency") or "USD"
+	credits.purchase(team, frappe.utils.flt(amount), currency, note="e2e wallet funding")
+	frappe.db.commit()
+	return {"team": team, "balance": credits.get_balance(team)["balance"]}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def save_test_card(team: str) -> dict:
+	"""Attach a **real** Stripe test card to the team so invoice charges hit the real
+	off-session PaymentIntent path (no mock). Builds a PaymentMethod from `tok_visa`
+	on the team's real gateway customer, then records the active Payment Method the
+	collection loop charges. Card teams are USD (USD's default gateway is Stripe)."""
+	_enter_test_mode()
+	import stripe
+
+	from central.billing.gateways.registry import get_adapter, resolve_gateway_for_currency
+	from central.billing.payments.payments import densify_priorities, ensure_gateway_customer
+
+	currency = frappe.db.get_value("Billing Profile", team, "currency") or "USD"
+	gateway = resolve_gateway_for_currency(currency)
+	adapter = get_adapter(frappe.get_doc("Payment Gateway", gateway))
+	customer_id = ensure_gateway_customer(team, gateway, adapter)
+
+	stripe.api_key = adapter.get_credential("api_secret")
+	pm = stripe.PaymentMethod.create(type="card", card={"token": "tok_visa"})
+	stripe.PaymentMethod.attach(pm.id, customer=customer_id)
+
+	name = frappe.get_doc({
+		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
+		"status": "Active", "display_label": "Visa ····4242", "is_default": 1,
+		"gateway_method_id": pm.id, "gateway_customer_id": customer_id,
+		"expiry_month": 12, "expiry_year": 2034, "validated_at": frappe.utils.now_datetime(),
+	}).insert(ignore_permissions=True).name
+	densify_priorities(team)
+	frappe.db.commit()
+	return {"payment_method": name, "gateway": gateway, "gateway_method_id": pm.id}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def make_invoice(team: str, total: float = 1180, currency: str | None = None,
+				 link_card: int = 0) -> dict:
+	"""Create a Draft Billable invoice (subtotal + tax = total) the waterfall can
+	open and collect. Returns its name.
+
+	With `link_card`, attach a minimal Subscription whose `default_payment_method`
+	is the team's active card — real invoices always come from a subscription, and
+	the manual 'Pay' button (`pay_invoice`) resolves the method through it."""
+	_enter_test_mode()
+	currency = currency or frappe.db.get_value("Billing Profile", team, "currency") or "USD"
+	total = frappe.utils.flt(total)
+	tax = frappe.utils.flt(total - total / 1.18, 2)  # treat total as tax-inclusive at 18%
+	subtotal = frappe.utils.flt(total - tax, 2)
+
+	subscription = None
+	if int(link_card):
+		card = frappe.db.get_value(
+			"Payment Method", {"team": team, "status": "Active"}, ["name", "gateway"], as_dict=True
+		)
+		if card:
+			subscription = frappe.get_doc({
+				"doctype": "Subscription", "team": team, "status": "Active",
+				"default_payment_method": card.name, "gateway": card.gateway,
+			}).insert(ignore_permissions=True).name
+
+	name = frappe.get_doc({
+		"doctype": "Invoice", "team": team, "invoice_type": "Billable", "status": "Draft",
+		"subscription": subscription,
+		"period_start": "2026-06-01", "period_end": "2026-06-30", "currency": currency,
+		"subtotal": subtotal, "output_tax_type": "GST" if currency == "INR" else "VAT",
+		"output_tax_amount": tax, "total": total, "tds_amount": 0, "expected_collection": total,
+		"items": [{"resource_type": "bundle", "rate": subtotal, "days": 30, "amount": subtotal}],
+	}).insert(ignore_permissions=True).name
+	frappe.db.commit()
+	return {"invoice": name, "total": total, "currency": currency, "subscription": subscription}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def settle(team: str, invoice: str, collect: int = 1) -> dict:
+	"""Run the real credits-then-card waterfall (open_and_collect): apply wallet
+	credits, then — if `collect` — charge the remainder to the team's card via the
+	real off-session PaymentIntent. With `collect=0` the invoice is opened (credits
+	applied) but left for the UI 'Pay' button to charge. Returns the waterfall
+	result, plus the in-flight attempt name so the spec can deliver its webhook."""
+	_enter_test_mode()
+	from central.billing.revenue.invoicing.lifecycle import open_and_collect
+
+	result = open_and_collect(invoice, collect=bool(int(collect)))
+	attempt = frappe.db.get_value(
+		"Payment Attempt", {"invoice": invoice, "status": "Captured"}, "name"
+	)
+	frappe.db.commit()
+	return {**result, "attempt": attempt}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def deliver_webhook(attempt: str) -> dict:
+	"""Deliver the gateway success webhook for a captured attempt — the only path
+	that flips an Open invoice to Paid (charges.apply_webhook → _settle_invoice).
+
+	Stripe/Razorpay webhooks can't reach a local bench, so we build the Webhook
+	Event from the attempt's **real** captured transaction id and run the **real**
+	apply_webhook. Only the HTTP signature check (a separate security gate covered
+	by unit tests) is skipped; the settlement logic and the txn id are real."""
+	_enter_test_mode()
+	from central.billing.payments import charges
+
+	att = frappe.get_doc("Payment Attempt", attempt)
+	adapter_key = frappe.db.get_value("Payment Gateway", att.gateway, "adapter_key")
+	if adapter_key == "Stripe":
+		event_type = "payment_intent.succeeded"
+		payload = {"id": f"evt_e2e{frappe.generate_hash(10)}", "type": event_type,
+				   "data": {"object": {"id": att.gateway_transaction_id}}}
+	else:
+		event_type = "payment.captured"
+		payload = {"event": event_type,
+				   "payload": {"payment": {"entity": {"id": att.gateway_transaction_id}}}}
+
+	event = frappe.get_doc({
+		"doctype": "Webhook Event", "gateway": att.gateway, "event_type": event_type,
+		"gateway_event_id": payload.get("id") or frappe.generate_hash(12),
+		"status": "Received", "raw_payload": frappe.as_json(payload),
+	}).insert(ignore_permissions=True)
+	result = charges.apply_webhook(event.name)
+	frappe.db.commit()
+	return result
 
 
 # --- scenario builders -------------------------------------------------------

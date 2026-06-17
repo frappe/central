@@ -40,18 +40,35 @@ export const test = base.extend({
       return creds
     }
 
-    // Complete a Razorpay top-up at the gateway boundary: signs the real order with
-    // the real test secret and calls the real confirm_topup (see e2e.py). Used by
-    // the Razorpay spec, whose hosted sheet can't be automated reliably.
-    async function finishRazorpay({ team, gateway, orderId, amount }) {
-      const res = await request.post(method('central.billing.tests.e2e.finish_razorpay_topup'), {
-        form: { team, gateway, order_id: orderId, amount },
-      })
-      expect(res.ok(), `finish_razorpay failed: ${res.status()} ${await res.text()}`).toBeTruthy()
+    // Call any test-only backend helper (guest, allow_tests-gated) and return its
+    // result. Used by the settlement specs to arrange real backend state and to
+    // deliver the gateway webhook the local bench can't receive.
+    async function backend(name, form) {
+      const res = await request.post(method(`central.billing.tests.e2e.${name}`), { form })
+      expect(res.ok(), `${name} failed: ${res.status()} ${await res.text()}`).toBeTruthy()
       return (await res.json()).message
     }
 
-    await use({ seed, login, signIn, finishRazorpay })
+    // Complete a Razorpay top-up at the gateway boundary: signs the real order with
+    // the real test secret and calls the real confirm_topup (see e2e.py). Used by
+    // the Razorpay spec, whose hosted sheet can't be automated reliably.
+    const finishRazorpay = ({ team, gateway, orderId, amount }) =>
+      backend('finish_razorpay_topup', { team, gateway, order_id: orderId, amount })
+
+    // Settlement arrange-helpers (all real backend, no mocks): fund the wallet,
+    // attach a real Stripe test card, create a Draft invoice, run the credits→card
+    // waterfall, and deliver the success webhook that flips Open → Paid.
+    const addCredits = ({ team, amount }) => backend('add_credits', { team, amount })
+    const saveCard = ({ team }) => backend('save_test_card', { team })
+    const makeInvoice = ({ team, total = 1180, linkCard = 0 }) =>
+      backend('make_invoice', { team, total, link_card: linkCard })
+    const settle = ({ team, invoice, collect = 1 }) => backend('settle', { team, invoice, collect })
+    const deliverWebhook = ({ attempt }) => backend('deliver_webhook', { attempt })
+
+    await use({
+      seed, login, signIn, finishRazorpay,
+      addCredits, saveCard, makeInvoice, settle, deliverWebhook,
+    })
 
     // Best-effort teardown of everything this test seeded (guest context).
     for (const c of seeded) {

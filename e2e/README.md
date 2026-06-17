@@ -31,6 +31,19 @@ just a new subfolder. Each domain wires its own test-only seed endpoint under
 | `topup-stripe.spec.js` | USD wallet top-up via the embedded Stripe card Element | **real Stripe test-mode PaymentIntent** (4242 card) |
 | `topup-razorpay.spec.js` | INR wallet top-up — real Razorpay sheet opens, finished at the gateway boundary | **real Razorpay test order + real signature**, real `confirm_topup` |
 | `invoices.spec.js` | Invoice list + detail (line items, tax block) | real `Invoice` docs |
+| `settlement.spec.js` | Credits-only, partial credits + card, and the "Pay" button | **real credits→card waterfall**, real off-session PaymentIntent, real `apply_webhook` |
+
+### Settlement & the webhook boundary
+
+`settlement.spec.js` runs the real credits-then-card waterfall (`open_and_collect`):
+credits apply first; if they cover the bill it is `Paid` with no charge, otherwise
+the remainder is charged to a **real Stripe test card** (attached off-session via
+`tok_visa`) through a genuine PaymentIntent. The `Open → Paid` flip is webhook-only
+in production, and a local bench can't receive live webhooks — so the spec delivers
+it by building a `Webhook Event` from the **real captured transaction id** and
+running the **real** `apply_webhook` (`e2e.py:deliver_webhook`). Only the HTTP
+signature check (a separate gate, unit-tested) is skipped; the charge, the txn id,
+and the settlement logic are all real.
 
 ### Gateway automation note
 
