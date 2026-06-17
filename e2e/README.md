@@ -34,6 +34,7 @@ just a new subfolder. Each domain wires its own test-only seed endpoint under
 | `settlement.spec.js` | Credits-only, partial credits + card, and the "Pay" button | **real credits→card waterfall**, real off-session PaymentIntent, real `apply_webhook` |
 | `mandate-upi.spec.js` | UPI Autopay mandate setup (INR) | **real Razorpay recurring order + real signature**, real `confirm_mandate` |
 | `emandate.spec.js` | INR e-mandate pre-debit notice + the ₹15,000 Action Required fork | **fully real** `schedule_predebit` / `collection_mode` |
+| `dunning.spec.js` | Declined card → Overdue + Past Due after the retry window | **real Stripe decline** + real dunning state machine (simulated clock) |
 
 ### INR rails (e-mandate + UPI Autopay)
 

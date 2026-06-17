@@ -153,11 +153,14 @@ def add_credits(team: str, amount: float, currency: str | None = None) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def save_test_card(team: str) -> dict:
+def save_test_card(team: str, token: str = "tok_visa") -> dict:
 	"""Attach a **real** Stripe test card to the team so invoice charges hit the real
-	off-session PaymentIntent path (no mock). Builds a PaymentMethod from `tok_visa`
-	on the team's real gateway customer, then records the active Payment Method the
-	collection loop charges. Card teams are USD (USD's default gateway is Stripe)."""
+	off-session PaymentIntent path (no mock). Builds a PaymentMethod from `token` on
+	the team's real gateway customer, then records the active Payment Method the
+	collection loop charges. Card teams are USD (USD's default gateway is Stripe).
+
+	`token="tok_chargeCustomerFail"` attaches a card that Stripe declines on the real
+	off-session charge (but attaches cleanly) — for the dunning/decline path."""
 	_enter_test_mode()
 	import stripe
 
@@ -170,13 +173,14 @@ def save_test_card(team: str) -> dict:
 	customer_id = ensure_gateway_customer(team, gateway, adapter)
 
 	stripe.api_key = adapter.get_credential("api_secret")
-	pm = stripe.PaymentMethod.create(type="card", card={"token": "tok_visa"})
+	pm = stripe.PaymentMethod.create(type="card", card={"token": token})
 	stripe.PaymentMethod.attach(pm.id, customer=customer_id)
 
+	declined = token != "tok_visa"
 	name = frappe.get_doc({
 		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
-		"status": "Active", "display_label": "Visa ····4242", "is_default": 1,
-		"gateway_method_id": pm.id, "gateway_customer_id": customer_id,
+		"status": "Active", "display_label": "Visa ····0341" if declined else "Visa ····4242",
+		"is_default": 1, "gateway_method_id": pm.id, "gateway_customer_id": customer_id,
 		"expiry_month": 12, "expiry_year": 2034, "validated_at": frappe.utils.now_datetime(),
 	}).insert(ignore_permissions=True).name
 	densify_priorities(team)
@@ -207,6 +211,7 @@ def make_invoice(team: str, total: float = 1180, currency: str | None = None,
 		if card:
 			subscription = frappe.get_doc({
 				"doctype": "Subscription", "team": team, "status": "Active",
+				"account_standing": "Current",
 				"default_payment_method": card.name, "gateway": card.gateway,
 			}).insert(ignore_permissions=True).name
 
@@ -269,6 +274,22 @@ def deliver_webhook(attempt: str) -> dict:
 		"status": "Received", "raw_payload": frappe.as_json(payload),
 	}).insert(ignore_permissions=True)
 	result = charges.apply_webhook(event.name)
+	frappe.db.commit()
+	return result
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def dun(invoice: str, days: int = 7) -> dict:
+	"""Run one day of the real dunning state machine for an invoice, as if `days`
+	had elapsed past its due date (process_invoice_dunning with a simulated `now`).
+	`days=7` → invoice Overdue + standing Past Due; `days=14` → Suspended. Lets the
+	spec walk the escalation without waiting real calendar days."""
+	_enter_test_mode()
+	from central.billing.revenue import dunning
+
+	due = frappe.db.get_value("Invoice", invoice, "due_date")
+	now = frappe.utils.add_days(frappe.utils.getdate(due), int(days))
+	result = dunning.process_invoice_dunning(invoice, now=now)
 	frappe.db.commit()
 	return result
 

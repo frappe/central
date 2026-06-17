@@ -59,11 +59,14 @@ export const test = base.extend({
     // attach a real Stripe test card, create a Draft invoice, run the credits→card
     // waterfall, and deliver the success webhook that flips Open → Paid.
     const addCredits = ({ team, amount }) => backend('add_credits', { team, amount })
-    const saveCard = ({ team }) => backend('save_test_card', { team })
+    // token='tok_chargeCustomerFail' attaches a real card that declines on charge.
+    const saveCard = ({ team, token } = {}) => backend('save_test_card', { team, ...(token && { token }) })
     const makeInvoice = ({ team, total = 1180, linkCard = 0 }) =>
       backend('make_invoice', { team, total, link_card: linkCard })
     const settle = ({ team, invoice, collect = 1 }) => backend('settle', { team, invoice, collect })
     const deliverWebhook = ({ attempt }) => backend('deliver_webhook', { attempt })
+    // Run one day of dunning as if `days` had elapsed past the invoice due date.
+    const dun = ({ invoice, days = 7 }) => backend('dun', { invoice, days })
 
     // INR rails (e-mandate + UPI Autopay mandate): give the team a trust tier (the
     // UPI ceiling), switch collection mode, run the pre-debit step, and confirm a
@@ -76,7 +79,7 @@ export const test = base.extend({
 
     await use({
       seed, login, signIn, finishRazorpay,
-      addCredits, saveCard, makeInvoice, settle, deliverWebhook,
+      addCredits, saveCard, makeInvoice, settle, deliverWebhook, dun,
       setTrustTier, setCollectionMode, predebit, finishMandate,
     })
 
