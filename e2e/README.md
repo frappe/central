@@ -94,6 +94,16 @@ cd ../../..            # the bench root (cenral-bench)
 PATH="$HOME/.nvm/versions/node/v24.16.0/bin:$PATH" bench start
 ```
 
+## CI
+
+`.github/workflows/e2e.yml` runs the suite on push to `develop` and on manual
+dispatch (not on PRs — it needs gateway secrets, which aren't exposed to fork PRs).
+It boots a bench + `test_site`, builds the SPA, seeds the catalog/gateways, serves
+on port 8000, installs Playwright, and runs the suite, uploading the HTML report as
+an artifact. **Required repo secrets** (test-mode keys): `STRIPE_SECRET_KEY`,
+`STRIPE_PUBLISHABLE_KEY`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET` — the job fails
+fast with a clear message if they're absent.
+
 ## Running
 
 ```bash
