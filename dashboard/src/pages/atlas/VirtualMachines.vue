@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import SplitView from '@/components/SplitView.vue'
 import MockBanner from '@/components/MockBanner.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { operationalTheme } from '@/utils/status'
 import { infoToast } from '@/utils/toast'
 import { MOCK_VMS, MOCK_CLUSTERS, MOCK_EVENTS, clusterLabel } from './mock'
@@ -12,6 +13,13 @@ import { MOCK_VMS, MOCK_CLUSTERS, MOCK_EVENTS, clusterLabel } from './mock'
 // 🟡 Mock. VM list (split view) + detail tabs. Lifecycle actions are proposed
 // endpoints — they toast a notice instead of mutating (no Atlas API yet).
 const { canManageAtlas } = useCapabilities()
+const { requireSetup } = useBillingSetup()
+
+// Provisioning a VM spends money, so it's gated on a complete billing profile:
+// requireSetup() diverts to onboarding (remembering this page) when it isn't.
+function onNewVM() {
+  if (requireSetup()) action('Create VM')
+}
 
 const vms = ref(MOCK_VMS)
 const search = ref('')
@@ -67,7 +75,7 @@ function rowActions(vm) {
   <div class="flex h-full flex-col">
     <PageHeader :items="[{ label: 'Atlas' }, { label: 'Virtual Machines' }]">
       <template #actions>
-        <Button v-if="canManageAtlas" variant="solid" label="New VM" disabled />
+        <Button v-if="canManageAtlas" variant="solid" label="New VM" @click="onNewVM" />
       </template>
     </PageHeader>
 
