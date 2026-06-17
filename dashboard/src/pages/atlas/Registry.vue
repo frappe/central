@@ -15,13 +15,19 @@ const { has } = useCapabilities()
 
 const registry = useCall({
   url: m(API.atlasRegistry),
-  method: 'POST',
   params: () => ({ team: currentTeam.value }),
   refetch: true,
 })
 
+// Refresh is the only writer: POST the sync, then re-read the mirror.
+const refresh = useCall({ url: m(API.refreshAssets), method: 'POST', immediate: false })
+async function refreshAssets() {
+  await refresh.submit({ team: currentTeam.value })
+  registry.reload()
+}
+
 const assets = computed(() => registry.data?.assets ?? [])
-const stale = computed(() => registry.data?.stale ?? [])
+const stale = computed(() => refresh.data?.stale ?? [])
 const canOpen = computed(() => has('vm:open'))
 
 const counts = computed(() => {
@@ -52,7 +58,11 @@ async function openVm(asset) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :items="[{ label: 'Atlas' }, { label: 'Registry' }]" />
+    <PageHeader :items="[{ label: 'Atlas' }, { label: 'Registry' }]">
+      <template #actions>
+        <Button label="Refresh" :loading="refresh.loading" @click="refreshAssets" />
+      </template>
+    </PageHeader>
 
     <div class="body-container space-y-6 pb-40 pt-5">
       <p v-if="stale.length" class="rounded bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3">
