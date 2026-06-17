@@ -279,6 +279,24 @@ def deliver_webhook(attempt: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+def refund(payment_attempt: str, amount: float | None = None, destination: str = "Source") -> dict:
+	"""Refund a captured Payment Attempt (issue #15). `destination=Source` issues a
+	**real** Stripe refund of the captured PaymentIntent and marks a full refund's
+	attempt Refunded; `Wallet` books the amount as a wallet credit (an overcharge
+	correction). The invoice stays Paid either way."""
+	_enter_test_mode()
+	from central.billing.payments import refunds
+
+	doc = refunds.issue_refund(
+		payment_attempt, amount=frappe.utils.flt(amount) if amount else None,
+		destination=destination, reason=None,  # wallet note defaults to "Overcharge refund for …"
+	)
+	frappe.db.commit()
+	return {"refund": doc.name, "status": doc.status, "destination": destination,
+			"amount": frappe.utils.flt(doc.amount)}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def dun(invoice: str, days: int = 7) -> dict:
 	"""Run one day of the real dunning state machine for an invoice, as if `days`
 	had elapsed past its due date (process_invoice_dunning with a simulated `now`).

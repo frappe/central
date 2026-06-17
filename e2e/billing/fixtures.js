@@ -67,6 +67,9 @@ export const test = base.extend({
     const deliverWebhook = ({ attempt }) => backend('deliver_webhook', { attempt })
     // Run one day of dunning as if `days` had elapsed past the invoice due date.
     const dun = ({ invoice, days = 7 }) => backend('dun', { invoice, days })
+    // Refund a captured attempt: destination 'Source' (real Stripe refund) or 'Wallet'.
+    const refund = ({ attempt, amount, destination = 'Source' }) =>
+      backend('refund', { payment_attempt: attempt, destination, ...(amount && { amount }) })
 
     // INR rails (e-mandate + UPI Autopay mandate): give the team a trust tier (the
     // UPI ceiling), switch collection mode, run the pre-debit step, and confirm a
@@ -79,7 +82,7 @@ export const test = base.extend({
 
     await use({
       seed, login, signIn, finishRazorpay,
-      addCredits, saveCard, makeInvoice, settle, deliverWebhook, dun,
+      addCredits, saveCard, makeInvoice, settle, deliverWebhook, dun, refund,
       setTrustTier, setCollectionMode, predebit, finishMandate,
     })
 

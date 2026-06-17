@@ -35,6 +35,7 @@ just a new subfolder. Each domain wires its own test-only seed endpoint under
 | `mandate-upi.spec.js` | UPI Autopay mandate setup (INR) | **real Razorpay recurring order + real signature**, real `confirm_mandate` |
 | `emandate.spec.js` | INR e-mandate pre-debit notice + the ₹15,000 Action Required fork | **fully real** `schedule_predebit` / `collection_mode` |
 | `dunning.spec.js` | Declined card → Overdue + Past Due after the retry window | **real Stripe decline** + real dunning state machine (simulated clock) |
+| `refunds.spec.js` | Full dispute → source (invoice stays Paid); partial overcharge → wallet | **real Stripe refund** + real credit ledger |
 
 ### INR rails (e-mandate + UPI Autopay)
 
