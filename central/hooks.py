@@ -223,6 +223,7 @@ override_doctype_dashboards = {
 
 # Request Events
 # ----------------
+# TODO: This needs to be removed once we have a first-class claim hook in Frappe framework.
 before_request = ["central.oauth.install_oauth_claim_patch"]
 # after_request = ["central.utils.after_request"]
 
