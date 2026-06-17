@@ -65,9 +65,19 @@ export const test = base.extend({
     const settle = ({ team, invoice, collect = 1 }) => backend('settle', { team, invoice, collect })
     const deliverWebhook = ({ attempt }) => backend('deliver_webhook', { attempt })
 
+    // INR rails (e-mandate + UPI Autopay mandate): give the team a trust tier (the
+    // UPI ceiling), switch collection mode, run the pre-debit step, and confirm a
+    // mandate at the gateway boundary (its hosted recurring sheet can't be automated).
+    const setTrustTier = ({ team, maxSpend = 50000 }) => backend('set_trust_tier', { team, max_spend: maxSpend })
+    const setCollectionMode = ({ team, mode }) => backend('set_collection_mode', { team, mode })
+    const predebit = ({ invoice }) => backend('predebit', { invoice })
+    const finishMandate = ({ paymentMethod, orderId }) =>
+      backend('finish_mandate', { payment_method: paymentMethod, order_id: orderId })
+
     await use({
       seed, login, signIn, finishRazorpay,
       addCredits, saveCard, makeInvoice, settle, deliverWebhook,
+      setTrustTier, setCollectionMode, predebit, finishMandate,
     })
 
     // Best-effort teardown of everything this test seeded (guest context).

@@ -77,22 +77,22 @@ def seed(scenario: str = "profile_pending", currency: str = "INR") -> dict:
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def teardown(team: str | None = None, email: str | None = None) -> dict:
 	"""Delete everything `seed()` created for one spec. Best-effort and idempotent:
-	a spec calls this in its afterEach, so it must never raise on partially-built
-	state. Billing rows go first (they link the team), then the team, then the user
-	(who is the team's owner). `email` is also deleted directly in case the team was
-	never created."""
+	a spec calls this in its afterEach, so it must never raise — and must always
+	reach the user deletion even if one row delete fails (a single failing step must
+	never leak a team/user). Each delete runs in its own savepoint; the team and its
+	users go last."""
 	_enter_test_mode()
 
 	if team and frappe.db.exists("Team", team):
 		owner = frappe.db.get_value("Team", team, "owner_user")
 		for dt in (
 			"Invoice", "Payment Attempt", "Subscription", "Payment Method",
-			"Credit Ledger Entry", "Gateway Customer", "Billing Profile",
+			"Credit Ledger Entry", "Credit Wallet", "Gateway Customer",
+			"Billing Notification Log", "Notification Preference", "Billing Profile",
 			"Trust Tier", "Tax Profile",
 		):
-			frappe.db.delete(dt, {"team": team})
-		frappe.db.delete("Credit Wallet", {"team": team})
-		frappe.delete_doc("Team", team, force=True, ignore_permissions=True)
+			_safe(frappe.db.delete, dt, {"team": team})
+		_safe(frappe.delete_doc, "Team", team, force=True, ignore_permissions=True)
 		_delete_user(owner)
 
 	_delete_user(email)
@@ -273,6 +273,81 @@ def deliver_webhook(attempt: str) -> dict:
 	return result
 
 
+# --- INR rails (e-mandate + UPI Autopay mandate) -----------------------------
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def set_trust_tier(team: str, max_spend: float = 50000) -> dict:
+	"""Give the team a trust tier with a spend cap — the UPI Autopay mandate ceiling
+	is this cap, and UPI is only eligible below the ₹1,00,000 recurring limit."""
+	_enter_test_mode()
+	if frappe.db.exists("Trust Tier", team):
+		frappe.delete_doc("Trust Tier", team, force=True, ignore_permissions=True)
+	frappe.get_doc({
+		"doctype": "Trust Tier", "team": team, "tier": "t1",
+		"max_spend": frappe.utils.flt(max_spend), "manual_override": 1,
+	}).insert(ignore_permissions=True)
+	frappe.db.commit()
+	return {"team": team, "max_spend": frappe.utils.flt(max_spend)}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def set_collection_mode(team: str, mode: str) -> dict:
+	"""Set the team's collection mode directly (e.g. `emandate`). The customer-facing
+	endpoint only allows manual_checkout/prepaid; `emandate` is a system default, so
+	tests set it on the profile."""
+	_enter_test_mode()
+	frappe.db.set_value("Billing Profile", team, "collection_mode", mode, update_modified=False)
+	frappe.db.commit()
+	return {"team": team, "collection_mode": mode}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def predebit(invoice: str) -> dict:
+	"""Run the e-mandate pre-debit step for an Open invoice: send the RBI pre-debit
+	notice and arm the 24h debit window, or fork to Action Required if it's over the
+	₹15,000 silent ceiling (emandate.schedule_predebit — all real, no gateway)."""
+	_enter_test_mode()
+	from central.billing.payments import emandate
+
+	result = emandate.schedule_predebit(invoice)
+	frappe.db.commit()
+	return result
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def finish_mandate(payment_method: str, order_id: str) -> dict:
+	"""Confirm a UPI Autopay / card mandate at the gateway boundary — the spec drives
+	the real UI until the genuine Razorpay recurring sheet opens against a *real*
+	order (setup_payment_method_order), then this finishes the authorisation the
+	hosted sheet can't be automated through. It signs the real order with the real
+	test secret (the checkout-callback HMAC `confirm_mandate` verifies) and supplies
+	a token id — the one synthetic value, since a Razorpay-issued recurring token
+	needs the bank/UPI auth flow. Flips the Payment Method to Active."""
+	import hashlib
+	import hmac
+
+	_enter_test_mode()
+	from central.billing.gateways.registry import get_adapter
+	from central.billing.payments import mandates
+
+	method = frappe.get_doc("Payment Method", payment_method)
+	adapter = get_adapter(frappe.get_doc("Payment Gateway", method.gateway))
+	secret = adapter.get_credential("api_secret")
+	payment_id = f"pay_e2e{frappe.generate_hash(length=14)}"
+	signature = hmac.new(
+		secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256
+	).hexdigest()
+
+	confirmed = mandates.confirm_mandate(payment_method, {
+		"razorpay_order_id": order_id, "razorpay_payment_id": payment_id,
+		"razorpay_signature": signature, "razorpay_token_id": f"token_e2e{frappe.generate_hash(12)}",
+	})
+	frappe.db.commit()
+	return {"payment_method": confirmed.name, "status": confirmed.status,
+			"mandate_max_amount": confirmed.mandate_max_amount}
+
+
 # --- scenario builders -------------------------------------------------------
 
 
@@ -296,6 +371,18 @@ def _seed_invoices(team: str, currency: str) -> None:
 # --- helpers -----------------------------------------------------------------
 
 
+def _safe(fn, *args, **kwargs) -> None:
+	"""Run a teardown delete in its own savepoint, swallowing any failure (and
+	rolling that step back) so one bad delete can't abort the rest of teardown —
+	the team and user must always get cleaned up."""
+	sp = f"sp{frappe.generate_hash(8)}"
+	frappe.db.savepoint(sp)
+	try:
+		fn(*args, **kwargs)
+	except Exception:
+		frappe.db.rollback(save_point=sp)
+
+
 def _delete_user(email: str | None) -> None:
 	if email and frappe.db.exists("User", email):
-		frappe.delete_doc("User", email, force=True, ignore_permissions=True)
+		_safe(frappe.delete_doc, "User", email, force=True, ignore_permissions=True)

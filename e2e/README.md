@@ -32,6 +32,20 @@ just a new subfolder. Each domain wires its own test-only seed endpoint under
 | `topup-razorpay.spec.js` | INR wallet top-up — real Razorpay sheet opens, finished at the gateway boundary | **real Razorpay test order + real signature**, real `confirm_topup` |
 | `invoices.spec.js` | Invoice list + detail (line items, tax block) | real `Invoice` docs |
 | `settlement.spec.js` | Credits-only, partial credits + card, and the "Pay" button | **real credits→card waterfall**, real off-session PaymentIntent, real `apply_webhook` |
+| `mandate-upi.spec.js` | UPI Autopay mandate setup (INR) | **real Razorpay recurring order + real signature**, real `confirm_mandate` |
+| `emandate.spec.js` | INR e-mandate pre-debit notice + the ₹15,000 Action Required fork | **fully real** `schedule_predebit` / `collection_mode` |
+
+### INR rails (e-mandate + UPI Autopay)
+
+`emandate.spec.js` is fully real (no gateway): it drives `schedule_predebit`, asserting
+the **pre-debit notice** for a ≤₹15,000 bill and the **Action Required** banner + the
+prepaid/manual-checkout choice for a bill over the silent-debit ceiling. `mandate-upi.spec.js`
+sets up a UPI Autopay mandate — UPI authorises through Razorpay's hosted recurring sheet
+(same bot protection as the top-up), so it opens the **real recurring order/sheet** from the
+UI and confirms at the gateway boundary (`e2e.py:finish_mandate`: real checkout-callback
+signature; only the recurring **token id** is synthetic, since Razorpay issues one only via
+the bank/UPI auth flow). The successful recurring **debit** of an INR invoice isn't covered
+end-to-end for the same reason — it needs a real authorised token.
 
 ### Settlement & the webhook boundary
 
