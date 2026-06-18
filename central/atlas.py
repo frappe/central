@@ -2,51 +2,16 @@ from __future__ import annotations
 
 import frappe
 
-from central.atlas_client import AtlasClient, stub_vm_inventory
-from central.iam import can, get_user_team_names, user_has_operator_bypass
+from central.atlas_client import AtlasClient
+from central.iam import can, get_user_team_names
 
-# Edge B → registry mirror. Central holds a read model of each team's VMs as Asset
-# rows. `registry` is a pure read of that mirror; `refresh_assets` (a POST) syncs it
-# from every Active Atlas. Source of truth stays in Atlas.
-
-
-def _inventory(instance, team: str) -> list[dict]:
-	"""Team's VMs in one cluster. Real Atlas call, or the dev stub when the
-	`atlas_use_stub_inventory` flag is set — never fabricated data in prod."""
-	if frappe.conf.get("atlas_use_stub_inventory"):
-		return stub_vm_inventory(team)
-	return AtlasClient(instance).list_vms(team)
-
-
-def _upsert_asset(team: str, cluster: str, vm: dict, now) -> None:
-	rid = vm["resource_id"]
-	doc = frappe.get_doc("Asset", rid) if frappe.db.exists("Asset", rid) else frappe.new_doc("Asset")
-	doc.resource_id = rid
-	doc.team = team
-	doc.cluster = cluster
-	doc.status = vm.get("status") or "Provisioning"
-	doc.gateway_url = vm.get("gateway_url") or None
-	doc.last_synced_at = now
-	doc.save(ignore_permissions=True)
-
-
-def sync_team_assets(team: str) -> dict:
-	"""Mirror a team's VMs from every Active Atlas into Asset rows. Fail-soft: a
-	cluster that errors is reported in `stale`, leaving its last-known mirror intact."""
-	now = frappe.utils.now_datetime()
-	synced, stale = [], []
-	for region in frappe.get_all("Atlas Instance", filters={"status": "Active"}, pluck="name"):
-		instance = frappe.get_doc("Atlas Instance", region)
-		try:
-			vms = _inventory(instance, team)
-		except Exception:
-			frappe.log_error(title=f"Atlas inventory sync failed: {region}")
-			stale.append(region)
-			continue
-		for vm in vms:
-			_upsert_asset(team, region, vm, now)
-		synced.append(region)
-	return {"synced": synced, "stale": stale}
+# Edge B → the Asset mirror. Central holds a read model of each team's VMs as
+# Asset rows, kept fresh two ways: Atlas pushes lifecycle events to the
+# `central.api.event` webhook (low latency), and a periodic reconcile pulls the
+# authoritative list to correct any drift the push missed. Source of truth stays
+# in Atlas; both paths share one idempotent, last-writer-wins upsert. The Asset
+# mirrors the VM verbatim (its `status` is the Atlas status as-is). The command
+# path (Central → Atlas) lives at the bottom of this module.
 
 
 def _resolve_team(user: str, team: str | None) -> str:
@@ -58,11 +23,132 @@ def _resolve_team(user: str, team: str | None) -> str:
 	return teams[0]
 
 
+# --- the shared upsert ------------------------------------------------------
+
+
+def _is_stale(resource_id: str, occurred_at) -> bool:
+	"""Last-writer-wins: True if we've already applied a newer event for this VM."""
+	last = frappe.db.get_value("Asset", resource_id, "last_event_at")
+	return bool(last and occurred_at and frappe.utils.get_datetime(last) > frappe.utils.get_datetime(occurred_at))
+
+
+def _mirror_vm(cluster: str, vm: dict, *, occurred_at=None, synced_at=None) -> None:
+	"""Upsert one VM into the Asset mirror — shared by the event push (pass
+	`occurred_at`, which drives LWW) and the reconcile pull (pass `synced_at`). A
+	VM with no team (`central_reference`) belongs to no team's mirror and is
+	skipped."""
+	resource_id, team = vm.get("name"), vm.get("central_reference")
+	if not resource_id or not team or not frappe.db.exists("Team", team):
+		return
+	exists = frappe.db.exists("Asset", resource_id)
+	if exists and occurred_at and _is_stale(resource_id, occurred_at):
+		return
+	doc = frappe.get_doc("Asset", resource_id) if exists else frappe.new_doc("Asset")
+	doc.resource_id = resource_id
+	doc.team = team
+	doc.cluster = cluster
+	doc.status = vm.get("status") or "Pending"
+	doc.title = vm.get("title")
+	doc.vcpus = vm.get("vcpus")
+	doc.memory_megabytes = vm.get("memory_megabytes")
+	doc.disk_gigabytes = vm.get("disk_gigabytes")
+	doc.ipv6_address = vm.get("ipv6_address")
+	doc.public_ipv4 = vm.get("public_ipv4")
+	doc.gateway_url = vm.get("gateway_url") or None
+	if occurred_at:
+		doc.last_event_at = occurred_at
+	if synced_at:
+		doc.last_synced_at = synced_at
+	# System write: Asset is a read-only mirror (users can't write it); the sync
+	# is the sole writer, authorized by the verified Atlas event, not desk RBAC.
+	doc.save(ignore_permissions=True)
+
+
+# --- push: inbound events (central.api.event delegates here) ----------------
+
+
+def _atlas_cluster(atlas_id: str) -> str:
+	"""The cluster (Atlas Instance) an event came from — and the 'known sender'
+	check: events from an unregistered or disabled Atlas are refused."""
+	cluster = frappe.db.get_value("Atlas Instance", {"atlas_id": atlas_id, "status": ["!=", "Disabled"]})
+	if not cluster:
+		frappe.throw(f"Unknown or disabled Atlas '{atlas_id}'.", frappe.PermissionError)
+	return cluster
+
+
+def _on_ping(cluster: str, payload: dict, occurred_at) -> None:
+	print("ping", cluster, payload, occurred_at)
+
+
+def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
+	_mirror_vm(cluster, payload, occurred_at=occurred_at)
+
+
+def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
+	resource_id = payload.get("name")
+	if resource_id and frappe.db.exists("Asset", resource_id) and not _is_stale(resource_id, occurred_at):
+		frappe.db.set_value("Asset", resource_id, {"status": "Terminated", "last_event_at": occurred_at})
+
+
+_EVENT_HANDLERS = {
+	"ping": _on_ping,
+	"vm.created": _on_vm,
+	"vm.status_changed": _on_vm,
+	"vm.deleted": _on_vm_deleted,
+}
+
+
+def ingest_event(atlas_id: str, event_type: str, payload: dict, occurred_at) -> dict:
+	"""Apply one verified Atlas event to the mirror, dispatched by type. Unknown
+	types are acknowledged and ignored (forward-compatible)."""
+	cluster = _atlas_cluster(atlas_id)
+	handler = _EVENT_HANDLERS.get(event_type)
+	if handler:
+		handler(cluster, payload or {}, occurred_at)
+	return {"ok": True, "handled": bool(handler)}
+
+
+# --- pull: reconcile (periodic + manual backstop) ---------------------------
+
+
+def reconcile_atlas(instance, team: str | None = None) -> int:
+	"""Pull the authoritative VM list from one Atlas and sync the mirror: upsert
+	each, then mark vanished ones Terminated. Optionally scope to one team."""
+	now = frappe.utils.now_datetime()
+	vms = AtlasClient(instance).central_vms(team)
+	seen = {vm.get("name") for vm in vms}
+	for vm in vms:
+		_mirror_vm(instance.name, vm, synced_at=now)
+	gone = {"cluster": instance.name, "status": ["!=", "Terminated"]}
+	if team:
+		gone["team"] = team
+	for resource_id in frappe.get_all("Asset", filters=gone, pluck="name"):
+		if resource_id not in seen:
+			frappe.db.set_value("Asset", resource_id, {"status": "Terminated", "last_synced_at": now})
+	return len(vms)
+
+
+def reconcile(team: str | None = None) -> dict:
+	"""Reconcile the Asset mirror against every Active Atlas — the periodic backstop
+	to the event push (and the scheduler entry point). Fail-soft: an unreachable
+	Atlas is reported in `stale`, its last-known mirror left intact."""
+	synced, stale = [], []
+	for name in frappe.get_all("Atlas Instance", {"status": "Active"}, pluck="name"):
+		try:
+			reconcile_atlas(frappe.get_doc("Atlas Instance", name), team)
+			synced.append(name)
+		except Exception:
+			frappe.log_error(title=f"Atlas reconcile failed: {name}")
+			stale.append(name)
+	return {"synced": synced, "stale": stale}
+
+
+# --- read + manual refresh (dashboard) --------------------------------------
+
+
 @frappe.whitelist(methods=["GET"])
 def registry(team: str | None = None) -> dict:
-	"""List a team's VMs from the Asset mirror — a pure read. Gated on `cluster:view`.
-	The cluster is denormalized on each Asset, so no join is needed. Populate or
-	refresh the mirror with `refresh_assets`."""
+	"""List a team's VMs from the Asset mirror — a pure read. Gated on `cluster:view`."""
 	user = frappe.session.user
 	team = _resolve_team(user, team)
 	if not can(user, team, "cluster:view"):
@@ -70,7 +156,19 @@ def registry(team: str | None = None) -> dict:
 	assets = frappe.get_all(
 		"Asset",
 		filters={"team": team},
-		fields=["resource_id", "cluster", "status", "gateway_url", "last_synced_at"],
+		fields=[
+			"resource_id",
+			"title",
+			"cluster",
+			"status",
+			"vcpus",
+			"memory_megabytes",
+			"disk_gigabytes",
+			"ipv6_address",
+			"public_ipv4",
+			"gateway_url",
+			"last_synced_at",
+		],
 		order_by="cluster asc, resource_id asc",
 	)
 	return {"team": team, "assets": assets}
@@ -78,19 +176,19 @@ def registry(team: str | None = None) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def refresh_assets(team: str | None = None) -> dict:
-	"""Refresh the team's Asset mirror from every Active Atlas (writes; Frappe
-	commits the POST). Gated on `cluster:view`. Returns which clusters synced vs.
-	were left stale (Atlas unreachable)."""
+	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
+	twin of the scheduled reconcile. Gated on `cluster:view`."""
 	user = frappe.session.user
 	team = _resolve_team(user, team)
 	if not can(user, team, "cluster:view"):
 		frappe.throw("You can't refresh this team's clusters.", frappe.PermissionError)
-	return sync_team_assets(team)
+	return reconcile(team)
 
 
-# Command path → Central drives Atlas. Capability-gated here (Atlas stays
-# policy-unaware); Central calls Atlas as the operator. create stamps the team's
-# Tenant; lifecycle methods act on an existing asset by id.
+# --- command path: Central drives Atlas -------------------------------------
+# Capability-gated here (Atlas stays policy-unaware); Central calls Atlas as the
+# operator. Lifecycle methods act on an existing asset by id.
+
 
 def _run_command(action: str, capability: str, atlas_method: str, team: str | None, resource_id: str | None) -> dict:
 	"""Shared lifecycle path (start/stop/terminate): gate on `capability`,confirm

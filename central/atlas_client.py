@@ -3,21 +3,12 @@ from __future__ import annotations
 import frappe
 from frappe.frappeclient import FrappeClient
 
-# Frozen inventory contract Atlas fulfils and Central mirrors into Asset rows.
-INVENTORY_VM_FIELDS = ("resource_id", "status", "gateway_url")
+# Edge B: Central → regional Atlas, over Frappe's standard FrappeClient. Token
+# auth uses the per-instance API key/secret on the `Atlas Instance` record.
 
 
 class AtlasError(frappe.ValidationError):
 	pass
-
-
-def stub_vm_inventory(team: str) -> list[dict]:
-	"""Canned inventory in INVENTORY_VM_FIELDS shape — used by the dev sync until
-	Atlas ships the real endpoint. Keeps Central buildable against a fake."""
-	return [
-		{"resource_id": "vm-blr-1", "status": "Running", "gateway_url": "http://localhost:3030"},
-		{"resource_id": "vm-blr-2", "status": "Stopped", "gateway_url": ""},
-	]
 
 
 def get_atlas_instance(region: str):
@@ -58,6 +49,8 @@ class AtlasClient:
 			"run_doc_method", params={"dt": "Virtual Machine", "dn": name, "method": method}
 		)
 
-	def list_vms(self, team: str) -> list[dict]:
-		"""Inventory of a team's VMs in this cluster — the registry mirror source."""
-		return self.client().get_api("atlas.api.list_team_vms", {"team": team})
+	def central_vms(self, central_reference: str | None = None) -> list[dict]:
+		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one
+		team). One dict per VM: name, central_reference, status, gateway_url."""
+		params = {"central_reference": central_reference} if central_reference else None
+		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
