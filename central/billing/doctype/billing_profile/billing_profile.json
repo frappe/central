@@ -62,7 +62,7 @@
   {"fieldname": "gstin", "fieldtype": "Data", "label": "GSTIN", "description": "15-char GST identifier (India); validated on save against the selected state."},
   {"fieldname": "section_break_settings", "fieldtype": "Section Break", "label": "Billing Settings"},
   {"default": "0", "fieldname": "min_balance", "fieldtype": "Currency", "label": "Low Balance Alert"},
-  {"default": "prepaid", "fieldname": "collection_mode", "fieldtype": "Select", "label": "Collection Mode", "options": "stripe_auto\nemandate\nmanual_checkout\nprepaid\naction_required", "description": "How this team's invoices are collected (ADR 0005). action_required is transient: an e-mandate team crossed the ₹15,000 silent-debit limit and must pick manual_checkout or prepaid."},
+  {"default": "Prepaid", "fieldname": "collection_mode", "fieldtype": "Select", "label": "Collection Mode", "options": "Stripe Auto\nE-Mandate\nManual Checkout\nPrepaid\nAction Required", "description": "How this team's invoices are collected (ADR 0005). Action Required is transient: an e-mandate team crossed the ₹15,000 silent-debit limit and must pick Manual Checkout or Prepaid."},
   {"fieldname": "column_break_settings", "fieldtype": "Column Break"},
   {"default": "0", "fieldname": "spend_alert_threshold", "fieldtype": "Currency", "label": "Spend Alert Threshold"},
   {"fieldname": "collection_action_reason", "fieldtype": "Data", "label": "Collection Action Reason", "read_only": 1, "description": "Why the team is in action_required: forecast_over_threshold / invoice_over_threshold / mandate_failed / tier_cap."},
