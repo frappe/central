@@ -125,7 +125,7 @@ class PlanConfigurator(Document):
 			frappe.throw("No rungs selected to generate.")
 
 		result = configurator.generate_plans(
-			rungs, billing_cycle=self.billing_cycle, is_active=cint(self.is_active)
+			plan_class=self.plan_class, rungs=rungs, billing_cycle=self.billing_cycle, is_active=cint(self.is_active)
 		)
 		for row in self.rungs:
 			if frappe.db.exists("Plan", row.plan_name):
