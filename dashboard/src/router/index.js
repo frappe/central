@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import GroupGate from '@/components/GroupGate.vue'
+import { whoReady, useTeam } from '@/composables/useTeam'
+import { fetchBillingSetup } from '@/data/billingSetup'
 
 // The SPA is mounted under /dashboard (central/hooks.py website_route_rules).
 const routes = [
