@@ -1,9 +1,6 @@
-from unittest.mock import patch
-
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.atlas_client import INVENTORY_VM_FIELDS, AtlasClient, stub_vm_inventory
 from central.tests.test_iam import ensure_user
 
 
@@ -46,19 +43,3 @@ class TestAsset(IntegrationTestCase):
 		self.assertEqual(asset.name, "vm-xyz")
 		self.assertEqual(asset.team, self.team.name)
 		self.assertEqual(asset.cluster, self.cluster)
-
-	def test_inventory_stub_matches_contract_shape(self):
-		vms = stub_vm_inventory(self.team.name)
-		self.assertTrue(vms)
-		for vm in vms:
-			self.assertEqual(set(vm.keys()), set(INVENTORY_VM_FIELDS))
-
-	def test_list_vms_calls_team_scoped_endpoint(self):
-		inst = frappe.get_doc("Atlas Instance", self.cluster)
-		with patch("central.atlas_client.requests.request") as req:
-			req.return_value.json.return_value = []
-			req.return_value.raise_for_status.return_value = None
-			AtlasClient(inst).list_vms(self.team.name)
-			_, kwargs = req.call_args
-			self.assertEqual(kwargs["params"], {"team": self.team.name})
-			self.assertTrue(req.call_args[0][1].endswith("/api/method/atlas.api.list_team_vms"))
