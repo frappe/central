@@ -55,7 +55,7 @@ class TestTeamManagement(IntegrationTestCase):
 		result = frappe.get_doc("Team Invitation", invitation_name).accept()
 
 		self.assertTrue(result["accepted"])
-		self.assertTrue(can(self.invitee, self.team.name, "vm:terminate"))
+		self.assertTrue(can(self.invitee, self.team.name, "site:create"))
 		self.assertIn(self.team.name, get_fc_teams_claim(self.invitee))
 
 		invitation = frappe.get_doc("Team Invitation", invitation_name)
@@ -131,8 +131,8 @@ class TestTeamManagement(IntegrationTestCase):
 
 		invitation = frappe.get_doc("Team Invitation", invitation_name)
 		self.assertEqual(invitation.status, "Accepted")
-		self.assertTrue(can(email, self.team.name, "vm:view"))
-		self.assertFalse(can(email, self.team.name, "vm:terminate"))
+		self.assertTrue(can(email, self.team.name, "server:view"))
+		self.assertFalse(can(email, self.team.name, "server:terminate"))
 
 	def test_team_changes_follow_capabilities(self):
 		frappe.set_user(self.owner)
@@ -156,7 +156,7 @@ class TestTeamManagement(IntegrationTestCase):
 			team.set_member_role(self.viewer, "Owner")
 
 		team.set_member_role(self.viewer, "Developer")
-		self.assertTrue(can(self.viewer, self.team.name, "vm:terminate"))
+		self.assertTrue(can(self.viewer, self.team.name, "site:create"))
 
 	def test_only_owner_can_transfer_ownership(self):
 		frappe.set_user(self.admin)

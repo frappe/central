@@ -97,18 +97,19 @@ def mint_bench_assertion(user: str, team: str) -> str:
 def get_bench_link(asset: str | None = None, team: str | None = None, gateway_url: str | None = None) -> dict:
 	"""Mint a scoped SSO assertion and return the bench URL to redirect to.
 
-	Pass `asset` (a VM resource_id) to open that VM's bench — its team and
+	Pass `asset` (a server resource_id) to open that server — its team and
 	gateway are resolved and validated (Running, has a gateway, Active cluster).
-	`vm:open` on the team is the gate. `gateway_url` is the dev path used until the
-	registry "Open" wires `asset` in (#30)."""
+	`server:open` on the team is the gate (the old vm:open; distinct from
+	server:view, which only lists the server). `gateway_url` is the dev path used
+	until the registry "Open" wires `asset` in (#30)."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		frappe.throw("Sign in first.", frappe.PermissionError)
 	if asset:
 		team, gateway_url = _resolve_asset_target(asset, team)
 	team = team or _only_team(user)
-	if not can(user, team, "vm:open"):
-		frappe.throw("You can't open benches for this team.", frappe.PermissionError)
+	if not can(user, team, "server:open"):
+		frappe.throw("You can't open servers for this team.", frappe.PermissionError)
 	target = (gateway_url or _bench_sso_url()).rstrip("/")
 	if not target.endswith("/sso"):
 		target += "/sso"

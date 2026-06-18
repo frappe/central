@@ -11,7 +11,7 @@ import frappe
 # Memory-ratio pre-fills for the Plan Configurator (issue #33). Authoring-only:
 # the ratio derives a default memory; the resulting GB is what's stored, never
 # the ratio itself. 1 vCPU = 1000 millicores is the configurator's notion only.
-RATIO_FACTORS = {"1:2": 2, "1:4": 4}
+RATIO_FACTORS = {"1:2": 2, "1:4": 4, "1:6": 6, "1:8": 8}
 
 
 def configure_includes(vcpu: float, ratio: str = "1:2", disk_gb: float = 0, memory_gb: float | None = None) -> list[dict]:

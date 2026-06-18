@@ -26,7 +26,7 @@ from central.billing.payments import mandates
 INR_SILENT_THRESHOLD = 15000
 
 # The modes a customer may pick to resolve action_required (or switch into).
-CUSTOMER_CHOOSABLE = ("manual_checkout", "prepaid")
+CUSTOMER_CHOOSABLE = ("Manual Checkout", "Prepaid")
 
 
 def silent_threshold(team: str) -> float:
@@ -43,7 +43,7 @@ def evaluate(team: str, projected_amount: float | None = None,
 	any other mode (so it's safe to call from the charge loop / dashboard). Returns
 	the current status()."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
-	if mode == "emandate" and projected_amount is not None:
+	if mode == "E-Mandate" and projected_amount is not None:
 		if frappe.utils.flt(projected_amount) >= silent_threshold(team):
 			trip(team, reason)
 	return status(team)
@@ -53,9 +53,9 @@ def trip(team: str, reason: str) -> None:
 	"""Pause silent auto-charge and raise Action Required. Idempotent — notifies
 	once (a team already in action_required is left as-is)."""
 	profile = frappe.get_doc("Billing Profile", team)
-	if profile.collection_mode == "action_required":
+	if profile.collection_mode == "Action Required":
 		return
-	profile.collection_mode = "action_required"
+	profile.collection_mode = "Action Required"
 	profile.collection_action_reason = reason
 	profile.save(ignore_permissions=True)
 
@@ -87,10 +87,10 @@ def status(team: str) -> dict:
 	p = frappe.db.get_value(
 		"Billing Profile", team, ["collection_mode", "collection_action_reason"], as_dict=True
 	) or frappe._dict()
-	mode = p.collection_mode or "prepaid"
+	mode = p.collection_mode or "Prepaid"
 	return {
 		"collection_mode": mode,
-		"action_required": mode == "action_required",
+		"action_required": mode == "Action Required",
 		"reason": p.collection_action_reason,
 		"threshold": silent_threshold(team),
 		"choices": list(CUSTOMER_CHOOSABLE),

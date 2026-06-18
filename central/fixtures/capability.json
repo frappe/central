@@ -1,15 +1,5 @@
 [
  {
-  "capability": "app:install",
-  "description": "Install and uninstall apps on a site.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "app:install",
-  "plane": "bench",
-  "resource": "app"
- },
- {
   "capability": "asset:view",
   "description": "View team-owned assets in the Central registry.",
   "docstatus": 0,
@@ -18,26 +8,6 @@
   "name": "asset:view",
   "plane": "central",
   "resource": "asset"
- },
- {
-  "capability": "bench:config",
-  "description": "Edit bench-level config.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "bench:config",
-  "plane": "bench",
-  "resource": "bench"
- },
- {
-  "capability": "bench:manage",
-  "description": "Start/stop processes, run updates and upgrades.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "bench:manage",
-  "plane": "bench",
-  "resource": "bench"
  },
  {
   "capability": "billing:manage",
@@ -61,33 +31,103 @@
  },
  {
   "capability": "cluster:view",
-  "description": "View clusters (Atlas instances) the team uses.",
+  "description": "View clusters the team can place servers in.",
   "docstatus": 0,
   "doctype": "Capability",
-  "modified": "2026-06-16 00:00:00",
+  "modified": "2026-06-17 00:00:00",
   "name": "cluster:view",
   "plane": "atlas",
   "resource": "cluster"
  },
  {
-  "capability": "db:access",
-  "description": "Database console and query access.",
+  "capability": "server:config",
+  "description": "Edit server (bench) config, restart processes, run updates and upgrades.",
   "docstatus": 0,
   "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "db:access",
+  "modified": "2026-06-17 00:00:00",
+  "name": "server:config",
   "plane": "bench",
-  "resource": "database"
+  "resource": "server"
  },
  {
-  "capability": "log:view",
-  "description": "View logs.",
+  "capability": "server:create",
+  "description": "Provision a new server.",
   "docstatus": 0,
   "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "log:view",
+  "modified": "2026-06-17 00:00:00",
+  "name": "server:create",
+  "plane": "atlas",
+  "resource": "server"
+ },
+ {
+  "capability": "server:open",
+  "description": "Open a server's console (bench admin) via signed-token SSO.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "server:open",
+  "plane": "atlas",
+  "resource": "server"
+ },
+ {
+  "capability": "server:power",
+  "description": "Start, stop, and restart a server.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "server:power",
+  "plane": "atlas",
+  "resource": "server"
+ },
+ {
+  "capability": "server:resize",
+  "description": "Resize or rebuild a server.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "server:resize",
+  "plane": "atlas",
+  "resource": "server"
+ },
+ {
+  "capability": "server:snapshot",
+  "description": "Create and restore server snapshots.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "server:snapshot",
+  "plane": "atlas",
+  "resource": "server"
+ },
+ {
+  "capability": "server:terminate",
+  "description": "Destroy a server.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "server:terminate",
+  "plane": "atlas",
+  "resource": "server"
+ },
+ {
+  "capability": "server:view",
+  "description": "List servers; view status, specs, and metrics; open the server console.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "server:view",
+  "plane": "atlas",
+  "resource": "server"
+ },
+ {
+  "capability": "site:apps",
+  "description": "Install and uninstall apps on a site.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "site:apps",
   "plane": "bench",
-  "resource": "log"
+  "resource": "site"
  },
  {
   "capability": "site:backup",
@@ -110,6 +150,16 @@
   "resource": "site"
  },
  {
+  "capability": "site:console",
+  "description": "Run bench tasks and manage site background jobs.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "site:console",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
   "capability": "site:create",
   "description": "Create a new site.",
   "docstatus": 0,
@@ -120,12 +170,32 @@
   "resource": "site"
  },
  {
+  "capability": "site:db",
+  "description": "Database console and query access.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "site:db",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
   "capability": "site:delete",
   "description": "Drop a site.",
   "docstatus": 0,
   "doctype": "Capability",
   "modified": "2026-06-15 00:00:00",
   "name": "site:delete",
+  "plane": "bench",
+  "resource": "site"
+ },
+ {
+  "capability": "site:logs",
+  "description": "View site and process logs.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-06-17 00:00:00",
+  "name": "site:logs",
   "plane": "bench",
   "resource": "site"
  },
@@ -160,16 +230,6 @@
   "resource": "site"
  },
  {
-  "capability": "task:run",
-  "description": "Run bench tasks and manage processes.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "task:run",
-  "plane": "bench",
-  "resource": "task"
- },
- {
   "capability": "team:delete",
   "description": "Delete a team.",
   "docstatus": 0,
@@ -198,95 +258,5 @@
   "name": "team:manage_members",
   "plane": "central",
   "resource": "team"
- },
- {
-  "capability": "vm:create",
-  "description": "Create virtual machines in Atlas.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-08 19:52:59.278004",
-  "name": "vm:create",
-  "plane": "atlas",
-  "resource": "virtual machine"
- },
- {
-  "capability": "vm:open",
-  "description": "Open a VM's bench site UI via signed-token SSO.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-16 00:00:00",
-  "name": "vm:open",
-  "plane": "atlas",
-  "resource": "virtual machine"
- },
- {
-  "capability": "vm:rebuild",
-  "description": "Rebuild virtual machines and restore snapshots in Atlas.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-09 00:00:00",
-  "name": "vm:rebuild",
-  "plane": "atlas",
-  "resource": "virtual machine"
- },
- {
-  "capability": "vm:resize",
-  "description": "Resize virtual machines in Atlas.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-08 19:52:59.280375",
-  "name": "vm:resize",
-  "plane": "atlas",
-  "resource": "virtual machine"
- },
- {
-  "capability": "vm:snapshot",
-  "description": "Create, clone, and delete virtual machine snapshots in Atlas.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-09 00:00:00",
-  "name": "vm:snapshot",
-  "plane": "atlas",
-  "resource": "virtual machine"
- },
- {
-  "capability": "vm:start",
-  "description": "Start virtual machines in Atlas.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-08 19:52:59.282744",
-  "name": "vm:start",
-  "plane": "atlas",
-  "resource": "virtual machine"
- },
- {
-  "capability": "vm:stop",
-  "description": "Stop virtual machines in Atlas.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-08 19:52:59.285098",
-  "name": "vm:stop",
-  "plane": "atlas",
-  "resource": "virtual machine"
- },
- {
-  "capability": "vm:terminate",
-  "description": "Terminate virtual machines in Atlas.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-08 19:52:59.287386",
-  "name": "vm:terminate",
-  "plane": "atlas",
-  "resource": "virtual machine"
- },
- {
-  "capability": "vm:view",
-  "description": "View virtual machines in Atlas.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-08 19:52:59.289657",
-  "name": "vm:view",
-  "plane": "atlas",
-  "resource": "virtual machine"
  }
 ]

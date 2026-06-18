@@ -7,6 +7,23 @@ from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 
 
 class Plan(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
+		from frappe.types import DF
+
+		annual_discount_pct: DF.Float
+		billing_cycle: DF.Literal["Monthly", "Annual"]
+		includes: DF.Table[PlanIncludes]
+		is_active: DF.Check
+		plan_class: DF.Literal["General", "CPU Optimised", "Memory Optimised", "Storage Optimised", "Custom"]
+		title: DF.Data
+	# end: auto-generated types
+
 	def get_rate(self, currency: str, cluster: str | None = None):
 		"""Resolved flat rate for (currency, cluster). The rate IS the price."""
 		return resolve_rate(get_catalog_rates("Plan", self.name), currency, cluster)

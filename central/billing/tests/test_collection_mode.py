@@ -33,15 +33,15 @@ class TestCollectionMode(IntegrationTestCase):
 		self.assertEqual(collection_mode.silent_threshold(TEAM), 8000.0)
 
 	def test_emandate_under_threshold_stays_silent(self):
-		_set_mode(TEAM, "emandate")
+		_set_mode(TEAM, "E-Mandate")
 		st = collection_mode.evaluate(TEAM, projected_amount=9000)
-		self.assertEqual(st["collection_mode"], "emandate")
+		self.assertEqual(st["collection_mode"], "E-Mandate")
 		self.assertFalse(st["action_required"])
 
 	def test_emandate_over_threshold_trips_action_required(self):
-		_set_mode(TEAM, "emandate")
+		_set_mode(TEAM, "E-Mandate")
 		st = collection_mode.evaluate(TEAM, projected_amount=18400)
-		self.assertEqual(st["collection_mode"], "action_required")
+		self.assertEqual(st["collection_mode"], "Action Required")
 		self.assertTrue(st["action_required"])
 		self.assertEqual(st["reason"], "forecast_over_threshold")
 		# A notification was raised for the customer to act on.
@@ -49,7 +49,7 @@ class TestCollectionMode(IntegrationTestCase):
 			"Billing Notification Log", {"team": TEAM, "event_type": "Action Required"}))
 
 	def test_trip_is_idempotent_one_notification(self):
-		_set_mode(TEAM, "emandate")
+		_set_mode(TEAM, "E-Mandate")
 		collection_mode.evaluate(TEAM, projected_amount=20000)
 		collection_mode.evaluate(TEAM, projected_amount=25000)
 		self.assertEqual(frappe.db.count(
@@ -58,31 +58,31 @@ class TestCollectionMode(IntegrationTestCase):
 	def test_non_emandate_modes_are_never_tripped(self):
 		# A prepaid team running a huge bill is not "action required" — it just draws
 		# the wallet; only the silent e-mandate rail has the ₹15k ceiling.
-		_set_mode(TEAM, "prepaid")
+		_set_mode(TEAM, "Prepaid")
 		st = collection_mode.evaluate(TEAM, projected_amount=99999)
-		self.assertEqual(st["collection_mode"], "prepaid")
+		self.assertEqual(st["collection_mode"], "Prepaid")
 		self.assertFalse(st["action_required"])
 
 	def test_customer_chooses_manual_checkout_clears_action(self):
-		_set_mode(TEAM, "action_required", reason="forecast_over_threshold")
-		st = collection_mode.choose(TEAM, "manual_checkout")
-		self.assertEqual(st["collection_mode"], "manual_checkout")
+		_set_mode(TEAM, "Action Required", reason="forecast_over_threshold")
+		st = collection_mode.choose(TEAM, "Manual Checkout")
+		self.assertEqual(st["collection_mode"], "Manual Checkout")
 		self.assertFalse(st["action_required"])
 		self.assertIsNone(frappe.db.get_value("Billing Profile", TEAM, "collection_action_reason"))
 
 	def test_customer_chooses_prepaid_clears_action(self):
-		_set_mode(TEAM, "action_required", reason="forecast_over_threshold")
-		st = collection_mode.choose(TEAM, "prepaid")
-		self.assertEqual(st["collection_mode"], "prepaid")
+		_set_mode(TEAM, "Action Required", reason="forecast_over_threshold")
+		st = collection_mode.choose(TEAM, "Prepaid")
+		self.assertEqual(st["collection_mode"], "Prepaid")
 		self.assertFalse(st["action_required"])
 
 	def test_invalid_mode_choice_is_rejected(self):
-		_set_mode(TEAM, "action_required")
+		_set_mode(TEAM, "Action Required")
 		# A customer cannot silently put themselves (back) on a silent auto rail.
 		with self.assertRaises(frappe.ValidationError):
-			collection_mode.choose(TEAM, "emandate")
+			collection_mode.choose(TEAM, "E-Mandate")
 		with self.assertRaises(frappe.ValidationError):
-			collection_mode.choose(TEAM, "stripe_auto")
+			collection_mode.choose(TEAM, "Stripe Auto")
 
 
 class TestInvoiceTimeTrip(IntegrationTestCase):
@@ -94,7 +94,7 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
-		_set_mode(TEAM, "emandate")
+		_set_mode(TEAM, "E-Mandate")
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
 		frappe.db.delete("Invoice", {"team": TEAM})
@@ -125,7 +125,7 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 		# No Payment Attempt was created — we never hit the gateway.
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
 		self.assertEqual(
-			frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "action_required")
+			frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
 
 
 class TestManualCheckout(IntegrationTestCase):
@@ -137,7 +137,7 @@ class TestManualCheckout(IntegrationTestCase):
 
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
-		_set_mode(TEAM, "manual_checkout")
+		_set_mode(TEAM, "Manual Checkout")
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
 		frappe.db.delete("Invoice", {"team": TEAM})
 		self.gw = make_razorpay_gateway("GW-Manual-RZP").name
@@ -219,7 +219,7 @@ class TestModeAwareDunning(IntegrationTestCase):
 	def test_manual_checkout_is_not_retried_and_copy_says_pay(self):
 		from central.billing.revenue import dunning
 
-		_set_mode(TEAM, "manual_checkout")
+		_set_mode(TEAM, "Manual Checkout")
 		inv = self._overdue_invoice()
 		dunning.process_invoice_dunning(inv, now="2026-06-10")  # 9 days overdue
 		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)  # no silent retry
@@ -231,7 +231,7 @@ class TestModeAwareDunning(IntegrationTestCase):
 	def test_prepaid_copy_says_top_up(self):
 		from central.billing.revenue import dunning
 
-		_set_mode(TEAM, "prepaid")
+		_set_mode(TEAM, "Prepaid")
 		inv = self._overdue_invoice()
 		dunning.process_invoice_dunning(inv, now="2026-06-10")
 		msg = frappe.db.get_value(
