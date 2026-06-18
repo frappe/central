@@ -1,19 +1,33 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Plan Configurator authoring helper (issue #33).
+"""Plan Configurator (issue #33).
 
-Authoring-only convenience: pick a memory ratio (1:2 / 1:4) and vCPU, auto-fill
-memory, add disk, and write PLAIN quantity/unit rows into Plan Includes. The
-ratio is a pre-fill default, not a constraint (off-ratio overrides are allowed).
-No schema change, no billing change — millicores/ratio never reach the data.
+Two surfaces:
+- the single-plan authoring helper (`plans.configure_includes` / `create_configured_plan`)
+  — pick a ratio + vCPU, auto-fill memory, write PLAIN quantity/unit into Plan Includes;
+- the **ladder generator** (`configurator` + the `Plan Configurator` DocType) — a doubling
+  t-shirt ladder of bundles, priced per cluster (all or a selected subset).
+
+Authoring-only resource math: millicores/ratio never reach the data or billing.
 """
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.catalog import plans
+from central.billing.catalog import configurator, plans
+from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 
 PLAN = "bundle-configured-test"
+PREFIX = "CfgTest"
+TEMPLATE = "Cfg Test Template"
+
+
+def _cleanup():
+	for plan in frappe.get_all("Plan", filters={"name": ["like", f"{PREFIX}%"]}, pluck="name"):
+		frappe.db.delete("Catalog Rate", {"priced_doctype": "Plan", "priced_for": plan})
+		frappe.delete_doc("Plan", plan, force=True, ignore_permissions=True)
+	if frappe.db.exists("Plan Configurator", TEMPLATE):
+		frappe.delete_doc("Plan Configurator", TEMPLATE, force=True, ignore_permissions=True)
 
 
 class TestConfigureIncludes(IntegrationTestCase):
@@ -52,3 +66,99 @@ class TestCreateConfiguredPlan(IntegrationTestCase):
 		self.assertEqual(by_type["Disk"].quantity, 20)
 		# Plain quantity/unit only — no millicores/ratio stored anywhere.
 		self.assertEqual(by_type["Compute"].unit, "vCPU")
+
+
+class TestBuildLadder(IntegrationTestCase):
+	"""The pure authoring math — no DB."""
+
+	def test_doubling_ladder_with_memory_and_disk(self):
+		rungs = configurator.build_ladder(0.125, 4, "1:2", base_disk_gb=10, name_prefix=PREFIX)
+		self.assertEqual([r["vcpu"] for r in rungs], [0.125, 0.25, 0.5, 1, 2, 4])
+		self.assertEqual([r["memory_gb"] for r in rungs], [0.25, 0.5, 1, 2, 4, 8])
+		self.assertEqual([r["multiplier"] for r in rungs], [1, 2, 4, 8, 16, 32])
+		self.assertEqual([r["disk_gb"] for r in rungs], [10, 20, 40, 80, 160, 320])
+
+	def test_high_memory_ratio(self):
+		rungs = configurator.build_ladder(1, 2, "1:4", name_prefix=PREFIX)
+		self.assertEqual([r["memory_gb"] for r in rungs], [4, 8])
+
+	def test_labels_and_names(self):
+		rungs = configurator.build_ladder(0.125, 1, "1:2", name_prefix=PREFIX)
+		self.assertEqual(rungs[0]["label"], "1/8 vCPU · 0.25 GB")
+		self.assertEqual(rungs[0]["name"], f"{PREFIX} 0.125 vCPU 0.25 GB")
+		self.assertEqual(rungs[-1]["label"], "1 vCPU · 2 GB")
+
+	def test_no_disk_line_when_base_disk_zero(self):
+		rungs = configurator.build_ladder(1, 1, "1:2", base_disk_gb=0, name_prefix=PREFIX)
+		types = [i["resource_type"] for i in rungs[0]["includes"]]
+		self.assertEqual(types, ["Compute", "Memory"])
+
+	def test_bad_inputs_throw(self):
+		with self.assertRaises(frappe.ValidationError):
+			configurator.build_ladder(0.125, 4, "1:3")
+		with self.assertRaises(frappe.ValidationError):
+			configurator.build_ladder(4, 1, "1:2")
+
+
+class TestGenerate(IntegrationTestCase):
+	def setUp(self):
+		_cleanup()
+		self.cfg = frappe.get_doc({
+			"doctype": "Plan Configurator", "template_name": TEMPLATE,
+			"start_vcpu": 0.125, "ceiling_vcpu": 4, "memory_ratio": "1:2",
+			"base_disk_gb": 10, "plan_name_prefix": PREFIX, "billing_cycle": "Monthly",
+			"is_active": 1, "base_rate": 100, "currency": "INR",
+		}).insert(ignore_permissions=True)
+
+	def tearDown(self):
+		_cleanup()
+
+	def test_generate_creates_plans_composition_and_default_pricing(self):
+		out = self.cfg.generate()
+		self.assertEqual(len(out["created"]), 6)
+		self.cfg.reload()
+		self.assertEqual(len(self.cfg.plans), 6)
+
+		# Composition is plain (no millicores / ratio); memory derived, disk scaled.
+		plan = frappe.get_doc("Plan", f"{PREFIX} 2 vCPU 4 GB")
+		comp = {i.resource_type: i.quantity for i in plan.includes}
+		self.assertEqual(comp, {"Compute": 2, "Memory": 4, "Disk": 160})
+
+		# Priced globally at base_rate × multiplier (2 vCPU = ×16 → 1600).
+		self.assertEqual(plan.get_rate("INR"), 1600)
+		# Smallest rung is the base rate itself.
+		self.assertEqual(
+			frappe.get_doc("Plan", f"{PREFIX} 0.125 vCPU 0.25 GB").get_rate("INR"), 100)
+
+	def test_generate_is_idempotent(self):
+		self.cfg.generate()
+		out = self.cfg.generate()
+		self.assertEqual(len(out["created"]), 0)
+		self.assertEqual(len(out["skipped"]), 6)
+
+	def test_apply_pricing_to_cluster_subset_is_selective(self):
+		self.cfg.generate()
+		small = f"{PREFIX} 0.125 vCPU 0.25 GB"
+		big = f"{PREFIX} 2 vCPU 4 GB"
+
+		out = self.cfg.apply_pricing_to_cluster(
+			cluster="ap-south-1", base_rate=200, plans=[small])
+		self.assertEqual(out["created"], [small])
+
+		# The selected plan has a regional rate (200 × 1); the unselected one does not.
+		self.assertEqual(resolve_rate(get_catalog_rates("Plan", small), "INR", "ap-south-1"), 200)
+		big_rows = get_catalog_rates("Plan", big)
+		self.assertFalse([r for r in big_rows if r.cluster == "ap-south-1"])
+		# ...but the unselected plan still resolves via its global rate (fallback).
+		self.assertEqual(resolve_rate(big_rows, "INR", "ap-south-1"), 1600)
+
+	def test_reapply_updates_rate_in_place(self):
+		self.cfg.generate()
+		small = f"{PREFIX} 0.125 vCPU 0.25 GB"
+		self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", base_rate=200, plans=[small])
+		out = self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", base_rate=250, plans=[small])
+		self.assertEqual(out["updated"], [small])
+		self.assertEqual(resolve_rate(get_catalog_rates("Plan", small), "INR", "ap-south-1"), 250)
+		# No duplicate row was created.
+		rows = [r for r in get_catalog_rates("Plan", small) if r.cluster == "ap-south-1"]
+		self.assertEqual(len(rows), 1)

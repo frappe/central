@@ -1,0 +1,74 @@
+{
+ "actions": [],
+ "creation": "2026-06-18 00:00:00.000000",
+ "description": "One generated rung of a Plan Configurator ladder — the reusable record used to price a Plan on a new cluster.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "plan",
+  "label",
+  "vcpu",
+  "memory_gb",
+  "multiplier"
+ ],
+ "fields": [
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Plan",
+   "options": "Plan",
+   "reqd": 1,
+   "columns": 4
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Size",
+   "read_only": 1,
+   "columns": 3
+  },
+  {
+   "fieldname": "vcpu",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "vCPU",
+   "read_only": 1,
+   "precision": "3",
+   "columns": 1
+  },
+  {
+   "fieldname": "memory_gb",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Memory (GB)",
+   "read_only": 1,
+   "precision": "3",
+   "columns": 1
+  },
+  {
+   "fieldname": "multiplier",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Rate ×",
+   "read_only": 1,
+   "precision": "3",
+   "columns": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Plan Configurator Plan",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
