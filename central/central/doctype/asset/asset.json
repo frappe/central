@@ -7,11 +7,18 @@
  "engine": "InnoDB",
  "field_order": [
   "resource_id",
+  "title",
   "team",
   "cluster",
   "status",
+  "vcpus",
+  "memory_megabytes",
+  "disk_gigabytes",
+  "ipv6_address",
+  "public_ipv4",
   "gateway_url",
-  "last_synced_at"
+  "last_synced_at",
+  "last_event_at"
  ],
  "fields": [
   {
@@ -22,6 +29,14 @@
    "label": "Resource ID",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "description": "Human label, mirrored from the Atlas VM (resource_id is a UUID).",
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "read_only": 1
   },
   {
    "description": "Owning Central team (mirrored from Atlas).",
@@ -44,25 +59,64 @@
    "reqd": 1
   },
   {
-   "default": "Provisioning",
+   "default": "Pending",
+   "description": "Mirrors the Atlas Virtual Machine status verbatim.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Provisioning\nRunning\nStopped\nTerminated"
+   "options": "Pending\nRunning\nPaused\nStopped\nFailed\nTerminated"
   },
   {
-   "description": "The bench gateway Central deep-links into (VM leaf). Empty unless Running.",
+   "fieldname": "vcpus",
+   "fieldtype": "Int",
+   "label": "vCPUs",
+   "read_only": 1
+  },
+  {
+   "fieldname": "memory_megabytes",
+   "fieldtype": "Int",
+   "label": "Memory (MB)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "disk_gigabytes",
+   "fieldtype": "Int",
+   "label": "Disk (GB)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ipv6_address",
+   "fieldtype": "Data",
+   "label": "IPv6 Address",
+   "read_only": 1
+  },
+  {
+   "fieldname": "public_ipv4",
+   "fieldtype": "Data",
+   "label": "Public IPv4",
+   "read_only": 1
+  },
+  {
+   "description": "The bench gateway Central deep-links into (VM leaf). Reserved — empty until the bench-gateway layer reports it.",
    "fieldname": "gateway_url",
    "fieldtype": "Data",
    "label": "Gateway URL",
    "options": "URL"
   },
   {
+   "description": "When the last reconcile (pull) refreshed this row.",
    "fieldname": "last_synced_at",
    "fieldtype": "Datetime",
    "label": "Last Synced At",
+   "read_only": 1
+  },
+  {
+   "description": "occurred_at of the last applied Atlas event. Used for last-writer-wins so a stale or duplicate push can't overwrite newer state.",
+   "fieldname": "last_event_at",
+   "fieldtype": "Datetime",
+   "label": "Last Event At",
    "read_only": 1
   }
  ],
