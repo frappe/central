@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class TrustTier(Document):
+class TrustTierThreshold(Document):
 	pass

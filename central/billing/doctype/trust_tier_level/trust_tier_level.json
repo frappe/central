@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "prompt",
  "creation": "2026-06-02 00:00:00.000000",
- "description": "An admin-defined rung of the trust-tier ladder. Promotion picks the highest rung a team's paid history qualifies for.",
+ "description": "An admin-defined rung of the trust-tier ladder. Promotion picks the highest rung a team's paid history qualifies for. Money limits are defined per currency in the Thresholds table.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -12,15 +12,15 @@
   "sequence",
   "is_default",
   "column_break_caps",
-  "max_spend",
   "max_resource_count",
   "section_break_promo",
   "min_paid_invoices",
-  "min_cumulative_paid",
   "column_break_allow",
   "allowed_plans",
   "allowed_clusters",
-  "allowed_resource_types"
+  "allowed_resource_types",
+  "section_break_thresholds",
+  "thresholds"
  ],
  "fields": [
   {
@@ -51,12 +51,6 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "max_spend",
-   "fieldtype": "Currency",
-   "in_list_view": 1,
-   "label": "Max Monthly Spend"
-  },
-  {
    "default": "0",
    "fieldname": "max_resource_count",
    "fieldtype": "Int",
@@ -72,12 +66,6 @@
    "fieldname": "min_paid_invoices",
    "fieldtype": "Int",
    "label": "Min Consecutive Paid Invoices"
-  },
-  {
-   "default": "0",
-   "fieldname": "min_cumulative_paid",
-   "fieldtype": "Currency",
-   "label": "Min Cumulative Paid"
   },
   {
    "fieldname": "column_break_allow",
@@ -97,11 +85,23 @@
    "fieldname": "allowed_resource_types",
    "fieldtype": "JSON",
    "label": "Allowed Resource Types"
+  },
+  {
+   "fieldname": "section_break_thresholds",
+   "fieldtype": "Section Break",
+   "label": "Currency Thresholds",
+   "description": "Spend cap and promotion floor per currency. The entry tier must cover every supported currency."
+  },
+  {
+   "fieldname": "thresholds",
+   "fieldtype": "Table",
+   "label": "Thresholds",
+   "options": "Trust Tier Threshold"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-02 00:00:00.000000",
+ "modified": "2026-06-17 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Trust Tier Level",

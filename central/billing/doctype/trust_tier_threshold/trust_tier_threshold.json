@@ -1,0 +1,51 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-06-17 00:00:00.000000",
+ "description": "A trust-tier rung's money limits for one currency. ₹15,000 and $200 are different caps for the same tier, so the spend cap and promotion floor are defined per currency rather than as a single ladder-wide number.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "currency",
+  "max_spend",
+  "min_cumulative_paid"
+ ],
+ "fields": [
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Currency",
+   "options": "Currency",
+   "reqd": 1
+  },
+  {
+   "fieldname": "max_spend",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Max Monthly Spend",
+   "options": "currency"
+  },
+  {
+   "default": "0",
+   "fieldname": "min_cumulative_paid",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Min Cumulative Paid",
+   "options": "currency"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Trust Tier Threshold",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "ASC",
+ "states": []
+}

@@ -63,10 +63,21 @@ ANCHOR = "2026-06-01"  # the current (open) billing month
 
 def _tiers():
 	for level, seq, default, cap, res, inv, paid in TIERS:
+		# The TIERS table is denominated in INR; the per-currency thresholds are
+		# derived from it at seed time via FX (a one-off seeding convenience — the
+		# runtime never converts, it reads the row for the team's currency).
+		thresholds = [
+			{
+				"currency": c,
+				"max_spend": round(cap / FX[c], 2),
+				"min_cumulative_paid": round(paid / FX[c], 2),
+			}
+			for c in CURRENCIES
+		]
 		_upsert("Trust Tier Level", level, {
 			"tier": level, "sequence": seq, "is_default": default,
-			"max_spend": cap, "max_resource_count": res,
-			"min_paid_invoices": inv, "min_cumulative_paid": paid,
+			"max_resource_count": res, "min_paid_invoices": inv,
+			"thresholds": thresholds,
 		}, newname=True)
 
 
@@ -125,11 +136,10 @@ def _gateways():
 
 
 def _tier(team, level):
-	cap = next(t[3] for t in TIERS if t[0] == level)
-	res = next(t[4] for t in TIERS if t[0] == level)
-	_upsert("Trust Tier", team, {
-		"team": team, "level": level, "tier": level,
-		"max_spend": cap, "max_resource_count": res, "manual_override": 1,
+	# The tier is a link on the Billing Profile; the cap resolves live from the
+	# level × the team's currency. manual_override pins the demo team's tier.
+	frappe.db.set_value("Billing Profile", team, {
+		"trust_tier_level": level, "trust_tier": level, "manual_override": 1,
 	})
 
 
@@ -391,7 +401,7 @@ def _wipe_all():
 	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Gateway Customer",
 					 "Price Lock", "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
 					 "Billing Notification Log", "Entitlement Token", "Webhook Event", "Subscription")
-	config = ("Trust Tier", "Tax Profile", "Billing Profile")
+	config = ("Tax Profile", "Billing Profile")
 	catalog = ("Plan", "Add-on", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:
 		try:

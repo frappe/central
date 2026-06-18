@@ -89,7 +89,7 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 			"Refund", "Invoice", "Payment Attempt", "Subscription", "Payment Method",
 			"Credit Ledger Entry", "Credit Wallet", "Gateway Customer",
 			"Price Lock", "Usage Rollup", "Billing Notification Log",
-			"Notification Preference", "Billing Profile", "Trust Tier", "Tax Profile",
+			"Notification Preference", "Billing Profile", "Tax Profile",
 		):
 			_safe(frappe.db.delete, dt, {"team": team})
 		_safe(frappe.delete_doc, "Team", team, force=True, ignore_permissions=True)
@@ -343,14 +343,19 @@ def generate_invoice(team: str, monthly_rate: float = 3000,
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def set_trust_tier(team: str, max_spend: float = 50000) -> dict:
 	"""Give the team a trust tier with a spend cap — the UPI Autopay mandate ceiling
-	is this cap, and UPI is only eligible below the ₹1,00,000 recurring limit."""
+	is this cap, and UPI is only eligible below the ₹1,00,000 recurring limit.
+
+	The tier lives on the Billing Profile; a bespoke `override_max_spend` (with
+	manual_override) pins the exact cap the mandate test expects."""
 	_enter_test_mode()
-	if frappe.db.exists("Trust Tier", team):
-		frappe.delete_doc("Trust Tier", team, force=True, ignore_permissions=True)
-	frappe.get_doc({
-		"doctype": "Trust Tier", "team": team, "tier": "t1",
-		"max_spend": frappe.utils.flt(max_spend), "manual_override": 1,
-	}).insert(ignore_permissions=True)
+	if not frappe.db.exists("Billing Profile", team):
+		frappe.get_doc({"doctype": "Billing Profile", "team": team, "currency": "INR"}).insert(
+			ignore_permissions=True
+		)
+	frappe.db.set_value("Billing Profile", team, {
+		"trust_tier_level": "t1", "trust_tier": "t1", "manual_override": 1,
+		"override_max_spend": frappe.utils.flt(max_spend),
+	})
 	frappe.db.commit()
 	return {"team": team, "max_spend": frappe.utils.flt(max_spend)}
 

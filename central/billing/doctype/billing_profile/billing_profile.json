@@ -31,7 +31,15 @@
   "collection_mode",
   "column_break_settings",
   "spend_alert_threshold",
-  "collection_action_reason"
+  "collection_action_reason",
+  "section_break_trust",
+  "trust_tier_level",
+  "trust_tier",
+  "manual_override",
+  "column_break_trust",
+  "override_max_spend",
+  "promoted_at",
+  "promotion_basis"
  ],
  "fields": [
   {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "unique": 1, "reqd": 1},
@@ -57,7 +65,15 @@
   {"default": "prepaid", "fieldname": "collection_mode", "fieldtype": "Select", "label": "Collection Mode", "options": "stripe_auto\nemandate\nmanual_checkout\nprepaid\naction_required", "description": "How this team's invoices are collected (ADR 0005). action_required is transient: an e-mandate team crossed the ₹15,000 silent-debit limit and must pick manual_checkout or prepaid."},
   {"fieldname": "column_break_settings", "fieldtype": "Column Break"},
   {"default": "0", "fieldname": "spend_alert_threshold", "fieldtype": "Currency", "label": "Spend Alert Threshold"},
-  {"fieldname": "collection_action_reason", "fieldtype": "Data", "label": "Collection Action Reason", "read_only": 1, "description": "Why the team is in action_required: forecast_over_threshold / invoice_over_threshold / mandate_failed / tier_cap."}
+  {"fieldname": "collection_action_reason", "fieldtype": "Data", "label": "Collection Action Reason", "read_only": 1, "description": "Why the team is in action_required: forecast_over_threshold / invoice_over_threshold / mandate_failed / tier_cap."},
+  {"fieldname": "section_break_trust", "fieldtype": "Section Break", "label": "Trust Tier"},
+  {"fieldname": "trust_tier_level", "fieldtype": "Link", "options": "Trust Tier Level", "label": "Trust Tier Level", "description": "The team's current ladder rung. Caps are resolved live from this level and the team's currency (see entitlements.get_team_caps)."},
+  {"fieldname": "trust_tier", "fieldtype": "Data", "read_only": 1, "label": "Trust Tier", "description": "Denormalised tier key (from the linked level) for lists and reports."},
+  {"default": "0", "fieldname": "manual_override", "fieldtype": "Check", "label": "Manual Override", "description": "Admin-set: exempt from auto promotion/demotion."},
+  {"fieldname": "column_break_trust", "fieldtype": "Column Break"},
+  {"fieldname": "override_max_spend", "fieldtype": "Currency", "options": "currency", "label": "Override Max Spend", "description": "Bespoke spend cap, used only with Manual Override. Blank means use the level's cap for the team's currency."},
+  {"fieldname": "promoted_at", "fieldtype": "Datetime", "label": "Promoted At", "read_only": 1},
+  {"fieldname": "promotion_basis", "fieldtype": "Small Text", "label": "Promotion Basis", "read_only": 1}
  ],
  "index_web_pages_for_search": 1,
  "links": [],

@@ -6,7 +6,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.payments import collection_mode
-from central.billing.tests.utils import complete_billing_profile, ensure_team
+from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team, set_team_tier
 
 TEAM = "team-collection"
 
@@ -22,20 +22,14 @@ class TestCollectionMode(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
-		frappe.db.delete("Trust Tier", {"team": TEAM})  # no tier → flat ₹15k threshold
+		clear_team_tier(TEAM)  # no tier → flat ₹15k threshold
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
 
 	def test_threshold_is_15k_without_a_tier(self):
 		self.assertEqual(collection_mode.silent_threshold(TEAM), 15000.0)
 
 	def test_threshold_is_capped_by_a_lower_tier(self):
-		if not frappe.db.exists("Trust Tier Level", "t0"):
-			frappe.get_doc({"doctype": "Trust Tier Level", "__newname": "t0", "tier": "t0",
-							"sequence": 0, "is_default": 1, "max_spend": 8000,
-							"max_resource_count": 5}).insert(ignore_permissions=True)
-		frappe.get_doc({"doctype": "Trust Tier", "team": TEAM, "tier": "t0", "level": "t0",
-						"max_spend": 8000, "max_resource_count": 5, "manual_override": 1}
-					   ).insert(ignore_permissions=True)
+		set_team_tier(TEAM, level="t0", max_spend=8000)
 		self.assertEqual(collection_mode.silent_threshold(TEAM), 8000.0)
 
 	def test_emandate_under_threshold_stays_silent(self):
