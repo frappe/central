@@ -1,0 +1,46 @@
+{
+ "actions": [],
+ "creation": "2026-06-18 00:00:00.000000",
+ "description": "One currency's base rate (price of the smallest rung) for a Plan Configurator ladder.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "currency",
+  "base_rate"
+ ],
+ "fields": [
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Currency",
+   "options": "Currency",
+   "reqd": 1,
+   "columns": 4
+  },
+  {
+   "fieldname": "base_rate",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Base Rate",
+   "options": "currency",
+   "reqd": 1,
+   "columns": 4,
+   "description": "Price of the smallest rung in this currency; each rung is base_rate × its size multiplier."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Plan Configurator Rate",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

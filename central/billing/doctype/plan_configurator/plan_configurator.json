@@ -10,6 +10,7 @@
   "template_name",
   "is_active",
   "sizing_section",
+  "plan_class",
   "start_vcpu",
   "ceiling_vcpu",
   "memory_ratio",
@@ -18,8 +19,7 @@
   "plan_name_prefix",
   "billing_cycle",
   "pricing_section",
-  "base_rate",
-  "currency",
+  "base_rates",
   "default_cluster",
   "pricing_help",
   "plans_section",
@@ -46,6 +46,14 @@
    "label": "Sizing"
   },
   {
+   "default": "General",
+   "fieldname": "plan_class",
+   "fieldtype": "Select",
+   "label": "Plan Class",
+   "options": "General\nCPU Optimised\nMemory Optimised\nCustom",
+   "description": "Pins the memory ratio like a cloud family — CPU Optimised 1:2, General 1:4, Memory Optimised 1:8. Choose Custom to set the ratio yourself."
+  },
+  {
    "default": "0.125",
    "fieldname": "start_vcpu",
    "fieldtype": "Float",
@@ -64,13 +72,14 @@
    "description": "Largest rung. The ladder doubles from start up to (and including) this."
   },
   {
-   "default": "1:2",
+   "default": "1:4",
    "fieldname": "memory_ratio",
    "fieldtype": "Select",
    "label": "Memory Ratio",
-   "options": "1:2\n1:4",
+   "options": "1:2\n1:4\n1:6\n1:8",
    "reqd": 1,
-   "description": "GB RAM per vCPU — 1:2 standard, 1:4 high-memory. A pre-fill; edit a generated Plan to go off-ratio."
+   "description": "GB RAM per vCPU. Set by Plan Class unless it is Custom. A pre-fill; edit a generated Plan to go off-ratio.",
+   "depends_on": "eval:doc.plan_class=='Custom'"
   },
   {
    "default": "0",
@@ -105,20 +114,12 @@
    "label": "Default Pricing"
   },
   {
-   "fieldname": "base_rate",
-   "fieldtype": "Currency",
-   "label": "Base Rate",
-   "options": "currency",
+   "fieldname": "base_rates",
+   "fieldtype": "Table",
+   "label": "Base Rates",
+   "options": "Plan Configurator Rate",
    "reqd": 1,
-   "description": "Price of the smallest rung. Each rung is priced base_rate × its size multiplier."
-  },
-  {
-   "default": "INR",
-   "fieldname": "currency",
-   "fieldtype": "Link",
-   "label": "Currency",
-   "options": "Currency",
-   "reqd": 1
+   "description": "One row per currency — the price of the smallest rung. Each rung is priced base_rate × its size multiplier."
   },
   {
    "fieldname": "default_cluster",
@@ -129,7 +130,7 @@
   {
    "fieldname": "pricing_help",
    "fieldtype": "HTML",
-   "options": "<p class='text-muted small'>Generate creates the bundles and prices them for the currency + default cluster above. Use <b>Apply Pricing to Cluster</b> to add a new cluster's rates over all or a selected subset of these plans — a plan is sellable on a cluster only where it has a rate (or a global one).</p>"
+   "options": "<p class='text-muted small'>Generate creates the bundles and prices them in every base-rate currency for the default cluster above. Use <b>Apply Pricing to Cluster</b> to add a new cluster's rates over all or a selected subset of these plans — a plan is sellable on a cluster only where it has a rate (or a global one).</p>"
   },
   {
    "fieldname": "plans_section",

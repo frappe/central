@@ -25,6 +25,17 @@ from central.billing.catalog.plans import RATIO_FACTORS, configure_includes
 
 _MAX_RUNGS = 24  # safety bound on the doubling loop
 
+# Plan classes pre-set the memory ratio the way cloud families do (compute /
+# general / memory optimised). "Custom" defers to the explicit ratio.
+CLASS_RATIOS = {"CPU Optimised": "1:2", "General": "1:4", "Memory Optimised": "1:8"}
+
+
+def ratio_for(plan_class: str | None, memory_ratio: str) -> str:
+	"""The effective ratio: a class pins it; "Custom"/blank uses the explicit one."""
+	if plan_class and plan_class != "Custom":
+		return CLASS_RATIOS[plan_class]
+	return memory_ratio
+
 
 def build_ladder(
 	start_vcpu: float,

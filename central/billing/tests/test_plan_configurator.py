@@ -82,6 +82,17 @@ class TestBuildLadder(IntegrationTestCase):
 		rungs = configurator.build_ladder(1, 2, "1:4", name_prefix=PREFIX)
 		self.assertEqual([r["memory_gb"] for r in rungs], [4, 8])
 
+	def test_memory_optimised_ratios(self):
+		self.assertEqual([r["memory_gb"] for r in configurator.build_ladder(1, 2, "1:6")], [6, 12])
+		self.assertEqual([r["memory_gb"] for r in configurator.build_ladder(1, 1, "1:8")], [8])
+
+	def test_ratio_for_plan_class(self):
+		self.assertEqual(configurator.ratio_for("CPU Optimised", "1:4"), "1:2")
+		self.assertEqual(configurator.ratio_for("General", "1:2"), "1:4")
+		self.assertEqual(configurator.ratio_for("Memory Optimised", "1:2"), "1:8")
+		self.assertEqual(configurator.ratio_for("Custom", "1:6"), "1:6")
+		self.assertEqual(configurator.ratio_for(None, "1:4"), "1:4")
+
 	def test_labels_and_names(self):
 		rungs = configurator.build_ladder(0.125, 1, "1:2", name_prefix=PREFIX)
 		self.assertEqual(rungs[0]["label"], "1/8 vCPU · 0.25 GB")
@@ -105,15 +116,16 @@ class TestGenerate(IntegrationTestCase):
 		_cleanup()
 		self.cfg = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": TEMPLATE,
-			"start_vcpu": 0.125, "ceiling_vcpu": 4, "memory_ratio": "1:2",
-			"base_disk_gb": 10, "plan_name_prefix": PREFIX, "billing_cycle": "Monthly",
-			"is_active": 1, "base_rate": 100, "currency": "INR",
+			"plan_class": "Custom", "start_vcpu": 0.125, "ceiling_vcpu": 4,
+			"memory_ratio": "1:2", "base_disk_gb": 10, "plan_name_prefix": PREFIX,
+			"billing_cycle": "Monthly", "is_active": 1,
+			"base_rates": [{"currency": "INR", "base_rate": 100}, {"currency": "USD", "base_rate": 2}],
 		}).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		_cleanup()
 
-	def test_generate_creates_plans_composition_and_default_pricing(self):
+	def test_generate_creates_plans_composition_and_multi_currency_pricing(self):
 		out = self.cfg.generate()
 		self.assertEqual(len(out["created"]), 6)
 		self.cfg.reload()
@@ -124,11 +136,20 @@ class TestGenerate(IntegrationTestCase):
 		comp = {i.resource_type: i.quantity for i in plan.includes}
 		self.assertEqual(comp, {"Compute": 2, "Memory": 4, "Disk": 160})
 
-		# Priced globally at base_rate × multiplier (2 vCPU = ×16 → 1600).
+		# Priced in both currencies at base_rate × multiplier (2 vCPU = ×16).
 		self.assertEqual(plan.get_rate("INR"), 1600)
+		self.assertEqual(plan.get_rate("USD"), 32)
 		# Smallest rung is the base rate itself.
+		small = frappe.get_doc("Plan", f"{PREFIX} 0.125 vCPU 0.25 GB")
+		self.assertEqual(small.get_rate("INR"), 100)
+		self.assertEqual(small.get_rate("USD"), 2)
+
+	def test_preview_is_currency_aware(self):
+		data = self.cfg.preview()
+		self.assertEqual(data["currencies"], ["INR", "USD"])
+		first = data["rungs"][0]  # smallest rung, ×1
 		self.assertEqual(
-			frappe.get_doc("Plan", f"{PREFIX} 0.125 vCPU 0.25 GB").get_rate("INR"), 100)
+			{x["currency"]: x["rate"] for x in first["rates"]}, {"INR": 100, "USD": 2})
 
 	def test_generate_is_idempotent(self):
 		self.cfg.generate()
@@ -141,24 +162,45 @@ class TestGenerate(IntegrationTestCase):
 		small = f"{PREFIX} 0.125 vCPU 0.25 GB"
 		big = f"{PREFIX} 2 vCPU 4 GB"
 
+		# Price only the smallest plan, only in INR, on a region.
 		out = self.cfg.apply_pricing_to_cluster(
-			cluster="ap-south-1", base_rate=200, plans=[small])
-		self.assertEqual(out["created"], [small])
+			cluster="ap-south-1", currencies=["INR"], plans=[small])
+		self.assertEqual(out[0]["created"], [small])
 
-		# The selected plan has a regional rate (200 × 1); the unselected one does not.
-		self.assertEqual(resolve_rate(get_catalog_rates("Plan", small), "INR", "ap-south-1"), 200)
+		# The selected plan has a regional INR rate (100 × 1); the unselected one does not.
+		self.assertEqual(resolve_rate(get_catalog_rates("Plan", small), "INR", "ap-south-1"), 100)
 		big_rows = get_catalog_rates("Plan", big)
 		self.assertFalse([r for r in big_rows if r.cluster == "ap-south-1"])
 		# ...but the unselected plan still resolves via its global rate (fallback).
 		self.assertEqual(resolve_rate(big_rows, "INR", "ap-south-1"), 1600)
+		# USD was not selected, so no regional USD row for the small plan either.
+		self.assertFalse(
+			[r for r in get_catalog_rates("Plan", small) if r.cluster == "ap-south-1" and r.currency == "USD"])
 
 	def test_reapply_updates_rate_in_place(self):
 		self.cfg.generate()
 		small = f"{PREFIX} 0.125 vCPU 0.25 GB"
-		self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", base_rate=200, plans=[small])
-		out = self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", base_rate=250, plans=[small])
-		self.assertEqual(out["updated"], [small])
+		self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", currencies=["INR"], plans=[small])
+		self.cfg.base_rates[0].base_rate = 250  # re-price INR
+		out = self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", currencies=["INR"], plans=[small])
+		self.assertEqual(out[0]["updated"], [small])
 		self.assertEqual(resolve_rate(get_catalog_rates("Plan", small), "INR", "ap-south-1"), 250)
 		# No duplicate row was created.
-		rows = [r for r in get_catalog_rates("Plan", small) if r.cluster == "ap-south-1"]
+		rows = [r for r in get_catalog_rates("Plan", small)
+				if r.cluster == "ap-south-1" and r.currency == "INR"]
 		self.assertEqual(len(rows), 1)
+
+	def test_plan_class_drives_ratio_and_composition(self):
+		mem = frappe.get_doc({
+			"doctype": "Plan Configurator", "template_name": TEMPLATE + " Mem",
+			"plan_class": "Memory Optimised", "start_vcpu": 1, "ceiling_vcpu": 1,
+			"plan_name_prefix": PREFIX, "billing_cycle": "Monthly", "is_active": 1,
+			"base_rates": [{"currency": "INR", "base_rate": 500}],
+		}).insert(ignore_permissions=True)
+		try:
+			mem.generate()
+			plan = frappe.get_doc("Plan", f"{PREFIX} 1 vCPU 8 GB")  # 1:8 from the class
+			comp = {i.resource_type: i.quantity for i in plan.includes}
+			self.assertEqual(comp["Memory"], 8)
+		finally:
+			frappe.delete_doc("Plan Configurator", TEMPLATE + " Mem", force=True, ignore_permissions=True)

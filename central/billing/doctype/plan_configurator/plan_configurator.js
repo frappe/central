@@ -1,7 +1,23 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
+// Plan classes pin the memory ratio the way cloud families do (mirror of
+// configurator.CLASS_RATIOS).
+const CLASS_RATIOS = { "CPU Optimised": "1:2", General: "1:4", "Memory Optimised": "1:8" };
+
 frappe.ui.form.on("Plan Configurator", {
+	plan_class(frm) {
+		const ratio = CLASS_RATIOS[frm.doc.plan_class];
+		if (ratio) frm.set_value("memory_ratio", ratio);
+		if (frm.doc.plan_class && frm.doc.plan_class !== "Custom" && !frm.doc.__user_set_prefix) {
+			frm.set_value("plan_name_prefix", frm.doc.plan_class);
+		}
+	},
+
+	plan_name_prefix(frm) {
+		frm.doc.__user_set_prefix = true;
+	},
+
 	refresh(frm) {
 		if (frm.is_new()) {
 			frm.dashboard.set_headline(__("Save the template, then generate plans."));
@@ -9,14 +25,14 @@ frappe.ui.form.on("Plan Configurator", {
 		}
 
 		frm.add_custom_button(__("Preview Ladder"), () => {
-			frm.call("preview").then((r) => show_preview(r.message || []));
+			frm.call("preview").then((r) => show_preview(r.message || {}));
 		});
 
 		frm.add_custom_button(__("Generate Plans"), () => {
 			const where = frm.doc.default_cluster || __("global");
 			frappe.confirm(
-				__("Create the bundles for this ladder and price them for {0} ({1})?", [
-					frm.doc.currency,
+				__("Create the bundles for this ladder and price them ({0} currencies, {1})?", [
+					(frm.doc.base_rates || []).length,
 					where,
 				]),
 				() =>
@@ -41,12 +57,23 @@ frappe.ui.form.on("Plan Configurator", {
 	},
 });
 
-function show_preview(rungs) {
+function show_preview(data) {
+	const rungs = data.rungs || [];
+	const currencies = data.currencies || [];
 	if (!rungs.length) {
 		frappe.msgprint(__("Nothing to preview — check the sizing inputs."));
 		return;
 	}
-	const rows = rungs
+	const rate_of = (rung, cur) => {
+		const hit = (rung.rates || []).find((x) => x.currency === cur);
+		return hit ? format_currency(hit.rate, cur) : "—";
+	};
+	const head =
+		`<th>${__("Size")}</th><th class="text-right">${__("vCPU")}</th>` +
+		`<th class="text-right">${__("GB")}</th><th class="text-right">${__("Disk")}</th>` +
+		`<th class="text-right">${__("Rate ×")}</th>` +
+		currencies.map((c) => `<th class="text-right">${frappe.utils.escape_html(c)}</th>`).join("");
+	const body = rungs
 		.map(
 			(r) => `<tr>
 				<td>${frappe.utils.escape_html(r.label)}</td>
@@ -54,23 +81,19 @@ function show_preview(rungs) {
 				<td class="text-right">${r.memory_gb}</td>
 				<td class="text-right">${r.disk_gb || "—"}</td>
 				<td class="text-right">×${r.multiplier}</td>
-				<td class="text-right">${format_currency(r.rate)}</td>
+				${currencies.map((c) => `<td class="text-right">${rate_of(r, c)}</td>`).join("")}
 			</tr>`
 		)
 		.join("");
 	frappe.msgprint({
 		title: __("Ladder Preview — {0} sizes", [rungs.length]),
-		message: `<table class="table table-bordered">
-			<thead><tr>
-				<th>${__("Size")}</th><th class="text-right">${__("vCPU")}</th>
-				<th class="text-right">${__("GB")}</th><th class="text-right">${__("Disk")}</th>
-				<th class="text-right">${__("Rate ×")}</th><th class="text-right">${__("Rate")}</th>
-			</tr></thead><tbody>${rows}</tbody></table>`,
+		message: `<table class="table table-bordered"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`,
 		wide: true,
 	});
 }
 
 function apply_dialog(frm) {
+	const currencies = (frm.doc.base_rates || []).map((r) => r.currency);
 	const d = new frappe.ui.Dialog({
 		title: __("Apply Pricing to Cluster"),
 		fields: [
@@ -80,24 +103,14 @@ function apply_dialog(frm) {
 				label: __("Cluster"),
 				description: __("Blank = global (every cluster). Else a region key."),
 			},
-			{ fieldname: "cb", fieldtype: "Column Break" },
+			{ fieldname: "sb_cur", fieldtype: "Section Break", label: __("Currencies") },
 			{
-				fieldname: "currency",
-				fieldtype: "Link",
-				label: __("Currency"),
-				options: "Currency",
-				default: frm.doc.currency,
-				reqd: 1,
+				fieldname: "currencies",
+				fieldtype: "MultiCheck",
+				columns: 2,
+				get_data: () => currencies.map((c) => ({ label: c, value: c, checked: 1 })),
 			},
-			{
-				fieldname: "base_rate",
-				fieldtype: "Currency",
-				label: __("Base Rate"),
-				default: frm.doc.base_rate,
-				reqd: 1,
-				description: __("Smallest rung's price; scales by size."),
-			},
-			{ fieldname: "sb", fieldtype: "Section Break", label: __("Plans") },
+			{ fieldname: "sb_plans", fieldtype: "Section Break", label: __("Plans") },
 			{
 				fieldname: "plans",
 				fieldtype: "MultiCheck",
@@ -112,26 +125,26 @@ function apply_dialog(frm) {
 		],
 		primary_action_label: __("Apply Pricing"),
 		primary_action(values) {
-			const plans = values.plans || [];
-			if (!plans.length) {
-				frappe.msgprint(__("Select at least one plan."));
-				return;
-			}
+			if (!(values.plans || []).length) return frappe.msgprint(__("Select at least one plan."));
+			if (!(values.currencies || []).length)
+				return frappe.msgprint(__("Select at least one currency."));
 			frm.call("apply_pricing_to_cluster", {
 				cluster: values.cluster,
-				currency: values.currency,
-				base_rate: values.base_rate,
-				plans: plans,
+				currencies: values.currencies,
+				plans: values.plans,
 			}).then((r) => {
-				const m = r.message || {};
+				const results = r.message || [];
+				const priced = results.reduce((n, x) => n + (x.created || []).length, 0);
+				const updated = results.reduce((n, x) => n + (x.updated || []).length, 0);
 				d.hide();
 				frappe.msgprint({
 					title: __("Pricing Applied"),
 					indicator: "green",
-					message: __("{0}: {1} priced, {2} updated.", [
-						m.cluster || __("global"),
-						(m.created || []).length,
-						(m.updated || []).length,
+					message: __("{0}: {1} priced, {2} updated across {3} currencies.", [
+						values.cluster || __("global"),
+						priced,
+						updated,
+						(values.currencies || []).length,
 					]),
 				});
 			});
