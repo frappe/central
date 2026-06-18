@@ -8,7 +8,7 @@ import { test, expect } from './fixtures'
 test.describe('INR e-mandate collection', () => {
   test('sends a pre-debit notice for a bill within the ₹15,000 ceiling', async ({ page, billing }) => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
-    await billing.setCollectionMode({ team, mode: 'emandate' })
+    await billing.setCollectionMode({ team, mode: 'E-Mandate' })
 
     const { invoice } = await billing.makeInvoice({ team, total: 5000 })
     await billing.settle({ team, invoice, collect: 0 }) // open it; e-mandate debits later
@@ -22,7 +22,7 @@ test.describe('INR e-mandate collection', () => {
 
   test('forks a bill over the ceiling to the Action Required choice', async ({ page, billing }) => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
-    await billing.setCollectionMode({ team, mode: 'emandate' })
+    await billing.setCollectionMode({ team, mode: 'E-Mandate' })
 
     const { invoice } = await billing.makeInvoice({ team, total: 20000 }) // over ₹15,000
     await billing.settle({ team, invoice, collect: 0 })

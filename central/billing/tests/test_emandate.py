@@ -23,7 +23,7 @@ class TestEmandatePredebit(IntegrationTestCase):
 
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
-		_set_mode(TEAM, "emandate")
+		_set_mode(TEAM, "E-Mandate")
 		clear_team_tier(TEAM)
 		frappe.db.delete("Invoice", {"team": TEAM})
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
@@ -70,7 +70,7 @@ class TestEmandatePredebit(IntegrationTestCase):
 		out = emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
 		self.assertTrue(out.get("action_required"))
 		self.assertIsNone(frappe.db.get_value("Invoice", inv, "predebit_notified_at"))
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "action_required")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Action Required")
 		# No pre-debit notice was sent for a debit we can't make.
 		self.assertFalse(frappe.db.exists(
 			"Billing Notification Log", {"team": TEAM, "event_type": "Pre-debit Notice"}))

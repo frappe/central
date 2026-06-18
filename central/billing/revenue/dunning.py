@@ -39,9 +39,9 @@ def _collection_mode(team: str) -> str | None:
 
 def _overdue_message(invoice: str, mode: str | None) -> str:
 	"""Mode-aware overdue copy: tell the customer the action that settles it."""
-	if mode == "manual_checkout":
+	if mode == "Manual Checkout":
 		return f"Invoice {invoice} is overdue — pay it now to avoid suspension."
-	if mode == "prepaid":
+	if mode == "Prepaid":
 		return f"Invoice {invoice} is overdue — top up your wallet to settle it and avoid suspension."
 	return f"Invoice {invoice} is overdue. Please settle it to avoid suspension."
 
@@ -121,7 +121,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# are never silently retried — dunning just escalates and asks them to act
 	# (ADR 0005, #50). prepaid/stripe_auto/emandate retry iff a method exists.
 	mode = _collection_mode(inv.team)
-	auto_charge = mode not in ("manual_checkout", "action_required")
+	auto_charge = mode not in ("Manual Checkout", "Action Required")
 	if inv.status == "Open" and auto_charge and collection.next_method_for(invoice_name, inv.team):
 		retry_payment(invoice_name)
 		actions.append("retry")

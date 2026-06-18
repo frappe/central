@@ -34,7 +34,7 @@ def seed():
 	_tier_and_tax()
 	_billing_profile()
 	# INR team on the prepaid wallet model (ADR 0005 / #50): usage draws down credits.
-	frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "prepaid")
+	frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Prepaid")
 	card = _payment_method()
 	sub = subscriptions.create_subscription(
 		team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"

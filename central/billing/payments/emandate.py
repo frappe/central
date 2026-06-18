@@ -29,7 +29,7 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	Over the silent ceiling → fork to Action Required rather than promise a debit we
 	can't make off-session. Idempotent (skips an already-notified invoice)."""
 	inv = frappe.get_doc("Invoice", invoice)
-	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "emandate":
+	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "E-Mandate":
 		return {"invoice": invoice, "skipped": "not_emandate"}
 	if inv.invoice_type != "Billable" or inv.status not in ("Open", "Overdue"):
 		return {"invoice": invoice, "skipped": "not_collectable"}
@@ -87,7 +87,7 @@ def charge_due(now=None) -> list[dict]:
 	)
 	out = []
 	for inv in due:
-		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "emandate":
+		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "E-Mandate":
 			continue
 		out.append({"invoice": inv.name, **collection.collect_invoice(inv.name)})
 	return out
