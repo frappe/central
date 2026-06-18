@@ -1,16 +1,16 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "prompt",
- "creation": "2026-06-02 00:00:00.000000",
+ "creation": "2026-06-02 00:00:00",
  "description": "A flat-rate bundle with one immutable identity forever. The rate is the price; a rate change never forks a new plan.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "title",
-  "is_active",
+  "plan_class",
   "column_break_head",
+  "is_active",
   "billing_cycle",
   "annual_discount_pct",
   "section_break_includes",
@@ -59,11 +59,17 @@
    "fieldtype": "Table",
    "label": "Includes",
    "options": "Plan Includes"
+  },
+  {
+   "fieldname": "plan_class",
+   "fieldtype": "Select",
+   "label": "Plan Class",
+   "options": "General\nCPU Optimised\nMemory Optimised\nStorage Optimised\nCustom"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-02 00:00:00.000000",
+ "modified": "2026-06-18 12:07:51.148692",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Plan",
@@ -83,6 +89,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],

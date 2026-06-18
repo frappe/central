@@ -116,7 +116,7 @@ def rung_includes(vcpu: float, memory_gb: float, disk_gb: float, transfer_gb: fl
 	return rows
 
 
-def generate_plans(rungs: list, billing_cycle: str = "Monthly", is_active: int = 1) -> dict:
+def generate_plans(plan_class: str | None, rungs: list, billing_cycle: str = "Monthly", is_active: int = 1) -> dict:
 	"""Materialise each (edited) rung as a `Plan` + composition. Cluster-agnostic.
 
 	Idempotent: a rung whose Plan name already exists is left untouched and reported
@@ -134,6 +134,7 @@ def generate_plans(rungs: list, billing_cycle: str = "Monthly", is_active: int =
 				"doctype": "Plan",
 				"__newname": name,
 				"title": g("label") or name,
+				"plan_class": plan_class,
 				"billing_cycle": billing_cycle,
 				"is_active": is_active,
 				"includes": rung_includes(g("vcpu"), g("memory_gb"), g("disk_gb"), g("transfer_gb")),
