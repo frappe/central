@@ -86,3 +86,52 @@ def refresh_assets(team: str | None = None) -> dict:
 	if not can(user, team, "cluster:view"):
 		frappe.throw("You can't refresh this team's clusters.", frappe.PermissionError)
 	return sync_team_assets(team)
+
+
+# Command path → Central drives Atlas. Capability-gated here (Atlas stays
+# policy-unaware); Central calls Atlas as the operator. create stamps the team's
+# Tenant; lifecycle methods act on an existing asset by id.
+
+def _run_command(action: str, capability: str, atlas_method: str, team: str | None, resource_id: str | None) -> dict:
+	"""Shared lifecycle path (start/stop/terminate): gate on `capability`,confirm
+	the asset belongs to the team, call Atlas, return the Task handle.
+	"""
+	user = frappe.session.user
+	team = _resolve_team(user, team)
+
+	# capability check
+	if not can(user, team, capability):
+		frappe.throw(f"You can't {action} servers for this team.", frappe.PermissionError)
+
+	if not resource_id:
+		frappe.throw("resource_id is required.", frappe.ValidationError)
+
+	# Ownership: the asset must be in this team's mirror — also how we route to
+	# the right Atlas (its cluster).
+	cluster = frappe.db.get_value("Asset", {"resource_id": resource_id, "team": team}, "cluster")
+	if not cluster:
+		frappe.throw(f"No server '{resource_id}' for this team.", frappe.DoesNotExistError)
+
+	instance = frappe.get_doc("Atlas Instance", cluster)
+
+	task = AtlasClient(instance).vm_action(resource_id, atlas_method)
+
+	return {"resource_id": resource_id, "task": task}
+
+
+@frappe.whitelist(methods=["POST"])
+def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Start a stopped server. Gated on `server:power`."""
+	return _run_command("start", "server:power", "start", team, resource_id)
+
+
+@frappe.whitelist(methods=["POST"])
+def stop_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Stop a running server. Gated on `server:power`."""
+	return _run_command("stop", "server:power", "stop", team, resource_id)
+
+
+@frappe.whitelist(methods=["POST"])
+def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Terminate a server. Gated on `server:terminate`."""
+	return _run_command("terminate", "server:terminate", "terminate", team, resource_id)
