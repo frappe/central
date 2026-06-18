@@ -22,7 +22,6 @@
   "billing_cycle",
   "pricing_section",
   "base_rates",
-  "default_cluster",
   "pricing_help",
   "rungs_section",
   "rungs"
@@ -140,15 +139,9 @@
    "description": "One row per currency — the price of the smallest rung. Each rung is priced base_rate × its size multiplier."
   },
   {
-   "fieldname": "default_cluster",
-   "fieldtype": "Data",
-   "label": "Default Cluster",
-   "description": "Blank = a global rate (available on every cluster). Set a region key to price only there."
-  },
-  {
    "fieldname": "pricing_help",
    "fieldtype": "HTML",
-   "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> then creates a bundle per rung and prices it in every base-rate currency for the default cluster. <b>Apply Pricing to Cluster</b> adds a new cluster's rates over all or a subset — a plan is sellable on a cluster only where it has a rate (or a global one).</p>"
+   "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> opens a dialog to pick the cluster, currencies, and which rungs — then runs in the background, creating a bundle per rung and its rates. Re-run it per cluster (a plan is sellable on a cluster only where it has a rate, or a global one); blank cluster = global.</p>"
   },
   {
    "fieldname": "rungs_section",

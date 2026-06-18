@@ -86,12 +86,20 @@ def build_ladder(
 				"disk_gb": flt(base_disk_gb) * (vcpu / start),
 				"transfer_gb": flt(base_transfer_gb) + index * flt(transfer_step_gb),
 				"multiplier": vcpu / start,
-				"label": f"{_vcpu_label(vcpu)} · {_num(memory_gb)} GB",
-				"plan_name": f"{name_prefix} {_num(vcpu)} vCPU {_num(memory_gb)} GB",
+				**rung_identity(vcpu, memory_gb, name_prefix),
 			}
 		)
 		vcpu *= 2
 	return rungs
+
+
+def rung_identity(vcpu: float, memory_gb: float, name_prefix: str = "Bundle") -> dict:
+	"""The Plan name + human label for a rung — shared by the formula and by
+	manually-added rows so a hand-inserted size (e.g. 1 vCPU 3 GB) names itself."""
+	return {
+		"plan_name": f"{name_prefix} {_num(vcpu)} vCPU {_num(memory_gb)} GB",
+		"label": f"{_vcpu_label(vcpu)} · {_num(memory_gb)} GB",
+	}
 
 
 def rung_includes(vcpu: float, memory_gb: float, disk_gb: float, transfer_gb: float) -> list[dict]:

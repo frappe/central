@@ -133,9 +133,9 @@ class TestGenerate(IntegrationTestCase):
 	def tearDown(self):
 		_cleanup()
 
-	def _generate(self):
+	def _generate(self, **kw):
 		self.cfg.populate_rungs()
-		return self.cfg.generate()
+		return self.cfg.generate_and_price(**kw)
 
 	def test_generate_creates_plans_composition_and_multi_currency_pricing(self):
 		out = self._generate()
@@ -170,26 +170,41 @@ class TestGenerate(IntegrationTestCase):
 		row = next(r for r in self.cfg.rungs if r.plan_name == f"{PREFIX} 1 vCPU 2 GB")
 		row.memory_gb = 3  # off-ratio override
 		self.cfg.save(ignore_permissions=True)
-		self.cfg.generate()
+		self.cfg.generate_and_price()
 		plan = frappe.get_doc("Plan", f"{PREFIX} 1 vCPU 2 GB")
 		mem = next(i for i in plan.includes if i.resource_type == "Memory")
 		self.assertEqual(mem.quantity, 3)
 
+	def test_add_custom_rung_between_sizes(self):
+		# A hand-added 1 vCPU / 3 GB rung (between the 2 GB and 4 GB rungs) names and
+		# prices itself on save, then generates like any other.
+		self.cfg.populate_rungs()
+		self.cfg.append("rungs", {"vcpu": 1, "memory_gb": 3})
+		self.cfg.save(ignore_permissions=True)
+		added = next(r for r in self.cfg.rungs if r.vcpu == 1 and r.memory_gb == 3)
+		self.assertEqual(added.plan_name, f"{PREFIX} 1 vCPU 3 GB")  # auto-derived
+		self.assertEqual(added.multiplier, 8)  # 1 / 0.125 start
+
+		self.cfg.generate_and_price()
+		plan = frappe.get_doc("Plan", f"{PREFIX} 1 vCPU 3 GB")
+		self.assertEqual(
+			next(i.quantity for i in plan.includes if i.resource_type == "Memory"), 3)
+		self.assertEqual(plan.get_rate("INR"), 800)  # 100 × 8
+
 	def test_generate_is_idempotent(self):
 		self._generate()
-		out = self.cfg.generate()
+		out = self.cfg.generate_and_price()
 		self.assertEqual(len(out["created"]), 0)
 		self.assertEqual(len(out["skipped"]), 6)
 
-	def test_apply_pricing_to_cluster_subset_is_selective(self):
-		self._generate()
+	def test_per_cluster_subset_is_selective(self):
+		self._generate()  # global rates for all rungs
 		small = f"{PREFIX} 0.125 vCPU 0.25 GB"
 		big = f"{PREFIX} 2 vCPU 4 GB"
 
-		# Price only the smallest plan, only in INR, on a region.
-		out = self.cfg.apply_pricing_to_cluster(
-			cluster="ap-south-1", currencies=["INR"], plans=[small])
-		self.assertEqual(out[0]["created"], [small])
+		# Generate again for a region, only the smallest plan, only in INR.
+		out = self.cfg.generate_and_price(cluster="ap-south-1", currencies=["INR"], plans=[small])
+		self.assertEqual(out["pricing"][0]["created"], [small])
 
 		# The selected plan has a regional INR rate (100 × 1); the unselected one does not.
 		self.assertEqual(resolve_rate(get_catalog_rates("Plan", small), "INR", "ap-south-1"), 100)
@@ -201,18 +216,27 @@ class TestGenerate(IntegrationTestCase):
 		self.assertFalse(
 			[r for r in get_catalog_rates("Plan", small) if r.cluster == "ap-south-1" and r.currency == "USD"])
 
-	def test_reapply_updates_rate_in_place(self):
+	def test_reprice_cluster_updates_rate_in_place(self):
 		self._generate()
 		small = f"{PREFIX} 0.125 vCPU 0.25 GB"
-		self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", currencies=["INR"], plans=[small])
+		self.cfg.generate_and_price(cluster="ap-south-1", currencies=["INR"], plans=[small])
 		self.cfg.base_rates[0].base_rate = 250  # re-price INR
-		out = self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", currencies=["INR"], plans=[small])
-		self.assertEqual(out[0]["updated"], [small])
+		out = self.cfg.generate_and_price(cluster="ap-south-1", currencies=["INR"], plans=[small])
+		self.assertEqual(out["pricing"][0]["updated"], [small])
 		self.assertEqual(resolve_rate(get_catalog_rates("Plan", small), "INR", "ap-south-1"), 250)
 		# No duplicate row was created.
 		rows = [r for r in get_catalog_rates("Plan", small)
 				if r.cluster == "ap-south-1" and r.currency == "INR"]
 		self.assertEqual(len(rows), 1)
+
+	def test_run_generation_job(self):
+		# The background entrypoint loads the doc and does the work synchronously.
+		from central.billing.doctype.plan_configurator.plan_configurator import run_generation
+
+		self.cfg.populate_rungs()
+		out = run_generation(self.cfg.name, cluster=None, plans=[f"{PREFIX} 1 vCPU 2 GB"])
+		self.assertEqual(out["created"], [f"{PREFIX} 1 vCPU 2 GB"])
+		self.assertTrue(frappe.db.exists("Plan", f"{PREFIX} 1 vCPU 2 GB"))
 
 	def test_plan_class_drives_ratio_and_composition(self):
 		mem = frappe.get_doc({
@@ -222,7 +246,7 @@ class TestGenerate(IntegrationTestCase):
 			"base_rates": [{"currency": "INR", "base_rate": 500}],
 		}).insert(ignore_permissions=True)
 		mem.populate_rungs()
-		mem.generate()
+		mem.generate_and_price()
 		plan = frappe.get_doc("Plan", f"{PREFIX} 1 vCPU 8 GB")  # 1:8 from the class
 		comp = {i.resource_type: i.quantity for i in plan.includes}
 		self.assertEqual(comp["Memory"], 8)
@@ -238,7 +262,7 @@ class TestGenerate(IntegrationTestCase):
 			"base_rates": [{"currency": "USD", "base_rate": 63}],
 		}).insert(ignore_permissions=True)
 		gp.populate_rungs()
-		gp.generate()
+		gp.generate_and_price()
 
 		entry = frappe.get_doc("Plan", "CfgGP 2 vCPU 8 GB")  # $63
 		self.assertEqual(

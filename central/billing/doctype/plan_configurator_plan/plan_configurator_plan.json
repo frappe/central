@@ -21,9 +21,8 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Plan Name",
-   "reqd": 1,
    "columns": 2,
-   "description": "Identity of the Plan this rung creates."
+   "description": "Identity of the Plan this rung creates. Auto-derived from vCPU + RAM if left blank."
   },
   {
    "fieldname": "label",

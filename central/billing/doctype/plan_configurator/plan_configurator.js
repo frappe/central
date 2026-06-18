@@ -10,6 +10,14 @@ const CLASS_RATIOS = {
 	"Storage Optimised": "1:8",
 };
 
+// Mirror of configurator._num / _vcpu_label, for live autofill of added rows.
+const num = (v) => parseFloat(Number(v).toPrecision(12)).toString();
+function vcpu_label(v) {
+	if (v >= 1) return `${num(v)} vCPU`;
+	const inv = 1 / v;
+	return Math.abs(inv - Math.round(inv)) < 1e-6 ? `1/${Math.round(inv)} vCPU` : `${num(v)} vCPU`;
+}
+
 frappe.ui.form.on("Plan Configurator", {
 	plan_class(frm) {
 		const ratio = CLASS_RATIOS[frm.doc.plan_class];
@@ -29,6 +37,24 @@ frappe.ui.form.on("Plan Configurator", {
 			return;
 		}
 
+		// Background generation notifies the user who queued it.
+		if (!frm.__pc_realtime) {
+			frm.__pc_realtime = true;
+			frappe.realtime.on("plan_configurator_done", (data) => {
+				if (!data || data.configurator !== frm.doc.name) return;
+				frappe.msgprint({
+					title: __("Plans Generated"),
+					indicator: "green",
+					message: __("{0}: {1} created, {2} skipped.", [
+						data.cluster,
+						(data.created || []).length,
+						(data.skipped || []).length,
+					]),
+				});
+				frm.reload_doc();
+			});
+		}
+
 		frm.add_custom_button(__("Populate Rungs"), () => {
 			frm.call("populate_rungs").then((r) => {
 				frappe.show_alert({
@@ -46,34 +72,27 @@ frappe.ui.form.on("Plan Configurator", {
 		});
 
 		if ((frm.doc.rungs || []).length) {
-			frm.add_custom_button(__("Generate Plans"), () => {
-				const where = frm.doc.default_cluster || __("global");
-				frappe.confirm(
-					__("Create {0} bundles and price them ({1} currencies, {2})?", [
-						frm.doc.rungs.length,
-						(frm.doc.base_rates || []).length,
-						where,
-					]),
-					() =>
-						frm.call("generate").then((r) => {
-							const m = r.message || {};
-							frappe.msgprint({
-								title: __("Plans Generated"),
-								indicator: "green",
-								message: __("{0} created, {1} skipped (already existed).", [
-									(m.created || []).length,
-									(m.skipped || []).length,
-								]),
-							});
-							frm.reload_doc();
-						})
-				);
-			}).addClass("btn-primary");
-
-			frm.add_custom_button(__("Apply Pricing to Cluster"), () => apply_dialog(frm));
+			frm.add_custom_button(__("Generate Plans"), () => generate_dialog(frm)).addClass(
+				"btn-primary"
+			);
 		}
 	},
 });
+
+// Live autofill for hand-added / edited rungs (the server also fills blanks on save).
+frappe.ui.form.on("Plan Configurator Plan", {
+	vcpu: (frm, cdt, cdn) => fill_rung(frm, locals[cdt][cdn]),
+	memory_gb: (frm, cdt, cdn) => fill_rung(frm, locals[cdt][cdn]),
+});
+
+function fill_rung(frm, row) {
+	if (!row.vcpu || !row.memory_gb) return;
+	const prefix = frm.doc.plan_name_prefix || "Bundle";
+	if (!row.plan_name) row.plan_name = `${prefix} ${num(row.vcpu)} vCPU ${num(row.memory_gb)} GB`;
+	if (!row.label) row.label = `${vcpu_label(row.vcpu)} · ${num(row.memory_gb)} GB`;
+	if (!row.multiplier) row.multiplier = row.vcpu / (frm.doc.start_vcpu || 1);
+	frm.refresh_field("rungs");
+}
 
 function show_preview(data) {
 	const rungs = data.rungs || [];
@@ -110,60 +129,61 @@ function show_preview(data) {
 	});
 }
 
-function apply_dialog(frm) {
-	const currencies = (frm.doc.base_rates || []).map((r) => r.currency);
+function generate_dialog(frm) {
+	const base = frm.doc.base_rates || [];
+	const primary = base[0];
+	const price_hint = (mult) =>
+		primary ? ` — ${format_currency(primary.base_rate * mult, primary.currency)}` : "";
+
 	const d = new frappe.ui.Dialog({
-		title: __("Apply Pricing to Cluster"),
+		title: __("Generate Plans"),
+		size: "large",
 		fields: [
 			{
 				fieldname: "cluster",
 				fieldtype: "Data",
 				label: __("Cluster"),
-				description: __("Blank = global (every cluster). Else a region key."),
+				description: __("Blank = global rate (every cluster). Else a region key. Re-run per cluster."),
 			},
 			{ fieldname: "sb_cur", fieldtype: "Section Break", label: __("Currencies") },
 			{
 				fieldname: "currencies",
 				fieldtype: "MultiCheck",
-				columns: 2,
-				get_data: () => currencies.map((c) => ({ label: c, value: c, checked: 1 })),
+				columns: 3,
+				get_data: () => base.map((r) => ({ label: r.currency, value: r.currency, checked: 1 })),
 			},
-			{ fieldname: "sb_plans", fieldtype: "Section Break", label: __("Plans") },
+			{ fieldname: "sb_plans", fieldtype: "Section Break", label: __("Plans to generate") },
 			{
 				fieldname: "plans",
 				fieldtype: "MultiCheck",
 				columns: 1,
 				get_data: () =>
 					(frm.doc.rungs || []).map((p) => ({
-						label: `${p.label || p.plan_name}  (${p.plan_name})`,
+						label: `${p.label || p.plan_name}  ·  ${p.disk_gb || 0} GB disk · ${
+							p.transfer_gb || 0
+						} GB xfer${price_hint(p.multiplier)}`,
 						value: p.plan_name,
 						checked: 1,
 					})),
 			},
 		],
-		primary_action_label: __("Apply Pricing"),
+		primary_action_label: __("Generate in Background"),
 		primary_action(values) {
 			if (!(values.plans || []).length) return frappe.msgprint(__("Select at least one plan."));
 			if (!(values.currencies || []).length)
 				return frappe.msgprint(__("Select at least one currency."));
-			frm.call("apply_pricing_to_cluster", {
+			frm.call("enqueue_generation", {
 				cluster: values.cluster,
 				currencies: values.currencies,
 				plans: values.plans,
-			}).then((r) => {
-				const results = r.message || [];
-				const priced = results.reduce((n, x) => n + (x.created || []).length, 0);
-				const updated = results.reduce((n, x) => n + (x.updated || []).length, 0);
+			}).then(() => {
 				d.hide();
-				frappe.msgprint({
-					title: __("Pricing Applied"),
-					indicator: "green",
-					message: __("{0}: {1} priced, {2} updated across {3} currencies.", [
+				frappe.show_alert({
+					message: __("Queued — generating {0} plans for {1}.", [
+						values.plans.length,
 						values.cluster || __("global"),
-						priced,
-						updated,
-						(values.currencies || []).length,
 					]),
+					indicator: "blue",
 				});
 			});
 		},

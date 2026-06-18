@@ -11,6 +11,19 @@ _RUNG_FIELDS = ("plan_name", "label", "vcpu", "memory_gb", "disk_gb", "transfer_
 
 
 class PlanConfigurator(Document):
+	def before_validate(self):
+		"""Fill identity/price for hand-added or edited rungs, so an inserted size
+		(e.g. 1 vCPU 3 GB between the 2 GB and 4 GB rungs) is usable without the
+		admin spelling out its name, label, and multiplier."""
+		start = flt(self.start_vcpu) or 1
+		for r in self.rungs:
+			if not flt(r.multiplier) and flt(r.vcpu):
+				r.multiplier = flt(r.vcpu) / start
+			if flt(r.vcpu) and flt(r.memory_gb) and (not r.plan_name or not r.label):
+				ident = configurator.rung_identity(r.vcpu, r.memory_gb, self.plan_name_prefix)
+				r.plan_name = r.plan_name or ident["plan_name"]
+				r.label = r.label or ident["label"]
+
 	def _ratio(self) -> str:
 		return configurator.ratio_for(self.plan_class, self.memory_ratio)
 
@@ -68,54 +81,74 @@ class PlanConfigurator(Document):
 		return {"rungs": rungs, "currencies": [br["currency"] for br in rates]}
 
 	@frappe.whitelist()
-	def generate(self) -> dict:
-		"""Create a bundle per (edited) rung and price it in every base-rate currency
-		for the default cluster. Idempotent on the Plans."""
-		if not self.rungs:
-			frappe.throw("Populate the rungs first, then edit and generate.")
-		result = configurator.generate_plans(
-			self.rungs, billing_cycle=self.billing_cycle, is_active=cint(self.is_active)
-		)
-		for row in self.rungs:
-			if frappe.db.exists("Plan", row.plan_name):
-				row.plan = row.plan_name
-		self.save(ignore_permissions=True)
-
-		multipliers = [{"plan": r.plan_name, "multiplier": r.multiplier} for r in self.rungs]
-		pricing = [
-			configurator.apply_pricing(
-				multipliers, br["currency"], br["base_rate"], cluster=self.default_cluster
-			)
-			for br in self._base_rates()
-		]
-		return {**result, "pricing": pricing}
-
-	@frappe.whitelist()
-	def apply_pricing_to_cluster(
+	def enqueue_generation(
 		self,
 		cluster: str | None = None,
 		currencies: str | list | None = None,
 		plans: str | list | None = None,
-	) -> list:
-		"""Price a cluster over all generated rungs (or a subset), in all the
-		template's base-rate currencies (or a subset). A plan is sellable on the
-		cluster only where it has a rate (or a global one) — so subsets give
-		selective availability."""
+	) -> dict:
+		"""Queue the (background) generation for a chosen cluster, currencies, and
+		subset of rungs. Editing of the rung specs happens in the Rungs table on the
+		form; this picks where/what to ship."""
+		if not self.rungs:
+			frappe.throw("Populate the rungs first, then edit and generate.")
+		frappe.enqueue(
+			run_generation,
+			queue="long",
+			configurator=self.name,
+			cluster=cluster,
+			currencies=currencies,
+			plans=plans,
+			user=frappe.session.user,
+		)
+		return {"enqueued": True, "cluster": cluster or None}
+
+	def generate_and_price(
+		self,
+		cluster: str | None = None,
+		currencies: str | list | None = None,
+		plans: str | list | None = None,
+	) -> dict:
+		"""Create a bundle per selected rung and price it at `cluster` in the selected
+		base-rate currencies. Synchronous core (the background job calls this).
+
+		Idempotent on the Plans (existing ones are skipped, only their rates for the
+		given cluster are added/updated)."""
 		if isinstance(plans, str):
 			plans = frappe.parse_json(plans)
 		if isinstance(currencies, str):
 			currencies = frappe.parse_json(currencies)
 		selected = set(plans) if plans else None
 
-		multipliers = [
-			{"plan": r.plan_name, "multiplier": r.multiplier}
-			for r in self.rungs
-			if selected is None or r.plan_name in selected
-		]
-		if not multipliers:
-			frappe.throw("No generated plans selected to price.")
+		rungs = [r for r in self.rungs if selected is None or r.plan_name in selected]
+		if not rungs:
+			frappe.throw("No rungs selected to generate.")
 
-		return [
+		result = configurator.generate_plans(
+			rungs, billing_cycle=self.billing_cycle, is_active=cint(self.is_active)
+		)
+		for row in self.rungs:
+			if frappe.db.exists("Plan", row.plan_name):
+				row.plan = row.plan_name
+		self.save(ignore_permissions=True)
+
+		multipliers = [{"plan": r.plan_name, "multiplier": r.multiplier} for r in rungs]
+		pricing = [
 			configurator.apply_pricing(multipliers, br["currency"], br["base_rate"], cluster=cluster)
 			for br in self._base_rates(set(currencies) if currencies else None)
 		]
+		return {**result, "pricing": pricing, "cluster": cluster or None}
+
+
+def run_generation(configurator, cluster=None, currencies=None, plans=None, user=None):
+	"""Background entrypoint: generate + price, then notify the user who queued it."""
+	doc = frappe.get_doc("Plan Configurator", configurator)
+	result = doc.generate_and_price(cluster=cluster, currencies=currencies, plans=plans)
+	frappe.db.commit()
+	if user:
+		frappe.publish_realtime(
+			"plan_configurator_done",
+			message={"configurator": configurator, "cluster": cluster or "global", **result},
+			user=user,
+		)
+	return result
