@@ -15,6 +15,8 @@
   "ceiling_vcpu",
   "memory_ratio",
   "base_disk_gb",
+  "base_transfer_gb",
+  "transfer_step_gb",
   "column_break_sizing",
   "plan_name_prefix",
   "billing_cycle",
@@ -22,8 +24,8 @@
   "base_rates",
   "default_cluster",
   "pricing_help",
-  "plans_section",
-  "plans"
+  "rungs_section",
+  "rungs"
  ],
  "fields": [
   {
@@ -50,8 +52,8 @@
    "fieldname": "plan_class",
    "fieldtype": "Select",
    "label": "Plan Class",
-   "options": "General\nCPU Optimised\nMemory Optimised\nCustom",
-   "description": "Pins the memory ratio like a cloud family — CPU Optimised 1:2, General 1:4, Memory Optimised 1:8. Choose Custom to set the ratio yourself."
+   "options": "General\nCPU Optimised\nMemory Optimised\nStorage Optimised\nCustom",
+   "description": "Pins the memory ratio like a cloud family — CPU Optimised 1:2, General 1:4, Memory/Storage Optimised 1:8. Choose Custom to set the ratio yourself."
   },
   {
    "default": "0.125",
@@ -87,7 +89,23 @@
    "fieldtype": "Float",
    "label": "Base Disk (GB)",
    "precision": "3",
-   "description": "Disk for the smallest rung; scales with size. 0 = no disk line."
+   "description": "Disk for the smallest rung; scales with the size multiplier. 0 = no disk line."
+  },
+  {
+   "default": "0",
+   "fieldname": "base_transfer_gb",
+   "fieldtype": "Float",
+   "label": "Base Transfer (GB)",
+   "precision": "3",
+   "description": "Transfer for the smallest rung. 0 = no transfer line. Real transfer tiers are irregular — tune per rung below."
+  },
+  {
+   "default": "0",
+   "fieldname": "transfer_step_gb",
+   "fieldtype": "Float",
+   "label": "Transfer Step (GB)",
+   "precision": "3",
+   "description": "Added to transfer per rung (base + index × step), e.g. +1000 GB each step."
   },
   {
    "fieldname": "column_break_sizing",
@@ -130,19 +148,19 @@
   {
    "fieldname": "pricing_help",
    "fieldtype": "HTML",
-   "options": "<p class='text-muted small'>Generate creates the bundles and prices them in every base-rate currency for the default cluster above. Use <b>Apply Pricing to Cluster</b> to add a new cluster's rates over all or a selected subset of these plans — a plan is sellable on a cluster only where it has a rate (or a global one).</p>"
+   "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> then creates a bundle per rung and prices it in every base-rate currency for the default cluster. <b>Apply Pricing to Cluster</b> adds a new cluster's rates over all or a subset — a plan is sellable on a cluster only where it has a rate (or a global one).</p>"
   },
   {
-   "fieldname": "plans_section",
+   "fieldname": "rungs_section",
    "fieldtype": "Section Break",
-   "label": "Generated Plans"
+   "label": "Rungs"
   },
   {
-   "fieldname": "plans",
+   "fieldname": "rungs",
    "fieldtype": "Table",
-   "label": "Plans",
+   "label": "Rungs",
    "options": "Plan Configurator Plan",
-   "read_only": 1
+   "description": "Populate from the formula, then edit before generating."
   }
  ],
  "index_web_pages_for_search": 1,

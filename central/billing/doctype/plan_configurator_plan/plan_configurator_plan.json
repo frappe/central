@@ -1,41 +1,40 @@
 {
  "actions": [],
  "creation": "2026-06-18 00:00:00.000000",
- "description": "One generated rung of a Plan Configurator ladder — the reusable record used to price a Plan on a new cluster.",
+ "description": "One rung of a Plan Configurator ladder. Populated from the formula, editable before generating, and (after Generate) linked to the Plan it created — the reusable record used to price it per cluster.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "plan",
+  "plan_name",
   "label",
   "vcpu",
   "memory_gb",
-  "multiplier"
+  "disk_gb",
+  "transfer_gb",
+  "multiplier",
+  "plan"
  ],
  "fields": [
   {
-   "fieldname": "plan",
-   "fieldtype": "Link",
+   "fieldname": "plan_name",
+   "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Plan",
-   "options": "Plan",
+   "label": "Plan Name",
    "reqd": 1,
-   "columns": 4
+   "columns": 2,
+   "description": "Identity of the Plan this rung creates."
   },
   {
    "fieldname": "label",
    "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Size",
-   "read_only": 1,
-   "columns": 3
+   "label": "Title"
   },
   {
    "fieldname": "vcpu",
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "vCPU",
-   "read_only": 1,
    "precision": "3",
    "columns": 1
   },
@@ -43,8 +42,23 @@
    "fieldname": "memory_gb",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Memory (GB)",
-   "read_only": 1,
+   "label": "RAM (GB)",
+   "precision": "3",
+   "columns": 1
+  },
+  {
+   "fieldname": "disk_gb",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Disk (GB)",
+   "precision": "3",
+   "columns": 1
+  },
+  {
+   "fieldname": "transfer_gb",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Transfer (GB)",
    "precision": "3",
    "columns": 1
   },
@@ -53,9 +67,18 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Rate ×",
-   "read_only": 1,
    "precision": "3",
-   "columns": 1
+   "columns": 1,
+   "description": "Price = a currency's base rate × this."
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Generated Plan",
+   "options": "Plan",
+   "read_only": 1,
+   "columns": 2
   }
  ],
  "index_web_pages_for_search": 1,

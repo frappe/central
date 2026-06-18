@@ -23,11 +23,11 @@ TEMPLATE = "Cfg Test Template"
 
 
 def _cleanup():
-	for plan in frappe.get_all("Plan", filters={"name": ["like", f"{PREFIX}%"]}, pluck="name"):
+	for plan in frappe.get_all("Plan", filters={"name": ["like", "Cfg%"]}, pluck="name"):
 		frappe.db.delete("Catalog Rate", {"priced_doctype": "Plan", "priced_for": plan})
 		frappe.delete_doc("Plan", plan, force=True, ignore_permissions=True)
-	if frappe.db.exists("Plan Configurator", TEMPLATE):
-		frappe.delete_doc("Plan Configurator", TEMPLATE, force=True, ignore_permissions=True)
+	for t in frappe.get_all("Plan Configurator", filters={"name": ["like", "Cfg Test%"]}, pluck="name"):
+		frappe.delete_doc("Plan Configurator", t, force=True, ignore_permissions=True)
 
 
 class TestConfigureIncludes(IntegrationTestCase):
@@ -86,23 +86,31 @@ class TestBuildLadder(IntegrationTestCase):
 		self.assertEqual([r["memory_gb"] for r in configurator.build_ladder(1, 2, "1:6")], [6, 12])
 		self.assertEqual([r["memory_gb"] for r in configurator.build_ladder(1, 1, "1:8")], [8])
 
+	def test_transfer_steps_additively(self):
+		rungs = configurator.build_ladder(2, 16, "1:4", base_transfer_gb=4000, transfer_step_gb=1000)
+		self.assertEqual([r["transfer_gb"] for r in rungs], [4000, 5000, 6000, 7000])
+
 	def test_ratio_for_plan_class(self):
 		self.assertEqual(configurator.ratio_for("CPU Optimised", "1:4"), "1:2")
 		self.assertEqual(configurator.ratio_for("General", "1:2"), "1:4")
 		self.assertEqual(configurator.ratio_for("Memory Optimised", "1:2"), "1:8")
+		self.assertEqual(configurator.ratio_for("Storage Optimised", "1:2"), "1:8")
 		self.assertEqual(configurator.ratio_for("Custom", "1:6"), "1:6")
 		self.assertEqual(configurator.ratio_for(None, "1:4"), "1:4")
 
 	def test_labels_and_names(self):
 		rungs = configurator.build_ladder(0.125, 1, "1:2", name_prefix=PREFIX)
 		self.assertEqual(rungs[0]["label"], "1/8 vCPU · 0.25 GB")
-		self.assertEqual(rungs[0]["name"], f"{PREFIX} 0.125 vCPU 0.25 GB")
+		self.assertEqual(rungs[0]["plan_name"], f"{PREFIX} 0.125 vCPU 0.25 GB")
 		self.assertEqual(rungs[-1]["label"], "1 vCPU · 2 GB")
 
-	def test_no_disk_line_when_base_disk_zero(self):
-		rungs = configurator.build_ladder(1, 1, "1:2", base_disk_gb=0, name_prefix=PREFIX)
-		types = [i["resource_type"] for i in rungs[0]["includes"]]
-		self.assertEqual(types, ["Compute", "Memory"])
+	def test_rung_includes_skips_zero_disk_and_transfer(self):
+		self.assertEqual(
+			[r["resource_type"] for r in configurator.rung_includes(1, 2, 0, 0)],
+			["Compute", "Memory"])
+		self.assertEqual(
+			[r["resource_type"] for r in configurator.rung_includes(1, 2, 25, 4000)],
+			["Compute", "Memory", "Disk", "Transfer"])
 
 	def test_bad_inputs_throw(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -125,11 +133,16 @@ class TestGenerate(IntegrationTestCase):
 	def tearDown(self):
 		_cleanup()
 
+	def _generate(self):
+		self.cfg.populate_rungs()
+		return self.cfg.generate()
+
 	def test_generate_creates_plans_composition_and_multi_currency_pricing(self):
-		out = self.cfg.generate()
+		out = self._generate()
 		self.assertEqual(len(out["created"]), 6)
 		self.cfg.reload()
-		self.assertEqual(len(self.cfg.plans), 6)
+		self.assertEqual(len(self.cfg.rungs), 6)
+		self.assertTrue(all(r.plan for r in self.cfg.rungs))  # each rung links its Plan
 
 		# Composition is plain (no millicores / ratio); memory derived, disk scaled.
 		plan = frappe.get_doc("Plan", f"{PREFIX} 2 vCPU 4 GB")
@@ -145,20 +158,31 @@ class TestGenerate(IntegrationTestCase):
 		self.assertEqual(small.get_rate("USD"), 2)
 
 	def test_preview_is_currency_aware(self):
-		data = self.cfg.preview()
+		data = self.cfg.preview()  # works off the formula before rungs exist
 		self.assertEqual(data["currencies"], ["INR", "USD"])
 		first = data["rungs"][0]  # smallest rung, ×1
 		self.assertEqual(
 			{x["currency"]: x["rate"] for x in first["rates"]}, {"INR": 100, "USD": 2})
 
-	def test_generate_is_idempotent(self):
+	def test_edited_rung_is_honoured(self):
+		# Populate, then hand-edit a rung's memory off-ratio before generating.
+		self.cfg.populate_rungs()
+		row = next(r for r in self.cfg.rungs if r.plan_name == f"{PREFIX} 1 vCPU 2 GB")
+		row.memory_gb = 3  # off-ratio override
+		self.cfg.save(ignore_permissions=True)
 		self.cfg.generate()
+		plan = frappe.get_doc("Plan", f"{PREFIX} 1 vCPU 2 GB")
+		mem = next(i for i in plan.includes if i.resource_type == "Memory")
+		self.assertEqual(mem.quantity, 3)
+
+	def test_generate_is_idempotent(self):
+		self._generate()
 		out = self.cfg.generate()
 		self.assertEqual(len(out["created"]), 0)
 		self.assertEqual(len(out["skipped"]), 6)
 
 	def test_apply_pricing_to_cluster_subset_is_selective(self):
-		self.cfg.generate()
+		self._generate()
 		small = f"{PREFIX} 0.125 vCPU 0.25 GB"
 		big = f"{PREFIX} 2 vCPU 4 GB"
 
@@ -178,7 +202,7 @@ class TestGenerate(IntegrationTestCase):
 			[r for r in get_catalog_rates("Plan", small) if r.cluster == "ap-south-1" and r.currency == "USD"])
 
 	def test_reapply_updates_rate_in_place(self):
-		self.cfg.generate()
+		self._generate()
 		small = f"{PREFIX} 0.125 vCPU 0.25 GB"
 		self.cfg.apply_pricing_to_cluster(cluster="ap-south-1", currencies=["INR"], plans=[small])
 		self.cfg.base_rates[0].base_rate = 250  # re-price INR
@@ -192,15 +216,38 @@ class TestGenerate(IntegrationTestCase):
 
 	def test_plan_class_drives_ratio_and_composition(self):
 		mem = frappe.get_doc({
-			"doctype": "Plan Configurator", "template_name": TEMPLATE + " Mem",
+			"doctype": "Plan Configurator", "template_name": "Cfg Test Mem",
 			"plan_class": "Memory Optimised", "start_vcpu": 1, "ceiling_vcpu": 1,
 			"plan_name_prefix": PREFIX, "billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "INR", "base_rate": 500}],
 		}).insert(ignore_permissions=True)
-		try:
-			mem.generate()
-			plan = frappe.get_doc("Plan", f"{PREFIX} 1 vCPU 8 GB")  # 1:8 from the class
-			comp = {i.resource_type: i.quantity for i in plan.includes}
-			self.assertEqual(comp["Memory"], 8)
-		finally:
-			frappe.delete_doc("Plan Configurator", TEMPLATE + " Mem", force=True, ignore_permissions=True)
+		mem.populate_rungs()
+		mem.generate()
+		plan = frappe.get_doc("Plan", f"{PREFIX} 1 vCPU 8 GB")  # 1:8 from the class
+		comp = {i.resource_type: i.quantity for i in plan.includes}
+		self.assertEqual(comp["Memory"], 8)
+
+	def test_reproduces_general_purpose_family(self):
+		# DigitalOcean's General Purpose ladder, exactly (USD): the configurator's
+		# formula reproduces vCPU/RAM/disk/transfer/price across the rungs.
+		gp = frappe.get_doc({
+			"doctype": "Plan Configurator", "template_name": "Cfg Test GP",
+			"plan_class": "General", "start_vcpu": 2, "ceiling_vcpu": 16,
+			"base_disk_gb": 25, "base_transfer_gb": 4000, "transfer_step_gb": 1000,
+			"plan_name_prefix": "CfgGP", "billing_cycle": "Monthly", "is_active": 1,
+			"base_rates": [{"currency": "USD", "base_rate": 63}],
+		}).insert(ignore_permissions=True)
+		gp.populate_rungs()
+		gp.generate()
+
+		entry = frappe.get_doc("Plan", "CfgGP 2 vCPU 8 GB")  # $63
+		self.assertEqual(
+			{i.resource_type: i.quantity for i in entry.includes},
+			{"Compute": 2, "Memory": 8, "Disk": 25, "Transfer": 4000})
+		self.assertEqual(entry.get_rate("USD"), 63)
+
+		top = frappe.get_doc("Plan", "CfgGP 16 vCPU 64 GB")  # $504
+		self.assertEqual(
+			{i.resource_type: i.quantity for i in top.includes},
+			{"Compute": 16, "Memory": 64, "Disk": 200, "Transfer": 7000})
+		self.assertEqual(top.get_rate("USD"), 504)
