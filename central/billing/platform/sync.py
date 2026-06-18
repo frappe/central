@@ -1,94 +1,62 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Central -> Agent synchronisation.
+"""Usage recording — Central writes the runtime it bills from.
 
-Central pushes plan definitions plus a display price to each regional Agent's
-Plan Cache. The communication surface is intentionally tiny; this module owns
-the Central side of the plan push.
+Agentless (ADR 0006): there is no Subscription Agent and no push/pull sync.
+Central provisions and meters via the cluster manager and records what it drives
+directly — the event log (subscribed / changed / cancelled, per `resource_id`
+with `shown_rate` + currency) into the price-lock ledger, and metered-usage
+rollups into the bounded rollup store. These are *internal* recording calls made
+by the provisioning/metering paths, not whitelisted endpoints an external party
+posts to (which would let any caller forge usage and so a price lock).
 """
 
 import frappe
-import requests
-
-RECEIVE_PLANS_PATH = "/api/method/press_billing_agent.sync.receive_plans"
 
 
-def _agent_auth_headers() -> dict:
-	"""Authorization header for the cluster-scoped Agent API key.
+def record_usage_events(events: list | str) -> dict:
+	"""Record provisioning events into the price-lock ledger as Central drives them.
 
-	Credentials live in site config (agent_api_key / agent_api_secret) and are
-	never exposed through any customer or admin API.
-	"""
-	key = frappe.conf.get("agent_api_key")
-	secret = frappe.conf.get("agent_api_secret")
-	if key and secret:
-		return {"Authorization": f"token {key}:{secret}"}
-	return {}
-
-
-@frappe.whitelist()
-def push_plans_to_agent(agent_url: str, plans: list | str) -> dict:
-	"""Push plan identity + composition + display price to an Agent's Plan Cache.
-
-	Cheap and rare (few clusters). The Agent stores these display-only; it
-	computes nothing with them.
-	"""
-	if isinstance(plans, str):
-		plans = frappe.parse_json(plans)
-
-	payload = [frappe.get_doc("Plan", name).as_pricing() for name in plans]
-
-	url = agent_url.rstrip("/") + RECEIVE_PLANS_PATH
-	response = requests.post(
-		url=url,
-		json={"plans": payload},
-		headers=_agent_auth_headers(),
-		timeout=30,
-	)
-	response.raise_for_status()
-	return response.json().get("message")
-
-
-@frappe.whitelist()
-def receive_usage_events(events: list | str) -> dict:
-	"""Agent -> Central: ingest reported plan-change events into the lock ledger.
-
-	Each event carries a stable `event_id`; locking is idempotent on it, so the
-	Agent can safely re-push. Only acknowledged event_ids are returned — the
-	Agent marks exactly those `synced_to_central`, so a partial failure is
-	retried on the next push rather than silently dropped.
+	Each event carries a stable `event_id`; locking is idempotent on it, so a
+	replay (e.g. a metering refresh from the cluster manager) is a safe no-op.
+	Returns the handled event_ids.
 	"""
 	from central.billing.revenue.pricelock import lock_from_event
 
 	if isinstance(events, str):
 		events = frappe.parse_json(events)
 
-	acknowledged = []
+	recorded = []
 	for event in events:
 		event_id = lock_from_event(event)
 		if event_id:
-			acknowledged.append(event_id)
+			recorded.append(event_id)
 
-	return {"acknowledged": acknowledged}
+	# `acknowledged` kept alongside `recorded` for back-compat with existing callers.
+	return {"recorded": recorded, "acknowledged": recorded}
 
 
-@frappe.whitelist()
-def receive_meter_rollups(meters: list | str) -> dict:
-	"""Agent -> Central: ingest metered rollups into the bounded rollup store.
+def record_meter_rollups(meters: list | str) -> dict:
+	"""Record metered rollups into the bounded rollup store as Central meters.
 
-	Idempotent on each rollup's idempotency_key; a re-push replaces the period
-	figure rather than adding. Returns the acknowledged keys so the Agent marks
-	exactly those synced.
+	Idempotent on each rollup's idempotency_key; a refresh replaces the period
+	figure rather than adding. Returns the handled keys.
 	"""
 	from central.billing.revenue.metering import ingest_rollup
 
 	if isinstance(meters, str):
 		meters = frappe.parse_json(meters)
 
-	acknowledged = []
+	recorded = []
 	for meter in meters:
 		key = ingest_rollup(meter)
 		if key:
-			acknowledged.append(key)
+			recorded.append(key)
 
-	return {"acknowledged": acknowledged}
+	return {"recorded": recorded, "acknowledged": recorded}
+
+
+# Deprecated agent-era names — kept so existing callers/tests keep working while
+# they migrate to record_*. The "Agent → Central push" they implied is gone.
+receive_usage_events = record_usage_events
+receive_meter_rollups = record_meter_rollups

@@ -117,6 +117,43 @@ def complete_billing_profile(team, currency="INR"):
 	return team
 
 
+def set_team_tier(team, level="t1", max_spend=None, manual_override=1):
+	"""Pin a team's trust tier on its Billing Profile — the per-team tier carrier
+	since the standalone Trust Tier doctype was folded in (#62). Ensures a profile
+	exists; an explicit `max_spend` is stored as a bespoke `override_max_spend` so
+	get_team_caps returns exactly it regardless of the level's currency thresholds."""
+	if not frappe.db.exists("Billing Profile", team):
+		frappe.get_doc(
+			{"doctype": "Billing Profile", "team": team, "currency": "INR"}
+		).insert(ignore_permissions=True)
+	values = {
+		"trust_tier_level": level,
+		"trust_tier": level,
+		"manual_override": manual_override,
+	}
+	if max_spend is not None:
+		values["override_max_spend"] = max_spend
+	frappe.db.set_value("Billing Profile", team, values)
+	return team
+
+
+def clear_team_tier(team):
+	"""Reset a team's tier fields on its Billing Profile (test teardown)."""
+	if frappe.db.exists("Billing Profile", team):
+		frappe.db.set_value(
+			"Billing Profile",
+			team,
+			{
+				"trust_tier_level": None,
+				"trust_tier": None,
+				"manual_override": 0,
+				"override_max_spend": 0,
+				"promoted_at": None,
+				"promotion_basis": None,
+			},
+		)
+
+
 def make_billing_team(user, role="Billing", team_name=None):
 	"""A Central `Team` with `user` as an active member under `role`. The team's
 	Owner is a separate throwaway user (a Team must have exactly one Owner), so

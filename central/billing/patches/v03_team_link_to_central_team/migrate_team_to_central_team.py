@@ -40,17 +40,15 @@ TEAM_DOCTYPES = [
 	"Tax Profile",
 	"Billing Profile",
 	"Entitlement Token",
-	"Trust Tier",
 	"Billing Notification Log",
 	"Notification Preference",
 ]
 
 # Of those, the ones autonamed `field:team` — their document `name` *is* the
-# team value, and code looks them up by name (e.g. `get_doc("Trust Tier", team)`).
+# team value, and code looks them up by name (e.g. `get_doc("Tax Profile", team)`).
 # Renaming keeps the `name == team` invariant after the slug→Team.name rewrite.
 FIELD_TEAM_DOCTYPES = [
 	"Credit Wallet",
-	"Trust Tier",
 	"Tax Profile",
 	"Billing Profile",
 	"Notification Preference",

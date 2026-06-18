@@ -4,6 +4,7 @@ import { Badge, Button, Dialog, FormControl } from 'frappe-ui'
 import PageHeader from '@/components/PageHeader.vue'
 import MockBanner from '@/components/MockBanner.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { requestTheme } from '@/utils/status'
 import { successToast } from '@/utils/toast'
 import { MOCK_ACCESS_REQUESTS, MOCK_CLUSTERS } from './mock'
@@ -12,12 +13,20 @@ import { MOCK_ACCESS_REQUESTS, MOCK_CLUSTERS } from './mock'
 // it auto-resolves on the next trust-tier promotion that widens the set). The
 // approval widens the team's entitlement slice in the real model.
 const { canManageAtlas } = useCapabilities()
+const { requireSetup } = useBillingSetup()
 
 const requests = ref([...MOCK_ACCESS_REQUESTS])
 const lockedClusters = MOCK_CLUSTERS.filter((c) => !c.allowed)
 
 const showNew = ref(false)
 const form = ref({ cluster: '', reason: '' })
+
+// Requesting region access leads to provisioning (which spends money), so it's
+// gated on a complete billing profile: requireSetup() diverts to onboarding
+// (remembering this page) when it isn't.
+function onRequest() {
+  if (requireSetup()) showNew.value = true
+}
 const clusterOptions = lockedClusters.map((c) => ({ label: c.label, value: c.slug }))
 const canSubmit = computed(() => form.value.cluster && form.value.reason.trim())
 
@@ -46,7 +55,7 @@ function submit() {
           variant="solid"
           label="Request access"
           :disabled="!lockedClusters.length"
-          @click="showNew = true"
+          @click="onRequest"
         />
       </template>
     </PageHeader>

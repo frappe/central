@@ -8,9 +8,7 @@ import frappe
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
-	_FX_TO_INR,
 	_default_team,
-	_from_inr,
 	_has_money_activity,
 	_missing_profile_fields,
 	_profile_complete,
@@ -61,6 +59,19 @@ def get_billing_profile(team: str | None = None) -> dict:
 		"supported_currencies": supported_currencies(),
 	})
 	return profile
+
+
+@frappe.whitelist()
+def get_billing_geo() -> dict:
+	"""Dropdown feeds for the billing-address form: the full country list, and
+	India's GST states (the single source of truth the Billing Profile validates
+	the GSTIN against)."""
+	from central.billing.india_gst import india_state_options
+
+	return {
+		"countries": frappe.get_all("Country", pluck="name", order_by="name asc"),
+		"india_states": india_state_options(),
+	}
 
 
 def _validate_currency(team: str, currency: str | None):
@@ -165,14 +176,17 @@ def set_collection_mode(team: str | None = None, mode: str | None = None) -> dic
 @frappe.whitelist()
 def get_team_overview(team: str | None = None) -> dict:
 	"""Team header: trust tier, account standing, payment mode, resource count."""
+	from central.billing.catalog import entitlements
+
 	team = _resolve_team(team)
-	tier = frappe.db.get_value("Trust Tier", team, ["tier", "max_spend"], as_dict=True) or {}
+	caps = entitlements.get_team_caps(team)
 	standing = frappe.db.get_value("Subscription", {"team": team}, "account_standing") or "Current"
 	resources = frappe.db.count("Price Lock", {"team": team, "ended_at": ["is", "not set"]})
 	clusters = len(_team_clusters(team))
 	currency = _team_currency(team)
-	return {"team": team, "tier": tier.get("tier"),
-			"max_spend": _from_inr(tier.get("max_spend"), currency),
+	# Caps resolve live from the team's tier level × its currency — no FX.
+	return {"team": team, "tier": caps.tier,
+			"max_spend": frappe.utils.flt(caps.max_spend),
 			"standing": standing, "resources": resources, "clusters": clusters,
 			"currency": currency}
 
@@ -186,36 +200,37 @@ def get_trust_tier(team: str | None = None) -> dict:
 	and the NEXT tier's promotion criteria — so a customer can see what unlocks
 	more headroom.
 	"""
+	from central.billing.catalog import entitlements
+
 	team = _resolve_team(team)
 	currency = _team_currency(team)
-	tt = frappe.db.get_value("Trust Tier", team, ["tier", "level", "max_spend", "max_resource_count"], as_dict=True) or {}
+	current_tier = entitlements.get_team_caps(team).tier
 
-	levels = frappe.get_all(
-		"Trust Tier Level",
-		fields=["name", "tier", "sequence", "max_spend", "max_resource_count",
-				"min_paid_invoices", "min_cumulative_paid"],
-		order_by="sequence asc",
-	)
-	current_seq = next((l.sequence for l in levels if l.tier == tt.get("tier")), None)
-	current = next((l for l in levels if l.tier == tt.get("tier")), None)
+	# The ladder carries per-currency thresholds; everything below reads the row
+	# for THIS team's currency, so caps are native (no FX conversion).
+	levels = entitlements.get_ladder()
+	current_seq = next((l.sequence for l in levels if l.tier == current_tier), None)
+	current = next((l for l in levels if l.tier == current_tier), None)
 	nxt = next((l for l in levels if current_seq is not None and l.sequence == current_seq + 1), None)
 
-	# Progress signals toward the next level.
+	# Progress signals toward the next level. A team bills in one currency, so its
+	# paid invoices are already in that currency — sum them directly.
 	resources_used = frappe.db.count("Price Lock", {"team": team, "ended_at": ["is", "not set"]})
 	paid_invoices = frappe.db.count("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"})
 	paid_rows = frappe.get_all("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"},
-							   ["amount_paid", "currency"])
-	cumulative_paid_inr = sum(frappe.utils.flt(r.amount_paid) * _FX_TO_INR.get(r.currency, 1.0) for r in paid_rows)
+							   ["amount_paid"])
+	cumulative_paid = sum(frappe.utils.flt(r.amount_paid) for r in paid_rows)
 
 	def level_view(l):
 		if not l:
 			return None
+		row = entitlements.threshold_for(l, currency)
 		return {
 			"tier": l.tier, "sequence": l.sequence,
-			"max_spend": _from_inr(l.max_spend, currency),
+			"max_spend": frappe.utils.flt(row.max_spend) if row else None,
 			"max_resource_count": l.max_resource_count,
 			"min_paid_invoices": l.min_paid_invoices,
-			"min_cumulative_paid": _from_inr(l.min_cumulative_paid, currency),
+			"min_cumulative_paid": frappe.utils.flt(row.min_cumulative_paid) if row else None,
 		}
 
 	return {
@@ -226,7 +241,7 @@ def get_trust_tier(team: str | None = None) -> dict:
 		"progress": {
 			"resources_used": resources_used,
 			"paid_invoices": paid_invoices,
-			"cumulative_paid": _from_inr(cumulative_paid_inr, currency),
+			"cumulative_paid": frappe.utils.flt(cumulative_paid),
 		},
 		"all_levels": [level_view(l) for l in levels],
 	}
@@ -239,7 +254,7 @@ def list_switchable_teams() -> list[dict]:
 				   | set(frappe.get_all("Billing Profile", pluck="team")) if t)
 	out = []
 	for t in teams:
-		out.append({"team": t, "tier": frappe.db.get_value("Trust Tier", t, "tier"),
+		out.append({"team": t, "tier": frappe.db.get_value("Billing Profile", t, "trust_tier"),
 					"standing": frappe.db.get_value("Subscription", {"team": t}, "account_standing") or "Current"})
 	return out
 

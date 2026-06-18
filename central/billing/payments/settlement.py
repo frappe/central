@@ -51,7 +51,9 @@ def ensure_settlement_source(team: str):
 
 
 def _tier_cap(team: str):
-	return frappe.utils.flt(frappe.db.get_value("Trust Tier", team, "max_spend"))
+	from central.billing.catalog.entitlements import get_team_caps
+
+	return frappe.utils.flt(get_team_caps(team).max_spend)
 
 
 def effective_spend_cap(team: str):

@@ -12,8 +12,9 @@ const routes = [
     children: [
       { path: '', redirect: '/billing' },
 
-      // First-run billing setup — rendered inside the shell (sidebar stays, its
-      // billing/settings options stay locked until the profile is complete).
+      // First-run billing setup wizard — rendered inside the shell. Navigation
+      // stays open; money-moving actions divert here via requireSetup() until the
+      // billing profile is complete, passing a ?redirect= back to where they were.
       { path: 'onboarding', name: 'Onboarding', component: () => import('@/pages/Onboarding.vue') },
 
       {
@@ -72,23 +73,15 @@ export const router = createRouter({
   routes,
 })
 
-// Onboarding gate. Until the billing profile is complete, EVERY route funnels to
-// /onboarding — any click or refresh lands there and nowhere else. A set-up team
-// is conversely kept off /onboarding. The check is awaited before the route paints
-// (and the app mounts only after router.isReady()), so a hard refresh is
-// deterministic and never flashes onboarding away. Cached → one request per
-// session (invalidated on save). Fail-open: if the check errors, navigation
-// proceeds rather than trapping the user.
-router.beforeEach(async (to) => {
-  // Resolve identity first so we gate on the active team, not an empty/default one.
+// Navigation is open regardless of billing-profile completeness — a team with an
+// incomplete profile can browse every tab. The profile is only enforced at the
+// point of a money-moving action (top-up, credits, payment method), where
+// useBillingSetup().requireSetup() diverts to /onboarding. Here we just warm the
+// shared setup cache for the active team so those pages render their state without
+// a flash. Identity is resolved first so we key on the active team, not a default.
+router.beforeEach(async () => {
   await whoReady
   const { currentTeam } = useTeam()
-  const setup = await fetchBillingSetup(currentTeam.value)
-  const incomplete = setup && setup.complete === false
-
-  if (to.path === '/onboarding') {
-    // A set-up team has no business on onboarding — send it on to its target.
-    return incomplete ? true : to.query.redirect || '/billing'
-  }
-  return incomplete ? { path: '/onboarding', query: { redirect: to.fullPath } } : true
+  fetchBillingSetup(currentTeam.value) // non-blocking: warm cache, never redirect
+  return true
 })

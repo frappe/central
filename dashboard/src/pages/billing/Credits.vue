@@ -15,7 +15,7 @@ import { money, signedMoney } from '@/utils/money'
 const router = useRouter()
 const { currentTeam } = useTeam()
 const { canManage } = useCapabilities()
-const { complete: setupComplete } = useBillingSetup()
+const { complete: setupComplete, requireSetup } = useBillingSetup()
 
 const params = () => ({ team: currentTeam.value })
 const balance = useCall({ url: m(API.creditBalance), params, refetch: true })
@@ -23,6 +23,10 @@ const ledger = useCall({ url: m(API.creditLedger), params, refetch: true })
 
 const currency = computed(() => balance.data?.currency || 'INR')
 const showTopup = ref(false)
+
+function onTopup() {
+  if (requireSetup()) showTopup.value = true
+}
 
 function reloadAll() {
   balance.reload()
@@ -43,8 +47,7 @@ function isCredit(entry) {
           v-if="canManage"
           variant="solid"
           label="Top up"
-          :disabled="!setupComplete"
-          @click="showTopup = true"
+          @click="onTopup"
         />
       </template>
     </PageHeader>
@@ -62,7 +65,7 @@ function isCredit(entry) {
           <p class="text-p-sm text-ink-amber-3">
             Set your billing currency and address before topping up your wallet.
           </p>
-          <Button variant="subtle" label="Go to Settings" @click="router.push({ name: 'Address' })" />
+          <Button variant="subtle" label="Complete setup" @click="router.push({ name: 'Onboarding' })" />
         </div>
 
         <StatTile

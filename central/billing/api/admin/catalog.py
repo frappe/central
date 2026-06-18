@@ -102,7 +102,11 @@ def get_conversion() -> dict:
 	from central.billing.catalog.trials import entry_tier
 
 	entry = entry_tier()
-	tiers = frappe.get_all("Trust Tier", fields=["team", "tier", "promotion_basis"])
+	tiers = frappe.get_all(
+		"Billing Profile",
+		filters={"trust_tier": ["is", "set"]},
+		fields=["team", "trust_tier as tier", "promotion_basis"],
+	)
 	total = len(tiers)
 	trial = sum(1 for t in tiers if t.tier == entry)
 	paid = total - trial
@@ -128,7 +132,7 @@ def get_trial_detail() -> dict:
 	by_team = {}
 	still_on_trial, converted_subsidy, trial_subsidy = 0.0, 0.0, 0.0
 	for inv in invoices:
-		tier = frappe.db.get_value("Trust Tier", inv.team, "tier")
+		tier = frappe.db.get_value("Billing Profile", inv.team, "trust_tier")
 		on_trial = tier == entry
 		inr = _to_inr(inv.subtotal, inv.currency)
 		t = by_team.setdefault(inv.team, {"team": inv.team, "on_trial": on_trial, "tier": tier or "—",
@@ -161,7 +165,7 @@ def get_trial_costs_detail() -> dict:
 	entry = entry_tier()
 	unconverted, converted = 0.0, 0.0
 	for inv in frappe.get_all("Invoice", filters={"invoice_type": "Cost Report"}, fields=["team", "subtotal"]):
-		tier = frappe.db.get_value("Trust Tier", inv.team, "tier")
+		tier = frappe.db.get_value("Billing Profile", inv.team, "trust_tier")
 		if tier == entry:
 			unconverted += frappe.utils.flt(inv.subtotal)
 		else:
