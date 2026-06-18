@@ -64,14 +64,14 @@ _TOPUP_STATES = ("credits", "credits_full", "credits_partial")
 #   prepaid          — wallet-funded (hooli, piedpiper, harbor, seedling)
 # Unlisted INR teams default to prepaid; unlisted non-INR to stripe_auto.
 _COLLECTION_MODES = {
-	"acme-corp": "emandate", "wayne-ent": "emandate", "daybreak": "emandate",
-	"umbrella": "manual_checkout", "stark-ind": "manual_checkout", "rivulet": "manual_checkout",
-	"hooli": "prepaid", "piedpiper": "prepaid", "harbor": "prepaid", "seedling": "prepaid",
+	"acme-corp": "E-Mandate", "wayne-ent": "E-Mandate", "daybreak": "E-Mandate",
+	"umbrella": "Manual Checkout", "stark-ind": "Manual Checkout", "rivulet": "Manual Checkout",
+	"hooli": "Prepaid", "piedpiper": "Prepaid", "harbor": "Prepaid", "seedling": "Prepaid",
 }
 
 
 def _collection_mode_for(slug, currency):
-	return _COLLECTION_MODES.get(slug) or ("stripe_auto" if currency != "INR" else "prepaid")
+	return _COLLECTION_MODES.get(slug) or ("Stripe Auto" if currency != "INR" else "Prepaid")
 
 # Card teams: which historical month indices show a failed-then-settled trail in
 # the invoice Activity (month index → failed retries before the capture). A few
@@ -310,7 +310,7 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 	# e-mandate team runs the real trip/pre-debit flow against its actual bill.
 	mode = _collection_mode_for(slug, currency)
 	set_collection_mode(team, mode)
-	if mode == "emandate":
+	if mode == "E-Mandate":
 		arm_emandate(team)
 	final_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	return f"{len(resources)} instances across {len(by_cluster)} region(s) — {note} [{final_mode}]"

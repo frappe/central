@@ -24,7 +24,7 @@ const show = computed(() => !!s.value.action_required)
 const currency = computed(() => s.value.currency || 'INR')
 
 const choosing = ref(false)
-const chosen = ref(null) // 'manual_checkout' | 'prepaid'
+const chosen = ref(null) // 'Manual Checkout' | 'Prepaid'
 
 const setMode = useCall({
   url: m(API.setCollectionMode),
@@ -37,7 +37,7 @@ async function choose() {
   if (!chosen.value) return
   await setMode.submit({ team: currentTeam.value, mode: chosen.value })
   successToast(
-    chosen.value === 'prepaid'
+    chosen.value === 'Prepaid'
       ? 'Switched to prepaid wallet. Add credits to cover your usage.'
       : 'You’ll now pay each invoice yourself.',
   )
@@ -48,14 +48,14 @@ async function choose() {
 
 const options = [
   {
-    key: 'manual_checkout',
+    key: 'Manual Checkout',
     icon: 'lucide-receipt',
     title: 'Pay each invoice',
     blurb: 'We email you each bill; you pay in a few taps (any amount).',
     fit: 'Best if your usage varies a lot month to month.',
   },
   {
-    key: 'prepaid',
+    key: 'Prepaid',
     icon: 'lucide-wallet',
     title: 'Prepaid wallet',
     blurb: 'Add credits up front; your usage draws them down.',

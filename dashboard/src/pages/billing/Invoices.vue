@@ -66,7 +66,7 @@ const { run: payCheckout, loading: payingCheckout } = usePayInvoiceCheckout({ on
 // manual_checkout teams settle on-session (any amount, no ₹15k limit); everyone
 // else uses the off-session charge against their saved method.
 const collection = useCall({ url: m(API.collectionStatus), params, refetch: true })
-const manualMode = computed(() => collection.data?.collection_mode === 'manual_checkout')
+const manualMode = computed(() => collection.data?.collection_mode === 'Manual Checkout')
 const payBusy = computed(() => paying.value || payingCheckout.value)
 function pay(name) {
   return manualMode.value ? payCheckout(name) : payInvoice(name)

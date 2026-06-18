@@ -49,3 +49,7 @@ central.billing.patches.v12_trust_tier_currency_thresholds.trust_tier_thresholds
 # link + audit + optional override_max_spend); caps resolve live now. Copy the
 # rows onto profiles, then drop the doctype — issue #62.
 central.billing.patches.v13_drop_trust_tier_doctype.drop_trust_tier
+# collection_mode landed after the v08 Select title-casing sweep, so its stored
+# values are still snake_case (stripe_auto/emandate/...). Title-case them to match
+# every other billing Select field (ADR 0005, #50).
+central.billing.patches.v14_titlecase_collection_mode.titlecase_collection_mode
