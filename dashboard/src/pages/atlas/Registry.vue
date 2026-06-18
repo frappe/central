@@ -19,9 +19,16 @@ const registry = useCall({
   refetch: true,
 })
 
+// Refresh is the only writer: POST the sync, then re-read the mirror.
+const refresh = useCall({ url: m(API.refreshAssets), method: 'POST', immediate: false })
+async function refreshAssets() {
+  await refresh.submit({ team: currentTeam.value })
+  registry.reload()
+}
+
 const assets = computed(() => registry.data?.assets ?? [])
-const stale = computed(() => registry.data?.stale ?? [])
-const canOpen = computed(() => has('vm:open'))
+const stale = computed(() => refresh.data?.stale ?? [])
+const canOpen = computed(() => has('server:open'))
 
 const counts = computed(() => {
   const c = { Running: 0, Stopped: 0, Terminated: 0 }
@@ -40,9 +47,17 @@ const openCall = useCall({ url: m(API.getBenchLink), method: 'GET', immediate: f
 
 async function openVm(asset) {
   opening.value = asset.resource_id
+  // Open the tab synchronously (inside the click) so it isn't popup-blocked, then
+  // point it at the minted SSO URL once it resolves.
+  const tab = window.open('', '_blank')
   try {
     const res = await openCall.submit({ asset: asset.resource_id })
-    if (res?.url) window.location.href = res.url
+    if (res?.url && tab) tab.location = res.url
+    else if (res?.url) window.location.href = res.url
+    else tab?.close()
+  } catch (e) {
+    tab?.close()
+    throw e
   } finally {
     opening.value = ''
   }
@@ -51,7 +66,11 @@ async function openVm(asset) {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader :items="[{ label: 'Atlas' }, { label: 'Registry' }]" />
+    <PageHeader :items="[{ label: 'Atlas' }, { label: 'Registry' }]">
+      <template #actions>
+        <Button label="Refresh" :loading="refresh.loading" @click="refreshAssets" />
+      </template>
+    </PageHeader>
 
     <div class="body-container space-y-6 pb-40 pt-5">
       <p v-if="stale.length" class="rounded bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3">

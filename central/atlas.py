@@ -5,9 +5,9 @@ import frappe
 from central.atlas_client import AtlasClient, stub_vm_inventory
 from central.iam import can, get_user_team_names, user_has_operator_bypass
 
-# Edge B → registry mirror. `registry` is the dashboard's entry point: it pulls a
-# team's VMs from every Active Atlas (cluster), mirrors them into Asset rows, and
-# returns them. Source of truth stays in Atlas; Central holds a read model.
+# Edge B → registry mirror. Central holds a read model of each team's VMs as Asset
+# rows. `registry` is a pure read of that mirror; `refresh_assets` (a POST) syncs it
+# from every Active Atlas. Source of truth stays in Atlas.
 
 
 def _inventory(instance, team: str) -> list[dict]:
@@ -60,19 +60,29 @@ def _resolve_team(user: str, team: str | None) -> str:
 
 @frappe.whitelist(methods=["GET"])
 def registry(team: str | None = None) -> dict:
-	"""The team's asset registry (clusters → VMs), refreshed on demand from Atlas.
-
-	Gated on `cluster:view`. Returns the mirrored assets plus which clusters were
-	freshly synced vs. served stale (Atlas unreachable)."""
+	"""List a team's VMs from the Asset mirror — a pure read. Gated on `cluster:view`.
+	The cluster is denormalized on each Asset, so no join is needed. Populate or
+	refresh the mirror with `refresh_assets`."""
 	user = frappe.session.user
 	team = _resolve_team(user, team)
 	if not can(user, team, "cluster:view"):
 		frappe.throw("You can't view this team's clusters.", frappe.PermissionError)
-	freshness = sync_team_assets(team)
 	assets = frappe.get_all(
 		"Asset",
 		filters={"team": team},
 		fields=["resource_id", "cluster", "status", "gateway_url", "last_synced_at"],
 		order_by="cluster asc, resource_id asc",
 	)
-	return {"team": team, "assets": assets, **freshness}
+	return {"team": team, "assets": assets}
+
+
+@frappe.whitelist(methods=["POST"])
+def refresh_assets(team: str | None = None) -> dict:
+	"""Refresh the team's Asset mirror from every Active Atlas (writes; Frappe
+	commits the POST). Gated on `cluster:view`. Returns which clusters synced vs.
+	were left stale (Atlas unreachable)."""
+	user = frappe.session.user
+	team = _resolve_team(user, team)
+	if not can(user, team, "cluster:view"):
+		frappe.throw("You can't refresh this team's clusters.", frappe.PermissionError)
+	return sync_team_assets(team)

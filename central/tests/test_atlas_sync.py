@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.atlas import registry, sync_team_assets
+from central.atlas import refresh_assets, registry, sync_team_assets
 from central.tests.test_iam import ensure_user
 
 
@@ -50,11 +50,17 @@ class TestAtlasSync(IntegrationTestCase):
 		self.assertEqual(vm.status, "Running")
 		self.assertTrue(vm.last_synced_at)
 
-	def test_registry_returns_team_assets(self):
+	def test_registry_lists_mirrored_assets(self):
+		sync_team_assets(self.team.name)
 		result = registry(team=self.team.name)
 		ids = {a["resource_id"] for a in result["assets"]}
 		self.assertIn("vm-blr-1", ids)
-		self.assertIn(self.region, result["synced"])
+
+	def test_refresh_assets_syncs_then_registry_lists(self):
+		freshness = refresh_assets(team=self.team.name)
+		self.assertIn(self.region, freshness["synced"])
+		ids = {a["resource_id"] for a in registry(team=self.team.name)["assets"]}
+		self.assertIn("vm-blr-1", ids)
 
 	def test_sync_is_failsoft_when_atlas_unreachable(self):
 		frappe.conf.atlas_use_stub_inventory = 0

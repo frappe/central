@@ -53,3 +53,4 @@ central.billing.patches.v13_drop_trust_tier_doctype.drop_trust_tier
 # values are still snake_case (stripe_auto/emandate/...). Title-case them to match
 # every other billing Select field (ADR 0005, #50).
 central.billing.patches.v14_titlecase_collection_mode.titlecase_collection_mode
+central.patches.v01_capability_model_v2.rename_capabilities

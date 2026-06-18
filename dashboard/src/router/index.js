@@ -1,8 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import GroupGate from '@/components/GroupGate.vue'
-import { fetchBillingSetup } from '@/data/billingSetup'
-import { useTeam, whoReady } from '@/composables/useTeam'
 
 // The SPA is mounted under /dashboard (central/hooks.py website_route_rules).
 const routes = [
@@ -56,7 +54,7 @@ const routes = [
       {
         path: 'atlas',
         component: GroupGate,
-        props: { capability: 'vm:view', roles: 'Developer, Admin or Owner' },
+        props: { capability: 'server:view', roles: 'Developer, Admin or Owner' },
         children: [
           { path: '', name: 'AtlasRegistry', component: () => import('@/pages/atlas/Registry.vue') },
           { path: 'vms', name: 'AtlasVMs', component: () => import('@/pages/atlas/VirtualMachines.vue') },
