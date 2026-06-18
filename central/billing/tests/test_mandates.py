@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.tests.utils import complete_billing_profile, ensure_team
+from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
 from central.billing.payments import mandates
 from central.billing.catalog.entitlements import recompute_trust_tier
@@ -70,8 +70,7 @@ class MandateTestBase(IntegrationTestCase):
 			frappe.delete_doc("Payment Method", name, force=True)
 		frappe.db.delete("Gateway Customer", {"team": TEAM})
 		complete_billing_profile(TEAM)  # carries a phone — Razorpay recurring needs a contact
-		if frappe.db.exists("Trust Tier", TEAM):
-			frappe.delete_doc("Trust Tier", TEAM, force=True)
+		clear_team_tier(TEAM)
 		# Entry tier: t0 cap = 100.
 		recompute_trust_tier(TEAM, paid_invoice_count=0, cumulative_paid=0)
 
@@ -200,7 +199,8 @@ class TestUpiRecurringLimit(MandateTestBase):
 		self.assertTrue(mandates.upi_eligibility(TEAM)["eligible"])  # t0 cap = 100
 
 	def test_blocked_when_cap_at_limit(self):
-		frappe.db.set_value("Trust Tier", TEAM, "max_spend", mandates.UPI_RECURRING_MAX)
+		frappe.db.set_value("Billing Profile", TEAM,
+			{"manual_override": 1, "override_max_spend": mandates.UPI_RECURRING_MAX})
 		elig = mandates.upi_eligibility(TEAM)
 		self.assertFalse(elig["eligible"])
 		self.assertIn("cap", elig["reason"].lower())
@@ -227,7 +227,8 @@ class TestRazorpayCardSetup(MandateTestBase):
 		self.assertEqual(method.status, "Pending Validation")
 
 	def test_card_setup_works_even_when_upi_is_blocked(self):
-		frappe.db.set_value("Trust Tier", TEAM, "max_spend", mandates.UPI_RECURRING_MAX)
+		frappe.db.set_value("Billing Profile", TEAM,
+			{"manual_override": 1, "override_max_spend": mandates.UPI_RECURRING_MAX})
 		with stub_adapter():
 			result = mandates.setup_card(TEAM, GATEWAY)  # no exception
 		self.assertEqual(

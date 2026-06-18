@@ -20,7 +20,7 @@ from central.billing.payments.settlement import (
 	settlement_sources,
 )
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import ensure_team, make_plan, set_team_tier
 
 TEAM = "team-waterfall"
 CLUSTER = "ap-south-1"
@@ -42,11 +42,7 @@ def stub_adapter(success=True, txn_id="pi_x"):
 
 
 def set_tier(team, max_spend):
-	if frappe.db.exists("Trust Tier", team):
-		frappe.delete_doc("Trust Tier", team, force=True)
-	frappe.get_doc(
-		{"doctype": "Trust Tier", "team": team, "tier": "t0", "max_spend": max_spend}
-	).insert(ignore_permissions=True)
+	set_team_tier(team, level="t0", max_spend=max_spend)
 
 
 class SettlementTestBase(IntegrationTestCase):
@@ -65,8 +61,7 @@ class SettlementTestBase(IntegrationTestCase):
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for pm in frappe.get_all("Payment Method", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Payment Method", {"name": pm})
-		if frappe.db.exists("Trust Tier", TEAM):
-			frappe.db.delete("Trust Tier", {"team": TEAM})
+		frappe.db.delete("Billing Profile", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})

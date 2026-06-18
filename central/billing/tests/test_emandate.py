@@ -6,7 +6,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.payments import emandate
-from central.billing.tests.utils import complete_billing_profile, ensure_team
+from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
 TEAM = "team-emandate"
 
@@ -24,7 +24,7 @@ class TestEmandatePredebit(IntegrationTestCase):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
 		_set_mode(TEAM, "emandate")
-		frappe.db.delete("Trust Tier", {"team": TEAM})
+		clear_team_tier(TEAM)
 		frappe.db.delete("Invoice", {"team": TEAM})
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
 		frappe.db.delete("Payment Method", {"team": TEAM})

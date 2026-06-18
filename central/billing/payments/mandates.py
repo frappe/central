@@ -31,7 +31,9 @@ CARD_TOKEN_MAX = 1000000
 
 def team_cap(team: str):
 	"""Current trust-tier monthly cap for a team (0 when no tier exists yet)."""
-	return frappe.db.get_value("Trust Tier", team, "max_spend") or 0
+	from central.billing.catalog.entitlements import get_team_caps
+
+	return get_team_caps(team).max_spend or 0
 
 
 def last_invoice_amount(team: str):

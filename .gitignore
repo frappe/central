@@ -58,3 +58,9 @@ jspm_packages/
 central/public/dashboard/
 central/www/dashboard.html
 central/public/node_modules
+
+# Playwright e2e suite artifacts (see e2e/README.md)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

@@ -2,16 +2,18 @@
 # For license information, please see license.txt
 """Subscription intent + the two-axis state model (issue #04).
 
-A Central Subscription is the customer's *intent/contract*, not billing truth —
-the authoritative runtime record is born at the cluster and reported by the
-Agent (#03). State lives on two orthogonal axes, never one enum:
+A Central Subscription is the customer's *intent/contract*. Agentless (ADR 0006):
+Central provisions via the cluster manager and writes the authoritative runtime
+record (the price-lock) itself, at provision time — see `provision_subscription`.
+State lives on two orthogonal axes, never one enum:
 
-  - operational (running / stopped / terminated) — owned by the Agent
+  - operational (running / stopped / terminated) — Central's record of cluster-
+    manager state (read from / reported by the cluster manager)
   - account standing (current / past_due / suspended) — owned by Central, here
 
-Central never stores the operational axis: a resource can be `running` and
-`past_due` at once (normal grace), so collapsing them would lose information.
-Every transition writes an append-only Subscription Change.
+Central never collapses the axes: a resource can be `running` and `past_due` at
+once (normal grace), so one enum would lose information. Every standing transition
+writes an append-only Subscription Change.
 """
 
 import frappe
@@ -63,9 +65,10 @@ def create_subscription(
 	gateway: str | None = None,
 	changed_by: str | None = None,
 ):
-	"""Record a subscription INTENT. Provisioning happens at the cluster; the
-	authoritative event (resource_id, shown_rate) is born there and reported by
-	the Agent. This only captures what the customer asked for."""
+	"""Record a subscription INTENT — what the customer asked for. The actual
+	provisioning (calling the cluster manager and writing the price-lock) is
+	`provision_subscription`; this captures the contract only, so it stays usable
+	for fixtures and intent-only flows."""
 	doc = frappe.get_doc(
 		{
 			"doctype": "Subscription",
@@ -84,9 +87,52 @@ def create_subscription(
 	return doc
 
 
+def provision_subscription(
+	team: str,
+	cluster: str,
+	plan: str,
+	billing_cycle: str = "Monthly",
+	start_date=None,
+	resource_id: str | None = None,
+	default_payment_method: str | None = None,
+	gateway: str | None = None,
+	changed_by: str | None = None,
+):
+	"""Provision a subscription the agentless way (ADR 0006): record the intent,
+	then — as the *same* component — write the authoritative runtime record.
+
+	Central calls the cluster manager to create the resource (here the seam mints a
+	`resource_id`; a real impl uses the id the cluster manager returns), then writes
+	the price-lock at the catalog rate for the team's currency + cluster. Because the
+	one component both provisions and locks, the rate shown is the rate locked — no
+	agent push, no reconciliation gap. Returns the subscription + the locked handles.
+	"""
+	from central.billing.platform.sync import record_usage_events
+
+	sub = create_subscription(
+		team, cluster, plan, billing_cycle=billing_cycle, start_date=start_date,
+		default_payment_method=default_payment_method, gateway=gateway, changed_by=changed_by,
+	)
+
+	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
+	shown_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
+	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
+	effective_from = f"{sub.start_date} 00:00:00"
+
+	record_usage_events([{
+		"event_id": f"prov-{sub.name}-{resource_id}",
+		"team": team, "resource_id": resource_id, "cluster": cluster, "plan": plan,
+		"shown_rate": shown_rate, "currency": currency,
+		"event_type": "subscribed", "effective_from": effective_from, "effective_to": None,
+	}])
+
+	return {"subscription": sub.name, "resource_id": resource_id,
+			"shown_rate": shown_rate, "currency": currency}
+
+
 def change_plan(subscription: str, new_plan: str, changed_by: str | None = None):
-	"""Change the requested plan (intent). A new price-lock is created at the
-	cluster on reprovision (#03) — this records the contract change only."""
+	"""Change the requested plan (intent). Central writes a new price-lock segment
+	when it reprovisions (ADR 0006); this records the contract change only."""
 	doc = frappe.get_doc("Subscription", subscription)
 	old_plan = doc.plan
 	if new_plan == old_plan:
@@ -108,8 +154,8 @@ def change_payment_method(subscription: str, new_method: str, changed_by: str | 
 
 def cancel_subscription(subscription: str, changed_by: str | None = None):
 	"""Cancel the subscription intent. The contract record is kept; the
-	cancellation is logged. Stopping/terminating running resources is a separate
-	operational concern owned by the Agent."""
+	cancellation is logged. Stopping/terminating the running resource is a separate
+	operational step Central drives via the cluster manager (ADR 0006)."""
 	_record_change(subscription, "Cancelled", changed_by=changed_by)
 	return frappe.get_doc("Subscription", subscription)
 
@@ -141,13 +187,11 @@ def set_standing(subscription: str, new_standing: str, changed_by: str | None = 
 	return doc
 
 
-def reconcile_with_agent_event(subscription: str, resource_id: str) -> dict:
-	"""Reconcile a subscription's intent against the authoritative cluster event.
-
-	The real subscription event is born at the cluster; Central holds the price
-	lock keyed by `resource_id` (#03). This compares the intended plan with the
-	plan actually locked: a missing lock means the cluster has not yet reported
-	(intent outstanding); a plan mismatch is surfaced for follow-up.
+def reconcile_subscription_resource(subscription: str, resource_id: str) -> dict:
+	"""Reconcile a subscription's intent against the price-lock Central wrote when it
+	provisioned the resource (keyed by `resource_id`). A missing lock means the
+	resource hasn't been provisioned yet (intent outstanding); a plan mismatch is
+	surfaced for follow-up.
 	"""
 	from central.billing.revenue.pricelock import _open_lock
 
@@ -163,3 +207,7 @@ def reconcile_with_agent_event(subscription: str, resource_id: str) -> dict:
 		"locked_plan": locked_plan,
 		"resource_id": resource_id,
 	}
+
+
+# Deprecated agent-era name — agentless, Central writes the lock at provision time.
+reconcile_with_agent_event = reconcile_subscription_resource

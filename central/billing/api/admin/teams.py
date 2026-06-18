@@ -29,7 +29,7 @@ def get_team_billing(team: str) -> dict:
 	return {
 		"team": team,
 		"currency": currency,
-		"tier": frappe.db.get_value("Trust Tier", team, "tier") or "—",
+		"tier": frappe.db.get_value("Billing Profile", team, "trust_tier") or "—",
 		"subscriptions": frappe.get_all(
 			"Subscription", filters={"team": team},
 			fields=["name", "plan", "cluster", "account_standing"]),
@@ -115,7 +115,7 @@ def list_teams() -> list[dict]:
 	for t in teams.values():
 		currency = _team_currency(t["team"])
 		t["mrr"] = frappe.utils.flt(t["mrr"], 2)
-		t["tier"] = frappe.db.get_value("Trust Tier", t["team"], "tier") or "—"
+		t["tier"] = frappe.db.get_value("Billing Profile", t["team"], "trust_tier") or "—"
 		t["open_invoices"] = frappe.db.count("Invoice", {"team": t["team"], "status": ["in", ["Open", "Overdue"]]})
 		t["invoices"] = frappe.db.count("Invoice", {"team": t["team"]})
 		# Credit normalised to INR so the whole row reads on one (INR-equiv.) axis.

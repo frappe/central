@@ -17,7 +17,7 @@ import { billingPeriod } from '@/utils/date'
 const router = useRouter()
 const { currentTeam } = useTeam()
 const { canManage } = useCapabilities()
-const { complete: setupComplete } = useBillingSetup()
+const { requireSetup } = useBillingSetup()
 
 const params = () => ({ team: currentTeam.value })
 const overview = useCall({ url: m(API.teamOverview), params, refetch: true })
@@ -86,6 +86,14 @@ const primaryMethod = computed(
 
 const showTopup = ref(false)
 const showAddMethod = ref(false)
+// Both actions move money, so they're gated on a complete profile: requireSetup()
+// diverts to onboarding when it isn't, and we don't open the dialog.
+function onTopup() {
+  if (requireSetup()) showTopup.value = true
+}
+function onAddMethod() {
+  if (requireSetup()) showAddMethod.value = true
+}
 function editProfile() {
   router.push({ name: 'Address' })
 }
@@ -104,8 +112,7 @@ function onToppedUp() {
           v-if="canManage"
           variant="solid"
           label="Top up"
-          :disabled="!setupComplete"
-          @click="showTopup = true"
+          @click="onTopup"
         />
       </template>
     </PageHeader>
@@ -185,14 +192,13 @@ function onToppedUp() {
               <p class="truncate text-sm" :class="billingEmail ? 'text-ink-gray-8' : 'text-ink-gray-5'">
                 {{ billingEmail || 'Not set' }}
               </p>
-              <button
+              <Button
                 v-if="canManage"
-                class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
+                variant="ghost"
+                icon="lucide-pencil"
                 aria-label="Edit billing email"
                 @click="editProfile"
-              >
-                <span class="lucide-pencil size-4" />
-              </button>
+              />
             </div>
           </div>
 
@@ -213,7 +219,7 @@ function onToppedUp() {
                 v-else-if="canManage"
                 variant="subtle"
                 label="Add"
-                @click="showAddMethod = true"
+                @click="onAddMethod"
               >
                 <template #prefix><span class="lucide-plus size-4" /></template>
               </Button>
@@ -227,14 +233,13 @@ function onToppedUp() {
               <p class="truncate text-sm" :class="billingAddress ? 'text-ink-gray-8' : 'text-ink-gray-5'">
                 {{ billingAddress || 'No address on file' }}
               </p>
-              <button
+              <Button
                 v-if="canManage"
-                class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
+                variant="ghost"
+                icon="lucide-pencil"
                 aria-label="Edit billing address"
                 @click="editProfile"
-              >
-                <span class="lucide-pencil size-4" />
-              </button>
+              />
             </div>
           </div>
         </section>

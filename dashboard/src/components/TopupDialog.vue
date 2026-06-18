@@ -137,6 +137,7 @@ watch(open, (isOpen) => {
           <FormControl
             v-model="amount"
             type="number"
+            label="Amount"
             :placeholder="`Enter amount in ${currency}`"
             min="1"
           />

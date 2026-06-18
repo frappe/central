@@ -41,4 +41,12 @@ central.billing.patches.v10_gateway_customer.backfill_gateway_customers
 # (resolve the gateway from the profile currency). Live gateway calls; per-team
 # isolated + idempotent.
 central.billing.patches.v11_provision_gateway_customers.provision_gateway_customers
+# Trust Tier Level money limits move from single max_spend/min_cumulative_paid
+# columns to the per-currency Trust Tier Threshold child table; backfill the
+# legacy (INR) numbers as an INR row, then drop the columns — issue #61.
+central.billing.patches.v12_trust_tier_currency_thresholds.trust_tier_thresholds
+# The per-team Trust Tier doctype folds into the Billing Profile (trust_tier_level
+# link + audit + optional override_max_spend); caps resolve live now. Copy the
+# rows onto profiles, then drop the doctype — issue #62.
+central.billing.patches.v13_drop_trust_tier_doctype.drop_trust_tier
 central.patches.v01_capability_model_v2.rename_capabilities

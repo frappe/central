@@ -26,7 +26,7 @@ def entry_tier() -> str | None:
 
 def is_trial_team(team: str) -> bool:
 	"""A team sitting on the entry tier is on free/trial."""
-	tier = frappe.db.get_value("Trust Tier", team, "tier")
+	tier = frappe.db.get_value("Billing Profile", team, "trust_tier")
 	return bool(tier) and tier == entry_tier()
 
 
@@ -54,28 +54,19 @@ def convert_to_paid(team: str, level: str | None = None):
 			frappe.throw("No paid tier level configured to convert into.", frappe.ValidationError)
 		level = paid[0].name
 
+	from central.billing.catalog import entitlements
+
+	# The cap is resolved live from the level × the team's currency, so conversion
+	# just points the profile at the paid rung and pins it (manual_override).
 	target = frappe.get_doc("Trust Tier Level", level)
-	tier = (
-		frappe.get_doc("Trust Tier", team)
-		if frappe.db.exists("Trust Tier", team)
-		else frappe.get_doc({"doctype": "Trust Tier", "team": team})
-	)
-	tier.update(
-		{
-			"level": target.name,
-			"tier": target.tier,
-			"max_spend": target.max_spend,
-			"max_resource_count": target.max_resource_count,
-			"allowed_plans": target.allowed_plans,
-			"allowed_clusters": target.allowed_clusters,
-			"allowed_resource_types": target.allowed_resource_types,
-			"manual_override": 1,
-			"promoted_at": frappe.utils.now_datetime(),
-			"promotion_basis": "converted to paid",
-		}
-	)
-	tier.save(ignore_permissions=True)
-	return tier
+	profile = entitlements._profile_for(team)
+	profile.trust_tier_level = target.name
+	profile.trust_tier = target.tier
+	profile.manual_override = 1
+	profile.promoted_at = frappe.utils.now_datetime()
+	profile.promotion_basis = "converted to paid"
+	profile.save(ignore_permissions=True)
+	return entitlements._tier_result(team, profile)
 
 
 def expire_trial(team: str, cluster_slices: dict | None = None) -> dict:

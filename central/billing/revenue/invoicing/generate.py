@@ -14,13 +14,14 @@ from central.billing.revenue.invoicing.lines import compute_line_items
 
 
 def reconcile_subscription(subscription_doc):
-	"""Pull from the Agent only if the local data is stale.
+	"""Refresh the current period's metered figures from the cluster manager if stale.
 
-	Sync is push-primary (#03), so in the common case the event-log segments are
-	already on Central and this is a no-op. A real pull would call the Agent's
-	get_team_usage; wired here as the seam, exercised by the reconciliation job.
+	Agentless (ADR 0006): Central wrote the event-log segments itself at provision
+	time, so in the common case they're already local and this is a no-op. A real
+	refresh would read live usage from the cluster manager; wired here as the seam,
+	exercised by the reconciliation job.
 	"""
-	return False  # not stale — use what was pushed
+	return False  # not stale — use what Central already recorded
 
 
 def generate_draft_invoice(subscription: str, period_start, period_end):
