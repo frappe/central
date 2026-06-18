@@ -10,6 +10,11 @@ const routes = [
     children: [
       { path: '', redirect: '/billing' },
 
+      // First-run billing setup wizard — rendered inside the shell. Navigation
+      // stays open; money-moving actions divert here via requireSetup() until the
+      // billing profile is complete, passing a ?redirect= back to where they were.
+      { path: 'onboarding', name: 'Onboarding', component: () => import('@/pages/Onboarding.vue') },
+
       {
         path: 'billing',
         component: GroupGate,
@@ -64,4 +69,17 @@ const routes = [
 export const router = createRouter({
   history: createWebHistory('/dashboard/'),
   routes,
+})
+
+// Navigation is open regardless of billing-profile completeness — a team with an
+// incomplete profile can browse every tab. The profile is only enforced at the
+// point of a money-moving action (top-up, credits, payment method), where
+// useBillingSetup().requireSetup() diverts to /onboarding. Here we just warm the
+// shared setup cache for the active team so those pages render their state without
+// a flash. Identity is resolved first so we key on the active team, not a default.
+router.beforeEach(async () => {
+  await whoReady
+  const { currentTeam } = useTeam()
+  fetchBillingSetup(currentTeam.value) // non-blocking: warm cache, never redirect
+  return true
 })

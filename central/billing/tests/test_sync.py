@@ -1,32 +1,63 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
+"""Agentless provisioning writes the price-lock (ADR 0006).
 
-from unittest.mock import MagicMock, patch
+There is no Subscription Agent and no plan push; Central provisions a resource and
+records the authoritative runtime (the price-lock) itself, at the catalog rate —
+so the rate shown is the rate locked, with no reconciliation gap.
+"""
 
+import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.platform.sync import push_plans_to_agent
-from central.billing.tests.utils import make_plan
+from central.billing.catalog import subscriptions
+from central.billing.tests.utils import complete_billing_profile, ensure_team, make_plan
+
+TEAM = "team-provision"
+PLAN = "bundle-provision"
+CLUSTER = "ap-south-1"
 
 
-class TestPushPlansToAgent(IntegrationTestCase):
-	def test_posts_identity_includes_and_rates_to_agent_endpoint(self):
-		make_plan("bundle-test-push")
+class TestProvisionWritesLock(IntegrationTestCase):
+	def setUp(self):
+		ensure_team(TEAM)
+		complete_billing_profile(TEAM, currency="INR")
+		make_plan(PLAN)  # INR catalog rate 3200
+		frappe.db.delete("Price Lock", {"team": TEAM})
+		frappe.db.commit()
 
-		with patch("central.billing.platform.sync.requests.post") as mock_post:
-			mock_post.return_value = MagicMock(status_code=200)
-			mock_post.return_value.json.return_value = {"message": {"received": ["bundle-test-push"]}}
+	def test_provision_writes_open_lock_at_catalog_rate(self):
+		res = subscriptions.provision_subscription(TEAM, CLUSTER, PLAN)
 
-			push_plans_to_agent(agent_url="https://agent.example", plans=["bundle-test-push"])
+		self.assertTrue(res["resource_id"])
+		self.assertEqual(res["currency"], "INR")
+		self.assertEqual(res["shown_rate"], 3200)
 
-		self.assertEqual(mock_post.call_count, 1)
-		_, kwargs = mock_post.call_args
-		# Targets the Agent's receive_plans method endpoint.
-		self.assertIn("press_billing_agent.sync.receive_plans", kwargs["url"])
+		lock = frappe.db.get_value(
+			"Price Lock",
+			{"team": TEAM, "resource_id": res["resource_id"]},
+			["plan", "locked_rate", "central_rate", "discrepancy", "ended_at", "event_type"],
+			as_dict=True,
+		)
+		self.assertIsNotNone(lock)  # provisioning wrote the lock — no agent push needed
+		self.assertEqual(lock.plan, PLAN)
+		self.assertEqual(lock.event_type, "subscribed")
+		self.assertFalse(lock.ended_at)  # an open (live) lock
+		# Rate shown == rate locked == Central's catalog rate: no discrepancy.
+		self.assertEqual(float(lock.locked_rate), 3200)
+		self.assertEqual(float(lock.central_rate), 3200)
+		self.assertFalse(lock.discrepancy)
 
-		pushed = kwargs["json"]["plans"][0]
-		self.assertEqual(pushed["plan"], "bundle-test-push")  # immutable identity
-		self.assertEqual(len(pushed["includes"]), 3)  # composition, no price
-		rates_by_ccy = {r["currency"]: r["rate"] for r in pushed["rates"]}
-		self.assertEqual(rates_by_ccy["USD"], 40)  # full rate set, both currencies
-		self.assertEqual(rates_by_ccy["INR"], 3200)
+	def test_provision_lock_drives_invoice_generation(self):
+		from central.billing.revenue import invoicing
+
+		res = subscriptions.provision_subscription(
+			TEAM, CLUSTER, PLAN, start_date="2026-06-01"
+		)
+		name = invoicing.generate_draft_invoice(res["subscription"], "2026-06-01", "2026-06-30")
+		inv = frappe.get_doc("Invoice", name)
+		# A full June on the locked ₹3200 plan → a non-zero draft generated straight
+		# from Central's own price-lock, with no agent in the loop.
+		self.assertEqual(inv.status, "Draft")
+		self.assertGreater(inv.subtotal, 0)
+		self.assertTrue(inv.items)

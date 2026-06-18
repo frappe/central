@@ -13,7 +13,7 @@ from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
 from central.billing.catalog.signing import generate_keypair
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import ensure_team, make_plan, set_team_tier
 
 TEAM = "team-dunning"
 CLUSTER = "ap-south-1"
@@ -44,10 +44,7 @@ class DunningTestBase(IntegrationTestCase):
 		self._priv, self._pub = generate_keypair()
 		frappe.conf.entitlement_private_key = self._priv
 		self._purge()
-		if not frappe.db.exists("Trust Tier", TEAM):
-			frappe.get_doc(
-				{"doctype": "Trust Tier", "team": TEAM, "tier": "t1", "max_spend": 50000}
-			).insert(ignore_permissions=True)
+		set_team_tier(TEAM, level="t1", max_spend=50000)
 
 	def tearDown(self):
 		self._purge()
@@ -58,8 +55,7 @@ class DunningTestBase(IntegrationTestCase):
 		for pm in frappe.get_all("Payment Method", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Payment Method", {"name": pm})
 		frappe.db.delete("Entitlement Token", {"team": TEAM})
-		if frappe.db.exists("Trust Tier", TEAM):
-			frappe.db.delete("Trust Tier", {"team": TEAM})
+		frappe.db.delete("Billing Profile", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})

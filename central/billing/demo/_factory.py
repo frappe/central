@@ -63,10 +63,21 @@ ANCHOR = "2026-06-01"  # the current (open) billing month
 
 def _tiers():
 	for level, seq, default, cap, res, inv, paid in TIERS:
+		# The TIERS table is denominated in INR; the per-currency thresholds are
+		# derived from it at seed time via FX (a one-off seeding convenience — the
+		# runtime never converts, it reads the row for the team's currency).
+		thresholds = [
+			{
+				"currency": c,
+				"max_spend": round(cap / FX[c], 2),
+				"min_cumulative_paid": round(paid / FX[c], 2),
+			}
+			for c in CURRENCIES
+		]
 		_upsert("Trust Tier Level", level, {
 			"tier": level, "sequence": seq, "is_default": default,
-			"max_spend": cap, "max_resource_count": res,
-			"min_paid_invoices": inv, "min_cumulative_paid": paid,
+			"max_resource_count": res, "min_paid_invoices": inv,
+			"thresholds": thresholds,
 		}, newname=True)
 
 
@@ -125,11 +136,10 @@ def _gateways():
 
 
 def _tier(team, level):
-	cap = next(t[3] for t in TIERS if t[0] == level)
-	res = next(t[4] for t in TIERS if t[0] == level)
-	_upsert("Trust Tier", team, {
-		"team": team, "level": level, "tier": level,
-		"max_spend": cap, "max_resource_count": res, "manual_override": 1,
+	# The tier is a link on the Billing Profile; the cap resolves live from the
+	# level × the team's currency. manual_override pins the demo team's tier.
+	frappe.db.set_value("Billing Profile", team, {
+		"trust_tier_level": level, "trust_tier": level, "manual_override": 1,
 	})
 
 
@@ -138,19 +148,84 @@ def _tax(team, currency):
 	_upsert("Tax Profile", team, {"team": team, "output_tax_type": tax_type, "output_tax_rate": rate})
 
 
+# country must be a valid Country (Billing Profile.country is a Link); for India
+# the state must be a GST state whose code matches the GSTIN (27 = Maharashtra).
+_GEO_BY_CLUSTER = {
+	"in-mumbai": ("India", "Maharashtra", "Mumbai", "400001"),
+	"eu-frankfurt": ("Germany", "Hesse", "Frankfurt", "60311"),
+	"me-dubai": ("United Arab Emirates", "Dubai", "Dubai", "00000"),
+}
+
+
 def _profile(team, slug, currency, cluster):
-	region = next(label for s, label, _c in CLUSTERS if s == cluster)
 	india = currency == "INR"
+	country, state, city, pincode = _GEO_BY_CLUSTER.get(cluster, ("India", "Maharashtra", "Mumbai", "400001"))
 	_upsert("Billing Profile", team, {
 		"team": team, "currency": currency,
 		"legal_name": f"{slug.replace('-', ' ').title()} Ltd",
 		"email": f"billing@{slug}.example",
 		"gstin": "27AAPFU0939F1ZV" if india else None,
-		"address_line1": "1 Demo Street", "city": region.split("—")[-1].strip(),
-		"state": "Maharashtra" if india else region.split("—")[-1].strip(),
-		"country": "India" if india else region.split("—")[0].strip(),
-		"pincode": "400001" if india else "00000",
+		"address_line1": "1 Demo Street", "city": city,
+		"state": state, "country": country, "pincode": pincode,
 	})
+
+
+# --- team roster (members + custom role) ------------------------------------
+
+# (suffix, system role, member status) — a roster with role AND status variety so
+# the Members & Roles screen shows the full spread. Roster users are created
+# DISABLED so User.after_insert never bootstraps a personal team for them; they
+# exist only as members of the demo team.
+_MEMBER_ROSTER = [
+	("admin", "Admin", "Active"),
+	("dev", "Developer", "Active"),
+	("billing", "Billing", "Active"),
+	("viewer", "Viewer", "Active"),
+	("contractor", "Developer", "Suspended"),
+	("invitee", "Viewer", "Invited"),
+]
+
+# One team-scoped CUSTOM role, to exercise the custom-role path end to end: read
+# billing and operate (start/stop) VMs, but not manage members or terminate.
+_CUSTOM_ROLE = ("Finance & Ops", ["billing:view", "billing:manage", "vm:view", "vm:start", "vm:stop"])
+
+
+def _team_members(team, slug):
+	"""Give the demo team a realistic roster — members on varied system roles with
+	status variety, plus one team-scoped custom role. Idempotent: resets the roster
+	(and the team's custom role) on every reseed, keeping only the Owner."""
+	role = _custom_role(team)
+	doc = frappe.get_doc("Team", team)
+	doc.members = [m for m in doc.members if m.user == doc.owner_user]
+	for suffix, member_role, status in _MEMBER_ROSTER + [("finance", role, "Active")]:
+		email = f"{suffix}-{slug}@example.com"
+		_ensure_member_user(email, f"{suffix.title()} ({slug})")
+		doc.append("members", {"user": email, "role": member_role, "status": status})
+	doc.save(ignore_permissions=True)
+
+
+def _custom_role(team):
+	"""(Re)create this team's single custom Team Role and return its name."""
+	for existing in frappe.get_all("Team Role", {"team": team, "is_system": 0}, pluck="name"):
+		frappe.delete_doc("Team Role", existing, force=True, ignore_permissions=True)
+	name, caps = _CUSTOM_ROLE
+	return frappe.get_doc({
+		"doctype": "Team Role", "role_name": name, "is_system": 0, "team": team,
+		"capabilities": [{"capability": c} for c in caps],
+	}).insert(ignore_permissions=True).name
+
+
+def _ensure_member_user(email, full_name):
+	"""Roster-only user, created DISABLED so the after_insert hook doesn't bootstrap
+	a personal team (central.users.bootstrap_user_team skips disabled users)."""
+	if frappe.db.exists("User", email):
+		return email
+	first, _, last = full_name.partition(" ")
+	frappe.get_doc({
+		"doctype": "User", "email": email, "first_name": first, "last_name": last or None,
+		"send_welcome_email": 0, "enabled": 0,
+	}).insert(ignore_permissions=True)
+	return email
 
 
 def _payment_setup(team, slug, currency, state):
@@ -326,7 +401,7 @@ def _wipe_all():
 	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Gateway Customer",
 					 "Price Lock", "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
 					 "Billing Notification Log", "Entitlement Token", "Webhook Event", "Subscription")
-	config = ("Trust Tier", "Tax Profile", "Billing Profile")
+	config = ("Tax Profile", "Billing Profile")
 	catalog = ("Plan", "Add-on", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:
 		try:

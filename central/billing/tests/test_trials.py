@@ -55,8 +55,7 @@ class TrialTestBase(IntegrationTestCase):
 		for dt in ("Invoice", "Price Lock", "Credit Ledger Entry"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
-		if frappe.db.exists("Trust Tier", TEAM):
-			frappe.db.delete("Trust Tier", {"team": TEAM})
+		frappe.db.delete("Billing Profile", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})

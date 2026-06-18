@@ -238,18 +238,14 @@ def _tier_and_tax():
 					"tier": tier,
 					"sequence": 0 if default else 1,
 					"is_default": default,
-					"max_spend": cap,
 					"max_resource_count": 5 if default else 50,
 					"min_paid_invoices": 0 if default else 1,
-					"min_cumulative_paid": 0 if default else 3000,
+					"thresholds": [
+						{"currency": "INR", "max_spend": cap,
+						 "min_cumulative_paid": 0 if default else 3000}
+					],
 				}
 			).insert(ignore_permissions=True)
-	# A paid (t1) team, so invoices are billable rather than cost_report.
-	_replace(
-		"Trust Tier",
-		TEAM,
-		{"tier": "t1", "level": "t1", "max_spend": 50000, "max_resource_count": 50, "manual_override": 1},
-	)
 	_replace(
 		"Tax Profile",
 		TEAM,
@@ -260,7 +256,10 @@ def _tier_and_tax():
 def _billing_profile():
 	"""A complete Billing Profile for the demo team. It is mandatory before any money
 	moves (top-up / payment method) and gates the dashboard, so without it the demo
-	team's UI is unreachable. Currency is INR — matching its wallet, card and invoices."""
+	team's UI is unreachable. Currency is INR — matching its wallet, card and invoices.
+
+	It also carries the team's trust tier: a paid (t1) team, pinned with
+	manual_override so invoices are billable rather than cost_report."""
 	_replace(
 		"Billing Profile",
 		TEAM,
@@ -276,6 +275,9 @@ def _billing_profile():
 			"state": "Maharashtra",
 			"country": "India",
 			"pincode": "400001",
+			"trust_tier_level": "t1",
+			"trust_tier": "t1",
+			"manual_override": 1,
 		},
 	)
 
@@ -400,7 +402,7 @@ def _replace(doctype, name, values):
 		frappe.delete_doc(doctype, name, force=True)
 	field = "__newname" if doctype in ("Plan", "Add-on", "Payment Gateway") else None
 	doc = {"doctype": doctype, **values}
-	if doctype in ("Trust Tier", "Tax Profile"):
+	if doctype == "Tax Profile":
 		doc["team"] = name
 	elif field:
 		doc[field] = name
@@ -417,7 +419,7 @@ def _wipe():
 		"Usage Rollup", "Credit Ledger Entry", "Subscription", "Billing Notification Log",
 	):
 		frappe.db.delete(dt, {"team": TEAM})
-	for dt in ("Credit Wallet", "Trust Tier", "Tax Profile", "Notification Preference", "Billing Profile"):
+	for dt in ("Credit Wallet", "Tax Profile", "Notification Preference", "Billing Profile"):
 		if frappe.db.exists(dt, TEAM):
 			frappe.delete_doc(dt, TEAM, force=True)
 	for inv in frappe.get_all("Team Invitation", {"team": TEAM}, pluck="name"):
@@ -465,7 +467,7 @@ def _ensure_workspace():
 	]
 	cards = {
 		"Billing Records": ["Invoice", "Payment Attempt", "Credit Ledger Entry", "Price Lock", "Usage Rollup"],
-		"Catalog & Config": ["Plan", "Add-on", "Payment Gateway", "Tax Profile", "Trust Tier"],
+		"Catalog & Config": ["Plan", "Add-on", "Payment Gateway", "Tax Profile", "Trust Tier Level"],
 	}
 	links = []
 	for card_name, doctypes in cards.items():

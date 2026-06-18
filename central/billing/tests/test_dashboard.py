@@ -202,10 +202,15 @@ class TestCustomerActions(CustomerDataBase):
 		super().tearDown()
 
 	def test_gstin_validation(self):
-		dashboard.save_billing_profile(TEAM, legal_name="Acme Pvt Ltd", gstin="27AAPFU0939F1ZV")
+		# 27 = Maharashtra: the GSTIN's state code must match the chosen state.
+		dashboard.save_billing_profile(TEAM, legal_name="Acme Pvt Ltd", state="Maharashtra",
+									   gstin="27AAPFU0939F1ZV")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "gstin"), "27AAPFU0939F1ZV")
 		with self.assertRaises(frappe.ValidationError):
-			dashboard.save_billing_profile(TEAM, legal_name="Acme", gstin="NOT-A-GSTIN")
+			dashboard.save_billing_profile(TEAM, legal_name="Acme", state="Maharashtra", gstin="NOT-A-GSTIN")
+		# state code mismatch (Karnataka is 29) is rejected too.
+		with self.assertRaises(frappe.ValidationError):
+			dashboard.save_billing_profile(TEAM, legal_name="Acme", state="Karnataka", gstin="27AAPFU0939F1ZV")
 
 
 	def test_purchase_credits(self):

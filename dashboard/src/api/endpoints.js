@@ -31,6 +31,7 @@ export const API = {
   paymentMethodOptions: `${D}.get_payment_method_options`,
   subscriptions: `${D}.list_subscriptions`,
   billingProfile: `${D}.get_billing_profile`,
+  billingGeo: `${D}.get_billing_geo`,
   billingSettings: `${D}.get_billing_settings`,
   collectionStatus: `${D}.get_collection_status`,
   notifications: `${D}.list_notifications`,
