@@ -1,0 +1,184 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:template_name",
+ "creation": "2026-06-18 00:00:00.000000",
+ "description": "Authoring tool: generate a t-shirt-size ladder of bundles, then price it per cluster. Reusable — re-apply pricing when a new cluster onboards (final-plan-pricing.md §11, issue #33).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "template_name",
+  "is_active",
+  "sizing_section",
+  "plan_class",
+  "start_vcpu",
+  "ceiling_vcpu",
+  "memory_ratio",
+  "base_disk_gb",
+  "base_transfer_gb",
+  "transfer_step_gb",
+  "column_break_sizing",
+  "plan_name_prefix",
+  "billing_cycle",
+  "pricing_section",
+  "base_rates",
+  "pricing_help",
+  "rungs_section",
+  "rungs"
+ ],
+ "fields": [
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "label": "Template Name",
+   "reqd": 1,
+   "unique": 1,
+   "description": "Identifies this reusable ladder (e.g. \"Standard 1:2\")."
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Generate Plans as Active"
+  },
+  {
+   "fieldname": "sizing_section",
+   "fieldtype": "Section Break",
+   "label": "Sizing"
+  },
+  {
+   "default": "General",
+   "fieldname": "plan_class",
+   "fieldtype": "Select",
+   "label": "Plan Class",
+   "options": "General\nCPU Optimised\nMemory Optimised\nStorage Optimised\nCustom",
+   "description": "Pins the memory ratio like a cloud family — CPU Optimised 1:2, General 1:4, Memory/Storage Optimised 1:8. Choose Custom to set the ratio yourself."
+  },
+  {
+   "default": "0.125",
+   "fieldname": "start_vcpu",
+   "fieldtype": "Float",
+   "label": "Start vCPU",
+   "precision": "3",
+   "reqd": 1,
+   "description": "Smallest rung, in vCPU (1 vCPU = 1000 millicores). The ladder doubles from here."
+  },
+  {
+   "default": "4",
+   "fieldname": "ceiling_vcpu",
+   "fieldtype": "Float",
+   "label": "Ceiling vCPU",
+   "precision": "3",
+   "reqd": 1,
+   "description": "Largest rung. The ladder doubles from start up to (and including) this."
+  },
+  {
+   "default": "1:4",
+   "fieldname": "memory_ratio",
+   "fieldtype": "Select",
+   "label": "Memory Ratio",
+   "options": "1:2\n1:4\n1:6\n1:8",
+   "reqd": 1,
+   "description": "GB RAM per vCPU. Set by Plan Class unless it is Custom. A pre-fill; edit a generated Plan to go off-ratio.",
+   "depends_on": "eval:doc.plan_class=='Custom'"
+  },
+  {
+   "default": "0",
+   "fieldname": "base_disk_gb",
+   "fieldtype": "Float",
+   "label": "Base Disk (GB)",
+   "precision": "3",
+   "description": "Disk for the smallest rung; scales with the size multiplier. 0 = no disk line."
+  },
+  {
+   "default": "0",
+   "fieldname": "base_transfer_gb",
+   "fieldtype": "Float",
+   "label": "Base Transfer (GB)",
+   "precision": "3",
+   "description": "Transfer for the smallest rung. 0 = no transfer line. Real transfer tiers are irregular — tune per rung below."
+  },
+  {
+   "default": "0",
+   "fieldname": "transfer_step_gb",
+   "fieldtype": "Float",
+   "label": "Transfer Step (GB)",
+   "precision": "3",
+   "description": "Added to transfer per rung (base + index × step), e.g. +1000 GB each step."
+  },
+  {
+   "fieldname": "column_break_sizing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Bundle",
+   "fieldname": "plan_name_prefix",
+   "fieldtype": "Data",
+   "label": "Plan Name Prefix",
+   "reqd": 1,
+   "description": "Generated plan names start with this (e.g. \"Bundle 2 vCPU 4 GB\")."
+  },
+  {
+   "default": "Monthly",
+   "fieldname": "billing_cycle",
+   "fieldtype": "Select",
+   "label": "Billing Cycle",
+   "options": "Monthly\nAnnual"
+  },
+  {
+   "fieldname": "pricing_section",
+   "fieldtype": "Section Break",
+   "label": "Default Pricing"
+  },
+  {
+   "fieldname": "base_rates",
+   "fieldtype": "Table",
+   "label": "Base Rates",
+   "options": "Plan Configurator Rate",
+   "reqd": 1,
+   "description": "One row per currency — the price of the smallest rung. Each rung is priced base_rate × its size multiplier."
+  },
+  {
+   "fieldname": "pricing_help",
+   "fieldtype": "HTML",
+   "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> opens a dialog to pick the cluster, currencies, and which rungs — then runs in the background, creating a bundle per rung and its rates. Re-run it per cluster (a plan is sellable on a cluster only where it has a rate, or a global one); blank cluster = global.</p>"
+  },
+  {
+   "fieldname": "rungs_section",
+   "fieldtype": "Section Break",
+   "label": "Rungs"
+  },
+  {
+   "fieldname": "rungs",
+   "fieldtype": "Table",
+   "label": "Rungs",
+   "options": "Plan Configurator Plan",
+   "description": "Populate from the formula, then edit before generating."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-18 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Plan Configurator",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

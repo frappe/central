@@ -48,6 +48,43 @@ def set_catalog_rates(priced_doctype: str, priced_for: str, rates) -> None:
 		).insert(ignore_permissions=True)
 
 
+def set_catalog_rate(
+	priced_doctype: str, priced_for: str, currency: str, rate, cluster: str | None = None
+) -> tuple[str, bool]:
+	"""Upsert one `Catalog Rate` for `(priced_for, cluster, currency)`.
+
+	Unlike `set_catalog_rates` (which replaces *every* row for a plan/add-on), this
+	touches a single cluster's row — so pricing one cluster never disturbs another.
+	Returns `(name, created)`; an existing row has its `rate` updated in place.
+	"""
+	cluster = (cluster or "").strip() or None
+	existing = frappe.db.get_value(
+		"Catalog Rate",
+		{
+			"priced_doctype": priced_doctype,
+			"priced_for": priced_for,
+			"currency": currency,
+			"cluster": cluster,
+		},
+		"name",
+	)
+	if existing:
+		frappe.db.set_value("Catalog Rate", existing, "rate", rate)
+		return existing, False
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "Catalog Rate",
+			"priced_doctype": priced_doctype,
+			"priced_for": priced_for,
+			"cluster": cluster,
+			"currency": currency,
+			"rate": rate,
+		}
+	).insert(ignore_permissions=True)
+	return doc.name, True
+
+
 def resolve_rate(rate_rows, currency: str, cluster: str | None = None):
 	"""Return the rate for (currency, cluster), or None if not configured.
 
