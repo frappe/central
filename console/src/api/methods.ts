@@ -16,6 +16,7 @@ export const API = {
   registry: 'central.atlas.registry',
   listInstances: 'central.atlas.list_instances',
   refreshAssets: 'central.atlas.refresh_assets',
+  createServer: 'central.atlas.create_server',
   startServer: 'central.atlas.start_server',
   stopServer: 'central.atlas.stop_server',
   terminateServer: 'central.atlas.terminate_server',

@@ -34,6 +34,21 @@ const refresh = useCall<RefreshResponse, TeamParams>({
   immediate: false,
 })
 
+type CreateParams = {
+  team: string | null
+  region: string
+  title: string
+  vcpus: number
+  memory_megabytes: number
+  disk_gigabytes: number
+  cpu_max_cores?: number
+}
+const createCall = useCall<{ resource_id: string }, CreateParams>({
+  url: method(API.createServer),
+  method: 'POST',
+  immediate: false,
+})
+
 const startCall = useCall<unknown, CommandParams>({ url: method(API.startServer), method: 'POST', immediate: false })
 const stopCall = useCall<unknown, CommandParams>({ url: method(API.stopServer), method: 'POST', immediate: false })
 const terminateCall = useCall<unknown, CommandParams>({ url: method(API.terminateServer), method: 'POST', immediate: false })
@@ -103,10 +118,26 @@ export function useServers() {
     }
   }
 
+  // Provision a new server in a region. Returns the new resource_id on success
+  // (so the caller can navigate), throws on failure (so it can surface the error).
+  async function create(params: Omit<CreateParams, 'team'>): Promise<string> {
+    await createCall.submit({ team: activeTeam.value, ...params })
+    // useCall surfaces HTTP failures on `.error` rather than throwing — surface
+    // it and re-throw so the page keeps the user on the form.
+    if (createCall.error) {
+      errorToast(createCall.error)
+      throw createCall.error
+    }
+    successToast(`Creating ${params.title} in ${params.region}.`)
+    registry.reload()
+    return createCall.data?.resource_id ?? ''
+  }
+
   return {
     servers: computed<Server[]>(() => registry.data?.assets ?? []),
     loading: computed(() => registry.loading),
     refreshing: computed(() => refresh.loading),
+    creating: computed(() => createCall.loading),
     // Atlas instances that couldn't be reached on the last refresh — their rows
     // show last-known data.
     stale: computed<string[]>(() => refresh.data?.stale ?? []),
@@ -114,6 +145,7 @@ export function useServers() {
     opening,
     reload: () => registry.reload(),
     refreshAssets,
+    create,
     start,
     stop,
     terminate,
