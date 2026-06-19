@@ -251,3 +251,46 @@ def stop_server(team: str | None = None, resource_id: str | None = None) -> dict
 def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Terminate a server. Gated on `server:terminate`."""
 	return _run_command("terminate", "server:terminate", "terminate", team, resource_id)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_server(
+	team: str | None = None,
+	region: str | None = None,
+	title: str | None = None,
+	vcpus: int | None = None,
+	memory_megabytes: int | None = None,
+	disk_gigabytes: int | None = None,
+	cpu_max_cores: float | None = None,
+) -> dict:
+	"""Provision a new server for a team in a region. Gated on `server:create`.
+
+	`region` is an Atlas Instance (one Atlas = one region), which is also how we
+	route the provision call. Atlas owns placement/image/lifecycle; we pass the
+	team (as the tenant's central_reference) and the chosen size. The returned VM
+	is upserted into the Asset mirror right away so it appears in the registry
+	without waiting for the next reconcile/event.
+	"""
+	user = frappe.session.user
+	team = _resolve_team(user, team)
+	if not can(user, team, "server:create"):
+		frappe.throw("You can't create servers for this team.", frappe.PermissionError)
+	if not region:
+		frappe.throw("region is required.", frappe.ValidationError)
+
+	client = AtlasClient.for_region(region)
+	# Seed the Atlas tenant (first use) with the team owner's email.
+	email = frappe.db.get_value("Team", team, "owner_user")
+
+	vm = client.create_vm(
+		central_reference=team,
+		title=title or "server",
+		vcpus=int(vcpus or 1),
+		memory_megabytes=int(memory_megabytes or 512),
+		disk_gigabytes=int(disk_gigabytes or 10),
+		email=email,
+		cpu_max_cores=cpu_max_cores,
+	)
+
+	_mirror_vm(client.instance.name, vm, synced_at=frappe.utils.now_datetime())
+	return {"resource_id": vm.get("name"), "server": vm}
