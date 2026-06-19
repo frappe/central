@@ -184,11 +184,17 @@ def list_instances(team: str | None = None) -> list[dict]:
 	team = _resolve_team(user, team)
 	if not can(user, team, "cluster:view"):
 		frappe.throw("You can't view clusters for this team.", frappe.PermissionError)
+	# Atlas Instance is global infrastructure that also holds the per-instance API
+	# credentials, so the DocType is locked to System Manager. Regions aren't
+	# user/team-scoped, and `cluster:view` already authorizes this read, so we
+	# bypass DocType RBAC and curate the safe, non-secret fields here — otherwise
+	# a Central User (e.g. a team Owner) gets an empty list.
 	return frappe.get_all(
 		"Atlas Instance",
 		filters={"status": "Active"},
 		fields=["region", "status", "reachable"],
 		order_by="region asc",
+		ignore_permissions=True,
 	)
 
 
