@@ -1,0 +1,48 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { Sidebar, ToastProvider } from 'frappe-ui'
+import { useSession } from '@/composables/useSession'
+import { useCapabilities } from '@/composables/useCapabilities'
+
+// App shell: the new frappe-ui Sidebar (collapsible, Espresso design system) +
+// the routed page. The header doubles as the team switcher — switching re-drives
+// the team-scoped reads (capabilities, registry). Sections are capability-gated.
+const { teams, activeTeam, activeTeamLabel, setActiveTeam } = useSession()
+const { canViewServers } = useCapabilities()
+
+// SidebarHeader renders `menuItems` as a dropdown (title + subtitle + chevron) —
+// the team switcher. The active team carries a check; the rest switch on click.
+const header = computed(() => ({
+  title: 'Central Console',
+  subtitle: activeTeamLabel.value,
+  menuItems: teams.value.map((team) => ({
+    label: team.label,
+    icon: team.name === activeTeam.value ? 'lucide-check' : 'lucide-users',
+    onClick: () => setActiveTeam(team.name),
+  })),
+}))
+
+const sections = computed(() => [
+  {
+    label: 'Compute',
+    items: [
+      {
+        label: 'Servers',
+        icon: 'lucide-server',
+        to: '/servers',
+        condition: () => canViewServers.value,
+      },
+    ],
+  },
+])
+</script>
+
+<template>
+  <div class="flex h-screen overflow-hidden bg-surface-white text-ink-gray-9">
+    <Sidebar :header="header" :sections="sections" />
+    <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <router-view />
+    </main>
+    <ToastProvider />
+  </div>
+</template>

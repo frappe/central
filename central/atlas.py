@@ -174,6 +174,29 @@ def registry(team: str | None = None) -> dict:
 	return {"team": team, "assets": assets}
 
 
+@frappe.whitelist(methods=["GET"])
+def list_instances(team: str | None = None) -> list[dict]:
+	"""List the regions a team can place servers in — every Active Atlas Instance.
+	A pure read used by the console's New Server region picker. Gated on
+	`cluster:view` (same scope as `registry`); the team only resolves the gate,
+	the region set itself is team-agnostic."""
+	user = frappe.session.user
+	team = _resolve_team(user, team)
+	if not can(user, team, "cluster:view"):
+		frappe.throw("You can't view clusters for this team.", frappe.PermissionError)
+	# Atlas Instance is global infrastructure that also holds the per-instance API
+	# credentials, so the DocType is locked to System Manager. Regions aren't
+	# user/team-scoped, and `cluster:view` already authorizes this read, so we
+	# bypass DocType RBAC and curate the safe, non-secret fields here — otherwise
+	# a Central User (e.g. a team Owner) gets an empty list.
+	return frappe.get_all(
+		"Atlas Instance",
+		filters={"status": "Active"},
+		fields=["region", "status", "reachable"],
+		order_by="region asc",
+	)
+
+
 @frappe.whitelist(methods=["POST"])
 def refresh_assets(team: str | None = None) -> dict:
 	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
@@ -233,3 +256,49 @@ def stop_server(team: str | None = None, resource_id: str | None = None) -> dict
 def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Terminate a server. Gated on `server:terminate`."""
 	return _run_command("terminate", "server:terminate", "terminate", team, resource_id)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_server(
+	team: str | None = None,
+	region: str | None = None,
+	title: str | None = None,
+	vcpus: int | None = None,
+	memory_megabytes: int | None = None,
+	disk_gigabytes: int | None = None,
+	cpu_max_cores: float | None = None,
+) -> dict:
+	"""Provision a new server for a team in a region. Gated on `server:create`.
+
+	`region` is an Atlas Instance (one Atlas = one region), which is also how we
+	route the provision call. Atlas owns placement/image/lifecycle; we pass the
+	team (as the tenant's central_reference) and the chosen size. The Asset mirror
+	is populated by the `vm.created` event Atlas emits on insert — the single
+	writer — so we don't upsert here as well.
+	"""
+	user = frappe.session.user
+	team = _resolve_team(user, team)
+	if not can(user, team, "server:create"):
+		frappe.throw("You can't create servers for this team.", frappe.PermissionError)
+	if not region:
+		frappe.throw("region is required.", frappe.ValidationError)
+
+	client = AtlasClient.for_region(region)
+	# Seed the Atlas tenant (first use) with the team owner's email.
+	email = frappe.db.get_value("Team", team, "owner_user")
+
+	vm = client.create_vm(
+		central_reference=team,
+		title=title or "server",
+		vcpus=int(vcpus or 1),
+		memory_megabytes=int(memory_megabytes or 512),
+		disk_gigabytes=int(disk_gigabytes or 10),
+		email=email,
+		cpu_max_cores=cpu_max_cores,
+	)
+
+	# No _mirror_vm here: Atlas's `vm.created` event is the single mirror writer.
+	# A second writer races that event — under REPEATABLE READ our exists-check
+	# can miss the event's just-inserted row, then the insert hits the unique key
+	# → DuplicateEntryError.
+	return {"resource_id": vm.get("name"), "server": vm}

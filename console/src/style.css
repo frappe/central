@@ -1,0 +1,14 @@
+@import 'frappe-ui/style.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* Standard reading-width page body. It is the growing child of the page's
+     `flex h-full flex-col` (header + body), and owns the vertical scroll:
+     min-h-0 + flex-1 + overflow-y-auto keep tall content scrollable instead of
+     clipping under the shell's overflow-hidden <main>. */
+  .page-body {
+    @apply mx-auto w-full max-w-[1100px] px-4 sm:px-6 min-h-0 flex-1 overflow-y-auto;
+  }
+}

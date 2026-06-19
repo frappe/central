@@ -11,9 +11,13 @@ fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
 ]
 
-# Central Console SPA (frappe-ui) — all client routes resolve to the www/dashboard page.
+# Central Console SPAs — each client route resolves to its www entry page.
+#   /dashboard → legacy JS app (www/dashboard).
+#   /console   → new TypeScript app (www/console). Both coexist; routing is the
+#               only thing that keeps them apart.
 website_route_rules = [
 	{"from_route": "/dashboard/<path:app_path>", "to_route": "dashboard"},
+	{"from_route": "/console/<path:app_path>", "to_route": "console"},
 ]
 
 # Apps
