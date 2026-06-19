@@ -174,6 +174,24 @@ def registry(team: str | None = None) -> dict:
 	return {"team": team, "assets": assets}
 
 
+@frappe.whitelist(methods=["GET"])
+def list_instances(team: str | None = None) -> list[dict]:
+	"""List the regions a team can place servers in — every Active Atlas Instance.
+	A pure read used by the console's New Server region picker. Gated on
+	`cluster:view` (same scope as `registry`); the team only resolves the gate,
+	the region set itself is team-agnostic."""
+	user = frappe.session.user
+	team = _resolve_team(user, team)
+	if not can(user, team, "cluster:view"):
+		frappe.throw("You can't view clusters for this team.", frappe.PermissionError)
+	return frappe.get_all(
+		"Atlas Instance",
+		filters={"status": "Active"},
+		fields=["region", "status", "reachable"],
+		order_by="region asc",
+	)
+
+
 @frappe.whitelist(methods=["POST"])
 def refresh_assets(team: str | None = None) -> dict:
 	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
