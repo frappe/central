@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
-import { useSession } from '@/composables/useSession'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 
 // Mirrors Central's capability IAM (central/iam.my_capabilities). Computed once
 // and bound to every screen: the UI just avoids offering buttons the API would
@@ -10,13 +10,14 @@ import { useSession } from '@/composables/useSession'
 // central/atlas.py: power drives start/stop, terminate destroys, open mints the
 // bench SSO link.
 
-const { activeTeam } = useSession()
-
-const capsCall = useCall<string[], { team: string | null }>({
+const capsCall = useCall<string[], { team: string }>({
   url: method(API.myCapabilities),
-  params: () => ({ team: activeTeam.value }),
+  params: teamParams,
   refetch: true,
+  immediate: false,
 })
+
+whenTeamReady(() => capsCall.reload())
 
 function has(cap: string): boolean {
   return capsCall.data?.includes(cap) ?? false

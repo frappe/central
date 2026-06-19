@@ -194,7 +194,6 @@ def list_instances(team: str | None = None) -> list[dict]:
 		filters={"status": "Active"},
 		fields=["region", "status", "reachable"],
 		order_by="region asc",
-		ignore_permissions=True,
 	)
 
 
@@ -273,9 +272,9 @@ def create_server(
 
 	`region` is an Atlas Instance (one Atlas = one region), which is also how we
 	route the provision call. Atlas owns placement/image/lifecycle; we pass the
-	team (as the tenant's central_reference) and the chosen size. The returned VM
-	is upserted into the Asset mirror right away so it appears in the registry
-	without waiting for the next reconcile/event.
+	team (as the tenant's central_reference) and the chosen size. The Asset mirror
+	is populated by the `vm.created` event Atlas emits on insert — the single
+	writer — so we don't upsert here as well.
 	"""
 	user = frappe.session.user
 	team = _resolve_team(user, team)
@@ -298,5 +297,8 @@ def create_server(
 		cpu_max_cores=cpu_max_cores,
 	)
 
-	_mirror_vm(client.instance.name, vm, synced_at=frappe.utils.now_datetime())
+	# No _mirror_vm here: Atlas's `vm.created` event is the single mirror writer.
+	# A second writer races that event — under REPEATABLE READ our exists-check
+	# can miss the event's just-inserted row, then the insert hits the unique key
+	# → DuplicateEntryError.
 	return {"resource_id": vm.get("name"), "server": vm}

@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { successToast, errorToast } from '@/lib/toast'
 import type {
   BenchLinkResponse,
@@ -18,14 +19,17 @@ import type {
 const { activeTeam } = useSession()
 
 // Param shapes for the lifecycle/SSO methods (central/atlas.py, central/sso.py).
-type TeamParams = { team: string | null }
-type CommandParams = { team: string | null; resource_id: string }
+type TeamParams = { team: string }
+type CommandParams = { team: string; resource_id: string }
 
 const registry = useCall<RegistryResponse, TeamParams>({
   url: method(API.registry),
-  params: () => ({ team: activeTeam.value }),
+  params: teamParams,
   refetch: true,
+  immediate: false,
 })
+
+whenTeamReady(() => registry.reload())
 
 // Re-pulls the mirror from every Active Atlas, then re-reads it.
 const refresh = useCall<RefreshResponse, TeamParams>({
@@ -35,7 +39,7 @@ const refresh = useCall<RefreshResponse, TeamParams>({
 })
 
 type CreateParams = {
-  team: string | null
+  team: string
   region: string
   title: string
   vcpus: number
@@ -68,7 +72,7 @@ async function runCommand(
 ): Promise<void> {
   busy.value = server.resource_id
   try {
-    await call.submit({ team: activeTeam.value, resource_id: server.resource_id })
+    await call.submit({ team: activeTeam.value!, resource_id: server.resource_id })
     successToast(`${verb} requested for ${server.title || server.resource_id}.`)
     registry.reload()
   } catch (e) {
@@ -81,7 +85,7 @@ async function runCommand(
 export function useServers() {
   async function refreshAssets(): Promise<void> {
     try {
-      await refresh.submit({ team: activeTeam.value })
+      await refresh.submit({ team: activeTeam.value! })
       registry.reload()
     } catch (e) {
       errorToast(e)
@@ -121,7 +125,7 @@ export function useServers() {
   // Provision a new server in a region. Returns the new resource_id on success
   // (so the caller can navigate), throws on failure (so it can surface the error).
   async function create(params: Omit<CreateParams, 'team'>): Promise<string> {
-    await createCall.submit({ team: activeTeam.value, ...params })
+    await createCall.submit({ team: activeTeam.value!, ...params })
     // useCall surfaces HTTP failures on `.error` rather than throwing — surface
     // it and re-throw so the page keeps the user on the form.
     if (createCall.error) {
