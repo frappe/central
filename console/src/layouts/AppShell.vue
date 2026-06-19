@@ -5,14 +5,21 @@ import { useSession } from '@/composables/useSession'
 import { useCapabilities } from '@/composables/useCapabilities'
 
 // App shell: the new frappe-ui Sidebar (collapsible, Espresso design system) +
-// the routed page. Sections are capability-gated — we only surface what the
-// signed-in user can act on. Servers is the only surface for now.
-const { activeTeamLabel } = useSession()
+// the routed page. The header doubles as the team switcher — switching re-drives
+// the team-scoped reads (capabilities, registry). Sections are capability-gated.
+const { teams, activeTeam, activeTeamLabel, setActiveTeam } = useSession()
 const { canViewServers } = useCapabilities()
 
+// SidebarHeader renders `menuItems` as a dropdown (title + subtitle + chevron) —
+// the team switcher. The active team carries a check; the rest switch on click.
 const header = computed(() => ({
   title: 'Central Console',
   subtitle: activeTeamLabel.value,
+  menuItems: teams.value.map((team) => ({
+    label: team.label,
+    icon: team.name === activeTeam.value ? 'lucide-check' : 'lucide-users',
+    onClick: () => setActiveTeam(team.name),
+  })),
 }))
 
 const sections = computed(() => [

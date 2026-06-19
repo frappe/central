@@ -5,17 +5,39 @@ import type { Team } from '@/types'
 
 // Identity for the console: which teams the signed-in user belongs to, and which
 // one is active. Module-level singletons so every screen + composable scopes its
-// reads (registry, capabilities) to the same team. A full team switcher is out of
-// scope for now — we default to the first team; `setActiveTeam` is ready for when
-// a switcher lands.
+// reads (registry, capabilities) to the same team, and a single switch re-drives
+// all of them. The active team is persisted so a refresh keeps your context.
 
-const activeTeam = ref<string | null>(null)
+const STORAGE_KEY = 'central.console.activeTeam'
+
+function storedTeam(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+const activeTeam = ref<string | null>(storedTeam())
+
+function selectTeam(name: string | null) {
+  activeTeam.value = name
+  try {
+    if (name) localStorage.setItem(STORAGE_KEY, name)
+  } catch {
+    /* storage unavailable (private mode) — in-memory selection still works */
+  }
+}
 
 const teamsCall = useCall<Team[]>({
   url: method(API.myTeams),
-  // my_teams takes no args; default the active team to the first one we get.
+  // Settle the active team once we know the roster: keep a valid stored choice,
+  // otherwise fall back to the first team. (my_teams takes no args.)
   onSuccess: (teams: Team[]) => {
-    if (!activeTeam.value && teams.length) activeTeam.value = teams[0].name
+    const names = teams.map((t) => t.name)
+    if (!activeTeam.value || !names.includes(activeTeam.value)) {
+      selectTeam(teams[0]?.name ?? null)
+    }
   },
 })
 
@@ -27,9 +49,7 @@ export function useSession() {
     activeTeamLabel: computed(
       () => (teamsCall.data ?? []).find((t) => t.name === activeTeam.value)?.label ?? 'Central',
     ),
-    setActiveTeam(name: string) {
-      activeTeam.value = name
-    },
+    setActiveTeam: selectTeam,
     reload: () => teamsCall.reload(),
   }
 }
