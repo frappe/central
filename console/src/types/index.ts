@@ -22,14 +22,18 @@ export interface Server {
   last_synced_at: string | null
 }
 
-/** Mirrors Atlas verbatim — see Asset.status options. */
+/** Mirrors the Atlas VM status verbatim. Atlas is the source of truth and can
+ *  report values beyond the Asset doctype's declared options (e.g. Provisioning),
+ *  so we keep the known states for autocomplete but accept any string. */
 export type ServerStatus =
   | 'Pending'
+  | 'Provisioning'
   | 'Running'
   | 'Paused'
   | 'Stopped'
   | 'Failed'
   | 'Terminated'
+  | (string & {})
 
 /** central.atlas.registry response. */
 export interface RegistryResponse {
