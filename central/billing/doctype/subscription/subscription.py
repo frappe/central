@@ -94,3 +94,17 @@ class Subscription(Document):
 		"""Mark this subscription disabled and save."""
 		self.enabled = 0
 		self.save(ignore_permissions=True)
+
+
+def create_subscription(asset_id: str):
+	"""Create an enabled Subscription for an Asset, using its team + plan."""
+	asset = frappe.get_doc("Asset", asset_id)
+	return frappe.get_doc(
+		{
+			"doctype": "Subscription",
+			"team": asset.team,
+			"asset_id": asset.name,
+			"plan": asset.plan,
+			"enabled": 1,
+		}
+	).insert(ignore_permissions=True)

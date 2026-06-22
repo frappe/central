@@ -212,3 +212,18 @@ def reconcile_subscription_resource(subscription: str, resource_id: str) -> dict
 
 # Deprecated agent-era name — agentless, Central writes the lock at provision time.
 reconcile_with_agent_event = reconcile_subscription_resource
+
+
+def backfill_missing_subscriptions():
+	"""Daily job: create a Subscription for any Running Asset that lacks an
+	active one (e.g. the Asset's status was set Running outside the normal flow).
+	"""
+	from central.billing.doctype.subscription.subscription import create_subscription
+
+	running_assets = frappe.get_all("Asset", filters={"status": "Running"}, pluck="name")
+	for asset_id in running_assets:
+		has_active_subscription = frappe.db.exists(
+			"Subscription", {"asset_id": asset_id, "enabled": 1}
+		)
+		if not has_active_subscription:
+			create_subscription(asset_id)
