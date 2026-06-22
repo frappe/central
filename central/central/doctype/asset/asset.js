@@ -1,4 +1,4 @@
-// Desk buttons for the Central → Atlas command path (central/atlas.py). The
+// Desk buttons for the Central → Atlas command path (central/api/servers.py). The
 // server methods re-check capability (server:power / server:terminate) and that
 // the asset belongs to the team, so these buttons just call them by id.
 frappe.ui.form.on("Asset", {
@@ -8,7 +8,7 @@ frappe.ui.form.on("Asset", {
 		const run = (label, method, indicator) =>
 			frappe
 				.call({
-					method: `central.atlas.${method}`,
+					method: `central.api.servers.${method}`,
 					args: { team: frm.doc.team, resource_id: frm.doc.resource_id },
 					freeze: true,
 					freeze_message: __("{0}…", [label]),

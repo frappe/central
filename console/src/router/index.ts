@@ -24,7 +24,7 @@ export const router = createRouter({
 })
 
 // Identity first — team-scoped atlas reads await my_teams so they always carry
-// ?team=… (see central.atlas._resolve_team).
+// ?team=… (see central.iam.resolve_team).
 router.beforeEach(async () => {
   await sessionReady
   return true

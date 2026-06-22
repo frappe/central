@@ -5,7 +5,7 @@ import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import type { Region } from '@/types'
 
 // Regions a team can place servers in — the Active Atlas Instances
-// (central.atlas.list_instances). Used by the New Server flow's region picker.
+// (central.api.servers.list_instances). Used by the New Server flow's region picker.
 
 const instances = useCall<Region[], { team: string }>({
   url: method(API.listInstances),

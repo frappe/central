@@ -6,7 +6,7 @@ import type { Server } from '@/types'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
 // server's status and the user's capabilities — the same rules the API enforces
-// in central/atlas.py, so we never offer a button that would 403. The component
+// in central/api/servers.py, so we never offer a button that would 403. The component
 // is presentational: it emits the chosen verb; the page owns the calls.
 const props = defineProps<{
   server: Server

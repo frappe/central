@@ -3,7 +3,8 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.atlas import ingest_event, reconcile, reconcile_atlas, refresh_assets, registry
+from central.api.servers import refresh_assets, registry
+from central.integrations.atlas import ingest_event, reconcile, reconcile_atlas
 from central.tests.test_iam import ensure_user
 
 
@@ -104,21 +105,21 @@ class TestAtlasMirror(IntegrationTestCase):
 		)
 		instance = frappe.get_doc("Atlas Instance", self.region)
 		pulled = [{"name": "vm-3", "central_reference": self.team.name, "status": "Stopped", "gateway_url": None}]
-		with patch("central.atlas.AtlasClient.central_vms", return_value=pulled):
+		with patch("central.integrations.atlas.AtlasClient.central_vms", return_value=pulled):
 			reconcile_atlas(instance, self.team.name)
 		self.assertEqual(frappe.db.get_value("Asset", "vm-3", "status"), "Stopped")
 		self.assertEqual(frappe.db.get_value("Asset", "gone", "status"), "Terminated")
 
 	def test_refresh_assets_reconciles_and_registry_lists(self):
 		pulled = [{"name": "vm-4", "central_reference": self.team.name, "status": "Running", "gateway_url": None}]
-		with patch("central.atlas.AtlasClient.central_vms", return_value=pulled):
+		with patch("central.integrations.atlas.AtlasClient.central_vms", return_value=pulled):
 			result = refresh_assets(team=self.team.name)
 		self.assertIn(self.region, result["synced"])
 		ids = {a["resource_id"] for a in registry(team=self.team.name)["assets"]}
 		self.assertIn("vm-4", ids)
 
 	def test_reconcile_is_failsoft_when_atlas_unreachable(self):
-		with patch("central.atlas.AtlasClient.central_vms", side_effect=Exception("unreachable")):
+		with patch("central.integrations.atlas.AtlasClient.central_vms", side_effect=Exception("unreachable")):
 			result = reconcile(team=self.team.name)
 		self.assertIn(self.region, result["stale"])
 

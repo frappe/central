@@ -11,14 +11,14 @@ import type {
   Server,
 } from '@/types'
 
-// The team's servers, read from the Asset mirror (central.atlas.registry), plus
+// The team's servers, read from the Asset mirror (central.api.servers.registry), plus
 // the lifecycle command path. The mirror is kept fresh by Atlas's event push +
 // the reconcile pull, so a command's effect lands on the next refresh, not
 // synchronously — hence every action `reload()`s after it fires.
 
 const { activeTeam } = useSession()
 
-// Param shapes for the lifecycle/SSO methods (central/atlas.py, central/sso.py).
+// Param shapes for the lifecycle/SSO methods (central/api/servers.py, central/sso.py).
 type TeamParams = { team: string }
 type CommandParams = { team: string; resource_id: string }
 

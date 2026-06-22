@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.atlas_client import AtlasClient, AtlasError, get_atlas_instance
+from central.integrations.atlas import AtlasClient, AtlasError, get_atlas_instance
 
 
 class TestAtlasInstance(IntegrationTestCase):

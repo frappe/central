@@ -9,7 +9,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { SIZE_PRESETS, presetSpecs, type SizePreset } from '@/lib/plans'
 
 // New server. Region is the set of available Atlas Instances; size is a preset
-// (no Plan doctype on Central yet). Create routes through central.atlas
+// (no Plan doctype on Central yet). Create routes through central.api.servers
 // .create_server → the region's Atlas → a real VM (dev fake provider), which is
 // mirrored back so it shows on the Servers list.
 const router = useRouter()

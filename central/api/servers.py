@@ -1,0 +1,148 @@
+from __future__ import annotations
+
+import frappe
+
+from central.iam import can, resolve_team
+from central.integrations.atlas import AtlasClient, reconcile
+
+# Server endpoints for the console. Reads come from the Asset mirror; commands go
+# to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
+# here). Every call resolves and authorizes a team first.
+
+
+@frappe.whitelist(methods=["GET"])
+def registry(team: str | None = None) -> dict:
+	"""List a team's VMs from the Asset mirror — a pure read. Gated on `cluster:view`."""
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "cluster:view"):
+		frappe.throw("You can't view this team's clusters.", frappe.PermissionError)
+	assets = frappe.get_all(
+		"Asset",
+		filters={"team": team},
+		fields=[
+			"resource_id",
+			"title",
+			"cluster",
+			"status",
+			"vcpus",
+			"memory_megabytes",
+			"disk_gigabytes",
+			"ipv6_address",
+			"public_ipv4",
+			"gateway_url",
+			"last_synced_at",
+		],
+		order_by="cluster asc, resource_id asc",
+	)
+	return {"team": team, "assets": assets}
+
+
+@frappe.whitelist(methods=["GET"])
+def list_instances(team: str | None = None) -> list[dict]:
+	"""List the regions a team can place servers in — every Active Atlas Instance.
+	A pure read for the console's New Server region picker. Gated on `cluster:view`
+	(same scope as `registry`); the team only resolves the gate, the region set is
+	team-agnostic."""
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "cluster:view"):
+		frappe.throw("You can't view clusters for this team.", frappe.PermissionError)
+	# Atlas Instance is global infrastructure holding per-instance API credentials,
+	# so the DocType is locked to System Manager. `cluster:view` already authorizes
+	# this read, so we bypass DocType RBAC and curate the safe, non-secret fields
+	# here — otherwise a Central User (e.g. a team Owner) gets an empty list.
+	return frappe.get_all(
+		"Atlas Instance",
+		filters={"status": "Active"},
+		fields=["region", "status", "reachable"],
+		order_by="region asc",
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+def refresh_assets(team: str | None = None) -> dict:
+	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
+	twin of the scheduled reconcile. Gated on `cluster:view`."""
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "cluster:view"):
+		frappe.throw("You can't refresh this team's clusters.", frappe.PermissionError)
+	return reconcile(team)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_server(
+	team: str | None = None,
+	region: str | None = None,
+	title: str | None = None,
+	vcpus: int | None = None,
+	memory_megabytes: int | None = None,
+	disk_gigabytes: int | None = None,
+	cpu_max_cores: float | None = None,
+) -> dict:
+	"""Provision a new server for a team in a region. Gated on `server:create`.
+
+	`region` is an Atlas Instance (one Atlas = one region), which is also how we
+	route the provision call. Atlas owns placement/image/lifecycle; we pass the team
+	(as the tenant's central_reference) and the chosen size. The Asset mirror is
+	populated by the `vm.created` event Atlas emits — the single writer — so we
+	don't upsert here (a second writer would race that event)."""
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "server:create"):
+		frappe.throw("You can't create servers for this team.", frappe.PermissionError)
+	if not region:
+		frappe.throw("region is required.", frappe.ValidationError)
+
+	client = AtlasClient.for_region(region)
+	# Seed the Atlas tenant (first use) with the team owner's email.
+	email = frappe.db.get_value("Team", team, "owner_user")
+	vm = client.create_vm(
+		central_reference=team,
+		title=title or "server",
+		vcpus=int(vcpus or 1),
+		memory_megabytes=int(memory_megabytes or 512),
+		disk_gigabytes=int(disk_gigabytes or 10),
+		email=email,
+		cpu_max_cores=cpu_max_cores,
+	)
+	return {"resource_id": vm.get("name"), "server": vm}
+
+
+@frappe.whitelist(methods=["POST"])
+def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Start a stopped server. Gated on `server:power`."""
+	return _run_command("start", "server:power", "start", team, resource_id)
+
+
+@frappe.whitelist(methods=["POST"])
+def stop_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Stop a running server. Gated on `server:power`."""
+	return _run_command("stop", "server:power", "stop", team, resource_id)
+
+
+@frappe.whitelist(methods=["POST"])
+def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Terminate a server. Gated on `server:terminate`."""
+	return _run_command("terminate", "server:terminate", "terminate", team, resource_id)
+
+
+def _run_command(action: str, capability: str, atlas_method: str, team: str | None, resource_id: str | None) -> dict:
+	"""Shared lifecycle path (start/stop/terminate): gate on `capability`, confirm
+	the asset belongs to the team, call Atlas, return the Task handle."""
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, capability):
+		frappe.throw(f"You can't {action} servers for this team.", frappe.PermissionError)
+	if not resource_id:
+		frappe.throw("resource_id is required.", frappe.ValidationError)
+
+	# The asset must be in this team's mirror — also how we route to its Atlas.
+	cluster = frappe.db.get_value("Asset", {"resource_id": resource_id, "team": team}, "cluster")
+	if not cluster:
+		frappe.throw(f"No server '{resource_id}' for this team.", frappe.DoesNotExistError)
+
+	instance = frappe.get_doc("Atlas Instance", cluster)
+	task = AtlasClient(instance).vm_action(resource_id, atlas_method)
+	return {"resource_id": resource_id, "task": task}
