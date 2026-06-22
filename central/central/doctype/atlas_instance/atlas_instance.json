@@ -1,8 +1,7 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "field:region",
- "creation": "2026-06-16 00:00:00.000000",
+ "creation": "2026-06-16 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -80,6 +79,7 @@
    "default": "0",
    "fieldname": "reachable",
    "fieldtype": "Check",
+   "is_virtual": 1,
    "label": "Reachable",
    "read_only": 1
   },
@@ -91,7 +91,7 @@
   }
  ],
  "links": [],
- "modified": "2026-06-16 00:00:00.000000",
+ "modified": "2026-06-22 17:27:10.707891",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Atlas Instance",
@@ -111,6 +111,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "region",
  "sort_order": "ASC",
  "states": [],
