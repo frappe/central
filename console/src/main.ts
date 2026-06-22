@@ -9,6 +9,10 @@ import './style.css'
 // so no extra request config is needed beyond the FrappeUI plugin.
 const app = createApp(App)
 app.use(router)
-app.use(FrappeUI)
+app.use(FrappeUI, {
+    socketio: (window as any).socketio_port
+      ? { port: (window as any).socketio_port }
+      : true,
+  })
 
 router.isReady().then(() => app.mount('#app'))
