@@ -1,5 +1,6 @@
 import {
   getCurrentInstance,
+  onScopeDispose,
   readonly,
   ref,
   toValue,
@@ -148,6 +149,27 @@ export function useFrappeDocTypeEventListener(
   useFrappeEventListener<DocTypeListUpdateEvent>('list_update', (event) => {
     if (event.doctype === toValue(doctype)) onListUpdate(event)
   })
+}
+
+interface ListInvalidationOptions {
+  debounceMs?: number
+}
+
+/** Reload a list after Frappe commits a document change, coalescing event bursts. */
+export function useFrappeListInvalidation(
+  doctype: MaybeRefOrGetter<string>,
+  reload: () => unknown,
+  options: ListInvalidationOptions = {},
+): void {
+  const debounceMs = options.debounceMs ?? 150
+  let timer: number | undefined
+
+  useFrappeDocTypeEventListener(doctype, () => {
+    window.clearTimeout(timer)
+    timer = window.setTimeout(reload, debounceMs)
+  })
+
+  onScopeDispose(() => window.clearTimeout(timer))
 }
 
 function useFrappeSocket(): FrappeSocket {
