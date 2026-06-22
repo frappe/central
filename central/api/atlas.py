@@ -13,8 +13,8 @@ from central.integrations.atlas import ingest_event
 def event(**kwargs) -> dict:
 	"""
 	Webhook sink for Atlas lifecycle events. Atlas authenticates with its Frappe
-	token; ingest_event verifies the `atlas_id` is one we know before touching the
-	mirror. Body: `atlas_id`, `type`, `payload`, `occurred_at`.
+	token; ingest_event verifies the sender, then queues the mirror update so Atlas
+	gets a fast ack. Body: `atlas_id`, `type`, `payload`, `occurred_at`.
 
 	"""
 	data = frappe._dict(kwargs)
