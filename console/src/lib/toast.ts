@@ -18,13 +18,17 @@ interface FrappeError {
 }
 
 export function errorToast(e: unknown, fallback = 'Something went wrong.'): void {
+  toast.error(getErrorMessage(e, fallback))
+}
+
+export function getErrorMessage(e: unknown, fallback = 'Something went wrong.'): string {
   const err = (e ?? {}) as FrappeError
   const msg =
     err.messages?.[0] ||
     err.exc_message ||
     err.message ||
     (typeof e === 'string' ? e : fallback)
-  toast.error(stripHtml(msg))
+  return stripHtml(msg)
 }
 
 function stripHtml(s: string): string {

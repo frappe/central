@@ -5,6 +5,8 @@
 /** A team's VM, mirrored from Atlas into the Asset doctype. The console only
  *  ever reads this (the mirror is written by the Atlas event push / reconcile). */
 export interface Server {
+  /** Asset.name; identical to resource_id because the DocType uses it for autoname. */
+  name: string
   /** Asset.resource_id — the Atlas VM id (source of truth, a UUID). */
   resource_id: string
   /** Human label mirrored from the Atlas VM. */

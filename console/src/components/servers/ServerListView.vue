@@ -1,14 +1,25 @@
 <script setup lang="ts">
+import { computed, h } from 'vue'
 import { Button } from 'frappe-ui'
-import ServerStatusBadge from '@/components/servers/ServerStatusBadge.vue'
+import {
+  ListView,
+  type ListViewColumn,
+  type ListViewFilter,
+  type ListViewQuery,
+} from '@/components/common/list-view'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
+import ServerStatusBadge from '@/components/servers/ServerStatusBadge.vue'
 import { formatSpecs } from '@/lib/format'
 import type { Server } from '@/types'
 
-// Standard server list. Presentational: the page owns data + actions and passes
-// capability flags down so the row only offers what the API would allow.
-defineProps<{
+const props = defineProps<{
   servers: Server[]
+  totalRows: number
+  countLoading: boolean
+  query: ListViewQuery
+  loading: boolean
+  error: string | null
+  canCreate: boolean
   canPower: boolean
   canTerminate: boolean
   canOpen: boolean
@@ -17,64 +28,128 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
+  'update:query': [query: ListViewQuery]
+  retry: []
+  create: []
   start: [server: Server]
   stop: [server: Server]
   terminate: [server: Server]
   open: [server: Server]
 }>()
+
+const columns = computed<ListViewColumn<Server>[]>(() => [
+  {
+    id: 'title',
+    accessorFn: (server) => server.title || server.resource_id,
+    header: 'Name',
+    size: 280,
+    cell: ({ row }) =>
+      h('div', { class: 'min-w-0' }, [
+        h(
+          'p',
+          { class: 'truncate font-medium text-ink-gray-9' },
+          row.original.title || row.original.resource_id,
+        ),
+        h(
+          'p',
+          { class: 'mt-0.5 truncate text-p-sm text-ink-gray-5 sm:hidden' },
+          formatSpecs(row.original),
+        ),
+      ]),
+  },
+  {
+    accessorKey: 'cluster',
+    header: 'Region',
+    size: 180,
+    cell: ({ getValue }) => h('span', { class: 'text-ink-gray-7' }, String(getValue())),
+  },
+  {
+    id: 'specs',
+    accessorFn: formatSpecs,
+    header: 'Specs',
+    size: 220,
+    enableSorting: false,
+    cell: ({ getValue }) => h('span', { class: 'text-ink-gray-7' }, String(getValue())),
+    meta: {
+      headerClass: 'hidden sm:table-cell',
+      cellClass: 'hidden sm:table-cell',
+    },
+  },
+  {
+    accessorKey: 'status',
+    header: 'Status',
+    size: 140,
+    cell: ({ row }) => h(ServerStatusBadge, { status: row.original.status }),
+  },
+  {
+    id: 'actions',
+    header: 'Actions',
+    size: 210,
+    enableSorting: false,
+    enableGlobalFilter: false,
+    meta: { align: 'end' },
+    cell: ({ row }) =>
+      h('div', { class: 'flex items-center justify-end gap-1' }, [
+        props.canOpen
+          ? h(Button, {
+              variant: 'ghost',
+              label: 'Open',
+              iconRight: 'lucide-external-link',
+              loading: props.opening === row.original.resource_id,
+              disabled: row.original.status !== 'Running' || !row.original.gateway_url,
+              onClick: (event: Event) => {
+                event.stopPropagation()
+                emit('open', row.original)
+              },
+            })
+          : null,
+        h(ServerRowActions, {
+          server: row.original,
+          canPower: props.canPower,
+          canTerminate: props.canTerminate,
+          busy: props.busy === row.original.resource_id,
+          onStart: (server: Server) => emit('start', server),
+          onStop: (server: Server) => emit('stop', server),
+          onTerminate: (server: Server) => emit('terminate', server),
+        }),
+      ]),
+  },
+])
+
+const filters: ListViewFilter[] = [
+  {
+    key: 'status',
+    label: 'Status',
+    options: ['Pending', 'Provisioning', 'Running', 'Paused', 'Stopped', 'Failed', 'Terminated']
+      .map((value) => ({ label: value, value })),
+  },
+]
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-lg border border-outline-gray-2">
-    <table class="w-full border-collapse text-left">
-      <thead>
-        <tr class="border-b border-outline-gray-2 bg-surface-gray-1 text-p-sm text-ink-gray-5">
-          <th class="px-4 py-2.5 font-medium">Name</th>
-          <th class="px-4 py-2.5 font-medium">Region</th>
-          <th class="hidden px-4 py-2.5 font-medium sm:table-cell">Specs</th>
-          <th class="px-4 py-2.5 font-medium">Status</th>
-          <th class="px-4 py-2.5 text-right font-medium">Actions</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-outline-gray-1">
-        <tr
-          v-for="server in servers"
-          :key="server.resource_id"
-          class="text-base text-ink-gray-8 hover:bg-surface-gray-1"
-        >
-          <td class="px-4 py-3">
-            <p class="font-medium text-ink-gray-9">{{ server.title || server.resource_id }}</p>
-            <p class="text-p-sm text-ink-gray-5 sm:hidden">{{ formatSpecs(server) }}</p>
-          </td>
-          <td class="px-4 py-3 text-ink-gray-7">{{ server.cluster }}</td>
-          <td class="hidden px-4 py-3 text-ink-gray-7 sm:table-cell">{{ formatSpecs(server) }}</td>
-          <td class="px-4 py-3">
-            <ServerStatusBadge :status="server.status" />
-          </td>
-          <td class="px-4 py-3">
-            <div class="flex items-center justify-end gap-1">
-              <Button
-                v-if="canOpen"
-                variant="ghost"
-                label="Open"
-                icon-right="lucide-external-link"
-                :loading="opening === server.resource_id"
-                :disabled="server.status !== 'Running' || !server.gateway_url"
-                @click="emit('open', server)"
-              />
-              <ServerRowActions
-                :server="server"
-                :can-power="canPower"
-                :can-terminate="canTerminate"
-                :busy="busy === server.resource_id"
-                @start="emit('start', $event)"
-                @stop="emit('stop', $event)"
-                @terminate="emit('terminate', $event)"
-              />
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  <ListView
+    :rows="servers"
+    :query="query"
+    :columns="columns"
+    :row-key="(server) => server.resource_id"
+    :loading="loading"
+    :error="error"
+    :filters="filters"
+    :total-rows="totalRows"
+    :count-loading="countLoading"
+    item-label="server"
+    server-side
+    searchable
+    search-placeholder="Search servers…"
+    :empty-state="{
+      title: 'No servers yet',
+      description: 'Spin one up to see it here, kept in sync with Atlas.',
+    }"
+    @update:query="$emit('update:query', $event)"
+    @retry="$emit('retry')"
+  >
+    <template v-if="canCreate" #empty-action>
+      <Button variant="solid" label="New server" icon-left="lucide-plus" @click="$emit('create')" />
+    </template>
+  </ListView>
 </template>
