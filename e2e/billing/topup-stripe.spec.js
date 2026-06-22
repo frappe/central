@@ -11,7 +11,7 @@ test.describe('Wallet top-up (Stripe)', () => {
   test('tops up a USD wallet via a real Stripe test-mode PaymentIntent', async ({ page, billing }) => {
     await billing.signIn({ scenario: 'ready', currency: 'USD' })
 
-    await page.goto('/dashboard/billing/credits')
+    await page.goto('/legacy-dashboard/billing/credits')
 
     // Wallet starts empty.
     await expect(page.getByText('Wallet balance')).toBeVisible()

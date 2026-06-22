@@ -5,10 +5,14 @@ import App from '@/App.vue'
 import './style.css'
 
 // The new data-fetching composables (useCall/useList) read window.csrf_token —
-// injected by central/www/console.py — and POST relative to the served origin,
+// injected by central/www/dashboard.py — and POST relative to the served origin,
 // so no extra request config is needed beyond the FrappeUI plugin.
 const app = createApp(App)
 app.use(router)
-app.use(FrappeUI)
+app.use(FrappeUI, {
+    socketio: (window as any).socketio_port
+      ? { port: (window as any).socketio_port }
+      : true,
+  })
 
 router.isReady().then(() => app.mount('#app'))

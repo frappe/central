@@ -15,9 +15,9 @@ class AtlasInstance(Document):
 
 		api_key: DF.Data
 		api_secret: DF.Password
+		atlas_id: DF.Data | None
 		base_url: DF.Data
 		last_synced_at: DF.Datetime | None
-		reachable: DF.Check
 		region: DF.Data
 		status: DF.Literal["Active", "Draining", "Disabled"]
 	# end: auto-generated types

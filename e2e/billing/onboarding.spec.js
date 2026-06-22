@@ -8,7 +8,7 @@ test.describe('Onboarding', () => {
   test('completes the billing profile step', async ({ page, billing }) => {
     await billing.signIn({ scenario: 'profile_pending' })
 
-    await page.goto('/dashboard/onboarding')
+    await page.goto('/legacy-dashboard/onboarding')
     await expect(page.getByRole('heading', { name: 'Set up billing for your team' })).toBeVisible()
     await expect(page.getByText('0 of 2 done')).toBeVisible()
 

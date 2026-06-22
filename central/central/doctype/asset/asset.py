@@ -78,4 +78,6 @@ class Asset(Document):
 			stamp["last_event_at"] = last_event_at
 		if last_synced_at:
 			stamp["last_synced_at"] = last_synced_at
-		frappe.db.set_value("Asset", resource_id, stamp)
+		# db_set(notify=True) emits Frappe's list_update after commit so Console
+		# subscribers see terminal state changes without polling.
+		frappe.get_doc("Asset", resource_id).db_set(stamp, notify=True)

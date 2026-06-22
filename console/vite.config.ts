@@ -3,19 +3,18 @@ import vue from '@vitejs/plugin-vue'
 import frappeui from 'frappe-ui/vite'
 import path from 'path'
 
-// Second Central frontend (TypeScript). Coexists with the legacy JS `dashboard`
-// app: this one builds to its own asset dir and serves under `/console`, leaving
-// `/dashboard` completely untouched. See central/www/console.py + hooks.py.
+// Primary Central frontend. The previous dashboard remains available under
+// /legacy-dashboard while its surfaces are migrated.
 export default defineConfig({
   plugins: [
     frappeui({
-      frontendRoute: '/console',
+      frontendRoute: '/dashboard',
       frappeProxy: true,
       jinjaBootData: true,
       buildConfig: {
-        outDir: path.resolve(__dirname, '../central/public/console'),
-        baseUrl: '/assets/central/console/',
-        indexHtmlPath: path.resolve(__dirname, '../central/www/console.html'),
+        outDir: path.resolve(__dirname, '../central/public/dashboard'),
+        baseUrl: '/assets/central/dashboard/',
+        indexHtmlPath: path.resolve(__dirname, '../central/www/dashboard.html'),
       },
     }),
     vue(),
@@ -26,7 +25,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(__dirname, '../central/public/console'),
+    outDir: path.resolve(__dirname, '../central/public/dashboard'),
     emptyOutDir: true,
     target: 'es2015',
     sourcemap: true,

@@ -15,7 +15,7 @@ test.describe('Invoice generation', () => {
     expect(gen.subtotal).toBe(3000) // a full June on the ₹3,000 locked plan, computed from the lock
     await billing.settle({ team, invoice: gen.invoice, collect: 0 }) // Draft → Open (no charge)
 
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
     const rows = page.locator('ul.divide-y > li')
     await rows.filter({ hasText: '3,000' }).click()
 

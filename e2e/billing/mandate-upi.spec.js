@@ -12,7 +12,7 @@ test.describe('UPI Autopay mandate', () => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
     await billing.setTrustTier({ team, maxSpend: 50000 }) // UPI cap, below the ₹1,00,000 limit
 
-    await page.goto('/dashboard/settings/methods')
+    await page.goto('/legacy-dashboard/settings/methods')
     await expect(page.getByText('No payment methods yet.')).toBeVisible()
 
     // Open the add dialog and choose UPI Autopay; capture the real recurring order.
@@ -39,7 +39,7 @@ test.describe('UPI Autopay mandate', () => {
     expect(res.mandate_max_amount).toBe(50000)
 
     // The active UPI Autopay mandate now shows in the methods list as the default.
-    await page.goto('/dashboard/settings/methods')
+    await page.goto('/legacy-dashboard/settings/methods')
     await expect(page.getByText('No payment methods yet.')).toHaveCount(0)
     const row = page.locator('ul li').filter({ hasText: 'UPI Autopay' })
     await expect(row).toHaveCount(1)

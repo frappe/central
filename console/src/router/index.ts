@@ -1,9 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { sessionReady } from '@/composables/useSession'
 
-// The SPA is served under /console (central/hooks.py website_route_rules →
-// www/console). Only the Servers surface exists for now; the structure leaves
-// room for the rest of the console to grow alongside it.
+// The SPA owns /dashboard. Only the Servers surface exists for now; the
+// structure leaves room for the rest of Central to migrate into it.
 const routes = [
   { path: '/', redirect: '/servers' },
   {
@@ -19,7 +18,7 @@ const routes = [
 ]
 
 export const router = createRouter({
-  history: createWebHistory('/console/'),
+  history: createWebHistory('/dashboard/'),
   routes,
 })
 

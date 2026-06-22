@@ -17,17 +17,17 @@ test.describe('Dunning (declined card)', () => {
     expect(res.status).toBe('Open')
 
     // The customer is told the payment failed.
-    await page.goto('/dashboard/settings/notifications')
+    await page.goto('/legacy-dashboard/settings/notifications')
     await expect(page.getByText('Payment Failure').first()).toBeVisible()
 
     // Day 7: retries exhausted → invoice Overdue, subscription Past Due.
     const day7 = await billing.dun({ invoice, days: 7 })
     expect(day7.standing).toBe('Past Due')
 
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
     await expect(page.locator('ul.divide-y > li').filter({ hasText: 'Overdue' })).toHaveCount(1)
 
-    await page.goto('/dashboard/billing/subscriptions')
+    await page.goto('/legacy-dashboard/billing/subscriptions')
     await expect(page.getByText('Past Due')).toBeVisible()
   })
 })
