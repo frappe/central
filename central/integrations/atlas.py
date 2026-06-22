@@ -96,13 +96,34 @@ class AtlasClient:
 
 
 def ingest_event(atlas_id: str, event_type: str, payload: dict, occurred_at) -> dict:
-	"""Apply one verified Atlas event to the mirror, dispatched by type. Unknown
-	types are acknowledged and ignored (forward-compatible)."""
+	"""
+	Verify the sender, then queue the mirror write so Atlas gets a fast ack. The
+	write runs in a background job — it's idempotent and last-writer-wins, and the
+	periodic reconcile is the backstop if a job is ever lost. ping and unknown event
+	types have nothing to mirror, so they're acknowledged without queuing.
+	"""
+
 	cluster = _atlas_cluster(atlas_id)
-	handler = _EVENT_HANDLERS.get(event_type)
-	if handler:
-		handler(cluster, payload or {}, occurred_at)
-	return {"ok": True, "handled": bool(handler)}
+
+	if event_type not in _EVENT_HANDLERS:
+		return {"ok": True, "queued": False}
+
+	frappe.enqueue(
+		apply_event,
+		queue="short",
+		enqueue_after_commit=True,
+		cluster=cluster,
+		event_type=event_type,
+		payload=payload or {},
+		occurred_at=occurred_at,
+	)
+
+	return {"ok": True, "queued": True}
+
+
+def apply_event(cluster: str, event_type: str, payload: dict, occurred_at) -> None:
+	"""Background job: apply one verified Atlas event to the Asset mirror."""
+	_EVENT_HANDLERS[event_type](cluster, payload or {}, occurred_at)
 
 
 def _atlas_cluster(atlas_id: str) -> str:
@@ -112,10 +133,6 @@ def _atlas_cluster(atlas_id: str) -> str:
 	if not cluster:
 		frappe.throw(f"Unknown or disabled Atlas '{atlas_id}'.", frappe.PermissionError)
 	return cluster
-
-
-def _on_ping(cluster: str, payload: dict, occurred_at) -> None:
-	pass  # Heartbeat — acknowledged, nothing to mirror.
 
 
 def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
@@ -129,7 +146,6 @@ def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
 
 
 _EVENT_HANDLERS = {
-	"ping": _on_ping,
 	"vm.created": _on_vm,
 	"vm.status_changed": _on_vm,
 	"vm.deleted": _on_vm_deleted,
