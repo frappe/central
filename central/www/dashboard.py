@@ -23,7 +23,7 @@ def get_context(context):
 	boot = context.boot or frappe._dict()
 	boot["csrf_token"] = get_csrf_token()
 	boot["user"] = frappe.session.user
-	# If developer mode is enabled, set the socketio port to the socketio port in the config
+	# Development benches expose Socket.IO directly; production proxies it.
 	if frappe.conf.developer_mode:
 		boot["socketio_port"] = frappe.conf.socketio_port
 	boot["site_name"] = frappe.local.site

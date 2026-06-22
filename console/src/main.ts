@@ -10,9 +10,7 @@ import './style.css'
 const app = createApp(App)
 app.use(router)
 app.use(FrappeUI, {
-    socketio: (window as any).socketio_port
-      ? { port: (window as any).socketio_port }
-      : true,
-  })
+  socketio: window.socketio_port ? { port: window.socketio_port } : true,
+})
 
 router.isReady().then(() => app.mount('#app'))

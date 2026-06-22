@@ -11,4 +11,6 @@ declare module '*.vue' {
 interface Window {
   csrf_token?: string
   user?: string
+  site_name?: string
+  socketio_port?: number
 }

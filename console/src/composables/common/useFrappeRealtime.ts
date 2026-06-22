@@ -12,13 +12,10 @@ import {
 type SocketListener = (...args: unknown[]) => void
 
 interface FrappeSocket {
+  connected: boolean
   on(event: string, listener: SocketListener): void
   off(event: string, listener: SocketListener): void
   emit(event: string, ...args: unknown[]): void
-  io: {
-    on(event: 'reconnect', listener: SocketListener): void
-    off(event: 'reconnect', listener: SocketListener): void
-  }
 }
 
 export interface DocumentUpdateEvent {
@@ -84,15 +81,15 @@ export function useFrappeDocumentEventListener(
       const subscribe = () =>
         socket.emit('doc_subscribe', nextDoctype, nextDocname)
 
-      subscribe()
-      socket.io.on('reconnect', subscribe)
+      socket.on('connect', subscribe)
+      if (socket.connected) subscribe()
       if (emitOpenCloseEvents) {
         socket.emit('doc_open', nextDoctype, nextDocname)
       }
 
       onCleanup(() => {
         socket.emit('doc_unsubscribe', nextDoctype, nextDocname)
-        socket.io.off('reconnect', subscribe)
+        socket.off('connect', subscribe)
         if (emitOpenCloseEvents) {
           socket.emit('doc_close', nextDoctype, nextDocname)
         }
@@ -136,11 +133,11 @@ export function useFrappeDocTypeEventListener(
 
       const subscribe = () => socket.emit('doctype_subscribe', nextDoctype)
 
-      subscribe()
-      socket.io.on('reconnect', subscribe)
+      socket.on('connect', subscribe)
+      if (socket.connected) subscribe()
       onCleanup(() => {
         socket.emit('doctype_unsubscribe', nextDoctype)
-        socket.io.off('reconnect', subscribe)
+        socket.off('connect', subscribe)
       })
     },
     { immediate: true },
