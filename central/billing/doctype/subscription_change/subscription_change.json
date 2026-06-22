@@ -1,14 +1,13 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "hash",
- "creation": "2026-06-03 00:00:00.000000",
+ "creation": "2026-06-03 00:00:00",
  "description": "Append-only history of subscription transitions. Not a child table; never directly editable.",
  "doctype": "DocType",
- "editable_grid": 0,
  "engine": "InnoDB",
  "field_order": [
   "subscription",
+  "team",
   "change_type",
   "column_break_values",
   "old_value",
@@ -24,14 +23,15 @@
    "in_list_view": 1,
    "label": "Subscription",
    "options": "Subscription",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "change_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Change Type",
-   "options": "Created\nPlan Changed\nPayment Method Changed\nPast Due\nSuspended\nReactivated\nCancelled"
+   "options": "Created\nPlan Changed\nCancelled"
   },
   {
    "fieldname": "column_break_values",
@@ -60,11 +60,18 @@
    "fieldname": "changed_by",
    "fieldtype": "Data",
    "label": "Changed By"
+  },
+  {
+   "fetch_from": "subscription.team",
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "label": "Team",
+   "options": "Team"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "modified": "2026-06-22 14:28:18.448249",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Subscription Change",
@@ -84,6 +91,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": []

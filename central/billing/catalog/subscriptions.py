@@ -81,9 +81,10 @@ def create_subscription(
 			"default_payment_method": default_payment_method,
 			"gateway": gateway,
 		}
-	).insert(ignore_permissions=True)
+	)
+	doc.flags.changed_by = changed_by
+	doc.insert(ignore_permissions=True)
 
-	_record_change(doc.name, "Created", new_value=plan, changed_by=changed_by)
 	return doc
 
 
