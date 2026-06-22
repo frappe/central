@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api import fc_teams
+from central.api.identity import fc_teams
 from central.iam import can, expand_capabilities, get_effective_permissions, get_fc_teams_claim
 from central.oauth import install_oauth_claim_patch
 

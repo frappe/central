@@ -27,7 +27,7 @@ class AtlasInstance(Document):
 		"""Operator action: ping the Atlas API and record reachability."""
 		if "System Manager" not in frappe.get_roles():
 			frappe.throw("Not permitted.", frappe.PermissionError)
-		from central.atlas_client import AtlasClient
+		from central.integrations.atlas import AtlasClient
 
 		try:
 			AtlasClient(self).ping()

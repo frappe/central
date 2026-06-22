@@ -7,7 +7,7 @@ import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 // and bound to every screen: the UI just avoids offering buttons the API would
 // 403 — the server re-checks every call. Re-fetches whenever the active team
 // changes. The lifecycle gates map one-to-one to the server-side checks in
-// central/atlas.py: power drives start/stop, terminate destroys, open mints the
+// central/api/servers.py: power drives start/stop, terminate destroys, open mints the
 // bench SSO link.
 
 const capsCall = useCall<string[], { team: string }>({

@@ -129,8 +129,9 @@ The `fc_teams` claim maps each Team to its grants:
 
 Observe-only endpoints:
 
-- Central: `central.api.fc_teams`, `central.api.effective_permissions`,
-  `central.api.check_capability`
+- Central: `central.api.identity.fc_teams`,
+  `central.api.identity.effective_permissions`,
+  `central.api.identity.check_capability`
 - Atlas: `atlas.atlas.api.iam.session_grants`,
   `atlas.atlas.api.iam.check_session_capability`
 

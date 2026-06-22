@@ -43,7 +43,7 @@ const teamsCall = useCall<Team[]>({
 
 // Resolves once my_teams has settled the active team. Router + team-scoped reads
 // await this so atlas/iam calls never fire with a missing team (multi-team users
-// get "Specify a team." from central.atlas._resolve_team).
+// get "Specify a team." from central.iam.resolve_team).
 export const sessionReady = teamsCall.promise
 
 export function useSession() {

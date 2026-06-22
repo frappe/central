@@ -2,7 +2,8 @@ import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
 
-from central.sso import _central_url, _ensure_oauth_client, get_bench_link
+from central.api.sso import get_bench_link
+from central.sso import _central_url, _ensure_oauth_client
 from central.tests.test_iam import ensure_user
 
 

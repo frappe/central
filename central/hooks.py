@@ -165,8 +165,8 @@ doc_events = {
 scheduler_events = {
 	"cron": {
 		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
-		# backstop that corrects any drift the event push (central.api.event) missed.
-		"*/10 * * * *": ["central.atlas.reconcile"],
+		# backstop that corrects drift the event push (central.api.atlas.event) missed.
+		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",

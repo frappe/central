@@ -20,7 +20,7 @@ export function statusTheme(status: ServerStatus): BadgeTheme {
   return STATUS_THEME[status] ?? 'gray'
 }
 
-/** States a stopped server can be powered on from (mirrors central/atlas.py). */
+/** States a stopped server can be powered on from (mirrors central/api/servers.py). */
 export const POWER_ON_STATES: ServerStatus[] = ['Stopped', 'Paused', 'Failed']
 
 export function canStart(status: ServerStatus): boolean {
