@@ -6,7 +6,7 @@ declare module '*.vue' {
   export default component
 }
 
-// Boot data injected by central/www/console.py (see jinjaBootData in vite.config).
+// Boot data injected by central/www/dashboard.py (see jinjaBootData in vite.config).
 // frappe-ui's request layer reads window.csrf_token for write (POST) calls.
 interface Window {
   csrf_token?: string

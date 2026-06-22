@@ -16,7 +16,7 @@ test.describe('INR e-mandate collection', () => {
     expect(res.notified).toBe(true)
 
     // The customer sees the pre-debit notice in their notification feed.
-    await page.goto('/dashboard/settings/notifications')
+    await page.goto('/legacy-dashboard/settings/notifications')
     await expect(page.getByText('Pre-debit Notice').first()).toBeVisible()
   })
 
@@ -30,7 +30,7 @@ test.describe('INR e-mandate collection', () => {
     expect(res.action_required).toBe(true) // can't debit silently → ask the customer
 
     // The Action Required banner appears on the overview; the customer picks how to pay.
-    await page.goto('/dashboard/billing')
+    await page.goto('/legacy-dashboard/billing')
     await expect(page.getByText('Action required — choose how to keep paying')).toBeVisible()
 
     await page.getByRole('button', { name: 'Choose how to pay' }).click()
