@@ -18,7 +18,18 @@ interface FrappeError {
 }
 
 export function errorToast(e: unknown, fallback = 'Something went wrong.'): void {
+  if (isAbortError(e)) return
   toast.error(getErrorMessage(e, fallback))
+}
+
+// A fetch aborted because it was superseded (e.g. an in-flight list request when
+// the active team switches) rejects with a DOMException named 'AbortError'. It's
+// not a real failure — callers should ignore it rather than surface it.
+export function isAbortError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+
+  const err = e as { name?: string; message?: string }
+  return err.name === 'AbortError'
 }
 
 export function getErrorMessage(e: unknown, fallback = 'Something went wrong.'): string {

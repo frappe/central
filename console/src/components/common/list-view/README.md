@@ -61,6 +61,8 @@ Use TanStack `ColumnDef` options directly for custom cells, sort/filter rules,
 and column behavior. `meta.align`, `meta.headerClass`, and `meta.cellClass` are
 Central additions for Espresso layout and responsive visibility.
 
+Listen to `@row-click` for row activation; it emits the row's original data.
+
 For DocTypes, pair `server-side` with `useFrappeList`. It translates the same
 query object into Desk's permission-aware `frappe.desk.reportview.get_list` and
 `get_count` calls. Without `server-side`, TanStack applies the query to the

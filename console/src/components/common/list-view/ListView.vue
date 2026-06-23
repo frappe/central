@@ -78,13 +78,14 @@ const rowSelection = ref<RowSelectionState>({})
 
 const selectionColumn = computed<ColumnDef<TData, unknown>>(() => ({
   id: '__selection',
-  size: 44,
-  minSize: 44,
-  maxSize: 44,
+  size: 1,
+  minSize: 1,
+  maxSize: 1,
   enableSorting: false,
   enableHiding: false,
   header: ({ table }) =>
     h(Checkbox, {
+      class: 'cursor-pointer shrink-0',
       modelValue: table.getIsAllPageRowsSelected(),
       'aria-label': 'Select all rows on this page',
       'onUpdate:modelValue': (...args: unknown[]) =>
@@ -92,16 +93,13 @@ const selectionColumn = computed<ColumnDef<TData, unknown>>(() => ({
     }),
   cell: ({ row }) =>
     h(Checkbox, {
+      class: 'cursor-pointer shrink-0',
       modelValue: row.getIsSelected(),
       disabled: !row.getCanSelect(),
       'aria-label': `Select row ${row.id}`,
       onClick: (event: Event) => event.stopPropagation(),
       'onUpdate:modelValue': (...args: unknown[]) => row.toggleSelected(Boolean(args[0])),
     }),
-  meta: {
-    cellClass: 'px-3',
-    headerClass: 'px-3',
-  },
 }))
 
 const tableColumns = computed(() =>
@@ -179,10 +177,20 @@ const countText = computed(() => {
   const label = resultCount.value === 1 ? props.itemLabel : `${props.itemLabel}s`
   return `${resultCount.value.toLocaleString()} ${label}`
 })
-const showPagination = computed(
-  () => props.paginated && resultCount.value > 0 && !props.loading,
+// Footer visibility deliberately ignores `loading`: a refetch (e.g. changing
+// the page size) keeps the row count stable, so unmounting the footer mid-load
+// only causes a flicker and layout shift. It stays put while new rows arrive.
+const showPagination = computed(() => props.paginated && resultCount.value > 0)
+const showFooter = computed(
+  () => (props.showCount && resultCount.value > 0) || showPagination.value,
 )
 const pagination = computed(() => table.getState().pagination)
+const gridTemplateColumns = computed(() =>
+  table
+    .getFlatHeaders()
+    .map((header) => (header.id === '__selection' ? '14px' : `${header.getSize()}fr`))
+    .join(' '),
+)
 
 function clearFilters(): void {
   query.value = {
@@ -247,10 +255,14 @@ function sortAria(column: ReturnType<typeof table.getAllLeafColumns>[number]) {
   return sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none'
 }
 
-function alignClass(align?: 'start' | 'center' | 'end'): string {
-  if (align === 'center') return 'text-center'
-  if (align === 'end') return 'text-right'
-  return 'text-left'
+function justifyClass(align?: 'start' | 'center' | 'end'): string {
+  if (align === 'center') return 'justify-center'
+  if (align === 'end') return 'justify-end'
+  return 'justify-start'
+}
+
+function metaClass(className?: string): string {
+  return className?.replace(/\btable-cell\b/g, 'block') ?? ''
 }
 
 function handleRowClick(row: Row<TData>): void {
@@ -273,7 +285,7 @@ defineExpose({ table })
 <template>
   <section class="min-w-0">
     <div
-      v-if="searchable || filters.length || showCount || $slots.toolbar"
+v-if="searchable || filters.length || $slots.toolbar"
       class="flex flex-wrap items-center justify-between gap-3 pb-3"
     >
       <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
@@ -313,18 +325,8 @@ defineExpose({ table })
           @click="clearFilters"
         />
       </div>
-      <div class="ml-auto flex shrink-0 items-center gap-3">
+      <div v-if="$slots.toolbar" class="ml-auto flex shrink-0 items-center gap-3">
         <slot name="toolbar" :table="table" />
-        <div v-if="showCount" class="flex min-w-16 justify-end">
-          <div
-            v-if="countLoading"
-            class="h-3 w-12 animate-pulse rounded bg-surface-gray-2"
-            aria-label="Loading result count"
-          />
-          <p v-else class="whitespace-nowrap text-p-sm text-ink-gray-5">
-            {{ countText }}
-          </p>
-        </div>
       </div>
     </div>
 
@@ -354,139 +356,116 @@ defineExpose({ table })
       <Button label="Retry" variant="ghost" @click="$emit('retry')" />
     </div>
 
-    <div class="relative overflow-x-auto">
-      <div
-        v-if="loading && hasRows"
-        class="absolute inset-x-0 top-0 z-10 h-0.5 animate-pulse bg-surface-blue-5"
-        aria-label="Refreshing list"
-      />
+    <div class="relative min-w-0 overflow-x-auto">
+      <div role="table" class="min-w-[720px]">
+        <div v-if="hasRows || loading" role="row"
+          class="grid h-10 items-center gap-4 border-b border-outline-gray-2 px-2" :style="{ gridTemplateColumns }">
+          <div v-for="header in table.getFlatHeaders()" :key="header.id" role="columnheader"
+            :aria-sort="header.column.getCanSort() ? sortAria(header.column) : undefined"
+            class="flex min-w-0 items-center gap-2 truncate text-sm text-ink-gray-5" :class="[
+              header.id === '__selection' ? 'shrink-0' : justifyClass(header.column.columnDef.meta?.align),
+              metaClass(header.column.columnDef.meta?.headerClass),
+            ]"
+>
+            <button v-if="!header.isPlaceholder && header.column.getCanSort()" type="button"
+              class="inline-flex min-w-0 items-center gap-2 truncate outline-none hover:text-ink-gray-8 focus-visible:ring-2 focus-visible:ring-outline-blue-2"
+              @click="header.column.getToggleSortingHandler()?.($event)">
+              <FlexRender :render="header.column.columnDef.header" :props="header.getContext()" />
+              <span :class="[
+                header.column.getIsSorted() === 'asc'
+                  ? 'lucide-arrow-up'
+                  : header.column.getIsSorted() === 'desc'
+                    ? 'lucide-arrow-down'
+                    : 'lucide-arrow-up-down opacity-60',
+  'size-3.5 shrink-0',
+]" aria-hidden="true" />
+            </button>
+            <FlexRender v-else-if="!header.isPlaceholder" :render="header.column.columnDef.header"
+              :props="header.getContext()" />
+          </div>
+        </div>
 
-      <table class="w-full min-w-[720px] border-collapse text-left">
-        <thead v-if="hasRows || loading">
-          <tr class="border-y border-outline-gray-2 bg-surface-gray-1">
-            <th
-              v-for="header in table.getFlatHeaders()"
-              :key="header.id"
-              scope="col"
-              :aria-sort="header.column.getCanSort() ? sortAria(header.column) : undefined"
-              class="h-10 px-4 text-p-sm font-medium text-ink-gray-5"
-              :class="[
-                alignClass(header.column.columnDef.meta?.align),
-                header.column.columnDef.meta?.headerClass,
-              ]"
-              :style="{ width: `${header.getSize()}px` }"
-            >
-              <button
-                v-if="!header.isPlaceholder && header.column.getCanSort()"
-                type="button"
-                class="inline-flex items-center gap-1.5 rounded-sm outline-none hover:text-ink-gray-8 focus-visible:ring-2 focus-visible:ring-outline-blue-2"
-                @click="header.column.getToggleSortingHandler()?.($event)"
-              >
-                <FlexRender
-                  :render="header.column.columnDef.header"
-                  :props="header.getContext()"
-                />
-                <span
-                  :class="[
-                    header.column.getIsSorted() === 'asc'
-                      ? 'lucide-arrow-up'
-                      : header.column.getIsSorted() === 'desc'
-                        ? 'lucide-arrow-down'
-                        : 'lucide-arrow-up-down opacity-60',
-                    'size-3.5',
-                  ]"
-                  aria-hidden="true"
-                />
-              </button>
-              <FlexRender
-                v-else-if="!header.isPlaceholder"
-                :render="header.column.columnDef.header"
-                :props="header.getContext()"
-              />
-            </th>
-          </tr>
-        </thead>
-
-        <tbody v-if="loading && !hasRows" class="divide-y divide-outline-gray-1">
-          <tr v-for="rowIndex in 5" :key="rowIndex">
-            <td v-for="column in visibleColumnCount" :key="column" class="h-14 px-4">
+        <div v-if="loading && !hasRows" role="rowgroup">
+          <div v-for="rowIndex in 5" :key="rowIndex" role="row"
+            class="grid h-10 items-center gap-4 border-b border-outline-gray-1 px-2"
+            :style="{ gridTemplateColumns }">
+            <div v-for="column in visibleColumnCount" :key="column" role="cell" class="min-w-0">
               <div
                 class="h-3 animate-pulse rounded bg-surface-gray-2"
                 :class="column === 1 ? 'w-2/3' : 'w-1/2'"
               />
-            </td>
-          </tr>
-        </tbody>
+            </div>
+          </div>
+        </div>
 
-        <tbody v-else-if="error && !hasRows">
-          <tr>
-            <td :colspan="visibleColumnCount">
-              <ListViewState
-                kind="error"
-                title="Couldn't load this list"
-                :description="error"
-                @retry="$emit('retry')"
-              />
-            </td>
-          </tr>
-        </tbody>
+        <!-- State messages stay inside the table, so they're wrapped in a
+             row/cell: every non-rowgroup child of role="table" must be a row. -->
+        <div v-else-if="!hasRows" role="row">
+          <div role="cell" :aria-colindex="1" :aria-colspan="visibleColumnCount">
+            <ListViewState
+              v-if="error"
+              kind="error"
+              title="Couldn't load this list"
+              :description="error"
+              @retry="$emit('retry')"
+            />
+            <ListViewState
+              v-else-if="hasActiveQuery"
+              kind="filtered"
+              title="No matching results"
+              description="Change or clear the filters to see more results."
+              @clear="clearFilters"
+            />
+            <ListViewState
+              v-else
+              kind="empty"
+              :title="emptyState.title"
+              :description="emptyState.description"
+            >
+              <template v-if="$slots['empty-action']" #action>
+                <slot name="empty-action" />
+              </template>
+            </ListViewState>
+          </div>
+        </div>
 
-        <tbody v-else-if="!hasRows && hasActiveQuery">
-          <tr>
-            <td :colspan="visibleColumnCount">
-              <ListViewState
-                kind="filtered"
-                title="No matching results"
-                description="Change or clear the filters to see more results."
-                @clear="clearFilters"
-              />
-            </td>
-          </tr>
-        </tbody>
-
-        <tbody v-else-if="!hasRows">
-          <tr>
-            <td :colspan="visibleColumnCount">
-              <ListViewState
-                kind="empty"
-                :title="emptyState.title"
-                :description="emptyState.description"
-              >
-                <template v-if="$slots['empty-action']" #action>
-                  <slot name="empty-action" />
-                </template>
-              </ListViewState>
-            </td>
-          </tr>
-        </tbody>
-
-        <tbody v-else class="divide-y divide-outline-gray-1">
-          <tr
+        <div v-else role="rowgroup">
+          <div
             v-for="row in pageRows"
             :key="row.id"
-            class="text-base text-ink-gray-8 transition-colors hover:bg-surface-gray-1"
-            :class="row.getIsSelected() ? 'bg-surface-blue-1 hover:bg-surface-blue-1' : ''"
+            role="row"
+            class="grid h-10 cursor-default items-center gap-4 border-b border-outline-gray-1 px-2 text-sm transition-colors duration-150 ease-in-out hover:bg-surface-sidebar"
+            :class="
+              row.getIsSelected() ? 'bg-surface-gray-2 hover:bg-surface-gray-3' : ''
+            "
+            :style="{ gridTemplateColumns }"
             @click="handleRowClick(row)"
           >
-            <td
-              v-for="cell in row.getVisibleCells()"
+            <div v-for="(cell, cellIndex) in row.getVisibleCells()"
               :key="cell.id"
-              class="h-14 px-4"
+role="cell"
+              class="flex min-w-0 overflow-x-hidden"
               :class="[
-                alignClass(cell.column.columnDef.meta?.align),
-                cell.column.columnDef.meta?.cellClass,
+  cell.column.id === '__selection'
+    ? 'w-fit shrink-0 pe-2'
+    : [
+      cellIndex === (selectable ? 1 : 0) ? 'text-ink-gray-9' : 'text-ink-gray-7',
+      justifyClass(cell.column.columnDef.meta?.align),
+    ],
+  metaClass(cell.column.columnDef.meta?.cellClass),
               ]"
-              :style="{ width: `${cell.column.getSize()}px` }"
+@click="cell.column.id === '__selection' ? $event.stopPropagation() : undefined"
             >
               <FlexRender :render="cell.column.columnDef.cell" :props="cell.getContext()" />
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <ListViewPagination
-      v-if="showPagination"
+v-if="showFooter" :paginated="showPagination" :show-count="showCount" :count-text="countText"
+      :count-loading="countLoading"
       :page="pagination.pageIndex + 1"
       :page-count="table.getPageCount()"
       :page-size="pagination.pageSize"
