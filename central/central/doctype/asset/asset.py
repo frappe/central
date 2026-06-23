@@ -47,12 +47,36 @@ class Asset(Document):
 		resource_id, team = vm.get("name"), vm.get("central_reference")
 		if not resource_id or not team or not frappe.db.exists("Team", team):
 			return
-		exists = frappe.db.exists("Asset", resource_id)
-		if exists and occurred_at and cls.is_stale(resource_id, occurred_at):
+		if frappe.db.exists("Asset", resource_id):
+			cls._update_mirror(resource_id, cluster, vm, occurred_at, synced_at)
 			return
-		doc = frappe.get_doc("Asset", resource_id) if exists else frappe.new_doc("Asset")
-		doc.resource_id = resource_id
-		doc.team = team
+		try:
+			doc = frappe.new_doc("Asset")
+			cls._stamp(doc, cluster, vm, occurred_at, synced_at)
+			# Users can't write the mirror; this sync is its sole writer, authorized
+			# by the verified Atlas event/pull rather than desk RBAC.
+			doc.save(ignore_permissions=True)
+		except frappe.DuplicateEntryError:
+			# Lost the insert race: under REPEATABLE READ our exists-check ran on a
+			# snapshot that predated a concurrent writer's commit, so we took the
+			# insert path and hit the unique key. Recover as an update.
+			cls._update_mirror(resource_id, cluster, vm, occurred_at, synced_at)
+
+	@classmethod
+	def _update_mirror(cls, resource_id: str, cluster: str, vm: dict, occurred_at, synced_at) -> None:
+		# A locking read refreshes our snapshot so the row a concurrent insert just
+		# committed is visible here, even when we arrive via the lost-race recovery.
+		frappe.db.get_value("Asset", resource_id, "name", for_update=True)
+		if occurred_at and cls.is_stale(resource_id, occurred_at):
+			return
+		doc = frappe.get_doc("Asset", resource_id)
+		cls._stamp(doc, cluster, vm, occurred_at, synced_at)
+		doc.save(ignore_permissions=True)
+
+	@staticmethod
+	def _stamp(doc, cluster: str, vm: dict, occurred_at, synced_at) -> None:
+		doc.resource_id = vm.get("name")
+		doc.team = vm.get("central_reference")
 		doc.cluster = cluster
 		doc.status = vm.get("status") or "Pending"
 		doc.title = vm.get("title")
@@ -66,9 +90,6 @@ class Asset(Document):
 			doc.last_event_at = occurred_at
 		if synced_at:
 			doc.last_synced_at = synced_at
-		# Users can't write the mirror; this sync is its sole writer, authorized by
-		# the verified Atlas event/pull rather than desk RBAC.
-		doc.save(ignore_permissions=True)
 
 	@staticmethod
 	def mark_terminated(resource_id: str, *, last_event_at=None, last_synced_at=None) -> None:
