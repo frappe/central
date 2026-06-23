@@ -46,6 +46,11 @@ def _rates(global_inr, cluster=None, cluster_inr=None):
 	return rows
 
 
+def _flat(out):
+	"""All plan rows across the grouped `{plan_class: [rows]}` menu."""
+	return [p for rows in out["plans"].values() for p in rows]
+
+
 class TestEligiblePlans(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
@@ -62,7 +67,7 @@ class TestEligiblePlans(IntegrationTestCase):
 
 	def _titles(self, cluster=CLUSTER):
 		out = get_eligible_plans(cluster=cluster, team=TEAM)
-		return {p["plan"] for p in out["plans"]}, out
+		return {p["plan"] for p in _flat(out)}, out
 
 	def _provision(self, plan, rate, cluster=CLUSTER):
 		"""A running resource that consumes `rate` of the team's cap (active lock)."""
@@ -109,8 +114,21 @@ class TestEligiblePlans(IntegrationTestCase):
 	def test_plans_are_ordered_cheapest_first(self):
 		set_team_tier(TEAM, max_spend=6000)
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
-		rates = [p["rate"] for p in out["plans"]]
-		self.assertEqual(rates, sorted(rates))
+		for rows in out["plans"].values():
+			rates = [p["rate"] for p in rows]
+			self.assertEqual(rates, sorted(rates))
+
+	def test_plans_are_grouped_by_class(self):
+		set_team_tier(TEAM, max_spend=6000)
+		# Re-class two plans; the rest stay unset → folded into "General".
+		frappe.db.set_value("Plan", MID, "plan_class", "CPU Optimised")
+		frappe.db.set_value("Plan", PRICEY, "plan_class", "Memory Optimised")
+		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+		# Canonical key order: General before CPU Optimised before Memory Optimised.
+		self.assertEqual(list(out["plans"]), ["General", "CPU Optimised", "Memory Optimised"])
+		self.assertIn(CHEAP, {p["plan"] for p in out["plans"]["General"]})
+		self.assertEqual({p["plan"] for p in out["plans"]["CPU Optimised"]}, {MID})
+		self.assertEqual({p["plan"] for p in out["plans"]["Memory Optimised"]}, {PRICEY})
 
 	def test_regional_plan_only_on_its_cluster(self):
 		set_team_tier(TEAM, max_spend=6000)
@@ -124,7 +142,7 @@ class TestEligiblePlans(IntegrationTestCase):
 		# Re-price CHEAP cheaper on CLUSTER; the menu must show the regional rate.
 		make_plan(CHEAP, rates=_rates(1000, cluster=CLUSTER, cluster_inr=800))
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
-		row = next(p for p in out["plans"] if p["plan"] == CHEAP)
+		row = next(p for p in _flat(out) if p["plan"] == CHEAP)
 		self.assertEqual(row["rate"], 800)
 
 	def test_allowed_plans_allowlist_restricts_menu(self):
@@ -145,8 +163,9 @@ class TestEligiblePlans(IntegrationTestCase):
 		# No tier pinned → 0 cap → no paid plan fits (only free plans, if any).
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		self.assertEqual(out["max_spend"], 0)
-		self.assertTrue(all(p["rate"] == 0 for p in out["plans"]))
-		self.assertEqual({CHEAP, MID, PRICEY} & {p["plan"] for p in out["plans"]}, set())
+		plans = _flat(out)
+		self.assertTrue(all(p["rate"] == 0 for p in plans))
+		self.assertEqual({CHEAP, MID, PRICEY} & {p["plan"] for p in plans}, set())
 
 	def test_inactive_plan_is_excluded(self):
 		set_team_tier(TEAM, max_spend=6000)

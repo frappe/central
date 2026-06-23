@@ -92,7 +92,9 @@ export interface Plan {
 }
 
 /** get_eligible_plans response: the offered menu plus the trust-tier headroom
- *  (spend cap minus current run-rate) that shaped it. */
+ *  (spend cap minus current run-rate) that shaped it. `plans` is grouped by plan
+ *  class — keys in canonical order, rows cheapest-first, unset class folded into
+ *  "General"; a forbidden cluster yields an empty map. */
 export interface ProvisionablePlans {
   team: string
   cluster: string | null
@@ -102,5 +104,5 @@ export interface ProvisionablePlans {
   current_spend: number
   /** Remaining headroom in the team's currency: a plan is offered only if it fits. */
   available: number
-  plans: Plan[]
+  plans: Record<string, Plan[]>
 }

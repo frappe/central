@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Badge, Button, FormControl } from 'frappe-ui'
+import { Badge, Button, FormControl, Tabs } from 'frappe-ui'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/common/PageHeader.vue'
+import PlanCards from '@/components/servers/PlanCards.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePlans } from '@/composables/usePlans'
-import { planSpecs, planPrice, planResources } from '@/lib/plans'
+import { planResources } from '@/lib/plans'
 import type { Plan } from '@/types'
 
 // New server. Region is the set of available Atlas Instances; the plan comes from
@@ -25,18 +26,34 @@ const selectedRegion = ref<string | null>(null)
 const name = ref('')
 const selectedPlan = ref<string | null>(null)
 
-const { plans, loading: plansLoading } = usePlans(selectedRegion)
+// The menu arrives grouped by plan class (server-side: keys ordered, rows
+// cheapest-first); `plans` is the flat view, `groups`/`classes` drive the tabs.
+const { plans, groups, classes, loading: plansLoading } = usePlans(selectedRegion)
 
 const selectedPlanObj = computed<Plan | null>(
   () => plans.value.find((p) => p.plan === selectedPlan.value) ?? null,
 )
 
-// Switching region re-prices the menu, so a plan picked for the old region may no
-// longer be offered — drop the selection unless it survives.
+// Bifurcate the menu by plan class, but only when the region actually offers more
+// than one — a single-class region (e.g. just General) lists its plans flat.
+const hasClassTabs = computed(() => classes.value.length > 1)
+const classTabs = computed(() => classes.value.map((label) => ({ label })))
+// Tabs select by index; reset to the first whenever the class list changes.
+const activeTab = ref(0)
+
+function plansInClass(planClass: string): Plan[] {
+  return groups.value[planClass] ?? []
+}
+
+// Switching region re-prices the menu: drop a selection no longer offered, and
+// point the class tabs back at the first class the new region has.
 watch(plans, (rows) => {
   if (selectedPlan.value && !rows.some((p) => p.plan === selectedPlan.value)) {
     selectedPlan.value = null
   }
+})
+watch(classes, () => {
+  activeTab.value = 0
 })
 
 const canSubmit = computed(
@@ -138,26 +155,15 @@ async function submit() {
           No plans are available for this region within your current spending limit.
         </p>
 
-        <div v-else class="grid gap-3 sm:grid-cols-2">
-          <button
-            v-for="plan in plans"
-            :key="plan.plan"
-            type="button"
-            class="flex flex-col gap-1.5 rounded-lg border px-4 py-3 text-left transition-colors"
-            :class="
-              selectedPlan === plan.plan
-                ? 'border-outline-gray-4 bg-surface-gray-2'
-                : 'border-outline-gray-2 hover:border-outline-gray-3'
-            "
-            @click="selectedPlan = plan.plan"
-          >
-            <div class="flex items-center justify-between gap-2">
-              <span class="font-medium text-ink-gray-9">{{ plan.title }}</span>
-              <span class="shrink-0 text-p-sm font-medium text-ink-gray-8">{{ planPrice(plan) }}</span>
-            </div>
-            <span class="text-p-sm text-ink-gray-5">{{ planSpecs(plan) }}</span>
-          </button>
-        </div>
+        <!-- Multiple classes on this region: split them across tabs. -->
+        <Tabs v-else-if="hasClassTabs" v-model="activeTab" :tabs="classTabs">
+          <template #tab-panel="{ tab }">
+            <PlanCards :plans="plansInClass(tab.label)" v-model="selectedPlan" class="pt-4" />
+          </template>
+        </Tabs>
+
+        <!-- Single class: list the plans flat, unclassified. -->
+        <PlanCards v-else :plans="plans" v-model="selectedPlan" />
       </section>
 
       <!-- Submit -->

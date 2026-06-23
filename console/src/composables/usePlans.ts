@@ -29,8 +29,14 @@ export function usePlans(cluster: Ref<string | null>) {
     { immediate: true },
   )
 
+  // The menu arrives grouped by plan class (keys ordered, rows cheapest-first);
+  // `classes` is the tab order, `plans` a flat view for selection lookups.
+  const groups = computed<Record<string, Plan[]>>(() => call.data?.plans ?? {})
+
   return {
-    plans: computed<Plan[]>(() => call.data?.plans ?? []),
+    groups,
+    classes: computed<string[]>(() => Object.keys(groups.value)),
+    plans: computed<Plan[]>(() => Object.values(groups.value).flat()),
     currency: computed<string | null>(() => call.data?.currency ?? null),
     tier: computed<string | null>(() => call.data?.tier ?? null),
     // Remaining trust-tier headroom in the team's currency — explains an empty menu.

@@ -29,15 +29,24 @@ def _allowlist(value) -> set[str] | None:
 	return names or None
 
 
+# Canonical class order for the grouped menu (matches the Plan.plan_class Select).
+# An unset class is folded into "General" so unclassified plans get a real label.
+_CLASS_ORDER = ["General", "CPU Optimised", "Memory Optimised", "Storage Optimised", "Custom"]
+
+
 @frappe.whitelist()
 def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> dict:
-	"""Active plans the team can provision on `cluster`, filtered by its trust tier.
+	"""Active plans the team can provision on `cluster`, grouped by plan class.
+
+	`plans` is a `{plan_class: [rows]}` map so the client can render one tab per
+	class without re-grouping: keys are in canonical order (`_CLASS_ORDER`, then any
+	unknown classes alphabetically), rows within each class are cheapest-first, and
+	an unset class is folded into "General". A forbidden cluster yields an empty map.
 
 	A plan is offered only when ALL of the following hold:
 	  - it is active;
 	  - the tier's `allowed_plans` admits it (unset = all plans);
-	  - the tier's `allowed_clusters` admits `cluster` (unset = all clusters) —
-	    a forbidden cluster yields an empty list;
+	  - the tier's `allowed_clusters` admits `cluster` (unset = all clusters);
 	  - it prices the team's currency on this cluster (the regional Catalog Rate,
 	    else the global blank-cluster rate);
 	  - its rate fits the team's *remaining* headroom: the trust-tier spend cap
@@ -63,7 +72,7 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 
 	# The tier forbids this cluster outright — nothing is provisionable here.
 	if cluster and allowed_clusters is not None and cluster not in allowed_clusters:
-		return {**header, "plans": []}
+		return {**header, "plans": {}}
 
 	plans = []
 	for name in frappe.get_all("Plan", filters={"is_active": 1}, pluck="name", order_by="title asc"):
@@ -78,7 +87,19 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 
 	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
 	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
-	return {**header, "plans": plans}
+	return {**header, "plans": _group_by_class(plans)}
+
+
+def _group_by_class(rows: list[dict]) -> dict[str, list]:
+	"""Group plan rows by class into a `{plan_class: [rows]}` map. Keys are emitted in
+	canonical order (then any unknown classes, alphabetically); `rows` keeps the
+	caller's order within each class (so cheapest-first survives)."""
+	grouped: dict[str, list] = {}
+	for row in rows:
+		grouped.setdefault(row["plan_class"], []).append(row)
+	known = [c for c in _CLASS_ORDER if c in grouped]
+	extra = sorted(c for c in grouped if c not in _CLASS_ORDER)
+	return {c: grouped[c] for c in [*known, *extra]}
 
 
 def _current_run_rate(team: str) -> float:
@@ -99,7 +120,7 @@ def _plan_row(name: str, currency: str, cluster: str | None, rate) -> dict:
 	return {
 		"plan": name,
 		"title": doc.title,
-		"plan_class": doc.plan_class,
+		"plan_class": doc.plan_class or "General",  # unset class groups under General
 		"billing_cycle": doc.billing_cycle,
 		"currency": currency,
 		"cluster": cluster,
