@@ -74,11 +74,14 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 	if cluster and allowed_clusters is not None and cluster not in allowed_clusters:
 		return {**header, "plans": {}}
 
+	# The whole active catalog is wanted on purpose — currency/cluster/headroom
+	# filtering happens in Python below — so opt out of pagination explicitly.
 	candidates = frappe.get_all(
 		"Plan",
 		filters={"is_active": 1},
 		fields=["name", "title", "plan_class", "billing_cycle"],
 		order_by="title asc",
+		limit=0,
 	)
 	if allowed_plans is not None:
 		candidates = [p for p in candidates if p.name in allowed_plans]
