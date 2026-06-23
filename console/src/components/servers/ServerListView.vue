@@ -84,30 +84,20 @@ const columns = computed<ListViewColumn<Server>[]>(() => [
   {
     id: 'actions',
     header: 'Actions',
-    size: 210,
+    size: 120,
     enableSorting: false,
     enableGlobalFilter: false,
     meta: { align: 'end' },
     cell: ({ row }) =>
-      h('div', { class: 'flex items-center justify-end gap-1' }, [
-        props.canOpen
-          ? h(Button, {
-              variant: 'ghost',
-              label: 'Open',
-              iconRight: 'lucide-external-link',
-              loading: props.opening === row.original.resource_id,
-              disabled: row.original.status !== 'Running' || !row.original.gateway_url,
-              onClick: (event: Event) => {
-                event.stopPropagation()
-                emit('open', row.original)
-              },
-            })
-          : null,
+      h('div', { class: 'flex items-center justify-end' }, [
         h(ServerRowActions, {
           server: row.original,
+          canOpen: props.canOpen,
           canPower: props.canPower,
           canTerminate: props.canTerminate,
           busy: props.busy === row.original.resource_id,
+          opening: props.opening === row.original.resource_id,
+          onOpen: (server: Server) => emit('open', server),
           onStart: (server: Server) => emit('start', server),
           onStop: (server: Server) => emit('stop', server),
           onTerminate: (server: Server) => emit('terminate', server),
