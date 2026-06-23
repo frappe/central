@@ -53,4 +53,9 @@ central.billing.patches.v13_drop_trust_tier_doctype.drop_trust_tier
 # values are still snake_case (stripe_auto/emandate/...). Title-case them to match
 # every other billing Select field (ADR 0005, #50).
 central.billing.patches.v14_titlecase_collection_mode.titlecase_collection_mode
+# Catalog taxonomy moves from VM-shaped Select enums to masters: Plan Category +
+# Plan Sub-Category (replacing plan_class) + Resource Type (Plan Includes/Add-on
+# links). Seeds the VM family, backfills plans, drops the plan_class column, flags
+# IP/Snapshot for reclassification — ADR 0007, issue #75.
+central.billing.patches.v15_catalog_taxonomy_masters.catalog_taxonomy
 central.patches.v01_capability_model_v2.rename_capabilities
