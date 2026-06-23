@@ -3,92 +3,33 @@
 """Catalog taxonomy moves from VM-shaped Select enums to masters (ADR 0007, #75).
 
 `Plan.plan_class` and the `resource_type` Select on Plan Includes / Add-on were
-frozen enums — the proliferation trap one level down from plans. They become
-`Plan Category` + `Plan Sub-Category` (replacing plan_class) and `Resource Type`
-links.
+frozen enums. They become `Plan Category` + `Plan Sub-Category` (replacing plan_class)
+and `Resource Type` links.
 
-Seeds the current VM taxonomy so nothing in flight breaks, then backfills.
-Because a Link stores the master's name verbatim, the resource_type strings
-(Compute, Memory, ...) need no rewrite — only the masters must exist for the
-links to resolve. plan_class, however, is copied into category/sub_category and
-its orphan column dropped.
+The master *seed* lives in `taxonomy_setup.ensure_catalog_masters` (shared with the
+install/migrate/test hooks, since patches are skipped on fresh installs). This patch
+is the existing-DB migration on top of that seed: backfill plans from the old
+plan_class column, drop it, and flag IP/Snapshot. Because a Link stores the master's
+name verbatim, the resource_type strings (Compute, Memory, …) need no rewrite.
 
-Idempotent: seeds skip when present; the backfill only touches plans missing a
-category; the column drop is has_column-guarded. Uses db.set_value for the
-backfill so legacy IP/Snapshot includes don't trip the new category validation.
+Idempotent: the backfill is gated on the legacy column still existing; the drop is
+has_column-guarded. Uses db.set_value so legacy IP/Snapshot includes don't trip the
+new category validation mid-migration.
 """
 
 import frappe
 
-# Resource Types = every value the old enums could hold, so existing Plan
-# Includes / Add-on links resolve. IP and Snapshot are seeded for continuity but
-# are NOT in any category's allow-list — #77 reclassifies them as add-ons.
-RESOURCE_TYPES = ["Compute", "Memory", "Disk", "Transfer", "IP", "Snapshot"]
+from central.billing.catalog.taxonomy_setup import ensure_catalog_masters
 
-VM_PLANS = {
-	"category_name": "VM Plans",
-	"configurator_builder": "vm_rungs",
-	"sub_category_label": "Optimization profile",
-	"default_billing_type": "Fixed",
-	"default_pricing_mode": "Grandfathered",
-	"billable_unit": "vCPU bundle / mo",
-	"meter_kind": "None",
-	"description": "Flat-rate compute bundles (vCPU + memory + disk + transfer).",
-	"allowed": ["Compute", "Memory", "Disk", "Transfer"],
-}
-
-# Old plan_class value -> seeded Plan Sub-Category under VM Plans. "Custom" maps
-# to nothing (a custom rung carries no profile).
+# Old plan_class value -> seeded Plan Sub-Category under VM Plans. "Custom" maps to none.
 VM_SUB_CATEGORIES = ["General", "CPU Optimised", "Memory Optimised", "Storage Optimised"]
 
 
 def execute():
-	_seed_resource_types()
-	_seed_vm_category()
-	_seed_vm_sub_categories()
+	ensure_catalog_masters()
 	_backfill_plans()
 	_drop_plan_class_column()
 	_flag_ip_snapshot_rows()
-
-
-def _seed_resource_types():
-	for name in RESOURCE_TYPES:
-		if not frappe.db.exists("Resource Type", name):
-			frappe.get_doc({"doctype": "Resource Type", "resource_type_name": name}).insert(
-				ignore_permissions=True
-			)
-
-
-def _seed_vm_category():
-	if frappe.db.exists("Plan Category", VM_PLANS["category_name"]):
-		return
-	doc = frappe.get_doc(
-		{
-			"doctype": "Plan Category",
-			"category_name": VM_PLANS["category_name"],
-			"configurator_builder": VM_PLANS["configurator_builder"],
-			"sub_category_label": VM_PLANS["sub_category_label"],
-			"default_billing_type": VM_PLANS["default_billing_type"],
-			"default_pricing_mode": VM_PLANS["default_pricing_mode"],
-			"billable_unit": VM_PLANS["billable_unit"],
-			"meter_kind": VM_PLANS["meter_kind"],
-			"description": VM_PLANS["description"],
-			"allowed_resource_types": [{"resource_type": rt} for rt in VM_PLANS["allowed"]],
-		}
-	)
-	doc.insert(ignore_permissions=True)
-
-
-def _seed_vm_sub_categories():
-	for name in VM_SUB_CATEGORIES:
-		if not frappe.db.exists("Plan Sub-Category", name):
-			frappe.get_doc(
-				{
-					"doctype": "Plan Sub-Category",
-					"sub_category_name": name,
-					"category": VM_PLANS["category_name"],
-				}
-			).insert(ignore_permissions=True)
 
 
 def _backfill_plans():
@@ -97,8 +38,6 @@ def _backfill_plans():
 	Gated on the legacy column still existing — `category` can't be the sentinel
 	because its field default pre-fills existing rows when the column is added.
 	Once plan_class is dropped there's nothing to backfill, so a re-run is a no-op.
-	set_value (not save) keeps legacy IP/Snapshot includes from tripping the new
-	category validation mid-migration.
 	"""
 	if not frappe.db.has_column("Plan", "plan_class"):
 		return
@@ -108,7 +47,7 @@ def _backfill_plans():
 		frappe.db.set_value(
 			"Plan",
 			name,
-			{"category": VM_PLANS["category_name"], "sub_category": sub_category},
+			{"category": "VM Plans", "sub_category": sub_category},
 			update_modified=False,
 		)
 
