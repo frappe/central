@@ -55,27 +55,39 @@ frappe.ui.form.on("Plan Configurator", {
 			});
 		}
 
-		frm.add_custom_button(__("Populate Rungs"), () => {
-			frm.call("populate_rungs").then((r) => {
-				frappe.show_alert({
-					message: __("{0} rungs populated — edit them, then Generate.", [
-						(r.message || {}).count || 0,
-					]),
-					indicator: "blue",
+		const simple = frm.doc.builder === "simple";
+
+		// The vCPU ladder builder authors plans from a formula; the simple builder
+		// authors them row-by-row, so Populate/Preview are vm_rungs-only.
+		if (!simple) {
+			frm.add_custom_button(__("Populate Rungs"), () => {
+				frm.call("populate_rungs").then((r) => {
+					frappe.show_alert({
+						message: __("{0} rungs populated — edit them, then Generate.", [
+							(r.message || {}).count || 0,
+						]),
+						indicator: "blue",
+					});
+					frm.reload_doc();
 				});
-				frm.reload_doc();
 			});
-		});
 
-		frm.add_custom_button(__("Preview Pricing"), () => {
-			frm.call("preview").then((r) => show_preview(r.message || {}));
-		});
+			frm.add_custom_button(__("Preview Pricing"), () => {
+				frm.call("preview").then((r) => show_preview(r.message || {}));
+			});
+		}
 
-		if ((frm.doc.rungs || []).length) {
+		const rows = simple ? frm.doc.simple_plans : frm.doc.rungs;
+		if ((rows || []).length) {
 			frm.add_custom_button(__("Generate Plans"), () => generate_dialog(frm)).addClass(
 				"btn-primary"
 			);
 		}
+	},
+
+	category(frm) {
+		// builder is fetched from the family; resections depend on it.
+		frm.refresh_fields();
 	},
 });
 
@@ -158,13 +170,21 @@ function generate_dialog(frm) {
 				fieldtype: "MultiCheck",
 				columns: 1,
 				get_data: () =>
-					(frm.doc.rungs || []).map((p) => ({
-						label: `${p.label || p.plan_name}  ·  ${p.disk_gb || 0} GB disk · ${
-							p.transfer_gb || 0
-						} GB xfer${price_hint(p.multiplier)}`,
-						value: p.plan_name,
-						checked: 1,
-					})),
+					frm.doc.builder === "simple"
+						? (frm.doc.simple_plans || []).map((p) => ({
+								label: `${p.title}  ·  ${p.quantity || 0} ${p.unit || ""}${price_hint(
+									p.multiplier || 1
+								)}`,
+								value: p.title,
+								checked: 1,
+						  }))
+						: (frm.doc.rungs || []).map((p) => ({
+								label: `${p.label || p.plan_name}  ·  ${p.disk_gb || 0} GB disk · ${
+									p.transfer_gb || 0
+								} GB xfer${price_hint(p.multiplier)}`,
+								value: p.plan_name,
+								checked: 1,
+						  })),
 			},
 		],
 		primary_action_label: __("Generate in Background"),

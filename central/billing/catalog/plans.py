@@ -35,25 +35,28 @@ def configure_includes(vcpu: float, ratio: str = "1:2", disk_gb: float = 0, memo
 
 @frappe.whitelist()
 def create_configured_plan(
-	name: str,
 	title: str,
 	vcpu: float,
 	ratio: str = "1:2",
 	disk_gb: float = 0,
 	memory_gb: float | None = None,
 	billing_cycle: str = "Monthly",
+	category: str = "VM Plans",
+	sub_category: str | None = None,
 ) -> str:
-	"""Create a bundle Plan from configurator inputs; return its name.
+	"""Create a bundle Plan from configurator inputs; return its (hash) name.
 
-	Writes the derived composition into Plan Includes. Rates are authored
-	separately as Catalog Rate documents (#27) — out of scope here.
+	The Plan is named by an opaque hash (sync-stable); `title` is the human label.
+	Writes the derived composition into Plan Includes. Rates are authored separately
+	as Catalog Rate documents (#27) — out of scope here.
 	"""
 	includes = configure_includes(vcpu, ratio=ratio, disk_gb=disk_gb, memory_gb=memory_gb)
 	doc = frappe.get_doc(
 		{
 			"doctype": "Plan",
-			"__newname": name,
 			"title": title,
+			"category": category,
+			"sub_category": sub_category,
 			"billing_cycle": billing_cycle,
 			"is_active": 1,
 			"includes": includes,

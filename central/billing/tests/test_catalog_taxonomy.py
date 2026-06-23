@@ -67,21 +67,24 @@ class TestCatalogTaxonomy(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Plan", name, "sub_category"), "CPU Optimised")
 
 	def test_configurator_sets_category_and_maps_sub_category(self):
-		"""generate_plans authors the VM family and carries plan_class -> sub_category."""
-		configurator.generate_plans(
+		"""generate_plans authors the VM family (hash-named) and carries the profile."""
+		out = configurator.generate_plans(
 			"Memory Optimised",
 			rungs=[{"plan_name": "tax-cfg-mem", "label": "Mem", "vcpu": 1, "memory_gb": 4, "disk_gb": 20, "transfer_gb": 0}],
 		)
-		self.assertEqual(frappe.db.get_value("Plan", "tax-cfg-mem", "category"), "VM Plans")
-		self.assertEqual(frappe.db.get_value("Plan", "tax-cfg-mem", "sub_category"), "Memory Optimised")
+		plan = frappe.get_doc("Plan", out["created"][0])
+		self.assertEqual(plan.category, "VM Plans")
+		self.assertEqual(plan.sub_category, "Memory Optimised")
+		self.assertEqual(plan.title, "Memory Optimised — Mem")
 
 	def test_configurator_custom_class_carries_no_sub_category(self):
-		configurator.generate_plans(
-			"Custom",
-			rungs=[{"plan_name": "tax-cfg-custom", "label": "Cust", "vcpu": 1, "memory_gb": 2, "disk_gb": 10, "transfer_gb": 0}],
-		)
-		self.assertEqual(frappe.db.get_value("Plan", "tax-cfg-custom", "category"), "VM Plans")
-		self.assertIsNone(frappe.db.get_value("Plan", "tax-cfg-custom", "sub_category"))
+		rung = {"plan_name": "tax-cfg-custom", "label": "Cust", "vcpu": 1, "memory_gb": 2, "disk_gb": 10, "transfer_gb": 0}
+		out = configurator.generate_plans("Custom", rungs=[rung])
+		plan = frappe.get_doc("Plan", out["created"][0])
+		self.assertEqual(plan.category, "VM Plans")
+		self.assertIsNone(plan.sub_category)
+		# the rung records the minted hash for idempotency
+		self.assertEqual(rung["plan"], plan.name)
 
 
 def _ensure_category(name, *, allowed, sub_label=None):

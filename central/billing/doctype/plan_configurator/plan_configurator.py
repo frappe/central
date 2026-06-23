@@ -80,6 +80,16 @@ class PlanConfigurator(Document):
 		]
 		return {"rungs": rungs, "currencies": [br["currency"] for br in rates]}
 
+	def _builder(self) -> str:
+		"""The authoring builder for this configurator's family (ADR 0007)."""
+		return frappe.db.get_value("Plan Category", self.category, "configurator_builder") or "vm_rungs"
+
+	def _resolved_sub_category(self) -> str | None:
+		"""A typed `new_sub_category` is minted (the Custom path); else the picked one."""
+		if self.new_sub_category:
+			return configurator.ensure_sub_category(self.category, self.new_sub_category)
+		return self.sub_category or None
+
 	@frappe.whitelist()
 	def enqueue_generation(
 		self,
@@ -88,9 +98,11 @@ class PlanConfigurator(Document):
 		plans: str | list | None = None,
 	) -> dict:
 		"""Queue the (background) generation for a chosen cluster, currencies, and
-		subset of rungs. Editing of the rung specs happens in the Rungs table on the
-		form; this picks where/what to ship."""
-		if not self.rungs:
+		subset of plans. This picks where/what to ship; the specs are edited above."""
+		if self._builder() == "simple":
+			if not self.simple_plans:
+				frappe.throw("Add at least one plan row, then generate.")
+		elif not self.rungs:
 			frappe.throw("Populate the rungs first, then edit and generate.")
 		frappe.enqueue(
 			run_generation,
@@ -109,35 +121,67 @@ class PlanConfigurator(Document):
 		currencies: str | list | None = None,
 		plans: str | list | None = None,
 	) -> dict:
-		"""Create a bundle per selected rung and price it at `cluster` in the selected
-		base-rate currencies. Synchronous core (the background job calls this).
-
-		Idempotent on the Plans (existing ones are skipped, only their rates for the
-		given cluster are added/updated)."""
+		"""Create the selected plans and price them at `cluster` in the selected
+		base-rate currencies. Dispatches to the family's builder (ADR 0007). Synchronous
+		core (the background job calls this). Idempotent on the Plans — an already-generated
+		row is skipped, only its rates for the given cluster are added/updated."""
 		if isinstance(plans, str):
 			plans = frappe.parse_json(plans)
 		if isinstance(currencies, str):
 			currencies = frappe.parse_json(currencies)
 		selected = set(plans) if plans else None
+		if self._builder() == "simple":
+			return self._generate_simple(selected, cluster, currencies)
+		return self._generate_vm_rungs(selected, cluster, currencies)
 
+	def _generate_vm_rungs(self, selected, cluster, currencies) -> dict:
 		rungs = [r for r in self.rungs if selected is None or r.plan_name in selected]
 		if not rungs:
 			frappe.throw("No rungs selected to generate.")
-
 		result = configurator.generate_plans(
-			plan_class=self.plan_class, rungs=rungs, billing_cycle=self.billing_cycle, is_active=cint(self.is_active)
+			plan_class=self.plan_class,
+			rungs=rungs,
+			billing_cycle=self.billing_cycle,
+			is_active=cint(self.is_active),
+			sub_category=self._resolved_sub_category(),
+			category=self.category,
 		)
-		for row in self.rungs:
-			if frappe.db.exists("Plan", row.plan_name):
-				row.plan = row.plan_name
+		# generate_plans wrote each rung's minted hash onto row.plan in place; persist it.
 		self.save(ignore_permissions=True)
+		multipliers = [{"plan": r.plan, "multiplier": r.multiplier} for r in rungs]
+		return {**result, **self._price(multipliers, cluster, currencies)}
 
-		multipliers = [{"plan": r.plan_name, "multiplier": r.multiplier} for r in rungs]
+	def _generate_simple(self, selected, cluster, currencies) -> dict:
+		rows = [r for r in self.simple_plans if selected is None or r.title in selected]
+		if not rows:
+			frappe.throw("No plans selected to generate.")
+		sub_category = self._resolved_sub_category()
+		created, skipped = [], []
+		for row in rows:
+			if row.plan and frappe.db.exists("Plan", row.plan):
+				skipped.append(row.plan)
+				continue
+			row.plan = configurator.create_simple_plan(
+				self.category,
+				row.title,
+				row.resource_type,
+				row.quantity,
+				row.unit,
+				sub_category=sub_category,
+				billing_cycle=self.billing_cycle,
+				is_active=cint(self.is_active),
+			)
+			created.append(row.plan)
+		self.save(ignore_permissions=True)
+		multipliers = [{"plan": r.plan, "multiplier": flt(r.multiplier) or 1} for r in rows]
+		return {"created": created, "skipped": skipped, **self._price(multipliers, cluster, currencies)}
+
+	def _price(self, multipliers, cluster, currencies) -> dict:
 		pricing = [
 			configurator.apply_pricing(multipliers, br["currency"], br["base_rate"], cluster=cluster)
 			for br in self._base_rates(set(currencies) if currencies else None)
 		]
-		return {**result, "pricing": pricing, "cluster": cluster or None}
+		return {"pricing": pricing, "cluster": cluster or None}
 
 
 def run_generation(configurator, cluster=None, currencies=None, plans=None, user=None):

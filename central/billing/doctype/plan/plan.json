@@ -1,8 +1,8 @@
 {
  "actions": [],
- "autoname": "prompt",
+ "autoname": "hash",
  "creation": "2026-06-02 00:00:00",
- "description": "A flat-rate bundle with one immutable identity forever. The rate is the price; a rate change never forks a new plan.",
+ "description": "A flat-rate bundle with one immutable identity forever. The rate is the price; a rate change never forks a new plan. Named by an opaque hash (sync-stable); the title is the human label.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -85,8 +85,10 @@
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Plan",
- "naming_rule": "Set by user",
+ "naming_rule": "Random",
  "owner": "Administrator",
+ "show_title_field_in_link": 1,
+ "title_field": "title",
  "permissions": [
   {
    "create": 1,

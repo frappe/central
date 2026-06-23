@@ -9,6 +9,8 @@
  "field_order": [
   "template_name",
   "is_active",
+  "category",
+  "builder",
   "sizing_section",
   "plan_class",
   "start_vcpu",
@@ -24,7 +26,11 @@
   "base_rates",
   "pricing_help",
   "rungs_section",
-  "rungs"
+  "rungs",
+  "simple_section",
+  "sub_category",
+  "new_sub_category",
+  "simple_plans"
  ],
  "fields": [
   {
@@ -42,6 +48,24 @@
    "label": "Generate Plans as Active"
   },
   {
+   "default": "VM Plans",
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "label": "Product Family",
+   "options": "Plan Category",
+   "reqd": 1,
+   "description": "The family these plans belong to. Its builder (vm_rungs / simple) decides how you author them (ADR 0007)."
+  },
+  {
+   "fetch_from": "category.configurator_builder",
+   "fieldname": "builder",
+   "fieldtype": "Data",
+   "label": "Builder",
+   "read_only": 1,
+   "description": "Resolved from the family — vm_rungs (vCPU ladder) or simple (name + quantity + rate)."
+  },
+  {
+   "depends_on": "eval:doc.builder=='vm_rungs'",
    "fieldname": "sizing_section",
    "fieldtype": "Section Break",
    "label": "Sizing"
@@ -144,6 +168,7 @@
    "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> opens a dialog to pick the cluster, currencies, and which rungs — then runs in the background, creating a bundle per rung and its rates. Re-run it per cluster (a plan is sellable on a cluster only where it has a rate, or a global one); blank cluster = global.</p>"
   },
   {
+   "depends_on": "eval:doc.builder=='vm_rungs'",
    "fieldname": "rungs_section",
    "fieldtype": "Section Break",
    "label": "Rungs"
@@ -154,6 +179,32 @@
    "label": "Rungs",
    "options": "Plan Configurator Plan",
    "description": "Populate from the formula, then edit before generating."
+  },
+  {
+   "depends_on": "eval:doc.builder=='simple'",
+   "fieldname": "simple_section",
+   "fieldtype": "Section Break",
+   "label": "Plans"
+  },
+  {
+   "fieldname": "sub_category",
+   "fieldtype": "Link",
+   "label": "Sub-Category",
+   "options": "Plan Sub-Category",
+   "description": "Optional variant within the family (only families with a sub-category axis use it). Leave blank, or mint a new one below."
+  },
+  {
+   "fieldname": "new_sub_category",
+   "fieldtype": "Data",
+   "label": "New Sub-Category (Custom)",
+   "description": "Type a name to mint a new Sub-Category under this family before generating, then attach the plans to it."
+  },
+  {
+   "fieldname": "simple_plans",
+   "fieldtype": "Table",
+   "label": "Plans",
+   "options": "Plan Configurator Simple Plan",
+   "description": "One row per plan: title, the family's resource type, included quantity, unit, and a rate multiplier (rate = base rate x multiplier)."
   }
  ],
  "index_web_pages_for_search": 1,

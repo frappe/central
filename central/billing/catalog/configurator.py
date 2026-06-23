@@ -116,41 +116,105 @@ def rung_includes(vcpu: float, memory_gb: float, disk_gb: float, transfer_gb: fl
 	return rows
 
 
-def generate_plans(plan_class: str | None, rungs: list, billing_cycle: str = "Monthly", is_active: int = 1) -> dict:
-	"""Materialise each (edited) rung as a `Plan` + composition. Cluster-agnostic.
+def plan_title(prefix: str | None, label: str) -> str:
+	"""Display title: the profile (sub-category, else category) + resource info."""
+	return f"{prefix} — {label}" if prefix else label
 
-	Idempotent: a rung whose Plan name already exists is left untouched and reported
-	under `skipped` (never overwritten). Accepts dicts or child-table rows.
+
+def generate_plans(
+	plan_class: str | None,
+	rungs: list,
+	billing_cycle: str = "Monthly",
+	is_active: int = 1,
+	sub_category: str | None = None,
+	category: str = "VM Plans",
+) -> dict:
+	"""Materialise each (edited) rung as a hash-named `Plan` + composition. Cluster-agnostic.
+
+	Identity is the rung's `plan` link (the hash the rung produced), never the human
+	name — a Plan title collides and changes, so it can't be the synced key. A rung
+	already linked to an existing Plan is skipped; others are created and the new hash
+	written back onto the rung (in place; persisted by the caller). Accepts dicts or
+	child-table rows.
+
+	`sub_category` overrides the profile (e.g. a freshly-minted Custom one); when
+	absent it derives from `plan_class` (the vm_rungs optimization profile).
 	"""
-	created, skipped = [], []
-	for rung in rungs:
-		g = rung.get if isinstance(rung, dict) else lambda k: getattr(rung, k)
-		name = g("plan_name")
-		if frappe.db.exists("Plan", name):
-			skipped.append(name)
-			continue
-		# vm_rungs always authors the VM Plans family; plan_class is its optimization
-		# profile, now a Plan Sub-Category (Custom carries none). #76 folds this into
-		# the category-aware builder dispatch.
+	if sub_category is None:
 		sub_category = (
 			plan_class
 			if plan_class and plan_class != "Custom" and frappe.db.exists("Plan Sub-Category", plan_class)
 			else None
 		)
-		frappe.get_doc(
+	prefix = sub_category or category
+	created, skipped = [], []
+	for rung in rungs:
+		get = rung.get if isinstance(rung, dict) else lambda k: getattr(rung, k, None)
+		linked = get("plan")
+		if linked and frappe.db.exists("Plan", linked):
+			skipped.append(linked)
+			continue
+		doc = frappe.get_doc(
 			{
 				"doctype": "Plan",
-				"__newname": name,
-				"title": g("label") or name,
-				"category": "VM Plans",
+				"title": plan_title(prefix, get("label") or get("plan_name")),
+				"category": category,
 				"sub_category": sub_category,
 				"billing_cycle": billing_cycle,
 				"is_active": is_active,
-				"includes": rung_includes(g("vcpu"), g("memory_gb"), g("disk_gb"), g("transfer_gb")),
+				"includes": rung_includes(get("vcpu"), get("memory_gb"), get("disk_gb"), get("transfer_gb")),
 			}
 		).insert(ignore_permissions=True)
-		created.append(name)
+		_set_rung_plan(rung, doc.name)
+		created.append(doc.name)
 	return {"created": created, "skipped": skipped}
+
+
+def _set_rung_plan(rung, name: str) -> None:
+	"""Record the minted hash on the rung — dict (unit tests) or child row (real flow)."""
+	if isinstance(rung, dict):
+		rung["plan"] = name
+	else:
+		rung.plan = name
+
+
+def ensure_sub_category(category: str, name: str) -> str:
+	"""Mint a Plan Sub-Category under `category` if absent; return its name. Used by
+	the 'Custom' authoring path — a custom variant becomes a real sub-category first,
+	then the plans hang beneath it."""
+	if not frappe.db.exists("Plan Sub-Category", name):
+		frappe.get_doc(
+			{"doctype": "Plan Sub-Category", "sub_category_name": name, "category": category}
+		).insert(ignore_permissions=True)
+	return name
+
+
+def create_simple_plan(
+	category: str,
+	title: str,
+	resource_type: str,
+	quantity: float,
+	unit: str,
+	*,
+	sub_category: str | None = None,
+	billing_cycle: str = "Monthly",
+	is_active: int = 1,
+) -> str:
+	"""The `simple` builder: author one hash-named Plan with a single-resource
+	composition (Tokens, Disk, Storage…). The category's allowed_resource_types
+	guard the include (enforced by Plan.validate). Returns the minted hash."""
+	doc = frappe.get_doc(
+		{
+			"doctype": "Plan",
+			"title": title,
+			"category": category,
+			"sub_category": sub_category,
+			"billing_cycle": billing_cycle,
+			"is_active": is_active,
+			"includes": [{"resource_type": resource_type, "quantity": flt(quantity), "unit": unit}],
+		}
+	).insert(ignore_permissions=True)
+	return doc.name
 
 
 def apply_pricing(
