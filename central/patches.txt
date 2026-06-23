@@ -58,4 +58,8 @@ central.billing.patches.v14_titlecase_collection_mode.titlecase_collection_mode
 # links). Seeds the VM family, backfills plans, drops the plan_class column, flags
 # IP/Snapshot for reclassification — ADR 0007, issue #75.
 central.billing.patches.v15_catalog_taxonomy_masters.catalog_taxonomy
+# Seed the non-VM product families on the ADR 0007 taxonomy: AI Tokens, SaaS Storage,
+# Remote Storage (Frappe Box) categories + Tokens/Storage/Backup resource types +
+# Remote Storage sub-categories. No schema change — issue #77.
+central.billing.patches.v16_product_families.product_families
 central.patches.v01_capability_model_v2.rename_capabilities
