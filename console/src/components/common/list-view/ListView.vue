@@ -398,21 +398,36 @@ v-if="searchable || filters.length || $slots.toolbar"
           </div>
         </div>
 
-        <ListViewState
-v-else-if="error && !hasRows" kind="error" title="Couldn't load this list" :description="error"
-          @retry="$emit('retry')" />
-
-        <ListViewState
-v-else-if="!hasRows && hasActiveQuery" kind="filtered" title="No matching results"
-          description="Change or clear the filters to see more results." @clear="clearFilters" />
-
-        <ListViewState
-v-else-if="!hasRows" kind="empty" :title="emptyState.title"
-          :description="emptyState.description">
-          <template v-if="$slots['empty-action']" #action>
-            <slot name="empty-action" />
-          </template>
-        </ListViewState>
+        <!-- State messages stay inside the table, so they're wrapped in a
+             row/cell: every non-rowgroup child of role="table" must be a row. -->
+        <div v-else-if="!hasRows" role="row">
+          <div role="cell" :aria-colindex="1" :aria-colspan="visibleColumnCount">
+            <ListViewState
+              v-if="error"
+              kind="error"
+              title="Couldn't load this list"
+              :description="error"
+              @retry="$emit('retry')"
+            />
+            <ListViewState
+              v-else-if="hasActiveQuery"
+              kind="filtered"
+              title="No matching results"
+              description="Change or clear the filters to see more results."
+              @clear="clearFilters"
+            />
+            <ListViewState
+              v-else
+              kind="empty"
+              :title="emptyState.title"
+              :description="emptyState.description"
+            >
+              <template v-if="$slots['empty-action']" #action>
+                <slot name="empty-action" />
+              </template>
+            </ListViewState>
+          </div>
+        </div>
 
         <div v-else role="rowgroup">
           <div

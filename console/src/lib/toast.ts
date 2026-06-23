@@ -29,7 +29,7 @@ export function isAbortError(e: unknown): boolean {
   if (!e || typeof e !== 'object') return false
 
   const err = e as { name?: string; message?: string }
-  return err.name === 'AbortError' || /\baborted\b/i.test(err.message ?? '')
+  return err.name === 'AbortError'
 }
 
 export function getErrorMessage(e: unknown, fallback = 'Something went wrong.'): string {
