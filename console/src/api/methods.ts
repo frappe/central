@@ -22,4 +22,7 @@ export const API = {
 
   // ── SSO open-in-bench (central.api.sso) ──
   getBenchLink: 'central.api.sso.get_bench_link',
+
+  // ── Billing catalog (central.billing.api.dashboard.catalog) ──
+  eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 } as const

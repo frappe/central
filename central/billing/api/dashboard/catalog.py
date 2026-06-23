@@ -30,7 +30,7 @@ def _allowlist(value) -> set[str] | None:
 
 
 @frappe.whitelist()
-def get_provisionable_plans(cluster: str | None = None, team: str | None = None) -> dict:
+def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> dict:
 	"""Active plans the team can provision on `cluster`, filtered by its trust tier.
 
 	A plan is offered only when ALL of the following hold:

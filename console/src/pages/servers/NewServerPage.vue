@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Badge, Button, FormControl } from 'frappe-ui'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/common/PageHeader.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { SIZE_PRESETS, presetSpecs, type SizePreset } from '@/lib/plans'
+import { usePlans } from '@/composables/usePlans'
+import { planSpecs, planPrice, planResources } from '@/lib/plans'
+import type { Plan } from '@/types'
 
-// New server. Region is the set of available Atlas Instances; size is a preset
-// (no Plan doctype on Central yet). Create routes through central.api.servers
-// .create_server → the region's Atlas → a real VM (dev fake provider), which is
-// mirrored back so it shows on the Servers list.
+// New server. Region is the set of available Atlas Instances; the plan comes from
+// the billing catalog, priced for the team's currency on that region and within
+// its trust-tier headroom (usePlans). Create routes through central.api.servers
+// .create_server — Atlas provisions raw resources, not plan names, so we pass the
+// plan's bundled vcpus/memory/disk → the region's Atlas → a real VM (dev fake
+// provider), mirrored back so it shows on the Servers list.
 const router = useRouter()
 const { regions, loading } = useRegions()
 const { create, creating } = useServers()
@@ -19,27 +23,37 @@ const { canCreateServer } = useCapabilities()
 
 const selectedRegion = ref<string | null>(null)
 const name = ref('')
-const selectedSlug = ref<string>(SIZE_PRESETS[0].slug)
+const selectedPlan = ref<string | null>(null)
 
-const selectedSize = computed<SizePreset>(
-  () => SIZE_PRESETS.find((p) => p.slug === selectedSlug.value) ?? SIZE_PRESETS[0],
+const { plans, loading: plansLoading } = usePlans(selectedRegion)
+
+const selectedPlanObj = computed<Plan | null>(
+  () => plans.value.find((p) => p.plan === selectedPlan.value) ?? null,
 )
 
+// Switching region re-prices the menu, so a plan picked for the old region may no
+// longer be offered — drop the selection unless it survives.
+watch(plans, (rows) => {
+  if (selectedPlan.value && !rows.some((p) => p.plan === selectedPlan.value)) {
+    selectedPlan.value = null
+  }
+})
+
 const canSubmit = computed(
-  () => canCreateServer.value && !!selectedRegion.value && name.value.trim().length > 0,
+  () =>
+    canCreateServer.value &&
+    !!selectedRegion.value &&
+    !!selectedPlanObj.value &&
+    name.value.trim().length > 0,
 )
 
 async function submit() {
-  if (!canSubmit.value || !selectedRegion.value) return
-  const size = selectedSize.value
+  if (!canSubmit.value || !selectedRegion.value || !selectedPlanObj.value) return
   try {
     await create({
       region: selectedRegion.value,
       title: name.value.trim(),
-      vcpus: size.vcpus,
-      memory_megabytes: size.memoryMegabytes,
-      disk_gigabytes: size.diskGigabytes,
-      cpu_max_cores: size.cpuMaxCores,
+      ...planResources(selectedPlanObj.value),
     })
     router.push('/servers')
   } catch {
@@ -109,27 +123,39 @@ async function submit() {
         </div>
       </section>
 
-      <!-- Size -->
+      <!-- Plan -->
       <section class="space-y-3">
         <div class="flex items-center gap-2">
-          <span class="lucide-cpu size-4 text-ink-gray-6" aria-hidden="true" />
-          <h2 class="text-base font-medium text-ink-gray-8">Size</h2>
+          <span class="lucide-box size-4 text-ink-gray-6" aria-hidden="true" />
+          <h2 class="text-base font-medium text-ink-gray-8">Plan</h2>
         </div>
-        <div class="grid gap-3 sm:grid-cols-2">
+
+        <p v-if="!selectedRegion" class="text-p-sm text-ink-gray-5">
+          Pick a region to see the plans available there.
+        </p>
+        <p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">Loading plans…</p>
+        <p v-else-if="!plans.length" class="text-p-sm text-ink-gray-5">
+          No plans are available for this region within your current spending limit.
+        </p>
+
+        <div v-else class="grid gap-3 sm:grid-cols-2">
           <button
-            v-for="preset in SIZE_PRESETS"
-            :key="preset.slug"
+            v-for="plan in plans"
+            :key="plan.plan"
             type="button"
-            class="flex flex-col gap-1 rounded-lg border px-4 py-3 text-left transition-colors"
+            class="flex flex-col gap-1.5 rounded-lg border px-4 py-3 text-left transition-colors"
             :class="
-              selectedSlug === preset.slug
+              selectedPlan === plan.plan
                 ? 'border-outline-gray-4 bg-surface-gray-2'
                 : 'border-outline-gray-2 hover:border-outline-gray-3'
             "
-            @click="selectedSlug = preset.slug"
+            @click="selectedPlan = plan.plan"
           >
-            <span class="font-medium text-ink-gray-9">{{ preset.label }}</span>
-            <span class="text-p-sm text-ink-gray-5">{{ presetSpecs(preset) }}</span>
+            <div class="flex items-center justify-between gap-2">
+              <span class="font-medium text-ink-gray-9">{{ plan.title }}</span>
+              <span class="shrink-0 text-p-sm font-medium text-ink-gray-8">{{ planPrice(plan) }}</span>
+            </div>
+            <span class="text-p-sm text-ink-gray-5">{{ planSpecs(plan) }}</span>
           </button>
         </div>
       </section>

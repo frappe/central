@@ -5,7 +5,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.api.dashboard.catalog import get_provisionable_plans
+from central.billing.api.dashboard.catalog import get_eligible_plans
 from central.billing.tests.utils import (
 	clear_team_tier,
 	complete_billing_profile,
@@ -46,7 +46,7 @@ def _rates(global_inr, cluster=None, cluster_inr=None):
 	return rows
 
 
-class TestProvisionablePlans(IntegrationTestCase):
+class TestEligiblePlans(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM, currency="INR")
@@ -61,7 +61,7 @@ class TestProvisionablePlans(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def _titles(self, cluster=CLUSTER):
-		out = get_provisionable_plans(cluster=cluster, team=TEAM)
+		out = get_eligible_plans(cluster=cluster, team=TEAM)
 		return {p["plan"] for p in out["plans"]}, out
 
 	def _provision(self, plan, rate, cluster=CLUSTER):
@@ -117,7 +117,7 @@ class TestProvisionablePlans(IntegrationTestCase):
 		set_team_tier(TEAM, max_spend=6000)
 		# Re-price CHEAP cheaper on CLUSTER; the menu must show the regional rate.
 		make_plan(CHEAP, rates=_rates(1000, cluster=CLUSTER, cluster_inr=800))
-		out = get_provisionable_plans(cluster=CLUSTER, team=TEAM)
+		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		row = next(p for p in out["plans"] if p["plan"] == CHEAP)
 		self.assertEqual(row["rate"], 800)
 
@@ -137,7 +137,7 @@ class TestProvisionablePlans(IntegrationTestCase):
 
 	def test_untiered_team_has_no_headroom(self):
 		# No tier pinned → 0 cap → no paid plan fits (only free plans, if any).
-		out = get_provisionable_plans(cluster=CLUSTER, team=TEAM)
+		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		self.assertEqual(out["max_spend"], 0)
 		self.assertTrue(all(p["rate"] == 0 for p in out["plans"]))
 		self.assertEqual({CHEAP, MID, PRICEY} & {p["plan"] for p in out["plans"]}, set())

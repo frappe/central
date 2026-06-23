@@ -69,3 +69,38 @@ export interface Team {
 export interface BenchLinkResponse {
   url: string
 }
+
+/** One bundled resource in a plan (central Plan Includes). */
+export interface PlanInclude {
+  resource_type: 'Compute' | 'Memory' | 'Disk' | 'Transfer' | 'IP' | 'Snapshot'
+  quantity: number
+  unit: string
+}
+
+/** An eligible plan from the billing catalog, priced for the team's currency
+ *  on the chosen region.
+ *  (central.billing.api.dashboard.catalog.get_eligible_plans) */
+export interface Plan {
+  plan: string
+  title: string
+  plan_class: string
+  billing_cycle: 'Monthly' | 'Annual'
+  currency: string
+  cluster: string | null
+  rate: number
+  includes: PlanInclude[]
+}
+
+/** get_eligible_plans response: the offered menu plus the trust-tier headroom
+ *  (spend cap minus current run-rate) that shaped it. */
+export interface ProvisionablePlans {
+  team: string
+  cluster: string | null
+  currency: string
+  tier: string | null
+  max_spend: number
+  current_spend: number
+  /** Remaining headroom in the team's currency: a plan is offered only if it fits. */
+  available: number
+  plans: Plan[]
+}
