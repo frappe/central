@@ -33,6 +33,8 @@ def make_plan(name, rates=None, includes=None, **kwargs):
 			"doctype": "Plan",
 			"__newname": name,
 			"title": kwargs.get("title", name),
+			"category": kwargs.get("category", "VM Plans"),
+			"sub_category": kwargs.get("sub_category"),
 			"billing_cycle": kwargs.get("billing_cycle", "Monthly"),
 			"is_active": kwargs.get("is_active", 1),
 			"includes": includes if includes is not None else DEFAULT_INCLUDES,

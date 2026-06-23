@@ -1,0 +1,143 @@
+{
+ "actions": [],
+ "autoname": "field:category_name",
+ "creation": "2026-06-23 00:00:00.000000",
+ "description": "A product family (VM Plans, AI Tokens, SaaS Storage, Remote Storage). Behavioral and self-describing: it declares the resource types a member plan may include, the unit billing collects, the meter kind, and which configurator builder authors it. Adding a family is a new document, not a schema change (ADR 0007).",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "category_name",
+  "is_active",
+  "description",
+  "column_break_head",
+  "configurator_builder",
+  "sub_category_label",
+  "section_break_billing",
+  "default_billing_type",
+  "default_pricing_mode",
+  "column_break_billing",
+  "billable_unit",
+  "meter_kind",
+  "section_break_resources",
+  "allowed_resource_types"
+ ],
+ "fields": [
+  {
+   "fieldname": "category_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Category",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "simple",
+   "fieldname": "configurator_builder",
+   "fieldtype": "Select",
+   "label": "Configurator Builder",
+   "options": "vm_rungs\nsimple",
+   "reqd": 1,
+   "description": "Which Plan Configurator builder authors this family. vm_rungs = the vCPU/memory/disk/transfer ladder; simple = name + included quantity + rate."
+  },
+  {
+   "fieldname": "sub_category_label",
+   "fieldtype": "Data",
+   "label": "Sub-Category Label",
+   "description": "What a sub-category means for this family (e.g. 'Optimization profile', 'Storage purpose'). Blank = this family has no sub-category axis; plans attach directly to the category."
+  },
+  {
+   "fieldname": "section_break_billing",
+   "fieldtype": "Section Break",
+   "label": "Billing"
+  },
+  {
+   "default": "Fixed",
+   "fieldname": "default_billing_type",
+   "fieldtype": "Select",
+   "label": "Default Billing Type",
+   "options": "Fixed\nMetered\nTiered",
+   "reqd": 1
+  },
+  {
+   "default": "Grandfathered",
+   "fieldname": "default_pricing_mode",
+   "fieldtype": "Select",
+   "label": "Default Pricing Mode",
+   "options": "Grandfathered\nLive"
+  },
+  {
+   "fieldname": "column_break_billing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "billable_unit",
+   "fieldtype": "Data",
+   "label": "Billable Unit",
+   "description": "The human-readable thing billing counts (e.g. 'vCPU bundle / mo', '1M tokens', 'GB-day'). Answers: what data do we collect to bill this family?"
+  },
+  {
+   "default": "None",
+   "fieldname": "meter_kind",
+   "fieldtype": "Select",
+   "label": "Meter Kind",
+   "options": "None\nCounter\nGauge",
+   "description": "How usage is recorded: None (flat bundle), Counter (tokens, transfer), Gauge (storage GB-days)."
+  },
+  {
+   "fieldname": "section_break_resources",
+   "fieldtype": "Section Break",
+   "label": "Allowed Resource Types"
+  },
+  {
+   "fieldname": "allowed_resource_types",
+   "fieldtype": "Table",
+   "label": "Allowed Resource Types",
+   "options": "Plan Category Resource Type",
+   "description": "A member plan's composition may only use these resource types. Blank = unconstrained."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-06-23 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Plan Category",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

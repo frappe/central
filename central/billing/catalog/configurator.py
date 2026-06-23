@@ -129,12 +129,21 @@ def generate_plans(plan_class: str | None, rungs: list, billing_cycle: str = "Mo
 		if frappe.db.exists("Plan", name):
 			skipped.append(name)
 			continue
+		# vm_rungs always authors the VM Plans family; plan_class is its optimization
+		# profile, now a Plan Sub-Category (Custom carries none). #76 folds this into
+		# the category-aware builder dispatch.
+		sub_category = (
+			plan_class
+			if plan_class and plan_class != "Custom" and frappe.db.exists("Plan Sub-Category", plan_class)
+			else None
+		)
 		frappe.get_doc(
 			{
 				"doctype": "Plan",
 				"__newname": name,
 				"title": g("label") or name,
-				"plan_class": plan_class,
+				"category": "VM Plans",
+				"sub_category": sub_category,
 				"billing_cycle": billing_cycle,
 				"is_active": is_active,
 				"includes": rung_includes(g("vcpu"), g("memory_gb"), g("disk_gb"), g("transfer_gb")),

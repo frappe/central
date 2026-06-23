@@ -8,7 +8,8 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
-  "plan_class",
+  "category",
+  "sub_category",
   "column_break_head",
   "is_active",
   "billing_cycle",
@@ -61,10 +62,21 @@
    "options": "Plan Includes"
   },
   {
-   "fieldname": "plan_class",
-   "fieldtype": "Select",
-   "label": "Plan Class",
-   "options": "General\nCPU Optimised\nMemory Optimised\nStorage Optimised\nCustom"
+   "default": "VM Plans",
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Category",
+   "options": "Plan Category",
+   "reqd": 1,
+   "description": "The product family this plan belongs to (ADR 0007). Constrains the resource types its composition may use."
+  },
+  {
+   "fieldname": "sub_category",
+   "fieldtype": "Link",
+   "label": "Sub-Category",
+   "options": "Plan Sub-Category",
+   "description": "Optional variant within the family; only families with a sub-category axis use it."
   }
  ],
  "index_web_pages_for_search": 1,
