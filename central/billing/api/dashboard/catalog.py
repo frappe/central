@@ -116,6 +116,7 @@ def _rates_by_plan(names: list[str]) -> dict[str, list]:
 		"Catalog Rate",
 		filters={"priced_doctype": "Plan", "priced_for": ["in", names]},
 		fields=["priced_for", "cluster", "currency", "rate"],
+		limit=0,  # all rates for the candidate set (get_all is unbounded, but be explicit)
 	):
 		grouped.setdefault(r.priced_for, []).append(r)
 	return grouped
@@ -131,6 +132,7 @@ def _includes_by_plan(names: list[str]) -> dict[str, list]:
 		filters={"parenttype": "Plan", "parent": ["in", names]},
 		fields=["parent", "resource_type", "quantity", "unit"],
 		order_by="idx asc",
+		limit=0,  # every composition row for the candidate set, not a 20-row page
 	):
 		grouped.setdefault(r.parent, []).append(r)
 	return grouped
@@ -156,6 +158,7 @@ def _current_run_rate(team: str) -> float:
 		"Price Lock",
 		filters={"team": team, "ended_at": ["is", "not set"]},
 		pluck="locked_rate",
+		limit=0,  # sum every active lock; a 20-row page would understate the run-rate
 	)
 	return frappe.utils.flt(sum(frappe.utils.flt(r) for r in rates))
 
