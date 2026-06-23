@@ -51,6 +51,7 @@ class TestProvisionablePlans(IntegrationTestCase):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM, currency="INR")
 		clear_team_tier(TEAM)  # each test pins (or leaves untiered) its own cap
+		frappe.db.delete("Price Lock", {"team": TEAM})  # start with no committed usage
 		_ensure_tier_level("t1")
 		make_plan(CHEAP, rates=_rates(1000))
 		make_plan(MID, rates=_rates(2000))
@@ -63,6 +64,16 @@ class TestProvisionablePlans(IntegrationTestCase):
 		out = get_provisionable_plans(cluster=cluster, team=TEAM)
 		return {p["plan"] for p in out["plans"]}, out
 
+	def _provision(self, plan, rate, cluster=CLUSTER):
+		"""A running resource that consumes `rate` of the team's cap (active lock)."""
+		frappe.get_doc(
+			{
+				"doctype": "Price Lock", "team": TEAM, "plan": plan, "cluster": cluster,
+				"resource_id": f"srv-{frappe.generate_hash(6)}", "currency": "INR",
+				"locked_rate": rate, "started_at": frappe.utils.now_datetime(),
+			}
+		).insert(ignore_permissions=True)
+
 	def test_spend_cap_hides_plans_above_the_ceiling(self):
 		set_team_tier(TEAM, max_spend=2000)  # admits CHEAP (1000) + MID (2000), not PRICEY
 		plans, out = self._titles()
@@ -70,6 +81,25 @@ class TestProvisionablePlans(IntegrationTestCase):
 		self.assertIn(CHEAP, plans)
 		self.assertIn(MID, plans)
 		self.assertNotIn(PRICEY, plans)
+
+	def test_existing_usage_reduces_headroom(self):
+		# 4000 cap, already running a 1000 server → 3000 headroom. MID (2000) fits,
+		# PRICEY (5000) and any 3001+ plan do not.
+		set_team_tier(TEAM, max_spend=4000)
+		self._provision(CHEAP, 1000)
+		plans, out = self._titles()
+		self.assertEqual(out["max_spend"], 4000)
+		self.assertEqual(out["current_spend"], 1000)
+		self.assertEqual(out["available"], 3000)
+		self.assertIn(MID, plans)
+		self.assertNotIn(PRICEY, plans)
+
+	def test_usage_at_cap_leaves_no_paid_headroom(self):
+		set_team_tier(TEAM, max_spend=2000)
+		self._provision(MID, 2000)  # consumes the whole cap
+		plans, out = self._titles()
+		self.assertEqual(out["available"], 0)
+		self.assertEqual({CHEAP, MID, PRICEY} & plans, set())
 
 	def test_higher_cap_reveals_more_plans(self):
 		set_team_tier(TEAM, max_spend=6000)
