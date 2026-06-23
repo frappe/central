@@ -14,7 +14,7 @@ import frappe
 
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
 from central.billing.catalog.entitlements import get_team_caps
-from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
+from central.billing.catalog.pricing import resolve_rate
 
 
 def _allowlist(value) -> set[str] | None:
@@ -74,20 +74,63 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 	if cluster and allowed_clusters is not None and cluster not in allowed_clusters:
 		return {**header, "plans": {}}
 
+	candidates = frappe.get_all(
+		"Plan",
+		filters={"is_active": 1},
+		fields=["name", "title", "plan_class", "billing_cycle"],
+		order_by="title asc",
+	)
+	if allowed_plans is not None:
+		candidates = [p for p in candidates if p.name in allowed_plans]
+
+	# Bulk-load rates + composition for the whole candidate set up front, so the loop
+	# below is in-memory work — no per-plan query (was an N+1: a rates query and a
+	# get_doc per plan).
+	names = [p.name for p in candidates]
+	rates_by_plan = _rates_by_plan(names)
+	includes_by_plan = _includes_by_plan(names)
+
 	plans = []
-	for name in frappe.get_all("Plan", filters={"is_active": 1}, pluck="name", order_by="title asc"):
-		if allowed_plans is not None and name not in allowed_plans:
-			continue
-		rate = resolve_rate(get_catalog_rates("Plan", name), currency, cluster)
+	for p in candidates:
+		rate = resolve_rate(rates_by_plan.get(p.name, []), currency, cluster)
 		if rate is None:
 			continue  # not priced for this currency/cluster → not available here
 		if frappe.utils.flt(rate) > available:
 			continue  # would push the team past its remaining trust-tier headroom
-		plans.append(_plan_row(name, currency, cluster, rate))
+		plans.append(_plan_row(p, currency, cluster, rate, includes_by_plan.get(p.name, [])))
 
 	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
 	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
 	return {**header, "plans": _group_by_class(plans)}
+
+
+def _rates_by_plan(names: list[str]) -> dict[str, list]:
+	"""Every Plan's `Catalog Rate` rows in one query, grouped by plan name."""
+	if not names:
+		return {}
+	grouped: dict[str, list] = {}
+	for r in frappe.get_all(
+		"Catalog Rate",
+		filters={"priced_doctype": "Plan", "priced_for": ["in", names]},
+		fields=["priced_for", "cluster", "currency", "rate"],
+	):
+		grouped.setdefault(r.priced_for, []).append(r)
+	return grouped
+
+
+def _includes_by_plan(names: list[str]) -> dict[str, list]:
+	"""Every Plan's `Plan Includes` rows in one query, grouped by parent (in `idx` order)."""
+	if not names:
+		return {}
+	grouped: dict[str, list] = {}
+	for r in frappe.get_all(
+		"Plan Includes",
+		filters={"parenttype": "Plan", "parent": ["in", names]},
+		fields=["parent", "resource_type", "quantity", "unit"],
+		order_by="idx asc",
+	):
+		grouped.setdefault(r.parent, []).append(r)
+	return grouped
 
 
 def _group_by_class(rows: list[dict]) -> dict[str, list]:
@@ -114,19 +157,19 @@ def _current_run_rate(team: str) -> float:
 	return frappe.utils.flt(sum(frappe.utils.flt(r) for r in rates))
 
 
-def _plan_row(name: str, currency: str, cluster: str | None, rate) -> dict:
-	"""A create-server menu entry: identity, composition (specs), and resolved rate."""
-	doc = frappe.get_doc("Plan", name)
+def _plan_row(plan, currency: str, cluster: str | None, rate, includes) -> dict:
+	"""A create-server menu entry: identity, composition (specs), and resolved rate.
+	`plan` is a bulk-fetched Plan row; `includes` its pre-loaded Plan Includes rows."""
 	return {
-		"plan": name,
-		"title": doc.title,
-		"plan_class": doc.plan_class or "General",  # unset class groups under General
-		"billing_cycle": doc.billing_cycle,
+		"plan": plan.name,
+		"title": plan.title,
+		"plan_class": plan.plan_class or "General",  # unset class groups under General
+		"billing_cycle": plan.billing_cycle,
 		"currency": currency,
 		"cluster": cluster,
 		"rate": frappe.utils.flt(rate),
 		"includes": [
 			{"resource_type": i.resource_type, "quantity": i.quantity, "unit": i.unit}
-			for i in doc.includes
+			for i in includes
 		],
 	}
