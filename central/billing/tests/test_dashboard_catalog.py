@@ -124,11 +124,15 @@ class TestEligiblePlans(IntegrationTestCase):
 		frappe.db.set_value("Plan", MID, "plan_class", "CPU Optimised")
 		frappe.db.set_value("Plan", PRICEY, "plan_class", "Memory Optimised")
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
-		# Canonical key order: General before CPU Optimised before Memory Optimised.
-		self.assertEqual(list(out["plans"]), ["General", "CPU Optimised", "Memory Optimised"])
+		# Keys come in canonical order, whatever subset of classes the catalog has
+		# (other suites seed plans of their own — don't assume a closed world).
+		canonical = ["General", "CPU Optimised", "Memory Optimised", "Storage Optimised", "Custom"]
+		keys = list(out["plans"])
+		self.assertEqual(keys, [c for c in canonical if c in keys])
+		# Each plan lands in its own class; an unset class stays General.
 		self.assertIn(CHEAP, {p["plan"] for p in out["plans"]["General"]})
-		self.assertEqual({p["plan"] for p in out["plans"]["CPU Optimised"]}, {MID})
-		self.assertEqual({p["plan"] for p in out["plans"]["Memory Optimised"]}, {PRICEY})
+		self.assertIn(MID, {p["plan"] for p in out["plans"]["CPU Optimised"]})
+		self.assertIn(PRICEY, {p["plan"] for p in out["plans"]["Memory Optimised"]})
 
 	def test_regional_plan_only_on_its_cluster(self):
 		set_team_tier(TEAM, max_spend=6000)
