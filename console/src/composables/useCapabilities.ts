@@ -32,6 +32,8 @@ export function useCapabilities() {
     canTerminateServer: computed(() => has('server:terminate')),
     canOpenServer: computed(() => has('server:open')),
     canViewClusters: computed(() => has('cluster:view')),
+    canViewBilling: computed(() => has('billing:view')),
+    canManageBilling: computed(() => has('billing:manage')),
     reload: () => capsCall.reload(),
   }
 }
