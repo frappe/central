@@ -106,6 +106,12 @@ class TestEligiblePlans(IntegrationTestCase):
 		plans, _ = self._titles()
 		self.assertTrue({CHEAP, MID, PRICEY, REGIONAL}.issubset(plans))
 
+	def test_plans_are_ordered_cheapest_first(self):
+		set_team_tier(TEAM, max_spend=6000)
+		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+		rates = [p["rate"] for p in out["plans"]]
+		self.assertEqual(rates, sorted(rates))
+
 	def test_regional_plan_only_on_its_cluster(self):
 		set_team_tier(TEAM, max_spend=6000)
 		on_cluster, _ = self._titles(cluster=CLUSTER)

@@ -76,6 +76,8 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 			continue  # would push the team past its remaining trust-tier headroom
 		plans.append(_plan_row(name, currency, cluster, rate))
 
+	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
+	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
 	return {**header, "plans": plans}
 
 
