@@ -3,6 +3,7 @@ import { useCall } from 'frappe-ui'
 import { method } from '@/api/methods'
 import type { ListViewQuery } from '@/components/common/list-view'
 import { useFrappeListInvalidation } from '@/composables/common/useFrappeRealtime'
+import { isAbortError } from '@/lib/toast'
 
 type FilterValue = string | number | boolean | null
 export type FrappeListFilter = [string, string, FilterValue]
@@ -94,7 +95,12 @@ export function useFrappeList<T>(options: UseFrappeListOptions<T>) {
     totalRows: computed(() => countCall.data ?? 0),
     countLoading: computed(() => countCall.loading || !countCall.isFinished),
     loading: computed(() => rowsCall.loading || !rowsCall.isFinished),
-    error: computed(() => rowsCall.error || countCall.error),
+    // A superseded request (aborted when the team/query changes) isn't a real
+    // error — ignore it so switching teams doesn't flash a failure banner.
+    error: computed(() => {
+      const e = rowsCall.error || countCall.error
+      return isAbortError(e) ? null : e
+    }),
     reload,
     listenForUpdates,
   }
