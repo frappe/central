@@ -29,10 +29,11 @@ from central.billing.catalog.plans import RATIO_FACTORS
 
 _MAX_RUNGS = 24  # safety bound on the doubling loop
 
-# Plan classes pre-set the memory ratio the way cloud families do. "Custom" defers
-# to the explicit ratio. Storage- and memory-optimised share 1:8; they differ by
-# disk, which the admin sets via the base disk (and edits per rung).
-CLASS_RATIOS = {
+# Sub-category presets pin the memory ratio the way cloud families do. Storage- and
+# memory-optimised share 1:8; they differ by disk, which the admin sets via the base
+# disk (and edits per rung). Any other (or a freshly-minted custom) sub-category
+# defers to the explicit ratio.
+SUB_CATEGORY_RATIOS = {
 	"CPU Optimised": "1:2",
 	"General": "1:4",
 	"Memory Optimised": "1:8",
@@ -40,11 +41,10 @@ CLASS_RATIOS = {
 }
 
 
-def ratio_for(plan_class: str | None, memory_ratio: str) -> str:
-	"""The effective ratio: a class pins it; "Custom"/blank uses the explicit one."""
-	if plan_class and plan_class != "Custom":
-		return CLASS_RATIOS[plan_class]
-	return memory_ratio
+def ratio_for(sub_category: str | None, memory_ratio: str) -> str:
+	"""The effective ratio: a preset sub-category pins it; anything else (blank, custom)
+	uses the explicit ratio."""
+	return SUB_CATEGORY_RATIOS.get(sub_category, memory_ratio)
 
 
 def build_ladder(
@@ -122,7 +122,6 @@ def plan_title(prefix: str | None, label: str) -> str:
 
 
 def generate_plans(
-	plan_class: str | None,
 	rungs: list,
 	billing_cycle: str = "Monthly",
 	is_active: int = 1,
@@ -137,15 +136,9 @@ def generate_plans(
 	written back onto the rung (in place; persisted by the caller). Accepts dicts or
 	child-table rows.
 
-	`sub_category` overrides the profile (e.g. a freshly-minted Custom one); when
-	absent it derives from `plan_class` (the vm_rungs optimization profile).
+	`sub_category` is the optimisation profile (a Plan Sub-Category under `category`),
+	or None for an unclassified bundle; the prefix (sub-category, else category) names it.
 	"""
-	if sub_category is None:
-		sub_category = (
-			plan_class
-			if plan_class and plan_class != "Custom" and frappe.db.exists("Plan Sub-Category", plan_class)
-			else None
-		)
 	prefix = sub_category or category
 	created, skipped = [], []
 	for rung in rungs:

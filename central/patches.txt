@@ -62,4 +62,7 @@ central.billing.patches.v15_catalog_taxonomy_masters.catalog_taxonomy
 # Remote Storage (Frappe Box) categories + Tokens/Storage/Backup resource types +
 # Remote Storage sub-categories. No schema change — issue #77.
 central.billing.patches.v16_product_families.product_families
+# Title-case the configurator_builder Select (vm_rungs/simple -> VM Rungs/Simple) and
+# replace Plan Configurator's plan_class with the sub_category link — ADR 0007.
+central.billing.patches.v17_configurator_taxonomy_alignment.configurator_taxonomy_alignment
 central.patches.v01_capability_model_v2.rename_capabilities

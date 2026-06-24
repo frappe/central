@@ -25,7 +25,7 @@ class PlanConfigurator(Document):
 				r.label = r.label or ident["label"]
 
 	def _ratio(self) -> str:
-		return configurator.ratio_for(self.plan_class, self.memory_ratio)
+		return configurator.ratio_for(self.sub_category, self.memory_ratio)
 
 	def _formula_rungs(self) -> list[dict]:
 		return configurator.build_ladder(
@@ -82,7 +82,7 @@ class PlanConfigurator(Document):
 
 	def _builder(self) -> str:
 		"""The authoring builder for this configurator's family (ADR 0007)."""
-		return frappe.db.get_value("Plan Category", self.category, "configurator_builder") or "vm_rungs"
+		return frappe.db.get_value("Plan Category", self.category, "configurator_builder") or "VM Rungs"
 
 	def _resolved_sub_category(self) -> str | None:
 		"""A typed `new_sub_category` is minted (the Custom path); else the picked one."""
@@ -99,7 +99,7 @@ class PlanConfigurator(Document):
 	) -> dict:
 		"""Queue the (background) generation for a chosen cluster, currencies, and
 		subset of plans. This picks where/what to ship; the specs are edited above."""
-		if self._builder() == "simple":
+		if self._builder() == "Simple":
 			if not self.simple_plans:
 				frappe.throw("Add at least one plan row, then generate.")
 		elif not self.rungs:
@@ -130,7 +130,7 @@ class PlanConfigurator(Document):
 		if isinstance(currencies, str):
 			currencies = frappe.parse_json(currencies)
 		selected = set(plans) if plans else None
-		if self._builder() == "simple":
+		if self._builder() == "Simple":
 			return self._generate_simple(selected, cluster, currencies)
 		return self._generate_vm_rungs(selected, cluster, currencies)
 
@@ -139,7 +139,6 @@ class PlanConfigurator(Document):
 		if not rungs:
 			frappe.throw("No rungs selected to generate.")
 		result = configurator.generate_plans(
-			plan_class=self.plan_class,
 			rungs=rungs,
 			billing_cycle=self.billing_cycle,
 			is_active=cint(self.is_active),

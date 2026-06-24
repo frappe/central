@@ -48,13 +48,13 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "simple",
+   "default": "Simple",
    "fieldname": "configurator_builder",
    "fieldtype": "Select",
    "label": "Configurator Builder",
-   "options": "vm_rungs\nsimple",
+   "options": "VM Rungs\nSimple",
    "reqd": 1,
-   "description": "Which Plan Configurator builder authors this family. vm_rungs = the vCPU/memory/disk/transfer ladder; simple = name + included quantity + rate."
+   "description": "Which Plan Configurator builder authors this category. VM Rungs = the vCPU/memory/disk/transfer ladder; Simple = name + included quantity + rate."
   },
   {
    "fieldname": "sub_category_label",

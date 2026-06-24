@@ -1,9 +1,9 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-// Plan classes pin the memory ratio the way cloud families do (mirror of
-// configurator.CLASS_RATIOS).
-const CLASS_RATIOS = {
+// Sub-category presets pin the memory ratio the way cloud families do (mirror of
+// configurator.SUB_CATEGORY_RATIOS).
+const SUB_CATEGORY_RATIOS = {
 	"CPU Optimised": "1:2",
 	General: "1:4",
 	"Memory Optimised": "1:8",
@@ -19,11 +19,11 @@ function vcpu_label(v) {
 }
 
 frappe.ui.form.on("Plan Configurator", {
-	plan_class(frm) {
-		const ratio = CLASS_RATIOS[frm.doc.plan_class];
+	sub_category(frm) {
+		const ratio = SUB_CATEGORY_RATIOS[frm.doc.sub_category];
 		if (ratio) frm.set_value("memory_ratio", ratio);
-		if (frm.doc.plan_class && frm.doc.plan_class !== "Custom" && !frm.doc.__user_set_prefix) {
-			frm.set_value("plan_name_prefix", frm.doc.plan_class);
+		if (frm.doc.sub_category && !frm.doc.__user_set_prefix) {
+			frm.set_value("plan_name_prefix", frm.doc.sub_category);
 		}
 	},
 
@@ -32,6 +32,9 @@ frappe.ui.form.on("Plan Configurator", {
 	},
 
 	refresh(frm) {
+		// Sub-categories belong to a category; only offer this category's.
+		frm.set_query("sub_category", () => ({ filters: { category: frm.doc.category } }));
+
 		if (frm.is_new()) {
 			frm.dashboard.set_headline(__("Save the template, then populate and generate rungs."));
 			return;
@@ -55,10 +58,10 @@ frappe.ui.form.on("Plan Configurator", {
 			});
 		}
 
-		const simple = frm.doc.builder === "simple";
+		const simple = frm.doc.builder === "Simple";
 
 		// The vCPU ladder builder authors plans from a formula; the simple builder
-		// authors them row-by-row, so Populate/Preview are vm_rungs-only.
+		// authors them row-by-row, so Populate/Preview are VM Rungs-only.
 		if (!simple) {
 			frm.add_custom_button(__("Populate Rungs"), () => {
 				frm.call("populate_rungs").then((r) => {
@@ -86,7 +89,7 @@ frappe.ui.form.on("Plan Configurator", {
 	},
 
 	category(frm) {
-		// builder is fetched from the family; resections depend on it.
+		// builder is fetched from the category; resections depend on it.
 		frm.refresh_fields();
 	},
 });
@@ -170,7 +173,7 @@ function generate_dialog(frm) {
 				fieldtype: "MultiCheck",
 				columns: 1,
 				get_data: () =>
-					frm.doc.builder === "simple"
+					frm.doc.builder === "Simple"
 						? (frm.doc.simple_plans || []).map((p) => ({
 								label: `${p.title}  ·  ${p.quantity || 0} ${p.unit || ""}${price_hint(
 									p.multiplier || 1

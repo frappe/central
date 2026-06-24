@@ -101,7 +101,7 @@ class TestBuildLadder(IntegrationTestCase):
 		rungs = configurator.build_ladder(2, 16, "1:4", base_transfer_gb=4000, transfer_step_gb=1000)
 		self.assertEqual([r["transfer_gb"] for r in rungs], [4000, 5000, 6000, 7000])
 
-	def test_ratio_for_plan_class(self):
+	def test_ratio_for_sub_category(self):
 		self.assertEqual(configurator.ratio_for("CPU Optimised", "1:4"), "1:2")
 		self.assertEqual(configurator.ratio_for("General", "1:2"), "1:4")
 		self.assertEqual(configurator.ratio_for("Memory Optimised", "1:2"), "1:8")
@@ -135,7 +135,7 @@ class TestGenerate(IntegrationTestCase):
 		_cleanup()
 		self.cfg = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": TEMPLATE,
-			"plan_class": "Custom", "start_vcpu": 0.125, "ceiling_vcpu": 4,
+			"start_vcpu": 0.125, "ceiling_vcpu": 4,
 			"memory_ratio": "1:2", "base_disk_gb": 10, "plan_name_prefix": PREFIX,
 			"billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "INR", "base_rate": 100}, {"currency": "USD", "base_rate": 2}],
@@ -258,10 +258,10 @@ class TestGenerate(IntegrationTestCase):
 		self.assertTrue(row.plan and frappe.db.exists("Plan", row.plan))
 		self.assertEqual(out["created"], [row.plan])
 
-	def test_plan_class_drives_ratio_and_composition(self):
+	def test_sub_category_drives_ratio_and_composition(self):
 		mem = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": "Cfg Test Mem",
-			"plan_class": "Memory Optimised", "start_vcpu": 1, "ceiling_vcpu": 1,
+			"sub_category": "Memory Optimised", "start_vcpu": 1, "ceiling_vcpu": 1,
 			"plan_name_prefix": PREFIX, "billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "INR", "base_rate": 500}],
 		}).insert(ignore_permissions=True)
@@ -277,7 +277,7 @@ class TestGenerate(IntegrationTestCase):
 		# formula reproduces vCPU/RAM/disk/transfer/price across the rungs.
 		gp = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": "Cfg Test GP",
-			"plan_class": "General", "start_vcpu": 2, "ceiling_vcpu": 16,
+			"sub_category": "General", "start_vcpu": 2, "ceiling_vcpu": 16,
 			"base_disk_gb": 25, "base_transfer_gb": 4000, "transfer_step_gb": 1000,
 			"plan_name_prefix": "CfgGP", "billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "USD", "base_rate": 63}],
@@ -311,7 +311,7 @@ class TestSimpleBuilder(IntegrationTestCase):
 		if not frappe.db.exists("Plan Category", self.CATEGORY):
 			frappe.get_doc({
 				"doctype": "Plan Category", "category_name": self.CATEGORY,
-				"configurator_builder": "simple", "default_billing_type": "Metered",
+				"configurator_builder": "Simple", "default_billing_type": "Metered",
 				"billable_unit": "1M tokens", "meter_kind": "Counter",
 				"allowed_resource_types": [{"resource_type": "Tokens"}],
 			}).insert(ignore_permissions=True)
@@ -334,7 +334,7 @@ class TestSimpleBuilder(IntegrationTestCase):
 		}).insert(ignore_permissions=True)
 
 	def test_builder_dispatches_from_family(self):
-		self.assertEqual(self._cfg().builder, "simple")  # fetched from the category
+		self.assertEqual(self._cfg().builder, "Simple")  # fetched from the category
 
 	def test_authors_hash_named_priced_plans(self):
 		cfg = self._cfg()

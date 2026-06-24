@@ -69,14 +69,14 @@
    "label": "Category",
    "options": "Plan Category",
    "reqd": 1,
-   "description": "The product family this plan belongs to (ADR 0007). Constrains the resource types its composition may use."
+   "description": "The Plan Category this plan belongs to (ADR 0007). Constrains the resource types its composition may use."
   },
   {
    "fieldname": "sub_category",
    "fieldtype": "Link",
    "label": "Sub-Category",
    "options": "Plan Sub-Category",
-   "description": "Optional variant within the family; only families with a sub-category axis use it."
+   "description": "Optional sub-category within the Plan Category; only categories with a sub-category axis use it."
   }
  ],
  "index_web_pages_for_search": 1,

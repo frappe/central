@@ -21,7 +21,7 @@ RESOURCE_TYPES = ["Compute", "Memory", "Disk", "Transfer", "IP", "Snapshot", "To
 CATEGORIES = [
 	{
 		"category_name": "VM Plans",
-		"configurator_builder": "vm_rungs",
+		"configurator_builder": "VM Rungs",
 		"sub_category_label": "Optimization profile",
 		"default_billing_type": "Fixed",
 		"default_pricing_mode": "Grandfathered",
@@ -33,7 +33,7 @@ CATEGORIES = [
 	},
 	{
 		"category_name": "AI Tokens",
-		"configurator_builder": "simple",
+		"configurator_builder": "Simple",
 		"sub_category_label": "",
 		"default_billing_type": "Metered",
 		"default_pricing_mode": "Grandfathered",
@@ -45,7 +45,7 @@ CATEGORIES = [
 	},
 	{
 		"category_name": "SaaS Storage",
-		"configurator_builder": "simple",
+		"configurator_builder": "Simple",
 		"sub_category_label": "",
 		"default_billing_type": "Fixed",
 		"default_pricing_mode": "Grandfathered",
@@ -57,7 +57,7 @@ CATEGORIES = [
 	},
 	{
 		"category_name": "Remote Storage",
-		"configurator_builder": "simple",
+		"configurator_builder": "Simple",
 		"sub_category_label": "Storage purpose",
 		"default_billing_type": "Metered",
 		"default_pricing_mode": "Live",
