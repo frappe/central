@@ -1,0 +1,101 @@
+{
+ "actions": [],
+ "creation": "2026-06-24 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_hub",
+  "hub_private_key_path",
+  "hub_endpoint",
+  "listen_port",
+  "tunnel_cidr",
+  "hub_interface",
+  "column_break_hub",
+  "hub_public_key",
+  "hub_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_hub",
+   "fieldtype": "Section Break",
+   "label": "WireGuard Hub"
+  },
+  {
+   "default": "/etc/wireguard/wg0.key",
+   "description": "Path on the Central host to the hub's 0600 WireGuard private key. Generated here by Initialize Hub if absent; the key itself never enters the database.",
+   "fieldname": "hub_private_key_path",
+   "fieldtype": "Data",
+   "label": "Hub Private Key Path",
+   "reqd": 1
+  },
+  {
+   "description": "The hub's public endpoint, ip:port, pushed to each Atlas as its hub peer endpoint. e.g. 203.0.113.5:51820",
+   "fieldname": "hub_endpoint",
+   "fieldtype": "Data",
+   "label": "Hub Endpoint"
+  },
+  {
+   "default": "51820",
+   "description": "The hub's wg0 UDP listen port.",
+   "fieldname": "listen_port",
+   "fieldtype": "Int",
+   "label": "Listen Port",
+   "reqd": 1
+  },
+  {
+   "default": "10.88.0.0/16",
+   "description": "The tunnel address pool. The hub takes the first host (.1); each Atlas is allocated the next free /32.",
+   "fieldname": "tunnel_cidr",
+   "fieldtype": "Data",
+   "label": "Tunnel CIDR",
+   "reqd": 1
+  },
+  {
+   "default": "wg0",
+   "fieldname": "hub_interface",
+   "fieldtype": "Data",
+   "label": "Hub Interface",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_hub",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The hub's WireGuard public key, filled by Initialize Hub. Pushed to each Atlas as its hub peer key.",
+   "fieldname": "hub_public_key",
+   "fieldtype": "Small Text",
+   "label": "Hub Public Key",
+   "read_only": 1
+  },
+  {
+   "default": "Uninitialized",
+   "fieldname": "hub_status",
+   "fieldtype": "Select",
+   "label": "Hub Status",
+   "options": "Uninitialized\nActive",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-06-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Central Tunnel Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
