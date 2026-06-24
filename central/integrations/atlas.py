@@ -135,6 +135,14 @@ class AtlasClient:
 			"atlas.atlas.api.central_link.confirm_tunnel", params={}
 		)
 
+	def deprovision_tunnel(self, base_url: str) -> dict:
+		"""Atlas inbound deprovision_tunnel (admin auth): Atlas reverts its firewall +
+		drops wg0 + clears its tunnel fields. Called over the tunnel while Active, so the
+		teardown drops wg0 and the response may not return — the caller tolerates that."""
+		return self._admin_client(base_url).post_api(
+			"atlas.atlas.api.central_link.deprovision_tunnel", params={}
+		)
+
 
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
 
@@ -417,3 +425,56 @@ def _rollback(instance, service_user: str | None, peer_added: bool) -> None:
 	# half-provisioned state; the caller re-raises, on which Frappe rolls the request back. Commit
 	# the cleanup here so the half state can't survive that rollback — no Unregistered/orphan limbo.
 	frappe.db.commit()
+
+
+def remove_tunnel(instance) -> dict:
+	"""Tear down an Atlas's tunnel + management firewall — the inverse of register_atlas
+	(the operator's Remove Tunnel button). Tells Atlas to revert its firewall + drop wg0,
+	removes the hub peer, deletes the scoped service user, frees the tunnel_ip, and
+	returns the instance to Unregistered.
+
+	Best-effort throughout: a teardown must not hard-fail and strand half state. The
+	Atlas call goes over the tunnel while Active; Atlas reverts the firewall (reopening
+	public) before dropping wg0, so the response races the teardown — a dropped
+	connection is expected and tolerated, re-verified over the now-public base_url."""
+	if "System Manager" not in frappe.get_roles():
+		frappe.throw("Not permitted.", frappe.PermissionError)
+
+	if instance.tunnel_status in ("Active", "Provisioning"):
+		client = AtlasClient(instance)
+		over = instance.tunnel_url if (instance.tunnel_status == "Active" and instance.tunnel_url) else instance.base_url
+		try:
+			client.deprovision_tunnel(over)
+		except Exception:
+			# firewall-revert + tunnel-down commit host-side; dropping wg0 mid-call kills
+			# the response. Confirm Atlas is reachable publicly again (firewall reverted)
+			# before trusting the teardown; if even that fails, log and finish the cleanup.
+			try:
+				client.admin_ping(instance.base_url)
+			except Exception:
+				frappe.log_error(title=f"Remove tunnel: {instance.region} unconfirmed after deprovision")
+
+	if instance.peer_public_key:
+		try:
+			run_host_task(
+				script="hub-peer-remove.py",
+				variables={"PEER_PUBLIC_KEY": instance.peer_public_key},
+			)
+		except Exception:
+			frappe.log_error(title=f"Remove tunnel: hub-peer-remove failed for {instance.region}")
+
+	service_user = instance.service_user
+	for field in ("tunnel_ip", "tunnel_url", "peer_public_key", "peer_endpoint", "service_user"):
+		instance.db_set(field, None)
+	instance.db_set("tunnel_status", "Unregistered")
+
+	if service_user and frappe.db.exists("User", service_user):
+		try:
+			frappe.delete_doc("User", service_user, ignore_permissions=True, force=True)
+		except Exception:
+			frappe.log_error(title=f"Remove tunnel: service-user cleanup failed for {instance.region}")
+
+	# nosemgrep: frappe-manual-commit -- hub-peer-remove (run_host_task) already committed; persist
+	# the teardown durably so a later error in the request can't resurrect the torn-down state.
+	frappe.db.commit()
+	return {"ok": True, "tunnel_status": "Unregistered"}

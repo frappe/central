@@ -47,6 +47,15 @@ class AtlasInstance(Document):
 		return register_atlas(self)
 
 	@frappe.whitelist()
+	def remove_tunnel(self) -> dict:
+		"""Operator action: tear down this Atlas's tunnel + management firewall (the
+		inverse of Register) — revert the firewall + drop wg0 on the Atlas, remove the
+		hub peer, delete the service user, free the tunnel_ip, return to Unregistered."""
+		from central.integrations.atlas import remove_tunnel
+
+		return remove_tunnel(self)
+
+	@frappe.whitelist()
 	def test_connection(self) -> dict:
 		"""Operator action: ping the Atlas API and record reachability."""
 		if "System Manager" not in frappe.get_roles():
