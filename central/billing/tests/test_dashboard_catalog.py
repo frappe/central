@@ -79,6 +79,19 @@ class TestEligiblePlans(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
+	def test_excludes_non_server_families(self):
+		# An AI Tokens plan is billable but not provisioned via the create-server flow;
+		# its family's provision_target is blank, so it never appears in the menu.
+		make_plan(
+			"tokens-100m", category="AI Tokens",
+			includes=[{"resource_type": "Tokens", "quantity": 100, "unit": "1M tokens"}],
+			rates=_rates(800),
+		)
+		set_team_tier(TEAM, max_spend=100000)  # ample headroom — exclusion is by family, not price
+		plans, _ = self._titles()
+		self.assertIn(CHEAP, plans)            # a VM Plans (Server) family member shows
+		self.assertNotIn("tokens-100m", plans)  # the AI Tokens family does not
+
 	def test_spend_cap_hides_plans_above_the_ceiling(self):
 		set_team_tier(TEAM, max_spend=2000)  # admits CHEAP (1000) + MID (2000), not PRICEY
 		plans, out = self._titles()

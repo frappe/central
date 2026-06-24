@@ -23,6 +23,17 @@ DEFAULT_INCLUDES = [
 ]
 
 
+def ensure_atlas_instance(region):
+	"""Catalog Rate.cluster is a Link to Atlas Instance, so a per-region rate needs
+	that instance to exist. Atlas Instance is autonamed by region."""
+	if not frappe.db.exists("Atlas Instance", region):
+		frappe.get_doc({
+			"doctype": "Atlas Instance", "region": region,
+			"base_url": f"https://{region}.atlas.test", "api_key": "test", "api_secret": "test",
+		}).insert(ignore_permissions=True)
+	return region
+
+
 def make_plan(name, rates=None, includes=None, **kwargs):
 	"""Create (or replace) a bundle Plan and its Catalog Rate rows; return its name."""
 	if frappe.db.exists("Plan", name):
@@ -44,8 +55,17 @@ def make_plan(name, rates=None, includes=None, **kwargs):
 	doc.name = name
 	doc.flags.name_set = True
 	doc.insert(ignore_permissions=True)
-	set_catalog_rates("Plan", doc.name, rates if rates is not None else DEFAULT_RATES)
+	rates = rates if rates is not None else DEFAULT_RATES
+	_ensure_rate_instances(rates)
+	set_catalog_rates("Plan", doc.name, rates)
 	return doc.name
+
+
+def _ensure_rate_instances(rates):
+	"""Seed the Atlas Instance behind every non-blank cluster a rate row references."""
+	for cluster in {(r.get("cluster") or "").strip() for r in rates}:
+		if cluster:
+			ensure_atlas_instance(cluster)
 
 
 def make_addon(name, rates=None, **kwargs):
@@ -66,7 +86,9 @@ def make_addon(name, rates=None, **kwargs):
 		}
 	)
 	doc.insert(ignore_permissions=True)
-	set_catalog_rates("Add-on", doc.name, rates if rates is not None else DEFAULT_ADDON_RATES)
+	rates = rates if rates is not None else DEFAULT_ADDON_RATES
+	_ensure_rate_instances(rates)
+	set_catalog_rates("Add-on", doc.name, rates)
 	return doc.name
 
 

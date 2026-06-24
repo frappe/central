@@ -1,8 +1,18 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-// Mirror of configurator._num / _vcpu_label, for live autofill of added rows.
+// Mirror of configurator._num / _vcpu_label / parse_vcpu, for live autofill.
 const num = (v) => parseFloat(Number(v).toPrecision(12)).toString();
+// "1/16" -> 0.0625, "4" -> 4 — start_vcpu is a fraction-string dropdown value.
+function parse_vcpu(v) {
+	if (v == null || v === "") return 0;
+	const s = String(v).trim();
+	if (s.includes("/")) {
+		const [n, d] = s.split("/");
+		return parseFloat(n) / parseFloat(d);
+	}
+	return parseFloat(s);
+}
 function vcpu_label(v) {
 	if (v >= 1) return `${num(v)} vCPU`;
 	const inv = 1 / v;
@@ -12,7 +22,7 @@ function vcpu_label(v) {
 frappe.ui.form.on("Plan Configurator", {
 	sub_category(frm) {
 		if (!frm.doc.sub_category) return;
-		// The optimisation profile pins the memory ratio — read it off the master.
+		// Pre-fill the memory ratio from the profile; the admin can override it after.
 		frappe.db.get_value("Plan Sub-Category", frm.doc.sub_category, "memory_ratio").then((r) => {
 			const ratio = r.message && r.message.memory_ratio;
 			if (ratio) frm.set_value("memory_ratio", ratio);
@@ -98,7 +108,7 @@ function fill_rung(frm, row) {
 	const prefix = frm.doc.plan_name_prefix || "Bundle";
 	if (!row.plan_name) row.plan_name = `${prefix} ${num(row.vcpu)} vCPU ${num(row.memory_gb)} GB`;
 	if (!row.label) row.label = `${vcpu_label(row.vcpu)} · ${num(row.memory_gb)} GB`;
-	if (!row.multiplier) row.multiplier = row.vcpu / (frm.doc.start_vcpu || 1);
+	if (!row.multiplier) row.multiplier = row.vcpu / (parse_vcpu(frm.doc.start_vcpu) || 1);
 	frm.refresh_field("rungs");
 }
 
@@ -149,9 +159,10 @@ function generate_dialog(frm) {
 		fields: [
 			{
 				fieldname: "cluster",
-				fieldtype: "Data",
-				label: __("Cluster"),
-				description: __("Blank = global rate (every cluster). Else a region key. Re-run per cluster."),
+				fieldtype: "Link",
+				options: "Atlas Instance",
+				label: __("Atlas Instance"),
+				description: __("Blank = global rate (every Atlas Instance). Else pick one. Re-run per Atlas Instance."),
 			},
 			{ fieldname: "sb_cur", fieldtype: "Section Break", label: __("Currencies") },
 			{

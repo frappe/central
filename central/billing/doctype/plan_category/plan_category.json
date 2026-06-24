@@ -12,6 +12,7 @@
   "description",
   "column_break_head",
   "configurator_builder",
+  "provision_target",
   "sub_category_label",
   "section_break_resources",
   "allowed_resource_types"
@@ -49,6 +50,13 @@
    "options": "VM Rungs\nSimple",
    "reqd": 1,
    "description": "Which Plan Configurator builder authors this category. VM Rungs = the vCPU/memory/disk/transfer ladder; Simple = name + included quantity + rate."
+  },
+  {
+   "fieldname": "provision_target",
+   "fieldtype": "Select",
+   "label": "Provision Target",
+   "options": "\nServer",
+   "description": "What a member plan provisions, if anything. 'Server' = offered in the create-server flow. Blank = not directly provisionable here (e.g. metered AI Tokens, storage subscriptions). New provisioning surfaces add their own option."
   },
   {
    "fieldname": "sub_category_label",

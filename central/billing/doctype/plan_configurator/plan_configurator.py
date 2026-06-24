@@ -11,11 +11,47 @@ _RUNG_FIELDS = ("plan_name", "label", "vcpu", "memory_gb", "disk_gb", "transfer_
 
 
 class PlanConfigurator(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from central.billing.doctype.plan_configurator_plan.plan_configurator_plan import PlanConfiguratorPlan
+		from central.billing.doctype.plan_configurator_rate.plan_configurator_rate import PlanConfiguratorRate
+		from central.billing.doctype.plan_configurator_simple_plan.plan_configurator_simple_plan import PlanConfiguratorSimplePlan
+		from frappe.types import DF
+
+		base_disk_gb: DF.Float
+		base_rates: DF.Table[PlanConfiguratorRate]
+		base_transfer_gb: DF.Float
+		billing_cycle: DF.Literal["Monthly", "Annual"]
+		builder: DF.ReadOnly | None
+		category: DF.Link
+		ceiling_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
+		is_active: DF.Check
+		memory_ratio: DF.Literal["1:2", "1:4", "1:6", "1:8"]
+		plan_name_prefix: DF.Data
+		rungs: DF.Table[PlanConfiguratorPlan]
+		simple_plans: DF.Table[PlanConfiguratorSimplePlan]
+		start_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
+		sub_category: DF.Link | None
+		template_name: DF.Data
+		transfer_step_gb: DF.Float
+	# end: auto-generated types
+
 	def before_validate(self):
 		"""Fill identity/price for hand-added or edited rungs, so an inserted size
 		(e.g. 1 vCPU 3 GB between the 2 GB and 4 GB rungs) is usable without the
 		admin spelling out its name, label, and multiplier."""
-		start = flt(self.start_vcpu) or 1
+		# The sub-category's optimisation profile is the *default* memory ratio — pre-fill
+		# it here (mirroring the form's on-select prefill) so programmatic creation and the
+		# mandatory check have a value. The configurator's own ratio stays authoritative:
+		# ratio_for honours it even when the admin has overridden it off the profile.
+		if not self.memory_ratio and self.sub_category:
+			self.memory_ratio = configurator.ratio_for(self.sub_category, None)
+
+		start = configurator.parse_vcpu(self.start_vcpu) or 1
 		for r in self.rungs:
 			if not flt(r.multiplier) and flt(r.vcpu):
 				r.multiplier = flt(r.vcpu) / start
