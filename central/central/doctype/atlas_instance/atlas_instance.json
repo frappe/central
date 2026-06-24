@@ -67,18 +67,16 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "frappe API key of the Central service user on the Atlas site.",
+   "description": "Deprecated: the old inbound service key. Central→Atlas now uses the Atlas admin token; kept optional for back-compat (spec/19-tunnel.md).",
    "fieldname": "api_key",
    "fieldtype": "Data",
-   "label": "API Key",
-   "reqd": 1
+   "label": "API Key (deprecated)"
   },
   {
-   "description": "frappe API secret (stored encrypted). Sent as `token key:secret`.",
+   "description": "Deprecated: paired with the old service key. Unused now that Central→Atlas authenticates with the admin token.",
    "fieldname": "api_secret",
    "fieldtype": "Password",
-   "label": "API Secret",
-   "reqd": 1
+   "label": "API Secret (deprecated)"
   },
   {
    "description": "Atlas admin API key. Central authenticates with the Atlas admin creds for the registration handshake (provision_tunnel over base_url, confirm_tunnel over the tunnel).",
