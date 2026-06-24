@@ -15,6 +15,7 @@ from central.integrations.atlas import (
 	AtlasClient,
 	TunnelRegistrationError,
 	register_atlas,
+	remove_tunnel,
 )
 
 PROVISION_RETURN = {"wg_public_key": "SPOKEPUBKEY=", "listen_port": 51820, "tunnel_ip": "10.88.0.2"}
@@ -161,6 +162,68 @@ class TestAtlasRegister(IntegrationTestCase):
 			register_atlas(instance)
 		instance.reload()
 		self.assertEqual(instance.tunnel_ip, "10.88.0.3")
+
+	def _register(self, region: str):
+		"""Register an instance through the mocked happy path and return it Active."""
+		instance = self.make_instance(region)
+		ping, provision, confirm, host_task = self._patched()
+		with ping, provision, confirm, host_task:
+			register_atlas(instance)
+		instance.reload()
+		return instance
+
+	# ----- remove_tunnel (the inverse) -------------------------------------
+
+	def test_remove_tunnel_tears_down_and_unregisters(self) -> None:
+		instance = self._register("blr-remove")
+		peer_key = instance.peer_public_key
+		service_user = instance.service_user
+		tunnel_url = instance.tunnel_url  # cleared by remove_tunnel; capture first
+		self.assertTrue(frappe.db.exists("User", service_user))
+
+		deprov = patch.object(AtlasClient, "deprovision_tunnel", return_value={"tunnel_status": "Inactive"})
+		host_task = patch("central.integrations.atlas.run_host_task", return_value=MagicMock())
+		with deprov as deprovision_tunnel, host_task as run_host_task:
+			out = remove_tunnel(instance)
+
+		self.assertEqual(out["tunnel_status"], "Unregistered")
+		# Atlas teardown driven over the tunnel_url.
+		deprovision_tunnel.assert_called_once_with(tunnel_url)
+		# hub peer removed with the Atlas's key.
+		remove_call = run_host_task.call_args
+		self.assertEqual(remove_call.kwargs["script"], "hub-peer-remove.py")
+		self.assertEqual(remove_call.kwargs["variables"]["PEER_PUBLIC_KEY"], peer_key)
+
+		instance.reload()
+		self.assertEqual(instance.tunnel_status, "Unregistered")
+		self.assertFalse(instance.tunnel_ip)
+		self.assertFalse(instance.tunnel_url)
+		self.assertFalse(instance.peer_public_key)
+		self.assertFalse(instance.service_user)
+		# the scoped service user is gone, freeing the identity + the tunnel_ip.
+		self.assertFalse(frappe.db.exists("User", service_user))
+
+	def test_remove_tunnel_tolerates_dropped_connection(self) -> None:
+		instance = self._register("blr-remove-drop")
+		# Atlas drops wg0 mid-call (the deprovision response never returns); cleanup
+		# must still complete after re-verifying over the public base_url.
+		deprov = patch.object(AtlasClient, "deprovision_tunnel", side_effect=ConnectionError("tunnel gone"))
+		ping = patch.object(AtlasClient, "admin_ping", return_value={"message": "pong"})
+		host_task = patch("central.integrations.atlas.run_host_task", return_value=MagicMock())
+		with deprov, ping as admin_ping, host_task:
+			out = remove_tunnel(instance)
+
+		self.assertEqual(out["tunnel_status"], "Unregistered")
+		admin_ping.assert_called_once_with(instance.base_url)
+		instance.reload()
+		self.assertEqual(instance.tunnel_status, "Unregistered")
+		self.assertFalse(instance.service_user)
+
+	def test_remove_tunnel_requires_system_manager(self) -> None:
+		instance = self._register("blr-remove-perm")
+		frappe.set_user(_make_plain_user())
+		with self.assertRaises(frappe.PermissionError):
+			remove_tunnel(instance)
 
 	# ----- guards ----------------------------------------------------------
 
