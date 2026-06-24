@@ -95,7 +95,6 @@ def _ensure_category(name, *, allowed, sub_label=None):
 			"doctype": "Plan Category",
 			"category_name": name,
 			"configurator_builder": "Simple",
-			"default_billing_type": "Fixed",
 			"sub_category_label": sub_label,
 			"allowed_resource_types": [{"resource_type": rt} for rt in allowed],
 		}

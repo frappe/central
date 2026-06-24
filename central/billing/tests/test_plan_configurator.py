@@ -311,8 +311,7 @@ class TestSimpleBuilder(IntegrationTestCase):
 		if not frappe.db.exists("Plan Category", self.CATEGORY):
 			frappe.get_doc({
 				"doctype": "Plan Category", "category_name": self.CATEGORY,
-				"configurator_builder": "Simple", "default_billing_type": "Metered",
-				"billable_unit": "1M tokens", "meter_kind": "Counter",
+				"configurator_builder": "Simple",
 				"allowed_resource_types": [{"resource_type": "Tokens"}],
 			}).insert(ignore_permissions=True)
 

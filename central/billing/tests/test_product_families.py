@@ -14,17 +14,14 @@ from central.billing.tests.utils import ensure_team, make_addon, make_plan
 class TestFamiliesSeed(IntegrationTestCase):
 	def test_families_are_seeded_with_rules(self):
 		expected = {
-			"AI Tokens": ({"Tokens"}, "Metered", "Counter", ""),
-			"SaaS Storage": ({"Disk"}, "Fixed", "Gauge", ""),
-			"Remote Storage": ({"Storage", "Backup"}, "Metered", "Gauge", "Storage purpose"),
+			"AI Tokens": ({"Tokens"}, ""),
+			"SaaS Storage": ({"Disk"}, ""),
+			"Remote Storage": ({"Storage", "Backup"}, "Storage purpose"),
 		}
-		for name, (allowed, billing, meter, sub_label) in expected.items():
+		for name, (allowed, sub_label) in expected.items():
 			cat = frappe.get_doc("Plan Category", name)
 			self.assertEqual(cat.allowed_types(), allowed)
-			self.assertEqual(cat.default_billing_type, billing)
-			self.assertEqual(cat.meter_kind, meter)
 			self.assertEqual(cat.sub_category_label or "", sub_label)
-		self.assertEqual(frappe.db.get_value("Plan Category", "Remote Storage", "default_pricing_mode"), "Live")
 		self.assertEqual(
 			set(frappe.get_all("Plan Sub-Category", {"category": "Remote Storage"}, pluck="name")),
 			{"Data", "Backups", "Snapshots"},
@@ -124,8 +121,6 @@ class TestRemoteStorage(IntegrationTestCase):
 		plan = frappe.get_doc("Plan", name)
 		self.assertEqual(plan.sub_category, "Snapshots")
 		self.assertEqual(plan.get_rate("USD"), 1)
-		cat = frappe.get_doc("Plan Category", "Remote Storage")
-		self.assertEqual((cat.default_pricing_mode, cat.meter_kind), ("Live", "Gauge"))
 
 
 class TestIPSnapshotAreAddOnsOnly(IntegrationTestCase):

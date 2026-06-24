@@ -2,7 +2,7 @@
  "actions": [],
  "autoname": "field:category_name",
  "creation": "2026-06-23 00:00:00.000000",
- "description": "A product family (VM Plans, AI Tokens, SaaS Storage, Remote Storage). Behavioral and self-describing: it declares the resource types a member plan may include, the unit billing collects, the meter kind, and which configurator builder authors it. Adding a family is a new document, not a schema change (ADR 0007).",
+ "description": "A product family (VM Plans, AI Tokens, SaaS Storage, Remote Storage). Behavioral and self-describing: it declares the resource types a member plan may include, its sub-category axis, and which configurator builder authors it. Adding a family is a new document, not a schema change (ADR 0007).",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -13,12 +13,6 @@
   "column_break_head",
   "configurator_builder",
   "sub_category_label",
-  "section_break_billing",
-  "default_billing_type",
-  "default_pricing_mode",
-  "column_break_billing",
-  "billable_unit",
-  "meter_kind",
   "section_break_resources",
   "allowed_resource_types"
  ],
@@ -61,44 +55,6 @@
    "fieldtype": "Data",
    "label": "Sub-Category Label",
    "description": "What a sub-category means for this family (e.g. 'Optimization profile', 'Storage purpose'). Blank = this family has no sub-category axis; plans attach directly to the category."
-  },
-  {
-   "fieldname": "section_break_billing",
-   "fieldtype": "Section Break",
-   "label": "Billing"
-  },
-  {
-   "default": "Fixed",
-   "fieldname": "default_billing_type",
-   "fieldtype": "Select",
-   "label": "Default Billing Type",
-   "options": "Fixed\nMetered\nTiered",
-   "reqd": 1
-  },
-  {
-   "default": "Grandfathered",
-   "fieldname": "default_pricing_mode",
-   "fieldtype": "Select",
-   "label": "Default Pricing Mode",
-   "options": "Grandfathered\nLive"
-  },
-  {
-   "fieldname": "column_break_billing",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "billable_unit",
-   "fieldtype": "Data",
-   "label": "Billable Unit",
-   "description": "The human-readable thing billing counts (e.g. 'vCPU bundle / mo', '1M tokens', 'GB-day'). Answers: what data do we collect to bill this family?"
-  },
-  {
-   "default": "None",
-   "fieldname": "meter_kind",
-   "fieldtype": "Select",
-   "label": "Meter Kind",
-   "options": "None\nCounter\nGauge",
-   "description": "How usage is recorded: None (flat bundle), Counter (tokens, transfer), Gauge (storage GB-days)."
   },
   {
    "fieldname": "section_break_resources",

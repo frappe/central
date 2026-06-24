@@ -17,14 +17,10 @@ class PlanCategory(Document):
 		from frappe.types import DF
 
 		allowed_resource_types: DF.Table[PlanCategoryResourceType]
-		billable_unit: DF.Data | None
 		category_name: DF.Data
 		configurator_builder: DF.Literal["VM Rungs", "Simple"]
-		default_billing_type: DF.Literal["Fixed", "Metered", "Tiered"]
-		default_pricing_mode: DF.Literal["Grandfathered", "Live"]
 		description: DF.SmallText | None
 		is_active: DF.Check
-		meter_kind: DF.Literal["None", "Counter", "Gauge"]
 		sub_category_label: DF.Data | None
 	# end: auto-generated types
 
