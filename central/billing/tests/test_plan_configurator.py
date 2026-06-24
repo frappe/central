@@ -363,11 +363,15 @@ class TestSimpleBuilder(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			cfg.generate_and_price()
 
-	def test_custom_mints_sub_category_first(self):
-		cfg = self._cfg(template="Cfg Simple Custom", new_sub_category="Premium Tokens")
+	def test_honours_a_custom_sub_category(self):
+		# A sub-category outside the seeded presets — minted inline via the Link's
+		# quick-create in the UI; created directly here — is carried onto the plans.
+		frappe.get_doc({
+			"doctype": "Plan Sub-Category", "sub_category_name": "Premium Tokens",
+			"category": self.CATEGORY,
+		}).insert(ignore_permissions=True)
+		cfg = self._cfg(template="Cfg Simple Custom", sub_category="Premium Tokens")
 		cfg.generate_and_price()
-		self.assertEqual(
-			frappe.db.get_value("Plan Sub-Category", "Premium Tokens", "category"), self.CATEGORY)
 		cfg.reload()
 		self.assertEqual(frappe.get_doc("Plan", cfg.simple_plans[0].plan).sub_category, "Premium Tokens")
 

@@ -171,17 +171,6 @@ def _set_rung_plan(rung, name: str) -> None:
 		rung.plan = name
 
 
-def ensure_sub_category(category: str, name: str) -> str:
-	"""Mint a Plan Sub-Category under `category` if absent; return its name. Used by
-	the 'Custom' authoring path — a custom variant becomes a real sub-category first,
-	then the plans hang beneath it."""
-	if not frappe.db.exists("Plan Sub-Category", name):
-		frappe.get_doc(
-			{"doctype": "Plan Sub-Category", "sub_category_name": name, "category": category}
-		).insert(ignore_permissions=True)
-	return name
-
-
 def create_simple_plan(
 	category: str,
 	title: str,

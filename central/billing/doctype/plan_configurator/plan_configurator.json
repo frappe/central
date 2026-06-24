@@ -12,7 +12,6 @@
   "category",
   "builder",
   "sub_category",
-  "new_sub_category",
   "sizing_section",
   "start_vcpu",
   "ceiling_vcpu",
@@ -68,13 +67,7 @@
    "fieldtype": "Link",
    "label": "Sub-Category",
    "options": "Plan Sub-Category",
-   "description": "The optimisation profile / variant within the category (filtered to it). For VM plans this is the profile that pins the memory ratio (CPU Optimised 1:2, General 1:4, Memory/Storage Optimised 1:8); leave blank, or mint a new one below."
-  },
-  {
-   "fieldname": "new_sub_category",
-   "fieldtype": "Data",
-   "label": "New Sub-Category (Custom)",
-   "description": "Type a name to mint a new Sub-Category under this category before generating, then attach the plans to it."
+   "description": "The optimisation profile / variant within the category (filtered to it). For VM plans this is the profile that pins the memory ratio (CPU Optimised 1:2, General 1:4, Memory/Storage Optimised 1:8). Leave blank, or create a new one inline if it isn't a preconfigured option."
   },
   {
    "depends_on": "eval:doc.builder=='VM Rungs'",

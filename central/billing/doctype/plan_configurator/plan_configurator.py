@@ -85,9 +85,8 @@ class PlanConfigurator(Document):
 		return frappe.db.get_value("Plan Category", self.category, "configurator_builder") or "VM Rungs"
 
 	def _resolved_sub_category(self) -> str | None:
-		"""A typed `new_sub_category` is minted (the Custom path); else the picked one."""
-		if self.new_sub_category:
-			return configurator.ensure_sub_category(self.category, self.new_sub_category)
+		"""The picked Sub-Category, or None. A custom one is minted inline via the
+		Link's quick-create, so it's already a real Plan Sub-Category by the time we read it."""
 		return self.sub_category or None
 
 	@frappe.whitelist()

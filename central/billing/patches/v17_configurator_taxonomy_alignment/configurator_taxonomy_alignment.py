@@ -10,10 +10,11 @@ Two existing-DB fixes on top of the doctype changes:
 2. Plan Configurator drops its `plan_class` Select: the optimisation profile is
    now the `sub_category` link (the Plan Sub-Category under the category). Carry
    the old plan_class onto sub_category where it maps to a real VM sub-category
-   ("Custom" mapped to none), then drop the column.
+   ("Custom" mapped to none), then drop the column. The `new_sub_category` Data
+   field also goes — a custom sub-category is now minted inline via the Link.
 
-Idempotent: the casing maps only rows still on the old value; the backfill/drop
-are gated on the legacy column still existing.
+Idempotent: the casing maps only rows still on the old value; the backfill/drops
+are gated on the legacy columns still existing.
 """
 
 import frappe
@@ -27,7 +28,8 @@ def execute():
 	_titlecase_builder("Plan Category", "configurator_builder")
 	_titlecase_builder("Plan Configurator", "builder")
 	_backfill_configurator_sub_category()
-	_drop_plan_class_column()
+	_drop_column("plan_class")
+	_drop_column("new_sub_category")
 
 
 def _titlecase_builder(doctype: str, field: str):
@@ -53,6 +55,6 @@ def _backfill_configurator_sub_category():
 		)
 
 
-def _drop_plan_class_column():
-	if frappe.db.has_column("Plan Configurator", "plan_class"):
-		frappe.db.sql_ddl("ALTER TABLE `tabPlan Configurator` DROP COLUMN `plan_class`")
+def _drop_column(column: str):
+	if frappe.db.has_column("Plan Configurator", column):
+		frappe.db.sql_ddl(f"ALTER TABLE `tabPlan Configurator` DROP COLUMN `{column}`")
