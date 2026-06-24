@@ -1,15 +1,6 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-// Sub-category presets pin the memory ratio the way cloud families do (mirror of
-// configurator.SUB_CATEGORY_RATIOS).
-const SUB_CATEGORY_RATIOS = {
-	"CPU Optimised": "1:2",
-	General: "1:4",
-	"Memory Optimised": "1:8",
-	"Storage Optimised": "1:8",
-};
-
 // Mirror of configurator._num / _vcpu_label, for live autofill of added rows.
 const num = (v) => parseFloat(Number(v).toPrecision(12)).toString();
 function vcpu_label(v) {
@@ -20,11 +11,13 @@ function vcpu_label(v) {
 
 frappe.ui.form.on("Plan Configurator", {
 	sub_category(frm) {
-		const ratio = SUB_CATEGORY_RATIOS[frm.doc.sub_category];
-		if (ratio) frm.set_value("memory_ratio", ratio);
-		if (frm.doc.sub_category && !frm.doc.__user_set_prefix) {
-			frm.set_value("plan_name_prefix", frm.doc.sub_category);
-		}
+		if (!frm.doc.sub_category) return;
+		// The optimisation profile pins the memory ratio — read it off the master.
+		frappe.db.get_value("Plan Sub-Category", frm.doc.sub_category, "memory_ratio").then((r) => {
+			const ratio = r.message && r.message.memory_ratio;
+			if (ratio) frm.set_value("memory_ratio", ratio);
+		});
+		if (!frm.doc.__user_set_prefix) frm.set_value("plan_name_prefix", frm.doc.sub_category);
 	},
 
 	plan_name_prefix(frm) {

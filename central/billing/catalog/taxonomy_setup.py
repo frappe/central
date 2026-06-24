@@ -25,7 +25,14 @@ CATEGORIES = [
 		"sub_category_label": "Optimization profile",
 		"description": "Flat-rate compute bundles (vCPU + memory + disk + transfer).",
 		"allowed": ["Compute", "Memory", "Disk", "Transfer"],
-		"sub_categories": ["General", "CPU Optimised", "Memory Optimised", "Storage Optimised"],
+		# VM optimisation profiles carry the memory ratio (GB RAM per vCPU) the
+		# configurator pins. Storage/Memory Optimised share 1:8; they differ by disk.
+		"sub_categories": [
+			{"name": "General", "memory_ratio": "1:4"},
+			{"name": "CPU Optimised", "memory_ratio": "1:2"},
+			{"name": "Memory Optimised", "memory_ratio": "1:8"},
+			{"name": "Storage Optimised", "memory_ratio": "1:8"},
+		],
 	},
 	{
 		"category_name": "AI Tokens",
@@ -49,7 +56,7 @@ CATEGORIES = [
 		"sub_category_label": "Storage purpose",
 		"description": "Frappe Box remote storage — data, backups, or snapshots (live-priced).",
 		"allowed": ["Storage", "Backup"],
-		"sub_categories": ["Data", "Backups", "Snapshots"],
+		"sub_categories": [{"name": "Data"}, {"name": "Backups"}, {"name": "Snapshots"}],
 	},
 ]
 
@@ -78,11 +85,12 @@ def _ensure_category(spec):
 			}
 		).insert(ignore_permissions=True)
 	for sub in spec["sub_categories"]:
-		if not frappe.db.exists("Plan Sub-Category", sub):
+		if not frappe.db.exists("Plan Sub-Category", sub["name"]):
 			frappe.get_doc(
 				{
 					"doctype": "Plan Sub-Category",
-					"sub_category_name": sub,
+					"sub_category_name": sub["name"],
 					"category": spec["category_name"],
+					"memory_ratio": sub.get("memory_ratio"),
 				}
 			).insert(ignore_permissions=True)

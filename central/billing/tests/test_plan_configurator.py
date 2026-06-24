@@ -102,12 +102,23 @@ class TestBuildLadder(IntegrationTestCase):
 		self.assertEqual([r["transfer_gb"] for r in rungs], [4000, 5000, 6000, 7000])
 
 	def test_ratio_for_sub_category(self):
+		# Pinned by the ratio configured on each VM profile (the Plan Sub-Category master).
 		self.assertEqual(configurator.ratio_for("CPU Optimised", "1:4"), "1:2")
 		self.assertEqual(configurator.ratio_for("General", "1:2"), "1:4")
 		self.assertEqual(configurator.ratio_for("Memory Optimised", "1:2"), "1:8")
 		self.assertEqual(configurator.ratio_for("Storage Optimised", "1:2"), "1:8")
+		# A profile with no configured ratio (or none picked) uses the explicit one.
 		self.assertEqual(configurator.ratio_for("Custom", "1:6"), "1:6")
 		self.assertEqual(configurator.ratio_for(None, "1:4"), "1:4")
+
+	def test_ratio_is_configurable_on_the_sub_category(self):
+		# The ratio is data, not code: set it on the master and ratio_for follows.
+		frappe.get_doc({
+			"doctype": "Plan Sub-Category", "sub_category_name": "Cfg Ratio Test",
+			"category": "VM Plans", "memory_ratio": "1:6",
+		}).insert(ignore_permissions=True)
+		self.addCleanup(frappe.delete_doc, "Plan Sub-Category", "Cfg Ratio Test", force=True)
+		self.assertEqual(configurator.ratio_for("Cfg Ratio Test", "1:2"), "1:6")
 
 	def test_labels_and_names(self):
 		rungs = configurator.build_ladder(0.125, 1, "1:2", name_prefix=PREFIX)

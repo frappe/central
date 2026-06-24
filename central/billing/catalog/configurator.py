@@ -29,22 +29,15 @@ from central.billing.catalog.plans import RATIO_FACTORS
 
 _MAX_RUNGS = 24  # safety bound on the doubling loop
 
-# Sub-category presets pin the memory ratio the way cloud families do. Storage- and
-# memory-optimised share 1:8; they differ by disk, which the admin sets via the base
-# disk (and edits per rung). Any other (or a freshly-minted custom) sub-category
-# defers to the explicit ratio.
-SUB_CATEGORY_RATIOS = {
-	"CPU Optimised": "1:2",
-	"General": "1:4",
-	"Memory Optimised": "1:8",
-	"Storage Optimised": "1:8",
-}
-
-
 def ratio_for(sub_category: str | None, memory_ratio: str) -> str:
-	"""The effective ratio: a preset sub-category pins it; anything else (blank, custom)
-	uses the explicit ratio."""
-	return SUB_CATEGORY_RATIOS.get(sub_category, memory_ratio)
+	"""The effective ratio: a sub-category that configures a `memory_ratio` pins it
+	(the optimisation profile, set on the Plan Sub-Category master); anything else
+	(blank, or a profile with no ratio) uses the explicit ratio."""
+	if sub_category:
+		configured = frappe.db.get_value("Plan Sub-Category", sub_category, "memory_ratio")
+		if configured:
+			return configured
+	return memory_ratio
 
 
 def build_ladder(

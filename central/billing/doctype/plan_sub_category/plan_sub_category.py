@@ -15,6 +15,7 @@ class PlanSubCategory(Document):
 
 		category: DF.Link
 		is_active: DF.Check
+		memory_ratio: DF.Literal["", "1:2", "1:4", "1:6", "1:8"]
 		sub_category_name: DF.Data
 	# end: auto-generated types
 

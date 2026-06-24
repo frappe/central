@@ -68,4 +68,7 @@ central.billing.patches.v17_configurator_taxonomy_alignment.configurator_taxonom
 # Drop the Plan Category billing-metadata fields that no code path ever read:
 # default_billing_type, default_pricing_mode, billable_unit, meter_kind — ADR 0007.
 central.billing.patches.v18_drop_unused_category_billing_meta.drop_unused_category_billing_meta
+# Backfill the configurable memory ratio onto the VM optimisation-profile
+# sub-categories (moved off a hardcoded dict onto the master) — ADR 0007.
+central.billing.patches.v19_sub_category_memory_ratio.sub_category_memory_ratio
 central.patches.v01_capability_model_v2.rename_capabilities

@@ -2,13 +2,14 @@
  "actions": [],
  "autoname": "field:sub_category_name",
  "creation": "2026-06-23 00:00:00.000000",
- "description": "An optional variant within a product family (e.g. VM Plans -> CPU Optimised; Remote Storage -> Backups). Used only where a real variant axis exists; families like AI Tokens have none (ADR 0007).",
+ "description": "An optional variant within a product family (e.g. VM Plans -> CPU Optimised; Remote Storage -> Backups). Used only where a real variant axis exists; families like AI Tokens have none (ADR 0007). For VM compute profiles it also carries the memory ratio the configurator pins.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "sub_category_name",
   "category",
+  "memory_ratio",
   "is_active"
  ],
  "fields": [
@@ -27,6 +28,13 @@
    "label": "Category",
    "options": "Plan Category",
    "reqd": 1
+  },
+  {
+   "fieldname": "memory_ratio",
+   "fieldtype": "Select",
+   "label": "Memory Ratio",
+   "options": "\n1:2\n1:4\n1:6\n1:8",
+   "description": "VM compute profiles only: GB RAM per vCPU the configurator pins for this optimisation profile (e.g. CPU Optimised 1:2, General 1:4, Memory/Storage Optimised 1:8). Blank for non-compute families."
   },
   {
    "default": "1",
