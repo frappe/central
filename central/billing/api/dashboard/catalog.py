@@ -75,11 +75,22 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 	if cluster and allowed_clusters is not None and cluster not in allowed_clusters:
 		return {**header, "plans": {}}
 
-	# The whole active catalog is wanted on purpose — currency/cluster/headroom
-	# filtering happens in Python below — so opt out of pagination explicitly.
+	# Only families that provision a server belong in the create-server menu — AI
+	# Tokens, storage subscriptions, etc. are billable but not provisioned here. The
+	# family declares this via Plan Category.provision_target (ADR 0007); no server
+	# category means nothing is provisionable.
+	server_categories = frappe.get_all(
+		"Plan Category", filters={"provision_target": "Server"}, pluck="name", limit=0
+	)
+	if not server_categories:
+		return {**header, "plans": {}}
+
+	# The whole active catalog (in server families) is wanted on purpose —
+	# currency/cluster/headroom filtering happens in Python below — so opt out of
+	# pagination explicitly.
 	candidates = frappe.get_all(
 		"Plan",
-		filters={"is_active": 1},
+		filters={"is_active": 1, "category": ["in", server_categories]},
 		fields=["name", "title", "sub_category", "billing_cycle"],
 		order_by="title asc",
 		limit=0,

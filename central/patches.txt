@@ -75,4 +75,7 @@ central.billing.patches.v18_drop_unused_category_billing_meta.drop_unused_catego
 # Backfill the configurable memory ratio onto the VM optimisation-profile
 # sub-categories (moved off a hardcoded dict onto the master) — ADR 0007.
 central.billing.patches.v19_sub_category_memory_ratio.sub_category_memory_ratio
+# Backfill Plan Category.provision_target (VM Plans -> Server) so the create-server
+# flow lists only provisionable families, not AI Tokens / storage plans — issue #33.
+central.billing.patches.v21_category_provision_target.category_provision_target
 central.patches.v01_capability_model_v2.rename_capabilities

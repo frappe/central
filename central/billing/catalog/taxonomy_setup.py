@@ -22,6 +22,7 @@ CATEGORIES = [
 	{
 		"category_name": "VM Plans",
 		"configurator_builder": "VM Rungs",
+		"provision_target": "Server",
 		"sub_category_label": "Optimization profile",
 		"description": "Flat-rate compute bundles (vCPU + memory + disk + transfer).",
 		"allowed": ["Compute", "Memory", "Disk", "Transfer"],
@@ -79,6 +80,7 @@ def _ensure_category(spec):
 				"doctype": "Plan Category",
 				"category_name": spec["category_name"],
 				"configurator_builder": spec["configurator_builder"],
+				"provision_target": spec.get("provision_target", ""),
 				"sub_category_label": spec["sub_category_label"],
 				"description": spec["description"],
 				"allowed_resource_types": [{"resource_type": rt} for rt in spec["allowed"]],
