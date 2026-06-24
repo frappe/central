@@ -29,21 +29,14 @@ from central.billing.catalog.plans import RATIO_FACTORS
 
 _MAX_RUNGS = 24  # safety bound on the doubling loop
 
-# Plan classes pre-set the memory ratio the way cloud families do. "Custom" defers
-# to the explicit ratio. Storage- and memory-optimised share 1:8; they differ by
-# disk, which the admin sets via the base disk (and edits per rung).
-CLASS_RATIOS = {
-	"CPU Optimised": "1:2",
-	"General": "1:4",
-	"Memory Optimised": "1:8",
-	"Storage Optimised": "1:8",
-}
-
-
-def ratio_for(plan_class: str | None, memory_ratio: str) -> str:
-	"""The effective ratio: a class pins it; "Custom"/blank uses the explicit one."""
-	if plan_class and plan_class != "Custom":
-		return CLASS_RATIOS[plan_class]
+def ratio_for(sub_category: str | None, memory_ratio: str) -> str:
+	"""The effective ratio: a sub-category that configures a `memory_ratio` pins it
+	(the optimisation profile, set on the Plan Sub-Category master); anything else
+	(blank, or a profile with no ratio) uses the explicit ratio."""
+	if sub_category:
+		configured = frappe.db.get_value("Plan Sub-Category", sub_category, "memory_ratio")
+		if configured:
+			return configured
 	return memory_ratio
 
 
@@ -116,32 +109,87 @@ def rung_includes(vcpu: float, memory_gb: float, disk_gb: float, transfer_gb: fl
 	return rows
 
 
-def generate_plans(plan_class: str | None, rungs: list, billing_cycle: str = "Monthly", is_active: int = 1) -> dict:
-	"""Materialise each (edited) rung as a `Plan` + composition. Cluster-agnostic.
+def plan_title(prefix: str | None, label: str) -> str:
+	"""Display title: the profile (sub-category, else category) + resource info."""
+	return f"{prefix} — {label}" if prefix else label
 
-	Idempotent: a rung whose Plan name already exists is left untouched and reported
-	under `skipped` (never overwritten). Accepts dicts or child-table rows.
+
+def generate_plans(
+	rungs: list,
+	billing_cycle: str = "Monthly",
+	is_active: int = 1,
+	sub_category: str | None = None,
+	category: str = "VM Plans",
+) -> dict:
+	"""Materialise each (edited) rung as a hash-named `Plan` + composition. Cluster-agnostic.
+
+	Identity is the rung's `plan` link (the hash the rung produced), never the human
+	name — a Plan title collides and changes, so it can't be the synced key. A rung
+	already linked to an existing Plan is skipped; others are created and the new hash
+	written back onto the rung (in place; persisted by the caller). Accepts dicts or
+	child-table rows.
+
+	`sub_category` is the optimisation profile (a Plan Sub-Category under `category`),
+	or None for an unclassified bundle; the prefix (sub-category, else category) names it.
 	"""
+	prefix = sub_category or category
 	created, skipped = [], []
 	for rung in rungs:
-		g = rung.get if isinstance(rung, dict) else lambda k: getattr(rung, k)
-		name = g("plan_name")
-		if frappe.db.exists("Plan", name):
-			skipped.append(name)
+		get = rung.get if isinstance(rung, dict) else lambda k: getattr(rung, k, None)
+		linked = get("plan")
+		if linked and frappe.db.exists("Plan", linked):
+			skipped.append(linked)
 			continue
-		frappe.get_doc(
+		doc = frappe.get_doc(
 			{
 				"doctype": "Plan",
-				"__newname": name,
-				"title": g("label") or name,
-				"plan_class": plan_class,
+				"title": plan_title(prefix, get("label") or get("plan_name")),
+				"category": category,
+				"sub_category": sub_category,
 				"billing_cycle": billing_cycle,
 				"is_active": is_active,
-				"includes": rung_includes(g("vcpu"), g("memory_gb"), g("disk_gb"), g("transfer_gb")),
+				"includes": rung_includes(get("vcpu"), get("memory_gb"), get("disk_gb"), get("transfer_gb")),
 			}
 		).insert(ignore_permissions=True)
-		created.append(name)
+		_set_rung_plan(rung, doc.name)
+		created.append(doc.name)
 	return {"created": created, "skipped": skipped}
+
+
+def _set_rung_plan(rung, name: str) -> None:
+	"""Record the minted hash on the rung — dict (unit tests) or child row (real flow)."""
+	if isinstance(rung, dict):
+		rung["plan"] = name
+	else:
+		rung.plan = name
+
+
+def create_simple_plan(
+	category: str,
+	title: str,
+	resource_type: str,
+	quantity: float,
+	unit: str,
+	*,
+	sub_category: str | None = None,
+	billing_cycle: str = "Monthly",
+	is_active: int = 1,
+) -> str:
+	"""The `simple` builder: author one hash-named Plan with a single-resource
+	composition (Tokens, Disk, Storage…). The category's allowed_resource_types
+	guard the include (enforced by Plan.validate). Returns the minted hash."""
+	doc = frappe.get_doc(
+		{
+			"doctype": "Plan",
+			"title": title,
+			"category": category,
+			"sub_category": sub_category,
+			"billing_cycle": billing_cycle,
+			"is_active": is_active,
+			"includes": [{"resource_type": resource_type, "quantity": flt(quantity), "unit": unit}],
+		}
+	).insert(ignore_permissions=True)
+	return doc.name
 
 
 def apply_pricing(

@@ -1,15 +1,6 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-// Plan classes pin the memory ratio the way cloud families do (mirror of
-// configurator.CLASS_RATIOS).
-const CLASS_RATIOS = {
-	"CPU Optimised": "1:2",
-	General: "1:4",
-	"Memory Optimised": "1:8",
-	"Storage Optimised": "1:8",
-};
-
 // Mirror of configurator._num / _vcpu_label, for live autofill of added rows.
 const num = (v) => parseFloat(Number(v).toPrecision(12)).toString();
 function vcpu_label(v) {
@@ -19,12 +10,14 @@ function vcpu_label(v) {
 }
 
 frappe.ui.form.on("Plan Configurator", {
-	plan_class(frm) {
-		const ratio = CLASS_RATIOS[frm.doc.plan_class];
-		if (ratio) frm.set_value("memory_ratio", ratio);
-		if (frm.doc.plan_class && frm.doc.plan_class !== "Custom" && !frm.doc.__user_set_prefix) {
-			frm.set_value("plan_name_prefix", frm.doc.plan_class);
-		}
+	sub_category(frm) {
+		if (!frm.doc.sub_category) return;
+		// The optimisation profile pins the memory ratio — read it off the master.
+		frappe.db.get_value("Plan Sub-Category", frm.doc.sub_category, "memory_ratio").then((r) => {
+			const ratio = r.message && r.message.memory_ratio;
+			if (ratio) frm.set_value("memory_ratio", ratio);
+		});
+		if (!frm.doc.__user_set_prefix) frm.set_value("plan_name_prefix", frm.doc.sub_category);
 	},
 
 	plan_name_prefix(frm) {
@@ -32,6 +25,9 @@ frappe.ui.form.on("Plan Configurator", {
 	},
 
 	refresh(frm) {
+		// Sub-categories belong to a category; only offer this category's.
+		frm.set_query("sub_category", () => ({ filters: { category: frm.doc.category } }));
+
 		if (frm.is_new()) {
 			frm.dashboard.set_headline(__("Save the template, then populate and generate rungs."));
 			return;
@@ -55,27 +51,39 @@ frappe.ui.form.on("Plan Configurator", {
 			});
 		}
 
-		frm.add_custom_button(__("Populate Rungs"), () => {
-			frm.call("populate_rungs").then((r) => {
-				frappe.show_alert({
-					message: __("{0} rungs populated — edit them, then Generate.", [
-						(r.message || {}).count || 0,
-					]),
-					indicator: "blue",
+		const simple = frm.doc.builder === "Simple";
+
+		// The vCPU ladder builder authors plans from a formula; the simple builder
+		// authors them row-by-row, so Populate/Preview are VM Rungs-only.
+		if (!simple) {
+			frm.add_custom_button(__("Populate Rungs"), () => {
+				frm.call("populate_rungs").then((r) => {
+					frappe.show_alert({
+						message: __("{0} rungs populated — edit them, then Generate.", [
+							(r.message || {}).count || 0,
+						]),
+						indicator: "blue",
+					});
+					frm.reload_doc();
 				});
-				frm.reload_doc();
 			});
-		});
 
-		frm.add_custom_button(__("Preview Pricing"), () => {
-			frm.call("preview").then((r) => show_preview(r.message || {}));
-		});
+			frm.add_custom_button(__("Preview Pricing"), () => {
+				frm.call("preview").then((r) => show_preview(r.message || {}));
+			});
+		}
 
-		if ((frm.doc.rungs || []).length) {
+		const rows = simple ? frm.doc.simple_plans : frm.doc.rungs;
+		if ((rows || []).length) {
 			frm.add_custom_button(__("Generate Plans"), () => generate_dialog(frm)).addClass(
 				"btn-primary"
 			);
 		}
+	},
+
+	category(frm) {
+		// builder is fetched from the category; resections depend on it.
+		frm.refresh_fields();
 	},
 });
 
@@ -158,13 +166,21 @@ function generate_dialog(frm) {
 				fieldtype: "MultiCheck",
 				columns: 1,
 				get_data: () =>
-					(frm.doc.rungs || []).map((p) => ({
-						label: `${p.label || p.plan_name}  ·  ${p.disk_gb || 0} GB disk · ${
-							p.transfer_gb || 0
-						} GB xfer${price_hint(p.multiplier)}`,
-						value: p.plan_name,
-						checked: 1,
-					})),
+					frm.doc.builder === "Simple"
+						? (frm.doc.simple_plans || []).map((p) => ({
+								label: `${p.title}  ·  ${p.quantity || 0} ${p.unit || ""}${price_hint(
+									p.multiplier || 1
+								)}`,
+								value: p.title,
+								checked: 1,
+						  }))
+						: (frm.doc.rungs || []).map((p) => ({
+								label: `${p.label || p.plan_name}  ·  ${p.disk_gb || 0} GB disk · ${
+									p.transfer_gb || 0
+								} GB xfer${price_hint(p.multiplier)}`,
+								value: p.plan_name,
+								checked: 1,
+						  })),
 			},
 		],
 		primary_action_label: __("Generate in Background"),

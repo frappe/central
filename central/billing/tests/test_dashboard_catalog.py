@@ -47,7 +47,7 @@ def _rates(global_inr, cluster=None, cluster_inr=None):
 
 
 def _flat(out):
-	"""All plan rows across the grouped `{plan_class: [rows]}` menu."""
+	"""All plan rows across the grouped `{sub_category: [rows]}` menu."""
 	return [p for rows in out["plans"].values() for p in rows]
 
 
@@ -118,18 +118,19 @@ class TestEligiblePlans(IntegrationTestCase):
 			rates = [p["rate"] for p in rows]
 			self.assertEqual(rates, sorted(rates))
 
-	def test_plans_are_grouped_by_class(self):
+	def test_plans_are_grouped_by_sub_category(self):
 		set_team_tier(TEAM, max_spend=6000)
-		# Re-class two plans; the rest stay unset → folded into "General".
-		frappe.db.set_value("Plan", MID, "plan_class", "CPU Optimised")
-		frappe.db.set_value("Plan", PRICEY, "plan_class", "Memory Optimised")
+		# Re-classify two plans into VM Plans sub-categories; the rest stay unset →
+		# folded into "General". The sub-categories are seeded by the taxonomy.
+		frappe.db.set_value("Plan", MID, "sub_category", "CPU Optimised")
+		frappe.db.set_value("Plan", PRICEY, "sub_category", "Memory Optimised")
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
-		# Keys come in canonical order, whatever subset of classes the catalog has
+		# Keys come in canonical order, whatever subset of sub-categories the catalog has
 		# (other suites seed plans of their own — don't assume a closed world).
 		canonical = ["General", "CPU Optimised", "Memory Optimised", "Storage Optimised", "Custom"]
 		keys = list(out["plans"])
 		self.assertEqual(keys, [c for c in canonical if c in keys])
-		# Each plan lands in its own class; an unset class stays General.
+		# Each plan lands in its own sub-category; an unset sub-category stays General.
 		self.assertIn(CHEAP, {p["plan"] for p in out["plans"]["General"]})
 		self.assertIn(MID, {p["plan"] for p in out["plans"]["CPU Optimised"]})
 		self.assertIn(PRICEY, {p["plan"] for p in out["plans"]["Memory Optimised"]})

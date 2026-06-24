@@ -99,7 +99,10 @@ website_route_rules = [
 # ------------
 
 # before_install = "central.install.before_install"
-# after_install = "central.install.after_install"
+# Seed the catalog taxonomy masters (Plan Category / Sub-Category / Resource Type) on a
+# fresh install — patches are skipped on fresh installs, so the seed can't live only
+# there. Idempotent (ADR 0007).
+after_install = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
 
 # Uninstallation
 # ------------
@@ -187,12 +190,17 @@ scheduler_events = {
 }
 
 # Billing (module): authorisation is Central's capability IAM (ADR 0004) — no
-# billing-owned roles or User->team field to provision, so no after_migrate shim.
+# billing-owned roles or User->team field to provision. The catalog taxonomy masters,
+# however, are reference data the catalog can't run without, so re-assert them on every
+# migrate too (idempotent — ADR 0007).
+after_migrate = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
 
 # Testing
 # -------
 
-# before_tests = "central.install.before_tests"
+# Tests run on a fresh site (patches skipped), so seed the taxonomy masters the test
+# fixtures depend on before the suite runs.
+before_tests = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
 
 # Extend DocType Class
 # ------------------------------

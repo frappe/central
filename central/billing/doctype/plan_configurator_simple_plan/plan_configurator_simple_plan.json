@@ -1,16 +1,26 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-06-02 00:00:00.000000",
+ "creation": "2026-06-23 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "title",
   "resource_type",
   "quantity",
-  "unit"
+  "unit",
+  "multiplier",
+  "plan"
  ],
  "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
   {
    "fieldname": "resource_type",
    "fieldtype": "Link",
@@ -24,24 +34,38 @@
    "fieldname": "quantity",
    "fieldtype": "Float",
    "in_list_view": 1,
-   "label": "Quantity",
-   "description": "Included amount; also the metered allowance baseline"
+   "label": "Included Quantity"
   },
   {
    "fieldname": "unit",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Unit",
-   "description": "vCPU / GB / unit"
+   "label": "Unit"
+  },
+  {
+   "default": "1",
+   "fieldname": "multiplier",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Rate Multiplier",
+   "description": "Rate = base rate x multiplier (per currency). 1 = the base rate."
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "label": "Plan",
+   "options": "Plan",
+   "read_only": 1,
+   "description": "The Plan this row generated (hash)."
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-06-02 00:00:00.000000",
+ "modified": "2026-06-23 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
- "name": "Plan Includes",
+ "name": "Plan Configurator Simple Plan",
  "owner": "Administrator",
  "permissions": [],
  "sort_field": "creation",
