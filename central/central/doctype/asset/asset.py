@@ -29,7 +29,6 @@ class Asset(Document):
 		vcpus: DF.Int
 	# end: auto-generated types
 
-<<<<<<< HEAD
 	def on_update(self):
 		if self.has_value_changed("status") or self.has_value_changed("plan"):
 			self.sync_subscription_on_status_change()
@@ -71,7 +70,6 @@ class Asset(Document):
 		)
 		if existing:
 			frappe.get_doc("Subscription", existing).disable()
-=======
 	# Asset is a read-only mirror of a VM on some Atlas cluster. These methods are
 	# the mirror's sole writer, called by the integration layer
 	# (central.integrations.atlas) from both the event push and the reconcile pull.
@@ -146,4 +144,3 @@ class Asset(Document):
 		# db_set(notify=True) emits Frappe's list_update after commit so Console
 		# subscribers see terminal state changes without polling.
 		frappe.get_doc("Asset", resource_id).db_set(stamp, notify=True)
->>>>>>> develop
