@@ -54,13 +54,16 @@ class Subscription(Document):
 			)
 
 	def after_insert(self):
-		"""Log a 'Created' Subscription Change on insert."""
+		"""Log a 'Created' Subscription Change, with a rate snapshot, on insert."""
+		rate, currency = self.resolve_rate_snapshot()
 		frappe.get_doc(
 			{
 				"doctype": "Subscription Change",
 				"subscription": self.name,
 				"change_type": "Created",
 				"new_value": self.plan,
+				"locked_rate": rate,
+				"currency": currency,
 				"effective_at": frappe.utils.now_datetime(),
 				"changed_by": frappe.session.user,
 			}
@@ -71,8 +74,9 @@ class Subscription(Document):
 			self.log_plan_change()
 
 	def log_plan_change(self):
-		"""Log a 'Plan Changed' Subscription Change whenever plan is updated."""
+		"""Log a 'Plan Changed' Subscription Change, with a fresh rate snapshot."""
 		previous = self.get_doc_before_save()
+		rate, currency = self.resolve_rate_snapshot()
 		frappe.get_doc(
 			{
 				"doctype": "Subscription Change",
@@ -80,10 +84,27 @@ class Subscription(Document):
 				"change_type": "Plan Changed",
 				"old_value": previous.plan if previous else None,
 				"new_value": self.plan,
+				"locked_rate": rate,
+				"currency": currency,
 				"effective_at": frappe.utils.now_datetime(),
 				"changed_by": self.flags.changed_by or frappe.session.user,
 			}
 		).insert(ignore_permissions=True)
+
+	def resolve_rate_snapshot(self) -> tuple[float | None, str | None]:
+		"""The catalog rate + currency to snapshot onto a Subscription Change now.
+
+		Billing reads this snapshot forever for the segment it opens — never the
+		live catalog rate — so re-resolving it later must not change past charges.
+		"""
+		if not self.plan:
+			return None, None
+		currency = frappe.db.get_value("Billing Profile", self.team, "currency")
+		if not currency:
+			return None, None
+		cluster = frappe.db.get_value("Asset", self.asset_id, "cluster") if self.asset_id else None
+		rate = frappe.get_doc("Plan", self.plan).get_rate(currency, cluster)
+		return rate, currency
 
 	def enable(self):
 		"""Mark this subscription enabled and save."""

@@ -12,6 +12,9 @@
   "column_break_values",
   "old_value",
   "new_value",
+  "column_break_rate",
+  "locked_rate",
+  "currency",
   "section_break_meta",
   "effective_at",
   "changed_by"
@@ -48,6 +51,22 @@
    "label": "New Value"
   },
   {
+   "fieldname": "column_break_rate",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "locked_rate",
+   "fieldtype": "Currency",
+   "label": "Locked Rate",
+   "description": "Rate snapshot at this change, resolved from the catalog at the time it was written. Billing reads this for its segment, never the live catalog rate."
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "options": "Currency",
+   "label": "Currency"
+  },
+  {
    "fieldname": "section_break_meta",
    "fieldtype": "Section Break"
   },
@@ -71,7 +90,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-22 14:28:18.448249",
+ "modified": "2026-06-23 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Subscription Change",
