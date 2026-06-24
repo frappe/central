@@ -12,6 +12,16 @@
   "column_break_auth",
   "api_key",
   "api_secret",
+  "admin_api_key",
+  "admin_api_secret",
+  "section_break_tunnel",
+  "tunnel_status",
+  "tunnel_ip",
+  "tunnel_url",
+  "service_user",
+  "column_break_tunnel",
+  "peer_public_key",
+  "peer_endpoint",
   "section_break_health",
   "reachable",
   "last_synced_at"
@@ -69,6 +79,74 @@
    "fieldtype": "Password",
    "label": "API Secret",
    "reqd": 1
+  },
+  {
+   "description": "Atlas admin API key. Central authenticates with the Atlas admin creds for the registration handshake (provision_tunnel over base_url, confirm_tunnel over the tunnel).",
+   "fieldname": "admin_api_key",
+   "fieldtype": "Data",
+   "label": "Admin API Key"
+  },
+  {
+   "description": "Atlas admin API secret (stored encrypted).",
+   "fieldname": "admin_api_secret",
+   "fieldtype": "Password",
+   "label": "Admin API Secret"
+  },
+  {
+   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register — not hand-entered.",
+   "fieldname": "section_break_tunnel",
+   "fieldtype": "Section Break",
+   "label": "Tunnel"
+  },
+  {
+   "default": "Unregistered",
+   "description": "Unregistered → Provisioning (wg0 up, firewall armed) → Active (confirmed over the tunnel).",
+   "fieldname": "tunnel_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Tunnel Status",
+   "options": "Unregistered\nProvisioning\nActive",
+   "read_only": 1
+  },
+  {
+   "description": "This Atlas's /32 on wg0, allocated from the pool, e.g. 10.88.0.2.",
+   "fieldname": "tunnel_ip",
+   "fieldtype": "Data",
+   "label": "Tunnel IP",
+   "read_only": 1
+  },
+  {
+   "description": "Derived from tunnel_ip (e.g. https://10.88.0.2). The post-registration data path; base_url is used only during bootstrap.",
+   "fieldname": "tunnel_url",
+   "fieldtype": "Data",
+   "label": "Tunnel URL",
+   "read_only": 1
+  },
+  {
+   "description": "The per-Atlas scoped Central service user this Atlas authenticates as when it reports events.",
+   "fieldname": "service_user",
+   "fieldtype": "Link",
+   "label": "Service User",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_tunnel",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The Atlas's WireGuard public key, returned by provision_tunnel and added to the hub as a peer.",
+   "fieldname": "peer_public_key",
+   "fieldtype": "Small Text",
+   "label": "Peer Public Key",
+   "read_only": 1
+  },
+  {
+   "description": "The Atlas's public wg endpoint (host of base_url : listen port) the hub dials.",
+   "fieldname": "peer_endpoint",
+   "fieldtype": "Data",
+   "label": "Peer Endpoint",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_health",
