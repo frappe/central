@@ -112,12 +112,15 @@ def _catalog():
 		}, newname=True)
 		set_catalog_rates("Plan", plan, rates)
 
-	addon = _upsert("Add-on", ADDON, {
-		"title": "Bandwidth Overage", "resource_type": "Transfer", "unit": "GB",
-		"billing_type": "Metered", "billing_interval": "Monthly",
+	# Transfer overage is a metered single-resource Plan now (ADR 0008): one Transfer
+	# include under the metered family, priced per GB.
+	overage = _upsert("Plan", ADDON, {
+		"title": "Bandwidth Overage", "category": "Metered Resources",
+		"billing_cycle": "Monthly", "is_active": 1,
+		"includes": [{"resource_type": "Transfer", "quantity": 0, "unit": "GB"}],
 	}, newname=True)
 	set_catalog_rates(
-		"Add-on", addon, [{"cluster": "", "currency": c, "rate": ADDON_RATE[c]} for c in CURRENCIES]
+		"Plan", overage, [{"cluster": "", "currency": c, "rate": ADDON_RATE[c]} for c in CURRENCIES]
 	)
 
 
@@ -415,7 +418,7 @@ def _wipe_all():
 					 "Price Lock", "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
 					 "Billing Notification Log", "Entitlement Token", "Webhook Event", "Subscription")
 	config = ("Tax Profile", "Billing Profile")
-	catalog = ("Plan", "Add-on", "Payment Gateway", "Trust Tier Level")
+	catalog = ("Plan", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:
 		try:
 			frappe.db.delete(dt)

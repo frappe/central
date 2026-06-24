@@ -145,7 +145,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Catalog",
-   "link_count": 3,
+   "link_count": 2,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -156,16 +156,6 @@
    "label": "Plan",
    "link_count": 0,
    "link_to": "Plan",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Add-on",
-   "link_count": 0,
-   "link_to": "Add-on",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"

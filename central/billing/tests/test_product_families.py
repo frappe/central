@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.billing.platform.sync import receive_meter_rollups, receive_usage_events
 from central.billing.revenue import metering
-from central.billing.tests.utils import ensure_team, make_addon, make_plan
+from central.billing.tests.utils import ensure_team, make_metered_plan, make_plan
 
 
 class TestFamiliesSeed(IntegrationTestCase):
@@ -46,10 +46,9 @@ class TestAITokensBilling(IntegrationTestCase):
 			category="AI Tokens",
 			includes=[{"resource_type": "Tokens", "quantity": 10, "unit": "1M tokens"}],
 		)
-		make_addon(
-			"addon-tokens-meter",
+		make_metered_plan(
+			"meter-tokens",
 			resource_type="Tokens",
-			billing_type="Metered",
 			unit="1M tokens",
 			rates=[{"cluster": "", "currency": "INR", "rate": 5}],
 		)
@@ -80,7 +79,7 @@ class TestAITokensBilling(IntegrationTestCase):
 		receive_meter_rollups([self._meter(15)])  # 15M used, 10M allowed
 		rollup = frappe.get_doc("Usage Rollup", {"resource_id": self.RESOURCE})
 		self.assertEqual(rollup.locked_allowance, 10)  # bundled allowance from the plan
-		self.assertEqual(rollup.locked_rate, 5)  # from the Tokens add-on
+		self.assertEqual(rollup.locked_rate, 5)  # from the Tokens metered plan
 		lines = metering.metered_line_items(self.TEAM, self.CLUSTER, "2026-06-01", "2026-06-30")
 		self.assertEqual(len(lines), 1)
 		self.assertEqual(lines[0]["quantity"], 5)  # max(0, 15-10)
@@ -123,8 +122,8 @@ class TestRemoteStorage(IntegrationTestCase):
 		self.assertEqual(plan.get_rate("USD"), 1)
 
 
-class TestIPSnapshotAreAddOnsOnly(IntegrationTestCase):
-	"""IP and Snapshot are valid add-on dimensions but never bundle composition."""
+class TestIPSnapshotAreMeteredOnly(IntegrationTestCase):
+	"""IP and Snapshot are valid metered-resource dimensions but never bundle composition."""
 
 	def test_ip_cannot_be_in_a_bundle(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -137,9 +136,12 @@ class TestIPSnapshotAreAddOnsOnly(IntegrationTestCase):
 				includes=[{"resource_type": "Snapshot", "quantity": 1, "unit": "GB"}],
 			)
 
-	def test_snapshot_is_valid_as_an_addon(self):
-		name = make_addon(
-			"addon-snapshot-fam", resource_type="Snapshot", billing_type="Metered",
+	def test_snapshot_is_valid_as_a_metered_plan(self):
+		name = make_metered_plan(
+			"meter-snapshot-fam", resource_type="Snapshot",
 			pricing_mode="Live", rates=[{"cluster": "", "currency": "USD", "rate": 1}],
 		)
-		self.assertEqual(frappe.db.get_value("Add-on", name, "resource_type"), "Snapshot")
+		plan = frappe.get_doc("Plan", name)
+		self.assertEqual({i.resource_type for i in plan.includes}, {"Snapshot"})
+		self.assertEqual(plan.category, "Live Metered Resources")
+		self.assertTrue(plan.is_metered_single_resource())

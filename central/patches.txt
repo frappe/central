@@ -78,5 +78,9 @@ central.billing.patches.v19_sub_category_memory_ratio.sub_category_memory_ratio
 # Backfill Plan Category.provision_target (VM Plans -> Server) so the create-server
 # flow lists only provisionable families, not AI Tokens / storage plans — issue #33.
 central.billing.patches.v21_category_provision_target.category_provision_target
+# Retire the Add-on doctype: each Add-on becomes a metered single-resource Plan, its
+# billing metadata moves onto Plan Category, and its Catalog Rate rows repoint to Plan.
+# Billing-neutral — ADR 0008, issue #78.
+central.billing.patches.v22_retire_addon_into_plan.retire_addon_into_plan
 central.patches.v01_capability_model_v2.rename_capabilities
 central.patches.v02_portal_central_users.make_central_users_portal_only

@@ -195,18 +195,19 @@ def _catalog():
 			{"cluster": "", "currency": "INR", "rate": 3200},
 		],
 	)
-	addon = _replace(
-		"Add-on",
+	# Transfer overage is a metered single-resource Plan now (ADR 0008).
+	overage = _replace(
+		"Plan",
 		ADDON,
 		{
 			"title": "Bandwidth Overage",
-			"resource_type": "Transfer",
-			"unit": "GB",
-			"billing_type": "Metered",
-			"billing_interval": "Monthly",
+			"category": "Metered Resources",
+			"billing_cycle": "Monthly",
+			"is_active": 1,
+			"includes": [{"resource_type": "Transfer", "quantity": 0, "unit": "GB"}],
 		},
 	)
-	set_catalog_rates("Add-on", addon, [{"cluster": "", "currency": "INR", "rate": 0.8}])
+	set_catalog_rates("Plan", overage, [{"cluster": "", "currency": "INR", "rate": 0.8}])
 
 
 def _gateway():
@@ -400,7 +401,7 @@ def _settle(name, card, due_date, with_failure=False):
 def _replace(doctype, name, values):
 	if frappe.db.exists(doctype, name):
 		frappe.delete_doc(doctype, name, force=True)
-	field = "__newname" if doctype in ("Plan", "Add-on", "Payment Gateway") else None
+	field = "__newname" if doctype in ("Plan", "Payment Gateway") else None
 	doc = {"doctype": doctype, **values}
 	if doctype == "Tax Profile":
 		doc["team"] = name
@@ -467,7 +468,7 @@ def _ensure_workspace():
 	]
 	cards = {
 		"Billing Records": ["Invoice", "Payment Attempt", "Credit Ledger Entry", "Price Lock", "Usage Rollup"],
-		"Catalog & Config": ["Plan", "Add-on", "Payment Gateway", "Tax Profile", "Trust Tier Level"],
+		"Catalog & Config": ["Plan", "Payment Gateway", "Tax Profile", "Trust Tier Level"],
 	}
 	links = []
 	for card_name, doctypes in cards.items():

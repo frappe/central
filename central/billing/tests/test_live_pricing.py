@@ -1,9 +1,9 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Live-priced snapshot add-on (issue #32 / ADR 0002).
+"""Live-priced snapshot metered plan (issue #32 / ADR 0002, ADR 0008).
 
-Most add-ons grandfather their rate at provision. Depreciating storage would
-strand a customer on a stale-high rate, so a `live` add-on reads the CURRENT
+Most metered plans grandfather their rate at provision. Depreciating storage would
+strand a customer on a stale-high rate, so a `Live` metered plan reads the CURRENT
 Catalog Rate each billing period and has NO allowance. A snapshot is its own
 resource_id from birth, so it survives VM termination (no active price-lock
 required to bill it).
@@ -15,7 +15,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue import metering
 from central.billing.catalog.pricing import set_catalog_rates
 from central.billing.platform.sync import receive_meter_rollups
-from central.billing.tests.utils import ensure_team, make_addon
+from central.billing.tests.utils import ensure_team, make_metered_plan
 
 TEAM = "team-live"
 CLUSTER = "ap-south-1"
@@ -40,10 +40,9 @@ def snapshot_meter(resource_id, qty, currency="INR"):
 class LivePricingTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
-		make_addon(
-			"addon-snapshot",
+		make_metered_plan(
+			"meter-snapshot",
 			resource_type="Snapshot",
-			billing_type="Metered",
 			pricing_mode="Live",
 			rates=[{"cluster": "", "currency": "INR", "rate": 0.10}],
 		)
@@ -68,7 +67,7 @@ class TestLiveSnapshot(LivePricingTestBase):
 
 		# Storage depreciates: drop the catalog rate. The bill follows it down —
 		# the rate is read live, never locked at ingest.
-		set_catalog_rates("Add-on", "addon-snapshot", [{"cluster": "", "currency": "INR", "rate": 0.08}])
+		set_catalog_rates("Plan", "meter-snapshot", [{"cluster": "", "currency": "INR", "rate": 0.08}])
 		lines = metering.metered_line_items(TEAM, CLUSTER, "2026-06-01", "2026-06-30")
 		self.assertEqual(lines[0]["amount"], 8.0)  # 100 * 0.08, not the old 0.10
 

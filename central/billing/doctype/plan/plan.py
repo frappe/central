@@ -30,6 +30,38 @@ class Plan(Document):
 	def validate(self):
 		self._validate_sub_category()
 		self._validate_includes_against_category()
+		self._validate_unique_metered_resource()
+
+	def is_metered_single_resource(self) -> bool:
+		"""True when this Plan is a metering target: a single-resource plan under a
+		`Metered` Plan Category (ADR 0008). This is what `metering.py` resolves by
+		resource type."""
+		if len(self.includes) != 1 or not self.category:
+			return False
+		return frappe.db.get_value("Plan Category", self.category, "billing_type") == "Metered"
+
+	def _validate_unique_metered_resource(self):
+		"""At most one *active* metered single-resource Plan may exist per resource type,
+		so metering's resolution is unambiguous (ADR 0008). The old global Add-on lookup
+		silently picked one row; this surfaces the collision at save time instead."""
+		if not self.is_active or not self.is_metered_single_resource():
+			return
+		resource_type = self.includes[0].resource_type
+		metered_cats = frappe.get_all("Plan Category", filters={"billing_type": "Metered"}, pluck="name")
+		others = frappe.get_all(
+			"Plan",
+			filters={"category": ["in", metered_cats], "is_active": 1, "name": ["!=", self.name]},
+			pluck="name",
+		)
+		for other in others:
+			includes = frappe.get_all("Plan Includes", filters={"parent": other}, pluck="resource_type")
+			if len(includes) == 1 and includes[0] == resource_type:
+				frappe.throw(
+					_(
+						"An active metered plan ({0}) already prices resource type {1}. "
+						"At most one active metered plan may cover a resource type."
+					).format(other, resource_type)
+				)
 
 	def _validate_sub_category(self):
 		"""A chosen sub-category must belong to this plan's category (ADR 0007)."""
