@@ -15,8 +15,8 @@ class AtlasInstance(Document):
 
 		admin_api_key: DF.Data | None
 		admin_api_secret: DF.Password | None
-		api_key: DF.Data
-		api_secret: DF.Password
+		api_key: DF.Data | None
+		api_secret: DF.Password | None
 		atlas_id: DF.Data | None
 		base_url: DF.Data
 		last_synced_at: DF.Datetime | None
