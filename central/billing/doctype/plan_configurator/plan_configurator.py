@@ -172,6 +172,9 @@ class PlanConfigurator(Document):
 				is_active=cint(self.is_active),
 			)
 			created.append(row.plan)
+		# create_simple_plan minted each row.plan in place; persist it. Runs in the
+		# background generation job (run_generation) with no interactive user to
+		# permission-check, hence ignore_permissions.
 		self.save(ignore_permissions=True)
 		multipliers = [{"plan": r.plan, "multiplier": flt(r.multiplier) or 1} for r in rows]
 		return {"created": created, "skipped": skipped, **self._price(multipliers, cluster, currencies)}

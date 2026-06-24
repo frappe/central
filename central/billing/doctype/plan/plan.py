@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
@@ -37,7 +38,9 @@ class Plan(Document):
 		owner = frappe.db.get_value("Plan Sub-Category", self.sub_category, "category")
 		if owner != self.category:
 			frappe.throw(
-				f"Sub-Category {self.sub_category!r} belongs to {owner!r}, not {self.category!r}."
+				_("Sub-Category {0} belongs to {1}, not {2}.").format(
+					self.sub_category, owner, self.category
+				)
 			)
 
 	def _validate_includes_against_category(self):
@@ -57,8 +60,9 @@ class Plan(Document):
 		offenders = {i.resource_type for i in self.includes if i.resource_type not in allowed}
 		if offenders:
 			frappe.throw(
-				f"Resource type(s) {', '.join(sorted(offenders))} are not allowed in category "
-				f"{self.category!r} (allowed: {', '.join(sorted(allowed))})."
+				_("Resource type(s) {0} are not allowed in category {1} (allowed: {2}).").format(
+					", ".join(sorted(offenders)), self.category, ", ".join(sorted(allowed))
+				)
 			)
 
 	def get_rate(self, currency: str, cluster: str | None = None):

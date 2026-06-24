@@ -41,12 +41,16 @@ def _backfill_plans():
 	"""
 	if not frappe.db.has_column("Plan", "plan_class"):
 		return
-	for name in frappe.get_all("Plan", pluck="name"):
-		plan_class = frappe.db.get_value("Plan", name, "plan_class")
-		sub_category = plan_class if plan_class in VM_SUB_CATEGORIES else None
+	# One read of (name, plan_class) for the whole fleet, not a get_value per plan.
+	# plan_class is no longer in the doctype meta (only the live DB column), so go
+	# through the query builder by column rather than frappe.get_all's field check.
+	plan = frappe.qb.DocType("Plan")
+	rows = frappe.qb.from_(plan).select(plan.name, plan.plan_class).run(as_dict=True)
+	for row in rows:
+		sub_category = row.plan_class if row.plan_class in VM_SUB_CATEGORIES else None
 		frappe.db.set_value(
 			"Plan",
-			name,
+			row.name,
 			{"category": "VM Plans", "sub_category": sub_category},
 			update_modified=False,
 		)
@@ -66,7 +70,9 @@ def _flag_ip_snapshot_rows():
 			fields=["name", "resource_type"],
 		)
 		for r in rows:
-			print(
-				f"[v15 #75] {doctype} {r.name} uses resource_type {r.resource_type!r} — "
-				f"reclassify as an Add-on in #77."
+			# logger (not print): visible in the site log + `bench console`, and not
+			# swallowed when the patch runs headlessly under `bench migrate`.
+			frappe.logger("billing").info(
+				f"[catalog_taxonomy #75] {doctype} {r.name} uses resource_type "
+				f"{r.resource_type!r} — reclassify as an Add-on in #77."
 			)
