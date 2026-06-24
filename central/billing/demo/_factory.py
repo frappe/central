@@ -81,7 +81,20 @@ def _tiers():
 		}, newname=True)
 
 
+def _atlas_instances():
+	"""Each demo cluster needs a real Atlas Instance — Catalog Rate scopes its
+	regional rates to one via a Link (autonamed by region)."""
+	for cslug, label, _cur in CLUSTERS:
+		if frappe.db.exists("Atlas Instance", cslug):
+			continue
+		frappe.get_doc({
+			"doctype": "Atlas Instance", "region": cslug,
+			"base_url": f"https://{cslug}.atlas.demo", "api_key": "demo", "api_secret": "demo",
+		}).insert(ignore_permissions=True)
+
+
 def _catalog():
+	_atlas_instances()
 	for slug, title, vcpu, ram, disk, transfer, base_inr in PLAN_SIZES:
 		rates = []
 		for cslug, _label, _cur in CLUSTERS:

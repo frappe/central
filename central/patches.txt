@@ -8,6 +8,10 @@ central.billing.patches.v01_rates_to_standalone.snapshot_legacy_rate_children
 # per slug, rewrite values, backfill Team Members, drop User.billing_team. Runs
 # while `team` is still Data, before the Link field-type flip is synced (#43).
 central.billing.patches.v03_team_link_to_central_team.migrate_team_to_central_team
+# Plan Configurator start_vcpu / ceiling_vcpu: Float -> Select (1/16 … 1024).
+# Widen the decimal columns to varchar before sync (the sync can't cast a '1/8'
+# default against a decimal column) and relabel stored values — issue #33.
+central.billing.patches.v20_configurator_vcpu_dropdown.configurator_vcpu_dropdown
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated

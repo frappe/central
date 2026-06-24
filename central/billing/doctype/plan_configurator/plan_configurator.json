@@ -79,22 +79,22 @@
    "label": "Sizing"
   },
   {
-   "default": "0.125",
+   "default": "1/8",
    "description": "Smallest rung, in vCPU (1 vCPU = 1000 millicores). The ladder doubles from here.",
    "fieldname": "start_vcpu",
-   "fieldtype": "Float",
+   "fieldtype": "Select",
+   "options": "1/16\n1/8\n1/4\n1/2\n1\n2\n4\n8\n16\n32\n64\n128\n256\n512\n1024",
    "in_list_view": 1,
    "label": "Start vCPU",
-   "precision": "3",
    "reqd": 1
   },
   {
    "default": "4",
    "description": "Largest rung. The ladder doubles from start up to (and including) this.",
    "fieldname": "ceiling_vcpu",
-   "fieldtype": "Float",
+   "fieldtype": "Select",
+   "options": "1/16\n1/8\n1/4\n1/2\n1\n2\n4\n8\n16\n32\n64\n128\n256\n512\n1024",
    "label": "Ceiling vCPU",
-   "precision": "3",
    "reqd": 1
   },
   {

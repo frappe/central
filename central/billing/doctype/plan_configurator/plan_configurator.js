@@ -1,8 +1,18 @@
 // Copyright (c) 2026, Frappe and contributors
 // For license information, please see license.txt
 
-// Mirror of configurator._num / _vcpu_label, for live autofill of added rows.
+// Mirror of configurator._num / _vcpu_label / parse_vcpu, for live autofill.
 const num = (v) => parseFloat(Number(v).toPrecision(12)).toString();
+// "1/16" -> 0.0625, "4" -> 4 — start_vcpu is a fraction-string dropdown value.
+function parse_vcpu(v) {
+	if (v == null || v === "") return 0;
+	const s = String(v).trim();
+	if (s.includes("/")) {
+		const [n, d] = s.split("/");
+		return parseFloat(n) / parseFloat(d);
+	}
+	return parseFloat(s);
+}
 function vcpu_label(v) {
 	if (v >= 1) return `${num(v)} vCPU`;
 	const inv = 1 / v;
@@ -98,7 +108,7 @@ function fill_rung(frm, row) {
 	const prefix = frm.doc.plan_name_prefix || "Bundle";
 	if (!row.plan_name) row.plan_name = `${prefix} ${num(row.vcpu)} vCPU ${num(row.memory_gb)} GB`;
 	if (!row.label) row.label = `${vcpu_label(row.vcpu)} · ${num(row.memory_gb)} GB`;
-	if (!row.multiplier) row.multiplier = row.vcpu / (frm.doc.start_vcpu || 1);
+	if (!row.multiplier) row.multiplier = row.vcpu / (parse_vcpu(frm.doc.start_vcpu) || 1);
 	frm.refresh_field("rungs");
 }
 

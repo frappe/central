@@ -28,13 +28,13 @@ class PlanConfigurator(Document):
 		billing_cycle: DF.Literal["Monthly", "Annual"]
 		builder: DF.ReadOnly | None
 		category: DF.Link
-		ceiling_vcpu: DF.Float
+		ceiling_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
 		is_active: DF.Check
 		memory_ratio: DF.Literal["1:2", "1:4", "1:6", "1:8"]
 		plan_name_prefix: DF.Data
 		rungs: DF.Table[PlanConfiguratorPlan]
 		simple_plans: DF.Table[PlanConfiguratorSimplePlan]
-		start_vcpu: DF.Float
+		start_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
 		sub_category: DF.Link | None
 		template_name: DF.Data
 		transfer_step_gb: DF.Float
@@ -44,7 +44,7 @@ class PlanConfigurator(Document):
 		"""Fill identity/price for hand-added or edited rungs, so an inserted size
 		(e.g. 1 vCPU 3 GB between the 2 GB and 4 GB rungs) is usable without the
 		admin spelling out its name, label, and multiplier."""
-		start = flt(self.start_vcpu) or 1
+		start = configurator.parse_vcpu(self.start_vcpu) or 1
 		for r in self.rungs:
 			if not flt(r.multiplier) and flt(r.vcpu):
 				r.multiplier = flt(r.vcpu) / start

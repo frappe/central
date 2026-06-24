@@ -16,6 +16,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog import configurator, plans
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
+from central.billing.tests.utils import ensure_atlas_instance
 
 PREFIX = "CfgTest"
 TEMPLATE = "Cfg Test Template"
@@ -144,9 +145,10 @@ class TestBuildLadder(IntegrationTestCase):
 class TestGenerate(IntegrationTestCase):
 	def setUp(self):
 		_cleanup()
+		ensure_atlas_instance("ap-south-1")
 		self.cfg = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": TEMPLATE,
-			"start_vcpu": 0.125, "ceiling_vcpu": 4,
+			"start_vcpu": "1/8", "ceiling_vcpu": "4",
 			"memory_ratio": "1:2", "base_disk_gb": 10, "plan_name_prefix": PREFIX,
 			"billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "INR", "base_rate": 100}, {"currency": "USD", "base_rate": 2}],
@@ -272,7 +274,7 @@ class TestGenerate(IntegrationTestCase):
 	def test_sub_category_drives_ratio_and_composition(self):
 		mem = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": "Cfg Test Mem",
-			"sub_category": "Memory Optimised", "start_vcpu": 1, "ceiling_vcpu": 1,
+			"sub_category": "Memory Optimised", "start_vcpu": "1", "ceiling_vcpu": "1",
 			"plan_name_prefix": PREFIX, "billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "INR", "base_rate": 500}],
 		}).insert(ignore_permissions=True)
@@ -288,7 +290,7 @@ class TestGenerate(IntegrationTestCase):
 		# formula reproduces vCPU/RAM/disk/transfer/price across the rungs.
 		gp = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": "Cfg Test GP",
-			"sub_category": "General", "start_vcpu": 2, "ceiling_vcpu": 16,
+			"sub_category": "General", "start_vcpu": "2", "ceiling_vcpu": "16",
 			"base_disk_gb": 25, "base_transfer_gb": 4000, "transfer_step_gb": 1000,
 			"plan_name_prefix": "CfgGP", "billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "USD", "base_rate": 63}],
