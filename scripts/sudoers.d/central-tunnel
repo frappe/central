@@ -1,0 +1,27 @@
+# /etc/sudoers.d/central-tunnel
+#
+# Privileged commands the Central WireGuard hub scripts run via sudo. These scripts
+# are invoked ONLY through central.host_task.run_host_task, which gates execution to
+# the three pinned hub scripts (central.scripts_catalog.HUB_SCRIPTS) — so this grant's
+# real surface is those scripts, not an open shell.
+#
+# This file is an operator install step; the Central app never edits sudoers. Install:
+#   sudo install -m 0440 -o root -g root \
+#       apps/central/scripts/sudoers.d/central-tunnel /etc/sudoers.d/central-tunnel
+#   sudo visudo -cf /etc/sudoers.d/central-tunnel   # validate before trusting it
+#
+# Replace `frappe` below with the bench OS user if different (e.g. the local dev
+# user). Adjust binary paths if your distro differs (`command -v wg wg-quick install
+# systemctl cat test`). Requires `wireguard-tools` installed (provides /etc/wireguard).
+
+Cmnd_Alias CENTRAL_TUNNEL = \
+    /usr/bin/wg, \
+    /usr/bin/wg-quick, \
+    /usr/bin/systemctl enable wg-quick@wg0, \
+    /usr/bin/systemctl disable wg-quick@wg0, \
+    /usr/bin/install -m 0600 * /etc/wireguard/*, \
+    /usr/bin/install -d -m 0700 /etc/wireguard, \
+    /usr/bin/cat /etc/wireguard/*, \
+    /usr/bin/test -f /etc/wireguard/*
+
+frappe ALL=(root) NOPASSWD: CENTRAL_TUNNEL
