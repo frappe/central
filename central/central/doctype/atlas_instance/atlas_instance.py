@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 import frappe
 from frappe.model.document import Document
 
@@ -31,10 +33,21 @@ class AtlasInstance(Document):
 	# end: auto-generated types
 
 	def validate(self) -> None:
-		"""Keep `tunnel_url` derived from `tunnel_ip` (the post-registration data path,
-		e.g. https://10.88.0.2). Computed here so it can never drift from the allocated
-		address."""
-		self.tunnel_url = f"https://{self.tunnel_ip}" if self.tunnel_ip else None
+		"""Keep `tunnel_url` derived from `tunnel_ip` (the post-registration data path).
+		Computed here so it can never drift from the allocated address."""
+		self.tunnel_url = self._derive_tunnel_url()
+
+	def _derive_tunnel_url(self) -> str | None:
+		"""The data path over wg0, mirroring base_url's scheme + port so it matches how
+		this Atlas is actually served. The WireGuard tunnel already encrypts the hop, so
+		we do NOT assume TLS on the tunnel IP — http base_url -> http tunnel_url. e.g.
+		base_url http://1.2.3.4:8000 -> http://10.88.0.2:8000; https://host -> https://10.88.0.2."""
+		if not self.tunnel_ip:
+			return None
+		parsed = urlparse(self.base_url or "")
+		scheme = parsed.scheme or "https"
+		port = f":{parsed.port}" if parsed.port else ""
+		return f"{scheme}://{self.tunnel_ip}{port}"
 
 	@frappe.whitelist()
 	def register(self) -> dict:
