@@ -149,9 +149,10 @@ function generate_dialog(frm) {
 		fields: [
 			{
 				fieldname: "cluster",
-				fieldtype: "Data",
-				label: __("Cluster"),
-				description: __("Blank = global rate (every cluster). Else a region key. Re-run per cluster."),
+				fieldtype: "Link",
+				options: "Atlas Instance",
+				label: __("Atlas Instance"),
+				description: __("Blank = global rate (every Atlas Instance). Else pick one. Re-run per Atlas Instance."),
 			},
 			{ fieldname: "sb_cur", fieldtype: "Section Break", label: __("Currencies") },
 			{
