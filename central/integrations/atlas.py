@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import re
+from urllib.parse import urlparse
+
 import frappe
 from frappe.frappeclient import FrappeClient
 
 from central.central.doctype.asset.asset import Asset
+from central.host_task import run_host_task
 
 # Central's integration with the regional Atlas clusters (Edge B), all in one place:
 #   - outbound: AtlasClient calls Atlas over Frappe's FrappeClient (token auth from
@@ -90,6 +94,41 @@ class AtlasClient:
 		team). One dict per VM: name, central_reference, status, gateway_url."""
 		params = {"central_reference": central_reference} if central_reference else None
 		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
+
+	# --- admin-auth path: the registration handshake (TUNNEL.md) -------------
+	# Central→Atlas registration uses the Atlas ADMIN creds (not the per-Atlas service
+	# creds the data path uses today). provision_tunnel goes over the public base_url;
+	# the verify ping and confirm_tunnel go over the tunnel_url, so reaching them is
+	# itself the proof that wg0 works before the public side is locked for good.
+
+	def _admin_client(self, base_url: str) -> FrappeClient:
+		if not self.instance.admin_api_key:
+			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+		return FrappeClient(
+			base_url,
+			api_key=self.instance.admin_api_key,
+			api_secret=self.instance.get_password("admin_api_secret"),
+		)
+
+	def admin_ping(self, base_url: str) -> dict:
+		"""Ping Atlas's frappe endpoint with the admin token at `base_url` — the public
+		bootstrap URL during step 1, the tunnel_url during the over-the-tunnel verify."""
+		return self._admin_client(base_url).get_api("ping")
+
+	def provision_tunnel(self, base_url: str, payload: dict) -> dict:
+		"""Atlas inbound provision_tunnel over the public base_url (admin auth): Atlas
+		brings up wg0, locks its public firewall with the auto-revert armed, stores the
+		pushed creds, and returns { wg_public_key, listen_port, tunnel_ip }."""
+		return self._admin_client(base_url).post_api(
+			"atlas.atlas.api.central_link.provision_tunnel", params=payload
+		)
+
+	def confirm_tunnel(self, tunnel_url: str) -> dict:
+		"""Atlas inbound confirm_tunnel OVER the tunnel (admin auth): Atlas persists the
+		lockdown and cancels its auto-revert. Returns { tunnel_status }."""
+		return self._admin_client(tunnel_url).post_api(
+			"atlas.atlas.api.central_link.confirm_tunnel", params={}
+		)
 
 
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
@@ -185,3 +224,191 @@ def reconcile_atlas(instance, team: str | None = None) -> int:
 		if resource_id not in seen:
 			Asset.mark_terminated(resource_id, last_synced_at=now)
 	return len(vms)
+
+
+# --- Register orchestration: Central drives the tunnel handshake -------------
+# central/spec/TUNNEL.md § Register Atlas. The operator supplies admin creds + base_url
+# + region and clicks Register; this runs the 8-step handshake with a lockout-safe
+# rollback. Atlas's own armed auto-revert restores its public firewall if confirm never
+# arrives, so a failure here can't leave the Atlas dark — we undo only the Central-side
+# half (the half-added hub peer + the scoped service user).
+
+SERVICE_ROLE = "Atlas Service"
+
+
+class TunnelRegistrationError(AtlasError):
+	pass
+
+
+def register_atlas(instance) -> dict:
+	"""Run the full Central-driven registration handshake for one Atlas Instance.
+
+	1. ping over the public base_url (admin auth); 2. ensure the hub is up + allocate
+	tunnel_ip; 3. mint atlas_id + the scoped service user; 4. provision_tunnel over
+	base_url; 5. hub-peer-add on the hub; 6. ping at tunnel_ip over wg0; 7.
+	confirm_tunnel over the tunnel; 8. tunnel_status=Active. Any failure before confirm
+	rolls back the Central-side half and raises TunnelRegistrationError; the instance
+	stays Unregistered (Atlas's auto-revert reopens its own firewall)."""
+	if "System Manager" not in frappe.get_roles():
+		frappe.throw("Not permitted.", frappe.PermissionError)
+	if not (instance.admin_api_key and instance.get_password("admin_api_secret", raise_exception=False)):
+		frappe.throw("Set the Atlas admin API key and secret before registering.", TunnelRegistrationError)
+
+	settings = frappe.get_single("Central Tunnel Settings")
+	if settings.hub_status != "Active":
+		frappe.throw("Initialize the hub before registering an Atlas.", TunnelRegistrationError)
+
+	client = AtlasClient(instance)
+
+	# 1. Prove the public bootstrap path + admin creds before changing anything.
+	client.admin_ping(instance.base_url)
+
+	# 2-3. Allocate the tunnel address and mint the scoped service identity. Reuse an
+	# existing allocation/id on re-register so the Atlas keeps a stable address.
+	tunnel_ip = instance.tunnel_ip or settings.allocate_tunnel_ip()
+	atlas_id = instance.atlas_id or frappe.generate_hash(length=12)
+	service_user = _ensure_service_user(instance)
+	api_key, api_secret = _rotate_service_credentials(service_user)
+
+	peer_added = False
+	try:
+		# 4. Atlas brings up wg0 + arms its firewall, returns its public key + port.
+		provision = client.provision_tunnel(
+			instance.base_url,
+			{
+				"atlas_id": atlas_id,
+				"hub_public_key": settings.hub_public_key,
+				"hub_endpoint": settings.hub_endpoint,
+				"tunnel_ip": tunnel_ip,
+				"tunnel_cidr": settings.tunnel_cidr,
+				"central_url": frappe.utils.get_url(),
+				"service_api_key": api_key,
+				"service_api_secret": api_secret,
+			},
+		)
+		peer_public_key = provision["wg_public_key"]
+		peer_endpoint = _peer_endpoint(instance.base_url, provision["listen_port"])
+
+		instance.atlas_id = atlas_id
+		instance.tunnel_ip = tunnel_ip
+		instance.peer_public_key = peer_public_key
+		instance.peer_endpoint = peer_endpoint
+		instance.service_user = service_user
+		instance.tunnel_status = "Provisioning"
+		instance.save(ignore_permissions=True)  # validate() derives tunnel_url from tunnel_ip
+
+		# 5. Add the spoke as a hub peer (the hub dials the Atlas's public endpoint).
+		run_host_task(
+			script="hub-peer-add.py",
+			variables={
+				"PEER_PUBLIC_KEY": peer_public_key,
+				"ALLOWED_IPS": f"{tunnel_ip}/32",
+				"ENDPOINT": peer_endpoint,
+			},
+		)
+		peer_added = True
+
+		# 6. Verify reachability over wg0, then 7. confirm over the tunnel.
+		client.admin_ping(instance.tunnel_url)
+		client.confirm_tunnel(instance.tunnel_url)
+
+		# 8. The lockdown is now proven safe to keep.
+		instance.tunnel_status = "Active"
+		instance.save(ignore_permissions=True)
+	except Exception as exception:
+		_rollback(instance, service_user, peer_added)
+		raise TunnelRegistrationError(f"Register failed for '{instance.region}': {exception}") from exception
+
+	return {"ok": True, "atlas_id": atlas_id, "tunnel_ip": tunnel_ip, "tunnel_status": "Active"}
+
+
+def _ensure_service_user(instance) -> str:
+	"""Get-or-create the dedicated, scoped Central user this Atlas authenticates as when
+	it calls in (`atlas-<region>@<central-site>`). Its only role is `Atlas Service`
+	(desk-less) — it holds no operator powers; the inbound event/sizes/images/ping
+	endpoints are all it ever needs to reach."""
+	email = f"atlas-{_slug(instance.region)}@{frappe.local.site}"
+	if frappe.db.exists("User", email):
+		user = frappe.get_doc("User", email)
+	else:
+		user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": email,
+				"first_name": f"Atlas {instance.region}",
+				"user_type": "System User",
+				"send_welcome_email": 0,
+				"enabled": 1,
+			}
+		).insert(ignore_permissions=True)
+	_ensure_service_role(user)
+	return user.name
+
+
+def _ensure_service_role(user) -> None:
+	"""Ensure the desk-less `Atlas Service` role exists and the user carries only it."""
+	if not frappe.db.exists("Role", SERVICE_ROLE):
+		frappe.get_doc({"doctype": "Role", "role_name": SERVICE_ROLE, "desk_access": 0}).insert(
+			ignore_permissions=True
+		)
+	if SERVICE_ROLE not in {row.role for row in (user.get("roles") or [])}:
+		user.append("roles", {"role": SERVICE_ROLE})
+		user.save(ignore_permissions=True)
+
+
+def _rotate_service_credentials(user_name: str) -> tuple[str, str]:
+	"""Generate a fresh API key/secret for the service user (rotation = re-register) and
+	return them so provision_tunnel can push them to Atlas. The secret is stored
+	encrypted on the User; only this plaintext copy leaves Central."""
+	api_key = frappe.generate_hash(length=20)
+	api_secret = frappe.generate_hash(length=20)
+	user = frappe.get_doc("User", user_name)
+	user.api_key = api_key
+	user.api_secret = api_secret
+	user.save(ignore_permissions=True)
+	return api_key, api_secret
+
+
+def _peer_endpoint(base_url: str, listen_port: int) -> str:
+	"""The Atlas's public wg endpoint the hub dials: the host of base_url with the wg
+	listen port (https://blr.atlas.example.com → blr.atlas.example.com:51820)."""
+	host = urlparse(base_url).hostname
+	if not host:
+		frappe.throw(f"Cannot derive a wg endpoint from base_url '{base_url}'.", TunnelRegistrationError)
+	return f"{host}:{listen_port}"
+
+
+def _slug(text: str) -> str:
+	return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _rollback(instance, service_user: str | None, peer_added: bool) -> None:
+	"""Undo the Central-side half of a failed registration. Atlas's armed auto-revert
+	restores its own public firewall and tears its tunnel on its own, so we only remove
+	the half-added hub peer and the scoped service user, and return the instance to
+	Unregistered. Best-effort: cleanup failures are logged, not raised — the original
+	error is the one worth surfacing."""
+	if peer_added and instance.peer_public_key:
+		try:
+			run_host_task(
+				script="hub-peer-remove.py",
+				variables={"PEER_PUBLIC_KEY": instance.peer_public_key},
+			)
+		except Exception:
+			frappe.log_error(title=f"Tunnel rollback: hub-peer-remove failed for {instance.region}")
+
+	instance.db_set("service_user", None)
+	instance.db_set("peer_public_key", None)
+	instance.db_set("peer_endpoint", None)
+	instance.db_set("tunnel_status", "Unregistered")
+
+	if service_user and frappe.db.exists("User", service_user):
+		try:
+			frappe.delete_doc("User", service_user, ignore_permissions=True, force=True)
+		except Exception:
+			frappe.log_error(title=f"Tunnel rollback: service-user cleanup failed for {instance.region}")
+
+	# nosemgrep: frappe-manual-commit -- hub-peer-add (run_host_task) already committed the
+	# half-provisioned state; the caller re-raises, on which Frappe rolls the request back. Commit
+	# the cleanup here so the half state can't survive that rollback — no Unregistered/orphan limbo.
+	frappe.db.commit()
