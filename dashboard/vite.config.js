@@ -6,13 +6,13 @@ import path from 'path'
 export default defineConfig({
   plugins: [
     frappeui({
-      frontendRoute: '/dashboard',
+      frontendRoute: '/legacy-dashboard',
       frappeProxy: true,
       jinjaBootData: true,
       buildConfig: {
-        outDir: path.resolve(__dirname, '../central/public/dashboard'),
-        baseUrl: '/assets/central/dashboard/',
-        indexHtmlPath: path.resolve(__dirname, '../central/www/dashboard.html'),
+        outDir: path.resolve(__dirname, '../central/public/legacy-dashboard'),
+        baseUrl: '/assets/central/legacy-dashboard/',
+        indexHtmlPath: path.resolve(__dirname, '../central/www/legacy-dashboard.html'),
       },
     }),
     vue(),
@@ -23,7 +23,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(__dirname, '../central/public/dashboard'),
+    outDir: path.resolve(__dirname, '../central/public/legacy-dashboard'),
     emptyOutDir: true,
     target: 'es2015',
     sourcemap: true,

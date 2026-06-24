@@ -13,10 +13,10 @@
  "fields": [
   {
    "fieldname": "resource_type",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Resource Type",
-   "options": "Compute\nMemory\nDisk\nTransfer\nIP\nSnapshot",
+   "options": "Resource Type",
    "reqd": 1
   },
   {

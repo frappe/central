@@ -3,7 +3,8 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.atlas import ingest_event, reconcile, reconcile_atlas, refresh_assets, registry
+from central.api.servers import refresh_assets, registry
+from central.integrations.atlas import apply_event, ingest_event, reconcile, reconcile_atlas
 from central.tests.test_iam import ensure_user
 
 
@@ -41,7 +42,10 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def _push(self, event_type, vm, occurred_at):
-		return ingest_event(self.atlas_id, event_type, vm, occurred_at)
+		# ingest_event verifies the sender then queues the work; here we run the
+		# worker (apply_event) directly to assert its mirror effect. The
+		# verify-and-queue path is covered by the dispatch tests below.
+		apply_event(self.region, event_type, vm, occurred_at)
 
 	# --- push -----------------------------------------------------------------
 
@@ -94,6 +98,44 @@ class TestAtlasMirror(IntegrationTestCase):
 		self._push("vm.deleted", {"name": "vm-2"}, "2026-06-18 11:00:00")
 		self.assertEqual(frappe.db.get_value("Asset", "vm-2", "status"), "Terminated")
 
+	# --- dispatch: verify synchronously, mirror in the background -------------
+
+	def test_known_event_is_queued_not_applied_inline(self):
+		vm = {"name": "vm-q", "central_reference": self.team.name, "status": "Running"}
+		with patch("frappe.enqueue") as enqueue:
+			result = ingest_event(self.atlas_id, "vm.created", vm, "2026-06-18 10:00:00")
+		self.assertTrue(result["queued"])
+		enqueue.assert_called_once()
+		# nothing written on the request thread — the worker does it
+		self.assertFalse(frappe.db.exists("Asset", "vm-q"))
+
+	def test_unknown_event_type_is_acked_without_queuing(self):
+		with patch("frappe.enqueue") as enqueue:
+			result = ingest_event(self.atlas_id, "vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00")
+		self.assertEqual(result, {"ok": True, "queued": False})
+		enqueue.assert_not_called()
+
+	def test_mirror_recovers_when_exists_check_loses_insert_race(self):
+		from central.central.doctype.asset.asset import Asset
+
+		self._push("vm.created", {"name": "vm-race", "central_reference": self.team.name, "status": "Pending"}, "2026-06-18 10:00:00")
+
+		# Simulate the REPEATABLE READ race: a concurrent writer's exists-check misses
+		# the row, so it takes the insert path and hits the duplicate key. mirror_vm
+		# must recover by updating, not raise DuplicateEntryError.
+		real_exists = frappe.db.exists
+
+		def blind_to_asset(dt, *a, **k):
+			return None if dt == "Asset" else real_exists(dt, *a, **k)
+
+		with patch("frappe.db.exists", side_effect=blind_to_asset):
+			Asset.mirror_vm(
+				self.region,
+				{"name": "vm-race", "central_reference": self.team.name, "status": "Running"},
+				occurred_at="2026-06-18 11:00:00",
+			)
+		self.assertEqual(frappe.db.get_value("Asset", "vm-race", "status"), "Running")
+
 	# --- pull / reconcile -----------------------------------------------------
 
 	def test_reconcile_upserts_present_and_terminates_missing(self):
@@ -104,21 +146,21 @@ class TestAtlasMirror(IntegrationTestCase):
 		)
 		instance = frappe.get_doc("Atlas Instance", self.region)
 		pulled = [{"name": "vm-3", "central_reference": self.team.name, "status": "Stopped", "gateway_url": None}]
-		with patch("central.atlas.AtlasClient.central_vms", return_value=pulled):
+		with patch("central.integrations.atlas.AtlasClient.central_vms", return_value=pulled):
 			reconcile_atlas(instance, self.team.name)
 		self.assertEqual(frappe.db.get_value("Asset", "vm-3", "status"), "Stopped")
 		self.assertEqual(frappe.db.get_value("Asset", "gone", "status"), "Terminated")
 
 	def test_refresh_assets_reconciles_and_registry_lists(self):
 		pulled = [{"name": "vm-4", "central_reference": self.team.name, "status": "Running", "gateway_url": None}]
-		with patch("central.atlas.AtlasClient.central_vms", return_value=pulled):
+		with patch("central.integrations.atlas.AtlasClient.central_vms", return_value=pulled):
 			result = refresh_assets(team=self.team.name)
 		self.assertIn(self.region, result["synced"])
 		ids = {a["resource_id"] for a in registry(team=self.team.name)["assets"]}
 		self.assertIn("vm-4", ids)
 
 	def test_reconcile_is_failsoft_when_atlas_unreachable(self):
-		with patch("central.atlas.AtlasClient.central_vms", side_effect=Exception("unreachable")):
+		with patch("central.integrations.atlas.AtlasClient.central_vms", side_effect=Exception("unreachable")):
 			result = reconcile(team=self.team.name)
 		self.assertIn(self.region, result["stale"])
 

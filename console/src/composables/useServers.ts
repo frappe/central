@@ -1,32 +1,56 @@
 import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
+import { createListViewQuery } from '@/components/common/list-view'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { successToast, errorToast } from '@/lib/toast'
+import { whenTeamReady } from '@/composables/useTeamScope'
+import { useFrappeList } from '@/composables/common/useFrappeList'
+import { successToast, errorToast, getErrorMessage } from '@/lib/toast'
 import type {
   BenchLinkResponse,
   RefreshResponse,
-  RegistryResponse,
   Server,
 } from '@/types'
 
-// The team's servers, read from the Asset mirror (central.atlas.registry), plus
+// The team's servers, read from the Asset DocType through Frappe reportview, plus
 // the lifecycle command path. The mirror is kept fresh by Atlas's event push +
 // the reconcile pull, so a command's effect lands on the next refresh, not
 // synchronously — hence every action `reload()`s after it fires.
 
 const { activeTeam } = useSession()
 
-// Param shapes for the lifecycle/SSO methods (central/atlas.py, central/sso.py).
+// Param shapes for the lifecycle/SSO methods (central/api/servers.py, central/sso.py).
 type TeamParams = { team: string }
 type CommandParams = { team: string; resource_id: string }
 
-const registry = useCall<RegistryResponse, TeamParams>({
-  url: method(API.registry),
-  params: teamParams,
-  refetch: true,
-  immediate: false,
+const query = ref(
+  createListViewQuery({
+    pageSize: 20,
+    sort: { key: 'cluster', direction: 'asc' },
+  }),
+)
+
+const registry = useFrappeList<Server>({
+  doctype: 'Asset',
+  fields: [
+    'name',
+    'resource_id',
+    'title',
+    'cluster',
+    'status',
+    'vcpus',
+    'memory_megabytes',
+    'disk_gigabytes',
+    'ipv6_address',
+    'public_ipv4',
+    'gateway_url',
+    'last_synced_at',
+  ],
+  query,
+  filters: () => [['team', '=', activeTeam.value]],
+  searchFields: ['title', 'resource_id', 'cluster', 'status'],
+  sortableFields: ['title', 'cluster', 'status', 'resource_id'],
+  defaultOrderBy: 'cluster asc, resource_id asc',
 })
 
 whenTeamReady(() => registry.reload())
@@ -83,6 +107,8 @@ async function runCommand(
 }
 
 export function useServers() {
+  registry.listenForUpdates()
+
   async function refreshAssets(): Promise<void> {
     try {
       await refresh.submit({ team: activeTeam.value! })
@@ -138,8 +164,16 @@ export function useServers() {
   }
 
   return {
-    servers: computed<Server[]>(() => registry.data?.assets ?? []),
-    loading: computed(() => registry.loading),
+    servers: registry.rows,
+    totalRows: registry.totalRows,
+    countLoading: registry.countLoading,
+    query,
+    loading: registry.loading,
+    error: computed(() =>
+      registry.error.value
+        ? getErrorMessage(registry.error.value, "Couldn't load servers.")
+        : null,
+    ),
     refreshing: computed(() => refresh.loading),
     creating: computed(() => createCall.loading),
     // Atlas instances that couldn't be reached on the last refresh — their rows

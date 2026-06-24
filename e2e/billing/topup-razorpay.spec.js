@@ -12,7 +12,7 @@ test.describe('Wallet top-up (Razorpay)', () => {
   test('opens the real Razorpay sheet for an INR order and credits the wallet', async ({ page, billing }) => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
 
-    await page.goto('/dashboard/billing/credits')
+    await page.goto('/legacy-dashboard/billing/credits')
     await expect(page.getByText('No credit activity yet.')).toBeVisible()
 
     // Capture the REAL Razorpay order create_topup_order mints on "Continue".
@@ -39,7 +39,7 @@ test.describe('Wallet top-up (Razorpay)', () => {
     await billing.finishRazorpay({ team, gateway: order.gateway, orderId: order.order_id, amount: 1000 })
 
     // The wallet now reflects the credited ₹1,000 top-up, keyed on the payment id.
-    await page.goto('/dashboard/billing/credits')
+    await page.goto('/legacy-dashboard/billing/credits')
     await expect(page.getByText('No credit activity yet.')).toHaveCount(0)
     await expect(page.getByText(/Wallet top-up \(pay_/)).toBeVisible()
     await expect(page.getByText('1,000').first()).toBeVisible()

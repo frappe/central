@@ -9,8 +9,10 @@
  "field_order": [
   "template_name",
   "is_active",
+  "category",
+  "builder",
+  "sub_category",
   "sizing_section",
-  "plan_class",
   "start_vcpu",
   "ceiling_vcpu",
   "memory_ratio",
@@ -24,7 +26,9 @@
   "base_rates",
   "pricing_help",
   "rungs_section",
-  "rungs"
+  "rungs",
+  "simple_section",
+  "simple_plans"
  ],
  "fields": [
   {
@@ -42,17 +46,34 @@
    "label": "Generate Plans as Active"
   },
   {
+   "default": "VM Plans",
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "label": "Category",
+   "options": "Plan Category",
+   "reqd": 1,
+   "description": "The Plan Category these plans belong to. Its builder (VM Rungs / Simple) decides how you author them (ADR 0007)."
+  },
+  {
+   "fetch_from": "category.configurator_builder",
+   "fieldname": "builder",
+   "fieldtype": "Data",
+   "label": "Builder",
+   "read_only": 1,
+   "description": "Resolved from the category — VM Rungs (vCPU ladder) or Simple (name + quantity + rate)."
+  },
+  {
+   "fieldname": "sub_category",
+   "fieldtype": "Link",
+   "label": "Sub-Category",
+   "options": "Plan Sub-Category",
+   "description": "The optimisation profile / variant within the category (filtered to it). For VM plans this is the profile that pins the memory ratio configured on the Sub-Category. Leave blank, or create a new one inline if it isn't a preconfigured option."
+  },
+  {
+   "depends_on": "eval:doc.builder=='VM Rungs'",
    "fieldname": "sizing_section",
    "fieldtype": "Section Break",
    "label": "Sizing"
-  },
-  {
-   "default": "General",
-   "fieldname": "plan_class",
-   "fieldtype": "Select",
-   "label": "Plan Class",
-   "options": "General\nCPU Optimised\nMemory Optimised\nStorage Optimised\nCustom",
-   "description": "Pins the memory ratio like a cloud family — CPU Optimised 1:2, General 1:4, Memory/Storage Optimised 1:8. Choose Custom to set the ratio yourself."
   },
   {
    "default": "0.125",
@@ -79,8 +100,7 @@
    "label": "Memory Ratio",
    "options": "1:2\n1:4\n1:6\n1:8",
    "reqd": 1,
-   "description": "GB RAM per vCPU. Set by Plan Class unless it is Custom. A pre-fill; edit a generated Plan to go off-ratio.",
-   "depends_on": "eval:doc.plan_class=='Custom'"
+   "description": "GB RAM per vCPU. Auto-filled from the Sub-Category's configured ratio when it has one; otherwise set it here. A pre-fill; edit a generated Plan to go off-ratio."
   },
   {
    "default": "0",
@@ -144,6 +164,7 @@
    "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> opens a dialog to pick the cluster, currencies, and which rungs — then runs in the background, creating a bundle per rung and its rates. Re-run it per cluster (a plan is sellable on a cluster only where it has a rate, or a global one); blank cluster = global.</p>"
   },
   {
+   "depends_on": "eval:doc.builder=='VM Rungs'",
    "fieldname": "rungs_section",
    "fieldtype": "Section Break",
    "label": "Rungs"
@@ -154,6 +175,19 @@
    "label": "Rungs",
    "options": "Plan Configurator Plan",
    "description": "Populate from the formula, then edit before generating."
+  },
+  {
+   "depends_on": "eval:doc.builder=='Simple'",
+   "fieldname": "simple_section",
+   "fieldtype": "Section Break",
+   "label": "Plans"
+  },
+  {
+   "fieldname": "simple_plans",
+   "fieldtype": "Table",
+   "label": "Plans",
+   "options": "Plan Configurator Simple Plan",
+   "description": "One row per plan: title, the category's resource type, included quantity, unit, and a rate multiplier (rate = base rate x multiplier)."
   }
  ],
  "index_web_pages_for_search": 1,

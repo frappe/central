@@ -15,11 +15,11 @@ yarn dev        # Vite dev server, proxies /api to the Central bench site
 ## Build
 
 ```bash
-yarn build      # outputs to ../central/public/dashboard, served at /dashboard
+yarn build      # outputs to ../central/public/legacy-dashboard
 ```
 
-The production page is served by Frappe at `/dashboard` (`central/www/dashboard.py`
-reads Vite's manifest to inject the hashed asset chunks).
+The previous UI is served at `/legacy-dashboard` while its surfaces are migrated
+to the new `/dashboard` application.
 
 ## Layout
 

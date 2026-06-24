@@ -95,6 +95,17 @@ def get_user_team_names(user: str) -> list[str]:
 	return [row.name for row in rows]
 
 
+def resolve_team(user: str, team: str | None = None) -> str:
+	"""The team to act on: the one given, else the user's sole active team. With
+	zero or many teams and none specified, the caller must pick one."""
+	if team:
+		return team
+	teams = get_user_team_names(user)
+	if len(teams) != 1:
+		frappe.throw("Specify a team.", frappe.ValidationError)
+	return teams[0]
+
+
 def get_user_team_names_with_capability(user: str, capability: str) -> list[str]:
 	grants = resolve_user_grants(user)
 	return sorted(
@@ -176,8 +187,8 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 			grants_by_key[key]["caps"].append(row.capability)
 
 	# Close every grant under the implication rules so enforcement (`can`, the SSO
-	# mint, my_capabilities) always sees a self-consistent set — never site:create
-	# without the site:view/server:view it depends on.
+	# mint, the capability reads) always sees a self-consistent set — never
+	# site:create without the site:view/server:view it depends on.
 	for grant in grants_by_key.values():
 		grant["caps"] = expand_capabilities(grant["caps"])
 
@@ -189,70 +200,6 @@ def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]
 	if not user or user == "Guest":
 		return {}
 	return resolve_user_grants(user)
-
-
-@frappe.whitelist(methods=["GET"])
-def my_capabilities(team: str | None = None) -> list[str]:
-	"""Capabilities the signed-in user carries on a team (or any team, if omitted).
-
-	The single source the Central console UI gates every screen on: reads behind
-	`*:view`, mutations behind `*:manage`. Always the session user — never another
-	user's — so it is safe to expose to any logged-in member.
-	"""
-	user = frappe.session.user
-	if not user or user == "Guest":
-		return []
-	# Operators (System Manager) bypass team membership everywhere in Central IAM,
-	# so the console must reflect that — otherwise the UI gates hide screens the
-	# API would happily serve.
-	if user_has_operator_bypass(user):
-		return get_all_capabilities()
-	grants = resolve_user_grants(user)
-	team_grants = grants.get(team, []) if team else [g for gs in grants.values() for g in gs]
-	return sorted({cap for grant in team_grants for cap in grant.get("caps", [])})
-
-
-@frappe.whitelist(methods=["GET"])
-def my_teams() -> list[dict[str, Any]]:
-	"""Teams the signed-in user can switch between in the console — the teams they
-	are an active member of, each with a display label + the owner email."""
-	user = frappe.session.user
-	if not user or user == "Guest":
-		return []
-	out = []
-	for t in get_user_team_names(user):
-		r = frappe.db.get_value("Team", t, ["team_name", "owner_user"], as_dict=True) or {}
-		out.append({
-			"name": t,
-			"label": r.get("team_name") or r.get("owner_user") or t,
-			"owner": r.get("owner_user"),
-		})
-	return out
-
-
-@frappe.whitelist(methods=["GET"])
-def search_teams(query: str = "", limit: int = 20) -> list[dict[str, Any]]:
-	"""Operator-only: any active team, for impersonation in the team switcher.
-	Mirrors the IAM rule that a System Manager bypasses team membership."""
-	if not user_has_operator_bypass(frappe.session.user):
-		return []
-	q = (query or "").strip()
-	or_filters = None
-	if q:
-		like = f"%{q}%"
-		or_filters = {"name": ["like", like], "team_name": ["like", like], "owner_user": ["like", like]}
-	rows = frappe.get_all(
-		"Team",
-		filters={"status": "Active"},
-		or_filters=or_filters,
-		fields=["name", "team_name", "owner_user"],
-		order_by="modified desc",
-		limit=limit,
-	)
-	return [
-		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user}
-		for r in rows
-	]
 
 
 def can(user: str, team: str, capability: str) -> bool:
@@ -281,113 +228,3 @@ def get_effective_permissions(user: str, team: str | None = None) -> dict[str, A
 		effective[team_name] = {"caps": caps, "grants": team_grants}
 
 	return {"user": user, "teams": effective}
-
-
-# ── Central console: team-roster reads ────────────────────────────────────────
-# Thin, session-scoped endpoints the console's Team screens read. Visibility is
-# "being a member" (any capability on the team); mutations go through the Team
-# doc methods, which independently enforce team:manage_members.
-
-
-def _require_team_member(team: str, user: str | None = None) -> None:
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return
-	if not resolve_user_grants(user).get(team):
-		frappe.throw("You are not a member of this team.", frappe.PermissionError)
-
-
-@frappe.whitelist(methods=["GET"])
-def list_team_members(team: str) -> list[dict[str, Any]]:
-	"""Roster of the team the caller belongs to (user, role, status, owner flag)."""
-	_require_team_member(team)
-	doc = frappe.get_doc("Team", team)
-	return [
-		{"user": m.user, "role": m.role, "status": m.status, "is_owner": m.user == doc.owner_user}
-		for m in doc.members
-	]
-
-
-@frappe.whitelist(methods=["GET"])
-def list_team_roles(team: str) -> list[dict[str, Any]]:
-	"""System roles plus this team's custom roles, each with its capabilities."""
-	_require_team_member(team)
-	rows = frappe.get_all(
-		"Team Role",
-		filters={"is_system": 1},
-		fields=["name", "role_name", "is_system", "team"],
-		order_by="role_name asc",
-	) + frappe.get_all(
-		"Team Role",
-		filters={"team": team, "is_system": 0},
-		fields=["name", "role_name", "is_system", "team"],
-		order_by="role_name asc",
-	)
-	for r in rows:
-		r["capabilities"] = get_role_capabilities(r["name"])
-	return rows
-
-
-@frappe.whitelist(methods=["GET"])
-def list_capabilities() -> list[dict[str, Any]]:
-	"""Every capability in the system — the palette the role builder picks from."""
-	return frappe.get_all(
-		"Capability",
-		fields=["name", "plane", "resource", "description"],
-		order_by="name asc",
-	)
-
-
-# ── Central console: team-roster mutations ───────────────────────────────────
-# Thin wrappers over the Team doc methods (which enforce team:manage_members) so
-# the console has a uniform method-call surface.
-
-
-@frappe.whitelist(methods=["POST"])
-def invite_team_member(team: str, email: str, role: str, expires_in_days: int = 7) -> str:
-	return frappe.get_doc("Team", team).invite_member(email, role, expires_in_days)
-
-
-@frappe.whitelist(methods=["POST"])
-def set_team_member_role(team: str, user: str, role: str) -> dict:
-	frappe.get_doc("Team", team).set_member_role(user, role)
-	return {"team": team, "user": user, "role": role}
-
-
-@frappe.whitelist(methods=["POST"])
-def set_team_member_status(team: str, user: str, status: str) -> dict:
-	frappe.get_doc("Team", team).set_member_status(user, status)
-	return {"team": team, "user": user, "status": status}
-
-
-@frappe.whitelist(methods=["POST"])
-def remove_team_member(team: str, user: str) -> dict:
-	frappe.get_doc("Team", team).remove_member(user)
-	return {"team": team, "user": user, "removed": True}
-
-
-@frappe.whitelist(methods=["POST"])
-def create_custom_role(team: str, role_name: str, capabilities: list | str) -> dict:
-	"""Create a team-scoped custom Team Role granting exactly `capabilities`.
-	Gated on team:manage_members (same authority as member changes)."""
-	if not can(frappe.session.user, team, "team:manage_members"):
-		frappe.throw("You can't manage roles for this team.", frappe.PermissionError)
-	if isinstance(capabilities, str):
-		capabilities = frappe.parse_json(capabilities)
-	valid = set(get_all_capabilities())
-	picked = [c for c in capabilities if c in valid]
-	if not picked:
-		frappe.throw("Pick at least one capability.", frappe.ValidationError)
-	# Persist the implied dependencies too (e.g. site:create pulls in site:view +
-	# server:view), so the saved role is usable and matches what enforcement grants.
-	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
-	role = frappe.get_doc(
-		{
-			"doctype": "Team Role",
-			"role_name": role_name,
-			"is_system": 0,
-			"team": team,
-			"capabilities": rows,
-		}
-	).insert()
-	return {"role": role.name, "role_name": role.role_name}

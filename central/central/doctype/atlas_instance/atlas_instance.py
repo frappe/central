@@ -15,9 +15,9 @@ class AtlasInstance(Document):
 
 		api_key: DF.Data
 		api_secret: DF.Password
+		atlas_id: DF.Data | None
 		base_url: DF.Data
 		last_synced_at: DF.Datetime | None
-		reachable: DF.Check
 		region: DF.Data
 		status: DF.Literal["Active", "Draining", "Disabled"]
 	# end: auto-generated types
@@ -27,7 +27,7 @@ class AtlasInstance(Document):
 		"""Operator action: ping the Atlas API and record reachability."""
 		if "System Manager" not in frappe.get_roles():
 			frappe.throw("Not permitted.", frappe.PermissionError)
-		from central.atlas_client import AtlasClient
+		from central.integrations.atlas import AtlasClient
 
 		try:
 			AtlasClient(self).ping()

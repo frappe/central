@@ -11,13 +11,11 @@ fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
 ]
 
-# Central Console SPAs — each client route resolves to its www entry page.
-#   /dashboard → legacy JS app (www/dashboard).
-#   /console   → new TypeScript app (www/console). Both coexist; routing is the
-#               only thing that keeps them apart.
+# The TypeScript UI owns the product route. Keep the previous dashboard
+# available while its remaining surfaces are migrated.
 website_route_rules = [
 	{"from_route": "/dashboard/<path:app_path>", "to_route": "dashboard"},
-	{"from_route": "/console/<path:app_path>", "to_route": "console"},
+	{"from_route": "/legacy-dashboard/<path:app_path>", "to_route": "legacy-dashboard"},
 ]
 
 # Apps
@@ -101,7 +99,10 @@ website_route_rules = [
 # ------------
 
 # before_install = "central.install.before_install"
-# after_install = "central.install.after_install"
+# Seed the catalog taxonomy masters (Plan Category / Sub-Category / Resource Type) on a
+# fresh install — patches are skipped on fresh installs, so the seed can't live only
+# there. Idempotent (ADR 0007).
+after_install = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
 
 # Uninstallation
 # ------------
@@ -165,8 +166,8 @@ doc_events = {
 scheduler_events = {
 	"cron": {
 		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
-		# backstop that corrects any drift the event push (central.api.event) missed.
-		"*/10 * * * *": ["central.atlas.reconcile"],
+		# backstop that corrects drift the event push (central.api.atlas.event) missed.
+		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
@@ -191,12 +192,17 @@ scheduler_events = {
 }
 
 # Billing (module): authorisation is Central's capability IAM (ADR 0004) — no
-# billing-owned roles or User->team field to provision, so no after_migrate shim.
+# billing-owned roles or User->team field to provision. The catalog taxonomy masters,
+# however, are reference data the catalog can't run without, so re-assert them on every
+# migrate too (idempotent — ADR 0007).
+after_migrate = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
 
 # Testing
 # -------
 
-# before_tests = "central.install.before_tests"
+# Tests run on a fresh site (patches skipped), so seed the taxonomy masters the test
+# fixtures depend on before the suite runs.
+before_tests = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
 
 # Extend DocType Class
 # ------------------------------

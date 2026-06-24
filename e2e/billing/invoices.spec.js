@@ -8,7 +8,7 @@ test.describe('Invoices', () => {
   test('lists the seeded paid and open invoices', async ({ page, billing }) => {
     await billing.signIn({ scenario: 'with_invoices', currency: 'USD' })
 
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
 
     const rows = page.locator('ul.divide-y > li')
     await expect(rows).toHaveCount(2)
@@ -21,7 +21,7 @@ test.describe('Invoices', () => {
   test('opens an invoice to show its line items and tax', async ({ page, billing }) => {
     await billing.signIn({ scenario: 'with_invoices', currency: 'USD' })
 
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
     await page.locator('ul.divide-y > li').filter({ hasText: 'Paid' }).click()
 
     // Detail pane: line-item table + the totals/tax block from the seeded invoice.

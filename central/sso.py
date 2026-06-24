@@ -6,7 +6,7 @@ import time
 import frappe
 import jwt
 
-from central.iam import CAPABILITY_VERSION, can, get_user_team_names, resolve_user_grants
+from central.iam import CAPABILITY_VERSION, resolve_user_grants
 
 # The bench admin backend verifies these assertions (HS256, audience=client_id,
 # issuer=central_url, requiring exp/aud/iss/sub). Keep the mint in lockstep.
@@ -93,56 +93,12 @@ def mint_bench_assertion(user: str, team: str) -> str:
 	return jwt.encode(payload, client.client_secret, algorithm="HS256")
 
 
-@frappe.whitelist(methods=["GET"])
-def get_bench_link(asset: str | None = None, team: str | None = None, gateway_url: str | None = None) -> dict:
-	"""Mint a scoped SSO assertion and return the bench URL to redirect to.
-
-	Pass `asset` (a server resource_id) to open that server — its team and
-	gateway are resolved and validated (Running, has a gateway, Active cluster).
-	`server:open` on the team is the gate (the old vm:open; distinct from
-	server:view, which only lists the server). `gateway_url` is the dev path used
-	until the registry "Open" wires `asset` in (#30)."""
-	user = frappe.session.user
-	if not user or user == "Guest":
-		frappe.throw("Sign in first.", frappe.PermissionError)
-	if asset:
-		team, gateway_url = _resolve_asset_target(asset, team)
-	team = team or _only_team(user)
-	if not can(user, team, "server:open"):
-		frappe.throw("You can't open servers for this team.", frappe.PermissionError)
-	target = (gateway_url or _bench_sso_url()).rstrip("/")
-	if not target.endswith("/sso"):
-		target += "/sso"
-	return {"url": f"{target}?assertion={mint_bench_assertion(user, team)}"}
-
-
-def _resolve_asset_target(asset: str, team: str | None) -> tuple[str, str]:
-	"""Resolve a VM Asset to (team, gateway_url), refusing anything not openable.
-	get_doc enforces the team-scoped Asset read perm, so a user who can't see the
-	VM can't probe it here either."""
-	doc = frappe.get_doc("Asset", asset)
-	if team and team != doc.team:
-		frappe.throw("That VM isn't in this team.", frappe.PermissionError)
-	if doc.status != "Running":
-		frappe.throw(f"VM is {doc.status.lower()}, not running.", frappe.ValidationError)
-	if not doc.gateway_url:
-		frappe.throw("VM has no gateway yet.", frappe.ValidationError)
-	if frappe.db.get_value("Atlas Instance", doc.cluster, "status") != "Active":
-		frappe.throw("That cluster is not active.", frappe.ValidationError)
-	return doc.team, doc.gateway_url
-
-
-def _only_team(user: str) -> str:
-	teams = get_user_team_names(user)
-	if len(teams) != 1:
-		frappe.throw("Specify a team.", frappe.ValidationError)
-	return teams[0]
-
-
 def print_local_bench_credentials() -> None:
 	"""Emit the bench's SSO trust config for admin/scripts/setup_sso.sh to capture."""
 	_assert_insecure_signing_allowed()
 	client = _ensure_oauth_client()
+	# CLI helper: persist the just-created OAuth Client so the external setup script
+	# can read its credentials from stdout in a separate connection.
 	frappe.db.commit()
 	cfg = {
 		"central_url": _central_url(),

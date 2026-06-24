@@ -14,11 +14,16 @@ import type { Server } from '@/types'
 // bench (server:open). Terminate routes through a destructive confirm.
 const {
   servers,
+  totalRows,
+  countLoading,
+  query,
   loading,
+  error,
   refreshing,
   stale,
   busy,
   opening,
+  reload,
   refreshAssets,
   start,
   stop,
@@ -51,7 +56,7 @@ async function confirmTerminate(server: Server) {
       </template>
     </PageHeader>
 
-    <div class="page-body space-y-4 py-5">
+    <div class="list-page-body space-y-4 py-5">
       <p
         v-if="stale.length"
         class="rounded-md bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3"
@@ -59,38 +64,21 @@ async function confirmTerminate(server: Server) {
         Showing last-known data — couldn't reach: {{ stale.join(', ') }}
       </p>
 
-      <div
-        v-if="loading && !servers.length"
-        class="rounded-lg border border-outline-gray-2 px-4 py-12 text-center text-p-sm text-ink-gray-5"
-      >
-        Loading servers…
-      </div>
-
-      <div
-        v-else-if="!servers.length"
-        class="rounded-lg border border-dashed border-outline-gray-2 px-4 py-12 text-center"
-      >
-        <p class="text-base text-ink-gray-7">No servers yet</p>
-        <p class="mt-1 text-p-sm text-ink-gray-5">
-          Spin one up to see it here, kept in sync with Atlas.
-        </p>
-        <Button
-          v-if="canCreateServer"
-          class="mt-4"
-          variant="solid"
-          label="New server"
-          @click="$router.push('/servers/new')"
-        />
-      </div>
-
       <ServerListView
-        v-else
+        v-model:query="query"
         :servers="servers"
+        :total-rows="totalRows"
+        :count-loading="countLoading"
+        :loading="loading"
+        :error="error"
+        :can-create="canCreateServer"
         :can-power="canPowerServer"
         :can-terminate="canTerminateServer"
         :can-open="canOpenServer"
         :busy="busy"
         :opening="opening"
+        @retry="reload"
+        @create="$router.push('/servers/new')"
         @start="start"
         @stop="stop"
         @terminate="pendingTerminate = $event"

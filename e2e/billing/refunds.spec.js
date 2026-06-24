@@ -26,7 +26,7 @@ test.describe('Refunds', () => {
     expect(res.status).toBe('Completed')
 
     // The invoice is still Paid, and its activity timeline records the refund.
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
     await open(page).filter({ hasText: 'Paid' }).click()
     await expect(page.getByText('Payment refunded')).toBeVisible()
   })
@@ -38,7 +38,7 @@ test.describe('Refunds', () => {
     expect(res.status).toBe('Completed')
 
     // The $200 overcharge correction shows as a wallet credit, applied next cycle.
-    await page.goto('/dashboard/billing/credits')
+    await page.goto('/legacy-dashboard/billing/credits')
     await expect(page.getByText('$200.00').first()).toBeVisible()
     await expect(page.getByText(/Overcharge refund/)).toBeVisible()
   })

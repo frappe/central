@@ -31,13 +31,18 @@ def make_plan(name, rates=None, includes=None, **kwargs):
 	doc = frappe.get_doc(
 		{
 			"doctype": "Plan",
-			"__newname": name,
 			"title": kwargs.get("title", name),
+			"category": kwargs.get("category", "VM Plans"),
+			"sub_category": kwargs.get("sub_category"),
 			"billing_cycle": kwargs.get("billing_cycle", "Monthly"),
 			"is_active": kwargs.get("is_active", 1),
 			"includes": includes if includes is not None else DEFAULT_INCLUDES,
 		}
 	)
+	# Plan autonames by hash now; force a deterministic name for tests that reference
+	# the plan by a known id (name_set skips autoname, unlike __newname under hash).
+	doc.name = name
+	doc.flags.name_set = True
 	doc.insert(ignore_permissions=True)
 	set_catalog_rates("Plan", doc.name, rates if rates is not None else DEFAULT_RATES)
 	return doc.name

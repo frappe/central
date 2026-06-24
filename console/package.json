@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@tanstack/vue-table": "^8.21.3",
     "frappe-ui": "github:frappe/frappe-ui#v1.0.0-beta.11",
     "vue": "^3.4.0",
     "vue-router": "^4.3.0"

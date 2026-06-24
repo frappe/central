@@ -1,10 +1,12 @@
 // Domain types for the Central Console. These mirror the server-side shapes of
-// the Asset / Atlas Instance doctypes and the capability IAM (central/atlas.py,
+// the Asset / Atlas Instance doctypes and the capability IAM (central/api/servers.py,
 // central/iam.py). Kept in one place so screens and composables share them.
 
 /** A team's VM, mirrored from Atlas into the Asset doctype. The console only
  *  ever reads this (the mirror is written by the Atlas event push / reconcile). */
 export interface Server {
+  /** Asset.name; identical to resource_id because the DocType uses it for autoname. */
+  name: string
   /** Asset.resource_id — the Atlas VM id (source of truth, a UUID). */
   resource_id: string
   /** Human label mirrored from the Atlas VM. */
@@ -35,13 +37,13 @@ export type ServerStatus =
   | 'Terminated'
   | (string & {})
 
-/** central.atlas.registry response. */
+/** central.api.servers.registry response. */
 export interface RegistryResponse {
   team: string
   assets: Server[]
 }
 
-/** central.atlas.refresh_assets response (the reconcile result). */
+/** central.api.servers.refresh_assets response (the reconcile result). */
 export interface RefreshResponse {
   synced: string[]
   /** Atlas instances that couldn't be reached this pass; their mirror is stale. */
@@ -49,21 +51,58 @@ export interface RefreshResponse {
 }
 
 /** A region the team can place servers in — an Atlas Instance row.
- *  (central.atlas.list_instances) */
+ *  (central.api.servers.list_instances) */
 export interface Region {
   region: string
   status: 'Active' | 'Draining' | 'Disabled'
   reachable: boolean
 }
 
-/** central.iam.my_teams item. */
+/** central.api.identity.my_teams item. */
 export interface Team {
   name: string
   label: string
   owner: string | null
 }
 
-/** central.sso.get_bench_link response. */
+/** central.api.sso.get_bench_link response. */
 export interface BenchLinkResponse {
   url: string
+}
+
+/** One bundled resource in a plan (central Plan Includes). */
+export interface PlanInclude {
+  resource_type: 'Compute' | 'Memory' | 'Disk' | 'Transfer' | 'IP' | 'Snapshot'
+  quantity: number
+  unit: string
+}
+
+/** An eligible plan from the billing catalog, priced for the team's currency
+ *  on the chosen region.
+ *  (central.billing.api.dashboard.catalog.get_eligible_plans) */
+export interface Plan {
+  plan: string
+  title: string
+  sub_category: string
+  billing_cycle: 'Monthly' | 'Annual'
+  currency: string
+  cluster: string | null
+  rate: number
+  includes: PlanInclude[]
+}
+
+/** get_eligible_plans response: the offered menu plus the trust-tier headroom
+ *  (spend cap minus current run-rate) that shaped it. `plans` is grouped by
+ *  sub-category — keys in canonical order, rows cheapest-first, unset sub-category
+ *  folded into "General"; a forbidden cluster yields an empty map. */
+export interface ProvisionablePlans {
+  team: string
+  cluster: string | null
+  currency: string
+  tier: string | null
+  max_spend: number
+  current_spend: number
+  /** Remaining headroom in the team's currency: a plan is offered only if it fits. */
+  available: number
+  plans: Record<string, Plan[]>
 }

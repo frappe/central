@@ -19,13 +19,13 @@ test.describe('Invoice settlement', () => {
     const res = await billing.settle({ team, invoice, collect: 1 })
     expect(res.status).toBe('Paid')
 
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
     await expect(open(page).filter({ hasText: 'Paid' })).toHaveCount(1)
     await open(page).filter({ hasText: 'Paid' }).click()
     await expect(page.locator('dl').getByText('Credit applied')).toBeVisible()
 
     // Wallet dropped by the full invoice total ($2,000 − $1,180 = $820).
-    await page.goto('/dashboard/billing/credits')
+    await page.goto('/legacy-dashboard/billing/credits')
     await expect(page.getByText('$820.00').first()).toBeVisible()
     await expect(page.getByText(new RegExp(`Credit applied to ${invoice}`))).toBeVisible()
   })
@@ -43,7 +43,7 @@ test.describe('Invoice settlement', () => {
     expect(res.attempt).toBeTruthy() // a captured off-session PaymentIntent
     await billing.deliverWebhook({ attempt: res.attempt }) // flips Open → Paid
 
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
     await expect(open(page).filter({ hasText: 'Paid' })).toHaveCount(1)
     await open(page).filter({ hasText: 'Paid' }).click()
     const totals = page.locator('dl')
@@ -52,7 +52,7 @@ test.describe('Invoice settlement', () => {
     await expect(totals.getByText('Paid', { exact: true })).toBeVisible()
 
     // Wallet fully drained by the $500 it contributed.
-    await page.goto('/dashboard/billing/credits')
+    await page.goto('/legacy-dashboard/billing/credits')
     await expect(page.getByText('$0.00').first()).toBeVisible()
   })
 
@@ -66,7 +66,7 @@ test.describe('Invoice settlement', () => {
     const res = await billing.settle({ team, invoice, collect: 0 })
     expect(res.status).toBe('Open')
 
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
     await open(page).filter({ hasText: 'Open' }).click()
 
     // The detail pane offers "Pay $1,180.00"; clicking it runs the real off-session
@@ -79,7 +79,7 @@ test.describe('Invoice settlement', () => {
 
     // The webhook settles it; the invoice flips to Paid in the UI.
     await billing.deliverWebhook({ attempt: charge.attempt })
-    await page.goto('/dashboard/billing/invoices')
+    await page.goto('/legacy-dashboard/billing/invoices')
     await expect(open(page).filter({ hasText: 'Paid' })).toHaveCount(1)
     await expect(open(page).filter({ hasText: 'Open' })).toHaveCount(0)
   })

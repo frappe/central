@@ -4,7 +4,7 @@ import GroupGate from '@/components/GroupGate.vue'
 import { whoReady, useTeam } from '@/composables/useTeam'
 import { fetchBillingSetup } from '@/data/billingSetup'
 
-// The SPA is mounted under /dashboard (central/hooks.py website_route_rules).
+// The previous SPA remains mounted while its surfaces move to the new UI.
 const routes = [
   {
     path: '/',
@@ -69,7 +69,7 @@ const routes = [
 ]
 
 export const router = createRouter({
-  history: createWebHistory('/dashboard/'),
+  history: createWebHistory('/legacy-dashboard/'),
   routes,
 })
 

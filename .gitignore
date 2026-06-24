@@ -54,12 +54,16 @@ jspm_packages/
 # Aider AI Chat
 .aider*
 
-# Built Central Console SPA (produced by `cd dashboard && yarn build`)
+# Previous Central dashboard SPA (produced by `cd dashboard && yarn build`)
+central/public/legacy-dashboard/
+central/www/legacy-dashboard.html
+
+# Primary Central dashboard SPA (produced by `cd console && yarn build`)
 central/public/dashboard/
 central/www/dashboard.html
 central/public/node_modules
 
-# Built Central Console SPA — new TypeScript app (produced by `cd console && yarn build`)
+# Obsolete pre-migration build output.
 central/public/console/
 central/www/console.html
 

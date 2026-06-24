@@ -1,26 +1,28 @@
 // Whitelisted method paths in one place. `method(path)` builds the v2 method URL
 // the data-fetching composables call. These are the live, capability-gated,
-// team-scoped endpoints in central/atlas.py, central/iam.py and central/sso.py —
-// the same contract the legacy dashboard uses.
+// team-scoped endpoints under central/api/.
 
 export function method(path: string): string {
   return `/api/v2/method/${path}`
 }
 
 export const API = {
-  // ── Identity / capability IAM (central.iam) ──
-  myTeams: 'central.iam.my_teams',
-  myCapabilities: 'central.iam.my_capabilities',
+  // ── Identity / capability IAM (central.api.identity) ──
+  myTeams: 'central.api.identity.my_teams',
+  myCapabilities: 'central.api.identity.my_capabilities',
 
-  // ── Servers (central.atlas) ──
-  registry: 'central.atlas.registry',
-  listInstances: 'central.atlas.list_instances',
-  refreshAssets: 'central.atlas.refresh_assets',
-  createServer: 'central.atlas.create_server',
-  startServer: 'central.atlas.start_server',
-  stopServer: 'central.atlas.stop_server',
-  terminateServer: 'central.atlas.terminate_server',
+  // ── Servers (central.api.servers) ──
+  registry: 'central.api.servers.registry',
+  listInstances: 'central.api.servers.list_instances',
+  refreshAssets: 'central.api.servers.refresh_assets',
+  createServer: 'central.api.servers.create_server',
+  startServer: 'central.api.servers.start_server',
+  stopServer: 'central.api.servers.stop_server',
+  terminateServer: 'central.api.servers.terminate_server',
 
-  // ── SSO open-in-bench (central.sso) ──
-  getBenchLink: 'central.sso.get_bench_link',
+  // ── SSO open-in-bench (central.api.sso) ──
+  getBenchLink: 'central.api.sso.get_bench_link',
+
+  // ── Billing catalog (central.billing.api.dashboard.catalog) ──
+  eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 } as const

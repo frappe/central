@@ -1,14 +1,15 @@
 {
  "actions": [],
- "autoname": "prompt",
+ "autoname": "hash",
  "creation": "2026-06-02 00:00:00",
- "description": "A flat-rate bundle with one immutable identity forever. The rate is the price; a rate change never forks a new plan.",
+ "description": "A flat-rate bundle with one immutable identity forever. The rate is the price; a rate change never forks a new plan. Named by an opaque hash (sync-stable); the title is the human label.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "title",
-  "plan_class",
+  "category",
+  "sub_category",
   "column_break_head",
   "is_active",
   "billing_cycle",
@@ -61,10 +62,21 @@
    "options": "Plan Includes"
   },
   {
-   "fieldname": "plan_class",
-   "fieldtype": "Select",
-   "label": "Plan Class",
-   "options": "General\nCPU Optimised\nMemory Optimised\nStorage Optimised\nCustom"
+   "default": "VM Plans",
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Category",
+   "options": "Plan Category",
+   "reqd": 1,
+   "description": "The Plan Category this plan belongs to (ADR 0007). Constrains the resource types its composition may use."
+  },
+  {
+   "fieldname": "sub_category",
+   "fieldtype": "Link",
+   "label": "Sub-Category",
+   "options": "Plan Sub-Category",
+   "description": "Optional sub-category within the Plan Category; only categories with a sub-category axis use it."
   }
  ],
  "index_web_pages_for_search": 1,
@@ -73,8 +85,10 @@
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Plan",
- "naming_rule": "Set by user",
+ "naming_rule": "Random",
  "owner": "Administrator",
+ "show_title_field_in_link": 1,
+ "title_field": "title",
  "permissions": [
   {
    "create": 1,
