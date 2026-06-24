@@ -22,7 +22,7 @@ function vcpu_label(v) {
 frappe.ui.form.on("Plan Configurator", {
 	sub_category(frm) {
 		if (!frm.doc.sub_category) return;
-		// The optimisation profile pins the memory ratio — read it off the master.
+		// Pre-fill the memory ratio from the profile; the admin can override it after.
 		frappe.db.get_value("Plan Sub-Category", frm.doc.sub_category, "memory_ratio").then((r) => {
 			const ratio = r.message && r.message.memory_ratio;
 			if (ratio) frm.set_value("memory_ratio", ratio);

@@ -98,13 +98,12 @@
    "reqd": 1
   },
   {
-   "default": "1:4",
-   "description": "GB RAM per vCPU. Auto-filled from the Sub-Category's configured ratio when it has one; otherwise set it here. A pre-fill; edit a generated Plan to go off-ratio.",
+   "description": "GB RAM per vCPU. Pre-filled from the Sub-Category's optimisation profile, but authoritative once set — override it here and the override wins over the profile. Edit a generated Plan to go off-ratio.",
    "fieldname": "memory_ratio",
    "fieldtype": "Select",
    "label": "Memory Ratio",
-   "options": "1:2\n1:4\n1:6\n1:8",
-   "reqd": 1
+   "options": "\n1:2\n1:4\n1:6\n1:8",
+   "mandatory_depends_on": "eval:doc.builder=='VM Rungs'"
   },
   {
    "default": "0",

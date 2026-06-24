@@ -44,6 +44,13 @@ class PlanConfigurator(Document):
 		"""Fill identity/price for hand-added or edited rungs, so an inserted size
 		(e.g. 1 vCPU 3 GB between the 2 GB and 4 GB rungs) is usable without the
 		admin spelling out its name, label, and multiplier."""
+		# The sub-category's optimisation profile is the *default* memory ratio — pre-fill
+		# it here (mirroring the form's on-select prefill) so programmatic creation and the
+		# mandatory check have a value. The configurator's own ratio stays authoritative:
+		# ratio_for honours it even when the admin has overridden it off the profile.
+		if not self.memory_ratio and self.sub_category:
+			self.memory_ratio = configurator.ratio_for(self.sub_category, None)
+
 		start = configurator.parse_vcpu(self.start_vcpu) or 1
 		for r in self.rungs:
 			if not flt(r.multiplier) and flt(r.vcpu):

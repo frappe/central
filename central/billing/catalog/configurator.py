@@ -50,14 +50,15 @@ def parse_vcpu(value) -> float:
 	return flt(text)
 
 
-def ratio_for(sub_category: str | None, memory_ratio: str) -> str:
-	"""The effective ratio: a sub-category that configures a `memory_ratio` pins it
-	(the optimisation profile, set on the Plan Sub-Category master); anything else
-	(blank, or a profile with no ratio) uses the explicit ratio."""
+def ratio_for(sub_category: str | None, memory_ratio: str | None) -> str:
+	"""The effective memory ratio. The configurator's own `memory_ratio` wins: the
+	form pre-fills it from the sub-category's optimisation profile, but the admin may
+	override it, and that override is honoured even when it differs from the profile.
+	Fall back to the sub-category's configured ratio only when `memory_ratio` is blank."""
+	if memory_ratio:
+		return memory_ratio
 	if sub_category:
-		configured = frappe.db.get_value("Plan Sub-Category", sub_category, "memory_ratio")
-		if configured:
-			return configured
+		return frappe.db.get_value("Plan Sub-Category", sub_category, "memory_ratio") or memory_ratio
 	return memory_ratio
 
 
