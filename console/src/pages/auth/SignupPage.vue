@@ -1,0 +1,97 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import { Button, ErrorMessage } from 'frappe-ui'
+import { useRouter } from 'vue-router'
+import AuthShell from '@/components/auth/AuthShell.vue'
+import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
+import { useAuth } from '@/composables/useAuth'
+import ValidatedFormControl from '@/formComponents/ValidatedFormControl.vue'
+import { emailError, frappeErrorMessage, postFrappe, requiredError } from '@/lib/auth'
+
+const router = useRouter()
+const fullName = ref('')
+const email = ref('')
+const submitted = ref(false)
+const loading = ref(false)
+const error = ref('')
+
+const { providerLogins } = useAuth()
+
+async function signup() {
+  submitted.value = true
+  error.value = ''
+  if (requiredError('Full name')(fullName.value) || emailError(email.value)) return
+
+  loading.value = true
+  try {
+    const response = await postFrappe<[number, string]>(
+      '/api/method/central.api.auth.sign_up',
+      {
+        full_name: fullName.value.trim(),
+        email: email.value.trim(),
+      },
+    )
+    const [status, message] = response ?? [0, 'Unable to create your account.']
+    if (status !== 1) {
+      error.value = message
+      return
+    }
+    await router.push({
+      path: '/signup/check-email',
+      query: { email: email.value.trim() },
+    })
+  } catch (exception) {
+    error.value = frappeErrorMessage(exception, 'Unable to create your account.')
+  } finally {
+    loading.value = false
+  }
+}
+</script>
+
+<template>
+  <AuthShell show-progress>
+    <h1 class="text-2xl font-semibold text-ink-gray-9">
+      Create your account
+    </h1>
+    <p class="mt-1 text-base text-ink-gray-5">
+      A couple of minutes from here to managing your first server.
+    </p>
+
+    <form class="mt-8 space-y-4" novalidate @submit.prevent="signup">
+      <ValidatedFormControl
+        v-model="fullName"
+        label="Full name"
+        autocomplete="name"
+        placeholder="Jane Doe"
+        :validator="requiredError('Full name')"
+        :submitted="submitted"
+      />
+      <ValidatedFormControl
+        v-model="email"
+        label="Work email"
+        type="email"
+        autocomplete="email"
+        placeholder="jane@company.com"
+        :validator="emailError"
+        :submitted="submitted"
+      />
+
+      <ErrorMessage v-if="error" :message="error" />
+      <Button type="submit" variant="solid" size="md" class="w-full" :loading="loading">
+        Continue
+      </Button>
+    </form>
+
+    <SocialLoginButtons :providers="providerLogins" prefix="Continue with" />
+
+    <p class="mt-6 text-center text-p-sm text-ink-gray-5">
+      Already have an account?
+      <RouterLink
+        class="font-medium text-ink-gray-8 hover:text-ink-gray-9"
+        to="/login"
+      >
+        Sign in
+      </RouterLink>
+    </p>
+  </AuthShell>
+</template>
