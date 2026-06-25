@@ -4,7 +4,7 @@ Central is the **WireGuard hub** for every Atlas cluster. Each Atlas management
 plane is reachable only over the tunnel; Central drives registration end to end.
 This is the Central side of the seam — the Atlas side (the inbound API, the host
 firewall, the lockout-safe handshake) is in
-[atlas/spec/19-tunnel.md](../../atlas/spec/19-tunnel.md), which is authoritative
+[atlas/spec/21-tunnel.md](../../atlas/spec/21-tunnel.md), which is authoritative
 where the two overlap.
 
 ## Topology
@@ -166,7 +166,7 @@ sequenceDiagram
   orchestration against a faked `AtlasClient` + faked hub scripts; rollback at each
   failure point.
 - **End-to-end (two hosts):** see
-  [atlas/spec/19-tunnel.md § Testing](../../atlas/spec/19-tunnel.md#testing) — one
+  [atlas/spec/21-tunnel.md § Testing](../../atlas/spec/21-tunnel.md#testing) — one
   shared two-host drill proves both sides.
 
 ## Deferred
