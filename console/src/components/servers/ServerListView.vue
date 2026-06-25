@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, h } from 'vue'
-import { Button } from 'frappe-ui'
 import {
   ListView,
   type ListViewColumn,
