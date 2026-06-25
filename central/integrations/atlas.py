@@ -5,6 +5,7 @@ import time
 from urllib.parse import urlparse
 
 import frappe
+import requests
 from frappe.frappeclient import FrappeClient
 
 from central.central.doctype.asset.asset import Asset
@@ -136,13 +137,24 @@ class AtlasClient:
 			"atlas.atlas.api.central_link.confirm_tunnel", params={}
 		)
 
-	def deprovision_tunnel(self, base_url: str) -> dict:
+	def deprovision_tunnel(self, base_url: str, timeout: int = 15) -> dict:
 		"""Atlas inbound deprovision_tunnel (admin auth): Atlas reverts its firewall +
 		drops wg0 + clears its tunnel fields. Called over the tunnel while Active, so the
-		teardown drops wg0 and the response may not return — the caller tolerates that."""
-		return self._admin_client(base_url).post_api(
-			"atlas.atlas.api.central_link.deprovision_tunnel", params={}
+		teardown drops wg0 and the response usually never returns. FrappeClient has no
+		timeout, and a torn tunnel drops packets silently (no RST) — so use a direct
+		request with a bounded timeout; the host work commits server-side regardless and
+		the caller (remove_tunnel) tolerates the timeout and re-verifies over base_url."""
+		if not self.instance.admin_api_key:
+			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+		url = base_url.rstrip("/") + "/api/method/atlas.atlas.api.central_link.deprovision_tunnel"
+		secret = self.instance.get_password("admin_api_secret")
+		response = requests.post(
+			url,
+			headers={"Authorization": f"token {self.instance.admin_api_key}:{secret}"},
+			timeout=timeout,
 		)
+		response.raise_for_status()
+		return response.json().get("message", {})
 
 
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
