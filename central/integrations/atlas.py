@@ -130,6 +130,15 @@ class AtlasClient:
 			"atlas.atlas.api.central_link.provision_tunnel", params=payload
 		)
 
+	def link_local(self, base_url: str, payload: dict) -> dict:
+		"""Local-dev registration over the public base_url (admin auth): push the atlas_id +
+		service-user creds with skip_tunnel set, so Atlas stores them and enables event
+		reporting but brings up no wg0 and locks no firewall. Reuses provision_tunnel — the
+		flag branches it before any host script runs."""
+		return self._admin_client(base_url).post_api(
+			"atlas.atlas.api.central_link.provision_tunnel", params={**payload, "skip_tunnel": 1}
+		)
+
 	def confirm_tunnel(self, tunnel_url: str) -> dict:
 		"""Atlas inbound confirm_tunnel OVER the tunnel (admin auth): Atlas persists the
 		lockdown and cancels its auto-revert. Returns { tunnel_status }."""
@@ -280,6 +289,9 @@ def register_atlas(instance) -> dict:
 	if not (instance.api_key and instance.get_password("api_secret", raise_exception=False)):
 		frappe.throw("Set the Atlas admin API key and secret before registering.", TunnelRegistrationError)
 
+	if instance.skip_tunnel:
+		return _register_local(instance)
+
 	settings = frappe.get_single("Central Tunnel Settings")
 	if settings.hub_status != "Active":
 		frappe.throw("Initialize the hub before registering an Atlas.", TunnelRegistrationError)
@@ -352,6 +364,38 @@ def register_atlas(instance) -> dict:
 		raise TunnelRegistrationError(f"Register failed for '{instance.region}': {exception}") from exception
 
 	return {"ok": True, "atlas_id": atlas_id, "tunnel_ip": tunnel_ip, "tunnel_status": "Active"}
+
+
+def _register_local(instance) -> dict:
+	"""Local-dev registration without a tunnel (Atlas Instance.skip_tunnel). Do only the
+	identity half — admin_ping, mint atlas_id, the scoped service user + creds — then push
+	those to Atlas with skip_tunnel set so it stores them without bringing up wg0 or locking
+	its firewall. No hub, no tunnel_ip allocation, no peering, no over-the-tunnel confirm.
+	The data path stays on the public base_url (tunnel_url is never set), and tunnel_status
+	stays Inactive. There is nothing host-side to roll back, so a failure just propagates."""
+	client = AtlasClient(instance)
+	client.admin_ping(instance.base_url)
+
+	atlas_id = instance.atlas_id or frappe.generate_hash(length=12)
+	service_user = _ensure_service_user(instance)
+	api_key, api_secret = _rotate_service_credentials(service_user)
+
+	client.link_local(
+		instance.base_url,
+		{
+			"atlas_id": atlas_id,
+			"central_url": frappe.utils.get_url(),
+			"service_api_key": api_key,
+			"service_api_secret": api_secret,
+		},
+	)
+
+	instance.atlas_id = atlas_id
+	instance.service_user = service_user
+	instance.tunnel_status = "Inactive"
+	instance.save(ignore_permissions=True)
+
+	return {"ok": True, "atlas_id": atlas_id, "tunnel_status": "Inactive", "skip_tunnel": True}
 
 
 def _ensure_service_user(instance) -> str:

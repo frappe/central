@@ -13,6 +13,7 @@
   "api_key",
   "api_secret",
   "section_break_tunnel",
+  "skip_tunnel",
   "tunnel_status",
   "tunnel_ip",
   "tunnel_url",
@@ -83,6 +84,13 @@
    "fieldname": "section_break_tunnel",
    "fieldtype": "Section Break",
    "label": "Tunnel"
+  },
+  {
+   "default": "0",
+   "description": "Local development only: register without a WireGuard tunnel. Central does the identity half (atlas_id, scoped service user, pushed creds) and leaves the data path on the public base_url. No hub peering, no firewall lockdown.",
+   "fieldname": "skip_tunnel",
+   "fieldtype": "Check",
+   "label": "Skip Tunnel (Local Dev)"
   },
   {
    "default": "Unregistered",

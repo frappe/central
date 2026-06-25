@@ -25,6 +25,7 @@ class AtlasInstance(Document):
 		reachable: DF.Check
 		region: DF.Data
 		service_user: DF.Link | None
+		skip_tunnel: DF.Check
 		status: DF.Literal["Active", "Draining", "Disabled"]
 		tunnel_ip: DF.Data | None
 		tunnel_status: DF.Literal["Unregistered", "Provisioning", "Active", "Inactive"]

@@ -84,6 +84,7 @@ hand-entered service `api_key` / `api_secret`. It gains:
 | `peer_endpoint` | the Atlas's public `wg` endpoint (`<host-of-base_url-or-override>:<listen_port>`) |
 | `service_user` | Link → User: the per-Atlas scoped Central service user |
 | `tunnel_status` | `Unregistered` → `Provisioning` → `Active` |
+| `skip_tunnel` (Check) | **local development only** — register the identity half without a WireGuard tunnel (see below) |
 
 - `base_url` stays = the **public bootstrap URL** (used only during registration).
 - The old hand-entered service `api_key` / `api_secret` are **migrated away**:
@@ -151,6 +152,20 @@ sequenceDiagram
   scoped service user.
 - Central raises a typed `TunnelRegistrationError`; the `Atlas Instance` stays
   `Unregistered` (or returns there) — no half state.
+
+### Local development — `skip_tunnel`
+
+WireGuard needs two real hosts, a sudoers drop-in, and a public firewall to lock —
+none of which exist on a laptop. With `skip_tunnel` ticked on the `Atlas Instance`,
+`register_atlas` takes a short branch that does only the **identity half**: `ping` over
+`base_url`, mint `atlas_id`, create the scoped service user + rotate its creds, then
+push those to Atlas via `provision_tunnel(..., skip_tunnel=1)` — which on the Atlas side
+stores the creds and enables event reporting **without running any host script**. It
+skips the hub check, IP allocation, hub peering, and the over-the-tunnel verify/confirm.
+`tunnel_status` ends `Inactive` and `tunnel_url` is never set, so the data path stays on
+the public `base_url` (the same fallback used for a real `Inactive` tunnel). There is no
+host state to roll back, so a failure just propagates. This is a development convenience
+with **no management-plane isolation** — never a production posture.
 
 ## Cut-over and retirement
 
