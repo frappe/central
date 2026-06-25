@@ -175,3 +175,88 @@ sequenceDiagram
 - Surfacing `public_allow_ports` / break-glass in the UI.
 - Durable, queued re-dial of a spoke whose public IP changes (today: operator
   re-registers, or updates `peer_endpoint` + re-runs `hub-peer-add`).
+
+## Operator runbook — setting it up
+
+This is the practical sequence to put one or more Atlas behind the tunnel. The
+Central host is the WireGuard hub; each Atlas is a `/32` spoke. Everything is driven
+from the Central Desk; the only thing done *on* a host is the one-time operator
+install below.
+
+### 1. One-time host install (each host, by an operator — the app never does this)
+
+Both the Central host and every Atlas host run privileged `wg`/`nft`/`systemd`
+commands as sudoers-pinned scripts. Install the pins (and on Atlas, the fail-closed
+boot unit) once, as the bench OS user (`frappe` below — change to match your bench):
+
+- **Central host** — `wireguard-tools` installed; then
+  ```
+  sudo install -m 0440 -o root -g root \
+      apps/central/scripts/sudoers.d/central-tunnel /etc/sudoers.d/central-tunnel
+  sudo visudo -cf /etc/sudoers.d/central-tunnel
+  ```
+- **Each Atlas host** — `wireguard-tools` + `nftables` installed; then
+  ```
+  sudo install -m 0440 -o root -g root \
+      apps/atlas/scripts/sudoers.d/atlas-tunnel /etc/sudoers.d/atlas-tunnel
+  sudo visudo -cf /etc/sudoers.d/atlas-tunnel
+  sudo install -m 0644 apps/atlas/scripts/systemd/atlas-mgmt-firewall.service \
+      /etc/systemd/system/ && sudo systemctl daemon-reload
+  ```
+
+### 2. Initialize the hub (Central Desk, once)
+
+`Central Tunnel Settings` (single) → set **Hub Private Key Path** (a `0600` path on
+the Central host, e.g. `/etc/wireguard/hub.key`) and **Hub Endpoint**
+(`<central-public-ip>:51820`); CIDR `10.88.0.0/16`, port `51820`, interface `wg0`
+are the defaults. **Save**, then **Initialize Hub** → brings up `wg0` at `10.88.0.1`
+and records the hub's public key. Idempotent.
+
+### 3. Register an Atlas (per Atlas)
+
+On the Atlas, create an **admin API key/secret** for a System Manager (User → API
+Access → Generate Keys). Then on the Central Desk create an **Atlas Instance**:
+
+| Field | Value |
+| --- | --- |
+| Region | unique name, e.g. `blr` (also the record name) |
+| Base URL | the Atlas's public URL, e.g. `https://blr.atlas.example.com` |
+| Admin API Key / Secret | the Atlas admin creds from above |
+
+**Save → Register.** This runs the whole handshake: allocate the next free `/32`,
+mint a scoped service user, `provision_tunnel` over the public `base_url` (Atlas
+brings up its spoke `wg0`, **locks its public interface** with an armed auto-revert),
+`hub-peer-add`, verify over the tunnel, `confirm_tunnel`. Ends `Tunnel Status =
+Active`, and the data path for this instance switches to `tunnel_url`
+(`http(s)://<tunnel_ip>`).
+
+> Once Active the Atlas's public Desk/API is **dark** — it is reachable only over the
+> tunnel, from Central. Drive everything from the Central Desk thereafter. If Register
+> *fails* before confirm, the Atlas's armed auto-revert reopens its public side on its
+> own within a few minutes.
+
+### 4. Multiple Atlas
+
+Repeat step 3 for each Atlas — each gets the next sequential `/32` (`10.88.0.2`,
+`10.88.0.3`, …; allocation is locked + `tunnel_ip` is unique, so concurrent
+registrations can't collide), its own scoped service user, and its own hub peer. The
+hub accumulates one peer per spoke.
+
+### 5. Remove / re-tunnel
+
+**Remove Tunnel** (shown when Active) strips the runtime tunnel — reverts the Atlas
+firewall, drops its `wg0`, removes the hub peer — but **keeps the instance
+registered** (`Tunnel Status = Inactive`, retaining `atlas_id`, the service user and
+the allocated `tunnel_ip`). The data path falls back to the public `base_url`.
+**Register** again (shown as *Register (re-tunnel)* when Inactive) brings the tunnel
+back up reusing the same identity + address.
+
+### 6. Break-glass — recovering a stranded Atlas
+
+If an Atlas is locked but its Central record is lost (so there's no Remove Tunnel
+button), it is still reachable over the tunnel: from the Central host, authenticate
+with the Atlas admin creds and POST
+`atlas.atlas.api.central_link.deprovision_tunnel` at `http(s)://<tunnel_ip>` — it
+reverts the firewall first, so the public side reopens. Last resort: the host's
+serial console — `nft delete table inet atlas_mgmt`, `systemctl disable
+atlas-mgmt-firewall.service`, `rm -f /etc/atlas/mgmt-firewall.nft`.
