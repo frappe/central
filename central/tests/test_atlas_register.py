@@ -78,10 +78,8 @@ class TestAtlasRegister(IntegrationTestCase):
 			"region": region,
 			"base_url": "https://blr.atlas.example.test",
 			"status": "Active",
-			"api_key": "svc_key_old",
-			"api_secret": "svc_secret_old",
-			"admin_api_key": "admin_key",
-			"admin_api_secret": "admin_secret",
+			"api_key": "admin_key",
+			"api_secret": "admin_secret",
 			**overrides,
 		}
 		return frappe.get_doc(values).insert(ignore_permissions=True)
@@ -172,13 +170,13 @@ class TestAtlasRegister(IntegrationTestCase):
 		instance.reload()
 		return instance
 
-	# ----- remove_tunnel (the inverse) -------------------------------------
+	# ----- remove_tunnel (strips the tunnel, KEEPS registration) -----------
 
-	def test_remove_tunnel_tears_down_and_unregisters(self) -> None:
+	def test_remove_tunnel_strips_tunnel_but_stays_registered(self) -> None:
 		instance = self._register("blr-remove")
 		peer_key = instance.peer_public_key
 		service_user = instance.service_user
-		tunnel_url = instance.tunnel_url  # cleared by remove_tunnel; capture first
+		tunnel_url = instance.tunnel_url  # the deprovision target; capture before the call
 		self.assertTrue(frappe.db.exists("User", service_user))
 
 		deprov = patch.object(AtlasClient, "deprovision_tunnel", return_value={"tunnel_status": "Inactive"})
@@ -186,7 +184,7 @@ class TestAtlasRegister(IntegrationTestCase):
 		with deprov as deprovision_tunnel, host_task as run_host_task:
 			out = remove_tunnel(instance)
 
-		self.assertEqual(out["tunnel_status"], "Unregistered")
+		self.assertEqual(out["tunnel_status"], "Inactive")
 		# Atlas teardown driven over the tunnel_url.
 		deprovision_tunnel.assert_called_once_with(tunnel_url)
 		# hub peer removed with the Atlas's key.
@@ -195,13 +193,15 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertEqual(remove_call.kwargs["variables"]["PEER_PUBLIC_KEY"], peer_key)
 
 		instance.reload()
-		self.assertEqual(instance.tunnel_status, "Unregistered")
-		self.assertFalse(instance.tunnel_ip)
-		self.assertFalse(instance.tunnel_url)
+		# tunnel runtime is gone...
+		self.assertEqual(instance.tunnel_status, "Inactive")
 		self.assertFalse(instance.peer_public_key)
-		self.assertFalse(instance.service_user)
-		# the scoped service user is gone, freeing the identity + the tunnel_ip.
-		self.assertFalse(frappe.db.exists("User", service_user))
+		self.assertFalse(instance.peer_endpoint)
+		# ...but the registration identity is RETAINED.
+		self.assertTrue(instance.atlas_id)
+		self.assertEqual(instance.service_user, service_user)
+		self.assertEqual(instance.tunnel_ip, "10.88.0.2")
+		self.assertTrue(frappe.db.exists("User", service_user))
 
 	def test_remove_tunnel_tolerates_dropped_connection(self) -> None:
 		instance = self._register("blr-remove-drop")
@@ -213,11 +213,32 @@ class TestAtlasRegister(IntegrationTestCase):
 		with deprov, ping as admin_ping, host_task:
 			out = remove_tunnel(instance)
 
-		self.assertEqual(out["tunnel_status"], "Unregistered")
+		self.assertEqual(out["tunnel_status"], "Inactive")
 		admin_ping.assert_called_once_with(instance.base_url)
 		instance.reload()
-		self.assertEqual(instance.tunnel_status, "Unregistered")
-		self.assertFalse(instance.service_user)
+		self.assertEqual(instance.tunnel_status, "Inactive")
+		# still registered after a messy teardown.
+		self.assertTrue(instance.service_user)
+
+	def test_re_register_after_remove_reuses_identity(self) -> None:
+		instance = self._register("blr-retunnel")
+		atlas_id, service_user, tunnel_ip = instance.atlas_id, instance.service_user, instance.tunnel_ip
+		# strip the tunnel (Inactive, still registered)
+		with patch.object(AtlasClient, "deprovision_tunnel", return_value={}), patch(
+			"central.integrations.atlas.run_host_task", return_value=MagicMock()
+		):
+			remove_tunnel(instance)
+		instance.reload()
+		self.assertEqual(instance.tunnel_status, "Inactive")
+		# Register again → re-tunnels, reusing the same identity + address.
+		ping, provision, confirm, host_task = self._patched()
+		with ping, provision, confirm, host_task:
+			register_atlas(instance)
+		instance.reload()
+		self.assertEqual(instance.tunnel_status, "Active")
+		self.assertEqual(instance.atlas_id, atlas_id)
+		self.assertEqual(instance.service_user, service_user)
+		self.assertEqual(instance.tunnel_ip, tunnel_ip)
 
 	def test_remove_tunnel_requires_system_manager(self) -> None:
 		instance = self._register("blr-remove-perm")
@@ -235,7 +256,7 @@ class TestAtlasRegister(IntegrationTestCase):
 
 	def test_requires_admin_creds(self) -> None:
 		instance = self.make_instance("blr-nocreds")
-		instance.db_set("admin_api_key", None)
+		instance.db_set("api_key", None)
 		with self.assertRaises(TunnelRegistrationError):
 			register_atlas(instance)
 

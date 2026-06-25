@@ -15,20 +15,19 @@ class AtlasInstance(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		admin_api_key: DF.Data | None
-		admin_api_secret: DF.Password | None
-		api_key: DF.Data | None
-		api_secret: DF.Password | None
+		api_key: DF.Data
+		api_secret: DF.Password
 		atlas_id: DF.Data | None
 		base_url: DF.Data
 		last_synced_at: DF.Datetime | None
 		peer_endpoint: DF.Data | None
 		peer_public_key: DF.SmallText | None
+		reachable: DF.Check
 		region: DF.Data
 		service_user: DF.Link | None
 		status: DF.Literal["Active", "Draining", "Disabled"]
 		tunnel_ip: DF.Data | None
-		tunnel_status: DF.Literal["Unregistered", "Provisioning", "Active"]
+		tunnel_status: DF.Literal["Unregistered", "Provisioning", "Active", "Inactive"]
 		tunnel_url: DF.Data | None
 	# end: auto-generated types
 
@@ -61,9 +60,10 @@ class AtlasInstance(Document):
 
 	@frappe.whitelist()
 	def remove_tunnel(self) -> dict:
-		"""Operator action: tear down this Atlas's tunnel + management firewall (the
-		inverse of Register) — revert the firewall + drop wg0 on the Atlas, remove the
-		hub peer, delete the service user, free the tunnel_ip, return to Unregistered."""
+		"""Operator action: strip the tunnel + management firewall but keep the Atlas
+		registered — revert the firewall + drop wg0 on the Atlas and remove the hub peer,
+		while retaining atlas_id, the service user and the allocated tunnel_ip. Status
+		goes to Inactive; Register brings the tunnel back up."""
 		from central.integrations.atlas import remove_tunnel
 
 		return remove_tunnel(self)

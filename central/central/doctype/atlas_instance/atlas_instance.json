@@ -12,8 +12,6 @@
   "column_break_auth",
   "api_key",
   "api_secret",
-  "admin_api_key",
-  "admin_api_secret",
   "section_break_tunnel",
   "tunnel_status",
   "tunnel_ip",
@@ -67,28 +65,18 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Deprecated: the old inbound service key. Central→Atlas now uses the Atlas admin token; kept optional for back-compat (spec/19-tunnel.md).",
+   "description": "Atlas admin API key. Central authenticates with the Atlas admin token for every Central→Atlas call (the registration handshake and, once Active, the data path over the tunnel).",
    "fieldname": "api_key",
    "fieldtype": "Data",
-   "label": "API Key (deprecated)"
+   "label": "Admin API Key",
+   "reqd": 1
   },
   {
-   "description": "Deprecated: paired with the old service key. Unused now that Central→Atlas authenticates with the admin token.",
+   "description": "Atlas admin API secret, paired with the key (stored encrypted).",
    "fieldname": "api_secret",
    "fieldtype": "Password",
-   "label": "API Secret (deprecated)"
-  },
-  {
-   "description": "Atlas admin API key. Central authenticates with the Atlas admin creds for the registration handshake (provision_tunnel over base_url, confirm_tunnel over the tunnel).",
-   "fieldname": "admin_api_key",
-   "fieldtype": "Data",
-   "label": "Admin API Key"
-  },
-  {
-   "description": "Atlas admin API secret (stored encrypted).",
-   "fieldname": "admin_api_secret",
-   "fieldtype": "Password",
-   "label": "Admin API Secret"
+   "label": "Admin API Secret",
+   "reqd": 1
   },
   {
    "description": "The Central-managed WireGuard tunnel. Every field here is set by Register — not hand-entered.",
@@ -98,12 +86,12 @@
   },
   {
    "default": "Unregistered",
-   "description": "Unregistered → Provisioning (wg0 up, firewall armed) → Active (confirmed over the tunnel).",
+   "description": "Unregistered → Provisioning (wg0 up, firewall armed) → Active (confirmed over the tunnel). Inactive = still registered (keeps atlas_id + service user) but the tunnel has been stripped down; Register again to bring it back up.",
    "fieldname": "tunnel_status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Tunnel Status",
-   "options": "Unregistered\nProvisioning\nActive",
+   "options": "Unregistered\nProvisioning\nActive\nInactive",
    "read_only": 1
   },
   {
@@ -153,9 +141,9 @@
   },
   {
    "default": "0",
+   "description": "Result of the last Test Connection (over the current data path — base_url before/after the tunnel, tunnel_url while Active).",
    "fieldname": "reachable",
    "fieldtype": "Check",
-   "is_virtual": 1,
    "label": "Reachable",
    "read_only": 1
   },

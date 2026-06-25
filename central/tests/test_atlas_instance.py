@@ -17,16 +17,16 @@ class TestAtlasInstance(IntegrationTestCase):
 				"region": region,
 				"base_url": "https://atlas.example.test",
 				"status": status,
-				"admin_api_key": "admin_k",
-				"admin_api_secret": "admin_s",
+				"api_key": "admin_k",
+				"api_secret": "admin_s",
 			}
 		).insert()
 
 	def test_admin_secret_is_stored_encrypted(self):
 		inst = self.make_instance("blr-secret")
 		# Plaintext is retrievable via get_password, but never stored in the column.
-		self.assertEqual(inst.get_password("admin_api_secret"), "admin_s")
-		raw = frappe.db.get_value("Atlas Instance", inst.name, "admin_api_secret")
+		self.assertEqual(inst.get_password("api_secret"), "admin_s")
+		raw = frappe.db.get_value("Atlas Instance", inst.name, "api_secret")
 		self.assertNotEqual(raw, "admin_s")
 
 	def test_region_resolver(self):
