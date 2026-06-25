@@ -1,6 +1,6 @@
 import { computed, readonly, ref } from 'vue'
 import { frappeRequest } from 'frappe-ui'
-import type { ProviderLogin } from '@/types'
+import type { ProviderLogin } from '@/types/api'
 
 // Auth for the console/dashboard app a single reactive `currentUser` plus `login` / `logout` / `updateCurrentUser` that wrap
 // Frappe's native endpoints. Module-level singletons so every screen shares one session state.

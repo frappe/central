@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { planSpecs, planPrice } from '@/lib/plans'
-import type { Plan } from '@/types'
+import type { Plan } from '@/types/api'
 
 // Selectable grid of plan cards for the New Server flow. Used both flat (single
 // plan class) and inside a class tab panel (multiple classes); the parent owns

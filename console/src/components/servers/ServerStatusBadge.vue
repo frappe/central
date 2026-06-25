@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { Badge } from 'frappe-ui'
-import { statusTheme } from '@/lib/status'
-import type { ServerStatus } from '@/types'
+import { statusTheme, type AssetStatus } from '@/lib/status'
 
-const props = defineProps<{ status: ServerStatus }>()
+const props = defineProps<{ status: AssetStatus }>()
 </script>
 
 <template>

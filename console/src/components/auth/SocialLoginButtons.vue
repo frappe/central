@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import type { ProviderLogin } from '@/types'
+import type { ProviderLogin } from '@/types/api'
 
 defineProps<{
   providers: readonly ProviderLogin[]

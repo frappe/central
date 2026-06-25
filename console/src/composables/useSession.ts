@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
-import type { Team } from '@/types'
+import type { Team } from '@/types/api'
 
 // Identity for the console: which teams the signed-in user belongs to, and which
 // one is active. Module-level singletons so every screen + composable scopes its

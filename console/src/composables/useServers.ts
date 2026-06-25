@@ -6,11 +6,28 @@ import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { useFrappeList } from '@/composables/common/useFrappeList'
 import { successToast, errorToast, getErrorMessage } from '@/lib/toast'
-import type {
-  BenchLinkResponse,
-  RefreshResponse,
-  Server,
-} from '@/types'
+import type { RefreshResponse } from '@/types/api'
+import type { Asset } from '@/types/Central/Asset'
+
+type BenchLinkResponse = {
+  url: string
+}
+
+export type AssetRow = Pick<
+  Asset,
+  | 'name'
+  | 'resource_id'
+  | 'title'
+  | 'cluster'
+  | 'status'
+  | 'vcpus'
+  | 'memory_megabytes'
+  | 'disk_gigabytes'
+  | 'ipv6_address'
+  | 'public_ipv4'
+  | 'gateway_url'
+  | 'last_synced_at'
+>
 
 // The team's servers, read from the Asset DocType through Frappe reportview, plus
 // the lifecycle command path. The mirror is kept fresh by Atlas's event push +
@@ -30,7 +47,7 @@ const query = ref(
   }),
 )
 
-const registry = useFrappeList<Server>({
+const registry = useFrappeList<AssetRow>({
   doctype: 'Asset',
   fields: [
     'name',
@@ -91,7 +108,7 @@ type Verb = 'Start' | 'Stop' | 'Terminate'
 
 async function runCommand(
   call: typeof startCall,
-  server: Server,
+  server: AssetRow,
   verb: Verb,
 ): Promise<void> {
   busy.value = server.resource_id
@@ -118,20 +135,20 @@ export function useServers() {
     }
   }
 
-  function start(server: Server) {
+  function start(server: AssetRow) {
     return runCommand(startCall, server, 'Start')
   }
-  function stop(server: Server) {
+  function stop(server: AssetRow) {
     return runCommand(stopCall, server, 'Stop')
   }
-  function terminate(server: Server) {
+  function terminate(server: AssetRow) {
     return runCommand(terminateCall, server, 'Terminate')
   }
 
   // Open the VM's bench via a scoped SSO assertion. The tab is opened
   // synchronously inside the click so it isn't popup-blocked, then pointed at the
   // minted URL once it resolves.
-  async function open(server: Server): Promise<void> {
+  async function open(server: AssetRow): Promise<void> {
     opening.value = server.resource_id
     const tab = window.open('', '_blank')
     try {

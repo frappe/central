@@ -3,7 +3,7 @@
 // (see usePlans); these turn one into a spec line, a price label, and the raw
 // size create_server still takes — Atlas provisions resources, not plan names.
 
-import type { Plan } from '@/types'
+import type { Plan } from '@/types/api'
 
 /** Compact spec line from a plan's bundled resources, e.g. "2 vCPU · 4 GB RAM · 40 GB disk". */
 export function planSpecs(plan: Plan): string {

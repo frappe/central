@@ -9,10 +9,10 @@ import {
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import ServerStatusBadge from '@/components/servers/ServerStatusBadge.vue'
 import { formatSpecs } from '@/lib/format'
-import type { Server } from '@/types'
+import type { AssetRow } from '@/composables/useServers'
 
 const props = defineProps<{
-  servers: Server[]
+  servers: AssetRow[]
   totalRows: number
   countLoading: boolean
   query: ListViewQuery
@@ -30,13 +30,13 @@ const emit = defineEmits<{
   'update:query': [query: ListViewQuery]
   retry: []
   create: []
-  start: [server: Server]
-  stop: [server: Server]
-  terminate: [server: Server]
-  open: [server: Server]
+  start: [server: AssetRow]
+  stop: [server: AssetRow]
+  terminate: [server: AssetRow]
+  open: [server: AssetRow]
 }>()
 
-const columns = computed<ListViewColumn<Server>[]>(() => [
+const columns = computed<ListViewColumn<AssetRow>[]>(() => [
   {
     id: 'title',
     accessorFn: (server) => server.title || server.resource_id,
@@ -96,10 +96,10 @@ const columns = computed<ListViewColumn<Server>[]>(() => [
           canTerminate: props.canTerminate,
           busy: props.busy === row.original.resource_id,
           opening: props.opening === row.original.resource_id,
-          onOpen: (server: Server) => emit('open', server),
-          onStart: (server: Server) => emit('start', server),
-          onStop: (server: Server) => emit('stop', server),
-          onTerminate: (server: Server) => emit('terminate', server),
+          onOpen: (server: AssetRow) => emit('open', server),
+          onStart: (server: AssetRow) => emit('start', server),
+          onStop: (server: AssetRow) => emit('stop', server),
+          onTerminate: (server: AssetRow) => emit('terminate', server),
         }),
       ]),
   },
