@@ -8,7 +8,6 @@
   "region",
   "base_url",
   "status",
-  "atlas_id",
   "column_break_auth",
   "api_key",
   "api_secret",
@@ -55,13 +54,6 @@
    "reqd": 1
   },
   {
-   "description": "The id this Atlas reports as in inbound events (its Central Settings.atlas_id). Routes events to this cluster. Set when the Atlas registers.",
-   "fieldname": "atlas_id",
-   "fieldtype": "Data",
-   "label": "Atlas ID",
-   "unique": 1
-  },
-  {
    "fieldname": "column_break_auth",
    "fieldtype": "Column Break"
   },
@@ -87,14 +79,14 @@
   },
   {
    "default": "0",
-   "description": "Local development only: register without a WireGuard tunnel. Central does the identity half (atlas_id, scoped service user, pushed creds) and leaves the data path on the public base_url. No hub peering, no firewall lockdown.",
+   "description": "Local development only: register without a WireGuard tunnel. Central does the identity half (scoped service user, pushed creds) and leaves the data path on the public base_url. No hub peering, no firewall lockdown.",
    "fieldname": "skip_tunnel",
    "fieldtype": "Check",
    "label": "Skip Tunnel (Local Dev)"
   },
   {
    "default": "Unregistered",
-   "description": "Unregistered → Provisioning (wg0 up, firewall armed) → Active (confirmed over the tunnel). Inactive = still registered (keeps atlas_id + service user) but the tunnel has been stripped down; Register again to bring it back up.",
+   "description": "Unregistered → Provisioning (wg0 up, firewall armed) → Active (confirmed over the tunnel). Inactive = still registered (keeps the service user) but the tunnel has been stripped down; Register again to bring it back up.",
    "fieldname": "tunnel_status",
    "fieldtype": "Select",
    "in_list_view": 1,

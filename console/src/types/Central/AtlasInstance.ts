@@ -16,8 +16,6 @@ export interface AtlasInstance{
 	base_url: string
 	/**	Status : Select	*/
 	status: "Active" | "Draining" | "Disabled"
-	/**	Atlas ID : Data - The id this Atlas reports as in inbound events (its Central Settings.atlas_id). Routes events to this cluster. Set when the Atlas registers.	*/
-	atlas_id?: string
 	/**	API Key : Data - frappe API key of the Central service user on the Atlas site.	*/
 	api_key: string
 	/**	API Secret : Password - frappe API secret (stored encrypted). Sent as `token key:secret`.	*/

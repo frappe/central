@@ -22,7 +22,9 @@ class TestAtlasMirror(IntegrationTestCase):
 			}
 		).insert()
 		self.region = "blr-sync"
-		self.atlas_id = "atlas-blr-sync"
+		# The Atlas authenticates as its scoped service user; the sender (= cluster) is
+		# resolved from that session, so the instance is keyed on service_user.
+		self.service_user = ensure_user("atlas-blr-sync@example.test")
 		if not frappe.db.exists("Atlas Instance", self.region):
 			frappe.get_doc(
 				{
@@ -30,13 +32,13 @@ class TestAtlasMirror(IntegrationTestCase):
 					"region": self.region,
 					"base_url": "https://atlas.example.test",
 					"status": "Active",
-					"atlas_id": self.atlas_id,
+					"service_user": self.service_user,
 					"api_key": "k",
 					"api_secret": "s",
 				}
 			).insert()
 		else:
-			frappe.db.set_value("Atlas Instance", self.region, "atlas_id", self.atlas_id)
+			frappe.db.set_value("Atlas Instance", self.region, "service_user", self.service_user)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -77,13 +79,17 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Asset", "vm-1", "status"), "Stopped")
 
 	def test_push_from_unknown_atlas_is_refused(self):
-		with self.assertRaises(frappe.PermissionError):
-			ingest_event(
-				"who-dis",
-				"vm.created",
-				{"name": "vm-x", "central_reference": self.team.name, "status": "Running"},
-				"2026-06-18 10:00:00",
-			)
+		# A session that owns no Atlas Instance can't push events.
+		frappe.set_user(self.outsider)
+		try:
+			with self.assertRaises(frappe.PermissionError):
+				ingest_event(
+					"vm.created",
+					{"name": "vm-x", "central_reference": self.team.name, "status": "Running"},
+					"2026-06-18 10:00:00",
+				)
+		finally:
+			frappe.set_user("Administrator")
 
 	def test_push_skips_untenanted_vm(self):
 		self._push("vm.created", {"name": "vm-op", "central_reference": None, "status": "Running"}, "2026-06-18 10:00:00")
@@ -102,16 +108,24 @@ class TestAtlasMirror(IntegrationTestCase):
 
 	def test_known_event_is_queued_not_applied_inline(self):
 		vm = {"name": "vm-q", "central_reference": self.team.name, "status": "Running"}
-		with patch("frappe.enqueue") as enqueue:
-			result = ingest_event(self.atlas_id, "vm.created", vm, "2026-06-18 10:00:00")
+		frappe.set_user(self.service_user)
+		try:
+			with patch("frappe.enqueue") as enqueue:
+				result = ingest_event("vm.created", vm, "2026-06-18 10:00:00")
+		finally:
+			frappe.set_user("Administrator")
 		self.assertTrue(result["queued"])
 		enqueue.assert_called_once()
 		# nothing written on the request thread — the worker does it
 		self.assertFalse(frappe.db.exists("Asset", "vm-q"))
 
 	def test_unknown_event_type_is_acked_without_queuing(self):
-		with patch("frappe.enqueue") as enqueue:
-			result = ingest_event(self.atlas_id, "vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00")
+		frappe.set_user(self.service_user)
+		try:
+			with patch("frappe.enqueue") as enqueue:
+				result = ingest_event("vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00")
+		finally:
+			frappe.set_user("Administrator")
 		self.assertEqual(result, {"ok": True, "queued": False})
 		enqueue.assert_not_called()
 
