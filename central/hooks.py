@@ -18,6 +18,10 @@ website_route_rules = [
 	{"from_route": "/legacy-dashboard/<path:app_path>", "to_route": "legacy-dashboard"},
 ]
 
+# Central is a website application. Portal users land in the console; Desk stays
+# reserved for users whose roles explicitly grant desk access.
+website_user_home_page = "dashboard"
+
 # Apps
 # ------------------
 
