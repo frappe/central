@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import frappeCloudLogo from '@/assets/frappe-cloud-logo.png'
+
 withDefaults(
   defineProps<{
     step?: number
@@ -17,9 +19,7 @@ withDefaults(
   <main class="flex min-h-screen justify-center bg-surface-base px-4 pb-12 pt-12 sm:pt-16">
     <section class="w-full max-w-[384px]">
       <header class="mb-8 flex items-center justify-center gap-2">
-        <span class="grid size-8 place-items-center rounded-4 bg-surface-blue-2 text-white">
-          <span class="lucide-cloud size-5" aria-hidden="true" />
-        </span>
+        <img :src="frappeCloudLogo" alt="Frappe Cloud Logo" class="h-8 w-8 rounded-4 object-contain" />
         <span class="text-xl font-semibold text-ink-gray-9">Frappe Cloud</span>
       </header>
 
