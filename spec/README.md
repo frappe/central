@@ -12,7 +12,7 @@ grants through OAuth and enforces them locally.
 
 - [Tunnel](TUNNEL.md): Central as the WireGuard hub, the `Register Atlas`
   orchestration, the per-Atlas scoped service user, and the host-exec runner for the
-  hub scripts. Pairs with [atlas/spec/19-tunnel.md](../../atlas/spec/19-tunnel.md)
+  hub scripts. Pairs with [atlas/spec/21-tunnel.md](../../atlas/spec/21-tunnel.md)
   (the Atlas-side lockdown + lockout-safe handshake).
 
 Each Atlas management plane is reachable only over the tunnel; Central firewalls each

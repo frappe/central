@@ -48,7 +48,7 @@ class AtlasClient:
 	def client(self) -> FrappeClient:
 		"""The data-path client (vm_action / create_vm / central_vms / reconcile).
 		Central→Atlas authenticates with the Atlas ADMIN token throughout
-		(spec/19-tunnel.md § Credentials); the target is the tunnel_url over wg0 once the
+		(spec/21-tunnel.md § Credentials); the target is the tunnel_url over wg0 once the
 		tunnel is Active, and the public base_url only during bootstrap."""
 		if self.instance.status == "Disabled":
 			frappe.throw(f"Atlas '{self.instance.region}' is disabled.", AtlasError)
