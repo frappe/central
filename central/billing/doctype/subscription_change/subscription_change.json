@@ -34,7 +34,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Change Type",
-   "options": "Created\nPlan Changed\nCancelled"
+   "options": "Created\nPlan Changed\nPayment Method Changed\nPast Due\nSuspended\nReactivated\nCancelled"
   },
   {
    "fieldname": "column_break_values",
