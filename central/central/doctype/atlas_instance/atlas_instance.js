@@ -20,10 +20,38 @@ frappe.ui.form.on("Atlas Instance", {
 			}),
 		);
 
-		// Register locks the Atlas behind the tunnel — confirm before driving it.
-		// Once tunnelled, offer Remove Tunnel (the inverse) instead.
-		if (frm.doc.tunnel_status === "Unregistered" || !frm.doc.tunnel_status) {
-			frm.add_custom_button(__("Register"), () =>
+		// While the tunnel is up (Active) offer Remove Tunnel; otherwise offer Register,
+		// which brings the tunnel up — for an Unregistered instance it also creates the
+		// identity, for an Inactive (already-registered) one it just re-tunnels.
+		if (frm.doc.tunnel_status === "Active") {
+			frm.add_custom_button(__("Remove Tunnel"), () =>
+				frappe.confirm(
+					__(
+						"Strip the tunnel + firewall for {0}? This reverts the Atlas's management firewall (restoring public access) and tears down wg0, but keeps it registered (Inactive) — Register brings the tunnel back.",
+						[frm.doc.region],
+					),
+					() =>
+						frm
+							.call("remove_tunnel")
+							.then((r) => {
+								const result = r.message || {};
+								frappe.show_alert(
+									{
+										message: __("Tunnel removed ({0})", [
+											result.tunnel_status || "Inactive",
+										]),
+										indicator: "orange",
+									},
+									5,
+								);
+								frm.reload_doc();
+							})
+							.catch(() => frm.reload_doc()),
+				),
+			);
+		} else {
+			const label = frm.doc.tunnel_status === "Inactive" ? __("Register (re-tunnel)") : __("Register");
+			frm.add_custom_button(label, () =>
 				frappe.confirm(
 					__(
 						"Register {0}? This brings up the tunnel and locks the Atlas's public interface behind it.",
@@ -41,32 +69,6 @@ frappe.ui.form.on("Atlas Instance", {
 											result.tunnel_status || "",
 										]),
 										indicator: "green",
-									},
-									5,
-								);
-								frm.reload_doc();
-							})
-							.catch(() => frm.reload_doc()),
-				),
-			);
-		} else {
-			frm.add_custom_button(__("Remove Tunnel"), () =>
-				frappe.confirm(
-					__(
-						"Remove the tunnel + firewall for {0}? This reverts the Atlas's management firewall (restoring public access), tears down wg0, removes the hub peer, and deletes its service user.",
-						[frm.doc.region],
-					),
-					() =>
-						frm
-							.call("remove_tunnel")
-							.then((r) => {
-								const result = r.message || {};
-								frappe.show_alert(
-									{
-										message: __("Tunnel removed ({0})", [
-											result.tunnel_status || "Unregistered",
-										]),
-										indicator: "orange",
 									},
 									5,
 								);

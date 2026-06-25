@@ -103,18 +103,18 @@ class AtlasClient:
 		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
 
 	# --- admin-auth path: the registration handshake (TUNNEL.md) -------------
-	# Central→Atlas registration uses the Atlas ADMIN creds (not the per-Atlas service
-	# creds the data path uses today). provision_tunnel goes over the public base_url;
-	# the verify ping and confirm_tunnel go over the tunnel_url, so reaching them is
-	# itself the proof that wg0 works before the public side is locked for good.
+	# Central→Atlas authenticates with the Atlas ADMIN creds (api_key/api_secret on the
+	# Atlas Instance) for everything: provision_tunnel over the public base_url; the verify
+	# ping + confirm_tunnel over the tunnel_url, so reaching them is itself the proof that
+	# wg0 works before the public side is locked for good.
 
 	def _admin_client(self, base_url: str) -> FrappeClient:
-		if not self.instance.admin_api_key:
+		if not self.instance.api_key:
 			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
 		return FrappeClient(
 			base_url,
-			api_key=self.instance.admin_api_key,
-			api_secret=self.instance.get_password("admin_api_secret"),
+			api_key=self.instance.api_key,
+			api_secret=self.instance.get_password("api_secret"),
 		)
 
 	def admin_ping(self, base_url: str) -> dict:
@@ -144,13 +144,13 @@ class AtlasClient:
 		timeout, and a torn tunnel drops packets silently (no RST) — so use a direct
 		request with a bounded timeout; the host work commits server-side regardless and
 		the caller (remove_tunnel) tolerates the timeout and re-verifies over base_url."""
-		if not self.instance.admin_api_key:
+		if not self.instance.api_key:
 			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
 		url = base_url.rstrip("/") + "/api/method/atlas.atlas.api.central_link.deprovision_tunnel"
-		secret = self.instance.get_password("admin_api_secret")
+		secret = self.instance.get_password("api_secret")
 		response = requests.post(
 			url,
-			headers={"Authorization": f"token {self.instance.admin_api_key}:{secret}"},
+			headers={"Authorization": f"token {self.instance.api_key}:{secret}"},
 			timeout=timeout,
 		)
 		response.raise_for_status()
@@ -274,23 +274,27 @@ def register_atlas(instance) -> dict:
 	base_url; 5. hub-peer-add on the hub; 6. ping at tunnel_ip over wg0; 7.
 	confirm_tunnel over the tunnel; 8. tunnel_status=Active. Any failure before confirm
 	rolls back the Central-side half and raises TunnelRegistrationError; the instance
-	stays Unregistered (Atlas's auto-revert reopens its own firewall)."""
+	stays whatever it was (Atlas's auto-revert reopens its own firewall)."""
 	if "System Manager" not in frappe.get_roles():
 		frappe.throw("Not permitted.", frappe.PermissionError)
-	if not (instance.admin_api_key and instance.get_password("admin_api_secret", raise_exception=False)):
+	if not (instance.api_key and instance.get_password("api_secret", raise_exception=False)):
 		frappe.throw("Set the Atlas admin API key and secret before registering.", TunnelRegistrationError)
 
 	settings = frappe.get_single("Central Tunnel Settings")
 	if settings.hub_status != "Active":
 		frappe.throw("Initialize the hub before registering an Atlas.", TunnelRegistrationError)
 
+	# Re-registering an already-registered (Inactive) instance just re-tunnels it: reuse
+	# its identity, and on failure fall back to Inactive rather than tearing the identity
+	# down. A first registration that fails rolls all the way back to Unregistered.
+	was_registered = bool(instance.service_user)
 	client = AtlasClient(instance)
 
 	# 1. Prove the public bootstrap path + admin creds before changing anything.
 	client.admin_ping(instance.base_url)
 
 	# 2-3. Allocate the tunnel address and mint the scoped service identity. Reuse an
-	# existing allocation/id on re-register so the Atlas keeps a stable address.
+	# existing allocation/id/user on re-tunnel so the Atlas keeps a stable address.
 	tunnel_ip = instance.tunnel_ip or settings.allocate_tunnel_ip()
 	atlas_id = instance.atlas_id or frappe.generate_hash(length=12)
 	service_user = _ensure_service_user(instance)
@@ -344,7 +348,7 @@ def register_atlas(instance) -> dict:
 		instance.tunnel_status = "Active"
 		instance.save(ignore_permissions=True)
 	except Exception as exception:
-		_rollback(instance, service_user, peer_added)
+		_rollback(instance, service_user, peer_added, was_registered)
 		raise TunnelRegistrationError(f"Register failed for '{instance.region}': {exception}") from exception
 
 	return {"ok": True, "atlas_id": atlas_id, "tunnel_ip": tunnel_ip, "tunnel_status": "Active"}
@@ -427,12 +431,13 @@ def _slug(text: str) -> str:
 	return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
-def _rollback(instance, service_user: str | None, peer_added: bool) -> None:
+def _rollback(instance, service_user: str | None, peer_added: bool, was_registered: bool) -> None:
 	"""Undo the Central-side half of a failed registration. Atlas's armed auto-revert
 	restores its own public firewall and tears its tunnel on its own, so we only remove
-	the half-added hub peer and the scoped service user, and return the instance to
-	Unregistered. Best-effort: cleanup failures are logged, not raised — the original
-	error is the one worth surfacing."""
+	the half-added hub peer + the runtime tunnel state. If the instance was ALREADY
+	registered (a re-tunnel that failed) we keep its identity and fall back to Inactive;
+	a first registration that fails is torn down to Unregistered (delete the new service
+	user). Best-effort: cleanup failures are logged, not raised."""
 	if peer_added and instance.peer_public_key:
 		try:
 			run_host_task(
@@ -442,28 +447,34 @@ def _rollback(instance, service_user: str | None, peer_added: bool) -> None:
 		except Exception:
 			frappe.log_error(title=f"Tunnel rollback: hub-peer-remove failed for {instance.region}")
 
-	instance.db_set("service_user", None)
 	instance.db_set("peer_public_key", None)
 	instance.db_set("peer_endpoint", None)
-	instance.db_set("tunnel_status", "Unregistered")
 
-	if service_user and frappe.db.exists("User", service_user):
-		try:
-			frappe.delete_doc("User", service_user, ignore_permissions=True, force=True)
-		except Exception:
-			frappe.log_error(title=f"Tunnel rollback: service-user cleanup failed for {instance.region}")
+	if was_registered:
+		# keep atlas_id, service_user and tunnel_ip — only the tunnel failed to come up.
+		instance.db_set("tunnel_status", "Inactive")
+	else:
+		instance.db_set("service_user", None)
+		instance.db_set("tunnel_status", "Unregistered")
+		if service_user and frappe.db.exists("User", service_user):
+			try:
+				frappe.delete_doc("User", service_user, ignore_permissions=True, force=True)
+			except Exception:
+				frappe.log_error(title=f"Tunnel rollback: service-user cleanup failed for {instance.region}")
 
 	# nosemgrep: frappe-manual-commit -- hub-peer-add (run_host_task) already committed the
 	# half-provisioned state; the caller re-raises, on which Frappe rolls the request back. Commit
-	# the cleanup here so the half state can't survive that rollback — no Unregistered/orphan limbo.
+	# the cleanup here so the half state can't survive that rollback — no limbo.
 	frappe.db.commit()
 
 
 def remove_tunnel(instance) -> dict:
-	"""Tear down an Atlas's tunnel + management firewall — the inverse of register_atlas
-	(the operator's Remove Tunnel button). Tells Atlas to revert its firewall + drop wg0,
-	removes the hub peer, deletes the scoped service user, frees the tunnel_ip, and
-	returns the instance to Unregistered.
+	"""Strip an Atlas's tunnel + management firewall while keeping it REGISTERED (the
+	operator's Remove Tunnel button). Tells Atlas to revert its firewall + drop wg0 and
+	removes the hub peer, but RETAINS the registration identity — atlas_id, the scoped
+	service user and the allocated tunnel_ip — and sets status to Inactive. Register
+	brings the tunnel back up (re-tunnel). The data path falls back to the public
+	base_url while Inactive (only Active routes over tunnel_url).
 
 	Best-effort throughout: a teardown must not hard-fail and strand half state. The
 	Atlas call goes over the tunnel while Active; Atlas reverts the firewall (reopening
@@ -495,18 +506,12 @@ def remove_tunnel(instance) -> dict:
 		except Exception:
 			frappe.log_error(title=f"Remove tunnel: hub-peer-remove failed for {instance.region}")
 
-	service_user = instance.service_user
-	for field in ("tunnel_ip", "tunnel_url", "peer_public_key", "peer_endpoint", "service_user"):
-		instance.db_set(field, None)
-	instance.db_set("tunnel_status", "Unregistered")
-
-	if service_user and frappe.db.exists("User", service_user):
-		try:
-			frappe.delete_doc("User", service_user, ignore_permissions=True, force=True)
-		except Exception:
-			frappe.log_error(title=f"Remove tunnel: service-user cleanup failed for {instance.region}")
+	# Keep atlas_id / service_user / tunnel_ip — only the runtime tunnel is torn down.
+	instance.db_set("peer_public_key", None)
+	instance.db_set("peer_endpoint", None)
+	instance.db_set("tunnel_status", "Inactive")
 
 	# nosemgrep: frappe-manual-commit -- hub-peer-remove (run_host_task) already committed; persist
 	# the teardown durably so a later error in the request can't resurrect the torn-down state.
 	frappe.db.commit()
-	return {"ok": True, "tunnel_status": "Unregistered"}
+	return {"ok": True, "tunnel_status": "Inactive"}
