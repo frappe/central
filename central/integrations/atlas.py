@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 from urllib.parse import urlparse
 
 import frappe
@@ -321,8 +322,10 @@ def register_atlas(instance) -> dict:
 		)
 		peer_added = True
 
-		# 6. Verify reachability over wg0, then 7. confirm over the tunnel.
-		client.admin_ping(instance.tunnel_url)
+		# 6. Verify reachability over wg0, then 7. confirm over the tunnel. The hub only
+		# just added the peer, so the first packet triggers the WireGuard handshake and
+		# can race it — retry the verify ping until the tunnel settles.
+		_verify_over_tunnel(client, instance.tunnel_url)
 		client.confirm_tunnel(instance.tunnel_url)
 
 		# 8. The lockdown is now proven safe to keep.
@@ -380,6 +383,23 @@ def _rotate_service_credentials(user_name: str) -> tuple[str, str]:
 	user.api_secret = api_secret
 	user.save(ignore_permissions=True)
 	return api_key, api_secret
+
+
+def _verify_over_tunnel(client, tunnel_url: str, attempts: int = 8, delay: float = 2.0) -> None:
+	"""Ping the Atlas over wg0 until it answers. The hub adds the peer immediately
+	before this, so the first packet triggers the WireGuard handshake and can race it
+	(connection reset / incomplete read). Retry a handful of times so a freshly-dialled
+	tunnel gets a moment to settle before we treat it as unreachable and roll back."""
+	last: Exception | None = None
+	for attempt in range(attempts):
+		try:
+			client.admin_ping(tunnel_url)
+			return
+		except Exception as exception:
+			last = exception
+			if attempt < attempts - 1:
+				time.sleep(delay)
+	raise last  # type: ignore[misc]
 
 
 def _peer_endpoint(base_url: str, listen_port: int) -> str:
