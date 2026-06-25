@@ -2,7 +2,7 @@
 import { ref } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
 import AuthShell from '@/components/auth/AuthShell.vue'
-import ValidatedFormControl from '@/formComponents/ValidatedFormControl.vue'
+import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { emailError, frappeErrorMessage, postFrappe } from '@/lib/auth'
 
 const email = ref('')

@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
 import { useAuth } from '@/composables/useAuth'
-import ValidatedFormControl from '@/formComponents/ValidatedFormControl.vue'
+import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { emailError, frappeErrorMessage, postFrappe, requiredError } from '@/lib/auth'
 
 const router = useRouter()

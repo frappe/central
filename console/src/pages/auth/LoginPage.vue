@@ -6,7 +6,7 @@ import AuthShell from '@/components/auth/AuthShell.vue'
 import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
 import OtpInput from '@/components/common/OtpInput.vue'
 import { useAuth, type LoginResponse } from '@/composables/useAuth'
-import ValidatedFormControl from '@/formComponents/ValidatedFormControl.vue'
+import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { emailError, frappeErrorMessage, requiredError } from '@/lib/auth'
 import { loginDestination } from '@/lib/authRedirect'
 
