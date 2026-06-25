@@ -192,6 +192,7 @@ class TestCentralIAM(IntegrationTestCase):
 		)
 
 		self.assertIn("Central User", {row.role for row in user.roles})
+		self.assertEqual(user.user_type, "Website User")
 		self.assertEqual(len(teams), 1)
 		self.assertEqual(teams[0].status, "Active")
 

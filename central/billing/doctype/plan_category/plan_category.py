@@ -21,6 +21,7 @@ class PlanCategory(Document):
 		configurator_builder: DF.Literal["VM Rungs", "Simple"]
 		description: DF.SmallText | None
 		is_active: DF.Check
+		provision_target: DF.Literal["", "Server"]
 		sub_category_label: DF.Data | None
 	# end: auto-generated types
 

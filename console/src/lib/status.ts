@@ -1,10 +1,12 @@
-import type { ServerStatus } from '@/types'
+import type { Asset } from '@/types/Central/Asset'
+
+export type AssetStatus = NonNullable<Asset['status']> | 'Provisioning' | (string & {})
 
 type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue'
 
 // Asset status → Badge theme. Mirrors the Atlas lifecycle: Running is healthy,
 // transient states are amber, terminal/failure states are red, the rest neutral.
-// Keyed by string (not the ServerStatus union) since Atlas can report statuses
+// Keyed by string (not the AssetStatus union) since Atlas can report statuses
 // beyond the known set — anything unmapped falls back to neutral gray.
 const STATUS_THEME: Record<string, BadgeTheme> = {
   Running: 'green',
@@ -16,21 +18,21 @@ const STATUS_THEME: Record<string, BadgeTheme> = {
   Terminated: 'red',
 }
 
-export function statusTheme(status: ServerStatus): BadgeTheme {
+export function statusTheme(status: AssetStatus): BadgeTheme {
   return STATUS_THEME[status] ?? 'gray'
 }
 
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */
-export const POWER_ON_STATES: ServerStatus[] = ['Stopped', 'Paused', 'Failed']
+export const POWER_ON_STATES: AssetStatus[] = ['Stopped', 'Paused', 'Failed']
 
-export function canStart(status: ServerStatus): boolean {
+export function canStart(status: AssetStatus): boolean {
   return POWER_ON_STATES.includes(status)
 }
 
-export function canStop(status: ServerStatus): boolean {
+export function canStop(status: AssetStatus): boolean {
   return status === 'Running'
 }
 
-export function isTerminated(status: ServerStatus): boolean {
+export function isTerminated(status: AssetStatus): boolean {
   return status === 'Terminated'
 }

@@ -5,17 +5,18 @@
 Two phases, decoupled to avoid the 1st-of-month bottleneck:
 
   Phase 1 (28th, heavy/off-peak): per active subscription, reconcile sync if
-    stale, compute day-weighted line items from the Central price-lock segments
-    (event-log time windows x the locked rate, with the max(1, end-start)
-    floor), and create a `Draft`.
+    stale, compute day-weighted line items from Subscription Change segments
+    (each Created/Plan Changed row opens a segment at its locked_rate snapshot,
+    running until the next change, with the max(1, end-start) floor), and
+    create a `Draft`.
 
   Phase 2 (1st, light/parallel): one job per draft applies credits, claims the
     `Draft -> Open` transition atomically (no invoice processed twice), and
     leaves collection to the charge step (#10).
 
-The price-lock ledger already encodes both the time windows (started_at/ended_at
-per segment) and the locked rate, so billing reads only Central — no live Agent
-call in the common (push-primary) case.
+Subscription Change already encodes both the time windows (effective_at per
+row) and the rate snapshot, so billing reads only Central — no live Agent call
+in the common (push-primary) case.
 
 Split into modules (lines / generate / lifecycle); this package re-exports the
 public API so callers and the `billing.revenue.invoicing.*` enqueue paths hold.

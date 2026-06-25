@@ -29,20 +29,42 @@ from central.billing.catalog.plans import RATIO_FACTORS
 
 _MAX_RUNGS = 24  # safety bound on the doubling loop
 
-def ratio_for(sub_category: str | None, memory_ratio: str) -> str:
-	"""The effective ratio: a sub-category that configures a `memory_ratio` pins it
-	(the optimisation profile, set on the Plan Sub-Category master); anything else
-	(blank, or a profile with no ratio) uses the explicit ratio."""
+# The vCPU dropdown anchors for a ladder's start/ceiling — clean powers of two
+# from 1/16 up to 1024 (final-plan-pricing.md §4). Stored as the fraction string
+# (what the admin sees); `parse_vcpu` turns it into the float the ladder uses.
+VCPU_CHOICES = (
+	"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8",
+	"16", "32", "64", "128", "256", "512", "1024",
+)
+
+
+def parse_vcpu(value) -> float:
+	"""A vCPU dropdown value as a float: '1/16' -> 0.0625, '4' -> 4. Accepts a
+	plain number too, so direct callers and any pre-Select Float data still parse."""
+	if value in (None, ""):
+		return 0.0
+	text = str(value).strip()
+	if "/" in text:
+		num, den = text.split("/", 1)
+		return flt(num) / flt(den)
+	return flt(text)
+
+
+def ratio_for(sub_category: str | None, memory_ratio: str | None) -> str:
+	"""The effective memory ratio. The configurator's own `memory_ratio` wins: the
+	form pre-fills it from the sub-category's optimisation profile, but the admin may
+	override it, and that override is honoured even when it differs from the profile.
+	Fall back to the sub-category's configured ratio only when `memory_ratio` is blank."""
+	if memory_ratio:
+		return memory_ratio
 	if sub_category:
-		configured = frappe.db.get_value("Plan Sub-Category", sub_category, "memory_ratio")
-		if configured:
-			return configured
+		return frappe.db.get_value("Plan Sub-Category", sub_category, "memory_ratio") or memory_ratio
 	return memory_ratio
 
 
 def build_ladder(
-	start_vcpu: float,
-	ceiling_vcpu: float,
+	start_vcpu: str | float,
+	ceiling_vcpu: str | float,
 	memory_ratio: str,
 	base_disk_gb: float = 0,
 	base_transfer_gb: float = 0,
@@ -57,8 +79,8 @@ def build_ladder(
 	transfer steps additively (`base + index × step`, since real transfer tiers are
 	rarely a clean multiple). The admin may overwrite any of these before generating.
 	"""
-	start = flt(start_vcpu)
-	ceiling = flt(ceiling_vcpu)
+	start = parse_vcpu(start_vcpu)
+	ceiling = parse_vcpu(ceiling_vcpu)
 	factor = RATIO_FACTORS.get(memory_ratio)
 	if not factor:
 		frappe.throw(f"Memory ratio must be one of {', '.join(RATIO_FACTORS)}.")

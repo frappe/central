@@ -16,6 +16,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog import configurator, plans
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
+from central.billing.tests.utils import ensure_atlas_instance
 
 PREFIX = "CfgTest"
 TEMPLATE = "Cfg Test Template"
@@ -102,23 +103,29 @@ class TestBuildLadder(IntegrationTestCase):
 		self.assertEqual([r["transfer_gb"] for r in rungs], [4000, 5000, 6000, 7000])
 
 	def test_ratio_for_sub_category(self):
-		# Pinned by the ratio configured on each VM profile (the Plan Sub-Category master).
-		self.assertEqual(configurator.ratio_for("CPU Optimised", "1:4"), "1:2")
-		self.assertEqual(configurator.ratio_for("General", "1:2"), "1:4")
-		self.assertEqual(configurator.ratio_for("Memory Optimised", "1:2"), "1:8")
-		self.assertEqual(configurator.ratio_for("Storage Optimised", "1:2"), "1:8")
-		# A profile with no configured ratio (or none picked) uses the explicit one.
+		# The configurator's own ratio wins, even when it differs from the profile's.
+		self.assertEqual(configurator.ratio_for("CPU Optimised", "1:4"), "1:4")
+		self.assertEqual(configurator.ratio_for("Memory Optimised", "1:2"), "1:2")
+		# Blank ratio falls back to the profile's configured optimisation ratio.
+		self.assertEqual(configurator.ratio_for("CPU Optimised", None), "1:2")
+		self.assertEqual(configurator.ratio_for("General", None), "1:4")
+		self.assertEqual(configurator.ratio_for("Memory Optimised", None), "1:8")
+		self.assertEqual(configurator.ratio_for("Storage Optimised", None), "1:8")
+		# No profile (or one with no configured ratio) uses the explicit ratio.
 		self.assertEqual(configurator.ratio_for("Custom", "1:6"), "1:6")
 		self.assertEqual(configurator.ratio_for(None, "1:4"), "1:4")
 
 	def test_ratio_is_configurable_on_the_sub_category(self):
-		# The ratio is data, not code: set it on the master and ratio_for follows.
+		# The fallback ratio is data, not code: set it on the master and a blank
+		# configurator ratio follows it.
 		frappe.get_doc({
 			"doctype": "Plan Sub-Category", "sub_category_name": "Cfg Ratio Test",
 			"category": "VM Plans", "memory_ratio": "1:6",
 		}).insert(ignore_permissions=True)
 		self.addCleanup(frappe.delete_doc, "Plan Sub-Category", "Cfg Ratio Test", force=True)
-		self.assertEqual(configurator.ratio_for("Cfg Ratio Test", "1:2"), "1:6")
+		self.assertEqual(configurator.ratio_for("Cfg Ratio Test", None), "1:6")
+		# An explicit ratio still overrides the master.
+		self.assertEqual(configurator.ratio_for("Cfg Ratio Test", "1:2"), "1:2")
 
 	def test_labels_and_names(self):
 		rungs = configurator.build_ladder(0.125, 1, "1:2", name_prefix=PREFIX)
@@ -144,9 +151,10 @@ class TestBuildLadder(IntegrationTestCase):
 class TestGenerate(IntegrationTestCase):
 	def setUp(self):
 		_cleanup()
+		ensure_atlas_instance("ap-south-1")
 		self.cfg = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": TEMPLATE,
-			"start_vcpu": 0.125, "ceiling_vcpu": 4,
+			"start_vcpu": "1/8", "ceiling_vcpu": "4",
 			"memory_ratio": "1:2", "base_disk_gb": 10, "plan_name_prefix": PREFIX,
 			"billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "INR", "base_rate": 100}, {"currency": "USD", "base_rate": 2}],
@@ -272,7 +280,7 @@ class TestGenerate(IntegrationTestCase):
 	def test_sub_category_drives_ratio_and_composition(self):
 		mem = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": "Cfg Test Mem",
-			"sub_category": "Memory Optimised", "start_vcpu": 1, "ceiling_vcpu": 1,
+			"sub_category": "Memory Optimised", "start_vcpu": "1", "ceiling_vcpu": "1",
 			"plan_name_prefix": PREFIX, "billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "INR", "base_rate": 500}],
 		}).insert(ignore_permissions=True)
@@ -283,12 +291,29 @@ class TestGenerate(IntegrationTestCase):
 		self.assertEqual(comp["Memory"], 8)
 		self.assertEqual(plan.sub_category, "Memory Optimised")
 
+	def test_explicit_ratio_overrides_sub_category(self):
+		# Profile is Memory Optimised (1:8) but the configurator sets 1:2 — the
+		# configurator's ratio wins, so 1 vCPU yields 2 GB, not 8 GB.
+		cfg = frappe.get_doc({
+			"doctype": "Plan Configurator", "template_name": "Cfg Test Override",
+			"sub_category": "Memory Optimised", "memory_ratio": "1:2",
+			"start_vcpu": "1", "ceiling_vcpu": "1",
+			"plan_name_prefix": PREFIX, "billing_cycle": "Monthly", "is_active": 1,
+			"base_rates": [{"currency": "INR", "base_rate": 500}],
+		}).insert(ignore_permissions=True)
+		self.assertEqual(cfg.memory_ratio, "1:2")  # not overwritten by the profile
+		cfg.populate_rungs()
+		cfg.generate_and_price()
+		plan = _plan_for(cfg, f"{PREFIX} 1 vCPU 2 GB")
+		comp = {i.resource_type: i.quantity for i in plan.includes}
+		self.assertEqual(comp["Memory"], 2)
+
 	def test_reproduces_general_purpose_family(self):
 		# DigitalOcean's General Purpose ladder, exactly (USD): the configurator's
 		# formula reproduces vCPU/RAM/disk/transfer/price across the rungs.
 		gp = frappe.get_doc({
 			"doctype": "Plan Configurator", "template_name": "Cfg Test GP",
-			"sub_category": "General", "start_vcpu": 2, "ceiling_vcpu": 16,
+			"sub_category": "General", "start_vcpu": "2", "ceiling_vcpu": "16",
 			"base_disk_gb": 25, "base_transfer_gb": 4000, "transfer_step_gb": 1000,
 			"plan_name_prefix": "CfgGP", "billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "USD", "base_rate": 63}],

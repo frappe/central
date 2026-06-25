@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Dialog } from 'frappe-ui'
-import type { Server } from '@/types'
+import type { AssetRow } from '@/composables/useServers'
 
 // Destructive, irreversible confirm for terminating a server. Controlled by the
 // page: pass the pending server (or null) via v-model:server.
 const props = defineProps<{
-  server: Server | null
+  server: AssetRow | null
   loading?: boolean
 }>()
 
 const emit = defineEmits<{
-  'update:server': [server: Server | null]
-  confirm: [server: Server]
+  'update:server': [server: AssetRow | null]
+  confirm: [server: AssetRow]
 }>()
 
 const open = computed({

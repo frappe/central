@@ -2,7 +2,7 @@ import { computed, watch, type Ref } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import type { Plan, ProvisionablePlans } from '@/types'
+import type { Plan, ProvisionablePlans } from '@/types/api'
 
 // Plans a team can provision in the selected region, from the billing catalog
 // (central.billing.api.dashboard.catalog.get_eligible_plans). The menu is

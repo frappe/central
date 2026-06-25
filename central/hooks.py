@@ -18,6 +18,10 @@ website_route_rules = [
 	{"from_route": "/legacy-dashboard/<path:app_path>", "to_route": "legacy-dashboard"},
 ]
 
+# Central is a website application. Portal users land in the console; Desk stays
+# reserved for users whose roles explicitly grant desk access.
+website_user_home_page = "dashboard"
+
 # Apps
 # ------------------
 
@@ -178,6 +182,8 @@ scheduler_events = {
 		"central.billing.payments.charges.cleanup_payment_logs",
 		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
 		"central.billing.payments.emandate.run_emandate_cycle",
+		# Backfill Subscriptions for any Running Asset missing an active one.
+		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
 	],
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.

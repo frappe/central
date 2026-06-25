@@ -2,7 +2,7 @@ import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import type { Region } from '@/types'
+import type { Region } from '@/types/Region'
 
 // Regions a team can place servers in — the Active Atlas Instances
 // (central.api.servers.list_instances). Used by the New Server flow's region picker.

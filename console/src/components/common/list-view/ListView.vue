@@ -320,7 +320,7 @@ v-if="searchable || filters.length || $slots.toolbar"
         />
         <Button
           v-if="hasActiveQuery"
-          label="Clear filters"
+label="Clear"
           variant="ghost"
           @click="clearFilters"
         />
