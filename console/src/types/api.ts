@@ -32,7 +32,7 @@ export interface PlanInclude {
 export interface Plan {
   plan: string
   title: string
-  plan_class: string
+  sub_category: string
   billing_cycle: 'Monthly' | 'Annual'
   currency: string
   cluster: string | null
@@ -41,7 +41,9 @@ export interface Plan {
 }
 
 /** get_eligible_plans response: the offered menu plus the trust-tier headroom
- *  (spend cap minus current run-rate) that shaped it. */
+ *  (spend cap minus current run-rate) that shaped it. `plans` is grouped by
+ *  sub-category — keys in canonical order, rows cheapest-first, unset sub-category
+ *  folded into "General"; a forbidden cluster yields an empty map. */
 export interface ProvisionablePlans {
   team: string
   cluster: string | null
