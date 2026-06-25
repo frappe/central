@@ -40,7 +40,7 @@ const icons = {
     <Button
       v-else-if="kind === 'filtered'"
       class="mt-4"
-      label="Clear search"
+label="Clear"
       @click="$emit('clear')"
     />
     <div v-else-if="$slots.action" class="mt-4">

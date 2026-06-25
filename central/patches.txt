@@ -79,3 +79,4 @@ central.billing.patches.v19_sub_category_memory_ratio.sub_category_memory_ratio
 # flow lists only provisionable families, not AI Tokens / storage plans — issue #33.
 central.billing.patches.v21_category_provision_target.category_provision_target
 central.patches.v01_capability_model_v2.rename_capabilities
+central.patches.v02_portal_central_users.make_central_users_portal_only

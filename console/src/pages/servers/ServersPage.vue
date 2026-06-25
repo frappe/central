@@ -6,7 +6,7 @@ import ServerListView from '@/components/servers/ServerListView.vue'
 import TerminateDialog from '@/components/servers/TerminateDialog.vue'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
-import type { Server } from '@/types'
+import type { AssetRow } from '@/composables/useServers'
 
 // The team's servers, mirrored from Atlas. A standard list with the lifecycle
 // actions Central actually implements — start/stop (server:power), terminate
@@ -34,8 +34,8 @@ const {
 const { canPowerServer, canTerminateServer, canOpenServer, canCreateServer } = useCapabilities()
 
 // Terminate confirmation — the only destructive, irreversible action.
-const pendingTerminate = ref<Server | null>(null)
-async function confirmTerminate(server: Server) {
+const pendingTerminate = ref<AssetRow | null>(null)
+async function confirmTerminate(server: AssetRow) {
   pendingTerminate.value = null
   await terminate(server)
 }

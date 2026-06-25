@@ -2,14 +2,14 @@
 import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
 import { canStart, canStop, isTerminated } from '@/lib/status'
-import type { Server } from '@/types'
+import type { AssetRow } from '@/composables/useServers'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
 // server's status and the user's capabilities — the same rules the API enforces
 // in central/api/servers.py, so we never offer a button that would 403. The component
 // is presentational: it emits the chosen verb; the page owns the calls.
 const props = defineProps<{
-  server: Server
+  server: AssetRow
   canOpen: boolean
   canPower: boolean
   canTerminate: boolean
@@ -18,10 +18,10 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  open: [server: Server]
-  start: [server: Server]
-  stop: [server: Server]
-  terminate: [server: Server]
+  open: [server: AssetRow]
+  start: [server: AssetRow]
+  stop: [server: AssetRow]
+  terminate: [server: AssetRow]
 }>()
 
 interface ActionItem {

@@ -11,6 +11,8 @@ declare module '*.vue' {
 interface Window {
   csrf_token?: string
   user?: string
+  user_type?: string
+  provider_logins?: import('@/types/api').ProviderLogin[]
   site_name?: string
   socketio_port?: number
 }

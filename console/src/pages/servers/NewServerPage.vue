@@ -9,7 +9,7 @@ import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePlans } from '@/composables/usePlans'
 import { planResources } from '@/lib/plans'
-import type { Plan } from '@/types'
+import type { Plan } from '@/types/api'
 
 // New server. Region is the set of available Atlas Instances; the plan comes from
 // the billing catalog, priced for the team's currency on that region and within
