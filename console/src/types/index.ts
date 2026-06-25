@@ -24,6 +24,13 @@ export interface Server {
   last_synced_at: string | null
 }
 
+export interface ProviderLogin {
+  name: string
+  label: string
+  icon: string
+  auth_url: string
+}
+
 /** Mirrors the Atlas VM status verbatim. Atlas is the source of truth and can
  *  report values beyond the Asset doctype's declared options (e.g. Provisioning),
  *  so we keep the known states for autocomplete but accept any string. */

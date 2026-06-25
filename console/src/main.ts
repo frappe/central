@@ -1,8 +1,12 @@
 import { createApp } from 'vue'
-import { FrappeUI } from 'frappe-ui'
+import { FrappeUI, useTheme } from 'frappe-ui'
 import { router } from '@/router'
 import App from '@/App.vue'
 import './style.css'
+
+// Frappe UI defaults to the operating-system theme and persists an explicit
+// user choice when a theme switcher is added later.
+useTheme()
 
 // The new data-fetching composables (useCall/useList) read window.csrf_token —
 // injected by central/www/dashboard.py — and POST relative to the served origin,
