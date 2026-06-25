@@ -1,11 +1,11 @@
 import { createApp } from 'vue'
-import { FrappeUI, useTheme } from 'frappe-ui'
+import { FrappeUI } from 'frappe-ui'
 import { router } from '@/router'
 import App from '@/App.vue'
+import { useTheme } from '@/composables/useTheme'
 import './style.css'
 
-// Frappe UI defaults to the operating-system theme and persists an explicit
-// user choice when a theme switcher is added later.
+// Apply the stored (or default light) theme before the app mounts.
 useTheme()
 
 // The new data-fetching composables (useCall/useList) read window.csrf_token —

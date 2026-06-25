@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Sidebar, ToastProvider } from 'frappe-ui'
 import { useAuth } from '@/composables/useAuth'
+import { useTheme } from '@/composables/useTheme'
 import { useSession } from '@/composables/useSession'
 import { useCapabilities } from '@/composables/useCapabilities'
 
@@ -11,6 +12,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 const { teams, activeTeam, activeTeamLabel, setActiveTeam } = useSession()
 const { canViewServers } = useCapabilities()
 const { logout } = useAuth()
+const { currentTheme, toggleTheme } = useTheme()
 
 async function logoutAndRedirect() {
   await logout()
@@ -22,15 +24,23 @@ async function logoutAndRedirect() {
 const header = computed(() => ({
   title: 'Central Console',
   subtitle: activeTeamLabel.value,
-  menuItems: teams.value.map((team) => ({
-    label: team.label,
-    icon: team.name === activeTeam.value ? 'lucide-check' : 'lucide-users',
-    onClick: () => setActiveTeam(team.name),
-  })).concat({
-    label: 'Log out',
-    icon: 'lucide-log-out',
-    onClick: logoutAndRedirect,
-  }),
+  menuItems: [
+    ...teams.value.map((team) => ({
+      label: team.label,
+      icon: team.name === activeTeam.value ? 'lucide-check' : 'lucide-users',
+      onClick: () => setActiveTeam(team.name),
+    })),
+    {
+      label: 'Toggle Theme',
+      icon: currentTheme.value === 'dark' ? 'lucide-sun' : 'lucide-moon',
+      onClick: toggleTheme,
+    },
+    {
+      label: 'Log out',
+      icon: 'lucide-log-out',
+      onClick: logoutAndRedirect,
+    },
+  ],
 }))
 
 const sections = computed(() => [
