@@ -29,19 +29,20 @@ def _allowlist(value) -> set[str] | None:
 	return names or None
 
 
-# Canonical class order for the grouped menu (matches the Plan.plan_class Select).
-# An unset class is folded into "General" so unclassified plans get a real label.
-_CLASS_ORDER = ["General", "CPU Optimised", "Memory Optimised", "Storage Optimised", "Custom"]
+# Canonical order for the grouped menu (the VM Plans optimisation profiles, the
+# Plan Sub-Category masters under that category). An unset sub-category is folded
+# into "General" so unclassified plans still get a real label.
+_SUB_CATEGORY_ORDER = ["General", "CPU Optimised", "Memory Optimised", "Storage Optimised", "Custom"]
 
 
 @frappe.whitelist()
 def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> dict:
-	"""Active plans the team can provision on `cluster`, grouped by plan class.
+	"""Active plans the team can provision on `cluster`, grouped by sub-category.
 
-	`plans` is a `{plan_class: [rows]}` map so the client can render one tab per
-	class without re-grouping: keys are in canonical order (`_CLASS_ORDER`, then any
-	unknown classes alphabetically), rows within each class are cheapest-first, and
-	an unset class is folded into "General". A forbidden cluster yields an empty map.
+	`plans` is a `{sub_category: [rows]}` map so the client can render one tab per
+	sub-category without re-grouping: keys are in canonical order (`_SUB_CATEGORY_ORDER`,
+	then any unknown sub-categories alphabetically), rows within each are cheapest-first,
+	and an unset sub-category is folded into "General". A forbidden cluster yields an empty map.
 
 	A plan is offered only when ALL of the following hold:
 	  - it is active;
@@ -74,12 +75,23 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 	if cluster and allowed_clusters is not None and cluster not in allowed_clusters:
 		return {**header, "plans": {}}
 
-	# The whole active catalog is wanted on purpose — currency/cluster/headroom
-	# filtering happens in Python below — so opt out of pagination explicitly.
+	# Only families that provision a server belong in the create-server menu — AI
+	# Tokens, storage subscriptions, etc. are billable but not provisioned here. The
+	# family declares this via Plan Category.provision_target (ADR 0007); no server
+	# category means nothing is provisionable.
+	server_categories = frappe.get_all(
+		"Plan Category", filters={"provision_target": "Server"}, pluck="name", limit=0
+	)
+	if not server_categories:
+		return {**header, "plans": {}}
+
+	# The whole active catalog (in server families) is wanted on purpose —
+	# currency/cluster/headroom filtering happens in Python below — so opt out of
+	# pagination explicitly.
 	candidates = frappe.get_all(
 		"Plan",
-		filters={"is_active": 1},
-		fields=["name", "title", "plan_class", "billing_cycle"],
+		filters={"is_active": 1, "category": ["in", server_categories]},
+		fields=["name", "title", "sub_category", "billing_cycle"],
 		order_by="title asc",
 		limit=0,
 	)
@@ -104,7 +116,7 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 
 	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
 	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
-	return {**header, "plans": _group_by_class(plans)}
+	return {**header, "plans": _group_by_sub_category(plans)}
 
 
 def _rates_by_plan(names: list[str]) -> dict[str, list]:
@@ -138,15 +150,15 @@ def _includes_by_plan(names: list[str]) -> dict[str, list]:
 	return grouped
 
 
-def _group_by_class(rows: list[dict]) -> dict[str, list]:
-	"""Group plan rows by class into a `{plan_class: [rows]}` map. Keys are emitted in
-	canonical order (then any unknown classes, alphabetically); `rows` keeps the
-	caller's order within each class (so cheapest-first survives)."""
+def _group_by_sub_category(rows: list[dict]) -> dict[str, list]:
+	"""Group plan rows by sub-category into a `{sub_category: [rows]}` map. Keys are
+	emitted in canonical order (then any unknown sub-categories, alphabetically); `rows`
+	keeps the caller's order within each group (so cheapest-first survives)."""
 	grouped: dict[str, list] = {}
 	for row in rows:
-		grouped.setdefault(row["plan_class"], []).append(row)
-	known = [c for c in _CLASS_ORDER if c in grouped]
-	extra = sorted(c for c in grouped if c not in _CLASS_ORDER)
+		grouped.setdefault(row["sub_category"], []).append(row)
+	known = [c for c in _SUB_CATEGORY_ORDER if c in grouped]
+	extra = sorted(c for c in grouped if c not in _SUB_CATEGORY_ORDER)
 	return {c: grouped[c] for c in [*known, *extra]}
 
 
@@ -169,7 +181,7 @@ def _plan_row(plan, currency: str, cluster: str | None, rate, includes) -> dict:
 	return {
 		"plan": plan.name,
 		"title": plan.title,
-		"plan_class": plan.plan_class or "General",  # unset class groups under General
+		"sub_category": plan.sub_category or "General",  # unset sub-category groups under General
 		"billing_cycle": plan.billing_cycle,
 		"currency": currency,
 		"cluster": cluster,

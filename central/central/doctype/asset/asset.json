@@ -10,6 +10,7 @@
   "title",
   "team",
   "cluster",
+  "plan",
   "status",
   "vcpus",
   "memory_megabytes",
@@ -57,6 +58,14 @@
    "label": "Cluster",
    "options": "Atlas Instance",
    "reqd": 1
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Plan",
+   "options": "Plan"
   },
   {
    "default": "Pending",
@@ -121,7 +130,7 @@
   }
  ],
  "links": [],
- "modified": "2026-06-16 00:00:00.000000",
+ "modified": "2026-06-22 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Asset",

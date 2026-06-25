@@ -1,15 +1,15 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "hash",
- "creation": "2026-06-03 00:00:00.000000",
- "description": "The customer's subscription INTENT/contract on Central — not billing truth. Carries ONLY the Central-owned account_standing axis; operational state (running/stopped/terminated) is Agent-owned and lives nowhere here.",
+ "creation": "2026-06-03 00:00:00",
+ "description": "The customer's subscription INTENT/contract on Central \u2014 not billing truth. Carries ONLY the Central-owned account_standing axis; operational state (running/stopped/terminated) is Agent-owned and lives nowhere here.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "enabled",
   "team",
-  "cluster",
+  "asset_id",
   "plan",
   "billing_cycle",
   "column_break_state",
@@ -23,24 +23,18 @@
   {
    "fieldname": "team",
    "fieldtype": "Link",
-   "options": "Team",
    "in_list_view": 1,
    "label": "Team",
+   "options": "Team",
    "reqd": 1
   },
   {
-   "fieldname": "cluster",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Cluster"
-  },
-  {
+   "description": "Requested plan (intent)",
    "fieldname": "plan",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Plan",
-   "options": "Plan",
-   "description": "Requested plan (intent)"
+   "options": "Plan"
   },
   {
    "fieldname": "billing_cycle",
@@ -54,12 +48,12 @@
   },
   {
    "default": "Current",
+   "description": "Central-owned financial axis, derived from payment. Orthogonal to the Agent-owned operational axis \u2014 never one combined enum.",
    "fieldname": "account_standing",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Account Standing",
-   "options": "Current\nPast Due\nSuspended",
-   "description": "Central-owned financial axis, derived from payment. Orthogonal to the Agent-owned operational axis — never one combined enum."
+   "options": "Current\nPast Due\nSuspended"
   },
   {
    "fieldname": "start_date",
@@ -81,11 +75,29 @@
    "fieldtype": "Link",
    "label": "Gateway",
    "options": "Payment Gateway"
+  },
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "asset_id",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Asset ID",
+   "options": "Asset"
   }
  ],
  "index_web_pages_for_search": 1,
- "links": [],
- "modified": "2026-06-03 00:00:00.000000",
+ "links": [
+  {
+   "link_doctype": "Subscription Change",
+   "link_fieldname": "subscription"
+  }
+ ],
+ "modified": "2026-06-22 14:17:29.576623",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Subscription",
@@ -105,6 +117,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],

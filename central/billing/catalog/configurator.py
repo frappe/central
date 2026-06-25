@@ -29,27 +29,42 @@ from central.billing.catalog.plans import RATIO_FACTORS
 
 _MAX_RUNGS = 24  # safety bound on the doubling loop
 
-# Plan classes pre-set the memory ratio the way cloud families do. "Custom" defers
-# to the explicit ratio. Storage- and memory-optimised share 1:8; they differ by
-# disk, which the admin sets via the base disk (and edits per rung).
-CLASS_RATIOS = {
-	"CPU Optimised": "1:2",
-	"General": "1:4",
-	"Memory Optimised": "1:8",
-	"Storage Optimised": "1:8",
-}
+# The vCPU dropdown anchors for a ladder's start/ceiling — clean powers of two
+# from 1/16 up to 1024 (final-plan-pricing.md §4). Stored as the fraction string
+# (what the admin sees); `parse_vcpu` turns it into the float the ladder uses.
+VCPU_CHOICES = (
+	"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8",
+	"16", "32", "64", "128", "256", "512", "1024",
+)
 
 
-def ratio_for(plan_class: str | None, memory_ratio: str) -> str:
-	"""The effective ratio: a class pins it; "Custom"/blank uses the explicit one."""
-	if plan_class and plan_class != "Custom":
-		return CLASS_RATIOS[plan_class]
+def parse_vcpu(value) -> float:
+	"""A vCPU dropdown value as a float: '1/16' -> 0.0625, '4' -> 4. Accepts a
+	plain number too, so direct callers and any pre-Select Float data still parse."""
+	if value in (None, ""):
+		return 0.0
+	text = str(value).strip()
+	if "/" in text:
+		num, den = text.split("/", 1)
+		return flt(num) / flt(den)
+	return flt(text)
+
+
+def ratio_for(sub_category: str | None, memory_ratio: str | None) -> str:
+	"""The effective memory ratio. The configurator's own `memory_ratio` wins: the
+	form pre-fills it from the sub-category's optimisation profile, but the admin may
+	override it, and that override is honoured even when it differs from the profile.
+	Fall back to the sub-category's configured ratio only when `memory_ratio` is blank."""
+	if memory_ratio:
+		return memory_ratio
+	if sub_category:
+		return frappe.db.get_value("Plan Sub-Category", sub_category, "memory_ratio") or memory_ratio
 	return memory_ratio
 
 
 def build_ladder(
-	start_vcpu: float,
-	ceiling_vcpu: float,
+	start_vcpu: str | float,
+	ceiling_vcpu: str | float,
 	memory_ratio: str,
 	base_disk_gb: float = 0,
 	base_transfer_gb: float = 0,
@@ -64,8 +79,8 @@ def build_ladder(
 	transfer steps additively (`base + index × step`, since real transfer tiers are
 	rarely a clean multiple). The admin may overwrite any of these before generating.
 	"""
-	start = flt(start_vcpu)
-	ceiling = flt(ceiling_vcpu)
+	start = parse_vcpu(start_vcpu)
+	ceiling = parse_vcpu(ceiling_vcpu)
 	factor = RATIO_FACTORS.get(memory_ratio)
 	if not factor:
 		frappe.throw(f"Memory ratio must be one of {', '.join(RATIO_FACTORS)}.")
@@ -116,32 +131,87 @@ def rung_includes(vcpu: float, memory_gb: float, disk_gb: float, transfer_gb: fl
 	return rows
 
 
-def generate_plans(plan_class: str | None, rungs: list, billing_cycle: str = "Monthly", is_active: int = 1) -> dict:
-	"""Materialise each (edited) rung as a `Plan` + composition. Cluster-agnostic.
+def plan_title(prefix: str | None, label: str) -> str:
+	"""Display title: the profile (sub-category, else category) + resource info."""
+	return f"{prefix} — {label}" if prefix else label
 
-	Idempotent: a rung whose Plan name already exists is left untouched and reported
-	under `skipped` (never overwritten). Accepts dicts or child-table rows.
+
+def generate_plans(
+	rungs: list,
+	billing_cycle: str = "Monthly",
+	is_active: int = 1,
+	sub_category: str | None = None,
+	category: str = "VM Plans",
+) -> dict:
+	"""Materialise each (edited) rung as a hash-named `Plan` + composition. Cluster-agnostic.
+
+	Identity is the rung's `plan` link (the hash the rung produced), never the human
+	name — a Plan title collides and changes, so it can't be the synced key. A rung
+	already linked to an existing Plan is skipped; others are created and the new hash
+	written back onto the rung (in place; persisted by the caller). Accepts dicts or
+	child-table rows.
+
+	`sub_category` is the optimisation profile (a Plan Sub-Category under `category`),
+	or None for an unclassified bundle; the prefix (sub-category, else category) names it.
 	"""
+	prefix = sub_category or category
 	created, skipped = [], []
 	for rung in rungs:
-		g = rung.get if isinstance(rung, dict) else lambda k: getattr(rung, k)
-		name = g("plan_name")
-		if frappe.db.exists("Plan", name):
-			skipped.append(name)
+		get = rung.get if isinstance(rung, dict) else lambda k: getattr(rung, k, None)
+		linked = get("plan")
+		if linked and frappe.db.exists("Plan", linked):
+			skipped.append(linked)
 			continue
-		frappe.get_doc(
+		doc = frappe.get_doc(
 			{
 				"doctype": "Plan",
-				"__newname": name,
-				"title": g("label") or name,
-				"plan_class": plan_class,
+				"title": plan_title(prefix, get("label") or get("plan_name")),
+				"category": category,
+				"sub_category": sub_category,
 				"billing_cycle": billing_cycle,
 				"is_active": is_active,
-				"includes": rung_includes(g("vcpu"), g("memory_gb"), g("disk_gb"), g("transfer_gb")),
+				"includes": rung_includes(get("vcpu"), get("memory_gb"), get("disk_gb"), get("transfer_gb")),
 			}
 		).insert(ignore_permissions=True)
-		created.append(name)
+		_set_rung_plan(rung, doc.name)
+		created.append(doc.name)
 	return {"created": created, "skipped": skipped}
+
+
+def _set_rung_plan(rung, name: str) -> None:
+	"""Record the minted hash on the rung — dict (unit tests) or child row (real flow)."""
+	if isinstance(rung, dict):
+		rung["plan"] = name
+	else:
+		rung.plan = name
+
+
+def create_simple_plan(
+	category: str,
+	title: str,
+	resource_type: str,
+	quantity: float,
+	unit: str,
+	*,
+	sub_category: str | None = None,
+	billing_cycle: str = "Monthly",
+	is_active: int = 1,
+) -> str:
+	"""The `simple` builder: author one hash-named Plan with a single-resource
+	composition (Tokens, Disk, Storage…). The category's allowed_resource_types
+	guard the include (enforced by Plan.validate). Returns the minted hash."""
+	doc = frappe.get_doc(
+		{
+			"doctype": "Plan",
+			"title": title,
+			"category": category,
+			"sub_category": sub_category,
+			"billing_cycle": billing_cycle,
+			"is_active": is_active,
+			"includes": [{"resource_type": resource_type, "quantity": flt(quantity), "unit": unit}],
+		}
+	).insert(ignore_permissions=True)
+	return doc.name
 
 
 def apply_pricing(

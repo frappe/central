@@ -8,6 +8,10 @@ central.billing.patches.v01_rates_to_standalone.snapshot_legacy_rate_children
 # per slug, rewrite values, backfill Team Members, drop User.billing_team. Runs
 # while `team` is still Data, before the Link field-type flip is synced (#43).
 central.billing.patches.v03_team_link_to_central_team.migrate_team_to_central_team
+# Plan Configurator start_vcpu / ceiling_vcpu: Float -> Select (1/16 … 1024).
+# Widen the decimal columns to varchar before sync (the sync can't cast a '1/8'
+# default against a decimal column) and relabel stored values — issue #33.
+central.billing.patches.v20_configurator_vcpu_dropdown.configurator_vcpu_dropdown
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -53,5 +57,26 @@ central.billing.patches.v13_drop_trust_tier_doctype.drop_trust_tier
 # values are still snake_case (stripe_auto/emandate/...). Title-case them to match
 # every other billing Select field (ADR 0005, #50).
 central.billing.patches.v14_titlecase_collection_mode.titlecase_collection_mode
+# Catalog taxonomy moves from VM-shaped Select enums to masters: Plan Category +
+# Plan Sub-Category (replacing plan_class) + Resource Type (Plan Includes/Add-on
+# links). Seeds the VM family, backfills plans, drops the plan_class column, flags
+# IP/Snapshot for reclassification — ADR 0007, issue #75.
+central.billing.patches.v15_catalog_taxonomy_masters.catalog_taxonomy
+# Seed the non-VM product families on the ADR 0007 taxonomy: AI Tokens, SaaS Storage,
+# Remote Storage (Frappe Box) categories + Tokens/Storage/Backup resource types +
+# Remote Storage sub-categories. No schema change — issue #77.
+central.billing.patches.v16_product_families.product_families
+# Title-case the configurator_builder Select (vm_rungs/simple -> VM Rungs/Simple) and
+# replace Plan Configurator's plan_class with the sub_category link — ADR 0007.
+central.billing.patches.v17_configurator_taxonomy_alignment.configurator_taxonomy_alignment
+# Drop the Plan Category billing-metadata fields that no code path ever read:
+# default_billing_type, default_pricing_mode, billable_unit, meter_kind — ADR 0007.
+central.billing.patches.v18_drop_unused_category_billing_meta.drop_unused_category_billing_meta
+# Backfill the configurable memory ratio onto the VM optimisation-profile
+# sub-categories (moved off a hardcoded dict onto the master) — ADR 0007.
+central.billing.patches.v19_sub_category_memory_ratio.sub_category_memory_ratio
+# Backfill Plan Category.provision_target (VM Plans -> Server) so the create-server
+# flow lists only provisionable families, not AI Tokens / storage plans — issue #33.
+central.billing.patches.v21_category_provision_target.category_provision_target
 central.patches.v01_capability_model_v2.rename_capabilities
 central.patches.v02_portal_central_users.make_central_users_portal_only

@@ -2,38 +2,44 @@
  "actions": [],
  "allow_rename": 1,
  "autoname": "field:template_name",
- "creation": "2026-06-18 00:00:00.000000",
- "description": "Authoring tool: generate a t-shirt-size ladder of bundles, then price it per cluster. Reusable — re-apply pricing when a new cluster onboards (final-plan-pricing.md §11, issue #33).",
+ "creation": "2026-06-18 00:00:00",
+ "description": "Authoring tool: generate a t-shirt-size ladder of bundles, then price it per cluster. Reusable \u2014 re-apply pricing when a new cluster onboards (final-plan-pricing.md \u00a711, issue #33).",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "template_name",
-  "is_active",
-  "sizing_section",
-  "plan_class",
-  "start_vcpu",
-  "ceiling_vcpu",
-  "memory_ratio",
-  "base_disk_gb",
-  "base_transfer_gb",
-  "transfer_step_gb",
-  "column_break_sizing",
   "plan_name_prefix",
   "billing_cycle",
+  "column_break_xbyf",
+  "is_active",
+  "category",
+  "builder",
+  "sub_category",
+  "sizing_section",
+  "start_vcpu",
+  "memory_ratio",
+  "base_transfer_gb",
+  "column_break_sizing",
+  "ceiling_vcpu",
+  "base_disk_gb",
+  "transfer_step_gb",
   "pricing_section",
   "base_rates",
   "pricing_help",
   "rungs_section",
-  "rungs"
+  "rungs",
+  "simple_section",
+  "simple_plans"
  ],
  "fields": [
   {
+   "description": "Identifies this reusable ladder (e.g. \"Standard 1:2\").",
    "fieldname": "template_name",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Template Name",
    "reqd": 1,
-   "unique": 1,
-   "description": "Identifies this reusable ladder (e.g. \"Standard 1:2\")."
+   "unique": 1
   },
   {
    "default": "1",
@@ -42,69 +48,86 @@
    "label": "Generate Plans as Active"
   },
   {
+   "default": "VM Plans",
+   "description": "The Plan Category these plans belong to. Its builder (VM Rungs / Simple) decides how you author them (ADR 0007).",
+   "fieldname": "category",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Category",
+   "options": "Plan Category",
+   "reqd": 1
+  },
+  {
+   "description": "Resolved from the category \u2014 VM Rungs (vCPU ladder) or Simple (name + quantity + rate).",
+   "fetch_from": "category.configurator_builder",
+   "fieldname": "builder",
+   "fieldtype": "Read Only",
+   "label": "Builder",
+   "read_only": 1
+  },
+  {
+   "description": "The optimisation profile / variant within the category (filtered to it). For VM plans this is the profile that pins the memory ratio configured on the Sub-Category. Leave blank, or create a new one inline if it isn't a preconfigured option.",
+   "fieldname": "sub_category",
+   "fieldtype": "Link",
+   "label": "Sub-Category",
+   "options": "Plan Sub-Category"
+  },
+  {
+   "depends_on": "eval:doc.builder=='VM Rungs'",
    "fieldname": "sizing_section",
    "fieldtype": "Section Break",
    "label": "Sizing"
   },
   {
-   "default": "General",
-   "fieldname": "plan_class",
-   "fieldtype": "Select",
-   "label": "Plan Class",
-   "options": "General\nCPU Optimised\nMemory Optimised\nStorage Optimised\nCustom",
-   "description": "Pins the memory ratio like a cloud family — CPU Optimised 1:2, General 1:4, Memory/Storage Optimised 1:8. Choose Custom to set the ratio yourself."
-  },
-  {
-   "default": "0.125",
+   "default": "1/8",
+   "description": "Smallest rung, in vCPU (1 vCPU = 1000 millicores). The ladder doubles from here.",
    "fieldname": "start_vcpu",
-   "fieldtype": "Float",
+   "fieldtype": "Select",
+   "options": "1/16\n1/8\n1/4\n1/2\n1\n2\n4\n8\n16\n32\n64\n128\n256\n512\n1024",
+   "in_list_view": 1,
    "label": "Start vCPU",
-   "precision": "3",
-   "reqd": 1,
-   "description": "Smallest rung, in vCPU (1 vCPU = 1000 millicores). The ladder doubles from here."
+   "reqd": 1
   },
   {
    "default": "4",
+   "description": "Largest rung. The ladder doubles from start up to (and including) this.",
    "fieldname": "ceiling_vcpu",
-   "fieldtype": "Float",
+   "fieldtype": "Select",
+   "options": "1/16\n1/8\n1/4\n1/2\n1\n2\n4\n8\n16\n32\n64\n128\n256\n512\n1024",
    "label": "Ceiling vCPU",
-   "precision": "3",
-   "reqd": 1,
-   "description": "Largest rung. The ladder doubles from start up to (and including) this."
+   "reqd": 1
   },
   {
-   "default": "1:4",
+   "description": "GB RAM per vCPU. Pre-filled from the Sub-Category's optimisation profile, but authoritative once set — override it here and the override wins over the profile. Edit a generated Plan to go off-ratio.",
    "fieldname": "memory_ratio",
    "fieldtype": "Select",
    "label": "Memory Ratio",
-   "options": "1:2\n1:4\n1:6\n1:8",
-   "reqd": 1,
-   "description": "GB RAM per vCPU. Set by Plan Class unless it is Custom. A pre-fill; edit a generated Plan to go off-ratio.",
-   "depends_on": "eval:doc.plan_class=='Custom'"
+   "options": "\n1:2\n1:4\n1:6\n1:8",
+   "mandatory_depends_on": "eval:doc.builder=='VM Rungs'"
   },
   {
    "default": "0",
+   "description": "Disk for the smallest rung; scales with the size multiplier. 0 = no disk line.",
    "fieldname": "base_disk_gb",
    "fieldtype": "Float",
    "label": "Base Disk (GB)",
-   "precision": "3",
-   "description": "Disk for the smallest rung; scales with the size multiplier. 0 = no disk line."
+   "precision": "3"
   },
   {
    "default": "0",
+   "description": "Transfer for the smallest rung. 0 = no transfer line. Real transfer tiers are irregular \u2014 tune per rung below.",
    "fieldname": "base_transfer_gb",
    "fieldtype": "Float",
    "label": "Base Transfer (GB)",
-   "precision": "3",
-   "description": "Transfer for the smallest rung. 0 = no transfer line. Real transfer tiers are irregular — tune per rung below."
+   "precision": "3"
   },
   {
    "default": "0",
+   "description": "Added to transfer per rung (base + index \u00d7 step), e.g. +1000 GB each step.",
    "fieldname": "transfer_step_gb",
    "fieldtype": "Float",
    "label": "Transfer Step (GB)",
-   "precision": "3",
-   "description": "Added to transfer per rung (base + index × step), e.g. +1000 GB each step."
+   "precision": "3"
   },
   {
    "fieldname": "column_break_sizing",
@@ -112,11 +135,12 @@
   },
   {
    "default": "Bundle",
+   "description": "Generated plan names start with this (e.g. \"Bundle 2 vCPU 4 GB\").",
    "fieldname": "plan_name_prefix",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Plan Name Prefix",
-   "reqd": 1,
-   "description": "Generated plan names start with this (e.g. \"Bundle 2 vCPU 4 GB\")."
+   "reqd": 1
   },
   {
    "default": "Monthly",
@@ -131,37 +155,56 @@
    "label": "Default Pricing"
   },
   {
+   "description": "One row per currency \u2014 the price of the smallest rung. Each rung is priced base_rate \u00d7 its size multiplier.",
    "fieldname": "base_rates",
    "fieldtype": "Table",
    "label": "Base Rates",
    "options": "Plan Configurator Rate",
-   "reqd": 1,
-   "description": "One row per currency — the price of the smallest rung. Each rung is priced base_rate × its size multiplier."
+   "reqd": 1
   },
   {
    "fieldname": "pricing_help",
    "fieldtype": "HTML",
-   "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> opens a dialog to pick the cluster, currencies, and which rungs — then runs in the background, creating a bundle per rung and its rates. Re-run it per cluster (a plan is sellable on a cluster only where it has a rate, or a global one); blank cluster = global.</p>"
+   "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> opens a dialog to pick the cluster, currencies, and which rungs \u2014 then runs in the background, creating a bundle per rung and its rates. Re-run it per cluster (a plan is sellable on a cluster only where it has a rate, or a global one); blank cluster = global.</p>"
   },
   {
+   "depends_on": "eval:doc.builder=='VM Rungs'",
    "fieldname": "rungs_section",
    "fieldtype": "Section Break",
    "label": "Rungs"
   },
   {
+   "description": "Populate from the formula, then edit before generating.",
    "fieldname": "rungs",
    "fieldtype": "Table",
    "label": "Rungs",
-   "options": "Plan Configurator Plan",
-   "description": "Populate from the formula, then edit before generating."
+   "options": "Plan Configurator Plan"
+  },
+  {
+   "depends_on": "eval:doc.builder=='Simple'",
+   "fieldname": "simple_section",
+   "fieldtype": "Section Break",
+   "label": "Plans"
+  },
+  {
+   "description": "One row per plan: title, the category's resource type, included quantity, unit, and a rate multiplier (rate = base rate x multiplier).",
+   "fieldname": "simple_plans",
+   "fieldtype": "Table",
+   "label": "Plans",
+   "options": "Plan Configurator Simple Plan"
+  },
+  {
+   "fieldname": "column_break_xbyf",
+   "fieldtype": "Column Break"
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-06-18 00:00:00.000000",
+ "modified": "2026-06-24 12:54:45.644382",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Plan Configurator",
+ "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [
   {
@@ -177,6 +220,7 @@
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

@@ -40,10 +40,12 @@
   },
   {
    "fieldname": "cluster",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
+   "options": "Atlas Instance",
    "in_list_view": 1,
-   "label": "Cluster",
-   "description": "Blank = global default; else a region/cluster key (e.g. ap-south-1)"
+   "in_standard_filter": 1,
+   "label": "Atlas Instance",
+   "description": "Blank = global default (available on every Atlas Instance); else the Atlas Instance (region) this rate is scoped to."
   },
   {
    "fieldname": "currency",
