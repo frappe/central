@@ -95,11 +95,12 @@
    "read_only": 1
   },
   {
-   "description": "This Atlas's /32 on wg0, allocated from the pool, e.g. 10.88.0.2.",
+   "description": "This Atlas's /32 on wg0, allocated from the pool, e.g. 10.88.0.2. Unique — the hard backstop against a double-allocation race.",
    "fieldname": "tunnel_ip",
    "fieldtype": "Data",
    "label": "Tunnel IP",
-   "read_only": 1
+   "read_only": 1,
+   "unique": 1
   },
   {
    "description": "Derived from tunnel_ip (e.g. https://10.88.0.2). The post-registration data path; base_url is used only during bootstrap.",

@@ -48,7 +48,13 @@ class CentralTunnelSettings(Document):
 	def allocate_tunnel_ip(self) -> str:
 		"""Allocate the next free Atlas `/32` host address from the pool (bare, e.g.
 		`10.88.0.2`). The caller (Register orchestration) stores it on the
-		`Atlas Instance` and forms the `/32` for `allowed-ips`."""
+		`Atlas Instance` and forms the `/32` for `allowed-ips`.
+
+		Serialized: lock the hub settings row `FOR UPDATE` so two registrations running
+		at once can't read the same free address before either commits its `tunnel_ip`.
+		The `unique` constraint on `Atlas Instance.tunnel_ip` is the hard backstop if a
+		race still slips through."""
+		frappe.db.get_value("Central Tunnel Settings", self.name, "hub_status", for_update=True)
 		return next_free_ip(self.tunnel_cidr, _used_tunnel_ips())
 
 	@frappe.whitelist()

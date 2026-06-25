@@ -161,6 +161,12 @@ class TestAtlasRegister(IntegrationTestCase):
 		instance.reload()
 		self.assertEqual(instance.tunnel_ip, "10.88.0.3")
 
+	def test_tunnel_ip_is_unique(self) -> None:
+		# The hard backstop against a double-allocation race: two Atlas can't share a /32.
+		self.make_instance("blr-ip-a", tunnel_ip="10.88.0.50")
+		with self.assertRaises(frappe.UniqueValidationError):
+			self.make_instance("blr-ip-b", tunnel_ip="10.88.0.50")
+
 	def _register(self, region: str):
 		"""Register an instance through the mocked happy path and return it Active."""
 		instance = self.make_instance(region)
