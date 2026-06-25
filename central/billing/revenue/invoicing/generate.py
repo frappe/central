@@ -2,9 +2,9 @@
 # For license information, please see license.txt
 """Phase 1 (28th, off-peak): reconcile-if-stale, then draft.
 
-Per team/subscription, compute day-weighted fixed lines (from the Central
-price-lock segments) plus metered overage, apply the commitment adjustment, and
-create a `Draft`. Idempotent per (team/subscription, period).
+Per team/subscription, compute day-weighted fixed lines (from Subscription
+Change rate-snapshot segments) plus metered overage, apply the commitment
+adjustment, and create a `Draft`. Idempotent per (team/subscription, period).
 """
 
 import frappe
@@ -49,8 +49,9 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	from central.billing.revenue.metering import metered_line_items
 	from central.billing.catalog.trials import invoice_type_for
 
-	lines = compute_line_items(sub.team, sub.cluster, period_start, period_end)
-	lines += metered_line_items(sub.team, sub.cluster, period_start, period_end)
+	cluster = frappe.db.get_value("Asset", sub.asset_id, "cluster") if sub.asset_id else None
+	lines = compute_line_items(sub.team, cluster, period_start, period_end)
+	lines += metered_line_items(sub.team, cluster, period_start, period_end)
 	if not lines:
 		return None
 
@@ -63,9 +64,7 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	discount = commitment["discount"]
 	clawback = commitment["clawback"]
 	taxable_base = frappe.utils.flt(subtotal - discount + clawback, 2)
-	currency = frappe.db.get_value(
-		"Price Lock", {"team": sub.team, "cluster": sub.cluster}, "currency"
-	)
+	currency = frappe.db.get_value("Billing Profile", sub.team, "currency")
 	tax = resolve_tax(sub.team, taxable_base)
 	total = frappe.utils.flt(taxable_base + tax["output_tax_amount"], 2)
 	# expected_collection = total - tds (credits reduce it further at open).
@@ -132,7 +131,10 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	from central.billing.revenue.tax import resolve_tax
 	from central.billing.catalog.trials import invoice_type_for
 
-	clusters = sorted(c for c in set(frappe.get_all("Price Lock", {"team": team}, pluck="cluster")) if c)
+	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
+	clusters = sorted({
+		c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c
+	})
 	lines = []
 	for cluster in clusters:
 		lines += compute_line_items(team, cluster, period_start, period_end)
@@ -147,7 +149,7 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	discount = commitment["discount"]
 	clawback = commitment["clawback"]
 	taxable_base = frappe.utils.flt(subtotal - discount + clawback, 2)
-	currency = frappe.db.get_value("Price Lock", {"team": team}, "currency")
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	tax = resolve_tax(team, taxable_base)
 	total = frappe.utils.flt(taxable_base + tax["output_tax_amount"], 2)
 	expected = frappe.utils.flt(total - tax["tds_amount"], 2)
