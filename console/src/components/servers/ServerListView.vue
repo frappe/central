@@ -137,9 +137,6 @@ const filters: ListViewFilter[] = [
     }"
     @update:query="$emit('update:query', $event)"
     @retry="$emit('retry')"
-  >
-    <template v-if="canCreate" #empty-action>
-      <Button variant="solid" label="New server" icon-left="lucide-plus" @click="$emit('create')" />
-    </template>
+>
   </ListView>
 </template>
