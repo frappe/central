@@ -10,6 +10,7 @@ from central.billing.tests.utils import (
 	clear_team_tier,
 	complete_billing_profile,
 	ensure_team,
+	make_metered_plan,
 	make_plan,
 	set_team_tier,
 )
@@ -91,6 +92,19 @@ class TestEligiblePlans(IntegrationTestCase):
 		plans, _ = self._titles()
 		self.assertIn(CHEAP, plans)            # a VM Plans (Server) family member shows
 		self.assertNotIn("tokens-100m", plans)  # the AI Tokens family does not
+
+	def test_excludes_metered_plans(self):
+		# A metered single-resource plan (a former Add-on) is billed through metering,
+		# not provisioned via create-server. Its family carries no provision_target, so
+		# it must never surface in the menu (ADR 0008).
+		make_metered_plan(
+			"meter-menu-transfer", resource_type="Transfer",
+			rates=[{"cluster": "", "currency": "INR", "rate": 1}],
+		)
+		set_team_tier(TEAM, max_spend=100000)  # ample headroom — exclusion is by family
+		plans, _ = self._titles()
+		self.assertIn(CHEAP, plans)                      # a VM Plans (Server) member shows
+		self.assertNotIn("meter-menu-transfer", plans)   # the metered plan does not
 
 	def test_spend_cap_hides_plans_above_the_ceiling(self):
 		set_team_tier(TEAM, max_spend=2000)  # admits CHEAP (1000) + MID (2000), not PRICEY

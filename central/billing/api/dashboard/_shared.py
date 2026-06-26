@@ -197,9 +197,10 @@ def _describe_line(team: str, li) -> dict:
 	"""Turn a stored line item into a human-readable charge row.
 
 	Resource slugs and plan IDs mean nothing to a customer, so we resolve the
-	plan/add-on TITLE and spell out what drove the charge: a plan's monthly fee
+	plan TITLE and spell out what drove the charge: a plan's monthly fee
 	(prorated days), or a metered overage above the plan's included allowance.
 	"""
+	from central.billing.revenue.metering import _metered_plan_for
 	row = {
 		"resource_type": li.resource_type, "plan": li.plan,
 		"subscription_resource": li.subscription_resource,
@@ -212,8 +213,9 @@ def _describe_line(team: str, li) -> dict:
 		row["kind"] = "Plan"
 		row["detail"] = f"{li.days} day(s) this period" if li.days else None
 	else:
-		addon = frappe.db.get_value("Add-on", {"resource_type": li.resource_type}, ["title"])
-		row["item"] = addon or f"{li.resource_type.title()} overage"
+		metered_plan = _metered_plan_for(li.resource_type)
+		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
+		row["item"] = title or f"{li.resource_type.title()} overage"
 		row["kind"] = "Overage"
 		# Surface the included allowance the usage ran past, so the bill is legible.
 		allowance = frappe.db.get_value(

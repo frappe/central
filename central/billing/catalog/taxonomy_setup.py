@@ -15,9 +15,15 @@ Idempotent: every row is created only when absent, so it is safe to run repeated
 import frappe
 
 # Every value the catalog's `resource_type` links can hold. IP and Snapshot are valid
-# Add-on dimensions but appear in no category's allowed list (so never composition).
+# metered-resource dimensions but appear in no fixed category's allowed list (so never
+# bundle composition).
 RESOURCE_TYPES = ["Compute", "Memory", "Disk", "Transfer", "IP", "Snapshot", "Tokens", "Storage", "Backup"]
 
+# Metered categories host the single-resource overage meters that used to be Add-ons
+# (ADR 0008). A metered single-resource Plan under one of these is what metering.py
+# resolves by resource type; the family carries the billing behaviour (interval +
+# Grandfathered/Live). The allow-list is left blank (unconstrained) so any overage
+# resource type can attach.
 CATEGORIES = [
 	{
 		"category_name": "VM Plans",
@@ -25,6 +31,7 @@ CATEGORIES = [
 		"provision_target": "Server",
 		"sub_category_label": "Optimization profile",
 		"description": "Flat-rate compute bundles (vCPU + memory + disk + transfer).",
+		"billing_type": "Fixed",
 		"allowed": ["Compute", "Memory", "Disk", "Transfer"],
 		# VM optimisation profiles carry the memory ratio (GB RAM per vCPU) the
 		# configurator pins. Storage/Memory Optimised share 1:8; they differ by disk.
@@ -59,6 +66,28 @@ CATEGORIES = [
 		"allowed": ["Storage", "Backup"],
 		"sub_categories": [{"name": "Data"}, {"name": "Backups"}, {"name": "Snapshots"}],
 	},
+	{
+		"category_name": "Metered Resources",
+		"configurator_builder": "Simple",
+		"sub_category_label": "",
+		"description": "Per-unit overage meters (transfer, IPs, token overage). The rate is locked at provision, like a bundle (ADR 0008).",
+		"billing_type": "Metered",
+		"billing_interval": "Monthly",
+		"pricing_mode": "Grandfathered",
+		"allowed": [],
+		"sub_categories": [],
+	},
+	{
+		"category_name": "Live Metered Resources",
+		"configurator_builder": "Simple",
+		"sub_category_label": "",
+		"description": "Live-priced per-unit meters for depreciating storage (e.g. snapshots) — the rate is read from the current Catalog Rate each period, never locked (ADR 0002 / 0008).",
+		"billing_type": "Metered",
+		"billing_interval": "Monthly",
+		"pricing_mode": "Live",
+		"allowed": [],
+		"sub_categories": [],
+	},
 ]
 
 
@@ -83,6 +112,9 @@ def _ensure_category(spec):
 				"provision_target": spec.get("provision_target", ""),
 				"sub_category_label": spec["sub_category_label"],
 				"description": spec["description"],
+				"billing_type": spec.get("billing_type", "Fixed"),
+				"billing_interval": spec.get("billing_interval", ""),
+				"pricing_mode": spec.get("pricing_mode", ""),
 				"allowed_resource_types": [{"resource_type": rt} for rt in spec["allowed"]],
 			}
 		).insert(ignore_permissions=True)

@@ -12,8 +12,9 @@ from central.billing.api.admin._shared import _active_locks, _plan_monthly_inr, 
 
 @frappe.whitelist()
 def get_catalog() -> dict:
-	"""Products & infrastructure: plans (with INR base rate), add-ons, and the
-	clusters teams run in (with active resource counts)."""
+	"""Products & infrastructure: plans (with INR base rate) and the clusters teams
+	run in (with active resource counts). Metered overage plans are Plans too now
+	(ADR 0008), so they appear in the plan list rather than a separate add-on list."""
 	require_operator()
 	plans = []
 	for p in frappe.get_all("Plan", fields=["name", "title", "billing_cycle", "is_active"], order_by="name asc"):
@@ -22,7 +23,6 @@ def get_catalog() -> dict:
 			"inr_rate": _plan_monthly_inr(p.name, None),
 			"active_resources": frappe.db.count("Price Lock", {"plan": p.name, "ended_at": ["is", "not set"]}),
 		})
-	addons = frappe.get_all("Add-on", fields=["name", "title", "resource_type", "unit", "billing_type"], order_by="name asc")
 	clusters = {}
 	for lock in _active_locks():
 		c = clusters.setdefault(lock.cluster or "global", {"cluster": lock.cluster or "global", "resources": 0, "teams": set()})
@@ -32,7 +32,7 @@ def get_catalog() -> dict:
 		({"cluster": c["cluster"], "resources": c["resources"], "teams": len(c["teams"])} for c in clusters.values()),
 		key=lambda r: r["resources"], reverse=True,
 	)
-	return {"plans": plans, "addons": addons, "clusters": cluster_rows}
+	return {"plans": plans, "clusters": cluster_rows}
 
 
 @frappe.whitelist()

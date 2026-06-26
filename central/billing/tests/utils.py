@@ -68,28 +68,55 @@ def _ensure_rate_instances(rates):
 			ensure_atlas_instance(cluster)
 
 
-def make_addon(name, rates=None, **kwargs):
-	"""Create (or replace) an Add-on and its Catalog Rate rows; return its name."""
-	if frappe.db.exists("Add-on", name):
-		frappe.delete_doc("Add-on", name, force=True)
+def make_metered_plan(name, resource_type="Transfer", rates=None, pricing_mode="Grandfathered", **kwargs):
+	"""Create (or replace) a metered single-resource Plan and its Catalog Rate rows.
+
+	The ADR 0008 replacement for an Add-on: a single-resource Plan under a Metered
+	Plan Category, which metering resolves by its resource type. The category is chosen
+	by `pricing_mode` (Grandfathered vs Live). Drops any other active metered plan
+	covering the same resource first, since at most one may be active. Returns its name."""
+	category = "Live Metered Resources" if pricing_mode == "Live" else "Metered Resources"
+	_clear_metered_plans(resource_type, keep=name)
+	if frappe.db.exists("Plan", name):
+		frappe.delete_doc("Plan", name, force=True)
 
 	doc = frappe.get_doc(
 		{
-			"doctype": "Add-on",
-			"__newname": name,
+			"doctype": "Plan",
 			"title": kwargs.get("title", name),
-			"resource_type": kwargs.get("resource_type", "Transfer"),
-			"unit": kwargs.get("unit", "GB"),
-			"billing_type": kwargs.get("billing_type", "Metered"),
-			"billing_interval": kwargs.get("billing_interval", "Monthly"),
-			"pricing_mode": kwargs.get("pricing_mode", "Grandfathered"),
+			"category": category,
+			"billing_cycle": "Monthly",
+			"is_active": kwargs.get("is_active", 1),
+			"includes": [
+				{
+					"resource_type": resource_type,
+					"quantity": kwargs.get("quantity", 0),
+					"unit": kwargs.get("unit", "GB"),
+				}
+			],
 		}
 	)
+	# Plan autonames by hash; force a deterministic name for tests that reference it.
+	doc.name = name
+	doc.flags.name_set = True
 	doc.insert(ignore_permissions=True)
 	rates = rates if rates is not None else DEFAULT_ADDON_RATES
 	_ensure_rate_instances(rates)
-	set_catalog_rates("Add-on", doc.name, rates)
+	set_catalog_rates("Plan", doc.name, rates)
 	return doc.name
+
+
+def _clear_metered_plans(resource_type, keep=None):
+	"""Delete every active/inactive metered single-resource Plan for `resource_type`
+	(except `keep`), so a test can re-seed without tripping the one-active-per-resource
+	uniqueness rule on data committed by an earlier test."""
+	metered_cats = frappe.get_all("Plan Category", filters={"billing_type": "Metered"}, pluck="name")
+	for plan in frappe.get_all("Plan", filters={"category": ["in", metered_cats]}, pluck="name"):
+		if plan == keep:
+			continue
+		includes = frappe.get_all("Plan Includes", filters={"parent": plan}, pluck="resource_type")
+		if len(includes) == 1 and includes[0] == resource_type:
+			frappe.delete_doc("Plan", plan, force=True)
 
 
 def make_user(email=None):
