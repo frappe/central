@@ -10,6 +10,7 @@ from frappe.frappeclient import FrappeClient
 
 from central.central.doctype.asset.asset import Asset
 from central.host_task import run_host_task
+from central.central.doctype.site.site import Site
 
 # Central's integration with the regional Atlas clusters (Edge B), all in one place:
 #   - outbound: AtlasClient calls Atlas over Frappe's FrappeClient (token auth from
@@ -165,6 +166,45 @@ class AtlasClient:
 		response.raise_for_status()
 		return response.json().get("message", {})
 
+	def create_site(
+		self,
+		*,
+		team: str,
+		subdomain: str,
+		email: str | None = None,
+		region: str | None = None,
+	) -> dict:
+		"""
+		Provision a self-serve site on this Atlas for a Central team (the operator
+		write). Returns the site in the Site-mirror shape so the caller can upsert it.
+		"""
+
+		params: dict = {"team": team, "subdomain": subdomain}
+
+		if email:
+			params["email"] = email
+		if region:
+			params["region"] = region
+
+		return self.client().post_api("atlas.atlas.api.site.create_site", params=params)
+
+	def get_site(self, name: str) -> dict:
+		"""
+		Poll one site's current state — the self-heal fallback to the site.* events.
+		Returns the mirror shape, with url + admin_password once the site is Running.
+		"""
+
+		return self.client().post_api("atlas.atlas.api.site.get_site", params={"name": name})
+
+	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
+		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""
+		params = {"subdomain": subdomain}
+
+		if region:
+			params["region"] = region
+
+		return self.client().get_api("atlas.atlas.api.site.check_subdomain", params)
+
 
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
 
@@ -229,10 +269,16 @@ def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
 		Asset.mark_terminated(resource_id, last_event_at=occurred_at)
 
 
+def _on_site(cluster: str, payload: dict, occurred_at) -> None:
+	Site.mirror_site(cluster, payload, occurred_at=occurred_at)
+
+
 _EVENT_HANDLERS = {
 	"vm.created": _on_vm,
 	"vm.status_changed": _on_vm,
 	"vm.deleted": _on_vm_deleted,
+	"site.created": _on_site,
+	"site.status_changed": _on_site,
 }
 
 

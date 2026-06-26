@@ -1,0 +1,134 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:site_name",
+ "creation": "2026-06-25 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "site_name",
+  "subdomain",
+  "team",
+  "cluster",
+  "region",
+  "status",
+  "url",
+  "admin_password",
+  "last_synced_at",
+  "last_event_at"
+ ],
+ "fields": [
+  {
+   "description": "The site FQDN in Atlas (the source of truth) — the one routing identity.",
+   "fieldname": "site_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Site Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "The single DNS label the site is fronted at (mirrored from Atlas).",
+   "fieldname": "subdomain",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Subdomain",
+   "read_only": 1
+  },
+  {
+   "description": "Owning Central team (mirrored from Atlas).",
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1
+  },
+  {
+   "description": "The cluster (Atlas Instance / region) this site lives in.",
+   "fieldname": "cluster",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Cluster",
+   "options": "Atlas Instance",
+   "reqd": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Data",
+   "label": "Region",
+   "read_only": 1
+  },
+  {
+   "default": "Pending",
+   "description": "Mirrors the Atlas Site status verbatim.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nProvisioning\nDeploying\nRunning\nFailed\nTerminated"
+  },
+  {
+   "description": "The live site URL (the tenant handoff). Empty until Running.",
+   "fieldname": "url",
+   "fieldtype": "Data",
+   "label": "URL",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
+   "description": "The baked Administrator password (the tenant handoff). Written once, when the site reaches Running.",
+   "fieldname": "admin_password",
+   "fieldtype": "Password",
+   "label": "Admin Password",
+   "read_only": 1
+  },
+  {
+   "description": "When the last get_site poll refreshed this row.",
+   "fieldname": "last_synced_at",
+   "fieldtype": "Datetime",
+   "label": "Last Synced At",
+   "read_only": 1
+  },
+  {
+   "description": "occurred_at of the last applied Atlas event. Used for last-writer-wins so a stale or duplicate push can't overwrite newer state.",
+   "fieldname": "last_event_at",
+   "fieldtype": "Datetime",
+   "label": "Last Event At",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-06-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Site",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
+  }
+ ],
+ "sort_field": "site_name",
+ "sort_order": "ASC",
+ "title_field": "site_name"
+}
