@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 1,
  "creation": "2026-06-05 00:00:00.000000",
- "description": "One standalone rate (ERPNext Item Price style) for a Plan or Add-on, per cluster x currency. Linked via a Dynamic Link; the rate is the price for a bundle and per-unit for an add-on.",
+ "description": "One standalone rate (ERPNext Item Price style) for a Plan, per cluster x currency. Linked via a Dynamic Link; the rate is the flat price for a bundle and the per-unit price for a metered single-resource Plan (ADR 0008).",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -23,7 +23,7 @@
    "label": "Priced Doctype",
    "options": "DocType",
    "reqd": 1,
-   "description": "Plan or Add-on"
+   "description": "Plan"
   },
   {
    "fieldname": "priced_for",
@@ -61,7 +61,7 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Rate",
-   "description": "Plan: the flat rate. Add-on: the per-unit rate.",
+   "description": "A fixed bundle: the flat rate. A metered single-resource plan: the per-unit rate.",
    "reqd": 1
   }
  ],

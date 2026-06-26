@@ -2,19 +2,20 @@
 # For license information, please see license.txt
 """Rate resolution — region x currency.
 
-Shared by Plan (bundle) and Add-on. A rate is resolved for a team's billing
-currency and the resource's cluster: the most-specific region match wins,
-falling back to the global (blank-cluster) row.
+A rate is resolved for a team's billing currency and the resource's cluster: the
+most-specific region match wins, falling back to the global (blank-cluster) row.
 
 Rates live in one standalone `Catalog Rate` DocType (ERPNext `Item Price` style),
-linked to a Plan or Add-on via a Dynamic Link (`priced_doctype` + `priced_for`).
+linked to a Plan via a Dynamic Link (`priced_doctype` + `priced_for`). The rate is
+the flat price for a fixed bundle and the per-unit price for a metered
+single-resource Plan (ADR 0008).
 """
 
 import frappe
 
 
 def get_catalog_rates(priced_doctype: str, priced_for: str) -> list:
-	"""All `Catalog Rate` rows (cluster/currency/rate) for one plan or add-on."""
+	"""All `Catalog Rate` rows (cluster/currency/rate) for one priced plan."""
 	return frappe.get_all(
 		"Catalog Rate",
 		filters={"priced_doctype": priced_doctype, "priced_for": priced_for},
@@ -23,7 +24,7 @@ def get_catalog_rates(priced_doctype: str, priced_for: str) -> list:
 
 
 def set_catalog_rates(priced_doctype: str, priced_for: str, rates) -> None:
-	"""Replace every `Catalog Rate` for a plan/add-on with the given rows.
+	"""Replace every `Catalog Rate` for a plan with the given rows.
 
 	`rates`: iterable of dicts with `cluster` (optional), `currency`, `rate`.
 	Used by seeds and tests where rates used to be passed as a child table.
@@ -53,7 +54,7 @@ def set_catalog_rate(
 ) -> tuple[str, bool]:
 	"""Upsert one `Catalog Rate` for `(priced_for, cluster, currency)`.
 
-	Unlike `set_catalog_rates` (which replaces *every* row for a plan/add-on), this
+	Unlike `set_catalog_rates` (which replaces *every* row for a plan), this
 	touches a single cluster's row — so pricing one cluster never disturbs another.
 	Returns `(name, created)`; an existing row has its `rate` updated in place.
 	"""

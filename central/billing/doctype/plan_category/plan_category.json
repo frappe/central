@@ -14,6 +14,11 @@
   "configurator_builder",
   "provision_target",
   "sub_category_label",
+  "section_break_billing",
+  "billing_type",
+  "billing_interval",
+  "column_break_billing",
+  "pricing_mode",
   "section_break_resources",
   "allowed_resource_types"
  ],
@@ -63,6 +68,38 @@
    "fieldtype": "Data",
    "label": "Sub-Category Label",
    "description": "What a sub-category means for this family (e.g. 'Optimization profile', 'Storage purpose'). Blank = this family has no sub-category axis; plans attach directly to the category."
+  },
+  {
+   "fieldname": "section_break_billing",
+   "fieldtype": "Section Break",
+   "label": "Billing Behaviour"
+  },
+  {
+   "default": "Fixed",
+   "fieldname": "billing_type",
+   "fieldtype": "Select",
+   "label": "Billing Type",
+   "options": "Fixed\nMetered",
+   "reqd": 1,
+   "description": "Fixed = a flat rate per billing cycle (a bundle). Metered = per-unit usage billing; a member plan with a single resource is a metering target resolved by its resource type (ADR 0008)."
+  },
+  {
+   "fieldname": "billing_interval",
+   "fieldtype": "Select",
+   "label": "Billing Interval",
+   "options": "\nHourly\nDaily\nMonthly",
+   "description": "The metering cadence for a Metered family. Leave blank for Fixed families."
+  },
+  {
+   "fieldname": "column_break_billing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "pricing_mode",
+   "fieldtype": "Select",
+   "label": "Pricing Mode",
+   "options": "\nGrandfathered\nLive",
+   "description": "For a Metered family: Grandfathered bills the rate locked at provision (like bundles); Live reads the current Catalog Rate each period with no allowance, for depreciating storage (ADR 0002). Leave blank for Fixed families."
   },
   {
    "fieldname": "section_break_resources",

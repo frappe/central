@@ -8,7 +8,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.revenue import invoicing, metering
 from central.billing.catalog import subscriptions
 from central.billing.platform.sync import receive_meter_rollups, receive_usage_events
-from central.billing.tests.utils import ensure_team, make_addon, make_plan
+from central.billing.tests.utils import ensure_team, make_metered_plan, make_plan
 
 TEAM = "team-meter"
 CLUSTER = "ap-south-1"
@@ -52,15 +52,14 @@ def provision(rate=1000):
 class MeteringTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
-		# Plan includes a 100 GB transfer allowance; metered Add-on bills 0.5/GB overage.
+		# Plan includes a 100 GB transfer allowance; metered plan bills 0.5/GB overage.
 		make_plan(
 			PLAN,
 			includes=[{"resource_type": "Transfer", "quantity": 100, "unit": "GB"}],
 		)
-		make_addon(
-			"addon-transfer-meter",
+		make_metered_plan(
+			"meter-transfer",
 			resource_type="Transfer",
-			billing_type="Metered",
 			rates=[{"cluster": "", "currency": "INR", "rate": 0.5}],
 		)
 		self._purge()
@@ -87,7 +86,7 @@ class TestIngestRollup(MeteringTestBase):
 		self.assertEqual(rollup.team, TEAM)
 		self.assertEqual(rollup.quantity, 150)
 		self.assertEqual(rollup.locked_allowance, 100)  # from the locked plan includes
-		self.assertEqual(rollup.locked_rate, 0.5)  # from the metered add-on
+		self.assertEqual(rollup.locked_rate, 0.5)  # from the metered plan
 
 	def test_repush_replaces_quantity_no_double_count(self):
 		receive_meter_rollups([meter("a", 150)])
