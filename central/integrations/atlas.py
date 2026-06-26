@@ -73,7 +73,7 @@ class AtlasClient:
 	def create_vm(
 		self,
 		*,
-		central_reference: str,
+		team: str,
 		title: str,
 		vcpus: int,
 		memory_megabytes: int,
@@ -84,7 +84,7 @@ class AtlasClient:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
 		Returns the new VM in the Asset-mirror shape so the caller can upsert it."""
 		params: dict = {
-			"central_reference": central_reference,
+			"team": team,
 			"title": title,
 			"vcpus": vcpus,
 			"memory_megabytes": memory_megabytes,
@@ -96,10 +96,10 @@ class AtlasClient:
 			params["cpu_max_cores"] = cpu_max_cores
 		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
 
-	def central_vms(self, central_reference: str | None = None) -> list[dict]:
+	def central_vms(self, team: str | None = None) -> list[dict]:
 		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one
-		team). One dict per VM: name, central_reference, status, gateway_url."""
-		params = {"central_reference": central_reference} if central_reference else None
+		team). One dict per VM: name, team, status, gateway_url."""
+		params = {"team": team} if team else None
 		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
 
 	# --- admin-auth path: the registration handshake (TUNNEL.md) -------------
@@ -128,6 +128,15 @@ class AtlasClient:
 		pushed creds, and returns { wg_public_key, listen_port, tunnel_ip }."""
 		return self._admin_client(base_url).post_api(
 			"atlas.atlas.api.central_link.provision_tunnel", params=payload
+		)
+
+	def link_local(self, base_url: str, payload: dict) -> dict:
+		"""Local-dev registration over the public base_url (admin auth): push the
+		service-user creds with skip_tunnel set, so Atlas stores them and enables event
+		reporting but brings up no wg0 and locks no firewall. Reuses provision_tunnel — the
+		flag branches it before any host script runs."""
+		return self._admin_client(base_url).post_api(
+			"atlas.atlas.api.central_link.provision_tunnel", params={**payload, "skip_tunnel": 1}
 		)
 
 	def confirm_tunnel(self, tunnel_url: str) -> dict:
@@ -160,15 +169,16 @@ class AtlasClient:
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
 
 
-def ingest_event(atlas_id: str, event_type: str, payload: dict, occurred_at) -> dict:
+def ingest_event(event_type: str, payload: dict, occurred_at) -> dict:
 	"""
-	Verify the sender, then queue the mirror write so Atlas gets a fast ack. The
-	write runs in a background job — it's idempotent and last-writer-wins, and the
-	periodic reconcile is the backstop if a job is ever lost. ping and unknown event
-	types have nothing to mirror, so they're acknowledged without queuing.
+	Resolve the sender from its authenticated session, then queue the mirror write so
+	Atlas gets a fast ack. The write runs in a background job — it's idempotent and
+	last-writer-wins, and the periodic reconcile is the backstop if a job is ever lost.
+	ping and unknown event types have nothing to mirror, so they're acknowledged
+	without queuing.
 	"""
 
-	cluster = _atlas_cluster(atlas_id)
+	cluster = _atlas_cluster()
 
 	if event_type not in _EVENT_HANDLERS:
 		return {"ok": True, "queued": False}
@@ -191,12 +201,17 @@ def apply_event(cluster: str, event_type: str, payload: dict, occurred_at) -> No
 	_EVENT_HANDLERS[event_type](cluster, payload or {}, occurred_at)
 
 
-def _atlas_cluster(atlas_id: str) -> str:
-	"""The cluster an event came from — and the 'known sender' check: events from
-	an unregistered or disabled Atlas are refused."""
-	cluster = frappe.db.get_value("Atlas Instance", {"atlas_id": atlas_id, "status": ["!=", "Disabled"]})
+def _atlas_cluster() -> str:
+	"""The cluster an event came from — resolved from the authenticated sender. Each
+	Atlas calls in as its own scoped service user (set on the Atlas Instance at
+	registration), so the session identity IS the cluster: unforgeable, and no need
+	for the caller to assert who it is in the payload. Doubles as the 'known sender'
+	check — events from a session that owns no enabled Atlas are refused."""
+	cluster = frappe.db.get_value(
+		"Atlas Instance", {"service_user": frappe.session.user, "status": ["!=", "Disabled"]}
+	)
 	if not cluster:
-		frappe.throw(f"Unknown or disabled Atlas '{atlas_id}'.", frappe.PermissionError)
+		frappe.throw(f"'{frappe.session.user}' is not a known or enabled Atlas.", frappe.PermissionError)
 	return cluster
 
 
@@ -206,7 +221,11 @@ def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
 
 def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
 	resource_id = payload.get("name")
-	if resource_id and frappe.db.exists("Asset", resource_id) and not Asset.is_stale(resource_id, occurred_at):
+	if (
+		resource_id
+		and frappe.db.exists("Asset", resource_id)
+		and not Asset.is_stale(resource_id, occurred_at)
+	):
 		Asset.mark_terminated(resource_id, last_event_at=occurred_at)
 
 
@@ -270,7 +289,7 @@ def register_atlas(instance) -> dict:
 	"""Run the full Central-driven registration handshake for one Atlas Instance.
 
 	1. ping over the public base_url (admin auth); 2. ensure the hub is up + allocate
-	tunnel_ip; 3. mint atlas_id + the scoped service user; 4. provision_tunnel over
+	tunnel_ip; 3. mint the scoped service user; 4. provision_tunnel over
 	base_url; 5. hub-peer-add on the hub; 6. ping at tunnel_ip over wg0; 7.
 	confirm_tunnel over the tunnel; 8. tunnel_status=Active. Any failure before confirm
 	rolls back the Central-side half and raises TunnelRegistrationError; the instance
@@ -279,6 +298,9 @@ def register_atlas(instance) -> dict:
 		frappe.throw("Not permitted.", frappe.PermissionError)
 	if not (instance.api_key and instance.get_password("api_secret", raise_exception=False)):
 		frappe.throw("Set the Atlas admin API key and secret before registering.", TunnelRegistrationError)
+
+	if instance.skip_tunnel:
+		return _register_local(instance)
 
 	settings = frappe.get_single("Central Tunnel Settings")
 	if settings.hub_status != "Active":
@@ -294,9 +316,8 @@ def register_atlas(instance) -> dict:
 	client.admin_ping(instance.base_url)
 
 	# 2-3. Allocate the tunnel address and mint the scoped service identity. Reuse an
-	# existing allocation/id/user on re-tunnel so the Atlas keeps a stable address.
+	# existing allocation/user on re-tunnel so the Atlas keeps a stable address.
 	tunnel_ip = instance.tunnel_ip or settings.allocate_tunnel_ip()
-	atlas_id = instance.atlas_id or frappe.generate_hash(length=12)
 	service_user = _ensure_service_user(instance)
 	api_key, api_secret = _rotate_service_credentials(service_user)
 
@@ -306,7 +327,6 @@ def register_atlas(instance) -> dict:
 		provision = client.provision_tunnel(
 			instance.base_url,
 			{
-				"atlas_id": atlas_id,
 				"hub_public_key": settings.hub_public_key,
 				"hub_endpoint": settings.hub_endpoint,
 				"tunnel_ip": tunnel_ip,
@@ -319,7 +339,6 @@ def register_atlas(instance) -> dict:
 		peer_public_key = provision["wg_public_key"]
 		peer_endpoint = _peer_endpoint(instance.base_url, provision["listen_port"])
 
-		instance.atlas_id = atlas_id
 		instance.tunnel_ip = tunnel_ip
 		instance.peer_public_key = peer_public_key
 		instance.peer_endpoint = peer_endpoint
@@ -351,7 +370,36 @@ def register_atlas(instance) -> dict:
 		_rollback(instance, service_user, peer_added, was_registered)
 		raise TunnelRegistrationError(f"Register failed for '{instance.region}': {exception}") from exception
 
-	return {"ok": True, "atlas_id": atlas_id, "tunnel_ip": tunnel_ip, "tunnel_status": "Active"}
+	return {"ok": True, "tunnel_ip": tunnel_ip, "tunnel_status": "Active"}
+
+
+def _register_local(instance) -> dict:
+	"""Local-dev registration without a tunnel (Atlas Instance.skip_tunnel). Do only the
+	identity half — admin_ping, mint the scoped service user + creds — then push those to
+	Atlas with skip_tunnel set so it stores them without bringing up wg0 or locking its
+	firewall. No hub, no tunnel_ip allocation, no peering, no over-the-tunnel confirm.
+	The data path stays on the public base_url (tunnel_url is never set), and tunnel_status
+	stays Inactive. There is nothing host-side to roll back, so a failure just propagates."""
+	client = AtlasClient(instance)
+	client.admin_ping(instance.base_url)
+
+	service_user = _ensure_service_user(instance)
+	api_key, api_secret = _rotate_service_credentials(service_user)
+
+	client.link_local(
+		instance.base_url,
+		{
+			"central_url": frappe.utils.get_url(),
+			"service_api_key": api_key,
+			"service_api_secret": api_secret,
+		},
+	)
+
+	instance.service_user = service_user
+	instance.tunnel_status = "Inactive"
+	instance.save(ignore_permissions=True)
+
+	return {"ok": True, "tunnel_status": "Inactive", "skip_tunnel": True}
 
 
 def _ensure_service_user(instance) -> str:
@@ -363,16 +411,14 @@ def _ensure_service_user(instance) -> str:
 	if frappe.db.exists("User", email):
 		user = frappe.get_doc("User", email)
 	else:
-		user = frappe.get_doc(
-			{
-				"doctype": "User",
-				"email": email,
-				"first_name": f"Atlas {instance.region}",
-				"user_type": "System User",
-				"send_welcome_email": 0,
-				"enabled": 1,
-			}
-		).insert(ignore_permissions=True)
+		user = frappe.get_doc({
+			"doctype": "User",
+			"email": email,
+			"first_name": f"Atlas {instance.region}",
+			"user_type": "System User",
+			"send_welcome_email": 0,
+			"enabled": 1,
+		}).insert(ignore_permissions=True)
 	_ensure_service_role(user)
 	return user.name
 
@@ -451,7 +497,7 @@ def _rollback(instance, service_user: str | None, peer_added: bool, was_register
 	instance.db_set("peer_endpoint", None)
 
 	if was_registered:
-		# keep atlas_id, service_user and tunnel_ip — only the tunnel failed to come up.
+		# keep service_user and tunnel_ip — only the tunnel failed to come up.
 		instance.db_set("tunnel_status", "Inactive")
 	else:
 		instance.db_set("service_user", None)
@@ -471,8 +517,8 @@ def _rollback(instance, service_user: str | None, peer_added: bool, was_register
 def remove_tunnel(instance) -> dict:
 	"""Strip an Atlas's tunnel + management firewall while keeping it REGISTERED (the
 	operator's Remove Tunnel button). Tells Atlas to revert its firewall + drop wg0 and
-	removes the hub peer, but RETAINS the registration identity — atlas_id, the scoped
-	service user and the allocated tunnel_ip — and sets status to Inactive. Register
+	removes the hub peer, but RETAINS the registration identity — the scoped service
+	user and the allocated tunnel_ip — and sets status to Inactive. Register
 	brings the tunnel back up (re-tunnel). The data path falls back to the public
 	base_url while Inactive (only Active routes over tunnel_url).
 
@@ -485,7 +531,11 @@ def remove_tunnel(instance) -> dict:
 
 	if instance.tunnel_status in ("Active", "Provisioning"):
 		client = AtlasClient(instance)
-		over = instance.tunnel_url if (instance.tunnel_status == "Active" and instance.tunnel_url) else instance.base_url
+		over = (
+			instance.tunnel_url
+			if (instance.tunnel_status == "Active" and instance.tunnel_url)
+			else instance.base_url
+		)
 		try:
 			client.deprovision_tunnel(over)
 		except Exception:
@@ -506,7 +556,7 @@ def remove_tunnel(instance) -> dict:
 		except Exception:
 			frappe.log_error(title=f"Remove tunnel: hub-peer-remove failed for {instance.region}")
 
-	# Keep atlas_id / service_user / tunnel_ip — only the runtime tunnel is torn down.
+	# Keep service_user / tunnel_ip — only the runtime tunnel is torn down.
 	instance.db_set("peer_public_key", None)
 	instance.db_set("peer_endpoint", None)
 	instance.db_set("tunnel_status", "Inactive")

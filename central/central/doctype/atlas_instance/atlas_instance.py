@@ -17,7 +17,6 @@ class AtlasInstance(Document):
 
 		api_key: DF.Data
 		api_secret: DF.Password
-		atlas_id: DF.Data | None
 		base_url: DF.Data
 		last_synced_at: DF.Datetime | None
 		peer_endpoint: DF.Data | None
@@ -25,6 +24,7 @@ class AtlasInstance(Document):
 		reachable: DF.Check
 		region: DF.Data
 		service_user: DF.Link | None
+		skip_tunnel: DF.Check
 		status: DF.Literal["Active", "Draining", "Disabled"]
 		tunnel_ip: DF.Data | None
 		tunnel_status: DF.Literal["Unregistered", "Provisioning", "Active", "Inactive"]
@@ -62,7 +62,7 @@ class AtlasInstance(Document):
 	def remove_tunnel(self) -> dict:
 		"""Operator action: strip the tunnel + management firewall but keep the Atlas
 		registered — revert the firewall + drop wg0 on the Atlas and remove the hub peer,
-		while retaining atlas_id, the service user and the allocated tunnel_ip. Status
+		while retaining the service user and the allocated tunnel_ip. Status
 		goes to Inactive; Register brings the tunnel back up."""
 		from central.integrations.atlas import remove_tunnel
 

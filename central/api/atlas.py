@@ -12,23 +12,24 @@ from central.integrations.atlas import ingest_event
 @frappe.whitelist(methods=["POST"])
 def event(**kwargs) -> dict:
 	"""
-	Webhook sink for Atlas lifecycle events. Atlas authenticates with its Frappe
-	token; ingest_event verifies the sender, then queues the mirror update so Atlas
-	gets a fast ack. Body: `atlas_id`, `type`, `payload`, `occurred_at`.
+	Webhook sink for Atlas lifecycle events. Atlas authenticates with its scoped
+	Central service-user token; ingest_event resolves the sender from that session,
+	then queues the mirror update so Atlas gets a fast ack. Body: `type`, `payload`,
+	`occurred_at`.
 
 	"""
 	data = frappe._dict(kwargs)
 	payload = frappe.parse_json(data.payload) if isinstance(data.payload, str) else (data.payload or {})
 
-	return ingest_event(data.atlas_id, data.type, payload, data.occurred_at)
+	return ingest_event(data.type, payload, data.occurred_at)
 
 
 @frappe.whitelist(methods=["POST"])
 def register(**kwargs) -> dict:
 	"""Retired. Registration is Central-initiated now (central/spec/TUNNEL.md): the
 	operator runs Register on the Atlas Instance, which drives the tunnel handshake
-	(provision_tunnel / confirm_tunnel) and stamps the atlas_id from Central's side.
-	This inbound endpoint no longer registers anything; it stays only to give an old
+	(provision_tunnel / confirm_tunnel) and mints the scoped service user from Central's
+	side. This inbound endpoint no longer registers anything; it stays only to give an old
 	Atlas build a clear signal instead of a 404."""
 	frappe.throw(
 		_("Atlas-initiated register is retired; registration is Central-initiated."),

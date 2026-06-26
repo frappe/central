@@ -72,7 +72,7 @@ The hub's identity and the allocation pool.
 
 ### Atlas Instance (extended)
 
-Today `Atlas Instance` holds `region`, `base_url`, `status`, `atlas_id`, and a
+Today `Atlas Instance` holds `region`, `base_url`, `status`, and a
 hand-entered service `api_key` / `api_secret`. It gains:
 
 | Field | Meaning |
@@ -84,6 +84,7 @@ hand-entered service `api_key` / `api_secret`. It gains:
 | `peer_endpoint` | the Atlas's public `wg` endpoint (`<host-of-base_url-or-override>:<listen_port>`) |
 | `service_user` | Link → User: the per-Atlas scoped Central service user |
 | `tunnel_status` | `Unregistered` → `Provisioning` → `Active` |
+| `skip_tunnel` (Check) | **local development only** — register the identity half without a WireGuard tunnel (see below) |
 
 - `base_url` stays = the **public bootstrap URL** (used only during registration).
 - The old hand-entered service `api_key` / `api_secret` are **migrated away**:
@@ -120,7 +121,7 @@ sequenceDiagram
     Op->>C: Register (admin creds + base_url + region)
     C->>A: ping (public base_url, admin auth)
     C->>C: ensure hub up; allocate tunnel_ip
-    C->>C: generate atlas_id; create scoped service user
+    C->>C: create scoped service user
     C->>A: provision_tunnel(...) [public base_url]
     A-->>C: { wg_public_key, listen_port, tunnel_ip }
     C->>Hub: hub-peer-add.py (key + endpoint)
@@ -132,7 +133,7 @@ sequenceDiagram
 
 1. Validate creds; `ping` Atlas over **public** `base_url` (admin auth).
 2. Ensure the hub is initialized; allocate the next-free `tunnel_ip`.
-3. Generate `atlas_id`; create the scoped Central service user.
+3. Create the scoped Central service user.
 4. `provision_tunnel` over public `base_url` → Atlas brings up `wg0`, applies the
    firewall with the **auto-revert armed**, stores Central Settings, and returns its
    `wg_public_key` + listen port.
@@ -151,6 +152,20 @@ sequenceDiagram
   scoped service user.
 - Central raises a typed `TunnelRegistrationError`; the `Atlas Instance` stays
   `Unregistered` (or returns there) — no half state.
+
+### Local development — `skip_tunnel`
+
+WireGuard needs two real hosts, a sudoers drop-in, and a public firewall to lock —
+none of which exist on a laptop. With `skip_tunnel` ticked on the `Atlas Instance`,
+`register_atlas` takes a short branch that does only the **identity half**: `ping` over
+`base_url`, create the scoped service user + rotate its creds, then
+push those to Atlas via `provision_tunnel(..., skip_tunnel=1)` — which on the Atlas side
+stores the creds and enables event reporting **without running any host script**. It
+skips the hub check, IP allocation, hub peering, and the over-the-tunnel verify/confirm.
+`tunnel_status` ends `Inactive` and `tunnel_url` is never set, so the data path stays on
+the public `base_url` (the same fallback used for a real `Inactive` tunnel). There is no
+host state to roll back, so a failure just propagates. This is a development convenience
+with **no management-plane isolation** — never a production posture.
 
 ## Cut-over and retirement
 
@@ -246,7 +261,7 @@ hub accumulates one peer per spoke.
 
 **Remove Tunnel** (shown when Active) strips the runtime tunnel — reverts the Atlas
 firewall, drops its `wg0`, removes the hub peer — but **keeps the instance
-registered** (`Tunnel Status = Inactive`, retaining `atlas_id`, the service user and
+registered** (`Tunnel Status = Inactive`, retaining the service user and
 the allocated `tunnel_ip`). The data path falls back to the public `base_url`.
 **Register** again (shown as *Register (re-tunnel)* when Inactive) brings the tunnel
 back up reusing the same identity + address.

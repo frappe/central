@@ -111,7 +111,7 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertEqual(instance.peer_public_key, "SPOKEPUBKEY=")
 		# peer_endpoint = host of base_url : listen port.
 		self.assertEqual(instance.peer_endpoint, "blr.atlas.example.test:51820")
-		self.assertTrue(instance.atlas_id)
+		self.assertTrue(instance.service_user)
 
 		# provision_tunnel got the hub identity + allocated ip + pushed service creds.
 		payload = provision_tunnel.call_args.args[1]
@@ -119,7 +119,7 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertEqual(payload["hub_endpoint"], "203.0.113.1:51820")
 		self.assertEqual(payload["tunnel_ip"], "10.88.0.2")
 		self.assertEqual(payload["tunnel_cidr"], "10.88.0.0/16")
-		self.assertEqual(payload["atlas_id"], instance.atlas_id)
+		self.assertNotIn("atlas_id", payload)
 		self.assertTrue(payload["service_api_key"])
 		self.assertTrue(payload["service_api_secret"])
 
@@ -133,6 +133,56 @@ class TestAtlasRegister(IntegrationTestCase):
 		# verify ping went over the tunnel_url; confirm too.
 		admin_ping.assert_any_call("https://10.88.0.2")
 		confirm_tunnel.assert_called_once_with("https://10.88.0.2")
+
+	# ----- local dev (skip_tunnel) -----------------------------------------
+
+	def test_register_skip_tunnel_does_identity_only(self) -> None:
+		"""skip_tunnel registers the identity half without any tunnel: link_local pushes the
+		creds, no hub/allocation/peer/confirm runs, and the data path stays on base_url."""
+		instance = self.make_instance("blr-local", skip_tunnel=1)
+		with (
+			patch.object(AtlasClient, "admin_ping", return_value={"message": "pong"}) as admin_ping,
+			patch.object(AtlasClient, "link_local", return_value={"skip_tunnel": True}) as link_local,
+			patch.object(AtlasClient, "provision_tunnel") as provision_tunnel,
+			patch.object(AtlasClient, "confirm_tunnel") as confirm_tunnel,
+			patch("central.integrations.atlas.run_host_task") as run_host_task,
+		):
+			out = register_atlas(instance)
+
+		self.assertEqual(out, {"ok": True, "tunnel_status": "Inactive", "skip_tunnel": True})
+
+		# Only admin_ping + link_local; no tunnel host work at all.
+		admin_ping.assert_called_once_with(instance.base_url)
+		link_local.assert_called_once()
+		provision_tunnel.assert_not_called()
+		confirm_tunnel.assert_not_called()
+		run_host_task.assert_not_called()
+
+		# link_local pushed the creds, no identity/tunnel/hub fields.
+		payload = link_local.call_args.args[1]
+		self.assertNotIn("atlas_id", payload)
+		self.assertTrue(payload["service_api_key"])
+		self.assertTrue(payload["service_api_secret"])
+		self.assertNotIn("tunnel_ip", payload)
+		self.assertNotIn("hub_public_key", payload)
+
+		instance.reload()
+		self.assertEqual(instance.tunnel_status, "Inactive")
+		self.assertTrue(instance.service_user)
+		self.assertFalse(instance.tunnel_ip)
+		self.assertFalse(instance.tunnel_url)  # data path stays on base_url
+		self.assertFalse(instance.peer_public_key)
+
+	def test_register_skip_tunnel_needs_no_hub(self) -> None:
+		"""skip_tunnel must work with no hub initialized — it never touches one."""
+		_set_hub(active=False)
+		instance = self.make_instance("blr-local-nohub", skip_tunnel=1)
+		with (
+			patch.object(AtlasClient, "admin_ping", return_value={"message": "pong"}),
+			patch.object(AtlasClient, "link_local", return_value={"skip_tunnel": True}),
+		):
+			out = register_atlas(instance)
+		self.assertEqual(out["tunnel_status"], "Inactive")
 
 	def test_register_creates_scoped_service_user(self) -> None:
 		instance = self.make_instance("blr-svc")
@@ -204,7 +254,6 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertFalse(instance.peer_public_key)
 		self.assertFalse(instance.peer_endpoint)
 		# ...but the registration identity is RETAINED.
-		self.assertTrue(instance.atlas_id)
 		self.assertEqual(instance.service_user, service_user)
 		self.assertEqual(instance.tunnel_ip, "10.88.0.2")
 		self.assertTrue(frappe.db.exists("User", service_user))
@@ -228,7 +277,7 @@ class TestAtlasRegister(IntegrationTestCase):
 
 	def test_re_register_after_remove_reuses_identity(self) -> None:
 		instance = self._register("blr-retunnel")
-		atlas_id, service_user, tunnel_ip = instance.atlas_id, instance.service_user, instance.tunnel_ip
+		service_user, tunnel_ip = instance.service_user, instance.tunnel_ip
 		# strip the tunnel (Inactive, still registered)
 		with patch.object(AtlasClient, "deprovision_tunnel", return_value={}), patch(
 			"central.integrations.atlas.run_host_task", return_value=MagicMock()
@@ -242,7 +291,6 @@ class TestAtlasRegister(IntegrationTestCase):
 			register_atlas(instance)
 		instance.reload()
 		self.assertEqual(instance.tunnel_status, "Active")
-		self.assertEqual(instance.atlas_id, atlas_id)
 		self.assertEqual(instance.service_user, service_user)
 		self.assertEqual(instance.tunnel_ip, tunnel_ip)
 
