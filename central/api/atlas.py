@@ -25,27 +25,15 @@ def event(**kwargs) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def register(**kwargs) -> dict:
-	"""
-	Register a regional Atlas: match its (operator-created) Atlas Instance by
-	region and assign a stable `atlas_id`, which Atlas stamps on every event so we
-	can route them to this cluster.
-	"""
-	region = frappe._dict(kwargs).region
-	if not region:
-		frappe.throw(_("Region is required to register on Central."), frappe.ValidationError)
-
-	name = frappe.db.get_value("Atlas Instance", {"region": region})
-	if not name:
-		frappe.throw(_("No Atlas Instance configured for region {0}.").format(region), frappe.DoesNotExistError)
-
-	instance = frappe.get_doc("Atlas Instance", name)
-	if not instance.atlas_id:
-		instance.atlas_id = frappe.generate_hash(length=12)
-		# Atlas Instance is operator-managed (not writable by the authenticated
-		# service caller); stamping the id is part of registration.
-		instance.save(ignore_permissions=True)
-
-	return {"atlas_id": instance.atlas_id, "label": frappe.local.site}
+	"""Retired. Registration is Central-initiated now (central/spec/TUNNEL.md): the
+	operator runs Register on the Atlas Instance, which drives the tunnel handshake
+	(provision_tunnel / confirm_tunnel) and stamps the atlas_id from Central's side.
+	This inbound endpoint no longer registers anything; it stays only to give an old
+	Atlas build a clear signal instead of a 404."""
+	frappe.throw(
+		_("Atlas-initiated register is retired; registration is Central-initiated."),
+		frappe.ValidationError,
+	)
 
 
 @frappe.whitelist(methods=["GET"])

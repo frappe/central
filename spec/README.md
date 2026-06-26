@@ -8,6 +8,16 @@
 Central authors identity and Team permissions. Each Atlas cluster consumes those
 grants through OAuth and enforces them locally.
 
+## Tunnel
+
+- [Tunnel](TUNNEL.md): Central as the WireGuard hub, the `Register Atlas`
+  orchestration, the per-Atlas scoped service user, and the host-exec runner for the
+  hub scripts. Pairs with [atlas/spec/21-tunnel.md](../../atlas/spec/21-tunnel.md)
+  (the Atlas-side lockdown + lockout-safe handshake).
+
+Each Atlas management plane is reachable only over the tunnel; Central firewalls each
+Atlas's public interface during a lockout-safe, Central-initiated registration.
+
 ## Billing
 
 - [Atlas Integration](../../v2-billing-specs/atlas-integration/README.md): the
