@@ -113,3 +113,62 @@ class TestUnmodelledMeteredResource(IntegrationTestCase):
 		receive_meter_rollups([self._backup_meter(50)])
 		with self.assertRaises(frappe.ValidationError):
 			metering.metered_line_items(self.TEAM, self.CLUSTER, "2026-06-01", "2026-06-30")
+
+
+class TestFreeTierMeteredResource(IntegrationTestCase):
+	"""A metered plan whose rate row is configured at 0 is a legitimate free tier — its
+	overage bills a zero-amount line, NOT a 'no active metered plan' error. This is the
+	case the old `if not rate` guard conflated with a genuine misconfiguration (ADR 0008)."""
+
+	TEAM = "team-freetier"
+	CLUSTER = "ap-south-1"
+	PLAN = "bundle-freetier"
+	RESOURCE = "srv-freetier"
+
+	def setUp(self):
+		ensure_team(self.TEAM)
+		# Base bundle gives Transfer a zero allowance, so all usage is overage.
+		make_plan(self.PLAN, includes=[{"resource_type": "Transfer", "quantity": 0, "unit": "GB"}])
+		# A metered plan that DOES price Transfer — at a rate of 0 (free tier).
+		make_metered_plan(
+			"meter-freetier", resource_type="Transfer",
+			rates=[{"cluster": "", "currency": "INR", "rate": 0}],
+		)
+		self._purge()
+		frappe.get_doc(
+			{
+				"doctype": "Price Lock", "team": self.TEAM, "plan": self.PLAN,
+				"cluster": self.CLUSTER, "resource_id": self.RESOURCE, "currency": "INR",
+				"locked_rate": 1000, "started_at": frappe.utils.now_datetime(),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+
+	def tearDown(self):
+		self._purge()
+		from central.billing.tests.utils import _clear_metered_plans
+
+		_clear_metered_plans("Transfer")
+		frappe.db.commit()
+
+	def _purge(self):
+		for dt in ("Usage Rollup", "Price Lock"):
+			frappe.db.delete(dt, {"team": self.TEAM})
+		frappe.db.commit()
+
+	def _transfer_meter(self, qty):
+		return {
+			"resource_id": self.RESOURCE, "resource_type": "Transfer", "meter_type": "Gauge",
+			"period_start": "2026-06-01 00:00:00", "period_end": "2026-06-30 23:59:59",
+			"quantity": qty, "unit": "GB",
+			"idempotency_key": f"{self.RESOURCE}:Transfer:2026-06-01", "status": "open",
+		}
+
+	def test_zero_priced_overage_bills_a_zero_line(self):
+		receive_meter_rollups([self._transfer_meter(50)])
+		lines = metering.metered_line_items(self.TEAM, self.CLUSTER, "2026-06-01", "2026-06-30")
+		self.assertEqual(len(lines), 1)
+		self.assertEqual(lines[0]["resource_type"], "Transfer")
+		self.assertEqual(lines[0]["quantity"], 50)
+		self.assertEqual(lines[0]["rate"], 0)
+		self.assertEqual(lines[0]["amount"], 0)

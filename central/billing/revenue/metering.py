@@ -190,31 +190,51 @@ def metered_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	)
 
 	lines = []
+	unpriced = []  # (resource_type, reason) — collected so every problem surfaces at once
 	for r in rollups:
 		if r.period_start and not (period_start <= frappe.utils.getdate(r.period_start) <= period_end):
 			continue
 
 		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate and has no
-		# allowance; a grandfathered one uses the terms locked at ingest.
+		# allowance; a grandfathered one uses the terms locked at ingest. `resolved`
+		# stays None (not 0) when no rate is configured, so an unpriced overage is
+		# distinguishable from a genuinely free one below.
 		plan = _metered_plan_for(r.resource_type)
 		if plan and plan.pricing_mode == "Live":
-			rate = frappe.utils.flt(resolve_rate(get_catalog_rates("Plan", plan.name), r.currency, cluster))
+			resolved = resolve_rate(get_catalog_rates("Plan", plan.name), r.currency, cluster)
 			allowance = 0.0
 		else:
-			rate = frappe.utils.flt(r.locked_rate)
+			resolved = r.locked_rate
 			allowance = frappe.utils.flt(r.locked_allowance)
 
 		billable_qty = max(0.0, frappe.utils.flt(r.quantity) - allowance)
 		if billable_qty <= 0:
 			continue
-		if not rate:
-			# Usage ran past the allowance but no metered plan prices the overage —
-			# a misconfiguration to surface, not bill silently at zero (ADR 0008).
-			frappe.throw(
-				frappe._("No active metered plan prices resource type {0} (team {1}).").format(
-					r.resource_type, team
+
+		# Usage ran past the allowance, so the overage must resolve to a rate. Surface the
+		# two misconfigurations distinctly (a missing rate row must not read as a missing
+		# plan during an outage investigation), and don't bill either silently at zero:
+		#   - resolved is None: a live plan exists but has no Catalog Rate for this
+		#     currency/cluster (the grandfathered branch always carries a locked number).
+		#   - rate is 0 with no plan modelling the resource: nothing prices the overage.
+		# A rate that *is* configured at 0 with a plan present is a legitimate free tier and
+		# falls through to a zero-amount line (ADR 0008).
+		if resolved is None:
+			unpriced.append(
+				(
+					r.resource_type,
+					frappe._("metered plan {0} has no rate for {1} / {2}").format(
+						plan.name, r.currency, cluster or frappe._("default cluster")
+					),
 				)
 			)
+			continue
+
+		rate = frappe.utils.flt(resolved)
+		if rate == 0 and plan is None:
+			unpriced.append((r.resource_type, frappe._("no active metered plan prices it")))
+			continue
+
 		amount = frappe.utils.flt(billable_qty * rate, 2)
 		lines.append(
 			{
@@ -228,5 +248,12 @@ def metered_line_items(team: str, cluster: str, period_start, period_end) -> lis
 				"days": 0,
 				"amount": amount,
 			}
+		)
+
+	if unpriced:
+		frappe.throw(
+			frappe._("Cannot bill team {0} — unpriced metered usage: {1}.").format(
+				team, "; ".join(frappe._("{0} ({1})").format(rt, why) for rt, why in unpriced)
+			)
 		)
 	return lines

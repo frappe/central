@@ -53,8 +53,19 @@ class Plan(Document):
 			filters={"category": ["in", metered_cats], "is_active": 1, "name": ["!=", self.name]},
 			pluck="name",
 		)
+		if not others:
+			return
+
+		# One batched read of every other plan's composition, grouped by plan, instead of
+		# a query per plan.
+		includes_by_plan: dict[str, list[str]] = {}
+		for inc in frappe.get_all(
+			"Plan Includes", filters={"parent": ["in", others]}, fields=["parent", "resource_type"]
+		):
+			includes_by_plan.setdefault(inc.parent, []).append(inc.resource_type)
+
 		for other in others:
-			includes = frappe.get_all("Plan Includes", filters={"parent": other}, pluck="resource_type")
+			includes = includes_by_plan.get(other, [])
 			if len(includes) == 1 and includes[0] == resource_type:
 				frappe.throw(
 					_(
