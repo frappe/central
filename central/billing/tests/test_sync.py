@@ -11,7 +11,12 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog import subscriptions
-from central.billing.tests.utils import complete_billing_profile, ensure_team, make_plan
+from central.billing.tests.utils import (
+	complete_billing_profile,
+	ensure_atlas_instance,
+	ensure_team,
+	make_plan,
+)
 
 TEAM = "team-provision"
 PLAN = "bundle-provision"
@@ -22,6 +27,7 @@ class TestProvisionWritesLock(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM, currency="INR")
+		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)  # INR catalog rate 3200
 		frappe.db.delete("Price Lock", {"team": TEAM})
 		frappe.db.commit()

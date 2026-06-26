@@ -4,7 +4,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan
 
 EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
@@ -20,6 +20,7 @@ class IntegrationTestSubscriptionChange(IntegrationTestCase):
 		self.team = ensure_team("team-sub-change")
 		self.plan = make_plan("plan-sub-change-a")
 		self.plan_b = make_plan("plan-sub-change-b")
+		ensure_atlas_instance("ap-south-1")
 		if not frappe.db.exists("Asset", "vm-sub-change"):
 			frappe.get_doc(
 				{

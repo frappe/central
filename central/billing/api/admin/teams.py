@@ -11,10 +11,20 @@ from central.billing.authz import require_operator
 from central.billing.api.admin._shared import (
 	_STANDING_RANK,
 	_active_locks,
+	_asset_cluster_map,
 	_plan_monthly_inr,
 	_team_currency,
 	_to_inr,
 )
+
+
+def _with_cluster(subs: list[dict]) -> list[dict]:
+	"""Stamp each subscription row with its region, resolved through its asset_id
+	(cluster lives on the Asset now, not the Subscription)."""
+	clusters = _asset_cluster_map([s.asset_id for s in subs])
+	for s in subs:
+		s.cluster = clusters.get(s.asset_id)
+	return subs
 
 
 @frappe.whitelist()
@@ -30,9 +40,9 @@ def get_team_billing(team: str) -> dict:
 		"team": team,
 		"currency": currency,
 		"tier": frappe.db.get_value("Billing Profile", team, "trust_tier") or "—",
-		"subscriptions": frappe.get_all(
+		"subscriptions": _with_cluster(frappe.get_all(
 			"Subscription", filters={"team": team},
-			fields=["name", "plan", "cluster", "account_standing"]),
+			fields=["name", "plan", "asset_id", "account_standing"])),
 		"invoices": frappe.get_all(
 			"Invoice", filters={"team": team},
 			fields=["name", "status", "total", "amount_paid", "currency", "period_end"], order_by="period_start desc"),
@@ -73,9 +83,9 @@ def get_retention() -> dict:
 def get_metrics() -> dict:
 	"""Headline reports: team counts, on-time vs delinquent, failures, MRR."""
 	require_operator()
-	subs = frappe.get_all(
-		"Subscription", fields=["team", "plan", "cluster", "account_standing", "billing_cycle"]
-	)
+	subs = _with_cluster(frappe.get_all(
+		"Subscription", fields=["team", "plan", "asset_id", "account_standing", "billing_cycle"]
+	))
 	teams, mrr = {}, 0.0
 	for s in subs:
 		rate = _plan_monthly_inr(s.plan, s.cluster)
@@ -101,7 +111,7 @@ def list_teams() -> list[dict]:
 	"""Per-team rollup: standing, tier, MRR, resources, open invoices, credit."""
 	require_operator()
 	teams = {}
-	for s in frappe.get_all("Subscription", fields=["team", "plan", "cluster", "account_standing", "billing_cycle"]):
+	for s in _with_cluster(frappe.get_all("Subscription", fields=["team", "plan", "asset_id", "account_standing", "billing_cycle"])):
 		t = teams.setdefault(s.team, {"team": s.team, "standing": "Current", "mrr": 0.0, "subscriptions": 0, "resources": 0})
 		rate = _plan_monthly_inr(s.plan, s.cluster)
 		t["mrr"] += rate / 12 if s.billing_cycle == "Annual" else rate

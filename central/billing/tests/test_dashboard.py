@@ -9,8 +9,11 @@ from central.billing.revenue import credits
 from central.billing.api import dashboard
 from central.billing.platform.sync import receive_usage_events
 from central.billing.tests.utils import (
+	add_segment,
 	complete_billing_profile,
+	ensure_atlas_instance,
 	ensure_team,
+	make_billing_subscription,
 	make_billing_team,
 	make_custom_role_team,
 	make_plan,
@@ -36,6 +39,7 @@ class TestDashboardSmoke(IntegrationTestCase):
 class CustomerDataBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
 		self._purge()
 		self.today = frappe.utils.getdate()
@@ -48,14 +52,22 @@ class CustomerDataBase(IntegrationTestCase):
 		for dt in ("Invoice", "Price Lock", "Credit Ledger Entry", "Gateway Customer"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
+		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
+			frappe.db.delete("Subscription Change", {"subscription": sub})
+			frappe.db.delete("Subscription", {"name": sub})
 		frappe.db.commit()
 
 	def _provision(self, rate=3000):
+		# Price Lock feeds _team_clusters; the Subscription + its month-start segment
+		# feed compute_line_items (the Asset-model fixed accrual).
 		receive_usage_events(
 			[{"event_id": "ev-cust", "team": TEAM, "resource_id": "srv-cust", "cluster": CLUSTER,
 			  "plan": PLAN, "shown_rate": rate, "currency": "INR", "event_type": "subscribed",
 			  "effective_from": f"{self.month_start} 00:00:00", "effective_to": None}]
 		)
+		sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		add_segment(sub, "Created", rate, f"{self.month_start} 00:00:00")
+		return sub
 
 
 class TestForecast(CustomerDataBase):

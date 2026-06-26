@@ -6,9 +6,14 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.revenue import invoicing, metering
-from central.billing.catalog import subscriptions
 from central.billing.platform.sync import receive_meter_rollups, receive_usage_events
-from central.billing.tests.utils import ensure_team, make_metered_plan, make_plan
+from central.billing.tests.utils import (
+	add_segment,
+	ensure_team,
+	make_billing_subscription,
+	make_metered_plan,
+	make_plan,
+)
 
 TEAM = "team-meter"
 CLUSTER = "ap-south-1"
@@ -120,9 +125,10 @@ class TestMeteredLineItems(MeteringTestBase):
 
 	def test_draft_invoice_includes_fixed_and_metered_lines(self):
 		receive_meter_rollups([meter("a", 150)])
-		sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
-		).name
+		sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		# Full-June fixed segment at ₹1000/mo (authored as the run-segment billing
+		# day-weights over), alongside the metered overage.
+		add_segment(sub, "Created", 1000, "2026-06-01 00:00:00")
 		name = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 

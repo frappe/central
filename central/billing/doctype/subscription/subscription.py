@@ -54,8 +54,15 @@ class Subscription(Document):
 			)
 
 	def after_insert(self):
-		"""Log a 'Created' Subscription Change, with a rate snapshot, on insert."""
+		"""Log a 'Created' Subscription Change, with a rate snapshot, on insert.
+
+		The segment opens at the subscription's start_date (when billing begins),
+		not the wall-clock insert time, so a backdated subscription bills its real
+		period."""
 		rate, currency = self.resolve_rate_snapshot()
+		effective_at = (
+			frappe.utils.get_datetime(self.start_date) if self.start_date else frappe.utils.now_datetime()
+		)
 		frappe.get_doc(
 			{
 				"doctype": "Subscription Change",
@@ -64,13 +71,15 @@ class Subscription(Document):
 				"new_value": self.plan,
 				"locked_rate": rate,
 				"currency": currency,
-				"effective_at": frappe.utils.now_datetime(),
+				"effective_at": effective_at,
 				"changed_by": frappe.session.user,
 			}
 		).insert(ignore_permissions=True)
 
 	def on_update(self):
-		if self.has_value_changed("plan"):
+		# on_update fires during the initial insert too; after_insert already logs the
+		# 'Created' segment, so only log a plan change on a genuine later edit.
+		if not self.flags.in_insert and self.has_value_changed("plan"):
 			self.log_plan_change()
 
 	def log_plan_change(self):

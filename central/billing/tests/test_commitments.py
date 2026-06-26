@@ -12,32 +12,22 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.revenue import invoicing
-from central.billing.catalog import subscriptions
-from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
 
 TEAM = "team-commitment"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-commitment-test"
 
+_CHANGE_TYPE = {"subscribed": "Created", "changed": "Plan Changed", "Cancelled": "Cancelled"}
+
 
 def push_event(event_id, resource_id, rate, effective_from, event_type="subscribed", team=TEAM):
-	receive_usage_events(
-		[
-			{
-				"event_id": event_id,
-				"team": team,
-				"resource_id": resource_id,
-				"cluster": CLUSTER,
-				"plan": PLAN,
-				"shown_rate": rate,
-				"currency": "INR",
-				"event_type": event_type,
-				"effective_from": effective_from,
-				"effective_to": None,
-			}
-		]
-	)
+	"""Author a run-segment for the team's subscription (the unit billing
+	day-weights over in the Asset model). Kept under the old event-shaped signature
+	so the test bodies read unchanged."""
+	sub = frappe.db.get_value("Subscription", {"team": team}, "name")
+	change_type = _CHANGE_TYPE[event_type]
+	add_segment(sub, change_type, rate, effective_from, plan=PLAN)
 
 
 def make_commitment(team, floor, discount_pct, started_at="2026-06-01", term_months=12, currency="INR"):
@@ -58,12 +48,9 @@ def make_commitment(team, floor, discount_pct, started_at="2026-06-01", term_mon
 
 class CommitmentTestBase(IntegrationTestCase):
 	def setUp(self):
-		ensure_team(TEAM)
 		make_plan(PLAN)
 		self._purge()
-		self.sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
-		).name
+		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
 
 	def tearDown(self):
 		self._purge()

@@ -8,32 +8,15 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.revenue import invoicing, credits
-from central.billing.catalog import subscriptions
-from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import (
+	add_segment,
+	make_billing_subscription,
+	make_plan,
+)
 
 TEAM = "team-invoice"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-invoice-test"
-
-
-def push_event(event_id, resource_id, rate, effective_from, event_type="subscribed"):
-	receive_usage_events(
-		[
-			{
-				"event_id": event_id,
-				"team": TEAM,
-				"resource_id": resource_id,
-				"cluster": CLUSTER,
-				"plan": PLAN,
-				"shown_rate": rate,
-				"currency": "INR",
-				"event_type": event_type,
-				"effective_from": effective_from,
-				"effective_to": None,
-			}
-		]
-	)
 
 
 def run_workers(n, fn):
@@ -63,12 +46,12 @@ def run_workers(n, fn):
 
 class BillingTestBase(IntegrationTestCase):
 	def setUp(self):
-		ensure_team(TEAM)
 		make_plan(PLAN)
 		self._purge()
-		self.sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
-		).name
+		# Asset-model subscription; the auto 'Created' segment is cleared so each test
+		# authors its own run-segment timeline with add_segment.
+		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		frappe.db.commit()
 
 	def tearDown(self):
 		self._purge()
@@ -85,10 +68,10 @@ class BillingTestBase(IntegrationTestCase):
 
 class TestDraftGeneration(BillingTestBase):
 	def test_day_weighted_line_items_new_plan_wins_the_day(self):
-		# One resource, two plan changes within June (rates 1000 / 2000 / 1000).
-		push_event("e1", "R1", 1000, "2026-06-01 00:00:00", "subscribed")
-		push_event("e2", "R1", 2000, "2026-06-10 00:00:00", "changed")
-		push_event("e3", "R1", 1000, "2026-06-22 00:00:00", "changed")
+		# One subscription, two plan changes within June (rates 1000 / 2000 / 1000).
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-10 00:00:00")
+		add_segment(self.sub, "Plan Changed", 1000, "2026-06-22 00:00:00")
 
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
@@ -105,8 +88,8 @@ class TestDraftGeneration(BillingTestBase):
 
 	def test_same_day_provision_destroy_floors_to_one_day(self):
 		# Provisioned and cancelled on the same day → 1 day, not 0.
-		push_event("e1", "R2", 1000, "2026-06-05 00:00:00", "subscribed")
-		push_event("e2", "R2", 1000, "2026-06-05 00:00:00", "Cancelled")
+		add_segment(self.sub, "Created", 1000, "2026-06-05 00:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-05 00:00:00")
 
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
@@ -115,7 +98,7 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertEqual(inv.items[0].amount, round(1000 / 30, 2))
 
 	def test_partial_first_month_billed_for_join_window(self):
-		push_event("e1", "R3", 3000, "2026-06-15 00:00:00", "subscribed")
+		add_segment(self.sub, "Created", 3000, "2026-06-15 00:00:00")
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual(inv.items[0].days, 16)  # Jun15-30 inclusive
@@ -126,7 +109,7 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertEqual(frappe.db.count("Invoice", {"team": TEAM}), 0)
 
 	def test_draft_generation_is_idempotent(self):
-		push_event("e1", "R1", 1000, "2026-06-01 00:00:00", "subscribed")
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		second = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertEqual(first, second)
@@ -139,7 +122,7 @@ class TestDraftGeneration(BillingTestBase):
 
 class TestOpenAndCollect(BillingTestBase):
 	def _draft(self):
-		push_event("e1", "R1", 1000, "2026-06-01 00:00:00", "subscribed")
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		return invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 
 	def test_open_applies_credits_and_transitions(self):

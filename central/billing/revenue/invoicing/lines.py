@@ -40,7 +40,10 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 			"Subscription Change",
 			filters={"subscription": sub.name, "change_type": ["in", ["Created", "Plan Changed", "Cancelled"]]},
 			fields=["change_type", "new_value", "locked_rate", "effective_at"],
-			order_by="effective_at asc",
+			# Secondary sort on creation so changes sharing an effective_at (e.g. a
+			# same-instant provision then cancel) order deterministically by when they
+			# were recorded — otherwise a Cancelled could sort ahead of its Created.
+			order_by="effective_at asc, creation asc",
 		)
 		for i, change in enumerate(changes):
 			if change.change_type == "Cancelled" or change.locked_rate is None:
