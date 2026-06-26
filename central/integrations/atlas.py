@@ -73,7 +73,7 @@ class AtlasClient:
 	def create_vm(
 		self,
 		*,
-		central_reference: str,
+		team: str,
 		title: str,
 		vcpus: int,
 		memory_megabytes: int,
@@ -84,7 +84,7 @@ class AtlasClient:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
 		Returns the new VM in the Asset-mirror shape so the caller can upsert it."""
 		params: dict = {
-			"central_reference": central_reference,
+			"team": team,
 			"title": title,
 			"vcpus": vcpus,
 			"memory_megabytes": memory_megabytes,
@@ -96,10 +96,10 @@ class AtlasClient:
 			params["cpu_max_cores"] = cpu_max_cores
 		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
 
-	def central_vms(self, central_reference: str | None = None) -> list[dict]:
+	def central_vms(self, team: str | None = None) -> list[dict]:
 		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one
-		team). One dict per VM: name, central_reference, status, gateway_url."""
-		params = {"central_reference": central_reference} if central_reference else None
+		team). One dict per VM: name, team, status, gateway_url."""
+		params = {"team": team} if team else None
 		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
 
 	# --- admin-auth path: the registration handshake (TUNNEL.md) -------------

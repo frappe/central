@@ -84,9 +84,9 @@ class Asset(Document):
 	@classmethod
 	def mirror_vm(cls, cluster: str, vm: dict, *, occurred_at=None, synced_at=None) -> None:
 		"""Upsert one VM into the mirror. `occurred_at` (event push) drives LWW;
-		`synced_at` (reconcile pull) just stamps freshness. A VM with no team
-		(`central_reference`) belongs to no mirror and is skipped."""
-		resource_id, team = vm.get("name"), vm.get("central_reference")
+		`synced_at` (reconcile pull) just stamps freshness. A VM with no `team`
+		belongs to no mirror and is skipped."""
+		resource_id, team = vm.get("name"), vm.get("team")
 		if not resource_id or not team or not frappe.db.exists("Team", team):
 			return
 		if frappe.db.exists("Asset", resource_id):
@@ -118,7 +118,7 @@ class Asset(Document):
 	@staticmethod
 	def _stamp(doc, cluster: str, vm: dict, occurred_at, synced_at) -> None:
 		doc.resource_id = vm.get("name")
-		doc.team = vm.get("central_reference")
+		doc.team = vm.get("team")
 		doc.cluster = cluster
 		doc.status = vm.get("status") or "Pending"
 		doc.title = vm.get("title")

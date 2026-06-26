@@ -85,7 +85,7 @@ def create_server(
 
 	`region` is an Atlas Instance (one Atlas = one region), which is also how we
 	route the provision call. Atlas owns placement/image/lifecycle; we pass the team
-	(as the tenant's central_reference) and the chosen size. The Asset mirror is
+	(the tenant key) and the chosen size. The Asset mirror is
 	populated by the `vm.created` event Atlas emits — the single writer — so we
 	don't upsert here (a second writer would race that event)."""
 	user = frappe.session.user
@@ -99,7 +99,7 @@ def create_server(
 	# Seed the Atlas tenant (first use) with the team owner's email.
 	email = frappe.db.get_value("Team", team, "owner_user")
 	vm = client.create_vm(
-		central_reference=team,
+		team=team,
 		title=title or "server",
 		vcpus=int(vcpus or 1),
 		memory_megabytes=int(memory_megabytes or 512),
