@@ -15,4 +15,5 @@ interface Window {
   provider_logins?: import('@/types/api').ProviderLogin[]
   site_name?: string
   socketio_port?: number
+  onboarding_complete?: boolean
 }

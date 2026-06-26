@@ -15,9 +15,9 @@ const routes = [
     meta: { public: true },
   },
   {
-    path: '/signup/check-email',
-    name: 'CheckEmail',
-    component: () => import('@/pages/auth/CheckEmailPage.vue'),
+    path: '/signup/verify',
+    name: 'VerifyEmail',
+    component: () => import('@/pages/auth/VerifyEmailPage.vue'),
     meta: { public: true },
   },
   {
@@ -26,6 +26,17 @@ const routes = [
     component: () => import('@/pages/auth/ForgotPasswordPage.vue'),
     meta: { public: true },
   },
+  {
+    path: '/onboarding/site',
+    name: 'OnboardingSite',
+    component: () => import('@/pages/onboarding/SiteNamePage.vue'),
+  },
+  {
+    path: '/onboarding/provisioning/:name',
+    name: 'OnboardingProvisioning',
+    component: () => import('@/pages/onboarding/SiteReadyPage.vue'),
+  },
+  // authenticated routes -> AppShell
   {
     path: '/',
     component: () => import('@/layouts/AppShell.vue'),
@@ -55,14 +66,23 @@ export const router = createRouter({
 // page reload, which re-boots the SPA with a fresh session — no client revalidation needed.
 router.beforeEach((to) => {
   const { isGuest } = useAuth()
+  // Seeded with `window.user` (central/www/dashboard.py). A brand-new user has no
+  // live site yet, so they belong in the onboarding funnel, not the dashboard.
+  const onboardingComplete = window.onboarding_complete ?? false
 
   if (to.meta.public) {
-    return isGuest.value ? true : '/servers'
+    if (isGuest.value) return true
+    // Logged in but on an auth page — e.g. browser-Back after verifying. Don't dump
+    // them into the dashboard mid-onboarding: resume the funnel until it's finished.
+    return onboardingComplete ? '/servers' : '/onboarding/site'
   }
 
   if (isGuest.value) {
     return { path: '/login', query: { 'redirect-to': `/dashboard${to.fullPath}` } }
   }
+
+  // A finished user has no reason to re-enter onboarding.
+  if (to.path.startsWith('/onboarding') && onboardingComplete) return '/servers'
 
   return true
 })

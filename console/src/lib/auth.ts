@@ -11,6 +11,23 @@ export async function postFrappe<T>(
   }) as Promise<T>
 }
 
+export async function getFrappe<T>(
+  path: string,
+  params?: Record<string, unknown>,
+): Promise<T> {
+  return frappeRequest({
+    url: path,
+    method: 'GET',
+    params,
+  }) as Promise<T>
+}
+
+// Auth + onboarding endpoints call the v1 method route (like sign_up), so callers
+// build the URL with this prefix and a dotted method path from `API`.
+export function methodUrl(path: string): string {
+  return `/api/method/${path}`
+}
+
 export function emailError(value: string): string {
   if (!value.trim()) return 'Email is required.'
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return 'Enter a valid email.'
