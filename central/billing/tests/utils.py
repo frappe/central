@@ -180,6 +180,7 @@ def make_billing_subscription(team, cluster, plan, start_date=None, clear_change
 	from central.billing.catalog import subscriptions
 
 	ensure_atlas_instance(cluster)
+	ensure_team(team)
 	if not frappe.db.get_value("Billing Profile", team, "currency"):
 		complete_billing_profile(team, currency=kwargs.pop("currency", "INR"))
 	sub = subscriptions.create_subscription(
