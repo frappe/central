@@ -1,15 +1,30 @@
 from __future__ import annotations
 
+import secrets
+
 import frappe
 from frappe import _
 from frappe.utils import cint, escape_html, random_string
 from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
 from frappe.utils.password import get_decrypted_password
 
+from central.iam import get_user_team_names
+
+# SMB signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
+# signup (no User yet, so an abandoned signup leaves nothing behind — simpler than
+# a holding DocType). `verify_signup` creates the User on a correct code, which
+# fires `bootstrap_user_team` (central/users.py) to make the personal Team, then
+# logs the user in so the onboarding flow continues authenticated.
+
+# 2 hours
+OTP_TTL_SECONDS = 2 * 60 * 60
+MAX_OTP_ATTEMPTS = 5
+
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def sign_up(email: str, full_name: str) -> tuple[int, str]:
-	"""Create a Central Website User even when public website signup is disabled."""
+	"""Start an SMB signup: email a verification code, hold the pending signup in
+	cache. The User is created only on `verify_signup`."""
 	email = email.strip().lower()
 	full_name = full_name.strip()
 	if not full_name:
@@ -20,6 +35,87 @@ def sign_up(email: str, full_name: str) -> tuple[int, str]:
 		return (0, _("Already Registered")) if existing_user else (0, _("Registered but disabled"))
 
 	_enforce_signup_limit()
+	_send_signup_code(email, full_name)
+	return 1, _("Please check your email for your verification code")
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def resend_signup_code(email: str) -> tuple[int, str]:
+	"""Re-issue a fresh code for a pending signup."""
+	email = email.strip().lower()
+	pending = frappe.cache.get_value(_otp_key(email))
+	if not pending:
+		frappe.throw(_("Start the signup again — your session expired."), frappe.ValidationError)
+	_send_signup_code(email, pending["full_name"])
+	return 1, _("A new verification code is on its way")
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def verify_signup(email: str, code: str) -> dict:
+	"""Verify the code, create the User (which bootstraps the personal Team), and
+	log the user in so onboarding continues authenticated."""
+	email = email.strip().lower()
+	code = (code or "").strip()
+	pending = frappe.cache.get_value(_otp_key(email))
+
+	# for developer mode, any 6-digit code passes
+	if frappe.conf.developer_mode and len(code) == 6 and code.isdigit():
+		pending = {"full_name": "Developer", "code": code, "attempts": 0}
+
+	if not pending:
+		frappe.throw(_("Your verification code expired. Please sign up again."), frappe.ValidationError)
+
+	if not _code_matches(pending, code):
+		pending["attempts"] = pending.get("attempts", 0) + 1
+		if pending["attempts"] >= MAX_OTP_ATTEMPTS:
+			frappe.cache.delete_value(_otp_key(email))
+			frappe.throw(_("Too many incorrect codes. Please sign up again."), frappe.ValidationError)
+		frappe.cache.set_value(_otp_key(email), pending, expires_in_sec=OTP_TTL_SECONDS)
+		frappe.throw(_("That code is incorrect — try again."), frappe.ValidationError)
+
+	user = _create_verified_user(email, pending["full_name"])
+	frappe.cache.delete_value(_otp_key(email))
+	frappe.local.login_manager.login_as(user.name)
+
+	teams = get_user_team_names(user.name)
+	return {"user": user.name, "team": teams[0] if teams else None}
+
+
+def _otp_key(email: str) -> str:
+	return f"signup:otp:{email}"
+
+
+def _send_signup_code(email: str, full_name: str) -> None:
+	code = f"{secrets.randbelow(900000) + 100000}"
+	frappe.cache.set_value(
+		_otp_key(email),
+		{"full_name": full_name, "code": code, "attempts": 0},
+		expires_in_sec=OTP_TTL_SECONDS,
+	)
+	# Queued (not `now`), and a delivery failure (e.g. no outgoing account in dev)
+	# is logged, never fatal — the code is already cached, so signup can proceed.
+	try:
+		frappe.sendmail(
+			recipients=[email],
+			subject=_("Your Frappe Cloud verification code"),
+			message=_(
+				"<p>Your verification code is <strong>{0}</strong>.</p>"
+				"<p>It expires in 10 minutes.</p>"
+			).format(code),
+		)
+	except Exception:
+		frappe.log_error(title="Signup verification email failed")
+
+
+def _code_matches(pending: dict, code: str) -> bool:
+	# Demo/dev convenience: any 6-digit code passes (mirrors the UI hint). Fails
+	# closed in production.
+	if frappe.conf.developer_mode and len(code) == 6 and code.isdigit():
+		return True
+	return secrets.compare_digest(str(pending.get("code", "")), code)
+
+
+def _create_verified_user(email: str, full_name: str):
 	user = frappe.get_doc(
 		{
 			"doctype": "User",
@@ -32,24 +128,34 @@ def sign_up(email: str, full_name: str) -> tuple[int, str]:
 	)
 	user.flags.ignore_permissions = True
 	user.flags.ignore_password_policy = True
+	user.flags.no_welcome_mail = True
 	user.insert()
 
 	default_role = frappe.get_single_value("Portal Settings", "default_role")
 	if default_role:
 		user.add_roles(default_role)
-
-	# TODO(SMB signup): redirect product signups to domain selection before provisioning.
-	frappe.cache.hset("redirect_after_login", user.name, "/dashboard/servers")
-	if user.flags.email_sent:
-		return 1, _("Please check your email for verification")
-	return 2, _("The verification email could not be sent. Please contact your administrator.")
+	return user
 
 
 def build_auth_context() -> dict:
 	return {
 		"user": frappe.session.user or "Guest",
 		"provider_logins": _provider_logins(),
+		"onboarding_complete": _onboarding_complete(),
 	}
+
+
+def _onboarding_complete() -> bool:
+	"""True once the user's team owns a live site — the signal the SPA uses to keep a
+	brand-new user inside the onboarding funnel (and let a returning one skip it).
+	A first-run user (no team or no site yet) is still onboarding."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		return False
+	teams = get_user_team_names(user)
+	if not teams:
+		return False
+	return bool(frappe.db.exists("Site", {"team": ["in", teams], "status": ["!=", "Terminated"]}))
 
 
 def _provider_logins() -> list[dict[str, str]]:
