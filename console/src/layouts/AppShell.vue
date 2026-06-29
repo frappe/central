@@ -64,6 +64,12 @@ const sections = computed(() => [
         to: '/billing',
         condition: () => canViewBilling.value,
       },
+      {
+        label: 'Invoices',
+        icon: 'lucide-file-text',
+        to: '/billing/invoices',
+        condition: () => canViewBilling.value,
+      },
     ],
   },
 ])

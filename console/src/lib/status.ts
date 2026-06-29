@@ -58,3 +58,18 @@ const STANDING_THEME: Record<string, BadgeTheme> = {
 export function standingTheme(standing: string | null | undefined): BadgeTheme {
   return (standing ? STANDING_THEME[standing] : undefined) ?? 'gray'
 }
+
+// Invoice status → Badge theme (case-insensitive): Paid green, Open/Unpaid amber,
+// Overdue red, Void/Draft neutral.
+const INVOICE_THEME: Record<string, BadgeTheme> = {
+  paid: 'green',
+  open: 'orange',
+  unpaid: 'orange',
+  overdue: 'red',
+  void: 'gray',
+  draft: 'gray',
+}
+
+export function invoiceTheme(status: string | null | undefined): BadgeTheme {
+  return INVOICE_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
+}

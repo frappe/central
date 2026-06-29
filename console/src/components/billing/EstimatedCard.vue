@@ -40,8 +40,8 @@ const byProject = computed(() => {
   const items = fc.value?.line_items ?? []
   const groups = new Map<string, { label: string; amount: number }>()
   for (const li of items) {
-    const key = li.plan || li.description || 'Usage'
-    const g = groups.get(key) || { label: li.description || key, amount: 0 }
+    const key = li.plan || li.item || 'Usage'
+    const g = groups.get(key) || { label: li.item || key, amount: 0 }
     g.amount += Number(li.amount || 0)
     groups.set(key, g)
   }

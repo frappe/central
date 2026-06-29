@@ -17,15 +17,20 @@ export interface TeamOverview {
 }
 
 /** One projected/charged line on the forecast or an invoice. Shaped by the
- *  server's `_describe_line` (resource · plan · qty × rate). */
+ *  server's `_describe_line`: `item` is the human title, `detail` spells out what
+ *  drove the charge. Currency lives on the parent (forecast/invoice), not the row. */
 export interface BillingLine {
-  description: string
-  resource?: string | null
+  item: string
+  detail?: string | null
+  kind?: 'Plan' | 'Overage' | (string & {})
+  resource_type?: string | null
   plan?: string | null
+  subscription_resource?: string | null
+  days?: number | null
   quantity?: number
   rate?: number
+  unit?: string | null
   amount: number
-  currency: Currency
 }
 
 /** get_forecast — current-cycle projection vs wallet. */
@@ -210,7 +215,8 @@ export interface BillingSettings {
 
 /** get_collection_status — collection mode + the "Action Required" banner feed (ADR 0005). */
 export interface CollectionStatus {
-  mode: string
+  mode?: string
+  collection_mode?: string
   action_required: boolean
   reason: string | null
   threshold: number | null

@@ -7,6 +7,7 @@
 // when the gateway webhook lands. So this composable never asserts success — it
 // asserts "we kicked off a charge".
 
+import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { successToast, infoToast, errorToast } from '@/lib/toast'
@@ -42,5 +43,7 @@ export function usePayInvoice({ onDone }: { onDone?: (res: PayResult | undefined
     return res
   }
 
-  return { run, loading: pay.loading }
+  // Wrap in a computed so the reactive `loading` survives being returned out of
+  // the reactive useCall object (reading it raw would snapshot a boolean).
+  return { run, loading: computed(() => pay.loading) }
 }
