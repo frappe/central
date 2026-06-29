@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@stripe/stripe-js": "^9.8.0",
     "@tanstack/vue-table": "^8.21.3",
     "frappe-ui": "github:frappe/frappe-ui#v1.0.0-beta.11",
     "reka-ui": "^2.5.0",
