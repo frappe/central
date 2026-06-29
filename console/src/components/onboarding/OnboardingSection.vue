@@ -47,7 +47,7 @@ const statusClass = computed(() =>
     class="overflow-hidden rounded-lg border transition-colors"
     :class="
       state === 'active'
-        ? 'border-outline-gray-3 bg-surface-white shadow-sm'
+        ? 'border-outline-gray-3 bg-surface-elevation-1 shadow-sm'
         : 'border-outline-gray-1 bg-surface-gray-1'
     "
   >

@@ -207,7 +207,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
             </div>
             <div class="max-h-80 overflow-y-auto rounded border border-outline-gray-1">
               <table class="w-full text-sm">
-                <thead class="sticky top-0 bg-surface-white">
+                <thead class="sticky top-0 bg-surface-elevation-1">
                   <tr class="border-b border-outline-gray-1 text-left text-p-sm text-ink-gray-5">
                     <th class="px-3 py-2 font-normal">Item</th>
                     <th class="px-3 py-2 text-right font-normal">Amount</th>
@@ -295,7 +295,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
           <!-- Pinned so the pay action is always reachable. -->
           <div
             v-if="canPay"
-            class="sticky bottom-0 -mx-4 -mb-4 border-t border-outline-gray-1 bg-surface-white px-4 py-3"
+            class="sticky bottom-0 -mx-4 -mb-4 border-t border-outline-gray-1 bg-surface-elevation-1 px-4 py-3"
           >
             <Button
               variant="solid"

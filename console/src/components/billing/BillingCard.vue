@@ -5,7 +5,7 @@ defineProps<{ title: string; description?: string }>()
 </script>
 
 <template>
-  <section class="rounded-lg border border-outline-gray-2 bg-surface-white">
+  <section class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1">
     <header class="flex items-start justify-between gap-3 border-b border-outline-gray-1 px-5 py-3.5">
       <div class="min-w-0">
         <h2 class="text-base text-ink-gray-9">{{ title }}</h2>

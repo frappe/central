@@ -90,20 +90,20 @@ const levels = computed(() => {
 
           <!-- Summary band -->
           <section class="grid gap-4 sm:grid-cols-3">
-            <div class="rounded-lg border border-outline-gray-2 bg-surface-white p-4">
+            <div class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-4">
               <p class="text-p-sm text-ink-gray-5">Current tier</p>
               <p class="mt-0.5 flex items-center gap-2 text-xl font-medium text-ink-gray-9">
                 {{ tierLabel(cur) }}
                 <Badge v-if="tier.data?.is_top_tier" theme="green" label="Top tier" />
               </p>
             </div>
-            <div class="rounded-lg border border-outline-gray-2 bg-surface-white p-4">
+            <div class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-4">
               <p class="text-p-sm text-ink-gray-5">Spending limit</p>
               <p class="mt-0.5 text-xl font-medium tabular-nums text-ink-gray-9">
                 {{ money(cur.max_spend, currency) }}
               </p>
             </div>
-            <div class="rounded-lg border border-outline-gray-2 bg-surface-white p-4">
+            <div class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-4">
               <p class="text-p-sm text-ink-gray-5">Paid to date</p>
               <p class="mt-0.5 text-xl font-medium tabular-nums text-ink-gray-9">
                 {{ money(prog?.cumulative_paid, currency) }}
@@ -115,7 +115,7 @@ const levels = computed(() => {
           </section>
 
           <!-- Progress to next tier -->
-          <section v-if="nxt" class="rounded-lg border border-outline-gray-2 bg-surface-white p-5">
+          <section v-if="nxt" class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5">
             <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <h2 class="text-base text-ink-gray-9">Progress to {{ tierLabel(nxt) }}</h2>
               <span class="text-p-sm text-ink-gray-5">
@@ -154,14 +154,14 @@ const levels = computed(() => {
 
           <section
             v-else
-            class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-white px-5 py-4 text-p-sm text-ink-gray-6"
+            class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-elevation-1 px-5 py-4 text-p-sm text-ink-gray-6"
           >
             <span class="lucide-circle-check size-4 text-ink-green-3" aria-hidden="true" />
             You're at the highest tier — the maximum spend and resource headroom.
           </section>
 
           <!-- Full ladder -->
-          <section class="overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-white">
+          <section class="overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1">
             <header class="border-b border-outline-gray-1 px-4 py-3">
               <h2 class="text-base text-ink-gray-8">All tiers</h2>
             </header>

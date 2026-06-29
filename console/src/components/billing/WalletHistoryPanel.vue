@@ -40,9 +40,9 @@ function isCredit(entry: CreditLedgerEntry): boolean {
   <Teleport to="body">
     <Transition name="wallet-fade">
       <div v-if="open" class="fixed inset-0 z-40" @click.self="open = false">
-        <div class="absolute inset-0 bg-black/20" />
+        <div class="absolute inset-0 bg-black-overlay-200" />
         <aside
-          class="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-surface-white shadow-xl"
+          class="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-surface-elevation-1 shadow-xl"
         >
           <header class="flex items-start justify-between gap-3 border-b border-outline-gray-1 px-5 py-4">
             <div>

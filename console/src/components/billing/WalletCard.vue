@@ -19,7 +19,7 @@ const shortfall = computed(() => projected.value > 0 && balance.value < projecte
 <template>
   <button
     type="button"
-    class="flex flex-col rounded-lg border border-outline-gray-2 bg-surface-white p-5 text-left transition-colors hover:border-outline-gray-3"
+    class="flex flex-col rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5 text-left transition-colors hover:border-outline-gray-3"
     @click="$emit('open')"
   >
     <div class="flex items-center justify-between gap-2">
