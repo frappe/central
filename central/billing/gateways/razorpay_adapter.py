@@ -257,22 +257,12 @@ class RazorpayAdapter(GatewayAdapter):
 
 		Razorpay enforces (email, contact) uniqueness per merchant, so editing a
 		reused customer to carry this identity can collide with a pre-existing
-		customer that already has it — Razorpay answers "Customer already exists for
-		the merchant". That means the identity is already established at the gateway,
-		so the sync is a no-op: swallow it rather than crash the mandate setup (which
-		would otherwise fail on every retry, since the stored customer is reused)."""
+		customer that already owns it ("Customer already exists for the merchant").
+		That collision is meaningful — the caller (mandates) recovers by switching
+		to the customer that already has the contact — so let it propagate."""
 		fields = {k: info.get(k) for k in ("name", "email", "contact") if info.get(k)}
-		if not fields:
-			return
-		try:
+		if fields:
 			self._client().customer.edit(customer_id, fields)
-		except razorpay.errors.BadRequestError as e:
-			if "already exists" not in str(e).lower():
-				raise
-			frappe.logger("billing").info(
-				f"Razorpay customer {customer_id} already carries this identity; "
-				f"skipping contact sync ({e})"
-			)
 
 	def verify_payment_signature(self, data: dict) -> bool:
 		"""Verify a Razorpay Checkout callback (payment_id + order_id + signature).
