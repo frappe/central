@@ -33,6 +33,7 @@ const chosen = ref<string | null>(null) // 'Manual Checkout' | 'Prepaid'
 
 const setMode = useCall<unknown, { team: string; mode: string }>({
   url: method(API.setCollectionMode),
+  method: 'POST',
   immediate: false,
   onError: (e: unknown) => errorToast(e, 'Could not update how you pay.'),
 })

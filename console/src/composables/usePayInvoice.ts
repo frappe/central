@@ -21,6 +21,7 @@ interface PayResult {
 export function usePayInvoice({ onDone }: { onDone?: (res: PayResult | undefined) => void } = {}) {
   const pay = useCall<PayResult, { invoice: string }>({
     url: method(API.payInvoice),
+    method: 'POST',
     immediate: false,
     onError: (e: unknown) => errorToast(e, 'Could not start the payment.'),
   })

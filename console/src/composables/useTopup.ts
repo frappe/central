@@ -30,10 +30,12 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
   const { activeTeam } = useSession()
   const createOrder = useCall<GatewayOrder, Record<string, unknown>>({
     url: method(API.createTopupOrder),
+    method: 'POST',
     immediate: false,
   })
   const confirm = useCall<unknown, Record<string, unknown>>({
     url: method(API.confirmTopup),
+    method: 'POST',
     immediate: false,
   })
 

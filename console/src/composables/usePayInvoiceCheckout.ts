@@ -15,10 +15,12 @@ import { successToast, infoToast, errorToast } from '@/lib/toast'
 export function usePayInvoiceCheckout({ onDone }: { onDone?: (res: unknown) => void } = {}) {
   const create = useCall<GatewayOrder, { invoice: string }>({
     url: method(API.payInvoiceCheckout),
+    method: 'POST',
     immediate: false,
   })
   const confirm = useCall<unknown, Record<string, unknown>>({
     url: method(API.confirmInvoiceCheckout),
+    method: 'POST',
     immediate: false,
   })
 

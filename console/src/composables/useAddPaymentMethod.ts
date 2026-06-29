@@ -25,10 +25,12 @@ export function useAddPaymentMethod({ onDone }: { onDone?: (res?: MethodResult) 
   const { activeTeam } = useSession()
   const setup = useCall<GatewayOrder, Record<string, unknown>>({
     url: method(API.setupPaymentMethodOrder),
+    method: 'POST',
     immediate: false,
   })
   const confirm = useCall<MethodResult, Record<string, unknown>>({
     url: method(API.confirmPaymentMethodOrder),
+    method: 'POST',
     immediate: false,
   })
 

@@ -22,13 +22,13 @@ const { requireSetup } = useBillingSetup()
 const ordered = computed(() => methods.data ?? [])
 
 const setDefault = useCall<unknown, { payment_method: string }>({
-  url: method(API.setDefaultPaymentMethod), immediate: false,
+  url: method(API.setDefaultPaymentMethod), method: 'POST', immediate: false,
 })
 const remove = useCall<unknown, { payment_method: string }>({
-  url: method(API.removePaymentMethod), immediate: false,
+  url: method(API.removePaymentMethod), method: 'POST', immediate: false,
 })
 const reorder = useCall<unknown, { team: string; ordered: string[] }>({
-  url: method(API.reorderPaymentMethods), immediate: false,
+  url: method(API.reorderPaymentMethods), method: 'POST', immediate: false,
 })
 
 async function makeDefault(pm: PaymentMethod): Promise<void> {

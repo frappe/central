@@ -65,6 +65,7 @@ const stateModel = optionModel('state')
 
 const save = useCall<unknown, Record<string, unknown>>({
   url: method(API.saveBillingProfile),
+  method: 'POST',
   immediate: false,
 })
 async function submit(): Promise<void> {

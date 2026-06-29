@@ -36,6 +36,7 @@ const settings = useCall<BillingSettings, { team: string }>({
 })
 const saveAlert = useCall<unknown, { team: string; spend_alert_threshold: number }>({
   url: method(API.saveBillingSettings),
+  method: 'POST',
   immediate: false,
 })
 whenTeamReady(() => settings.reload())

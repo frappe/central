@@ -35,10 +35,12 @@ interface MountOptions {
 export function useAddStripeCard({ onDone }: { onDone?: (res: ConfirmCardResult) => void } = {}) {
   const initiate = useCall<CardSetupOrder, { team: string }>({
     url: method(API.initiateCardSetup),
+    method: 'POST',
     immediate: false,
   })
   const confirm = useCall<ConfirmCardResult, Record<string, unknown>>({
     url: method(API.confirmCard),
+    method: 'POST',
     immediate: false,
   })
   const complete = ref(false) // the card field is filled in and valid
