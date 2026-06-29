@@ -6,6 +6,7 @@ import { money } from '@/lib/format'
 
 // Wallet — compact summary card. The chevron opens the wallet-history slide-over
 // (balance, auto-recharge, ledger, add credit), owned by the page.
+defineProps<{ active?: boolean }>()
 defineEmits<{ open: [] }>()
 const { credit, forecast, currency } = useBillingOverview()
 
@@ -19,7 +20,8 @@ const shortfall = computed(() => projected.value > 0 && balance.value < projecte
 <template>
   <button
     type="button"
-    class="flex flex-col rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5 text-left transition-colors hover:border-outline-gray-3"
+    class="flex flex-col rounded-lg border bg-surface-elevation-1 p-5 text-left transition-colors"
+    :class="active ? 'border-outline-gray-4 ring-1 ring-outline-gray-3' : 'border-outline-gray-2 hover:border-outline-gray-3'"
     @click="$emit('open')"
   >
     <div class="flex items-center justify-between gap-2">

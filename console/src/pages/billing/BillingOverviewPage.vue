@@ -23,21 +23,26 @@ const showWalletHistory = ref(false)
   <div class="flex h-full flex-col">
     <PageHeader title="Billing" />
 
-    <div class="min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto w-full max-w-4xl space-y-5 px-5 py-6">
-        <CollectionActionBanner />
-        <div class="grid gap-5 sm:grid-cols-2">
-          <EstimatedCard />
-          <WalletCard @open="showWalletHistory = true" />
+    <!-- Content + docked wallet-history panel (like the invoice tray): the panel
+         shares the row, the content stays bright beside it — no modal overlay. -->
+    <div class="flex min-h-0 flex-1">
+      <div class="min-w-0 flex-1 overflow-y-auto">
+        <div class="mx-auto w-full max-w-4xl space-y-5 px-5 py-6">
+          <CollectionActionBanner />
+          <div class="grid gap-5 sm:grid-cols-2">
+            <EstimatedCard />
+            <WalletCard :active="showWalletHistory" @open="showWalletHistory = true" />
+          </div>
+          <PaymentMethodsCard />
+          <BillingContactTaxCard @edit="showEditProfile = true" />
+          <SubscriptionsCard />
+          <StopBillingCard />
         </div>
-        <PaymentMethodsCard />
-        <BillingContactTaxCard @edit="showEditProfile = true" />
-        <SubscriptionsCard />
-        <StopBillingCard />
       </div>
+
+      <WalletHistoryPanel v-if="showWalletHistory" v-model="showWalletHistory" />
     </div>
 
-    <WalletHistoryPanel v-model="showWalletHistory" />
     <EditBillingProfileDialog v-model="showEditProfile" />
   </div>
 </template>
