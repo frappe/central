@@ -182,6 +182,25 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		self.assertEqual(cid, "cust_x")
 		self.assertEqual(fields["contact"], "9999999999")
 
+	def test_update_customer_tolerates_already_exists(self):
+		# Razorpay enforces (email, contact) uniqueness per merchant; editing a
+		# reused customer to carry that identity can collide with a pre-existing
+		# customer. That means the identity is already set, so the sync is a no-op
+		# — it must not crash the mandate setup.
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.customer.edit.side_effect = razorpay.errors.BadRequestError(
+				"Customer already exists for the merchant"
+			)
+			adapter.update_customer("cust_x", {"contact": "9999999999"})  # does not raise
+
+	def test_update_customer_reraises_other_bad_requests(self):
+		adapter = self.make_adapter()
+		with self._client() as c:
+			c.customer.edit.side_effect = razorpay.errors.BadRequestError("The contact is invalid")
+			with self.assertRaises(razorpay.errors.BadRequestError):
+				adapter.update_customer("cust_x", {"contact": "bad"})
+
 	def test_verify_payment_signature_valid(self):
 		adapter = self.make_adapter()
 		data = {"razorpay_payment_id": "p", "razorpay_order_id": "o", "razorpay_signature": "s"}
