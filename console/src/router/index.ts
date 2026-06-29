@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useSession } from '@/composables/useSession'
+import { fetchBillingSetup } from '@/data/billingSetup'
 
 const routes = [
   {
@@ -52,6 +54,13 @@ const routes = [
         name: 'NewServer',
         component: () => import('@/pages/servers/NewServerPage.vue'),
       },
+      {
+        // Destination the billing-setup gate (useBillingSetup.requireSetup)
+        // diverts incomplete-profile teams to. Filled out in #68.
+        path: 'billing/onboarding',
+        name: 'BillingOnboarding',
+        component: () => import('@/pages/billing/BillingOnboardingPage.vue'),
+      },
     ],
   },
 ]
@@ -83,6 +92,12 @@ router.beforeEach((to) => {
 
   // A finished user has no reason to re-enter onboarding.
   if (to.path.startsWith('/onboarding') && onboardingComplete) return '/servers'
+
+  // Warm the billing-profile completeness cache for the active team, non-blocking
+  // (mirrors the legacy guard): money-moving actions gate on it via
+  // useBillingSetup.requireSetup, but navigation stays open. Never redirects.
+  const { activeTeam } = useSession()
+  if (activeTeam.value) void fetchBillingSetup(activeTeam.value)
 
   return true
 })

@@ -36,4 +36,44 @@ export const API = {
 
   // ── Billing catalog (central.billing.api.dashboard.catalog) ──
   eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
+
+  // ── Billing: reads (central.billing.api.dashboard.*, billing:view) ──
+  // The dashboard package re-exports every submodule fn, so these flat paths are
+  // stable regardless of which module (account/invoices/methods) owns them.
+  teamOverview: 'central.billing.api.dashboard.get_team_overview',
+  forecast: 'central.billing.api.dashboard.get_forecast',
+  trustTier: 'central.billing.api.dashboard.get_trust_tier',
+  creditBalance: 'central.billing.api.dashboard.get_credit_balance',
+  creditLedger: 'central.billing.api.dashboard.credit_ledger',
+  invoices: 'central.billing.api.dashboard.list_invoices',
+  invoice: 'central.billing.api.dashboard.get_invoice',
+  paymentAttempts: 'central.billing.api.dashboard.list_payment_attempts',
+  paymentMethods: 'central.billing.api.dashboard.list_payment_methods',
+  paymentMethodOptions: 'central.billing.api.dashboard.get_payment_method_options',
+  subscriptions: 'central.billing.api.dashboard.list_subscriptions',
+  billingProfile: 'central.billing.api.dashboard.get_billing_profile',
+  billingGeo: 'central.billing.api.dashboard.get_billing_geo',
+  billingSettings: 'central.billing.api.dashboard.get_billing_settings',
+  collectionStatus: 'central.billing.api.dashboard.get_collection_status',
+  notifications: 'central.billing.api.dashboard.list_notifications',
+  notificationPreferences: 'central.billing.api.dashboard.get_notification_preferences',
+
+  // ── Billing: mutations (POST, billing:manage) ──
+  payInvoice: 'central.billing.api.dashboard.pay_invoice',
+  payInvoiceCheckout: 'central.billing.api.dashboard.pay_invoice_checkout',
+  confirmInvoiceCheckout: 'central.billing.api.dashboard.confirm_invoice_checkout',
+  createTopupOrder: 'central.billing.api.dashboard.create_topup_order',
+  confirmTopup: 'central.billing.api.dashboard.confirm_topup',
+  purchaseCredits: 'central.billing.api.dashboard.purchase_credits',
+  initiateCardSetup: 'central.billing.api.dashboard.initiate_card_setup',
+  confirmCard: 'central.billing.api.dashboard.confirm_card',
+  setupPaymentMethodOrder: 'central.billing.api.dashboard.setup_payment_method_order',
+  confirmPaymentMethodOrder: 'central.billing.api.dashboard.confirm_payment_method_order',
+  setDefaultPaymentMethod: 'central.billing.api.dashboard.set_default_payment_method',
+  reorderPaymentMethods: 'central.billing.api.dashboard.reorder_payment_methods',
+  removePaymentMethod: 'central.billing.api.dashboard.remove_payment_method',
+  saveBillingProfile: 'central.billing.api.dashboard.save_billing_profile',
+  saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',
+  setCollectionMode: 'central.billing.api.dashboard.set_collection_mode',
+  saveNotificationPreferences: 'central.billing.api.dashboard.save_notification_preferences',
 } as const
