@@ -70,6 +70,12 @@ const routes = [
         component: () => import('@/pages/billing/SpendingLimitsPage.vue'),
       },
       {
+        // Top-level surface (the bell), not a billing sub-page — see the nav.
+        path: 'notifications',
+        name: 'Notifications',
+        component: () => import('@/pages/NotificationsPage.vue'),
+      },
+      {
         // Destination the billing-setup gate (useBillingSetup.requireSetup)
         // diverts incomplete-profile teams to. Filled out in #68.
         path: 'billing/onboarding',

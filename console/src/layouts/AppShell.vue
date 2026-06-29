@@ -78,6 +78,18 @@ const sections = computed(() => [
       },
     ],
   },
+  {
+    label: 'Account',
+    items: [
+      // Top-level surface (the bell), per the new IA — not a billing sub-page.
+      {
+        label: 'Notifications',
+        icon: 'lucide-bell',
+        to: '/notifications',
+        condition: () => canViewBilling.value,
+      },
+    ],
+  },
 ])
 </script>
 
