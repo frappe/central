@@ -59,7 +59,7 @@ const sections = computed(() => [
     label: 'Billing',
     items: [
       {
-        label: 'Billing',
+        label: 'Overview',
         icon: 'lucide-credit-card',
         to: '/billing',
         condition: () => canViewBilling.value,
@@ -71,21 +71,9 @@ const sections = computed(() => [
         condition: () => canViewBilling.value,
       },
       {
-        label: 'Spending Limits',
+        label: 'Limit Tiers',
         icon: 'lucide-gauge',
         to: '/billing/limits',
-        condition: () => canViewBilling.value,
-      },
-    ],
-  },
-  {
-    label: 'Account',
-    items: [
-      // Top-level surface (the bell), per the new IA — not a billing sub-page.
-      {
-        label: 'Notifications',
-        icon: 'lucide-bell',
-        to: '/notifications',
         condition: () => canViewBilling.value,
       },
     ],

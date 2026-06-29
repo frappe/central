@@ -5,9 +5,8 @@ import CollectionActionBanner from '@/components/billing/CollectionActionBanner.
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
-import BillingContactCard from '@/components/billing/BillingContactCard.vue'
+import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import SubscriptionsCard from '@/components/billing/SubscriptionsCard.vue'
-import TaxComplianceCard from '@/components/billing/TaxComplianceCard.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 
@@ -28,10 +27,7 @@ const showEditProfile = ref(false)
         <EstimatedCard />
         <WalletCard />
         <PaymentMethodsCard />
-        <div class="grid gap-5 lg:grid-cols-2">
-          <BillingContactCard @edit="showEditProfile = true" />
-          <TaxComplianceCard @edit="showEditProfile = true" />
-        </div>
+        <BillingContactTaxCard @edit="showEditProfile = true" />
         <SubscriptionsCard />
         <StopBillingCard />
       </div>

@@ -73,10 +73,3 @@ const INVOICE_THEME: Record<string, BadgeTheme> = {
 export function invoiceTheme(status: string | null | undefined): BadgeTheme {
   return INVOICE_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
 }
-
-// Billing notification delivery status → Badge theme: sent green, suppressed neutral.
-const NOTIFICATION_THEME: Record<string, BadgeTheme> = { sent: 'green', suppressed: 'gray' }
-
-export function notificationTheme(status: string | null | undefined): BadgeTheme {
-  return NOTIFICATION_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
-}

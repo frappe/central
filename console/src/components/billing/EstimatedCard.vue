@@ -1,15 +1,24 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { LoadingText } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
+import { useCall, Button, FormControl, LoadingText } from 'frappe-ui'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
+import { useSession } from '@/composables/useSession'
+import { whenTeamReady } from '@/composables/useTeamScope'
+import { useCapabilities } from '@/composables/useCapabilities'
+import { API, method } from '@/api/methods'
 import { money } from '@/lib/format'
 import { billingPeriod } from '@/lib/date'
+import { successToast, errorToast } from '@/lib/toast'
+import type { BillingSettings } from '@/types/billing'
 
 // Estimated this cycle — the cost composition that adds up to the projected bill
-// (usage + tax = estimated), plus the credit position (available / required) and
-// the low-wallet alert. Reads get_forecast (+ get_team_overview for currency).
+// (usage + tax = estimated), the credit position (available / required), the
+// low-wallet alert, and the configurable billing alert (spend-alert threshold).
+// Reads get_forecast (+ get_team_overview for currency, get_billing_settings).
 const { forecast, credit, currency } = useBillingOverview()
+const { activeTeam } = useSession()
+const { canManageBilling } = useCapabilities()
 
 const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
@@ -47,6 +56,43 @@ const byProject = computed(() => {
   }
   return [...groups.values()].sort((a, b) => b.amount - a.amount)
 })
+
+// ── Billing alert (spend-alert threshold) ────────────────────────────────────
+// Notify the team once projected spend crosses this amount (0 = off). Stored on
+// the Billing Profile via get/save_billing_settings; lives here under the cycle
+// estimate so the alert sits next to the number it watches.
+const settings = useCall<BillingSettings, { team: string }>({
+  url: method(API.billingSettings),
+  params: () => ({ team: activeTeam.value! }),
+  immediate: false,
+  refetch: true,
+})
+const saveAlert = useCall<unknown, { team: string; spend_alert_threshold: number }>({
+  url: method(API.saveBillingSettings),
+  immediate: false,
+})
+whenTeamReady(() => settings.reload())
+
+const spendAlert = ref(0)
+const editingAlert = ref(false)
+watch(
+  () => settings.data,
+  (d) => {
+    if (d) spendAlert.value = d.spend_alert_threshold ?? 0
+  },
+  { immediate: true },
+)
+
+async function submitAlert(): Promise<void> {
+  try {
+    await saveAlert.submit({ team: activeTeam.value!, spend_alert_threshold: spendAlert.value })
+    successToast('Billing alert saved.')
+    editingAlert.value = false
+    settings.reload()
+  } catch (e) {
+    errorToast(e)
+  }
+}
 </script>
 
 <template>
@@ -129,6 +175,45 @@ const byProject = computed(() => {
             </span>
           </li>
         </ul>
+      </div>
+
+      <!-- Billing alert — notify when projected spend crosses a threshold. -->
+      <div class="border-t border-outline-gray-1 pt-4">
+        <div v-if="!editingAlert" class="flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-p-sm text-ink-gray-5">Billing alert</p>
+            <p class="text-sm text-ink-gray-8">
+              <template v-if="spendAlert > 0">
+                Notify when projected spend exceeds {{ money(spendAlert, currency) }}
+              </template>
+              <template v-else>Off</template>
+            </p>
+          </div>
+          <Button
+            v-if="canManageBilling"
+            variant="ghost"
+            :icon="spendAlert > 0 ? 'lucide-pencil' : 'lucide-plus'"
+            :aria-label="spendAlert > 0 ? 'Edit billing alert' : 'Set billing alert'"
+            @click="editingAlert = true"
+          />
+        </div>
+        <div v-else class="flex flex-wrap items-end gap-3">
+          <FormControl
+            v-model="spendAlert"
+            type="number"
+            label="Alert threshold"
+            :description="`Set 0 to turn it off (${currency}).`"
+            class="w-52"
+            min="0"
+          />
+          <Button
+            variant="solid"
+            label="Save"
+            :loading="saveAlert.loading"
+            @click="submitAlert"
+          />
+          <Button label="Cancel" @click="editingAlert = false" />
+        </div>
       </div>
     </div>
   </BillingCard>
