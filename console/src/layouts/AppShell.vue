@@ -70,6 +70,12 @@ const sections = computed(() => [
         to: '/billing/invoices',
         condition: () => canViewBilling.value,
       },
+      {
+        label: 'Spending Limits',
+        icon: 'lucide-gauge',
+        to: '/billing/limits',
+        condition: () => canViewBilling.value,
+      },
     ],
   },
 ])
