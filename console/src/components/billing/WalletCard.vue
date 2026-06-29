@@ -1,87 +1,50 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Button, LoadingText } from 'frappe-ui'
-import BillingCard from '@/components/billing/BillingCard.vue'
-import TopupDialog from '@/components/TopupDialog.vue'
+import { computed } from 'vue'
+import { LoadingText } from 'frappe-ui'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useBillingSetup } from '@/composables/useBillingSetup'
-import { money, signedMoney } from '@/lib/format'
-import type { CreditLedgerEntry } from '@/types/billing'
+import { money } from '@/lib/format'
 
-// Wallet — balance, top-up (via #67 useTopup in TopupDialog), and the credit
-// ledger. Top-up is gated on a complete profile (requireSetup diverts otherwise).
-const { credit, ledger, currency, reloadMoney } = useBillingOverview()
-const { canManageBilling } = useCapabilities()
-const { requireSetup } = useBillingSetup()
+// Wallet — compact summary card. The chevron opens the wallet-history slide-over
+// (balance, auto-recharge, ledger, add credit), owned by the page.
+defineEmits<{ open: [] }>()
+const { credit, forecast, currency } = useBillingOverview()
 
 const balance = computed(() => Number(credit.data?.balance ?? 0))
+const projected = computed(() => Number(forecast.data?.projected_total ?? 0))
 const loading = computed(() => credit.loading && !credit.data)
-
-const showTopup = ref(false)
-function onTopup(): void {
-  if (requireSetup()) showTopup.value = true
-}
-
-// Credits go up on top-up/refund, down when applied to an invoice.
-function isCredit(entry: CreditLedgerEntry): boolean {
-  return Number(entry.amount) >= 0 && entry.entry_type !== 'Debit'
-}
+// Warn when the wallet can't cover the projected bill (prepaid teams top up).
+const shortfall = computed(() => projected.value > 0 && balance.value < projected.value)
 </script>
 
 <template>
-  <BillingCard title="Wallet" description="Applied to invoices before any card is charged">
-    <template #action>
-      <Button v-if="canManageBilling" variant="subtle" label="Add" @click="onTopup">
-        <template #prefix><span class="lucide-plus size-4" aria-hidden="true" /></template>
-      </Button>
-    </template>
-
-    <div v-if="loading" class="space-y-3">
-      <LoadingText :lines="3" />
+  <button
+    type="button"
+    class="flex flex-col rounded-lg border border-outline-gray-2 bg-surface-white p-5 text-left transition-colors hover:border-outline-gray-3"
+    @click="$emit('open')"
+  >
+    <div class="flex items-center justify-between gap-2">
+      <span class="flex items-center gap-1 text-p-sm text-ink-gray-5">
+        Wallet
+        <span class="lucide-info size-3.5 text-ink-gray-4" aria-hidden="true" />
+      </span>
+      <span
+        class="grid size-6 place-items-center rounded-full border border-outline-gray-2 text-ink-gray-6"
+      >
+        <span class="lucide-chevron-right size-4" aria-hidden="true" />
+      </span>
     </div>
 
-    <div v-else class="space-y-4">
-      <p class="text-2xl font-semibold tabular-nums text-ink-gray-9">
+    <div v-if="loading" class="mt-2 w-32">
+      <LoadingText :lines="1" />
+    </div>
+    <template v-else>
+      <p class="mt-1 text-2xl font-semibold tabular-nums text-ink-gray-9">
         {{ money(balance, currency) }}
       </p>
-
-      <div class="rounded-lg border border-outline-gray-1">
-        <header class="border-b border-outline-gray-1 px-4 py-2.5">
-          <h3 class="text-p-sm font-medium text-ink-gray-7">Credit history</h3>
-        </header>
-        <div v-if="ledger.loading && !ledger.data" class="space-y-3 p-4">
-          <LoadingText :lines="4" />
-        </div>
-        <div
-          v-else-if="!ledger.data?.length"
-          class="px-4 py-8 text-center text-p-sm text-ink-gray-5"
-        >
-          No credit activity yet.
-        </div>
-        <ul v-else class="divide-y divide-outline-gray-1">
-          <li
-            v-for="(e, idx) in ledger.data"
-            :key="idx"
-            class="flex items-center justify-between gap-3 px-4 py-3"
-          >
-            <div class="min-w-0">
-              <p class="truncate text-sm text-ink-gray-8">{{ e.note || e.entry_type }}</p>
-              <p class="text-p-sm text-ink-gray-5">{{ e.created_at }}</p>
-            </div>
-            <div class="text-right">
-              <p class="text-sm" :class="isCredit(e) ? 'text-ink-green-3' : 'text-ink-gray-8'">
-                {{ signedMoney(e.amount, e.currency || currency, isCredit(e)) }}
-              </p>
-              <p class="text-p-sm text-ink-gray-5">
-                bal {{ money(e.running_balance, e.currency || currency) }}
-              </p>
-            </div>
-          </li>
-        </ul>
-      </div>
-    </div>
-
-    <TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
-  </BillingCard>
+      <p v-if="shortfall" class="mt-1 flex items-center gap-1.5 text-p-sm text-ink-red-3">
+        <span class="lucide-triangle-alert size-3.5" aria-hidden="true" />
+        Won't cover the {{ money(projected, currency) }} invoice
+      </p>
+    </template>
+  </button>
 </template>
