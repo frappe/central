@@ -55,6 +55,11 @@ const routes = [
         component: () => import('@/pages/servers/NewServerPage.vue'),
       },
       {
+        path: 'billing',
+        name: 'Billing',
+        component: () => import('@/pages/billing/BillingOverviewPage.vue'),
+      },
+      {
         // Destination the billing-setup gate (useBillingSetup.requireSetup)
         // diverts incomplete-profile teams to. Filled out in #68.
         path: 'billing/onboarding',
