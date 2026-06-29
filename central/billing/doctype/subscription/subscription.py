@@ -17,6 +17,7 @@ class Subscription(Document):
 		account_standing: DF.Literal["Current", "Past Due", "Suspended"]
 		asset_id: DF.Link | None
 		billing_cycle: DF.Literal["Monthly", "Annual"]
+		cluster: DF.ReadOnly | None
 		default_payment_method: DF.Link | None
 		enabled: DF.Check
 		gateway: DF.Link | None
