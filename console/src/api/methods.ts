@@ -20,6 +20,17 @@ export const API = {
   stopServer: 'central.api.servers.stop_server',
   terminateServer: 'central.api.servers.terminate_server',
 
+  // ── Auth / SMB signup (central.api.auth) ──
+  signUp: 'central.api.auth.sign_up',
+  verifySignup: 'central.api.auth.verify_signup',
+  resendSignupCode: 'central.api.auth.resend_signup_code',
+
+  // ── Self-serve sites (central.api.sites) ──
+  checkSubdomain: 'central.api.sites.check_subdomain',
+  siteDomain: 'central.api.sites.site_domain',
+  createSite: 'central.api.sites.create_site',
+  getSite: 'central.api.sites.get_site',
+
   // ── SSO open-in-bench (central.api.sso) ──
   getBenchLink: 'central.api.sso.get_bench_link',
 

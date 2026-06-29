@@ -37,7 +37,7 @@ async function signup() {
       return
     }
     await router.push({
-      path: '/signup/check-email',
+      path: '/signup/verify',
       query: { email: email.value.trim() },
     })
   } catch (exception) {
@@ -63,6 +63,7 @@ async function signup() {
         label="Full name"
         autocomplete="name"
         placeholder="Jane Doe"
+autofocus
         :validator="requiredError('Full name')"
         :submitted="submitted"
       />
