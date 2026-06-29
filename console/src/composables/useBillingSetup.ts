@@ -47,9 +47,12 @@ export function useBillingSetup() {
     missing: computed(() => state.data?.missing ?? []),
     currency: computed(() => state.data?.currency ?? null),
     currencyLocked: computed(() => !!state.data?.currency_locked),
+    supportedCurrencies: computed(() => state.data?.supported_currencies ?? []),
     loading: computed(() => state.loading),
     profile: computed(() => state.data),
     requireSetup,
     refresh,
+    // Legacy alias — force a re-pull of the shared state.
+    reload: refresh,
   }
 }
