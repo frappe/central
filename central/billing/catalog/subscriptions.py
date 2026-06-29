@@ -64,16 +64,37 @@ def create_subscription(
 	default_payment_method: str | None = None,
 	gateway: str | None = None,
 	changed_by: str | None = None,
+	resource_id: str | None = None,
 ):
-	"""Record a subscription INTENT — what the customer asked for. The actual
-	provisioning (calling the cluster manager and writing the price-lock) is
-	`provision_subscription`; this captures the contract only, so it stays usable
-	for fixtures and intent-only flows."""
+	"""Record a subscription INTENT — what the customer asked for — linked to its
+	runtime Asset. The Asset is the resource Central drives on a cluster (it carries
+	the region); the Subscription is the billing contract that links to it via
+	`asset_id`. Billing resolves the region (and so the rate snapshot) through the
+	Asset (ADR 0006, cdea38e). The actual provisioning (calling the cluster manager
+	and writing the price-lock) is `provision_subscription`; this captures the
+	contract + its asset only, so it stays usable for fixtures and intent-only flows.
+
+	The cluster must be a registered Atlas Instance (Asset.cluster is a reqd Link)."""
+	resource_id = resource_id or f"vm-{frappe.generate_hash(length=10)}"
+	if not frappe.db.exists("Asset", resource_id):
+		# Pending — not Running — so the Asset status-sync does not race us to create
+		# a second Subscription for this asset.
+		frappe.get_doc(
+			{
+				"doctype": "Asset",
+				"resource_id": resource_id,
+				"team": team,
+				"cluster": cluster,
+				"plan": plan,
+				"status": "Pending",
+			}
+		).insert(ignore_permissions=True)
+
 	doc = frappe.get_doc(
 		{
 			"doctype": "Subscription",
 			"team": team,
-			"cluster": cluster,
+			"asset_id": resource_id,
 			"plan": plan,
 			"billing_cycle": billing_cycle,
 			"account_standing": "Current",
@@ -110,14 +131,15 @@ def provision_subscription(
 	"""
 	from central.billing.platform.sync import record_usage_events
 
+	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
 		team, cluster, plan, billing_cycle=billing_cycle, start_date=start_date,
 		default_payment_method=default_payment_method, gateway=gateway, changed_by=changed_by,
+		resource_id=resource_id,
 	)
 
 	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
 	shown_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
-	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	effective_from = f"{sub.start_date} 00:00:00"
 
 	record_usage_events([{

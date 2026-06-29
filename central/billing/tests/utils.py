@@ -171,6 +171,43 @@ def complete_billing_profile(team, currency="INR"):
 	return team
 
 
+def make_billing_subscription(team, cluster, plan, start_date=None, clear_changes=True, **kwargs):
+	"""Provision a billable subscription for billing tests under the Asset model:
+	ensure the cluster's Atlas Instance + the team's Billing Profile currency, create
+	the Asset (carrying the region) + linked Subscription, and (by default) clear the
+	auto 'Created' segment so the test can author its own Subscription Change timeline
+	with `add_segment`. Returns the Subscription name."""
+	from central.billing.catalog import subscriptions
+
+	ensure_atlas_instance(cluster)
+	ensure_team(team)
+	if not frappe.db.get_value("Billing Profile", team, "currency"):
+		complete_billing_profile(team, currency=kwargs.pop("currency", "INR"))
+	sub = subscriptions.create_subscription(
+		team=team, cluster=cluster, plan=plan, start_date=start_date, **kwargs
+	)
+	if clear_changes:
+		frappe.db.delete("Subscription Change", {"subscription": sub.name})
+	return sub.name
+
+
+def add_segment(subscription, change_type, rate, effective_at, plan=None, currency="INR"):
+	"""Author one Subscription Change run-segment directly — the unit billing
+	day-weights over in the new model. `change_type` is Created / Plan Changed /
+	Cancelled; a Cancelled marker carries no rate (it just closes the prior segment)."""
+	return frappe.get_doc(
+		{
+			"doctype": "Subscription Change",
+			"subscription": subscription,
+			"change_type": change_type,
+			"new_value": plan,
+			"locked_rate": None if change_type == "Cancelled" else rate,
+			"currency": currency,
+			"effective_at": effective_at,
+		}
+	).insert(ignore_permissions=True)
+
+
 def set_team_tier(team, level="t1", max_spend=None, manual_override=1):
 	"""Pin a team's trust tier on its Billing Profile — the per-team tier carrier
 	since the standalone Trust Tier doctype was folded in (#62). Ensures a profile

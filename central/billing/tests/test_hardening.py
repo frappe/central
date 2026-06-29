@@ -14,7 +14,6 @@ from frappe.tests import IntegrationTestCase
 
 from central import billing
 from central.billing import authz
-from central.billing.catalog import subscriptions
 from central.billing.tests.utils import make_billing_team, make_custom_role_team, make_user
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.payments.webhooks import process_webhook
@@ -193,17 +192,11 @@ class TestLoadTwoPhase(IntegrationTestCase):
 
 	def test_thousand_scale_run_no_double_processing(self):
 		from central.billing.revenue import invoicing
-		from central.billing.platform.sync import receive_usage_events
+		from central.billing.tests.utils import add_segment, make_billing_subscription
 
-		for i, team in enumerate(self._teams):
-			receive_usage_events(
-				[{"event_id": f"ev-load-{i}", "team": team, "resource_id": f"srv-{i}",
-				  "cluster": self.CLUSTER, "plan": self.PLAN, "shown_rate": 1000, "currency": "INR",
-				  "event_type": "subscribed", "effective_from": "2026-06-01 00:00:00", "effective_to": None}]
-			)
-			subscriptions.create_subscription(
-				team=team, cluster=self.CLUSTER, plan=self.PLAN, billing_cycle="Monthly"
-			)
+		for team in self._teams:
+			sub = make_billing_subscription(team, self.CLUSTER, self.PLAN, billing_cycle="Monthly")
+			add_segment(sub, "Created", 1000, "2026-06-01 00:00:00")
 
 		drafts = invoicing.generate_draft_invoices("2026-06-01", "2026-06-30")
 		mine = [d for d in drafts if frappe.db.get_value("Invoice", d, "team") in self._teams]

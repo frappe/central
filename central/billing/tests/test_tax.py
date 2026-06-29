@@ -6,9 +6,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.revenue import invoicing, tax
-from central.billing.catalog import subscriptions
-from central.billing.platform.sync import receive_usage_events
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
 
 TEAM = "team-tax"
 CLUSTER = "ap-south-1"
@@ -21,34 +19,12 @@ def set_tax_profile(**kw):
 	frappe.get_doc({"doctype": "Tax Profile", "team": TEAM, **kw}).insert(ignore_permissions=True)
 
 
-def provision(rate=1000):
-	receive_usage_events(
-		[
-			{
-				"event_id": "ev-tax",
-				"team": TEAM,
-				"resource_id": "srv-tax",
-				"cluster": CLUSTER,
-				"plan": PLAN,
-				"shown_rate": rate,
-				"currency": "INR",
-				"event_type": "subscribed",
-				"effective_from": "2026-06-01 00:00:00",
-				"effective_to": None,
-			}
-		]
-	)
-
-
 class TaxTestBase(IntegrationTestCase):
 	def setUp(self):
-		ensure_team(TEAM)
 		make_plan(PLAN)
 		self._purge()
-		provision()  # full-month fixed line = 1000
-		self.sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
-		).name
+		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")  # full-month fixed line = 1000
 
 	def tearDown(self):
 		self._purge()

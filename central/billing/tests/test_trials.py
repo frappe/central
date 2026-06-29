@@ -6,12 +6,17 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.revenue import invoicing, credits
-from central.billing.catalog import subscriptions, trials
+from central.billing.catalog import trials
 from central.billing.catalog.entitlements import recompute_trust_tier
 from central.billing.catalog.signing import generate_keypair
 from central.billing.platform.sync import receive_usage_events
 from central.billing.tests.test_entitlements import make_ladder
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import (
+	add_segment,
+	ensure_team,
+	make_billing_subscription,
+	make_plan,
+)
 
 TEAM = "team-trial"
 CLUSTER = "ap-south-1"
@@ -43,10 +48,11 @@ class TrialTestBase(IntegrationTestCase):
 		make_ladder()  # t0 (entry, default) / t1 / t2
 		make_plan(PLAN)
 		self._purge()
+		# Asset-model subscription (seeds the cluster's Atlas Instance + the team's
+		# INR Billing Profile, clears the auto 'Created' segment); the trust tier is
+		# then pinned to the entry tier on that profile.
+		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
 		recompute_trust_tier(TEAM, paid_invoice_count=0, cumulative_paid=0)  # entry tier t0
-		self.sub = subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
-		).name
 
 	def tearDown(self):
 		self._purge()
@@ -67,11 +73,13 @@ class TestCostReportGeneration(TrialTestBase):
 	def test_entry_tier_invoice_is_cost_report(self):
 		self.assertTrue(trials.is_trial_team(TEAM))
 		provision()
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "Cost Report")
 
 	def test_cost_report_is_computed_but_not_charged(self):
 		provision()
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		credits.purchase(TEAM, 500, "INR")  # even with a wallet, nothing is drawn
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 
@@ -89,6 +97,7 @@ class TestCostReportGeneration(TrialTestBase):
 class TestConversion(TrialTestBase):
 	def test_convert_to_paid_flips_type_and_keeps_resources(self):
 		provision()
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")  # runs into July too
 		# June: trial → cost_report.
 		june = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertEqual(frappe.db.get_value("Invoice", june, "invoice_type"), "Cost Report")
@@ -111,8 +120,13 @@ class TestConversion(TrialTestBase):
 class TestSubsidyAndExpiry(TrialTestBase):
 	def test_subsidy_total_sums_cost_report_invoices(self):
 		# A far-future period isolates this global aggregate from seeded demo data.
+		# Two run-segments in the team+cluster (1000 + 2000) — the consolidated draft
+		# day-weights both over the full month.
 		provision("srv-a", rate=1000, start="2099-01-01 00:00:00")
 		provision("srv-b", rate=2000, start="2099-01-01 00:00:00")
+		add_segment(self.sub, "Created", 1000, "2099-01-01 00:00:00")
+		sub_b = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		add_segment(sub_b, "Created", 2000, "2099-01-01 00:00:00")
 		name = invoicing.generate_draft_invoice(self.sub, "2099-01-01", "2099-01-31")
 		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "Cost Report")
 
