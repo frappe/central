@@ -54,44 +54,51 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
   async function begin(amount: number, payMethod?: string): Promise<BeginResult> {
     try {
       await createOrder.submit({ team: activeTeam.value, amount, method: payMethod })
-      order = createOrder.data
-      if (!order) throw new Error('Could not start the top-up.')
-      if (order.adapter_key === 'Stripe') return { card: true }
-      if (order.adapter_key === 'Paypal') return { paypal: true }
+      if (createOrder.error) throw createOrder.error
+      // Capture locally: the shared `order` is nulled by destroy() when the dialog
+      // closes, which can race an in-flight confirm below.
+      const o = createOrder.data
+      if (!o) throw new Error('Could not start the top-up.')
+      order = o
+      if (o.adapter_key === 'Stripe') return { card: true }
+      if (o.adapter_key === 'Paypal') return { paypal: true }
 
-      const handles = await openRazorpayCheckout(order, {
+      const handles = await openRazorpayCheckout(o, {
         name: 'Central',
         description: 'Wallet top-up',
-        displayPayPal: order.display_paypal,
+        displayPayPal: o.display_paypal,
       })
-      await confirm.submit({
-        team: activeTeam.value,
-        amount: order.amount,
-        gateway: order.gateway,
-        ...handles,
-      })
-      finish(confirm.data)
+      await settle({ team: activeTeam.value, amount: o.amount, gateway: o.gateway, ...handles })
     } catch (e) {
       if ((e as Error)?.message !== 'cancelled') errorToast(e, 'Top-up could not be completed.')
     }
     return { card: false }
   }
 
+  // Run confirm_topup and only declare success when the server actually credited
+  // the wallet — submit() resolves even on a server error (it sets .error), so a
+  // failed confirm must not toast a false "topped up".
+  async function settle(params: Record<string, unknown>): Promise<void> {
+    await confirm.submit(params)
+    if (confirm.error) throw confirm.error
+    finish(confirm.data)
+  }
+
   // Render PayPal Buttons for the order begin() created. On approval we capture
   // the order server-side (confirm_topup) and credit what PayPal actually took.
   async function mountPayPal(el: Element): Promise<void> {
-    if (!order) return
-    await mountPayPalButtons(el, order, {
+    const o = order
+    if (!o) return
+    await mountPayPalButtons(el, o, {
       onApprove: async (paypalOrderId: string) => {
         submitting.value = true
         try {
-          await confirm.submit({
+          await settle({
             team: activeTeam.value,
-            amount: order!.amount,
-            gateway: order!.gateway,
+            amount: o.amount,
+            gateway: o.gateway,
             paypal_order_id: paypalOrderId,
           })
-          finish(confirm.data)
         } catch (e) {
           errorToast(e, 'Top-up could not be completed.')
         } finally {
@@ -115,22 +122,22 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
   // Confirm the PaymentIntent with the entered card, then credit server-side from
   // what Stripe actually charged.
   async function pay(): Promise<unknown> {
-    if (!stripe || !card || !order?.client_secret) return
+    const o = order
+    if (!stripe || !card || !o?.client_secret) return
     submitting.value = true
     try {
-      const { paymentIntent, error } = await stripe.confirmCardPayment(order.client_secret, {
+      const { paymentIntent, error } = await stripe.confirmCardPayment(o.client_secret, {
         payment_method: { card },
       })
       if (error) throw error
       if (paymentIntent?.status !== 'succeeded') throw new Error('Payment was not completed.')
 
-      await confirm.submit({
+      await settle({
         team: activeTeam.value,
-        amount: order.amount,
-        gateway: order.gateway,
+        amount: o.amount,
+        gateway: o.gateway,
         payment_intent: paymentIntent.id,
       })
-      finish(confirm.data)
       return confirm.data
     } catch (e) {
       errorToast(e, 'Top-up could not be completed.')
