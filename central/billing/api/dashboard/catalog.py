@@ -181,6 +181,43 @@ def provision_composed_config(
 	return provision_composed_subscription(team, cluster, includes, sub_category)
 
 
+@frappe.whitelist()
+def get_composed_config(asset: str, team: str | None = None) -> dict:
+	"""The composed config running on `asset` (for the resize slider, #84): its
+	subscription, optimisation profile, current composition, and the headroom a resize
+	has — the cap minus the team's *other* run-rate, so the running config's own spend
+	is available to it. Returns `{composed: False}` for a preset/legacy server."""
+	team = _resolve_team(team)
+	sub = frappe.db.get_value(
+		"Subscription",
+		{"asset_id": asset, "team": team, "pricing_mode": "Composed"},
+		["name", "sub_category"],
+		as_dict=True,
+	)
+	if not sub:
+		return {"composed": False}
+
+	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
+	from central.billing.catalog.subscriptions import team_run_rate
+
+	includes = frappe.get_all(
+		"Plan Includes",
+		filters={"parenttype": "Subscription", "parent": sub.name},
+		fields=["resource_type", "quantity"],
+	)
+	qty = composition_quantities(includes)
+	cap = frappe.utils.flt(get_team_caps(team).max_spend)
+	return {
+		"composed": True,
+		"subscription": sub.name,
+		"sub_category": sub.sub_category,
+		"vcpus": qty.get(COMPUTE, 0),
+		"memory_gb": qty.get(MEMORY, 0),
+		"disk_gb": qty.get(DISK, 0),
+		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
+	}
+
+
 @frappe.whitelist(methods=["POST"])
 def resize_composed_config(
 	subscription: str, includes: list | str, sub_category: str | None = None

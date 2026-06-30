@@ -21,20 +21,24 @@ const props = defineProps<{
   rateCard: RateCard
   available: number
   currency: string
+  // Pre-fill the sliders with a running config's shape (resize, #82/#84).
+  initial?: ComposedConfig | null
 }>()
 
 // The chosen config (null while invalid / over headroom) — the parent provisions it.
 const config = defineModel<ComposedConfig | null>({ required: true })
 
-const profileName = ref<string>(props.profiles[0]?.sub_category ?? '')
+const profileName = ref<string>(props.initial?.sub_category ?? props.profiles[0]?.sub_category ?? '')
 const profile = computed<Profile | null>(
   () => props.profiles.find((p) => p.sub_category === profileName.value) ?? null,
 )
 
 const steps = computed<number[]>(() => [...(profile.value?.vcpu_steps ?? [])].sort((a, b) => a - b))
-const vcpuIndex = ref(0)
+// Seed the sliders from a pre-fill (resize) when given, else the profile's floor.
+const seededIndex = props.initial ? steps.value.indexOf(props.initial.vcpus) : -1
+const vcpuIndex = ref(seededIndex < 0 ? 0 : seededIndex)
 const vcpus = computed<number>(() => steps.value[vcpuIndex.value] ?? steps.value[0] ?? 0)
-const diskGb = ref<number>(profile.value?.disk_min ?? 0)
+const diskGb = ref<number>(props.initial?.disk_gb ?? profile.value?.disk_min ?? 0)
 
 const ram = computed<number>(() => (profile.value ? ramFor(vcpus.value, profile.value) : 0))
 

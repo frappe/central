@@ -58,6 +58,7 @@ export const API = {
 
   // ── Billing catalog (central.billing.api.dashboard.catalog) ──
   eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
+  composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
   resizeComposedConfig: 'central.billing.api.dashboard.catalog.resize_composed_config',
 
   // ── Billing: reads (central.billing.api.dashboard.*, billing:view) ──

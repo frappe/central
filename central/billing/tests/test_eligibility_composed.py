@@ -6,7 +6,12 @@ re-validates composition, bounds, and headroom server-side (#83)."""
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.api.dashboard.catalog import get_eligible_plans, provision_composed_config
+from central.billing.api.dashboard.catalog import (
+	get_composed_config,
+	get_eligible_plans,
+	provision_composed_config,
+	resize_composed_config,
+)
 from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.tests.utils import (
 	complete_billing_profile,
@@ -104,3 +109,38 @@ class TestEligibilityComposed(IntegrationTestCase):
 		]
 		with self.assertRaises(frappe.ValidationError):
 			provision_composed_config(bad, "General", CLUSTER, team=TEAM)
+
+	def test_get_composed_config_returns_shape_and_resize_headroom(self):
+		from central.billing.catalog import subscriptions
+
+		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		got = get_composed_config(out["resource_id"], team=TEAM)
+		self.assertTrue(got["composed"])
+		self.assertEqual(got["subscription"], out["subscription"])
+		self.assertEqual((got["vcpus"], got["memory_gb"], got["disk_gb"]), (2, 8, 40))
+		# Resize headroom excludes this config's own spend, so it has the full cap back.
+		self.assertEqual(got["available"], got_max := frappe.utils.flt(get_eligible_plans(cluster=CLUSTER, team=TEAM)["max_spend"]))
+
+	def test_get_composed_config_false_for_preset_asset(self):
+		from central.billing.tests.utils import make_plan
+		from central.billing.catalog import subscriptions
+
+		plan = make_plan("preset-for-config", rates=[{"cluster": "", "currency": "INR", "rate": 1000}])
+		sub = subscriptions.create_subscription(TEAM, CLUSTER, plan=plan)
+		self.assertFalse(get_composed_config(sub.asset_id, team=TEAM)["composed"])
+
+	def test_resize_endpoint_relocks(self):
+		from central.billing.catalog import subscriptions
+
+		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		bigger = [
+			{"resource_type": "Compute", "quantity": 4, "unit": "vCPU"},
+			{"resource_type": "Memory", "quantity": 16, "unit": "GB"},
+			{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
+		]
+		result = resize_composed_config(out["subscription"], bigger, "General")
+		self.assertTrue(result["resized"])
+		self.assertEqual(
+			frappe.db.count("Subscription Change", {"subscription": out["subscription"], "change_type": "Plan Changed"}),
+			1,
+		)

@@ -4,6 +4,7 @@ import { Button } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
 import ServerListView from '@/components/servers/ServerListView.vue'
 import TerminateDialog from '@/components/servers/TerminateDialog.vue'
+import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
 import type { AssetRow } from '@/composables/useServers'
@@ -39,6 +40,9 @@ async function confirmTerminate(server: AssetRow) {
   pendingTerminate.value = null
   await terminate(server)
 }
+
+// Resize a running config with the design-your-own slider (#84).
+const pendingResize = ref<AssetRow | null>(null)
 </script>
 
 <template>
@@ -81,6 +85,7 @@ async function confirmTerminate(server: AssetRow) {
         @create="$router.push('/servers/new')"
         @start="start"
         @stop="stop"
+        @resize="pendingResize = $event"
         @terminate="pendingTerminate = $event"
         @open="open"
       />
@@ -91,5 +96,7 @@ async function confirmTerminate(server: AssetRow) {
       :loading="busy === pendingTerminate?.resource_id"
       @confirm="confirmTerminate"
     />
+
+    <ResizeServerDialog v-model:server="pendingResize" @resized="reload" />
   </div>
 </template>
