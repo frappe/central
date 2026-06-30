@@ -82,12 +82,28 @@ class Subscription(Document):
 
 	def on_update(self):
 		# on_update fires during the initial insert too; after_insert already logs the
-		# 'Created' segment, so only log a plan change on a genuine later edit.
-		if not self.flags.in_insert and self.has_value_changed("plan"):
+		# 'Created' segment, so only open a new segment on a genuine later edit that
+		# changes what is billed (the preset plan, the mode, the profile, or the
+		# composition) — a payment-method or standing edit is not a price event.
+		if not self.flags.in_insert and self._billing_segment_changed():
 			self.log_plan_change()
 
+	def _billing_segment_changed(self) -> bool:
+		"""Whether this save opens a new billing segment (a re-lock, #82)."""
+		if any(self.has_value_changed(f) for f in ("plan", "pricing_mode", "sub_category")):
+			return True
+		before = self.get_doc_before_save()
+		if not before:
+			return False
+		from central.billing.catalog.composition import composition_quantities
+
+		return composition_quantities(before.includes or []) != composition_quantities(self.includes or [])
+
 	def log_plan_change(self):
-		"""Log a 'Plan Changed' Subscription Change, with a fresh rate snapshot."""
+		"""Log a 'Plan Changed' Subscription Change, with a fresh rate snapshot — the
+		`changed`-event re-lock: it closes the open segment and opens a new one at
+		today's rate (ADR 0010). Used by both a preset plan change and a composed
+		resize / mode switch (#82)."""
 		previous = self.get_doc_before_save()
 		rate, currency = self.resolve_rate_snapshot()
 		frappe.get_doc(
@@ -95,7 +111,7 @@ class Subscription(Document):
 				"doctype": "Subscription Change",
 				"subscription": self.name,
 				"change_type": "Plan Changed",
-				"old_value": previous.plan if previous else None,
+				"old_value": self._segment_label(previous) if previous else None,
 				"new_value": self.segment_label(),
 				"locked_rate": rate,
 				"currency": currency,
@@ -105,15 +121,20 @@ class Subscription(Document):
 		).insert(ignore_permissions=True)
 
 	def segment_label(self) -> str | None:
-		"""What a billed segment shows: the Plan for a preset, the composition for a
+		"""What this subscription's current billed segment shows (see `_segment_label`)."""
+		return self._segment_label(self)
+
+	@staticmethod
+	def _segment_label(doc) -> str | None:
+		"""A segment's description: the Plan for a preset, the composition for a
 		composed config (e.g. 'Custom: 2 vCPU · 4 GB RAM · 40 GB disk'). Stored on the
 		change row's `new_value`, which the invoice line surfaces as its description."""
-		if self.pricing_mode == "Composed":
+		if doc.pricing_mode == "Composed":
 			from central.billing.catalog.composition import config_summary
 
-			summary = config_summary(self.includes)
+			summary = config_summary(doc.includes)
 			return f"Custom: {summary}" if summary else "Custom config"
-		return self.plan
+		return doc.plan
 
 	def resolve_rate_snapshot(self) -> tuple[float | None, str | None]:
 		"""The rate + currency to snapshot onto a Subscription Change now.

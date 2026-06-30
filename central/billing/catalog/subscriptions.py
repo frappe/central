@@ -223,16 +223,133 @@ def provision_subscription(
 
 
 def change_plan(subscription: str, new_plan: str, changed_by: str | None = None):
-	"""Change the requested plan (intent). Central writes a new price-lock segment
-	when it reprovisions (ADR 0006); this records the contract change only."""
+	"""Switch a subscription onto a curated preset (intent). The controller opens the
+	new billing segment on save (the `changed`-event re-lock, ADR 0010) — this just
+	mutates the contract. Switching a composed config onto a preset drops the
+	composition (and so the à-la-carte pricing); picking the same preset is a no-op."""
 	doc = frappe.get_doc("Subscription", subscription)
-	old_plan = doc.plan
-	if new_plan == old_plan:
+	if doc.pricing_mode != "Composed" and new_plan == doc.plan:
 		return doc
+	doc.pricing_mode = "Preset"
 	doc.plan = new_plan
+	doc.sub_category = None
+	doc.set("includes", [])
+	doc.flags.changed_by = changed_by
 	doc.save(ignore_permissions=True)
-	_record_change(subscription, "Plan Changed", old_plan, new_plan, changed_by)
 	return doc
+
+
+def resize_composed_subscription(
+	subscription: str,
+	includes: list,
+	sub_category: str | None = None,
+	changed_by: str | None = None,
+):
+	"""Resize a composed config — or slide a preset onto a custom shape — as the
+	`changed`-event re-lock (#82, ADR 0010).
+
+	Closes the open segment and opens a new one whose `locked_rate` is the config
+	total **re-resolved at the current rate card**; grandfathering protects only the
+	*unchanged* config. The new shape is validated against its profile (#81) and the
+	team's remaining headroom before anything is written. A no-op on an identical
+	composition (matching #54), and records nothing on a never-provisioned or
+	terminated config.
+	"""
+	doc = frappe.get_doc("Subscription", subscription)
+	if not _is_resizable(doc):
+		return None
+
+	profile = sub_category or doc.sub_category
+	if not profile:
+		frappe.throw(frappe._("A composed config needs an optimisation profile."))
+
+	rows = [dict(r) for r in includes]
+	from central.billing.catalog.composition import composition_quantities, validate_composition
+	from central.billing.catalog.pricing import resolve_config_rate
+
+	validate_composition(profile, rows)
+
+	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	cluster = frappe.db.get_value("Asset", doc.asset_id, "cluster") if doc.asset_id else None
+	new_rate = resolve_config_rate(rows, currency, cluster)
+	enforce_headroom(doc.team, new_rate, exclude=subscription)
+
+	# Resizing to the identical composition already running is a no-op (no event).
+	if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(rows):
+		return doc
+
+	doc.pricing_mode = "Composed"
+	doc.plan = None
+	doc.sub_category = profile
+	doc.set("includes", rows)
+	if doc.asset_id:
+		# Record the new shape on the running machine. A real impl also drives the
+		# cluster-manager resize here (the Atlas seam, #54); there is no resize call
+		# yet, so we only update Central's mirror of the machine's shape.
+		frappe.db.set_value("Asset", doc.asset_id, _asset_shape(rows))
+	doc.flags.changed_by = changed_by
+	doc.save(ignore_permissions=True)  # controller appends the Plan Changed re-lock
+	return doc
+
+
+def _is_resizable(doc) -> bool:
+	"""A config can be resized only while it is provisioned and live — not before its
+	opening segment, after a cancellation, or once the machine is terminated."""
+	latest = frappe.get_all(
+		"Subscription Change",
+		filters={"subscription": doc.name, "change_type": ["in", ["Created", "Plan Changed", "Cancelled"]]},
+		pluck="change_type",
+		order_by="effective_at desc, creation desc",
+		limit=1,
+	)
+	if not latest or latest[0] == "Cancelled":
+		return False
+	if doc.asset_id and frappe.db.get_value("Asset", doc.asset_id, "status") == "Terminated":
+		return False
+	return True
+
+
+def current_segment_rate(subscription: str) -> float:
+	"""The locked_rate of a subscription's currently-open billing segment, or 0 when
+	it is cancelled / never priced. The open segment is the latest Created/Plan Changed
+	not closed by a later Cancelled (ADR 0010 — the ledger is the lock)."""
+	rows = frappe.get_all(
+		"Subscription Change",
+		filters={"subscription": subscription, "change_type": ["in", ["Created", "Plan Changed", "Cancelled"]]},
+		fields=["change_type", "locked_rate"],
+		order_by="effective_at desc, creation desc",
+		limit=1,
+	)
+	if not rows or rows[0].change_type == "Cancelled":
+		return 0.0
+	return frappe.utils.flt(rows[0].locked_rate)
+
+
+def team_run_rate(team: str, exclude: str | None = None) -> float:
+	"""The team's committed monthly run-rate: the summed open-segment locked rate of
+	its subscriptions (preset and composed alike). A team bills in one currency, so the
+	rates are already comparable. `exclude` drops one subscription — used by resize to
+	measure headroom as if the config being resized weren't there."""
+	subs = frappe.get_all("Subscription", filters={"team": team}, pluck="name")
+	return frappe.utils.flt(sum(current_segment_rate(s) for s in subs if s != exclude))
+
+
+def enforce_headroom(team: str, new_rate, exclude: str | None = None) -> None:
+	"""Reject a config that can't be priced, or that would push the team past its
+	remaining trust-tier headroom (the spend cap minus its other running run-rate).
+	The authoritative server-side gate reused by provision (#83) and resize (#82)."""
+	from central.billing.catalog.entitlements import get_team_caps
+
+	if new_rate is None:
+		frappe.throw(frappe._("This configuration cannot be priced in your currency."))
+	cap = frappe.utils.flt(get_team_caps(team).max_spend)
+	available = max(0.0, cap - team_run_rate(team, exclude=exclude))
+	if frappe.utils.flt(new_rate) > available:
+		frappe.throw(
+			frappe._("This configuration ({0}) exceeds your remaining headroom ({1}).").format(
+				frappe.utils.flt(new_rate), frappe.utils.flt(available)
+			)
+		)
 
 
 def change_payment_method(subscription: str, new_method: str, changed_by: str | None = None):
