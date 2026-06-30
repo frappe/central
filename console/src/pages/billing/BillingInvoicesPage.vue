@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useCall, Badge, Button, LoadingText } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
@@ -50,6 +50,20 @@ async function selectRow(inv: InvoiceSummary): Promise<void> {
   await detail.submit({ name: inv.name })
 }
 
+// Open the latest invoice expanded on first load — list_invoices is ordered newest
+// first, so that's row 0. Only auto-select once: after the user closes the panel
+// (or a refetch arrives), we leave their choice alone.
+let autoSelected = false
+watch(
+  () => invoices.data,
+  (rows) => {
+    if (autoSelected || selected.value || !rows?.length) return
+    autoSelected = true
+    selectRow(rows[0])
+  },
+  { immediate: true },
+)
+
 const canPay = computed(
   () => canManageBilling.value && String(detail.data?.status).toLowerCase() === 'open',
 )
@@ -85,10 +99,23 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
     <PageHeader title="Invoices" subtitle="Billing" />
 
     <SplitView v-model:open="detailOpen" class="flex-1">
-      <!-- Document actions, pinned to the detail header. GROUNDING GAP (#70): no
-           email-invoice / download-PDF endpoints yet, so these stay disabled
-           until the backend lands them. -->
-      <template v-if="detail.data" #actions>
+      <!-- The selected invoice's identity lives in the panel header (number +
+           period + due), driven by the summary row so it shows instantly while the
+           full detail loads. -->
+      <template v-if="selected" #header>
+        <p class="truncate text-base font-medium text-ink-gray-9">{{ selected.name }}</p>
+        <p class="truncate text-p-sm text-ink-gray-5">
+          {{ selected.invoice_type }} ·
+          {{ billingPeriod(selected.period_start, selected.period_end) }}
+          <span v-if="selected.due_date"> · Due {{ shortDate(selected.due_date) }}</span>
+        </p>
+      </template>
+
+      <!-- Status + document actions, pinned to the detail header. GROUNDING GAP
+           (#70): no email-invoice / download-PDF endpoints yet, so these stay
+           disabled until the backend lands them. -->
+      <template v-if="selected" #actions>
+        <Badge :theme="invoiceTheme(selected.status)" :label="selected.status" />
         <Button
           variant="ghost"
           icon="lucide-mail"
@@ -121,20 +148,6 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
           <LoadingText :lines="6" />
         </div>
         <div v-else-if="detail.data" class="flex flex-col gap-5 p-4">
-          <header class="space-y-2">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="text-base text-ink-gray-9">{{ detail.data.name }}</h2>
-              <Badge :theme="invoiceTheme(detail.data.status)" :label="detail.data.status" />
-            </div>
-            <p class="text-p-sm text-ink-gray-5">
-              {{ detail.data.invoice_type }} ·
-              {{ billingPeriod(detail.data.period_start, detail.data.period_end) }}
-            </p>
-            <p v-if="detail.data.due_date" class="text-p-sm text-ink-gray-5">
-              Due {{ shortDate(detail.data.due_date) }}
-            </p>
-          </header>
-
           <!-- Line items. A long fleet can run to dozens of rows, so the list gets
                its own bounded scroll (sticky header). -->
           <div>
@@ -182,7 +195,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
             <p v-if="detail.data.zero_rating_reason" class="text-p-sm text-ink-gray-5">
               {{ detail.data.zero_rating_reason }}
             </p>
-            <div v-if="detail.data.credit_applied" class="flex justify-between text-ink-green-3">
+            <div v-if="detail.data.credit_applied" class="flex justify-between text-ink-green-8">
               <dt>Credit applied</dt>
               <dd>− {{ money(detail.data.credit_applied, detail.data.currency) }}</dd>
             </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h } from 'vue'
-import { Badge } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { ListView, type ListViewColumn, type ListViewFilter } from '@/components/common/list-view'
 import { money } from '@/lib/format'
 import { billingPeriod } from '@/lib/date'
@@ -55,6 +55,41 @@ const columns = computed<ListViewColumn<InvoiceSummary>[]>(() => [
     size: 120,
     cell: ({ row }) =>
       h(Badge, { theme: invoiceTheme(row.original.status), label: row.original.status }),
+  },
+  {
+    id: 'actions',
+    header: '',
+    size: 90,
+    enableSorting: false,
+    enableGlobalFilter: false,
+    meta: { align: 'end' },
+    // Email / download the invoice straight from the row. GROUNDING GAP (#70): no
+    // backend endpoints yet, so these stay disabled until they land. The wrapper
+    // stops the click from also selecting the row.
+    cell: () =>
+      h(
+        'div',
+        {
+          class: 'flex items-center justify-end gap-1',
+          onClick: (e: Event) => e.stopPropagation(),
+        },
+        [
+          h(Button, {
+            variant: 'ghost',
+            icon: 'lucide-mail',
+            disabled: true,
+            title: 'Email invoice — coming soon',
+            'aria-label': 'Email invoice',
+          }),
+          h(Button, {
+            variant: 'ghost',
+            icon: 'lucide-download',
+            disabled: true,
+            title: 'Download PDF — coming soon',
+            'aria-label': 'Download invoice',
+          }),
+        ],
+      ),
   },
 ])
 

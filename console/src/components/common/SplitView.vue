@@ -22,13 +22,23 @@ const open = defineModel<boolean>('open', { default: false })
       class="flex w-full shrink-0 flex-col overflow-y-auto border-outline-gray-1 sm:w-[480px] sm:border-l"
     >
       <div class="flex items-center justify-between gap-2 border-b border-outline-gray-1 px-4 py-2.5">
-        <button class="text-p-sm text-ink-gray-6 sm:hidden" @click="open = false">← Back</button>
-        <span
-          class="hidden text-p-sm font-medium uppercase tracking-wide text-ink-gray-5 sm:inline"
+        <button
+          class="shrink-0 text-p-sm text-ink-gray-6 sm:hidden"
+          aria-label="Back"
+          @click="open = false"
         >
-          Details
-        </span>
-        <div class="ml-auto flex items-center gap-1">
+          ← Back
+        </button>
+        <!-- Panel title — defaults to "Details", but the parent can replace it with
+             document context (e.g. the selected invoice's number + period). -->
+        <div class="min-w-0 flex-1">
+          <slot name="header">
+            <span class="text-p-sm font-medium uppercase tracking-wide text-ink-gray-5">
+              Details
+            </span>
+          </slot>
+        </div>
+        <div class="ml-auto flex shrink-0 items-center gap-1">
           <!-- Document-level actions (e.g. email / download), pinned to the top of
                the panel beside the close control rather than buried in the body. -->
           <slot name="actions" />

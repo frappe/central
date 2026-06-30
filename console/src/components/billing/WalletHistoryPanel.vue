@@ -87,7 +87,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
               class="size-4"
               :class="
                 isCredit(e)
-                  ? 'lucide-arrow-down-left text-ink-green-3'
+                  ? 'lucide-arrow-down-left text-ink-green-8'
                   : 'lucide-arrow-up-right text-ink-gray-6'
               "
               aria-hidden="true"
@@ -99,7 +99,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
           </div>
           <span
             class="shrink-0 text-sm tabular-nums"
-            :class="isCredit(e) ? 'text-ink-green-3' : 'text-ink-gray-8'"
+            :class="isCredit(e) ? 'text-ink-green-8' : 'text-ink-gray-8'"
           >
             {{ signedMoney(e.amount, e.currency || currency, isCredit(e)) }}
           </span>
