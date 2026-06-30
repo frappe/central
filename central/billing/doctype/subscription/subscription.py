@@ -21,8 +21,11 @@ class Subscription(Document):
 		default_payment_method: DF.Link | None
 		enabled: DF.Check
 		gateway: DF.Link | None
+		includes: DF.Table
 		plan: DF.Link | None
+		pricing_mode: DF.Literal["Preset", "Composed"]
 		start_date: DF.Date | None
+		sub_category: DF.Link | None
 		team: DF.Link
 	# end: auto-generated types
 
@@ -69,7 +72,7 @@ class Subscription(Document):
 				"doctype": "Subscription Change",
 				"subscription": self.name,
 				"change_type": "Created",
-				"new_value": self.plan,
+				"new_value": self.segment_label(),
 				"locked_rate": rate,
 				"currency": currency,
 				"effective_at": effective_at,
@@ -93,7 +96,7 @@ class Subscription(Document):
 				"subscription": self.name,
 				"change_type": "Plan Changed",
 				"old_value": previous.plan if previous else None,
-				"new_value": self.plan,
+				"new_value": self.segment_label(),
 				"locked_rate": rate,
 				"currency": currency,
 				"effective_at": frappe.utils.now_datetime(),
@@ -101,18 +104,37 @@ class Subscription(Document):
 			}
 		).insert(ignore_permissions=True)
 
+	def segment_label(self) -> str | None:
+		"""What a billed segment shows: the Plan for a preset, the composition for a
+		composed config (e.g. 'Custom: 2 vCPU · 4 GB RAM · 40 GB disk'). Stored on the
+		change row's `new_value`, which the invoice line surfaces as its description."""
+		if self.pricing_mode == "Composed":
+			from central.billing.catalog.composition import config_summary
+
+			summary = config_summary(self.includes)
+			return f"Custom: {summary}" if summary else "Custom config"
+		return self.plan
+
 	def resolve_rate_snapshot(self) -> tuple[float | None, str | None]:
-		"""The catalog rate + currency to snapshot onto a Subscription Change now.
+		"""The rate + currency to snapshot onto a Subscription Change now.
 
 		Billing reads this snapshot forever for the segment it opens — never the
-		live catalog rate — so re-resolving it later must not change past charges.
+		live catalog rate — so re-resolving it later must not change past charges. A
+		preset snapshots its Plan's flat rate; a composed config snapshots the
+		whole-config rate `Σ(qty × component_rate)`, frozen as one number (ADR 0010).
 		"""
-		if not self.plan:
-			return None, None
 		currency = frappe.db.get_value("Billing Profile", self.team, "currency")
 		if not currency:
 			return None, None
 		cluster = frappe.db.get_value("Asset", self.asset_id, "cluster") if self.asset_id else None
+
+		if self.pricing_mode == "Composed":
+			from central.billing.catalog.pricing import resolve_config_rate
+
+			return resolve_config_rate(self.includes, currency, cluster), currency
+
+		if not self.plan:
+			return None, None
 		rate = frappe.get_doc("Plan", self.plan).get_rate(currency, cluster)
 		return rate, currency
 

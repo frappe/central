@@ -11,14 +11,18 @@
   "team",
   "asset_id",
   "cluster",
+  "pricing_mode",
   "plan",
+  "sub_category",
   "billing_cycle",
   "column_break_state",
   "account_standing",
   "start_date",
   "section_break_payment",
   "default_payment_method",
-  "gateway"
+  "gateway",
+  "section_break_composition",
+  "includes"
  ],
  "fields": [
   {
@@ -30,12 +34,43 @@
    "reqd": 1
   },
   {
-   "description": "Requested plan (intent)",
+   "default": "Preset",
+   "description": "Preset = links a curated Plan, billed at its flat rate. Composed = a design-your-own config priced from its parts; carries `includes` as the locked composition and no Plan (ADR 0009).",
+   "fieldname": "pricing_mode",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Pricing Mode",
+   "options": "Preset\nComposed"
+  },
+  {
+   "description": "Requested plan (intent). Set for Preset mode only.",
+   "depends_on": "eval:doc.pricing_mode != 'Composed'",
    "fieldname": "plan",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Plan",
    "options": "Plan"
+  },
+  {
+   "description": "Composed mode: the optimisation profile the composition is bounded by (#81), kept for resize re-validation (#82).",
+   "depends_on": "eval:doc.pricing_mode == 'Composed'",
+   "fieldname": "sub_category",
+   "fieldtype": "Link",
+   "label": "Optimisation Profile",
+   "options": "Plan Sub-Category"
+  },
+  {
+   "fieldname": "section_break_composition",
+   "fieldtype": "Section Break",
+   "label": "Composition",
+   "depends_on": "eval:doc.pricing_mode == 'Composed'"
+  },
+  {
+   "description": "Composed mode: the locked composition (qty per Resource Type) Central bills from. Empty for a preset.",
+   "fieldname": "includes",
+   "fieldtype": "Table",
+   "label": "Includes",
+   "options": "Plan Includes"
   },
   {
    "fieldname": "billing_cycle",

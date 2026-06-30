@@ -58,13 +58,16 @@ def _record_change(subscription: str, change_type: str, old_value=None, new_valu
 def create_subscription(
 	team: str,
 	cluster: str,
-	plan: str,
+	plan: str | None = None,
 	billing_cycle: str = "Monthly",
 	start_date=None,
 	default_payment_method: str | None = None,
 	gateway: str | None = None,
 	changed_by: str | None = None,
 	resource_id: str | None = None,
+	pricing_mode: str = "Preset",
+	includes: list | None = None,
+	sub_category: str | None = None,
 ):
 	"""Record a subscription INTENT — what the customer asked for — linked to its
 	runtime Asset. The Asset is the resource Central drives on a cluster (it carries
@@ -73,6 +76,10 @@ def create_subscription(
 	Asset (ADR 0006, cdea38e). The actual provisioning (calling the cluster manager
 	and writing the price-lock) is `provision_subscription`; this captures the
 	contract + its asset only, so it stays usable for fixtures and intent-only flows.
+
+	A `Composed` subscription mints no Plan: it carries `includes` (qty per Resource
+	Type) as its locked composition and `sub_category` as its optimisation profile;
+	billing reads the summed config rate off its Subscription Change (ADR 0009/0010).
 
 	The cluster must be a registered Atlas Instance (Asset.cluster is a reqd Link)."""
 	resource_id = resource_id or f"vm-{frappe.generate_hash(length=10)}"
@@ -87,6 +94,7 @@ def create_subscription(
 				"cluster": cluster,
 				"plan": plan,
 				"status": "Pending",
+				**_asset_shape(includes),
 			}
 		).insert(ignore_permissions=True)
 
@@ -95,7 +103,10 @@ def create_subscription(
 			"doctype": "Subscription",
 			"team": team,
 			"asset_id": resource_id,
+			"pricing_mode": pricing_mode,
 			"plan": plan,
+			"sub_category": sub_category,
+			"includes": includes or [],
 			"billing_cycle": billing_cycle,
 			"account_standing": "Current",
 			"start_date": start_date or frappe.utils.nowdate(),
@@ -107,6 +118,64 @@ def create_subscription(
 	doc.insert(ignore_permissions=True)
 
 	return doc
+
+
+def _asset_shape(includes) -> dict:
+	"""Record a composed config's real shape on its Asset so the running machine
+	reflects what was provisioned. Empty for a preset (the Plan carries the shape)."""
+	if not includes:
+		return {}
+	from central.billing.catalog.composition import composition_quantities, COMPUTE, MEMORY, DISK
+
+	qty = composition_quantities(includes)
+	return {
+		"vcpus": int(qty.get(COMPUTE, 0)),
+		"memory_megabytes": int(qty.get(MEMORY, 0) * 1024),
+		"disk_gigabytes": int(qty.get(DISK, 0)),
+	}
+
+
+def provision_composed_subscription(
+	team: str,
+	cluster: str,
+	includes: list,
+	sub_category: str,
+	billing_cycle: str = "Monthly",
+	start_date=None,
+	resource_id: str | None = None,
+	default_payment_method: str | None = None,
+	gateway: str | None = None,
+	changed_by: str | None = None,
+):
+	"""Provision a design-your-own compute config (ADR 0009, #80). No Plan is minted.
+
+	The shape is validated against its optimisation profile (#81), then Central writes
+	the composition onto the Subscription and stamps the summed whole-config rate on
+	the opening `Created` Subscription Change (done in the controller's after_insert).
+	Grandfathering holds while the config is unchanged — a later rate-card edit does
+	not re-price a running config; only a resize re-resolves (#82).
+	"""
+	from central.billing.catalog.composition import validate_composition
+
+	validate_composition(sub_category, includes)
+	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
+	sub = create_subscription(
+		team, cluster, plan=None, billing_cycle=billing_cycle, start_date=start_date,
+		default_payment_method=default_payment_method, gateway=gateway, changed_by=changed_by,
+		resource_id=resource_id, pricing_mode="Composed", includes=includes, sub_category=sub_category,
+	)
+	opening = frappe.db.get_value(
+		"Subscription Change",
+		{"subscription": sub.name, "change_type": "Created"},
+		["locked_rate", "currency"],
+		as_dict=True,
+	)
+	return {
+		"subscription": sub.name,
+		"resource_id": resource_id,
+		"locked_rate": opening.locked_rate if opening else None,
+		"currency": opening.currency if opening else None,
+	}
 
 
 def provision_subscription(

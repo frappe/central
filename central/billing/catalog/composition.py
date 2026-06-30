@@ -40,6 +40,19 @@ def composition_quantities(includes) -> dict[str, float]:
 	return out
 
 
+def config_summary(includes) -> str:
+	"""A composition as a human one-liner: '2 vCPU · 4 GB RAM · 40 GB disk'."""
+	qty = composition_quantities(includes)
+	parts = []
+	if qty.get(COMPUTE):
+		parts.append(f"{_num(qty[COMPUTE])} vCPU")
+	if qty.get(MEMORY):
+		parts.append(f"{_num(qty[MEMORY])} GB RAM")
+	if qty.get(DISK):
+		parts.append(f"{_num(qty[DISK])} GB disk")
+	return " · ".join(parts)
+
+
 def validate_composition(sub_category: str, includes) -> None:
 	"""Reject a composed config that is not a valid shape for its profile.
 
