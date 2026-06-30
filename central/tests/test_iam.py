@@ -47,70 +47,64 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 26 capabilities across three planes: central (6), atlas (8), bench (12).
-		# v2: vm:*/bench:* collapsed into server:*; site sub-caps renamed.
-		self.assertEqual(frappe.db.count("Capability"), 26)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 12)
+		# 13 capabilities across two live planes: central (5) + atlas (8). v3 makes
+		# server the atomic unit — the bench plane and asset:view are dropped.
+		self.assertEqual(frappe.db.count("Capability"), 13)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 5)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 8)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
+		# The retired roles are gone; the five-rung ladder is all that remains.
+		self.assertEqual(frappe.db.count("Team Role", {"is_system": 1}), 5)
+		for retired in ("Operator", "Site Manager", "Support"):
+			self.assertFalse(frappe.db.exists("Team Role", retired))
 
 		owner_caps = set(frappe.get_all("Role Capability", {"parent": "Owner"}, pluck="capability"))
 		admin_caps = set(frappe.get_all("Role Capability", {"parent": "Admin"}, pluck="capability"))
 		developer_caps = set(frappe.get_all("Role Capability", {"parent": "Developer"}, pluck="capability"))
-		operator_caps = set(frappe.get_all("Role Capability", {"parent": "Operator"}, pluck="capability"))
-		site_manager_caps = set(frappe.get_all("Role Capability", {"parent": "Site Manager"}, pluck="capability"))
-		support_caps = set(frappe.get_all("Role Capability", {"parent": "Support"}, pluck="capability"))
 		viewer_caps = set(frappe.get_all("Role Capability", {"parent": "Viewer"}, pluck="capability"))
 		billing_caps = set(frappe.get_all("Role Capability", {"parent": "Billing"}, pluck="capability"))
 
-		# Server lifecycle (create/terminate/snapshot/resize) is Owner/Admin only.
+		# Full server lifecycle is shared by Owner, Admin, and Developer.
+		for caps in (owner_caps, admin_caps, developer_caps):
+			for cap in ("server:create", "server:power", "server:resize", "server:snapshot", "server:terminate", "server:open"):
+				self.assertIn(cap, caps)
+		# Team management is Owner/Admin; deleting the team is Owner-only.
 		for caps in (owner_caps, admin_caps):
-			self.assertIn("server:snapshot", caps)
-			self.assertIn("server:resize", caps)
-			self.assertIn("server:terminate", caps)
-		# Developer lives inside existing servers: full site:* (incl. create/delete),
-		# but no server lifecycle. Operator manages servers short of create/terminate.
-		self.assertIn("site:create", owner_caps)
-		self.assertIn("site:create", admin_caps)
-		self.assertIn("site:create", developer_caps)
-		self.assertIn("site:delete", developer_caps)
-		self.assertNotIn("server:create", developer_caps)
-		self.assertNotIn("server:terminate", developer_caps)
-		self.assertIn("server:config", operator_caps)
-		self.assertNotIn("server:create", operator_caps)
-		self.assertNotIn("server:terminate", operator_caps)
-		# Site Manager runs existing sites but can't create or drop them.
-		self.assertIn("site:config", site_manager_caps)
-		self.assertNotIn("site:create", site_manager_caps)
-		self.assertNotIn("site:delete", site_manager_caps)
-		# Viewer is a pure inventory auditor — sees servers but cannot open a console.
-		self.assertEqual(viewer_caps, {"asset:view", "cluster:view", "server:view"})
-		# Support is read-only-with-console: opens servers, reads sites/logs, no writes.
-		self.assertEqual(support_caps, {"asset:view", "cluster:view", "server:open", "server:view", "site:logs", "site:view"})
-		self.assertNotIn("server:snapshot", billing_caps)
-		self.assertNotIn("server:config", billing_caps)
+			self.assertIn("team:manage_members", caps)
+		self.assertNotIn("team:manage_members", developer_caps)
+		self.assertIn("team:delete", owner_caps)
+		self.assertNotIn("team:delete", admin_caps)
+		# Billing lives with Owner and Billing only.
+		for cap in ("billing:view", "billing:manage"):
+			self.assertIn(cap, owner_caps)
+			self.assertIn(cap, billing_caps)
+			self.assertNotIn(cap, admin_caps)
+			self.assertNotIn(cap, developer_caps)
+		# Viewer is a pure inventory auditor; Billing adds billing to that read view.
+		self.assertEqual(viewer_caps, {"cluster:view", "server:view"})
+		self.assertEqual(billing_caps, {"billing:view", "billing:manage", "cluster:view", "server:view"})
 
-		# server:open (the old vm:open) is the console gate, distinct from server:view.
-		# Operators/Support carry it; the read-only Viewer and Billing do not.
-		for caps in (owner_caps, admin_caps, developer_caps, operator_caps, site_manager_caps, support_caps):
+		# server:open is the console gate; the read-only Viewer and Billing lack it.
+		for caps in (owner_caps, admin_caps, developer_caps):
 			self.assertIn("server:open", caps)
 		for caps in (viewer_caps, billing_caps):
 			self.assertNotIn("server:open", caps)
 
 		# Every system role can still see servers and the cluster they live in.
-		for caps in (owner_caps, admin_caps, developer_caps, operator_caps, site_manager_caps, support_caps, viewer_caps, billing_caps):
+		for caps in (owner_caps, admin_caps, developer_caps, viewer_caps, billing_caps):
 			self.assertIn("cluster:view", caps)
 			self.assertIn("server:view", caps)
 
 	def test_capability_implications_close_a_grant(self):
-		# site:create can't stand alone — it pulls in the site:view + server:view
-		# needed to use it. server:create also pulls in cluster:view.
-		expanded = set(expand_capabilities(["site:create"]))
-		self.assertEqual(expanded, {"site:create", "site:view", "server:view"})
+		# server:create can't stand alone — it pulls in the server:view + cluster:view
+		# needed to use it.
+		expanded = set(expand_capabilities(["server:create"]))
+		self.assertEqual(expanded, {"server:create", "server:view", "cluster:view"})
 
-		self.assertIn("cluster:view", expand_capabilities(["server:create"]))
+		self.assertIn("server:view", expand_capabilities(["server:open"]))
 
 		# Already-closed sets are returned unchanged (order preserved, no dupes).
-		closed = ["server:view", "site:view"]
+		closed = ["server:view", "cluster:view"]
 		self.assertEqual(expand_capabilities(closed), closed)
 
 	def test_user_claim_is_team_scoped(self):
@@ -124,12 +118,12 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertTrue(can(self.viewer, team_a.name, "server:view"))
 		self.assertFalse(can(self.viewer, team_a.name, "server:terminate"))
 
-	def test_developer_manages_sites_but_not_servers_or_billing(self):
+	def test_developer_operates_servers_but_not_team_or_billing(self):
 		team = self.make_team("IAM Dev Team", self.developer, "Developer")
 
-		self.assertTrue(can(self.developer, team.name, "site:create"))
-		self.assertTrue(can(self.developer, team.name, "site:delete"))
-		self.assertFalse(can(self.developer, team.name, "server:terminate"))
+		self.assertTrue(can(self.developer, team.name, "server:create"))
+		self.assertTrue(can(self.developer, team.name, "server:terminate"))
+		self.assertFalse(can(self.developer, team.name, "team:manage_members"))
 		self.assertFalse(can(self.developer, team.name, "billing:manage"))
 
 	def test_effective_permissions_shape_matches_fc_teams_claim(self):
@@ -140,7 +134,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertEqual(effective["user"], self.viewer)
 		self.assertEqual(
 			effective["teams"][team.name]["caps"],
-			["asset:view", "cluster:view", "server:view"],
+			["cluster:view", "server:view"],
 		)
 		self.assertEqual(effective["teams"][team.name]["grants"][0]["source"], "member")
 

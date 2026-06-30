@@ -84,3 +84,8 @@ central.billing.patches.v21_category_provision_target.category_provision_target
 central.billing.patches.v22_retire_addon_into_plan.retire_addon_into_plan
 central.patches.v01_capability_model_v2.rename_capabilities
 central.patches.v02_portal_central_users.make_central_users_portal_only
+# Strip the capability catalog to v3: drop the bench plane (site:* + server:config)
+# and the redundant asset:view, and collapse the system roles from eight to five
+# (retire Operator / Site Manager / Support, reassigning their members onto the
+# surviving roles). Server is the atomic unit now.
+central.patches.v03_strip_to_server_caps.strip_capabilities

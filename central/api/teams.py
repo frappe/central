@@ -102,8 +102,8 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 	picked = [c for c in capabilities if c in valid]
 	if not picked:
 		frappe.throw("Pick at least one capability.", frappe.ValidationError)
-	# Persist the implied dependencies too (e.g. site:create pulls in site:view +
-	# server:view), so the saved role is usable and matches what enforcement grants.
+	# Persist the implied dependencies too (e.g. server:create pulls in server:view +
+	# cluster:view), so the saved role is usable and matches what enforcement grants.
 	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
 	role = frappe.get_doc(
 		{
