@@ -26,7 +26,7 @@ function has(cap: string): boolean {
 export function useCapabilities() {
   return {
     loading: computed(() => capsCall.loading),
-    canViewServers: computed(() => has('server:view') || has('asset:view')),
+    canViewServers: computed(() => has('server:view')),
     canCreateServer: computed(() => has('server:create')),
     canPowerServer: computed(() => has('server:power')),
     canTerminateServer: computed(() => has('server:terminate')),

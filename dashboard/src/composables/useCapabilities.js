@@ -6,11 +6,11 @@
 // Real capabilities (central/fixtures/capability.json):
 //   billing:view, billing:manage,
 //   team:edit, team:manage_members, team:delete,
-//   asset:view, cluster:view,
-//   server:view/open/create/power/resize/snapshot/terminate/config
+//   cluster:view,
+//   server:view/open/create/power/resize/snapshot/terminate
 // There is NO team:view / atlas:* — team visibility is "being a member" (any cap
-// on the team), and the compute (server) screens map to the server:* / asset:view
-// family. server:view lists servers; server:open is the distinct console-open gate.
+// on the team), and the compute (server) screens map to the server:* family.
+// server:view lists servers; server:open is the distinct console-open gate.
 
 import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
@@ -45,7 +45,7 @@ export function useCapabilities() {
     canViewTeam: computed(() => (caps.data?.length ?? 0) > 0),
     canManageTeam: computed(() => has('team:manage_members')),
     // Compute (servers) — viewing resources vs acting on them.
-    canViewAtlas: computed(() => has('server:view') || has('asset:view')),
+    canViewAtlas: computed(() => has('server:view')),
     canManageAtlas: computed(() => has('server:create') || has('server:power')),
   }
 }
