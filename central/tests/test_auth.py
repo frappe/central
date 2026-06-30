@@ -28,16 +28,33 @@ class TestAuth(IntegrationTestCase):
 		self.assertEqual(status, 1)
 		self.assertFalse(frappe.db.exists("User", email))
 
-		# Step 2: the cached code creates the Website User and (via bootstrap_user_team)
-		# its personal team, then logs the user in. login_manager only exists on a real
-		# request, so stub it here.
+		# Step 2: the cached code creates the Website User, logs it in, then provisions
+		# its Central role and personal team as the authenticated user. login_manager
+		# only exists on a real request, so stub the session transition here.
 		code = frappe.cache.get_value(_otp_key(email))["code"]
-		with patch("frappe.local.login_manager", create=True):
+		with patch("frappe.local.login_manager", create=True) as login_manager:
+			login_manager.login_as.side_effect = frappe.set_user
 			result = verify_signup(email, code)
 
+		self.assertEqual(frappe.session.user, email)
 		self.assertEqual(frappe.db.get_value("User", email, "user_type"), "Website User")
+		self.assertIn("Central User", frappe.get_roles(email))
 		self.assertTrue(result["team"])
 		self.assertIsNone(frappe.cache.get_value(_otp_key(email)))
+
+	def test_developer_otp_bypass_still_requires_a_pending_signup(self):
+		frappe.set_user("Guest")
+		email = "central-missing-signup-test@example.test"
+		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
+		original_developer_mode = frappe.conf.developer_mode
+		frappe.conf.developer_mode = 1
+		self.addCleanup(setattr, frappe.conf, "developer_mode", original_developer_mode)
+
+		with self.assertRaises(frappe.ValidationError):
+			with patch("frappe.local.login_manager", create=True):
+				verify_signup(email, "123456")
+
+		self.assertFalse(frappe.db.exists("User", email))
 
 	def test_signup_rejects_existing_user(self):
 		status, message = sign_up("Administrator", "Administrator")

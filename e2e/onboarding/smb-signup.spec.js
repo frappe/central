@@ -1,8 +1,7 @@
 import { test, expect } from '@playwright/test'
 
-// SMB onboarding — the signup half (Create account → Verify email → Name your
-// site), driven against the real bench with NO MOCKS. It uses the developer_mode
-// OTP bypass (any 6 digits), so no mailbox is needed.
+// Signup routing, driven against the real bench with NO MOCKS. It uses the
+// developer_mode OTP bypass (any 6 digits), so no mailbox is needed.
 //
 // The site-provisioning screens (subdomain availability + the Running handoff)
 // need a configured Atlas region — an active Root Domain and a golden bench
@@ -16,10 +15,10 @@ import { test, expect } from '@playwright/test'
 // pass once.
 const uniqueEmail = () => `smb-${Date.now()}@example.com`
 
-test('signup → OTP verify → reaches Name your site', async ({ page }) => {
+test('product signup → OTP verify → reaches Name your site', async ({ page }) => {
   const email = uniqueEmail()
 
-  await page.goto('/dashboard/signup')
+  await page.goto('/dashboard/signup?product=erpnext')
   await page.getByLabel('Full name').fill('SMB Tester')
   await page.getByLabel('Work email').fill(email)
   await page.getByRole('button', { name: 'Continue' }).click()
@@ -34,4 +33,21 @@ test('signup → OTP verify → reaches Name your site', async ({ page }) => {
   // verify() creates the User + personal Team, logs in, and full-navigates to the
   // authenticated onboarding route.
   await expect(page.getByRole('heading', { name: 'Name your site' })).toBeVisible()
+})
+
+test('central signup → OTP verify → reaches Servers', async ({ page }) => {
+  const email = uniqueEmail()
+
+  await page.goto('/dashboard/signup')
+  await page.getByLabel('Full name').fill('Central Tester')
+  await page.getByLabel('Work email').fill(email)
+  await page.getByRole('button', { name: 'Continue' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Verify your email' })).toBeVisible()
+
+  await page.locator('[data-otp-input]').first().click()
+  await page.keyboard.type('123456')
+
+  await expect(page).toHaveURL(/\/dashboard\/servers$/)
+  await expect(page.getByRole('heading', { name: 'Servers' })).toBeVisible()
 })

@@ -9,12 +9,13 @@ from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
 from frappe.utils.password import get_decrypted_password
 
 from central.iam import get_user_team_names
+from central.users import CENTRAL_USER_ROLE
 
-# SMB signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
+# Signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
 # signup (no User yet, so an abandoned signup leaves nothing behind — simpler than
-# a holding DocType). `verify_signup` creates the User on a correct code, which
-# fires `bootstrap_user_team` (central/users.py) to make the personal Team, then
-# logs the user in so the onboarding flow continues authenticated.
+# a holding DocType). `verify_signup` creates the User on a correct code — which
+# fires `bootstrap_user_team` (central/users.py) to provision the Central role and
+# personal Team — then logs the new user in so onboarding continues authenticated.
 
 # 2 hours
 OTP_TTL_SECONDS = 2 * 60 * 60
@@ -59,8 +60,8 @@ def verify_signup(email: str, code: str) -> dict:
 	pending = frappe.cache.get_value(_otp_key(email))
 
 	# for developer mode, any 6-digit code passes
-	if frappe.conf.developer_mode and len(code) == 6 and code.isdigit():
-		pending = {"full_name": "Developer", "code": code, "attempts": 0}
+	if frappe.conf.developer_mode and pending and len(code) == 6 and code.isdigit():
+		pending["code"] = code
 
 	if not pending:
 		frappe.throw(_("Your verification code expired. Please sign up again."), frappe.ValidationError)
@@ -124,17 +125,23 @@ def _create_verified_user(email: str, full_name: str):
 			"enabled": 1,
 			"new_password": random_string(10),
 			"user_type": "Website User",
+			"roles": [{"role": role} for role in _signup_roles()],
 		}
 	)
 	user.flags.ignore_permissions = True
 	user.flags.ignore_password_policy = True
 	user.flags.no_welcome_mail = True
-	user.insert()
-
-	default_role = frappe.get_single_value("Portal Settings", "default_role")
-	if default_role:
-		user.add_roles(default_role)
+	# ignore permissions because we are inserting a user as a website user
+	user.insert(ignore_permissions=True)
 	return user
+
+
+def _signup_roles() -> list[str]:
+	roles = [CENTRAL_USER_ROLE]
+	default_role = frappe.get_single_value("Portal Settings", "default_role")
+	if default_role and default_role not in roles:
+		roles.append(default_role)
+	return roles
 
 
 def build_auth_context() -> dict:
