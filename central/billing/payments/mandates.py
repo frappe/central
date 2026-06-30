@@ -71,6 +71,25 @@ def _adapter(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
+def _prefill(team: str) -> dict:
+	"""Contact details to pre-populate the Razorpay Checkout sheet so the customer
+	isn't re-asked for the name/email/phone we already hold. Razorpay does NOT
+	auto-fill these from `customer_id` in recurring mode, so Checkout must be handed
+	an explicit `prefill` block. Only non-empty values are included."""
+	p = (
+		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
+		or frappe._dict()
+	)
+	out = {}
+	if p.legal_name:
+		out["name"] = p.legal_name
+	if p.email:
+		out["email"] = p.email
+	if p.phone:
+		out["contact"] = p.phone
+	return out
+
+
 def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None = None) -> str:
 	"""Reuse-or-create a gateway customer for a mandate setup. Recurring orders
 	need a customer (see payments.ensure_gateway_customer for the why); shared so
@@ -80,10 +99,14 @@ def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None =
 	return payments.ensure_gateway_customer(team, gateway, adapter, customer_id)
 
 
-def _require_card_contact(team: str, gateway: str, adapter, customer_id: str, contact: str | None = None):
-	"""A Razorpay *card* mandate order needs the customer to carry a contact (phone)
-	— without it Razorpay errors "The contact field is required for recurring links".
+def _require_card_contact(
+	team: str, gateway: str, adapter, customer_id: str, contact: str | None = None
+) -> str:
+	"""Ensure the customer for a Razorpay *card* mandate carries a contact (phone) —
+	without it Razorpay errors "The contact field is required for recurring links".
 	(UPI Autopay does not need one, so this is only called from the card path.)
+	Returns the customer id to use for the order, which may differ from the input
+	(see the collision case below).
 
 	The phone is optional on the billing profile, so the dashboard collects it inline
 	at card setup when missing and passes it here. Use the inline `contact` else the
@@ -91,7 +114,7 @@ def _require_card_contact(team: str, gateway: str, adapter, customer_id: str, co
 	name/email/contact onto the (possibly reused / older, contactless) customer.
 	"""
 	if frappe.db.get_value("Payment Gateway", gateway, "adapter_key") != "Razorpay":
-		return
+		return customer_id
 	p = (
 		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
 		or frappe._dict()
@@ -104,11 +127,38 @@ def _require_card_contact(team: str, gateway: str, adapter, customer_id: str, co
 			frappe.ValidationError,
 		)
 	# An inline-provided phone is saved to the profile so it's collected only once.
+	# Saved BEFORE the recovery path so gateway_customer_info() below carries it.
 	if contact and contact != str(p.phone or ""):
 		frappe.db.set_value("Billing Profile", team, "phone", contact)
-	adapter.update_customer(
-		customer_id, {"name": p.legal_name or team, "email": p.email, "contact": phone}
-	)
+
+	try:
+		adapter.update_customer(
+			customer_id, {"name": p.legal_name or team, "email": p.email, "contact": phone}
+		)
+		return customer_id
+	except Exception as e:
+		# Razorpay enforces (email, contact) uniqueness per merchant. If a different
+		# customer already owns this identity (e.g. our stored customer was minted
+		# contactless and the real one already carries the phone), the edit fails
+		# "Customer already exists for the merchant". Swallowing it would leave a
+		# contactless customer and the order would then fail "contact required".
+		# Instead, fetch the customer that already has (email, contact) — create with
+		# fail_existing returns it now that the phone is on the profile — and repoint
+		# our stored row so the recurring order uses the contact-bearing customer.
+		if "already exists" not in str(e).lower():
+			raise
+		from central.billing.payments.payments import gateway_customer_info
+
+		corrected = adapter.create_customer(gateway_customer_info(team))
+		if corrected and corrected != customer_id:
+			frappe.db.set_value(
+				"Gateway Customer",
+				{"team": team, "gateway": gateway},
+				"gateway_customer_id",
+				corrected,
+			)
+			return corrected
+		return customer_id
 
 
 def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_default: int = 0) -> dict:
@@ -146,7 +196,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 		}
 	).insert(ignore_permissions=True)
 
-	return {**handles, "payment_method": method.name}
+	return {**handles, "payment_method": method.name, "prefill": _prefill(team)}
 
 
 def setup_card(team: str, gateway: str, customer_id: str | None = None, contact: str | None = None) -> dict:
@@ -159,7 +209,8 @@ def setup_card(team: str, gateway: str, customer_id: str | None = None, contact:
 	"""
 	adapter = _adapter(gateway)
 	customer_id = _ensure_customer(team, gateway, adapter, customer_id)
-	_require_card_contact(team, gateway, adapter, customer_id, contact=contact)
+	# May return a different (contact-bearing) customer if the held one collided.
+	customer_id = _require_card_contact(team, gateway, adapter, customer_id, contact=contact)
 	handles = adapter.setup_payment_method(
 		team, {"method": "card", "max_amount": CARD_TOKEN_MAX, "customer_id": customer_id}
 	)
@@ -176,7 +227,9 @@ def setup_card(team: str, gateway: str, customer_id: str | None = None, contact:
 		}
 	).insert(ignore_permissions=True)
 
-	return {**handles, "payment_method": method.name}
+	# _require_card_contact has already persisted any inline phone onto the profile,
+	# so _prefill picks it up here.
+	return {**handles, "payment_method": method.name, "prefill": _prefill(team)}
 
 
 def confirm_mandate(payment_method: str, callback: dict):

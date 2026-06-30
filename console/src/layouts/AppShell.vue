@@ -10,7 +10,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 // the routed page. The header doubles as the team switcher — switching re-drives
 // the team-scoped reads (capabilities, registry). Sections are capability-gated.
 const { teams, activeTeam, activeTeamLabel, setActiveTeam } = useSession()
-const { canViewServers } = useCapabilities()
+const { canViewServers, canViewBilling } = useCapabilities()
 const { logout } = useAuth()
 const { currentTheme, toggleTheme } = useTheme()
 
@@ -52,6 +52,29 @@ const sections = computed(() => [
         icon: 'lucide-server',
         to: '/servers',
         condition: () => canViewServers.value,
+      },
+    ],
+  },
+  {
+    label: 'Billing',
+    items: [
+      {
+        label: 'Overview',
+        icon: 'lucide-credit-card',
+        to: '/billing',
+        condition: () => canViewBilling.value,
+      },
+      {
+        label: 'Invoices',
+        icon: 'lucide-file-text',
+        to: '/billing/invoices',
+        condition: () => canViewBilling.value,
+      },
+      {
+        label: 'Limit Tiers',
+        icon: 'lucide-gauge',
+        to: '/billing/limits',
+        condition: () => canViewBilling.value,
       },
     ],
   },
