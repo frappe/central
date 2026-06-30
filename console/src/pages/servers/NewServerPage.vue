@@ -208,17 +208,25 @@ async function submit() {
               <span class="ml-auto font-medium text-ink-gray-9">{{ isCustom ? customPrice : 'Design your own' }}</span>
             </label>
 
-            <div v-if="isCustom" class="border-t border-outline-gray-2 px-4 py-4">
-              <ConfigDesigner
-                v-model="composedConfig"
-                :profiles="profiles"
-                :rate-card="rateCard"
-                :available="available ?? 0"
-              />
-              <p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">
-                The <span class="font-medium text-ink-gray-7">{{ matchingPreset.title }}</span> preset offers this
-                exact shape — it may be cheaper than building it à la carte.
-              </p>
+            <!-- Smooth expand: animate grid rows from 0fr → 1fr (CSS only). -->
+            <div
+              class="grid transition-[grid-template-rows] duration-200 ease-out"
+              :class="isCustom ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
+            >
+              <div class="overflow-hidden">
+                <div class="border-t border-outline-gray-2 px-4 py-4">
+                  <ConfigDesigner
+                    v-model="composedConfig"
+                    :profiles="profiles"
+                    :rate-card="rateCard"
+                    :available="available ?? 0"
+                  />
+                  <p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">
+                    The <span class="font-medium text-ink-gray-7">{{ matchingPreset.title }}</span> preset offers
+                    this exact shape — it may be cheaper than building it à la carte.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>

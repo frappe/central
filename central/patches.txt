@@ -85,6 +85,9 @@ central.billing.patches.v22_retire_addon_into_plan.retire_addon_into_plan
 # Promote the optimisation profile to a runtime constraint: backfill the numeric
 # ram_ratio + vcpu_steps + disk bounds onto the VM Plan Sub-Categories — ADR 0009, #81.
 central.billing.patches.v23_sub_category_compose_bounds.sub_category_compose_bounds
+# Widen the VM profiles' vCPU ladder to the configurator's full fractional set so the
+# composed-config slider can reach a 1/8 vCPU micro config — #84.
+central.billing.patches.v24_widen_vcpu_ladder.widen_vcpu_ladder
 central.patches.v01_capability_model_v2.rename_capabilities
 central.patches.v02_portal_central_users.make_central_users_portal_only
 # Strip the capability catalog to v3: drop the bench plane (site:* + server:config)

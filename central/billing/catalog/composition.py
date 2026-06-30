@@ -22,6 +22,20 @@ COMPUTE = "Compute"
 MEMORY = "Memory"
 DISK = "Disk"
 
+# The storage ladder a composed config snaps to (GB). Mirrors the configurator's
+# storage choices; the slider offers the rungs inside the profile's [disk_min,
+# disk_max]. Storage is a ladder (not a free range) for the same reason vCPU is —
+# clean, supportable sizes — but the server only enforces the [min, max] bounds.
+DISK_LADDER = (10, 20, 50, 100, 200, 500, 1000, 2000, 4096)
+
+
+def disk_steps_for(disk_min, disk_max) -> list[int]:
+	"""The storage ladder rungs available to a profile: DISK_LADDER ∩ [min, max]."""
+	lo = frappe.utils.cint(disk_min)
+	hi = frappe.utils.cint(disk_max) or DISK_LADDER[-1]
+	rungs = [d for d in DISK_LADDER if lo <= d <= hi]
+	return rungs or [lo]
+
 
 def parse_vcpu_steps(raw) -> list[float]:
 	"""The profile's allowed vCPU values as a sorted list, e.g. '1,2,4,8' -> [1,2,4,8]."""

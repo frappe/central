@@ -124,6 +124,8 @@ export interface Profile {
   ram_ratio: number
   /** Allowed vCPU values the slider snaps to. */
   vcpu_steps: number[]
+  /** Allowed storage values (GB) the slider snaps to, within [disk_min, disk_max]. */
+  disk_steps: number[]
   disk_min: number
   disk_max: number
 }

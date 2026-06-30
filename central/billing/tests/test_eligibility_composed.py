@@ -58,7 +58,10 @@ class TestEligibilityComposed(IntegrationTestCase):
 		self.assertEqual(out["rate_card"]["Disk"], {"rate": 10, "unit": "GB"})
 		general = next(p for p in out["profiles"] if p["sub_category"] == "General")
 		self.assertEqual(general["ram_ratio"], 4)
-		self.assertEqual(general["vcpu_steps"], [1, 2, 4, 8, 16])
+		# The configurator ladder: fractional vCPUs through powers of two.
+		self.assertEqual(general["vcpu_steps"][:5], [0.125, 0.25, 0.5, 1, 2])
+		# Storage ladder rungs within [disk_min, disk_max] (10..2000).
+		self.assertEqual(general["disk_steps"], [10, 20, 50, 100, 200, 500, 1000, 2000])
 		self.assertEqual(general["disk_min"], 10)
 		self.assertEqual(general["disk_max"], 2000)
 		self.assertEqual(out["available"], out["max_spend"])  # no usage yet

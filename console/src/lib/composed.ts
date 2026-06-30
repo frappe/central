@@ -20,28 +20,25 @@ export function estimateConfig(config: ComposedConfig, rateCard: RateCard): numb
   )
 }
 
-/** The largest vCPU step whose full config (its derived RAM + the chosen disk) still
+/** The largest vCPU rung whose full config (its derived RAM + the chosen disk) still
  *  fits `available` headroom — the slider's hard stop. Falls back to the smallest
- *  step when even that doesn't fit (the caller then shows the over-headroom state). */
+ *  rung when even that doesn't fit (the caller then shows the over-headroom state). */
 export function maxAffordableVcpu(
   profile: Profile,
   rateCard: RateCard,
   available: number,
   diskGb: number,
 ): number {
-  const steps = [...profile.vcpu_steps].sort((a, b) => a - b)
-  let best = steps[0] ?? 0
-  for (const step of steps) {
-    const cost = estimateConfig(
-      { sub_category: profile.sub_category, vcpus: step, memory_gb: ramFor(step, profile), disk_gb: diskGb },
+  return largestAffordable(profile.vcpu_steps, (vcpus) =>
+    estimateConfig(
+      { sub_category: profile.sub_category, vcpus, memory_gb: ramFor(vcpus, profile), disk_gb: diskGb },
       rateCard,
-    )
-    if (cost <= available) best = step
-  }
-  return best
+    ),
+    available,
+  )
 }
 
-/** The largest disk (GB) that fits both the profile's range and the remaining
+/** The largest storage rung (from the profile's ladder) that fits the remaining
  *  headroom after the chosen vCPU + RAM are paid for. */
 export function maxAffordableDisk(
   profile: Profile,
@@ -49,28 +46,41 @@ export function maxAffordableDisk(
   available: number,
   vcpus: number,
 ): number {
-  const diskRate = rateCard.Disk?.rate ?? 0
-  const spentOnCompute = estimateConfig(
-    { sub_category: profile.sub_category, vcpus, memory_gb: ramFor(vcpus, profile), disk_gb: 0 },
-    rateCard,
+  return largestAffordable(profile.disk_steps, (diskGb) =>
+    estimateConfig(
+      { sub_category: profile.sub_category, vcpus, memory_gb: ramFor(vcpus, profile), disk_gb: diskGb },
+      rateCard,
+    ),
+    available,
   )
-  const headroomDisk = diskRate > 0 ? Math.floor((available - spentOnCompute) / diskRate) : profile.disk_max
-  return clamp(Math.min(profile.disk_max, headroomDisk), profile.disk_min, profile.disk_max)
 }
 
-/** Snap a raw slider value to the nearest allowed vCPU step. */
-export function snapVcpu(value: number, steps: number[]): number {
-  if (!steps.length) return value
-  return steps.reduce((nearest, step) => (Math.abs(step - value) < Math.abs(nearest - value) ? step : nearest))
+/** The largest ladder rung whose cost fits `available`; the smallest rung if none do. */
+function largestAffordable(ladder: number[], costOf: (rung: number) => number, available: number): number {
+  const rungs = [...ladder].sort((a, b) => a - b)
+  let best = rungs[0] ?? 0
+  for (const rung of rungs) if (costOf(rung) <= available) best = rung
+  return best
 }
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+/** A vCPU count as the configurator shows it: 1/8 → '⅛', 1/2 → '½', else the number. */
+const VCPU_FRACTIONS: Record<string, string> = { '0.125': '⅛', '0.25': '¼', '0.5': '½' }
+export function formatVcpu(vcpus: number): string {
+  return VCPU_FRACTIONS[String(vcpus)] ?? formatGb(vcpus)
+}
+
+/** Trim trailing zeros: 2 → '2', 0.25 → '0.25'. */
+export function formatGb(value: number): string {
+  return Number.isInteger(value) ? `${value}` : `${value}`.replace(/\.?0+$/, '')
+}
+
 /** Compact spec line for a composed config, matching the preset spec style. */
 export function configSpecs(config: ComposedConfig): string {
-  return `${config.vcpus} vCPU · ${config.memory_gb} GB RAM · ${config.disk_gb} GB disk`
+  return `${formatVcpu(config.vcpus)} vCPU · ${formatGb(config.memory_gb)} GB RAM · ${formatGb(config.disk_gb)} GB SSD`
 }
 
 /** The composition payload the provision/resize endpoints take (Plan Includes shape). */

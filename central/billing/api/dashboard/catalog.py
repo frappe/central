@@ -144,8 +144,11 @@ def _rate_card(currency: str, cluster: str | None) -> dict:
 
 
 def _profiles(server_categories: list[str]) -> list[dict]:
-	"""The optimisation profiles (#81) the slider bounds itself with: ratio, allowed
-	vCPU steps, and the disk range, per active compute Plan Sub-Category."""
+	"""The optimisation profiles (#81) the slider bounds itself with: ratio, the
+	allowed vCPU steps, and the storage ladder (the disk rungs within [min, max]),
+	per active compute Plan Sub-Category."""
+	from central.billing.catalog.composition import disk_steps_for
+
 	rows = frappe.get_all(
 		"Plan Sub-Category",
 		filters={"category": ["in", server_categories], "is_active": 1, "ram_ratio": [">", 0]},
@@ -158,6 +161,7 @@ def _profiles(server_categories: list[str]) -> list[dict]:
 			"sub_category": r.name,
 			"ram_ratio": r.ram_ratio,
 			"vcpu_steps": parse_vcpu_steps(r.vcpu_steps),
+			"disk_steps": disk_steps_for(r.disk_min, r.disk_max),
 			"disk_min": r.disk_min,
 			"disk_max": r.disk_max,
 		}

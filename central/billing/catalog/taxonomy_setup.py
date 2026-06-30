@@ -19,6 +19,10 @@ import frappe
 # bundle composition).
 RESOURCE_TYPES = ["Compute", "Memory", "Disk", "Transfer", "IP", "Snapshot", "Tokens", "Storage", "Backup"]
 
+# The vCPU ladder a composed-config slider snaps to — the configurator's choices,
+# fractional vCPUs through powers of two (final-plan-pricing.md §4).
+VCPU_LADDER = "0.125,0.25,0.5,1,2,4,8,16,32,64,128,256"
+
 # Metered categories host the single-resource overage meters that used to be Add-ons
 # (ADR 0008). A metered single-resource Plan under one of these is what metering.py
 # resolves by resource type; the family carries the billing behaviour (interval +
@@ -36,11 +40,13 @@ CATEGORIES = [
 		# VM optimisation profiles carry the composed-config bounds (ADR 0009): the RAM
 		# ratio (GB per vCPU), the allowed vCPU steps, and the disk range the slider is
 		# bounded to. Storage/Memory Optimised share ratio 8; they differ by disk.
+		# vCPU follows the configurator ladder (fractional vCPUs through powers of two)
+		# so a slider can reach a 1/8 vCPU micro config; RAM derives from the ratio.
 		"sub_categories": [
-			{"name": "General", "ram_ratio": 4, "vcpu_steps": "1,2,4,8,16", "disk_min": 10, "disk_max": 2000},
-			{"name": "CPU Optimised", "ram_ratio": 2, "vcpu_steps": "1,2,4,8,16,32", "disk_min": 10, "disk_max": 1000},
-			{"name": "Memory Optimised", "ram_ratio": 8, "vcpu_steps": "1,2,4,8,16", "disk_min": 10, "disk_max": 2000},
-			{"name": "Storage Optimised", "ram_ratio": 8, "vcpu_steps": "1,2,4,8", "disk_min": 100, "disk_max": 10000},
+			{"name": "General", "ram_ratio": 4, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 2000},
+			{"name": "CPU Optimised", "ram_ratio": 2, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 1000},
+			{"name": "Memory Optimised", "ram_ratio": 8, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 2000},
+			{"name": "Storage Optimised", "ram_ratio": 8, "vcpu_steps": VCPU_LADDER, "disk_min": 100, "disk_max": 10000},
 		],
 	},
 	{
