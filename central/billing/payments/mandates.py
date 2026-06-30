@@ -71,6 +71,25 @@ def _adapter(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
+def _prefill(team: str) -> dict:
+	"""Contact details to pre-populate the Razorpay Checkout sheet so the customer
+	isn't re-asked for the name/email/phone we already hold. Razorpay does NOT
+	auto-fill these from `customer_id` in recurring mode, so Checkout must be handed
+	an explicit `prefill` block. Only non-empty values are included."""
+	p = (
+		frappe.db.get_value("Billing Profile", team, ["legal_name", "email", "phone"], as_dict=True)
+		or frappe._dict()
+	)
+	out = {}
+	if p.legal_name:
+		out["name"] = p.legal_name
+	if p.email:
+		out["email"] = p.email
+	if p.phone:
+		out["contact"] = p.phone
+	return out
+
+
 def _ensure_customer(team: str, gateway: str, adapter, customer_id: str | None = None) -> str:
 	"""Reuse-or-create a gateway customer for a mandate setup. Recurring orders
 	need a customer (see payments.ensure_gateway_customer for the why); shared so
@@ -177,7 +196,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 		}
 	).insert(ignore_permissions=True)
 
-	return {**handles, "payment_method": method.name}
+	return {**handles, "payment_method": method.name, "prefill": _prefill(team)}
 
 
 def setup_card(team: str, gateway: str, customer_id: str | None = None, contact: str | None = None) -> dict:
@@ -208,7 +227,9 @@ def setup_card(team: str, gateway: str, customer_id: str | None = None, contact:
 		}
 	).insert(ignore_permissions=True)
 
-	return {**handles, "payment_method": method.name}
+	# _require_card_contact has already persisted any inline phone onto the profile,
+	# so _prefill picks it up here.
+	return {**handles, "payment_method": method.name, "prefill": _prefill(team)}
 
 
 def confirm_mandate(payment_method: str, callback: dict):

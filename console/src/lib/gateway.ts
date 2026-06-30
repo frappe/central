@@ -25,6 +25,7 @@ export interface GatewayOrder {
   amount_in_subunits?: number
   customer_id?: string
   recurring?: number
+  prefill?: { name?: string; email?: string; contact?: string }
   // Stripe
   publishable_key?: string | null
   client_secret?: string
@@ -107,6 +108,10 @@ export async function openRazorpayCheckout(
     // authorises.
     if (order.customer_id) options.customer_id = order.customer_id
     if (order.recurring) options.recurring = 1
+    // Pre-populate name/email/contact: Razorpay does not fill these from
+    // customer_id in recurring mode, so without this the sheet re-asks for the
+    // contact details we already hold on the billing profile.
+    if (order.prefill) options.prefill = order.prefill
     // Show only the PayPal block for a Via-Razorpay PayPal top-up, so the sheet
     // opens straight on PayPal rather than the full method menu.
     if (displayPayPal) {
