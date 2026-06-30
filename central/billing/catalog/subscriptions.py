@@ -183,6 +183,32 @@ def cancel_subscription(subscription: str, changed_by: str | None = None):
 	return frappe.get_doc("Subscription", subscription)
 
 
+def pause_billing(subscription: str, changed_by: str | None = None):
+	"""Pause billing for a subscription (customer intent). Disables the subscription
+	and logs the change. Like cancel_subscription, the running resource and its open
+	price-lock are settled by the cluster manager (ADR 0006) — this records the
+	contract intent only. A no-op if already paused."""
+	doc = frappe.get_doc("Subscription", subscription)
+	if not doc.enabled:
+		return doc
+	doc.enabled = 0
+	doc.save(ignore_permissions=True)
+	_record_change(subscription, "Paused", old_value=1, new_value=0, changed_by=changed_by)
+	return doc
+
+
+def resume_billing(subscription: str, changed_by: str | None = None):
+	"""Resume billing for a paused subscription. Re-enables it and logs the change.
+	A no-op if already active."""
+	doc = frappe.get_doc("Subscription", subscription)
+	if doc.enabled:
+		return doc
+	doc.enabled = 1
+	doc.save(ignore_permissions=True)
+	_record_change(subscription, "Resumed", old_value=0, new_value=1, changed_by=changed_by)
+	return doc
+
+
 def set_standing(subscription: str, new_standing: str, changed_by: str | None = None, reason=None):
 	"""Move a subscription's account standing through the allowed transitions.
 

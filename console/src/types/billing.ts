@@ -143,11 +143,23 @@ export interface InvoiceDetail {
 /** list_subscriptions row — per-server plan. */
 export interface SubscriptionRow {
   name: string
+  /** Friendly server name (Asset.title), e.g. "atlas-web-01". */
+  server: string | null
+  /** Asset gateway URL for the "Open server" action. */
+  gateway_url: string | null
   plan: string
+  /** Human plan name (Plan.title), e.g. "Business". */
+  plan_title: string | null
   cluster: string | null
+  /** Human region label, e.g. "Mumbai, India (AWS)". */
+  region: string | null
   billing_cycle: string
   account_standing: string
-  start_date: string | null
+  /** 0 when billing is paused. */
+  enabled: boolean | number
+  /** Resolved monthly price for the team's currency + region. */
+  monthly_rate: number | null
+  currency: string
 }
 
 export type PaymentMethodType = 'Card' | 'UPI Autopay' | (string & {})

@@ -76,4 +76,6 @@ export const API = {
   saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',
   setCollectionMode: 'central.billing.api.dashboard.set_collection_mode',
   saveNotificationPreferences: 'central.billing.api.dashboard.save_notification_preferences',
+  pauseSubscription: 'central.billing.api.dashboard.pause_subscription',
+  resumeSubscription: 'central.billing.api.dashboard.resume_subscription',
 } as const

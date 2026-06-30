@@ -70,13 +70,71 @@ def get_forecast(team: str | None = None) -> dict:
 
 @frappe.whitelist()
 def list_subscriptions(team: str | None = None) -> list[dict]:
+	"""Active per-server subscriptions, enriched for display: the server's friendly
+	name, its plan title, a human region label, and the resolved monthly price — the
+	fields the dashboard renders instead of the raw hashes."""
 	team = _resolve_team(team)
-	return frappe.get_all(
+	from central.billing.regions import region_label
+
+	rows = frappe.get_all(
 		"Subscription",
 		filters={"team": team},
-		fields=["name", "plan", "cluster", "billing_cycle", "account_standing", "start_date"],
+		fields=["name", "plan", "cluster", "asset_id", "billing_cycle",
+				"account_standing", "start_date", "enabled"],
 		order_by="creation desc",
 	)
+	currency = _team_currency(team)
+	plan_titles: dict[str, str] = {}
+	rate_cache: dict[tuple, float | None] = {}
+	out = []
+	for r in rows:
+		asset = (
+			frappe.db.get_value("Asset", r.asset_id, ["title", "gateway_url"], as_dict=True)
+			if r.asset_id
+			else None
+		) or frappe._dict()
+		if r.plan and r.plan not in plan_titles:
+			plan_titles[r.plan] = frappe.db.get_value("Plan", r.plan, "title") or r.plan
+		key = (r.plan, r.cluster)
+		if r.plan and key not in rate_cache:
+			rate_cache[key] = frappe.get_doc("Plan", r.plan).get_rate(currency, r.cluster)
+		out.append({
+			"name": r.name,
+			"server": asset.title or None,
+			"gateway_url": asset.gateway_url or None,
+			"plan": r.plan,
+			"plan_title": plan_titles.get(r.plan),
+			"cluster": r.cluster,
+			"region": region_label(r.cluster),
+			"billing_cycle": r.billing_cycle,
+			"account_standing": r.account_standing,
+			"enabled": r.enabled,
+			"monthly_rate": rate_cache.get(key),
+			"currency": currency,
+		})
+	return out
+
+
+@frappe.whitelist(methods=["POST"])
+def pause_subscription(subscription: str, team: str | None = None) -> dict:
+	"""Pause billing for a subscription (records intent + disables it, ADR 0006)."""
+	owner = frappe.db.get_value("Subscription", subscription, "team")
+	_require_manage(owner)
+	from central.billing.catalog import subscriptions
+
+	doc = subscriptions.pause_billing(subscription)
+	return {"name": doc.name, "enabled": doc.enabled}
+
+
+@frappe.whitelist(methods=["POST"])
+def resume_subscription(subscription: str, team: str | None = None) -> dict:
+	"""Resume billing for a paused subscription."""
+	owner = frappe.db.get_value("Subscription", subscription, "team")
+	_require_manage(owner)
+	from central.billing.catalog import subscriptions
+
+	doc = subscriptions.resume_billing(subscription)
+	return {"name": doc.name, "enabled": doc.enabled}
 
 
 @frappe.whitelist()

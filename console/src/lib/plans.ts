@@ -51,7 +51,7 @@ function formatQty(quantity: number): string {
   return Number.isInteger(quantity) ? `${quantity}` : quantity.toFixed(1)
 }
 
-function formatMoney(amount: number, currency: string): string {
+export function formatMoney(amount: number, currency: string): string {
   return new Intl.NumberFormat(undefined, {
     style: 'currency',
     currency,
