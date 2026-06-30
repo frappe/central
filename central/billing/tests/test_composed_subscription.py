@@ -15,6 +15,7 @@ from central.billing.tests.utils import (
 	ensure_atlas_instance,
 	ensure_team,
 	make_plan,
+	set_team_tier,
 )
 
 TEAM = "team-composed"
@@ -34,6 +35,7 @@ class TestComposedSubscription(IntegrationTestCase):
 		ensure_atlas_instance(CLUSTER)
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM, currency="INR")
+		set_team_tier(TEAM, max_spend=1_000_000)  # ample headroom — provision enforces it (#83)
 		# Reset the INR component card to a known baseline (a prior test may have
 		# re-priced a component, and the seed only fills gaps).
 		for resource_type, rate in (("Compute", 500), ("Memory", 250), ("Disk", 10)):

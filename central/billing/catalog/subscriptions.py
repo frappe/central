@@ -156,8 +156,13 @@ def provision_composed_subscription(
 	not re-price a running config; only a resize re-resolves (#82).
 	"""
 	from central.billing.catalog.composition import validate_composition
+	from central.billing.catalog.pricing import resolve_config_rate
 
 	validate_composition(sub_category, includes)
+	# Re-check the config fits the team's remaining headroom (#83) — the client bounds
+	# are a convenience, the server is the gate.
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	enforce_headroom(team, resolve_config_rate(includes, currency, cluster))
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
 		team, cluster, plan=None, billing_cycle=billing_cycle, start_date=start_date,
