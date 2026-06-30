@@ -134,15 +134,15 @@ Set:
 
 - `User`: the user to test.
 - `Team`: the team they belong to.
-- `Capability`: for example `vm:view` or `vm:terminate`.
+- `Capability`: for example `server:view` or `server:terminate`.
 
 Save the document. `Allowed` and `Resolved Grants` are filled automatically.
 
 Good checks:
 
-- `Viewer` + `vm:view` -> allowed.
-- `Viewer` + `vm:terminate` -> denied.
-- `Developer` + `vm:terminate` -> allowed.
+- `Viewer` + `server:view` -> allowed.
+- `Viewer` + `server:terminate` -> denied.
+- `Developer` + `server:terminate` -> allowed.
 
 ## Atlas
 
@@ -156,7 +156,7 @@ Central already emits Atlas-ready IAM data through OAuth/OpenID:
         "role": "Viewer",
         "source": "member",
         "scope": "*",
-        "caps": ["asset:view", "vm:view"]
+        "caps": ["cluster:view", "server:view"]
       }
     ]
   }
