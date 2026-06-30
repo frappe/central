@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useCall, Badge, Button, LoadingText } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
-import ListToolbar from '@/components/common/ListToolbar.vue'
+import InvoiceListView from '@/components/billing/InvoiceListView.vue'
 import SplitView from '@/components/common/SplitView.vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
@@ -31,25 +31,6 @@ const collection = useCall<CollectionStatus, { team: string }>({
 whenTeamReady(() => {
   invoices.reload()
   collection.reload()
-})
-
-// ── Filtering ──
-const search = ref('')
-const status = ref('all')
-const statuses = [
-  { label: 'All', value: 'all' },
-  { label: 'Open', value: 'open' },
-  { label: 'Paid', value: 'paid' },
-  { label: 'Overdue', value: 'overdue' },
-]
-const rows = computed(() => {
-  let list = invoices.data ?? []
-  if (status.value !== 'all') {
-    list = list.filter((i) => String(i.status).toLowerCase() === status.value)
-  }
-  const q = search.value.trim().toLowerCase()
-  if (q) list = list.filter((i) => i.name.toLowerCase().includes(q))
-  return list
 })
 
 // ── Detail panel ──
@@ -106,49 +87,12 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
     <SplitView v-model:open="detailOpen" class="flex-1">
       <!-- LIST -->
       <template #list>
-        <ListToolbar
-          v-model:search="search"
-          v-model:status="status"
-          :statuses="statuses"
-          placeholder="Search invoices…"
+        <InvoiceListView
+          :invoices="invoices.data ?? []"
+          :loading="invoices.loading && !invoices.data"
+          :active-name="selected?.name"
+          @row-click="selectRow"
         />
-        <div v-if="invoices.loading && !invoices.data" class="space-y-3 p-4">
-          <LoadingText :lines="6" />
-        </div>
-        <div v-else-if="!rows.length" class="px-4 py-12 text-center text-p-sm text-ink-gray-5">
-          No invoices match.
-        </div>
-        <template v-else>
-          <div
-            class="flex items-center gap-3 border-b border-outline-gray-1 px-4 py-2 text-p-sm font-medium uppercase tracking-wide text-ink-gray-5"
-          >
-            <span class="flex-1">Invoice</span>
-            <span class="w-28 shrink-0 text-right">Amount</span>
-            <span class="w-20 shrink-0">Status</span>
-          </div>
-          <ul class="divide-y divide-outline-gray-1">
-            <li
-              v-for="inv in rows"
-              :key="inv.name"
-              class="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-surface-gray-1"
-              :class="selected?.name === inv.name && 'bg-surface-gray-2'"
-              @click="selectRow(inv)"
-            >
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium text-ink-gray-8">{{ inv.name }}</p>
-                <p class="truncate text-p-sm text-ink-gray-5">
-                  {{ billingPeriod(inv.period_start, inv.period_end) }}
-                </p>
-              </div>
-              <span class="w-28 shrink-0 text-right text-sm tabular-nums text-ink-gray-7">
-                {{ money(inv.total, inv.currency) }}
-              </span>
-              <span class="w-20 shrink-0">
-                <Badge :theme="invoiceTheme(inv.status)" :label="inv.status" />
-              </span>
-            </li>
-          </ul>
-        </template>
       </template>
 
       <!-- DETAIL -->
