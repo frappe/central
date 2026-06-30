@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
 import { useAuth } from '@/composables/useAuth'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { emailError, frappeErrorMessage, postFrappe, requiredError } from '@/lib/auth'
 
+const route = useRoute()
 const router = useRouter()
 const fullName = ref('')
 const email = ref('')
@@ -16,6 +17,14 @@ const loading = ref(false)
 const error = ref('')
 
 const { providerLogins } = useAuth()
+const product = computed(() => queryString(route.query.product))
+const isProductSignup = computed(() => Boolean(product.value))
+const signupSteps = computed(() => (isProductSignup.value ? 4 : 2))
+const subheading = computed(() => (
+  isProductSignup.value
+    ? 'A couple of minutes from here to naming your first site.'
+    : 'Verify your email to start managing Central instances.'
+))
 
 async function signup() {
   submitted.value = true
@@ -38,7 +47,7 @@ async function signup() {
     }
     await router.push({
       path: '/signup/verify',
-      query: { email: email.value.trim() },
+      query: verificationQuery(),
     })
   } catch (exception) {
     error.value = frappeErrorMessage(exception, 'Unable to create your account.')
@@ -46,15 +55,33 @@ async function signup() {
     loading.value = false
   }
 }
+
+function verificationQuery(): LocationQueryRaw {
+  return {
+    email: email.value.trim(),
+    ...(product.value ? { product: product.value } : {}),
+  }
+}
+
+function loginQuery(): LocationQueryRaw | undefined {
+  if (!isProductSignup.value) return undefined
+  return { 'redirect-to': '/dashboard/onboarding/site' }
+}
+
+function queryString(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return queryString(value[0])
+  return ''
+}
 </script>
 
 <template>
-  <AuthShell show-progress>
+  <AuthShell show-progress :steps="signupSteps">
     <h1 class="text-2xl font-semibold text-ink-gray-9">
       Create your account
     </h1>
     <p class="mt-1 text-base text-ink-gray-5">
-      A couple of minutes from here to managing your first server.
+      {{ subheading }}
     </p>
 
     <form class="mt-8 space-y-4" novalidate @submit.prevent="signup">
@@ -63,7 +90,7 @@ async function signup() {
         label="Full name"
         autocomplete="name"
         placeholder="Jane Doe"
-autofocus
+        autofocus
         :validator="requiredError('Full name')"
         :submitted="submitted"
       />
@@ -89,7 +116,7 @@ autofocus
       Already have an account?
       <RouterLink
         class="font-medium text-ink-gray-8 hover:text-ink-gray-9"
-        to="/login"
+        :to="{ path: '/login', query: loginQuery() }"
       >
         Sign in
       </RouterLink>

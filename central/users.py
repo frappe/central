@@ -36,7 +36,8 @@ def bootstrap_user_team(doc, method: str | None = None) -> None:
 			}
 		)
 		team.flags.from_user_bootstrap = True
-		# User.after_insert can run as Guest during self-signup.
+		# User.after_insert runs as Guest during self-signup; this is trusted
+		# provisioning of the user's own team, gated upstream by OTP verification.
 		team.insert(ignore_permissions=True)
 
 	_accept_pending_invitations(doc.name)
