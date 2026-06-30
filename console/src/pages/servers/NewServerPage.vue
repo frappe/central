@@ -1,25 +1,24 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Badge, Button, FormControl } from 'frappe-ui'
+import { Badge, Button, FormControl, Tabs } from 'frappe-ui'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/common/PageHeader.vue'
-import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
+import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePlans } from '@/composables/usePlans'
-import { planResources, planSpecs, planPrice, formatMoney } from '@/lib/plans'
-import { configIncludes, configSpecs, estimateConfig, rateCardComplete } from '@/lib/composed'
-import type { ComposedConfig, Plan } from '@/types/api'
+import { planResources } from '@/lib/plans'
+import { configIncludes, rateCardComplete } from '@/lib/composed'
+import type { ComposedConfig, Plan, Profile } from '@/types/api'
 
-// New server. Region is the set of available Atlas Instances; the plan comes from
-// the billing catalog, priced for the team's currency on that region and within its
-// trust-tier headroom (usePlans). The picker is one radio list: the curated presets,
-// plus a "Custom" row that expands into a slider to design your own config (#84). A
-// preset routes through create_server (Atlas provisions raw resources); a composed
-// config routes through create_composed_server, which records the subscription (#80).
-const CUSTOM = '__custom__'
-
+// New server. Region is the set of available Atlas Instances; plans come from the
+// billing catalog (usePlans), priced for the team's currency on that region and
+// within its headroom. The picker mirrors the catalog's shape: when a region's
+// presets span several optimisation profiles it splits into tabs, each listing that
+// profile's presets + a Custom row scoped to it; a region with one (or no)
+// sub-classification stays a flat list with a simple Custom (#84). A preset routes
+// through create_server; a composed config through create_composed_server (#80).
 const router = useRouter()
 const { regions, loading } = useRegions()
 const { create, createComposed, creating, creatingComposed } = useServers()
@@ -27,55 +26,56 @@ const { canCreateServer } = useCapabilities()
 
 const selectedRegion = ref<string | null>(null)
 const name = ref('')
+// A preset name, or `custom:<profile>` for a designed config in that profile.
 const selectedPlan = ref<string | null>(null)
 const composedConfig = ref<ComposedConfig | null>(null)
 
-// `plans` is the flat, cheapest-first preset list; `rateCard` + `profiles` +
-// `available` feed the Custom slider.
-const { plans, rateCard, profiles, available, currency, loading: plansLoading } = usePlans(selectedRegion)
+const { plans, groups, classes, rateCard, profiles, available, currency, loading: plansLoading } =
+  usePlans(selectedRegion)
 
-// "Custom" is offered only where the region prices every component.
 const canDesign = computed(() => rateCardComplete(rateCard.value) && profiles.value.length > 0)
-const isCustom = computed(() => selectedPlan.value === CUSTOM)
-
+const isCustom = computed(() => (selectedPlan.value ?? '').startsWith('custom:'))
 const selectedPlanObj = computed<Plan | null>(
   () => plans.value.find((p) => p.plan === selectedPlan.value) ?? null,
 )
 
-// Live spec + price for the Custom row, shown inline like a preset.
-const customEstimate = computed<number | null>(() =>
-  composedConfig.value ? estimateConfig(composedConfig.value, rateCard.value) : null,
-)
-const customSpec = computed<string>(() => (composedConfig.value ? configSpecs(composedConfig.value) : ''))
-const customPrice = computed<string>(() =>
-  customEstimate.value !== null ? `${formatMoney(customEstimate.value, currency.value ?? 'USD')} / mo` : '',
-)
+function profileFor(cls: string): Profile | null {
+  return profiles.value.find((p) => p.sub_category === cls) ?? null
+}
 
-// The bundle-discount note: shown only while the designed shape sits exactly on a
-// preset (a preset may price that shape below its component sum).
-const matchingPreset = computed<Plan | null>(() => {
-  const c = composedConfig.value
-  if (!c) return null
-  const qty = (p: Plan, type: string) => p.includes.find((i) => i.resource_type === type)?.quantity ?? 0
-  return (
-    plans.value.find(
-      (p) => qty(p, 'Compute') === c.vcpus && qty(p, 'Memory') === c.memory_gb && qty(p, 'Disk') === c.disk_gb,
-    ) ?? null
-  )
+// Tabs when the region's presets span more than one profile; flat otherwise.
+const hasTabs = computed(() => classes.value.length > 1)
+const classTabs = computed(() => classes.value.map((label) => ({ label })))
+const activeTab = ref(0)
+
+// Flat layout: the sole preset class, or General when a region offers only a designer.
+const soleClass = computed(() => classes.value[0] ?? 'General')
+const flatPresets = computed<Plan[]>(() => groups.value[soleClass.value] ?? [])
+const flatProfile = computed<Profile | null>(
+  () =>
+    profileFor(soleClass.value) ??
+    profiles.value.find((p) => p.sub_category === 'General') ??
+    profiles.value[0] ??
+    null,
+)
+const nothingToShow = computed(() => !hasTabs.value && !flatPresets.value.length && !flatProfile.value)
+
+// Switching region re-prices the menu: reset the tab and drop a selection the new
+// region no longer offers (a preset that's gone, or a custom profile it lacks).
+watch(classes, () => {
+  activeTab.value = 0
 })
-
-// Switching region re-prices the menu: drop a now-unoffered preset selection, and
-// drop a Custom selection if the new region can't price one.
 watch([plans, canDesign], () => {
-  if (selectedPlan.value === CUSTOM) {
-    if (!canDesign.value) selectedPlan.value = null
-  } else if (selectedPlan.value && !plans.value.some((p) => p.plan === selectedPlan.value)) {
+  const sel = selectedPlan.value
+  if (!sel) return
+  if (sel.startsWith('custom:')) {
+    if (!profileFor(sel.slice('custom:'.length))) selectedPlan.value = null
+  } else if (!plans.value.some((p) => p.plan === sel)) {
     selectedPlan.value = null
   }
 })
 
 const submitting = computed(() => creating.value || creatingComposed.value)
-
 const canSubmit = computed(() => {
   if (!canCreateServer.value || !selectedRegion.value || !name.value.trim()) return false
   return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
@@ -161,7 +161,7 @@ async function submit() {
         </div>
       </section>
 
-      <!-- Plan: one radio list of presets + a Custom row that expands into the slider. -->
+      <!-- Plan: presets + a scoped Custom row, split into tabs by profile when needed. -->
       <section class="space-y-3">
         <div class="flex items-center gap-2">
           <span class="lucide-box size-4 text-ink-gray-6" aria-hidden="true" />
@@ -172,64 +172,35 @@ async function submit() {
           Pick a region to see the plans available there.
         </p>
         <p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">Loading plans…</p>
-        <p v-else-if="!plans.length && !canDesign" class="text-p-sm text-ink-gray-5">
+        <p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
           No plans are available for this region within your current spending limit.
         </p>
 
-        <div v-else class="space-y-3">
-          <!-- Presets -->
-          <label
-            v-for="plan in plans"
-            :key="plan.plan"
-            class="flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors"
-            :class="
-              selectedPlan === plan.plan
-                ? 'border-outline-gray-4'
-                : 'border-outline-gray-2 hover:border-outline-gray-3'
-            "
-          >
-            <input v-model="selectedPlan" type="radio" :value="plan.plan" class="accent-ink-gray-9" />
-            <span class="font-medium text-ink-gray-9">{{ plan.title }}</span>
-            <span class="text-p-sm text-ink-gray-5">{{ planSpecs(plan) }}</span>
-            <span class="ml-auto font-medium text-ink-gray-9">{{ planPrice(plan) }}</span>
-          </label>
+        <Tabs v-else-if="hasTabs" v-model="activeTab" :tabs="classTabs">
+          <template #tab-panel="{ tab }">
+            <PlanGroup
+              class="pt-4"
+              :presets="groups[tab.label] ?? []"
+              :profile="profileFor(tab.label)"
+              :rate-card="rateCard"
+              :available="available ?? 0"
+              :currency="currency ?? 'USD'"
+              v-model:selected-plan="selectedPlan"
+              v-model:composed-config="composedConfig"
+            />
+          </template>
+        </Tabs>
 
-          <!-- Custom: a radio row that expands into the design slider. -->
-          <div
-            v-if="canDesign"
-            class="rounded-lg border transition-colors"
-            :class="isCustom ? 'border-outline-gray-4' : 'border-outline-gray-2 hover:border-outline-gray-3'"
-          >
-            <label class="flex cursor-pointer items-center gap-3 px-4 py-3">
-              <input v-model="selectedPlan" type="radio" :value="CUSTOM" class="accent-ink-gray-9" />
-              <span class="font-medium text-ink-gray-9">Custom</span>
-              <span class="lucide-sliders-horizontal size-4 text-ink-gray-5" aria-hidden="true" />
-              <span v-if="isCustom && customSpec" class="text-p-sm text-ink-gray-5">{{ customSpec }}</span>
-              <span class="ml-auto font-medium text-ink-gray-9">{{ isCustom ? customPrice : 'Design your own' }}</span>
-            </label>
-
-            <!-- Smooth expand: animate grid rows from 0fr → 1fr (CSS only). -->
-            <div
-              class="grid transition-[grid-template-rows] duration-200 ease-out"
-              :class="isCustom ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'"
-            >
-              <div class="overflow-hidden">
-                <div class="border-t border-outline-gray-2 px-4 py-4">
-                  <ConfigDesigner
-                    v-model="composedConfig"
-                    :profiles="profiles"
-                    :rate-card="rateCard"
-                    :available="available ?? 0"
-                  />
-                  <p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">
-                    The <span class="font-medium text-ink-gray-7">{{ matchingPreset.title }}</span> preset offers
-                    this exact shape — it may be cheaper than building it à la carte.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <PlanGroup
+          v-else
+          :presets="flatPresets"
+          :profile="flatProfile"
+          :rate-card="rateCard"
+          :available="available ?? 0"
+          :currency="currency ?? 'USD'"
+          v-model:selected-plan="selectedPlan"
+          v-model:composed-config="composedConfig"
+        />
       </section>
 
       <!-- Submit -->

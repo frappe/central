@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import LadderSelect from '@/components/servers/LadderSelect.vue'
 import {
   clamp,
   estimateConfig,
@@ -55,6 +56,32 @@ const maxDiskIndex = computed<number>(() =>
     ? indexOf(diskSteps.value, maxAffordableDisk(profile.value, props.rateCard, props.available, vcpus.value))
     : 0,
 )
+
+// Dropdown ladders (the precise-pick companion to the sliders). Rungs past the
+// headroom hard stop are disabled. RAM is keyed by its vCPU rung, so picking a RAM
+// value just picks the matching vCPU — it can't express an off-ratio shape.
+const vcpuOptions = computed(() =>
+  vcpuSteps.value.map((v, i) => ({ label: `${formatVcpu(v)} vCPU`, value: v, disabled: i > maxVcpuIndex.value })),
+)
+const ramOptions = computed(() =>
+  profile.value
+    ? vcpuSteps.value.map((v, i) => ({
+        label: `${formatGb(ramFor(v, profile.value!))} GB RAM`,
+        value: v,
+        disabled: i > maxVcpuIndex.value,
+      }))
+    : [],
+)
+const diskOptions = computed(() =>
+  diskSteps.value.map((d, i) => ({ label: `${formatGb(d)} GB`, value: d, disabled: i > maxDiskIndex.value })),
+)
+
+function setVcpu(v: number) {
+  vcpuIndex.value = indexOf(vcpuSteps.value, v)
+}
+function setDisk(d: number) {
+  diskIndex.value = indexOf(diskSteps.value, d)
+}
 
 const overHeadroom = computed<boolean>(() =>
   profile.value
@@ -136,12 +163,8 @@ function indexOf(ladder: number[], value: number): number {
           class="min-w-0 flex-1 accent-ink-gray-9"
           aria-label="vCPU"
         />
-        <span class="w-24 shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-center text-p-sm font-medium text-ink-gray-8">
-          {{ formatVcpu(vcpus) }} vCPU
-        </span>
-        <span class="w-28 shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-center text-p-sm font-medium text-ink-gray-8">
-          {{ formatGb(ram) }} GB RAM
-        </span>
+        <LadderSelect class="shrink-0" :options="vcpuOptions" :selected="vcpus" @select="setVcpu" />
+        <LadderSelect class="shrink-0" :options="ramOptions" :selected="vcpus" @select="setVcpu" />
       </div>
 
       <!-- Storage: independent ladder slider with rung-by-rung ± steppers. -->
@@ -165,9 +188,7 @@ function indexOf(ladder: number[], value: number): number {
         >
           <span class="lucide-minus size-4" aria-hidden="true" />
         </button>
-        <span class="w-24 shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-center text-p-sm font-medium text-ink-gray-8">
-          {{ formatGb(diskGb) }} GB
-        </span>
+        <LadderSelect class="shrink-0" :options="diskOptions" :selected="diskGb" @select="setDisk" />
         <button
           type="button"
           class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"
