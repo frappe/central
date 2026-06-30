@@ -217,10 +217,12 @@ def resume_billing(subscription: str, changed_by: str | None = None):
 _SERVER_ACTION_FROM = {"stop": {"Running"}, "start": {"Stopped", "Paused", "Failed"}}
 
 
-def _control_subscription_server(sub, atlas_method: str) -> None:
-	"""Drive the subscription's linked server: pausing stops the VM, resuming starts
-	it. Skips when there is no provisioned resource, or when its mirrored status means
-	the action wouldn't apply."""
+def _control_subscription_server(sub, action: str) -> None:
+	"""Drive the subscription's linked server through the very same operator methods
+	the server listing uses — central.api.servers.stop_server / start_server — so
+	pausing a subscription stops its VM and resuming starts it back. Skips when there
+	is no provisioned resource, or when its mirrored status means the action wouldn't
+	apply (e.g. stopping an already-stopped server)."""
 	if not sub.asset_id:
 		return
 	asset = frappe.db.get_value(
@@ -228,11 +230,12 @@ def _control_subscription_server(sub, atlas_method: str) -> None:
 	)
 	if not asset or not asset.resource_id:
 		return
-	if asset.status not in _SERVER_ACTION_FROM.get(atlas_method, set()):
+	if asset.status not in _SERVER_ACTION_FROM.get(action, set()):
 		return
-	from central.api.servers import control_server
+	from central.api import servers
 
-	control_server(sub.team, asset.resource_id, atlas_method)
+	command = servers.stop_server if action == "stop" else servers.start_server
+	command(team=sub.team, resource_id=asset.resource_id)
 
 
 def set_standing(subscription: str, new_standing: str, changed_by: str | None = None, reason=None):

@@ -108,7 +108,10 @@ function rowActions(sub: SubscriptionRow) {
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2">
             <p class="truncate text-base font-medium text-ink-gray-8">{{ title(sub) }}</p>
-            <Badge v-if="isPaused(sub)" theme="gray" label="Paused" />
+            <Badge
+              :theme="isPaused(sub) ? 'gray' : 'green'"
+              :label="isPaused(sub) ? 'Paused' : 'Running'"
+            />
           </div>
           <p class="truncate text-p-sm text-ink-gray-5">{{ subtitle(sub) }}</p>
         </div>

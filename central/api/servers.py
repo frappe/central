@@ -137,14 +137,8 @@ def _run_command(action: str, capability: str, atlas_method: str, team: str | No
 		frappe.throw(f"You can't {action} servers for this team.", frappe.PermissionError)
 	if not resource_id:
 		frappe.throw("resource_id is required.", frappe.ValidationError)
-	return control_server(team, resource_id, atlas_method)
 
-
-def control_server(team: str, resource_id: str, atlas_method: str) -> dict:
-	"""Drive an Atlas VM lifecycle method (start/stop/terminate) for a team's server,
-	without the whitelist/capability gate. For internal orchestration where the caller
-	already authorized the action — e.g. pausing a subscription stops its server. The
-	asset must be in this team's mirror, which also routes us to its Atlas."""
+	# The asset must be in this team's mirror — also how we route to its Atlas.
 	cluster = frappe.db.get_value("Asset", {"resource_id": resource_id, "team": team}, "cluster")
 	if not cluster:
 		frappe.throw(f"No server '{resource_id}' for this team.", frappe.DoesNotExistError)
