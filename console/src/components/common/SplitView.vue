@@ -21,20 +21,25 @@ const open = defineModel<boolean>('open', { default: false })
       v-if="open"
       class="flex w-full shrink-0 flex-col overflow-y-auto border-outline-gray-1 sm:w-[480px] sm:border-l"
     >
-      <div class="flex items-center justify-between border-b border-outline-gray-1 px-4 py-2.5">
+      <div class="flex items-center justify-between gap-2 border-b border-outline-gray-1 px-4 py-2.5">
         <button class="text-p-sm text-ink-gray-6 sm:hidden" @click="open = false">← Back</button>
         <span
           class="hidden text-p-sm font-medium uppercase tracking-wide text-ink-gray-5 sm:inline"
         >
           Details
         </span>
-        <button
-          class="ml-auto grid size-6 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
-          aria-label="Close details"
-          @click="open = false"
-        >
-          <span class="lucide-x size-4" aria-hidden="true" />
-        </button>
+        <div class="ml-auto flex items-center gap-1">
+          <!-- Document-level actions (e.g. email / download), pinned to the top of
+               the panel beside the close control rather than buried in the body. -->
+          <slot name="actions" />
+          <button
+            class="grid size-6 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
+            aria-label="Close details"
+            @click="open = false"
+          >
+            <span class="lucide-x size-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
       <slot name="detail" />
     </aside>

@@ -85,14 +85,34 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
     <PageHeader title="Invoices" subtitle="Billing" />
 
     <SplitView v-model:open="detailOpen" class="flex-1">
+      <!-- Document actions, pinned to the detail header. GROUNDING GAP (#70): no
+           email-invoice / download-PDF endpoints yet, so these stay disabled
+           until the backend lands them. -->
+      <template v-if="detail.data" #actions>
+        <Button
+          variant="ghost"
+          icon="lucide-mail"
+          :disabled="true"
+          title="Email invoice — coming soon"
+        />
+        <Button
+          variant="ghost"
+          icon="lucide-download"
+          :disabled="true"
+          title="Download PDF — coming soon"
+        />
+      </template>
+
       <!-- LIST -->
       <template #list>
-        <InvoiceListView
-          :invoices="invoices.data ?? []"
-          :loading="invoices.loading && !invoices.data"
-          :active-name="selected?.name"
-          @row-click="selectRow"
-        />
+        <div class="px-4 py-5 sm:px-6">
+          <InvoiceListView
+            :invoices="invoices.data ?? []"
+            :loading="invoices.loading && !invoices.data"
+            :active-name="selected?.name"
+            @row-click="selectRow"
+          />
+        </div>
       </template>
 
       <!-- DETAIL -->
@@ -113,29 +133,6 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
             <p v-if="detail.data.due_date" class="text-p-sm text-ink-gray-5">
               Due {{ shortDate(detail.data.due_date) }}
             </p>
-            <!-- GROUNDING GAP (#70): no email-invoice / download-PDF endpoints yet,
-                 and get_billing_settings carries no recipient/language fields — so
-                 these are rendered disabled until the backend lands them. -->
-            <div class="flex gap-2 pt-1">
-              <Button
-                variant="subtle"
-                label="Email invoice"
-                :disabled="true"
-                title="Endpoint pending"
-              >
-                <template #prefix><span class="lucide-mail size-4" aria-hidden="true" /></template>
-              </Button>
-              <Button
-                variant="subtle"
-                label="Download PDF"
-                :disabled="true"
-                title="Endpoint pending"
-              >
-                <template #prefix
-                  ><span class="lucide-download size-4" aria-hidden="true"
-                /></template>
-              </Button>
-            </div>
           </header>
 
           <!-- Line items. A long fleet can run to dozens of rows, so the list gets

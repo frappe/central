@@ -117,6 +117,14 @@ const table = useVueTable({
     return tableColumns.value
   },
   getRowId: (row) => props.rowKey(row),
+  // Keep tanstack from auto-resetting the page on every row-model recompute. Our
+  // query handlers already reset `page` to 1 explicitly on search/filter/sort, so
+  // auto-reset is redundant — and harmful: in a client-side list it fires
+  // onPaginationChange while the rows re-render (e.g. when a master/detail
+  // selection flips `activeKey`), which rewrites `query` mid-render and spins into
+  // an infinite update loop that freezes the tab. Server-side lists dodge this
+  // only because manualPagination already disables auto-reset.
+  autoResetPageIndex: false,
   enableRowSelection: props.selectable,
   manualFiltering: props.serverSide,
   manualPagination: props.serverSide,
