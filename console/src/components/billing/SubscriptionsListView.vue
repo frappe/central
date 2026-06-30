@@ -41,7 +41,7 @@ const columns = computed<ListViewColumn<SubscriptionRow>[]>(() => [
     size: 280,
     cell: ({ row }) =>
       h('div', { class: 'min-w-0' }, [
-        h('p', { class: 'truncate font-medium text-ink-gray-9' }, title(row.original)),
+        h('p', { class: 'truncate text-base font-medium text-ink-gray-9' }, title(row.original)),
         h('p', { class: 'mt-0.5 truncate text-p-sm text-ink-gray-5' }, subtitle(row.original)),
       ]),
   },

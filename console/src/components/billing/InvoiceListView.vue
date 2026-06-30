@@ -28,7 +28,7 @@ const columns = computed<ListViewColumn<InvoiceSummary>[]>(() => [
     size: 260,
     cell: ({ row }) =>
       h('div', { class: 'min-w-0' }, [
-        h('p', { class: 'truncate font-medium text-ink-gray-9' }, row.original.name),
+        h('p', { class: 'truncate text-base font-medium text-ink-gray-9' }, row.original.name),
         h(
           'p',
           { class: 'mt-0.5 truncate text-p-sm text-ink-gray-5' },
