@@ -84,15 +84,25 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 		order_by="creation desc",
 	)
 	currency = _team_currency(team)
+	# Batch the asset lookup so a team with N subscriptions costs one query, not N.
+	asset_ids = list({r.asset_id for r in rows if r.asset_id})
+	assets = (
+		{
+			a.name: a
+			for a in frappe.get_all(
+				"Asset",
+				filters={"name": ["in", asset_ids]},
+				fields=["name", "title", "gateway_url"],
+			)
+		}
+		if asset_ids
+		else {}
+	)
 	plan_titles: dict[str, str] = {}
 	rate_cache: dict[tuple, float | None] = {}
 	out = []
 	for r in rows:
-		asset = (
-			frappe.db.get_value("Asset", r.asset_id, ["title", "gateway_url"], as_dict=True)
-			if r.asset_id
-			else None
-		) or frappe._dict()
+		asset = assets.get(r.asset_id) or frappe._dict()
 		if r.plan and r.plan not in plan_titles:
 			plan_titles[r.plan] = frappe.db.get_value("Plan", r.plan, "title") or r.plan
 		key = (r.plan, r.cluster)
