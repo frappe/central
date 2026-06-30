@@ -51,13 +51,19 @@ const activeTab = ref(0)
 // Flat layout: the sole preset class, or General when a region offers only a designer.
 const soleClass = computed(() => classes.value[0] ?? 'General')
 const flatPresets = computed<Plan[]>(() => groups.value[soleClass.value] ?? [])
-const flatProfile = computed<Profile | null>(
-  () =>
-    profileFor(soleClass.value) ??
-    profiles.value.find((p) => p.sub_category === 'General') ??
-    profiles.value[0] ??
-    null,
+// Custom is only offered where the region actually prices every component (else the
+// estimate would be a $0 dead-end) — so a profile is "designable" only when canDesign.
+const flatProfile = computed<Profile | null>(() =>
+  canDesign.value
+    ? profileFor(soleClass.value) ??
+      profiles.value.find((p) => p.sub_category === 'General') ??
+      profiles.value[0] ??
+      null
+    : null,
 )
+function designableProfile(cls: string): Profile | null {
+  return canDesign.value ? profileFor(cls) : null
+}
 const nothingToShow = computed(() => !hasTabs.value && !flatPresets.value.length && !flatProfile.value)
 
 // Switching region re-prices the menu: reset the tab and drop a selection the new
@@ -181,7 +187,7 @@ async function submit() {
             <PlanGroup
               class="pt-4"
               :presets="groups[tab.label] ?? []"
-              :profile="profileFor(tab.label)"
+              :profile="designableProfile(tab.label)"
               :rate-card="rateCard"
               :available="available ?? 0"
               :currency="currency ?? 'USD'"
