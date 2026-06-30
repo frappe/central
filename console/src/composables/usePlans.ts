@@ -2,7 +2,7 @@ import { computed, watch, type Ref } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import type { Plan, ProvisionablePlans } from '@/types/api'
+import type { Plan, Profile, ProvisionablePlans, RateCard } from '@/types/api'
 
 // Plans a team can provision in the selected region, from the billing catalog
 // (central.billing.api.dashboard.catalog.get_eligible_plans). The menu is
@@ -41,6 +41,9 @@ export function usePlans(cluster: Ref<string | null>) {
     tier: computed<string | null>(() => call.data?.tier ?? null),
     // Remaining trust-tier headroom in the team's currency — explains an empty menu.
     available: computed<number | null>(() => call.data?.available ?? null),
+    // "Design your own" inputs: the per-resource rate card + the profile bounds.
+    rateCard: computed<RateCard>(() => call.data?.rate_card ?? {}),
+    profiles: computed<Profile[]>(() => call.data?.profiles ?? []),
     loading: computed(() => call.loading),
   }
 }

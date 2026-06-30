@@ -111,6 +111,59 @@ def create_server(
 
 
 @frappe.whitelist(methods=["POST"])
+def create_composed_server(
+	team: str | None = None,
+	region: str | None = None,
+	title: str | None = None,
+	includes: list | str | None = None,
+	sub_category: str | None = None,
+) -> dict:
+	"""Provision a design-your-own config end-to-end (#84): create the Atlas VM from
+	the chosen composition, then record the composed Subscription (#80) that bills it
+	from its parts. The server is the gate — composition, profile bounds, and headroom
+	are re-validated server-side (#81/#83) *before* the VM is created, so a request the
+	client lets through is still refused and never leaves an orphan VM."""
+	from central.billing.catalog.composition import (
+		COMPUTE,
+		DISK,
+		MEMORY,
+		composition_quantities,
+		validate_composition,
+	)
+	from central.billing.catalog.pricing import resolve_config_rate
+	from central.billing.catalog.subscriptions import enforce_headroom, provision_composed_subscription
+
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "server:create"):
+		frappe.throw("You can't create servers for this team.", frappe.PermissionError)
+	if not region:
+		frappe.throw("region is required.", frappe.ValidationError)
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+
+	# Validate the shape + cost before touching Atlas.
+	validate_composition(sub_category, includes)
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	enforce_headroom(team, resolve_config_rate(includes, currency, region))
+
+	qty = composition_quantities(includes)
+	client = AtlasClient.for_region(region)
+	email = frappe.db.get_value("Team", team, "owner_user")
+	vm = client.create_vm(
+		team=team,
+		title=title or "server",
+		vcpus=int(qty.get(COMPUTE, 1)) or 1,
+		memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
+		disk_gigabytes=int(qty.get(DISK, 0)) or 10,
+		email=email,
+	)
+	resource_id = vm.get("name")
+	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
+	return {"resource_id": resource_id, "server": vm}
+
+
+@frappe.whitelist(methods=["POST"])
 def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Start a stopped server. Gated on `server:power`."""
 	return _run_command("start", "server:power", "start", team, resource_id)

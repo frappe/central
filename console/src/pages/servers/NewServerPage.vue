@@ -4,35 +4,57 @@ import { Badge, Button, FormControl, Tabs } from 'frappe-ui'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/common/PageHeader.vue'
 import PlanCards from '@/components/servers/PlanCards.vue'
+import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePlans } from '@/composables/usePlans'
 import { planResources } from '@/lib/plans'
-import type { Plan } from '@/types/api'
+import { configIncludes, rateCardComplete } from '@/lib/composed'
+import type { ComposedConfig, Plan } from '@/types/api'
 
 // New server. Region is the set of available Atlas Instances; the plan comes from
 // the billing catalog, priced for the team's currency on that region and within
-// its trust-tier headroom (usePlans). Create routes through central.api.servers
-// .create_server — Atlas provisions raw resources, not plan names, so we pass the
-// plan's bundled vcpus/memory/disk → the region's Atlas → a real VM (dev fake
-// provider), mirrored back so it shows on the Servers list.
+// its trust-tier headroom (usePlans). A customer either picks a curated preset or
+// designs their own config on a slider (#84). A preset routes through create_server
+// (Atlas provisions raw resources); a composed config routes through
+// create_composed_server, which also records the à-la-carte subscription (#80).
 const router = useRouter()
 const { regions, loading } = useRegions()
-const { create, creating } = useServers()
+const { create, createComposed, creating, creatingComposed } = useServers()
 const { canCreateServer } = useCapabilities()
 
 const selectedRegion = ref<string | null>(null)
 const name = ref('')
 const selectedPlan = ref<string | null>(null)
+const mode = ref<'preset' | 'design'>('preset')
+const composedConfig = ref<ComposedConfig | null>(null)
 
 // The menu arrives grouped by plan class (server-side: keys ordered, rows
 // cheapest-first); `plans` is the flat view, `groups`/`classes` drive the tabs.
-const { plans, groups, classes, loading: plansLoading } = usePlans(selectedRegion)
+// `rateCard` + `profiles` + `available` feed the "design your own" slider.
+const { plans, groups, classes, rateCard, profiles, available, currency, loading: plansLoading } =
+  usePlans(selectedRegion)
+
+// "Design your own" is offered only where the region prices every component.
+const canDesign = computed(() => rateCardComplete(rateCard.value) && profiles.value.length > 0)
 
 const selectedPlanObj = computed<Plan | null>(
   () => plans.value.find((p) => p.plan === selectedPlan.value) ?? null,
 )
+
+// The bundle-discount note: shown only while the designed shape sits exactly on a
+// preset (a preset may price that shape below its component sum).
+const matchingPreset = computed<Plan | null>(() => {
+  const c = composedConfig.value
+  if (!c) return null
+  const qty = (p: Plan, type: string) => p.includes.find((i) => i.resource_type === type)?.quantity ?? 0
+  return (
+    plans.value.find(
+      (p) => qty(p, 'Compute') === c.vcpus && qty(p, 'Memory') === c.memory_gb && qty(p, 'Disk') === c.disk_gb,
+    ) ?? null
+  )
+})
 
 // Bifurcate the menu by plan class, but only when the region actually offers more
 // than one — a single-class region (e.g. just General) lists its plans flat.
@@ -55,23 +77,35 @@ watch(plans, (rows) => {
 watch(classes, () => {
   activeTab.value = 0
 })
+// Switching to a region that can't price a custom config falls back to presets.
+watch(canDesign, (ok) => {
+  if (!ok && mode.value === 'design') mode.value = 'preset'
+})
 
-const canSubmit = computed(
-  () =>
-    canCreateServer.value &&
-    !!selectedRegion.value &&
-    !!selectedPlanObj.value &&
-    name.value.trim().length > 0,
-)
+const submitting = computed(() => creating.value || creatingComposed.value)
+
+const canSubmit = computed(() => {
+  if (!canCreateServer.value || !selectedRegion.value || !name.value.trim()) return false
+  return mode.value === 'design' ? !!composedConfig.value : !!selectedPlanObj.value
+})
 
 async function submit() {
-  if (!canSubmit.value || !selectedRegion.value || !selectedPlanObj.value) return
+  if (!canSubmit.value || !selectedRegion.value) return
   try {
-    await create({
-      region: selectedRegion.value,
-      title: name.value.trim(),
-      ...planResources(selectedPlanObj.value),
-    })
+    if (mode.value === 'design' && composedConfig.value) {
+      await createComposed({
+        region: selectedRegion.value,
+        title: name.value.trim(),
+        includes: configIncludes(composedConfig.value),
+        sub_category: composedConfig.value.sub_category,
+      })
+    } else if (selectedPlanObj.value) {
+      await create({
+        region: selectedRegion.value,
+        title: name.value.trim(),
+        ...planResources(selectedPlanObj.value),
+      })
+    }
     router.push('/servers')
   } catch {
     // create() already surfaced the error; stay on the form.
@@ -142,15 +176,52 @@ async function submit() {
 
       <!-- Plan -->
       <section class="space-y-3">
-        <div class="flex items-center gap-2">
-          <span class="lucide-box size-4 text-ink-gray-6" aria-hidden="true" />
-          <h2 class="text-base font-medium text-ink-gray-8">Plan</h2>
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="lucide-box size-4 text-ink-gray-6" aria-hidden="true" />
+            <h2 class="text-base font-medium text-ink-gray-8">Plan</h2>
+          </div>
+          <!-- Preset vs design your own — only where the region prices a custom config. -->
+          <div v-if="selectedRegion && canDesign" class="flex gap-1 rounded-lg bg-surface-gray-2 p-0.5">
+            <button
+              type="button"
+              class="rounded-md px-3 py-1 text-p-sm transition-colors"
+              :class="mode === 'preset' ? 'bg-surface-white text-ink-gray-9 shadow-sm' : 'text-ink-gray-6'"
+              @click="mode = 'preset'"
+            >
+              Presets
+            </button>
+            <button
+              type="button"
+              class="rounded-md px-3 py-1 text-p-sm transition-colors"
+              :class="mode === 'design' ? 'bg-surface-white text-ink-gray-9 shadow-sm' : 'text-ink-gray-6'"
+              @click="mode = 'design'"
+            >
+              Design your own
+            </button>
+          </div>
         </div>
 
         <p v-if="!selectedRegion" class="text-p-sm text-ink-gray-5">
           Pick a region to see the plans available there.
         </p>
         <p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">Loading plans…</p>
+
+        <!-- Design your own: the slider, fed by the rate card + profile bounds. -->
+        <template v-else-if="mode === 'design'">
+          <ConfigDesigner
+            v-model="composedConfig"
+            :profiles="profiles"
+            :rate-card="rateCard"
+            :available="available ?? 0"
+            :currency="currency ?? 'USD'"
+          />
+          <p v-if="matchingPreset" class="text-p-xs text-ink-gray-5">
+            The <span class="font-medium text-ink-gray-7">{{ matchingPreset.title }}</span> preset offers this
+            exact shape — it may be cheaper than building it à la carte.
+          </p>
+        </template>
+
         <p v-else-if="!plans.length" class="text-p-sm text-ink-gray-5">
           No plans are available for this region within your current spending limit.
         </p>
@@ -173,7 +244,7 @@ async function submit() {
           variant="solid"
           label="Create server"
           icon-left="lucide-plus"
-          :loading="creating"
+          :loading="submitting"
           :disabled="!canSubmit"
           @click="submit"
         />

@@ -11,6 +11,7 @@ only narrows the menu the customer is shown.
 """
 
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
@@ -178,6 +179,27 @@ def provision_composed_config(
 	from central.billing.catalog.subscriptions import provision_composed_subscription
 
 	return provision_composed_subscription(team, cluster, includes, sub_category)
+
+
+@frappe.whitelist(methods=["POST"])
+def resize_composed_config(
+	subscription: str, includes: list | str, sub_category: str | None = None
+) -> dict:
+	"""Resize a running config from the slider (#84) — the changed-event re-lock (#82).
+	Re-validates the new shape + headroom server-side before re-locking at the current
+	rate card. Returns whether a new segment was opened (a no-op resize returns False)."""
+	team = frappe.db.get_value("Subscription", subscription, "team")
+	if not team:
+		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
+	authz.require_capability(team, authz.MANAGE)
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+	from central.billing.catalog.subscriptions import resize_composed_subscription
+
+	before = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	resize_composed_subscription(subscription, includes, sub_category)
+	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	return {"subscription": subscription, "resized": after > before}
 
 
 def _rates_by_plan(names: list[str]) -> dict[str, list]:
