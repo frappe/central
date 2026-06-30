@@ -184,29 +184,55 @@ def cancel_subscription(subscription: str, changed_by: str | None = None):
 
 
 def pause_billing(subscription: str, changed_by: str | None = None):
-	"""Pause billing for a subscription (customer intent). Disables the subscription
-	and logs the change. Like cancel_subscription, the running resource and its open
-	price-lock are settled by the cluster manager (ADR 0006) — this records the
-	contract intent only. A no-op if already paused."""
+	"""Pause billing for a subscription. Disables the subscription, logs the change,
+	and STOPS the linked server resource — the VM and the sites/services running on
+	it — so a paused subscription is not left running and accruing. A no-op if
+	already paused. If the server can't be stopped the whole pause rolls back."""
 	doc = frappe.get_doc("Subscription", subscription)
 	if not doc.enabled:
 		return doc
 	doc.enabled = 0
 	doc.save(ignore_permissions=True)
 	_record_change(subscription, "Paused", old_value=1, new_value=0, changed_by=changed_by)
+	_control_subscription_server(doc, "stop")
 	return doc
 
 
 def resume_billing(subscription: str, changed_by: str | None = None):
-	"""Resume billing for a paused subscription. Re-enables it and logs the change.
-	A no-op if already active."""
+	"""Resume billing for a paused subscription. Re-enables it, logs the change, and
+	starts the linked server back up. A no-op if already active."""
 	doc = frappe.get_doc("Subscription", subscription)
 	if doc.enabled:
 		return doc
 	doc.enabled = 1
 	doc.save(ignore_permissions=True)
 	_record_change(subscription, "Resumed", old_value=0, new_value=1, changed_by=changed_by)
+	_control_subscription_server(doc, "start")
 	return doc
+
+
+# States from which a stop / start is a meaningful Atlas transition; in any other
+# state the action is a no-op we skip (avoids erroring on e.g. stopping a server
+# that is already stopped, or one never provisioned).
+_SERVER_ACTION_FROM = {"stop": {"Running"}, "start": {"Stopped", "Paused", "Failed"}}
+
+
+def _control_subscription_server(sub, atlas_method: str) -> None:
+	"""Drive the subscription's linked server: pausing stops the VM, resuming starts
+	it. Skips when there is no provisioned resource, or when its mirrored status means
+	the action wouldn't apply."""
+	if not sub.asset_id:
+		return
+	asset = frappe.db.get_value(
+		"Asset", sub.asset_id, ["resource_id", "status"], as_dict=True
+	)
+	if not asset or not asset.resource_id:
+		return
+	if asset.status not in _SERVER_ACTION_FROM.get(atlas_method, set()):
+		return
+	from central.api.servers import control_server
+
+	control_server(sub.team, asset.resource_id, atlas_method)
 
 
 def set_standing(subscription: str, new_standing: str, changed_by: str | None = None, reason=None):

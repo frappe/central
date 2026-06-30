@@ -47,11 +47,13 @@ function isPaused(sub: SubscriptionRow): boolean {
 function pauseBilling(sub: SubscriptionRow): void {
   confirmDialog({
     title: 'Pause billing',
-    message: `Pause billing for ${title(sub)}? It stops accruing charges until you resume.`,
+    message:
+      `Pause billing for ${title(sub)}? This will stop the server/VM and the ` +
+      `site(s)/services running on it, and stop charges until you resume.`,
     onConfirm: async ({ hideDialog }: { hideDialog: () => void }) => {
       try {
         await pause.submit({ subscription: sub.name })
-        successToast('Billing paused.')
+        successToast('Billing paused; server stopping.')
         subscriptions.reload()
         hideDialog()
       } catch (e) {
@@ -64,7 +66,7 @@ function pauseBilling(sub: SubscriptionRow): void {
 async function resumeBilling(sub: SubscriptionRow): Promise<void> {
   try {
     await resume.submit({ subscription: sub.name })
-    successToast('Billing resumed.')
+    successToast('Billing resumed; server starting.')
     subscriptions.reload()
   } catch (e) {
     errorToast(e)
