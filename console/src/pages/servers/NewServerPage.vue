@@ -1,24 +1,25 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Badge, Button, FormControl, Tabs } from 'frappe-ui'
+import { Badge, Button, FormControl } from 'frappe-ui'
 import { useRouter } from 'vue-router'
 import PageHeader from '@/components/common/PageHeader.vue'
-import PlanCards from '@/components/servers/PlanCards.vue'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePlans } from '@/composables/usePlans'
-import { planResources } from '@/lib/plans'
-import { configIncludes, rateCardComplete } from '@/lib/composed'
+import { planResources, planSpecs, planPrice, formatMoney } from '@/lib/plans'
+import { configIncludes, configSpecs, estimateConfig, rateCardComplete } from '@/lib/composed'
 import type { ComposedConfig, Plan } from '@/types/api'
 
 // New server. Region is the set of available Atlas Instances; the plan comes from
-// the billing catalog, priced for the team's currency on that region and within
-// its trust-tier headroom (usePlans). A customer either picks a curated preset or
-// designs their own config on a slider (#84). A preset routes through create_server
-// (Atlas provisions raw resources); a composed config routes through
-// create_composed_server, which also records the à-la-carte subscription (#80).
+// the billing catalog, priced for the team's currency on that region and within its
+// trust-tier headroom (usePlans). The picker is one radio list: the curated presets,
+// plus a "Custom" row that expands into a slider to design your own config (#84). A
+// preset routes through create_server (Atlas provisions raw resources); a composed
+// config routes through create_composed_server, which records the subscription (#80).
+const CUSTOM = '__custom__'
+
 const router = useRouter()
 const { regions, loading } = useRegions()
 const { create, createComposed, creating, creatingComposed } = useServers()
@@ -27,20 +28,27 @@ const { canCreateServer } = useCapabilities()
 const selectedRegion = ref<string | null>(null)
 const name = ref('')
 const selectedPlan = ref<string | null>(null)
-const mode = ref<'preset' | 'design'>('preset')
 const composedConfig = ref<ComposedConfig | null>(null)
 
-// The menu arrives grouped by plan class (server-side: keys ordered, rows
-// cheapest-first); `plans` is the flat view, `groups`/`classes` drive the tabs.
-// `rateCard` + `profiles` + `available` feed the "design your own" slider.
-const { plans, groups, classes, rateCard, profiles, available, currency, loading: plansLoading } =
-  usePlans(selectedRegion)
+// `plans` is the flat, cheapest-first preset list; `rateCard` + `profiles` +
+// `available` feed the Custom slider.
+const { plans, rateCard, profiles, available, currency, loading: plansLoading } = usePlans(selectedRegion)
 
-// "Design your own" is offered only where the region prices every component.
+// "Custom" is offered only where the region prices every component.
 const canDesign = computed(() => rateCardComplete(rateCard.value) && profiles.value.length > 0)
+const isCustom = computed(() => selectedPlan.value === CUSTOM)
 
 const selectedPlanObj = computed<Plan | null>(
   () => plans.value.find((p) => p.plan === selectedPlan.value) ?? null,
+)
+
+// Live spec + price for the Custom row, shown inline like a preset.
+const customEstimate = computed<number | null>(() =>
+  composedConfig.value ? estimateConfig(composedConfig.value, rateCard.value) : null,
+)
+const customSpec = computed<string>(() => (composedConfig.value ? configSpecs(composedConfig.value) : ''))
+const customPrice = computed<string>(() =>
+  customEstimate.value !== null ? `${formatMoney(customEstimate.value, currency.value ?? 'USD')} / mo` : '',
 )
 
 // The bundle-discount note: shown only while the designed shape sits exactly on a
@@ -56,43 +64,27 @@ const matchingPreset = computed<Plan | null>(() => {
   )
 })
 
-// Bifurcate the menu by plan class, but only when the region actually offers more
-// than one — a single-class region (e.g. just General) lists its plans flat.
-const hasClassTabs = computed(() => classes.value.length > 1)
-const classTabs = computed(() => classes.value.map((label) => ({ label })))
-// Tabs select by index; reset to the first whenever the class list changes.
-const activeTab = ref(0)
-
-function plansInClass(planClass: string): Plan[] {
-  return groups.value[planClass] ?? []
-}
-
-// Switching region re-prices the menu: drop a selection no longer offered, and
-// point the class tabs back at the first class the new region has.
-watch(plans, (rows) => {
-  if (selectedPlan.value && !rows.some((p) => p.plan === selectedPlan.value)) {
+// Switching region re-prices the menu: drop a now-unoffered preset selection, and
+// drop a Custom selection if the new region can't price one.
+watch([plans, canDesign], () => {
+  if (selectedPlan.value === CUSTOM) {
+    if (!canDesign.value) selectedPlan.value = null
+  } else if (selectedPlan.value && !plans.value.some((p) => p.plan === selectedPlan.value)) {
     selectedPlan.value = null
   }
-})
-watch(classes, () => {
-  activeTab.value = 0
-})
-// Switching to a region that can't price a custom config falls back to presets.
-watch(canDesign, (ok) => {
-  if (!ok && mode.value === 'design') mode.value = 'preset'
 })
 
 const submitting = computed(() => creating.value || creatingComposed.value)
 
 const canSubmit = computed(() => {
   if (!canCreateServer.value || !selectedRegion.value || !name.value.trim()) return false
-  return mode.value === 'design' ? !!composedConfig.value : !!selectedPlanObj.value
+  return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
 })
 
 async function submit() {
   if (!canSubmit.value || !selectedRegion.value) return
   try {
-    if (mode.value === 'design' && composedConfig.value) {
+    if (isCustom.value && composedConfig.value) {
       await createComposed({
         region: selectedRegion.value,
         title: name.value.trim(),
@@ -128,12 +120,7 @@ async function submit() {
           <span class="lucide-tag size-4 text-ink-gray-6" aria-hidden="true" />
           <h2 class="text-base font-medium text-ink-gray-8">Name</h2>
         </div>
-        <FormControl
-          v-model="name"
-          type="text"
-          placeholder="e.g. web-01"
-          :maxlength="60"
-        />
+        <FormControl v-model="name" type="text" placeholder="e.g. web-01" :maxlength="60" />
       </section>
 
       <!-- Region -->
@@ -174,67 +161,67 @@ async function submit() {
         </div>
       </section>
 
-      <!-- Plan -->
+      <!-- Plan: one radio list of presets + a Custom row that expands into the slider. -->
       <section class="space-y-3">
-        <div class="flex items-center justify-between gap-2">
-          <div class="flex items-center gap-2">
-            <span class="lucide-box size-4 text-ink-gray-6" aria-hidden="true" />
-            <h2 class="text-base font-medium text-ink-gray-8">Plan</h2>
-          </div>
-          <!-- Preset vs design your own — only where the region prices a custom config. -->
-          <div v-if="selectedRegion && canDesign" class="flex gap-1 rounded-lg bg-surface-gray-2 p-0.5">
-            <button
-              type="button"
-              class="rounded-md px-3 py-1 text-p-sm transition-colors"
-              :class="mode === 'preset' ? 'bg-surface-white text-ink-gray-9 shadow-sm' : 'text-ink-gray-6'"
-              @click="mode = 'preset'"
-            >
-              Presets
-            </button>
-            <button
-              type="button"
-              class="rounded-md px-3 py-1 text-p-sm transition-colors"
-              :class="mode === 'design' ? 'bg-surface-white text-ink-gray-9 shadow-sm' : 'text-ink-gray-6'"
-              @click="mode = 'design'"
-            >
-              Design your own
-            </button>
-          </div>
+        <div class="flex items-center gap-2">
+          <span class="lucide-box size-4 text-ink-gray-6" aria-hidden="true" />
+          <h2 class="text-base font-medium text-ink-gray-8">Select a plan</h2>
         </div>
 
         <p v-if="!selectedRegion" class="text-p-sm text-ink-gray-5">
           Pick a region to see the plans available there.
         </p>
         <p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">Loading plans…</p>
-
-        <!-- Design your own: the slider, fed by the rate card + profile bounds. -->
-        <template v-else-if="mode === 'design'">
-          <ConfigDesigner
-            v-model="composedConfig"
-            :profiles="profiles"
-            :rate-card="rateCard"
-            :available="available ?? 0"
-            :currency="currency ?? 'USD'"
-          />
-          <p v-if="matchingPreset" class="text-p-xs text-ink-gray-5">
-            The <span class="font-medium text-ink-gray-7">{{ matchingPreset.title }}</span> preset offers this
-            exact shape — it may be cheaper than building it à la carte.
-          </p>
-        </template>
-
-        <p v-else-if="!plans.length" class="text-p-sm text-ink-gray-5">
+        <p v-else-if="!plans.length && !canDesign" class="text-p-sm text-ink-gray-5">
           No plans are available for this region within your current spending limit.
         </p>
 
-        <!-- Multiple classes on this region: split them across tabs. -->
-        <Tabs v-else-if="hasClassTabs" v-model="activeTab" :tabs="classTabs">
-          <template #tab-panel="{ tab }">
-            <PlanCards :plans="plansInClass(tab.label)" v-model="selectedPlan" class="pt-4" />
-          </template>
-        </Tabs>
+        <div v-else class="space-y-3">
+          <!-- Presets -->
+          <label
+            v-for="plan in plans"
+            :key="plan.plan"
+            class="flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors"
+            :class="
+              selectedPlan === plan.plan
+                ? 'border-outline-gray-4'
+                : 'border-outline-gray-2 hover:border-outline-gray-3'
+            "
+          >
+            <input v-model="selectedPlan" type="radio" :value="plan.plan" class="accent-ink-gray-9" />
+            <span class="font-medium text-ink-gray-9">{{ plan.title }}</span>
+            <span class="text-p-sm text-ink-gray-5">{{ planSpecs(plan) }}</span>
+            <span class="ml-auto font-medium text-ink-gray-9">{{ planPrice(plan) }}</span>
+          </label>
 
-        <!-- Single class: list the plans flat, unclassified. -->
-        <PlanCards v-else :plans="plans" v-model="selectedPlan" />
+          <!-- Custom: a radio row that expands into the design slider. -->
+          <div
+            v-if="canDesign"
+            class="rounded-lg border transition-colors"
+            :class="isCustom ? 'border-outline-gray-4' : 'border-outline-gray-2 hover:border-outline-gray-3'"
+          >
+            <label class="flex cursor-pointer items-center gap-3 px-4 py-3">
+              <input v-model="selectedPlan" type="radio" :value="CUSTOM" class="accent-ink-gray-9" />
+              <span class="font-medium text-ink-gray-9">Custom</span>
+              <span class="lucide-sliders-horizontal size-4 text-ink-gray-5" aria-hidden="true" />
+              <span v-if="isCustom && customSpec" class="text-p-sm text-ink-gray-5">{{ customSpec }}</span>
+              <span class="ml-auto font-medium text-ink-gray-9">{{ isCustom ? customPrice : 'Design your own' }}</span>
+            </label>
+
+            <div v-if="isCustom" class="border-t border-outline-gray-2 px-4 py-4">
+              <ConfigDesigner
+                v-model="composedConfig"
+                :profiles="profiles"
+                :rate-card="rateCard"
+                :available="available ?? 0"
+              />
+              <p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">
+                The <span class="font-medium text-ink-gray-7">{{ matchingPreset.title }}</span> preset offers this
+                exact shape — it may be cheaper than building it à la carte.
+              </p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Submit -->

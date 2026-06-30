@@ -113,7 +113,6 @@ async function confirm() {
           :profiles="plansCall.data?.profiles ?? []"
           :rate-card="rateCard"
           :available="configCall.data?.available ?? 0"
-          :currency="currency"
           :initial="initial"
         />
         <div class="flex items-center justify-between rounded-lg bg-surface-gray-1 px-3 py-2 text-p-sm">

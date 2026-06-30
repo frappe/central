@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { formatMoney } from '@/lib/plans'
 import {
-  configSpecs,
+  clamp,
   estimateConfig,
   maxAffordableDisk,
   maxAffordableVcpu,
@@ -10,23 +9,24 @@ import {
 } from '@/lib/composed'
 import type { ComposedConfig, Profile, RateCard } from '@/types/api'
 
-// Design-your-own config slider (#84). Pick an optimisation profile, drag vCPU
-// (snaps to the profile's steps); RAM follows automatically by the profile's ratio
-// (not independently draggable, so an off-ratio shape can't be expressed); disk is
-// an independent bounded slider. The estimate recomputes live and both sliders have
-// a hard stop at `available` headroom — the customer can't drag into a config they
-// can't afford. The server re-validates everything at provision (#83).
+// Design-your-own config controls (#84). Drag Compute (vCPU snaps to the profile's
+// steps); RAM follows automatically by the profile's ratio, shown as a derived pill
+// — never independently chosen, so an off-ratio shape can't be expressed. Storage is
+// an independent bounded slider with ± steppers. Both have a hard stop at `available`
+// headroom, so the customer can't drag into a config they can't afford. The price is
+// shown by the parent; the server re-validates everything at provision (#83).
 const props = defineProps<{
   profiles: Profile[]
   rateCard: RateCard
   available: number
-  currency: string
-  // Pre-fill the sliders with a running config's shape (resize, #82/#84).
+  // Pre-fill the controls with a running config's shape (resize, #82/#84).
   initial?: ComposedConfig | null
 }>()
 
 // The chosen config (null while invalid / over headroom) — the parent provisions it.
 const config = defineModel<ComposedConfig | null>({ required: true })
+
+const DISK_STEP = 10
 
 const profileName = ref<string>(props.initial?.sub_category ?? props.profiles[0]?.sub_category ?? '')
 const profile = computed<Profile | null>(
@@ -34,7 +34,6 @@ const profile = computed<Profile | null>(
 )
 
 const steps = computed<number[]>(() => [...(profile.value?.vcpu_steps ?? [])].sort((a, b) => a - b))
-// Seed the sliders from a pre-fill (resize) when given, else the profile's floor.
 const seededIndex = props.initial ? steps.value.indexOf(props.initial.vcpus) : -1
 const vcpuIndex = ref(seededIndex < 0 ? 0 : seededIndex)
 const vcpus = computed<number>(() => steps.value[vcpuIndex.value] ?? steps.value[0] ?? 0)
@@ -44,34 +43,36 @@ const ram = computed<number>(() => (profile.value ? ramFor(vcpus.value, profile.
 
 // Hard stops: the largest vCPU step / disk that still fit the remaining headroom,
 // each given the other's current value.
-const maxVcpu = computed<number>(() =>
-  profile.value ? maxAffordableVcpu(profile.value, props.rateCard, props.available, diskGb.value) : 0,
-)
 const maxVcpuIndex = computed<number>(() => {
-  const i = steps.value.indexOf(maxVcpu.value)
+  if (!profile.value) return 0
+  const i = steps.value.indexOf(maxAffordableVcpu(profile.value, props.rateCard, props.available, diskGb.value))
   return i < 0 ? 0 : i
 })
 const maxDisk = computed<number>(() =>
   profile.value ? maxAffordableDisk(profile.value, props.rateCard, props.available, vcpus.value) : 0,
 )
 
-const estimate = computed<number>(() =>
+const overHeadroom = computed<boolean>(() =>
   profile.value
     ? estimateConfig(
         { sub_category: profileName.value, vcpus: vcpus.value, memory_gb: ram.value, disk_gb: diskGb.value },
         props.rateCard,
-      )
-    : 0,
+      ) > props.available
+    : false,
 )
-const overHeadroom = computed<boolean>(() => estimate.value > props.available)
 
-// Reset the sliders to the profile's floor whenever the profile changes.
+function stepDisk(delta: number) {
+  if (!profile.value) return
+  diskGb.value = clamp(diskGb.value + delta * DISK_STEP, profile.value.disk_min, maxDisk.value)
+}
+
+// Reset to the profile's floor whenever the profile changes (not on first mount).
 watch(profile, (p) => {
   vcpuIndex.value = 0
   diskGb.value = p?.disk_min ?? 0
 })
 
-// Keep both sliders inside the live hard stops (clamp down only, so this converges).
+// Keep both controls inside the live hard stops (clamp down only, so this converges).
 watch([maxVcpuIndex, maxDisk], () => {
   if (vcpuIndex.value > maxVcpuIndex.value) vcpuIndex.value = maxVcpuIndex.value
   if (diskGb.value > maxDisk.value) diskGb.value = maxDisk.value
@@ -92,85 +93,84 @@ watch(
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- Optimisation profile -->
-    <div class="space-y-2">
-      <label class="text-p-sm font-medium text-ink-gray-7">Optimisation profile</label>
-      <div class="flex flex-wrap gap-2">
-        <button
-          v-for="p in profiles"
-          :key="p.sub_category"
-          type="button"
-          class="rounded-lg border px-3 py-1.5 text-p-sm transition-colors"
-          :class="
-            profileName === p.sub_category
-              ? 'border-outline-gray-4 bg-surface-gray-2 text-ink-gray-9'
-              : 'border-outline-gray-2 text-ink-gray-7 hover:border-outline-gray-3'
-          "
-          @click="profileName = p.sub_category"
-        >
-          {{ p.sub_category }}
-          <span class="text-ink-gray-5">· 1:{{ p.ram_ratio }}</span>
-        </button>
-      </div>
+  <div class="space-y-4">
+    <!-- Optimisation profile — only when the region offers more than one. -->
+    <div v-if="profiles.length > 1" class="flex flex-wrap gap-2">
+      <button
+        v-for="p in profiles"
+        :key="p.sub_category"
+        type="button"
+        class="rounded-md border px-2.5 py-1 text-p-xs transition-colors"
+        :class="
+          profileName === p.sub_category
+            ? 'border-outline-gray-4 bg-surface-gray-2 text-ink-gray-9'
+            : 'border-outline-gray-2 text-ink-gray-6 hover:border-outline-gray-3'
+        "
+        @click="profileName = p.sub_category"
+      >
+        {{ p.sub_category }}
+      </button>
     </div>
 
     <template v-if="profile">
-      <!-- vCPU (snaps to steps) -->
-      <div class="space-y-2">
-        <div class="flex items-baseline justify-between">
-          <label class="text-p-sm font-medium text-ink-gray-7">vCPU</label>
-          <span class="text-p-sm font-medium text-ink-gray-9">{{ vcpus }} vCPU</span>
-        </div>
+      <!-- Compute: vCPU slider with the derived RAM shown as a pill. -->
+      <div class="flex items-center gap-4">
+        <span class="w-20 shrink-0 text-p-sm text-ink-gray-7">Compute</span>
         <input
           v-model.number="vcpuIndex"
           type="range"
           min="0"
           :max="Math.max(0, maxVcpuIndex)"
           step="1"
-          class="w-full accent-ink-gray-9"
+          class="min-w-0 flex-1 accent-ink-gray-9"
+          aria-label="vCPU"
         />
-        <div class="flex justify-between text-p-xs text-ink-gray-4">
-          <span v-for="s in steps" :key="s" :class="{ 'text-ink-gray-7': s === vcpus }">{{ s }}</span>
-        </div>
+        <span class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-p-sm font-medium text-ink-gray-8">
+          {{ vcpus }} vCPU
+        </span>
+        <span class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-p-sm font-medium text-ink-gray-8">
+          {{ ram }} GB RAM
+        </span>
       </div>
 
-      <!-- RAM (follows vCPU automatically) -->
-      <div class="flex items-baseline justify-between rounded-lg bg-surface-gray-1 px-3 py-2">
-        <span class="text-p-sm text-ink-gray-6">RAM (auto · 1:{{ profile.ram_ratio }})</span>
-        <span class="text-p-sm font-medium text-ink-gray-9">{{ ram }} GB</span>
-      </div>
-
-      <!-- Disk (independent, bounded) -->
-      <div class="space-y-2">
-        <div class="flex items-baseline justify-between">
-          <label class="text-p-sm font-medium text-ink-gray-7">Disk</label>
-          <span class="text-p-sm font-medium text-ink-gray-9">{{ diskGb }} GB</span>
-        </div>
+      <!-- Storage: independent bounded slider with ± steppers. -->
+      <div class="flex items-center gap-4">
+        <span class="w-20 shrink-0 text-p-sm text-ink-gray-7">Storage</span>
         <input
           v-model.number="diskGb"
           type="range"
           :min="profile.disk_min"
           :max="Math.max(profile.disk_min, maxDisk)"
-          step="10"
-          class="w-full accent-ink-gray-9"
+          :step="DISK_STEP"
+          class="min-w-0 flex-1 accent-ink-gray-9"
+          aria-label="Storage (GB)"
         />
-        <div class="flex justify-between text-p-xs text-ink-gray-4">
-          <span>{{ profile.disk_min }} GB</span>
-          <span>{{ profile.disk_max }} GB</span>
-        </div>
+        <button
+          type="button"
+          class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"
+          :disabled="diskGb <= profile.disk_min"
+          aria-label="Less storage"
+          @click="stepDisk(-1)"
+        >
+          <span class="lucide-minus size-4" aria-hidden="true" />
+        </button>
+        <span class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-p-sm font-medium text-ink-gray-8">
+          {{ diskGb }} GB
+        </span>
+        <button
+          type="button"
+          class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"
+          :disabled="diskGb >= maxDisk"
+          aria-label="More storage"
+          @click="stepDisk(1)"
+        >
+          <span class="lucide-plus size-4" aria-hidden="true" />
+        </button>
       </div>
 
-      <!-- Live estimate -->
-      <div class="flex items-center justify-between border-t border-outline-gray-1 pt-4">
-        <div>
-          <p class="text-p-sm text-ink-gray-6">{{ configSpecs({ sub_category: profileName, vcpus, memory_gb: ram, disk_gb: diskGb }) }}</p>
-          <p v-if="overHeadroom" class="text-p-xs text-ink-red-5">
-            Over your remaining limit of {{ formatMoney(available, currency) }}.
-          </p>
-        </div>
-        <p class="text-base font-semibold text-ink-gray-9">{{ formatMoney(estimate, currency) }} / mo</p>
-      </div>
+      <p v-if="overHeadroom" class="text-p-xs text-ink-red-5">
+        This config is over your remaining spending limit.
+      </p>
     </template>
   </div>
 </template>
