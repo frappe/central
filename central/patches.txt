@@ -82,6 +82,9 @@ central.billing.patches.v21_category_provision_target.category_provision_target
 # billing metadata moves onto Plan Category, and its Catalog Rate rows repoint to Plan.
 # Billing-neutral — ADR 0008, issue #78.
 central.billing.patches.v22_retire_addon_into_plan.retire_addon_into_plan
+# Promote the optimisation profile to a runtime constraint: backfill the numeric
+# ram_ratio + vcpu_steps + disk bounds onto the VM Plan Sub-Categories — ADR 0009, #81.
+central.billing.patches.v23_sub_category_compose_bounds.sub_category_compose_bounds
 central.patches.v01_capability_model_v2.rename_capabilities
 central.patches.v02_portal_central_users.make_central_users_portal_only
 # Strip the capability catalog to v3: drop the bench plane (site:* + server:config)

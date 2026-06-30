@@ -33,13 +33,14 @@ CATEGORIES = [
 		"description": "Flat-rate compute bundles (vCPU + memory + disk + transfer).",
 		"billing_type": "Fixed",
 		"allowed": ["Compute", "Memory", "Disk", "Transfer"],
-		# VM optimisation profiles carry the memory ratio (GB RAM per vCPU) the
-		# configurator pins. Storage/Memory Optimised share 1:8; they differ by disk.
+		# VM optimisation profiles carry the composed-config bounds (ADR 0009): the RAM
+		# ratio (GB per vCPU), the allowed vCPU steps, and the disk range the slider is
+		# bounded to. Storage/Memory Optimised share ratio 8; they differ by disk.
 		"sub_categories": [
-			{"name": "General", "memory_ratio": "1:4"},
-			{"name": "CPU Optimised", "memory_ratio": "1:2"},
-			{"name": "Memory Optimised", "memory_ratio": "1:8"},
-			{"name": "Storage Optimised", "memory_ratio": "1:8"},
+			{"name": "General", "ram_ratio": 4, "vcpu_steps": "1,2,4,8,16", "disk_min": 10, "disk_max": 2000},
+			{"name": "CPU Optimised", "ram_ratio": 2, "vcpu_steps": "1,2,4,8,16,32", "disk_min": 10, "disk_max": 1000},
+			{"name": "Memory Optimised", "ram_ratio": 8, "vcpu_steps": "1,2,4,8,16", "disk_min": 10, "disk_max": 2000},
+			{"name": "Storage Optimised", "ram_ratio": 8, "vcpu_steps": "1,2,4,8", "disk_min": 100, "disk_max": 10000},
 		],
 	},
 	{
@@ -126,11 +127,17 @@ def _ensure_category(spec):
 		).insert(ignore_permissions=True)
 	for sub in spec["sub_categories"]:
 		if not frappe.db.exists("Plan Sub-Category", sub["name"]):
+			ram_ratio = sub.get("ram_ratio")
 			frappe.get_doc(
 				{
 					"doctype": "Plan Sub-Category",
 					"sub_category_name": sub["name"],
 					"category": spec["category_name"],
-					"memory_ratio": sub.get("memory_ratio"),
+					"ram_ratio": ram_ratio,
+					"vcpu_steps": sub.get("vcpu_steps"),
+					"disk_min": sub.get("disk_min"),
+					"disk_max": sub.get("disk_max"),
+					# Legacy 1:N mirror of the authoritative numeric ram_ratio.
+					"memory_ratio": f"1:{ram_ratio}" if ram_ratio else None,
 				}
 			).insert(ignore_permissions=True)
