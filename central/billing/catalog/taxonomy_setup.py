@@ -101,6 +101,12 @@ def ensure_catalog_masters():
 	for spec in CATEGORIES:
 		_ensure_category(spec)
 
+	# The composed-config component rate card prices the Resource Types just seeded
+	# (ADR 0009); seed it here so a fresh install can price a custom config too.
+	from central.billing.catalog.rate_card import ensure_component_rate_card
+
+	ensure_component_rate_card()
+
 
 def _ensure_category(spec):
 	if not frappe.db.exists("Plan Category", spec["category_name"]):

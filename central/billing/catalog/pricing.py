@@ -103,3 +103,31 @@ def resolve_rate(rate_rows, currency: str, cluster: str | None = None):
 			return r.rate
 
 	return None
+
+
+def resolve_component_rate(resource_type: str, currency: str, cluster: str | None = None):
+	"""The per-unit rate card rate for one `Resource Type` (ADR 0009).
+
+	Resolved regional-over-global exactly like a plan rate. Returns None when the
+	currency has no component rate — a missing rate is *not* zero, so a config that
+	can't be fully priced is refused rather than billed at nothing.
+	"""
+	return resolve_rate(get_catalog_rates("Resource Type", resource_type), currency, cluster)
+
+
+def resolve_config_rate(includes, currency: str, cluster: str | None = None):
+	"""The whole-config rate for a composition: `Σ(quantity × component_rate)`.
+
+	`includes`: iterable of rows/dicts with `resource_type` and `quantity`. Returns
+	None if *any* component has no rate for the currency — a config priced from its
+	parts is only sellable when every part is priced (ADR 0009).
+	"""
+	total = 0.0
+	for row in includes:
+		resource_type = row["resource_type"] if isinstance(row, dict) else row.resource_type
+		quantity = row["quantity"] if isinstance(row, dict) else row.quantity
+		rate = resolve_component_rate(resource_type, currency, cluster)
+		if rate is None:
+			return None
+		total += frappe.utils.flt(quantity) * frappe.utils.flt(rate)
+	return total

@@ -5,6 +5,7 @@ cluster/plan run-rate consumption, and trial→paid conversion analysis.
 """
 
 import frappe
+from frappe import _
 
 from central.billing.authz import require_operator
 from central.billing.api.admin._shared import _active_locks, _plan_monthly_inr, _to_inr
@@ -65,6 +66,28 @@ def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> 
 			}
 		).insert(ignore_permissions=True)
 	return {"plan": plan, "currency": currency, "cluster": cluster or "global", "rate": frappe.utils.flt(rate)}
+
+
+@frappe.whitelist()
+def update_component_rate(resource_type: str, currency: str, rate: int, cluster: str = "") -> dict:
+	"""Price management for the composed-config rate card (ADR 0009): set one
+	`Resource Type`'s per-unit `Catalog Rate`. Like `update_plan_rate`, it is a
+	single document edit — it mints no plans, and a running composed config keeps
+	billing its locked config rate (only a new provision/resize picks up the new
+	rate, #80/#82)."""
+	require_operator()
+	from central.billing.catalog.pricing import set_catalog_rate
+
+	if not frappe.db.exists("Resource Type", resource_type):
+		frappe.throw(_("Resource Type {0} does not exist.").format(frappe.bold(resource_type)))
+	cluster = cluster or None
+	set_catalog_rate("Resource Type", resource_type, currency, rate, cluster=cluster)
+	return {
+		"resource_type": resource_type,
+		"currency": currency,
+		"cluster": cluster or "global",
+		"rate": frappe.utils.flt(rate),
+	}
 
 
 @frappe.whitelist()
