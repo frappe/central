@@ -51,7 +51,7 @@ defineEmits<{
     >
       <TabButtons
         :model-value="pageSize"
-        :buttons="pageSizeOptions.map((value) => ({ label: String(value), value }))"
+        :options="pageSizeOptions.map((value) => ({ label: String(value), value }))"
         @update:model-value="$emit('pageSizeChange', Number($event))"
       />
 

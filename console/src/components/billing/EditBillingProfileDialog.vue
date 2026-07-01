@@ -82,8 +82,8 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <Dialog v-model:open="open" :options="{ title: 'Billing profile', size: '2xl' }">
-    <template #body-content>
+  <Dialog v-model:open="open" title="Billing profile" size="2xl">
+    <template #default>
       <div v-if="profile.loading && !profile.data" class="space-y-3">
         <LoadingText :lines="6" />
       </div>
