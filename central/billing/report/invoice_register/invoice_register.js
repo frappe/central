@@ -5,12 +5,14 @@ frappe.query_reports["Invoice Register"] = {
 	filters: [
 		{
 			fieldname: "from_date",
+			reqd: 1,
 			label: __("From (Period Start)"),
 			fieldtype: "Date",
 			default: frappe.datetime.month_start(),
 		},
 		{
 			fieldname: "to_date",
+			reqd: 1,
 			label: __("To (Period Start)"),
 			fieldtype: "Date",
 			default: frappe.datetime.month_end(),

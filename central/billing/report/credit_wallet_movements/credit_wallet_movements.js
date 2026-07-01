@@ -5,12 +5,14 @@ frappe.query_reports["Credit Wallet Movements"] = {
 	filters: [
 		{
 			fieldname: "from_date",
+			reqd: 1,
 			label: __("From"),
 			fieldtype: "Date",
 			default: frappe.datetime.month_start(),
 		},
 		{
 			fieldname: "to_date",
+			reqd: 1,
 			label: __("To"),
 			fieldtype: "Date",
 			default: frappe.datetime.month_end(),

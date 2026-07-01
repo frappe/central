@@ -5,12 +5,14 @@ frappe.query_reports["Gateway Payment Success Ratio"] = {
 	filters: [
 		{
 			fieldname: "from_date",
+			reqd: 1,
 			label: __("From"),
 			fieldtype: "Date",
 			default: frappe.datetime.add_months(frappe.datetime.month_start(), -1),
 		},
 		{
 			fieldname: "to_date",
+			reqd: 1,
 			label: __("To"),
 			fieldtype: "Date",
 			default: frappe.datetime.month_end(),
