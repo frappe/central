@@ -34,12 +34,22 @@ frappe.ui.form.on("Plan Configurator", {
 		frm.doc.__user_set_prefix = true;
 	},
 
+	purpose(frm) {
+		// Switching the template's job swaps which actions belong here — rebuild them.
+		frm.clear_custom_buttons();
+		frm.trigger("refresh");
+	},
+
 	refresh(frm) {
 		// Sub-categories belong to a category; only offer this category's.
 		frm.set_query("sub_category", () => ({ filters: { category: frm.doc.category } }));
 
 		if (frm.is_new()) {
-			frm.dashboard.set_headline(__("Save the template, then populate and generate rungs."));
+			frm.dashboard.set_headline(
+				frm.doc.purpose === "Component Rate Card"
+					? __("Save the template, then seed and apply the component rate card.")
+					: __("Save the template, then populate and generate plans.")
+			);
 			return;
 		}
 
@@ -61,57 +71,13 @@ frappe.ui.form.on("Plan Configurator", {
 			});
 		}
 
-		const simple = frm.doc.builder === "Simple";
-
-		// The vCPU ladder builder authors plans from a formula; the simple builder
-		// authors them row-by-row, so Populate/Preview are VM Rungs-only.
-		if (!simple) {
-			frm.add_custom_button(__("Populate Rungs"), () => {
-				frm.call("populate_rungs").then((r) => {
-					frappe.show_alert({
-						message: __("{0} rungs populated — edit them, then Generate.", [
-							(r.message || {}).count || 0,
-						]),
-						indicator: "blue",
-					});
-					frm.reload_doc();
-				});
-			});
-
-			frm.add_custom_button(__("Preview Pricing"), () => {
-				frm.call("preview").then((r) => show_preview(r.message || {}));
-			});
-		}
-
-		const rows = simple ? frm.doc.simple_plans : frm.doc.rungs;
-		if ((rows || []).length) {
-			frm.add_custom_button(__("Generate Plans"), () => generate_dialog(frm)).addClass(
-				"btn-primary"
-			);
-		}
-
-		// Component rate card (ADR 0011): the Configurator prices the composed-config
-		// primitives (Compute / Memory / Disk) too, so an incomplete card surfaces here
-		// — before a region can offer custom configs — not as a silent $0 estimate.
-		frm.add_custom_button(
-			__("Seed Component Rows"),
-			() => {
-				frm.call("seed_component_rows").then((r) => {
-					frappe.show_alert({
-						message: __("{0} component rows added.", [(r.message || {}).added || 0]),
-						indicator: "blue",
-					});
-					frm.reload_doc();
-				});
-			},
-			__("Component Card")
-		);
-		if ((frm.doc.component_rates || []).length) {
-			frm.add_custom_button(
-				__("Apply Component Card"),
-				() => apply_component_card_dialog(frm),
-				__("Component Card")
-			);
+		// A template does one job (see `purpose`): author Plan Bundles OR maintain a
+		// Component Rate Card. Show only that job's actions — never both at once. The
+		// secondary steps live under one "Actions" menu, leaving a single primary button.
+		if (frm.doc.purpose === "Component Rate Card") {
+			bundle_card_actions(frm);
+		} else {
+			bundle_plan_actions(frm);
 		}
 	},
 
@@ -169,6 +135,70 @@ function show_preview(data) {
 		message: `<table class="table table-bordered"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`,
 		wide: true,
 	});
+}
+
+// Plan Bundles: author a ladder of sellable plans. Populate/Preview are the secondary
+// steps (under "Actions"); Generate is the single primary once there are rows to ship.
+function bundle_plan_actions(frm) {
+	const simple = frm.doc.builder === "Simple";
+
+	// The vCPU ladder builder authors plans from a formula; the simple builder
+	// authors them row-by-row, so Populate/Preview are VM Rungs-only.
+	if (!simple) {
+		frm.add_custom_button(
+			__("Populate Rungs"),
+			() => {
+				frm.call("populate_rungs").then((r) => {
+					frappe.show_alert({
+						message: __("{0} rungs populated — edit them, then Generate.", [
+							(r.message || {}).count || 0,
+						]),
+						indicator: "blue",
+					});
+					frm.reload_doc();
+				});
+			},
+			__("Actions")
+		);
+
+		frm.add_custom_button(
+			__("Preview Pricing"),
+			() => frm.call("preview").then((r) => show_preview(r.message || {})),
+			__("Actions")
+		);
+	}
+
+	const rows = simple ? frm.doc.simple_plans : frm.doc.rungs;
+	if ((rows || []).length) {
+		frm.add_custom_button(__("Generate Plans"), () => generate_dialog(frm)).addClass(
+			"btn-primary"
+		);
+	}
+}
+
+// Component rate card (ADR 0011): the Configurator prices the composed-config primitives
+// (Compute / Memory / Disk), so an incomplete card surfaces here — before a region can
+// offer custom configs — not as a silent $0 estimate. Seed is the secondary step
+// (under "Actions"); Apply is the single primary once there are rows.
+function bundle_card_actions(frm) {
+	frm.add_custom_button(
+		__("Seed Component Rows"),
+		() => {
+			frm.call("seed_component_rows").then((r) => {
+				frappe.show_alert({
+					message: __("{0} component rows added.", [(r.message || {}).added || 0]),
+					indicator: "blue",
+				});
+				frm.reload_doc();
+			});
+		},
+		__("Actions")
+	);
+	if ((frm.doc.component_rates || []).length) {
+		frm.add_custom_button(__("Apply Component Card"), () =>
+			apply_component_card_dialog(frm)
+		).addClass("btn-primary");
+	}
 }
 
 function generate_dialog(frm) {
