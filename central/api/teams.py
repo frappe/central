@@ -1,37 +1,22 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from typing import Any
 
 import frappe
+from frappe.query_builder import Order
 
-from central.iam import (
-	can,
-	expand_capabilities,
-	get_all_capabilities,
-	get_user_team_names,
-	user_has_operator_bypass,
-)
+from central.utils.guards import require_capability, require_team_member
+from central.iam import can, expand_capabilities, get_all_capabilities, user_has_operator_bypass
 
 # Team-roster reads + role management for the console's Team screens. Visibility
 # is "being a member" (any capability on the team); mutations delegate to the Team
 # doc methods, which independently enforce team:manage_members.
 
 
-def _require_team_member(team: str, user: str | None = None) -> None:
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return
-	# Cheaper than resolving full grants: get_user_team_names is a Team↔Team Member
-	# join scoped to active memberships of active teams — the same "is a member" test.
-	if team not in get_user_team_names(user):
-		frappe.throw("You are not a member of this team.", frappe.PermissionError)
-
-
 @frappe.whitelist(methods=["GET"])
+@require_team_member
 def list_team_members(team: str) -> list[dict[str, Any]]:
 	"""Roster of the team the caller belongs to (user, role, status, owner flag)."""
-	_require_team_member(team)
 	doc = frappe.get_doc("Team", team)
 	return [
 		{"user": m.user, "role": m.role, "status": m.status, "is_owner": m.user == doc.owner_user}
@@ -40,35 +25,39 @@ def list_team_members(team: str) -> list[dict[str, Any]]:
 
 
 @frappe.whitelist(methods=["GET"])
+@require_team_member
 def list_team_roles(team: str) -> list[dict[str, Any]]:
-	"""System roles plus this team's custom roles, each with its capabilities."""
-	_require_team_member(team)
-	rows = frappe.get_all(
-		"Team Role",
-		filters={"is_system": 1},
-		fields=["name", "role_name", "is_system", "team"],
-		order_by="role_name asc",
-	) + frappe.get_all(
-		"Team Role",
-		filters={"team": team, "is_system": 0},
-		fields=["name", "role_name", "is_system", "team"],
-		order_by="role_name asc",
-	)
-	# Fetch every role's capabilities in one query, then group — avoids an
-	# extra query per role.
-	caps_by_role: dict[str, list[str]] = defaultdict(list)
-	role_names = [r["name"] for r in rows]
-	if role_names:
-		for rc in frappe.get_all(
-			"Role Capability",
-			filters={"parenttype": "Team Role", "parentfield": "capabilities", "parent": ["in", role_names]},
-			fields=["parent", "capability"],
-			order_by="parent asc, idx asc",
-		):
-			caps_by_role[rc["parent"]].append(rc["capability"])
-	for r in rows:
-		r["capabilities"] = caps_by_role.get(r["name"], [])
-	return rows
+	"""System roles plus this team's custom roles, each with its capabilities —
+	one join (Team Role ⟕ Role Capability), grouped in order (system roles first)."""
+	role = frappe.qb.DocType("Team Role")
+	role_capability = frappe.qb.DocType("Role Capability")
+
+	rows = (
+		frappe.qb.from_(role)
+		.left_join(role_capability)
+		.on(
+			(role_capability.parent == role.name)
+			& (role_capability.parenttype == "Team Role")
+			& (role_capability.parentfield == "capabilities")
+		)
+		.select(role.name, role.role_name, role.is_system, role.team, role_capability.capability)
+		.where((role.is_system == 1) | ((role.team == team) & (role.is_system == 0)))
+		.orderby(role.is_system, order=Order.desc)
+		.orderby(role.role_name)
+		.orderby(role_capability.idx)
+	).run(as_dict=True)
+
+	# Fold the joined rows into one entry per role (dict keeps the system-first query order).
+	roles: dict[str, dict[str, Any]] = {}
+	for row in rows:
+		entry = roles.get(row.name)
+		if entry is None:
+			entry = {"name": row.name, "role_name": row.role_name, "is_system": row.is_system, "team": row.team, "capabilities": []}
+			roles[row.name] = entry
+		if row.capability:
+			entry["capabilities"].append(row.capability)
+
+	return list(roles.values())
 
 
 @frappe.whitelist(methods=["GET"])
@@ -82,10 +71,9 @@ def list_capabilities() -> list[dict[str, Any]]:
 
 
 @frappe.whitelist(methods=["GET"])
+@require_capability("team:manage_members", "You can't manage invitations for this team.")
 def list_team_invitations(team: str, status: str | None = None) -> list[dict[str, Any]]:
-	"""Invitations for a team — the manager's view. Gated on team:manage_members."""
-	if not can(frappe.session.user, team, "team:manage_members") and not user_has_operator_bypass():
-		frappe.throw("You can't manage invitations for this team.", frappe.PermissionError)
+	"""Invitations for a team — the manager's view."""
 	filters: dict[str, Any] = {"team": team}
 	if status:
 		filters["status"] = status
@@ -109,11 +97,9 @@ def create_team(team_name: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("team:edit", "You can't rename this team.")
 def rename_team(team: str, team_name: str) -> dict[str, Any]:
-	"""Rename a team. Gated on team:edit (explicit, matching the sibling endpoints;
-	Team.validate re-checks the same capability on save)."""
-	if not can(frappe.session.user, team, "team:edit") and not user_has_operator_bypass():
-		frappe.throw("You can't rename this team.", frappe.PermissionError)
+	"""Rename a team. Team.validate re-checks team:edit on save."""
 	doc = frappe.get_doc("Team", team)
 	doc.team_name = team_name
 	doc.save()
@@ -128,16 +114,15 @@ def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("team:delete", "You can't delete this team.")
 def delete_team(team: str) -> dict[str, Any]:
-	"""Delete a team. Gated on team:delete first (so an unauthorized call can't run
-	the cleanup below), then refuses while the team still owns servers or sites —
-	those must be torn down deliberately. Its invitations and custom roles are
-	cleared so their Link references don't block the delete."""
-	if not can(frappe.session.user, team, "team:delete") and not user_has_operator_bypass():
-		frappe.throw("You can't delete this team.", frappe.PermissionError)
+	"""Delete a team, once it owns no servers or sites (those must be torn down
+	deliberately). Invitations and custom roles are cleared first so their Link
+	references don't block the delete."""
 	for doctype in ("Asset", "Site"):
 		if frappe.db.exists(doctype, {"team": team}):
 			frappe.throw("Remove this team's servers and sites before deleting it.", frappe.ValidationError)
+	# force=True: clear the child links that would otherwise raise LinkExistsError on the Team delete.
 	for name in frappe.get_all("Team Invitation", {"team": team}, pluck="name"):
 		frappe.delete_doc("Team Invitation", name, ignore_permissions=True, force=True)
 	for name in frappe.get_all("Team Role", {"team": team, "is_system": 0}, pluck="name"):
@@ -192,13 +177,11 @@ def remove_team_member(team: str, user: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@require_capability("team:manage_members", "You can't manage roles for this team.")
 def create_custom_role(team: str, role_name: str, capabilities: list | str) -> dict:
-	"""Create a team-scoped custom Team Role granting exactly `capabilities`.
-	Gated on team:manage_members (same authority as member changes)."""
-	if not can(frappe.session.user, team, "team:manage_members"):
-		frappe.throw("You can't manage roles for this team.", frappe.PermissionError)
+	"""Create a team-scoped custom Team Role granting exactly `capabilities`."""
 	if isinstance(capabilities, str):
-		capabilities = frappe.parse_json(capabilities)
+		capabilities = frappe.parse_json(capabilities)  # the console posts a JSON-encoded array
 	valid = set(get_all_capabilities())
 	picked = [c for c in capabilities if c in valid]
 	if not picked:
@@ -206,8 +189,7 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 	# Persist the implied dependencies too (e.g. server:create pulls in server:view +
 	# cluster:view), so the saved role is usable and matches what enforcement grants.
 	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
-	# Authorized by the team:manage_members check above; the Team Role doctype grants
-	# create only to System Manager, so capability-gated writes bypass doc perms.
+	# Authorized by the decorator; Team Role grants create only to System Manager, so bypass doc perms.
 	role = frappe.get_doc(
 		{
 			"doctype": "Team Role",
