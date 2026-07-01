@@ -88,7 +88,10 @@ async function submit(): Promise<void> {
         <LoadingText :lines="6" />
       </div>
 
-      <form v-else class="space-y-6" @submit.prevent="submit">
+      <!-- Not a <form>: frappe-ui's Autocomplete trigger is a type-less (submit)
+           button, so a native form would save the profile just by opening/selecting
+           Country. The dialog's Save action drives submit() instead. -->
+      <div v-else class="space-y-6">
         <div class="space-y-3">
           <h3 class="text-sm font-medium text-ink-gray-8">Billing currency</h3>
           <FormControl
@@ -144,7 +147,7 @@ async function submit(): Promise<void> {
             description="Its first two digits must match the selected state."
           />
         </div>
-      </form>
+      </div>
     </template>
     <template #actions>
       <Button
