@@ -109,6 +109,26 @@ const tableColumns = computed(() =>
   props.selectable ? [selectionColumn.value, ...props.columns] : props.columns,
 )
 
+// TanStack state derived from the query model. These MUST be stable references:
+// the sorted/filtered/paginated row models (active in client-side mode) memoize on
+// them, so returning a fresh array/object on every read recomputes the models on
+// every render and wedges the page in an update loop. `computed` memoizes — the
+// reference changes only when the query actually does.
+const sortingState = computed<SortingState>(() =>
+  query.value.sort
+    ? [{ id: query.value.sort.key, desc: query.value.sort.direction === 'desc' }]
+    : [],
+)
+const columnFiltersState = computed<ColumnFiltersState>(() =>
+  Object.entries(query.value.filters)
+    .filter(([, value]) => value !== '')
+    .map(([id, value]) => ({ id, value })),
+)
+const paginationState = computed<PaginationState>(() => ({
+  pageIndex: query.value.page - 1,
+  pageSize: query.value.pageSize,
+}))
+
 const table = useVueTable({
   get data() {
     return props.rows
@@ -139,23 +159,16 @@ const table = useVueTable({
     props.paginated && !props.serverSide ? getPaginationRowModel() : undefined,
   state: {
     get sorting() {
-      return query.value.sort
-        ? [{ id: query.value.sort.key, desc: query.value.sort.direction === 'desc' }]
-        : []
+      return sortingState.value
     },
     get globalFilter() {
       return query.value.search
     },
     get columnFilters() {
-      return Object.entries(query.value.filters)
-        .filter(([, value]) => value !== '')
-        .map(([id, value]) => ({ id, value }))
+      return columnFiltersState.value
     },
     get pagination() {
-      return {
-        pageIndex: query.value.page - 1,
-        pageSize: query.value.pageSize,
-      }
+      return paginationState.value
     },
     get rowSelection() {
       return rowSelection.value
@@ -204,6 +217,8 @@ const gridTemplateColumns = computed(() =>
 )
 
 function clearFilters(): void {
+  if (!hasActiveQuery.value && query.value.page === 1) return
+
   query.value = {
     ...query.value,
     page: 1,
@@ -213,19 +228,24 @@ function clearFilters(): void {
 }
 
 function updateFilter(key: string, value: unknown): void {
+  const nextValue = typeof value === 'string' ? value : ''
+  if (query.value.filters[key] === nextValue && query.value.page === 1) return
+
   query.value = {
     ...query.value,
     page: 1,
     filters: {
       ...query.value.filters,
-      [key]: typeof value === 'string' ? value : '',
+      [key]: nextValue,
     },
   }
 }
 
 function updateSearch(updater: Updater<unknown>): void {
-  const next = applyUpdater(updater, query.value.search)
-  query.value = { ...query.value, page: 1, search: String(next ?? '') }
+  const nextSearch = String(applyUpdater(updater, query.value.search) ?? '')
+  if (query.value.search === nextSearch && query.value.page === 1) return
+
+  query.value = { ...query.value, page: 1, search: nextSearch }
 }
 
 function updateSorting(updater: Updater<SortingState>): void {
@@ -233,30 +253,41 @@ function updateSorting(updater: Updater<SortingState>): void {
     ? [{ id: query.value.sort.key, desc: query.value.sort.direction === 'desc' }]
     : []
   const next = applyUpdater(updater, current)[0]
+  const nextSort: ListViewQuery['sort'] = next
+    ? { key: next.id, direction: next.desc ? 'desc' : 'asc' }
+    : null
+  if (sameSort(query.value.sort, nextSort) && query.value.page === 1) return
+
   query.value = {
     ...query.value,
     page: 1,
-    sort: next
-      ? { key: next.id, direction: next.desc ? 'desc' : 'asc' }
-      : null,
+    sort: nextSort,
   }
 }
 
 function updateColumnFilters(updater: Updater<ColumnFiltersState>): void {
   const current = Object.entries(query.value.filters).map(([id, value]) => ({ id, value }))
   const next = applyUpdater(updater, current)
+  const nextFilters = Object.fromEntries(
+    next.map(({ id, value }) => [id, String(value ?? '')]),
+  )
+  if (sameStringRecord(query.value.filters, nextFilters) && query.value.page === 1) return
+
   query.value = {
     ...query.value,
     page: 1,
-    filters: Object.fromEntries(next.map(({ id, value }) => [id, String(value ?? '')])),
+    filters: nextFilters,
   }
 }
 
 function updatePagination(updater: Updater<PaginationState>): void {
   const next = applyUpdater(updater, pagination.value)
+  const nextPage = next.pageIndex + 1
+  if (query.value.page === nextPage && query.value.pageSize === next.pageSize) return
+
   query.value = {
     ...query.value,
-    page: next.pageIndex + 1,
+    page: nextPage,
     pageSize: next.pageSize,
   }
 }
@@ -290,16 +321,45 @@ function applyUpdater<T>(updater: Updater<T>, previous: T): T {
     : updater
 }
 
+function sameSort(
+  current: ListViewQuery['sort'],
+  next: ListViewQuery['sort'],
+): boolean {
+  if (!current || !next) return current === next
+  return current.key === next.key && current.direction === next.direction
+}
+
+function sameStringRecord(
+  current: Record<string, string>,
+  next: Record<string, string>,
+): boolean {
+  const currentKeys = Object.keys(current)
+  const nextKeys = Object.keys(next)
+  return (
+    currentKeys.length === nextKeys.length &&
+    currentKeys.every((key) => current[key] === next[key])
+  )
+}
+
+// Search + filters are only useful once there's data (or an active query). On a
+// genuinely empty list they add noise, so hide them — the empty state + the
+// #toolbar action carry the page instead.
+const showListControls = computed(
+  () =>
+    (props.searchable || props.filters.length > 0) &&
+    (hasRows.value || hasActiveQuery.value || props.loading),
+)
+
 defineExpose({ table })
 </script>
 
 <template>
   <section class="min-w-0">
     <div
-v-if="searchable || filters.length || $slots.toolbar"
+      v-if="showListControls || $slots.toolbar"
       class="flex flex-wrap items-center justify-between gap-3 pb-3"
     >
-      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      <div v-if="showListControls" class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         <TextInput
           v-if="searchable"
           :model-value="query.search"
@@ -370,7 +430,7 @@ label="Clear"
     <div class="relative min-w-0 overflow-x-auto">
       <div role="table" class="min-w-[720px]">
         <div v-if="hasRows || loading" role="row"
-          class="grid h-10 items-center gap-4 border-b border-outline-gray-2 px-3" :style="{ gridTemplateColumns }">
+          class="grid h-10 items-center gap-4 border-b border-outline-gray-2 px-2" :style="{ gridTemplateColumns }">
           <div v-for="header in table.getFlatHeaders()" :key="header.id" role="columnheader"
             :aria-sort="header.column.getCanSort() ? sortAria(header.column) : undefined"
             class="flex min-w-0 items-center gap-2 truncate text-sm text-ink-gray-5" :class="[
@@ -398,7 +458,7 @@ label="Clear"
 
         <div v-if="loading && !hasRows" role="rowgroup">
           <div v-for="rowIndex in 5" :key="rowIndex" role="row"
-            class="grid min-h-[3.5rem] items-center gap-4 border-b border-outline-gray-1 px-3 py-2.5"
+            class="grid h-10 items-center gap-4 border-b border-outline-gray-1 px-2"
             :style="{ gridTemplateColumns }">
             <div v-for="column in visibleColumnCount" :key="column" role="cell" class="min-w-0">
               <div
@@ -445,7 +505,7 @@ label="Clear"
             v-for="row in pageRows"
             :key="row.id"
             role="row"
-            class="grid min-h-[3.5rem] cursor-default items-center gap-4 border-b border-outline-gray-1 px-3 py-2.5 text-sm transition-colors duration-150 ease-in-out hover:bg-surface-sidebar"
+            class="grid h-10 cursor-default items-center gap-4 border-b border-outline-gray-1 px-2 text-sm transition-colors duration-150 ease-in-out hover:bg-surface-sidebar"
             :class="
               row.getIsSelected() || activeKey === row.id
                 ? 'bg-surface-gray-2 hover:bg-surface-gray-3'

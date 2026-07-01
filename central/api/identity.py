@@ -3,14 +3,14 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
-from frappe import _
+from frappe.query_builder import Order
 
+from central.utils.guards import require_self_or_operator
 from central.iam import (
 	can,
 	get_all_capabilities,
 	get_effective_permissions,
 	get_fc_teams_claim,
-	get_user_team_names,
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
@@ -20,33 +20,28 @@ from central.iam import (
 
 
 # --- observe contract: inspect any user's grants -----------------------------
-# Gated to operators or the user themselves; never mutates grants or resources.
-
-
-def _assert_can_inspect(user: str) -> None:
-	if frappe.session.user != user and "System Manager" not in frappe.get_roles():
-		frappe.throw(_("Only System Manager can inspect another user's permissions"), frappe.PermissionError)
+# @require_self_or_operator gates each to the subject user or a System Manager;
+# never mutates grants or resources.
 
 
 @frappe.whitelist(methods=["GET"])
+@require_self_or_operator
 def fc_teams(user: str | None = None) -> dict:
-	user = user or frappe.session.user
 	frappe.only_for(("System Manager", "Central User"))
-	_assert_can_inspect(user)
-	return get_fc_teams_claim(user)
+	return get_fc_teams_claim(user or frappe.session.user)
 
 
 @frappe.whitelist(methods=["GET"])
+@require_self_or_operator
 def effective_permissions(user: str, team: str | None = None) -> dict:
 	frappe.only_for(("System Manager", "Central User"))
-	_assert_can_inspect(user)
 	return get_effective_permissions(user, team)
 
 
 @frappe.whitelist(methods=["GET"])
+@require_self_or_operator
 def check_capability(user: str, team: str, capability: str) -> dict:
 	frappe.only_for(("System Manager", "Central User"))
-	_assert_can_inspect(user)
 	return {
 		"user": user,
 		"team": team,
@@ -82,15 +77,68 @@ def my_teams() -> list[dict[str, Any]]:
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return []
-	out = []
-	for t in get_user_team_names(user):
-		r = frappe.db.get_value("Team", t, ["team_name", "owner_user"], as_dict=True) or {}
-		out.append({
-			"name": t,
-			"label": r.get("team_name") or r.get("owner_user") or t,
-			"owner": r.get("owner_user"),
-		})
-	return out
+
+	team = frappe.qb.DocType("Team")
+	member = frappe.qb.DocType("Team Member")
+
+	rows = (
+		frappe.qb.from_(member)
+		.join(team)
+		.on(team.name == member.parent)
+		.select(team.name, team.team_name, team.owner_user)
+		.where(
+			(member.parenttype == "Team")
+			& (member.parentfield == "members")
+			& (member.user == user)
+			& (member.status == "Active")
+			& (team.status == "Active")
+		)
+		.orderby(team.team_name)
+	).run(as_dict=True)
+
+	return [
+		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user}
+		for r in rows
+	]
+
+
+@frappe.whitelist(methods=["GET"])
+def my_invitations() -> list[dict[str, Any]]:
+	"""Pending, unexpired invitations addressed to the signed-in user — the invitee's
+	inbox. Each carries the inviting team's label so the console can render it without
+	a second call."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		return []
+
+	invitation = frappe.qb.DocType("Team Invitation")
+	team = frappe.qb.DocType("Team")
+
+	rows = (
+		frappe.qb.from_(invitation)
+		.left_join(team)
+		.on(team.name == invitation.team)
+		.select(
+			invitation.name,
+			invitation.team,
+			invitation.role,
+			invitation.invited_by,
+			invitation.expires_on,
+			invitation.creation,
+			team.team_name,
+		)
+		.where(
+			(invitation.email == user)
+			& (invitation.status == "Pending")
+			& (invitation.expires_on >= frappe.utils.today())
+		)
+		.orderby(invitation.creation, order=Order.desc)
+	).run(as_dict=True)
+
+	for row in rows:
+		row["team_name"] = row.team_name or row.team
+
+	return rows
 
 
 @frappe.whitelist(methods=["GET"])

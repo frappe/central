@@ -27,16 +27,18 @@ def _default_region() -> str:
 
 @frappe.whitelist(methods=["POST"])
 def create_site(subdomain: str, region: str | None = None) -> dict:
-	"""Provision a self-serve site for the user's team. Gated on `site:create`.
+	"""Provision a self-serve site for the user's team. Gated on `server:create`.
 
-	Central supplies *what* (the owning team + the subdomain); Atlas
+	Server is the atomic unit, so deploying a site is authorized by the same
+	provisioning capability as standing up a server (site-level capabilities are
+	deferred). Central supplies *what* (the owning team + the subdomain); Atlas
 	owns placement, the fixed size, and the region/domain. We seed the Atlas tenant
 	with the team owner's email on first use, then mirror the returned Pending row
 	so the onboarding screen has something to poll immediately — the site.* events
 	keep it fresh from there."""
 	user = frappe.session.user
 	team = resolve_team(user)
-	if not can(user, team, "site:create"):
+	if not can(user, team, "server:create"):
 		frappe.throw("You can't create sites for this team.", frappe.PermissionError)
 
 	region = region or _default_region()

@@ -1,15 +1,5 @@
 [
  {
-  "capability": "asset:view",
-  "description": "View team-owned assets in the Central registry.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-08 19:52:59.230029",
-  "name": "asset:view",
-  "plane": "central",
-  "resource": "asset"
- },
- {
   "capability": "billing:manage",
   "description": "Manage billing settings and payment operations.",
   "docstatus": 0,
@@ -40,16 +30,6 @@
   "resource": "cluster"
  },
  {
-  "capability": "server:config",
-  "description": "Edit server (bench) config, restart processes, run updates and upgrades.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-17 00:00:00",
-  "name": "server:config",
-  "plane": "bench",
-  "resource": "server"
- },
- {
   "capability": "server:create",
   "description": "Provision a new server.",
   "docstatus": 0,
@@ -61,7 +41,7 @@
  },
  {
   "capability": "server:open",
-  "description": "Open a server's console (bench admin) via signed-token SSO.",
+"description": "Open a server's console(bench admin).",
   "docstatus": 0,
   "doctype": "Capability",
   "modified": "2026-06-17 00:00:00",
@@ -118,116 +98,6 @@
   "name": "server:view",
   "plane": "atlas",
   "resource": "server"
- },
- {
-  "capability": "site:apps",
-  "description": "Install and uninstall apps on a site.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-17 00:00:00",
-  "name": "site:apps",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:backup",
-  "description": "Trigger and download site backups.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "site:backup",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:config",
-  "description": "Edit site config (site_config.json).",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "site:config",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:console",
-  "description": "Run bench tasks and manage site background jobs.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-17 00:00:00",
-  "name": "site:console",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:create",
-  "description": "Create a new site.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "site:create",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:db",
-  "description": "Database console and query access.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-17 00:00:00",
-  "name": "site:db",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:delete",
-  "description": "Drop a site.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "site:delete",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:logs",
-  "description": "View site and process logs.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-17 00:00:00",
-  "name": "site:logs",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:migrate",
-  "description": "Run migrate and schema changes.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "site:migrate",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:restore",
-  "description": "Restore a site from backup.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "site:restore",
-  "plane": "bench",
-  "resource": "site"
- },
- {
-  "capability": "site:view",
-  "description": "List sites; view site detail, logs, tasks.",
-  "docstatus": 0,
-  "doctype": "Capability",
-  "modified": "2026-06-15 00:00:00",
-  "name": "site:view",
-  "plane": "bench",
-  "resource": "site"
  },
  {
   "capability": "team:delete",

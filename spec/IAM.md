@@ -48,16 +48,20 @@ There are no per-user capability overrides. A Team owner is an active
 | Role | Intended access |
 | --- | --- |
 | Owner | All Team capabilities |
-| Admin | Team management and VM operations, excluding billing |
-| Developer | VM operations |
-| Viewer | Read-only VM access |
-| Billing | Billing and read-only Team access |
+| Admin | Team management and server operations, excluding billing and team deletion |
+| Developer | Full server operations |
+| Viewer | Read-only server access |
+| Billing | Billing and read-only server access |
 
 A member has one role per Team. Create a custom Team role when a member needs a
 combination such as administration and billing.
 
-VM capabilities include `vm:view`, `vm:create`, `vm:start`, `vm:stop`,
-`vm:resize`, `vm:snapshot`, `vm:rebuild`, `vm:clone`, and `vm:terminate`.
+Server is the atomic unit (capability model v3): role capabilities live at the
+team and server level only. Server capabilities are `server:view`,
+`server:create`, `server:power`, `server:resize`, `server:snapshot`,
+`server:terminate`, and `server:open`, plus `cluster:view` for placement. The
+site-level (bench-plane) capabilities are deferred; see
+[`CAPABILITIES.md`](../CAPABILITIES.md) for the full taxonomy.
 
 ## User And Invitation Flow
 
@@ -114,7 +118,7 @@ The `fc_teams` claim maps each Team to its grants:
       "role": "Developer",
       "source": "member",
       "scope": "*",
-      "caps": ["vm:view", "vm:start", "vm:stop"]
+      "caps": ["server:view", "server:power", "server:open"]
     }
   ]
 }

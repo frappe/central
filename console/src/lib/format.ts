@@ -11,11 +11,19 @@ export function currencySymbol(currency: string): string {
   return CURRENCY_SYMBOL[currency] ?? ''
 }
 
-/** "₹5,000.00" — symbol + two-decimal grouped major units. */
-export function money(amount: number | null | undefined, currency = 'INR'): string {
-  const major = Number(amount ?? 0).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+/** "₹5,000.00" — symbol + two-decimal grouped major units.
+ *  Pass `trimTrailingZeros` to drop the decimals for whole amounts, e.g. plan
+ *  prices ("₹4,000" instead of "₹4,000.00"). */
+export function money(
+  amount: number | null | undefined,
+  currency = 'INR',
+  { trimTrailingZeros = false }: { trimTrailingZeros?: boolean } = {},
+): string {
+  const value = Number(amount ?? 0)
+  const decimals = trimTrailingZeros && Number.isInteger(value) ? 0 : 2
+  const major = value.toLocaleString(undefined, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
   })
   return `${currencySymbol(currency)}${major}`
 }
@@ -60,4 +68,12 @@ export function formatSyncedAt(value: string | null | undefined): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+/** ISO date (no time) → short label, e.g. "Jul 7, 2026". Returns '' when unset. */
+export function formatDate(value: string | null | undefined): string {
+  if (!value) return ''
+  const date = new Date(value.replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }

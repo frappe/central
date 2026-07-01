@@ -26,7 +26,7 @@ function has(cap: string): boolean {
 export function useCapabilities() {
   return {
     loading: computed(() => capsCall.loading),
-    canViewServers: computed(() => has('server:view') || has('asset:view')),
+    canViewServers: computed(() => has('server:view')),
     canCreateServer: computed(() => has('server:create')),
     canPowerServer: computed(() => has('server:power')),
     canTerminateServer: computed(() => has('server:terminate')),
@@ -34,6 +34,13 @@ export function useCapabilities() {
     canViewClusters: computed(() => has('cluster:view')),
     canViewBilling: computed(() => has('billing:view')),
     canManageBilling: computed(() => has('billing:manage')),
+    // Team & identity — every active member can view the roster (membership is
+    // "any capability on the team"); managing members/roles and editing or
+    // deleting the team are the gated mutations.
+    isMember: computed(() => (capsCall.data?.length ?? 0) > 0),
+    canManageMembers: computed(() => has('team:manage_members')),
+    canEditTeam: computed(() => has('team:edit')),
+    canDeleteTeam: computed(() => has('team:delete')),
     reload: () => capsCall.reload(),
   }
 }

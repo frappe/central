@@ -3,7 +3,7 @@ import { computed, h } from 'vue'
 import { Badge } from 'frappe-ui'
 import { ListView, type ListViewColumn } from '@/components/common/list-view'
 import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
-import { formatMoney } from '@/lib/plans'
+import { money } from '@/lib/format'
 import type { SubscriptionRow } from '@/types/billing'
 
 // The team's subscriptions, rendered with the same ListView the server list uses.
@@ -55,7 +55,7 @@ const columns = computed<ListViewColumn<SubscriptionRow>[]>(() => [
         'span',
         { class: 'text-ink-gray-7' },
         row.original.monthly_rate != null
-          ? `${formatMoney(row.original.monthly_rate, row.original.currency)}/mo`
+          ? `${money(row.original.monthly_rate, row.original.currency, { trimTrailingZeros: true })}/mo`
           : '—',
       ),
   },
