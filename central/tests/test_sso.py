@@ -60,10 +60,10 @@ class TestCentralSSO(IntegrationTestCase):
 
 		self.assertEqual(claims["sub"], self.developer)
 		self.assertEqual(claims["team"], team.name)
-		# Bench-plane caps only — never central/atlas caps. server:view is atlas
-		# (the console-open gate lives in Central), so it never reaches the bench.
-		self.assertIn("site:view", claims["caps"])
-		self.assertIn("site:migrate", claims["caps"])
+		# The bench plane is deferred (v3), so the token carries no caps yet — but the
+		# mint still filters by plane, so central/atlas caps never leak to the bench.
+		# When site:* returns under the bench plane it will flow through unchanged.
+		self.assertEqual(claims["caps"], [])
 		self.assertNotIn("billing:view", claims["caps"])
 		self.assertNotIn("server:view", claims["caps"])
 		self.assertNotIn("server:create", claims["caps"])

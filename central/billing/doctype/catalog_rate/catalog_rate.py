@@ -1,19 +1,22 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Catalog Rate — one standalone rate per (Plan, cluster, currency).
+"""Catalog Rate — one standalone rate per (priced thing, cluster, currency).
 
-Mirrors ERPNext's `Item Price`: a single table prices every Plan, linked via a
-Dynamic Link (`priced_doctype` + `priced_for`). The rate is the flat price for a
-fixed bundle and the per-unit price for a metered single-resource Plan (ADR 0008,
-which folded the standalone Add-on into Plan).
+Mirrors ERPNext's `Item Price`: a single table prices both a whole `Plan` and an
+individual `Resource Type`, linked via a Dynamic Link (`priced_doctype` +
+`priced_for`). For a Plan the rate is the flat bundle price (or the per-unit price
+of a metered single-resource Plan, ADR 0008); for a Resource Type it is the
+per-unit component rate (`$/vCPU`, `$/GB`) the composed-config rate card is summed
+from (ADR 0009).
 """
 
 import frappe
 from frappe.model.document import Document
 
-# `priced_doctype` is restricted to Plan via validation (a Dynamic Link to DocType
-# is otherwise unconstrained). Add-on was retired into Plan by ADR 0008.
-ALLOWED_PARENTS = ("Plan",)
+# `priced_doctype` is a Dynamic Link to DocType and otherwise unconstrained, so
+# validation pins it to the two things we price: a whole Plan (ADR 0008) and a
+# Resource Type component for à-la-carte composed configs (ADR 0009).
+ALLOWED_PARENTS = ("Plan", "Resource Type")
 
 
 class CatalogRate(Document):

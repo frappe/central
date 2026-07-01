@@ -19,6 +19,59 @@ export interface Team {
   owner: string | null
 }
 
+export type MemberStatus = 'Active' | 'Suspended'
+export type CapabilityPlane = 'central' | 'atlas' | 'bench'
+export type InvitationStatus = 'Pending' | 'Accepted' | 'Expired' | 'Revoked' | 'Declined'
+
+/** central.api.teams.list_team_members item. */
+export interface TeamMemberRow {
+  user: string
+  role: string
+  status: MemberStatus
+  is_owner: boolean
+}
+
+/** central.api.teams.list_team_roles item — a role plus the capabilities it grants. */
+export interface TeamRoleRow {
+  name: string
+  role_name: string
+  is_system: 0 | 1
+  team: string | null
+  capabilities: string[]
+}
+
+/** central.api.teams.list_capabilities item — the palette of authorization atoms. */
+export interface CapabilityInfo {
+  name: string
+  plane: CapabilityPlane
+  resource: string
+  description: string
+}
+
+/** central.api.teams.list_team_invitations item (the manager's view). */
+export interface InvitationRow {
+  name: string
+  email: string
+  role: string
+  status: InvitationStatus
+  invited_by: string | null
+  expires_on: string | null
+  accepted_by: string | null
+  accepted_at: string | null
+  creation: string
+}
+
+/** central.api.identity.my_invitations item (the invitee's inbox). */
+export interface MyInvitation {
+  name: string
+  team: string
+  team_name: string
+  role: string
+  invited_by: string | null
+  expires_on: string | null
+  creation: string
+}
+
 /** One bundled resource in a plan (central Plan Includes). */
 export interface PlanInclude {
   resource_type: 'Compute' | 'Memory' | 'Disk' | 'Transfer' | 'IP' | 'Snapshot'
@@ -54,4 +107,33 @@ export interface ProvisionablePlans {
   /** Remaining headroom in the team's currency: a plan is offered only if it fits. */
   available: number
   plans: Record<string, Plan[]>
+  /** Per-resource component rates for "design your own" (#79). Empty when a
+   *  component isn't priced for the team's currency — composed configs not offered. */
+  rate_card: RateCard
+  /** Optimisation-profile bounds the slider snaps + clamps to (#81). */
+  profiles: Profile[]
+}
+
+/** The per-resource rate card: `{ Compute: { rate, unit }, … }`. */
+export type RateCard = Partial<Record<'Compute' | 'Memory' | 'Disk', { rate: number; unit: string }>>
+
+/** A compute optimisation profile's runtime bounds (Plan Sub-Category, #81). */
+export interface Profile {
+  sub_category: string
+  /** GB RAM per vCPU: RAM = vCPU × ram_ratio. */
+  ram_ratio: number
+  /** Allowed vCPU values the slider snaps to. */
+  vcpu_steps: number[]
+  /** Allowed storage values (GB) the slider snaps to, within [disk_min, disk_max]. */
+  disk_steps: number[]
+  disk_min: number
+  disk_max: number
+}
+
+/** A design-your-own composition: quantity per compute primitive. */
+export interface ComposedConfig {
+  sub_category: string
+  vcpus: number
+  memory_gb: number
+  disk_gb: number
 }

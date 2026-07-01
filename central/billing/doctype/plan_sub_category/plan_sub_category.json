@@ -9,8 +9,14 @@
  "field_order": [
   "sub_category_name",
   "category",
-  "memory_ratio",
-  "is_active"
+  "is_active",
+  "compose_section",
+  "ram_ratio",
+  "vcpu_steps",
+  "column_break_compose",
+  "disk_min",
+  "disk_max",
+  "memory_ratio"
  ],
  "fields": [
   {
@@ -30,18 +36,50 @@
    "reqd": 1
   },
   {
-   "fieldname": "memory_ratio",
-   "fieldtype": "Select",
-   "label": "Memory Ratio",
-   "options": "\n1:2\n1:4\n1:6\n1:8",
-   "description": "VM compute profiles only: GB RAM per vCPU the configurator pins for this optimisation profile (e.g. CPU Optimised 1:2, General 1:4, Memory/Storage Optimised 1:8). Blank for non-compute families."
-  },
-  {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Is Active"
+  },
+  {
+   "fieldname": "compose_section",
+   "fieldtype": "Section Break",
+   "label": "Composed-Config Bounds",
+   "description": "VM compute profiles only (ADR 0009): the runtime constraints a design-your-own config is validated against. Blank for non-compute families."
+  },
+  {
+   "fieldname": "ram_ratio",
+   "fieldtype": "Int",
+   "label": "RAM Ratio",
+   "description": "GB RAM per vCPU for this optimisation profile (RAM = vCPU x ratio). Source of truth for the configurator's pinned ratio."
+  },
+  {
+   "fieldname": "vcpu_steps",
+   "fieldtype": "Data",
+   "label": "vCPU Steps",
+   "description": "Comma-separated allowed vCPU values, e.g. 1,2,4,8,16. The slider snaps to these."
+  },
+  {
+   "fieldname": "column_break_compose",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "disk_min",
+   "fieldtype": "Int",
+   "label": "Disk Min (GB)"
+  },
+  {
+   "fieldname": "disk_max",
+   "fieldtype": "Int",
+   "label": "Disk Max (GB)"
+  },
+  {
+   "fieldname": "memory_ratio",
+   "fieldtype": "Select",
+   "label": "Memory Ratio (legacy)",
+   "options": "\n1:2\n1:4\n1:6\n1:8",
+   "description": "Legacy display of ram_ratio as a 1:N string; ram_ratio is authoritative. Kept for backward-compatibility."
   }
  ],
  "index_web_pages_for_search": 1,

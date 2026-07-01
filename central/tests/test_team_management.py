@@ -4,6 +4,21 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
+from central.api.identity import my_invitations
+from central.api.teams import (
+	create_custom_role,
+	create_team,
+	delete_custom_role,
+	delete_team,
+	decline_invitation,
+	invite_team_member,
+	list_team_invitations,
+	rename_team,
+	resend_invitation,
+	revoke_invitation,
+	set_team_member_role,
+	transfer_team_ownership,
+)
 from central.central.doctype.team_invitation.team_invitation import expire_pending_invitations
 from central.iam import can, get_fc_teams_claim
 
@@ -55,7 +70,7 @@ class TestTeamManagement(IntegrationTestCase):
 		result = frappe.get_doc("Team Invitation", invitation_name).accept()
 
 		self.assertTrue(result["accepted"])
-		self.assertTrue(can(self.invitee, self.team.name, "site:create"))
+		self.assertTrue(can(self.invitee, self.team.name, "server:create"))
 		self.assertIn(self.team.name, get_fc_teams_claim(self.invitee))
 
 		invitation = frappe.get_doc("Team Invitation", invitation_name)
@@ -71,7 +86,7 @@ class TestTeamManagement(IntegrationTestCase):
 		message = sendmail.call_args.kwargs["message"]
 		self.assertIn("Join Managed Team", message)
 		self.assertIn("Developer", message)
-		self.assertIn(f"/app/team-invitation/{invitation_name}", message)
+		self.assertIn(f"/dashboard/invitations/{invitation_name}", message)
 		self.assertIn("View invitation", message)
 
 	def test_admin_can_invite_but_viewer_cannot(self):
@@ -156,7 +171,7 @@ class TestTeamManagement(IntegrationTestCase):
 			team.set_member_role(self.viewer, "Owner")
 
 		team.set_member_role(self.viewer, "Developer")
-		self.assertTrue(can(self.viewer, self.team.name, "site:create"))
+		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
 
 	def test_only_owner_can_transfer_ownership(self):
 		frappe.set_user(self.admin)
@@ -171,3 +186,136 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(team.owner_user, self.admin)
 		self.assertEqual(team._get_member(self.admin).role, "Owner")
 		self.assertEqual(team._get_member(self.owner).role, "Admin")
+
+	# --- API endpoints (central.api.teams / central.api.identity) ----------------
+
+	def test_create_team_makes_caller_the_owner(self):
+		frappe.set_user(self.owner)
+		result = create_team("Fresh Team")
+
+		team = frappe.get_doc("Team", result["name"])
+		self.assertEqual(team.owner_user, self.owner)
+		self.assertEqual(team._get_member(self.owner).role, "Owner")
+		self.assertTrue(can(self.owner, team.name, "team:delete"))
+
+	def test_list_team_invitations_is_manager_only(self):
+		frappe.set_user(self.owner)
+		invite_team_member(self.team.name, self.invitee, "Developer")
+
+		rows = list_team_invitations(self.team.name)
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["email"], self.invitee)
+		self.assertEqual(rows[0]["status"], "Pending")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			list_team_invitations(self.team.name)
+
+	def test_resend_invitation_extends_expiry_and_re_emails(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(self.team.name, self.invitee, "Developer")
+		frappe.db.set_value("Team Invitation", name, "expires_on", add_days(today(), 1))
+
+		with patch("central.central.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
+			result = resend_invitation(name)
+
+		sendmail.assert_called_once()
+		self.assertEqual(str(result["expires_on"]), add_days(today(), 7))
+
+	def test_revoke_invitation_blocks_further_acceptance(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(self.team.name, self.invitee, "Developer")
+
+		self.assertTrue(revoke_invitation(name)["revoked"])
+		self.assertEqual(frappe.db.get_value("Team Invitation", name, "status"), "Revoked")
+
+		frappe.set_user(self.invitee)
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc("Team Invitation", name).accept()
+
+	def test_invitee_declines_but_others_cannot(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(self.team.name, self.invitee, "Developer")
+
+		frappe.set_user(self.admin)
+		with self.assertRaises(frappe.PermissionError):
+			decline_invitation(name)
+
+		frappe.set_user(self.invitee)
+		self.assertTrue(decline_invitation(name)["declined"])
+		self.assertEqual(frappe.db.get_value("Team Invitation", name, "status"), "Declined")
+		self.assertFalse(can(self.invitee, self.team.name, "server:view"))
+
+	def test_my_invitations_lists_pending_for_the_signed_in_user(self):
+		frappe.set_user(self.owner)
+		invite_team_member(self.team.name, self.invitee, "Developer")
+
+		frappe.set_user(self.invitee)
+		rows = my_invitations()
+
+		mine = next(r for r in rows if r["team"] == self.team.name)
+		self.assertEqual(mine["team_name"], "Managed Team")
+		self.assertEqual(mine["role"], "Developer")
+		self.assertTrue(all(r["status"] != "Accepted" for r in rows if "status" in r))
+
+	def test_delete_custom_role_guards_system_and_in_use_roles(self):
+		frappe.set_user(self.owner)
+		role = create_custom_role(self.team.name, "Snapshotter", ["server:snapshot"])["role"]
+
+		# A system role can never be deleted.
+		with self.assertRaises(frappe.ValidationError):
+			delete_custom_role("Viewer")
+
+		# In use by a member -> refused until reassigned.
+		set_team_member_role(self.team.name, self.viewer, role)
+		with self.assertRaises(frappe.ValidationError):
+			delete_custom_role(role)
+
+		set_team_member_role(self.team.name, self.viewer, "Viewer")
+		self.assertTrue(delete_custom_role(role)["deleted"])
+		self.assertFalse(frappe.db.exists("Team Role", role))
+
+	def test_rename_team_needs_team_edit(self):
+		frappe.set_user(self.admin)
+		result = rename_team(self.team.name, "Renamed via API")
+		self.assertEqual(result["team_name"], "Renamed via API")
+
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			rename_team(self.team.name, "Viewer Rename")
+
+	def test_transfer_team_ownership_via_api_is_owner_only(self):
+		frappe.set_user(self.admin)
+		with self.assertRaises(frappe.PermissionError):
+			transfer_team_ownership(self.team.name, self.admin)
+
+		frappe.set_user(self.invitee)
+		with self.assertRaises(frappe.PermissionError):
+			transfer_team_ownership(self.team.name, self.admin)
+
+		frappe.set_user(self.owner)
+		transfer_team_ownership(self.team.name, self.admin)
+		self.assertEqual(frappe.db.get_value("Team", self.team.name, "owner_user"), self.admin)
+
+	def test_delete_team_is_owner_only(self):
+		frappe.set_user(self.owner)
+		fresh = create_team("Disposable Team")["name"]
+
+		frappe.set_user(self.admin)
+		with self.assertRaises(frappe.PermissionError):
+			delete_team(fresh)
+
+		frappe.set_user(self.owner)
+		self.assertTrue(delete_team(fresh)["deleted"])
+		self.assertFalse(frappe.db.exists("Team", fresh))
+
+	def test_delete_team_clears_invitations_that_would_block_it(self):
+		# An invitation Links to the Team; without cleanup the delete raised
+		# LinkExistsError. delete_team clears invitations + custom roles first.
+		frappe.set_user(self.owner)
+		team = create_team("Team With Invite")["name"]
+		invite = invite_team_member(team, "blocks.delete@example.test", "Viewer")
+
+		self.assertTrue(delete_team(team)["deleted"])
+		self.assertFalse(frappe.db.exists("Team", team))
+		self.assertFalse(frappe.db.exists("Team Invitation", invite))

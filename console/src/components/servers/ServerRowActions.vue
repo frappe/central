@@ -21,6 +21,7 @@ const emit = defineEmits<{
   open: [server: AssetRow]
   start: [server: AssetRow]
   stop: [server: AssetRow]
+  resize: [server: AssetRow]
   terminate: [server: AssetRow]
 }>()
 
@@ -45,6 +46,9 @@ const options = computed(() => {
     items.push({ label: 'Start', icon: 'lucide-play', onClick: () => emit('start', props.server) })
   if (props.canPower && canStop(props.server.status))
     items.push({ label: 'Stop', icon: 'lucide-square', onClick: () => emit('stop', props.server) })
+  // Resize a custom (composed) config; the dialog no-ops for a preset server.
+  if (props.canPower && !isTerminated(props.server.status))
+    items.push({ label: 'Resize', icon: 'lucide-sliders-horizontal', onClick: () => emit('resize', props.server) })
   if (props.canTerminate && !isTerminated(props.server.status))
     items.push({
       label: 'Terminate',

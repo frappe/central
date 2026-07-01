@@ -52,7 +52,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nAccepted\nExpired\nRevoked",
+   "options": "Pending\nAccepted\nExpired\nRevoked\nDeclined",
    "read_only": 1
   },
   {
@@ -130,6 +130,10 @@
   {
    "color": "Red",
    "title": "Revoked"
+  },
+  {
+   "color": "Gray",
+   "title": "Declined"
   }
  ],
  "track_changes": 1

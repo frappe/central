@@ -116,11 +116,11 @@ class TestBuildLadder(IntegrationTestCase):
 		self.assertEqual(configurator.ratio_for(None, "1:4"), "1:4")
 
 	def test_ratio_is_configurable_on_the_sub_category(self):
-		# The fallback ratio is data, not code: set it on the master and a blank
-		# configurator ratio follows it.
+		# The fallback ratio is data, not code: set the authoritative numeric ram_ratio
+		# on the master and a blank configurator ratio follows it as a 1:N string (#81).
 		frappe.get_doc({
 			"doctype": "Plan Sub-Category", "sub_category_name": "Cfg Ratio Test",
-			"category": "VM Plans", "memory_ratio": "1:6",
+			"category": "VM Plans", "ram_ratio": 6,
 		}).insert(ignore_permissions=True)
 		self.addCleanup(frappe.delete_doc, "Plan Sub-Category", "Cfg Ratio Test", force=True)
 		self.assertEqual(configurator.ratio_for("Cfg Ratio Test", None), "1:6")

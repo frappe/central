@@ -86,8 +86,8 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <Dialog v-model:open="open" :options="{ title: 'Top up wallet' }">
-    <template #body-content>
+  <Dialog v-model:open="open" title="Top up wallet">
+    <template #default>
       <!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
       <div v-if="cardPhase" class="space-y-3">
         <p class="text-sm text-ink-gray-8">Paying {{ money(Number(amount), currency) }}</p>

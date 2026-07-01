@@ -4,39 +4,30 @@ from collections import defaultdict
 from typing import Any
 
 import frappe
+from frappe import _
 
 OPERATOR_BYPASS_ROLE = "System Manager"
 
 # Bumped whenever the capability taxonomy changes. Stamped into the SSO assertion
 # (`cap_version`) so a bench can detect drift from its own `BENCH_CAPS` mirror.
-# v2: vm:*/bench:* collapsed into server:*; site sub-caps renamed (app:install ->
-# site:apps, db:access -> site:db, log:view -> site:logs, task:run -> site:console).
-CAPABILITY_VERSION = 2
+# v3: server is the atomic unit — the bench plane (site:* + server:config) and the
+# redundant asset:view are dropped; role capabilities live at team + server level
+# only. The plane field and the bench-caps SSO mint stay, so site caps can return
+# under the bench plane later with no contract change.
+CAPABILITY_VERSION = 3
 
 # Capability implications: granting the key implies every cap in the value. Acting
 # on a resource is meaningless without seeing it, so we close every grant under
 # these before it is asserted or evaluated — the role builder can let a user tick
-# `site:create` without also remembering `site:view`/`server:view`, and a grant
+# `server:create` without also remembering `server:view`/`cluster:view`, and a grant
 # hand-crafted through the API can't bypass it either. Phase 1: scope is still "*".
 CAP_IMPLICATIONS = {
-	"site:view": ("server:view",),
-	"site:create": ("site:view", "server:view"),
-	"site:delete": ("site:view", "server:view"),
-	"site:backup": ("site:view", "server:view"),
-	"site:restore": ("site:view", "server:view"),
-	"site:migrate": ("site:view", "server:view"),
-	"site:config": ("site:view", "server:view"),
-	"site:apps": ("site:view", "server:view"),
-	"site:db": ("site:view", "server:view"),
-	"site:logs": ("site:view", "server:view"),
-	"site:console": ("site:view", "server:view"),
 	"server:open": ("server:view",),
 	"server:create": ("server:view", "cluster:view"),
 	"server:terminate": ("server:view",),
 	"server:power": ("server:view",),
 	"server:resize": ("server:view",),
 	"server:snapshot": ("server:view",),
-	"server:config": ("server:view",),
 }
 
 
@@ -95,6 +86,36 @@ def get_user_team_names(user: str) -> list[str]:
 	return [row.name for row in rows]
 
 
+def is_active_team_member(user: str, team: str) -> bool:
+	"""
+	Whether `user` is an active member of the active team `team`. A scoped
+	existence check — cheaper than resolving grants or listing every team.
+	"""
+
+	member = frappe.qb.DocType("Team Member")
+	team_doc = frappe.qb.DocType("Team")
+
+	query = (
+			frappe.qb.from_(member)
+			.join(team_doc)
+			.on(team_doc.name == member.parent)
+			.select(member.name)
+			.where(
+				(member.parenttype == "Team")
+				& (member.parentfield == "members")
+				& (member.user == user)
+				& (member.status == "Active")
+				& (team_doc.name == team)
+				& (team_doc.status == "Active")
+			)
+			.limit(1)
+		)
+
+	return bool(
+		query.run()
+	)
+
+
 def resolve_team(user: str, team: str | None = None) -> str:
 	"""The team to act on: the one given, else the user's sole active team. With
 	zero or many teams and none specified, the caller must pick one."""
@@ -102,7 +123,7 @@ def resolve_team(user: str, team: str | None = None) -> str:
 		return team
 	teams = get_user_team_names(user)
 	if len(teams) != 1:
-		frappe.throw("Specify a team.", frappe.ValidationError)
+		frappe.throw(_("Specify a team."), frappe.ValidationError)
 	return teams[0]
 
 
@@ -188,7 +209,7 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 
 	# Close every grant under the implication rules so enforcement (`can`, the SSO
 	# mint, the capability reads) always sees a self-consistent set — never
-	# site:create without the site:view/server:view it depends on.
+	# server:create without the server:view/cluster:view it depends on.
 	for grant in grants_by_key.values():
 		grant["caps"] = expand_capabilities(grant["caps"])
 

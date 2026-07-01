@@ -32,13 +32,12 @@ def _to_inr(amount, currency) -> float:
 
 
 def _team_currency(team: str) -> str:
-	# Billing Profile currency is the source of truth; fall back to a price-lock
+	# Billing Profile currency is the source of truth; fall back to an open-segment
 	# currency (legacy teams) then INR.
-	return (
-		frappe.db.get_value("Billing Profile", team, "currency")
-		or frappe.db.get_value("Price Lock", {"team": team}, "currency")
-		or "INR"
-	)
+	from central.billing.catalog.subscriptions import team_active_segments
+
+	seg_currency = next((s.currency for s in team_active_segments(team) if s.currency), None)
+	return frappe.db.get_value("Billing Profile", team, "currency") or seg_currency or "INR"
 
 
 def _plan_monthly_inr(plan: str, cluster: str | None) -> float:
@@ -62,8 +61,11 @@ def _asset_cluster_map(asset_ids) -> dict:
 	}
 
 
-def _active_locks(filters=None):
-	f = {"ended_at": ["is", "not set"]}
-	if filters:
-		f.update(filters)
-	return frappe.get_all("Price Lock", filters=f, fields=["team", "cluster", "plan", "locked_rate"])
+def _active_segments(filters=None):
+	"""Every team's open billing segment (team, cluster, plan, locked_rate), resolved
+	from the `Subscription Change` ledger — the retired `Price Lock`'s replacement for
+	admin consumption aggregates (#86). Composed configs are now included, so a region
+	running only custom servers is no longer invisible in cluster/plan consumption."""
+	from central.billing.catalog.subscriptions import active_segments
+
+	return active_segments(filters)

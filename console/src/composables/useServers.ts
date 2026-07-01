@@ -83,6 +83,7 @@ type CreateParams = {
   team: string
   region: string
   title: string
+  plan: string
   vcpus: number
   memory_megabytes: number
   disk_gigabytes: number
@@ -90,6 +91,22 @@ type CreateParams = {
 }
 const createCall = useCall<{ resource_id: string }, CreateParams>({
   url: method(API.createServer),
+  method: 'POST',
+  immediate: false,
+})
+
+// Design-your-own (composed) provision: the server is built from a composition
+// (qty per resource) + its optimisation profile, billed à la carte (#80/#84).
+type ComposedInclude = { resource_type: string; quantity: number; unit: string }
+type CreateComposedParams = {
+  team: string
+  region: string
+  title: string
+  includes: ComposedInclude[]
+  sub_category: string
+}
+const createComposedCall = useCall<{ resource_id: string }, CreateComposedParams>({
+  url: method(API.createComposedServer),
   method: 'POST',
   immediate: false,
 })
@@ -180,6 +197,18 @@ export function useServers() {
     return createCall.data?.resource_id ?? ''
   }
 
+  // Provision a design-your-own (composed) server. Same contract as create().
+  async function createComposed(params: Omit<CreateComposedParams, 'team'>): Promise<string> {
+    await createComposedCall.submit({ team: activeTeam.value!, ...params })
+    if (createComposedCall.error) {
+      errorToast(createComposedCall.error)
+      throw createComposedCall.error
+    }
+    successToast(`Creating ${params.title} in ${params.region}.`)
+    registry.reload()
+    return createComposedCall.data?.resource_id ?? ''
+  }
+
   return {
     servers: registry.rows,
     totalRows: registry.totalRows,
@@ -193,6 +222,7 @@ export function useServers() {
     ),
     refreshing: computed(() => refresh.loading),
     creating: computed(() => createCall.loading),
+    creatingComposed: computed(() => createComposedCall.loading),
     // Atlas instances that couldn't be reached on the last refresh — their rows
     // show last-known data.
     stale: computed<string[]>(() => refresh.data?.stale ?? []),
@@ -201,6 +231,7 @@ export function useServers() {
     reload: () => registry.reload(),
     refreshAssets,
     create,
+    createComposed,
     start,
     stop,
     terminate,

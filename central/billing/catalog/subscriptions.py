@@ -58,13 +58,16 @@ def _record_change(subscription: str, change_type: str, old_value=None, new_valu
 def create_subscription(
 	team: str,
 	cluster: str,
-	plan: str,
+	plan: str | None = None,
 	billing_cycle: str = "Monthly",
 	start_date=None,
 	default_payment_method: str | None = None,
 	gateway: str | None = None,
 	changed_by: str | None = None,
 	resource_id: str | None = None,
+	pricing_mode: str = "Preset",
+	includes: list | None = None,
+	sub_category: str | None = None,
 ):
 	"""Record a subscription INTENT — what the customer asked for — linked to its
 	runtime Asset. The Asset is the resource Central drives on a cluster (it carries
@@ -73,6 +76,10 @@ def create_subscription(
 	Asset (ADR 0006, cdea38e). The actual provisioning (calling the cluster manager
 	and writing the price-lock) is `provision_subscription`; this captures the
 	contract + its asset only, so it stays usable for fixtures and intent-only flows.
+
+	A `Composed` subscription mints no Plan: it carries `includes` (qty per Resource
+	Type) as its locked composition and `sub_category` as its optimisation profile;
+	billing reads the summed config rate off its Subscription Change (ADR 0009/0010).
 
 	The cluster must be a registered Atlas Instance (Asset.cluster is a reqd Link)."""
 	resource_id = resource_id or f"vm-{frappe.generate_hash(length=10)}"
@@ -87,6 +94,7 @@ def create_subscription(
 				"cluster": cluster,
 				"plan": plan,
 				"status": "Pending",
+				**_asset_shape(includes),
 			}
 		).insert(ignore_permissions=True)
 
@@ -95,7 +103,10 @@ def create_subscription(
 			"doctype": "Subscription",
 			"team": team,
 			"asset_id": resource_id,
+			"pricing_mode": pricing_mode,
 			"plan": plan,
+			"sub_category": sub_category,
+			"includes": includes or [],
 			"billing_cycle": billing_cycle,
 			"account_standing": "Current",
 			"start_date": start_date or frappe.utils.nowdate(),
@@ -109,6 +120,69 @@ def create_subscription(
 	return doc
 
 
+def _asset_shape(includes) -> dict:
+	"""Record a composed config's real shape on its Asset so the running machine
+	reflects what was provisioned. Empty for a preset (the Plan carries the shape)."""
+	if not includes:
+		return {}
+	from central.billing.catalog.composition import composition_quantities, COMPUTE, MEMORY, DISK
+
+	qty = composition_quantities(includes)
+	return {
+		"vcpus": int(qty.get(COMPUTE, 0)),
+		"memory_megabytes": int(qty.get(MEMORY, 0) * 1024),
+		"disk_gigabytes": int(qty.get(DISK, 0)),
+	}
+
+
+def provision_composed_subscription(
+	team: str,
+	cluster: str,
+	includes: list,
+	sub_category: str,
+	billing_cycle: str = "Monthly",
+	start_date=None,
+	resource_id: str | None = None,
+	default_payment_method: str | None = None,
+	gateway: str | None = None,
+	changed_by: str | None = None,
+):
+	"""Provision a design-your-own compute config (ADR 0009, #80). No Plan is minted.
+
+	The shape is validated against its optimisation profile (#81), then Central writes
+	the composition onto the Subscription and stamps the summed whole-config rate on
+	the opening `Created` Subscription Change (done in the controller's after_insert).
+	Grandfathering holds while the config is unchanged — a later rate-card edit does
+	not re-price a running config; only a resize re-resolves (#82).
+	"""
+	from central.billing.catalog.composition import validate_composition
+	from central.billing.catalog.pricing import resolve_config_rate
+
+	validate_composition(sub_category, includes)
+	# Re-check the config fits the team's remaining headroom (#83) — the client bounds
+	# are a convenience, the server is the gate.
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	enforce_headroom(team, resolve_config_rate(includes, currency, cluster))
+	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
+	sub = create_subscription(
+		team, cluster, plan=None, billing_cycle=billing_cycle, start_date=start_date,
+		default_payment_method=default_payment_method, gateway=gateway, changed_by=changed_by,
+		resource_id=resource_id, pricing_mode="Composed", includes=includes, sub_category=sub_category,
+	)
+	opening = frappe.db.get_value(
+		"Subscription Change",
+		{"subscription": sub.name, "change_type": "Created"},
+		["locked_rate", "currency"],
+		as_dict=True,
+	)
+	return {
+		"subscription": sub.name,
+		"resource_id": resource_id,
+		"locked_rate": opening.locked_rate if opening else None,
+		"currency": opening.currency if opening else None,
+	}
+
+
 def provision_subscription(
 	team: str,
 	cluster: str,
@@ -120,17 +194,15 @@ def provision_subscription(
 	gateway: str | None = None,
 	changed_by: str | None = None,
 ):
-	"""Provision a subscription the agentless way (ADR 0006): record the intent,
-	then — as the *same* component — write the authoritative runtime record.
+	"""Provision a subscription the agentless way (ADR 0006): record the intent, which
+	— as the *same* component — opens the authoritative billing segment.
 
 	Central calls the cluster manager to create the resource (here the seam mints a
-	`resource_id`; a real impl uses the id the cluster manager returns), then writes
-	the price-lock at the catalog rate for the team's currency + cluster. Because the
-	one component both provisions and locks, the rate shown is the rate locked — no
-	agent push, no reconciliation gap. Returns the subscription + the locked handles.
-	"""
-	from central.billing.platform.sync import record_usage_events
-
+	`resource_id`; a real impl uses the id the cluster manager returns). Creating the
+	Subscription opens its `Created` Subscription Change at the catalog rate for the
+	team's currency + cluster — that segment IS the price-lock (ADR 0010), so the rate
+	shown is the rate locked, with no separate ledger to keep in sync. Returns the
+	subscription + the locked handles."""
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
 		team, cluster, plan, billing_cycle=billing_cycle, start_date=start_date,
@@ -138,32 +210,239 @@ def provision_subscription(
 		resource_id=resource_id,
 	)
 
-	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
-	shown_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
-	effective_from = f"{sub.start_date} 00:00:00"
-
-	record_usage_events([{
-		"event_id": f"prov-{sub.name}-{resource_id}",
-		"team": team, "resource_id": resource_id, "cluster": cluster, "plan": plan,
-		"shown_rate": shown_rate, "currency": currency,
-		"event_type": "subscribed", "effective_from": effective_from, "effective_to": None,
-	}])
-
-	return {"subscription": sub.name, "resource_id": resource_id,
-			"shown_rate": shown_rate, "currency": currency}
+	opening = frappe.db.get_value(
+		"Subscription Change",
+		{"subscription": sub.name, "change_type": "Created"},
+		["locked_rate", "currency"],
+		as_dict=True,
+	)
+	return {
+		"subscription": sub.name,
+		"resource_id": resource_id,
+		"shown_rate": opening.locked_rate if opening else None,
+		"currency": opening.currency if opening else None,
+	}
 
 
 def change_plan(subscription: str, new_plan: str, changed_by: str | None = None):
-	"""Change the requested plan (intent). Central writes a new price-lock segment
-	when it reprovisions (ADR 0006); this records the contract change only."""
+	"""Switch a subscription onto a curated preset (intent). The controller opens the
+	new billing segment on save (the `changed`-event re-lock, ADR 0010) — this just
+	mutates the contract. Switching a composed config onto a preset drops the
+	composition (and so the à-la-carte pricing); picking the same preset is a no-op."""
 	doc = frappe.get_doc("Subscription", subscription)
-	old_plan = doc.plan
-	if new_plan == old_plan:
+	if doc.pricing_mode != "Composed" and new_plan == doc.plan:
 		return doc
+	doc.pricing_mode = "Preset"
 	doc.plan = new_plan
+	doc.sub_category = None
+	doc.set("includes", [])
+	doc.flags.changed_by = changed_by
 	doc.save(ignore_permissions=True)
-	_record_change(subscription, "Plan Changed", old_plan, new_plan, changed_by)
 	return doc
+
+
+def resize_composed_subscription(
+	subscription: str,
+	includes: list,
+	sub_category: str | None = None,
+	changed_by: str | None = None,
+):
+	"""Resize a composed config — or slide a preset onto a custom shape — as the
+	`changed`-event re-lock (#82, ADR 0010).
+
+	Closes the open segment and opens a new one whose `locked_rate` is the config
+	total **re-resolved at the current rate card**; grandfathering protects only the
+	*unchanged* config. The new shape is validated against its profile (#81) and the
+	team's remaining headroom before anything is written. A no-op on an identical
+	composition (matching #54), and records nothing on a never-provisioned or
+	terminated config.
+	"""
+	doc = frappe.get_doc("Subscription", subscription)
+	if not _is_resizable(doc):
+		return None
+
+	profile = sub_category or doc.sub_category
+	if not profile:
+		frappe.throw(frappe._("A composed config needs an optimisation profile."))
+
+	rows = [dict(r) for r in includes]
+	from central.billing.catalog.composition import composition_quantities, validate_composition
+	from central.billing.catalog.pricing import resolve_config_rate
+
+	validate_composition(profile, rows)
+
+	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	cluster = frappe.db.get_value("Asset", doc.asset_id, "cluster") if doc.asset_id else None
+	new_rate = resolve_config_rate(rows, currency, cluster)
+	enforce_headroom(doc.team, new_rate, exclude=subscription)
+
+	# Resizing to the identical composition already running is a no-op (no event).
+	if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(rows):
+		return doc
+
+	doc.pricing_mode = "Composed"
+	doc.plan = None
+	doc.sub_category = profile
+	doc.set("includes", rows)
+	if doc.asset_id:
+		# Record the new shape on the running machine. A real impl also drives the
+		# cluster-manager resize here (the Atlas seam, #54); there is no resize call
+		# yet, so we only update Central's mirror of the machine's shape.
+		frappe.db.set_value("Asset", doc.asset_id, _asset_shape(rows))
+	doc.flags.changed_by = changed_by
+	doc.save(ignore_permissions=True)  # controller appends the Plan Changed re-lock
+	return doc
+
+
+def _is_resizable(doc) -> bool:
+	"""A config can be resized only while it is provisioned and live — not before its
+	opening segment, after a cancellation, or once the machine is terminated."""
+	latest = frappe.get_all(
+		"Subscription Change",
+		filters={"subscription": doc.name, "change_type": ["in", ["Created", "Plan Changed", "Cancelled"]]},
+		pluck="change_type",
+		order_by="effective_at desc, creation desc",
+		limit=1,
+	)
+	if not latest or latest[0] == "Cancelled":
+		return False
+	if doc.asset_id and frappe.db.get_value("Asset", doc.asset_id, "status") == "Terminated":
+		return False
+	return True
+
+
+# The Subscription Change types that bear a rate and bound a billing segment. A
+# segment is "open" when the latest such change is Created/Plan Changed, not a
+# terminal Cancelled.
+_SEGMENT_CHANGE_TYPES = ["Created", "Plan Changed", "Cancelled"]
+
+
+def _latest_segment_by_subscription(subscription_names: list[str]) -> dict:
+	"""The most-recent rate-bearing change per subscription, in ONE batched query.
+
+	Ordered newest-first so the first row seen per subscription is its latest segment
+	marker; this replaces the per-subscription query that made `team_run_rate` an N+1
+	on a hot read (review notes #2)."""
+	if not subscription_names:
+		return {}
+	rows = frappe.get_all(
+		"Subscription Change",
+		filters={"subscription": ["in", subscription_names], "change_type": ["in", _SEGMENT_CHANGE_TYPES]},
+		fields=["subscription", "change_type", "locked_rate", "currency"],
+		order_by="effective_at desc, creation desc",
+	)
+	latest: dict = {}
+	for r in rows:
+		latest.setdefault(r.subscription, r)
+	return latest
+
+
+def _asset_clusters(asset_ids) -> dict:
+	"""Map asset_id -> cluster in one query (cluster lives on the Asset, cdea38e)."""
+	ids = [a for a in set(asset_ids) if a]
+	if not ids:
+		return {}
+	return {
+		r.name: r.cluster
+		for r in frappe.get_all("Asset", filters={"name": ["in", ids]}, fields=["name", "cluster"])
+	}
+
+
+def active_segments(filters: dict | None = None) -> list:
+	"""Every open, rate-bearing billing segment — one row per subscription — resolved
+	from the `Subscription Change` ledger (ADR 0010) in batched queries.
+
+	This is THE single source of truth for "what is a team running", replacing the
+	retired `Price Lock` reads (#86). A preset and a composed subscription are treated
+	identically, so a composed config is finally visible everywhere a preset is —
+	"resources used", admin consumption, team-clusters, the currency fallback.
+
+	`filters` narrows the underlying Subscriptions (e.g. `{"team": t}` or
+	`{"plan": p}`). Each row is a `frappe._dict`: subscription, team, plan,
+	pricing_mode, asset_id, resource_id, cluster, currency, locked_rate."""
+	subs = frappe.get_all(
+		"Subscription",
+		filters=filters or {},
+		fields=["name", "team", "plan", "pricing_mode", "asset_id"],
+	)
+	if not subs:
+		return []
+	latest = _latest_segment_by_subscription([s.name for s in subs])
+	clusters = _asset_clusters([s.asset_id for s in subs])
+	out = []
+	for s in subs:
+		seg = latest.get(s.name)
+		if not seg or seg.change_type == "Cancelled":
+			continue
+		out.append(
+			frappe._dict(
+				{
+					"subscription": s.name,
+					"team": s.team,
+					"plan": s.plan,
+					"pricing_mode": s.pricing_mode,
+					"asset_id": s.asset_id,
+					"resource_id": s.asset_id,
+					"cluster": clusters.get(s.asset_id),
+					"currency": seg.currency,
+					"locked_rate": frappe.utils.flt(seg.locked_rate),
+				}
+			)
+		)
+	return out
+
+
+def team_active_segments(team: str) -> list:
+	"""A team's open priced segments — see `active_segments`."""
+	return active_segments({"team": team})
+
+
+def active_segment_for_resource(resource_id: str):
+	"""The open priced segment for a provisioned resource (its Asset's subscription),
+	or None. `asset_id` names the Asset, whose name is the `resource_id` (autoname
+	field:resource_id), so a resource maps to at most one subscription. Used by
+	metering to grandfather a metered resource's terms off the ledger (#86)."""
+	segs = active_segments({"asset_id": resource_id})
+	return segs[0] if segs else None
+
+
+def current_segment_rate(subscription: str) -> float:
+	"""The locked_rate of a subscription's currently-open billing segment, or 0 when
+	it is cancelled / never priced. The open segment is the latest Created/Plan Changed
+	not closed by a later Cancelled (ADR 0010 — the ledger is the lock)."""
+	seg = _latest_segment_by_subscription([subscription]).get(subscription)
+	if not seg or seg.change_type == "Cancelled":
+		return 0.0
+	return frappe.utils.flt(seg.locked_rate)
+
+
+def team_run_rate(team: str, exclude: str | None = None) -> float:
+	"""The team's committed monthly run-rate: the summed open-segment locked rate of
+	its subscriptions (preset and composed alike). A team bills in one currency, so the
+	rates are already comparable. `exclude` drops one subscription — used by resize to
+	measure headroom as if the config being resized weren't there. One batched query
+	via `team_active_segments` (no per-subscription N+1, review notes #2)."""
+	return frappe.utils.flt(
+		sum(s.locked_rate for s in team_active_segments(team) if s.subscription != exclude)
+	)
+
+
+def enforce_headroom(team: str, new_rate, exclude: str | None = None) -> None:
+	"""Reject a config that can't be priced, or that would push the team past its
+	remaining trust-tier headroom (the spend cap minus its other running run-rate).
+	The authoritative server-side gate reused by provision (#83) and resize (#82)."""
+	from central.billing.catalog.entitlements import get_team_caps
+
+	if new_rate is None:
+		frappe.throw(frappe._("This configuration cannot be priced in your currency."))
+	cap = frappe.utils.flt(get_team_caps(team).max_spend)
+	available = max(0.0, cap - team_run_rate(team, exclude=exclude))
+	if frappe.utils.flt(new_rate) > available:
+		frappe.throw(
+			frappe._("This configuration ({0}) exceeds your remaining headroom ({1}).").format(
+				frappe.utils.flt(new_rate), frappe.utils.flt(available)
+			)
+		)
 
 
 def change_payment_method(subscription: str, new_method: str, changed_by: str | None = None):
@@ -266,23 +545,20 @@ def set_standing(subscription: str, new_standing: str, changed_by: str | None = 
 
 
 def reconcile_subscription_resource(subscription: str, resource_id: str) -> dict:
-	"""Reconcile a subscription's intent against the price-lock Central wrote when it
-	provisioned the resource (keyed by `resource_id`). A missing lock means the
-	resource hasn't been provisioned yet (intent outstanding); a plan mismatch is
-	surfaced for follow-up.
+	"""Reconcile a subscription's intent against the open billing segment Central
+	opened when it provisioned the resource (ADR 0010 — the ledger is the lock). No
+	open segment for the resource means it hasn't been provisioned yet (intent
+	outstanding); a plan mismatch is surfaced for follow-up.
 	"""
-	from central.billing.revenue.pricelock import _open_lock
-
 	doc = frappe.get_doc("Subscription", subscription)
-	lock_name = _open_lock(resource_id)
-	if not lock_name:
+	seg = active_segment_for_resource(resource_id)
+	if not seg:
 		return {"reconciled": False, "reason": "no_cluster_event", "intent_plan": doc.plan}
 
-	locked_plan = frappe.db.get_value("Price Lock", lock_name, "plan")
 	return {
-		"reconciled": locked_plan == doc.plan,
+		"reconciled": seg.plan == doc.plan,
 		"intent_plan": doc.plan,
-		"locked_plan": locked_plan,
+		"locked_plan": seg.plan,
 		"resource_id": resource_id,
 	}
 

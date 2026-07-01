@@ -69,6 +69,36 @@ const routes = [
         name: 'SpendingLimits',
         component: () => import('@/pages/billing/SpendingLimitsPage.vue'),
       },
+      { path: 'team', redirect: '/team/members' },
+      // Members + roles share one tabbed page; /team/roles is kept as an alias.
+      {
+        path: 'team/members',
+        name: 'Members',
+        component: () => import('@/pages/team/AccessPage.vue'),
+      },
+      { path: 'team/roles', redirect: '/team/members' },
+      {
+        path: 'team/invitations',
+        name: 'TeamInvitations',
+        component: () => import('@/pages/team/InvitationsPage.vue'),
+      },
+      {
+        path: 'team/settings',
+        name: 'TeamSettings',
+        component: () => import('@/pages/team/TeamSettingsPage.vue'),
+      },
+      // Personal invitation inbox + the email deep-link both open the Invitations
+      // page on its Received tab.
+      {
+        path: 'invitations',
+        name: 'MyInvitations',
+        component: () => import('@/pages/team/InvitationsPage.vue'),
+      },
+      {
+        path: 'invitations/:name',
+        name: 'FocusedInvitation',
+        component: () => import('@/pages/team/InvitationsPage.vue'),
+      },
     ],
   },
 ]

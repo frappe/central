@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 from central.iam import can, get_user_team_names, resolve_team
 from central.integrations.atlas import AtlasClient
@@ -21,23 +22,25 @@ def _default_region() -> str:
 	to route the operator call; Atlas itself defaults the site's region/domain."""
 	region = frappe.db.get_value("Atlas Instance", {"status": "Active"}, "region", order_by="region asc")
 	if not region:
-		frappe.throw("No region is available — contact your operator.", frappe.ValidationError)
+		frappe.throw(_("No region is available — contact your operator."), frappe.ValidationError)
 	return region
 
 
 @frappe.whitelist(methods=["POST"])
 def create_site(subdomain: str, region: str | None = None) -> dict:
-	"""Provision a self-serve site for the user's team. Gated on `site:create`.
+	"""Provision a self-serve site for the user's team. Gated on `server:create`.
 
-	Central supplies *what* (the owning team + the subdomain); Atlas
+	Server is the atomic unit, so deploying a site is authorized by the same
+	provisioning capability as standing up a server (site-level capabilities are
+	deferred). Central supplies *what* (the owning team + the subdomain); Atlas
 	owns placement, the fixed size, and the region/domain. We seed the Atlas tenant
 	with the team owner's email on first use, then mirror the returned Pending row
 	so the onboarding screen has something to poll immediately — the site.* events
 	keep it fresh from there."""
 	user = frappe.session.user
 	team = resolve_team(user)
-	if not can(user, team, "site:create"):
-		frappe.throw("You can't create sites for this team.", frappe.PermissionError)
+	if not can(user, team, "server:create"):
+		frappe.throw(_("You can't create sites for this team."), frappe.PermissionError)
 
 	region = region or _default_region()
 	client = AtlasClient.for_region(region)
@@ -62,9 +65,9 @@ def get_site(name: str) -> dict:
 		"Site", name, ["team", "cluster", "status"], as_dict=True
 	)
 	if not mirror:
-		frappe.throw(f"No site '{name}'.", frappe.DoesNotExistError)
+		frappe.throw(_("No site '{0}'.").format(name), frappe.DoesNotExistError)
 	if mirror.team not in get_user_team_names(user):
-		frappe.throw("You can't view this site.", frappe.PermissionError)
+		frappe.throw(_("You can't view this site."), frappe.PermissionError)
 
 	if mirror.status not in _TERMINAL:
 		from central.central.doctype.site.site import Site

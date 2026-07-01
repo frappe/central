@@ -39,7 +39,11 @@ frappe.ui.form.on("Plan Configurator", {
 		frm.set_query("sub_category", () => ({ filters: { category: frm.doc.category } }));
 
 		if (frm.is_new()) {
-			frm.dashboard.set_headline(__("Save the template, then populate and generate rungs."));
+			frm.dashboard.set_headline(
+				frm.doc.provision_target === "Resource"
+					? __("Pick a Resource category and save, then seed and publish the rates.")
+					: __("Pick a category and save, then populate and generate plans.")
+			);
 			return;
 		}
 
@@ -61,33 +65,14 @@ frappe.ui.form.on("Plan Configurator", {
 			});
 		}
 
-		const simple = frm.doc.builder === "Simple";
-
-		// The vCPU ladder builder authors plans from a formula; the simple builder
-		// authors them row-by-row, so Populate/Preview are VM Rungs-only.
-		if (!simple) {
-			frm.add_custom_button(__("Populate Rungs"), () => {
-				frm.call("populate_rungs").then((r) => {
-					frappe.show_alert({
-						message: __("{0} rungs populated — edit them, then Generate.", [
-							(r.message || {}).count || 0,
-						]),
-						indicator: "blue",
-					});
-					frm.reload_doc();
-				});
-			});
-
-			frm.add_custom_button(__("Preview Pricing"), () => {
-				frm.call("preview").then((r) => show_preview(r.message || {}));
-			});
-		}
-
-		const rows = simple ? frm.doc.simple_plans : frm.doc.rungs;
-		if ((rows || []).length) {
-			frm.add_custom_button(__("Generate Plans"), () => generate_dialog(frm)).addClass(
-				"btn-primary"
-			);
+		// The category's Provision Target decides the job: 'Resource' categories author
+		// per-unit Resource Rates; everything else authors sellable plans. Show only that
+		// job's actions — the secondary steps live under one "Actions" menu, leaving a
+		// single primary button.
+		if (frm.doc.provision_target === "Resource") {
+			resource_rate_actions(frm);
+		} else {
+			plan_ladder_actions(frm);
 		}
 	},
 
@@ -145,6 +130,70 @@ function show_preview(data) {
 		message: `<table class="table table-bordered"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`,
 		wide: true,
 	});
+}
+
+// Server / plan categories: author a ladder of sellable plans. Populate/Preview are the
+// secondary steps (under "Actions"); Generate is the single primary once there are rows.
+function plan_ladder_actions(frm) {
+	const simple = frm.doc.builder === "Simple";
+
+	// The vCPU ladder builder authors plans from a formula; the simple builder
+	// authors them row-by-row, so Populate/Preview are VM Rungs-only.
+	if (!simple) {
+		frm.add_custom_button(
+			__("Populate Rungs"),
+			() => {
+				frm.call("populate_rungs").then((r) => {
+					frappe.show_alert({
+						message: __("{0} rungs populated — edit them, then Generate.", [
+							(r.message || {}).count || 0,
+						]),
+						indicator: "blue",
+					});
+					frm.reload_doc();
+				});
+			},
+			__("Actions")
+		);
+
+		frm.add_custom_button(
+			__("Preview Pricing"),
+			() => frm.call("preview").then((r) => show_preview(r.message || {})),
+			__("Actions")
+		);
+	}
+
+	const rows = simple ? frm.doc.simple_plans : frm.doc.rungs;
+	if ((rows || []).length) {
+		frm.add_custom_button(__("Generate Plans"), () => generate_dialog(frm)).addClass(
+			"btn-primary"
+		);
+	}
+}
+
+// Resource categories (ADR 0011): the Configurator prices each resource type per unit
+// (Compute / Memory / Disk), so an unpriced resource surfaces here — before a region can
+// offer custom configs — not as a silent $0 estimate. Seed is the secondary step
+// (under "Actions"); Publish is the single primary once there are rows.
+function resource_rate_actions(frm) {
+	frm.add_custom_button(
+		__("Seed Rates"),
+		() => {
+			frm.call("seed_component_rows").then((r) => {
+				frappe.show_alert({
+					message: __("{0} resource rates added.", [(r.message || {}).added || 0]),
+					indicator: "blue",
+				});
+				frm.reload_doc();
+			});
+		},
+		__("Actions")
+	);
+	if ((frm.doc.component_rates || []).length) {
+		frm.add_custom_button(__("Publish Rates"), () =>
+			apply_component_card_dialog(frm)
+		).addClass("btn-primary");
+	}
 }
 
 function generate_dialog(frm) {
@@ -211,6 +260,55 @@ function generate_dialog(frm) {
 						values.cluster || __("global"),
 					]),
 					indicator: "blue",
+				});
+			});
+		},
+	});
+	d.show();
+}
+
+function apply_component_card_dialog(frm) {
+	const d = new frappe.ui.Dialog({
+		title: __("Publish Resource Rates"),
+		fields: [
+			{
+				fieldname: "cluster",
+				fieldtype: "Link",
+				options: "Atlas Instance",
+				label: __("Atlas Instance"),
+				description: __("Blank = global rate (every Atlas Instance). Else price one region. Re-run per Atlas Instance."),
+			},
+		],
+		primary_action_label: __("Publish"),
+		primary_action(values) {
+			frm.call("apply_component_card", { cluster: values.cluster }).then((r) => {
+				d.hide();
+				const res = r.message || {};
+				const incomplete = res.incomplete || {};
+				const gaps = Object.keys(incomplete);
+				if (!gaps.length) {
+					frappe.show_alert({
+						message: __("Rates published — every currency is complete for {0}.", [
+							res.cluster || __("global"),
+						]),
+						indicator: "green",
+					});
+					return;
+				}
+				const rows = gaps
+					.map(
+						(c) =>
+							`<li><b>${frappe.utils.escape_html(c)}</b>: ${__("missing")} ${incomplete[c]
+								.map((rt) => frappe.utils.escape_html(rt))
+								.join(", ")}</li>`
+					)
+					.join("");
+				frappe.msgprint({
+					title: __("Rates published — but incomplete for some currencies"),
+					indicator: "orange",
+					message:
+						__("These currencies can't offer custom configs until every resource type is priced:") +
+						`<ul>${rows}</ul>`,
 				});
 			});
 		},

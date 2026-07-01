@@ -190,6 +190,10 @@ scheduler_events = {
 		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
 	],
 	"monthly": [
+		# Billing: on the 1st, bill the just-closed month end-to-end for every team —
+		# draft one consolidated invoice per team, then open + collect (credits→card).
+		# The production trigger for the two-phase invoicing (#09/#10).
+		"central.billing.revenue.invoicing.run_monthly_billing",
 		# Billing: cards expire at the end of their printed month; flip lapsed ones.
 		"central.billing.payments.payments.expire_payment_methods",
 	],
@@ -280,17 +284,21 @@ before_request = ["central.oauth.install_oauth_claim_patch"]
 # Authentication and authorization
 
 permission_query_conditions = {
+	"Asset": "central.permissions.asset_query_conditions",
+	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
+	"Site": "central.permissions.site_query_conditions",
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
-	"Asset": "central.permissions.asset_query_conditions",
 }
 
 has_permission = {
+	"Asset": "central.permissions.asset_has_permission",
+	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
+	"Site": "central.permissions.site_has_permission",
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
-	"Asset": "central.permissions.asset_has_permission",
 }
 
 override_whitelisted_methods = {

@@ -34,6 +34,7 @@ from central.billing.revenue.invoicing.lifecycle import (
 	open_and_collect,
 	open_drafts,
 	reissue_invoice,
+	run_monthly_billing,
 )
 from central.billing.revenue.invoicing.lines import compute_line_items
 
@@ -42,4 +43,5 @@ __all__ = [
 	"reconcile_subscription", "generate_draft_invoice", "generate_team_invoice",
 	"generate_draft_invoices",
 	"open_and_collect", "open_drafts", "cancel_invoice", "reissue_invoice", "DEFAULT_DUE_DAYS",
+	"run_monthly_billing",
 ]

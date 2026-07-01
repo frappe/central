@@ -155,6 +155,8 @@ export interface SubscriptionRow {
   region: string | null
   billing_cycle: string
   account_standing: string
+  /** The VM's operational state (Running/Stopped/Paused/Terminated/…) from the Asset. */
+  status: string | null
   /** 0 when billing is paused. */
   enabled: boolean | number
   /** Resolved monthly price for the team's currency + region. */

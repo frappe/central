@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Sidebar, ToastProvider } from 'frappe-ui'
+import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 import { useSession } from '@/composables/useSession'
@@ -10,9 +11,10 @@ import { useCapabilities } from '@/composables/useCapabilities'
 // the routed page. The header doubles as the team switcher — switching re-drives
 // the team-scoped reads (capabilities, registry). Sections are capability-gated.
 const { teams, activeTeam, activeTeamLabel, setActiveTeam } = useSession()
-const { canViewServers, canViewBilling } = useCapabilities()
+const { canViewServers, canViewBilling, isMember } = useCapabilities()
 const { logout } = useAuth()
 const { currentTheme, toggleTheme } = useTheme()
+const createTeamOpen = ref(false)
 
 async function logoutAndRedirect() {
   await logout()
@@ -31,6 +33,13 @@ const header = computed(() => ({
       onClick: () => setActiveTeam(team.name),
     })),
     {
+      label: 'Create team',
+      icon: 'lucide-plus',
+      onClick: () => {
+        createTeamOpen.value = true
+      },
+    },
+    {
       label: 'Toggle Theme',
       icon: currentTheme.value === 'dark' ? 'lucide-sun' : 'lucide-moon',
       onClick: toggleTheme,
@@ -46,6 +55,7 @@ const header = computed(() => ({
 const sections = computed(() => [
   {
     label: 'Compute',
+    collapsible: true,
     items: [
       {
         label: 'Servers',
@@ -57,6 +67,7 @@ const sections = computed(() => [
   },
   {
     label: 'Billing',
+    collapsible: true,
     items: [
       {
         label: 'Overview',
@@ -78,6 +89,30 @@ const sections = computed(() => [
       },
     ],
   },
+  {
+    label: 'Team',
+    collapsible: true,
+    items: [
+      {
+        label: 'Members & roles',
+        icon: 'lucide-users',
+        to: '/team/members',
+        condition: () => isMember.value,
+      },
+      {
+        label: 'Invitations',
+        icon: 'lucide-mail',
+        to: '/team/invitations',
+        condition: () => isMember.value,
+      },
+      {
+        label: 'Settings',
+        icon: 'lucide-settings',
+        to: '/team/settings',
+        condition: () => isMember.value,
+      },
+    ],
+  },
 ])
 </script>
 
@@ -88,5 +123,6 @@ const sections = computed(() => [
       <router-view />
     </main>
     <ToastProvider />
+    <CreateTeamDialog v-model:open="createTeamOpen" />
   </div>
 </template>

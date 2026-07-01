@@ -15,6 +15,7 @@ from central.billing.api.dashboard._shared import (
 	_resolve_team,
 	_team_clusters,
 	_team_currency,
+	_team_resource_count,
 )
 
 @frappe.whitelist()
@@ -181,7 +182,7 @@ def get_team_overview(team: str | None = None) -> dict:
 	team = _resolve_team(team)
 	caps = entitlements.get_team_caps(team)
 	standing = frappe.db.get_value("Subscription", {"team": team}, "account_standing") or "Current"
-	resources = frappe.db.count("Price Lock", {"team": team, "ended_at": ["is", "not set"]})
+	resources = _team_resource_count(team)
 	clusters = len(_team_clusters(team))
 	currency = _team_currency(team)
 	# Caps resolve live from the team's tier level × its currency — no FX.
@@ -215,7 +216,7 @@ def get_trust_tier(team: str | None = None) -> dict:
 
 	# Progress signals toward the next level. A team bills in one currency, so its
 	# paid invoices are already in that currency — sum them directly.
-	resources_used = frappe.db.count("Price Lock", {"team": team, "ended_at": ["is", "not set"]})
+	resources_used = _team_resource_count(team)
 	paid_invoices = frappe.db.count("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"})
 	paid_rows = frappe.get_all("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"},
 							   ["amount_paid"])

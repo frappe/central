@@ -114,8 +114,8 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <Dialog v-model:open="open" :options="{ title: 'Add payment method' }">
-    <template #body-content>
+  <Dialog v-model:open="open" title="Add payment method">
+    <template #default>
       <div v-if="options.loading && !options.data" class="space-y-2">
         <LoadingText :lines="3" />
       </div>
