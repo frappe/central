@@ -6,6 +6,7 @@ import { API, method } from '@/api/methods'
 import { usePlans } from '@/composables/usePlans'
 import { useSession } from '@/composables/useSession'
 import { configIncludes, rateCardComplete } from '@/lib/composed'
+import { getErrorMessage } from '@/lib/toast'
 import type { AssetRow } from '@/composables/useServers'
 import type { ComposedConfig, Profile } from '@/types/api'
 
@@ -148,6 +149,14 @@ const resizeCall = useCall<{ subscription: string; resized: boolean }, Record<st
   immediate: false,
 })
 
+// A failed resize (most often a disk downgrade — Atlas can only grow a disk) keeps
+// the dialog open with the reason shown, instead of silently dropping back to the
+// picker. Cleared when the selection changes so a fresh attempt starts clean.
+const resizeError = computed(() =>
+  resizeCall.error ? getErrorMessage(resizeCall.error, "Couldn't resize the server.") : '',
+)
+watch([selectedPlan, composedConfig], () => resizeCall.reset())
+
 async function confirm() {
   const sub = subscription.value
   if (!sub || !changed.value) return
@@ -186,10 +195,16 @@ async function confirm() {
       </p>
       <div v-else class="space-y-4">
         <div
+          v-if="resizeError"
+          class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-3 py-2.5 text-p-sm text-ink-red-4"
+        >
+          {{ resizeError }}
+        </div>
+        <div
           v-if="needsRestart"
           class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"
         >
-          Your server will briefly restart to apply the new size.
+          Your server will be stopped to apply the new size, and stay off until you start it again.
         </div>
 
         <Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">

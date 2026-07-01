@@ -170,20 +170,19 @@ class TestResizeComposed(IntegrationTestCase):
 		self.assertIsNone(result)
 		self.assertEqual(len(self._segments(sub)), 1)
 
-	def test_resize_power_cycles_running_vm(self):
+	def test_resize_stops_running_vm_and_leaves_it_stopped(self):
 		sub = self._provision()
 		asset = frappe.db.get_value("Subscription", sub, "asset_id")
 		frappe.db.set_value("Asset", asset, "status", "Running")
 		subscriptions.resize_composed_subscription(sub, BIG, "General")
-		# A live VM is stopped, resized, then started — one uninterrupted resize, no
-		# manual power step (and the re-price still happens).
+		# A live VM is stopped, then resized — and left Stopped (never auto-started).
 		self.resize_vm.assert_called_once()
-		self.assertEqual(self.vm_action.call_args_list, [call(asset, "stop"), call(asset, "start")])
-		self.assertEqual(len(self._segments(sub)), 2)
+		self.assertEqual(self.vm_action.call_args_list, [call(asset, "stop")])
+		self.assertEqual(len(self._segments(sub)), 2)  # re-priced
 
 	def test_resize_drives_atlas_with_new_shape(self):
 		sub = self._provision()
-		asset = self._ready(sub)  # Stopped: no stop needed, just resize + resume
+		self._ready(sub)  # Stopped: no stop needed, just resize
 		subscriptions.resize_composed_subscription(sub, BIG, "General")
 		self.resize_vm.assert_called_once()
 		# BIG is 4 vCPU / 16 GB RAM / 40 GB disk — memory carried in megabytes.
@@ -191,7 +190,7 @@ class TestResizeComposed(IntegrationTestCase):
 			self.resize_vm.call_args.kwargs,
 			{"vcpus": 4, "memory_megabytes": 16 * 1024, "disk_gigabytes": 40},
 		)
-		self.vm_action.assert_called_once_with(asset, "start")
+		self.vm_action.assert_not_called()  # already off — no power step
 
 	def test_resize_to_preset_plan_reshapes_and_relocks(self):
 		sub = self._provision()
@@ -200,9 +199,9 @@ class TestResizeComposed(IntegrationTestCase):
 		subscriptions.resize_to_plan(sub, plan)
 		doc = frappe.get_doc("Subscription", sub)
 		self.assertEqual((doc.pricing_mode, doc.plan), ("Preset", plan))
-		# The bundle's shape (DEFAULT_INCLUDES) drives the VM resize, then it resumes.
+		# The bundle's shape (DEFAULT_INCLUDES) drives the VM resize; no power step.
 		self.resize_vm.assert_called_once_with(asset, vcpus=2, memory_megabytes=4096, disk_gigabytes=80)
-		self.vm_action.assert_called_once_with(asset, "start")
+		self.vm_action.assert_not_called()
 		self.assertEqual(self._segments(sub)[-1].locked_rate, 1500)
 
 	def test_slide_off_preset_opens_composed_segment(self):

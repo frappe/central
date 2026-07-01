@@ -332,13 +332,12 @@ def _plan_shape(plan: str) -> dict:
 
 
 def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
-	"""Apply `shape` (vcpus/memory/disk) to the real VM on its Atlas, power-cycling as
-	needed. Firecracker can't reconfigure a running machine, so a Running/Paused VM is
-	stopped first; every reshape ends with a start, so a resize is one uninterrupted
-	"reshape and resume" action (the VM only briefly restarts) rather than a machine
-	the operator has to stop and start by hand. A VM that isn't provisioned yet
-	(Pending/Failed) has nothing to reshape and is skipped. Atlas's start/stop/resize
-	are synchronous, so this runs the whole cycle in order before returning."""
+	"""Apply `shape` (vcpus/memory/disk) to the real VM on its Atlas, stopping it first
+	when it's live. Firecracker can't reconfigure a running machine, so a Running/Paused
+	VM is stopped, then resized — and left Stopped for the operator to start again when
+	they're ready (we never auto-start). A VM that isn't provisioned yet (Pending/Failed)
+	has nothing to reshape and is skipped. Atlas's stop/resize are synchronous, so the
+	stop has completed before the resize runs."""
 	if not shape or status not in ("Running", "Paused", "Stopped"):
 		return
 	from central.integrations.atlas import AtlasClient
@@ -352,7 +351,6 @@ def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
 		memory_megabytes=shape["memory_megabytes"],
 		disk_gigabytes=shape["disk_gigabytes"],
 	)
-	client.vm_action(asset_id, "start")
 
 
 def _is_resizable(doc) -> bool:
