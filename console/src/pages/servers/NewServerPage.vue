@@ -9,7 +9,7 @@ import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePlans } from '@/composables/usePlans'
 import { planResources } from '@/lib/plans'
-import { configIncludes, rateCardComplete } from '@/lib/composed'
+import { configIncludes, estimateConfig, ramFor, rateCardComplete } from '@/lib/composed'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
 
 // New server. Region is the set of available Atlas Instances; plans come from the
@@ -66,6 +66,37 @@ function designableProfile(cls: string): Profile | null {
 }
 const nothingToShow = computed(() => !hasTabs.value && !flatPresets.value.length && !flatProfile.value)
 
+// The cheapest config a profile can be dragged to: its smallest vCPU rung (with the
+// RAM that ratio implies) on its smallest disk rung.
+function floorConfigCost(profile: Profile): number {
+  const vcpus = [...(profile.vcpu_steps ?? [])].sort((a, b) => a - b)[0] ?? 0
+  const diskGb = [...(profile.disk_steps ?? [])].sort((a, b) => a - b)[0] ?? 0
+  return estimateConfig(
+    { sub_category: profile.sub_category, vcpus, memory_gb: ramFor(vcpus, profile), disk_gb: diskGb },
+    rateCard.value,
+  )
+}
+const cheapestDesignCost = computed<number>(() =>
+  canDesign.value && profiles.value.length
+    ? Math.min(...profiles.value.map(floorConfigCost))
+    : Infinity,
+)
+
+// Tier bracket exhausted: a region is picked, no preset fits the remaining headroom
+// (the menu is already headroom-filtered server-side), and even the smallest custom
+// config is over the limit. Show a dead-end message rather than a Custom slider the
+// user can only ever drag into red — offering a config they can't create is worse UX
+// than telling them the limit is spent.
+const availableHeadroom = computed(() => available.value ?? 0)
+const bracketExhausted = computed(
+  () =>
+    !!selectedRegion.value &&
+    !plansLoading.value &&
+    !plans.value.length &&
+    canDesign.value &&
+    cheapestDesignCost.value > availableHeadroom.value,
+)
+
 // Switching region re-prices the menu: reset the tab and drop a selection the new
 // region no longer offers (a preset that's gone, or a custom profile it lacks).
 watch(classes, () => {
@@ -84,6 +115,7 @@ watch([plans, canDesign], () => {
 const submitting = computed(() => creating.value || creatingComposed.value)
 const canSubmit = computed(() => {
   if (!canCreateServer.value || !selectedRegion.value || !name.value.trim()) return false
+  if (bracketExhausted.value) return false // nothing here fits the budget
   return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
 })
 
@@ -179,6 +211,18 @@ async function submit() {
           Pick a region to see the plans available there.
         </p>
         <p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">Loading plans…</p>
+
+        <div
+          v-else-if="bracketExhausted"
+          class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
+        >
+          <p class="text-p-sm font-medium text-ink-gray-8">You've reached your spending limit</p>
+          <p class="mt-1 text-p-sm text-ink-gray-5">
+            No plans — preset or custom — fit your remaining headroom in this region. Remove a
+            server to free some up, or contact support to raise your limit.
+          </p>
+        </div>
+
         <p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
           No plans are available for this region within your current spending limit.
         </p>
