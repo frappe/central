@@ -5,7 +5,7 @@ import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { configIncludes, configSpecs, estimateConfig } from '@/lib/composed'
-import { formatMoney } from '@/lib/plans'
+import { money } from '@/lib/format'
 import type { AssetRow } from '@/composables/useServers'
 import type { ComposedConfig, ProvisionablePlans, RateCard } from '@/types/api'
 
@@ -118,10 +118,10 @@ async function confirm() {
         <div class="flex items-center justify-between rounded-lg bg-surface-gray-1 px-3 py-2 text-p-sm">
           <span class="text-ink-gray-6">
             Now: {{ initial ? configSpecs(initial, rateCard.Disk?.unit) : '—' }} ·
-            {{ formatMoney(currentEstimate, currency) }}/mo
+            {{ money(currentEstimate, currency) }}/mo
           </span>
           <span class="font-medium text-ink-gray-9">
-            New: {{ formatMoney(newEstimate, currency) }}/mo
+            New: {{ money(newEstimate, currency) }}/mo
           </span>
         </div>
       </div>

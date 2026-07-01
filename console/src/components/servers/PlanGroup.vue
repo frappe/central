@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
-import { planSpecs, planPrice, formatMoney } from '@/lib/plans'
+import { planSpecs, planPrice } from '@/lib/plans'
+import { money } from '@/lib/format'
 import { configSpecs, estimateConfig } from '@/lib/composed'
 import type { ComposedConfig, Plan, Profile, RateCard } from '@/types/api'
 
@@ -31,7 +32,7 @@ const customSpec = computed<string>(() =>
   composedConfig.value ? configSpecs(composedConfig.value, props.rateCard.Disk?.unit) : '',
 )
 const customPrice = computed<string>(() =>
-  customEstimate.value !== null ? `${formatMoney(customEstimate.value, props.currency)} / mo` : '',
+  customEstimate.value !== null ? `${money(customEstimate.value, props.currency)} / mo` : '',
 )
 
 // Bundle-discount note: shown only while the designed shape sits exactly on one of
