@@ -82,15 +82,19 @@ def my_teams() -> list[dict[str, Any]]:
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return []
-	out = []
-	for t in get_user_team_names(user):
-		r = frappe.db.get_value("Team", t, ["team_name", "owner_user"], as_dict=True) or {}
-		out.append({
-			"name": t,
-			"label": r.get("team_name") or r.get("owner_user") or t,
-			"owner": r.get("owner_user"),
-		})
-	return out
+	names = get_user_team_names(user)
+	if not names:
+		return []
+	rows = frappe.get_all(
+		"Team",
+		filters={"name": ["in", names]},
+		fields=["name", "team_name", "owner_user"],
+		order_by="team_name asc",
+	)
+	return [
+		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user}
+		for r in rows
+	]
 
 
 @frappe.whitelist(methods=["GET"])
@@ -107,8 +111,14 @@ def my_invitations() -> list[dict[str, Any]]:
 		fields=["name", "team", "role", "invited_by", "expires_on", "creation"],
 		order_by="creation desc",
 	)
+	team_ids = list({row["team"] for row in rows})
+	labels = (
+		{t.name: t.team_name for t in frappe.get_all("Team", {"name": ["in", team_ids]}, ["name", "team_name"])}
+		if team_ids
+		else {}
+	)
 	for row in rows:
-		row["team_name"] = frappe.db.get_value("Team", row["team"], "team_name") or row["team"]
+		row["team_name"] = labels.get(row["team"]) or row["team"]
 	return rows
 
 

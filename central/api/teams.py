@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 import frappe
@@ -8,8 +9,7 @@ from central.iam import (
 	can,
 	expand_capabilities,
 	get_all_capabilities,
-	get_role_capabilities,
-	resolve_user_grants,
+	get_user_team_names,
 	user_has_operator_bypass,
 )
 
@@ -22,7 +22,9 @@ def _require_team_member(team: str, user: str | None = None) -> None:
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return
-	if not resolve_user_grants(user).get(team):
+	# Cheaper than resolving full grants: get_user_team_names is a Team↔Team Member
+	# join scoped to active memberships of active teams — the same "is a member" test.
+	if team not in get_user_team_names(user):
 		frappe.throw("You are not a member of this team.", frappe.PermissionError)
 
 
@@ -52,8 +54,20 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 		fields=["name", "role_name", "is_system", "team"],
 		order_by="role_name asc",
 	)
+	# Fetch every role's capabilities in one query, then group — avoids an
+	# extra query per role.
+	caps_by_role: dict[str, list[str]] = defaultdict(list)
+	role_names = [r["name"] for r in rows]
+	if role_names:
+		for rc in frappe.get_all(
+			"Role Capability",
+			filters={"parenttype": "Team Role", "parentfield": "capabilities", "parent": ["in", role_names]},
+			fields=["parent", "capability"],
+			order_by="parent asc, idx asc",
+		):
+			caps_by_role[rc["parent"]].append(rc["capability"])
 	for r in rows:
-		r["capabilities"] = get_role_capabilities(r["name"])
+		r["capabilities"] = caps_by_role.get(r["name"], [])
 	return rows
 
 
