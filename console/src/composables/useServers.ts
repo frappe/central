@@ -83,6 +83,7 @@ type CreateParams = {
   team: string
   region: string
   title: string
+  plan: string
   vcpus: number
   memory_megabytes: number
   disk_gigabytes: number

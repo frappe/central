@@ -76,18 +76,27 @@ def create_server(
 	team: str | None = None,
 	region: str | None = None,
 	title: str | None = None,
+	plan: str | None = None,
 	vcpus: int | None = None,
 	memory_megabytes: int | None = None,
 	disk_gigabytes: int | None = None,
 	cpu_max_cores: float | None = None,
 ) -> dict:
-	"""Provision a new server for a team in a region. Gated on `server:create`.
+	"""Provision a new server for a team in a region from a preset bundle Plan. Gated
+	on `server:create`.
 
 	`region` is an Atlas Instance (one Atlas = one region), which is also how we
 	route the provision call. Atlas owns placement/image/lifecycle; we pass the team
-	(the tenant key) and the chosen size. The Asset mirror is
-	populated by the `vm.created` event Atlas emits — the single writer — so we
-	don't upsert here (a second writer would race that event)."""
+	(the tenant key) and the chosen size.
+
+	Once the VM is created we record the billing Subscription for `plan` — the same
+	way `create_composed_server` records a composed one — so the bundle a server was
+	provisioned from is captured and its price-lock opened (ADR 0006/0010). That
+	writes a Pending Asset keyed on the VM's id; the `vm.created` event Atlas emits
+	then reconciles that same Asset (keyed on `resource_id`) instead of racing to
+	create a second one."""
+	from central.billing.catalog.subscriptions import provision_subscription
+
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
@@ -107,7 +116,15 @@ def create_server(
 		email=email,
 		cpu_max_cores=cpu_max_cores,
 	)
-	return {"resource_id": vm.get("name"), "server": vm}
+	resource_id = vm.get("name")
+	# Record the contract for the bundle. Guarded so a raw-size call (no plan) still
+	# provisions a VM without a subscription, as before.
+	subscription = None
+	if plan:
+		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get(
+			"subscription"
+		)
+	return {"resource_id": resource_id, "server": vm, "subscription": subscription}
 
 
 @frappe.whitelist(methods=["POST"])

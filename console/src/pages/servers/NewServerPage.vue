@@ -101,6 +101,7 @@ async function submit() {
       await create({
         region: selectedRegion.value,
         title: name.value.trim(),
+        plan: selectedPlanObj.value.plan,
         ...planResources(selectedPlanObj.value),
       })
     }
