@@ -85,6 +85,7 @@ def list_team_invitations(team: str, status: str | None = None) -> list[dict[str
 			"expires_on", "accepted_by", "accepted_at", "creation",
 		],
 		order_by="creation desc",
+		limit=100,
 	)
 
 
@@ -107,6 +108,7 @@ def rename_team(team: str, team_name: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
+@require_team_member
 def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
 	"""Hand the Owner role to another active member. Current-owner only."""
 	frappe.get_doc("Team", team).transfer_ownership(user)
