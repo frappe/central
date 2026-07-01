@@ -75,10 +75,25 @@ class TestResizeComposed(IntegrationTestCase):
 		self.assertEqual(segments[1].new_value, "Custom: 4 vCPU · 16 GB RAM · 40 GB disk")
 
 	def test_resize_invoice_has_two_prorated_segments(self):
-		start = str(get_first_day(nowdate()))
-		sub = self._provision(start_date=start)
-		subscriptions.resize_composed_subscription(sub, BIG, "General")  # effective today
-		invoice = generate_team_invoice(TEAM, start, str(get_last_day(nowdate())))
+		start = get_first_day(nowdate())
+		sub = self._provision(start_date=str(start))
+		# Author the resize re-lock as a mid-month Plan Changed segment so proration has
+		# two spans regardless of the day the suite runs — resize stamps now_datetime(),
+		# which collapses onto the opening segment when today is the 1st (segment authoring
+		# itself is covered by test_resize_relocks…). Bills Created [1..15] + resize [15..].
+		mid = frappe.utils.add_days(start, 14)
+		frappe.get_doc(
+			{
+				"doctype": "Subscription Change",
+				"subscription": sub,
+				"change_type": "Plan Changed",
+				"new_value": "Custom: 4 vCPU · 16 GB RAM · 40 GB disk",
+				"locked_rate": 6400,
+				"currency": "INR",
+				"effective_at": f"{mid} 00:00:00",
+			}
+		).insert(ignore_permissions=True)
+		invoice = generate_team_invoice(TEAM, str(start), str(get_last_day(nowdate())))
 		doc = frappe.get_doc("Invoice", invoice)
 		self.assertEqual(len(doc.items), 2)
 		self.assertEqual({line.rate for line in doc.items}, {3400, 6400})

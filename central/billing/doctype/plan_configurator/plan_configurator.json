@@ -29,7 +29,10 @@
   "rungs_section",
   "rungs",
   "simple_section",
-  "simple_plans"
+  "simple_plans",
+  "component_card_section",
+  "component_rates",
+  "component_card_help"
  ],
  "fields": [
   {
@@ -196,6 +199,23 @@
   {
    "fieldname": "column_break_xbyf",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "component_card_section",
+   "fieldtype": "Section Break",
+   "label": "Component Rate Card"
+  },
+  {
+   "description": "Per-unit rates for the composed-config primitives (Compute / Memory / Disk), one row per (resource type × currency). A custom config is billed as the sum of quantity × these rates — so a composed config is sellable in a currency/region only when every primitive is priced there (ADR 0011).",
+   "fieldname": "component_rates",
+   "fieldtype": "Table",
+   "label": "Component Rates",
+   "options": "Plan Configurator Component Rate"
+  },
+  {
+   "fieldname": "component_card_help",
+   "fieldtype": "HTML",
+   "options": "<p class='text-muted small'><b>Seed Component Rows</b> fills the table with every shipped currency × primitive so nothing is missed. <b>Apply Component Card</b> writes these as Catalog Rate rows (per cluster; blank = global) and reports any currency whose card is still incomplete — that region can't offer custom configs until it is (ADR 0011).</p>"
   }
  ],
  "index_web_pages_for_search": 1,

@@ -9,7 +9,6 @@ from central.billing.revenue import invoicing, credits
 from central.billing.catalog import trials
 from central.billing.catalog.entitlements import recompute_trust_tier
 from central.billing.catalog.signing import generate_keypair
-from central.billing.platform.sync import receive_usage_events
 from central.billing.tests.test_entitlements import make_ladder
 from central.billing.tests.utils import (
 	add_segment,
@@ -21,25 +20,6 @@ from central.billing.tests.utils import (
 TEAM = "team-trial"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-trial-test"
-
-
-def provision(resource="srv-trial", rate=1000, start="2026-06-01 00:00:00"):
-	receive_usage_events(
-		[
-			{
-				"event_id": f"ev-{resource}",
-				"team": TEAM,
-				"resource_id": resource,
-				"cluster": CLUSTER,
-				"plan": PLAN,
-				"shown_rate": rate,
-				"currency": "INR",
-				"event_type": "subscribed",
-				"effective_from": start,
-				"effective_to": None,
-			}
-		]
-	)
 
 
 class TrialTestBase(IntegrationTestCase):
@@ -58,13 +38,14 @@ class TrialTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Price Lock", "Credit Ledger Entry"):
+		for dt in ("Invoice", "Credit Ledger Entry"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		frappe.db.delete("Billing Profile", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
+		frappe.db.delete("Asset", {"team": TEAM})
 		frappe.db.delete("Entitlement Token", {"team": TEAM})
 		frappe.db.commit()
 
@@ -72,13 +53,11 @@ class TrialTestBase(IntegrationTestCase):
 class TestCostReportGeneration(TrialTestBase):
 	def test_entry_tier_invoice_is_cost_report(self):
 		self.assertTrue(trials.is_trial_team(TEAM))
-		provision()
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "Cost Report")
 
 	def test_cost_report_is_computed_but_not_charged(self):
-		provision()
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		credits.purchase(TEAM, 500, "INR")  # even with a wallet, nothing is drawn
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
@@ -96,7 +75,6 @@ class TestCostReportGeneration(TrialTestBase):
 
 class TestConversion(TrialTestBase):
 	def test_convert_to_paid_flips_type_and_keeps_resources(self):
-		provision()
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")  # runs into July too
 		# June: trial → cost_report.
 		june = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
@@ -105,13 +83,12 @@ class TestConversion(TrialTestBase):
 		trials.convert_to_paid(TEAM)
 		self.assertFalse(trials.is_trial_team(TEAM))
 
-		# July invoice is billable; the resource's lock is untouched (still running).
+		# July invoice is billable; the resource's open segment is untouched (still running).
 		july = invoicing.generate_draft_invoice(self.sub, "2026-07-01", "2026-07-31")
 		self.assertEqual(frappe.db.get_value("Invoice", july, "invoice_type"), "Billable")
-		active_locks = frappe.get_all(
-			"Price Lock", {"team": TEAM, "resource_id": "srv-trial", "ended_at": ["is", "not set"]}
-		)
-		self.assertEqual(len(active_locks), 1)
+		from central.billing.catalog.subscriptions import current_segment_rate
+
+		self.assertEqual(current_segment_rate(self.sub), 1000.0)
 		self.assertEqual(
 			frappe.db.get_value("Subscription", self.sub, "account_standing"), "Current"
 		)
@@ -122,8 +99,6 @@ class TestSubsidyAndExpiry(TrialTestBase):
 		# A far-future period isolates this global aggregate from seeded demo data.
 		# Two run-segments in the team+cluster (1000 + 2000) — the consolidated draft
 		# day-weights both over the full month.
-		provision("srv-a", rate=1000, start="2099-01-01 00:00:00")
-		provision("srv-b", rate=2000, start="2099-01-01 00:00:00")
 		add_segment(self.sub, "Created", 1000, "2099-01-01 00:00:00")
 		sub_b = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
 		add_segment(sub_b, "Created", 2000, "2099-01-01 00:00:00")

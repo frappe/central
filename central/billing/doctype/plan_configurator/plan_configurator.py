@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, flt
 
@@ -219,6 +220,81 @@ class PlanConfigurator(Document):
 			for br in self._base_rates(set(currencies) if currencies else None)
 		]
 		return {"pricing": pricing, "cluster": cluster or None}
+
+	# ── Component rate card (ADR 0011) ──────────────────────────────────────────
+	# The Configurator is the single authority that prices the composed-config
+	# primitives too, capturing every shipped currency in one place beside the preset
+	# and simple builders — no separate seed + endpoint that could drift half-filled.
+
+	@frappe.whitelist()
+	def seed_component_rows(self) -> dict:
+		"""Fill the component-rate table with every (primitive × shipped currency) pair
+		not already present, so authoring captures all currencies in one place — an
+		incomplete card is what silently produced a `$0` estimate (ADR 0011)."""
+		from central.billing.catalog.component_card import COMPONENT_RESOURCE_TYPES
+		from central.billing.gateways.registry import supported_currencies
+
+		existing = {(r.resource_type, r.currency) for r in self.component_rates}
+		added = 0
+		for currency in supported_currencies():
+			for resource_type in COMPONENT_RESOURCE_TYPES:
+				if (resource_type, currency) not in existing:
+					self.append("component_rates", {"resource_type": resource_type, "currency": currency})
+					added += 1
+		self.save(ignore_permissions=True)
+		return {"added": added, "rows": len(self.component_rates)}
+
+	@frappe.whitelist()
+	def apply_component_card(self, cluster: str | None = None) -> dict:
+		"""Write the component-rate table onto the `Catalog Rate` spine for `cluster`
+		(blank = global) through the Configurator's single internal write, then report
+		any currency whose card is still incomplete — that region can't offer composed
+		configs until it is (ADR 0011)."""
+		from central.billing.catalog.component_card import component_card_gaps, set_component_rate
+
+		if not self.component_rates:
+			frappe.throw(_("Add component rates first (Seed Component Rows), then apply."))
+		cluster = (cluster or "").strip() or None
+		applied = []
+		for r in self.component_rates:
+			if flt(r.rate) <= 0:
+				continue  # a blank/zero row is "not priced yet", not a free primitive
+			set_component_rate(r.resource_type, r.currency, flt(r.rate), cluster=cluster)
+			applied.append({"resource_type": r.resource_type, "currency": r.currency})
+		currencies = sorted({r.currency for r in self.component_rates})
+		incomplete = {c: gaps for c in currencies if (gaps := component_card_gaps(c, cluster))}
+		return {"applied": applied, "cluster": cluster, "incomplete": incomplete}
+
+	@frappe.whitelist()
+	def component_card_status(self, cluster: str | None = None) -> dict:
+		"""Per-currency gaps in the *live* component card for `cluster` — so an incomplete
+		card is visible before a region offers composed configs (ADR 0011)."""
+		from central.billing.catalog.component_card import component_card_gaps
+		from central.billing.gateways.registry import supported_currencies
+
+		cluster = (cluster or "").strip() or None
+		return {c: component_card_gaps(c, cluster) for c in supported_currencies()}
+
+	@frappe.whitelist()
+	def pricing_warnings(self, cluster: str | None = None) -> dict:
+		"""Flag each generated preset whose flat rate diverges from its component sum —
+		`below` (an intended bundle discount) or `above` (a likely mispricing) — now that
+		one screen sees both numbers (ADR 0011). Only checks rungs already generated."""
+		from central.billing.catalog.component_card import preset_component_warning
+
+		if self._builder() != "VM Rungs":
+			return {"warnings": []}
+		cluster = (cluster or "").strip() or None
+		currencies = [r.currency for r in self.base_rates]
+		warnings = []
+		for rung in self.rungs:
+			if not rung.plan or not frappe.db.exists("Plan", rung.plan):
+				continue
+			for currency in currencies:
+				warning = preset_component_warning(rung.plan, currency, cluster)
+				if warning:
+					warnings.append(warning)
+		return {"warnings": warnings}
 
 
 def run_generation(configurator, cluster=None, currencies=None, plans=None, user=None):

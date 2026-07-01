@@ -24,12 +24,12 @@ from collections import Counter, defaultdict
 import frappe
 from frappe.model.rename_doc import rename_doc
 
-# The 16 billing DocTypes carrying `team` (Notification Log was renamed to
-# Billing Notification Log in #41).
+# The billing DocTypes carrying `team` (Notification Log was renamed to Billing
+# Notification Log in #41; Price Lock was retired into the Subscription Change
+# ledger by ADR 0010 / #86).
 TEAM_DOCTYPES = [
 	"Subscription",
 	"Invoice",
-	"Price Lock",
 	"Credit Wallet",
 	"Credit Ledger Entry",
 	"Payment Method",

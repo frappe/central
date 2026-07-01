@@ -27,7 +27,7 @@ import frappe
 from central.billing.revenue import invoicing, credits
 from central.billing.platform import notifications
 from central.billing.catalog import subscriptions
-from central.billing.platform.sync import receive_meter_rollups, receive_usage_events
+from central.billing.platform.sync import receive_meter_rollups
 from central.billing.demo._factory import (
 	ANCHOR,
 	PLAN_SIZES,
@@ -253,40 +253,45 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 	for cluster, plan in resources:
 		by_cluster.setdefault(cluster, []).append(plan)
 
-	# Provision every instance — one price-lock each. The first instance carries
-	# the grandfathered (locked launch) rate; the rest lock today's catalog rate.
-	idx = 0
-	for cluster, plans in by_cluster.items():
-		for plan in plans:
-			idx += 1
-			resource = f"srv-{slug}-{idx}"
-			catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
-			rate = round(catalog * 0.78, 2) if (state == "Grandfathered" and idx == 1) else catalog
-			receive_usage_events([{
-				"event_id": f"ev-{slug}-{idx}", "team": team, "resource_id": resource,
-				"cluster": cluster, "plan": plan, "shown_rate": rate, "currency": currency,
-				"event_type": "subscribed", "effective_from": f"{first_start} 00:00:00", "effective_to": None,
-			}])
-			# A metered bandwidth overage on the first active instance.
-			if idx == 1 and state in ("Grandfathered", "Active", "credits"):
-				allowance = next(p[5] for p in PLAN_SIZES if p[0] == plan)
-				receive_meter_rollups([{
-					"resource_id": resource, "resource_type": "Transfer", "meter_type": "Counter",
-					"period_start": f"{ANCHOR} 00:00:00", "period_end": "2026-06-30 23:59:59",
-					"quantity": round(allowance * 1.25), "unit": "GB",
-					"idempotency_key": f"{resource}:counter:{ANCHOR}", "status": "closed",
-				}])
-
 	# One subscription per cluster carries the per-region billing intent (and the
-	# default payment method that funds the auto-charge). But the customer sees a
-	# SINGLE consolidated invoice per month — generate_team_invoice rolls every
+	# default payment method that funds the auto-charge). Provisioning opens its billing
+	# segment inline (ADR 0010 — the ledger is the lock); the first cluster carries the
+	# grandfathered (locked launch) rate, the rest lock today's catalog rate. The customer
+	# sees a SINGLE consolidated invoice per month — generate_team_invoice rolls every
 	# cluster's day-weighted lines + overage into one Invoice per period.
 	subs = []
+	idx = 0
 	for cluster, plans in by_cluster.items():
-		subs.append(subscriptions.create_subscription(
-			team=team, cluster=cluster, plan=plans[0], billing_cycle="Monthly",
+		idx += 1
+		plan = plans[0]
+		resource = f"srv-{slug}-{idx}"
+		catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
+		rate = round(catalog * 0.78, 2) if (state == "Grandfathered" and idx == 1) else catalog
+		sub = subscriptions.create_subscription(
+			team=team, cluster=cluster, plan=plan, billing_cycle="Monthly",
 			default_payment_method=pm, gateway=gateway,
-		).name)
+			start_date=first_start, resource_id=resource,
+		).name
+		# Re-price the opening segment to the launch rate so the grandfathered story shows.
+		opening = frappe.db.get_value(
+			"Subscription Change", {"subscription": sub, "change_type": "Created"}, "name"
+		)
+		if opening:
+			frappe.db.set_value(
+				"Subscription Change", opening,
+				{"locked_rate": rate, "effective_at": f"{first_start} 00:00:00"},
+				update_modified=False,
+			)
+		subs.append(sub)
+		# A metered bandwidth overage on the first active instance.
+		if idx == 1 and state in ("Grandfathered", "Active", "credits"):
+			allowance = next(p[5] for p in PLAN_SIZES if p[0] == plan)
+			receive_meter_rollups([{
+				"resource_id": resource, "resource_type": "Transfer", "meter_type": "Counter",
+				"period_start": f"{ANCHOR} 00:00:00", "period_end": "2026-06-30 23:59:59",
+				"quantity": round(allowance * 1.25), "unit": "GB",
+				"idempotency_key": f"{resource}:counter:{ANCHOR}", "status": "closed",
+			}])
 	primary_sub = subs[0]
 
 	for i, (start, end) in enumerate(periods):

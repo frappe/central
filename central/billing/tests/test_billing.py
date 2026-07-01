@@ -57,7 +57,7 @@ class BillingTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Price Lock", "Credit Ledger Entry"):
+		for dt in ("Invoice", "Credit Ledger Entry"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):

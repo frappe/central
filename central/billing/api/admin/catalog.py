@@ -5,10 +5,9 @@ cluster/plan run-rate consumption, and trial→paid conversion analysis.
 """
 
 import frappe
-from frappe import _
 
 from central.billing.authz import require_operator
-from central.billing.api.admin._shared import _active_locks, _plan_monthly_inr, _to_inr
+from central.billing.api.admin._shared import _active_segments, _plan_monthly_inr, _to_inr
 
 
 @frappe.whitelist()
@@ -17,18 +16,23 @@ def get_catalog() -> dict:
 	run in (with active resource counts). Metered overage plans are Plans too now
 	(ADR 0008), so they appear in the plan list rather than a separate add-on list."""
 	require_operator()
+	# One ledger sweep, counted per plan/cluster in Python — no query per plan.
+	segments = _active_segments()
+	resources_by_plan: dict = {}
+	for seg in segments:
+		resources_by_plan[seg.plan] = resources_by_plan.get(seg.plan, 0) + 1
 	plans = []
 	for p in frappe.get_all("Plan", fields=["name", "title", "billing_cycle", "is_active"], order_by="name asc"):
 		plans.append({
 			**p,
 			"inr_rate": _plan_monthly_inr(p.name, None),
-			"active_resources": frappe.db.count("Price Lock", {"plan": p.name, "ended_at": ["is", "not set"]}),
+			"active_resources": resources_by_plan.get(p.name, 0),
 		})
 	clusters = {}
-	for lock in _active_locks():
-		c = clusters.setdefault(lock.cluster or "global", {"cluster": lock.cluster or "global", "resources": 0, "teams": set()})
+	for seg in segments:
+		c = clusters.setdefault(seg.cluster or "global", {"cluster": seg.cluster or "global", "resources": 0, "teams": set()})
 		c["resources"] += 1
-		c["teams"].add(lock.team)
+		c["teams"].add(seg.team)
 	cluster_rows = sorted(
 		({"cluster": c["cluster"], "resources": c["resources"], "teams": len(c["teams"])} for c in clusters.values()),
 		key=lambda r: r["resources"], reverse=True,
@@ -68,26 +72,17 @@ def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> 
 	return {"plan": plan, "currency": currency, "cluster": cluster or "global", "rate": frappe.utils.flt(rate)}
 
 
-@frappe.whitelist()
 def update_component_rate(resource_type: str, currency: str, rate: int, cluster: str = "") -> dict:
-	"""Price management for the composed-config rate card (ADR 0009): set one
-	`Resource Type`'s per-unit `Catalog Rate`. Like `update_plan_rate`, it is a
-	single document edit — it mints no plans, and a running composed config keeps
-	billing its locked config rate (only a new provision/resize picks up the new
-	rate, #80/#82)."""
-	require_operator()
-	from central.billing.catalog.pricing import set_catalog_rate
+	"""Set one `Resource Type`'s per-unit `Catalog Rate` (the composed-config rate card).
 
-	if not frappe.db.exists("Resource Type", resource_type):
-		frappe.throw(_("Resource Type {0} does not exist.").format(frappe.bold(resource_type)))
-	cluster = cluster or None
-	set_catalog_rate("Resource Type", resource_type, currency, rate, cluster=cluster)
-	return {
-		"resource_type": resource_type,
-		"currency": currency,
-		"cluster": cluster or "global",
-		"rate": frappe.utils.flt(rate),
-	}
+	No longer a whitelisted public endpoint (ADR 0011): the Plan Configurator is the
+	single authoring authority, so the component card is written through its internal
+	path (`component_card.set_component_rate`). This thin wrapper stays for migrations
+	and tests; it delegates to that single write so there is one place a component rate
+	is set."""
+	from central.billing.catalog.component_card import set_component_rate
+
+	return set_component_rate(resource_type, currency, rate, cluster=cluster or None)
 
 
 @frappe.whitelist()
@@ -99,10 +94,10 @@ def get_cluster_consumption() -> list[dict]:
 	"""
 	require_operator()
 	out = {}
-	for lock in _active_locks():
-		c = out.setdefault(lock.cluster or "global", {"cluster": lock.cluster or "global", "resources": 0, "monthly": 0.0, "currency": "INR"})
+	for seg in _active_segments():
+		c = out.setdefault(seg.cluster or "global", {"cluster": seg.cluster or "global", "resources": 0, "monthly": 0.0, "currency": "INR"})
 		c["resources"] += 1
-		c["monthly"] = frappe.utils.flt(c["monthly"] + _plan_monthly_inr(lock.plan, lock.cluster), 2)
+		c["monthly"] = frappe.utils.flt(c["monthly"] + _segment_monthly_inr(seg), 2)
 	return sorted(out.values(), key=lambda r: r["monthly"], reverse=True)
 
 
@@ -111,11 +106,21 @@ def get_plan_consumption() -> list[dict]:
 	"""Plan-wise consumption analysis (INR-normalised monthly run-rate)."""
 	require_operator()
 	out = {}
-	for lock in _active_locks():
-		p = out.setdefault(lock.plan or "—", {"plan": lock.plan or "—", "resources": 0, "monthly": 0.0, "currency": "INR"})
+	for seg in _active_segments():
+		key = seg.plan or "Custom"
+		p = out.setdefault(key, {"plan": key, "resources": 0, "monthly": 0.0, "currency": "INR"})
 		p["resources"] += 1
-		p["monthly"] = frappe.utils.flt(p["monthly"] + _plan_monthly_inr(lock.plan, lock.cluster), 2)
+		p["monthly"] = frappe.utils.flt(p["monthly"] + _segment_monthly_inr(seg), 2)
 	return sorted(out.values(), key=lambda r: r["monthly"], reverse=True)
+
+
+def _segment_monthly_inr(seg) -> float:
+	"""A segment's monthly run-rate in INR. A preset resolves its Plan's current INR
+	catalog rate (as the old Price Lock aggregate did); a composed config has no Plan,
+	so its locked config-total is converted from the segment's currency (#86)."""
+	if seg.plan:
+		return _plan_monthly_inr(seg.plan, seg.cluster)
+	return _to_inr(seg.locked_rate, seg.currency)
 
 
 @frappe.whitelist()

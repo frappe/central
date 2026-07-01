@@ -6,13 +6,12 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.revenue import invoicing, metering
-from central.billing.platform.sync import receive_meter_rollups, receive_usage_events
+from central.billing.platform.sync import receive_meter_rollups
 from central.billing.tests.utils import (
-	add_segment,
 	ensure_team,
-	make_billing_subscription,
 	make_metered_plan,
 	make_plan,
+	seed_running_resource,
 )
 
 TEAM = "team-meter"
@@ -36,22 +35,10 @@ def meter(key_suffix, qty, resource_type="Transfer", meter_type="Counter"):
 
 
 def provision(rate=1000):
-	receive_usage_events(
-		[
-			{
-				"event_id": "ev-meter",
-				"team": TEAM,
-				"resource_id": RESOURCE,
-				"cluster": CLUSTER,
-				"plan": PLAN,
-				"shown_rate": rate,
-				"currency": "INR",
-				"event_type": "subscribed",
-				"effective_from": "2026-06-01 00:00:00",
-				"effective_to": None,
-			}
-		]
-	)
+	"""Open the resource's billing segment on the ledger (ADR 0010) — its Asset +
+	Subscription + Created segment — so metering can grandfather its terms. Returns the
+	Subscription name."""
+	return seed_running_resource(TEAM, RESOURCE, CLUSTER, PLAN, rate=rate, currency="INR")
 
 
 class MeteringTestBase(IntegrationTestCase):
@@ -68,17 +55,18 @@ class MeteringTestBase(IntegrationTestCase):
 			rates=[{"cluster": "", "currency": "INR", "rate": 0.5}],
 		)
 		self._purge()
-		provision()
+		self.sub = provision()
 
 	def tearDown(self):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Usage Rollup", "Price Lock", "Invoice"):
+		for dt in ("Usage Rollup", "Invoice"):
 			frappe.db.delete(dt, {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
+		frappe.db.delete("Asset", {"team": TEAM})
 		frappe.db.commit()
 
 
@@ -103,7 +91,10 @@ class TestIngestRollup(MeteringTestBase):
 		)
 
 	def test_rollup_for_unprovisioned_resource_is_skipped(self):
-		frappe.db.delete("Price Lock", {"team": TEAM})  # no active lock
+		# Close the resource's segment so it has no open segment to bill against.
+		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
+			frappe.db.delete("Subscription Change", {"subscription": sub})
+			frappe.db.delete("Subscription", {"name": sub})
 		frappe.db.commit()
 		result = receive_meter_rollups([meter("a", 150)])
 		self.assertEqual(result["acknowledged"], [])
@@ -125,11 +116,9 @@ class TestMeteredLineItems(MeteringTestBase):
 
 	def test_draft_invoice_includes_fixed_and_metered_lines(self):
 		receive_meter_rollups([meter("a", 150)])
-		sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
-		# Full-June fixed segment at ₹1000/mo (authored as the run-segment billing
-		# day-weights over), alongside the metered overage.
-		add_segment(sub, "Created", 1000, "2026-06-01 00:00:00")
-		name = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
+		# The provisioned resource carries a full-June fixed segment at ₹1000/mo (its
+		# Created segment), alongside the metered overage.
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 
 		resource_types = sorted(li.resource_type for li in inv.items)

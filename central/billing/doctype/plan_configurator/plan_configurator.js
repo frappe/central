@@ -89,6 +89,30 @@ frappe.ui.form.on("Plan Configurator", {
 				"btn-primary"
 			);
 		}
+
+		// Component rate card (ADR 0011): the Configurator prices the composed-config
+		// primitives (Compute / Memory / Disk) too, so an incomplete card surfaces here
+		// — before a region can offer custom configs — not as a silent $0 estimate.
+		frm.add_custom_button(
+			__("Seed Component Rows"),
+			() => {
+				frm.call("seed_component_rows").then((r) => {
+					frappe.show_alert({
+						message: __("{0} component rows added.", [(r.message || {}).added || 0]),
+						indicator: "blue",
+					});
+					frm.reload_doc();
+				});
+			},
+			__("Component Card")
+		);
+		if ((frm.doc.component_rates || []).length) {
+			frm.add_custom_button(
+				__("Apply Component Card"),
+				() => apply_component_card_dialog(frm),
+				__("Component Card")
+			);
+		}
 	},
 
 	category(frm) {
@@ -211,6 +235,55 @@ function generate_dialog(frm) {
 						values.cluster || __("global"),
 					]),
 					indicator: "blue",
+				});
+			});
+		},
+	});
+	d.show();
+}
+
+function apply_component_card_dialog(frm) {
+	const d = new frappe.ui.Dialog({
+		title: __("Apply Component Card"),
+		fields: [
+			{
+				fieldname: "cluster",
+				fieldtype: "Link",
+				options: "Atlas Instance",
+				label: __("Atlas Instance"),
+				description: __("Blank = global rate (every Atlas Instance). Else price one region. Re-run per Atlas Instance."),
+			},
+		],
+		primary_action_label: __("Apply"),
+		primary_action(values) {
+			frm.call("apply_component_card", { cluster: values.cluster }).then((r) => {
+				d.hide();
+				const res = r.message || {};
+				const incomplete = res.incomplete || {};
+				const gaps = Object.keys(incomplete);
+				if (!gaps.length) {
+					frappe.show_alert({
+						message: __("Component card applied — every currency is complete for {0}.", [
+							res.cluster || __("global"),
+						]),
+						indicator: "green",
+					});
+					return;
+				}
+				const rows = gaps
+					.map(
+						(c) =>
+							`<li><b>${frappe.utils.escape_html(c)}</b>: ${__("missing")} ${incomplete[c]
+								.map((rt) => frappe.utils.escape_html(rt))
+								.join(", ")}</li>`
+					)
+					.join("");
+				frappe.msgprint({
+					title: __("Card applied — but incomplete for some currencies"),
+					indicator: "orange",
+					message:
+						__("These currencies can't offer custom configs until every primitive is priced:") +
+						`<ul>${rows}</ul>`,
 				});
 			});
 		},

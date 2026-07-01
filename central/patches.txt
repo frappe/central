@@ -88,6 +88,9 @@ central.billing.patches.v23_sub_category_compose_bounds.sub_category_compose_bou
 # Widen the VM profiles' vCPU ladder to the configurator's full fractional set so the
 # composed-config slider can reach a 1/8 vCPU micro config — #84.
 central.billing.patches.v24_widen_vcpu_ladder.widen_vcpu_ladder
+# Retire the Price Lock doctype: the Subscription Change ledger is the only lock now.
+# Backfill any remaining open lock into the ledger, then drop the doctype — ADR 0010, #86.
+central.billing.patches.v25_retire_price_lock.retire_price_lock
 central.patches.v01_capability_model_v2.rename_capabilities
 central.patches.v02_portal_central_users.make_central_users_portal_only
 # Strip the capability catalog to v3: drop the bench plane (site:* + server:config)

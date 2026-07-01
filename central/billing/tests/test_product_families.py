@@ -6,9 +6,14 @@ Frappe Box Remote Storage — each authored on the masters, billed by the existi
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.platform.sync import receive_meter_rollups, receive_usage_events
+from central.billing.platform.sync import receive_meter_rollups
 from central.billing.revenue import metering
-from central.billing.tests.utils import ensure_team, make_metered_plan, make_plan
+from central.billing.tests.utils import (
+	ensure_team,
+	make_metered_plan,
+	make_plan,
+	seed_running_resource,
+)
 
 
 class TestFamiliesSeed(IntegrationTestCase):
@@ -53,18 +58,19 @@ class TestAITokensBilling(IntegrationTestCase):
 			rates=[{"cluster": "", "currency": "INR", "rate": 5}],
 		)
 		self._purge()
-		receive_usage_events([{
-			"event_id": "ev-tok", "team": self.TEAM, "resource_id": self.RESOURCE,
-			"cluster": self.CLUSTER, "plan": self.PLAN, "shown_rate": 0, "currency": "INR",
-			"event_type": "subscribed", "effective_from": "2026-06-01 00:00:00", "effective_to": None,
-		}])
+		# Open the resource's billing segment (ADR 0010 — the ledger is the lock) so
+		# metering can grandfather its Tokens allowance + rate.
+		seed_running_resource(self.TEAM, self.RESOURCE, self.CLUSTER, self.PLAN, rate=0, currency="INR")
 
 	def tearDown(self):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Usage Rollup", "Price Lock"):
-			frappe.db.delete(dt, {"team": self.TEAM})
+		frappe.db.delete("Usage Rollup", {"team": self.TEAM})
+		for sub in frappe.get_all("Subscription", {"team": self.TEAM}, pluck="name"):
+			frappe.db.delete("Subscription Change", {"subscription": sub})
+			frappe.db.delete("Subscription", {"name": sub})
+		frappe.db.delete("Asset", {"team": self.TEAM})
 		frappe.db.commit()
 
 	def _meter(self, qty):

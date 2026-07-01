@@ -194,17 +194,15 @@ def provision_subscription(
 	gateway: str | None = None,
 	changed_by: str | None = None,
 ):
-	"""Provision a subscription the agentless way (ADR 0006): record the intent,
-	then — as the *same* component — write the authoritative runtime record.
+	"""Provision a subscription the agentless way (ADR 0006): record the intent, which
+	— as the *same* component — opens the authoritative billing segment.
 
 	Central calls the cluster manager to create the resource (here the seam mints a
-	`resource_id`; a real impl uses the id the cluster manager returns), then writes
-	the price-lock at the catalog rate for the team's currency + cluster. Because the
-	one component both provisions and locks, the rate shown is the rate locked — no
-	agent push, no reconciliation gap. Returns the subscription + the locked handles.
-	"""
-	from central.billing.platform.sync import record_usage_events
-
+	`resource_id`; a real impl uses the id the cluster manager returns). Creating the
+	Subscription opens its `Created` Subscription Change at the catalog rate for the
+	team's currency + cluster — that segment IS the price-lock (ADR 0010), so the rate
+	shown is the rate locked, with no separate ledger to keep in sync. Returns the
+	subscription + the locked handles."""
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
 		team, cluster, plan, billing_cycle=billing_cycle, start_date=start_date,
@@ -212,19 +210,18 @@ def provision_subscription(
 		resource_id=resource_id,
 	)
 
-	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
-	shown_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
-	effective_from = f"{sub.start_date} 00:00:00"
-
-	record_usage_events([{
-		"event_id": f"prov-{sub.name}-{resource_id}",
-		"team": team, "resource_id": resource_id, "cluster": cluster, "plan": plan,
-		"shown_rate": shown_rate, "currency": currency,
-		"event_type": "subscribed", "effective_from": effective_from, "effective_to": None,
-	}])
-
-	return {"subscription": sub.name, "resource_id": resource_id,
-			"shown_rate": shown_rate, "currency": currency}
+	opening = frappe.db.get_value(
+		"Subscription Change",
+		{"subscription": sub.name, "change_type": "Created"},
+		["locked_rate", "currency"],
+		as_dict=True,
+	)
+	return {
+		"subscription": sub.name,
+		"resource_id": resource_id,
+		"shown_rate": opening.locked_rate if opening else None,
+		"currency": opening.currency if opening else None,
+	}
 
 
 def change_plan(subscription: str, new_plan: str, changed_by: str | None = None):
@@ -314,29 +311,120 @@ def _is_resizable(doc) -> bool:
 	return True
 
 
+# The Subscription Change types that bear a rate and bound a billing segment. A
+# segment is "open" when the latest such change is Created/Plan Changed, not a
+# terminal Cancelled.
+_SEGMENT_CHANGE_TYPES = ["Created", "Plan Changed", "Cancelled"]
+
+
+def _latest_segment_by_subscription(subscription_names: list[str]) -> dict:
+	"""The most-recent rate-bearing change per subscription, in ONE batched query.
+
+	Ordered newest-first so the first row seen per subscription is its latest segment
+	marker; this replaces the per-subscription query that made `team_run_rate` an N+1
+	on a hot read (review notes #2)."""
+	if not subscription_names:
+		return {}
+	rows = frappe.get_all(
+		"Subscription Change",
+		filters={"subscription": ["in", subscription_names], "change_type": ["in", _SEGMENT_CHANGE_TYPES]},
+		fields=["subscription", "change_type", "locked_rate", "currency"],
+		order_by="effective_at desc, creation desc",
+	)
+	latest: dict = {}
+	for r in rows:
+		latest.setdefault(r.subscription, r)
+	return latest
+
+
+def _asset_clusters(asset_ids) -> dict:
+	"""Map asset_id -> cluster in one query (cluster lives on the Asset, cdea38e)."""
+	ids = [a for a in set(asset_ids) if a]
+	if not ids:
+		return {}
+	return {
+		r.name: r.cluster
+		for r in frappe.get_all("Asset", filters={"name": ["in", ids]}, fields=["name", "cluster"])
+	}
+
+
+def active_segments(filters: dict | None = None) -> list:
+	"""Every open, rate-bearing billing segment — one row per subscription — resolved
+	from the `Subscription Change` ledger (ADR 0010) in batched queries.
+
+	This is THE single source of truth for "what is a team running", replacing the
+	retired `Price Lock` reads (#86). A preset and a composed subscription are treated
+	identically, so a composed config is finally visible everywhere a preset is —
+	"resources used", admin consumption, team-clusters, the currency fallback.
+
+	`filters` narrows the underlying Subscriptions (e.g. `{"team": t}` or
+	`{"plan": p}`). Each row is a `frappe._dict`: subscription, team, plan,
+	pricing_mode, asset_id, resource_id, cluster, currency, locked_rate."""
+	subs = frappe.get_all(
+		"Subscription",
+		filters=filters or {},
+		fields=["name", "team", "plan", "pricing_mode", "asset_id"],
+	)
+	if not subs:
+		return []
+	latest = _latest_segment_by_subscription([s.name for s in subs])
+	clusters = _asset_clusters([s.asset_id for s in subs])
+	out = []
+	for s in subs:
+		seg = latest.get(s.name)
+		if not seg or seg.change_type == "Cancelled":
+			continue
+		out.append(
+			frappe._dict(
+				{
+					"subscription": s.name,
+					"team": s.team,
+					"plan": s.plan,
+					"pricing_mode": s.pricing_mode,
+					"asset_id": s.asset_id,
+					"resource_id": s.asset_id,
+					"cluster": clusters.get(s.asset_id),
+					"currency": seg.currency,
+					"locked_rate": frappe.utils.flt(seg.locked_rate),
+				}
+			)
+		)
+	return out
+
+
+def team_active_segments(team: str) -> list:
+	"""A team's open priced segments — see `active_segments`."""
+	return active_segments({"team": team})
+
+
+def active_segment_for_resource(resource_id: str):
+	"""The open priced segment for a provisioned resource (its Asset's subscription),
+	or None. `asset_id` names the Asset, whose name is the `resource_id` (autoname
+	field:resource_id), so a resource maps to at most one subscription. Used by
+	metering to grandfather a metered resource's terms off the ledger (#86)."""
+	segs = active_segments({"asset_id": resource_id})
+	return segs[0] if segs else None
+
+
 def current_segment_rate(subscription: str) -> float:
 	"""The locked_rate of a subscription's currently-open billing segment, or 0 when
 	it is cancelled / never priced. The open segment is the latest Created/Plan Changed
 	not closed by a later Cancelled (ADR 0010 — the ledger is the lock)."""
-	rows = frappe.get_all(
-		"Subscription Change",
-		filters={"subscription": subscription, "change_type": ["in", ["Created", "Plan Changed", "Cancelled"]]},
-		fields=["change_type", "locked_rate"],
-		order_by="effective_at desc, creation desc",
-		limit=1,
-	)
-	if not rows or rows[0].change_type == "Cancelled":
+	seg = _latest_segment_by_subscription([subscription]).get(subscription)
+	if not seg or seg.change_type == "Cancelled":
 		return 0.0
-	return frappe.utils.flt(rows[0].locked_rate)
+	return frappe.utils.flt(seg.locked_rate)
 
 
 def team_run_rate(team: str, exclude: str | None = None) -> float:
 	"""The team's committed monthly run-rate: the summed open-segment locked rate of
 	its subscriptions (preset and composed alike). A team bills in one currency, so the
 	rates are already comparable. `exclude` drops one subscription — used by resize to
-	measure headroom as if the config being resized weren't there."""
-	subs = frappe.get_all("Subscription", filters={"team": team}, pluck="name")
-	return frappe.utils.flt(sum(current_segment_rate(s) for s in subs if s != exclude))
+	measure headroom as if the config being resized weren't there. One batched query
+	via `team_active_segments` (no per-subscription N+1, review notes #2)."""
+	return frappe.utils.flt(
+		sum(s.locked_rate for s in team_active_segments(team) if s.subscription != exclude)
+	)
 
 
 def enforce_headroom(team: str, new_rate, exclude: str | None = None) -> None:
@@ -457,23 +545,20 @@ def set_standing(subscription: str, new_standing: str, changed_by: str | None = 
 
 
 def reconcile_subscription_resource(subscription: str, resource_id: str) -> dict:
-	"""Reconcile a subscription's intent against the price-lock Central wrote when it
-	provisioned the resource (keyed by `resource_id`). A missing lock means the
-	resource hasn't been provisioned yet (intent outstanding); a plan mismatch is
-	surfaced for follow-up.
+	"""Reconcile a subscription's intent against the open billing segment Central
+	opened when it provisioned the resource (ADR 0010 — the ledger is the lock). No
+	open segment for the resource means it hasn't been provisioned yet (intent
+	outstanding); a plan mismatch is surfaced for follow-up.
 	"""
-	from central.billing.revenue.pricelock import _open_lock
-
 	doc = frappe.get_doc("Subscription", subscription)
-	lock_name = _open_lock(resource_id)
-	if not lock_name:
+	seg = active_segment_for_resource(resource_id)
+	if not seg:
 		return {"reconciled": False, "reason": "no_cluster_event", "intent_plan": doc.plan}
 
-	locked_plan = frappe.db.get_value("Price Lock", lock_name, "plan")
 	return {
-		"reconciled": locked_plan == doc.plan,
+		"reconciled": seg.plan == doc.plan,
 		"intent_plan": doc.plan,
-		"locked_plan": locked_plan,
+		"locked_plan": seg.plan,
 		"resource_id": resource_id,
 	}
 

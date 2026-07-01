@@ -15,7 +15,7 @@ import frappe
 from central.billing.revenue import invoicing, credits
 from central.billing.catalog import subscriptions
 from central.billing.catalog.pricing import set_catalog_rates
-from central.billing.platform.sync import receive_meter_rollups, receive_usage_events
+from central.billing.platform.sync import receive_meter_rollups
 
 TEAM = "demo"
 CLUSTER = "ap-south-1"
@@ -36,14 +36,15 @@ def seed():
 	# INR team on the prepaid wallet model (ADR 0005 / #50): usage draws down credits.
 	frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Prepaid")
 	card = _payment_method()
+	# Provisioning opens the billing segment inline (ADR 0010 — the ledger is the
+	# lock). Runtime from 1 May: a full May (paid) and a partial-changed June (open).
 	sub = subscriptions.create_subscription(
-		team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly"
+		team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly",
+		start_date="2026-05-01", resource_id=RESOURCE,
 	).name
-
-	# Runtime from 1 May: a full May (paid) and a partial-changed June (open).
-	receive_usage_events([_event("ev-demo-1", RESOURCE, 3200, "2026-05-01 00:00:00", "subscribed")])
-	# A mid-June plan bump to a pricier rate shows multi-segment day-weighting.
-	receive_usage_events([_event("ev-demo-2", RESOURCE, 4800, "2026-06-12 00:00:00", "changed")])
+	# A mid-June plan bump to a pricier rate shows multi-segment day-weighting: append a
+	# Plan Changed re-lock segment at the higher rate (ADR 0010).
+	_add_segment(sub, "Plan Changed", 4800, "2026-06-12 00:00:00")
 	# Metered transfer: 150 GB used against a 100 GB allowance -> 50 GB overage.
 	receive_meter_rollups([_meter(150)])
 
@@ -142,19 +143,20 @@ def _team_and_members():
 	return team.name
 
 
-def _event(event_id, resource_id, rate, effective_from, event_type):
-	return {
-		"event_id": event_id,
-		"team": TEAM,
-		"resource_id": resource_id,
-		"cluster": CLUSTER,
-		"plan": PLAN,
-		"shown_rate": rate,
-		"currency": "INR",
-		"event_type": event_type,
-		"effective_from": effective_from,
-		"effective_to": None,
-	}
+def _add_segment(subscription, change_type, rate, effective_at):
+	"""Author one Subscription Change run-segment on the ledger (ADR 0010 — the ledger
+	is the price-lock). Used to stage the mid-period plan bump the demo bills over."""
+	frappe.get_doc(
+		{
+			"doctype": "Subscription Change",
+			"subscription": subscription,
+			"change_type": change_type,
+			"new_value": PLAN,
+			"locked_rate": rate,
+			"currency": "INR",
+			"effective_at": effective_at,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _meter(qty):
@@ -416,8 +418,8 @@ def _wipe():
 	for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 		frappe.db.delete("Subscription Change", {"subscription": sub})
 	for dt in (
-		"Invoice", "Payment Attempt", "Payment Method", "Gateway Customer", "Price Lock",
-		"Usage Rollup", "Credit Ledger Entry", "Subscription", "Billing Notification Log",
+		"Invoice", "Payment Attempt", "Payment Method", "Gateway Customer",
+		"Usage Rollup", "Credit Ledger Entry", "Subscription", "Asset", "Billing Notification Log",
 	):
 		frappe.db.delete(dt, {"team": TEAM})
 	for dt in ("Credit Wallet", "Tax Profile", "Notification Preference", "Billing Profile"):
@@ -467,7 +469,7 @@ def _ensure_workspace():
 		("Subscriptions", "Subscription", "Purple"),
 	]
 	cards = {
-		"Billing Records": ["Invoice", "Payment Attempt", "Credit Ledger Entry", "Price Lock", "Usage Rollup"],
+		"Billing Records": ["Invoice", "Payment Attempt", "Credit Ledger Entry", "Subscription Change", "Usage Rollup"],
 		"Catalog & Config": ["Plan", "Payment Gateway", "Tax Profile", "Trust Tier Level"],
 	}
 	links = []
