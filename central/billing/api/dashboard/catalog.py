@@ -200,7 +200,7 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 	sub = frappe.db.get_value(
 		"Subscription",
 		{"asset_id": asset, "team": team},
-		["name", "pricing_mode", "sub_category"],
+		["name", "pricing_mode", "sub_category", "plan"],
 		as_dict=True,
 	)
 	if not sub:
@@ -233,6 +233,7 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 		"composed": composed,
 		"subscription": sub.name,
 		"sub_category": sub.sub_category,
+		"plan": sub.plan,  # the current preset, so the picker can pre-select it
 		"vcpus": vcpus,
 		"memory_gb": memory_gb,
 		"disk_gb": disk_gb,
@@ -257,6 +258,34 @@ def resize_composed_config(
 
 	before = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
 	resize_composed_subscription(subscription, includes, sub_category)
+	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	return {"subscription": subscription, "resized": after > before}
+
+
+@frappe.whitelist(methods=["POST"])
+def resize_server(
+	subscription: str,
+	plan: str | None = None,
+	includes: list | str | None = None,
+	sub_category: str | None = None,
+) -> dict:
+	"""Resize a server to a preset bundle (`plan`) or a custom shape (`includes` +
+	`sub_category`) — the console's single Resize action (#84). Reshapes the real VM,
+	power-cycling as needed, and re-locks billing at the current rate card. Returns
+	whether a new billing segment was opened (a no-op resize returns False)."""
+	team = frappe.db.get_value("Subscription", subscription, "team")
+	if not team:
+		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
+	authz.require_capability(team, authz.MANAGE)
+	from central.billing.catalog.subscriptions import resize_composed_subscription, resize_to_plan
+
+	before = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	if plan:
+		resize_to_plan(subscription, plan)
+	else:
+		if isinstance(includes, str):
+			includes = frappe.parse_json(includes)
+		resize_composed_subscription(subscription, includes or [], sub_category)
 	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
 	return {"subscription": subscription, "resized": after > before}
 

@@ -11,6 +11,7 @@ from central.billing.api.dashboard.catalog import (
 	get_eligible_plans,
 	provision_composed_config,
 	resize_composed_config,
+	resize_server,
 )
 from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.tests.utils import (
@@ -164,3 +165,22 @@ class TestEligibilityComposed(IntegrationTestCase):
 			frappe.db.count("Subscription Change", {"subscription": out["subscription"], "change_type": "Plan Changed"}),
 			1,
 		)
+
+	def test_resize_server_onto_preset_bundle(self):
+		from unittest.mock import patch
+
+		from central.billing.tests.utils import make_plan
+		from central.billing.catalog import subscriptions
+
+		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		frappe.db.set_value("Asset", out["resource_id"], "status", "Stopped")
+		plan = make_plan("resize-bundle", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
+		with (
+			patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1") as resize_vm,
+			patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-2"),
+		):
+			result = resize_server(out["subscription"], plan=plan)
+		self.assertTrue(result["resized"])
+		resize_vm.assert_called_once()  # the bundle's shape drove a real VM resize
+		doc = frappe.get_doc("Subscription", out["subscription"])
+		self.assertEqual((doc.pricing_mode, doc.plan), ("Preset", plan))

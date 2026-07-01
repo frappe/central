@@ -285,12 +285,11 @@ def resize_composed_subscription(
 		return doc
 
 	if asset:
-		# Reshape the real VM on its Atlas BEFORE re-pricing (the Atlas seam, #54).
-		# Firecracker can't reconfigure a running machine, so the VM must be Stopped;
-		# and if the host rejects the resize we must not open a new — mis-priced —
-		# billing segment. Central's mirror picks up the new shape from the vm.resized
-		# event Atlas emits, so we no longer write it here.
-		_drive_atlas_resize(doc.asset_id, asset, _asset_shape(rows))
+		# Reshape the real VM on its Atlas BEFORE re-pricing (the Atlas seam, #54): if
+		# the host rejects the resize we must not open a new — mis-priced — billing
+		# segment. Central's mirror picks up the new shape from the vm.resized event
+		# Atlas emits, so we no longer write it here.
+		_reshape_vm(doc.asset_id, asset.cluster, asset.status, _asset_shape(rows))
 
 	doc.pricing_mode = "Composed"
 	doc.plan = None
@@ -301,29 +300,58 @@ def resize_composed_subscription(
 	return doc
 
 
-def _drive_atlas_resize(asset_id: str, asset, shape: dict) -> None:
-	"""Reshape the VM on its Atlas as part of a resize, then resume it. The VM must
-	be Stopped (Firecracker is pre-boot only) — a live one is refused so the operator
-	stops it first (matching the console's DO-style gate). We start it back up after
-	the reshape so a resize is a single "reshape and resume" action, not a machine
-	the operator has to remember to power on. `shape` is the _asset_shape dict;
-	`asset` carries the VM's cluster + current status."""
-	if asset.status != "Stopped":
-		frappe.throw(
-			frappe._("Stop the server before resizing its compute resources (it is {0}).").format(asset.status)
-		)
-	if not shape:
+def resize_to_plan(subscription: str, new_plan: str, changed_by: str | None = None):
+	"""Resize a server onto a preset bundle: reshape the VM to the bundle's size,
+	then switch the billing contract onto it. The counterpart to
+	`resize_composed_subscription` for a preset target (#84), so the console's one
+	Resize action covers bundles as well as custom shapes. A no-op when the server is
+	already on this preset; records nothing on a never-provisioned/terminated config."""
+	doc = frappe.get_doc("Subscription", subscription)
+	if not _is_resizable(doc):
+		return None
+	if doc.pricing_mode == "Preset" and doc.plan == new_plan:
+		return doc
+	asset = (
+		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status"], as_dict=True)
+		if doc.asset_id
+		else None
+	)
+	if asset:
+		_reshape_vm(doc.asset_id, asset.cluster, asset.status, _plan_shape(new_plan))
+	return change_plan(subscription, new_plan, changed_by=changed_by)
+
+
+def _plan_shape(plan: str) -> dict:
+	"""A preset Plan's bundled size as the _asset_shape dict (vcpus/memory/disk)."""
+	includes = frappe.get_all(
+		"Plan Includes",
+		filters={"parenttype": "Plan", "parent": plan},
+		fields=["resource_type", "quantity"],
+	)
+	return _asset_shape(includes)
+
+
+def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
+	"""Apply `shape` (vcpus/memory/disk) to the real VM on its Atlas, power-cycling as
+	needed. Firecracker can't reconfigure a running machine, so a Running/Paused VM is
+	stopped first; every reshape ends with a start, so a resize is one uninterrupted
+	"reshape and resume" action (the VM only briefly restarts) rather than a machine
+	the operator has to stop and start by hand. A VM that isn't provisioned yet
+	(Pending/Failed) has nothing to reshape and is skipped. Atlas's start/stop/resize
+	are synchronous, so this runs the whole cycle in order before returning."""
+	if not shape or status not in ("Running", "Paused", "Stopped"):
 		return
 	from central.integrations.atlas import AtlasClient
 
-	client = AtlasClient(frappe.get_doc("Atlas Instance", asset.cluster))
+	client = AtlasClient(frappe.get_doc("Atlas Instance", cluster))
+	if status in ("Running", "Paused"):
+		client.vm_action(asset_id, "stop")
 	client.resize_vm(
 		asset_id,
 		vcpus=shape["vcpus"],
 		memory_megabytes=shape["memory_megabytes"],
 		disk_gigabytes=shape["disk_gigabytes"],
 	)
-	# Resize returns with the VM still Stopped; bring it back online.
 	client.vm_action(asset_id, "start")
 
 
