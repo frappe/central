@@ -48,13 +48,15 @@ type ComposedConfigResponse = {
 }
 const configCall = useCall<ComposedConfigResponse, { asset: string; team: string }>({
   url: method(API.composedConfig),
-  params: () => ({ asset: props.server!.resource_id, team: activeTeam.value! }),
+  // params is tracked eagerly, so stay null-safe while the dialog is closed
+  // (server is null); reload() only fires once a server is set (see watch below).
+  params: () => ({ asset: props.server?.resource_id ?? '', team: activeTeam.value ?? '' }),
   immediate: false,
 })
 // The region's rate card + profile bounds the slider needs.
 const plansCall = useCall<ProvisionablePlans, { team: string; cluster: string }>({
   url: method(API.eligiblePlans),
-  params: () => ({ team: activeTeam.value!, cluster: props.server!.cluster }),
+  params: () => ({ team: activeTeam.value ?? '', cluster: props.server?.cluster ?? '' }),
   immediate: false,
 })
 
