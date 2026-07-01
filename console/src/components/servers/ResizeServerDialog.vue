@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Button, Dialog, Tooltip, useCall } from 'frappe-ui'
+import { Button, Dialog, LoadingIndicator, Tooltip, useCall } from 'frappe-ui'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
@@ -13,8 +13,9 @@ import type { ComposedConfig, ProvisionablePlans, RateCard } from '@/types/api'
 // both a composed server and a preset one (resizing a preset slides it onto a custom
 // config). Firecracker can't reconfigure a running machine, so the VM must be Stopped
 // first — a live one shows a turn-off prompt (DO-style) with Resize disabled.
-// Controlled by the page via v-model:server; the page owns the stop call.
-const props = defineProps<{ server: AssetRow | null }>()
+// Controlled by the page via v-model:server; the page owns the stop call and keeps
+// `server` pointing at the live mirror row, so the dialog reacts as the VM stops.
+const props = defineProps<{ server: AssetRow | null; stopping?: boolean }>()
 const emit = defineEmits<{
   'update:server': [server: AssetRow | null]
   resized: []
@@ -26,7 +27,8 @@ const { activeTeam } = useSession()
 const open = computed({
   get: () => !!props.server,
   set: (v: boolean) => {
-    if (!v) emit('update:server', null)
+    // Don't let a stray close (Esc / backdrop) abandon an in-flight resize.
+    if (!v && !resizeCall.loading) emit('update:server', null)
   },
 })
 
@@ -124,18 +126,27 @@ async function confirm() {
   }
 }
 
-// Turn the server off, then leave the dialog so the user reopens Resize once the
-// mirror reports it Stopped (the resize gate). The page owns the stop call.
+// Ask the page to stop the server, but stay open — Resize unlocks in place once the
+// mirror reports it Stopped (the page keeps `server` pointed at the live row).
 function turnOff() {
   if (props.server) emit('stop', props.server)
-  open.value = false
 }
 </script>
 
 <template>
   <Dialog v-model="open" :options="{ title: 'Resize server' }">
     <template #body-content>
-      <p v-if="configCall.loading || plansCall.loading" class="text-p-sm text-ink-gray-5">Loading…</p>
+      <!-- Resize runs on the host and can take a while for a data-heavy server, so
+           show a clear in-progress state and hold the dialog open until it lands. -->
+      <div v-if="resizeCall.loading" class="flex flex-col items-center gap-3 py-10 text-center">
+        <LoadingIndicator class="h-6 w-6 text-ink-gray-5" />
+        <p class="text-p-base font-medium text-ink-gray-8">Resizing your server…</p>
+        <p class="max-w-xs text-p-sm text-ink-gray-5">
+          This can take a few minutes for a server with a lot of data. It'll start back up on its own
+          once done — keep this window open.
+        </p>
+      </div>
+      <p v-else-if="configCall.loading || plansCall.loading" class="text-p-sm text-ink-gray-5">Loading…</p>
       <p v-else-if="isDead || !resizable" class="text-p-sm text-ink-gray-5">
         This server can't be resized.
       </p>
@@ -165,16 +176,17 @@ function turnOff() {
       </div>
     </template>
     <template #actions>
-      <div v-if="resizable && !isDead" class="flex items-center justify-end gap-2">
-        <Button v-if="!isStopped" theme="red" variant="subtle" label="Turn off this server" @click="turnOff" />
+      <div v-if="resizable && !isDead && !resizeCall.loading" class="flex items-center justify-end gap-2">
+        <Button
+          v-if="!isStopped"
+          theme="red"
+          variant="subtle"
+          label="Turn off this server"
+          :loading="stopping"
+          @click="turnOff"
+        />
         <Tooltip :text="isStopped ? '' : 'Turn off this server first'" :disabled="isStopped">
-          <Button
-            variant="solid"
-            label="Resize"
-            :loading="resizeCall.loading"
-            :disabled="!changed || !isStopped"
-            @click="confirm"
-          />
+          <Button variant="solid" label="Resize" :disabled="!changed || !isStopped" @click="confirm" />
         </Tooltip>
       </div>
     </template>

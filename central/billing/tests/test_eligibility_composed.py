@@ -154,7 +154,10 @@ class TestEligibilityComposed(IntegrationTestCase):
 			{"resource_type": "Memory", "quantity": 16, "unit": "GB"},
 			{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
 		]
-		with patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1"):
+		with (
+			patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1"),
+			patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-2"),
+		):
 			result = resize_composed_config(out["subscription"], bigger, "General")
 		self.assertTrue(result["resized"])
 		self.assertEqual(

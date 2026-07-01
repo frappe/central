@@ -302,10 +302,12 @@ def resize_composed_subscription(
 
 
 def _drive_atlas_resize(asset_id: str, asset, shape: dict) -> None:
-	"""Reshape the running VM on its Atlas as part of a resize. The VM must be
-	Stopped (Firecracker is pre-boot only) — a live one is refused so the operator
-	stops it first (matching the console's DO-style gate). `shape` is the
-	_asset_shape dict; `asset` carries the VM's cluster + current status."""
+	"""Reshape the VM on its Atlas as part of a resize, then resume it. The VM must
+	be Stopped (Firecracker is pre-boot only) — a live one is refused so the operator
+	stops it first (matching the console's DO-style gate). We start it back up after
+	the reshape so a resize is a single "reshape and resume" action, not a machine
+	the operator has to remember to power on. `shape` is the _asset_shape dict;
+	`asset` carries the VM's cluster + current status."""
 	if asset.status != "Stopped":
 		frappe.throw(
 			frappe._("Stop the server before resizing its compute resources (it is {0}).").format(asset.status)
@@ -314,13 +316,15 @@ def _drive_atlas_resize(asset_id: str, asset, shape: dict) -> None:
 		return
 	from central.integrations.atlas import AtlasClient
 
-	instance = frappe.get_doc("Atlas Instance", asset.cluster)
-	AtlasClient(instance).resize_vm(
+	client = AtlasClient(frappe.get_doc("Atlas Instance", asset.cluster))
+	client.resize_vm(
 		asset_id,
 		vcpus=shape["vcpus"],
 		memory_megabytes=shape["memory_megabytes"],
 		disk_gigabytes=shape["disk_gigabytes"],
 	)
+	# Resize returns with the VM still Stopped; bring it back online.
+	client.vm_action(asset_id, "start")
 
 
 def _is_resizable(doc) -> bool:

@@ -60,11 +60,15 @@ class TestResizeComposed(IntegrationTestCase):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.delete_doc("Subscription", name, force=True)
 		frappe.db.delete("Invoice", {"team": TEAM})
-		# A resize now drives the real VM on its Atlas (#54). Stub the outbound call so
-		# these billing-logic tests stay hermetic; tests that care assert against it.
-		patcher = patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1")
-		self.resize_vm = patcher.start()
-		self.addCleanup(patcher.stop)
+		# A resize now drives the real VM on its Atlas (#54) then resumes it. Stub both
+		# outbound calls so these billing-logic tests stay hermetic; tests that care
+		# assert against them.
+		resize_patcher = patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1")
+		action_patcher = patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-2")
+		self.resize_vm = resize_patcher.start()
+		self.vm_action = action_patcher.start()
+		self.addCleanup(resize_patcher.stop)
+		self.addCleanup(action_patcher.stop)
 
 	def _ready(self, sub):
 		"""Mark a subscription's VM Stopped — the state a resize requires (Firecracker
@@ -172,6 +176,7 @@ class TestResizeComposed(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "Stop the server"):
 			subscriptions.resize_composed_subscription(sub, BIG, "General")
 		self.resize_vm.assert_not_called()
+		self.vm_action.assert_not_called()
 		self.assertEqual(len(self._segments(sub)), 1)  # no re-price on a live VM
 
 	def test_resize_drives_atlas_with_new_shape(self):
@@ -184,6 +189,8 @@ class TestResizeComposed(IntegrationTestCase):
 			self.resize_vm.call_args.kwargs,
 			{"vcpus": 4, "memory_megabytes": 16 * 1024, "disk_gigabytes": 40},
 		)
+		# The VM is resumed after the reshape (resize leaves it Stopped).
+		self.vm_action.assert_called_once_with(frappe.db.get_value("Subscription", sub, "asset_id"), "start")
 
 	def test_slide_off_preset_opens_composed_segment(self):
 		plan = make_plan("preset-slide", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
