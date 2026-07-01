@@ -9,6 +9,8 @@ from central.iam import (
 	user_has_operator_bypass,
 )
 
+MUTATING_PERMISSION_TYPES = {"create", "write", "delete", "submit", "cancel", "amend"}
+
 
 def _team_filter(user: str) -> str:
 	teams = get_user_team_names(user)
@@ -81,21 +83,68 @@ def team_invitation_has_permission(doc, user: str | None = None, ptype: str | No
 
 
 def asset_query_conditions(user: str | None = None) -> str:
-	user = user or frappe.session.user
-	if user_has_operator_bypass(user):
-		return ""
-	teams = get_user_team_names_with_capability(user, "server:view")
-	if not teams:
-		return "1 = 0"
-	escaped = ", ".join(frappe.db.escape(team) for team in teams)
-	return f"`tabAsset`.`team` in ({escaped})"
+	return _team_field_query_conditions("Asset", "server:view", user)
 
 
 def asset_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
+
+
+def site_query_conditions(user: str | None = None) -> str:
+	return _team_field_query_conditions("Site", "server:view", user)
+
+
+def site_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
+
+
+def iam_permission_probe_query_conditions(user: str | None = None) -> str:
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return ""
+	return f"`tabIAM Permission Probe`.`user` = {frappe.db.escape(user)}"
+
+
+def iam_permission_probe_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True
-	# Assets are a read-only mirror of Atlas; only the sync (operator) writes them.
-	if ptype in ("create", "write", "delete"):
+	return doc.user == user
+
+
+def _team_field_query_conditions(doctype: str, capability: str, user: str | None = None) -> str:
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return ""
+
+	teams = get_user_team_names_with_capability(user, capability)
+	if not teams:
+		return "1 = 0"
+
+	escaped = ", ".join(frappe.db.escape(team) for team in teams)
+	return f"`tab{doctype}`.`team` in ({escaped})"
+
+
+def _team_field_has_permission(
+	doc,
+	read_capabilities: tuple[str, ...],
+	write_capabilities: tuple[str, ...],
+	user: str | None = None,
+	ptype: str | None = None,
+) -> bool:
+	user = user or frappe.session.user
+	if user_has_operator_bypass(user):
+		return True
+
+	team = getattr(doc, "team", None)
+	if not team:
 		return False
-	return can(user, doc.team, "server:view")
+
+	if ptype in MUTATING_PERMISSION_TYPES:
+		return _can_any(user, team, write_capabilities)
+
+	return _can_any(user, team, read_capabilities)
+
+
+def _can_any(user: str, team: str, capabilities: tuple[str, ...]) -> bool:
+	return any(can(user, team, capability) for capability in capabilities)

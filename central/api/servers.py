@@ -12,11 +12,12 @@ from central.integrations.atlas import AtlasClient, reconcile
 
 @frappe.whitelist(methods=["GET"])
 def registry(team: str | None = None) -> dict:
-	"""List a team's VMs from the Asset mirror — a pure read. Gated on `cluster:view`."""
+	"""List a team's VMs from the Asset mirror — a pure read. Gated on `server:view`."""
 	user = frappe.session.user
 	team = resolve_team(user, team)
-	if not can(user, team, "cluster:view"):
-		frappe.throw("You can't view this team's clusters.", frappe.PermissionError)
+	if not can(user, team, "server:view"):
+		frappe.throw("You can't view this team's servers.", frappe.PermissionError)
+
 	assets = frappe.get_all(
 		"Asset",
 		filters={"team": team},
@@ -63,11 +64,12 @@ def list_instances(team: str | None = None) -> list[dict]:
 @frappe.whitelist(methods=["POST"])
 def refresh_assets(team: str | None = None) -> dict:
 	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
-	twin of the scheduled reconcile. Gated on `cluster:view`."""
+	twin of the scheduled reconcile. Gated on `server:view`."""
 	user = frappe.session.user
 	team = resolve_team(user, team)
-	if not can(user, team, "cluster:view"):
-		frappe.throw("You can't refresh this team's clusters.", frappe.PermissionError)
+
+	if not can(user, team, "server:view"):
+		frappe.throw("You can't refresh this team's servers.", frappe.PermissionError)
 	return reconcile(team)
 
 
