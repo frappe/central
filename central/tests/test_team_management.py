@@ -289,6 +289,10 @@ class TestTeamManagement(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			transfer_team_ownership(self.team.name, self.admin)
 
+		frappe.set_user(self.invitee)
+		with self.assertRaises(frappe.PermissionError):
+			transfer_team_ownership(self.team.name, self.admin)
+
 		frappe.set_user(self.owner)
 		transfer_team_ownership(self.team.name, self.admin)
 		self.assertEqual(frappe.db.get_value("Team", self.team.name, "owner_user"), self.admin)
