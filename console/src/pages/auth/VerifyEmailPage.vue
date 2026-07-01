@@ -16,12 +16,13 @@ const signupSteps = computed(() => (isProductSignup.value ? 4 : 2))
 
 const otp = ref('')
 const loading = ref(false)
+const redirecting = ref(false)
 const resent = ref(false)
 const error = ref('')
 const devHint = import.meta.env.DEV
 
 async function verify() {
-  if (otp.value.length !== 6) return
+  if (loading.value || otp.value.length !== 6) return
   loading.value = true
   error.value = ''
   try {
@@ -29,17 +30,18 @@ async function verify() {
     // Full navigation so the SPA re-boots with the now-authenticated session.
     // `replace` (not `href`) so the verify page leaves the back stack — Back from
     // the next screen can't land on it (the guard also resumes authenticated state).
+    redirecting.value = true
     window.location.replace(signupDestination())
   } catch (exception) {
     error.value = frappeErrorMessage(exception, 'That code did not work. Please try again.')
     otp.value = ''
   } finally {
-    loading.value = false
+    if (!redirecting.value) loading.value = false
   }
 }
 
 async function resend() {
-  if (!email) return
+  if (loading.value || !email) return
   loading.value = true
   resent.value = false
   error.value = ''

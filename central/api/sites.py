@@ -65,7 +65,7 @@ def get_site(name: str) -> dict:
 		"Site", name, ["team", "cluster", "status"], as_dict=True
 	)
 	if not mirror:
-		frappe.throw(f"No site '{name}'.", frappe.DoesNotExistError(_("No site '{name}'.")))
+		frappe.throw(_("No site '{0}'.").format(name), frappe.DoesNotExistError)
 	if mirror.team not in get_user_team_names(user):
 		frappe.throw(_("You can't view this site."), frappe.PermissionError)
 
