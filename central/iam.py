@@ -4,6 +4,7 @@ from collections import defaultdict
 from typing import Any
 
 import frappe
+from frappe import _
 
 OPERATOR_BYPASS_ROLE = "System Manager"
 
@@ -122,7 +123,7 @@ def resolve_team(user: str, team: str | None = None) -> str:
 		return team
 	teams = get_user_team_names(user)
 	if len(teams) != 1:
-		frappe.throw("Specify a team.", frappe.ValidationError)
+		frappe.throw(_("Specify a team."), frappe.ValidationError)
 	return teams[0]
 
 

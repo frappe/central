@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 from central.iam import can, get_user_team_names, resolve_team
 from central.integrations.atlas import AtlasClient
@@ -21,7 +22,7 @@ def _default_region() -> str:
 	to route the operator call; Atlas itself defaults the site's region/domain."""
 	region = frappe.db.get_value("Atlas Instance", {"status": "Active"}, "region", order_by="region asc")
 	if not region:
-		frappe.throw("No region is available — contact your operator.", frappe.ValidationError)
+		frappe.throw(_("No region is available — contact your operator."), frappe.ValidationError)
 	return region
 
 
@@ -39,7 +40,7 @@ def create_site(subdomain: str, region: str | None = None) -> dict:
 	user = frappe.session.user
 	team = resolve_team(user)
 	if not can(user, team, "server:create"):
-		frappe.throw("You can't create sites for this team.", frappe.PermissionError)
+		frappe.throw(_("You can't create sites for this team."), frappe.PermissionError)
 
 	region = region or _default_region()
 	client = AtlasClient.for_region(region)
@@ -64,9 +65,9 @@ def get_site(name: str) -> dict:
 		"Site", name, ["team", "cluster", "status"], as_dict=True
 	)
 	if not mirror:
-		frappe.throw(f"No site '{name}'.", frappe.DoesNotExistError)
+		frappe.throw(f"No site '{name}'.", frappe.DoesNotExistError(_("No site '{name}'.")))
 	if mirror.team not in get_user_team_names(user):
-		frappe.throw("You can't view this site.", frappe.PermissionError)
+		frappe.throw(_("You can't view this site."), frappe.PermissionError)
 
 	if mirror.status not in _TERMINAL:
 		from central.central.doctype.site.site import Site

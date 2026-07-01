@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 from central.iam import can, resolve_team
 from central.integrations.atlas import AtlasClient, reconcile
@@ -16,7 +17,7 @@ def registry(team: str | None = None) -> dict:
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:view"):
-		frappe.throw("You can't view this team's servers.", frappe.PermissionError)
+		frappe.throw(_("You can't view this team's servers."), frappe.PermissionError)
 
 	assets = frappe.get_all(
 		"Asset",
@@ -48,7 +49,7 @@ def list_instances(team: str | None = None) -> list[dict]:
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "cluster:view"):
-		frappe.throw("You can't view clusters for this team.", frappe.PermissionError)
+		frappe.throw(_("You can't view clusters for this team."), frappe.PermissionError)
 	# Atlas Instance is global infrastructure holding per-instance API credentials,
 	# so the DocType is locked to System Manager. `cluster:view` already authorizes
 	# this read, so we bypass DocType RBAC and curate the safe, non-secret fields
@@ -69,7 +70,7 @@ def refresh_assets(team: str | None = None) -> dict:
 	team = resolve_team(user, team)
 
 	if not can(user, team, "server:view"):
-		frappe.throw("You can't refresh this team's servers.", frappe.PermissionError)
+		frappe.throw(_("You can't refresh this team's servers."), frappe.PermissionError)
 	return reconcile(team)
 
 
@@ -93,9 +94,9 @@ def create_server(
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
-		frappe.throw("You can't create servers for this team.", frappe.PermissionError)
+		frappe.throw(_("You can't create servers for this team."), frappe.PermissionError)
 	if not region:
-		frappe.throw("region is required.", frappe.ValidationError)
+		frappe.throw(_("Region is required."), frappe.ValidationError)
 
 	client = AtlasClient.for_region(region)
 	# Seed the Atlas tenant (first use) with the team owner's email.
@@ -136,14 +137,14 @@ def _run_command(action: str, capability: str, atlas_method: str, team: str | No
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, capability):
-		frappe.throw(f"You can't {action} servers for this team.", frappe.PermissionError)
+		frappe.throw(_("You can't {0} servers for this team.").format(action), frappe.PermissionError)
 	if not resource_id:
-		frappe.throw("resource_id is required.", frappe.ValidationError)
+		frappe.throw(_("resource_id is required."), frappe.ValidationError)
 
 	# The asset must be in this team's mirror — also how we route to its Atlas.
 	cluster = frappe.db.get_value("Asset", {"resource_id": resource_id, "team": team}, "cluster")
 	if not cluster:
-		frappe.throw(f"No server '{resource_id}' for this team.", frappe.DoesNotExistError)
+		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
 
 	instance = frappe.get_doc("Atlas Instance", cluster)
 	task = AtlasClient(instance).vm_action(resource_id, atlas_method)
