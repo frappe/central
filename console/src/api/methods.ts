@@ -60,6 +60,7 @@ export const API = {
   eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
   composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
   resizeComposedConfig: 'central.billing.api.dashboard.catalog.resize_composed_config',
+  resizeServer: 'central.billing.api.dashboard.catalog.resize_server',
 
   // ── Billing: reads (central.billing.api.dashboard.*, billing:view) ──
   // The dashboard package re-exports every submodule fn, so these flat paths are

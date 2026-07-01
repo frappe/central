@@ -12,17 +12,26 @@ import type { Plan, Profile, ProvisionablePlans, RateCard } from '@/types/api'
 // gated per region, so this refetches whenever the picked region changes — and
 // stays empty until a region is picked (no cluster, nothing to price).
 
-export function usePlans(cluster: Ref<string | null>) {
+export function usePlans(cluster: Ref<string | null>, excludeSubscription?: Ref<string | null>) {
   const { activeTeam } = useSession()
 
-  const call = useCall<ProvisionablePlans, { team: string; cluster: string }>({
+  // When resizing, `excludeSubscription` frees the resized server's own spend back
+  // into the headroom the menu is filtered by (so it can grow into its own budget).
+  const call = useCall<
+    ProvisionablePlans,
+    { team: string; cluster: string; exclude_subscription?: string }
+  >({
     url: method(API.eligiblePlans),
-    params: () => ({ team: activeTeam.value!, cluster: cluster.value! }),
+    params: () => ({
+      team: activeTeam.value!,
+      cluster: cluster.value!,
+      ...(excludeSubscription?.value ? { exclude_subscription: excludeSubscription.value } : {}),
+    }),
     immediate: false,
   })
 
   watch(
-    [activeTeam, cluster],
+    [activeTeam, cluster, () => excludeSubscription?.value],
     ([team, region]) => {
       if (team && region) call.reload()
     },

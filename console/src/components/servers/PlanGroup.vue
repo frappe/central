@@ -16,6 +16,8 @@ const props = defineProps<{
   rateCard: RateCard
   available: number
   currency: string
+  // Pre-fill the custom designer with a running config's shape (resize, #82/#84).
+  initial?: ComposedConfig | null
 }>()
 
 const selectedPlan = defineModel<string | null>('selectedPlan', { required: true })
@@ -96,6 +98,7 @@ const matchingPreset = computed<Plan | null>(() => {
               :profiles="[profile]"
               :rate-card="rateCard"
               :available="available"
+              :initial="initial"
             />
             <p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">
               The <span class="font-medium text-ink-gray-7">{{ matchingPreset.title }}</span> preset offers this

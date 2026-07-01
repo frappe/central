@@ -40,7 +40,9 @@ _SUB_CATEGORY_ORDER = ["General", "CPU Optimised", "Memory Optimised", "Storage 
 
 
 @frappe.whitelist()
-def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> dict:
+def get_eligible_plans(
+	cluster: str | None = None, team: str | None = None, exclude_subscription: str | None = None
+) -> dict:
 	"""Active plans the team can provision on `cluster`, grouped by sub-category.
 
 	`plans` is a `{sub_category: [rows]}` map so the client can render one tab per
@@ -58,12 +60,16 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 	    (`max_spend`) minus the run-rate of its already-running resources. A team
 	    on a 4000 cap already running 1000 only sees plans priced 3000 or less.
 	    An untiered team has a 0 cap and so no headroom.
+
+	`exclude_subscription` drops one subscription from the run-rate — passed when
+	resizing, so the server being resized frees its own spend back into the headroom
+	the new size (preset or custom) is measured against.
 	"""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
 	caps = get_team_caps(team)
 	spend_cap = frappe.utils.flt(caps.max_spend)
-	current_spend = _current_run_rate(team)
+	current_spend = _current_run_rate(team, exclude=exclude_subscription)
 	available = max(0.0, frappe.utils.flt(spend_cap - current_spend))
 	cluster = (cluster or "").strip() or None
 
@@ -333,13 +339,14 @@ def _group_by_sub_category(rows: list[dict]) -> dict[str, list]:
 	return {c: grouped[c] for c in [*known, *extra]}
 
 
-def _current_run_rate(team: str) -> float:
+def _current_run_rate(team: str, exclude: str | None = None) -> float:
 	"""The team's committed monthly run-rate: the summed open-segment locked rate of
 	its subscriptions, off the Subscription Change ledger (ADR 0010). Counts presets and
-	composed configs alike; a team bills in one currency, so the rates are comparable."""
+	composed configs alike; a team bills in one currency, so the rates are comparable.
+	`exclude` drops one subscription — used by resize to free the server's own spend."""
 	from central.billing.catalog.subscriptions import team_run_rate
 
-	return team_run_rate(team)
+	return team_run_rate(team, exclude=exclude)
 
 
 def _plan_row(plan, currency: str, cluster: str | None, rate, includes) -> dict:

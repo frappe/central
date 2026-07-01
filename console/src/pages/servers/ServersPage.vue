@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { Button } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
 import ServerListView from '@/components/servers/ServerListView.vue'
@@ -41,13 +41,9 @@ async function confirmTerminate(server: AssetRow) {
   await terminate(server)
 }
 
-// Resize a server with the design-your-own slider (#84). Track it by id and resolve
-// the *live* mirror row, so the dialog sees the VM flip to Stopped (after Turn off)
-// and unlocks Resize in place instead of holding a stale snapshot.
-const pendingResizeId = ref<string | null>(null)
-const pendingResize = computed<AssetRow | null>(
-  () => servers.value.find((s) => s.resource_id === pendingResizeId.value) ?? null,
-)
+// Resize a server (preset or custom) — the backend power-cycles the VM as needed, so
+// this is one action with no separate stop step.
+const pendingResize = ref<AssetRow | null>(null)
 </script>
 
 <template>
@@ -90,7 +86,7 @@ const pendingResize = computed<AssetRow | null>(
         @create="$router.push('/servers/new')"
         @start="start"
         @stop="stop"
-        @resize="pendingResizeId = $event.resource_id"
+        @resize="pendingResize = $event"
         @terminate="pendingTerminate = $event"
         @open="open"
       />
@@ -102,12 +98,6 @@ const pendingResize = computed<AssetRow | null>(
       @confirm="confirmTerminate"
     />
 
-    <ResizeServerDialog
-      :server="pendingResize"
-      :stopping="busy === pendingResize?.resource_id"
-      @update:server="pendingResizeId = $event?.resource_id ?? null"
-      @resized="reload"
-      @stop="stop"
-    />
+    <ResizeServerDialog v-model:server="pendingResize" @resized="reload" />
   </div>
 </template>
