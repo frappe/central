@@ -92,7 +92,7 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			for a in frappe.get_all(
 				"Asset",
 				filters={"name": ["in", asset_ids]},
-				fields=["name", "title", "gateway_url"],
+				fields=["name", "title", "gateway_url", "status"],
 			)
 		}
 		if asset_ids
@@ -125,6 +125,9 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			"name": r.name,
 			"server": asset.title or None,
 			"gateway_url": asset.gateway_url or None,
+			# The VM's operational state (Running/Stopped/Terminated/…) — the list shows
+			# it distinctly from the billing-paused flag, and gates resume on it.
+			"status": asset.status or None,
 			"plan": r.plan,
 			"plan_title": plan_title,
 			"cluster": r.cluster,

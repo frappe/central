@@ -7,6 +7,7 @@ import threading
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.billing.catalog import subscriptions
 from central.billing.revenue import invoicing, credits
 from central.billing.tests.utils import (
 	add_segment,
@@ -159,6 +160,35 @@ class TestOpenAndCollect(BillingTestBase):
 			{"team": TEAM, "entry_type": "Debit", "reference_name": name},
 		)
 		self.assertEqual(len(debits), 1)
+
+
+class TestTerminationCancelsBilling(BillingTestBase):
+	"""Terminating the VM must close the billing segment, not just pause it."""
+
+	def test_terminate_cancels_segment_and_frees_run_rate(self):
+		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")
+		# The VM comes up Running — that enables the subscription (Asset controller).
+		asset = frappe.get_doc("Asset", asset_id)
+		asset.status = "Running"
+		asset.save(ignore_permissions=True)
+		self.assertTrue(frappe.db.get_value("Subscription", self.sub, "enabled"))
+
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)  # it counts while alive
+
+		# The mirror flips to Terminated (Atlas vm.terminated / reconcile).
+		asset.reload()
+		asset.status = "Terminated"
+		asset.save(ignore_permissions=True)
+
+		# A Cancelled change closed the segment; the sub is disabled and stops counting.
+		changes = frappe.get_all(
+			"Subscription Change", {"subscription": self.sub}, pluck="change_type"
+		)
+		self.assertIn("Cancelled", changes)
+		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
+		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
+		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)  # headroom freed
 
 
 class TestMonthlyBillingRun(BillingTestBase):
