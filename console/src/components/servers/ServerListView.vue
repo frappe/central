@@ -32,6 +32,7 @@ const emit = defineEmits<{
   create: []
   start: [server: AssetRow]
   stop: [server: AssetRow]
+  resize: [server: AssetRow]
   terminate: [server: AssetRow]
   open: [server: AssetRow]
 }>()
@@ -99,6 +100,7 @@ const columns = computed<ListViewColumn<AssetRow>[]>(() => [
           onOpen: (server: AssetRow) => emit('open', server),
           onStart: (server: AssetRow) => emit('start', server),
           onStop: (server: AssetRow) => emit('stop', server),
+          onResize: (server: AssetRow) => emit('resize', server),
           onTerminate: (server: AssetRow) => emit('terminate', server),
         }),
       ]),

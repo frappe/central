@@ -4,36 +4,15 @@
 
 Agentless (ADR 0006): there is no Subscription Agent and no push/pull sync.
 Central provisions and meters via the cluster manager and records what it drives
-directly — the event log (subscribed / changed / cancelled, per `resource_id`
-with `shown_rate` + currency) into the price-lock ledger, and metered-usage
-rollups into the bounded rollup store. These are *internal* recording calls made
-by the provisioning/metering paths, not whitelisted endpoints an external party
-posts to (which would let any caller forge usage and so a price lock).
+directly. Provisioning opens the billing segment inline (`provision_subscription`
+writes the `Created` Subscription Change — the price-lock itself, ADR 0010), so
+there is no separate event-log ingestion; metered-usage rollups still land in the
+bounded rollup store here. This is an *internal* recording call made by the metering
+path, not a whitelisted endpoint an external party posts to (which would let any
+caller forge usage).
 """
 
 import frappe
-
-
-def record_usage_events(events: list | str) -> dict:
-	"""Record provisioning events into the price-lock ledger as Central drives them.
-
-	Each event carries a stable `event_id`; locking is idempotent on it, so a
-	replay (e.g. a metering refresh from the cluster manager) is a safe no-op.
-	Returns the handled event_ids.
-	"""
-	from central.billing.revenue.pricelock import lock_from_event
-
-	if isinstance(events, str):
-		events = frappe.parse_json(events)
-
-	recorded = []
-	for event in events:
-		event_id = lock_from_event(event)
-		if event_id:
-			recorded.append(event_id)
-
-	# `acknowledged` kept alongside `recorded` for back-compat with existing callers.
-	return {"recorded": recorded, "acknowledged": recorded}
 
 
 def record_meter_rollups(meters: list | str) -> dict:
@@ -56,7 +35,6 @@ def record_meter_rollups(meters: list | str) -> dict:
 	return {"recorded": recorded, "acknowledged": recorded}
 
 
-# Deprecated agent-era names — kept so existing callers/tests keep working while
-# they migrate to record_*. The "Agent → Central push" they implied is gone.
-receive_usage_events = record_usage_events
+# Deprecated agent-era name — kept so existing callers/tests keep working while
+# they migrate to record_*. The "Agent → Central push" it implied is gone.
 receive_meter_rollups = record_meter_rollups

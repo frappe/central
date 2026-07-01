@@ -37,6 +37,7 @@ export const API = {
   listInstances: 'central.api.servers.list_instances',
   refreshAssets: 'central.api.servers.refresh_assets',
   createServer: 'central.api.servers.create_server',
+  createComposedServer: 'central.api.servers.create_composed_server',
   startServer: 'central.api.servers.start_server',
   stopServer: 'central.api.servers.stop_server',
   terminateServer: 'central.api.servers.terminate_server',
@@ -57,6 +58,8 @@ export const API = {
 
   // ── Billing catalog (central.billing.api.dashboard.catalog) ──
   eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
+  composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
+  resizeComposedConfig: 'central.billing.api.dashboard.catalog.resize_composed_config',
 
   // ── Billing: reads (central.billing.api.dashboard.*, billing:view) ──
   // The dashboard package re-exports every submodule fn, so these flat paths are

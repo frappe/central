@@ -415,8 +415,8 @@ def _wipe_all():
 	children = ("Catalog Rate", "Plan Includes", "Invoice Line Item",
 				"Subscription Change")
 	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Gateway Customer",
-					 "Price Lock", "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
-					 "Billing Notification Log", "Entitlement Token", "Webhook Event", "Subscription")
+					 "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
+					 "Billing Notification Log", "Entitlement Token", "Webhook Event", "Subscription", "Asset")
 	config = ("Tax Profile", "Billing Profile")
 	catalog = ("Plan", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:

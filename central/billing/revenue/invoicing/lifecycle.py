@@ -11,7 +11,7 @@ reissued from current data.
 import frappe
 
 from central.billing.revenue import credits
-from central.billing.revenue.invoicing.generate import generate_draft_invoice
+from central.billing.revenue.invoicing.generate import generate_draft_invoice, generate_draft_invoices
 
 DEFAULT_DUE_DAYS = 7
 
@@ -105,6 +105,30 @@ def open_drafts(period_end, enqueue: bool = False) -> list[str]:
 		else:
 			open_and_collect(inv)
 	return drafts
+
+
+def run_monthly_billing(today=None) -> dict:
+	"""Scheduled entrypoint (1st of the month): bill the just-closed calendar month
+	end-to-end for every team — the production trigger for the two-phase invoicing
+	(#09/#10) that otherwise only ran from demos and tests.
+
+	Phase 1 drafts one consolidated invoice per team for the previous month; phase 2
+	opens each Draft and runs the credits-then-card waterfall — settling it, or leaving
+	it Open for dunning (#14). Idempotent: drafting is idempotent per (team, period) and
+	open_drafts only touches invoices still in Draft, so a retried tick is safe.
+	"""
+	today = frappe.utils.getdate(today or frappe.utils.nowdate())
+	period_start = frappe.utils.get_first_day(today, d_months=-1)
+	period_end = frappe.utils.get_last_day(period_start)
+
+	drafted = generate_draft_invoices(period_start, period_end)
+	opened = open_drafts(period_end)
+	return {
+		"period_start": str(period_start),
+		"period_end": str(period_end),
+		"drafted": len(drafted),
+		"opened": len(opened),
+	}
 
 
 def cancel_invoice(invoice: str, reason: str | None = None) -> str:

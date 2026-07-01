@@ -13,7 +13,22 @@ from frappe.tests import IntegrationTestCase
 
 from central.billing.platform.sync import receive_meter_rollups
 from central.billing.revenue import metering
-from central.billing.tests.utils import ensure_team, make_metered_plan, make_plan
+from central.billing.tests.utils import (
+	ensure_team,
+	make_metered_plan,
+	make_plan,
+	seed_running_resource,
+)
+
+
+def _seed_running_purge(team):
+	"""Clear a team's rollups + ledger between tests (Price Lock is retired, ADR 0010)."""
+	frappe.db.delete("Usage Rollup", {"team": team})
+	for sub in frappe.get_all("Subscription", {"team": team}, pluck="name"):
+		frappe.db.delete("Subscription Change", {"subscription": sub})
+		frappe.db.delete("Subscription", {"name": sub})
+	frappe.db.delete("Asset", {"team": team})
+	frappe.db.commit()
 
 
 def _metered_plan_doc(title, resource_type, category="Metered Resources", is_active=1):
@@ -83,22 +98,13 @@ class TestUnmodelledMeteredResource(IntegrationTestCase):
 
 		_clear_metered_plans("Backup")
 		self._purge()
-		frappe.get_doc(
-			{
-				"doctype": "Price Lock", "team": self.TEAM, "plan": self.PLAN,
-				"cluster": self.CLUSTER, "resource_id": self.RESOURCE, "currency": "INR",
-				"locked_rate": 1000, "started_at": frappe.utils.now_datetime(),
-			}
-		).insert(ignore_permissions=True)
-		frappe.db.commit()
+		seed_running_resource(self.TEAM, self.RESOURCE, self.CLUSTER, self.PLAN, rate=1000, currency="INR")
 
 	def tearDown(self):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Usage Rollup", "Price Lock"):
-			frappe.db.delete(dt, {"team": self.TEAM})
-		frappe.db.commit()
+		_seed_running_purge(self.TEAM)
 
 	def _backup_meter(self, qty):
 		return {
@@ -135,14 +141,7 @@ class TestFreeTierMeteredResource(IntegrationTestCase):
 			rates=[{"cluster": "", "currency": "INR", "rate": 0}],
 		)
 		self._purge()
-		frappe.get_doc(
-			{
-				"doctype": "Price Lock", "team": self.TEAM, "plan": self.PLAN,
-				"cluster": self.CLUSTER, "resource_id": self.RESOURCE, "currency": "INR",
-				"locked_rate": 1000, "started_at": frappe.utils.now_datetime(),
-			}
-		).insert(ignore_permissions=True)
-		frappe.db.commit()
+		seed_running_resource(self.TEAM, self.RESOURCE, self.CLUSTER, self.PLAN, rate=1000, currency="INR")
 
 	def tearDown(self):
 		self._purge()
@@ -152,9 +151,7 @@ class TestFreeTierMeteredResource(IntegrationTestCase):
 		frappe.db.commit()
 
 	def _purge(self):
-		for dt in ("Usage Rollup", "Price Lock"):
-			frappe.db.delete(dt, {"team": self.TEAM})
-		frappe.db.commit()
+		_seed_running_purge(self.TEAM)
 
 	def _transfer_meter(self, qty):
 		return {

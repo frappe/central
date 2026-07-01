@@ -30,8 +30,7 @@ class TaxTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Price Lock"):
-			frappe.db.delete(dt, {"team": TEAM})
+		frappe.db.delete("Invoice", {"team": TEAM})
 		if frappe.db.exists("Tax Profile", TEAM):
 			frappe.db.delete("Tax Profile", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):

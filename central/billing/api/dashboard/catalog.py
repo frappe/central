@@ -11,10 +11,14 @@ only narrows the menu the customer is shown.
 """
 
 import frappe
+from frappe import _
 
+from central.billing import authz
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
+from central.billing.catalog.composition import parse_vcpu_steps
 from central.billing.catalog.entitlements import get_team_caps
-from central.billing.catalog.pricing import resolve_rate
+from central.billing.catalog.pricing import resolve_component_rate, resolve_rate
+from central.billing.catalog.rate_card import COMPONENT_UNITS
 
 
 def _allowlist(value) -> set[str] | None:
@@ -70,10 +74,14 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 		"team": team, "cluster": cluster, "currency": currency, "tier": caps.tier,
 		"max_spend": spend_cap, "current_spend": current_spend, "available": available,
 	}
+	# A "design your own" config needs the same three things the slider does: the
+	# per-resource rate card, the profile bounds, and the headroom ceiling (#83).
+	empty = {**header, "plans": {}, "rate_card": {}, "profiles": []}
 
-	# The tier forbids this cluster outright — nothing is provisionable here.
+	# The tier forbids this cluster outright — nothing is provisionable here, and the
+	# rate card / profiles come back empty too (no composed configs offered either).
 	if cluster and allowed_clusters is not None and cluster not in allowed_clusters:
-		return {**header, "plans": {}}
+		return empty
 
 	# Only families that provision a server belong in the create-server menu — AI
 	# Tokens, storage subscriptions, etc. are billable but not provisioned here. The
@@ -83,7 +91,10 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 		"Plan Category", filters={"provision_target": "Server"}, pluck="name", limit=0
 	)
 	if not server_categories:
-		return {**header, "plans": {}}
+		return empty
+
+	rate_card = _rate_card(currency, cluster)
+	profiles = _profiles(server_categories)
 
 	# The whole active catalog (in server families) is wanted on purpose —
 	# currency/cluster/headroom filtering happens in Python below — so opt out of
@@ -116,7 +127,120 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 
 	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
 	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
-	return {**header, "plans": _group_by_sub_category(plans)}
+	return {**header, "plans": _group_by_sub_category(plans), "rate_card": rate_card, "profiles": profiles}
+
+
+def _rate_card(currency: str, cluster: str | None) -> dict:
+	"""The composed-config component rate card for the team's currency + region (#79):
+	`{resource_type: {rate, unit}}`. Resolved regional-over-global. A currency missing
+	*any* component yields an empty card — composed configs aren't offered (not zeros)."""
+	card = {}
+	for resource_type, unit in COMPONENT_UNITS.items():
+		rate = resolve_component_rate(resource_type, currency, cluster)
+		if rate is None:
+			return {}
+		card[resource_type] = {"rate": frappe.utils.flt(rate), "unit": unit}
+	return card
+
+
+def _profiles(server_categories: list[str]) -> list[dict]:
+	"""The optimisation profiles (#81) the slider bounds itself with: ratio, the
+	allowed vCPU steps, and the storage ladder (the disk rungs within [min, max]),
+	per active compute Plan Sub-Category."""
+	from central.billing.catalog.composition import disk_steps_for
+
+	rows = frappe.get_all(
+		"Plan Sub-Category",
+		filters={"category": ["in", server_categories], "is_active": 1, "ram_ratio": [">", 0]},
+		fields=["name", "ram_ratio", "vcpu_steps", "disk_min", "disk_max"],
+		order_by="name asc",
+		limit=0,
+	)
+	return [
+		{
+			"sub_category": r.name,
+			"ram_ratio": r.ram_ratio,
+			"vcpu_steps": parse_vcpu_steps(r.vcpu_steps),
+			"disk_steps": disk_steps_for(r.disk_min, r.disk_max),
+			"disk_min": r.disk_min,
+			"disk_max": r.disk_max,
+		}
+		for r in rows
+	]
+
+
+@frappe.whitelist(methods=["POST"])
+def provision_composed_config(
+	includes: list | str, sub_category: str, cluster: str, team: str | None = None
+) -> dict:
+	"""Provision a design-your-own config from the slider (#84). The server is the
+	gate: it re-validates composition, ratio, steps, bounds (#81) and that the config
+	fits current headroom (#83) before anything is created — a request that slips past
+	the client is still refused here."""
+	team = _resolve_team(team, require=authz.MANAGE)
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+	from central.billing.catalog.subscriptions import provision_composed_subscription
+
+	return provision_composed_subscription(team, cluster, includes, sub_category)
+
+
+@frappe.whitelist()
+def get_composed_config(asset: str, team: str | None = None) -> dict:
+	"""The composed config running on `asset` (for the resize slider, #84): its
+	subscription, optimisation profile, current composition, and the headroom a resize
+	has — the cap minus the team's *other* run-rate, so the running config's own spend
+	is available to it. Returns `{composed: False}` for a preset/legacy server."""
+	team = _resolve_team(team)
+	sub = frappe.db.get_value(
+		"Subscription",
+		{"asset_id": asset, "team": team, "pricing_mode": "Composed"},
+		["name", "sub_category"],
+		as_dict=True,
+	)
+	if not sub:
+		return {"composed": False}
+
+	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
+	from central.billing.catalog.subscriptions import team_run_rate
+
+	includes = frappe.get_all(
+		"Plan Includes",
+		filters={"parenttype": "Subscription", "parent": sub.name},
+		fields=["resource_type", "quantity"],
+	)
+	qty = composition_quantities(includes)
+	cap = frappe.utils.flt(get_team_caps(team).max_spend)
+	return {
+		"composed": True,
+		"subscription": sub.name,
+		"sub_category": sub.sub_category,
+		"vcpus": qty.get(COMPUTE, 0),
+		"memory_gb": qty.get(MEMORY, 0),
+		"disk_gb": qty.get(DISK, 0),
+		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def resize_composed_config(
+	subscription: str, includes: list | str, sub_category: str | None = None
+) -> dict:
+	"""Resize a running config from the slider (#84) — the changed-event re-lock (#82).
+	Re-validates the new shape + headroom server-side before re-locking at the current
+	rate card. Returns whether a new segment was opened (a no-op resize returns False)."""
+	team = frappe.db.get_value("Subscription", subscription, "team")
+	if not team:
+		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
+	authz.require_capability(team, authz.MANAGE)
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+	from central.billing.catalog.subscriptions import resize_composed_subscription
+
+	before = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	resize_composed_subscription(subscription, includes, sub_category)
+	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	return {"subscription": subscription, "resized": after > before}
 
 
 def _rates_by_plan(names: list[str]) -> dict[str, list]:
@@ -163,16 +287,12 @@ def _group_by_sub_category(rows: list[dict]) -> dict[str, list]:
 
 
 def _current_run_rate(team: str) -> float:
-	"""The team's committed monthly run-rate: the summed `locked_rate` of its active
-	price-locks. A team bills in one currency, so the locks are already in it — no
-	normalisation needed (unlike the cross-team, INR-normalised admin view)."""
-	rates = frappe.get_all(
-		"Price Lock",
-		filters={"team": team, "ended_at": ["is", "not set"]},
-		pluck="locked_rate",
-		limit=0,  # sum every active lock; a 20-row page would understate the run-rate
-	)
-	return frappe.utils.flt(sum(frappe.utils.flt(r) for r in rates))
+	"""The team's committed monthly run-rate: the summed open-segment locked rate of
+	its subscriptions, off the Subscription Change ledger (ADR 0010). Counts presets and
+	composed configs alike; a team bills in one currency, so the rates are comparable."""
+	from central.billing.catalog.subscriptions import team_run_rate
+
+	return team_run_rate(team)
 
 
 def _plan_row(plan, currency: str, cluster: str | None, rate, includes) -> dict:

@@ -190,6 +190,10 @@ scheduler_events = {
 		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
 	],
 	"monthly": [
+		# Billing: on the 1st, bill the just-closed month end-to-end for every team —
+		# draft one consolidated invoice per team, then open + collect (credits→card).
+		# The production trigger for the two-phase invoicing (#09/#10).
+		"central.billing.revenue.invoicing.run_monthly_billing",
 		# Billing: cards expire at the end of their printed month; flip lapsed ones.
 		"central.billing.payments.payments.expire_payment_methods",
 	],

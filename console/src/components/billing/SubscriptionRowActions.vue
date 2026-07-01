@@ -32,7 +32,9 @@ const options = computed(() => {
       icon: 'lucide-external-link',
       onClick: () => emit('open', props.subscription),
     })
-  if (props.canManage) {
+  // A terminated VM is gone — neither pause nor resume applies. Otherwise pause an
+  // active subscription, or resume one whose billing is paused (server stopped).
+  if (props.canManage && props.subscription.status !== 'Terminated') {
     if (props.subscription.enabled)
       items.push({ label: 'Pause billing', icon: 'lucide-pause', onClick: () => emit('pause', props.subscription) })
     else

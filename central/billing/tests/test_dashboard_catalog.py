@@ -57,7 +57,11 @@ class TestEligiblePlans(IntegrationTestCase):
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM, currency="INR")
 		clear_team_tier(TEAM)  # each test pins (or leaves untiered) its own cap
-		frappe.db.delete("Price Lock", {"team": TEAM})  # start with no committed usage
+		# Start with no committed usage: drop the team's subscriptions (the run-rate is
+		# summed off their Subscription Change ledger now, ADR 0010).
+		for name in frappe.get_all("Subscription", filters={"team": TEAM}, pluck="name"):
+			frappe.db.delete("Subscription Change", {"subscription": name})
+			frappe.delete_doc("Subscription", name, force=True)
 		_ensure_tier_level("t1")
 		make_plan(CHEAP, rates=_rates(1000))
 		make_plan(MID, rates=_rates(2000))
@@ -71,14 +75,11 @@ class TestEligiblePlans(IntegrationTestCase):
 		return {p["plan"] for p in _flat(out)}, out
 
 	def _provision(self, plan, rate, cluster=CLUSTER):
-		"""A running resource that consumes `rate` of the team's cap (active lock)."""
-		frappe.get_doc(
-			{
-				"doctype": "Price Lock", "team": TEAM, "plan": plan, "cluster": cluster,
-				"resource_id": f"srv-{frappe.generate_hash(6)}", "currency": "INR",
-				"locked_rate": rate, "started_at": frappe.utils.now_datetime(),
-			}
-		).insert(ignore_permissions=True)
+		"""A running subscription that consumes the plan's rate of the team's cap (its
+		opening Created segment on the ledger)."""
+		from central.billing.catalog import subscriptions
+
+		subscriptions.create_subscription(TEAM, cluster, plan=plan)
 
 	def test_excludes_non_server_families(self):
 		# An AI Tokens plan is billable but not provisioned via the create-server flow;

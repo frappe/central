@@ -9,6 +9,7 @@ humaniser. Endpoint modules (account/invoices/methods) build on these.
 import frappe
 
 from central.billing import authz
+from central.billing.catalog.subscriptions import team_active_segments
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
 # so a EUR/USD team sees a coherent cap-vs-spend comparison.
@@ -48,20 +49,23 @@ def _require_manage(team: str) -> str:
 	return team
 
 
+def _team_resource_count(team: str) -> int:
+	"""How many resources the team is running: its open billing segments (ADR 0010),
+	preset and composed alike (#86)."""
+	return len(team_active_segments(team))
+
+
 def _team_clusters(team: str) -> list[str]:
-	return [c for c in set(frappe.get_all("Price Lock", {"team": team}, pluck="cluster")) if c]
+	return sorted({s.cluster for s in team_active_segments(team) if s.cluster})
 
 
 def _team_currency(team: str) -> str:
 	"""A team bills in a single currency: the one set on its Billing Profile.
 
-	Falls back to a price-lock currency (legacy teams whose profile predates the
+	Falls back to an open-segment currency (legacy teams whose profile predates the
 	currency field) then INR, so reads never break before a profile exists."""
-	return (
-		frappe.db.get_value("Billing Profile", team, "currency")
-		or frappe.db.get_value("Price Lock", {"team": team}, "currency")
-		or "INR"
-	)
+	seg_currency = next((s.currency for s in team_active_segments(team) if s.currency), None)
+	return frappe.db.get_value("Billing Profile", team, "currency") or seg_currency or "INR"
 
 
 # A team must complete its billing profile — currency + legal name + a billing

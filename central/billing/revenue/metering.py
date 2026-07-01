@@ -87,24 +87,22 @@ def _resolve_terms(meter: dict):
 def _locked_terms(resource_id: str, resource_type: str):
 	"""Resolve the locked allowance + per-unit rate for a metered resource.
 
-	Keyed off the resource's active price-lock (team, cluster, currency, plan).
-	The allowance is the locked base plan's included quantity for the resource_type
-	(grandfathered via the plan's immutable identity); the rate is the matching
-	metered single-resource Plan's per-unit rate for that currency + cluster. Returns
-	None when the resource has no active lock (nothing to bill against).
+	Keyed off the resource's open billing segment (ADR 0010 — the ledger is the lock),
+	which carries the team, currency and base plan; the cluster comes from its Asset.
+	The allowance is the base plan's included quantity for the resource_type
+	(grandfathered via the plan's immutable identity); the rate is the matching metered
+	single-resource Plan's per-unit rate for that currency + cluster. Returns None when
+	the resource has no open segment (nothing to bill against).
 	"""
-	lock = frappe.db.get_value(
-		"Price Lock",
-		{"resource_id": resource_id, "ended_at": ["is", "not set"]},
-		["team", "cluster", "currency", "plan"],
-		as_dict=True,
-	)
-	if not lock:
+	from central.billing.catalog.subscriptions import active_segment_for_resource
+
+	seg = active_segment_for_resource(resource_id)
+	if not seg:
 		return None
 
 	allowance = 0
-	if lock.plan and frappe.db.exists("Plan", lock.plan):
-		plan = frappe.get_doc("Plan", lock.plan)
+	if seg.plan and frappe.db.exists("Plan", seg.plan):
+		plan = frappe.get_doc("Plan", seg.plan)
 		for inc in plan.includes:
 			if inc.resource_type == resource_type:
 				allowance = frappe.utils.flt(inc.quantity)
@@ -114,13 +112,13 @@ def _locked_terms(resource_id: str, resource_type: str):
 	plan = _metered_plan_for(resource_type)
 	if plan:
 		rate = frappe.utils.flt(
-			resolve_rate(get_catalog_rates("Plan", plan.name), lock.currency, lock.cluster)
+			resolve_rate(get_catalog_rates("Plan", plan.name), seg.currency, seg.cluster)
 		)
 
 	return {
-		"team": lock.team,
-		"cluster": lock.cluster,
-		"currency": lock.currency,
+		"team": seg.team,
+		"cluster": seg.cluster,
+		"currency": seg.currency,
 		"allowance": allowance,
 		"rate": rate,
 	}

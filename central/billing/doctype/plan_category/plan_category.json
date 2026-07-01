@@ -60,8 +60,8 @@
    "fieldname": "provision_target",
    "fieldtype": "Select",
    "label": "Provision Target",
-   "options": "\nServer",
-   "description": "What a member plan provisions, if anything. 'Server' = offered in the create-server flow. Blank = not directly provisionable here (e.g. metered AI Tokens, storage subscriptions). New provisioning surfaces add their own option."
+   "options": "\nServer\nResource",
+   "description": "What a member plan provisions. 'Server' = a whole sellable machine, offered in the create-server flow (the Configurator builds a ladder of plans). 'Resource' = individual resource types (Compute / Memory / Disk) priced per unit, so custom configs can be composed and billed (the Configurator authors Resource Rates). Blank = not directly provisionable (e.g. metered AI Tokens, storage subscriptions)."
   },
   {
    "fieldname": "sub_category_label",
