@@ -78,9 +78,12 @@ export function formatGb(value: number): string {
   return Number.isInteger(value) ? `${value}` : `${value}`.replace(/\.?0+$/, '')
 }
 
-/** Compact spec line for a composed config, matching the preset spec style. */
-export function configSpecs(config: ComposedConfig): string {
-  return `${formatVcpu(config.vcpus)} vCPU · ${formatGb(config.memory_gb)} GB RAM · ${formatGb(config.disk_gb)} GB SSD`
+/** Compact spec line for a composed config, matching the preset spec style. The disk
+ *  unit is driven from the Disk resource's unit on the rate card (single-sourced, #89);
+ *  "SSD" stays a literal (storage is single-type today). Defaults to 'GB' when the rate
+ *  card isn't loaded yet. */
+export function configSpecs(config: ComposedConfig, diskUnit = 'GB'): string {
+  return `${formatVcpu(config.vcpus)} vCPU · ${formatGb(config.memory_gb)} GB RAM · ${formatGb(config.disk_gb)} ${diskUnit} SSD`
 }
 
 /** The composition payload the provision/resize endpoints take (Plan Includes shape). */

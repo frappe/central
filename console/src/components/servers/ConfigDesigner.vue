@@ -72,8 +72,15 @@ const ramOptions = computed(() =>
       }))
     : [],
 )
+// The storage unit is driven from the Disk resource's unit on the rate card (#89),
+// single-sourced rather than a hardcoded "GB"; falls back to 'GB' until it loads.
+const diskUnit = computed<string>(() => props.rateCard.Disk?.unit ?? 'GB')
 const diskOptions = computed(() =>
-  diskSteps.value.map((d, i) => ({ label: `${formatGb(d)} GB`, value: d, disabled: i > maxDiskIndex.value })),
+  diskSteps.value.map((d, i) => ({
+    label: `${formatGb(d)} ${diskUnit.value}`,
+    value: d,
+    disabled: i > maxDiskIndex.value,
+  })),
 )
 
 function setVcpu(v: number) {

@@ -27,7 +27,9 @@ const isCustom = computed(() => !!props.profile && selectedPlan.value === custom
 const customEstimate = computed<number | null>(() =>
   composedConfig.value ? estimateConfig(composedConfig.value, props.rateCard) : null,
 )
-const customSpec = computed<string>(() => (composedConfig.value ? configSpecs(composedConfig.value) : ''))
+const customSpec = computed<string>(() =>
+  composedConfig.value ? configSpecs(composedConfig.value, props.rateCard.Disk?.unit) : '',
+)
 const customPrice = computed<string>(() =>
   customEstimate.value !== null ? `${formatMoney(customEstimate.value, props.currency)} / mo` : '',
 )
