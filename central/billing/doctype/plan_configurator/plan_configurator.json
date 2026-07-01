@@ -8,13 +8,13 @@
  "engine": "InnoDB",
  "field_order": [
   "template_name",
-  "purpose",
   "plan_name_prefix",
   "billing_cycle",
   "column_break_xbyf",
   "is_active",
   "category",
   "builder",
+  "provision_target",
   "sub_category",
   "sizing_section",
   "start_vcpu",
@@ -46,18 +46,8 @@
    "unique": 1
   },
   {
-   "default": "Plan Bundles",
-   "description": "What this template authors. A template does one job: <b>Plan Bundles</b> generates a ladder of sellable plans; <b>Component Rate Card</b> prices the composed-config primitives (Compute / Memory / Disk) for custom configs (ADR 0011). The form shows only the relevant fields and actions.",
-   "fieldname": "purpose",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Purpose",
-   "options": "Plan Bundles\nComponent Rate Card",
-   "reqd": 1
-  },
-  {
    "default": "1",
-   "depends_on": "eval:doc.purpose=='Plan Bundles'",
+   "depends_on": "eval:doc.provision_target!='Resource'",
    "fieldname": "is_active",
    "fieldtype": "Check",
    "label": "Generate Plans as Active"
@@ -81,6 +71,14 @@
    "read_only": 1
   },
   {
+   "description": "Resolved from the category. 'Server' / blank = this template authors sellable plans; 'Resource' = it prices resource types per unit for custom configs (the form switches to Resource Rates).",
+   "fetch_from": "category.provision_target",
+   "fieldname": "provision_target",
+   "fieldtype": "Read Only",
+   "label": "Provision Target",
+   "read_only": 1
+  },
+  {
    "description": "The optimisation profile / variant within the category (filtered to it). For VM plans this is the profile that pins the memory ratio configured on the Sub-Category. Leave blank, or create a new one inline if it isn't a preconfigured option.",
    "fieldname": "sub_category",
    "fieldtype": "Link",
@@ -88,7 +86,7 @@
    "options": "Plan Sub-Category"
   },
   {
-   "depends_on": "eval:doc.purpose=='Plan Bundles' && doc.builder=='VM Rungs'",
+   "depends_on": "eval:doc.provision_target!='Resource' && doc.builder=='VM Rungs'",
    "fieldname": "sizing_section",
    "fieldtype": "Section Break",
    "label": "Sizing"
@@ -150,24 +148,24 @@
   },
   {
    "default": "Bundle",
-   "depends_on": "eval:doc.purpose=='Plan Bundles'",
+   "depends_on": "eval:doc.provision_target!='Resource'",
    "description": "Generated plan names start with this (e.g. \"Bundle 2 vCPU 4 GB\").",
    "fieldname": "plan_name_prefix",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Plan Name Prefix",
-   "mandatory_depends_on": "eval:doc.purpose=='Plan Bundles'"
+   "mandatory_depends_on": "eval:doc.provision_target!='Resource'"
   },
   {
    "default": "Monthly",
-   "depends_on": "eval:doc.purpose=='Plan Bundles'",
+   "depends_on": "eval:doc.provision_target!='Resource'",
    "fieldname": "billing_cycle",
    "fieldtype": "Select",
    "label": "Billing Cycle",
    "options": "Monthly\nAnnual"
   },
   {
-   "depends_on": "eval:doc.purpose=='Plan Bundles'",
+   "depends_on": "eval:doc.provision_target!='Resource'",
    "fieldname": "pricing_section",
    "fieldtype": "Section Break",
    "label": "Default Pricing"
@@ -177,7 +175,7 @@
    "fieldname": "base_rates",
    "fieldtype": "Table",
    "label": "Base Rates",
-   "mandatory_depends_on": "eval:doc.purpose=='Plan Bundles'",
+   "mandatory_depends_on": "eval:doc.provision_target!='Resource'",
    "options": "Plan Configurator Rate"
   },
   {
@@ -186,7 +184,7 @@
    "options": "<p class='text-muted small'><b>Populate Rungs</b> fills the table below from the formula; edit any value (irregular transfer, off-ratio memory, a hand-authored tier). <b>Generate Plans</b> opens a dialog to pick the cluster, currencies, and which rungs \u2014 then runs in the background, creating a bundle per rung and its rates. Re-run it per cluster (a plan is sellable on a cluster only where it has a rate, or a global one); blank cluster = global.</p>"
   },
   {
-   "depends_on": "eval:doc.purpose=='Plan Bundles' && doc.builder=='VM Rungs'",
+   "depends_on": "eval:doc.provision_target!='Resource' && doc.builder=='VM Rungs'",
    "fieldname": "rungs_section",
    "fieldtype": "Section Break",
    "label": "Rungs"
@@ -199,7 +197,7 @@
    "options": "Plan Configurator Plan"
   },
   {
-   "depends_on": "eval:doc.purpose=='Plan Bundles' && doc.builder=='Simple'",
+   "depends_on": "eval:doc.provision_target!='Resource' && doc.builder=='Simple'",
    "fieldname": "simple_section",
    "fieldtype": "Section Break",
    "label": "Plans"
@@ -216,22 +214,22 @@
    "fieldtype": "Column Break"
   },
   {
-   "depends_on": "eval:doc.purpose=='Component Rate Card'",
+   "depends_on": "eval:doc.provision_target=='Resource'",
    "fieldname": "component_card_section",
    "fieldtype": "Section Break",
-   "label": "Component Rate Card"
+   "label": "Resource Rates"
   },
   {
-   "description": "Per-unit rates for the composed-config primitives (Compute / Memory / Disk), one row per (resource type × currency). A custom config is billed as the sum of quantity × these rates — so a composed config is sellable in a currency/region only when every primitive is priced there (ADR 0011).",
+   "description": "Per-unit rates for each resource type (Compute / Memory / Disk), one row per (resource type × currency). A custom config is billed as the sum of quantity × these rates — so a config is sellable in a currency/region only when every resource type is priced there (ADR 0011).",
    "fieldname": "component_rates",
    "fieldtype": "Table",
-   "label": "Component Rates",
+   "label": "Resource Rates",
    "options": "Plan Configurator Component Rate"
   },
   {
    "fieldname": "component_card_help",
    "fieldtype": "HTML",
-   "options": "<p class='text-muted small'><b>Seed Component Rows</b> fills the table with every shipped currency × primitive so nothing is missed. <b>Apply Component Card</b> writes these as Catalog Rate rows (per cluster; blank = global) and reports any currency whose card is still incomplete — that region can't offer custom configs until it is (ADR 0011).</p>"
+   "options": "<p class='text-muted small'><b>Seed Rates</b> fills the table with every shipped currency × resource type so nothing is missed. <b>Publish Rates</b> writes these as Catalog Rate rows (per cluster; blank = global) and reports any currency still missing a resource type — that region can't offer custom configs until it is priced (ADR 0011).</p>"
   }
  ],
  "index_web_pages_for_search": 1,

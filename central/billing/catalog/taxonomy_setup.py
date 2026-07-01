@@ -50,6 +50,20 @@ CATEGORIES = [
 		],
 	},
 	{
+		# The per-unit rates that compose a custom VM config (ADR 0009/0011). Its
+		# provision_target 'Resource' switches the Configurator to authoring Resource
+		# Rates (Compute / Memory / Disk priced per unit) instead of a plan ladder — no
+		# Plans live here; it is the pricing home for composed configs.
+		"category_name": "VM Resources",
+		"configurator_builder": "Simple",
+		"provision_target": "Resource",
+		"sub_category_label": "",
+		"description": "Per-unit resource rates (Compute / Memory / Disk) a custom VM config is composed and billed from.",
+		"billing_type": "Fixed",
+		"allowed": ["Compute", "Memory", "Disk"],
+		"sub_categories": [],
+	},
+	{
 		"category_name": "AI Tokens",
 		"configurator_builder": "Simple",
 		"sub_category_label": "",
