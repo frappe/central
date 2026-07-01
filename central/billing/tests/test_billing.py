@@ -159,3 +159,36 @@ class TestOpenAndCollect(BillingTestBase):
 			{"team": TEAM, "entry_type": "Debit", "reference_name": name},
 		)
 		self.assertEqual(len(debits), 1)
+
+
+class TestMonthlyBillingRun(BillingTestBase):
+	"""The scheduled entrypoint that drafts + settles the just-closed month."""
+
+	def test_run_bills_and_settles_previous_month(self):
+		# Ran all of June at 1000/mo; the run fires on the 1st of July.
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		credits.purchase(TEAM, 1000, "INR")  # credits cover it → settled in full
+		frappe.db.commit()
+
+		result = invoicing.run_monthly_billing(today="2026-07-01")
+
+		self.assertEqual(result["period_start"], "2026-06-01")
+		self.assertEqual(result["period_end"], "2026-06-30")
+
+		# The team's June invoice was drafted and opened (here, credits settle it).
+		inv = frappe.get_doc("Invoice", {"team": TEAM, "period_end": "2026-06-30"})
+		self.assertNotEqual(inv.status, "Draft")
+		self.assertEqual(inv.status, "Paid")
+		self.assertEqual(inv.credit_applied, 1000.0)
+
+	def test_run_is_idempotent(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		invoicing.run_monthly_billing(today="2026-07-01")
+		# A second tick must not double-bill the period.
+		invoicing.run_monthly_billing(today="2026-07-01")
+
+		self.assertEqual(
+			frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1
+		)
