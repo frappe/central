@@ -192,6 +192,28 @@ class TestResizeComposed(IntegrationTestCase):
 		)
 		self.vm_action.assert_not_called()  # already off — no power step
 
+	def test_resize_rejects_disk_shrink_without_touching_vm(self):
+		sub = self._provision()  # SMALL — 40 GB disk
+		asset = self._ready(sub)
+		frappe.db.set_value("Asset", asset, "disk_gigabytes", 100)  # server grew to 100 GB
+		with self.assertRaisesRegex(frappe.ValidationError, "Disk can't shrink"):
+			subscriptions.resize_composed_subscription(sub, BIG, "General")  # BIG is 40 GB < 100
+		# Refused before any power change — the VM is never stopped or resized.
+		self.vm_action.assert_not_called()
+		self.resize_vm.assert_not_called()
+		self.assertEqual(len(self._segments(sub)), 1)  # no re-price
+
+	def test_failed_reshape_restarts_a_running_vm(self):
+		sub = self._provision()  # 40 GB disk, so BIG (40) is not a shrink
+		asset = frappe.db.get_value("Subscription", sub, "asset_id")
+		frappe.db.set_value("Asset", asset, "status", "Running")
+		self.resize_vm.side_effect = frappe.ValidationError("host boom")
+		with self.assertRaises(frappe.ValidationError):
+			subscriptions.resize_composed_subscription(sub, BIG, "General")
+		# Stopped to resize, the resize failed, so it's started back — not left off.
+		self.assertEqual(self.vm_action.call_args_list, [call(asset, "stop"), call(asset, "start")])
+		self.assertEqual(len(self._segments(sub)), 1)  # no re-price on failure
+
 	def test_resize_to_preset_plan_reshapes_and_relocks(self):
 		sub = self._provision()
 		asset = self._ready(sub)  # Stopped

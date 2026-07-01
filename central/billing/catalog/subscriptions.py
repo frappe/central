@@ -335,22 +335,44 @@ def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
 	"""Apply `shape` (vcpus/memory/disk) to the real VM on its Atlas, stopping it first
 	when it's live. Firecracker can't reconfigure a running machine, so a Running/Paused
 	VM is stopped, then resized — and left Stopped for the operator to start again when
-	they're ready (we never auto-start). A VM that isn't provisioned yet (Pending/Failed)
-	has nothing to reshape and is skipped. Atlas's stop/resize are synchronous, so the
-	stop has completed before the resize runs."""
+	they're ready (we never auto-start on success). A VM that isn't provisioned yet
+	(Pending/Failed) has nothing to reshape and is skipped.
+
+	Two guards keep a failed resize from stranding the VM powered off: a disk shrink
+	(which Atlas refuses — a rootfs can only grow) is caught HERE, before anything is
+	stopped; and if the on-host resize fails for any other reason after we've stopped a
+	live VM, we start it back up before re-raising. Atlas's stop/start/resize are
+	synchronous, so each step has finished before the next runs."""
 	if not shape or status not in ("Running", "Paused", "Stopped"):
 		return
+	current_disk = frappe.utils.cint(frappe.db.get_value("Asset", asset_id, "disk_gigabytes"))
+	if shape["disk_gigabytes"] < current_disk:
+		frappe.throw(
+			frappe._("Disk can't shrink: this server has a {0} GB disk — choose a size with at least that much storage.").format(current_disk)
+		)
 	from central.integrations.atlas import AtlasClient
 
 	client = AtlasClient(frappe.get_doc("Atlas Instance", cluster))
-	if status in ("Running", "Paused"):
+	was_active = status in ("Running", "Paused")
+	if was_active:
 		client.vm_action(asset_id, "stop")
-	client.resize_vm(
-		asset_id,
-		vcpus=shape["vcpus"],
-		memory_megabytes=shape["memory_megabytes"],
-		disk_gigabytes=shape["disk_gigabytes"],
-	)
+	try:
+		client.resize_vm(
+			asset_id,
+			vcpus=shape["vcpus"],
+			memory_megabytes=shape["memory_megabytes"],
+			disk_gigabytes=shape["disk_gigabytes"],
+		)
+	except Exception:
+		# Reshape failed after we stopped a live VM — bring it back so a failed resize
+		# doesn't leave it powered off, then surface the original error (a restart that
+		# also fails is logged, not raised, so it can't mask the real cause).
+		if was_active:
+			try:
+				client.vm_action(asset_id, "start")
+			except Exception:
+				frappe.log_error(title=f"Resize recovery: failed to restart {asset_id}")
+		raise
 
 
 def _is_resizable(doc) -> bool:
