@@ -19,6 +19,59 @@ export interface Team {
   owner: string | null
 }
 
+export type MemberStatus = 'Active' | 'Suspended'
+export type CapabilityPlane = 'central' | 'atlas' | 'bench'
+export type InvitationStatus = 'Pending' | 'Accepted' | 'Expired' | 'Revoked' | 'Declined'
+
+/** central.api.teams.list_team_members item. */
+export interface TeamMemberRow {
+  user: string
+  role: string
+  status: MemberStatus
+  is_owner: boolean
+}
+
+/** central.api.teams.list_team_roles item — a role plus the capabilities it grants. */
+export interface TeamRoleRow {
+  name: string
+  role_name: string
+  is_system: 0 | 1
+  team: string | null
+  capabilities: string[]
+}
+
+/** central.api.teams.list_capabilities item — the palette of authorization atoms. */
+export interface CapabilityInfo {
+  name: string
+  plane: CapabilityPlane
+  resource: string
+  description: string
+}
+
+/** central.api.teams.list_team_invitations item (the manager's view). */
+export interface InvitationRow {
+  name: string
+  email: string
+  role: string
+  status: InvitationStatus
+  invited_by: string | null
+  expires_on: string | null
+  accepted_by: string | null
+  accepted_at: string | null
+  creation: string
+}
+
+/** central.api.identity.my_invitations item (the invitee's inbox). */
+export interface MyInvitation {
+  name: string
+  team: string
+  team_name: string
+  role: string
+  invited_by: string | null
+  expires_on: string | null
+  creation: string
+}
+
 /** One bundled resource in a plan (central Plan Includes). */
 export interface PlanInclude {
   resource_type: 'Compute' | 'Memory' | 'Disk' | 'Transfer' | 'IP' | 'Snapshot'
