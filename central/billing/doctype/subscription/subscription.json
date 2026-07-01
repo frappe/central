@@ -10,6 +10,7 @@
   "enabled",
   "team",
   "asset_id",
+  "cluster",
   "plan",
   "billing_cycle",
   "column_break_state",
@@ -88,6 +89,12 @@
    "in_list_view": 1,
    "label": "Asset ID",
    "options": "Asset"
+  },
+  {
+   "fetch_from": "asset_id.cluster",
+   "fieldname": "cluster",
+   "fieldtype": "Read Only",
+   "label": "Cluster"
   }
  ],
  "index_web_pages_for_search": 1,
@@ -97,7 +104,7 @@
    "link_fieldname": "subscription"
   }
  ],
- "modified": "2026-06-22 14:17:29.576623",
+ "modified": "2026-06-29 17:28:21.472366",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Subscription",

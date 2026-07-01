@@ -43,6 +43,8 @@ const props = withDefaults(
     itemLabel?: string
     showCount?: boolean
     emptyState?: ListViewEmptyState
+    /** Highlight the row whose rowKey matches this — for master/detail lists. */
+    activeKey?: string | null
   }>(),
   {
     loading: false,
@@ -57,6 +59,7 @@ const props = withDefaults(
     countLoading: false,
     itemLabel: 'row',
     showCount: true,
+    activeKey: null,
     emptyState: () => ({
       title: 'No data',
       description: 'There is nothing to show yet.',
@@ -134,6 +137,14 @@ const table = useVueTable({
     return tableColumns.value
   },
   getRowId: (row) => props.rowKey(row),
+  // Keep tanstack from auto-resetting the page on every row-model recompute. Our
+  // query handlers already reset `page` to 1 explicitly on search/filter/sort, so
+  // auto-reset is redundant — and harmful: in a client-side list it fires
+  // onPaginationChange while the rows re-render (e.g. when a master/detail
+  // selection flips `activeKey`), which rewrites `query` mid-render and spins into
+  // an infinite update loop that freezes the tab. Server-side lists dodge this
+  // only because manualPagination already disables auto-reset.
+  autoResetPageIndex: false,
   enableRowSelection: props.selectable,
   manualFiltering: props.serverSide,
   manualPagination: props.serverSide,
@@ -496,7 +507,9 @@ label="Clear"
             role="row"
             class="grid h-10 cursor-default items-center gap-4 border-b border-outline-gray-1 px-2 text-sm transition-colors duration-150 ease-in-out hover:bg-surface-sidebar"
             :class="
-              row.getIsSelected() ? 'bg-surface-gray-2 hover:bg-surface-gray-3' : ''
+              row.getIsSelected() || activeKey === row.id
+                ? 'bg-surface-gray-2 hover:bg-surface-gray-3'
+                : ''
             "
             :style="{ gridTemplateColumns }"
             @click="handleRowClick(row)"

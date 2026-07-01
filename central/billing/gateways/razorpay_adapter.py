@@ -253,7 +253,13 @@ class RazorpayAdapter(GatewayAdapter):
 		"""Sync name/email/contact onto an existing customer. Razorpay requires a
 		contact on the customer before a recurring order, and a customer minted
 		earlier (or by an older flow) may not have one — so we set it here, idempotently.
-		Only non-empty values are sent."""
+		Only non-empty values are sent.
+
+		Razorpay enforces (email, contact) uniqueness per merchant, so editing a
+		reused customer to carry this identity can collide with a pre-existing
+		customer that already owns it ("Customer already exists for the merchant").
+		That collision is meaningful — the caller (mandates) recovers by switching
+		to the customer that already has the contact — so let it propagate."""
 		fields = {k: info.get(k) for k in ("name", "email", "contact") if info.get(k)}
 		if fields:
 			self._client().customer.edit(customer_id, fields)

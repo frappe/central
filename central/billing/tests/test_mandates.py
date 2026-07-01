@@ -308,6 +308,30 @@ class TestRazorpayCardSetup(MandateTestBase):
 			mandates.setup_card(TEAM, GATEWAY)
 			self.assertEqual(adapter.update_customer.call_args.args[1]["contact"], "9999999999")
 
+	def test_card_setup_recovers_when_contact_sync_collides(self):
+		# Razorpay enforces (email, contact) uniqueness: if a duplicate customer
+		# already owns the identity, the contact-sync edit collides. We must switch
+		# to the contact-bearing customer (fetched via create) and use IT for the
+		# order — never proceed with the contactless one (which fails "contact
+		# required") — and repoint the stored row.
+		frappe.get_doc({
+			"doctype": "Gateway Customer", "team": TEAM, "gateway": GATEWAY,
+			"adapter_key": "Razorpay", "gateway_customer_id": "cust_stale",
+		}).insert(ignore_permissions=True)
+		with stub_adapter() as adapter:
+			adapter.update_customer.side_effect = Exception("Customer already exists for the merchant")
+			adapter.create_customer.return_value = "cust_with_contact"
+			mandates.setup_card(TEAM, GATEWAY)
+			self.assertEqual(
+				adapter.setup_payment_method.call_args.args[1]["customer_id"], "cust_with_contact"
+			)
+		self.assertEqual(
+			frappe.db.get_value(
+				"Gateway Customer", {"team": TEAM, "gateway": GATEWAY}, "gateway_customer_id"
+			),
+			"cust_with_contact",
+		)
+
 	def test_upi_setup_needs_no_phone(self):
 		# UPI Autopay carries no customer contact — setup works with no phone.
 		frappe.db.set_value("Billing Profile", TEAM, "phone", "")

@@ -1,8 +1,10 @@
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { successToast, errorToast, getErrorMessage } from '@/lib/toast'
+import { useBusyRunner } from '@/composables/useBusyRunner'
+import { getErrorMessage } from '@/lib/toast'
+import { submitOrThrow } from '@/lib/frappeCall'
 import type { MemberStatus, TeamMemberRow } from '@/types/api'
 
 // The active team's roster plus the member mutations Central enforces:
@@ -27,27 +29,15 @@ const setRoleCall = useCall<unknown, RoleParams>({ url: method(API.setTeamMember
 const setStatusCall = useCall<unknown, StatusParams>({ url: method(API.setTeamMemberStatus), method: 'POST', immediate: false })
 const removeCall = useCall<unknown, RemoveParams>({ url: method(API.removeTeamMember), method: 'POST', immediate: false })
 
-const busy = ref<string>('')
+const { busy, run } = useBusyRunner()
 
 export function useTeamMembers() {
-  async function run(fn: () => Promise<unknown>, ok: string, user: string): Promise<void> {
-    busy.value = user
-    try {
-      await fn()
-      successToast(ok)
-      membersCall.reload()
-    } catch (e) {
-      errorToast(e)
-    } finally {
-      busy.value = ''
-    }
-  }
-
   function setRole(user: string, role: string) {
     return run(
       () => submitOrThrow(setRoleCall, { team: teamParams().team, user, role }),
       `Updated ${user}'s role.`,
       user,
+      () => membersCall.reload(),
     )
   }
 
@@ -57,6 +47,7 @@ export function useTeamMembers() {
       () => submitOrThrow(setStatusCall, { team: teamParams().team, user, status }),
       `${verb} ${user}.`,
       user,
+      () => membersCall.reload(),
     )
   }
 
@@ -65,6 +56,7 @@ export function useTeamMembers() {
       () => submitOrThrow(removeCall, { team: teamParams().team, user }),
       `Removed ${user} from the team.`,
       user,
+      () => membersCall.reload(),
     )
   }
 
@@ -80,12 +72,4 @@ export function useTeamMembers() {
     setStatus,
     remove,
   }
-}
-
-async function submitOrThrow<TParams extends object>(
-  call: { submit: (params: TParams) => Promise<unknown>; error: unknown },
-  params: TParams,
-): Promise<void> {
-  await call.submit(params)
-  if (call.error) throw call.error
 }

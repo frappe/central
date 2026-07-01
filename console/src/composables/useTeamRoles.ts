@@ -3,6 +3,7 @@ import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { successToast, errorToast, getErrorMessage } from '@/lib/toast'
+import { submitOrThrow } from '@/lib/frappeCall'
 import type { CapabilityInfo, TeamRoleRow } from '@/types/api'
 
 // Roles available on the active team (system + this team's custom roles), each
@@ -114,12 +115,4 @@ function ensureCapabilitiesLoaded(): void {
   capabilitiesCall.reload().finally(() => {
     if (capabilitiesCall.error) capabilitiesRequested = false
   })
-}
-
-async function submitOrThrow<TParams extends object>(
-  call: { submit: (params: TParams) => Promise<unknown>; error: unknown },
-  params: TParams,
-): Promise<void> {
-  await call.submit(params)
-  if (call.error) throw call.error
 }

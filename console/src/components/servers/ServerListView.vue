@@ -46,7 +46,7 @@ const columns = computed<ListViewColumn<AssetRow>[]>(() => [
       h('div', { class: 'min-w-0' }, [
         h(
           'p',
-          { class: 'truncate font-medium text-ink-gray-9' },
+          { class: 'truncate text-base font-medium text-ink-gray-9' },
           row.original.title || row.original.resource_id,
         ),
         h(

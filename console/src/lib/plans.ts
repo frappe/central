@@ -3,6 +3,7 @@
 // (see usePlans); these turn one into a spec line, a price label, and the raw
 // size create_server still takes — Atlas provisions resources, not plan names.
 
+import { money } from '@/lib/format'
 import type { Plan } from '@/types/api'
 
 /** Compact spec line from a plan's bundled resources, e.g. "2 vCPU · 4 GB RAM · 40 GB disk". */
@@ -16,7 +17,7 @@ export function planSpecs(plan: Plan): string {
 /** Price label for a plan card, e.g. "₹4,000 / mo" or "$49 / yr". */
 export function planPrice(plan: Plan): string {
   const cycle = plan.billing_cycle === 'Annual' ? 'yr' : 'mo'
-  return `${formatMoney(plan.rate, plan.currency)} / ${cycle}`
+  return `${money(plan.rate, plan.currency, { trimTrailingZeros: true })} / ${cycle}`
 }
 
 /** A plan's bundled resources as the raw size create_server takes (Atlas owns the
@@ -49,12 +50,4 @@ function nounFor(resourceType: string): string {
 
 function formatQty(quantity: number): string {
   return Number.isInteger(quantity) ? `${quantity}` : quantity.toFixed(1)
-}
-
-function formatMoney(amount: number, currency: string): string {
-  return new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency,
-    maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-  }).format(amount)
 }

@@ -1,8 +1,10 @@
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { successToast, errorToast, getErrorMessage } from '@/lib/toast'
+import { useBusyRunner } from '@/composables/useBusyRunner'
+import { getErrorMessage } from '@/lib/toast'
+import { submitOrThrow } from '@/lib/frappeCall'
 import type { InvitationRow } from '@/types/api'
 
 // The active team's invitations — the manager's view (gated server-side on
@@ -29,27 +31,15 @@ const revokeCall = useCall<{ revoked: boolean }, { invitation: string }>({
   immediate: false,
 })
 
-const busy = ref<string>('')
+const { busy, run } = useBusyRunner()
 
 export function useTeamInvitations() {
-  async function run(fn: () => Promise<unknown>, ok: string, invitation: string): Promise<void> {
-    busy.value = invitation
-    try {
-      await fn()
-      successToast(ok)
-      invitationsCall.reload()
-    } catch (e) {
-      errorToast(e)
-    } finally {
-      busy.value = ''
-    }
-  }
-
   function resend(invitation: InvitationRow) {
     return run(
       () => submitOrThrow(resendCall, { invitation: invitation.name }),
       `Resent invite to ${invitation.email}.`,
       invitation.name,
+      () => invitationsCall.reload(),
     )
   }
 
@@ -58,6 +48,7 @@ export function useTeamInvitations() {
       () => submitOrThrow(revokeCall, { invitation: invitation.name }),
       `Revoked invite to ${invitation.email}.`,
       invitation.name,
+      () => invitationsCall.reload(),
     )
   }
 
@@ -72,12 +63,4 @@ export function useTeamInvitations() {
     resend,
     revoke,
   }
-}
-
-async function submitOrThrow<TParams extends object>(
-  call: { submit: (params: TParams) => Promise<unknown>; error: unknown },
-  params: TParams,
-): Promise<void> {
-  await call.submit(params)
-  if (call.error) throw call.error
 }

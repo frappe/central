@@ -51,3 +51,40 @@ const INVITATION_STATUS_THEME: Record<InvitationStatus, BadgeTheme> = {
 export function invitationStatusTheme(status: InvitationStatus): BadgeTheme {
   return INVITATION_STATUS_THEME[status] ?? 'gray'
 }
+
+// Subscription / invoice account-standing → Badge theme. Current is healthy,
+// past_due/dunning amber, suspended/terminated red.
+const STANDING_THEME: Record<string, BadgeTheme> = {
+  Current: 'green',
+  Active: 'green',
+  Paid: 'green',
+  Trialing: 'blue',
+  past_due: 'orange',
+  Past_Due: 'orange',
+  Overdue: 'orange',
+  Unpaid: 'orange',
+  Dunning: 'orange',
+  suspended: 'red',
+  Suspended: 'red',
+  Terminated: 'red',
+  Void: 'gray',
+}
+
+export function standingTheme(standing: string | null | undefined): BadgeTheme {
+  return (standing ? STANDING_THEME[standing] : undefined) ?? 'gray'
+}
+
+// Invoice status → Badge theme (case-insensitive): Paid green, Open/Unpaid amber,
+// Overdue red, Void/Draft neutral.
+const INVOICE_THEME: Record<string, BadgeTheme> = {
+  paid: 'green',
+  open: 'orange',
+  unpaid: 'orange',
+  overdue: 'red',
+  void: 'gray',
+  draft: 'gray',
+}
+
+export function invoiceTheme(status: string | null | undefined): BadgeTheme {
+  return INVOICE_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
+}
