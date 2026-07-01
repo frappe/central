@@ -42,7 +42,11 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog v-model="open" :options="dialogOptions">
+  <Dialog
+    v-model="open"
+    :title="dialogOptions.title"
+    :actions="dialogOptions.actions"
+  >
     <template #default>
       <FormControl
         v-model="teamName"
