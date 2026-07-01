@@ -106,9 +106,9 @@ const options = [
 
   <Dialog
     v-model:open="choosing"
-    :options="{ title: 'How would you like to pay going forward?' }"
+    title="How would you like to pay going forward?"
   >
-    <template #body-content>
+    <template #default>
       <div class="grid gap-3 sm:grid-cols-2">
         <button
           v-for="o in options"

@@ -81,7 +81,12 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog v-model="open" :options="dialogOptions">
+  <Dialog
+    v-model="open"
+    :title="dialogOptions.title"
+    :size="dialogOptions.size"
+    :actions="dialogOptions.actions"
+  >
     <template #default>
       <div class="space-y-4">
         <FormControl

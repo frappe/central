@@ -66,7 +66,12 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog v-model="open" :options="dialogOptions">
+  <Dialog
+    v-model="open"
+    :title="dialogOptions.title"
+    :size="dialogOptions.size"
+    :actions="dialogOptions.actions"
+  >
     <template #default>
       <div class="space-y-5">
         <FormControl v-model="roleName" label="Role name" placeholder="e.g. Release Manager" />

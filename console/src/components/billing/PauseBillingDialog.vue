@@ -47,5 +47,10 @@ const dialogOptions = computed(() => ({
 </script>
 
 <template>
-  <Dialog v-model="open" :options="dialogOptions" />
+  <Dialog
+    v-model="open"
+    :title="dialogOptions.title"
+    :message="dialogOptions.message"
+    :actions="dialogOptions.actions"
+  />
 </template>

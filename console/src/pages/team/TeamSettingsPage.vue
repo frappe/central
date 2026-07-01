@@ -129,7 +129,17 @@ async function onDelete() {
       </div>
     </div>
 
-    <Dialog v-model="confirmTransfer" :options="transferOptions" />
-    <Dialog v-model="confirmDelete" :options="deleteOptions" />
+    <Dialog
+      v-model="confirmTransfer"
+      :title="transferOptions.title"
+      :message="transferOptions.message"
+      :actions="transferOptions.actions"
+    />
+    <Dialog
+      v-model="confirmDelete"
+      :title="deleteOptions.title"
+      :message="deleteOptions.message"
+      :actions="deleteOptions.actions"
+    />
   </div>
 </template>
