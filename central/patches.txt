@@ -91,6 +91,9 @@ central.billing.patches.v24_widen_vcpu_ladder.widen_vcpu_ladder
 # Retire the Price Lock doctype: the Subscription Change ledger is the only lock now.
 # Backfill any remaining open lock into the ledger, then drop the doctype — ADR 0010, #86.
 central.billing.patches.v25_retire_price_lock.retire_price_lock
+# Close the open billing segment for VMs already Terminated before termination learned
+# to cancel — frees their run-rate + trust-tier headroom (ADR 0010).
+central.billing.patches.v26_cancel_terminated_subscriptions.cancel_terminated_subscriptions
 central.patches.v01_capability_model_v2.rename_capabilities
 central.patches.v02_portal_central_users.make_central_users_portal_only
 # Strip the capability catalog to v3: drop the bench plane (site:* + server:config)
