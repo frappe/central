@@ -67,9 +67,96 @@ def list_capabilities() -> list[dict[str, Any]]:
 	)
 
 
+@frappe.whitelist(methods=["GET"])
+def list_team_invitations(team: str, status: str | None = None) -> list[dict[str, Any]]:
+	"""Invitations for a team — the manager's view. Gated on team:manage_members."""
+	if not can(frappe.session.user, team, "team:manage_members") and not user_has_operator_bypass():
+		frappe.throw("You can't manage invitations for this team.", frappe.PermissionError)
+	filters: dict[str, Any] = {"team": team}
+	if status:
+		filters["status"] = status
+	return frappe.get_all(
+		"Team Invitation",
+		filters=filters,
+		fields=[
+			"name", "email", "role", "status", "invited_by",
+			"expires_on", "accepted_by", "accepted_at", "creation",
+		],
+		order_by="creation desc",
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_team(team_name: str) -> dict[str, Any]:
+	"""Create a new team owned by the caller. The Team doc seeds the active Owner
+	membership; team_has_permission gates creation to Central Users."""
+	team = frappe.get_doc({"doctype": "Team", "team_name": team_name}).insert()
+	return {"name": team.name, "team_name": team.team_name}
+
+
+@frappe.whitelist(methods=["POST"])
+def rename_team(team: str, team_name: str) -> dict[str, Any]:
+	"""Rename a team. Gated on team:edit (explicit, matching the sibling endpoints;
+	Team.validate re-checks the same capability on save)."""
+	if not can(frappe.session.user, team, "team:edit") and not user_has_operator_bypass():
+		frappe.throw("You can't rename this team.", frappe.PermissionError)
+	doc = frappe.get_doc("Team", team)
+	doc.team_name = team_name
+	doc.save()
+	return {"name": doc.name, "team_name": doc.team_name}
+
+
+@frappe.whitelist(methods=["POST"])
+def transfer_team_ownership(team: str, user: str) -> dict[str, Any]:
+	"""Hand the Owner role to another active member. Current-owner only."""
+	frappe.get_doc("Team", team).transfer_ownership(user)
+	return {"team": team, "owner": user}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_team(team: str) -> dict[str, Any]:
+	"""Delete a team. Gated on team:delete first (so an unauthorized call can't run
+	the cleanup below), then refuses while the team still owns servers or sites —
+	those must be torn down deliberately. Its invitations and custom roles are
+	cleared so their Link references don't block the delete."""
+	if not can(frappe.session.user, team, "team:delete") and not user_has_operator_bypass():
+		frappe.throw("You can't delete this team.", frappe.PermissionError)
+	for doctype in ("Asset", "Site"):
+		if frappe.db.exists(doctype, {"team": team}):
+			frappe.throw("Remove this team's servers and sites before deleting it.", frappe.ValidationError)
+	for name in frappe.get_all("Team Invitation", {"team": team}, pluck="name"):
+		frappe.delete_doc("Team Invitation", name, ignore_permissions=True, force=True)
+	for name in frappe.get_all("Team Role", {"team": team, "is_system": 0}, pluck="name"):
+		frappe.delete_doc("Team Role", name, ignore_permissions=True, force=True)
+	frappe.delete_doc("Team", team)
+	return {"team": team, "deleted": True}
+
+
 @frappe.whitelist(methods=["POST"])
 def invite_team_member(team: str, email: str, role: str, expires_in_days: int = 7) -> str:
 	return frappe.get_doc("Team", team).invite_member(email, role, expires_in_days)
+
+
+@frappe.whitelist(methods=["POST"])
+def resend_invitation(invitation: str) -> dict[str, Any]:
+	return frappe.get_doc("Team Invitation", invitation).resend()
+
+
+@frappe.whitelist(methods=["POST"])
+def revoke_invitation(invitation: str) -> dict[str, Any]:
+	revoked = frappe.get_doc("Team Invitation", invitation).revoke()
+	return {"invitation": invitation, "revoked": revoked}
+
+
+@frappe.whitelist(methods=["POST"])
+def accept_invitation(invitation: str) -> dict[str, Any]:
+	return frappe.get_doc("Team Invitation", invitation).accept()
+
+
+@frappe.whitelist(methods=["POST"])
+def decline_invitation(invitation: str) -> dict[str, Any]:
+	declined = frappe.get_doc("Team Invitation", invitation).decline()
+	return {"invitation": invitation, "declined": declined}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -105,6 +192,8 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 	# Persist the implied dependencies too (e.g. server:create pulls in server:view +
 	# cluster:view), so the saved role is usable and matches what enforcement grants.
 	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
+	# Authorized by the team:manage_members check above; the Team Role doctype grants
+	# create only to System Manager, so capability-gated writes bypass doc perms.
 	role = frappe.get_doc(
 		{
 			"doctype": "Team Role",
@@ -113,5 +202,23 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 			"team": team,
 			"capabilities": rows,
 		}
-	).insert()
+	).insert(ignore_permissions=True)
 	return {"role": role.name, "role_name": role.role_name}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_custom_role(role: str) -> dict:
+	"""Delete a team-scoped custom role. Gated on team:manage_members for its team;
+	refuses system roles and roles still referenced by a member or pending invite."""
+	doc = frappe.get_doc("Team Role", role)
+	if doc.is_system:
+		frappe.throw("System roles cannot be deleted.", frappe.ValidationError)
+	if not can(frappe.session.user, doc.team, "team:manage_members") and not user_has_operator_bypass():
+		frappe.throw("You can't manage roles for this team.", frappe.PermissionError)
+	if frappe.db.exists("Team Member", {"role": role}):
+		frappe.throw("Reassign members off this role before deleting it.", frappe.ValidationError)
+	if frappe.db.exists("Team Invitation", {"role": role, "status": "Pending"}):
+		frappe.throw("A pending invitation still uses this role.", frappe.ValidationError)
+	# Authorized above; the Team Role doctype grants delete only to System Manager.
+	frappe.delete_doc("Team Role", role, ignore_permissions=True)
+	return {"role": role, "deleted": True}

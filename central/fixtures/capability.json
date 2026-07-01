@@ -41,7 +41,7 @@
  },
  {
   "capability": "server:open",
-  "description": "Open a server's console (bench admin) via signed-token SSO.",
+"description": "Open a server's console(bench admin).",
   "docstatus": 0,
   "doctype": "Capability",
   "modified": "2026-06-17 00:00:00",

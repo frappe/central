@@ -94,6 +94,25 @@ def my_teams() -> list[dict[str, Any]]:
 
 
 @frappe.whitelist(methods=["GET"])
+def my_invitations() -> list[dict[str, Any]]:
+	"""Pending, unexpired invitations addressed to the signed-in user — the invitee's
+	inbox. Each carries the inviting team's label so the console can render it without
+	a second call."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		return []
+	rows = frappe.get_all(
+		"Team Invitation",
+		filters={"email": user, "status": "Pending", "expires_on": [">=", frappe.utils.today()]},
+		fields=["name", "team", "role", "invited_by", "expires_on", "creation"],
+		order_by="creation desc",
+	)
+	for row in rows:
+		row["team_name"] = frappe.db.get_value("Team", row["team"], "team_name") or row["team"]
+	return rows
+
+
+@frappe.whitelist(methods=["GET"])
 def search_teams(query: str = "", limit: int = 20) -> list[dict[str, Any]]:
 	"""Operator-only: any active team, for impersonation in the team switcher.
 	Mirrors the IAM rule that a System Manager bypasses team membership."""
