@@ -97,6 +97,6 @@ const pendingResize = ref<AssetRow | null>(null)
       @confirm="confirmTerminate"
     />
 
-    <ResizeServerDialog v-model:server="pendingResize" @resized="reload" />
+    <ResizeServerDialog v-model:server="pendingResize" @resized="reload" @stop="stop" />
   </div>
 </template>

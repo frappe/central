@@ -46,7 +46,8 @@ const options = computed(() => {
     items.push({ label: 'Start', icon: 'lucide-play', onClick: () => emit('start', props.server) })
   if (props.canPower && canStop(props.server.status))
     items.push({ label: 'Stop', icon: 'lucide-square', onClick: () => emit('stop', props.server) })
-  // Resize a custom (composed) config; the dialog no-ops for a preset server.
+  // Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
+  // custom config.
   if (props.canPower && !isTerminated(props.server.status))
     items.push({ label: 'Resize', icon: 'lucide-sliders-horizontal', onClick: () => emit('resize', props.server) })
   if (props.canTerminate && !isTerminated(props.server.status))

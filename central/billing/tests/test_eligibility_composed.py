@@ -124,24 +124,38 @@ class TestEligibilityComposed(IntegrationTestCase):
 		# Resize headroom excludes this config's own spend, so it has the full cap back.
 		self.assertEqual(got["available"], got_max := frappe.utils.flt(get_eligible_plans(cluster=CLUSTER, team=TEAM)["max_spend"]))
 
-	def test_get_composed_config_false_for_preset_asset(self):
+	def test_get_composed_config_preset_returns_vm_shape_for_resize(self):
 		from central.billing.tests.utils import make_plan
 		from central.billing.catalog import subscriptions
 
 		plan = make_plan("preset-for-config", rates=[{"cluster": "", "currency": "INR", "rate": 1000}])
 		sub = subscriptions.create_subscription(TEAM, CLUSTER, plan=plan)
-		self.assertFalse(get_composed_config(sub.asset_id, team=TEAM)["composed"])
+		# A preset carries its shape on the mirrored VM (Atlas fills these on vm.created).
+		frappe.db.set_value(
+			"Asset", sub.asset_id, {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 25}
+		)
+		got = get_composed_config(sub.asset_id, team=TEAM)
+		self.assertTrue(got["resizable"])
+		self.assertFalse(got["composed"])  # sliding it will make it composed
+		self.assertIsNone(got["sub_category"])  # designer defaults to the first profile
+		self.assertEqual((got["vcpus"], got["memory_gb"], got["disk_gb"]), (2, 4, 25))
 
 	def test_resize_endpoint_relocks(self):
+		from unittest.mock import patch
+
 		from central.billing.catalog import subscriptions
 
 		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		# A resize needs a Stopped VM and drives the real machine on its Atlas; mark it
+		# stopped and stub the outbound call so this stays an endpoint-logic test.
+		frappe.db.set_value("Asset", out["resource_id"], "status", "Stopped")
 		bigger = [
 			{"resource_type": "Compute", "quantity": 4, "unit": "vCPU"},
 			{"resource_type": "Memory", "quantity": 16, "unit": "GB"},
 			{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
 		]
-		result = resize_composed_config(out["subscription"], bigger, "General")
+		with patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1"):
+			result = resize_composed_config(out["subscription"], bigger, "General")
 		self.assertTrue(result["resized"])
 		self.assertEqual(
 			frappe.db.count("Subscription Change", {"subscription": out["subscription"], "change_type": "Plan Changed"}),

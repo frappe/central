@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Button, Dialog, useCall } from 'frappe-ui'
+import { Button, Dialog, Tooltip, useCall } from 'frappe-ui'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
@@ -9,11 +9,17 @@ import { money } from '@/lib/format'
 import type { AssetRow } from '@/composables/useServers'
 import type { ComposedConfig, ProvisionablePlans, RateCard } from '@/types/api'
 
-// Resize a running server with the very same slider used to design it (#82/#84).
-// Pre-fills the current config, shows old-vs-new, and on confirm drives the
-// changed-event re-lock. Controlled by the page via v-model:server.
+// Resize a server with the very same slider used to design it (#82/#84). Works for
+// both a composed server and a preset one (resizing a preset slides it onto a custom
+// config). Firecracker can't reconfigure a running machine, so the VM must be Stopped
+// first — a live one shows a turn-off prompt (DO-style) with Resize disabled.
+// Controlled by the page via v-model:server; the page owns the stop call.
 const props = defineProps<{ server: AssetRow | null }>()
-const emit = defineEmits<{ 'update:server': [server: AssetRow | null]; resized: [] }>()
+const emit = defineEmits<{
+  'update:server': [server: AssetRow | null]
+  resized: []
+  stop: [server: AssetRow]
+}>()
 
 const { activeTeam } = useSession()
 
@@ -24,11 +30,17 @@ const open = computed({
   },
 })
 
+// The VM must be off to reshape it (Firecracker is pre-boot only) — the same gate
+// the server enforces. A terminated server can't resize at all.
+const isStopped = computed(() => props.server?.status === 'Stopped')
+const isDead = computed(() => props.server?.status === 'Terminated')
+
 // The running config + its resize headroom (cap minus the team's *other* run-rate).
 type ComposedConfigResponse = {
-  composed: boolean
+  resizable: boolean
+  composed?: boolean
   subscription?: string
-  sub_category?: string
+  sub_category?: string | null
   vcpus?: number
   memory_gb?: number
   disk_gb?: number
@@ -57,11 +69,13 @@ watch(
   },
 )
 
-const isComposed = computed(() => configCall.data?.composed === true)
+const resizable = computed(() => configCall.data?.resizable === true)
+// Pre-fill the designer from the running shape. A preset carries no profile, so we
+// default to the region's first — resizing it slides it onto a custom config.
 const initial = computed<ComposedConfig | null>(() =>
-  isComposed.value
+  resizable.value
     ? {
-        sub_category: configCall.data!.sub_category!,
+        sub_category: configCall.data!.sub_category ?? plansCall.data?.profiles?.[0]?.sub_category ?? '',
         vcpus: configCall.data!.vcpus ?? 0,
         memory_gb: configCall.data!.memory_gb ?? 0,
         disk_gb: configCall.data!.disk_gb ?? 0,
@@ -84,7 +98,16 @@ const changed = computed(
       chosen.value.sub_category !== initial.value.sub_category),
 )
 
-const resizeCall = useCall({ url: method(API.resizeComposedConfig), method: 'POST', immediate: false })
+type ResizeParams = {
+  subscription: string
+  includes: { resource_type: string; quantity: number; unit: string }[]
+  sub_category: string
+}
+const resizeCall = useCall<{ subscription: string; resized: boolean }, ResizeParams>({
+  url: method(API.resizeComposedConfig),
+  method: 'POST',
+  immediate: false,
+})
 
 async function confirm() {
   if (!chosen.value || !configCall.data?.subscription) return
@@ -98,16 +121,29 @@ async function confirm() {
     open.value = false
   }
 }
+
+// Turn the server off, then leave the dialog so the user reopens Resize once the
+// mirror reports it Stopped (the resize gate). The page owns the stop call.
+function turnOff() {
+  if (props.server) emit('stop', props.server)
+  open.value = false
+}
 </script>
 
 <template>
   <Dialog v-model="open" :options="{ title: 'Resize server' }">
     <template #body-content>
       <p v-if="configCall.loading || plansCall.loading" class="text-p-sm text-ink-gray-5">Loading…</p>
-      <p v-else-if="!isComposed" class="text-p-sm text-ink-gray-5">
-        This server runs a preset plan — switch it to a custom config from a new server for now.
+      <p v-else-if="isDead || !resizable" class="text-p-sm text-ink-gray-5">
+        This server can't be resized.
       </p>
       <div v-else class="space-y-5">
+        <div
+          v-if="!isStopped"
+          class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"
+        >
+          Turn off this server to resize its compute resources.
+        </div>
         <ConfigDesigner
           v-model="chosen"
           :profiles="plansCall.data?.profiles ?? []"
@@ -127,13 +163,18 @@ async function confirm() {
       </div>
     </template>
     <template #actions>
-      <Button
-        variant="solid"
-        label="Resize"
-        :loading="resizeCall.loading"
-        :disabled="!changed"
-        @click="confirm"
-      />
+      <div v-if="resizable && !isDead" class="flex items-center justify-end gap-2">
+        <Button v-if="!isStopped" theme="red" variant="subtle" label="Turn off this server" @click="turnOff" />
+        <Tooltip :text="isStopped ? '' : 'Turn off this server first'" :disabled="isStopped">
+          <Button
+            variant="solid"
+            label="Resize"
+            :loading="resizeCall.loading"
+            :disabled="!changed || !isStopped"
+            @click="confirm"
+          />
+        </Tooltip>
+      </div>
     </template>
   </Dialog>
 </template>

@@ -187,37 +187,55 @@ def provision_composed_config(
 
 @frappe.whitelist()
 def get_composed_config(asset: str, team: str | None = None) -> dict:
-	"""The composed config running on `asset` (for the resize slider, #84): its
-	subscription, optimisation profile, current composition, and the headroom a resize
-	has — the cap minus the team's *other* run-rate, so the running config's own spend
-	is available to it. Returns `{composed: False}` for a preset/legacy server."""
+	"""The config running on `asset`, pre-filling the resize slider (#84): its
+	subscription, current shape, and the resize headroom — the cap minus the team's
+	*other* run-rate, so the running config's own spend is available to it.
+
+	Works for both a composed server (its exact composition + optimisation profile)
+	and a preset one, whose shape is read off the mirrored VM; resizing a preset
+	slides it onto a custom config, so `sub_category` is None and the slider defaults
+	to the region's first profile. `{resizable: False}` when there's no live
+	subscription to resize."""
 	team = _resolve_team(team)
 	sub = frappe.db.get_value(
 		"Subscription",
-		{"asset_id": asset, "team": team, "pricing_mode": "Composed"},
-		["name", "sub_category"],
+		{"asset_id": asset, "team": team},
+		["name", "pricing_mode", "sub_category"],
 		as_dict=True,
 	)
 	if not sub:
-		return {"composed": False}
+		return {"resizable": False, "composed": False}
 
 	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
 	from central.billing.catalog.subscriptions import team_run_rate
 
-	includes = frappe.get_all(
-		"Plan Includes",
-		filters={"parenttype": "Subscription", "parent": sub.name},
-		fields=["resource_type", "quantity"],
-	)
-	qty = composition_quantities(includes)
+	composed = sub.pricing_mode == "Composed"
+	if composed:
+		includes = frappe.get_all(
+			"Plan Includes",
+			filters={"parenttype": "Subscription", "parent": sub.name},
+			fields=["resource_type", "quantity"],
+		)
+		qty = composition_quantities(includes)
+		vcpus, memory_gb, disk_gb = qty.get(COMPUTE, 0), qty.get(MEMORY, 0), qty.get(DISK, 0)
+	else:
+		# A preset carries no composition — its shape lives on the mirrored VM.
+		shape = frappe.db.get_value(
+			"Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
+		) or frappe._dict()
+		vcpus = shape.vcpus or 0
+		memory_gb = (shape.memory_megabytes or 0) / 1024
+		disk_gb = shape.disk_gigabytes or 0
+
 	cap = frappe.utils.flt(get_team_caps(team).max_spend)
 	return {
-		"composed": True,
+		"resizable": True,
+		"composed": composed,
 		"subscription": sub.name,
 		"sub_category": sub.sub_category,
-		"vcpus": qty.get(COMPUTE, 0),
-		"memory_gb": qty.get(MEMORY, 0),
-		"disk_gb": qty.get(DISK, 0),
+		"vcpus": vcpus,
+		"memory_gb": memory_gb,
+		"disk_gb": disk_gb,
 		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
 	}
 
