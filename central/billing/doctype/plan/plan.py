@@ -28,9 +28,20 @@ class Plan(Document):
 	# end: auto-generated types
 
 	def validate(self):
+		self._validate_has_includes()
 		self._validate_sub_category()
 		self._validate_includes_against_category()
 		self._validate_unique_metered_resource()
+
+	def _validate_has_includes(self):
+		"""A Plan must declare what it bills: at least one `Plan Includes` row (#85).
+		An empty composition is a price with no subject — `is_metered_single_resource`
+		keys off the single include, and a bundle needs its composition. The field is
+		also `reqd`; this surfaces the invariant with a clear message server-side."""
+		if not self.includes:
+			frappe.throw(
+				_("A Plan must include at least one resource — it needs to declare what it bills.")
+			)
 
 	def is_metered_single_resource(self) -> bool:
 		"""True when this Plan is a metering target: a single-resource plan under a
