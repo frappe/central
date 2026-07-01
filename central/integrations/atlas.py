@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 from urllib.parse import urlparse
@@ -69,6 +70,34 @@ class AtlasClient:
 		operator; return the resulting Task name."""
 		return self.client().post_api(
 			"run_doc_method", params={"dt": "Virtual Machine", "dn": name, "method": method}
+		)
+
+	def resize_vm(
+		self,
+		name: str,
+		*,
+		vcpus: int,
+		memory_megabytes: int,
+		disk_gigabytes: int,
+	) -> str:
+		"""Resize a VM's compute shape (the resize() doc method takes kwargs, unlike
+		the arg-less lifecycle verbs, so it goes through run_doc_method's `args`).
+		Atlas refuses a resize on a running VM — the caller gates on Stopped first.
+		Returns the on-host resize Task name."""
+		return self.client().post_api(
+			"run_doc_method",
+			params={
+				"dt": "Virtual Machine",
+				"dn": name,
+				"method": "resize",
+				"args": json.dumps(
+					{
+						"vcpus": int(vcpus),
+						"memory_megabytes": int(memory_megabytes),
+						"disk_gigabytes": int(disk_gigabytes),
+					}
+				),
+			},
 		)
 
 	def create_vm(
@@ -276,6 +305,7 @@ def _on_site(cluster: str, payload: dict, occurred_at) -> None:
 _EVENT_HANDLERS = {
 	"vm.created": _on_vm,
 	"vm.status_changed": _on_vm,
+	"vm.resized": _on_vm,
 	"vm.deleted": _on_vm_deleted,
 	"site.created": _on_site,
 	"site.status_changed": _on_site,

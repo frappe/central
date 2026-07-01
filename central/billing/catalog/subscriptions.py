@@ -272,26 +272,55 @@ def resize_composed_subscription(
 	validate_composition(profile, rows)
 
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
-	cluster = frappe.db.get_value("Asset", doc.asset_id, "cluster") if doc.asset_id else None
-	new_rate = resolve_config_rate(rows, currency, cluster)
+	asset = (
+		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status"], as_dict=True)
+		if doc.asset_id
+		else None
+	)
+	new_rate = resolve_config_rate(rows, currency, asset.cluster if asset else None)
 	enforce_headroom(doc.team, new_rate, exclude=subscription)
 
 	# Resizing to the identical composition already running is a no-op (no event).
 	if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(rows):
 		return doc
 
+	if asset:
+		# Reshape the real VM on its Atlas BEFORE re-pricing (the Atlas seam, #54).
+		# Firecracker can't reconfigure a running machine, so the VM must be Stopped;
+		# and if the host rejects the resize we must not open a new — mis-priced —
+		# billing segment. Central's mirror picks up the new shape from the vm.resized
+		# event Atlas emits, so we no longer write it here.
+		_drive_atlas_resize(doc.asset_id, asset, _asset_shape(rows))
+
 	doc.pricing_mode = "Composed"
 	doc.plan = None
 	doc.sub_category = profile
 	doc.set("includes", rows)
-	if doc.asset_id:
-		# Record the new shape on the running machine. A real impl also drives the
-		# cluster-manager resize here (the Atlas seam, #54); there is no resize call
-		# yet, so we only update Central's mirror of the machine's shape.
-		frappe.db.set_value("Asset", doc.asset_id, _asset_shape(rows))
 	doc.flags.changed_by = changed_by
 	doc.save(ignore_permissions=True)  # controller appends the Plan Changed re-lock
 	return doc
+
+
+def _drive_atlas_resize(asset_id: str, asset, shape: dict) -> None:
+	"""Reshape the running VM on its Atlas as part of a resize. The VM must be
+	Stopped (Firecracker is pre-boot only) — a live one is refused so the operator
+	stops it first (matching the console's DO-style gate). `shape` is the
+	_asset_shape dict; `asset` carries the VM's cluster + current status."""
+	if asset.status != "Stopped":
+		frappe.throw(
+			frappe._("Stop the server before resizing its compute resources (it is {0}).").format(asset.status)
+		)
+	if not shape:
+		return
+	from central.integrations.atlas import AtlasClient
+
+	instance = frappe.get_doc("Atlas Instance", asset.cluster)
+	AtlasClient(instance).resize_vm(
+		asset_id,
+		vcpus=shape["vcpus"],
+		memory_megabytes=shape["memory_megabytes"],
+		disk_gigabytes=shape["disk_gigabytes"],
+	)
 
 
 def _is_resizable(doc) -> bool:

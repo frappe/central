@@ -2,6 +2,8 @@
 # For license information, please see license.txt
 """Resize a composed config: changed-event re-lock at current rates (#82)."""
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import get_first_day, get_last_day, nowdate
@@ -32,11 +34,25 @@ BIG = [
 ]  # General ratio 4: 4*500 + 16*250 + 40*10 = 6400 (at base card)
 
 
+def _ensure_tier_level(name):
+	"""A linkable Trust Tier Level so set_team_tier's pin resolves. Money caps come
+	from set_team_tier's override, so the threshold here is just a placeholder."""
+	if not frappe.db.exists("Trust Tier Level", name):
+		frappe.get_doc(
+			{
+				"doctype": "Trust Tier Level", "__newname": name, "tier": name,
+				"sequence": 1, "is_default": 0, "max_resource_count": 50, "min_paid_invoices": 0,
+				"thresholds": [{"currency": "INR", "max_spend": 100000, "min_cumulative_paid": 0}],
+			}
+		).insert(ignore_permissions=True)
+
+
 class TestResizeComposed(IntegrationTestCase):
 	def setUp(self):
 		ensure_atlas_instance(CLUSTER)
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM, currency="INR")
+		_ensure_tier_level("t1")
 		set_team_tier(TEAM, max_spend=1_000_000)
 		for resource_type, rate in (("Compute", 500), ("Memory", 250), ("Disk", 10)):
 			set_catalog_rate("Resource Type", resource_type, "INR", rate)
@@ -44,6 +60,18 @@ class TestResizeComposed(IntegrationTestCase):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.delete_doc("Subscription", name, force=True)
 		frappe.db.delete("Invoice", {"team": TEAM})
+		# A resize now drives the real VM on its Atlas (#54). Stub the outbound call so
+		# these billing-logic tests stay hermetic; tests that care assert against it.
+		patcher = patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1")
+		self.resize_vm = patcher.start()
+		self.addCleanup(patcher.stop)
+
+	def _ready(self, sub):
+		"""Mark a subscription's VM Stopped — the state a resize requires (Firecracker
+		can't reconfigure a running machine). Returns the asset id."""
+		asset = frappe.db.get_value("Subscription", sub, "asset_id")
+		frappe.db.set_value("Asset", asset, "status", "Stopped")
+		return asset
 
 	def _segments(self, sub):
 		return frappe.get_all(
@@ -60,6 +88,7 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def test_resize_relocks_at_current_rates_old_row_untouched(self):
 		sub = self._provision()
+		self._ready(sub)
 		frappe.set_user("Administrator")
 		update_component_rate("Compute", "INR", 900)  # rate card moves
 		subscriptions.resize_composed_subscription(sub, BIG, "General")
@@ -137,9 +166,29 @@ class TestResizeComposed(IntegrationTestCase):
 		self.assertIsNone(result)
 		self.assertEqual(len(self._segments(sub)), 1)
 
+	def test_resize_refused_on_running_vm(self):
+		sub = self._provision()
+		frappe.db.set_value("Asset", frappe.db.get_value("Subscription", sub, "asset_id"), "status", "Running")
+		with self.assertRaisesRegex(frappe.ValidationError, "Stop the server"):
+			subscriptions.resize_composed_subscription(sub, BIG, "General")
+		self.resize_vm.assert_not_called()
+		self.assertEqual(len(self._segments(sub)), 1)  # no re-price on a live VM
+
+	def test_resize_drives_atlas_with_new_shape(self):
+		sub = self._provision()
+		self._ready(sub)
+		subscriptions.resize_composed_subscription(sub, BIG, "General")
+		self.resize_vm.assert_called_once()
+		# BIG is 4 vCPU / 16 GB RAM / 40 GB disk — memory carried in megabytes.
+		self.assertEqual(
+			self.resize_vm.call_args.kwargs,
+			{"vcpus": 4, "memory_megabytes": 16 * 1024, "disk_gigabytes": 40},
+		)
+
 	def test_slide_off_preset_opens_composed_segment(self):
 		plan = make_plan("preset-slide", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
 		sub = subscriptions.create_subscription(TEAM, CLUSTER, plan=plan).name
+		self._ready(sub)
 		subscriptions.resize_composed_subscription(sub, SMALL, "General")
 		doc = frappe.get_doc("Subscription", sub)
 		self.assertEqual(doc.pricing_mode, "Composed")

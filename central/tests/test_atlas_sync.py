@@ -104,6 +104,41 @@ class TestAtlasMirror(IntegrationTestCase):
 		self._push("vm.deleted", {"name": "vm-2"}, "2026-06-18 11:00:00")
 		self.assertEqual(frappe.db.get_value("Asset", "vm-2", "status"), "Terminated")
 
+	def test_vm_resized_event_updates_mirror_shape(self):
+		self._push(
+			"vm.created",
+			{"name": "vm-r", "team": self.team.name, "status": "Stopped",
+			 "vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 40},
+			"2026-06-18 10:00:00",
+		)
+		# A resize leaves the VM Stopped, so no status_changed ever fires — the
+		# vm.resized event is how the mirror learns the new shape.
+		self._push(
+			"vm.resized",
+			{"name": "vm-r", "team": self.team.name, "status": "Stopped",
+			 "vcpus": 4, "memory_megabytes": 16384, "disk_gigabytes": 80},
+			"2026-06-18 10:05:00",
+		)
+		asset = frappe.get_doc("Asset", "vm-r")
+		self.assertEqual((asset.vcpus, asset.memory_megabytes, asset.disk_gigabytes), (4, 16384, 80))
+
+	def test_resize_vm_posts_run_doc_method_with_args(self):
+		import json
+
+		from central.integrations.atlas import AtlasClient
+
+		client = AtlasClient(frappe.get_doc("Atlas Instance", self.region))
+		with patch.object(AtlasClient, "client") as make_client:
+			make_client.return_value.post_api.return_value = "task-9"
+			task = client.resize_vm("vm-x", vcpus=4, memory_megabytes=16384, disk_gigabytes=80)
+		self.assertEqual(task, "task-9")
+		params = make_client.return_value.post_api.call_args.kwargs["params"]
+		self.assertEqual((params["dt"], params["dn"], params["method"]), ("Virtual Machine", "vm-x", "resize"))
+		self.assertEqual(
+			json.loads(params["args"]),
+			{"vcpus": 4, "memory_megabytes": 16384, "disk_gigabytes": 80},
+		)
+
 	# --- dispatch: verify synchronously, mirror in the background -------------
 
 	def test_known_event_is_queued_not_applied_inline(self):
