@@ -22,6 +22,9 @@ const activeTeamId = computed(() => activeTeam.value ?? '')
 
 const region = computed(() => props.server?.cluster ?? null)
 const needsRestart = computed(() => props.server?.status === 'Running' || props.server?.status === 'Paused')
+// Be explicit that a live resize stops the server (stop → resize → start); a
+// server that's already off just resizes.
+const resizeLabel = computed(() => (needsRestart.value ? 'Resize by stopping the server' : 'Resize'))
 
 // The config running on this server (current shape + preset, and the subscription
 // the resize re-locks). Drives both the pre-selection and the headroom exclusion.
@@ -219,7 +222,7 @@ async function confirm() {
     </template>
     <template #actions>
       <div v-if="resizable && !resizeCall.loading" class="flex items-center justify-end">
-        <Button variant="solid" label="Resize" :disabled="!changed" @click="confirm" />
+        <Button variant="solid" :label="resizeLabel" :disabled="!changed" @click="confirm" />
       </div>
     </template>
   </Dialog>
