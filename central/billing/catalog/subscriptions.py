@@ -303,21 +303,27 @@ def begin_resize(
 
 def _plan_resize(doc, asset, plan, includes, sub_category) -> dict | None:
 	"""Decide a resize synchronously: return the target VM shape (vcpus/memory/disk), or
-	None when it's a no-op (same config). Only the cheap, VM-free checks run here (no-op
-	detection + the disk-shrink guard) so the user gets the common error before anything
-	is queued; the worker re-runs the full billing validation (composition, headroom)
-	authoritatively when it actually applies the resize."""
+	None when it's a no-op (same config). Runs the VM-free checks — no-op detection,
+	headroom, and the disk-shrink guard — so the user gets these errors immediately,
+	before anything is queued; the worker re-runs them authoritatively when it applies
+	the resize. (Composition validity is left to the worker.)"""
+	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	cluster = asset.cluster if asset else None
 	if plan:
 		if doc.pricing_mode == "Preset" and doc.plan == plan:
 			return None
 		shape = _plan_shape(plan)
+		new_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	else:
 		from central.billing.catalog.composition import composition_quantities
+		from central.billing.catalog.pricing import resolve_config_rate
 
 		rows = [dict(r) for r in (includes or [])]
 		if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(rows):
 			return None
 		shape = _asset_shape(rows)
+		new_rate = resolve_config_rate(rows, currency, cluster)
+	enforce_headroom(doc.team, new_rate, exclude=doc.name)
 	if asset and asset.status in ("Running", "Paused", "Stopped"):
 		_guard_disk_shrink(doc.asset_id, shape)
 	return shape
@@ -431,6 +437,13 @@ def resize_to_plan(subscription: str, new_plan: str, changed_by: str | None = No
 		if doc.asset_id
 		else None
 	)
+	# Refuse a resize that would push the team past its trust-tier headroom — the same
+	# gate resize_composed_subscription applies, so a preset target can't slip past the
+	# spend cap. Authoritative here (covers every caller, incl. the background job);
+	# begin_resize also checks it synchronously for immediate feedback.
+	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, asset.cluster if asset else None)
+	enforce_headroom(doc.team, new_rate, exclude=subscription)
 	if asset:
 		_reshape_vm(doc.asset_id, asset.cluster, asset.status, _plan_shape(new_plan))
 	return change_plan(subscription, new_plan, changed_by=changed_by)

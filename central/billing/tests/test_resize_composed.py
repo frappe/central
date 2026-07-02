@@ -156,6 +156,18 @@ class TestResizeComposed(IntegrationTestCase):
 			subscriptions.resize_composed_subscription(sub, BIG, "General")
 		self.assertEqual(len(self._segments(sub)), 1)
 
+	def test_over_headroom_preset_resize_rejected(self):
+		# Parity with the composed guard above: a preset target must hit the cap too, so a
+		# resize onto a pricier bundle can't slip past trust-tier headroom.
+		sub = self._provision()
+		self._ready(sub)
+		set_team_tier(TEAM, max_spend=4000)
+		plan = make_plan("over-headroom", rates=[{"cluster": "", "currency": "INR", "rate": 5000}])
+		with self.assertRaises(frappe.ValidationError):
+			subscriptions.resize_to_plan(sub, plan)
+		self.resize_vm.assert_not_called()  # refused before the VM is touched
+		self.assertEqual(len(self._segments(sub)), 1)  # no new segment opened
+
 	def test_resize_records_nothing_on_cancelled(self):
 		sub = self._provision()
 		subscriptions.cancel_subscription(sub)
@@ -304,6 +316,17 @@ class TestResizeComposed(IntegrationTestCase):
 			with self.assertRaisesRegex(frappe.ValidationError, "Disk can't shrink"):
 				subscriptions.begin_resize(sub, includes=BIG, sub_category="General")  # BIG is 40 GB
 		enqueue.assert_not_called()  # refused before anything is queued
+		self.assertEqual(frappe.db.get_value("Asset", asset, "resize_in_progress"), 0)
+
+	def test_begin_resize_rejects_over_headroom_preset_synchronously(self):
+		sub = self._provision()
+		asset = self._ready(sub)
+		set_team_tier(TEAM, max_spend=4000)
+		plan = make_plan("over-headroom-sync", rates=[{"cluster": "", "currency": "INR", "rate": 5000}])
+		with patch("frappe.enqueue") as enqueue:
+			with self.assertRaises(frappe.ValidationError):
+				subscriptions.begin_resize(sub, plan=plan)
+		enqueue.assert_not_called()  # rejected up front, nothing queued
 		self.assertEqual(frappe.db.get_value("Asset", asset, "resize_in_progress"), 0)
 
 	def test_begin_resize_refuses_a_second_resize_while_one_is_running(self):
