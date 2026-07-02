@@ -59,7 +59,8 @@
    "fieldname": "includes",
    "fieldtype": "Table",
    "label": "Includes",
-   "options": "Plan Includes"
+   "options": "Plan Includes",
+   "reqd": 1
   },
   {
    "default": "VM Plans",

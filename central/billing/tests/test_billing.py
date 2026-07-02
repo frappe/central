@@ -7,6 +7,7 @@ import threading
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.billing.catalog import subscriptions
 from central.billing.revenue import invoicing, credits
 from central.billing.tests.utils import (
 	add_segment,
@@ -57,7 +58,7 @@ class BillingTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Price Lock", "Credit Ledger Entry"):
+		for dt in ("Invoice", "Credit Ledger Entry"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -159,3 +160,95 @@ class TestOpenAndCollect(BillingTestBase):
 			{"team": TEAM, "entry_type": "Debit", "reference_name": name},
 		)
 		self.assertEqual(len(debits), 1)
+
+
+class TestTerminationCancelsBilling(BillingTestBase):
+	"""Terminating the VM must close the billing segment, not just pause it."""
+
+	def test_terminate_cancels_segment_and_frees_run_rate(self):
+		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")
+		# The VM comes up Running — that enables the subscription (Asset controller).
+		asset = frappe.get_doc("Asset", asset_id)
+		asset.status = "Running"
+		asset.save(ignore_permissions=True)
+		self.assertTrue(frappe.db.get_value("Subscription", self.sub, "enabled"))
+
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)  # it counts while alive
+
+		# The mirror flips to Terminated (Atlas vm.terminated / reconcile).
+		asset.reload()
+		asset.status = "Terminated"
+		asset.save(ignore_permissions=True)
+
+		# A Cancelled change closed the segment; the sub is disabled and stops counting.
+		changes = frappe.get_all(
+			"Subscription Change", {"subscription": self.sub}, pluck="change_type"
+		)
+		self.assertIn("Cancelled", changes)
+		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
+		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
+		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)  # headroom freed
+
+
+class TestCancelTerminatedPatch(BillingTestBase):
+	"""v26 backfill: close the open segment of VMs terminated before the runtime fix."""
+
+	def test_patch_cancels_open_segment_on_terminated_asset(self):
+		from central.billing.patches.v26_cancel_terminated_subscriptions.cancel_terminated_subscriptions import (
+			cancel_terminated_subscriptions,
+		)
+
+		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")
+		frappe.db.set_value("Subscription", self.sub, "enabled", 1)
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		# Legacy bug state: the mirror was flipped to Terminated WITHOUT the controller
+		# cancelling — a direct write leaves the segment open.
+		frappe.db.set_value("Asset", asset_id, "status", "Terminated")
+		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)
+
+		self.assertEqual(cancel_terminated_subscriptions(), 1)
+
+		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
+		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)
+		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
+
+		# Idempotent: a second run closes nothing (no duplicate Cancelled).
+		self.assertEqual(cancel_terminated_subscriptions(), 0)
+		cancels = frappe.get_all(
+			"Subscription Change", {"subscription": self.sub, "change_type": "Cancelled"}
+		)
+		self.assertEqual(len(cancels), 1)
+
+
+class TestMonthlyBillingRun(BillingTestBase):
+	"""The scheduled entrypoint that drafts + settles the just-closed month."""
+
+	def test_run_bills_and_settles_previous_month(self):
+		# Ran all of June at 1000/mo; the run fires on the 1st of July.
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		credits.purchase(TEAM, 1000, "INR")  # credits cover it → settled in full
+		frappe.db.commit()
+
+		result = invoicing.run_monthly_billing(today="2026-07-01")
+
+		self.assertEqual(result["period_start"], "2026-06-01")
+		self.assertEqual(result["period_end"], "2026-06-30")
+
+		# The team's June invoice was drafted and opened (here, credits settle it).
+		inv = frappe.get_doc("Invoice", {"team": TEAM, "period_end": "2026-06-30"})
+		self.assertNotEqual(inv.status, "Draft")
+		self.assertEqual(inv.status, "Paid")
+		self.assertEqual(inv.credit_applied, 1000.0)
+
+	def test_run_is_idempotent(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		invoicing.run_monthly_billing(today="2026-07-01")
+		# A second tick must not double-bill the period.
+		invoicing.run_monthly_billing(today="2026-07-01")
+
+		self.assertEqual(
+			frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1
+		)

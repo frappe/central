@@ -107,4 +107,33 @@ export interface ProvisionablePlans {
   /** Remaining headroom in the team's currency: a plan is offered only if it fits. */
   available: number
   plans: Record<string, Plan[]>
+  /** Per-resource component rates for "design your own" (#79). Empty when a
+   *  component isn't priced for the team's currency — composed configs not offered. */
+  rate_card: RateCard
+  /** Optimisation-profile bounds the slider snaps + clamps to (#81). */
+  profiles: Profile[]
+}
+
+/** The per-resource rate card: `{ Compute: { rate, unit }, … }`. */
+export type RateCard = Partial<Record<'Compute' | 'Memory' | 'Disk', { rate: number; unit: string }>>
+
+/** A compute optimisation profile's runtime bounds (Plan Sub-Category, #81). */
+export interface Profile {
+  sub_category: string
+  /** GB RAM per vCPU: RAM = vCPU × ram_ratio. */
+  ram_ratio: number
+  /** Allowed vCPU values the slider snaps to. */
+  vcpu_steps: number[]
+  /** Allowed storage values (GB) the slider snaps to, within [disk_min, disk_max]. */
+  disk_steps: number[]
+  disk_min: number
+  disk_max: number
+}
+
+/** A design-your-own composition: quantity per compute primitive. */
+export interface ComposedConfig {
+  sub_category: string
+  vcpus: number
+  memory_gb: number
+  disk_gb: number
 }

@@ -64,11 +64,20 @@ class Asset(Document):
 			).insert(ignore_permissions=True)
 
 	def disable_active_subscription(self):
-		"""Disable the team's active subscription for this asset, if any."""
+		"""Terminated: cancel the team's active subscription for this asset, if any.
+
+		Termination is an END, not a billing pause — so we record a `Cancelled`
+		Subscription Change to CLOSE the open billing segment (ADR 0010). That drops the
+		subscription from the team's run-rate and frees its trust-tier headroom, so the
+		bill estimate stops counting a dead VM and the team can provision again. Then we
+		disable it (the `enabled: 1` filter makes this idempotent on a repeated event)."""
 		existing = frappe.db.get_value(
 			"Subscription", {"team": self.team, "asset_id": self.name, "enabled": 1}, "name"
 		)
 		if existing:
+			from central.billing.catalog.subscriptions import cancel_subscription
+
+			cancel_subscription(existing)
 			frappe.get_doc("Subscription", existing).disable()
 	# Asset is a read-only mirror of a VM on some Atlas cluster. These methods are
 	# the mirror's sole writer, called by the integration layer

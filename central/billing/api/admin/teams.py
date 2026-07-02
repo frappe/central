@@ -10,7 +10,7 @@ from central.billing.revenue import credits
 from central.billing.authz import require_operator
 from central.billing.api.admin._shared import (
 	_STANDING_RANK,
-	_active_locks,
+	_active_segments,
 	_asset_cluster_map,
 	_plan_monthly_inr,
 	_team_currency,
@@ -118,9 +118,9 @@ def list_teams() -> list[dict]:
 		t["subscriptions"] += 1
 		if _STANDING_RANK.get(s.account_standing, 0) > _STANDING_RANK.get(t["standing"], 0):
 			t["standing"] = s.account_standing
-	for lock in _active_locks():
-		if lock.team in teams:
-			teams[lock.team]["resources"] += 1
+	for seg in _active_segments():
+		if seg.team in teams:
+			teams[seg.team]["resources"] += 1
 	rows = []
 	for t in teams.values():
 		currency = _team_currency(t["team"])

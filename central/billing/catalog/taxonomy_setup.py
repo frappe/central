@@ -19,6 +19,10 @@ import frappe
 # bundle composition).
 RESOURCE_TYPES = ["Compute", "Memory", "Disk", "Transfer", "IP", "Snapshot", "Tokens", "Storage", "Backup"]
 
+# The vCPU ladder a composed-config slider snaps to — the configurator's choices,
+# fractional vCPUs through powers of two (final-plan-pricing.md §4).
+VCPU_LADDER = "0.125,0.25,0.5,1,2,4,8,16,32,64,128,256"
+
 # Metered categories host the single-resource overage meters that used to be Add-ons
 # (ADR 0008). A metered single-resource Plan under one of these is what metering.py
 # resolves by resource type; the family carries the billing behaviour (interval +
@@ -33,14 +37,31 @@ CATEGORIES = [
 		"description": "Flat-rate compute bundles (vCPU + memory + disk + transfer).",
 		"billing_type": "Fixed",
 		"allowed": ["Compute", "Memory", "Disk", "Transfer"],
-		# VM optimisation profiles carry the memory ratio (GB RAM per vCPU) the
-		# configurator pins. Storage/Memory Optimised share 1:8; they differ by disk.
+		# VM optimisation profiles carry the composed-config bounds (ADR 0009): the RAM
+		# ratio (GB per vCPU), the allowed vCPU steps, and the disk range the slider is
+		# bounded to. Storage/Memory Optimised share ratio 8; they differ by disk.
+		# vCPU follows the configurator ladder (fractional vCPUs through powers of two)
+		# so a slider can reach a 1/8 vCPU micro config; RAM derives from the ratio.
 		"sub_categories": [
-			{"name": "General", "memory_ratio": "1:4"},
-			{"name": "CPU Optimised", "memory_ratio": "1:2"},
-			{"name": "Memory Optimised", "memory_ratio": "1:8"},
-			{"name": "Storage Optimised", "memory_ratio": "1:8"},
+			{"name": "General", "ram_ratio": 4, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 2000},
+			{"name": "CPU Optimised", "ram_ratio": 2, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 1000},
+			{"name": "Memory Optimised", "ram_ratio": 8, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 2000},
+			{"name": "Storage Optimised", "ram_ratio": 8, "vcpu_steps": VCPU_LADDER, "disk_min": 100, "disk_max": 10000},
 		],
+	},
+	{
+		# The per-unit rates that compose a custom VM config (ADR 0009/0011). Its
+		# provision_target 'Resource' switches the Configurator to authoring Resource
+		# Rates (Compute / Memory / Disk priced per unit) instead of a plan ladder — no
+		# Plans live here; it is the pricing home for composed configs.
+		"category_name": "VM Resources",
+		"configurator_builder": "Simple",
+		"provision_target": "Resource",
+		"sub_category_label": "",
+		"description": "Per-unit resource rates (Compute / Memory / Disk) a custom VM config is composed and billed from.",
+		"billing_type": "Fixed",
+		"allowed": ["Compute", "Memory", "Disk"],
+		"sub_categories": [],
 	},
 	{
 		"category_name": "AI Tokens",
@@ -101,6 +122,12 @@ def ensure_catalog_masters():
 	for spec in CATEGORIES:
 		_ensure_category(spec)
 
+	# The composed-config component rate card prices the Resource Types just seeded
+	# (ADR 0009); seed it here so a fresh install can price a custom config too.
+	from central.billing.catalog.rate_card import ensure_component_rate_card
+
+	ensure_component_rate_card()
+
 
 def _ensure_category(spec):
 	if not frappe.db.exists("Plan Category", spec["category_name"]):
@@ -120,11 +147,17 @@ def _ensure_category(spec):
 		).insert(ignore_permissions=True)
 	for sub in spec["sub_categories"]:
 		if not frappe.db.exists("Plan Sub-Category", sub["name"]):
+			ram_ratio = sub.get("ram_ratio")
 			frappe.get_doc(
 				{
 					"doctype": "Plan Sub-Category",
 					"sub_category_name": sub["name"],
 					"category": spec["category_name"],
-					"memory_ratio": sub.get("memory_ratio"),
+					"ram_ratio": ram_ratio,
+					"vcpu_steps": sub.get("vcpu_steps"),
+					"disk_min": sub.get("disk_min"),
+					"disk_max": sub.get("disk_max"),
+					# Legacy 1:N mirror of the authoritative numeric ram_ratio.
+					"memory_ratio": f"1:{ram_ratio}" if ram_ratio else None,
 				}
 			).insert(ignore_permissions=True)

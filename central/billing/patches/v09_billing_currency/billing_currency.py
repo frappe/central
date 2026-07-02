@@ -16,11 +16,17 @@ import frappe
 
 
 def execute():
-	# Backfill currency on profiles that predate the field.
+	# Backfill currency on profiles that predate the field. Guarded on the Price Lock
+	# table still existing — it is retired by a later patch (ADR 0010, #86).
+	price_lock_exists = frappe.db.table_exists("Price Lock")
 	for profile in frappe.get_all(
 		"Billing Profile", filters={"currency": ["in", [None, ""]]}, pluck="name"
 	):
-		currency = frappe.db.get_value("Price Lock", {"team": profile}, "currency")
+		currency = (
+			frappe.db.get_value("Price Lock", {"team": profile}, "currency")
+			if price_lock_exists
+			else None
+		)
 		if currency:
 			frappe.db.set_value("Billing Profile", profile, "currency", currency,
 								update_modified=False)

@@ -79,8 +79,8 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 	rows = frappe.get_all(
 		"Subscription",
 		filters={"team": team},
-		fields=["name", "plan", "cluster", "asset_id", "billing_cycle",
-				"account_standing", "start_date", "enabled"],
+		fields=["name", "plan", "pricing_mode", "sub_category", "cluster", "asset_id",
+				"billing_cycle", "account_standing", "start_date", "enabled"],
 		order_by="creation desc",
 	)
 	currency = _team_currency(team)
@@ -92,37 +92,87 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			for a in frappe.get_all(
 				"Asset",
 				filters={"name": ["in", asset_ids]},
-				fields=["name", "title", "gateway_url"],
+				fields=["name", "title", "gateway_url", "status"],
 			)
 		}
 		if asset_ids
 		else {}
 	)
+	# A composed config carries no Plan: its price is the locked rate of its open
+	# billing segment (ADR 0010), and its "plan title" is a spec line built from the
+	# composition. Batch both so a team with N composed configs stays O(1) queries.
+	composed = [r.name for r in rows if r.pricing_mode == "Composed"]
+	includes_by_sub = _composed_includes(composed)
+	segment_rate = _open_segment_rates(team) if composed else {}
+
 	plan_titles: dict[str, str] = {}
 	rate_cache: dict[tuple, float | None] = {}
 	out = []
 	for r in rows:
 		asset = assets.get(r.asset_id) or frappe._dict()
-		if r.plan and r.plan not in plan_titles:
-			plan_titles[r.plan] = frappe.db.get_value("Plan", r.plan, "title") or r.plan
-		key = (r.plan, r.cluster)
-		if r.plan and key not in rate_cache:
-			rate_cache[key] = frappe.get_doc("Plan", r.plan).get_rate(currency, r.cluster)
+		if r.pricing_mode == "Composed":
+			plan_title = _composed_label(r.sub_category, includes_by_sub.get(r.name, []))
+			monthly_rate = segment_rate.get(r.name)
+		else:
+			if r.plan and r.plan not in plan_titles:
+				plan_titles[r.plan] = frappe.db.get_value("Plan", r.plan, "title") or r.plan
+			key = (r.plan, r.cluster)
+			if r.plan and key not in rate_cache:
+				rate_cache[key] = frappe.get_doc("Plan", r.plan).get_rate(currency, r.cluster)
+			plan_title = plan_titles.get(r.plan)
+			monthly_rate = rate_cache.get(key)
 		out.append({
 			"name": r.name,
 			"server": asset.title or None,
 			"gateway_url": asset.gateway_url or None,
+			# The VM's operational state (Running/Stopped/Terminated/…) — the list shows
+			# it distinctly from the billing-paused flag, and gates resume on it.
+			"status": asset.status or None,
 			"plan": r.plan,
-			"plan_title": plan_titles.get(r.plan),
+			"plan_title": plan_title,
 			"cluster": r.cluster,
 			"region": region_label(r.cluster),
 			"billing_cycle": r.billing_cycle,
 			"account_standing": r.account_standing,
 			"enabled": r.enabled,
-			"monthly_rate": rate_cache.get(key),
+			"monthly_rate": monthly_rate,
 			"currency": currency,
 		})
 	return out
+
+
+def _composed_includes(subscription_names: list[str]) -> dict[str, list]:
+	"""The composition rows (qty per Resource Type) for each composed subscription, in
+	one batched query — keyed by subscription name."""
+	if not subscription_names:
+		return {}
+	by_sub: dict[str, list] = {}
+	for row in frappe.get_all(
+		"Plan Includes",
+		filters={"parenttype": "Subscription", "parent": ["in", subscription_names]},
+		fields=["parent", "resource_type", "quantity", "unit"],
+	):
+		by_sub.setdefault(row.parent, []).append(row)
+	return by_sub
+
+
+def _open_segment_rates(team: str) -> dict[str, float]:
+	"""subscription -> its open segment's locked rate, the authoritative billed price
+	(ADR 0010), for the team's subscriptions in one batched read."""
+	from central.billing.catalog.subscriptions import team_active_segments
+
+	return {s.subscription: s.locked_rate for s in team_active_segments(team)}
+
+
+def _composed_label(sub_category: str | None, includes: list) -> str:
+	"""A composed config's display title, mirroring a preset's 'Profile — specs' shape,
+	e.g. 'General — 1 vCPU · 4 GB RAM · 40 GB disk'."""
+	from central.billing.catalog.composition import config_summary
+
+	summary = config_summary(includes)
+	if sub_category and summary:
+		return f"{sub_category} — {summary}"
+	return summary or "Custom config"
 
 
 @frappe.whitelist(methods=["POST"])

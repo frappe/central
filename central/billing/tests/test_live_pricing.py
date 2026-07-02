@@ -52,7 +52,7 @@ class LivePricingTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Usage Rollup", "Price Lock", "Invoice"):
+		for dt in ("Usage Rollup", "Invoice"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.commit()
 
@@ -72,7 +72,7 @@ class TestLiveSnapshot(LivePricingTestBase):
 		self.assertEqual(lines[0]["amount"], 8.0)  # 100 * 0.08, not the old 0.10
 
 	def test_ingests_without_price_lock(self):
-		# No price-lock exists for the snapshot's resource_id (its own id from
+		# No open billing segment exists for the snapshot's resource_id (its own id from
 		# birth; the VM may even be terminated). A live add-on still ingests.
 		result = receive_meter_rollups([snapshot_meter("snap-orphan", 50)])
 		self.assertEqual(len(result["acknowledged"]), 1)

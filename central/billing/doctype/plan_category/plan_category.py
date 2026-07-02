@@ -24,7 +24,7 @@ class PlanCategory(Document):
 		description: DF.SmallText | None
 		is_active: DF.Check
 		pricing_mode: DF.Literal["", "Grandfathered", "Live"]
-		provision_target: DF.Literal["", "Server"]
+		provision_target: DF.Literal["", "Server", "Resource"]
 		sub_category_label: DF.Data | None
 	# end: auto-generated types
 

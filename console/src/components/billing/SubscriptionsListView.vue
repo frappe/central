@@ -33,6 +33,17 @@ function subtitle(sub: SubscriptionRow): string {
   return parts.join(' · ') || sub.billing_cycle || 'Monthly'
 }
 
+// Display state, most-terminal first: a terminated VM reads Terminated (not Paused),
+// a dunning one Suspended, a billing-paused one Paused, otherwise its live op state.
+function statusInfo(sub: SubscriptionRow): { label: string; theme: string } {
+  if (sub.status === 'Terminated') return { label: 'Terminated', theme: 'red' }
+  if (sub.account_standing === 'Suspended') return { label: 'Suspended', theme: 'orange' }
+  if (!sub.enabled) return { label: 'Paused', theme: 'gray' }
+  if (sub.status === 'Stopped') return { label: 'Stopped', theme: 'gray' }
+  return { label: 'Running', theme: 'green' }
+}
+const isTerminated = (sub: SubscriptionRow) => sub.status === 'Terminated'
+
 const columns = computed<ListViewColumn<SubscriptionRow>[]>(() => [
   {
     id: 'title',
@@ -42,7 +53,7 @@ const columns = computed<ListViewColumn<SubscriptionRow>[]>(() => [
     cell: ({ row }) =>
       h('div', { class: 'min-w-0' }, [
         h('p', { class: 'truncate text-base font-medium text-ink-gray-9' }, title(row.original)),
-        h('p', { class: 'mt-0.5 truncate text-p-sm text-ink-gray-5' }, subtitle(row.original)),
+        h('p', { class: 'mt-0.5 truncate text-p-xs text-ink-gray-5' }, subtitle(row.original)),
       ]),
   },
   {
@@ -54,21 +65,21 @@ const columns = computed<ListViewColumn<SubscriptionRow>[]>(() => [
       h(
         'span',
         { class: 'text-ink-gray-7' },
-        row.original.monthly_rate != null
+        // A terminated VM no longer accrues — don't show an ongoing rate for it.
+        !isTerminated(row.original) && row.original.monthly_rate != null
           ? `${money(row.original.monthly_rate, row.original.currency, { trimTrailingZeros: true })}/mo`
           : '—',
       ),
   },
   {
     id: 'status',
-    accessorFn: (sub) => (sub.enabled ? 'Running' : 'Paused'),
+    accessorFn: (sub) => statusInfo(sub).label,
     header: 'Status',
     size: 140,
-    cell: ({ row }) =>
-      h(Badge, {
-        theme: row.original.enabled ? 'green' : 'gray',
-        label: row.original.enabled ? 'Running' : 'Paused',
-      }),
+    cell: ({ row }) => {
+      const s = statusInfo(row.original)
+      return h(Badge, { theme: s.theme, label: s.label })
+    },
   },
   {
     id: 'actions',

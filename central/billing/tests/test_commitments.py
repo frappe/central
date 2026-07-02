@@ -56,7 +56,7 @@ class CommitmentTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Price Lock", "Usage Rollup", "Commitment"):
+		for dt in ("Invoice", "Usage Rollup", "Commitment"):
 			frappe.db.delete(dt, {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})

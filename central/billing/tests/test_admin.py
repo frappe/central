@@ -6,7 +6,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.api import admin
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import ensure_team, make_plan, seed_running_resource
 
 PLAN = "bundle-admin-test"
 TEAM_A = "team-admin-a"
@@ -26,9 +26,13 @@ class AdminTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		for team in (TEAM_A, TEAM_B):
-			for dt in ("Invoice", "Payment Attempt", "Price Lock", "Credit Ledger Entry"):
+			for dt in ("Invoice", "Payment Attempt", "Credit Ledger Entry"):
 				frappe.db.delete(dt, {"team": team})
 			frappe.db.delete("Credit Wallet", {"team": team})
+			for sub in frappe.get_all("Subscription", {"team": team}, pluck="name"):
+				frappe.db.delete("Subscription Change", {"subscription": sub})
+				frappe.db.delete("Subscription", {"name": sub})
+			frappe.db.delete("Asset", {"team": team})
 		frappe.db.commit()
 
 	def _invoice(self, team, total, status="Paid", itype="Billable", cluster="ap-south-1",
@@ -110,20 +114,17 @@ class TestPanels(AdminTestBase):
 
 
 class TestPriceManagement(AdminTestBase):
-	def test_update_rate_does_not_touch_existing_locks(self):
-		# An existing price-lock (a grandfathered rate).
-		frappe.get_doc(
-			{"doctype": "Price Lock", "resource_id": "srv-x", "team": TEAM_A, "plan": PLAN,
-			 "currency": "INR", "locked_rate": 3200, "cluster": "ap-south-1",
-			 "source_event_id": "evt-lock-x", "started_at": "2026-06-01 00:00:00"}
-		).insert(ignore_permissions=True)
+	def test_update_rate_does_not_touch_existing_segments(self):
+		# An existing running subscription with a grandfathered locked segment (ADR 0010).
+		from central.billing.catalog.subscriptions import current_segment_rate
+
+		sub = seed_running_resource(TEAM_A, "srv-x", "ap-south-1", PLAN, rate=3200, currency="INR")
 
 		admin.update_plan_rate(PLAN, "INR", 5000)
 		# The live catalog rate moved...
 		self.assertEqual(frappe.get_doc("Plan", PLAN).get_rate("INR"), 5000)
-		# ...but the existing lock is unchanged.
-		self.assertEqual(frappe.db.get_value("Price Lock", {"source_event_id": "evt-lock-x"}, "locked_rate"), 3200)
-		frappe.db.delete("Price Lock", {"team": TEAM_A})
+		# ...but the running segment's locked rate is unchanged.
+		self.assertEqual(current_segment_rate(sub), 3200)
 
 
 class TestMetricsReports(AdminTestBase):

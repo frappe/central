@@ -184,7 +184,6 @@ class TestLoadTwoPhase(IntegrationTestCase):
 	def _purge(self):
 		for team in self._teams:
 			frappe.db.delete("Invoice", {"team": team})
-			frappe.db.delete("Price Lock", {"team": team})
 			for sub in frappe.get_all("Subscription", {"team": team}, pluck="name"):
 				frappe.db.delete("Subscription Change", {"subscription": sub})
 				frappe.db.delete("Subscription", {"name": sub})

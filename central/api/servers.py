@@ -79,18 +79,27 @@ def create_server(
 	team: str | None = None,
 	region: str | None = None,
 	title: str | None = None,
+	plan: str | None = None,
 	vcpus: int | None = None,
 	memory_megabytes: int | None = None,
 	disk_gigabytes: int | None = None,
 	cpu_max_cores: float | None = None,
 ) -> dict:
-	"""Provision a new server for a team in a region. Gated on `server:create`.
+	"""Provision a new server for a team in a region from a preset bundle Plan. Gated
+	on `server:create`.
 
 	`region` is an Atlas Instance (one Atlas = one region), which is also how we
 	route the provision call. Atlas owns placement/image/lifecycle; we pass the team
-	(the tenant key) and the chosen size. The Asset mirror is
-	populated by the `vm.created` event Atlas emits — the single writer — so we
-	don't upsert here (a second writer would race that event)."""
+	(the tenant key) and the chosen size.
+
+	Once the VM is created we record the billing Subscription for `plan` — the same
+	way `create_composed_server` records a composed one — so the bundle a server was
+	provisioned from is captured and its price-lock opened (ADR 0006/0010). That
+	writes a Pending Asset keyed on the VM's id; the `vm.created` event Atlas emits
+	then reconciles that same Asset (keyed on `resource_id`) instead of racing to
+	create a second one."""
+	from central.billing.catalog.subscriptions import provision_subscription
+
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
@@ -110,7 +119,68 @@ def create_server(
 		email=email,
 		cpu_max_cores=cpu_max_cores,
 	)
-	return {"resource_id": vm.get("name"), "server": vm}
+	resource_id = vm.get("name")
+	# Record the contract for the bundle. Guarded so a raw-size call (no plan) still
+	# provisions a VM without a subscription, as before.
+	subscription = None
+	if plan:
+		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get(
+			"subscription"
+		)
+	return {"resource_id": resource_id, "server": vm, "subscription": subscription}
+
+
+@frappe.whitelist(methods=["POST"])
+def create_composed_server(
+	team: str | None = None,
+	region: str | None = None,
+	title: str | None = None,
+	includes: list | str | None = None,
+	sub_category: str | None = None,
+) -> dict:
+	"""Provision a design-your-own config end-to-end (#84): create the Atlas VM from
+	the chosen composition, then record the composed Subscription (#80) that bills it
+	from its parts. The server is the gate — composition, profile bounds, and headroom
+	are re-validated server-side (#81/#83) *before* the VM is created, so a request the
+	client lets through is still refused and never leaves an orphan VM."""
+	from central.billing.catalog.composition import (
+		COMPUTE,
+		DISK,
+		MEMORY,
+		composition_quantities,
+		validate_composition,
+	)
+	from central.billing.catalog.pricing import resolve_config_rate
+	from central.billing.catalog.subscriptions import enforce_headroom, provision_composed_subscription
+
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "server:create"):
+		frappe.throw("You can't create servers for this team.", frappe.PermissionError)
+	if not region:
+		frappe.throw("region is required.", frappe.ValidationError)
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+
+	# Validate the shape + cost before touching Atlas.
+	validate_composition(sub_category, includes)
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	enforce_headroom(team, resolve_config_rate(includes, currency, region))
+
+	qty = composition_quantities(includes)
+	client = AtlasClient.for_region(region)
+	email = frappe.db.get_value("Team", team, "owner_user")
+	vm = client.create_vm(
+		team=team,
+		title=title or "server",
+		vcpus=int(qty.get(COMPUTE, 1)) or 1,
+		memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
+		disk_gigabytes=int(qty.get(DISK, 0)) or 10,
+		email=email,
+	)
+	resource_id = vm.get("name")
+	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
+	return {"resource_id": resource_id, "server": vm}
 
 
 @frappe.whitelist(methods=["POST"])

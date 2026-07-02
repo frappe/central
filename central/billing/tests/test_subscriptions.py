@@ -125,25 +125,11 @@ class TestReconciliation(SubscriptionTestBase):
 		self.assertEqual(result["reason"], "no_cluster_event")
 
 	def test_reconcile_matches_locked_plan(self):
-		from central.billing.platform.sync import receive_usage_events
-
-		sub = self.make_sub()
-		# Agent reports the resource for this plan → Central locks it.
-		receive_usage_events(
-			[
-				{
-					"event_id": "evt-sub-1",
-					"team": TEAM,
-					"resource_id": "srv-sub-1",
-					"cluster": "ap-south-1",
-					"plan": PLAN,
-					"shown_rate": 40,
-					"currency": "USD",
-					"event_type": "subscribed",
-					"effective_from": str(frappe.utils.now_datetime()),
-					"effective_to": None,
-				}
-			]
+		# Provisioning the resource opens its billing segment (ADR 0010 — the ledger is
+		# the lock); reconcile resolves the resource's open segment for its plan.
+		sub = subscriptions.create_subscription(
+			team=TEAM, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly",
+			resource_id="srv-sub-1",
 		)
 		result = subscriptions.reconcile_with_agent_event(sub.name, "srv-sub-1")
 		self.assertTrue(result["reconciled"])

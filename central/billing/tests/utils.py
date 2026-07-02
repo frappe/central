@@ -181,14 +181,27 @@ def make_billing_subscription(team, cluster, plan, start_date=None, clear_change
 
 	ensure_atlas_instance(cluster)
 	ensure_team(team)
+	currency = kwargs.pop("currency", "INR")
 	if not frappe.db.get_value("Billing Profile", team, "currency"):
-		complete_billing_profile(team, currency=kwargs.pop("currency", "INR"))
+		complete_billing_profile(team, currency=currency)
 	sub = subscriptions.create_subscription(
 		team=team, cluster=cluster, plan=plan, start_date=start_date, **kwargs
 	)
 	if clear_changes:
 		frappe.db.delete("Subscription Change", {"subscription": sub.name})
 	return sub.name
+
+
+def seed_running_resource(team, resource_id, cluster, plan, rate=1000, currency="INR",
+						  effective_at="2026-06-01 00:00:00"):
+	"""Seed a provisioned, running resource on the Subscription Change ledger (ADR 0010):
+	its Asset (named by `resource_id`) + Subscription + an open `Created` segment at
+	`rate`/`currency`. The ledger replacement for the retired price-lock event seeding
+	(#86) — metering and every 'what is running' reader resolve the resource through this
+	open segment. Returns the Subscription name."""
+	sub = make_billing_subscription(team, cluster, plan, resource_id=resource_id, currency=currency)
+	add_segment(sub, "Created", rate, effective_at, plan=plan, currency=currency)
+	return sub
 
 
 def add_segment(subscription, change_type, rate, effective_at, plan=None, currency="INR"):

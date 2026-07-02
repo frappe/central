@@ -57,3 +57,34 @@ class TestPlanIdentity(IntegrationTestCase):
 
 		self.assertEqual(frappe.db.count("Plan"), count_before)
 		self.assertEqual(get_plan_pricing(plan=name, currency="USD")["rate"], 99)
+
+
+class TestPlanRequiresIncludes(IntegrationTestCase):
+	"""A Plan must declare what it bills — at least one Plan Includes row (#85)."""
+
+	def test_empty_includes_is_rejected(self):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Plan",
+				"title": "Empty Plan",
+				"category": "VM Plans",
+				"billing_cycle": "Monthly",
+				"is_active": 1,
+				"includes": [],
+			}
+		)
+		self.assertRaises(frappe.ValidationError, doc.insert, ignore_permissions=True)
+
+	def test_one_include_is_accepted(self):
+		doc = frappe.get_doc(
+			{
+				"doctype": "Plan",
+				"title": "One-Include Plan",
+				"category": "VM Plans",
+				"billing_cycle": "Monthly",
+				"is_active": 1,
+				"includes": [{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"}],
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		self.assertEqual(len(doc.includes), 1)
