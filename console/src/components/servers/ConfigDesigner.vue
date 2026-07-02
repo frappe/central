@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { Slider } from 'frappe-ui'
 import LadderSelect from '@/components/servers/LadderSelect.vue'
 import {
   clamp,
@@ -42,6 +43,18 @@ const vcpuIndex = ref(seedIndex(vcpuSteps.value, props.initial?.vcpus))
 const diskIndex = ref(seedIndex(diskSteps.value, props.initial?.disk_gb))
 const vcpus = computed<number>(() => vcpuSteps.value[vcpuIndex.value] ?? vcpuSteps.value[0] ?? 0)
 const diskGb = computed<number>(() => diskSteps.value[diskIndex.value] ?? diskSteps.value[0] ?? 0)
+
+// frappe-ui's Slider is espresso-styled (dark surface-gray fill + white thumb) and
+// range-shaped — its v-model is a `number[]`. Wrap the single ladder index so the
+// track follows the design system instead of the browser's native accent-color.
+const vcpuModel = computed<number[]>({
+  get: () => [vcpuIndex.value],
+  set: ([i]) => (vcpuIndex.value = i ?? 0),
+})
+const diskModel = computed<number[]>({
+  get: () => [diskIndex.value],
+  set: ([i]) => (diskIndex.value = i ?? 0),
+})
 const ram = computed<number>(() => (profile.value ? ramFor(vcpus.value, profile.value) : 0))
 
 // Hard stops: the largest vCPU / storage rung that still fits the remaining
@@ -161,15 +174,9 @@ function indexOf(ladder: number[], value: number): number {
       <!-- Compute: vCPU slider with the derived RAM shown as a pill. -->
       <div class="flex items-center gap-4">
         <span class="w-20 shrink-0 text-p-sm text-ink-gray-7">Compute</span>
-        <input
-          v-model.number="vcpuIndex"
-          type="range"
-          min="0"
-          :max="Math.max(0, maxVcpuIndex)"
-          step="1"
-          class="min-w-0 flex-1 accent-ink-gray-9"
-          aria-label="vCPU"
-        />
+        <div class="min-w-0 flex-1">
+          <Slider v-model="vcpuModel" :min="0" :max="Math.max(0, maxVcpuIndex)" :step="1" />
+        </div>
         <LadderSelect class="shrink-0" :options="vcpuOptions" :selected="vcpus" @select="setVcpu" />
         <LadderSelect class="shrink-0" :options="ramOptions" :selected="vcpus" @select="setVcpu" />
       </div>
@@ -177,15 +184,9 @@ function indexOf(ladder: number[], value: number): number {
       <!-- Storage: independent ladder slider with rung-by-rung ± steppers. -->
       <div class="flex items-center gap-4">
         <span class="w-20 shrink-0 text-p-sm text-ink-gray-7">Storage</span>
-        <input
-          v-model.number="diskIndex"
-          type="range"
-          min="0"
-          :max="Math.max(0, maxDiskIndex)"
-          step="1"
-          class="min-w-0 flex-1 accent-ink-gray-9"
-          aria-label="Storage"
-        />
+        <div class="min-w-0 flex-1">
+          <Slider v-model="diskModel" :min="0" :max="Math.max(0, maxDiskIndex)" :step="1" />
+        </div>
         <button
           type="button"
           class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"
