@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.servers import refresh_assets, registry
+from central.api.servers import refresh_assets, registry, start_server
 from central.integrations.atlas import apply_event, ingest_event, reconcile, reconcile_atlas
 from central.tests.test_iam import ensure_user
 
@@ -219,3 +219,24 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.outsider)
 		with self.assertRaises(frappe.PermissionError):
 			registry(team=self.team.name)
+
+	# --- power gate while resizing --------------------------------------------
+
+	def _stopped_asset(self, resource_id, **extra):
+		self._push("vm.created", {"name": resource_id, "team": self.team.name, "status": "Stopped"}, "2026-07-02 10:00:00")
+		if extra:
+			frappe.db.set_value("Asset", resource_id, extra)
+		return resource_id
+
+	def test_start_blocked_while_resizing(self):
+		asset = self._stopped_asset("vm-resizing", resize_in_progress=1)
+		frappe.set_user(self.owner)
+		with self.assertRaisesRegex(frappe.ValidationError, "resizing"):
+			start_server(team=self.team.name, resource_id=asset)
+
+	def test_start_allowed_once_resize_clears(self):
+		asset = self._stopped_asset("vm-idle", resize_in_progress=0)
+		frappe.set_user(self.owner)
+		with patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-1") as vm_action:
+			start_server(team=self.team.name, resource_id=asset)
+		vm_action.assert_called_once_with(asset, "start")

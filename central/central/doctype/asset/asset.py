@@ -22,6 +22,7 @@ class Asset(Document):
 		memory_megabytes: DF.Int
 		plan: DF.Link | None
 		public_ipv4: DF.Data | None
+		resize_in_progress: DF.Check
 		resource_id: DF.Data
 		status: DF.Literal["Pending", "Running", "Paused", "Stopped", "Failed", "Terminated"]
 		team: DF.Link
@@ -141,6 +142,15 @@ class Asset(Document):
 			doc.last_event_at = occurred_at
 		if synced_at:
 			doc.last_synced_at = synced_at
+
+	@staticmethod
+	def mark_resizing(resource_id: str, resizing: bool) -> None:
+		"""Flag/unflag a VM as mid-resize so the console shows a "Resizing" state and
+		gates power actions while the slow reshape runs in its background job. This is a
+		Central-orchestration write (not an Atlas mirror field), so it's independent of
+		the status the Atlas events drive. `notify=True` pushes the change to Console
+		list subscribers live, without polling."""
+		frappe.get_doc("Asset", resource_id).db_set("resize_in_progress", 1 if resizing else 0, notify=True)
 
 	@staticmethod
 	def mark_terminated(resource_id: str, *, last_event_at=None, last_synced_at=None) -> None:

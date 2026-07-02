@@ -8,6 +8,7 @@ import {
 } from '@/components/common/list-view'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import ServerStatusBadge from '@/components/servers/ServerStatusBadge.vue'
+import { displayStatus } from '@/lib/status'
 import { formatSpecs } from '@/lib/format'
 import type { AssetRow } from '@/composables/useServers'
 
@@ -79,7 +80,7 @@ const columns = computed<ListViewColumn<AssetRow>[]>(() => [
     accessorKey: 'status',
     header: 'Status',
     size: 140,
-    cell: ({ row }) => h(ServerStatusBadge, { status: row.original.status }),
+    cell: ({ row }) => h(ServerStatusBadge, { status: displayStatus(row.original) }),
   },
   {
     id: 'actions',

@@ -276,24 +276,21 @@ def resize_server(
 	sub_category: str | None = None,
 ) -> dict:
 	"""Resize a server to a preset bundle (`plan`) or a custom shape (`includes` +
-	`sub_category`) — the console's single Resize action (#84). Reshapes the real VM,
-	power-cycling as needed, and re-locks billing at the current rate card. Returns
-	whether a new billing segment was opened (a no-op resize returns False)."""
+	`sub_category`) — the console's single Resize action (#84). Validates synchronously,
+	then hands the slow VM reshape (stop→resize→start on the host) plus the current-rate
+	re-lock to a background job, marking the server "Resizing" for the console meanwhile.
+	Returns `{queued, resized}`: `queued` when a live VM is being reshaped in the
+	background, `resized` False only for a no-op or non-resizable config."""
 	team = frappe.db.get_value("Subscription", subscription, "team")
 	if not team:
 		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
 	authz.require_capability(team, authz.MANAGE)
-	from central.billing.catalog.subscriptions import resize_composed_subscription, resize_to_plan
+	from central.billing.catalog.subscriptions import begin_resize
 
-	before = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
-	if plan:
-		resize_to_plan(subscription, plan)
-	else:
-		if isinstance(includes, str):
-			includes = frappe.parse_json(includes)
-		resize_composed_subscription(subscription, includes or [], sub_category)
-	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
-	return {"subscription": subscription, "resized": after > before}
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+	result = begin_resize(subscription, plan=plan, includes=includes, sub_category=sub_category)
+	return {"subscription": subscription, **result}
 
 
 def _rates_by_plan(names: list[str]) -> dict[str, list]:

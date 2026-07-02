@@ -13,6 +13,7 @@ const STATUS_THEME: Record<string, BadgeTheme> = {
   Running: 'green',
   Pending: 'orange',
   Provisioning: 'orange',
+  Resizing: 'orange',
   Paused: 'orange',
   Stopped: 'gray',
   Failed: 'red',
@@ -21,6 +22,18 @@ const STATUS_THEME: Record<string, BadgeTheme> = {
 
 export function statusTheme(status: AssetStatus): BadgeTheme {
   return STATUS_THEME[status] ?? 'gray'
+}
+
+// A server mid-resize reads as "Resizing" regardless of the raw Atlas status (which
+// flips Running→Stopped→Running under it as the host power-cycles the VM). The flag is
+// Central's own, set for the length of the background reshape job (#84).
+export function isResizing(server: { resize_in_progress?: 0 | 1 }): boolean {
+  return server.resize_in_progress === 1
+}
+
+/** The status to show for a row: "Resizing" while a reshape job runs, else the mirror. */
+export function displayStatus(server: { status?: AssetStatus; resize_in_progress?: 0 | 1 }): AssetStatus {
+  return isResizing(server) ? 'Resizing' : (server.status ?? 'Pending')
 }
 
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */

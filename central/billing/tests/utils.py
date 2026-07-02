@@ -6,6 +6,20 @@ import frappe
 
 from central.billing.catalog.pricing import set_catalog_rates
 
+# frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to
+# execute an enqueued job synchronously — dropping the queue-control kwargs and calling
+# the target with the real ones. Usage: patch("frappe.enqueue", side_effect=run_enqueued_inline).
+_ENQUEUE_CONTROL_KWARGS = (
+	"queue", "timeout", "enqueue_after_commit", "job_id", "at_front", "is_async", "now",
+	"deduplicate", "event", "on_success", "on_failure", "job_name",
+)
+
+
+def run_enqueued_inline(method, **kwargs):
+	for control in _ENQUEUE_CONTROL_KWARGS:
+		kwargs.pop(control, None)
+	return method(**kwargs)
+
 DEFAULT_RATES = [
 	{"cluster": "", "currency": "USD", "rate": 40},
 	{"cluster": "", "currency": "INR", "rate": 3200},

@@ -18,6 +18,7 @@ from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
 	ensure_team,
+	run_enqueued_inline,
 	set_team_tier,
 )
 
@@ -175,12 +176,18 @@ class TestEligibilityComposed(IntegrationTestCase):
 		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
 		frappe.db.set_value("Asset", out["resource_id"], "status", "Stopped")
 		plan = make_plan("resize-bundle", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
+		# The reshape + re-lock are deferred to a background job; run it inline here to
+		# assert the end-to-end effect (queued path).
 		with (
 			patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1") as resize_vm,
 			patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-2"),
+			patch("frappe.enqueue", side_effect=run_enqueued_inline),
 		):
 			result = resize_server(out["subscription"], plan=plan)
 		self.assertTrue(result["resized"])
+		self.assertTrue(result["queued"])  # a live VM was reshaped in the background
 		resize_vm.assert_called_once()  # the bundle's shape drove a real VM resize
 		doc = frappe.get_doc("Subscription", out["subscription"])
 		self.assertEqual((doc.pricing_mode, doc.plan), ("Preset", plan))
+		# The Resizing flag is set for the job and cleared when it finishes.
+		self.assertEqual(frappe.db.get_value("Asset", out["resource_id"], "resize_in_progress"), 0)

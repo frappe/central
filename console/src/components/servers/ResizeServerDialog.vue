@@ -6,7 +6,7 @@ import { API, method } from '@/api/methods'
 import { usePlans } from '@/composables/usePlans'
 import { useSession } from '@/composables/useSession'
 import { configIncludes, rateCardComplete } from '@/lib/composed'
-import { getErrorMessage } from '@/lib/toast'
+import { getErrorMessage, successToast } from '@/lib/toast'
 import type { AssetRow } from '@/composables/useServers'
 import type { ComposedConfig, Profile } from '@/types/api'
 
@@ -23,9 +23,9 @@ const activeTeamId = computed(() => activeTeam.value ?? '')
 
 const region = computed(() => props.server?.cluster ?? null)
 const needsRestart = computed(() => props.server?.status === 'Running' || props.server?.status === 'Paused')
-// Be explicit that a live resize stops the server (stop → resize → start); a
-// server that's already off just resizes.
-const resizeLabel = computed(() => (needsRestart.value ? 'Resize by stopping the server' : 'Resize'))
+// Be explicit that a live resize power-cycles the server (stop → resize → start),
+// which the backend does automatically; a server that's already off just resizes.
+const resizeLabel = computed(() => (needsRestart.value ? 'Restart & resize' : 'Resize'))
 
 // The config running on this server (current shape + preset, and the subscription
 // the resize re-locks). Drives both the pre-selection and the headroom exclusion.
@@ -143,7 +143,10 @@ const changed = computed(() => {
   return selectedPlan.value !== configCall.data?.plan
 })
 
-const resizeCall = useCall<{ subscription: string; resized: boolean }, Record<string, unknown>>({
+const resizeCall = useCall<
+  { subscription: string; queued: boolean; resized: boolean },
+  Record<string, unknown>
+>({
   url: method(API.resizeServer),
   method: 'POST',
   immediate: false,
@@ -170,6 +173,14 @@ async function confirm() {
       : { subscription: sub, plan: selectedPlan.value }
   await resizeCall.submit(payload)
   if (!resizeCall.error) {
+    // The reshape runs in the background now — the server shows "Resizing" in the list
+    // and comes back on its own — so confirm and close instead of holding the dialog.
+    const name = props.server?.title || props.server?.resource_id
+    successToast(
+      resizeCall.data?.queued
+        ? `Resizing ${name} — the server list shows its progress.`
+        : `Resized ${name}.`,
+    )
     emit('resized')
     open.value = false
   }
@@ -183,10 +194,10 @@ async function confirm() {
            show a clear in-progress state and hold the dialog open until it lands. -->
       <div v-if="resizeCall.loading" class="flex flex-col items-center gap-3 py-10 text-center">
         <LoadingIndicator class="h-6 w-6 text-ink-gray-5" />
-        <p class="text-p-base font-medium text-ink-gray-8">Resizing your server…</p>
+        <p class="text-p-base font-medium text-ink-gray-8">Starting resize…</p>
         <p class="max-w-xs text-p-sm text-ink-gray-5">
-          This can take a few minutes for a server with a lot of data. It restarts on its own once
-          done — keep this window open.
+          The reshape runs in the background — the server shows “Resizing” in the list and comes
+          back on its own when it’s done.
         </p>
       </div>
       <p v-else-if="configCall.loading || plansLoading" class="text-p-sm text-ink-gray-5">Loading…</p>
@@ -204,7 +215,7 @@ async function confirm() {
           v-if="needsRestart"
           class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"
         >
-          Your server will be stopped to apply the new size, and stay off until you start it again.
+          Your server will be briefly stopped to apply the new size, then started again automatically.
         </div>
 
         <Tabs v-if="hasTabs" v-model="activeTab" :tabs="classTabs">
