@@ -57,6 +57,16 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		doc.save(ignore_permissions=True)
 		return {"invoice": invoice, "claimed": True, "cost_report": True, "expected_collection": 0}
 
+	# TODO(invoice-group) — future ADR 0013, per-group credit budgets (deferred):
+	# Today credits are a single team wallet (model A): apply team credits, then card.
+	# With Billing-Group partitioning, a partner may want to *budget* credits per
+	# end-customer. Plan: keep one team wallet but TAG a top-up to a billing group
+	# (a `billing_group` dimension on Credit Ledger Entry) — a group's "budget" is the
+	# sum of its tagged entries, not a separate wallet. Settlement then follows the
+	# invoice's payment mode: card mode → card (credits first only if any exist);
+	# credits mode → the group's tagged budget first, then fall back to the team pool.
+	# Leftover group credits return to the team pool on group close. Not built yet.
+	#
 	# Leg 1 — credits first (only against the collectable amount, gross less TDS).
 	applied = 0
 	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
