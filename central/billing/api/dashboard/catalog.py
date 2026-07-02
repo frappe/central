@@ -411,10 +411,45 @@ def _gated_capacity(cluster: str | None, fetch, *, log: str) -> dict | None:
 	from central.integrations.atlas import AtlasClient
 
 	try:
-		return fetch(AtlasClient(frappe.get_doc("Atlas Instance", instance.name)))
+		raw = fetch(AtlasClient(frappe.get_doc("Atlas Instance", instance.name)))
 	except Exception:
+		# Unreachable / timed-out / auth failure — fail soft (show the full menu).
 		frappe.log_error(title=log)
 		return None
+
+	capacity = _valid_capacity(raw)
+	if capacity is None:
+		# A 200 with a shape we don't trust (partial JSON, schema drift). Treat it as
+		# "don't gate" rather than let a later `largest_vm["vcpus"]` KeyError 500 the
+		# whole menu — the fail-soft intent must hold for malformed-but-successful replies.
+		frappe.log_error(title=f"{log}: malformed capacity response", message=repr(raw))
+	return capacity
+
+
+def _valid_capacity(raw) -> dict | None:
+	"""Coerce a raw Atlas capacity reply into a trusted shape, or None if malformed.
+
+	Guarantees callers a well-formed `{available, unmeasured, largest_vm}` where
+	`largest_vm` is either None or a dict with numeric `vcpus`/`memory_megabytes`/
+	`disk_gigabytes` — so `_plan_fits`/`_capacity_block` can index it without a KeyError.
+	Anything that doesn't fit that shape returns None (→ don't gate); a successful call
+	must never crash the menu just because Atlas returned an unexpected body."""
+	if not isinstance(raw, dict) or not all(
+		key in raw for key in ("available", "unmeasured", "largest_vm")
+	):
+		return None
+	largest = raw.get("largest_vm")
+	if largest is not None:
+		if not isinstance(largest, dict) or not all(
+			isinstance(largest.get(axis), (int, float))
+			for axis in ("vcpus", "memory_megabytes", "disk_gigabytes")
+		):
+			return None
+	return {
+		"available": bool(raw.get("available")),
+		"unmeasured": bool(raw.get("unmeasured")),
+		"largest_vm": largest,
+	}
 
 
 def _region_capacity(cluster: str | None) -> dict | None:

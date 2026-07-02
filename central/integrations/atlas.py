@@ -26,6 +26,12 @@ from central.host_task import run_host_task
 # --- outbound: Central → Atlas ----------------------------------------------
 
 
+# Hard timeout (seconds) for the capacity reads on the create-server / resize menu path.
+# Short on purpose: these run on every menu render and fail soft (a timeout just shows the
+# full menu), so a degraded Atlas must not hold a worker longer than a page can wait.
+CAPACITY_TIMEOUT = 3
+
+
 class AtlasError(frappe.ValidationError):
 	pass
 
@@ -136,7 +142,7 @@ class AtlasClient:
 		the create-server menu hides plans that don't fit it. Advisory only — placement's
 		create-time gate is authoritative, since capacity can move between this read and
 		the create."""
-		return self.client().get_api("atlas.atlas.api.provision.capacity")
+		return self._get_bounded("atlas.atlas.api.provision.capacity")
 
 	def resize_capacity(self, vm: str) -> dict:
 		"""The largest shape `vm` can resize to on its current host: `{available,
@@ -144,9 +150,30 @@ class AtlasClient:
 		the VM's own footprint (a resize frees it before re-reserving), so the VM can always
 		keep its size or shrink. The create-server menu caps the resize slider to this so an
 		oversized resize can't be requested. Advisory — the host resize path is authoritative."""
-		return self.client().get_api(
-			"atlas.atlas.api.provision.resize_capacity", params={"vm": vm}
+		return self._get_bounded("atlas.atlas.api.provision.resize_capacity", {"vm": vm})
+
+	def _get_bounded(self, method: str, params: dict | None = None, timeout: int = CAPACITY_TIMEOUT) -> dict:
+		"""Admin-auth GET against the data path with a HARD timeout — the bounded twin of
+		`client().get_api`. The capacity reads run on every create-server / resize menu
+		render, and FrappeClient (like requests) has no default timeout, so a silently-hung
+		Atlas (slow net, overloaded host) would otherwise pin a Gunicorn worker on the OS
+		TCP timeout and stall every user in that region. A timeout raises here and the
+		caller's fail-soft path treats it as 'don't gate' (show the full menu). Returns the
+		endpoint's `message` payload."""
+		if self.instance.status == "Disabled":
+			frappe.throw(f"Atlas '{self.instance.region}' is disabled.", AtlasError)
+		if not self.instance.api_key:
+			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+		url = self._data_url().rstrip("/") + "/api/method/" + method
+		secret = self.instance.get_password("api_secret")
+		response = requests.get(
+			url,
+			headers={"Authorization": f"token {self.instance.api_key}:{secret}"},
+			params=params or {},
+			timeout=timeout,
 		)
+		response.raise_for_status()
+		return response.json().get("message", {})
 
 	def central_vms(self, team: str | None = None) -> list[dict]:
 		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one

@@ -205,6 +205,23 @@ class TestCapacityFilter(IntegrationTestCase):
 		self.assertIn(SMALL, plans)
 		self.assertIn(BIG, plans)
 
+	def test_malformed_largest_vm_fails_soft(self):
+		# A 200 whose largest_vm is missing an axis must not KeyError-500 the menu — it's
+		# treated as "don't gate" and the full priced list shows.
+		bad = {"available": True, "unmeasured": False, "largest_vm": {"vcpus": 4, "memory_megabytes": 8192}}
+		with patch.object(AtlasClient, "capacity", return_value=bad):
+			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+		self.assertFalse(out["capacity"]["gated"])
+		self.assertIn(BIG, _titles(out))
+
+	def test_missing_top_level_key_fails_soft(self):
+		# A body missing `available`/`unmeasured` is untrusted → ungated, full menu (not
+		# mistaken for a region-full empty menu).
+		with patch.object(AtlasClient, "capacity", return_value={"largest_vm": None}):
+			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+		self.assertFalse(out["capacity"]["gated"])
+		self.assertIn(BIG, _titles(out))
+
 	def test_unmeasured_host_admits_everything(self):
 		# An unreported axis surfaces as a huge sentinel → every plan fits (uncatalogued
 		# = unlimited, the same vouch-by-Active rule placement uses).
