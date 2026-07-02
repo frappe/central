@@ -97,7 +97,6 @@ class SettlementTestBase(IntegrationTestCase):
 			{
 				"doctype": "Invoice",
 				"team": TEAM,
-				"subscription": subscription,
 				"status": "Draft",
 				"period_start": "2026-06-01",
 				"period_end": "2026-06-30",

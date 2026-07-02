@@ -9,7 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "team",
-  "subscription",
+  "billing_group",
   "invoice_type",
   "column_break_head",
   "status",
@@ -56,10 +56,11 @@
    "reqd": 1
   },
   {
-   "fieldname": "subscription",
+   "description": "The Billing Group this invoice bills. Unset = the team's consolidated invoice (all ungrouped assets). The team (not the group) is always the biller/payer.",
+   "fieldname": "billing_group",
    "fieldtype": "Link",
-   "label": "Subscription",
-   "options": "Subscription"
+   "label": "Billing Group",
+   "options": "Billing Group"
   },
   {
    "default": "Billable",

@@ -19,6 +19,26 @@ writes an append-only Subscription Change.
 import frappe
 
 
+def anchor_subscription(team: str, billing_group: str | None = None) -> str | None:
+	"""The subscription an invoice's dunning / charge-routing anchors on.
+
+	An invoice bills a scope of the team's assets — a Billing Group, or (when
+	`billing_group` is unset) the team's ungrouped consolidated set. Account
+	standing and the default payment method/gateway live on the Subscription, so
+	dunning and on-charge routing need one representative subscription for the
+	invoice: the earliest-created one in that scope. This mirrors the "primary
+	subscription" the Invoice used to link to directly, before invoices became
+	team/group-scoped rather than subscription-scoped.
+	"""
+	filters = {"team": team, "billing_group": billing_group if billing_group else ["in", [None, ""]]}
+	name = frappe.db.get_value("Subscription", filters, "name", order_by="creation asc")
+	if not name and not billing_group:
+		# A team whose every subscription is grouped still needs an anchor for its
+		# (empty) consolidated scope — fall back to any subscription of the team.
+		name = frappe.db.get_value("Subscription", {"team": team}, "name", order_by="creation asc")
+	return name
+
+
 class InvalidTransition(frappe.ValidationError):
 	"""An account-standing transition that the state machine does not permit."""
 

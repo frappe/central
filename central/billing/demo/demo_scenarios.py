@@ -295,7 +295,7 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 	primary_sub = subs[0]
 
 	for i, (start, end) in enumerate(periods):
-		inv = invoicing.generate_team_invoice(team, start, end, subscription=primary_sub)
+		inv = invoicing.generate_team_invoice(team, start, end)
 		if not inv:
 			continue
 		total = frappe.db.get_value("Invoice", inv, "expected_collection")
@@ -331,12 +331,12 @@ def _set_team_standing(team, standing, changed_by="dunning"):
 def _finish_current_month(team, sub, currency, state, pm, gateway):
 	"""Build the open/June invoice (one consolidated invoice) in the team's terminal state."""
 	if state == "trial":
-		inv = invoicing.generate_team_invoice(team, ANCHOR, "2026-06-30", subscription=sub)
+		inv = invoicing.generate_team_invoice(team, ANCHOR, "2026-06-30")
 		if inv:
 			invoicing.open_and_collect(inv)  # cost_report → opened, never charged
 		return "trial cost report"
 
-	inv = invoicing.generate_team_invoice(team, ANCHOR, "2026-06-30", subscription=sub)
+	inv = invoicing.generate_team_invoice(team, ANCHOR, "2026-06-30")
 	if not inv:
 		return state
 

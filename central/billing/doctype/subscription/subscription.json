@@ -9,6 +9,7 @@
  "field_order": [
   "enabled",
   "team",
+  "billing_group",
   "asset_id",
   "cluster",
   "pricing_mode",
@@ -32,6 +33,13 @@
    "label": "Team",
    "options": "Team",
    "reqd": 1
+  },
+  {
+   "description": "Optional: tag this subscription's asset into a Billing Group to bill it on a separate invoice from the team's consolidated one. Unset = billed on the team's consolidated invoice.",
+   "fieldname": "billing_group",
+   "fieldtype": "Link",
+   "label": "Billing Group",
+   "options": "Billing Group"
   },
   {
    "default": "Preset",

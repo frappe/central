@@ -217,7 +217,6 @@ def make_invoice(team: str, total: float = 1180, currency: str | None = None,
 
 	name = frappe.get_doc({
 		"doctype": "Invoice", "team": team, "invoice_type": "Billable", "status": "Draft",
-		"subscription": subscription,
 		"period_start": "2026-06-01", "period_end": "2026-06-30", "currency": currency,
 		"subtotal": subtotal, "output_tax_type": "GST" if currency == "INR" else "VAT",
 		"output_tax_amount": tax, "total": total, "tds_amount": 0, "expected_collection": total,

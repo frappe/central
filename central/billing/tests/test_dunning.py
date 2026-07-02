@@ -80,7 +80,7 @@ class DunningTestBase(IntegrationTestCase):
 	def _open_invoice(self, sub, total=1000):
 		return frappe.get_doc(
 			{
-				"doctype": "Invoice", "team": TEAM, "subscription": sub, "invoice_type": "Billable",
+				"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable",
 				"status": "Open", "period_start": "2026-05-01", "period_end": "2026-05-31",
 				"currency": "INR", "subtotal": total, "total": total,
 				"expected_collection": total, "due_date": DUE,

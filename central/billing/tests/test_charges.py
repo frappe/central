@@ -111,7 +111,6 @@ class ChargeTestBase(IntegrationTestCase):
 			{
 				"doctype": "Invoice",
 				"team": TEAM,
-				"subscription": self.sub,
 				"status": "Open",
 				"period_start": "2026-06-01",
 				"period_end": "2026-06-30",

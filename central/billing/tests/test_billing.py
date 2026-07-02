@@ -114,7 +114,8 @@ class TestDraftGeneration(BillingTestBase):
 		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		second = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertEqual(first, second)
-		self.assertEqual(frappe.db.count("Invoice", {"subscription": self.sub}), 1)
+		team = frappe.db.get_value("Subscription", self.sub, "team")
+		self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 
 	def test_no_runtime_yields_no_invoice(self):
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
