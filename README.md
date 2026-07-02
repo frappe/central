@@ -1,175 +1,163 @@
-## Central
+# Central
 
-> [!WARNING]
-> This project is currently **experimental** with the intention of making it usable in production.
+Central is the control plane for Frappe Cloud. It owns identity, Teams, roles,
+capabilities, billing catalog, subscriptions, invoices, and the local mirror of
+resources that run on Atlas.
 
-Central is the global control plane and front door(console) of Frappe Cloud. It holds the mission control: it decides who you are, which team you act for, and what you are allowed to do before Atlas touches a VM. 
-
-Central's duty is to be the IAM authority and Asset Registry for Frappe Cloud. It owns identity, teams, roles, capabilities, OAuth claims etc. Atlas consumes those claims and enforces them locally to apply changes.
-
-
-
-Atlas repo - [https://github.com/adityahase/atlas](https://github.com/adityahase/atlas)
-
-## Architecture
-
-```mermaid
-flowchart LR
-	User["User"]
-	CentralDesk["Central Desk"]
-	CentralIAM["Central IAM<br/>Teams, Roles, Capabilities"]
-	OAuth["Central OAuth/OIDC<br/>fc_teams claim"]
-	Atlas["Atlas"]
-	AtlasSession["Atlas Session<br/>team grants"]
-	VMs["VM Actions"]
-
-	User --> CentralDesk
-	CentralDesk --> CentralIAM
-	CentralIAM --> OAuth
-	User --> OAuth
-	OAuth --> Atlas
-	Atlas --> AtlasSession
-	AtlasSession --> VMs
-
-	Atlas -. "does not edit IAM" .-> CentralIAM
-```
+Atlas is the regional runtime. One Atlas site represents one region or cluster.
+Central calls Atlas to create and operate VMs/sites, and Atlas reports lifecycle
+events back to Central. Atlas does not own Team membership, billing state, or IAM
+policy.
 
 
+Important contracts:
 
-Central writes authority. Atlas reads authority.
+- Central writes authority. Atlas reads authority.
+- `Team Member -> Team Role -> Capability` is the only customer permission path.
+- `Atlas Instance` stores the regional Atlas URL and admin credentials Central
+  uses for operator calls.
+- Production Atlas registration uses the WireGuard tunnel flow in
+  [spec/TUNNEL.md](spec/TUNNEL.md).
+- Local development uses `Atlas Instance.skip_tunnel = 1`; it pushes the scoped
+  Central service user to Atlas but keeps traffic on `atlas_base_url`.
 
-```mermaid
-sequenceDiagram
-	participant User
-	participant Central
-	participant Atlas
-	participant VM
+## Local Setup
 
-	User->>Central: Sign in
-	Central->>Central: Resolve Team Member -> Team Role -> Capabilities
-	Central-->>Atlas: OAuth userinfo / token with fc_teams
-	Atlas->>Atlas: Store team grants in session
-	User->>Atlas: Request VM action
-	Atlas->>Atlas: Check capability from session
-	Atlas-->>VM: Allow only if capability matches
-```
+Use a fresh bench when possible. A new pilot/bench-cli bench is preferred over an
+existing shared development bench because Central and Atlas both install fixtures,
+background jobs, demo data, and local site configuration.
 
+Link to pilot - https://github.com/frappe/pilot
 
+The examples below assume:
 
-## What Works
+- Central site: `central.localhost`
+- Atlas site: `mumbai.atlas.localhost`
+- Admin password: `admin`
+- Apps are checked out as `central` and `atlas`
 
-- Desk workspace for `Team`, `Team Role`, `Capability`, and `IAM Permission Probe`.
-- Fixture-backed capability catalog.
-- System team roles: `Owner`, `Admin`, `Developer`, `Viewer`, `Billing`.
-- New enabled `User` records get `Central User`, one default team, and active
-`Owner` membership.
-- Owners and Admins can invite, suspend, remove, and change member roles.
-- Invitations support Desk notifications, best-effort email delivery, expiry,
-  acceptance, and signup-time acceptance for users who do not exist yet.
-- Team-scoped permission resolution through `Team Member -> Team Role -> Capability`.
-- OAuth/OpenID userinfo includes the `fc_teams` claim for Atlas.
-- Probe DocType can test `(user, team, capability)` from Desk.
-
-## Not Yet
-
-- Central frontend/team switcher.
-- Atlas VM enforcement using `fc_teams`. Scoped VM (granular) permissions.
-- Partner/support access flows.
-
-## Installation
-
-From a bench:
+Create or use a fresh bench, then install both apps on separate sites:
 
 ```bash
-bench get-app central <repo-url>
-bench --site <site-name> install-app central
-bench --site <site-name> migrate
-```
+bench get-app central <central-repo-url>
+bench get-app atlas <atlas-repo-url>
 
-For local development:
+bench new-site central.localhost --admin-password admin
+bench --site central.localhost install-app central
 
-```bash
+bench new-site mumbai.atlas.localhost --admin-password admin
+bench --site mumbai.atlas.localhost install-app atlas
+
 bench set-config -g developer_mode 1
-bench --site central.site migrate
+bench --site central.localhost migrate
+bench --site mumbai.atlas.localhost migrate
+```
+
+If your bench does not have a global DB root password configured, `bench new-site`
+will ask for one or you can pass `--db-root-password <password>`.
+
+Start the bench in another terminal:
+
+```bash
 bench start
 ```
-
-Open Desk at:
-
-```text
-http://central.site:8000/app
-```
-
-## Test Teams
-
-1. Log in as `Administrator`.
-2. Create or open a `User`.
-3. Save the user. Central creates that user's default `Team` automatically.
-4. Open `Team` and confirm:
-  - `owner_user` is the new user.
-  - Members has the same user as `Owner` and `Active`.
-5. Add another user as `Viewer`, `Developer`, or `Admin`.
-
-To test invitations:
-
-1. Open a Team and click `Invite Member`.
-2. Choose an email and role. `Owner` must be assigned through ownership transfer,
-   not an invitation.
-3. Log in as the invited user and open `Team Invitation`.
-4. Click `Accept`.
-5. Confirm the user appears in the Team's Members table.
-
-The user's effective permissions are always resolved from team membership. The
-`owner_user` field is ownership metadata, not a permission bypass.
-
-## Test Probe
 
 Open:
 
 ```text
-/app/iam-permission-probe/new
+http://central.localhost:8000/app
+http://mumbai.atlas.localhost:8000/app
 ```
 
-Set:
+## Seed Central
 
-- `User`: the user to test.
-- `Team`: the team they belong to.
-- `Capability`: for example `server:view` or `server:terminate`.
+Run the Central local bootstrap:
 
-Save the document. `Allowed` and `Resolved Grants` are filled automatically.
-
-Good checks:
-
-- `Viewer` + `server:view` -> allowed.
-- `Viewer` + `server:terminate` -> denied.
-- `Developer` + `server:terminate` -> allowed.
-
-## Atlas
-
-Central already emits Atlas-ready IAM data through OAuth/OpenID:
-
-```json
-{
-  "fc_teams": {
-    "TEAM-00001": [
-      {
-        "role": "Viewer",
-        "source": "member",
-        "scope": "*",
-        "caps": ["cluster:view", "server:view"]
-      }
-    ]
-  }
-}
+```bash
+bench --site central.localhost execute central.api.developer_setup.setup_local
 ```
 
-Atlas should read `fc_teams` during SSO, store it in the session, and enforce VM
-actions from that session. Atlas must not edit teams, roles, or capabilities.
+This command only runs with `developer_mode` enabled. It seeds useful local data:
+
+- billing catalog, plans, rates, gateways, and trust tiers
+- demo Teams and Team members
+- invoices, subscriptions, payment methods, wallets, and notifications
+- billing workspace data
+
+The demo users are roster data, not login fixtures. Use `Administrator` for Desk
+inspection, or set passwords manually for specific users.
+
+To reseed without touching Atlas registration:
+
+```bash
+bench --site central.localhost execute central.api.developer_setup.setup_local --kwargs '{"register_atlas":0}'
+```
+
+## Wire Atlas Locally
+
+On the Atlas site, generate an Administrator API key and secret from Desk:
+
+```text
+User > Administrator > API Access > Generate Keys
+```
+
+Then run Central's bootstrap with those Atlas admin credentials:
+
+```bash
+bench --site central.localhost execute central.api.developer_setup.setup_local --kwargs '{"region":"in-mumbai","atlas_base_url":"http://mumbai.atlas.localhost:8000","atlas_api_key":"<atlas-admin-api-key>","atlas_api_secret":"<atlas-admin-api-secret>"}'
+```
+
+This creates or updates the `Atlas Instance` row for `in-mumbai`, marks it as
+local-dev `Skip Tunnel`, registers the scoped Central service user on Atlas, and
+keeps Central-to-Atlas calls on `http://mumbai.atlas.localhost:8000`.
+
+For a fake Atlas fleet that does not touch a cloud provider, use Atlas's fake
+provider demo on the Atlas site:
+
+```bash
+bench --site mumbai.atlas.localhost execute atlas.atlas.demo.run --kwargs '{"reset": true}'
+```
+
+For real provider bootstrap, follow [../atlas/BOOTSTRAP.md](../atlas/BOOTSTRAP.md).
+That path creates billable infrastructure.
+
+## Useful Test Data
+
+The compact Central seed creates Teams for:
+
+```text
+northwind
+daybreak
+harbor
+rivulet
+seedling
+```
+
+Each seeded Team has users shaped like:
+
+```text
+owner-<team>@example.com        Owner
+admin-<team>@example.com        Admin
+dev-<team>@example.com          Developer
+billing-<team>@example.com      Billing
+viewer-<team>@example.com       Viewer
+contractor-<team>@example.com   Developer, Suspended
+invitee-<team>@example.com      Viewer, Invited
+finance-<team>@example.com      Finance & Ops custom role
+```
 
 ## Tests
 
+Run the Central test suite from the bench root:
+
 ```bash
-bench --site central.site run-tests --app central
+bench --site central.localhost run-tests --app central
+```
+
+Run the focused developer setup tests:
+
+```bash
+bench --site central.localhost run-tests --app central --module central.tests.test_developer_setup
 ```
 
 ## License
