@@ -115,6 +115,7 @@ class PilotCredential(Document):
 		self.token_hash = self._hash(token)
 		self.status = "Active"
 		self.last_used_at = None
+		# system-internal path; no user
 		self.save(ignore_permissions=True)
 
 		return token
