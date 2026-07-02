@@ -189,7 +189,7 @@ class AtlasClient:
 		params.update(self._pilot_credential(team))
 
 		# Durability handoff: the token is about to leave for Atlas → the bench's
-		# common_site_config. Commit it BEFORE the call so a rollback of the enclosing
+		# bench.toml. Commit it BEFORE the call so a rollback of the enclosing
 		# request (e.g. the Site-mirror save right after this returns) can't wipe the
 		# credential and strand the bench with a token Central can't verify — a permanent
 		# 401 with no self-heal. The inverse failure is benign: if the Atlas call fails,
@@ -202,7 +202,7 @@ class AtlasClient:
 	def _pilot_credential(self, team: str) -> dict:
 		"""
 		Mint this pilot's Central credential and hand Atlas the token + callback URL to
-		store on the bench (common_site_config), so later pilot→Central calls authenticate.
+		store on the bench (bench.toml), so later pilot→Central calls authenticate.
 		Atlas binds pilot_credential_id to the pilot and echoes it back to join events. The
 		plaintext token leaves Central only here — never in the reply to Central's caller
 		"""

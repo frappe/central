@@ -9,7 +9,7 @@ from frappe import _
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 
 # The pilot→Central surface. The pilot (the on-VM agent, ~/pilot) authenticates with
-# the opaque token Central minted for it (stored in the bench's common_site_config).
+# the opaque token Central minted for it (stored in the bench's bench.toml).
 # The token rides an X-Pilot-Token header, NOT Authorization: Frappe's validate_auth()
 # claims the Authorization header and 401s any scheme it can't map to a real user,
 # before an allow_guest endpoint runs. The decorator resolves the token to its Pilot
