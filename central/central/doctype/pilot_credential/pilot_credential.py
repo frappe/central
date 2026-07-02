@@ -110,7 +110,7 @@ class PilotCredential(Document):
 	@classmethod
 	def rotate_by_id(cls, pilot_credential_id: str) -> str:
 		"""Re-issue a live pilot's token (entry point for Atlas-driven rotation). Returns
-		the new plaintext once, for Atlas to push into the bench's common_site_config."""
+		the new plaintext once, for Atlas to push into the bench's bench.toml."""
 		return frappe.get_doc(cls._DOCTYPE_NAME, pilot_credential_id).rotate()
 
 	def _issue_token(self) -> str:
