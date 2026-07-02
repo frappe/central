@@ -208,7 +208,7 @@ function indexOf(ladder: number[], value: number): number {
         </button>
       </div>
 
-      <p v-if="overHeadroom" class="text-p-xs text-ink-red-5">
+      <p v-if="overHeadroom" class="text-p-xs text-ink-red-7">
         This config is over your remaining spending limit.
       </p>
     </template>

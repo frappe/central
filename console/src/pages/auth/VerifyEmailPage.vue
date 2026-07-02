@@ -87,7 +87,7 @@ function queryString(value: unknown): string {
         autofocus
         @complete="verify"
       />
-      <p v-if="devHint" class="text-p-sm text-ink-gray-4">Demo — any 6 digits work.</p>
+      <p v-if="devHint" class="text-p-sm text-ink-gray-5">Demo — any 6 digits work.</p>
 
       <p v-if="resent" class="rounded bg-surface-green-2 px-3 py-2 text-p-sm text-ink-green-3">
         A new code has been sent.
