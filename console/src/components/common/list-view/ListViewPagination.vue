@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, TabButtons } from 'frappe-ui'
+import { Button, TabButtons, Skeleton } from 'frappe-ui'
 
 const pageSizeOptions = [10, 20, 50] as const
 
@@ -35,11 +35,7 @@ defineEmits<{
 <template>
   <footer class="flex flex-wrap items-center justify-between gap-2 pt-2">
     <div v-if="showCount" class="min-w-0 shrink-0">
-      <div
-        v-if="countLoading"
-        class="h-3 w-16 animate-pulse rounded bg-surface-gray-2"
-        aria-label="Loading result count"
-      />
+      <Skeleton v-if="countLoading" class="h-3 w-16 rounded" />
       <p v-else class="truncate text-sm text-ink-gray-5 tabular-nums">
         {{ countText }}
       </p>
