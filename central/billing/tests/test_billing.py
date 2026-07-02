@@ -58,7 +58,7 @@ class BillingTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Credit Ledger Entry"):
+		for dt in ("Invoice", "Credit Ledger Entry", "Billing Group"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -253,3 +253,39 @@ class TestMonthlyBillingRun(BillingTestBase):
 		self.assertEqual(
 			frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1
 		)
+
+
+class TestBillingGroupPartitioning(BillingTestBase):
+	def test_grouped_asset_bills_on_a_separate_invoice(self):
+		# self.sub is ungrouped -> consolidated. Add a second asset tagged into a group.
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+
+		grouped_sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		group = frappe.get_doc({"doctype": "Billing Group", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", grouped_sub, "billing_group", group)
+		add_segment(grouped_sub, "Created", 2000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		invoicing.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group", "subtotal"])
+		by_group = {(i.billing_group or None): i for i in invoices}
+		# One consolidated invoice (ungrouped asset) + one for the group.
+		self.assertEqual(len(invoices), 2)
+		self.assertIn(None, by_group)
+		self.assertIn(group, by_group)
+		# Each invoice bills ONLY its own scope's asset — no cross-leak despite same cluster.
+		self.assertEqual(by_group[None].subtotal, 1000.0)
+		self.assertEqual(by_group[group].subtotal, 2000.0)
+		# Both invoices still bill to the same team.
+		self.assertEqual(frappe.db.get_value("Invoice", by_group[group].name, "team"), TEAM)
+
+	def test_no_groups_yields_single_consolidated_invoice(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		invoicing.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group"])
+		self.assertEqual(len(invoices), 1)
+		self.assertIsNone(invoices[0].billing_group or None)

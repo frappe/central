@@ -30,6 +30,36 @@ def _existing_draft(team: str, billing_group: str | None, period_start, period_e
 	)
 
 
+def _resource_group_map(team: str) -> dict:
+	"""asset_id -> billing_group for the team's *grouped* subscriptions.
+
+	Only assets tagged into a Billing Group appear; anything absent is ungrouped
+	and belongs to the team's consolidated invoice."""
+	rows = frappe.get_all(
+		"Subscription", filters={"team": team}, fields=["asset_id", "billing_group"]
+	)
+	return {r.asset_id: r.billing_group for r in rows if r.asset_id and r.billing_group}
+
+
+def _scope_lines(lines: list[dict], team: str, billing_group: str | None) -> list[dict]:
+	"""Keep only the lines belonging to this invoice's Billing-Group scope.
+
+	Each line carries its resource (`subscription_resource`); a resource maps to a
+	group via its subscription. `billing_group` unset = the consolidated scope
+	(every ungrouped asset, plus standalone metered resources that map to no group)."""
+	group_map = _resource_group_map(team)
+	return [l for l in lines if group_map.get(l.get("subscription_resource")) == billing_group]
+
+
+def _team_invoice_groups(team: str) -> list:
+	"""The invoice scopes to draft for a team this period: the consolidated bucket
+	(None) plus one per distinct Billing Group its subscriptions are tagged into."""
+	groups = sorted({
+		bg for bg in frappe.get_all("Subscription", filters={"team": team}, pluck="billing_group") if bg
+	})
+	return [None, *groups]
+
+
 def reconcile_subscription(subscription_doc):
 	"""Refresh the current period's metered figures from the cluster manager if stale.
 
@@ -60,6 +90,9 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	cluster = frappe.db.get_value("Asset", sub.asset_id, "cluster") if sub.asset_id else None
 	lines = compute_line_items(sub.team, cluster, period_start, period_end)
 	lines += metered_line_items(sub.team, cluster, period_start, period_end)
+	# Draft only this subscription's own Billing-Group scope, even if other assets
+	# share its cluster (they bill on their own group's / the consolidated invoice).
+	lines = _scope_lines(lines, sub.team, sub.billing_group)
 	if not lines:
 		return None
 
@@ -140,6 +173,9 @@ def generate_team_invoice(team: str, period_start, period_end, billing_group: st
 	for cluster in clusters:
 		lines += compute_line_items(team, cluster, period_start, period_end)
 		lines += metered_line_items(team, cluster, period_start, period_end)
+	# Restrict to this invoice's scope: a specific Billing Group, or (unset) the
+	# team's consolidated set of ungrouped assets.
+	lines = _scope_lines(lines, team, billing_group)
 	if not lines:
 		return None
 
@@ -187,26 +223,27 @@ def generate_team_invoice(team: str, period_start, period_end, billing_group: st
 
 
 def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> list[str]:
-	"""Phase-1 orchestrator: ONE consolidated draft per team for the period.
+	"""Phase-1 orchestrator: one consolidated draft per team, plus one per Billing Group.
 
-	A team that runs instances across several clusters still gets a single
-	invoice (generate_team_invoice aggregates all its clusters). Billing-Group
-	partitioning (a separate invoice per group) is a later step layered on top of
-	this same per-scope generator; today every team bills as one consolidated
-	invoice (billing_group unset).
+	A team's ungrouped assets bill on a single consolidated invoice (aggregating all
+	its clusters); each Billing Group its assets are tagged into bills on its own
+	separate invoice for the same period. A team with no groups gets just the one
+	consolidated invoice — today's behaviour. All invoices bill to the team.
 	"""
 	teams = sorted({s.team for s in frappe.get_all("Subscription", fields=["team"]) if s.team})
 	created = []
 	for team in teams:
-		if enqueue:
-			frappe.enqueue(
-				"central.billing.revenue.invoicing.generate_team_invoice",
-				team=team,
-				period_start=period_start,
-				period_end=period_end,
-			)
-			continue
-		name = generate_team_invoice(team, period_start, period_end)
-		if name:
-			created.append(name)
+		for billing_group in _team_invoice_groups(team):
+			if enqueue:
+				frappe.enqueue(
+					"central.billing.revenue.invoicing.generate_team_invoice",
+					team=team,
+					period_start=period_start,
+					period_end=period_end,
+					billing_group=billing_group,
+				)
+				continue
+			name = generate_team_invoice(team, period_start, period_end, billing_group=billing_group)
+			if name:
+				created.append(name)
 	return created
