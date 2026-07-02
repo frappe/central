@@ -127,6 +127,27 @@ class AtlasClient:
 			params["cpu_max_cores"] = cpu_max_cores
 		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
 
+	def capacity(self) -> dict:
+		"""Ask this region what it can seat right now: `{available, unmeasured, largest_vm}`.
+
+		Central speaks in resources, never hosts — placement is Atlas's concern
+		(spec/16-central.md). `largest_vm` is the biggest single VM shape placeable now
+		(`{vcpus, memory_megabytes, disk_gigabytes}`, or null when no Active host exists);
+		the create-server menu hides plans that don't fit it. Advisory only — placement's
+		create-time gate is authoritative, since capacity can move between this read and
+		the create."""
+		return self.client().get_api("atlas.atlas.api.provision.capacity")
+
+	def resize_capacity(self, vm: str) -> dict:
+		"""The largest shape `vm` can resize to on its current host: `{available,
+		unmeasured, largest_vm}`. The in-place twin of `capacity()` — the ceiling includes
+		the VM's own footprint (a resize frees it before re-reserving), so the VM can always
+		keep its size or shrink. The create-server menu caps the resize slider to this so an
+		oversized resize can't be requested. Advisory — the host resize path is authoritative."""
+		return self.client().get_api(
+			"atlas.atlas.api.provision.resize_capacity", params={"vm": vm}
+		)
+
 	def central_vms(self, team: str | None = None) -> list[dict]:
 		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one
 		team). One dict per VM: name, team, status, gateway_url."""

@@ -112,6 +112,28 @@ export interface ProvisionablePlans {
   rate_card: RateCard
   /** Optimisation-profile bounds the slider snaps + clamps to (#81). */
   profiles: Profile[]
+  /** The region's live provisioning capacity — narrows the menu and caps the slider. */
+  capacity: Capacity
+}
+
+/** The largest single VM a region can seat right now (Atlas capacity API). */
+export interface LargestVm {
+  vcpus: number
+  memory_megabytes: number
+  disk_gigabytes: number
+}
+
+/** Live-capacity summary for the create-server menu (get_eligible_plans). */
+export interface Capacity {
+  /** Whether live capacity narrowed this menu (Atlas Instance.validate_capacity). */
+  gated: boolean
+  /** Whether the region can seat any new VM right now — False → show "region is full". */
+  available: boolean
+  /** The winning host has an unreported axis → `largest_vm` is sentinel, size unknown. */
+  unmeasured: boolean
+  /** The biggest placeable shape — the composed slider's hard ceiling. Null when ungated
+   *  or when the region has no room at all. */
+  largest_vm: LargestVm | null
 }
 
 /** The per-resource rate card: `{ Compute: { rate, unit }, … }`. */

@@ -37,6 +37,11 @@ class TestEligibilityComposed(IntegrationTestCase):
 		frappe.set_user("Administrator")  # a prior test may have left a customer user
 		ensure_atlas_instance(CLUSTER)
 		ensure_atlas_instance(OTHER)
+		# This suite covers the composed rate card / bounds, not live capacity — keep the
+		# capacity gate off so get_eligible_plans doesn't reach for the region's Atlas
+		# (its own coverage lives in test_capacity_filter.py).
+		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
+		frappe.db.set_value("Atlas Instance", OTHER, "validate_capacity", 0)
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM, currency="INR")
 		set_team_tier(TEAM, max_spend=100000)

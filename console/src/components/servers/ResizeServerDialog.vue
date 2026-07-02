@@ -48,10 +48,8 @@ const subscription = computed(() => configCall.data?.subscription ?? null)
 
 // The region's menu, with this server's own spend freed back into the headroom so it
 // can grow into its own budget (exclude_subscription).
-const { groups, classes, plans, rateCard, profiles, available, currency, loading: plansLoading } = usePlans(
-  region,
-  subscription,
-)
+const { groups, classes, plans, rateCard, profiles, available, currency, capacity, loading: plansLoading } =
+  usePlans(region, subscription)
 
 const open = computed({
   get: () => !!props.server,
@@ -227,6 +225,7 @@ async function confirm() {
               :rate-card="rateCard"
               :available="available ?? 0"
               :currency="currency ?? 'USD'"
+              :capacity="capacity"
               :initial="initialFor(designableProfile(tab.label))"
               v-model:selected-plan="selectedPlan"
               v-model:composed-config="composedConfig"
@@ -240,6 +239,7 @@ async function confirm() {
           :rate-card="rateCard"
           :available="available ?? 0"
           :currency="currency ?? 'USD'"
+          :capacity="capacity"
           :initial="initialFor(flatProfile)"
           v-model:selected-plan="selectedPlan"
           v-model:composed-config="composedConfig"
