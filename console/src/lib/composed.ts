@@ -71,11 +71,13 @@ function largestWithin(ladder: number[], ceiling: number): number {
   return best
 }
 
-/** Whether live capacity actually bounds the slider: gated, measured, and with a known
- *  shape. Ungated / unmeasured (sentinel numbers) → no practical limit here; the
- *  create-time gate on Atlas still decides. */
+/** Whether live capacity bounds the slider at all: gated, with a known shape. We clamp by
+ *  the raw `largest_vm` numbers — the same thing the backend preset filter (`_plan_fits`)
+ *  does — so the slider and the preset list agree. An axis the agent hasn't measured comes
+ *  back as a huge sentinel, which naturally imposes no limit on that axis, while a measured
+ *  axis (e.g. a slug-catalogued CPU) still clamps; hence `unmeasured` is NOT a bail-out. */
 export function capacityLimits(capacity: Capacity | null | undefined): boolean {
-  return !!(capacity?.gated && !capacity.unmeasured && capacity.largest_vm)
+  return !!(capacity?.gated && capacity.largest_vm)
 }
 
 /** The largest vCPU rung the region can physically seat: bounded by both the host's free
