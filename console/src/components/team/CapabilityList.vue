@@ -37,5 +37,5 @@ const groups = computed(() => groupCapabilitiesByPlane(props.palette, props.caps
       </ul>
     </section>
   </div>
-  <p v-else class="text-p-sm text-ink-gray-4">This role grants no capabilities.</p>
+  <p v-else class="text-p-sm text-ink-gray-5">This role grants no capabilities.</p>
 </template>

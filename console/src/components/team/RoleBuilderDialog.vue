@@ -78,7 +78,7 @@ async function submit() {
 
         <div>
           <p class="mb-1 text-p-sm font-medium text-ink-gray-7">Capabilities</p>
-          <p class="mb-3 text-xs text-ink-gray-4">
+          <p class="mb-3 text-xs text-ink-gray-5">
             Pick what this role can do. Dependencies (like “view” for an “act on”) are added automatically.
           </p>
           <div class="max-h-[50vh] space-y-4 overflow-y-auto">

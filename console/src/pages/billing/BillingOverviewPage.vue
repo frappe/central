@@ -38,9 +38,9 @@ const showWalletHistory = ref(false)
                first — money-moving actions stay gated on it. -->
           <div
             v-if="!complete"
-            class="flex flex-col gap-3 rounded-lg border border-outline-amber-1 bg-surface-amber-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+            class="flex flex-col gap-3 rounded-lg border border-outline-amber-2 bg-surface-amber-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
           >
-            <p class="text-p-sm text-ink-amber-3">
+            <p class="text-p-sm text-ink-amber-7">
               Add your billing details (currency, legal name, and address) to add credit, save a
               payment method, and provision servers.
             </p>

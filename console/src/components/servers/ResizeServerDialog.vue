@@ -188,8 +188,8 @@ async function confirm() {
 </script>
 
 <template>
-  <Dialog v-model="open" :options="{ title: 'Resize server', size: '2xl' }">
-    <template #body-content>
+  <Dialog v-model="open" title="Resize server" size="2xl">
+    <template #default>
       <!-- Resize runs on the host and can take a while for a data-heavy server, so
            show a clear in-progress state and hold the dialog open until it lands. -->
       <div v-if="resizeCall.loading" class="flex flex-col items-center gap-3 py-10 text-center">

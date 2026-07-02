@@ -85,7 +85,7 @@ onUnmounted(() => clearTimeout(timer))
     <template v-else-if="isFailed">
       <h1 class="text-2xl font-semibold text-ink-gray-9">Setup didn't finish</h1>
       <p class="mt-2 text-base text-ink-gray-5">
-        Something went wrong provisioning your site. You can try a different name.
+        We couldn't finish setting up your site. Pick a different name and try again.
       </p>
       <RouterLink to="/onboarding/site" class="mt-8 block">
         <Button variant="solid" size="md" class="w-full">Try again</Button>

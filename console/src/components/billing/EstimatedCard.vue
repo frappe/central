@@ -89,7 +89,7 @@ async function submitAlert(): Promise<void> {
         <template v-if="billsOn">Bills {{ billsOn }}</template>
         <template v-if="daysRemaining != null"> · {{ daysRemaining }} days left</template>
       </p>
-      <p v-if="spendAlert > 0 && !editingAlert" class="mt-1 text-p-sm text-ink-gray-4">
+      <p v-if="spendAlert > 0 && !editingAlert" class="mt-1 text-p-sm text-ink-gray-5">
         Alert above {{ money(spendAlert, currency) }}
       </p>
     </template>

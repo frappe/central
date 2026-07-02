@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="TData extends object">
 import { computed, h, ref } from 'vue'
-import { Button, Checkbox, Combobox, TextInput } from 'frappe-ui'
+import { Button, Checkbox, Combobox, TextInput, Skeleton } from 'frappe-ui'
 import {
   FlexRender,
   getCoreRowModel,
@@ -461,10 +461,7 @@ label="Clear"
             class="grid h-10 items-center gap-4 border-b border-outline-gray-1 px-2"
             :style="{ gridTemplateColumns }">
             <div v-for="column in visibleColumnCount" :key="column" role="cell" class="min-w-0">
-              <div
-                class="h-3 animate-pulse rounded bg-surface-gray-2"
-                :class="column === 1 ? 'w-2/3' : 'w-1/2'"
-              />
+              <Skeleton class="h-3 rounded" :class="column === 1 ? 'w-2/3' : 'w-1/2'" />
             </div>
           </div>
         </div>

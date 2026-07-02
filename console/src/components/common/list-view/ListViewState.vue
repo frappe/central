@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 const props = defineProps<{
   kind: 'empty' | 'filtered' | 'error'
@@ -20,31 +21,15 @@ const icons = {
 </script>
 
 <template>
-  <div class="flex min-h-64 flex-col items-center justify-center px-6 py-12 text-center">
-    <div
-      class="flex size-10 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-5"
-    >
-      <span :class="[icons[props.kind], 'size-4']" aria-hidden="true" />
-    </div>
-    <p class="mt-4 text-base font-medium text-ink-gray-8">{{ title }}</p>
-    <p v-if="description" class="mt-1 max-w-sm text-p-sm text-ink-gray-5">
-      {{ description }}
-    </p>
-    <Button
-      v-if="kind === 'error'"
-      class="mt-4"
-      label="Try again"
-      icon-left="lucide-refresh-cw"
-      @click="$emit('retry')"
-    />
-    <Button
-      v-else-if="kind === 'filtered'"
-      class="mt-4"
-label="Clear"
-      @click="$emit('clear')"
-    />
-    <div v-else-if="$slots.action" class="mt-4">
+  <EmptyState :icon="icons[props.kind]" :title="title" :description="description">
+    <template v-if="kind === 'error'" #action>
+      <Button label="Try again" icon-left="lucide-refresh-cw" @click="$emit('retry')" />
+    </template>
+    <template v-else-if="kind === 'filtered'" #action>
+      <Button label="Clear" @click="$emit('clear')" />
+    </template>
+    <template v-else-if="$slots.action" #action>
       <slot name="action" />
-    </div>
-  </div>
+    </template>
+  </EmptyState>
 </template>

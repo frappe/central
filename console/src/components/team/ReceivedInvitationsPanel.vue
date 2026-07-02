@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Avatar, Button } from 'frappe-ui'
+import { Avatar, Button, Skeleton } from 'frappe-ui'
 import ListViewState from '@/components/common/list-view/ListViewState.vue'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 import { formatDate } from '@/lib/format'
@@ -28,7 +28,7 @@ const focusedMissing = computed(
   <div class="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
     <div class="mx-auto max-w-2xl space-y-4">
       <div v-if="loading" class="space-y-3">
-        <div v-for="n in 2" :key="n" class="h-24 animate-pulse rounded-lg bg-surface-gray-2" />
+        <Skeleton v-for="n in 2" :key="n" class="h-24 rounded-lg" />
       </div>
 
       <ListViewState
@@ -58,7 +58,7 @@ const focusedMissing = computed(
               Invited as <span class="font-medium text-ink-gray-7">{{ invite.role }}</span>
               <template v-if="invite.invited_by"> by {{ invite.invited_by }}</template>
             </p>
-            <p v-if="invite.expires_on" class="mt-1 text-xs text-ink-gray-4">
+            <p v-if="invite.expires_on" class="mt-1 text-xs text-ink-gray-5">
               Expires {{ formatDate(invite.expires_on) }}
             </p>
           </div>

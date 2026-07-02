@@ -86,7 +86,7 @@ async function onDelete() {
               @click="rename(name.trim())"
             />
           </div>
-          <p v-if="!canEditTeam" class="mt-2 text-xs text-ink-gray-4">Requires the Admin or Owner role.</p>
+          <p v-if="!canEditTeam" class="mt-2 text-xs text-ink-gray-5">Requires the Admin or Owner role.</p>
         </section>
 
         <!-- Transfer ownership (owner only) -->
@@ -109,7 +109,7 @@ async function onDelete() {
             />
             <Button label="Transfer" :disabled="!newOwner" @click="confirmTransfer = true" />
           </div>
-          <p v-if="!transferTargets.length" class="mt-2 text-xs text-ink-gray-4">
+          <p v-if="!transferTargets.length" class="mt-2 text-xs text-ink-gray-5">
             Add another active member first.
           </p>
         </section>

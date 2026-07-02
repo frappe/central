@@ -202,8 +202,8 @@ _MEMBER_ROSTER = [
 ]
 
 # One team-scoped CUSTOM role, to exercise the custom-role path end to end: read
-# billing and operate (start/stop) VMs, but not manage members or terminate.
-_CUSTOM_ROLE = ("Finance & Ops", ["billing:view", "billing:manage", "vm:view", "vm:start", "vm:stop"])
+# billing and operate servers, but not manage members or terminate.
+_CUSTOM_ROLE = ("Finance & Ops", ["billing:view", "billing:manage", "server:view", "server:power"])
 
 
 def _team_members(team, slug):

@@ -186,7 +186,7 @@ watch(open, (isOpen) => {
         >
           <div>
             <p class="text-sm text-ink-gray-8">UPI Autopay</p>
-            <p v-if="upiBlocked" class="text-p-sm text-ink-amber-3">
+            <p v-if="upiBlocked" class="text-p-sm text-ink-amber-7">
               {{ options.data.upi_block_reason || 'Not available for your account yet.' }}
             </p>
             <p v-else class="text-p-sm text-ink-gray-5">
