@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { Avatar, Button, Skeleton } from 'frappe-ui'
+import EmptyState from '@/components/common/EmptyState.vue'
 import ListViewState from '@/components/common/list-view/ListViewState.vue'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 import { formatDate } from '@/lib/format'
@@ -25,26 +26,25 @@ const focusedMissing = computed(
 </script>
 
 <template>
-  <div class="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-    <div class="mx-auto max-w-2xl space-y-4">
-      <div v-if="loading" class="space-y-3">
-        <Skeleton v-for="n in 2" :key="n" class="h-24 rounded-lg" />
-      </div>
+  <div class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+    <div v-if="loading" class="mx-auto max-w-2xl space-y-3">
+      <Skeleton v-for="n in 2" :key="n" class="h-24 rounded-lg" />
+    </div>
 
-      <ListViewState
-        v-else-if="focusedMissing"
-        kind="empty"
-        title="This invitation isn't available"
-        description="It may have been accepted, declined, revoked, expired, or sent to a different account."
-      />
+    <ListViewState
+      v-else-if="focusedMissing"
+      kind="empty"
+      title="This invitation isn't available"
+      description="It may have been accepted, declined, revoked, expired, or sent to a different account."
+    />
 
-      <ListViewState
-        v-else-if="!shown.length"
-        kind="empty"
-        title="No pending invitations"
-        description="When someone invites you to a team, it shows up here."
-      />
+    <EmptyState
+      v-else-if="!shown.length"
+      title="No invitations"
+      description="Invitations sent to you will appear here."
+    />
 
+    <div v-else class="mx-auto max-w-2xl space-y-4">
       <article
         v-for="invite in shown"
         :key="invite.name"
