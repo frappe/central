@@ -1,6 +1,8 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime
@@ -93,3 +95,13 @@ class IntegrationTestPilotCredential(IntegrationTestCase):
 		new = PilotCredential.rotate_by_id("pilot-1")
 		self.assertIsNone(PilotCredential.verify(old))
 		self.assertIsNotNone(PilotCredential.verify(new))
+
+	def test_verify_rejects_token_rotated_between_lookup_and_load(self):
+		"""TOCTOU guard: if the row rotates to a new token between the hash lookup and the
+		doc load, the superseded token is rejected — not admitted one extra time."""
+		old = self.mint()
+		frappe.get_doc("Pilot Credential", "pilot-1").rotate()  # row now holds a new hash
+		# Force the lookup to resolve the name as if it matched before the rotate committed;
+		# the post-load hash re-check must still reject the old token.
+		with patch("frappe.db.get_value", return_value="pilot-1"):
+			self.assertIsNone(PilotCredential.verify(old))

@@ -188,6 +188,15 @@ class AtlasClient:
 			params["region"] = region
 		params.update(self._pilot_credential(team))
 
+		# Durability handoff: the token is about to leave for Atlas → the bench's
+		# common_site_config. Commit it BEFORE the call so a rollback of the enclosing
+		# request (e.g. the Site-mirror save right after this returns) can't wipe the
+		# credential and strand the bench with a token Central can't verify — a permanent
+		# 401 with no self-heal. The inverse failure is benign: if the Atlas call fails,
+		# the committed credential is simply unused (no one holds the plaintext), which we
+		# deliberately prefer over revoking here — a lost response could mean Atlas *did*
+		# provision, and revoking would then be what strands the bench.
+		frappe.db.commit()
 		return self.client().post_api("atlas.atlas.api.site.create_site", params=params)
 
 	def _pilot_credential(self, team: str) -> dict:

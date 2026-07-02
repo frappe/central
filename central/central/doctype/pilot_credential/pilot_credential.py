@@ -54,14 +54,19 @@ class PilotCredential(Document):
 	def verify(cls, token: str) -> "PilotCredential | None":
 		"""Resolve a bearer token to its usable credential, stamping last_used_at. The
 		auth surface turns a None here into a 401."""
-		name = frappe.db.get_value(cls._DOCTYPE_NAME, {"token_hash": cls._hash(token)}) if token else None
+		token_hash = cls._hash(token) if token else None
+		name = frappe.db.get_value(cls._DOCTYPE_NAME, {"token_hash": token_hash}) if token_hash else None
 
 		if not name:
 			return None
 
 		doc = frappe.get_doc(cls._DOCTYPE_NAME, name)
 
-		if not doc.is_usable():
+		# Re-check the hash against the freshly loaded row. The lookup and this load are two
+		# reads; under READ COMMITTED a rotate() committing a new token_hash between them
+		# would otherwise admit the superseded token once (the name still resolves, and
+		# is_usable() only checks status/expiry). Reject if the row no longer holds it.
+		if doc.token_hash != token_hash or not doc.is_usable():
 			return None
 
 		doc.db_set("last_used_at", frappe.utils.now_datetime(), update_modified=False)

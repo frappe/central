@@ -38,6 +38,11 @@ class TestPilotCredentialDelivery(IntegrationTestCase):
 					"api_secret": "s",
 				}
 			).insert()
+		# create_site commits the credential before handing it to Atlas (durability). Stub
+		# the commit so it can't break test isolation, and so we can assert it fires.
+		commit = patch("frappe.db.commit")
+		self.mock_commit = commit.start()
+		self.addCleanup(commit.stop)
 
 	def create_site_capturing_params(self) -> dict:
 		"""Run AtlasClient.create_site with a stubbed transport; return the outbound params."""
@@ -67,6 +72,21 @@ class TestPilotCredentialDelivery(IntegrationTestCase):
 		with patch.object(AtlasClient, "client", return_value=transport):
 			result = AtlasClient.for_region(self.region).create_site(team=self.team, subdomain="acme")
 		self.assertNotIn("central_auth_token", result)
+
+	def test_credential_is_committed_before_the_atlas_call(self):
+		"""Durability: the credential is committed BEFORE the token is handed to Atlas, so a
+		rollback of the enclosing request can't strand the bench with an unverifiable token."""
+		order: list[str] = []
+		self.mock_commit.side_effect = lambda: order.append("commit")
+		transport = MagicMock()
+		transport.post_api.side_effect = lambda *a, **k: order.append("post_api") or {
+			"name": "acme.blr.test",
+			"status": "Pending",
+			"team": self.team,
+		}
+		with patch.object(AtlasClient, "client", return_value=transport):
+			AtlasClient.for_region(self.region).create_site(team=self.team, subdomain="acme")
+		self.assertEqual(order, ["commit", "post_api"])
 
 	def test_vm_created_event_links_credential_to_its_asset(self):
 		"""Once Atlas echoes pilot_credential_id on the VM event, the credential binds to
