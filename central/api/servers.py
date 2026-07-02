@@ -212,10 +212,17 @@ def _run_command(action: str, capability: str, atlas_method: str, team: str | No
 		frappe.throw(_("resource_id is required."), frappe.ValidationError)
 
 	# The asset must be in this team's mirror — also how we route to its Atlas.
-	cluster = frappe.db.get_value("Asset", {"resource_id": resource_id, "team": team}, "cluster")
-	if not cluster:
+	asset = frappe.db.get_value(
+		"Asset", {"resource_id": resource_id, "team": team}, ["cluster", "resize_in_progress"], as_dict=True
+	)
+	if not asset:
 		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
 
-	instance = frappe.get_doc("Atlas Instance", cluster)
+	# A resize power-cycles the VM in the background; a manual start/stop mid-flight would
+	# race it. Terminate is still allowed — the user may want to abandon the machine.
+	if asset.resize_in_progress and action in ("start", "stop"):
+		frappe.throw(_("This server is resizing — you can {0} it once that finishes.").format(action))
+
+	instance = frappe.get_doc("Atlas Instance", asset.cluster)
 	task = AtlasClient(instance).vm_action(resource_id, atlas_method)
 	return {"resource_id": resource_id, "task": task}

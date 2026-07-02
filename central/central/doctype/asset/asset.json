@@ -18,6 +18,7 @@
   "ipv6_address",
   "public_ipv4",
   "gateway_url",
+  "resize_in_progress",
   "last_synced_at",
   "last_event_at"
  ],
@@ -113,6 +114,14 @@
    "fieldtype": "Data",
    "label": "Gateway URL",
    "options": "URL"
+  },
+  {
+   "default": "0",
+   "description": "Set while Central is applying a hardware resize (stop→resize→start) to the real VM — the slow Firecracker operation runs in a background job. The console shows a \"Resizing\" state and blocks power actions while this is on; the job clears it on completion.",
+   "fieldname": "resize_in_progress",
+   "fieldtype": "Check",
+   "label": "Resize In Progress",
+   "read_only": 1
   },
   {
    "description": "When the last reconcile (pull) refreshed this row.",

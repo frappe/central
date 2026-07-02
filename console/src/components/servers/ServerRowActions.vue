@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
-import { canStart, canStop, isTerminated } from '@/lib/status'
+import { canStart, canStop, isResizing, isTerminated } from '@/lib/status'
 import type { AssetRow } from '@/composables/useServers'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
@@ -35,20 +35,29 @@ interface ActionItem {
 
 const options = computed(() => {
   const items: ActionItem[] = []
+  // Mid-resize the VM is power-cycling in the background: power + resize actions are
+  // blocked (the API rejects them too) until the reshape job clears the flag.
+  const resizing = isResizing(props.server)
   if (props.canOpen)
     items.push({
       label: 'Open',
       icon: 'lucide-external-link',
-      disabled: props.server.status !== 'Running' || !props.server.gateway_url,
+      disabled: resizing || props.server.status !== 'Running' || !props.server.gateway_url,
       onClick: () => emit('open', props.server),
     })
   if (props.canPower && canStart(props.server.status))
-    items.push({ label: 'Start', icon: 'lucide-play', onClick: () => emit('start', props.server) })
+    items.push({ label: 'Start', icon: 'lucide-play', disabled: resizing, onClick: () => emit('start', props.server) })
   if (props.canPower && canStop(props.server.status))
-    items.push({ label: 'Stop', icon: 'lucide-square', onClick: () => emit('stop', props.server) })
-  // Resize a custom (composed) config; the dialog no-ops for a preset server.
+    items.push({ label: 'Stop', icon: 'lucide-square', disabled: resizing, onClick: () => emit('stop', props.server) })
+  // Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
+  // custom config.
   if (props.canPower && !isTerminated(props.server.status))
-    items.push({ label: 'Resize', icon: 'lucide-sliders-horizontal', onClick: () => emit('resize', props.server) })
+    items.push({
+      label: 'Resize',
+      icon: 'lucide-sliders-horizontal',
+      disabled: resizing,
+      onClick: () => emit('resize', props.server),
+    })
   if (props.canTerminate && !isTerminated(props.server.status))
     items.push({
       label: 'Terminate',

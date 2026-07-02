@@ -40,7 +40,9 @@ _SUB_CATEGORY_ORDER = ["General", "CPU Optimised", "Memory Optimised", "Storage 
 
 
 @frappe.whitelist()
-def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> dict:
+def get_eligible_plans(
+	cluster: str | None = None, team: str | None = None, exclude_subscription: str | None = None
+) -> dict:
 	"""Active plans the team can provision on `cluster`, grouped by sub-category.
 
 	`plans` is a `{sub_category: [rows]}` map so the client can render one tab per
@@ -58,12 +60,16 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 	    (`max_spend`) minus the run-rate of its already-running resources. A team
 	    on a 4000 cap already running 1000 only sees plans priced 3000 or less.
 	    An untiered team has a 0 cap and so no headroom.
+
+	`exclude_subscription` drops one subscription from the run-rate — passed when
+	resizing, so the server being resized frees its own spend back into the headroom
+	the new size (preset or custom) is measured against.
 	"""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
 	caps = get_team_caps(team)
 	spend_cap = frappe.utils.flt(caps.max_spend)
-	current_spend = _current_run_rate(team)
+	current_spend = _current_run_rate(team, exclude=exclude_subscription)
 	available = max(0.0, frappe.utils.flt(spend_cap - current_spend))
 	cluster = (cluster or "").strip() or None
 
@@ -187,37 +193,56 @@ def provision_composed_config(
 
 @frappe.whitelist()
 def get_composed_config(asset: str, team: str | None = None) -> dict:
-	"""The composed config running on `asset` (for the resize slider, #84): its
-	subscription, optimisation profile, current composition, and the headroom a resize
-	has — the cap minus the team's *other* run-rate, so the running config's own spend
-	is available to it. Returns `{composed: False}` for a preset/legacy server."""
+	"""The config running on `asset`, pre-filling the resize slider (#84): its
+	subscription, current shape, and the resize headroom — the cap minus the team's
+	*other* run-rate, so the running config's own spend is available to it.
+
+	Works for both a composed server (its exact composition + optimisation profile)
+	and a preset one, whose shape is read off the mirrored VM; resizing a preset
+	slides it onto a custom config, so `sub_category` is None and the slider defaults
+	to the region's first profile. `{resizable: False}` when there's no live
+	subscription to resize."""
 	team = _resolve_team(team)
 	sub = frappe.db.get_value(
 		"Subscription",
-		{"asset_id": asset, "team": team, "pricing_mode": "Composed"},
-		["name", "sub_category"],
+		{"asset_id": asset, "team": team},
+		["name", "pricing_mode", "sub_category", "plan"],
 		as_dict=True,
 	)
 	if not sub:
-		return {"composed": False}
+		return {"resizable": False, "composed": False}
 
 	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
 	from central.billing.catalog.subscriptions import team_run_rate
 
-	includes = frappe.get_all(
-		"Plan Includes",
-		filters={"parenttype": "Subscription", "parent": sub.name},
-		fields=["resource_type", "quantity"],
-	)
-	qty = composition_quantities(includes)
+	composed = sub.pricing_mode == "Composed"
+	if composed:
+		includes = frappe.get_all(
+			"Plan Includes",
+			filters={"parenttype": "Subscription", "parent": sub.name},
+			fields=["resource_type", "quantity"],
+		)
+		qty = composition_quantities(includes)
+		vcpus, memory_gb, disk_gb = qty.get(COMPUTE, 0), qty.get(MEMORY, 0), qty.get(DISK, 0)
+	else:
+		# A preset carries no composition — its shape lives on the mirrored VM.
+		shape = frappe.db.get_value(
+			"Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
+		) or frappe._dict()
+		vcpus = shape.vcpus or 0
+		memory_gb = (shape.memory_megabytes or 0) / 1024
+		disk_gb = shape.disk_gigabytes or 0
+
 	cap = frappe.utils.flt(get_team_caps(team).max_spend)
 	return {
-		"composed": True,
+		"resizable": True,
+		"composed": composed,
 		"subscription": sub.name,
 		"sub_category": sub.sub_category,
-		"vcpus": qty.get(COMPUTE, 0),
-		"memory_gb": qty.get(MEMORY, 0),
-		"disk_gb": qty.get(DISK, 0),
+		"plan": sub.plan,  # the current preset, so the picker can pre-select it
+		"vcpus": vcpus,
+		"memory_gb": memory_gb,
+		"disk_gb": disk_gb,
 		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
 	}
 
@@ -241,6 +266,31 @@ def resize_composed_config(
 	resize_composed_subscription(subscription, includes, sub_category)
 	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
 	return {"subscription": subscription, "resized": after > before}
+
+
+@frappe.whitelist(methods=["POST"])
+def resize_server(
+	subscription: str,
+	plan: str | None = None,
+	includes: list | str | None = None,
+	sub_category: str | None = None,
+) -> dict:
+	"""Resize a server to a preset bundle (`plan`) or a custom shape (`includes` +
+	`sub_category`) — the console's single Resize action (#84). Validates synchronously,
+	then hands the slow VM reshape (stop→resize→start on the host) plus the current-rate
+	re-lock to a background job, marking the server "Resizing" for the console meanwhile.
+	Returns `{queued, resized}`: `queued` when a live VM is being reshaped in the
+	background, `resized` False only for a no-op or non-resizable config."""
+	team = frappe.db.get_value("Subscription", subscription, "team")
+	if not team:
+		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
+	authz.require_capability(team, authz.MANAGE)
+	from central.billing.catalog.subscriptions import begin_resize
+
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+	result = begin_resize(subscription, plan=plan, includes=includes, sub_category=sub_category)
+	return {"subscription": subscription, **result}
 
 
 def _rates_by_plan(names: list[str]) -> dict[str, list]:
@@ -286,13 +336,14 @@ def _group_by_sub_category(rows: list[dict]) -> dict[str, list]:
 	return {c: grouped[c] for c in [*known, *extra]}
 
 
-def _current_run_rate(team: str) -> float:
+def _current_run_rate(team: str, exclude: str | None = None) -> float:
 	"""The team's committed monthly run-rate: the summed open-segment locked rate of
 	its subscriptions, off the Subscription Change ledger (ADR 0010). Counts presets and
-	composed configs alike; a team bills in one currency, so the rates are comparable."""
+	composed configs alike; a team bills in one currency, so the rates are comparable.
+	`exclude` drops one subscription — used by resize to free the server's own spend."""
 	from central.billing.catalog.subscriptions import team_run_rate
 
-	return team_run_rate(team)
+	return team_run_rate(team, exclude=exclude)
 
 
 def _plan_row(plan, currency: str, cluster: str | None, rate, includes) -> dict:

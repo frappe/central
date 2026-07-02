@@ -32,6 +32,8 @@ export interface Asset{
 	public_ipv4?: string
 	/**	Gateway URL : Data - The bench gateway Central deep-links into (VM leaf). Reserved — empty until the bench-gateway layer reports it.	*/
 	gateway_url?: string
+	/**	Resize In Progress : Check - Set while Central applies a hardware resize to the real VM in a background job.	*/
+	resize_in_progress?: 0 | 1
 	/**	Last Synced At : Datetime - When the last reconcile (pull) refreshed this row.	*/
 	last_synced_at?: string
 	/**	Last Event At : Datetime - occurred_at of the last applied Atlas event. Used for last-writer-wins so a stale or duplicate push can't overwrite newer state.	*/

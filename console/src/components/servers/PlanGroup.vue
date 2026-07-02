@@ -16,6 +16,8 @@ const props = defineProps<{
   rateCard: RateCard
   available: number
   currency: string
+  // Pre-fill the custom designer with a running config's shape (resize, #82/#84).
+  initial?: ComposedConfig | null
 }>()
 
 const selectedPlan = defineModel<string | null>('selectedPlan', { required: true })
@@ -62,7 +64,14 @@ const matchingPreset = computed<Plan | null>(() => {
           : 'border-outline-gray-2 hover:border-outline-gray-3'
       "
     >
-      <input v-model="selectedPlan" type="radio" :value="plan.plan" class="accent-ink-gray-9" />
+      <!-- @tailwindcss/forms drives the checked fill from `currentColor`, so the
+           espresso ink token goes on `text-`, not `accent-` (which it ignores). -->
+      <input
+        v-model="selectedPlan"
+        type="radio"
+        :value="plan.plan"
+        class="text-ink-gray-9 focus:ring-outline-gray-3"
+      />
       <span class="font-medium text-ink-gray-9">{{ plan.title }}</span>
       <span class="text-p-sm text-ink-gray-5">{{ planSpecs(plan) }}</span>
       <span class="ml-auto font-medium text-ink-gray-9">{{ planPrice(plan) }}</span>
@@ -75,7 +84,12 @@ const matchingPreset = computed<Plan | null>(() => {
       :class="isCustom ? 'border-outline-gray-4' : 'border-outline-gray-2 hover:border-outline-gray-3'"
     >
       <label class="flex cursor-pointer items-center gap-3 px-4 py-3">
-        <input v-model="selectedPlan" type="radio" :value="customKey" class="accent-ink-gray-9" />
+        <input
+          v-model="selectedPlan"
+          type="radio"
+          :value="customKey"
+          class="text-ink-gray-9 focus:ring-outline-gray-3"
+        />
         <span class="font-medium text-ink-gray-9">Custom</span>
         <span class="lucide-sliders-horizontal size-4 text-ink-gray-5" aria-hidden="true" />
         <span v-if="isCustom && customSpec" class="text-p-sm text-ink-gray-5">{{ customSpec }}</span>
@@ -96,6 +110,7 @@ const matchingPreset = computed<Plan | null>(() => {
               :profiles="[profile]"
               :rate-card="rateCard"
               :available="available"
+              :initial="initial"
             />
             <p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">
               The <span class="font-medium text-ink-gray-7">{{ matchingPreset.title }}</span> preset offers this

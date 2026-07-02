@@ -41,7 +41,8 @@ async function confirmTerminate(server: AssetRow) {
   await terminate(server)
 }
 
-// Resize a running config with the design-your-own slider (#84).
+// Resize a server (preset or custom) — the backend power-cycles the VM as needed, so
+// this is one action with no separate stop step.
 const pendingResize = ref<AssetRow | null>(null)
 </script>
 

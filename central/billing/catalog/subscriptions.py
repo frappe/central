@@ -241,6 +241,127 @@ def change_plan(subscription: str, new_plan: str, changed_by: str | None = None)
 	return doc
 
 
+def begin_resize(
+	subscription: str,
+	*,
+	plan: str | None = None,
+	includes: list | None = None,
+	sub_category: str | None = None,
+	changed_by: str | None = None,
+) -> dict:
+	"""Console's resize front door (#84). A real Firecracker resize is slow — the host
+	stops the VM, rewrites its machine config, grows the rootfs, and starts it again — so
+	we never run it inline in the request. Instead:
+
+	  1. validate synchronously, so the user still gets the common errors (disk shrink,
+	     same-config no-op) immediately;
+	  2. mark the VM `resize_in_progress` — the Console renders a live "Resizing" state
+	     and blocks power actions off this flag (see central/api/servers.py);
+	  3. hand the reshape + billing re-lock to a background job, and return at once.
+
+	A resize with no live VM to reshape (never provisioned) has nothing slow to defer, so
+	it re-locks inline. Returns `{queued, resized}`: `resized` is False only for a no-op
+	or a non-resizable config."""
+	doc = frappe.get_doc("Subscription", subscription)
+	if not _is_resizable(doc):
+		return {"queued": False, "resized": False}
+	asset = (
+		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status", "resize_in_progress"], as_dict=True)
+		if doc.asset_id
+		else None
+	)
+	if asset and asset.resize_in_progress:
+		frappe.throw(frappe._("This server is already resizing — wait for it to finish."))
+
+	shape = _plan_resize(doc, asset, plan, includes, sub_category)
+	if shape is None:
+		return {"queued": False, "resized": False}  # same config — nothing to do
+
+	# No live VM to reshape → re-lock the contract inline (nothing slow to defer).
+	if not asset or asset.status not in ("Running", "Paused", "Stopped"):
+		_apply_resize(subscription, plan=plan, includes=includes, sub_category=sub_category, changed_by=changed_by)
+		return {"queued": False, "resized": True}
+
+	# Slow path: flag the VM Resizing (pushed live to the Console) and defer the reshape.
+	from central.central.doctype.asset.asset import Asset
+
+	Asset.mark_resizing(doc.asset_id, True)
+	frappe.enqueue(
+		_apply_resize,
+		queue="long",
+		timeout=600,
+		enqueue_after_commit=True,
+		subscription=subscription,
+		plan=plan,
+		includes=includes,
+		sub_category=sub_category,
+		changed_by=changed_by,
+		asset_id=doc.asset_id,
+	)
+	return {"queued": True, "resized": True}
+
+
+def _plan_resize(doc, asset, plan, includes, sub_category) -> dict | None:
+	"""Decide a resize synchronously: return the target VM shape (vcpus/memory/disk), or
+	None when it's a no-op (same config). Runs the VM-free checks — no-op detection,
+	headroom, and the disk-shrink guard — so the user gets these errors immediately,
+	before anything is queued; the worker re-runs them authoritatively when it applies
+	the resize. (Composition validity is left to the worker.)"""
+	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	cluster = asset.cluster if asset else None
+	if plan:
+		if doc.pricing_mode == "Preset" and doc.plan == plan:
+			return None
+		shape = _plan_shape(plan)
+		new_rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
+	else:
+		from central.billing.catalog.composition import composition_quantities
+		from central.billing.catalog.pricing import resolve_config_rate
+
+		rows = [dict(r) for r in (includes or [])]
+		if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(rows):
+			return None
+		shape = _asset_shape(rows)
+		new_rate = resolve_config_rate(rows, currency, cluster)
+	enforce_headroom(doc.team, new_rate, exclude=doc.name)
+	if asset and asset.status in ("Running", "Paused", "Stopped"):
+		_guard_disk_shrink(doc.asset_id, shape)
+	return shape
+
+
+def _apply_resize(
+	subscription: str,
+	*,
+	plan: str | None = None,
+	includes: list | None = None,
+	sub_category: str | None = None,
+	changed_by: str | None = None,
+	asset_id: str | None = None,
+) -> None:
+	"""Apply a resize through the existing synchronous functions — reshape the real VM
+	(slow) then re-lock billing. Runs in a background job for a live VM (so the request
+	returns fast), or inline when there's no VM to reshape. Always clears the Resizing
+	flag: on failure it rolls back the partial billing write, then clears the flag on its
+	own committed write so the Console can't wedge on a stuck "Resizing" state, and
+	re-raises so the job is recorded as failed (billing stays on the old segment — we
+	never re-price to a shape the host didn't apply)."""
+	from central.central.doctype.asset.asset import Asset
+
+	try:
+		if plan:
+			resize_to_plan(subscription, plan, changed_by=changed_by)
+		else:
+			resize_composed_subscription(subscription, includes or [], sub_category, changed_by=changed_by)
+	except Exception:
+		if asset_id:
+			frappe.db.rollback()
+			Asset.mark_resizing(asset_id, False)
+			frappe.db.commit()
+		raise
+	if asset_id:
+		Asset.mark_resizing(asset_id, False)
+
+
 def resize_composed_subscription(
 	subscription: str,
 	includes: list,
@@ -272,26 +393,136 @@ def resize_composed_subscription(
 	validate_composition(profile, rows)
 
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
-	cluster = frappe.db.get_value("Asset", doc.asset_id, "cluster") if doc.asset_id else None
-	new_rate = resolve_config_rate(rows, currency, cluster)
+	asset = (
+		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status"], as_dict=True)
+		if doc.asset_id
+		else None
+	)
+	new_rate = resolve_config_rate(rows, currency, asset.cluster if asset else None)
 	enforce_headroom(doc.team, new_rate, exclude=subscription)
 
 	# Resizing to the identical composition already running is a no-op (no event).
 	if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(rows):
 		return doc
 
+	if asset:
+		# Reshape the real VM on its Atlas BEFORE re-pricing (the Atlas seam, #54): if
+		# the host rejects the resize we must not open a new — mis-priced — billing
+		# segment. Central's mirror picks up the new shape from the vm.resized event
+		# Atlas emits, so we no longer write it here.
+		_reshape_vm(doc.asset_id, asset.cluster, asset.status, _asset_shape(rows))
+
 	doc.pricing_mode = "Composed"
 	doc.plan = None
 	doc.sub_category = profile
 	doc.set("includes", rows)
-	if doc.asset_id:
-		# Record the new shape on the running machine. A real impl also drives the
-		# cluster-manager resize here (the Atlas seam, #54); there is no resize call
-		# yet, so we only update Central's mirror of the machine's shape.
-		frappe.db.set_value("Asset", doc.asset_id, _asset_shape(rows))
 	doc.flags.changed_by = changed_by
 	doc.save(ignore_permissions=True)  # controller appends the Plan Changed re-lock
 	return doc
+
+
+def resize_to_plan(subscription: str, new_plan: str, changed_by: str | None = None):
+	"""Resize a server onto a preset bundle: reshape the VM to the bundle's size,
+	then switch the billing contract onto it. The counterpart to
+	`resize_composed_subscription` for a preset target (#84), so the console's one
+	Resize action covers bundles as well as custom shapes. A no-op when the server is
+	already on this preset; records nothing on a never-provisioned/terminated config."""
+	doc = frappe.get_doc("Subscription", subscription)
+	if not _is_resizable(doc):
+		return None
+	if doc.pricing_mode == "Preset" and doc.plan == new_plan:
+		return doc
+	asset = (
+		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status"], as_dict=True)
+		if doc.asset_id
+		else None
+	)
+	# Refuse a resize that would push the team past its trust-tier headroom — the same
+	# gate resize_composed_subscription applies, so a preset target can't slip past the
+	# spend cap. Authoritative here (covers every caller, incl. the background job);
+	# begin_resize also checks it synchronously for immediate feedback.
+	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, asset.cluster if asset else None)
+	enforce_headroom(doc.team, new_rate, exclude=subscription)
+	if asset:
+		_reshape_vm(doc.asset_id, asset.cluster, asset.status, _plan_shape(new_plan))
+	return change_plan(subscription, new_plan, changed_by=changed_by)
+
+
+def _plan_shape(plan: str) -> dict:
+	"""A preset Plan's bundled size as the _asset_shape dict (vcpus/memory/disk)."""
+	includes = frappe.get_all(
+		"Plan Includes",
+		filters={"parenttype": "Plan", "parent": plan},
+		fields=["resource_type", "quantity"],
+	)
+	return _asset_shape(includes)
+
+
+def _guard_disk_shrink(asset_id: str, shape: dict) -> None:
+	"""Refuse a resize that would shrink the disk — Atlas can only grow a rootfs. Cheap
+	and VM-free, so `begin_resize` runs it synchronously to surface the error to the user
+	before the slow reshape is ever queued (and `_reshape_vm` re-checks as a backstop)."""
+	if not shape:
+		return
+	current_disk = frappe.utils.cint(frappe.db.get_value("Asset", asset_id, "disk_gigabytes"))
+	if shape["disk_gigabytes"] < current_disk:
+		frappe.throw(
+			frappe._("Disk can't shrink: this server has a {0} GB disk — choose a size with at least that much storage.").format(current_disk)
+		)
+
+
+def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
+	"""Apply `shape` (vcpus/memory/disk) to the real VM on its Atlas, stopping it first
+	when it's live. Firecracker can't reconfigure a running machine, so a Running/Paused
+	VM is stopped, then resized, then STARTED BACK UP — the stop→resize→start cycle
+	returns the server to the running state the user found it in, so a resize doesn't
+	silently leave it powered off. A VM that was already Stopped stays Stopped (resizing
+	an off server doesn't power it on), and one that isn't provisioned yet (Pending/Failed)
+	has nothing to reshape and is skipped.
+
+	Two guards keep a failed resize from stranding the VM powered off: a disk shrink
+	(which Atlas refuses — a rootfs can only grow) is caught HERE, before anything is
+	stopped; and if the on-host resize fails for any other reason after we've stopped a
+	live VM, we start it back up before re-raising. Atlas's stop/start/resize are
+	synchronous, so each step has finished before the next runs — the VM is Running
+	again by the time this returns, no background job in the loop."""
+	if not shape or status not in ("Running", "Paused", "Stopped"):
+		return
+	_guard_disk_shrink(asset_id, shape)
+	from central.integrations.atlas import AtlasClient
+
+	client = AtlasClient(frappe.get_doc("Atlas Instance", cluster))
+	was_active = status in ("Running", "Paused")
+	if was_active:
+		client.vm_action(asset_id, "stop")
+	try:
+		client.resize_vm(
+			asset_id,
+			vcpus=shape["vcpus"],
+			memory_megabytes=shape["memory_megabytes"],
+			disk_gigabytes=shape["disk_gigabytes"],
+		)
+	except Exception:
+		# Reshape failed after we stopped a live VM — bring it back so a failed resize
+		# doesn't leave it powered off, then surface the original error (a restart that
+		# also fails is logged, not raised, so it can't mask the real cause).
+		if was_active:
+			try:
+				client.vm_action(asset_id, "start")
+			except Exception:
+				frappe.log_error(title=f"Resize recovery: failed to restart {asset_id}")
+		raise
+	# Resize landed. A VM that was live before the resize is started back up so the
+	# server comes back on its own — the whole stop→resize→start cycle is invisible to
+	# the user. The resize itself has already succeeded (and billing will re-lock), so a
+	# start that fails here is logged, not raised: worst case is a resized-but-stopped VM
+	# the user can start manually, exactly the old behaviour — never a lost resize.
+	if was_active:
+		try:
+			client.vm_action(asset_id, "start")
+		except Exception:
+			frappe.log_error(title=f"Resize: reshaped but failed to restart {asset_id}")
 
 
 def _is_resizable(doc) -> bool:
