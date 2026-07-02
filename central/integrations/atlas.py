@@ -9,8 +9,9 @@ import requests
 from frappe.frappeclient import FrappeClient
 
 from central.central.doctype.asset.asset import Asset
-from central.host_task import run_host_task
+from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.site.site import Site
+from central.host_task import run_host_task
 
 # Central's integration with the regional Atlas clusters (Edge B), all in one place:
 #   - outbound: AtlasClient calls Atlas over Frappe's FrappeClient (token auth from
@@ -185,8 +186,33 @@ class AtlasClient:
 			params["email"] = email
 		if region:
 			params["region"] = region
+		params.update(self._pilot_credential(team))
 
+		# Durability handoff: the token is about to leave for Atlas → the bench's
+		# common_site_config. Commit it BEFORE the call so a rollback of the enclosing
+		# request (e.g. the Site-mirror save right after this returns) can't wipe the
+		# credential and strand the bench with a token Central can't verify — a permanent
+		# 401 with no self-heal. The inverse failure is benign: if the Atlas call fails,
+		# the committed credential is simply unused (no one holds the plaintext), which we
+		# deliberately prefer over revoking here — a lost response could mean Atlas *did*
+		# provision, and revoking would then be what strands the bench.
+		frappe.db.commit()
 		return self.client().post_api("atlas.atlas.api.site.create_site", params=params)
+
+	def _pilot_credential(self, team: str) -> dict:
+		"""
+		Mint this pilot's Central credential and hand Atlas the token + callback URL to
+		store on the bench (common_site_config), so later pilot→Central calls authenticate.
+		Atlas binds pilot_credential_id to the pilot and echoes it back to join events. The
+		plaintext token leaves Central only here — never in the reply to Central's caller
+		"""
+		pilot_credential_id = f"pcred-{frappe.generate_hash(length=16)}"
+
+		return {
+			"pilot_credential_id": pilot_credential_id,
+			"central_endpoint": frappe.conf.get("central_url") or frappe.utils.get_url(),
+			"central_auth_token": PilotCredential.mint(team=team, pilot_credential_id=pilot_credential_id),
+		}
 
 	def get_site(self, name: str) -> dict:
 		"""
@@ -257,6 +283,8 @@ def _atlas_cluster() -> str:
 
 def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
 	Asset.mirror_vm(cluster, payload, occurred_at=occurred_at)
+	# Once Atlas echoes the pilot_credential_id, bind the credential to its VM.
+	PilotCredential.link_asset(payload.get("pilot_credential_id"), payload.get("name"))
 
 
 def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
@@ -267,6 +295,8 @@ def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
 		and not Asset.is_stale(resource_id, occurred_at)
 	):
 		Asset.mark_terminated(resource_id, last_event_at=occurred_at)
+	# The pilot dies with its VM — kill its Central credential so a leaked token is inert.
+	PilotCredential.revoke_by_id(payload.get("pilot_credential_id"))
 
 
 def _on_site(cluster: str, payload: dict, occurred_at) -> None:
