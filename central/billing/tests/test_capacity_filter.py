@@ -154,6 +154,25 @@ class TestCapacityFilter(IntegrationTestCase):
 		self.assertNotIn(BIG, plans)      # growth capped to what the host can seat
 		self.assertTrue(out["capacity"]["gated"])
 
+	def test_resize_cannot_gate_on_another_teams_subscription(self):
+		# IDOR guard: exclude_subscription is scoped to the caller's team, so a subscription
+		# owned by a different team resolves no asset → gate skipped, Atlas never queried.
+		# (Otherwise the caller could read another team's host-capacity shape.)
+		from central.billing.catalog import subscriptions
+
+		other = ensure_team("team-capacity-other")
+		complete_billing_profile(other, currency="INR")
+		other_sub = subscriptions.create_subscription(other, CLUSTER, plan=SMALL).name
+		with (
+			patch.object(AtlasClient, "resize_capacity") as mock_resize,
+			patch.object(AtlasClient, "capacity") as mock_create,
+		):
+			out = get_eligible_plans(cluster=CLUSTER, team=TEAM, exclude_subscription=other_sub)
+		mock_resize.assert_not_called()
+		mock_create.assert_not_called()
+		self.assertFalse(out["capacity"]["gated"])
+		self.assertIn(BIG, _titles(out))
+
 	def test_resize_without_linked_asset_skips_the_gate(self):
 		# A subscription with no Asset yet (nothing placed to resize) → don't gate, and
 		# don't reach for either capacity endpoint.

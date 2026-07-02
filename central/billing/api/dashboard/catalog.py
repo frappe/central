@@ -104,7 +104,7 @@ def get_eligible_plans(
 	# headroom (capacity). None = don't gate — the flag is off, no Atlas is registered, or
 	# the check couldn't be reached (fail-soft).
 	is_resize = bool(exclude_subscription)
-	capacity = _resize_capacity(cluster, exclude_subscription) if is_resize else _region_capacity(cluster)
+	capacity = _resize_capacity(cluster, exclude_subscription, team) if is_resize else _region_capacity(cluster)
 	capacity_block = _capacity_block(capacity)
 
 	header = {
@@ -426,17 +426,21 @@ def _region_capacity(cluster: str | None) -> dict | None:
 	)
 
 
-def _resize_capacity(cluster: str | None, subscription: str | None) -> dict | None:
+def _resize_capacity(cluster: str | None, subscription: str | None, team: str) -> dict | None:
 	"""The largest shape the server behind `subscription` can resize to on its current
 	host (atlas.atlas.api.provision.resize_capacity), or None to skip the gate.
 
 	A resize reshapes a VM in place, so the ceiling is its host's free room with its own
 	footprint added back — the running size always fits, and growth is capped to what the
 	host can seat. None when the subscription has no linked Asset yet (nothing to resize)
-	or the region isn't capacity-gated / reachable."""
+	or the region isn't capacity-gated / reachable.
+
+	The subscription is scoped to `team`: a caller can only resize-gate against a
+	subscription their own team owns, so a supplied `exclude_subscription` can't be used
+	to read another team's host-capacity shape (`largest_vm`)."""
 	if not subscription:
 		return None
-	asset_id = frappe.db.get_value("Subscription", subscription, "asset_id")
+	asset_id = frappe.db.get_value("Subscription", {"name": subscription, "team": team}, "asset_id")
 	if not asset_id:
 		return None
 	return _gated_capacity(
