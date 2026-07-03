@@ -1,52 +1,109 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { LoadingText } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import { Button, Tooltip, LoadingText } from 'frappe-ui'
+import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
+import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { money } from '@/lib/format'
 
-// Wallet — compact summary card. The chevron opens the wallet-history slide-over
-// (balance, auto-recharge, ledger, add credit), owned by the page.
+// Wallet — the FC v2 prototype's funding card: balance, a one-line coverage
+// verdict, and (once there's a method to charge) the funding actions. The chevron
+// / title open the wallet-history slide-over the page owns; Add credit tops up
+// right here.
 defineProps<{ active?: boolean }>()
 defineEmits<{ open: [] }>()
-const { credit, forecast, currency } = useBillingOverview()
+const { credit, forecast, methods, currency, reloadMoney } = useBillingOverview()
+const { canManageBilling } = useCapabilities()
+const { requireSetup } = useBillingSetup()
 
 const balance = computed(() => Number(credit.data?.balance ?? 0))
 const projected = computed(() => Number(forecast.data?.projected_total ?? 0))
 const loading = computed(() => credit.loading && !credit.data)
-// Warn when the wallet can't cover the projected bill (prepaid teams top up).
-const shortfall = computed(() => projected.value > 0 && balance.value < projected.value)
+
+// Coverage verdict, mirroring the prototype's three states. The wallet is prepaid
+// and a working card covers any shortfall, so "at risk" only when the balance is
+// short AND nothing can be charged behind it.
+const hasMethod = computed(() => (methods.data?.length ?? 0) > 0)
+const hasWorkingMethod = computed(() => (methods.data ?? []).some((m) => m.status === 'Active'))
+const short = computed(() => projected.value > 0 && balance.value < projected.value)
+const atRisk = computed(() => short.value && !hasWorkingMethod.value)
+
+const showTopup = ref(false)
+function onAddCredit(): void {
+  if (requireSetup()) showTopup.value = true
+}
 </script>
 
 <template>
-  <button
-    type="button"
-    class="group flex flex-col rounded-xl border bg-surface-elevation-1 p-5 text-left transition-colors"
-    :class="active ? 'border-outline-gray-4 ring-1 ring-outline-gray-4' : 'border-outline-gray-2 hover:border-outline-gray-3'"
-    @click="$emit('open')"
+  <div
+    class="flex flex-col rounded-xl border bg-surface-elevation-1 p-5 transition-colors"
+    :class="active ? 'border-outline-gray-4 ring-1 ring-outline-gray-4' : 'border-outline-gray-2'"
   >
-    <div class="flex items-center justify-between gap-2">
-      <span class="flex items-center gap-1 text-p-sm text-ink-gray-5">
-        Wallet
-        <span class="lucide-info size-3.5 text-ink-gray-4" aria-hidden="true" />
+    <div class="flex h-6 items-center justify-between gap-2">
+      <span class="flex items-center gap-1">
+        <button
+          type="button"
+          class="text-p-sm text-ink-gray-5 transition-colors hover:text-ink-gray-7"
+          @click="$emit('open')"
+        >
+          Wallet
+        </button>
+        <Tooltip text="Applied to your invoice first, before any card is charged.">
+          <span class="lucide-info size-3.5 text-ink-gray-4" aria-hidden="true" />
+        </Tooltip>
       </span>
-      <span
-        class="grid size-6 place-items-center rounded text-ink-gray-4 group-hover:text-ink-gray-6"
+      <button
+        type="button"
+        class="grid size-6 place-items-center rounded text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
+        aria-label="Open wallet history"
+        @click="$emit('open')"
       >
         <span class="lucide-chevron-right size-4" aria-hidden="true" />
-      </span>
+      </button>
     </div>
 
     <div v-if="loading" class="mt-2 w-32">
       <LoadingText :lines="1" />
     </div>
     <template v-else>
-      <p class="mt-1 text-2xl font-semibold tabular-nums text-ink-gray-9">
+      <p class="mt-1.5 text-2xl font-semibold tabular-nums text-ink-gray-9">
         {{ money(balance, currency) }}
       </p>
-      <p v-if="shortfall" class="mt-1 flex items-center gap-1.5 text-p-sm text-ink-red-3">
+      <!-- Coverage verdict — always the third line -->
+      <p v-if="atRisk" class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-red-3">
         <span class="lucide-triangle-alert size-3.5 shrink-0" aria-hidden="true" />
-        Won't cover the {{ money(projected, currency) }} invoice
+        Insufficient balance
       </p>
+      <p v-else-if="short" class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-gray-5">
+        <span class="lucide-credit-card size-3.5 shrink-0 text-ink-gray-4" aria-hidden="true" />
+        Card covers the rest
+      </p>
+      <p v-else class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-gray-5">
+        <span class="lucide-circle-check size-3.5 shrink-0 text-ink-green-2" aria-hidden="true" />
+        Covers this invoice
+      </p>
+
+      <!-- Funding actions, once there's a method to charge. -->
+      <div
+        v-if="hasMethod && canManageBilling"
+        class="mt-auto flex items-center justify-between gap-2 pt-4"
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          label="Auto-recharge off"
+          class="-ml-2"
+          @click="$emit('open')"
+        >
+          <template #prefix><span class="lucide-zap size-4" aria-hidden="true" /></template>
+        </Button>
+        <Button variant="subtle" size="sm" label="Add credit" @click="onAddCredit">
+          <template #prefix><span class="lucide-plus size-4" aria-hidden="true" /></template>
+        </Button>
+      </div>
     </template>
-  </button>
+
+    <TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+  </div>
 </template>

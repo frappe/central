@@ -1,19 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useCall, Button, FormControl, LoadingText } from 'frappe-ui'
+import { useCall, Button, Dialog, FormControl, LoadingText } from 'frappe-ui'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { API, method } from '@/api/methods'
-import { money } from '@/lib/format'
+import { money, currencySymbol } from '@/lib/format'
 import { shortDate } from '@/lib/date'
 import { successToast, errorToast } from '@/lib/toast'
 import type { BillingSettings } from '@/types/billing'
 
-// Estimated this cycle — compact summary: the projected month-end bill, when it
-// bills + days left, and the configurable billing alert (spend-alert threshold).
-// Reads get_forecast (+ get_team_overview for currency, get_billing_settings).
+// Estimated this cycle — the projected month-end bill, when it bills + days left,
+// and the configurable billing alert (spend-alert threshold). Mirrors the FC v2
+// prototype: the alert is a quiet ghost button pinned to the card's foot that
+// tints amber/red as spend nears/crosses the threshold, and opens a small dialog.
+// Reads get_forecast (+ get_billing_settings).
 const { forecast, currency } = useBillingOverview()
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
@@ -26,8 +28,7 @@ const daysRemaining = computed(() => fc.value?.days_remaining ?? null)
 
 // ── Billing alert (spend-alert threshold) ────────────────────────────────────
 // Notify the team once projected spend crosses this amount (0 = off). Stored on
-// the Billing Profile via get/save_billing_settings; lives here under the cycle
-// estimate so the alert sits next to the number it watches.
+// the Billing Profile via get/save_billing_settings.
 const settings = useCall<BillingSettings, { team: string }>({
   url: method(API.billingSettings),
   params: () => ({ team: activeTeam.value! }),
@@ -42,7 +43,6 @@ const saveAlert = useCall<unknown, { team: string; spend_alert_threshold: number
 whenTeamReady(() => settings.reload())
 
 const spendAlert = ref(0)
-const editingAlert = ref(false)
 watch(
   () => settings.data,
   (d) => {
@@ -51,11 +51,35 @@ watch(
   { immediate: true },
 )
 
+// Alert relationship to the current estimate, so the button says something useful
+// at a glance and only tints when it's worth noticing.
+const crossed = computed(() => spendAlert.value > 0 && projected.value >= spendAlert.value)
+const near = computed(
+  () => spendAlert.value > 0 && !crossed.value && projected.value >= 0.8 * spendAlert.value,
+)
+const alertLabel = computed(() => {
+  if (spendAlert.value <= 0) return 'Set a budget alert'
+  if (crossed.value) return `Over your ${money(spendAlert.value, currency.value)} alert`
+  if (near.value) return `Nearing your ${money(spendAlert.value, currency.value)} alert`
+  return `Budget alert at ${money(spendAlert.value, currency.value)}`
+})
+const alertTint = computed(() =>
+  crossed.value ? '!text-ink-red-3' : near.value ? '!text-ink-amber-3' : '',
+)
+
+// Dialog: edit against a draft so Cancel leaves the live value untouched.
+const dialogOpen = ref(false)
+const draft = ref(0)
+function openDialog(): void {
+  draft.value = spendAlert.value
+  dialogOpen.value = true
+}
 async function submitAlert(): Promise<void> {
   try {
-    await saveAlert.submit({ team: activeTeam.value!, spend_alert_threshold: spendAlert.value })
+    await saveAlert.submit({ team: activeTeam.value!, spend_alert_threshold: Number(draft.value) || 0 })
+    spendAlert.value = Number(draft.value) || 0
     successToast('Billing alert saved.')
-    editingAlert.value = false
+    dialogOpen.value = false
     settings.reload()
   } catch (e) {
     errorToast(e)
@@ -65,48 +89,54 @@ async function submitAlert(): Promise<void> {
 
 <template>
   <div class="flex flex-col rounded-xl border border-outline-gray-2 bg-surface-elevation-1 p-5">
-    <div class="flex items-start justify-between gap-2">
+    <div class="flex h-6 items-center">
       <span class="text-p-sm text-ink-gray-5">Estimated this cycle</span>
-      <button
-        v-if="canManageBilling && !editingAlert"
-        class="grid size-6 place-items-center rounded text-ink-gray-5 hover:bg-surface-gray-3"
-        :aria-label="spendAlert > 0 ? 'Edit billing alert' : 'Set billing alert'"
-        title="Billing alert"
-        @click="editingAlert = true"
-      >
-        <span class="lucide-bell size-4" aria-hidden="true" />
-      </button>
     </div>
 
     <div v-if="loading" class="mt-2 w-32">
       <LoadingText :lines="1" />
     </div>
     <template v-else>
-      <p class="mt-1 text-2xl font-semibold tabular-nums text-ink-gray-9">
+      <p class="mt-1.5 text-2xl font-semibold tabular-nums text-ink-gray-9">
         {{ money(projected, currency) }}
       </p>
-      <p class="mt-1 text-p-sm text-ink-gray-5">
+      <p class="mt-1.5 text-p-sm text-ink-gray-5">
         <template v-if="billsOn">Bills {{ billsOn }}</template>
         <template v-if="daysRemaining != null"> · {{ daysRemaining }} days left</template>
       </p>
-      <p v-if="spendAlert > 0 && !editingAlert" class="mt-1 text-p-sm text-ink-gray-5">
-        Alert above {{ money(spendAlert, currency) }}
-      </p>
+
+      <Button
+        v-if="canManageBilling"
+        variant="ghost"
+        size="sm"
+        class="mt-auto -ml-2 self-start"
+        :class="alertTint"
+        :label="alertLabel"
+        @click="openDialog"
+      >
+        <template #prefix><span class="lucide-bell size-4" aria-hidden="true" /></template>
+      </Button>
     </template>
 
-    <!-- Inline billing-alert editor -->
-    <div v-if="editingAlert" class="mt-3 border-t border-outline-gray-1 pt-3">
-      <FormControl
-        v-model="spendAlert"
-        type="number"
-        label="Alert threshold"
-        :description="`Notify when projected spend crosses this. Set 0 to turn it off (${currency}).`"
-        min="0"
-      />
-      <div class="mt-2 flex gap-2">
-        <Button variant="solid" label="Save" :loading="saveAlert.loading" @click="submitAlert" />
-        <Button label="Cancel" @click="editingAlert = false" />
-      </div>
-    </div>
+    <Dialog v-model:open="dialogOpen" title="Set a budget alert">
+      <template #default>
+        <FormControl
+          v-model="draft"
+          type="number"
+          :label="`Alert me above (${currencySymbol(currency)})`"
+          min="0"
+          placeholder="20000"
+        />
+        <p class="mt-2 text-p-sm text-ink-gray-5">
+          We'll notify the team once projected spend crosses this. Set 0 to turn it off.
+        </p>
+      </template>
+      <template #actions>
+        <div class="flex justify-end gap-2">
+          <Button label="Cancel" @click="dialogOpen = false" />
+          <Button variant="solid" label="Set alert" :loading="saveAlert.loading" @click="submitAlert" />
+        </div>
+      </template>
+    </Dialog>
   </div>
 </template>
