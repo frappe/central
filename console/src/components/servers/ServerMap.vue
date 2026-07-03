@@ -50,7 +50,7 @@
                    separator ring hugs the visible disc, not the box edge. -->
               <span
                 v-if="n.stacked"
-                class="pointer-events-none absolute inset-[2px] rounded-full ring-2 ring-[var(--surface-gray-1)]"
+                class="pointer-events-none absolute inset-[2px] rounded-full ring-2 ring-[var(--surface-base)]"
               />
             </span>
             <span
@@ -73,7 +73,7 @@
               :class="n.broken ? 'sm-pulse bg-surface-red-4' : 'bg-surface-gray-3 opacity-60'"
             />
             <span
-              class="relative grid size-11 place-items-center rounded-full bg-surface-gray-5 text-base font-semibold text-ink-gray-9 shadow-md transition-transform duration-150 ease-out group-active:scale-95"
+              class="relative grid size-11 place-items-center rounded-full bg-surface-gray-1 text-base font-semibold text-ink-gray-9 shadow-md transition-transform duration-150 ease-out group-active:scale-95"
               :class="isHot(n) && 'scale-105'"
             >
               {{ n.members.length }}
