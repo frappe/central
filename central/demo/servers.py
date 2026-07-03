@@ -92,6 +92,8 @@ def seed() -> dict:
 		_upsert_instance(region)
 	for index, asset in enumerate(ASSETS):
 		_mirror_asset(index, asset, teams, synced_at)
+	for slug in HERO_ASSETS:
+		_attach_hero_plan(slug)
 
 	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- command-style local seed persists demo rows.
 	return summary()
@@ -183,6 +185,49 @@ def _mirror_asset(index: int, asset_row: tuple, teams: list[str], synced_at) -> 
 		},
 		synced_at=synced_at,
 	)
+
+
+# One Running "hero" per team whose Subscription carries a real Plan, so the
+# Change Plan dialog (resize in place / migrate with review) is demoable. Only
+# one per team: demo trust-tier headroom is tight, and a fleet of priced subs
+# would eat it and make every resize fail the headroom gate.
+HERO_ASSETS = ("web-01", "t2-app-01")
+
+
+def _attach_hero_plan(slug: str) -> None:
+	from central.billing.catalog.subscriptions import change_plan
+
+	resource_id = _resource_id(slug)
+	subscription = frappe.db.get_value(
+		"Subscription", {"asset_id": resource_id, "enabled": 1}, ["name", "plan", "team"], as_dict=True
+	)
+	if not subscription or subscription.plan:
+		return  # no Running-minted subscription (or already attached — idempotent)
+	plan = _cheapest_eligible_plan(subscription.team, frappe.db.get_value("Asset", resource_id, "cluster"))
+	if not plan:
+		return  # no billing profile / tier, or nothing eligible in this region
+	change_plan(subscription.name, plan)
+	frappe.db.set_value("Asset", resource_id, "plan", plan)
+
+
+def _cheapest_eligible_plan(team: str, cluster: str | None) -> str | None:
+	"""Exactly what the Change Plan dialog would offer (tier allow-list, currency,
+	regional rate, headroom) — asked as the team's owner, since the endpoint
+	resolves eligibility per member. Picking from anything wider would pin a plan
+	the console then refuses to show."""
+	from central.billing.api.dashboard.catalog import get_eligible_plans
+
+	owner = frappe.db.get_value("Team", team, "owner_user")
+	if not owner:
+		return None
+	previous_user = frappe.session.user
+	frappe.set_user(owner)
+	try:
+		menu = get_eligible_plans(cluster=cluster, team=team)
+	finally:
+		frappe.set_user(previous_user)
+	rows = [row for group in (menu.get("plans") or {}).values() for row in group]
+	return min(rows, key=lambda r: r["rate"])["plan"] if rows else None
 
 
 def _resource_id(slug: str) -> str:
