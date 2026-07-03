@@ -10,6 +10,20 @@ from central.integrations.atlas import AtlasClient, reconcile
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
 # here). Every call resolves and authorizes a team first.
 
+# The only Atlas Instance fields `list_instances` may return. The doctype holds
+# per-instance API credentials and tunnel internals, so exposure is allowlisted —
+# never add api_key/api_secret/base_url/tunnel_*/peer_*/service_user here.
+INSTANCE_PUBLIC_FIELDS = (
+	"region",
+	"status",
+	"reachable",
+	"display_name",
+	"provider",
+	"latitude",
+	"longitude",
+	"country_code",
+)
+
 # Frappe versions a new VM can be provisioned with. Central validates the choice
 # and passes it to Atlas verbatim; Atlas owns what each token maps to.
 FRAPPE_VERSIONS = ("v15", "v16", "v14", "nightly")
@@ -50,16 +64,20 @@ def registry(team: str | None = None) -> dict:
 		"Asset",
 		filters={"team": team},
 		fields=[
+			"name",
 			"resource_id",
 			"title",
 			"cluster",
 			"status",
+			"plan",
+			"frappe_version",
 			"vcpus",
 			"memory_megabytes",
 			"disk_gigabytes",
 			"ipv6_address",
 			"public_ipv4",
 			"gateway_url",
+			"resize_in_progress",
 			"last_synced_at",
 		],
 		order_by="cluster asc, resource_id asc",
@@ -84,7 +102,7 @@ def list_instances(team: str | None = None) -> list[dict]:
 	return frappe.get_all(
 		"Atlas Instance",
 		filters={"status": "Active"},
-		fields=["region", "status", "reachable"],
+		fields=list(INSTANCE_PUBLIC_FIELDS),
 		order_by="region asc",
 	)
 

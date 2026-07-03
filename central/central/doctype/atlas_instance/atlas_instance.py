@@ -18,9 +18,14 @@ class AtlasInstance(Document):
 		api_key: DF.Data
 		api_secret: DF.Password
 		base_url: DF.Data
+		country_code: DF.Data | None
+		display_name: DF.Data | None
 		last_synced_at: DF.Datetime | None
+		latitude: DF.Float
+		longitude: DF.Float
 		peer_endpoint: DF.Data | None
 		peer_public_key: DF.SmallText | None
+		provider: DF.Literal["", "AWS", "Hetzner", "Frappe", "OCI", "DigitalOcean"]
 		reachable: DF.Check
 		region: DF.Data
 		service_user: DF.Link | None
