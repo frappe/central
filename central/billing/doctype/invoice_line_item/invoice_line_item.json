@@ -2,7 +2,7 @@
  "actions": [],
  "allow_rename": 0,
  "creation": "2026-06-03 00:00:00.000000",
- "description": "Invoice line, generated once and never updated. Day-weighted from an event-log time window x the locked price.",
+ "description": "Invoice line, generated once and never updated. Time-weighted from an event-log window x the locked price: whole days for a stable config, exact hours on a day the machine churned (multiple resizes within 24h).",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -17,6 +17,7 @@
   "quantity",
   "rate",
   "days",
+  "hours",
   "amount"
  ],
  "fields": [
@@ -70,14 +71,21 @@
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Days",
-   "description": "Whole units active in the period (with max-1 floor)"
+   "description": "Whole days active in the period, for a daily-billed (stable) segment"
+  },
+  {
+   "fieldname": "hours",
+   "fieldtype": "Float",
+   "label": "Hours",
+   "precision": "2",
+   "description": "Hours active, for a segment billed hourly on a churn day (multiple resizes within 24h)"
   },
   {
    "fieldname": "amount",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Amount",
-   "description": "days x (rate / units_in_period)"
+   "description": "days x (rate / days_in_period), or hours x (rate / (days_in_period x 24)) for an hourly line"
   }
  ],
  "index_web_pages_for_search": 1,

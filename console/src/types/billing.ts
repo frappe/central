@@ -27,6 +27,7 @@ export interface BillingLine {
   plan?: string | null
   subscription_resource?: string | null
   days?: number | null
+  hours?: number | null
   quantity?: number
   rate?: number
   unit?: string | null
