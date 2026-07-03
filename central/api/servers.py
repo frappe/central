@@ -10,6 +10,33 @@ from central.integrations.atlas import AtlasClient, reconcile
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
 # here). Every call resolves and authorizes a team first.
 
+# Frappe versions a new VM can be provisioned with. Central validates the choice
+# and passes it to Atlas verbatim; Atlas owns what each token maps to.
+FRAPPE_VERSIONS = ("v15", "v16", "v14", "nightly")
+
+
+def _validate_frappe_version(frappe_version: str | None) -> None:
+	# The client value never goes back into the message — frappe.throw renders
+	# HTML in desk, so reflecting input is an XSS habit not worth having.
+	if frappe_version and frappe_version not in FRAPPE_VERSIONS:
+		frappe.throw(
+			_("Unknown Frappe version. Choose one of: {0}.").format(", ".join(FRAPPE_VERSIONS)),
+			frappe.ValidationError,
+		)
+
+
+def _stamp_frappe_version(resource_id: str | None, frappe_version: str | None) -> None:
+	"""Record the chosen version on the Pending Asset the billing seam wrote. The
+	Atlas echo (`Asset._stamp`) keeps it current after that."""
+	if resource_id and frappe_version and frappe.db.exists("Asset", resource_id):
+		frappe.db.set_value("Asset", resource_id, "frappe_version", frappe_version)
+
+
+@frappe.whitelist(methods=["GET"])
+def frappe_versions() -> list[str]:
+	"""Versions offered on the new-server form, newest-stable first."""
+	return list(FRAPPE_VERSIONS)
+
 
 @frappe.whitelist(methods=["GET"])
 def registry(team: str | None = None) -> dict:
@@ -84,6 +111,7 @@ def create_server(
 	memory_megabytes: int | None = None,
 	disk_gigabytes: int | None = None,
 	cpu_max_cores: float | None = None,
+	frappe_version: str | None = None,
 ) -> dict:
 	"""Provision a new server for a team in a region from a preset bundle Plan. Gated
 	on `server:create`.
@@ -106,6 +134,7 @@ def create_server(
 		frappe.throw(_("You can't create servers for this team."), frappe.PermissionError)
 	if not region:
 		frappe.throw(_("Region is required."), frappe.ValidationError)
+	_validate_frappe_version(frappe_version)
 
 	client = AtlasClient.for_region(region)
 	# Seed the Atlas tenant (first use) with the team owner's email.
@@ -118,6 +147,7 @@ def create_server(
 		disk_gigabytes=int(disk_gigabytes or 10),
 		email=email,
 		cpu_max_cores=cpu_max_cores,
+		frappe_version=frappe_version,
 	)
 	resource_id = vm.get("name")
 	# Record the contract for the bundle. Guarded so a raw-size call (no plan) still
@@ -127,6 +157,7 @@ def create_server(
 		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get(
 			"subscription"
 		)
+	_stamp_frappe_version(resource_id, frappe_version)
 	return {"resource_id": resource_id, "server": vm, "subscription": subscription}
 
 
@@ -137,6 +168,7 @@ def create_composed_server(
 	title: str | None = None,
 	includes: list | str | None = None,
 	sub_category: str | None = None,
+	frappe_version: str | None = None,
 ) -> dict:
 	"""Provision a design-your-own config end-to-end (#84): create the Atlas VM from
 	the chosen composition, then record the composed Subscription (#80) that bills it
@@ -161,6 +193,7 @@ def create_composed_server(
 		frappe.throw("region is required.", frappe.ValidationError)
 	if isinstance(includes, str):
 		includes = frappe.parse_json(includes)
+	_validate_frappe_version(frappe_version)
 
 	# Validate the shape + cost before touching Atlas.
 	validate_composition(sub_category, includes)
@@ -177,9 +210,11 @@ def create_composed_server(
 		memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
 		disk_gigabytes=int(qty.get(DISK, 0)) or 10,
 		email=email,
+		frappe_version=frappe_version,
 	)
 	resource_id = vm.get("name")
 	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
+	_stamp_frappe_version(resource_id, frappe_version)
 	return {"resource_id": resource_id, "server": vm}
 
 

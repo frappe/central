@@ -111,6 +111,7 @@ class AtlasClient:
 		disk_gigabytes: int,
 		email: str | None = None,
 		cpu_max_cores: float | None = None,
+		frappe_version: str | None = None,
 	) -> dict:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
 		Returns the new VM in the Asset-mirror shape so the caller can upsert it."""
@@ -125,6 +126,8 @@ class AtlasClient:
 			params["email"] = email
 		if cpu_max_cores:
 			params["cpu_max_cores"] = cpu_max_cores
+		if frappe_version:
+			params["frappe_version"] = frappe_version
 		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
 
 	def central_vms(self, team: str | None = None) -> list[dict]:
