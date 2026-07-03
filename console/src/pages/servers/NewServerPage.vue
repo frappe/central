@@ -7,6 +7,7 @@ import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { usePlans } from '@/composables/usePlans'
 import { planResources } from '@/lib/plans'
 import { configIncludes, estimateConfig, ramFor, rateCardComplete } from '@/lib/composed'
@@ -23,6 +24,7 @@ const router = useRouter()
 const { regions, loading } = useRegions()
 const { create, createComposed, creating, creatingComposed } = useServers()
 const { canCreateServer } = useCapabilities()
+const { requireSetup } = useBillingSetup()
 
 const selectedRegion = ref<string | null>(null)
 const name = ref('')
@@ -129,6 +131,13 @@ const canSubmit = computed(() => {
 
 async function submit() {
   if (!canSubmit.value || !selectedRegion.value) return
+  // A server bills the team, so it needs a billing profile first. If it's
+  // incomplete, prompt (requireSetup toasts + flags the setup dialog) and send
+  // them to Billing, where that dialog opens.
+  if (!requireSetup()) {
+    router.push({ name: 'Billing' })
+    return
+  }
   try {
     if (isCustom.value && composedConfig.value) {
       await createComposed({

@@ -89,15 +89,24 @@ def _profile_complete(team: str) -> bool:
 	return not _missing_profile_fields(team)
 
 
-def _require_billing_setup(team: str):
-	"""Server-side backstop: refuse money movement until the profile is complete.
-	The dashboard also blocks these actions; this guarantees it can't be bypassed."""
+def require_billing_profile(team: str, action: str):
+	"""Refuse `action` until the team's billing profile is complete.
+
+	Server-side backstop for anything that needs billing set up first (money
+	movement, provisioning a billable resource). The dashboard also blocks these;
+	this guarantees it can't be bypassed. `action` completes the sentence
+	"… before you can {action}"."""
 	if _missing_profile_fields(team):
 		frappe.throw(
-			"Complete your billing profile (currency, legal name and address) in "
-			"Settings before adding credits or a payment method.",
+			f"Set up your billing profile (currency, legal name and address) in "
+			f"Settings before you can {action}.",
 			frappe.ValidationError,
 		)
+
+
+def _require_billing_setup(team: str):
+	"""Server-side backstop: refuse money movement until the profile is complete."""
+	require_billing_profile(team, "add credits or a payment method")
 
 
 def _has_money_activity(team: str) -> bool:
