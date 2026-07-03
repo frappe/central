@@ -142,8 +142,11 @@ const sections = computed(() => [
 <template>
   <div class="flex h-screen overflow-hidden bg-surface-base text-ink-gray-9">
     <!-- Collapse control: the whole right edge is the trigger; the chevron
-         rides the cursor. The built-in bottom item is hidden below. -->
-    <div class="sb-wrap relative isolate shrink-0">
+         rides the cursor. The built-in bottom item is hidden below. z-10 lifts
+         the sidebar's whole stacking context above the main pane — pages that
+         isolate themselves (the map) otherwise paint over the knob's overhang,
+         since later DOM order wins at equal z. -->
+    <div class="sb-wrap relative isolate z-10 shrink-0">
       <Sidebar v-model:collapsed="sidebarCollapsed" :header="header" :sections="sections" class="h-full" />
       <button
         class="sb-edge absolute inset-y-0 -right-2 z-30 w-4 cursor-pointer"
