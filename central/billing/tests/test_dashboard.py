@@ -106,6 +106,26 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertEqual(detail["output_tax_amount"], 180)
 		self.assertEqual(len(detail["items"]), 1)
 
+	def test_get_invoice_flags_payment_in_progress(self):
+		# An Open invoice with a captured-but-unsettled attempt is mid-settlement:
+		# the flag lets the UI show a "settling" status instead of a Pay button.
+		inv = frappe.get_doc(
+			{"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Open",
+			 "period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
+			 "subtotal": 1000, "total": 1000, "expected_collection": 1000}
+		).insert(ignore_permissions=True).name
+		self.assertFalse(dashboard.get_invoice(inv)["payment_in_progress"])
+
+		attempt = frappe.get_doc(
+			{"doctype": "Payment Attempt", "invoice": inv, "team": TEAM, "amount": 1000,
+			 "currency": "INR", "status": "Captured", "gateway_transaction_id": "pi_x"}
+		).insert(ignore_permissions=True)
+		self.assertTrue(dashboard.get_invoice(inv)["payment_in_progress"])
+
+		# Once it settles/fails (terminal), the flag clears and Pay is offered again.
+		attempt.db_set("status", "Failed")
+		self.assertFalse(dashboard.get_invoice(inv)["payment_in_progress"])
+
 	def test_payment_methods_never_expose_secrets(self):
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
