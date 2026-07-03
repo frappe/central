@@ -1,25 +1,38 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""In-app billing API — a single facade of whitelisted caller methods for a site
-to drive a team's billing.
+"""In-app billing API — a single facade of pilot-authenticated caller methods for a
+site/pilot to drive a team's billing.
 
-Each method takes `team` (or a record that resolves to one) and delegates to the
-existing billing service layer; no business logic lives here. Authentication is
-intentionally skipped for now — the team is taken as a parameter and acted on
-directly — so a proper site-token auth layer can wrap this later without changing
-the methods.
+Every method authenticates via `pilot_credential_auth` (the X-Pilot-Token header → a
+Pilot Credential bound to a team) and takes the **team from that credential**, never
+a request parameter — so a pilot can only ever act on its own team (IDOR defence).
+Record-scoped methods additionally check the record belongs to that team. No business
+logic lives here; each method delegates to the existing billing service layer.
 """
 
 import frappe
 
+from central.api.pilot import pilot_credential_auth
 from central.billing.api.dashboard._shared import _add_method_gateway, _team_currency
+
+
+def _team() -> str:
+	"""The team the authenticated pilot credential is bound to (never a request param)."""
+	return frappe.local.pilot_credential.team
+
+
+def _assert_owns(team_of_record: str | None) -> None:
+	"""Guard a record-scoped call: the record must belong to the credential's team."""
+	if team_of_record != _team():
+		frappe.throw("Not permitted for this team.", frappe.PermissionError)
 
 
 # ── Payment methods ──────────────────────────────────────────────────────────
 
 
-@frappe.whitelist(methods=["POST"])
-def add_payment_method(team: str, method_type: str = "Card", contact: str | None = None) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def add_payment_method(method_type: str = "Card", contact: str | None = None) -> dict:
 	"""Begin adding a payment method for the team, on the gateway that serves its
 	billing currency: Stripe for USD/EUR (card SetupIntent), Razorpay for INR
 	(recurring Card, or UPI Autopay). Real card details are collected client-side by
@@ -31,6 +44,7 @@ def add_payment_method(team: str, method_type: str = "Card", contact: str | None
 	"""
 	from central.billing.payments import mandates, payments
 
+	team = _team()
 	currency = _team_currency(team)
 	gw = _add_method_gateway(currency)
 	gateway = gw.get("name")
@@ -49,7 +63,8 @@ def add_payment_method(team: str, method_type: str = "Card", contact: str | None
 	return {**handles, "gateway": gateway, "adapter_key": adapter_key, "method_type": method_type}
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
 def confirm_payment_method(
 	payment_method: str,
 	gateway_method_id: str | None = None,
@@ -66,8 +81,9 @@ def confirm_payment_method(
 	the Checkout callback signature and activates the mandate/token."""
 	from central.billing.payments import mandates, payments
 
-	gateway = frappe.db.get_value("Payment Method", payment_method, "gateway")
-	adapter_key = frappe.db.get_value("Payment Gateway", gateway, "adapter_key") if gateway else None
+	method_row = frappe.db.get_value("Payment Method", payment_method, ["team", "gateway"], as_dict=True)
+	_assert_owns(method_row.team if method_row else None)
+	adapter_key = frappe.db.get_value("Payment Gateway", method_row.gateway, "adapter_key")
 
 	if adapter_key == "Razorpay":
 		method = mandates.confirm_mandate(payment_method, {
@@ -88,40 +104,50 @@ def confirm_payment_method(
 # ── Plans ────────────────────────────────────────────────────────────────────
 
 
-@frappe.whitelist()
-def get_available_plans(team: str, asset: str) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def get_available_plans(asset: str) -> dict:
 	"""Active plans the team can switch `asset` to — priced for the team's currency on
 	the asset's cluster, admitted by the trust tier, and within remaining headroom.
 	Grouped by sub-category. The asset's cluster is resolved here; the underlying plan
 	menu keys on cluster."""
 	from central.billing.api.dashboard.catalog import get_eligible_plans
 
+	team = _team()
 	cluster = frappe.db.get_value("Asset", asset, "cluster")
+	# The delegated menu gates on the session user's capability; the pilot is a Guest
+	# session, so act as operator — the team is fixed from the verified credential.
+	frappe.set_user("Administrator")
 	return get_eligible_plans(cluster=cluster, team=team)
 
 
-@frappe.whitelist(methods=["POST"])
-def change_plan(team: str, asset: str, plan: str) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def change_plan(asset: str, plan: str) -> dict:
 	"""Switch the asset's server onto a preset `plan`: validates + re-locks the rate at
 	the current rate card and queues the VM reshape (stop→resize→start). Resolves the
 	subscription from (team, asset). Returns `{queued, resized}`."""
 	from central.billing.api.dashboard.catalog import resize_server
 
-	subscription = frappe.db.get_value("Subscription", {"team": team, "asset_id": asset}, "name")
+	subscription = frappe.db.get_value("Subscription", {"team": _team(), "asset_id": asset}, "name")
 	if not subscription:
 		frappe.throw(f"No subscription for asset {asset} on this team.", frappe.ValidationError)
+	# resize_server gates on the session user's capability; act as operator (team is
+	# fixed by the subscription lookup above, which is already scoped to the credential).
+	frappe.set_user("Administrator")
 	return resize_server(subscription, plan=plan)
 
 
 # ── Credits ──────────────────────────────────────────────────────────────────
 
 
-@frappe.whitelist()
-def get_credit_balance(team: str) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def get_credit_balance() -> dict:
 	"""The team's current prepaid wallet balance: `{"balance", "currency"}`."""
 	from central.billing.revenue import credits
 
-	return credits.get_balance(team)
+	return credits.get_balance(_team())
 
 
 # ── Billing profile / address ────────────────────────────────────────────────
@@ -134,21 +160,28 @@ _PROFILE_FIELDS = (
 )
 
 
-@frappe.whitelist()
-def get_billing_profile(team: str) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def get_billing_profile() -> dict:
 	"""The team's billing profile (stored fields plus derived setup state:
 	complete / missing / currency_locked / supported_currencies)."""
 	from central.billing.api.dashboard.account import get_billing_profile as _get
 
+	team = _team()
+	# The delegated read gates on the session user's capability; act as operator (team
+	# is fixed from the verified credential).
+	frappe.set_user("Administrator")
 	return _get(team)
 
 
-@frappe.whitelist(methods=["POST"])
-def save_billing_profile(team: str, **fields) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def save_billing_profile(**fields) -> dict:
 	"""Create/update the team's billing identity + address. Only the profile fields
 	are accepted; the GSTIN is validated in the controller on save."""
 	from central.billing.payments import profile
 
+	team = _team()
 	values = {k: v for k, v in fields.items() if k in _PROFILE_FIELDS}
 	doc = profile.create_or_update_billing_profile(team, **values)
 	return {"saved": True, "team": team, "currency": doc.currency, "gstin": doc.gstin}
@@ -163,13 +196,15 @@ def save_billing_profile(team: str, **fields) -> dict:
 # idempotency key (one checkout = one credit), so polling is safe to repeat.
 
 
-@frappe.whitelist(methods=["POST"])
-def create_topup_checkout(team: str, amount: float, redirect_url: str) -> dict:
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	"""Start a wallet top-up via hosted checkout. Returns `{checkout_url, reference,
 	gateway}`; redirect the payer to `checkout_url`, then poll `get_checkout_status`."""
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
+	team = _team()
 	currency = _team_currency(team)
 	return _create_hosted_checkout(
 		team, currency, amount, purpose="topup", target=team, redirect_url=redirect_url,
@@ -177,12 +212,14 @@ def create_topup_checkout(team: str, amount: float, redirect_url: str) -> dict:
 	)
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
 def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
 	"""Start an on-session payment of an open invoice via hosted checkout. Returns
 	`{checkout_url, reference, gateway}`; the invoice settles to Paid on the gateway
 	webhook (webhook-truth), which `get_checkout_status` reports."""
 	inv = frappe.get_doc("Invoice", invoice)
+	_assert_owns(inv.team)
 	if inv.status not in ("Open", "Overdue"):
 		frappe.throw("Invoice is not open for payment.", frappe.ValidationError)
 	amount = frappe.utils.flt(inv.expected_collection)
@@ -216,7 +253,8 @@ def _create_hosted_checkout(team, currency, amount, purpose, target, redirect_ur
 			"gateway": gateway, "adapter_key": gw_doc.adapter_key, "amount": amount, "currency": currency}
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
 def get_checkout_status(reference: str) -> dict:
 	"""Poll a hosted checkout. Returns `{status, success, message, ...}`. On the first
 	observed `paid`: a top-up credits the wallet idempotently and returns the new
@@ -224,6 +262,12 @@ def get_checkout_status(reference: str) -> dict:
 	from central.billing.gateways.registry import get_adapter
 
 	gateway, session_id, purpose, target = reference.split("|", 3)
+	# Ownership: a top-up's target is the team; an invoice's target is the invoice.
+	if purpose == "topup":
+		_assert_owns(target)
+	else:
+		_assert_owns(frappe.db.get_value("Invoice", target, "team"))
+
 	gw_doc = frappe.get_doc("Payment Gateway", gateway)
 	adapter = get_adapter(gw_doc)
 	session = adapter.get_checkout_session(session_id)
