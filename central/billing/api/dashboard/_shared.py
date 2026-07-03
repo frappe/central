@@ -193,6 +193,14 @@ def _add_method_gateway(currency: str):
 	return gw or frappe._dict()
 
 
+def _card_gateway(currency: str) -> str | None:
+	"""The gateway that saves cards for this currency. Saved cards are a Stripe-only
+	rail (ADR 0005) in every currency — INR included, where Razorpay handles only the
+	UPI Autopay e-mandate. Returns an enabled Stripe gateway that handles the
+	currency, or None if there is no card rail for it."""
+	return _enabled_gateway_for_currency(currency, "Stripe")
+
+
 def _from_inr(amount: float, currency: str) -> float:
 	return frappe.utils.flt(frappe.utils.flt(amount) / _FX_TO_INR.get(currency, 1.0), 2)
 
@@ -208,14 +216,21 @@ def _describe_line(team: str, li) -> dict:
 	row = {
 		"resource_type": li.resource_type, "plan": li.plan,
 		"subscription_resource": li.subscription_resource,
-		"days": li.days, "quantity": li.quantity, "rate": li.rate, "amount": li.amount,
-		"unit": li.unit,
+		"days": li.days, "hours": li.hours, "quantity": li.quantity,
+		"rate": li.rate, "amount": li.amount, "unit": li.unit,
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
 		row["item"] = title or li.plan or "Subscription plan"
 		row["kind"] = "Plan"
-		row["detail"] = f"{li.days} day(s) this period" if li.days else None
+		# Hourly lines come from a churn day (multiple resizes within 24h); daily
+		# lines are a whole-day stable segment.
+		if li.unit == "hour" and li.hours:
+			row["detail"] = f"{frappe.utils.flt(li.hours):g} hour(s) this period"
+		elif li.days:
+			row["detail"] = f"{li.days} day(s) this period"
+		else:
+			row["detail"] = None
 	else:
 		metered_plan = _metered_plan_for(li.resource_type)
 		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
