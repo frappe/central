@@ -5,17 +5,19 @@ defineProps<{ title: string; description?: string }>()
 </script>
 
 <template>
-  <section class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1">
-    <header class="flex items-start justify-between gap-3 border-b border-outline-gray-1 px-5 py-3.5">
+  <!-- Card surface mirrors the frappe-cloud-v2 billing prototype: a rounded-xl
+       hairline card with the title inline (no header divider) and a padded body. -->
+  <section class="rounded-xl border border-outline-gray-2 bg-surface-elevation-1">
+    <header class="flex items-start justify-between gap-3 px-5 pt-4">
       <div class="min-w-0">
-        <h2 class="text-base text-ink-gray-9">{{ title }}</h2>
+        <h2 class="text-base font-semibold text-ink-gray-8">{{ title }}</h2>
         <p v-if="description" class="mt-0.5 text-p-sm text-ink-gray-5">{{ description }}</p>
       </div>
       <div class="shrink-0">
         <slot name="action" />
       </div>
     </header>
-    <div class="px-5 py-4">
+    <div class="px-5 pb-5 pt-2">
       <slot />
     </div>
   </section>

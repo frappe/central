@@ -20,8 +20,8 @@ const shortfall = computed(() => projected.value > 0 && balance.value < projecte
 <template>
   <button
     type="button"
-    class="flex flex-col rounded-lg border bg-surface-elevation-1 p-5 text-left transition-colors"
-    :class="active ? 'border-outline-gray-4 ring-1 ring-outline-gray-3' : 'border-outline-gray-2 hover:border-outline-gray-3'"
+    class="group flex flex-col rounded-xl border bg-surface-elevation-1 p-5 text-left transition-colors"
+    :class="active ? 'border-outline-gray-4 ring-1 ring-outline-gray-4' : 'border-outline-gray-2 hover:border-outline-gray-3'"
     @click="$emit('open')"
   >
     <div class="flex items-center justify-between gap-2">
@@ -30,7 +30,7 @@ const shortfall = computed(() => projected.value > 0 && balance.value < projecte
         <span class="lucide-info size-3.5 text-ink-gray-4" aria-hidden="true" />
       </span>
       <span
-        class="grid size-6 place-items-center rounded-full border border-outline-gray-2 text-ink-gray-6"
+        class="grid size-6 place-items-center rounded text-ink-gray-4 group-hover:text-ink-gray-6"
       >
         <span class="lucide-chevron-right size-4" aria-hidden="true" />
       </span>
@@ -44,7 +44,7 @@ const shortfall = computed(() => projected.value > 0 && balance.value < projecte
         {{ money(balance, currency) }}
       </p>
       <p v-if="shortfall" class="mt-1 flex items-center gap-1.5 text-p-sm text-ink-red-3">
-        <span class="lucide-triangle-alert size-3.5" aria-hidden="true" />
+        <span class="lucide-triangle-alert size-3.5 shrink-0" aria-hidden="true" />
         Won't cover the {{ money(projected, currency) }} invoice
       </p>
     </template>

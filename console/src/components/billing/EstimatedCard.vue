@@ -64,7 +64,7 @@ async function submitAlert(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex flex-col rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5">
+  <div class="flex flex-col rounded-xl border border-outline-gray-2 bg-surface-elevation-1 p-5">
     <div class="flex items-start justify-between gap-2">
       <span class="text-p-sm text-ink-gray-5">Estimated this cycle</span>
       <button
