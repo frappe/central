@@ -34,8 +34,12 @@ const paypalPhase = ref(false)
 const paypalLoading = ref(false)
 const paypalEl = ref<HTMLElement | null>(null)
 
+// Set when the wallet is actually credited, so a Razorpay top-up that runs with
+// the dialog closed knows whether to reopen (customer backed out) or stay closed.
+let completed = false
 const { begin, mountCard, mountPayPal, pay, destroy, cardComplete, submitting, loading } = useTopup({
   onDone: (res) => {
+    completed = true
     open.value = false
     emit('done', res)
   },
@@ -46,12 +50,19 @@ async function submit(): Promise<void> {
   if (!value || value <= 0) return
   // PayPal is only offered for international currencies; INR stays on the default rail.
   const chosen = showMethodChoice.value && payMethod.value === 'paypal' ? 'paypal' : undefined
-  const { card, paypal } = await begin(value, chosen)
+  completed = false
+  // On the Razorpay rail begin() invokes onSheet before opening the hosted sheet —
+  // drop our modal so the sheet is reachable, and reopen it if the customer cancels.
+  const { card, paypal } = await begin(value, chosen, () => {
+    open.value = false
+  })
   if (paypal)
     return enterPhase(paypalPhase, paypalLoading, paypalEl, mountPayPal, 'Could not start PayPal.')
   if (card)
     return enterPhase(cardPhase, cardLoading, cardEl, mountCard, 'Could not start secure card entry.')
-  // else: Razorpay finished in its sheet (or was cancelled/failed) — nothing to mount.
+  // else: the Razorpay sheet ran with our dialog closed — reopen it unless the
+  // top-up went through (onDone already closed and flagged it).
+  if (!completed) open.value = true
 }
 
 // Switch to a second-phase view and mount its gateway widget into the fresh node.

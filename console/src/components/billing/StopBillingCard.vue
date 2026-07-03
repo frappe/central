@@ -12,14 +12,12 @@ const { canManageBilling } = useCapabilities()
 </script>
 
 <template>
-  <BillingCard
-    title="Stop billing"
-    description="Suspend every server on this team and stop new charges."
-  >
+  <BillingCard title="Stop billing">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <p class="text-p-sm text-ink-gray-5">
-        Suspends all running servers. This action isn't available yet — the backend
-        endpoint is pending.
+        Suspend every server on this team to pause charges. Sites go offline;
+        nothing is deleted. This action isn't available yet — the backend endpoint
+        is pending.
       </p>
       <Button
         v-if="canManageBilling"
