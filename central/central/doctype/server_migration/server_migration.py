@@ -107,16 +107,20 @@ def enqueue_migration(name: str):
 
 
 def run_migration(name: str):
-	"""Execute one migration end-to-end (background job). Claims the doc by flipping
-	Scheduled → Running, so the cron backstop and a direct enqueue can't double-run it.
-	On failure: roll back the partial write, record Failed on a fresh committed write,
-	clear the Asset flag so the console can't wedge on "Migrating", and re-raise."""
+	"""Execute one migration end-to-end (background job). Claims the doc first —
+	row-lock, re-check, flip to Running, commit — so when a direct enqueue and the
+	cron backstop race on concurrent workers, the loser blocks on the lock, then
+	reads Running and leaves. A plain read-then-write would let both pass the guard
+	and provision (and bill) two replacements. On failure: roll back the partial
+	write, record Failed on a fresh committed write, clear the Asset flag so the
+	console can't wedge on "Migrating", and re-raise."""
 	from central.central.doctype.asset.asset import Asset
 
 	doc = frappe.get_doc("Server Migration", name)
-	if doc.status != "Scheduled":
+	if frappe.db.get_value("Server Migration", name, "status", for_update=True) != "Scheduled":
 		return
 	doc.db_set({"status": "Running", "started_at": now_datetime()}, notify=True)
+	frappe.db.commit()  # release the claim's row lock before the slow Atlas work
 	Asset.mark_migrating(doc.asset, True)
 	try:
 		_execute(doc)
