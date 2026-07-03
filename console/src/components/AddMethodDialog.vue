@@ -112,10 +112,16 @@ function cancelStripe(): void {
   stripeMode.value = false
 }
 
-// Tear down the Element and reset inline state whenever the dialog closes, so a
+// On open, re-pull the currency-derived gateway options + profile: the team may
+// have just completed its billing profile (picking a non-INR currency) without a
+// team switch, so the reads warmed at mount would otherwise still offer the INR
+// gateway. On close, tear down the Stripe Element and reset inline state so a
 // reopen starts on the method picker (not a stale Stripe field).
 watch(open, (isOpen) => {
-  if (!isOpen) {
+  if (isOpen) {
+    options.reload()
+    profile.reload()
+  } else {
     destroyStripe()
     stripeMode.value = false
     stripeLoading.value = false
