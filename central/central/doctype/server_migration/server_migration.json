@@ -1,0 +1,177 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-07-03 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "asset",
+  "team",
+  "from_cluster",
+  "to_cluster",
+  "column_break_target",
+  "pricing_mode",
+  "plan",
+  "sub_category",
+  "includes_json",
+  "section_break_lifecycle",
+  "status",
+  "scheduled_at",
+  "subscription",
+  "column_break_result",
+  "new_resource_id",
+  "started_at",
+  "completed_at",
+  "error"
+ ],
+ "fields": [
+  {
+   "description": "The source VM being moved (Asset docname = its Atlas resource_id).",
+   "fieldname": "asset",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Asset",
+   "options": "Asset",
+   "reqd": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1
+  },
+  {
+   "description": "Where the VM lives today. Snapshotted at request time so the record stays truthful even after the Asset is terminated.",
+   "fieldname": "from_cluster",
+   "fieldtype": "Link",
+   "label": "From Cluster",
+   "options": "Atlas Instance",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "to_cluster",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "To Cluster",
+   "options": "Atlas Instance",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_target",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Preset",
+   "description": "Preset carries `plan`; Composed carries `sub_category` + `includes_json` — the same two pricing modes as Subscription.",
+   "fieldname": "pricing_mode",
+   "fieldtype": "Select",
+   "label": "Pricing Mode",
+   "options": "Preset\nComposed"
+  },
+  {
+   "depends_on": "eval:doc.pricing_mode=='Preset'",
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "label": "Plan",
+   "options": "Plan"
+  },
+  {
+   "depends_on": "eval:doc.pricing_mode=='Composed'",
+   "fieldname": "sub_category",
+   "fieldtype": "Data",
+   "label": "Sub Category"
+  },
+  {
+   "depends_on": "eval:doc.pricing_mode=='Composed'",
+   "description": "Composed config rows as JSON ([{resource_type, quantity, unit}]). An operational snapshot, not the billing ledger — the real Subscription rows are written at execution.",
+   "fieldname": "includes_json",
+   "fieldtype": "JSON",
+   "label": "Includes (JSON)"
+  },
+  {
+   "fieldname": "section_break_lifecycle",
+   "fieldtype": "Section Break",
+   "label": "Lifecycle"
+  },
+  {
+   "default": "Scheduled",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Scheduled\nRunning\nCompleted\nFailed\nCancelled",
+   "reqd": 1
+  },
+  {
+   "description": "Empty means \"as soon as possible\" (the request enqueues it directly; the cron picker is the backstop). A future time defers execution to the cron picker.",
+   "fieldname": "scheduled_at",
+   "fieldtype": "Datetime",
+   "label": "Scheduled At"
+  },
+  {
+   "description": "The subscription carried over: cancelled after the replacement's subscription opens in the target cluster.",
+   "fieldname": "subscription",
+   "fieldtype": "Link",
+   "label": "Subscription",
+   "options": "Subscription",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_result",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The replacement VM's Atlas resource_id, once provisioned in the target region.",
+   "fieldname": "new_resource_id",
+   "fieldtype": "Data",
+   "label": "New Resource ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-07-03 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Server Migration",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

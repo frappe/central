@@ -112,9 +112,16 @@ class AtlasClient:
 		email: str | None = None,
 		cpu_max_cores: float | None = None,
 		frappe_version: str | None = None,
+		clone_from_region: str | None = None,
+		clone_from_vm: str | None = None,
 	) -> dict:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
-		Returns the new VM in the Asset-mirror shape so the caller can upsert it."""
+		Returns the new VM in the Asset-mirror shape so the caller can upsert it.
+
+		`clone_from_region`/`clone_from_vm` are the migration handoff (Server
+		Migration): they name the source VM whose data the new one should be restored
+		from. Atlas owns the actual data move; an Atlas without migration support
+		ignores them and provisions blank."""
 		params: dict = {
 			"team": team,
 			"title": title,
@@ -128,6 +135,9 @@ class AtlasClient:
 			params["cpu_max_cores"] = cpu_max_cores
 		if frappe_version:
 			params["frappe_version"] = frappe_version
+		if clone_from_region and clone_from_vm:
+			params["clone_from_region"] = clone_from_region
+			params["clone_from_vm"] = clone_from_vm
 		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
 
 	def central_vms(self, team: str | None = None) -> list[dict]:

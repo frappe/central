@@ -172,6 +172,9 @@ scheduler_events = {
 		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
 		# backstop that corrects drift the event push (central.api.atlas.event) missed.
 		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
+		# Server migrations: start every Scheduled one whose time has come (also the
+		# backstop for an immediate migration whose enqueue was lost).
+		"*/5 * * * *": ["central.central.doctype.server_migration.server_migration.run_due_migrations"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",

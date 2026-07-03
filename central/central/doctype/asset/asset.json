@@ -20,6 +20,7 @@
   "public_ipv4",
   "gateway_url",
   "resize_in_progress",
+  "migration_in_progress",
   "last_synced_at",
   "last_event_at"
  ],
@@ -132,6 +133,14 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "description": "Set while a Server Migration executes against this VM (replacement provisioned in the target region, subscription moved, source terminated). The console shows a \"Migrating\" state and blocks power actions while this is on; the job clears it on completion or failure.",
+   "fieldname": "migration_in_progress",
+   "fieldtype": "Check",
+   "label": "Migration In Progress",
+   "read_only": 1
+  },
+  {
    "description": "When the last reconcile (pull) refreshed this row.",
    "fieldname": "last_synced_at",
    "fieldtype": "Datetime",
@@ -147,7 +156,7 @@
   }
  ],
  "links": [],
- "modified": "2026-07-03 00:00:00.000000",
+ "modified": "2026-07-03 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Asset",

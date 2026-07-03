@@ -21,6 +21,7 @@ class Asset(Document):
 		last_event_at: DF.Datetime | None
 		last_synced_at: DF.Datetime | None
 		memory_megabytes: DF.Int
+		migration_in_progress: DF.Check
 		plan: DF.Link | None
 		public_ipv4: DF.Data | None
 		resize_in_progress: DF.Check
@@ -154,6 +155,12 @@ class Asset(Document):
 		the status the Atlas events drive. `notify=True` pushes the change to Console
 		list subscribers live, without polling."""
 		frappe.get_doc("Asset", resource_id).db_set("resize_in_progress", 1 if resizing else 0, notify=True)
+
+	@staticmethod
+	def mark_migrating(resource_id: str, migrating: bool) -> None:
+		"""Flag/unflag a VM as mid-migration — the same Central-orchestration pattern as
+		`mark_resizing`, driven by the Server Migration job instead of the resize job."""
+		frappe.get_doc("Asset", resource_id).db_set("migration_in_progress", 1 if migrating else 0, notify=True)
 
 	@staticmethod
 	def mark_terminated(resource_id: str, *, last_event_at=None, last_synced_at=None) -> None:
