@@ -20,6 +20,8 @@ export type AssetRow = Pick<
   | 'title'
   | 'cluster'
   | 'status'
+  | 'plan'
+  | 'frappe_version'
   | 'vcpus'
   | 'memory_megabytes'
   | 'disk_gigabytes'
@@ -56,6 +58,8 @@ const registry = useFrappeList<AssetRow>({
     'title',
     'cluster',
     'status',
+    'plan',
+    'frappe_version',
     'vcpus',
     'memory_megabytes',
     'disk_gigabytes',
@@ -132,7 +136,9 @@ async function runCommand(
 ): Promise<void> {
   busy.value = server.resource_id
   try {
+    // useCall surfaces HTTP failures on `.error` rather than throwing.
     await call.submit({ team: activeTeam.value!, resource_id: server.resource_id })
+    if (call.error) throw call.error
     successToast(`${verb} requested for ${server.title || server.resource_id}.`)
     registry.reload()
   } catch (e) {
@@ -148,6 +154,7 @@ export function useServers() {
   async function refreshAssets(): Promise<void> {
     try {
       await refresh.submit({ team: activeTeam.value! })
+      if (refresh.error) throw refresh.error
       registry.reload()
     } catch (e) {
       errorToast(e)
@@ -172,6 +179,7 @@ export function useServers() {
     const tab = window.open('', '_blank')
     try {
       await benchLink.submit({ asset: server.resource_id })
+      if (benchLink.error) throw benchLink.error
       const url = benchLink.data?.url
       if (url && tab) tab.location.href = url
       else if (url) window.location.href = url

@@ -20,6 +20,10 @@ export interface Asset{
 	cluster: string
 	/**	Status : Select - Mirrors the Atlas Virtual Machine status verbatim.	*/
 	status?: "Pending" | "Running" | "Paused" | "Stopped" | "Failed" | "Terminated"
+	/**	Plan : Link - Plan - The preset bundle this VM was provisioned from (empty for raw sizes).	*/
+	plan?: string
+	/**	Frappe Version : Data - Frappe version the VM was provisioned with (chosen at create, echoed by Atlas).	*/
+	frappe_version?: string
 	/**	vCPUs : Int	*/
 	vcpus?: number
 	/**	Memory (MB) : Int	*/
