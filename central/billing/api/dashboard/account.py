@@ -110,9 +110,18 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 
 	from central.billing.payments import profile
 	profile = profile.create_or_update_billing_profile(team, **values)
-	
+
+	# Once the profile is complete the team is a real customer: assign its entry
+	# trust tier, a tax profile, and welcome credits (idempotent — a no-op once
+	# each has happened).
+	setup_complete = _profile_complete(team)
+	if setup_complete:
+		from central.billing.payments.provisioning import provision_billing_profile
+
+		provision_billing_profile(team)
+
 	return {"saved": True, "team": team, "gstin": profile.gstin, "currency": profile.currency,
-			"setup_complete": _profile_complete(team)}
+			"setup_complete": setup_complete}
 
 
 @frappe.whitelist()
