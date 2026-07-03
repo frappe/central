@@ -263,6 +263,15 @@ def apply_webhook(event_name: str) -> dict:
 			return {"handled": False, "reason": "topup_not_captured"}
 		return _credit_topup(event, topup)
 
+	# Hosted-checkout invoice payments (create_invoice_checkout) also carry no Payment
+	# Attempt — they settle the invoice from the `invoice_payment` notes, same as top-ups.
+	inv_pay = _extract_invoice_payment(adapter_key, payload)
+	if inv_pay:
+		if not is_success:
+			_mark_event(event, "Ignored")
+			return {"handled": False, "reason": "invoice_payment_not_captured"}
+		return _settle_invoice_payment(event, inv_pay)
+
 	attempt_name = frappe.db.get_value("Payment Attempt", {"gateway_transaction_id": txn_id}, "name")
 	if not attempt_name:
 		_mark_event(event, "Ignored")
@@ -315,14 +324,20 @@ def apply_webhook(event_name: str) -> dict:
 
 def _settle_invoice(attempt) -> bool:
 	"""Mark the attempt's invoice Paid (idempotent, under a row lock)."""
+	return _mark_invoice_paid(attempt.invoice, attempt.amount)
+
+
+def _mark_invoice_paid(invoice: str, amount) -> bool:
+	"""Mark an invoice Paid (idempotent, under a row lock). Shared by the Payment
+	Attempt capture path and the hosted-checkout invoice-payment path."""
 	invoice_tbl = frappe.qb.DocType("Invoice")
 	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
-		invoice_tbl.name == attempt.invoice
+		invoice_tbl.name == invoice
 	).for_update().run()
-	inv = frappe.get_doc("Invoice", attempt.invoice)
+	inv = frappe.get_doc("Invoice", invoice)
 	if inv.status == "Paid":
 		return False  # a duplicate webhook — already settled
-	inv.amount_paid = frappe.utils.flt(attempt.amount)
+	inv.amount_paid = frappe.utils.flt(amount)
 	inv.status = "Paid"
 	inv.save(ignore_permissions=True)
 
@@ -439,6 +454,49 @@ def _extract_topup(adapter_key: str, payload: dict):
 			"currency": (obj.get("currency") or "").upper() or None,
 		}
 	return None
+
+
+def _extract_invoice_payment(adapter_key: str, payload: dict):
+	"""If this event is a hosted-checkout invoice payment (`purpose=invoice_payment`
+	in the gateway notes/metadata set at create_invoice_checkout), return its invoice
+	+ captured amount; else None. Mirrors _extract_topup for the wallet-topup case —
+	a hosted invoice checkout carries no Payment Attempt, so it settles from notes."""
+	if adapter_key == "Razorpay":
+		entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
+		notes = entity.get("notes") or {}
+		if notes.get("purpose") != "invoice_payment":
+			return None
+		minor = entity.get("amount")
+		return {
+			"invoice": notes.get("invoice"),
+			"payment_id": entity.get("id"),
+			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+		}
+	if adapter_key == "Stripe":
+		obj = ((payload.get("data") or {}).get("object")) or {}
+		notes = obj.get("metadata") or {}
+		if notes.get("purpose") != "invoice_payment":
+			return None
+		minor = obj.get("amount_total") or obj.get("amount_received") or obj.get("amount")
+		return {
+			"invoice": notes.get("invoice"),
+			"payment_id": obj.get("payment_intent") or obj.get("id"),
+			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+		}
+	return None
+
+
+def _settle_invoice_payment(event, inv_pay: dict) -> dict:
+	"""Settle a hosted-checkout invoice from the capture webhook (idempotent on the
+	invoice's Paid state). A malformed event (missing invoice/amount) is Ignored
+	rather than settling a guess — an invoice never magically flips to Paid."""
+	invoice = inv_pay.get("invoice")
+	if not (invoice and inv_pay.get("amount") and frappe.db.exists("Invoice", invoice)):
+		_mark_event(event, "Ignored")
+		return {"handled": False, "reason": "invoice_payment_incomplete"}
+	settled = _mark_invoice_paid(invoice, inv_pay["amount"])
+	_mark_event(event, "Processed")
+	return {"handled": True, "result": "paid", "invoice": invoice, "settled": settled}
 
 
 def _credit_topup(event, topup: dict) -> dict:

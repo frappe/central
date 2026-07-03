@@ -182,6 +182,34 @@ class TestChargeInvoice(ChargeTestBase):
 		)
 		self.assertTrue(comments)
 
+	def _stripe_invoice_payment_event(self, gateway_event_id, invoice, amount_minor, txn_id="pi_hosted"):
+		"""A Stripe capture webhook for a hosted invoice checkout — carries the
+		`invoice_payment` metadata (no Payment Attempt exists for this flow)."""
+		payload = {"id": gateway_event_id, "type": "payment_intent.succeeded",
+				   "data": {"object": {"id": txn_id, "amount_received": amount_minor, "currency": "inr",
+									   "metadata": {"purpose": "invoice_payment", "invoice": invoice}}}}
+		return frappe.get_doc({
+			"doctype": "Webhook Event", "gateway": GATEWAY, "gateway_event_id": gateway_event_id,
+			"event_type": "payment_intent.succeeded", "raw_payload": json.dumps(payload),
+			"status": "Received",
+		}).insert(ignore_permissions=True).name
+
+	def test_hosted_checkout_webhook_settles_invoice_without_attempt(self):
+		# Hosted invoice checkout records no Payment Attempt; the invoice must still
+		# settle from the invoice_payment notes on the capture webhook.
+		inv = self._open_invoice(1000)
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
+
+		out = charges.apply_webhook(self._stripe_invoice_payment_event("evt_hosted_1", inv, 100000))
+
+		self.assertEqual(out["result"], "paid")
+		invoice = frappe.get_doc("Invoice", inv)
+		self.assertEqual(invoice.status, "Paid")
+		self.assertEqual(invoice.amount_paid, 1000.0)
+		# Idempotent: a duplicate capture webhook does not re-settle.
+		second = charges.apply_webhook(self._stripe_invoice_payment_event("evt_hosted_2", inv, 100000))
+		self.assertFalse(second["settled"])
+
 	def test_duplicate_success_webhook_is_idempotent(self):
 		inv = self._open_invoice(1000)
 		with stub_adapter(success=True, txn_id="pi_dup"):
