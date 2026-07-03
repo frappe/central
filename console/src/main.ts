@@ -17,4 +17,17 @@ app.use(FrappeUI, {
   socketio: window.socketio_port ? { port: window.socketio_port } : true,
 })
 
-router.isReady().then(() => app.mount('#app'))
+// Under `yarn dev` nothing server-renders the page, so the token never lands
+// and Frappe rejects POSTs once the session has one minted (CSRFTokenError).
+// Pull it from the proxied desk page before mounting; production is untouched.
+async function ensureCsrfToken(): Promise<void> {
+  if (!import.meta.env.DEV || window.csrf_token) return
+  try {
+    const html = await (await fetch('/app', { headers: { Accept: 'text/html' } })).text()
+    window.csrf_token = html.match(/frappe\.csrf_token\s*=\s*"(\w+)"/)?.[1]
+  } catch {
+    // Logged out or proxy down — POSTs will surface their own errors.
+  }
+}
+
+Promise.all([router.isReady(), ensureCsrfToken()]).then(() => app.mount('#app'))
