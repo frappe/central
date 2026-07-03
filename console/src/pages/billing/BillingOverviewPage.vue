@@ -27,13 +27,13 @@ const showWalletHistory = ref(false)
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Billing" />
+    <PageHeader title="Billing" subtitle="One account funds every server." />
 
     <!-- Content + docked wallet-history panel (like the invoice tray): the panel
          shares the row, the content stays bright beside it — no modal overlay. -->
     <div class="flex min-h-0 flex-1">
       <div class="min-w-0 flex-1 overflow-y-auto">
-        <div class="mx-auto w-full max-w-4xl space-y-5 px-5 py-6">
+        <div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
           <!-- Until the billing profile is filled, ask the team to complete it
                first — money-moving actions stay gated on it. -->
           <div
@@ -54,7 +54,7 @@ const showWalletHistory = ref(false)
           </div>
 
           <CollectionActionBanner />
-          <div class="grid gap-5 sm:grid-cols-2">
+          <div class="grid gap-4 sm:grid-cols-2">
             <EstimatedCard />
             <WalletCard :active="showWalletHistory" @open="showWalletHistory = true" />
           </div>
