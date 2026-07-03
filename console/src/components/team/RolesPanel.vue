@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Button, Skeleton } from 'frappe-ui'
+import { Button } from 'frappe-ui'
+import Skeleton from '../common/Skeleton.vue'
 import RoleMatrix from '@/components/team/RoleMatrix.vue'
 import RoleBuilderDialog from '@/components/team/RoleBuilderDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'

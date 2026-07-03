@@ -1,6 +1,7 @@
 <script setup lang="ts" generic="TData extends object">
 import { computed, h, ref } from 'vue'
-import { Button, Checkbox, Combobox, TextInput, Skeleton } from 'frappe-ui'
+import { Button, Checkbox, Combobox, TextInput } from 'frappe-ui'
+import Skeleton from '../Skeleton.vue'
 import {
   FlexRender,
   getCoreRowModel,

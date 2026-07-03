@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Button, TabButtons, Skeleton } from 'frappe-ui'
+import { Button, TabButtons } from 'frappe-ui'
+import Skeleton from '../Skeleton.vue'
 
 const pageSizeOptions = [10, 20, 50] as const
 
