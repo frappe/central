@@ -29,6 +29,7 @@ export type AssetRow = Pick<
   | 'public_ipv4'
   | 'gateway_url'
   | 'resize_in_progress'
+  | 'migration_in_progress'
   | 'last_synced_at'
 >
 
@@ -67,6 +68,7 @@ const registry = useFrappeList<AssetRow>({
     'public_ipv4',
     'gateway_url',
     'resize_in_progress',
+    'migration_in_progress',
     'last_synced_at',
   ],
   query,

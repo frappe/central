@@ -14,6 +14,7 @@ const STATUS_THEME: Record<string, BadgeTheme> = {
   Pending: 'orange',
   Provisioning: 'orange',
   Resizing: 'orange',
+  Migrating: 'orange',
   Paused: 'orange',
   Stopped: 'gray',
   Failed: 'red',
@@ -31,8 +32,20 @@ export function isResizing(server: { resize_in_progress?: 0 | 1 }): boolean {
   return server.resize_in_progress === 1
 }
 
-/** The status to show for a row: "Resizing" while a reshape job runs, else the mirror. */
-export function displayStatus(server: { status?: AssetStatus; resize_in_progress?: 0 | 1 }): AssetStatus {
+/** A server mid-migration reads as "Migrating" the same way — Central's own flag,
+ * set for the length of the Server Migration job. */
+export function isMigrating(server: { migration_in_progress?: 0 | 1 }): boolean {
+  return server.migration_in_progress === 1
+}
+
+/** The status to show for a row: "Migrating"/"Resizing" while their background
+ * jobs run, else the mirror. */
+export function displayStatus(server: {
+  status?: AssetStatus
+  resize_in_progress?: 0 | 1
+  migration_in_progress?: 0 | 1
+}): AssetStatus {
+  if (isMigrating(server)) return 'Migrating'
   return isResizing(server) ? 'Resizing' : (server.status ?? 'Pending')
 }
 

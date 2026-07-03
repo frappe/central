@@ -35,10 +35,12 @@
             :can-terminate="canTerminateServer"
             :busy="busy === server.resource_id"
             :opening="opening === server.resource_id"
+            :scheduled-migration="!!scheduledFor(server.resource_id)"
             @open="open"
             @start="doStart"
             @stop="doStop"
-            @resize="pendingResize = $event"
+            @change-plan="pendingChange = $event"
+            @cancel-migration="doCancelMigration"
             @terminate="pendingTerminate = $event"
           />
         </template>
@@ -146,6 +148,13 @@
                     variant="subtle"
                     size="sm"
                   />
+                  <Badge
+                    v-if="scheduledFor(row.asset.resource_id)"
+                    label="Migration scheduled"
+                    theme="blue"
+                    variant="subtle"
+                    size="sm"
+                  />
                 </span>
                 <span class="block truncate text-sm text-ink-gray-5">{{ row.specs || row.regionLabel }}</span>
               </span>
@@ -157,10 +166,12 @@
                   :can-terminate="canTerminateServer"
                   :busy="busy === row.id"
                   :opening="opening === row.id"
+                  :scheduled-migration="!!scheduledFor(row.asset.resource_id)"
                   @open="open"
                   @start="doStart"
                   @stop="doStop"
-                  @resize="pendingResize = $event"
+                  @change-plan="pendingChange = $event"
+                  @cancel-migration="doCancelMigration"
                   @terminate="pendingTerminate = $event"
                 />
               </span>
@@ -223,7 +234,7 @@
       @confirm="confirmTerminate"
     />
 
-    <ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
+    <ChangePlanDialog v-model:server="pendingChange" @changed="reloadAll" />
   </div>
 </template>
 
@@ -232,12 +243,13 @@ import { computed, h, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Badge, Button, Dropdown, FormControl, Spinner } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
+import ChangePlanDialog from '@/components/servers/ChangePlanDialog.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
-import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateDialog from '@/components/servers/TerminateDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useMigrations } from '@/composables/useMigrations'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useServers } from '@/composables/useServers'
@@ -466,6 +478,7 @@ watch(panelOpen, (isOpen) => {
 //   the map reads through registry, so reload that too.
 function reloadAll(): void {
   reload()
+  reloadMigrations()
 }
 async function doRefresh(): Promise<void> {
   await refreshAssets()
@@ -488,9 +501,15 @@ async function confirmTerminate(server: AssetRow): Promise<void> {
   reload()
 }
 
-// Resize a server (preset or custom) — the backend power-cycles the VM as needed, so
-// this is one action with no separate stop step.
-const pendingResize = ref<AssetRow | null>(null)
+// Change plan / migrate — one dialog for both (resize in place, or move region
+// with a review + optional schedule). Scheduled migrations get a row badge and a
+// cancel action while they wait.
+const pendingChange = ref<AssetRow | null>(null)
+const { scheduledFor, cancel: cancelMigration, reload: reloadMigrations } = useMigrations()
+async function doCancelMigration(server: AssetRow): Promise<void> {
+  const migration = scheduledFor(server.resource_id)
+  if (migration) await cancelMigration(migration)
+}
 </script>
 
 <style scoped>

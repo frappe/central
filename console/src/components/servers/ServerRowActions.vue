@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
-import { canStart, canStop, isResizing, isTerminated } from '@/lib/status'
+import { canStart, canStop, isMigrating, isResizing, isTerminated } from '@/lib/status'
 import type { AssetRow } from '@/composables/useServers'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
@@ -15,13 +15,16 @@ const props = defineProps<{
   canTerminate: boolean
   busy?: boolean
   opening?: boolean
+  /** A Server Migration is scheduled for this server — offer to call it off. */
+  scheduledMigration?: boolean
 }>()
 
 const emit = defineEmits<{
   open: [server: AssetRow]
   start: [server: AssetRow]
   stop: [server: AssetRow]
-  resize: [server: AssetRow]
+  changePlan: [server: AssetRow]
+  cancelMigration: [server: AssetRow]
   terminate: [server: AssetRow]
 }>()
 
@@ -38,25 +41,33 @@ const options = computed(() => {
   // Mid-resize the VM is power-cycling in the background: power + resize actions are
   // blocked (the API rejects them too) until the reshape job clears the flag.
   const resizing = isResizing(props.server)
+  const migrating = isMigrating(props.server)
+  const inFlight = resizing || migrating
   if (props.canOpen)
     items.push({
       label: 'Open',
       icon: 'lucide-external-link',
-      disabled: resizing || props.server.status !== 'Running' || !props.server.gateway_url,
+      disabled: inFlight || props.server.status !== 'Running' || !props.server.gateway_url,
       onClick: () => emit('open', props.server),
     })
   if (props.canPower && canStart(props.server.status))
-    items.push({ label: 'Start', icon: 'lucide-play', disabled: resizing, onClick: () => emit('start', props.server) })
+    items.push({ label: 'Start', icon: 'lucide-play', disabled: inFlight, onClick: () => emit('start', props.server) })
   if (props.canPower && canStop(props.server.status))
-    items.push({ label: 'Stop', icon: 'lucide-square', disabled: resizing, onClick: () => emit('stop', props.server) })
-  // Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
-  // custom config.
+    items.push({ label: 'Stop', icon: 'lucide-square', disabled: inFlight, onClick: () => emit('stop', props.server) })
+  // Change plan: resize in place, or migrate when another region is picked —
+  // one dialog for both (the FC V2 Change Plan flow).
   if (props.canPower && !isTerminated(props.server.status))
     items.push({
-      label: 'Resize',
-      icon: 'lucide-sliders-horizontal',
-      disabled: resizing,
-      onClick: () => emit('resize', props.server),
+      label: 'Change plan',
+      icon: 'lucide-arrow-right-left',
+      disabled: resizing || migrating,
+      onClick: () => emit('changePlan', props.server),
+    })
+  if (props.scheduledMigration)
+    items.push({
+      label: 'Cancel scheduled migration',
+      icon: 'lucide-calendar-x',
+      onClick: () => emit('cancelMigration', props.server),
     })
   if (props.canTerminate && !isTerminated(props.server.status))
     items.push({

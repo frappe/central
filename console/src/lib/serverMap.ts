@@ -1,4 +1,4 @@
-import { displayStatus, isResizing } from '@/lib/status'
+import { displayStatus, isMigrating, isResizing } from '@/lib/status'
 import type { AssetRow } from '@/composables/useServers'
 import type { Region } from '@/types/Region'
 
@@ -10,7 +10,7 @@ type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue'
 
 export interface ServerVisual {
   /** Stable key the status filter matches on. */
-  key: 'active' | 'settingUp' | 'paused' | 'stopped' | 'broken' | 'resizing'
+  key: 'active' | 'settingUp' | 'paused' | 'stopped' | 'broken' | 'resizing' | 'migrating'
   label: string
   badgeTheme: BadgeTheme
   /** CSS variable for the status dot on pins and rows. */
@@ -26,6 +26,7 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
   stopped: { key: 'stopped', label: 'Stopped', badgeTheme: 'gray', dot: 'var(--ink-gray-5)', pulse: false },
   broken: { key: 'broken', label: 'Broken', badgeTheme: 'red', dot: 'var(--ink-red-7)', pulse: true },
   resizing: { key: 'resizing', label: 'Resizing', badgeTheme: 'orange', dot: 'var(--ink-amber-7)', pulse: false },
+  migrating: { key: 'migrating', label: 'Migrating', badgeTheme: 'orange', dot: 'var(--ink-amber-7)', pulse: false },
 }
 
 // Mirror status → visual. Keyed by string because Atlas can report statuses
@@ -40,6 +41,7 @@ const STATUS_VISUAL: Record<string, ServerVisual> = {
 }
 
 export function statusVisual(server: AssetRow): ServerVisual {
+  if (isMigrating(server)) return VISUALS.migrating
   if (isResizing(server)) return VISUALS.resizing
   return STATUS_VISUAL[displayStatus(server)] ?? VISUALS.settingUp
 }
@@ -49,6 +51,7 @@ export const STATUS_FILTERS: ServerVisual[] = [
   VISUALS.active,
   VISUALS.settingUp,
   VISUALS.resizing,
+  VISUALS.migrating,
   VISUALS.paused,
   VISUALS.stopped,
   VISUALS.broken,
