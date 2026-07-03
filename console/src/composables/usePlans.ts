@@ -53,6 +53,11 @@ export function usePlans(cluster: Ref<string | null>, excludeSubscription?: Ref<
     // "Design your own" inputs: the per-resource rate card + the profile bounds.
     rateCard: computed<RateCard>(() => call.data?.rate_card ?? {}),
     profiles: computed<Profile[]>(() => call.data?.profiles ?? []),
-    loading: computed(() => call.loading),
+    // Loading until the response *echo* matches the picked region — the fetch
+    // starts a tick after `cluster` changes, and without this gate the previous
+    // region's menu flashes through in that gap.
+    loading: computed(
+      () => call.loading || (!!cluster.value && call.data?.cluster !== cluster.value),
+    ),
   }
 }

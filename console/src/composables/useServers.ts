@@ -94,6 +94,7 @@ type CreateParams = {
   memory_megabytes: number
   disk_gigabytes: number
   cpu_max_cores?: number
+  frappe_version?: string
 }
 const createCall = useCall<{ resource_id: string }, CreateParams>({
   url: method(API.createServer),
@@ -110,6 +111,7 @@ type CreateComposedParams = {
   title: string
   includes: ComposedInclude[]
   sub_category: string
+  frappe_version?: string
 }
 const createComposedCall = useCall<{ resource_id: string }, CreateComposedParams>({
   url: method(API.createComposedServer),
