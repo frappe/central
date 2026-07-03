@@ -50,7 +50,7 @@
                    separator ring hugs the visible disc, not the box edge. -->
               <span
                 v-if="n.stacked"
-                class="pointer-events-none absolute inset-[2px] rounded-full ring-2 ring-[var(--surface-base)]"
+                class="pointer-events-none absolute inset-[2px] rounded-full ring-2 ring-[var(--surface-gray-1)]"
               />
             </span>
             <span
