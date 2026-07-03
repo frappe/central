@@ -175,6 +175,14 @@ def create_server(
 		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get(
 			"subscription"
 		)
+	elif resource_id:
+		# No billing seam ran, so no Pending Asset exists for the stamp below to
+		# land on (the chosen version would be lost until Atlas happens to echo
+		# it). Mirror the VM Atlas returned — the vm.created event reconciles
+		# this same row (keyed on resource_id) instead of creating a second one.
+		from central.central.doctype.asset.asset import Asset
+
+		Asset.mirror_vm(region, vm)
 	_stamp_frappe_version(resource_id, frappe_version)
 	return {"resource_id": resource_id, "server": vm, "subscription": subscription}
 

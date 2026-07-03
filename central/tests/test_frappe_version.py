@@ -42,6 +42,25 @@ class TestFrappeVersion(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			create_server(team=self.team.name, region=self.region, title="v", frappe_version="v99")
 
+	def test_planless_create_still_records_version(self):
+		# Without a plan the billing seam never writes a Pending Asset — create_server
+		# must mirror the VM Atlas returned so the chosen version has a row to land on.
+		from unittest.mock import patch
+
+		vm = {
+			"name": "fv-planless-test",
+			"team": self.team.name,
+			"title": "fv-planless",
+			"status": "Pending",
+			"vcpus": 1,
+			"memory_megabytes": 512,
+			"disk_gigabytes": 10,
+		}
+		frappe.set_user(self.owner)
+		with patch("central.integrations.atlas.AtlasClient.create_vm", return_value=vm):
+			create_server(team=self.team.name, region=self.region, title="fv-planless", frappe_version="v16")
+		self.assertEqual(frappe.db.get_value("Asset", "fv-planless-test", "frappe_version"), "v16")
+
 	def test_stamp_records_version_on_pending_asset(self):
 		frappe.get_doc(
 			{
