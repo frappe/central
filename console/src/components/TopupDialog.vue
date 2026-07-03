@@ -16,10 +16,15 @@ const emit = defineEmits<{ done: [res?: unknown] }>()
 const amount = ref<number | null>(null)
 const presets = [1000, 5000, 10000, 25000]
 
-// Payment rail. INR always uses the Razorpay sheet; international currencies pick
-// between a card (Stripe Element) and PayPal (directly settled, ADR 0007).
+// Payment rail. INR always uses the Razorpay sheet; international currencies use a
+// card (Stripe Element). PayPal (directly settled, ADR 0007) is temporarily hidden
+// — its gateway + Buttons plumbing is kept intact (useTopup.mountPayPal) so it can
+// be re-enabled by flipping this flag.
+const PAYPAL_ENABLED = false
 const payMethod = ref<'card' | 'paypal'>('card')
-const showMethodChoice = computed(() => props.currency !== 'INR')
+// With PayPal hidden, foreign currencies have only the Stripe card rail, so there
+// is no rail to choose between.
+const showMethodChoice = computed(() => props.currency !== 'INR' && PAYPAL_ENABLED)
 
 // Second-phase mount targets: Stripe card Element / PayPal Buttons.
 const cardPhase = ref(false)

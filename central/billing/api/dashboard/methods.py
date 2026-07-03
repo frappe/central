@@ -9,6 +9,8 @@ import frappe
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
 	_add_method_gateway,
+	_card_gateway,
+	_enabled_gateway_for_currency,
 	_require_billing_setup,
 	_require_manage,
 	_resolve_team,
@@ -35,29 +37,37 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 
 @frappe.whitelist()
 def get_payment_method_options(team: str | None = None) -> dict:
-	"""What the team can set up, resolved from their billing currency: card + UPI
-	on Razorpay (INR), card-only on Stripe (USD/EUR). UPI is gated by the
-	₹1,00,000 recurring limit."""
+	"""What the team can set up, resolved from their billing currency (ADR 0005).
+
+	Saved cards are a Stripe-only rail in every currency, so Card is the primary
+	option wherever an enabled Stripe gateway handles the currency. INR additionally
+	offers a Razorpay UPI Autopay e-mandate (gated by the recurring limit); it rides
+	Razorpay independently of the card gateway. Foreign currencies are card-only."""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
-	gw = _add_method_gateway(currency)
 
-	if gw.get("adapter_key") == "Razorpay":
+	methods: list[str] = []
+	publishable_key = None
+	card_gw = _card_gateway(currency)
+	if card_gw:
+		from central.billing.gateways.registry import get_adapter
+
+		publishable_key = get_adapter(frappe.get_doc("Payment Gateway", card_gw)).get_credential("api_key")
+		methods.append("Card")
+
+	# UPI Autopay is a Razorpay e-mandate (INR), offered only where an enabled
+	# Razorpay gateway handles the currency — independent of the card rail above.
+	upi = {"allow_upi": False, "upi_block_reason": None, "upi_limit": None}
+	if _enabled_gateway_for_currency(currency, "Razorpay"):
 		from central.billing.payments import mandates
 
 		elig = mandates.upi_eligibility(team)
-		return {"gateway": gw.name, "adapter_key": "Razorpay", "currency": currency,
-				"methods": ["Card", "UPI Autopay"], "allow_upi": elig["eligible"],
-				"upi_block_reason": elig["reason"], "upi_limit": elig["limit"]}
+		methods.append("UPI Autopay")
+		upi = {"allow_upi": elig["eligible"], "upi_block_reason": elig["reason"],
+			   "upi_limit": elig["limit"]}
 
-	publishable_key = None
-	if gw.get("adapter_key") == "Stripe":
-		from central.billing.gateways.registry import get_adapter
-
-		publishable_key = get_adapter(frappe.get_doc("Payment Gateway", gw.name)).get_credential("api_key")
-	return {"gateway": gw.get("name"), "adapter_key": gw.get("adapter_key"), "currency": currency,
-			"methods": ["Card"], "allow_upi": False, "upi_block_reason": None, "upi_limit": None,
-			"publishable_key": publishable_key}
+	return {"gateway": card_gw, "adapter_key": "Stripe" if card_gw else None,
+			"currency": currency, "methods": methods, "publishable_key": publishable_key, **upi}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -66,9 +76,9 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 	collected client-side by the gateway SDK (PCI), never by our server."""
 	team = _resolve_team(team, authz.MANAGE)
 	_require_billing_setup(team)
-	# Default to the team's currency gateway (Stripe for USD/EUR) when the caller
-	# doesn't name one — same resolution the Razorpay setup path uses.
-	gateway = gateway or _add_method_gateway(_team_currency(team)).get("name")
+	# Saved cards are a Stripe-only rail (ADR 0005), so resolve the currency's Stripe
+	# gateway — for INR that's the Stripe gateway, not the Razorpay currency default.
+	gateway = gateway or _card_gateway(_team_currency(team))
 	from central.billing.payments import payments
 
 	return payments.initiate_payment_method_setup(team, gateway)

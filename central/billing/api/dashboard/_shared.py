@@ -193,6 +193,14 @@ def _add_method_gateway(currency: str):
 	return gw or frappe._dict()
 
 
+def _card_gateway(currency: str) -> str | None:
+	"""The gateway that saves cards for this currency. Saved cards are a Stripe-only
+	rail (ADR 0005) in every currency — INR included, where Razorpay handles only the
+	UPI Autopay e-mandate. Returns an enabled Stripe gateway that handles the
+	currency, or None if there is no card rail for it."""
+	return _enabled_gateway_for_currency(currency, "Stripe")
+
+
 def _from_inr(amount: float, currency: str) -> float:
 	return frappe.utils.flt(frappe.utils.flt(amount) / _FX_TO_INR.get(currency, 1.0), 2)
 

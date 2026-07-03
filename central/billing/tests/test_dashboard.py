@@ -530,3 +530,81 @@ class TestWriteEndpointsRejectGet(IntegrationTestCase):
 					allowed[fn], ["POST"],
 					f"{fn.__name__} must be methods=['POST'] so a GET cannot silently roll back its writes",
 				)
+
+
+class TestPaymentMethodOptions(IntegrationTestCase):
+	"""Saved cards are a Stripe-only rail (ADR 0005): the Card option is Stripe in
+	every currency; INR also offers a Razorpay UPI Autopay e-mandate."""
+
+	TEAM = "team-method-opts"
+	STRIPE = "GW-Opts-Stripe"
+	RAZORPAY = "GW-Opts-Razorpay"
+
+	def setUp(self):
+		from central.billing.catalog.entitlements import recompute_trust_tier
+		from central.billing.tests.test_entitlements import make_ladder
+		from central.billing.tests.utils import clear_team_tier
+
+		ensure_team(self.TEAM)
+		make_ladder()
+		self._stripe_gateway(["INR", "USD"])
+		self._razorpay_gateway("INR")
+		complete_billing_profile(self.TEAM)
+		frappe.db.set_value("Billing Profile", self.TEAM, "currency", "INR")
+		clear_team_tier(self.TEAM)
+		recompute_trust_tier(self.TEAM, paid_invoice_count=0, cumulative_paid=0)
+
+	def _stripe_gateway(self, currencies):
+		if frappe.db.exists("Payment Gateway", self.STRIPE):
+			frappe.delete_doc("Payment Gateway", self.STRIPE, force=True)
+		frappe.get_doc({
+			"doctype": "Payment Gateway", "__newname": self.STRIPE, "title": "Stripe (Opts)",
+			"adapter_key": "Stripe", "api_key": "pk_test_opts", "api_secret": "sk_test_opts",
+			"webhook_secret": "whsec_opts", "is_enabled": 1,
+			# INR non-default (Razorpay owns the currency default), USD default.
+			"currencies": [{"currency": c, "is_default": 1 if c == "USD" else 0} for c in currencies],
+		}).insert(ignore_permissions=True)
+
+	def _razorpay_gateway(self, currency):
+		if frappe.db.exists("Payment Gateway", self.RAZORPAY):
+			frappe.delete_doc("Payment Gateway", self.RAZORPAY, force=True)
+		frappe.get_doc({
+			"doctype": "Payment Gateway", "__newname": self.RAZORPAY, "title": "Razorpay (Opts)",
+			"adapter_key": "Razorpay", "api_key": "rzp_test", "api_secret": "rzp_secret",
+			"webhook_secret": "rzp_whsec", "is_enabled": 1, "supports_mandates": 1,
+			"currencies": [{"currency": currency, "is_default": 1}],
+		}).insert(ignore_permissions=True)
+
+	def test_india_offers_stripe_card_and_razorpay_upi(self):
+		from central.billing.api.dashboard import methods
+
+		out = methods.get_payment_method_options(self.TEAM)
+		self.assertEqual(out["currency"], "INR")
+		self.assertEqual(out["adapter_key"], "Stripe")  # Card rides Stripe, not Razorpay
+		self.assertEqual(out["methods"], ["Card", "UPI Autopay"])  # Card is primary
+		self.assertEqual(out["gateway"], self.STRIPE)
+		self.assertTrue(out["publishable_key"])
+		self.assertIn("allow_upi", out)  # UPI eligibility carried through
+
+	def test_india_card_setup_uses_stripe_gateway(self):
+		from central.billing.api.dashboard import methods
+		from unittest.mock import patch
+
+		captured = {}
+
+		def fake_setup(team, gateway):
+			captured["gateway"] = gateway
+			return {"client_secret": "cs", "payment_method": "pm"}
+
+		with patch("central.billing.payments.payments.initiate_payment_method_setup", fake_setup):
+			methods.initiate_card_setup(self.TEAM)
+		self.assertEqual(captured["gateway"], self.STRIPE)
+
+	def test_foreign_currency_is_stripe_card_only(self):
+		from central.billing.api.dashboard import methods
+
+		frappe.db.set_value("Billing Profile", self.TEAM, "currency", "USD")
+		out = methods.get_payment_method_options(self.TEAM)
+		self.assertEqual(out["adapter_key"], "Stripe")
+		self.assertEqual(out["methods"], ["Card"])  # no UPI outside INR
+		self.assertFalse(out["allow_upi"])
