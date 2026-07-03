@@ -232,6 +232,30 @@ class RazorpayAdapter(GatewayAdapter):
 				"amount_in_subunits": order.get("amount"), "currency": (currency or "INR").upper(),
 				"customer_id": customer}
 
+	def create_checkout_session(self, amount, currency: str, receipt: str,
+								success_url: str, cancel_url: str, notes: dict | None = None,
+								customer: str | None = None) -> dict:
+		"""A hosted Razorpay Payment Link — the hosted-checkout equivalent of a Stripe
+		Checkout Session. The UI redirects to `checkout_url` (the link's short URL);
+		Razorpay returns the payer to `success_url` and fires the payment webhook.
+		`cancel_url` is unused — a Payment Link carries a single callback."""
+		link = self._client().payment_link.create({
+			"amount": int(round((amount or 0) * 100)),
+			"currency": (currency or "INR").upper(),
+			"accept_partial": False,
+			"description": (notes or {}).get("purpose") or "Payment",
+			"reference_id": receipt,
+			"callback_url": success_url,
+			"callback_method": "get",
+			"notes": notes or {},
+		})
+		return {"checkout_url": link.get("short_url"), "session_id": link.get("id"),
+				"key_id": self.get_credential("api_key")}
+
+	def get_checkout_session(self, session_id: str) -> dict:
+		"""Fetch the Payment Link to confirm it was paid (status == 'paid')."""
+		return self._client().payment_link.fetch(session_id)
+
 	def create_customer(self, team) -> str:
 		# Team.owner_user is a Link to User, whose name IS the email address.
 		# Primary idempotency is ours — ensure_gateway_customer stores the id per
