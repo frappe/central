@@ -2,7 +2,10 @@ import { computed, watch, type Ref } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import type { Plan, Profile, ProvisionablePlans, RateCard } from '@/types/api'
+import type { Capacity, Plan, Profile, ProvisionablePlans, RateCard } from '@/types/api'
+
+// Ungated fallback while the menu is loading (or on a resize, which isn't capacity-gated).
+const UNGATED: Capacity = { gated: false, available: true, unmeasured: false, largest_vm: null }
 
 // Plans a team can provision in the selected region, from the billing catalog
 // (central.billing.api.dashboard.catalog.get_eligible_plans). The menu is
@@ -53,6 +56,9 @@ export function usePlans(cluster: Ref<string | null>, excludeSubscription?: Ref<
     // "Design your own" inputs: the per-resource rate card + the profile bounds.
     rateCard: computed<RateCard>(() => call.data?.rate_card ?? {}),
     profiles: computed<Profile[]>(() => call.data?.profiles ?? []),
+    // Live provisioning capacity for this region: caps the custom slider and explains an
+    // empty menu when the region is full (`available` false).
+    capacity: computed<Capacity>(() => call.data?.capacity ?? UNGATED),
     loading: computed(() => call.loading),
   }
 }
