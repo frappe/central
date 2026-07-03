@@ -51,7 +51,11 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
   //  - Paypal → { paypal: true }: dialog mounts PayPal Buttons (ADR 0007).
   //  - Razorpay → collected in its hosted sheet, the whole top-up resolves here.
   // `payMethod` is 'paypal' for an international PayPal top-up.
-  async function begin(amount: number, payMethod?: string): Promise<BeginResult> {
+  async function begin(
+    amount: number,
+    payMethod?: string,
+    onSheet?: () => void,
+  ): Promise<BeginResult> {
     try {
       await createOrder.submit({ team: activeTeam.value, amount, method: payMethod })
       if (createOrder.error) throw createOrder.error
@@ -63,6 +67,9 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
       if (o.adapter_key === 'Stripe') return { card: true }
       if (o.adapter_key === 'Paypal') return { paypal: true }
 
+      // Razorpay collects in its own hosted sheet on <body>; a caller showing a
+      // modal must drop it now so the sheet isn't stuck behind the overlay.
+      onSheet?.()
       const handles = await openRazorpayCheckout(o, {
         name: 'Central',
         description: 'Wallet top-up',

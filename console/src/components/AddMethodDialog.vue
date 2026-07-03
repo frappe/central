@@ -42,6 +42,18 @@ function done(res?: unknown): void {
 
 const { run, loading } = useAddPaymentMethod({ onDone: done })
 
+// Razorpay opens its own hosted sheet on <body>. Our dialog is a modal with an
+// overlay + focus trap, so leaving it open renders the sheet *behind* our overlay
+// — the user has to dismiss our layers first to reach it. Drop our dialog before
+// launching the sheet, and reopen it only if they cancel/it fails (on success
+// `done` keeps it closed). The Stripe path stays in-dialog and never comes here.
+async function launchGateway(methodType: string, contact?: string): Promise<void> {
+  open.value = false
+  await nextTick()
+  const res = await run(methodType, contact)
+  if (!res) open.value = true
+}
+
 const upiBlocked = computed(() => options.data && !options.data.allow_upi)
 
 // A Razorpay card mandate needs a customer contact; phone is optional on the
@@ -92,7 +104,7 @@ async function onCard(): Promise<void> {
     askPhone.value = true
     return
   }
-  run('Card', phone.value.trim() || undefined)
+  launchGateway('Card', phone.value.trim() || undefined)
 }
 
 function cancelStripe(): void {
@@ -164,7 +176,7 @@ watch(open, (isOpen) => {
               v-if="options.data.methods.includes('UPI Autopay')"
               class="flex flex-col gap-1.5 rounded-lg border border-outline-gray-2 p-4 text-left transition-colors hover:border-outline-gray-3 disabled:cursor-not-allowed disabled:opacity-50"
               :disabled="loading || !!upiBlocked"
-              @click="run('UPI Autopay')"
+              @click="launchGateway('UPI Autopay')"
             >
               <span class="lucide-smartphone size-5 text-ink-gray-7" aria-hidden="true" />
               <span class="text-sm font-medium text-ink-gray-9">UPI Autopay</span>
@@ -192,7 +204,7 @@ watch(open, (isOpen) => {
             label="Continue"
             :loading="loading"
             :disabled="!phone.trim()"
-            @click="run('Card', phone.trim())"
+            @click="launchGateway('Card', phone.trim())"
           />
         </div>
 
