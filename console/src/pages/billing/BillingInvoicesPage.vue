@@ -159,7 +159,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
                 {{ detail.data.items.length }} item{{ detail.data.items.length === 1 ? '' : 's' }}
               </span>
             </div>
-            <div class="max-h-80 overflow-y-auto rounded border border-outline-gray-1">
+            <div class="max-h-80 overflow-y-auto rounded-lg border border-outline-gray-2">
               <table class="w-full text-sm">
                 <thead class="sticky top-0 bg-surface-elevation-1">
                   <tr class="border-b border-outline-gray-1 text-left text-p-sm text-ink-gray-5">
