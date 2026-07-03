@@ -13,7 +13,11 @@ logic lives here; each method delegates to the existing billing service layer.
 import frappe
 
 from central.api.pilot import pilot_credential_auth
-from central.billing.api.dashboard._shared import _add_method_gateway, _team_currency
+from central.billing.api.dashboard._shared import (
+	_add_method_gateway,
+	_require_billing_setup,
+	_team_currency,
+)
 
 
 def _team() -> str:
@@ -45,6 +49,9 @@ def add_payment_method(method_type: str = "Card", contact: str | None = None) ->
 	from central.billing.payments import mandates, payments
 
 	team = _team()
+	# Server-side backstop: no money movement until the billing profile (esp. currency)
+	# is complete — else _team_currency falls back to INR and routes to the wrong gateway.
+	_require_billing_setup(team)
 	currency = _team_currency(team)
 	gw = _add_method_gateway(currency)
 	gateway = gw.get("name")
@@ -192,8 +199,9 @@ def save_billing_profile(**fields) -> dict:
 # Razorpay Payment Link for an amount, hand back the URL to redirect to, then poll
 # get_checkout_status until the gateway reports paid. Stateless — the reference
 # carries everything needed and the authoritative amount/currency are read back
-# from the gateway, so no pending record is stored. The checkout id is the
-# idempotency key (one checkout = one credit), so polling is safe to repeat.
+# from the gateway, so no pending record is stored. A top-up credit is keyed on the
+# underlying gateway payment id (the same id the capture webhook uses), so polling
+# and the webhook backstop dedupe to a single credit.
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -205,6 +213,9 @@ def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	if amount <= 0:
 		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
 	team = _team()
+	# Same backstop as top-ups in the dashboard: require a complete profile (currency)
+	# before money moves, so the wallet can't be locked to the INR fallback currency.
+	_require_billing_setup(team)
 	currency = _team_currency(team)
 	return _create_hosted_checkout(
 		team, currency, amount, purpose="topup", target=team, redirect_url=redirect_url,
@@ -271,7 +282,7 @@ def get_checkout_status(reference: str) -> dict:
 	gw_doc = frappe.get_doc("Payment Gateway", gateway)
 	adapter = get_adapter(gw_doc)
 	session = adapter.get_checkout_session(session_id)
-	paid, amount, currency = _read_session(gw_doc.adapter_key, session)
+	paid, amount, currency, payment_id = _read_session(gw_doc.adapter_key, session)
 
 	if not paid:
 		return {"status": "pending", "success": False, "message": "Awaiting payment."}
@@ -279,9 +290,12 @@ def get_checkout_status(reference: str) -> dict:
 	if purpose == "topup":
 		from central.billing.revenue import credits
 
-		# The checkout id is the idempotency key: repeated polling books one credit.
-		credits.purchase(target, amount, currency, gateway_payment_id=session_id,
-						 reference_name=session_id, note=f"Wallet top-up ({session_id})")
+		# Key on the UNDERLYING payment id (Stripe pi_/Razorpay pay_), the same id the
+		# capture webhook credits on — so poll and webhook dedupe to a single credit.
+		# (Falls back to the session id only if the gateway hasn't surfaced one yet.)
+		key = payment_id or session_id
+		credits.purchase(target, amount, currency, gateway_payment_id=key,
+						 reference_name=key, note=f"Wallet top-up ({key})")
 		return {"status": "paid", "success": True, "message": "Wallet topped up.",
 				"balance": credits.get_balance(target)["balance"]}
 
@@ -290,11 +304,19 @@ def get_checkout_status(reference: str) -> dict:
 
 
 def _read_session(adapter_key: str, session: dict) -> tuple:
-	"""Normalise a gateway checkout object to `(paid, amount_major, currency)`."""
+	"""Normalise a gateway checkout object to `(paid, amount_major, currency, payment_id)`.
+
+	`payment_id` is the UNDERLYING payment — Stripe's PaymentIntent (`pi_…`), Razorpay's
+	captured payment (`pay_…`) — not the session/link id. It is the same id the capture
+	webhook credits on, so keying the poll credit on it makes poll and webhook dedupe."""
 	if adapter_key == "Razorpay":
 		paid = session.get("status") == "paid"
 		minor = session.get("amount_paid") or session.get("amount") or 0
+		payments = session.get("payments") or []
+		captured = next((p for p in payments if p.get("status") == "captured"), None)
+		payment_id = (captured or (payments[0] if payments else {})).get("payment_id")
 	else:  # Stripe Checkout Session
 		paid = session.get("payment_status") == "paid"
 		minor = session.get("amount_total") or 0
-	return paid, frappe.utils.flt(minor) / 100.0, (session.get("currency") or "").upper()
+		payment_id = session.get("payment_intent")
+	return paid, frappe.utils.flt(minor) / 100.0, (session.get("currency") or "").upper(), payment_id
