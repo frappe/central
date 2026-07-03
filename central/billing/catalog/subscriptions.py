@@ -266,12 +266,19 @@ def begin_resize(
 	if not _is_resizable(doc):
 		return {"queued": False, "resized": False}
 	asset = (
-		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status", "resize_in_progress"], as_dict=True)
+		frappe.db.get_value(
+			"Asset",
+			doc.asset_id,
+			["cluster", "status", "resize_in_progress", "migration_in_progress"],
+			as_dict=True,
+		)
 		if doc.asset_id
 		else None
 	)
 	if asset and asset.resize_in_progress:
 		frappe.throw(frappe._("This server is already resizing — wait for it to finish."))
+	if asset and asset.migration_in_progress:
+		frappe.throw(frappe._("This server is migrating — resize it once that finishes."))
 
 	shape = _plan_resize(doc, asset, plan, includes, sub_category)
 	if shape is None:

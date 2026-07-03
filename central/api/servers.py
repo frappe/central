@@ -78,6 +78,7 @@ def registry(team: str | None = None) -> dict:
 			"public_ipv4",
 			"gateway_url",
 			"resize_in_progress",
+			"migration_in_progress",
 			"last_synced_at",
 		],
 		order_by="cluster asc, resource_id asc",
@@ -274,7 +275,10 @@ def _run_command(action: str, capability: str, atlas_method: str, team: str | No
 
 	# The asset must be in this team's mirror — also how we route to its Atlas.
 	asset = frappe.db.get_value(
-		"Asset", {"resource_id": resource_id, "team": team}, ["cluster", "resize_in_progress"], as_dict=True
+		"Asset",
+		{"resource_id": resource_id, "team": team},
+		["cluster", "resize_in_progress", "migration_in_progress"],
+		as_dict=True,
 	)
 	if not asset:
 		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
@@ -283,6 +287,9 @@ def _run_command(action: str, capability: str, atlas_method: str, team: str | No
 	# race it. Terminate is still allowed — the user may want to abandon the machine.
 	if asset.resize_in_progress and action in ("start", "stop"):
 		frappe.throw(_("This server is resizing — you can {0} it once that finishes.").format(action))
+	# Same for a migration: the source is being replaced and then terminated under it.
+	if asset.migration_in_progress and action in ("start", "stop"):
+		frappe.throw(_("This server is migrating — you can {0} it once that finishes.").format(action))
 
 	instance = frappe.get_doc("Atlas Instance", asset.cluster)
 	task = AtlasClient(instance).vm_action(resource_id, atlas_method)
