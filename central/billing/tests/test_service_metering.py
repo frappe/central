@@ -20,6 +20,41 @@ def _ensure_resource_type(name: str) -> str:
 	return name
 
 
+def _make_metered_family(category, resource_type, plan, reporting_mode="Authoritative", rate=0.5):
+	"""A metered single-resource Plan under a dedicated Plan Category carrying an explicit
+	reporting_mode — so a test can exercise incremental accumulation without mutating a
+	shared category. Returns the plan name."""
+	from central.billing.catalog.pricing import set_catalog_rates
+	from central.billing.tests.utils import _ensure_rate_instances
+
+	_ensure_resource_type(resource_type)
+	for old in frappe.get_all("Plan", {"category": category}, pluck="name"):
+		frappe.delete_doc("Plan", old, force=True)
+	if frappe.db.exists("Plan Category", category):
+		frappe.delete_doc("Plan Category", category, force=True)
+	frappe.get_doc(
+		{
+			"doctype": "Plan Category", "category_name": category, "billing_type": "Metered",
+			"pricing_mode": "Grandfathered", "reporting_mode": reporting_mode,
+		}
+	).insert(ignore_permissions=True)
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "Plan", "title": plan, "category": category, "billing_cycle": "Monthly",
+			"is_active": 1,
+			"includes": [{"resource_type": resource_type, "quantity": 0, "unit": "unit"}],
+		}
+	)
+	doc.name = plan
+	doc.flags.name_set = True
+	doc.insert(ignore_permissions=True)
+	rates = [{"cluster": "", "currency": "INR", "rate": rate}]
+	_ensure_rate_instances(rates)
+	set_catalog_rates("Plan", doc.name, rates)
+	return doc.name
+
+
 class TestPlanCategoryModes(IntegrationTestCase):
 	"""settlement_mode / reporting_mode are per-family properties, blank resolving to
 	the built default; both are meaningless on a Fixed family (ADR 0015)."""
@@ -119,3 +154,72 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 		)
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.provision_service_subscription(self.TEAM, server_plan, cluster="mumbai")
+
+
+class TestDualModeIngestion(IntegrationTestCase):
+	"""Usage lands as one rollup row per period in both reporting modes (ADR 0015):
+	Authoritative replaces the period total; Incremental accumulates deltas, deduped by
+	a monotonic sequence cursor."""
+
+	TEAM = "svc-team-ingest"
+
+	def setUp(self):
+		from central.billing.revenue import metering
+
+		self.metering = metering
+		ensure_team(self.TEAM)
+		complete_billing_profile(self.TEAM, currency="INR")
+		frappe.db.delete("Subscription", {"team": self.TEAM})
+		frappe.db.delete("Usage Rollup", {"team": self.TEAM})
+
+	def _subject(self, resource_type, plan):
+		res = subscriptions.provision_service_subscription(self.TEAM, plan, cluster="mumbai")
+		return res["service_subject"]
+
+	def _meter(self, subject, resource_type, key, qty, sequence=0):
+		return {
+			"resource_id": subject, "resource_type": resource_type, "meter_type": "Counter",
+			"period_start": "2026-07-01 00:00:00", "period_end": "2026-07-31 23:59:59",
+			"quantity": qty, "unit": "unit", "idempotency_key": key, "sequence": sequence,
+		}
+
+	def _qty(self, subject):
+		return frappe.utils.flt(frappe.db.get_value("Usage Rollup", {"resource_id": subject}, "quantity"))
+
+	def test_authoritative_repush_replaces(self):
+		plan = _make_metered_family("SM Auth Family", "PDF Auth", "SM PDF Auth Plan")
+		subject = self._subject("PDF Auth", plan)
+		key = f"{subject}|Counter|2026-07"
+		self.metering.ingest_rollup(self._meter(subject, "PDF Auth", key, 100))
+		self.metering.ingest_rollup(self._meter(subject, "PDF Auth", key, 250))
+		self.assertEqual(self._qty(subject), 250)  # replaced, not summed
+
+	def test_incremental_accumulates_and_dedupes(self):
+		plan = _make_metered_family(
+			"SM Incr Family", "PDF Incr", "SM PDF Incr Plan", reporting_mode="Incremental"
+		)
+		subject = self._subject("PDF Incr", plan)
+		key = f"{subject}|Counter|2026-07"
+		self.metering.ingest_rollup(self._meter(subject, "PDF Incr", key, 100, sequence=1))
+		self.metering.ingest_rollup(self._meter(subject, "PDF Incr", key, 50, sequence=2))
+		self.assertEqual(self._qty(subject), 150)
+
+		# A retried batch (same sequence) and an out-of-order older batch are no-ops.
+		self.metering.ingest_rollup(self._meter(subject, "PDF Incr", key, 50, sequence=2))
+		self.metering.ingest_rollup(self._meter(subject, "PDF Incr", key, 999, sequence=1))
+		self.assertEqual(self._qty(subject), 150)
+
+		# A new higher sequence accumulates again.
+		self.metering.ingest_rollup(self._meter(subject, "PDF Incr", key, 25, sequence=3))
+		self.assertEqual(self._qty(subject), 175)
+
+	def test_incremental_stays_one_row_per_period(self):
+		plan = _make_metered_family(
+			"SM Incr Family", "PDF Incr", "SM PDF Incr Plan", reporting_mode="Incremental"
+		)
+		subject = self._subject("PDF Incr", plan)
+		key = f"{subject}|Counter|2026-07"
+		for seq in range(1, 21):
+			self.metering.ingest_rollup(self._meter(subject, "PDF Incr", key, 1, sequence=seq))
+		self.assertEqual(frappe.db.count("Usage Rollup", {"resource_id": subject}), 1)
+		self.assertEqual(self._qty(subject), 20)

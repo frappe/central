@@ -124,23 +124,54 @@ def _locked_terms(resource_id: str, resource_type: str):
 	}
 
 
-def ingest_rollup(meter: dict) -> str | None:
-	"""Idempotently store one Agent meter rollup, keyed by idempotency_key.
+def _reporting_mode_for(resource_type: str) -> str:
+	"""The reporting mode of the family that prices `resource_type` (ADR 0015), blank
+	resolving to Authoritative. A resource type maps to at most one active metered Plan
+	(ADR 0008), whose Plan Category carries the mode — so this is unambiguous."""
+	plan = _metered_plan_for(resource_type)
+	if not plan:
+		return "Authoritative"
+	category = frappe.db.get_value("Plan", plan.name, "category")
+	return frappe.db.get_value("Plan Category", category, "reporting_mode") or "Authoritative"
 
-	A re-push REPLACES the quantity (recompute after an outage), never adds. The
-	locked allowance + rate are stamped once, at first receipt, so the metered
-	terms are grandfathered and a later catalog change cannot move an existing
-	rollup's price. Returns the idempotency_key once handled (so the Agent can
-	mark it synced).
-	"""
+
+def ingest_rollup(meter: dict) -> str | None:
+	"""Idempotently store one meter rollup, keyed by the period-identity idempotency_key.
+	Both reporting modes (ADR 0015) land as one Usage Rollup row per period; the locked
+	allowance + rate are stamped once, at first receipt, so the metered terms are
+	grandfathered and a later catalog change cannot move an existing rollup's price.
+
+	- **Authoritative** (default): a re-push REPLACES the period quantity (recompute
+	  after an outage), never adds — the reporter holds the authoritative total.
+	- **Incremental**: each batch carries a `quantity` delta and a monotonic `sequence`.
+	  A batch is ACCUMULATED (`quantity += delta`) only if its sequence exceeds the last
+	  applied, so a retried/duplicate/out-of-order batch is a no-op. The row is locked
+	  for update while it accumulates (concurrent batches serialize).
+
+	Returns the idempotency_key once handled (so the reporter can mark it synced)."""
 	key = meter.get("idempotency_key")
 	if not key:
 		return None
 
-	existing = frappe.db.get_value("Usage Rollup", {"idempotency_key": key}, "name")
+	mode = _reporting_mode_for(meter.get("resource_type"))
+	qty = frappe.utils.flt(meter.get("quantity"))
+
+	existing = frappe.db.get_value(
+		"Usage Rollup", {"idempotency_key": key}, ["name", "quantity", "sequence"],
+		as_dict=True, for_update=True,
+	)
 	if existing:
-		# Replace the period figure; keep the locked terms stamped at first receipt.
-		frappe.db.set_value("Usage Rollup", existing, "quantity", frappe.utils.flt(meter.get("quantity")))
+		if mode == "Incremental":
+			seq = frappe.utils.cint(meter.get("sequence"))
+			if seq <= frappe.utils.cint(existing.sequence):
+				return key  # duplicate / out-of-order batch — already counted
+			frappe.db.set_value(
+				"Usage Rollup", existing.name,
+				{"quantity": frappe.utils.flt(existing.quantity) + qty, "sequence": seq},
+			)
+		else:
+			# Authoritative: replace the period figure; keep the locked terms stamped first.
+			frappe.db.set_value("Usage Rollup", existing.name, "quantity", qty)
 		return key
 
 	terms = _resolve_terms(meter)
@@ -157,12 +188,13 @@ def ingest_rollup(meter: dict) -> str | None:
 			"meter_type": meter.get("meter_type"),
 			"period_start": meter.get("period_start"),
 			"period_end": meter.get("period_end"),
-			"quantity": frappe.utils.flt(meter.get("quantity")),
+			"quantity": qty,
 			"unit": meter.get("unit"),
 			"currency": terms["currency"],
 			"locked_allowance": terms["allowance"],
 			"locked_rate": terms["rate"],
 			"idempotency_key": key,
+			"sequence": frappe.utils.cint(meter.get("sequence")),
 		}
 	).insert(ignore_permissions=True)
 	return key
