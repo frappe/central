@@ -26,7 +26,9 @@
   "completed_at",
   "section_break_failure",
   "failure_code",
-  "failure_reason"
+  "decline_code",
+  "failure_reason",
+  "gateway_response"
  ],
  "fields": [
   {
@@ -129,12 +131,26 @@
   {
    "fieldname": "failure_code",
    "fieldtype": "Data",
-   "label": "Failure Code"
+   "label": "Failure Code",
+   "description": "Gateway top-level error code (Stripe error.code / Razorpay error.reason)"
+  },
+  {
+   "fieldname": "decline_code",
+   "fieldtype": "Data",
+   "label": "Decline Code",
+   "description": "Granular decline reason (Stripe decline_code — insufficient_funds, lost_card, …); why the card_declined family actually failed"
   },
   {
    "fieldname": "failure_reason",
    "fieldtype": "Small Text",
    "label": "Failure Reason"
+  },
+  {
+   "fieldname": "gateway_response",
+   "fieldtype": "Code",
+   "label": "Gateway Response",
+   "options": "JSON",
+   "description": "Raw gateway error/response payload for audit (not shown to customers)"
   }
  ],
  "index_web_pages_for_search": 1,
