@@ -35,9 +35,21 @@ PLAN_SIZES = [
 	("plan-16vcpu", "Enterprise · 16 vCPU / 32 GB", 16, 32, 400, 1600, 24000),
 ]
 
-# Metered bandwidth overage, priced per GB per currency (cluster-agnostic).
-ADDON = "addon-transfer"
-ADDON_RATE = {"INR": 0.80, "EUR": 0.009, "USD": 0.010}
+# À-la-carte component rate card, per Resource Type (ADR 0009) — what powers the
+# "design your own" plan selector. A composed config prices as Σ(qty × component rate);
+# a config is only sellable when EVERY component it uses is priced. Base per-unit/month
+# in INR (Compute per vCPU, Memory/Disk per GB), converted per currency at seed time.
+COMPONENT_RATES_INR = {"Compute": 1200.0, "Memory": 400.0, "Disk": 30.0}
+
+# Team-level metered CONSUMER services (ADR 0013/0015) — the real metered story
+# (replaces the meaningless bandwidth overage). Each is a single-resource metered Plan
+# under its own family, billed as postpaid overage past a bundled allowance.
+# (family/category, resource_type, plan_slug, title, unit, allowance, per-unit rate by currency)
+SERVICES = [
+	("AI Tokens", "Tokens", "svc-ai-tokens", "AI Tokens", "1K tokens", 100, {"INR": 12.0, "USD": 0.15}),
+	("Emails", "Emails", "svc-emails", "Transactional Email", "1K emails", 50, {"INR": 7.0, "USD": 0.09}),
+	("PDF Generation", "PDF", "svc-pdf", "PDF / Print Generation", "1K docs", 20, {"INR": 18.0, "USD": 0.22}),
+]
 
 # (level, sequence, is_default, max_spend_inr, max_resources, min_invoices, min_paid_inr)
 TIERS = [
@@ -93,35 +105,93 @@ def _atlas_instances():
 		}).insert(ignore_permissions=True)
 
 
+# Logical plan key (PLAN_SIZES / SERVICES slug) -> the hash-named Plan the Plan
+# Configurator minted for it. Plans are authored through the configurator, so their
+# names are opaque hashes; the demo refers to them by these stable logical keys.
+_PLAN_BY_KEY: dict[str, str] = {}
+
+
+def plan_name(key: str) -> str:
+	"""Resolve a demo logical plan key (e.g. 'plan-2vcpu', 'svc-ai-tokens') to the
+	configurator-minted Plan name."""
+	return _PLAN_BY_KEY[key]
+
+
 def _catalog():
 	_atlas_instances()
-	for slug, title, vcpu, ram, disk, transfer, base_inr in PLAN_SIZES:
-		rates = []
-		for cslug, _label, _cur in CLUSTERS:
-			for currency in CURRENCIES:
-				rate = round(base_inr * CLUSTER_MULT[cslug] / FX[currency], 2)
-				rates.append({"cluster": cslug, "currency": currency, "rate": rate})
-		plan = _upsert("Plan", slug, {
-			"title": title, "billing_cycle": "Monthly", "is_active": 1,
-			"includes": [
-				{"resource_type": "Compute", "quantity": vcpu, "unit": "vCPU"},
-				{"resource_type": "Memory", "quantity": ram, "unit": "GB"},
-				{"resource_type": "Disk", "quantity": disk, "unit": "GB"},
-				{"resource_type": "Transfer", "quantity": transfer, "unit": "GB"},
-			],
-		}, newname=True)
-		set_catalog_rates("Plan", plan, rates)
+	_PLAN_BY_KEY.clear()
+	_vm_plans()
+	_component_rate_card()
+	_service_catalog()
 
-	# Transfer overage is a metered single-resource Plan now (ADR 0008): one Transfer
-	# include under the metered family, priced per GB.
-	overage = _upsert("Plan", ADDON, {
-		"title": "Bandwidth Overage", "category": "Metered Resources",
-		"billing_cycle": "Monthly", "is_active": 1,
-		"includes": [{"resource_type": "Transfer", "quantity": 0, "unit": "GB"}],
-	}, newname=True)
-	set_catalog_rates(
-		"Plan", overage, [{"cluster": "", "currency": c, "rate": ADDON_RATE[c]} for c in CURRENCIES]
-	)
+
+def _vm_plans():
+	"""Generate the VM bundle ladder + its prices through the Plan Configurator
+	(configurator.generate_plans + apply_pricing) — the same guided path the Desk
+	'Launch a plan' verb uses — rather than writing Plan / Catalog Rate rows by hand."""
+	from central.billing.catalog import configurator
+
+	# One rung per size; generate_plans mints a hash-named Plan per rung and writes
+	# the name back onto the rung.
+	rungs = [
+		{"key": slug, "label": title, "vcpu": vcpu, "memory_gb": ram,
+		 "disk_gb": disk, "transfer_gb": transfer}
+		for slug, title, vcpu, ram, disk, transfer, _base in PLAN_SIZES
+	]
+	configurator.generate_plans(rungs, category="VM Plans", sub_category="General")
+	for rung in rungs:
+		_PLAN_BY_KEY[rung["key"]] = rung["plan"]
+
+	# Price each rung per currency × cluster: rate = base_inr × cluster_mult ÷ FX. One
+	# apply_pricing call per (currency, cluster), base_rate carrying the cluster/FX
+	# factor and each plan's multiplier carrying its base INR price.
+	base_by_key = {slug: base for slug, _t, _v, _r, _d, _tr, base in PLAN_SIZES}
+	for currency in CURRENCIES:
+		for cslug, _label, _cur in CLUSTERS:
+			multipliers = [{"plan": _PLAN_BY_KEY[key], "multiplier": base}
+						   for key, base in base_by_key.items()]
+			configurator.apply_pricing(
+				multipliers, currency=currency,
+				base_rate=CLUSTER_MULT[cslug] / FX[currency], cluster=cslug,
+			)
+
+
+def _component_rate_card():
+	"""À-la-carte per-Resource-Type rates so a composed config prices from its parts
+	(ADR 0009). Global (blank-cluster) rate per currency for each component."""
+	for resource_type, base_inr in COMPONENT_RATES_INR.items():
+		set_catalog_rates(
+			"Resource Type", resource_type,
+			[{"cluster": "", "currency": c, "rate": round(base_inr / FX[c], 4)} for c in CURRENCIES],
+		)
+
+
+def _service_catalog():
+	"""Team-level metered consumer services (AI tokens, email, PDF) — each authored
+	through the Plan Configurator's `simple` builder (configurator.create_simple_plan
+	+ apply_pricing): a single-resource metered Plan under its own family, per-unit
+	priced (ADR 0013/0015/0008)."""
+	from central.billing.catalog import configurator
+
+	for category, resource_type, slug, title, unit, allowance, rates in SERVICES:
+		if not frappe.db.exists("Resource Type", resource_type):
+			frappe.get_doc({"doctype": "Resource Type",
+							"resource_type_name": resource_type}).insert(ignore_permissions=True)
+		# The family: a metered, team-level (non-Server) service billed as postpaid overage.
+		_upsert("Plan Category", category, {
+			"category_name": category, "configurator_builder": "Simple",
+			"billing_type": "Metered", "billing_interval": "Monthly", "pricing_mode": "Grandfathered",
+			"settlement_mode": "Postpaid Overage", "reporting_mode": "Authoritative",
+			"provision_target": "", "is_active": 1,
+		}, newname=True)
+		name = configurator.create_simple_plan(
+			category=category, title=title, resource_type=resource_type,
+			quantity=allowance, unit=unit,
+		)
+		_PLAN_BY_KEY[slug] = name
+		for currency, rate in rates.items():
+			configurator.apply_pricing([{"plan": name, "multiplier": 1}],
+									   currency=currency, base_rate=rate, cluster="")
 
 
 def _gateways():
@@ -244,11 +314,17 @@ def _ensure_member_user(email, full_name):
 	return email
 
 
+# States that settle from the wallet / free credits — no card on file.
+_NO_CARD_STATES = ("credits", "credits_full", "free_credits", "trial")
+# INR teams on UPI Autopay (Razorpay e-mandate); the ceiling = the tier cap.
+_MANDATE_TEAMS = ("acme-corp",)
+
+
 def _payment_setup(team, slug, currency, state):
 	"""Return (gateway, payment_method) for the team's terminal state."""
-	if state in ("credits", "credits_full", "free_credits", "trial"):
+	if state in _NO_CARD_STATES:
 		return None, None  # settled from wallet / free credits — no card needed
-	if currency == "INR" and slug == "wayne-ent":
+	if currency == "INR" and slug in _MANDATE_TEAMS:
 		# An INR team on UPI Autopay (mandate ceiling = tier cap).
 		pm = frappe.get_doc({
 			"doctype": "Payment Method", "team": team, "gateway": RAZORPAY,
@@ -360,10 +436,13 @@ def _month_periods(n):
 def _upsert(doctype, name, values, newname=False, flags=None):
 	if frappe.db.exists(doctype, name):
 		frappe.delete_doc(doctype, name, force=True)
-	data = {"doctype": doctype, **values}
+	doc = frappe.get_doc({"doctype": doctype, **values})
 	if newname:
-		data["__newname"] = name
-	doc = frappe.get_doc(data)
+		# Plan (and other catalog masters) autoname by random hash, so `__newname` is
+		# ignored — pin the readable slug the same way the Team seed does, so Links
+		# like Subscription.plan / Catalog Rate.priced_for resolve to it.
+		doc.flags.name_set = True
+		doc.name = name
 	if flags:
 		doc.flags.update(flags)
 	return doc.insert(ignore_permissions=True).name
@@ -425,3 +504,146 @@ def _wipe_all():
 		except Exception:  # noqa: BLE001 — some doctypes may not exist on older sites
 			pass
 	frappe.db.commit()
+
+
+# --- resize (Plan Changed) segments -----------------------------------------
+
+
+def _plan_after(plan, steps=1):
+	"""The plan `steps` sizes up (or down, if negative) the PLAN_SIZES ladder,
+	clamped to the ends. Used to stage a realistic VM upsize/downsize."""
+	order = [p[0] for p in PLAN_SIZES]
+	i = order.index(plan) if plan in order else 0
+	return order[max(0, min(len(order) - 1, i + steps))]
+
+
+def _add_resize(sub, plan, currency, cluster, effective_at):
+	"""Author one 'Plan Changed' run-segment on the ledger (ADR 0010 — the ledger is
+	the price-lock). The invoice day-weights every segment, so back-to-back resizes in
+	a single period show up as distinct slivers in the bill and the change history."""
+	rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
+	frappe.get_doc({
+		"doctype": "Subscription Change", "subscription": sub, "change_type": "Plan Changed",
+		"new_value": plan, "locked_rate": rate, "currency": currency, "effective_at": effective_at,
+	}).insert(ignore_permissions=True)
+
+
+def stage_resizes(primary_sub, base_cluster, base_plan, currency, kind):
+	"""Two resizes on the current (June) invoice, in one of two shapes:
+
+	  * same_day    — an upsize and a downsize within the SAME calendar day, so the
+	                  bill carries two same-day Plan Changed slivers.
+	  * within_24h  — an upsize late one evening and a downsize the next morning,
+	                  i.e. a second resize inside 24h of the first (spanning midnight).
+	"""
+	up = plan_name(_plan_after(base_plan, +1))
+	down = plan_name(_plan_after(base_plan, 0))  # back to the original size
+	if kind == "same_day":
+		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-15 09:30:00")
+		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 16:45:00")
+	elif kind == "within_24h":
+		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-14 20:00:00")
+		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 08:00:00")
+
+
+# --- payment attempts + refunds (terminal-state builders) -------------------
+
+
+def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
+	"""A successful (Captured) card charge that settled the invoice."""
+	when = when or frappe.utils.now_datetime()
+	return frappe.get_doc({
+		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
+		"payment_method": pm, "amount": amount, "currency": currency, "status": "Captured",
+		"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}", "resolved_by": "Webhook",
+		"initiated_at": when, "completed_at": when,
+	}).insert(ignore_permissions=True).name
+
+
+def bank_pending_attempt(team, invoice, pm, gateway, amount, currency):
+	"""An in-flight charge: submitted to Stripe, which is still awaiting the bank's
+	response (no webhook yet). The attempt is 'Initiated' — reconciliation treats it
+	as ambiguous — so the invoice is frozen (no Pay Now / no retry) until it resolves."""
+	now = frappe.utils.now_datetime()
+	return frappe.get_doc({
+		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
+		"payment_method": pm, "amount": amount, "currency": currency, "status": "Initiated",
+		"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
+		"initiated_at": now,  # completed_at left blank — the bank hasn't answered
+	}).insert(ignore_permissions=True).name
+
+
+def make_refund(team, invoice, attempt, amount, currency, destination, reason, chargeback=False):
+	"""A completed Refund against a captured charge. `destination` is 'Source' (back to
+	the card — a plain refund or a dispute chargeback) or 'Wallet' (as credits). A
+	chargeback also flips the original attempt to Refunded; the invoice stays Paid."""
+	frappe.get_doc({
+		"doctype": "Refund", "payment_attempt": attempt, "invoice": invoice, "team": team,
+		"amount": amount, "currency": currency, "destination": destination, "status": "Completed",
+		"reason": reason, "gateway_refund_id": f"re_{frappe.generate_hash(length=20)}",
+		"created_at": frappe.utils.now_datetime(), "completed_at": frappe.utils.now_datetime(),
+	}).insert(ignore_permissions=True)
+	if chargeback:
+		frappe.db.set_value("Payment Attempt", attempt, "status", "Refunded")
+
+
+# --- activation, composed configs, metered services -------------------------
+
+
+def activate_team_assets(team):
+	"""Flip the team's Pending VM Assets to Running. The Asset.on_update hook then
+	enables the linked Subscription (ensure_subscription_enabled) — the same path a
+	real provisioned+running VM takes. Without this every subscription stays Disabled."""
+	for name in frappe.get_all("Asset", filters={"team": team, "status": "Pending"}, pluck="name"):
+		# Change status ON the doc (not via set_value first) so has_value_changed sees
+		# Pending→Running and on_update fires ensure_subscription_enabled.
+		asset = frappe.get_doc("Asset", name)
+		asset.status = "Running"
+		asset.save(ignore_permissions=True)
+
+
+# A valid design-your-own config on the "General" profile (ram = 4×vcpu, disk in range),
+# so the à-la-carte selector path is exercised end to end.
+_COMPOSED_INCLUDES = [
+	{"resource_type": "Compute", "quantity": 2, "unit": "vCPU"},
+	{"resource_type": "Memory", "quantity": 8, "unit": "GB"},
+	{"resource_type": "Disk", "quantity": 60, "unit": "GB"},
+]
+
+
+def add_composed_subscription(team, cluster, currency, start_date, pm, gateway, resource_id):
+	"""Provision a custom VM the customer composed in the selector (ADR 0009): no Plan,
+	priced from the à-la-carte component rate card. Returns the subscription name."""
+	from central.billing.catalog.subscriptions import provision_composed_subscription
+
+	res = provision_composed_subscription(
+		team=team, cluster=cluster, includes=_COMPOSED_INCLUDES, sub_category="General",
+		billing_cycle="Monthly", start_date=start_date,
+		default_payment_method=pm, gateway=gateway, resource_id=resource_id,
+	)
+	return res["subscription"]
+
+
+def subscribe_service(team, service_slug, cluster, pm, gateway):
+	"""Subscribe a team to a metered consumer service and return (subscription, subject)."""
+	from central.billing.catalog.subscriptions import provision_service_subscription
+
+	res = provision_service_subscription(
+		team=team, plan=service_slug, cluster=cluster,
+		default_payment_method=pm, gateway=gateway,
+	)
+	return res["subscription"], res["service_subject"]
+
+
+def meter_service_usage(subject, resource_type, quantity, unit, period_start, period_end):
+	"""Report metered usage for a service subject (resource_id = the synthesized subject).
+	ingest_rollup stamps the locked allowance + per-unit rate from the subject's segment,
+	so anything past the allowance bills as overage on the period's invoice."""
+	from central.billing.platform.sync import record_meter_rollups
+
+	record_meter_rollups([{
+		"resource_id": subject, "resource_type": resource_type, "meter_type": "Counter",
+		"period_start": f"{period_start} 00:00:00", "period_end": f"{period_end} 23:59:59",
+		"quantity": quantity, "unit": unit,
+		"idempotency_key": f"{subject}:counter:{period_start}", "status": "closed",
+	}])
