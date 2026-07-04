@@ -72,9 +72,22 @@ def _team_currency(team: str) -> str:
 # address — before any money moves (top-up, buy credits, add a payment method).
 # Currency is the load-bearing field: wallet, payment methods and invoices are
 # all denominated in it, so it must be chosen first and then held fixed.
+#
+# State and pincode are deliberately NOT required: they're irrelevant for foreign
+# customers, and for India the state is only enforced when a GSTIN is entered
+# (see BillingProfile.validate_india_state).
 _REQUIRED_PROFILE_FIELDS = (
-	"currency", "legal_name", "address_line1", "city", "state", "country", "pincode",
+	"currency", "legal_name", "address_line1", "city", "country",
 )
+
+
+def currency_for_country(country: str | None) -> str:
+	"""Billing currency follows the customer's country: India bills in INR, every
+	other country in USD. Derived, not chosen — so a customer can't pick a currency
+	that mismatches where they are."""
+	from central.billing.india_gst import INDIA
+
+	return "INR" if (country or "").strip() == INDIA else "USD"
 
 
 def _missing_profile_fields(team: str) -> list[str]:

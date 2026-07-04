@@ -16,6 +16,7 @@ from central.billing.api.dashboard._shared import (
 	_team_clusters,
 	_team_currency,
 	_team_resource_count,
+	currency_for_country,
 )
 
 @frappe.whitelist()
@@ -106,6 +107,11 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 	allowed = ("currency", "legal_name", "email", "phone", "gstin", "address_line1",
 			   "address_line2", "city", "state", "country", "pincode")
 	values = {k: v for k, v in fields.items() if k in allowed}
+
+	# Billing currency is derived from the country (India → INR, else USD), not
+	# chosen — until money moves, at which point it's locked and left untouched.
+	if values.get("country") and not _has_money_activity(team):
+		values["currency"] = currency_for_country(values["country"])
 	_validate_currency(team, values.get("currency"))
 
 	from central.billing.payments import profile
