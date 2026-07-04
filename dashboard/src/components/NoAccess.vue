@@ -4,7 +4,7 @@
 defineProps({
   title: { type: String, default: "You don't have access" },
   message: { type: String, default: '' },
-  roles: { type: String, default: 'Owner or Billing' },
+  roles: { type: String, default: 'Owner, Admin, or Billing' },
 })
 </script>
 

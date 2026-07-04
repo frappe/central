@@ -187,17 +187,23 @@ class TestTeamScoping(CustomerDataBase):
 					frappe.set_user("Administrator")
 
 	def test_billing_capable_roles_can_read_and_manage(self):
-		"""The system roles that carry both capabilities — Owner and Billing — can
-		read and run a manage mutation on their own team. (Owner is the team's
-		sole owner_user; Billing is a separate member.)"""
+		"""The system roles that carry both capabilities can read and run a manage
+		mutation on their own team. Owner is the team's sole owner_user; Admin and
+		Billing are separate members."""
 		user = make_user()
 		owner_team = frappe.get_doc(
 			{"doctype": "Team", "team_name": f"Owned {frappe.generate_hash(5)}", "owner_user": user}
 		).insert(ignore_permissions=True)  # user becomes the sole active Owner member
+		admin_user = make_user()
+		admin_team = make_billing_team(admin_user, role="Admin")
 		billing_user = make_user()
 		billing_team = make_billing_team(billing_user, role="Billing")
 
-		cases = {"Owner": (user, owner_team.name), "Billing": (billing_user, billing_team.name)}
+		cases = {
+			"Owner": (user, owner_team.name),
+			"Admin": (admin_user, admin_team.name),
+			"Billing": (billing_user, billing_team.name),
+		}
 		for role, (member, team_name) in cases.items():
 			with self.subTest(role=role):
 				frappe.set_user(member)

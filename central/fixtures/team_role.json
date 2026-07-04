@@ -27,6 +27,8 @@
   "capabilities": [
    {"capability": "team:edit"},
    {"capability": "team:manage_members"},
+   {"capability": "billing:view"},
+   {"capability": "billing:manage"},
    {"capability": "cluster:view"},
    {"capability": "server:view"},
    {"capability": "server:create"},
