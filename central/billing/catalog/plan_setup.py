@@ -23,17 +23,18 @@ VM_SUB_CATEGORY = "General"
 
 # (slug, title, vcpu, ram_gb, disk_gb, transfer_gb, {currency: monthly rate}).
 # Round numbers per currency (not FX-derived at runtime) — admins tune per region.
+# We bill only in INR and USD for now, so each plan ships those two rates.
 STARTER_PLANS = [
 	("plan-1vcpu", "Starter · 1 vCPU / 2 GB", 1, 2, 25, 100,
-	 {"INR": 1500, "USD": 18, "EUR": 17}),
+	 {"INR": 1500, "USD": 18}),
 	("plan-2vcpu", "Basic · 2 vCPU / 4 GB", 2, 4, 50, 200,
-	 {"INR": 3000, "USD": 36, "EUR": 33}),
+	 {"INR": 3000, "USD": 36}),
 	("plan-4vcpu", "Standard · 4 vCPU / 8 GB", 4, 8, 100, 400,
-	 {"INR": 6000, "USD": 72, "EUR": 67}),
+	 {"INR": 6000, "USD": 72}),
 	("plan-8vcpu", "Pro · 8 vCPU / 16 GB", 8, 16, 200, 800,
-	 {"INR": 12000, "USD": 145, "EUR": 133}),
+	 {"INR": 12000, "USD": 145}),
 	("plan-16vcpu", "Enterprise · 16 vCPU / 32 GB", 16, 32, 400, 1600,
-	 {"INR": 24000, "USD": 289, "EUR": 267}),
+	 {"INR": 24000, "USD": 289}),
 ]
 
 

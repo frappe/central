@@ -17,8 +17,9 @@ profile exists, credits granted) is skipped.
 import frappe
 
 # Welcome credits granted once, in the team's own billing currency. A currency we
-# don't list gets no grant (rather than a wrong-currency one).
-WELCOME_CREDITS = {"INR": 1000.0, "USD": 15.0, "EUR": 15.0}
+# don't list gets no grant (rather than a wrong-currency one). We bill only in INR
+# and USD for now, so those are the only grants.
+WELCOME_CREDITS = {"INR": 2500.0, "USD": 25.0}
 
 
 def provision_billing_profile(team: str) -> None:
