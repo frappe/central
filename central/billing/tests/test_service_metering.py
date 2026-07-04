@@ -149,6 +149,42 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 		blr = subscriptions.provision_service_subscription(self.TEAM, self.plan, cluster="blr")
 		self.assertNotEqual(mumbai["service_subject"], blr["service_subject"])
 
+	def test_upgrade_within_family_keeps_subject_and_relocks(self):
+		# Subject is keyed on the family, so switching a team onto a newer plan in the
+		# same family (a catalog swap — only one metered plan per resource type may be
+		# active, ADR 0008) is an upgrade that stays on the same subject and re-locks.
+		from central.billing.catalog.pricing import set_catalog_rates
+		from central.billing.tests.utils import _ensure_rate_instances
+
+		cat = "SM Upgrade Family"
+		small = _make_metered_family(cat, "Tokens Up", "SM Tokens Small", rate=0.01, allowance=1000)
+		first = subscriptions.provision_service_subscription(self.TEAM, small, cluster="mumbai")
+
+		# Retire the small plan and publish a bigger one in the same family.
+		frappe.db.set_value("Plan", small, "is_active", 0)
+		big = frappe.get_doc(
+			{
+				"doctype": "Plan", "title": "SM Tokens Big", "category": cat,
+				"billing_cycle": "Monthly", "is_active": 1,
+				"includes": [{"resource_type": "Tokens Up", "quantity": 5000, "unit": "unit"}],
+			}
+		)
+		big.name = "SM Tokens Big"
+		big.flags.name_set = True
+		big.insert(ignore_permissions=True)
+		rates = [{"cluster": "", "currency": "INR", "rate": 0.008}]
+		_ensure_rate_instances(rates)
+		set_catalog_rates("Plan", big.name, rates)
+
+		upgrade = subscriptions.provision_service_subscription(self.TEAM, "SM Tokens Big", cluster="mumbai")
+
+		self.assertEqual(first["service_subject"], upgrade["service_subject"])
+		self.assertEqual(first["subscription"], upgrade["subscription"])
+		self.assertTrue(upgrade["upgraded"])
+		self.assertEqual(
+			frappe.db.get_value("Subscription", upgrade["subscription"], "plan"), "SM Tokens Big"
+		)
+
 	def test_server_plan_rejected_as_service(self):
 		from central.billing.tests.utils import make_plan
 

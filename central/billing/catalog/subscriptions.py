@@ -242,21 +242,28 @@ def provision_service_subscription(
 	price-lock itself, ADR 0010) inline. A service subject is always alive while
 	subscribed; there is no stop/start.
 
-	Idempotent: re-subscribing the same team to the same service on the same cluster
-	returns the existing subscription rather than opening a parallel subject. Returns
-	the subscription + the synthesized subject + the locked handles."""
-	_assert_service_plan(plan)
+	The subject is keyed per (team, service *family*, cluster), not per plan, so
+	upgrading to a different plan in the same family re-locks the SAME subject (a
+	`Plan Changed` segment) and keeps its usage history continuous — never forking into a
+	parallel subject. Re-subscribing the identical plan is idempotent. Returns the
+	subscription + the synthesized subject + the locked handles."""
+	category = _assert_service_plan(plan)
 
-	subject = _service_subject_id(team, plan, cluster)
+	subject = _service_subject_id(team, category, cluster)
 	existing = frappe.db.get_value(
-		"Subscription", {"service_subject": subject, "enabled": 1}, "name"
+		"Subscription", {"service_subject": subject, "enabled": 1}, ["name", "plan"], as_dict=True
 	)
 	if existing:
-		seg = _latest_segment_by_subscription([existing]).get(existing)
+		reused = existing.plan == plan
+		if not reused:
+			# Same family, different plan → an upgrade/downgrade: re-lock in place.
+			change_plan(existing.name, plan, changed_by=changed_by)
+		seg = _latest_segment_by_subscription([existing.name]).get(existing.name)
 		return {
-			"subscription": existing,
+			"subscription": existing.name,
 			"service_subject": subject,
-			"reused": True,
+			"reused": reused,
+			"upgraded": not reused,
 			"locked_rate": frappe.utils.flt(seg.locked_rate) if seg else None,
 			"currency": seg.currency if seg else None,
 		}
@@ -290,15 +297,17 @@ def provision_service_subscription(
 		"subscription": doc.name,
 		"service_subject": subject,
 		"reused": False,
+		"upgraded": False,
 		"locked_rate": opening.locked_rate if opening else None,
 		"currency": opening.currency if opening else None,
 	}
 
 
-def _assert_service_plan(plan: str) -> None:
+def _assert_service_plan(plan: str) -> str:
 	"""A team-level service plan is any active Plan whose family is not provisioned as a
 	whole Server (servers go through the VM create/resize flow, ADR 0007). Metered
-	families (AI Tokens, PDF, storage) and non-Server bundles qualify."""
+	families (AI Tokens, PDF, storage) and non-Server bundles qualify. Returns its
+	Plan Category (the service family)."""
 	category = frappe.db.get_value("Plan", plan, "category")
 	if not category:
 		frappe.throw(frappe._("Unknown plan {0}.").format(plan), frappe.ValidationError)
@@ -307,14 +316,16 @@ def _assert_service_plan(plan: str) -> None:
 			frappe._("Plan {0} provisions a server — subscribe it through the server flow, not as a team-level service.").format(plan),
 			frappe.ValidationError,
 		)
+	return category
 
 
-def _service_subject_id(team: str, plan: str, cluster: str | None) -> str:
-	"""A deterministic, collision-safe virtual subject per (team, service-plan, cluster),
-	so re-subscribing the same service resolves to the same subject (idempotency)."""
+def _service_subject_id(team: str, category: str, cluster: str | None) -> str:
+	"""A deterministic, collision-safe virtual subject per (team, service *family*,
+	cluster). Keyed on the family — not the specific plan — so an upgrade within the
+	family stays on the same subject and its usage history is continuous."""
 	import hashlib
 
-	seed = f"{team}|{plan}|{cluster or ''}"
+	seed = f"{team}|{category}|{cluster or ''}"
 	return "svc-" + hashlib.sha1(seed.encode()).hexdigest()[:16]
 
 
