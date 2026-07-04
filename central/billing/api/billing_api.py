@@ -229,6 +229,7 @@ def report_usage(
 	Returns `{recorded, service_subject}`; `recorded` is False if the team isn't subscribed
 	to the service or it has no open billing segment."""
 	from central.billing.catalog.services import resolve_service_subject
+	from central.billing.catalog.subscriptions import active_segment_for_resource
 	from central.billing.revenue.metering import ingest_rollup
 
 	team = _team()
@@ -238,10 +239,18 @@ def report_usage(
 			frappe._("Team is not subscribed to service {0}.").format(service), frappe.ValidationError
 		)
 
+	# Stamp the subject's authoritative billing context (team + its real cluster +
+	# currency) into the payload. A Live-priced family reads team/cluster/currency
+	# straight from the meter (a grandfathered one re-derives them off the segment), so
+	# without these a Live rollup would land context-less and be missed at invoicing.
+	seg = active_segment_for_resource(subject)
 	period_start, period_end, tag = _billing_period(period)
 	key = ingest_rollup(
 		{
 			"resource_id": subject,
+			"team": seg.team if seg else team,
+			"cluster": seg.cluster if seg else cluster,
+			"currency": seg.currency if seg else None,
 			"resource_type": service,
 			"meter_type": "Counter",
 			"quantity": frappe.utils.flt(quantity),

@@ -22,7 +22,7 @@ def _ensure_resource_type(name: str) -> str:
 
 def _make_metered_family(
 	category, resource_type, plan, reporting_mode="Authoritative",
-	settlement_mode="Postpaid Overage", allowance=0, rate=0.5,
+	settlement_mode="Postpaid Overage", allowance=0, rate=0.5, pricing_mode="Grandfathered",
 ):
 	"""A metered single-resource Plan under a dedicated Plan Category carrying explicit
 	reporting + settlement modes and an included allowance — so a test can exercise
@@ -39,7 +39,7 @@ def _make_metered_family(
 	frappe.get_doc(
 		{
 			"doctype": "Plan Category", "category_name": category, "billing_type": "Metered",
-			"pricing_mode": "Grandfathered", "reporting_mode": reporting_mode,
+			"pricing_mode": pricing_mode, "reporting_mode": reporting_mode,
 			"settlement_mode": settlement_mode,
 		}
 	).insert(ignore_permissions=True)
@@ -329,6 +329,36 @@ class TestServiceAPI(IntegrationTestCase):
 		self.assertEqual(
 			frappe.utils.flt(frappe.db.get_value("Usage Rollup", {"resource_id": globally}, "quantity")),
 			70,
+		)
+
+	def test_live_priced_service_reports_with_billing_context(self):
+		# A Live-priced family reads team/cluster/currency from the meter payload; the
+		# subject's segment must supply them, or the rollup lands context-less and is
+		# missed at invoicing.
+		from central.billing.revenue.metering import metered_line_items
+
+		live = _make_metered_family(
+			"SM Live Family", "PDF Live", "SM PDF Live Plan", pricing_mode="Live", rate=2.0
+		)
+		res_sub = self.subscribe_service(live, cluster=None)  # global Live service
+		res = self.report_usage(service="PDF Live", quantity=300)
+		subject = res_sub["service_subject"]
+		self.assertTrue(res["recorded"])
+
+		row = frappe.db.get_value(
+			"Usage Rollup", {"resource_id": subject}, ["team", "cluster", "currency"], as_dict=True
+		)
+		self.assertEqual(row.team, self.TEAM)     # was null before the context fix
+		self.assertEqual(row.currency, "INR")     # Live reads currency off the payload
+
+		# It bills: Live reads the current catalog rate at invoice time (300 x 2.0).
+		lines = metered_line_items(
+			self.TEAM, row.cluster,
+			frappe.utils.get_first_day(frappe.utils.nowdate()),
+			frappe.utils.get_last_day(frappe.utils.nowdate()),
+		)
+		self.assertTrue(
+			any(l["subscription_resource"] == subject and l["amount"] == 600.0 for l in lines)
 		)
 
 	def test_report_usage_for_unsubscribed_service_is_rejected(self):
