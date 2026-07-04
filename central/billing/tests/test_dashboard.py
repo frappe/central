@@ -291,6 +291,21 @@ class TestBillingCurrency(CustomerDataBase):
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.save_billing_profile(TEAM, currency="XYZ")  # no gateway → rejected
 
+	def test_currency_follows_country(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		make_razorpay_gateway("GW-Cur-INR")  # INR supported
+		make_stripe_gateway("GW-Cur-USD")  # USD supported
+
+		# India → INR, regardless of any currency the client tries to send.
+		dashboard.save_billing_profile(TEAM, legal_name="Acme", country="India", currency="USD")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
+
+		# A foreign country → USD.
+		dashboard.save_billing_profile(TEAM, country="Germany")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "USD")
+
 	def test_currency_locks_after_money_activity(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 		from central.billing.revenue import credits
@@ -303,6 +318,9 @@ class TestBillingCurrency(CustomerDataBase):
 		self.assertTrue(dashboard.get_billing_profile(TEAM)["currency_locked"])
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.save_billing_profile(TEAM, currency="USD")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
+		# A locked INR team editing its (foreign) address does NOT get re-derived to USD.
+		dashboard.save_billing_profile(TEAM, country="Germany", legal_name="Acme")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
 
 

@@ -50,7 +50,7 @@ class TestComponentRateCard(IntegrationTestCase):
 		self.assertIsNone(resolve_component_rate("Compute", "JPY"))
 
 	def test_starter_card_seeded_for_shipped_currencies(self):
-		for currency in ("INR", "USD", "EUR"):
+		for currency in ("INR", "USD"):
 			for resource_type in ("Compute", "Memory", "Disk"):
 				self.assertIsNotNone(
 					resolve_component_rate(resource_type, currency),

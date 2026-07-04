@@ -11,8 +11,8 @@ import type { TrustTier, TierLevel } from '@/types/billing'
 // Billing › Limit Tiers, shown to customers as "Spending Limits". A team's tier
 // sets how much it can spend and how many resources it can run; paying invoices on
 // time promotes it to higher tiers (#07/#08). Backend stays "Trust Tier"; the UI
-// speaks Spending Limits / Base / Tier 1–3 (mapped from the rung's sequence, never
-// the internal t0…t3 slug). Reads get_trust_tier (current + next + full ladder).
+// shows each rung's own title (Beginner, Growth, …) rather than a "Tier N" derived
+// from the sequence. Reads get_trust_tier (current + next + full ladder).
 //
 // Layout mirrors the frappe-cloud-v2 prototype: a standing band, a tiers table
 // whose Requirements column shows each rung's promotion gates against the team's
@@ -31,10 +31,11 @@ const currency = computed(() => tier.data?.currency || 'INR')
 const cur = computed(() => tier.data?.current)
 const prog = computed(() => tier.data?.progress)
 
-// Customer-facing rung name from the sequence: Base, then Tier 1, Tier 2, …
+// Customer-facing rung name: the tier's own title (Beginner, Growth, …), not a
+// "Tier N" derived from its sequence.
 function tierLabel(level: TierLevel | null | undefined): string {
   if (!level) return '—'
-  return level.sequence <= 0 ? 'Base' : `Tier ${level.sequence}`
+  return level.tier || '—'
 }
 
 interface Requirement {
