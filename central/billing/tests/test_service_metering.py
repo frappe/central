@@ -291,6 +291,33 @@ class TestDualModeIngestion(IntegrationTestCase):
 		self.assertEqual(self._qty(subject), 150)  # 100 + 50 — the racing delta survived
 		self.assertEqual(frappe.db.count("Usage Rollup", {"resource_id": subject}), 1)
 
+	def test_exhausted_insert_race_does_not_acknowledge(self):
+		# If every retry loses the race without ever persisting, ingest must return None
+		# (not the key) so the reporter does not mark the batch synced over missing usage.
+		from unittest.mock import patch
+
+		plan = _make_metered_family(
+			"SM Exhaust Family", "PDF Exh", "SM PDF Exh Plan", reporting_mode="Incremental"
+		)
+		subject = self._subject("PDF Exh", plan)
+		key = f"{subject}|Counter|2026-07"
+		orig_gv = frappe.db.get_value
+
+		def gv(doctype, filters=None, *a, **k):
+			if doctype == "Usage Rollup" and isinstance(filters, dict) and filters.get("idempotency_key") == key:
+				return None  # every read misses
+			return orig_gv(doctype, filters, *a, **k)
+
+		def ins(*a, **k):
+			raise frappe.DuplicateEntryError  # every insert loses
+
+		with patch.object(frappe.db, "get_value", side_effect=gv), \
+				patch.object(self.metering, "_insert_rollup", side_effect=ins):
+			result = self.metering.ingest_rollup(self._meter(subject, "PDF Exh", key, 50, sequence=1))
+
+		self.assertIsNone(result)  # not acknowledged
+		self.assertEqual(frappe.db.count("Usage Rollup", {"resource_id": subject}), 0)
+
 	def test_incremental_stays_one_row_per_period(self):
 		plan = _make_metered_family(
 			"SM Incr Family", "PDF Incr", "SM PDF Incr Plan", reporting_mode="Incremental"

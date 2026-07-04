@@ -197,7 +197,15 @@ def ingest_rollup(meter: dict) -> str | None:
 			# the batch), then loop — the re-read FOR UPDATE blocks on the winner and our
 			# figure lands on its row rather than being dropped.
 			frappe.db.rollback(save_point="usage_rollup_insert")
-	return key
+
+	# Every retry lost the race without ever applying or inserting (a winner that kept
+	# rolling back after we saw its lock). Do NOT acknowledge: return None so the caller
+	# doesn't mark the batch synced. The reporter retries and the delta still lands —
+	# the sequence cursor was never advanced, so there is no double-count.
+	frappe.logger("billing").warning(
+		f"Usage rollup {key} could not be applied after {_INGEST_RACE_RETRIES} attempts"
+	)
+	return None
 
 
 # A first-insert race resolves in one retry; a couple more absorb a winner that rolls
