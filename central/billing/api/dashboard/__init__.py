@@ -61,6 +61,10 @@ from central.billing.api.dashboard.methods import (
 	set_default_payment_method,
 	setup_payment_method_order,
 )
+from central.billing.api.dashboard.services import (
+	get_metered_services,
+	subscribe_metered_service,
+)
 
 __all__ = [
 	"whoami", "get_billing_profile", "get_billing_geo", "save_billing_profile", "get_billing_settings",
@@ -76,4 +80,5 @@ __all__ = [
 	"list_payment_methods", "get_payment_method_options", "initiate_card_setup", "confirm_card",
 	"add_demo_card", "setup_payment_method_order", "confirm_payment_method_order",
 	"remove_payment_method", "set_default_payment_method", "reorder_payment_methods",
+	"get_metered_services", "subscribe_metered_service",
 ]

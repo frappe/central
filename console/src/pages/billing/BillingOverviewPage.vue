@@ -9,6 +9,7 @@ import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
 import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import SubscriptionsCard from '@/components/billing/SubscriptionsCard.vue'
+import MeteredServicesCard from '@/components/billing/MeteredServicesCard.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
@@ -61,6 +62,7 @@ const showWalletHistory = ref(false)
           <PaymentMethodsCard />
           <BillingContactTaxCard @edit="setupDialogOpen = true" />
           <SubscriptionsCard />
+          <MeteredServicesCard />
           <StopBillingCard />
         </div>
       </div>

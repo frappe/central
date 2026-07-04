@@ -19,6 +19,8 @@
   "billing_interval",
   "column_break_billing",
   "pricing_mode",
+  "settlement_mode",
+  "reporting_mode",
   "section_break_resources",
   "allowed_resource_types"
  ],
@@ -100,6 +102,20 @@
    "label": "Pricing Mode",
    "options": "\nGrandfathered\nLive",
    "description": "For a Metered family: Grandfathered bills the rate locked at provision (like bundles); Live reads the current Catalog Rate each period with no allowance, for depreciating storage (ADR 0002). Leave blank for Fixed families."
+  },
+  {
+   "fieldname": "settlement_mode",
+   "fieldtype": "Select",
+   "label": "Settlement Mode",
+   "options": "\nPostpaid Overage\nPrepaid Pack",
+   "description": "What the included allowance means when it runs out (ADR 0015). Postpaid Overage (default): keep serving, bill max(0, qty-allowance) x rate at period close. Prepaid Pack: the allowance is a purchased balance drawn down as usage lands; blocked/degraded at zero until another pack is bought. Blank = Postpaid Overage."
+  },
+  {
+   "fieldname": "reporting_mode",
+   "fieldtype": "Select",
+   "label": "Reporting Mode",
+   "options": "\nAuthoritative\nIncremental",
+   "description": "How a consumer service reports usage (ADR 0015). Authoritative (default): the service sends the period's running total; Central replaces the rollup. Incremental: the service posts deltas as consumed; Central accumulates and dedupes by a monotonic sequence cursor (assumes ordered delivery). Blank = Authoritative."
   },
   {
    "fieldname": "section_break_resources",

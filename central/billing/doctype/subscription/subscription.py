@@ -24,6 +24,7 @@ class Subscription(Document):
 		includes: DF.Table
 		plan: DF.Link | None
 		pricing_mode: DF.Literal["Preset", "Composed"]
+		service_subject: DF.Data | None
 		start_date: DF.Date | None
 		sub_category: DF.Link | None
 		team: DF.Link
@@ -31,6 +32,7 @@ class Subscription(Document):
 
 	def validate(self):
 		self.validate_duplicate_subscription()
+		self.validate_duplicate_service_subject()
 
 	def validate_duplicate_subscription(self):
 		"""Block a second enabled subscription for the same team + asset.
@@ -54,6 +56,29 @@ class Subscription(Document):
 		if duplicate:
 			frappe.throw(
 				f"Team {self.team} already has an active subscription ({duplicate}) for asset {self.asset_id}.",
+				frappe.DuplicateEntryError,
+			)
+
+	def validate_duplicate_service_subject(self):
+		"""One active subscription per synthesized service subject (ADR 0013/0015).
+
+		The subject already encodes (team, service-plan, cluster), so this makes
+		provisioning idempotent: a second subscribe of the same service on the same
+		cluster must reuse the existing subject, not open a parallel one."""
+		if not (self.enabled and self.service_subject):
+			return
+
+		duplicate = frappe.db.exists(
+			"Subscription",
+			{
+				"name": ["!=", self.name],
+				"service_subject": self.service_subject,
+				"enabled": 1,
+			},
+		)
+		if duplicate:
+			frappe.throw(
+				f"Service subject {self.service_subject} already has an active subscription ({duplicate}).",
 				frappe.DuplicateEntryError,
 			)
 
@@ -147,7 +172,11 @@ class Subscription(Document):
 		currency = frappe.db.get_value("Billing Profile", self.team, "currency")
 		if not currency:
 			return None, None
-		cluster = frappe.db.get_value("Asset", self.asset_id, "cluster") if self.asset_id else None
+		# A VM subscription resolves its cluster off the Asset; a team-level service
+		# subject (no Asset) carries its cluster on the Subscription itself (ADR 0013).
+		cluster = (
+			frappe.db.get_value("Asset", self.asset_id, "cluster") if self.asset_id else None
+		) or self.cluster
 
 		if self.pricing_mode == "Composed":
 			from central.billing.catalog.pricing import resolve_config_rate

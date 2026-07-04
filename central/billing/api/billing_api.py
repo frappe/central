@@ -145,6 +145,133 @@ def change_plan(asset: str, plan: str) -> dict:
 	return resize_server(subscription, plan=plan)
 
 
+# ── Metered services (team-level: AI tokens, email, PDF, …) ──────────────────
+# The in-app flow a consumer service drives (ADR 0013/0015): discover service plans,
+# subscribe (a synthesized subject, no VM), read what the team runs, and report usage.
+# The team is always the credential's — never a parameter — so a pilot reports only its
+# own team's consumption.
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def list_service_plans(cluster: str | None = None) -> dict:
+	"""Active team-level service plans (AI tokens, email, PDF, storage), priced for the
+	team's currency on `cluster`. Each entry carries the billing shape, family modes,
+	included allowance, and the resolved rate."""
+	from central.billing.catalog.services import list_service_plans as _list
+
+	team = _team()
+	currency = _team_currency(team)
+	return {"plans": _list(currency, cluster=cluster), "currency": currency}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def subscribe_service(plan: str, cluster: str | None = None) -> dict:
+	"""Subscribe the team to a team-level metered service. Mints a synthesized subject
+	(no VM) and opens the price-lock segment inline; idempotent per (team, plan, cluster).
+	Returns the subject + locked handles."""
+	from central.billing.catalog.subscriptions import provision_service_subscription
+
+	team = _team()
+	_require_billing_setup(team)
+	return provision_service_subscription(team, plan, cluster=cluster)
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def get_service_subscription() -> dict:
+	"""The team's active team-level service subscriptions: subject, plan, cluster, rate,
+	family modes, included allowance, and the current period's reported usage."""
+	from central.billing.catalog.services import team_service_subscriptions
+
+	return {"services": team_service_subscriptions(_team())}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def check_service_allowance(service: str, cluster: str | None = None) -> dict:
+	"""Allowance state for edge enforcement, by the service the caller *is*: `{allowance,
+	used, remaining, blocked, settlement_mode}`. A Prepaid Pack service polls this and
+	degrades when `blocked`; a Postpaid Overage service never blocks. Central resolves the
+	team's subject from `service` (the metered Resource Type) — the caller handles no
+	subject. `exists: False` when the team isn't subscribed to it."""
+	from central.billing.catalog.services import resolve_service_subject, service_allowance
+
+	team = _team()
+	subject = resolve_service_subject(team, service, cluster=cluster)
+	if not subject:
+		return {"exists": False}
+	return service_allowance(team, subject)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def report_usage(
+	service: str,
+	quantity: float,
+	cluster: str | None = None,
+	sequence: int = 0,
+	period: str | None = None,
+) -> dict:
+	"""Report metered usage for a team-level service — the minimal call a consumer service
+	makes. It names the `service` it is (the metered Resource Type) and the `quantity`;
+	Central derives everything else from the credential:
+
+	  - the **team** (from the credential — a caller can only ever report its own team's
+	    usage, so there is no subject to forge),
+	  - the **subject** (resolved from team + service + cluster),
+	  - the billing **period** (the current month unless `period="YYYY-MM"` backfills one),
+	  - the **idempotency key** (subject + service + period).
+
+	Authoritative families send the period's running total (replaced); Incremental families
+	send a delta and bump `sequence` each flush (accumulated, retries/duplicates deduped).
+	Returns `{recorded, service_subject}`; `recorded` is False if the team isn't subscribed
+	to the service or it has no open billing segment."""
+	from central.billing.catalog.services import resolve_service_subject
+	from central.billing.catalog.subscriptions import active_segment_for_resource
+	from central.billing.revenue.metering import ingest_rollup
+
+	team = _team()
+	subject = resolve_service_subject(team, service, cluster=cluster)
+	if not subject:
+		frappe.throw(
+			frappe._("Team is not subscribed to service {0}.").format(service), frappe.ValidationError
+		)
+
+	# Stamp the subject's authoritative billing context (team + its real cluster +
+	# currency) into the payload. A Live-priced family reads team/cluster/currency
+	# straight from the meter (a grandfathered one re-derives them off the segment), so
+	# without these a Live rollup would land context-less and be missed at invoicing.
+	seg = active_segment_for_resource(subject)
+	period_start, period_end, tag = _billing_period(period)
+	key = ingest_rollup(
+		{
+			"resource_id": subject,
+			"team": seg.team if seg else team,
+			"cluster": seg.cluster if seg else cluster,
+			"currency": seg.currency if seg else None,
+			"resource_type": service,
+			"meter_type": "Counter",
+			"quantity": frappe.utils.flt(quantity),
+			"period_start": period_start,
+			"period_end": period_end,
+			"idempotency_key": f"{subject}|{service}|{tag}",
+			"sequence": frappe.utils.cint(sequence),
+		}
+	)
+	return {"recorded": bool(key), "service_subject": subject}
+
+
+def _billing_period(period: str | None) -> tuple[str, str, str]:
+	"""The (start, end, tag) of a billing month. Defaults to the current month; `period`
+	backfills a past one as `"YYYY-MM"`. The tag keys the rollup so all of a month's
+	reports land on one row."""
+	anchor = f"{period}-01" if period else frappe.utils.nowdate()
+	first = frappe.utils.get_first_day(anchor)
+	return str(first), str(frappe.utils.get_last_day(anchor)), first.strftime("%Y-%m")
+
+
 # ── Credits ──────────────────────────────────────────────────────────────────
 
 
