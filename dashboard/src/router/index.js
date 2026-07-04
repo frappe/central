@@ -20,7 +20,7 @@ const routes = [
       {
         path: 'billing',
         component: GroupGate,
-        props: { capability: 'billing:view', roles: 'Owner or Billing' },
+        props: { capability: 'billing:view', roles: 'Owner, Admin, or Billing' },
         children: [
           { path: '', name: 'Overview', component: () => import('@/pages/billing/Overview.vue') },
           { path: 'invoices', name: 'Invoices', component: () => import('@/pages/billing/Invoices.vue') },
@@ -32,7 +32,7 @@ const routes = [
       {
         path: 'settings',
         component: GroupGate,
-        props: { capability: 'billing:view', roles: 'Owner or Billing' },
+        props: { capability: 'billing:view', roles: 'Owner, Admin, or Billing' },
         children: [
           { path: '', redirect: '/settings/address' },
           { path: 'address', name: 'Address', component: () => import('@/pages/billing/Settings.vue') },

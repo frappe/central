@@ -11,7 +11,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 const props = defineProps({
   capability: { type: String, default: '' },
   requireMember: { type: Boolean, default: false },
-  roles: { type: String, default: 'Owner or Billing' },
+  roles: { type: String, default: 'Owner, Admin, or Billing' },
 })
 
 const { caps, has, isMember } = useCapabilities()

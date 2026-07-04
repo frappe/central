@@ -48,7 +48,7 @@ There are no per-user capability overrides. A Team owner is an active
 | Role | Intended access |
 | --- | --- |
 | Owner | All Team capabilities |
-| Admin | Team management and server operations, excluding billing and team deletion |
+| Admin | Day-to-day team, server, and billing operations, excluding team deletion and ownership transfer |
 | Developer | Full server operations |
 | Viewer | Read-only server access |
 | Billing | Billing and read-only server access |
