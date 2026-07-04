@@ -307,28 +307,22 @@ class TestServiceAPI(IntegrationTestCase):
 		services = self.get_service_subscription()["services"]
 		self.assertIn(subject, [s["service_subject"] for s in services])
 
-		res = self.report_usage(
-			service_subject=subject, resource_type="PDF API", quantity=500,
-			period_start="2026-07-01 00:00:00", period_end="2026-07-31 23:59:59",
-			idempotency_key=f"{subject}|Counter|2026-07",
-		)
+		# The consumer service names only the service it is + the quantity; Central
+		# derives the subject, period and idempotency key from the credential.
+		res = self.report_usage(service="PDF API", quantity=500, cluster="mumbai")
 		self.assertTrue(res["recorded"])
+		self.assertEqual(res["service_subject"], subject)
 		self.assertEqual(
 			frappe.utils.flt(frappe.db.get_value("Usage Rollup", {"resource_id": subject}, "quantity")),
 			500,
 		)
 
-	def test_report_usage_for_foreign_subject_is_rejected(self):
-		# A subject owned by another team must not be reportable by this credential.
-		self._act_as(self.OTHER)
-		foreign = self.subscribe_service(self.plan, cluster="mumbai")["service_subject"]
-		self._act_as(self.TEAM)
-		with self.assertRaises(frappe.PermissionError):
-			self.report_usage(
-				service_subject=foreign, resource_type="PDF API", quantity=10,
-				period_start="2026-07-01 00:00:00", period_end="2026-07-31 23:59:59",
-				idempotency_key=f"{foreign}|Counter|2026-07",
-			)
+	def test_report_usage_for_unsubscribed_service_is_rejected(self):
+		# A caller can only report for a service ITS OWN team is subscribed to — there is
+		# no subject to name, so another team's usage cannot be forged.
+		self._act_as(self.OTHER)  # OTHER never subscribed to PDF API
+		with self.assertRaises(frappe.ValidationError):
+			self.report_usage(service="PDF API", quantity=10, cluster="mumbai")
 
 
 class TestPrepaidSettlement(IntegrationTestCase):

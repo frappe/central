@@ -190,48 +190,77 @@ def get_service_subscription() -> dict:
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
-def check_service_allowance(service_subject: str) -> dict:
-	"""A service subject's allowance state for edge enforcement: `{allowance, used,
-	remaining, blocked, settlement_mode}`. A Prepaid Pack service polls this and degrades
-	when `blocked`; a Postpaid Overage service never blocks. Scoped to the team."""
-	from central.billing.catalog.services import service_allowance
+def check_service_allowance(service: str, cluster: str | None = None) -> dict:
+	"""Allowance state for edge enforcement, by the service the caller *is*: `{allowance,
+	used, remaining, blocked, settlement_mode}`. A Prepaid Pack service polls this and
+	degrades when `blocked`; a Postpaid Overage service never blocks. Central resolves the
+	team's subject from `service` (the metered Resource Type) — the caller handles no
+	subject. `exists: False` when the team isn't subscribed to it."""
+	from central.billing.catalog.services import resolve_service_subject, service_allowance
 
-	return service_allowance(_team(), service_subject)
+	team = _team()
+	subject = resolve_service_subject(team, service, cluster=cluster)
+	if not subject:
+		return {"exists": False}
+	return service_allowance(team, subject)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def report_usage(
-	service_subject: str,
-	resource_type: str,
+	service: str,
 	quantity: float,
-	period_start: str,
-	period_end: str,
-	idempotency_key: str,
-	meter_type: str = "Counter",
+	cluster: str | None = None,
 	sequence: int = 0,
+	period: str | None = None,
 ) -> dict:
-	"""Report metered usage for a team-level service subject. The subject must belong to
-	the credential's team (IDOR defence). Authoritative families send the period's
-	running total (replaced); Incremental families send a delta + a monotonic sequence
-	(accumulated, deduped). Returns the handled idempotency_key, or null if nothing was
-	recorded (e.g. no active segment for the subject)."""
+	"""Report metered usage for a team-level service — the minimal call a consumer service
+	makes. It names the `service` it is (the metered Resource Type) and the `quantity`;
+	Central derives everything else from the credential:
+
+	  - the **team** (from the credential — a caller can only ever report its own team's
+	    usage, so there is no subject to forge),
+	  - the **subject** (resolved from team + service + cluster),
+	  - the billing **period** (the current month unless `period="YYYY-MM"` backfills one),
+	  - the **idempotency key** (subject + service + period).
+
+	Authoritative families send the period's running total (replaced); Incremental families
+	send a delta and bump `sequence` each flush (accumulated, retries/duplicates deduped).
+	Returns `{recorded, service_subject}`; `recorded` is False if the team isn't subscribed
+	to the service or it has no open billing segment."""
+	from central.billing.catalog.services import resolve_service_subject
 	from central.billing.revenue.metering import ingest_rollup
 
-	_assert_owns(frappe.db.get_value("Subscription", {"service_subject": service_subject}, "team"))
+	team = _team()
+	subject = resolve_service_subject(team, service, cluster=cluster)
+	if not subject:
+		frappe.throw(
+			frappe._("Team is not subscribed to service {0}.").format(service), frappe.ValidationError
+		)
+
+	period_start, period_end, tag = _billing_period(period)
 	key = ingest_rollup(
 		{
-			"resource_id": service_subject,
-			"resource_type": resource_type,
-			"meter_type": meter_type,
+			"resource_id": subject,
+			"resource_type": service,
+			"meter_type": "Counter",
 			"quantity": frappe.utils.flt(quantity),
 			"period_start": period_start,
 			"period_end": period_end,
-			"idempotency_key": idempotency_key,
+			"idempotency_key": f"{subject}|{service}|{tag}",
 			"sequence": frappe.utils.cint(sequence),
 		}
 	)
-	return {"recorded": bool(key), "idempotency_key": key}
+	return {"recorded": bool(key), "service_subject": subject}
+
+
+def _billing_period(period: str | None) -> tuple[str, str, str]:
+	"""The (start, end, tag) of a billing month. Defaults to the current month; `period`
+	backfills a past one as `"YYYY-MM"`. The tag keys the rollup so all of a month's
+	reports land on one row."""
+	anchor = f"{period}-01" if period else frappe.utils.nowdate()
+	first = frappe.utils.get_first_day(anchor)
+	return str(first), str(frappe.utils.get_last_day(anchor)), first.strftime("%Y-%m")
 
 
 # ── Credits ──────────────────────────────────────────────────────────────────

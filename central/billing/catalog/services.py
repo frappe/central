@@ -99,6 +99,19 @@ def team_service_subscriptions(team: str) -> list[dict]:
 	return out
 
 
+def resolve_service_subject(team: str, service: str, cluster: str | None = None) -> str | None:
+	"""The team's active service subject for `service` on `cluster`, or None if it isn't
+	subscribed (ADR 0015). `service` is the Resource Type the family meters (one active
+	metered plan per resource type, ADR 0008), so a consumer service names the service it
+	*is* and Central resolves the synthesized subject — the caller never handles subjects.
+	A globally-priced service carries no cluster; pass None to match it."""
+	want_cluster = cluster or None
+	for s in team_service_subscriptions(team):
+		if s["resource_type"] == service and (s["cluster"] or None) == want_cluster:
+			return s["service_subject"]
+	return None
+
+
 def service_allowance(team: str, subject: str) -> dict:
 	"""A service subject's allowance state (ADR 0015), for edge enforcement.
 
