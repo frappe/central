@@ -60,9 +60,14 @@ export function useBillingOverview() {
     methods: methodsCall,
     profile: profileCall,
     subscriptions: subscriptionsCall,
-    // The team's billing currency, resolved from whichever read has it first.
+    // The team's billing currency. The Billing Profile is the source of truth
+    // (it's what the setup dialog writes), so read it FIRST: after a profile is
+    // saved, reloadProfile() re-pulls it and every consumer (top-up, add-method)
+    // reflects the chosen currency immediately — the forecast/credit reads may
+    // still be stale INR from before setup and must not win.
     currency: computed(
       () =>
+        profileCall.data?.currency ||
         forecastCall.data?.currency ||
         creditCall.data?.currency ||
         overviewCall.data?.currency ||

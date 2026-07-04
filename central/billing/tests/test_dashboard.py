@@ -48,7 +48,12 @@ class CustomerDataBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Credit Ledger Entry", "Gateway Customer"):
+		# Billing Profile + Tax Profile are purged too: completing a profile via the
+		# API now provisions a tax profile and welcome credits, so a profile left
+		# committed by one test would make a later test's partial save look complete
+		# and fire that provisioning under it.
+		for dt in ("Invoice", "Credit Ledger Entry", "Gateway Customer", "Tax Profile",
+				   "Billing Profile"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):

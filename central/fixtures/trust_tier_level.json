@@ -1,0 +1,86 @@
+[
+ {
+  "doctype": "Trust Tier Level",
+  "name": "Beginner",
+  "tier": "Beginner",
+  "sequence": 0,
+  "is_default": 1,
+  "max_resource_count": 3,
+  "min_paid_invoices": 0,
+  "thresholds": [
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "INR", "max_spend": 8300.0, "min_cumulative_paid": 0.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "USD", "max_spend": 100.0, "min_cumulative_paid": 0.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "EUR", "max_spend": 92.0, "min_cumulative_paid": 0.0}
+  ]
+ },
+ {
+  "doctype": "Trust Tier Level",
+  "name": "Growth",
+  "tier": "Growth",
+  "sequence": 1,
+  "is_default": 0,
+  "max_resource_count": 10,
+  "min_paid_invoices": 3,
+  "thresholds": [
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "INR", "max_spend": 20750.0, "min_cumulative_paid": 4150.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "USD", "max_spend": 250.0, "min_cumulative_paid": 50.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "EUR", "max_spend": 230.0, "min_cumulative_paid": 46.0}
+  ]
+ },
+ {
+  "doctype": "Trust Tier Level",
+  "name": "Intermediate",
+  "tier": "Intermediate",
+  "sequence": 2,
+  "is_default": 0,
+  "max_resource_count": 25,
+  "min_paid_invoices": 3,
+  "thresholds": [
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "INR", "max_spend": 83000.0, "min_cumulative_paid": 24900.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "USD", "max_spend": 1000.0, "min_cumulative_paid": 300.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "EUR", "max_spend": 920.0, "min_cumulative_paid": 276.0}
+  ]
+ },
+ {
+  "doctype": "Trust Tier Level",
+  "name": "Advance",
+  "tier": "Advance",
+  "sequence": 3,
+  "is_default": 0,
+  "max_resource_count": 50,
+  "min_paid_invoices": 3,
+  "thresholds": [
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "INR", "max_spend": 207500.0, "min_cumulative_paid": 41500.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "USD", "max_spend": 2500.0, "min_cumulative_paid": 500.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "EUR", "max_spend": 2300.0, "min_cumulative_paid": 460.0}
+  ]
+ },
+ {
+  "doctype": "Trust Tier Level",
+  "name": "Power",
+  "tier": "Power",
+  "sequence": 4,
+  "is_default": 0,
+  "max_resource_count": 150,
+  "min_paid_invoices": 6,
+  "thresholds": [
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "INR", "max_spend": 622500.0, "min_cumulative_paid": 124500.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "USD", "max_spend": 7500.0, "min_cumulative_paid": 1500.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "EUR", "max_spend": 6900.0, "min_cumulative_paid": 1380.0}
+  ]
+ },
+ {
+  "doctype": "Trust Tier Level",
+  "name": "Elite",
+  "tier": "Elite",
+  "sequence": 5,
+  "is_default": 0,
+  "max_resource_count": 500,
+  "min_paid_invoices": 6,
+  "thresholds": [
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "INR", "max_spend": 830000.0, "min_cumulative_paid": 249000.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "USD", "max_spend": 10000.0, "min_cumulative_paid": 3000.0},
+   {"doctype": "Trust Tier Threshold", "parentfield": "thresholds", "parenttype": "Trust Tier Level", "currency": "EUR", "max_spend": 9200.0, "min_cumulative_paid": 2760.0}
+  ]
+ }
+]

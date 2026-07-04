@@ -128,6 +128,12 @@ def ensure_catalog_masters():
 
 	ensure_component_rate_card()
 
+	# The starter VM Plan ladder + its rates, so a fresh install ships preset bundles
+	# a team can provision on day one (not just à la carte component rates).
+	from central.billing.catalog.plan_setup import ensure_starter_plans
+
+	ensure_starter_plans()
+
 
 def _ensure_category(spec):
 	if not frappe.db.exists("Plan Category", spec["category_name"]):

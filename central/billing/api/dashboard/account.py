@@ -110,9 +110,18 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 
 	from central.billing.payments import profile
 	profile = profile.create_or_update_billing_profile(team, **values)
-	
+
+	# Once the profile is complete the team is a real customer: assign its entry
+	# trust tier, a tax profile, and welcome credits (idempotent — a no-op once
+	# each has happened).
+	setup_complete = _profile_complete(team)
+	if setup_complete:
+		from central.billing.payments.provisioning import provision_billing_profile
+
+		provision_billing_profile(team)
+
 	return {"saved": True, "team": team, "gstin": profile.gstin, "currency": profile.currency,
-			"setup_complete": _profile_complete(team)}
+			"setup_complete": setup_complete}
 
 
 @frappe.whitelist()
@@ -219,8 +228,14 @@ def get_trust_tier(team: str | None = None) -> dict:
 	resources_used = _team_resource_count(team)
 	paid_invoices = frappe.db.count("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"})
 	paid_rows = frappe.get_all("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"},
-							   ["amount_paid"])
-	cumulative_paid = sum(frappe.utils.flt(r.amount_paid) for r in paid_rows)
+							   ["amount_paid", "credit_applied"])
+	# "Paid to date" is what actually settled each invoice — the card-collected
+	# `amount_paid` PLUS credits applied. A credits-settled invoice carries
+	# amount_paid=0 (no gateway charge), so summing amount_paid alone reports 0
+	# even though the customer's prepaid credits cleared the bill.
+	cumulative_paid = sum(
+		frappe.utils.flt(r.amount_paid) + frappe.utils.flt(r.credit_applied) for r in paid_rows
+	)
 
 	def level_view(l):
 		if not l:
