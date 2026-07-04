@@ -62,12 +62,22 @@ def get_data(filters: dict) -> list[dict]:
 
 
 def get_summary(rows: list[dict]) -> list[dict]:
-	completed = sum(flt(r.amount) for r in rows if r.status == "Completed")
 	initiated = sum(1 for r in rows if r.status == "Initiated")
 	failed = sum(1 for r in rows if r.status == "Failed")
-	return [
+	# Completed refund value grouped by currency (INR and USD don't sum together).
+	completed_by_currency: dict[str, float] = {}
+	for r in rows:
+		if r.status == "Completed":
+			completed_by_currency[r.currency or "INR"] = \
+				completed_by_currency.get(r.currency or "INR", 0.0) + flt(r.amount)
+
+	summary = [
 		{"label": _("Refunds"), "value": len(rows), "datatype": "Int"},
-		{"label": _("Completed Value"), "value": flt(completed, 2), "datatype": "Float", "indicator": "green"},
 		{"label": _("In Flight"), "value": initiated, "datatype": "Int", "indicator": "orange"},
 		{"label": _("Failed"), "value": failed, "datatype": "Int", "indicator": "red"},
 	]
+	for currency in sorted(completed_by_currency):
+		summary.append({"label": _("Completed ({0})").format(currency),
+						"value": flt(completed_by_currency[currency], 2), "datatype": "Float",
+						"indicator": "green"})
+	return summary

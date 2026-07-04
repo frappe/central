@@ -1,15 +1,20 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Metered usage value vs what was invoiced, per team per month.
+"""Metered usage value vs what was invoiced FOR THAT USAGE, per team per month.
 
-Usage value = Σ(quantity × locked_rate) over Usage Rollup rows in the month — the
-metered run-rate Central recorded. Invoiced = Σ(Invoice.total) for billable
-invoices whose period falls in the month. The variance flags billing leakage
-(usage recorded but not billed) or the reverse.
+This reconciles the metered rail only — it deliberately excludes fixed plan/bundle
+fees on both sides so the two columns are directly comparable (coverage ≈ 100% when
+billing is correct):
 
-Caveat: an invoice total also carries fixed plan/bundle fees, not only metered
-overage, so the two columns are a reconciliation aid — a large *negative* variance
-(usage far above invoiced) is the signal to chase, not an exact equality check.
+  Usage value = Σ max(0, quantity − allowance) × locked_rate over Usage Rollup rows —
+                the billable OVERAGE Central metered (usage within the allowance is
+                free, so it is not counted).
+  Invoiced    = Σ(amount) of the METERED invoice line items (resource_type ≠ "bundle")
+                on the month's billable invoices — the fixed VM/bundle lines are left out.
+
+A non-zero variance flags a billing leak (metered but not invoiced) or the reverse.
+Totals are grouped BY CURRENCY — a team bills in one currency, and summing INR and
+USD would be meaningless.
 """
 
 import frappe
@@ -65,43 +70,63 @@ def get_data(filters: dict):
 	# bills in one currency so the two agree.
 	agg: dict[tuple, dict] = {}
 
+	# Usage side: billable overage worth (usage within the allowance is free).
 	for r in frappe.get_all(
 		"Usage Rollup", filters=usage_conditions,
-		fields=["team", "period_start", "quantity", "locked_rate", "currency"],
+		fields=["team", "period_start", "quantity", "locked_allowance", "locked_rate", "currency"],
 	):
 		key = (_month(r.period_start), r.team)
 		g = agg.setdefault(key, {"usage_value": 0.0, "invoiced": 0.0, "currency": r.currency})
-		g["usage_value"] += flt(r.quantity) * flt(r.locked_rate)
+		overage = max(0.0, flt(r.quantity) - flt(r.locked_allowance))
+		g["usage_value"] += overage * flt(r.locked_rate)
 		g["currency"] = g["currency"] or r.currency
 
-	for r in frappe.get_all(
+	# Invoiced side: only the METERED line items on the month's billable invoices.
+	invoices = frappe.get_all(
 		"Invoice", filters=invoice_conditions,
-		fields=["team", "period_start", "total", "currency"],
-	):
-		key = (_month(r.period_start), r.team)
-		g = agg.setdefault(key, {"usage_value": 0.0, "invoiced": 0.0, "currency": r.currency})
-		g["invoiced"] += flt(r.total)
-		g["currency"] = g["currency"] or r.currency
+		fields=["name", "team", "period_start", "currency"],
+	)
+	inv_key = {inv.name: (_month(inv.period_start), inv.team, inv.currency) for inv in invoices}
+	if inv_key:
+		for li in frappe.get_all(
+			"Invoice Line Item",
+			filters={"parent": ["in", list(inv_key)], "resource_type": ["!=", "bundle"]},
+			fields=["parent", "amount"],
+		):
+			month, tm, cur = inv_key[li.parent]
+			g = agg.setdefault((month, tm), {"usage_value": 0.0, "invoiced": 0.0, "currency": cur})
+			g["invoiced"] += flt(li.amount)
+			g["currency"] = g["currency"] or cur
 
 	rows = []
-	tot_usage = tot_invoiced = 0.0
+	# Per-currency totals — never sum across currencies.
+	totals: dict[str, dict] = {}
 	for (month, tm), g in agg.items():
 		usage_value = flt(g["usage_value"], 2)
 		invoiced = flt(g["invoiced"], 2)
+		currency = g["currency"] or "INR"
+		# A team with no metered footprint this month contributes no reconciliation row.
+		if usage_value == 0 and invoiced == 0:
+			continue
 		coverage = (invoiced / usage_value * 100) if usage_value else 0.0
 		rows.append({
-			"month": month, "team": tm, "currency": g["currency"] or "INR",
+			"month": month, "team": tm, "currency": currency,
 			"usage_value": usage_value, "invoiced": invoiced,
 			"variance": flt(invoiced - usage_value, 2), "coverage_pct": flt(coverage, 2),
 		})
-		tot_usage += usage_value
-		tot_invoiced += invoiced
+		t = totals.setdefault(currency, {"usage": 0.0, "invoiced": 0.0})
+		t["usage"] += usage_value
+		t["invoiced"] += invoiced
 	rows.sort(key=lambda r: (r["month"], r["team"]), reverse=True)
 
-	summary = [
-		{"label": _("Usage Value"), "value": flt(tot_usage, 2), "datatype": "Float"},
-		{"label": _("Invoiced"), "value": flt(tot_invoiced, 2), "datatype": "Float"},
-		{"label": _("Variance"), "value": flt(tot_invoiced - tot_usage, 2), "datatype": "Float",
-		 "indicator": "green" if tot_invoiced >= tot_usage else "red"},
-	]
+	summary = []
+	for currency in sorted(totals):
+		t = totals[currency]
+		summary.append({"label": _("Usage Value ({0})").format(currency),
+						"value": flt(t["usage"], 2), "datatype": "Float"})
+		summary.append({"label": _("Invoiced ({0})").format(currency),
+						"value": flt(t["invoiced"], 2), "datatype": "Float"})
+		summary.append({"label": _("Variance ({0})").format(currency),
+						"value": flt(t["invoiced"] - t["usage"], 2), "datatype": "Float",
+						"indicator": "green" if abs(t["invoiced"] - t["usage"]) < 0.01 else "red"})
 	return rows, summary

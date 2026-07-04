@@ -63,12 +63,22 @@ def get_data(filters: dict) -> list[dict]:
 
 
 def get_summary(rows: list[dict]) -> list[dict]:
-	credited = sum(flt(r.amount) for r in rows if r.entry_type == "Credit")
-	debited = sum(flt(r.amount) for r in rows if r.entry_type == "Debit")
-	return [
-		{"label": _("Movements"), "value": len(rows), "datatype": "Int"},
-		{"label": _("Credited"), "value": flt(credited, 2), "datatype": "Float", "indicator": "green"},
-		{"label": _("Debited"), "value": flt(debited, 2), "datatype": "Float", "indicator": "red"},
-		{"label": _("Net"), "value": flt(credited - debited, 2), "datatype": "Float",
-		 "indicator": "green" if credited >= debited else "red"},
-	]
+	# Group money by currency — a team's wallet is in one currency, and summing INR
+	# and USD movements together would be meaningless.
+	by_currency: dict[str, dict] = {}
+	for r in rows:
+		g = by_currency.setdefault(r.currency or "INR", {"credited": 0.0, "debited": 0.0})
+		if r.entry_type == "Credit":
+			g["credited"] += flt(r.amount)
+		elif r.entry_type == "Debit":
+			g["debited"] += flt(r.amount)
+
+	summary = [{"label": _("Movements"), "value": len(rows), "datatype": "Int"}]
+	for currency in sorted(by_currency):
+		g = by_currency[currency]
+		net = g["credited"] - g["debited"]
+		summary.append({"label": _("Credited ({0})").format(currency),
+						"value": flt(g["credited"], 2), "datatype": "Float", "indicator": "green"})
+		summary.append({"label": _("Net ({0})").format(currency), "value": flt(net, 2),
+						"datatype": "Float", "indicator": "green" if net >= 0 else "red"})
+	return summary
