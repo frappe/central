@@ -9,6 +9,7 @@ from frappe.tests import IntegrationTestCase
 from central.billing.platform.sync import receive_meter_rollups
 from central.billing.revenue import metering
 from central.billing.tests.utils import (
+	_clear_metered_plans,
 	ensure_team,
 	make_metered_plan,
 	make_plan,
@@ -36,7 +37,9 @@ class TestFamiliesSeed(IntegrationTestCase):
 
 
 class TestAITokensBilling(IntegrationTestCase):
-	"""Tokens 'metered or bundled or both' = the existing allowance + overage path."""
+	"""AI Tokens is a Metered family (ADR 0013/0015): a single metered plan carries BOTH
+	the bundled allowance and the per-unit overage rate — one metered plan per resource
+	type. Overage bills max(0, used − allowance) × rate off that one plan."""
 
 	TEAM = "team-tokens"
 	CLUSTER = "ap-south-1"
@@ -45,16 +48,14 @@ class TestAITokensBilling(IntegrationTestCase):
 
 	def setUp(self):
 		ensure_team(self.TEAM)
-		# A bundled 10M-token allowance; metered overage at 5 / 1M tokens.
+		# One metered AI Tokens plan: a bundled allowance of 10 (its included quantity, in
+		# plain Nos) AND the overage rate of 5 per unit (its Catalog Rate). Clear any
+		# leftover metered Tokens plan first so it is the sole one covering the resource.
+		_clear_metered_plans("Tokens")
 		make_plan(
 			self.PLAN,
 			category="AI Tokens",
-			includes=[{"resource_type": "Tokens", "quantity": 10, "unit": "1M tokens"}],
-		)
-		make_metered_plan(
-			"meter-tokens",
-			resource_type="Tokens",
-			unit="1M tokens",
+			includes=[{"resource_type": "Tokens", "quantity": 10, "unit": "Nos"}],
 			rates=[{"cluster": "", "currency": "INR", "rate": 5}],
 		)
 		self._purge()
@@ -77,12 +78,12 @@ class TestAITokensBilling(IntegrationTestCase):
 		return {
 			"resource_id": self.RESOURCE, "resource_type": "Tokens", "meter_type": "Counter",
 			"period_start": "2026-06-01 00:00:00", "period_end": "2026-06-30 23:59:59",
-			"quantity": qty, "unit": "1M tokens",
+			"quantity": qty, "unit": "Nos",
 			"idempotency_key": f"{self.RESOURCE}:Counter:2026-06-01", "status": "open",
 		}
 
 	def test_overage_above_allowance_bills(self):
-		receive_meter_rollups([self._meter(15)])  # 15M used, 10M allowed
+		receive_meter_rollups([self._meter(15)])  # 15 used, 10 allowed
 		rollup = frappe.get_doc("Usage Rollup", {"resource_id": self.RESOURCE})
 		self.assertEqual(rollup.locked_allowance, 10)  # bundled allowance from the plan
 		self.assertEqual(rollup.locked_rate, 5)  # from the Tokens metered plan
@@ -92,7 +93,7 @@ class TestAITokensBilling(IntegrationTestCase):
 		self.assertEqual(lines[0]["amount"], 25.0)  # 5 * 5
 
 	def test_within_allowance_bills_nothing(self):
-		receive_meter_rollups([self._meter(8)])  # under the 10M allowance
+		receive_meter_rollups([self._meter(8)])  # under the 10 allowance
 		self.assertEqual(metering.metered_line_items(self.TEAM, self.CLUSTER, "2026-06-01", "2026-06-30"), [])
 
 	def test_no_compute_anywhere_in_a_tokens_plan(self):
@@ -120,7 +121,7 @@ class TestRemoteStorage(IntegrationTestCase):
 			"frappebox-snapshots",
 			category="Remote Storage",
 			sub_category="Snapshots",
-			includes=[{"resource_type": "Storage", "quantity": 0, "unit": "GB-day"}],
+			includes=[{"resource_type": "Storage", "quantity": 0, "unit": "GB"}],
 			rates=[{"cluster": "", "currency": "USD", "rate": 1}],
 		)
 		plan = frappe.get_doc("Plan", name)
@@ -133,7 +134,7 @@ class TestIPSnapshotAreMeteredOnly(IntegrationTestCase):
 
 	def test_ip_cannot_be_in_a_bundle(self):
 		with self.assertRaises(frappe.ValidationError):
-			make_plan("bad-ip", includes=[{"resource_type": "IP", "quantity": 1, "unit": "unit"}])
+			make_plan("bad-ip", includes=[{"resource_type": "IP", "quantity": 1, "unit": "Nos"}])
 
 	def test_snapshot_cannot_be_in_a_tokens_plan(self):
 		with self.assertRaises(frappe.ValidationError):

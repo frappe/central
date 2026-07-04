@@ -78,14 +78,15 @@ _TOPUP_STATES = ("credits", "credits_full", "free_credits")
 _PAID_MONTHS = {"t0": 0, "t1": 2, "t2": 5, "t3": 9}
 
 # Metered CONSUMER-service subscriptions per team (ADR 0013/0015): the service plan
-# slug + the units reported this month. Overage (usage − allowance) bills on the
-# current invoice. Allowances: AI tokens 100, email 50, PDF 20 (see SERVICES).
+# slug + the actual item count reported this month. Overage (usage − allowance) bills
+# on the current invoice. Allowances (real counts): AI tokens 100000, email 50000,
+# PDF 20000 (see SERVICES).
 _TEAM_SERVICES = {
-	"northwind": [("svc-ai-tokens", 260), ("svc-pdf", 45)],  # heavy AI + some PDF
-	"initech": [("svc-emails", 130)],
-	"acme-corp": [("svc-ai-tokens", 280), ("svc-emails", 90)],
-	"umbrella": [("svc-pdf", 75)],
-	"stark-ind": [("svc-emails", 90)],
+	"northwind": [("svc-ai-tokens", 260000), ("svc-pdf", 45000)],  # heavy AI + some PDF
+	"initech": [("svc-emails", 130000)],
+	"acme-corp": [("svc-ai-tokens", 280000), ("svc-emails", 90000)],
+	"umbrella": [("svc-pdf", 75000)],
+	"stark-ind": [("svc-emails", 90000)],
 }
 
 # Teams that also compose a custom VM in the à-la-carte selector (design-your-own, ADR 0009).

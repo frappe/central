@@ -32,8 +32,8 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Unit",
-   "options": "\nvCPU\nGB\nTB\nNos\nHours\n1K tokens\n1K emails\n1K docs",
-   "description": "Label for one unit of Quantity (e.g. 100 with Unit “1K tokens” means 100 × 1K tokens). Reference only — never used in a calculation; the Catalog Rate is quoted per this unit."
+   "options": "\nvCPU\nGB\nTB\nNos\nHours",
+   "description": "Plain display label for one unit of Quantity (e.g. vCPU, GB, Nos). Reference only — nothing evaluates it; Quantity is the actual count and the Catalog Rate is quoted per this unit."
   }
  ],
  "index_web_pages_for_search": 1,

@@ -44,11 +44,13 @@ COMPONENT_RATES_INR = {"Compute": 1200.0, "Memory": 400.0, "Disk": 30.0}
 # Team-level metered CONSUMER services (ADR 0013/0015) — the real metered story
 # (replaces the meaningless bandwidth overage). Each is a single-resource metered Plan
 # under its own family, billed as postpaid overage past a bundled allowance.
+# Unit is a plain label ("Nos") and Quantity is the ACTUAL count — allowances are real
+# item counts, and the rate is per item (a token costs a small fraction of a cent).
 # (family/category, resource_type, plan_slug, title, unit, allowance, per-unit rate by currency)
 SERVICES = [
-	("AI Tokens", "Tokens", "svc-ai-tokens", "AI Tokens", "1K tokens", 100, {"INR": 12.0, "USD": 0.15}),
-	("Emails", "Emails", "svc-emails", "Transactional Email", "1K emails", 50, {"INR": 7.0, "USD": 0.09}),
-	("PDF Generation", "PDF", "svc-pdf", "PDF / Print Generation", "1K docs", 20, {"INR": 18.0, "USD": 0.22}),
+	("AI Tokens", "Tokens", "svc-ai-tokens", "AI Tokens", "Nos", 100000, {"INR": 0.012, "USD": 0.00015}),
+	("Emails", "Emails", "svc-emails", "Transactional Email", "Nos", 50000, {"INR": 0.007, "USD": 0.00009}),
+	("PDF Generation", "PDF", "svc-pdf", "PDF / Print Generation", "Nos", 20000, {"INR": 0.018, "USD": 0.00022}),
 ]
 
 # (level, sequence, is_default, max_spend_inr, max_resources, min_invoices, min_paid_inr)

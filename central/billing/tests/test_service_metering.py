@@ -48,7 +48,7 @@ def _make_metered_family(
 		{
 			"doctype": "Plan", "title": plan, "category": category, "billing_cycle": "Monthly",
 			"is_active": 1,
-			"includes": [{"resource_type": resource_type, "quantity": allowance, "unit": "unit"}],
+			"includes": [{"resource_type": resource_type, "quantity": allowance, "unit": "Nos"}],
 		}
 	)
 	doc.name = plan
@@ -112,7 +112,7 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 		complete_billing_profile(self.TEAM, currency="INR")
 		frappe.db.delete("Subscription", {"team": self.TEAM})
 		_ensure_resource_type("PDF Render")
-		self.plan = make_metered_plan("Svc PDF Render", resource_type="PDF Render", unit="doc")
+		self.plan = make_metered_plan("Svc PDF Render", resource_type="PDF Render", unit="Nos")
 
 	def test_provision_synthesizes_subject_and_opens_segment(self):
 		res = subscriptions.provision_service_subscription(self.TEAM, self.plan, cluster="mumbai")
@@ -166,7 +166,7 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 			{
 				"doctype": "Plan", "title": "SM Tokens Big", "category": cat,
 				"billing_cycle": "Monthly", "is_active": 1,
-				"includes": [{"resource_type": "Tokens Up", "quantity": 5000, "unit": "unit"}],
+				"includes": [{"resource_type": "Tokens Up", "quantity": 5000, "unit": "Nos"}],
 			}
 		)
 		big.name = "SM Tokens Big"
@@ -221,7 +221,7 @@ class TestDualModeIngestion(IntegrationTestCase):
 		return {
 			"resource_id": subject, "resource_type": resource_type, "meter_type": "Counter",
 			"period_start": "2026-07-01 00:00:00", "period_end": "2026-07-31 23:59:59",
-			"quantity": qty, "unit": "unit", "idempotency_key": key, "sequence": sequence,
+			"quantity": qty, "unit": "Nos", "idempotency_key": key, "sequence": sequence,
 		}
 
 	def _qty(self, subject):
@@ -458,7 +458,7 @@ class TestPrepaidSettlement(IntegrationTestCase):
 		self.metering.ingest_rollup({
 			"resource_id": self.subject, "resource_type": "Tokens Pre", "meter_type": "Counter",
 			"period_start": "2026-07-01 00:00:00", "period_end": "2026-07-31 23:59:59",
-			"quantity": qty, "unit": "unit", "idempotency_key": f"{self.subject}|Counter|2026-07",
+			"quantity": qty, "unit": "Nos", "idempotency_key": f"{self.subject}|Counter|2026-07",
 		})
 
 	def test_within_allowance_not_blocked(self):

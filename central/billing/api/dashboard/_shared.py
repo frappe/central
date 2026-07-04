@@ -267,17 +267,11 @@ def _describe_line(team: str, li) -> dict:
 		# li.quantity is the BILLABLE overage (usage already minus the allowance), so it
 		# reads as the units charged *beyond* what's included — not a usage-vs-allowance
 		# ratio (which "40 over 50 included" wrongly implied, as if nothing was billed).
-		billed = _fmt_units(li.quantity, li.unit)
+		# Unit is a plain display label (Nos, GB); the quantity is the actual count.
+		unit = li.unit or "units"
+		billed = f"{frappe.utils.flt(li.quantity):g} {unit}"
 		if allowance is not None:
 			row["detail"] = f"{billed} beyond {frappe.utils.flt(allowance):g} included"
 		else:
 			row["detail"] = f"{billed} metered"
 	return row
-
-
-def _fmt_units(qty, unit) -> str:
-	"""Render a quantity + its unit. A unit that leads with a magnitude ("1K tokens")
-	is a multiple, so show "180 × 1K tokens"; a plain unit ("GB") reads inline as "5 GB"."""
-	unit = unit or "units"
-	q = frappe.utils.flt(qty)
-	return f"{q:g} × {unit}" if unit[0].isdigit() else f"{q:g} {unit}"

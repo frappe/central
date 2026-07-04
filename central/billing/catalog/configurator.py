@@ -240,7 +240,9 @@ def apply_pricing(
 	for row in plan_multipliers:
 		plan = row["plan"] if isinstance(row, dict) else row.plan
 		multiplier = row["multiplier"] if isinstance(row, dict) else row.multiplier
-		rate = flt(flt(base_rate) * flt(multiplier), 2)
+		# 6 dp, matching Catalog Rate.rate — a per-unit consumer rate (e.g. per token)
+		# is a small fraction of a cent, so rounding to 2 would zero it out.
+		rate = flt(flt(base_rate) * flt(multiplier), 6)
 		_, was_created = set_catalog_rate("Plan", plan, currency, rate, cluster=cluster)
 		(created if was_created else updated).append(plan)
 	return {"created": created, "updated": updated, "cluster": cluster or None, "currency": currency}
