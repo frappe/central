@@ -156,8 +156,14 @@ def ingest_rollup(meter: dict) -> str | None:
 	  after an outage), never adds — the reporter holds the authoritative total.
 	- **Incremental**: each batch carries a `quantity` delta and a monotonic `sequence`.
 	  A batch is ACCUMULATED (`quantity += delta`) only if its sequence exceeds the last
-	  applied, so a retried/duplicate/out-of-order batch is a no-op. The row is locked
-	  for update while it accumulates (concurrent batches serialize).
+	  applied, so a retried/duplicate/out-of-order batch is a no-op.
+
+	Concurrency: an existing row is locked FOR UPDATE while it is applied, so concurrent
+	batches serialize. The FIRST report can't lock a not-yet-existent row, so two
+	first-reports for the same period both miss and race to insert — the loser hits the
+	unique idempotency_key. We roll that failed insert back to a SAVEPOINT (not the whole
+	batch), then loop: the retry re-reads FOR UPDATE (blocking on the winner), so its
+	figure is applied to the winner's row instead of being dropped.
 
 	Returns the idempotency_key once handled (so the reporter can mark it synced)."""
 	key = meter.get("idempotency_key")
@@ -166,29 +172,56 @@ def ingest_rollup(meter: dict) -> str | None:
 
 	mode = _reporting_mode_for(meter.get("resource_type"))
 	qty = frappe.utils.flt(meter.get("quantity"))
+	seq = frappe.utils.cint(meter.get("sequence"))
 
-	existing = frappe.db.get_value(
-		"Usage Rollup", {"idempotency_key": key}, ["name", "quantity", "sequence"],
-		as_dict=True, for_update=True,
-	)
-	if existing:
-		if mode == "Incremental":
-			seq = frappe.utils.cint(meter.get("sequence"))
-			if seq <= frappe.utils.cint(existing.sequence):
-				return key  # duplicate / out-of-order batch — already counted
-			frappe.db.set_value(
-				"Usage Rollup", existing.name,
-				{"quantity": frappe.utils.flt(existing.quantity) + qty, "sequence": seq},
-			)
-		else:
-			# Authoritative: replace the period figure; keep the locked terms stamped first.
-			frappe.db.set_value("Usage Rollup", existing.name, "quantity", qty)
-		return key
+	for _ in range(_INGEST_RACE_RETRIES):
+		existing = frappe.db.get_value(
+			"Usage Rollup", {"idempotency_key": key}, ["name", "quantity", "sequence"],
+			as_dict=True, for_update=True,
+		)
+		if existing:
+			_apply_report(existing, mode, qty, seq)
+			return key
 
-	terms = _resolve_terms(meter)
-	if not terms:
-		return None  # no active lock — nothing to bill this against yet
+		terms = _resolve_terms(meter)
+		if not terms:
+			return None  # no active lock — nothing to bill this against yet
 
+		try:
+			frappe.db.savepoint("usage_rollup_insert")
+			_insert_rollup(meter, terms, qty, seq, key)
+			return key
+		except frappe.DuplicateEntryError:
+			# Lost the first-insert race: a concurrent first report created the row between
+			# our lock-miss and our insert. Undo only our failed insert (keep the rest of
+			# the batch), then loop — the re-read FOR UPDATE blocks on the winner and our
+			# figure lands on its row rather than being dropped.
+			frappe.db.rollback(save_point="usage_rollup_insert")
+	return key
+
+
+# A first-insert race resolves in one retry; a couple more absorb a winner that rolls
+# back after we saw its lock (leaving the row briefly gone again).
+_INGEST_RACE_RETRIES = 3
+
+
+def _apply_report(existing, mode: str, qty: float, seq: int) -> None:
+	"""Apply a report to the already-locked rollup row. Authoritative replaces the period
+	figure; Incremental accumulates only when the sequence advances (else a no-op)."""
+	if mode == "Incremental":
+		if seq <= frappe.utils.cint(existing.sequence):
+			return  # duplicate / out-of-order batch — already counted
+		frappe.db.set_value(
+			"Usage Rollup", existing.name,
+			{"quantity": frappe.utils.flt(existing.quantity) + qty, "sequence": seq},
+		)
+	else:
+		# Authoritative: replace the period figure; the locked terms stay as first stamped.
+		frappe.db.set_value("Usage Rollup", existing.name, "quantity", qty)
+
+
+def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> None:
+	"""Insert the period's rollup with its billing terms stamped once, at first receipt."""
 	frappe.get_doc(
 		{
 			"doctype": "Usage Rollup",
@@ -205,10 +238,9 @@ def ingest_rollup(meter: dict) -> str | None:
 			"locked_allowance": terms["allowance"],
 			"locked_rate": terms["rate"],
 			"idempotency_key": key,
-			"sequence": frappe.utils.cint(meter.get("sequence")),
+			"sequence": seq,
 		}
 	).insert(ignore_permissions=True)
-	return key
 
 
 def metered_line_items(team: str, cluster: str, period_start, period_end) -> list[dict]:

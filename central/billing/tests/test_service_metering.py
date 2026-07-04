@@ -254,6 +254,43 @@ class TestDualModeIngestion(IntegrationTestCase):
 		self.metering.ingest_rollup(self._meter(subject, "PDF Incr", key, 25, sequence=3))
 		self.assertEqual(self._qty(subject), 175)
 
+	def test_first_insert_race_reapplies_lost_delta(self):
+		# Two concurrent FIRST reports both miss the not-yet-existent row and race to
+		# insert; the loser hits the unique idempotency_key. Simulate that (lock-miss +
+		# duplicate insert) and assert the loser's delta is re-applied to the winner's
+		# row, not dropped.
+		from unittest.mock import patch
+
+		plan = _make_metered_family(
+			"SM Race Family", "PDF Race", "SM PDF Race Plan", reporting_mode="Incremental"
+		)
+		subject = self._subject("PDF Race", plan)
+		key = f"{subject}|Counter|2026-07"
+		self.metering.ingest_rollup(self._meter(subject, "PDF Race", key, 100, sequence=1))  # winner
+
+		orig_gv, orig_ins = frappe.db.get_value, self.metering._insert_rollup
+		state = {"missed": False, "raised": False}
+
+		def gv(doctype, filters=None, *a, **k):
+			if (not state["missed"] and doctype == "Usage Rollup"
+					and isinstance(filters, dict) and filters.get("idempotency_key") == key):
+				state["missed"] = True
+				return None  # our first-report lock-miss
+			return orig_gv(doctype, filters, *a, **k)
+
+		def ins(*a, **k):
+			if not state["raised"]:
+				state["raised"] = True
+				raise frappe.DuplicateEntryError  # we lose the unique-key race
+			return orig_ins(*a, **k)
+
+		with patch.object(frappe.db, "get_value", side_effect=gv), \
+				patch.object(self.metering, "_insert_rollup", side_effect=ins):
+			self.metering.ingest_rollup(self._meter(subject, "PDF Race", key, 50, sequence=2))
+
+		self.assertEqual(self._qty(subject), 150)  # 100 + 50 — the racing delta survived
+		self.assertEqual(frappe.db.count("Usage Rollup", {"resource_id": subject}), 1)
+
 	def test_incremental_stays_one_row_per_period(self):
 		plan = _make_metered_family(
 			"SM Incr Family", "PDF Incr", "SM PDF Incr Plan", reporting_mode="Incremental"
