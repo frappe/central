@@ -29,7 +29,6 @@ orchestration.
 import frappe
 
 from central.billing.revenue import invoicing, credits
-from central.billing.platform import notifications
 from central.billing.catalog import subscriptions
 from central.billing.payments.provisioning import provision_billing_profile
 from central.billing.demo._factory import (
@@ -57,6 +56,7 @@ from central.billing.demo._factory import (
 	add_composed_subscription,
 	arm_emandate,
 	bank_pending_attempt,
+	draw_wallet_credit,
 	make_refund,
 	meter_service_usage,
 	plan_name,
@@ -71,6 +71,11 @@ _SERVICE_META = {s[2]: (s[1], s[4]) for s in SERVICES}
 # Wallet-top-up states settle from credits — no card on file, but a gateway top-up
 # still mints a reusable Gateway Customer.
 _TOPUP_STATES = ("credits", "credits_full", "free_credits")
+
+# States that spend the team's welcome credit in the CURRENT month, so its historical
+# invoices leave the credit untouched (otherwise the current-month credit story has an
+# empty wallet). Every other team draws its welcome credit down on its first bill.
+_CREDIT_KEPT_STATES = ("partial_card", "credits_full", "credits", "free_credits", "trial")
 
 # Paid invoices per tier, BEFORE the current (June) month. The same ladder applies
 # to both currencies, so a USD team and an INR team at the same tier show the same
@@ -298,13 +303,20 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 			continue
 		# Finalised the morning the period closed — before that month's payment attempts.
 		backdate_invoice(inv, f"{end} 08:00:00")
-		total = frappe.db.get_value("Invoice", inv, "expected_collection")
+		# Real credits-then-card waterfall: draw the wallet credit first (a Credit Ledger
+		# debit + credit_applied), then the card settles the remainder. Credit-scenario
+		# teams keep their welcome credit for the current-month story.
+		remainder = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "expected_collection"))
+		if state not in _CREDIT_KEPT_STATES:
+			remainder = draw_wallet_credit(inv)
+			if frappe.db.get_value("Invoice", inv, "status") == "Paid":
+				continue  # welcome credit covered it in full — no card needed
 		retries = _RETRY_HISTORY.get(i, 0) if pm else 0
 		if retries:
-			_settle_with_retries(team, inv, pm, gateway, retries, total, currency)
+			_settle_with_retries(team, inv, pm, gateway, retries, remainder, currency)
 		else:
 			frappe.db.set_value("Invoice", inv, {
-				"status": "Paid", "amount_paid": total, "due_date": frappe.utils.add_days(end, 7),
+				"status": "Paid", "amount_paid": remainder, "due_date": frappe.utils.add_days(end, 7),
 			})
 
 	note = _finish_current_month(team, primary_sub, currency, state, pm, gateway)
@@ -315,11 +327,6 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		arm_emandate(team)
 	final_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	return f"{len(resources)} instance(s) across {len(by_cluster)} region(s) — {note} [{final_mode}]"
-
-
-def _set_team_standing(team, standing, changed_by="dunning"):
-	for s in frappe.get_all("Subscription", {"team": team}, pluck="name"):
-		subscriptions.set_standing(s, standing, changed_by=changed_by)
 
 
 def _finish_current_month(team, sub, currency, state, pm, gateway):
@@ -381,18 +388,25 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 			reference_type="Refund", reference_name=f"{team}-refund", note="Partial overcharge → wallet")
 		return "Paid + partial refund → wallet (credits)"
 
-	# --- dunning: overdue with a trail of failed retries ------------------------
+	# --- dunning: run the REAL dunning cycle across the calendar -----------------
 	if state == "overdue":
-		frappe.db.set_value("Invoice", inv, {"status": "Overdue", "due_date": "2026-06-01", "amount_paid": 0})
-		_set_team_standing(team, "Past Due")
+		from central.billing.revenue import dunning
+
+		# Open with a due date far enough back that the real cycle reaches its Day 7
+		# (Overdue + Past Due) and Day 14 (suspend) stages.
+		due = "2026-06-10"
+		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": due, "amount_paid": 0})
+		# Seed the declined retries (offline). With every method already failed, the real
+		# dunning has nothing left to charge, so it escalates without a gateway round-trip.
+		base = frappe.utils.get_datetime(f"{due} 09:00:00")
 		for n in range(3):
-			_failed_attempt(team, inv, pm, gateway, n)
-			notifications.notify(team, "Payment Retry",
-				message=f"Payment retry {n + 1} for {inv} failed: card_declined",
-				reference_doctype="Invoice", reference_name=inv)
-		notifications.notify(team, "Invoice Overdue", context={"invoice": inv},
-			reference_doctype="Invoice", reference_name=inv)
-		return "Overdue + past_due + 3 failed retries"
+			_failed_attempt(team, inv, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
+		# Drive the real dunning stages (dunning.process_invoice_dunning), not a hand-set
+		# state: Day 7 → Overdue + past_due + notification, Day 14 → suspend directive.
+		due_d = frappe.utils.getdate(due)
+		dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(due_d, 7))
+		dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(due_d, 14))
+		return "dunning cycle: 3 declines → Overdue + past_due (day 7) → suspended (day 14)"
 
 	# --- one failed attempt (with reason), then settled on retry ----------------
 	if state == "retry":

@@ -557,6 +557,22 @@ def backdate_invoice(invoice, when):
 	)
 
 
+def draw_wallet_credit(invoice) -> float:
+	"""Run the real credits-leg of settlement (invoicing.open_and_collect, collect=False):
+	draw the team's wallet credits against the invoice, recording a Credit Ledger debit and
+	`credit_applied`, and leaving the invoice Open for the card to settle the remainder.
+
+	This is the same waterfall production uses (credits first, then card); collect=False
+	skips the gateway leg because the demo gateways are offline, so the caller simulates the
+	card capture for whatever is returned. Returns the remainder still due after credits."""
+	from central.billing.revenue import invoicing
+
+	if frappe.db.get_value("Invoice", invoice, "status") != "Draft":
+		frappe.db.set_value("Invoice", invoice, "status", "Draft", update_modified=False)
+	invoicing.open_and_collect(invoice, collect=False)
+	return frappe.utils.flt(frappe.db.get_value("Invoice", invoice, "expected_collection"))
+
+
 def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
 	"""A successful (Captured) card charge that settled the invoice."""
 	when = when or frappe.utils.now_datetime()
