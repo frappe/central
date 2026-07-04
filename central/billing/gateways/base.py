@@ -29,6 +29,7 @@ class PaymentResult:
 	status: str  # captured / authorised / failed
 	gateway_transaction_id: str | None = None
 	failure_code: str | None = None
+	decline_code: str | None = None  # granular decline reason (Stripe decline_code)
 	failure_reason: str | None = None
 	raw: dict = field(default_factory=dict)
 

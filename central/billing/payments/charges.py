@@ -118,8 +118,8 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		attempt.status = "Captured"  # gateway captured; invoice Paid waits on webhook
 	else:
 		attempt.status = "Failed"
-		attempt.failure_code = result.failure_code
-		attempt.failure_reason = result.failure_reason
+		_stamp_failure(attempt, result.failure_code, result.decline_code,
+					   result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
 	attempt.save(ignore_permissions=True)
 
@@ -295,6 +295,12 @@ def apply_webhook(event_name: str) -> dict:
 		inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
 		if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
 			attempt.status = "Failed"
+			# Off-session declines surface their real reason here, not on the sync
+			# charge response — pull it off the event so the attempt records why.
+			detail = _extract_failure(adapter_key, payload)
+			if detail:
+				_stamp_failure(attempt, detail.get("failure_code"), detail.get("decline_code"),
+							   detail.get("failure_reason"), detail.get("raw"))
 			attempt.completed_at = frappe.utils.now_datetime()
 			attempt.save(ignore_permissions=True)
 			from central.billing.platform import notifications
@@ -422,6 +428,47 @@ def _extract_transaction_id(adapter_key: str, payload: dict):
 		payment = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
 		return payment.get("id")
 	return None
+
+
+def _extract_failure(adapter_key: str, payload: dict) -> dict | None:
+	"""Pull the decline detail out of a failure webhook body, normalised to
+	{failure_code, decline_code, failure_reason, raw}. This is where an off-session
+	decline's real reason lives — the sync charge response often can't see it."""
+	if adapter_key == "Stripe":
+		obj = ((payload.get("data") or {}).get("object")) or {}
+		err = obj.get("last_payment_error") or {}
+		if not err:
+			return None
+		return {
+			"failure_code": err.get("code"),
+			"decline_code": err.get("decline_code"),
+			"failure_reason": err.get("message"),
+			"raw": err,
+		}
+	if adapter_key == "Razorpay":
+		entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
+		if not entity.get("error_code") and not entity.get("error_reason"):
+			return None
+		# Razorpay's error_reason is the granular bucket (payment_failed,
+		# insufficient_balance, …) — the decline_code analogue.
+		return {
+			"failure_code": entity.get("error_code"),
+			"decline_code": entity.get("error_reason"),
+			"failure_reason": entity.get("error_description"),
+			"raw": {k: entity.get(k) for k in (
+				"error_code", "error_description", "error_reason", "error_source", "error_step")},
+		}
+	return None
+
+
+def _stamp_failure(attempt, failure_code, decline_code, failure_reason, raw):
+	"""Record the decline detail on a Payment Attempt. `raw` is stored as JSON on
+	the Code field; failure_reason is trimmed to the Small Text column width."""
+	attempt.failure_code = failure_code
+	attempt.decline_code = decline_code
+	attempt.failure_reason = (failure_reason or "")[:140] or None
+	if raw:
+		attempt.gateway_response = frappe.as_json(raw)
 
 
 def _extract_topup(adapter_key: str, payload: dict):

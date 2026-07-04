@@ -186,12 +186,16 @@ class StripeAdapter(GatewayAdapter):
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
 		except stripe.error.CardError as e:
+			body = getattr(e, "json_body", None) or {}
+			# `code` for a declined card is almost always "card_declined"; the actual
+			# reason (insufficient_funds, lost_card, stolen_card, …) is the decline_code.
 			return PaymentResult(
 				success=False,
 				status="Failed",
 				failure_code=getattr(e, "code", None),
+				decline_code=(body.get("error") or {}).get("decline_code"),
 				failure_reason=getattr(e, "user_message", None) or str(e),
-				raw=getattr(e, "json_body", None) or {},
+				raw=body,
 			)
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
 			raise GatewayTimeout(str(e)) from e

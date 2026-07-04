@@ -156,11 +156,16 @@ class RazorpayAdapter(GatewayAdapter):
 				}
 			)
 		except razorpay.errors.BadRequestError as e:
+			# The Razorpay SDK collapses the API error to its description string —
+			# it exposes neither the error code nor the granular reason. Those arrive
+			# on the `payment.failed` webhook (see charges.apply_webhook), which is the
+			# authoritative decline record. Capture what the exception carries here.
 			return PaymentResult(
 				success=False,
 				status="Failed",
-				failure_code=getattr(e, "code", None),
+				failure_code=getattr(e, "code", None) or type(e).__name__,
 				failure_reason=str(e),
+				raw={"description": str(e)},
 			)
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
