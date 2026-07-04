@@ -119,7 +119,12 @@ class AtlasClient:
 		cpu_max_cores: float | None = None,
 	) -> dict:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
-		Returns the new VM in the Asset-mirror shape so the caller can upsert it."""
+		Returns the new VM in the Asset-mirror shape so the caller can upsert it.
+
+		For a bench VM, `title` doubles as the subdomain — Atlas fronts it at
+		`title.<region domain>` and reports that back as gateway_url. The one-click
+		login URL is minted after boot, so it (and its expiry) arrive later on the
+		vm.status_changed event, not in this reply."""
 		params: dict = {
 			"team": team,
 			"title": title,
@@ -177,7 +182,8 @@ class AtlasClient:
 
 	def central_vms(self, team: str | None = None) -> list[dict]:
 		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one
-		team). One dict per VM: name, team, status, gateway_url."""
+		team). One dict per VM in the Asset-mirror shape — including the bench login
+		handoff (gateway_url + login_url/expiry, the latter only once Running)."""
 		params = {"team": team} if team else None
 		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
 
@@ -294,10 +300,36 @@ class AtlasClient:
 	def get_site(self, name: str) -> dict:
 		"""
 		Poll one site's current state — the self-heal fallback to the site.* events.
-		Returns the mirror shape, with url + admin_password once the site is Running.
+		Returns the mirror shape, with url + the one-click login_url (and its expiry)
+		once the site is Running.
 		"""
 
 		return self.client().post_api("atlas.atlas.api.site.get_site", params={"name": name})
+
+	def regenerate_site_login(self, name: str) -> dict:
+		"""Re-mint a serving site's one-click login URL and return the fresh Site-mirror
+		shape (url + login_url + login_url_expires_at). Central calls this when a tenant
+		clicks their login link after the stored URL's 24h session has expired — the URL
+		is short-lived by design, so it is re-signed on demand. The Atlas Site controller
+		re-mints in the guest, re-stamps, and returns the mirror."""
+		return self.client().post_api(
+			"run_doc_method",
+			params={"dt": "Site", "dn": name, "method": "regenerate_login_url"},
+		)
+
+	def regenerate_vm_login(self, name: str) -> dict:
+		"""Re-mint a bench VM's one-click login URL and return the fresh Asset-mirror
+		shape (gateway_url + login_url + login_url_expires_at). Central calls this on
+		Open when the Asset's stored URL has expired (the admin JWT lasts 5 minutes, so
+		this is the common path).
+
+		A bench VM's login URL lives on the Pilot that owns the VM, not the pure-microVM
+		Virtual Machine, so this goes through Atlas's provision endpoint, which resolves
+		the VM to its Pilot and re-mints in the guest before returning the payload."""
+		return self.client().post_api(
+			"atlas.atlas.api.provision.regenerate_vm_login",
+			params={"name": name},
+		)
 
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""

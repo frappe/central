@@ -19,6 +19,8 @@ class Asset(Document):
 		ipv6_address: DF.Data | None
 		last_event_at: DF.Datetime | None
 		last_synced_at: DF.Datetime | None
+		login_url: DF.SmallText | None
+		login_url_expires_at: DF.Datetime | None
 		memory_megabytes: DF.Int
 		plan: DF.Link | None
 		public_ipv4: DF.Data | None
@@ -138,6 +140,12 @@ class Asset(Document):
 		doc.ipv6_address = vm.get("ipv6_address")
 		doc.public_ipv4 = vm.get("public_ipv4")
 		doc.gateway_url = vm.get("gateway_url") or None
+		# Write-once: the bench login URL + its expiry only arrive once the VM is
+		# Running (Atlas gates them on status), so never blank a handoff we've already
+		# stored on a later status-only event. Same rule as Site's login_url.
+		if vm.get("login_url"):
+			doc.login_url = vm["login_url"]
+			doc.login_url_expires_at = vm.get("login_url_expires_at")
 		if occurred_at:
 			doc.last_event_at = occurred_at
 		if synced_at:
