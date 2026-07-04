@@ -224,6 +224,100 @@ def provision_subscription(
 	}
 
 
+def provision_service_subscription(
+	team: str,
+	plan: str,
+	cluster: str | None = None,
+	billing_cycle: str = "Monthly",
+	start_date=None,
+	default_payment_method: str | None = None,
+	gateway: str | None = None,
+	changed_by: str | None = None,
+):
+	"""Subscribe a team to a team-level metered service (ADR 0013/0015).
+
+	Unlike a VM subscription, this mints no Asset and calls no cluster manager: it
+	synthesizes a virtual subject per `(team, plan, cluster)`, records the intent, and
+	opens the authoritative billing segment (the `Created` Subscription Change — the
+	price-lock itself, ADR 0010) inline. A service subject is always alive while
+	subscribed; there is no stop/start.
+
+	Idempotent: re-subscribing the same team to the same service on the same cluster
+	returns the existing subscription rather than opening a parallel subject. Returns
+	the subscription + the synthesized subject + the locked handles."""
+	_assert_service_plan(plan)
+
+	subject = _service_subject_id(team, plan, cluster)
+	existing = frappe.db.get_value(
+		"Subscription", {"service_subject": subject, "enabled": 1}, "name"
+	)
+	if existing:
+		seg = _latest_segment_by_subscription([existing]).get(existing)
+		return {
+			"subscription": existing,
+			"service_subject": subject,
+			"reused": True,
+			"locked_rate": frappe.utils.flt(seg.locked_rate) if seg else None,
+			"currency": seg.currency if seg else None,
+		}
+
+	doc = frappe.get_doc(
+		{
+			"doctype": "Subscription",
+			"team": team,
+			"service_subject": subject,
+			"cluster": cluster,
+			"pricing_mode": "Preset",
+			"plan": plan,
+			"billing_cycle": billing_cycle,
+			"account_standing": "Current",
+			"enabled": 1,
+			"start_date": start_date or frappe.utils.nowdate(),
+			"default_payment_method": default_payment_method,
+			"gateway": gateway,
+		}
+	)
+	doc.flags.changed_by = changed_by
+	doc.insert(ignore_permissions=True)
+
+	opening = frappe.db.get_value(
+		"Subscription Change",
+		{"subscription": doc.name, "change_type": "Created"},
+		["locked_rate", "currency"],
+		as_dict=True,
+	)
+	return {
+		"subscription": doc.name,
+		"service_subject": subject,
+		"reused": False,
+		"locked_rate": opening.locked_rate if opening else None,
+		"currency": opening.currency if opening else None,
+	}
+
+
+def _assert_service_plan(plan: str) -> None:
+	"""A team-level service plan is any active Plan whose family is not provisioned as a
+	whole Server (servers go through the VM create/resize flow, ADR 0007). Metered
+	families (AI Tokens, PDF, storage) and non-Server bundles qualify."""
+	category = frappe.db.get_value("Plan", plan, "category")
+	if not category:
+		frappe.throw(frappe._("Unknown plan {0}.").format(plan), frappe.ValidationError)
+	if frappe.db.get_value("Plan Category", category, "provision_target") == "Server":
+		frappe.throw(
+			frappe._("Plan {0} provisions a server — subscribe it through the server flow, not as a team-level service.").format(plan),
+			frappe.ValidationError,
+		)
+
+
+def _service_subject_id(team: str, plan: str, cluster: str | None) -> str:
+	"""A deterministic, collision-safe virtual subject per (team, service-plan, cluster),
+	so re-subscribing the same service resolves to the same subject (idempotency)."""
+	import hashlib
+
+	seed = f"{team}|{plan}|{cluster or ''}"
+	return "svc-" + hashlib.sha1(seed.encode()).hexdigest()[:16]
+
+
 def change_plan(subscription: str, new_plan: str, changed_by: str | None = None):
 	"""Switch a subscription onto a curated preset (intent). The controller opens the
 	new billing segment on save (the `changed`-event re-lock, ADR 0010) — this just
@@ -594,7 +688,7 @@ def active_segments(filters: dict | None = None) -> list:
 	subs = frappe.get_all(
 		"Subscription",
 		filters=filters or {},
-		fields=["name", "team", "plan", "pricing_mode", "asset_id"],
+		fields=["name", "team", "plan", "pricing_mode", "asset_id", "service_subject", "cluster"],
 	)
 	if not subs:
 		return []
@@ -605,6 +699,10 @@ def active_segments(filters: dict | None = None) -> list:
 		seg = latest.get(s.name)
 		if not seg or seg.change_type == "Cancelled":
 			continue
+		# A VM subscription is subjected by its Asset (cluster off the Asset); a
+		# team-level service subject has no Asset — its id and cluster live on the
+		# Subscription itself (ADR 0013). Either way the resource_id keys metering.
+		resource_id = s.asset_id or s.service_subject
 		out.append(
 			frappe._dict(
 				{
@@ -613,8 +711,9 @@ def active_segments(filters: dict | None = None) -> list:
 					"plan": s.plan,
 					"pricing_mode": s.pricing_mode,
 					"asset_id": s.asset_id,
-					"resource_id": s.asset_id,
-					"cluster": clusters.get(s.asset_id),
+					"service_subject": s.service_subject,
+					"resource_id": resource_id,
+					"cluster": clusters.get(s.asset_id) or s.cluster,
 					"currency": seg.currency,
 					"locked_rate": frappe.utils.flt(seg.locked_rate),
 				}
@@ -629,11 +728,13 @@ def team_active_segments(team: str) -> list:
 
 
 def active_segment_for_resource(resource_id: str):
-	"""The open priced segment for a provisioned resource (its Asset's subscription),
-	or None. `asset_id` names the Asset, whose name is the `resource_id` (autoname
-	field:resource_id), so a resource maps to at most one subscription. Used by
-	metering to grandfather a metered resource's terms off the ledger (#86)."""
+	"""The open priced segment for a metered subject, or None. A VM resource is named
+	by its Asset (`asset_id`); a team-level service subject is named by the synthesized
+	`service_subject` (ADR 0013). Either maps to at most one subscription. Used by
+	metering to grandfather a subject's terms off the ledger (#86)."""
 	segs = active_segments({"asset_id": resource_id})
+	if not segs:
+		segs = active_segments({"service_subject": resource_id})
 	return segs[0] if segs else None
 
 
