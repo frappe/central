@@ -42,6 +42,60 @@ class TestAuth(IntegrationTestCase):
 		self.assertTrue(result["team"])
 		self.assertIsNone(frappe.cache.get_value(_otp_key(email)))
 
+	@IntegrationTestCase.change_settings("Website Settings", disable_signup=1)
+	def test_signup_seeds_billing_profile_currency_from_ip_country(self):
+		frappe.set_user("Guest")
+		email = "central-signup-geo-test@example.test"
+		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
+
+		sign_up(email, "Geo Signup Test")
+		code = frappe.cache.get_value(_otp_key(email))["code"]
+
+		with (
+			patch("frappe.local.login_manager", create=True) as login_manager,
+			patch("central.geo.get_country_from_ip", return_value="India"),
+		):
+			login_manager.login_as.side_effect = frappe.set_user
+			result = verify_signup(email, code)
+
+		team = result["team"]
+		# India → INR profile, stamped despite no legal name / address (ignore_mandatory).
+		self.assertEqual(frappe.db.get_value("Billing Profile", team, "country"), "India")
+		self.assertEqual(frappe.db.get_value("Billing Profile", team, "currency"), "INR")
+		# Welcome credits are granted in that currency.
+		self.assertTrue(
+			frappe.db.exists(
+				"Credit Ledger Entry", {"team": team, "reference_type": "Promotion", "currency": "INR"}
+			)
+		)
+
+	@IntegrationTestCase.change_settings("Website Settings", disable_signup=1)
+	def test_signup_falls_back_to_india_inr_when_ip_country_is_unknown(self):
+		frappe.set_user("Guest")
+		email = "central-signup-nogeo-test@example.test"
+		self.addCleanup(frappe.cache.delete_value, _otp_key(email))
+
+		sign_up(email, "No Geo Signup Test")
+		code = frappe.cache.get_value(_otp_key(email))["code"]
+
+		# get_country_from_ip returns None for localhost/private IPs (and in tests).
+		with (
+			patch("frappe.local.login_manager", create=True) as login_manager,
+			patch("central.geo.get_country_from_ip", return_value=None),
+		):
+			login_manager.login_as.side_effect = frappe.set_user
+			result = verify_signup(email, code)
+
+		team = result["team"]
+		# Unknown country → default to India / INR, and the two must agree.
+		self.assertEqual(frappe.db.get_value("Billing Profile", team, "country"), "India")
+		self.assertEqual(frappe.db.get_value("Billing Profile", team, "currency"), "INR")
+		self.assertTrue(
+			frappe.db.exists(
+				"Credit Ledger Entry", {"team": team, "reference_type": "Promotion", "currency": "INR"}
+			)
+		)
+
 	def test_developer_otp_bypass_still_requires_a_pending_signup(self):
 		frappe.set_user("Guest")
 		email = "central-missing-signup-test@example.test"
