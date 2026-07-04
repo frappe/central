@@ -32,6 +32,34 @@ def provision_billing_profile(team: str) -> None:
 	grant_welcome_credits(team)
 
 
+def provision_signup_billing(team: str, country: str | None) -> None:
+	"""Seed a brand-new team's billing at signup from its IP-derived `country`.
+
+	Stamps a minimal Billing Profile with the country and the currency it implies
+	(India → INR, everything else → USD), then runs the standard provisioning so
+	the team gets its entry tier, tax profile, and welcome credits in that currency
+	right away — no waiting for the full address.
+
+	The profile is created with `ignore_mandatory`: at signup we only know the
+	country, and the legal name / address are filled in later from the dashboard.
+	Idempotent — an existing profile (e.g. one already carrying money) is left
+	untouched, and every downstream step is individually guarded."""
+	from central.billing.api.dashboard._shared import currency_for_country
+	from central.billing.india_gst import INDIA
+
+	if not frappe.db.exists("Billing Profile", team):
+		# When the IP can't be geolocated — localhost/127.0.0.1, a private address,
+		# or a failed lookup — fall back to India, our home market. Currency is then
+		# always derived from the country actually stamped on the profile, so the
+		# two can never disagree (India → INR, everywhere else → USD).
+		profile = frappe.get_doc({"doctype": "Billing Profile", "team": team})
+		profile.country = country or INDIA
+		profile.currency = currency_for_country(profile.country)
+		profile.insert(ignore_permissions=True, ignore_mandatory=True)
+
+	provision_billing_profile(team)
+
+
 def assign_entry_tier(team: str) -> None:
 	"""Link the entry Trust Tier Level on the profile if it has none yet.
 

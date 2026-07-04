@@ -79,7 +79,24 @@ def verify_signup(email: str, code: str) -> dict:
 	frappe.local.login_manager.login_as(user.name)
 
 	teams = get_user_team_names(user.name)
-	return {"user": user.name, "team": teams[0] if teams else None}
+	team = teams[0] if teams else None
+	if team:
+		_provision_signup_billing(team)
+	return {"user": user.name, "team": team}
+
+
+def _provision_signup_billing(team: str) -> None:
+	"""Seed the new team's billing currency from its signup IP and grant the
+	matching welcome credits. Best-effort: a geolocation or provisioning hiccup is
+	logged, never fatal — the user can still complete their profile from the
+	dashboard, which provisions the same way."""
+	try:
+		from central.billing.payments.provisioning import provision_signup_billing
+		from central.geo import get_country_from_ip
+
+		provision_signup_billing(team, get_country_from_ip())
+	except Exception:
+		frappe.log_error(title="Signup billing provisioning failed")
 
 
 def _otp_key(email: str) -> str:
