@@ -7,10 +7,11 @@ from central.integrations.atlas import AtlasClient
 from central.sso import _bench_sso_url, mint_bench_assertion
 
 # Open-in-bench: hand the signed-in user a one-click link into their bench VM. For a
-# real VM (asset) that link is the login URL Atlas minted in the guest — a scoped,
-# short-lived admin session; expired ones are regenerated on the click so the link
-# always works. The legacy SSO-assertion path (central.sso) survives only for the
-# gateway_url dev shortcut, until RS256 signing (#21) makes it prod-safe.
+# real VM (asset) that link is a login URL Atlas mints in the guest — a scoped,
+# single-use admin SID (a 5-minute JWT). Because it's single-use, we re-mint on every
+# Open rather than reuse a stored URL, so the click always carries a live, unused SID.
+# The legacy SSO-assertion path (central.sso) survives only for the gateway_url dev
+# shortcut, until RS256 signing (#21) makes it prod-safe.
 
 
 @frappe.whitelist(methods=["GET"])
@@ -45,10 +46,9 @@ def _asset_login_link(asset: str, team: str | None, user: str) -> dict:
 
 	get_doc enforces the team-scoped Asset read perm, so a user who can't see the VM
 	can't probe it here either. The VM must be Running and live on an Active cluster.
-	The login URL comes from the mirror when it's present and unexpired; otherwise
-	Atlas re-mints it (the admin session is short-lived, and the push that carries a
-	fresh URL can lag the mirror by a reconcile cycle) and the mirror is refreshed
-	before we return."""
+	The login URL is always re-minted via Atlas (the admin SID is single-use, so the
+	stored mirror value is worthless on Open) and the mirror is refreshed before we
+	return; if the re-mint can't reach Atlas we hand back nothing and refuse below."""
 	doc = frappe.get_doc("Asset", asset)
 	if team and team != doc.team:
 		frappe.throw("That VM isn't in this team.", frappe.PermissionError)
@@ -60,36 +60,37 @@ def _asset_login_link(asset: str, team: str | None, user: str) -> dict:
 		frappe.throw("That cluster is not active.", frappe.ValidationError)
 	url = _fresh_asset_login_url(doc)
 	if not url:
-		# Running + Active but still no URL: the mirror never carried one and the
-		# re-mint couldn't reach Atlas. Surface it rather than hand back a dead link.
+		# Running + Active but the re-mint couldn't reach Atlas. Surface it rather than
+		# hand back the stored (single-use, likely already-spent) SID as a dead link.
 		frappe.throw("Couldn't get a login URL for this VM. Try again shortly.", frappe.ValidationError)
 	return {"url": url}
 
 
 def _fresh_asset_login_url(doc) -> str:
-	"""The VM's usable login URL: the stored one if it's still good, else a freshly
-	regenerated one.
+	"""The VM's usable login URL: always a freshly regenerated one.
 
-	Re-mint whenever the mirror can't hand back a live URL — the stored one is empty
-	or expired. Empty is the common case just after a VM goes Running: the login mint
-	on the guest lands on Atlas, but the status push that carries it can miss (the
-	Running flip is a db_set that doesn't fire the push), so the mirror only catches
-	up on the next reconcile. Asking Atlas directly closes that window instead of
-	failing Open.
+	Unlike a site session (a reusable 24h browser session), a bench Asset's login URL
+	is a **single-use** admin SID — a 5-minute JWT that `bench generate-admin-session`
+	invalidates the moment it's redeemed. So the stored mirror URL is worthless on
+	Open: even inside its 5-minute clock it may already be spent (the tenant clicked
+	once), and a spent SID is a dead login. We re-mint on every Open so the click
+	always carries a live, unused SID — the timestamp is not a usability signal here.
 
-	Best-effort on the regenerate — if Atlas is unreachable, fall back to the stored
-	URL. That may be empty, but a dead/absent link is no worse than blocking Open, and
-	the caller has already confirmed the VM is Running on an Active cluster."""
-	from central.api.sites import _login_url_expired
+	Re-minting also closes the just-went-Running window where the mirror carries no
+	URL at all: the guest mint lands on Atlas but the status push that carries it can
+	miss (the Running flip is a db_set that doesn't fire the push), so the mirror only
+	catches up on the next reconcile. Asking Atlas directly covers both cases.
 
-	if doc.login_url and not _login_url_expired(doc.login_url_expires_at):
-		return doc.login_url
+	NOT best-effort: if the re-mint can't reach Atlas we return empty (the caller then
+	refuses Open) rather than falling back to the stored URL. For a single-use SID the
+	stored value is almost certainly already consumed, so handing it back would open a
+	dead session — a clean "try again shortly" is better than a broken login."""
 	try:
 		fresh = AtlasClient(frappe.get_doc("Atlas Instance", doc.cluster)).regenerate_vm_login(doc.resource_id)
 		from central.central.doctype.asset.asset import Asset
 
 		Asset.mirror_vm(doc.cluster, fresh, synced_at=frappe.utils.now_datetime())
-		return fresh.get("login_url") or doc.login_url
+		return fresh.get("login_url") or ""
 	except Exception:
 		frappe.log_error(title=f"Regenerate login failed for VM {doc.resource_id}")
-		return doc.login_url
+		return ""

@@ -7,10 +7,12 @@ from central.api.sso import get_bench_link
 from central.tests.test_iam import ensure_user
 
 # Open-in-bench for a real VM (asset) now hands back Atlas's one-click login URL —
-# the scoped admin session minted in the guest — not a Central-signed SSO assertion.
-# A stored URL that's still good is returned verbatim (no Atlas round-trip); an
-# expired one is regenerated on the click. The legacy SSO-assertion path survives
-# only for the explicit `gateway_url` dev shortcut (covered by test_sso.py).
+# the scoped admin SID minted in the guest — not a Central-signed SSO assertion.
+# The SID is single-use (a 5-minute JWT `bench generate-admin-session` invalidates on
+# redeem), so Open ALWAYS re-mints via Atlas — even a stored, unexpired URL is spent
+# once clicked. If the re-mint can't reach Atlas, Open is refused (the stored SID is
+# no fallback — it's dead). The legacy SSO-assertion path survives only for the
+# explicit `gateway_url` dev shortcut (covered by test_sso.py).
 
 FUTURE = "2099-01-01 00:00:00"
 PAST = "2000-01-01 00:00:00"
@@ -86,12 +88,26 @@ class TestOpenBench(IntegrationTestCase):
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_open_running_vm_returns_its_login_url(self):
-		"""A still-valid stored login URL is handed back verbatim — no Atlas round-trip."""
-		with patch("central.integrations.atlas.AtlasClient.regenerate_vm_login") as regen:
+	def test_open_running_vm_always_regenerates_sid(self):
+		"""Even a stored, unexpired login URL is re-minted on Open — the bench SID is
+		single-use, so the stored value may already be spent. The fresh URL is returned
+		(and mirrored back), never the stored one."""
+		fresh_url = "https://vm-open-1.blr1.frappe.dev/app?sid=fresh"
+		fresh_payload = {
+			"name": "vm-open-1",
+			"team": self.team.name,
+			"status": "Running",
+			"gateway_url": "https://vm-open-1.blr1.frappe.dev",
+			"login_url": fresh_url,
+			"login_url_expires_at": FUTURE,
+		}
+		with patch(
+			"central.integrations.atlas.AtlasClient.regenerate_vm_login", return_value=fresh_payload
+		) as regen:
 			link = self._as(self.dev, lambda: get_bench_link(asset="vm-open-1"))
-		self.assertEqual(link["url"], STORED_URL)
-		regen.assert_not_called()
+		regen.assert_called_once_with("vm-open-1")
+		self.assertEqual(link["url"], fresh_url)
+		self.assertEqual(frappe.db.get_value("Asset", "vm-open-1", "login_url"), fresh_url)
 
 	def test_expired_login_url_is_regenerated(self):
 		"""An expired stored URL triggers a re-mint via Atlas, and the fresh URL is
@@ -114,15 +130,16 @@ class TestOpenBench(IntegrationTestCase):
 		self.assertEqual(link["url"], fresh_url)
 		self.assertEqual(frappe.db.get_value("Asset", "vm-open-1", "login_url"), fresh_url)
 
-	def test_regenerate_failure_falls_back_to_stored_url(self):
-		"""If Atlas is unreachable when regenerating, Open falls back to the stored URL
-		rather than blocking — a possibly-dead link is no worse than no link."""
-		self._asset("vm-open-1", "Running", login_url=STORED_URL, expires_at=PAST)
+	def test_regenerate_failure_refuses_rather_than_serving_stored_url(self):
+		"""If Atlas is unreachable when regenerating, Open is refused — the stored SID is
+		single-use and almost certainly spent, so handing it back would open a dead
+		session. A clean 'try again shortly' beats a broken login."""
+		self._asset("vm-open-1", "Running", login_url=STORED_URL, expires_at=FUTURE)
 		with patch(
 			"central.integrations.atlas.AtlasClient.regenerate_vm_login", side_effect=Exception("down")
 		):
-			link = self._as(self.dev, lambda: get_bench_link(asset="vm-open-1"))
-		self.assertEqual(link["url"], STORED_URL)
+			with self.assertRaises(frappe.ValidationError):
+				self._as(self.dev, lambda: get_bench_link(asset="vm-open-1"))
 
 	def test_viewer_without_vm_open_is_blocked(self):
 		with self.assertRaises(frappe.PermissionError):
