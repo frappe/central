@@ -545,6 +545,16 @@ def stage_resizes(primary_sub, base_cluster, base_plan, currency, kind):
 # --- payment attempts + refunds (terminal-state builders) -------------------
 
 
+def backdate_invoice(invoice, when):
+	"""Pin an invoice's finalisation moment to `when`. The invoice Activity reads
+	`creation` as the 'Invoice finalised' event; a demo invoice is generated at seed
+	time, so without this it would sort AFTER its own backdated payments — an invoice
+	that reads as finalised months after it was paid."""
+	frappe.db.set_value(
+		"Invoice", invoice, "creation", frappe.utils.get_datetime(when), update_modified=False
+	)
+
+
 def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
 	"""A successful (Captured) card charge that settled the invoice."""
 	when = when or frappe.utils.now_datetime()

@@ -53,6 +53,7 @@ from central.billing.demo._factory import (
 	_tiers,
 	_wipe_all,
 	activate_team_assets,
+	backdate_invoice,
 	add_composed_subscription,
 	arm_emandate,
 	bank_pending_attempt,
@@ -294,6 +295,8 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		inv = invoicing.generate_team_invoice(team, start, end, subscription=primary_sub)
 		if not inv:
 			continue
+		# Finalised the morning the period closed — before that month's payment attempts.
+		backdate_invoice(inv, f"{end} 08:00:00")
 		total = frappe.db.get_value("Invoice", inv, "expected_collection")
 		retries = _RETRY_HISTORY.get(i, 0) if pm else 0
 		if retries:
@@ -324,6 +327,8 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 	inv = invoicing.generate_team_invoice(team, ANCHOR, "2026-06-30", subscription=sub)
 	if not inv:
 		return state
+	# Finalised end of the current month — before this month's settlement/refund events.
+	backdate_invoice(inv, "2026-06-30 08:00:00")
 	total = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "total"))
 	collectable = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "expected_collection"))
 
