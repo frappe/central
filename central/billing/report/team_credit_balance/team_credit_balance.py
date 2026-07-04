@@ -11,12 +11,14 @@ wallets that have run below it.
 
 import frappe
 from frappe import _
+from central.billing.report._currency import split_currency_columns
 
 
 def execute(filters: dict | None = None):
 	filters = filters or {}
 	columns = get_columns()
 	data = get_data(filters)
+	columns = split_currency_columns(columns, data, ["balance", "min_balance"])
 	return columns, data
 
 

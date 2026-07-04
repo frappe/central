@@ -14,6 +14,7 @@ which gives the aggregate rate; this one names the individual failures.
 import frappe
 from frappe import _
 from frappe.utils import flt
+from central.billing.report._currency import split_currency_columns
 
 
 def execute(filters: dict | None = None):
@@ -23,6 +24,7 @@ def execute(filters: dict | None = None):
 	columns = _columns()
 	chart = _reason_chart(rows)
 	summary = _summary(rows, attempts)
+	columns = split_currency_columns(columns, rows, ["amount"])
 	return columns, rows, None, chart, summary
 
 

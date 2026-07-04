@@ -12,6 +12,7 @@ Invoice Type filter so the register reflects real billing.
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate
+from central.billing.report._currency import split_currency_columns
 
 STATUS_ORDER = ["Draft", "Open", "Paid", "Overdue", "Waived", "Cancelled"]
 
@@ -22,6 +23,9 @@ def execute(filters: dict | None = None):
 	rows = get_data(filters)
 	summary = get_summary(rows)
 	chart = get_chart(rows)
+	columns = split_currency_columns(
+		columns, rows, ["total", "credit_applied", "expected_collection", "amount_paid"]
+	)
 	return columns, rows, None, chart, summary
 
 

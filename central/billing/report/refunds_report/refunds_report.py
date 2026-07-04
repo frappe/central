@@ -11,6 +11,7 @@ stuck refund is visible. Destination = Source (back to card/bank) or Wallet
 import frappe
 from frappe import _
 from frappe.utils import flt
+from central.billing.report._currency import split_currency_columns
 
 
 def execute(filters: dict | None = None):
@@ -18,6 +19,7 @@ def execute(filters: dict | None = None):
 	columns = get_columns()
 	rows = get_data(filters)
 	summary = get_summary(rows)
+	columns = split_currency_columns(columns, rows, ["amount"])
 	return columns, rows, None, None, summary
 
 

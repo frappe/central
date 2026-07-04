@@ -16,6 +16,7 @@ separately as in-flight.
 import frappe
 from frappe import _
 from frappe.utils import flt
+from central.billing.report._currency import split_currency_columns
 
 
 def execute(filters: dict | None = None):
@@ -62,7 +63,8 @@ def execute_by_gateway(filters: dict):
 	for a in _attempts(filters):
 		gw = a.gateway or _("(none)")
 		g = agg.setdefault(gw, {"attempts": 0, "captured": 0, "authorised": 0,
-								"failed": 0, "refunded": 0, "captured_amount": 0.0})
+								"failed": 0, "refunded": 0, "captured_amount": 0.0, "currency": a.currency})
+		g["currency"] = g["currency"] or a.currency  # a gateway is single-currency
 		g["attempts"] += 1
 		if a.status == "Captured":
 			g["captured"] += 1
@@ -98,6 +100,7 @@ def execute_by_gateway(filters: dict):
 					 "datasets": [{"name": _("Success Rate"), "values": [r["success_rate"] for r in rows]}]},
 			"type": "bar",
 		}
+	columns = split_currency_columns(columns, rows, ["captured_amount"])
 	return columns, rows, None, chart, summary
 
 
