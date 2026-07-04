@@ -383,3 +383,34 @@ class TestPrepaidSettlement(IntegrationTestCase):
 			self.TEAM, "mumbai", "2026-07-01", "2026-07-31"
 		)
 		self.assertEqual(lines, [])
+
+
+class TestAdminServices(IntegrationTestCase):
+	"""The operator console view of a team's metered services + subscribe/upgrade
+	(ADR 0015). Operator-gated, team explicit (an admin acts across teams)."""
+
+	TEAM = "svc-team-admin"
+
+	def setUp(self):
+		from central.billing.api.admin import services as admin_services
+
+		self.admin = admin_services
+		frappe.set_user("Administrator")
+		ensure_team(self.TEAM)
+		complete_billing_profile(self.TEAM, currency="INR")
+		frappe.db.delete("Subscription", {"team": self.TEAM})
+		self.plan = _make_metered_family("SM Admin Family", "PDF Admin", "SM PDF Admin Plan")
+
+	def test_get_team_services_lists_footprint_and_catalog(self):
+		self.admin.subscribe_team_service(self.TEAM, self.plan, cluster="mumbai")
+		out = self.admin.get_team_services(self.TEAM, cluster="mumbai")
+		self.assertEqual(out["currency"], "INR")
+		self.assertIn(self.plan, [s["plan"] for s in out["services"]])
+		self.assertIn(self.plan, [p["plan"] for p in out["available_plans"]])
+
+	def test_subscribe_team_service_provisions_subject(self):
+		res = self.admin.subscribe_team_service(self.TEAM, self.plan, cluster="mumbai")
+		self.assertTrue(res["service_subject"].startswith("svc-"))
+		self.assertEqual(
+			frappe.db.get_value("Subscription", res["subscription"], "team"), self.TEAM
+		)
