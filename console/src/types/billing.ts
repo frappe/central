@@ -27,6 +27,7 @@ export interface BillingLine {
   plan?: string | null
   subscription_resource?: string | null
   days?: number | null
+  hours?: number | null
   quantity?: number
   rate?: number
   unit?: string | null
@@ -136,6 +137,8 @@ export interface InvoiceDetail {
   expected_collection: number
   amount_paid: number
   due_date: string | null
+  /** A charge is in flight (or captured, awaiting the settlement webhook). */
+  payment_in_progress: boolean
   items: BillingLine[]
   activity: InvoiceActivity[]
 }

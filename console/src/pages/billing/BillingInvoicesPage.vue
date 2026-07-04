@@ -64,9 +64,11 @@ watch(
   { immediate: true },
 )
 
-const canPay = computed(
-  () => canManageBilling.value && String(detail.data?.status).toLowerCase() === 'open',
-)
+// A charge already in flight (or captured, awaiting the settlement webhook) means
+// the money is moving — show a "settling" status, never a second Pay button.
+const isOpen = computed(() => String(detail.data?.status).toLowerCase() === 'open')
+const settling = computed(() => isOpen.value && !!detail.data?.payment_in_progress)
+const canPay = computed(() => canManageBilling.value && isOpen.value && !settling.value)
 
 function refresh(): void {
   invoices.reload()
@@ -159,7 +161,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
                 {{ detail.data.items.length }} item{{ detail.data.items.length === 1 ? '' : 's' }}
               </span>
             </div>
-            <div class="max-h-80 overflow-y-auto rounded border border-outline-gray-1">
+            <div class="max-h-80 overflow-y-auto rounded-lg border border-outline-gray-2">
               <table class="w-full text-sm">
                 <thead class="sticky top-0 bg-surface-elevation-1">
                   <tr class="border-b border-outline-gray-1 text-left text-p-sm text-ink-gray-5">
@@ -246,18 +248,26 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
             </ol>
           </section>
 
-          <!-- Pinned so the pay action is always reachable. -->
+          <!-- Pinned so the pay action / settling status is always reachable. -->
           <div
-            v-if="canPay"
+            v-if="canPay || settling"
             class="sticky bottom-0 -mx-4 -mb-4 border-t border-outline-gray-1 bg-surface-elevation-1 px-4 py-3"
           >
             <Button
+              v-if="canPay"
               variant="solid"
               :label="`Pay ${money(detail.data.expected_collection, detail.data.currency)}`"
               :loading="payBusy"
               class="w-full"
               @click="pay(detail.data.name)"
             />
+            <div
+              v-else
+              class="flex items-center justify-center gap-2 py-1 text-p-sm text-ink-gray-6"
+            >
+              <span class="lucide-loader-circle size-4 animate-spin" aria-hidden="true" />
+              <span>Waiting for the bank or gateway to confirm your payment…</span>
+            </div>
           </div>
         </div>
       </template>

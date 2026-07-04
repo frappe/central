@@ -7,6 +7,9 @@ app_license = "agpl-3.0"
 
 fixtures = [
 	"Capability",
+	# The trust-tier ladder (Beginner → Elite) with per-currency spend caps and
+	# promotion thresholds — reference data every team's caps resolve against.
+	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
 ]

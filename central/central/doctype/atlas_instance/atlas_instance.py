@@ -29,6 +29,7 @@ class AtlasInstance(Document):
 		tunnel_ip: DF.Data | None
 		tunnel_status: DF.Literal["Unregistered", "Provisioning", "Active", "Inactive"]
 		tunnel_url: DF.Data | None
+		validate_capacity: DF.Check
 	# end: auto-generated types
 
 	def validate(self) -> None:

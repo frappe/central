@@ -87,16 +87,59 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertEqual(inv.total, 1400.0)
 		self.assertEqual(inv.expected_collection, 1400.0)
 
-	def test_same_day_provision_destroy_floors_to_one_day(self):
-		# Provisioned and cancelled on the same day → 1 day, not 0.
-		add_segment(self.sub, "Created", 1000, "2026-06-05 00:00:00")
-		add_segment(self.sub, "Cancelled", None, "2026-06-05 00:00:00")
+	def test_same_day_churn_bills_by_the_hour(self):
+		# Provisioned 09:00 and cancelled 18:00 the same day: a sub-24h run bills its
+		# real hours (9h), not a floored full day.
+		add_segment(self.sub, "Created", 1000, "2026-06-05 09:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-05 18:00:00")
 
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual(len(inv.items), 1)  # cancelled marker is skipped
-		self.assertEqual(inv.items[0].days, 1)
-		self.assertEqual(inv.items[0].amount, round(1000 / 30, 2))
+		li = inv.items[0]
+		self.assertEqual(li.unit, "hour")
+		self.assertEqual(li.hours, 9.0)
+		self.assertEqual(li.amount, round(9 * 1000 / (30 * 24), 2))
+
+	def test_multiple_resizes_in_a_day_bill_that_day_hourly(self):
+		# 2000 all month; a peak-hours bump to 4000 (09:00) then back (18:00) on Jun 15.
+		# Only Jun 15 goes hourly; the rest of the month stays daily.
+		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 4000, "2026-06-15 09:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-15 18:00:00")
+
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		inv = frappe.get_doc("Invoice", name)
+
+		daily = [li for li in inv.items if li.unit == "day"]
+		hourly = [li for li in inv.items if li.unit == "hour"]
+		# Jun 1–14 (14 days) + Jun 16–30 (15 days) at 2000 stay daily.
+		self.assertEqual(sorted(li.days for li in daily), [14, 15])
+		# Jun 15 itemised by the hour: 9h@2000, 9h@4000, 6h@2000.
+		self.assertEqual(
+			sorted((li.hours, li.rate) for li in hourly),
+			[(6.0, 2000.0), (9.0, 2000.0), (9.0, 4000.0)],
+		)
+		# 29 daily days + 24 hourly hours = exactly one 30-day month of runtime, with
+		# 9h billed at the higher 4000 rate. No double-count, no gap.
+		self.assertEqual(inv.subtotal, 2025.0)
+
+	def test_cross_midnight_churn_bills_both_days_hourly(self):
+		# Bump 23:00 Jun 10 → drop 01:00 Jun 11 (2h, < 24h): the 24h window straddles
+		# midnight, so both dates go hourly even though each has one change.
+		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 8000, "2026-06-10 23:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-11 01:00:00")
+
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		inv = frappe.get_doc("Invoice", name)
+
+		hourly = [li for li in inv.items if li.unit == "hour"]
+		# 8000 ran exactly 1h on each side of midnight.
+		self.assertEqual(sorted(li.hours for li in hourly if li.rate == 8000.0), [1.0, 1.0])
+		# Jun 10 and Jun 11 are excluded from the daily lines (billed hourly instead).
+		daily_days = sum(li.days for li in inv.items if li.unit == "day")
+		self.assertEqual(daily_days, 28)  # 30 days − Jun 10 − Jun 11
 
 	def test_partial_first_month_billed_for_join_window(self):
 		add_segment(self.sub, "Created", 3000, "2026-06-15 00:00:00")

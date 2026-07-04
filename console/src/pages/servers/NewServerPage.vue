@@ -7,6 +7,7 @@ import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useServers } from '@/composables/useServers'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { usePlans } from '@/composables/usePlans'
 import { planResources } from '@/lib/plans'
 import { configIncludes, estimateConfig, ramFor, rateCardComplete } from '@/lib/composed'
@@ -23,6 +24,7 @@ const router = useRouter()
 const { regions, loading } = useRegions()
 const { create, createComposed, creating, creatingComposed } = useServers()
 const { canCreateServer } = useCapabilities()
+const { requireSetup } = useBillingSetup()
 
 const selectedRegion = ref<string | null>(null)
 const name = ref('')
@@ -30,7 +32,7 @@ const name = ref('')
 const selectedPlan = ref<string | null>(null)
 const composedConfig = ref<ComposedConfig | null>(null)
 
-const { plans, groups, classes, rateCard, profiles, available, currency, loading: plansLoading } =
+const { plans, groups, classes, rateCard, profiles, available, currency, capacity, loading: plansLoading } =
   usePlans(selectedRegion)
 
 const canDesign = computed(() => rateCardComplete(rateCard.value) && profiles.value.length > 0)
@@ -97,6 +99,13 @@ const bracketExhausted = computed(
     cheapestDesignCost.value > availableHeadroom.value,
 )
 
+// The region itself is full: capacity gating is on and Atlas can't seat any new VM
+// right now. A capacity dead-end, not a budget one — show a distinct message (and it
+// takes priority, since there's nothing to provision here at any size).
+const regionFull = computed(
+  () => !!selectedRegion.value && !plansLoading.value && capacity.value.gated && !capacity.value.available,
+)
+
 // Switching region re-prices the menu: reset the tab and drop a selection the new
 // region no longer offers (a preset that's gone, or a custom profile it lacks).
 watch(classes, () => {
@@ -115,12 +124,20 @@ watch([plans, canDesign], () => {
 const submitting = computed(() => creating.value || creatingComposed.value)
 const canSubmit = computed(() => {
   if (!canCreateServer.value || !selectedRegion.value || !name.value.trim()) return false
+  if (regionFull.value) return false // the region can't seat a new server right now
   if (bracketExhausted.value) return false // nothing here fits the budget
   return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
 })
 
 async function submit() {
   if (!canSubmit.value || !selectedRegion.value) return
+  // A server bills the team, so it needs a billing profile first. If it's
+  // incomplete, prompt (requireSetup toasts + flags the setup dialog) and send
+  // them to Billing, where that dialog opens.
+  if (!requireSetup()) {
+    router.push({ name: 'Billing' })
+    return
+  }
   try {
     if (isCustom.value && composedConfig.value) {
       await createComposed({
@@ -213,6 +230,17 @@ async function submit() {
         <p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">Loading plans…</p>
 
         <div
+          v-else-if="regionFull"
+          class="rounded-lg border border-outline-amber-1 bg-surface-amber-1 px-4 py-3"
+        >
+          <p class="text-p-sm font-medium text-ink-gray-8">This region is at capacity</p>
+          <p class="mt-1 text-p-sm text-ink-gray-6">
+            {{ selectedRegion }} can't fit a new server right now. Try another region, or check
+            back shortly — capacity frees up as machines are removed.
+          </p>
+        </div>
+
+        <div
           v-else-if="bracketExhausted"
           class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
         >
@@ -236,6 +264,7 @@ async function submit() {
               :rate-card="rateCard"
               :available="available ?? 0"
               :currency="currency ?? 'USD'"
+              :capacity="capacity"
               v-model:selected-plan="selectedPlan"
               v-model:composed-config="composedConfig"
             />
@@ -249,6 +278,7 @@ async function submit() {
           :rate-card="rateCard"
           :available="available ?? 0"
           :currency="currency ?? 'USD'"
+          :capacity="capacity"
           v-model:selected-plan="selectedPlan"
           v-model:composed-config="composedConfig"
         />

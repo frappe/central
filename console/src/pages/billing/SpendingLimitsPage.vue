@@ -11,8 +11,12 @@ import type { TrustTier, TierLevel } from '@/types/billing'
 // Billing › Limit Tiers, shown to customers as "Spending Limits". A team's tier
 // sets how much it can spend and how many resources it can run; paying invoices on
 // time promotes it to higher tiers (#07/#08). Backend stays "Trust Tier"; the UI
-// speaks Spending Limits / Base / Tier 1–3 (mapped from the rung's sequence, never
-// the internal t0…t3 slug). Reads get_trust_tier (current + next + full ladder).
+// shows each rung's own title (Beginner, Growth, …) rather than a "Tier N" derived
+// from the sequence. Reads get_trust_tier (current + next + full ladder).
+//
+// Layout mirrors the frappe-cloud-v2 prototype: a standing band, a tiers table
+// whose Requirements column shows each rung's promotion gates against the team's
+// live progress, and a "how it works" explainer.
 const { activeTeam } = useSession()
 
 const tier = useCall<TrustTier, { team: string }>({
@@ -25,38 +29,45 @@ whenTeamReady(() => tier.reload())
 
 const currency = computed(() => tier.data?.currency || 'INR')
 const cur = computed(() => tier.data?.current)
-const nxt = computed(() => tier.data?.next)
 const prog = computed(() => tier.data?.progress)
 
-// Customer-facing rung name from the sequence: Base, then Tier 1, Tier 2, …
+// Customer-facing rung name: the tier's own title (Beginner, Growth, …), not a
+// "Tier N" derived from its sequence.
 function tierLabel(level: TierLevel | null | undefined): string {
   if (!level) return '—'
-  return level.sequence <= 0 ? 'Base' : `Tier ${level.sequence}`
+  return level.tier || '—'
 }
 
-function pct(used: number | null | undefined, need: number | null | undefined): number {
-  if (!need) return 100
-  return Math.min(100, Math.round((Number(used || 0) / Number(need)) * 100))
+interface Requirement {
+  text: string
+  met: boolean
 }
 
-// Each promotion requirement, with the team's progress and met/unmet state.
-const gates = computed(() => {
-  if (!nxt.value || !prog.value) return []
-  return [
-    {
-      label: 'Paid invoices',
-      used: prog.value.paid_invoices,
-      need: nxt.value.min_paid_invoices ?? 0,
-      fmt: (v: number | null | undefined) => String(Number(v || 0)),
-    },
-    {
-      label: 'Cumulative paid',
-      used: prog.value.cumulative_paid,
-      need: nxt.value.min_cumulative_paid ?? 0,
-      fmt: (v: number | null | undefined) => money(v, currency.value),
-    },
-  ].map((g) => ({ ...g, met: Number(g.used || 0) >= Number(g.need || 0) }))
-})
+// A rung's promotion gates, checked against the team's live progress. The base
+// rung has no thresholds — it's where every team starts.
+function requirementsFor(level: TierLevel): Requirement[] {
+  const p = prog.value
+  const paid = Number(p?.paid_invoices ?? 0)
+  const cumulative = Number(p?.cumulative_paid ?? 0)
+  if (level.sequence <= 0) {
+    return [{ text: 'Starting tier — available to every team', met: true }]
+  }
+  const reqs: Requirement[] = []
+  if (level.min_paid_invoices) {
+    const n = level.min_paid_invoices
+    reqs.push({ text: `≥ ${n} paid invoice${n === 1 ? '' : 's'}`, met: paid >= n })
+  }
+  if (level.min_cumulative_paid) {
+    reqs.push({
+      text: `≥ ${money(level.min_cumulative_paid, currency.value)} paid to date`,
+      met: cumulative >= Number(level.min_cumulative_paid),
+    })
+  }
+  return reqs.length ? reqs : [{ text: 'No additional requirements', met: true }]
+}
+function hasUnmet(level: TierLevel): boolean {
+  return requirementsFor(level).some((r) => !r.met)
+}
 
 type RungState = 'reached' | 'current' | 'locked'
 
@@ -76,136 +87,136 @@ const levels = computed(() => {
     <PageHeader title="Spending Limits" subtitle="Billing" />
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto w-full max-w-3xl space-y-6 px-5 py-6">
+      <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
         <div v-if="tier.loading && !tier.data" class="space-y-3">
           <LoadingText :lines="6" />
         </div>
 
         <template v-else-if="cur">
-          <p class="max-w-2xl text-p-sm text-ink-gray-5">
-            Your spending limit sets how much your team can spend and how many resources it can
-            run. Paying invoices on time raises your limit tier, which lifts these limits and the
-            UPI-Autopay mandate ceiling.
+          <p class="max-w-2xl text-p-base text-ink-gray-5">
+            Your monthly spending limit. You move to a higher tier automatically as your usage and
+            payment history grow — which lifts these limits and the UPI-Autopay mandate ceiling.
           </p>
 
-          <!-- Summary band -->
-          <section class="grid gap-4 sm:grid-cols-3">
-            <div class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-4">
-              <p class="text-p-sm text-ink-gray-5">Current tier</p>
-              <p class="mt-0.5 flex items-center gap-2 text-xl font-medium text-ink-gray-9">
-                {{ tierLabel(cur) }}
-                <Badge v-if="tier.data?.is_top_tier" theme="green" label="Top tier" />
-              </p>
-            </div>
-            <div class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-4">
-              <p class="text-p-sm text-ink-gray-5">Spending limit</p>
-              <p class="mt-0.5 text-xl font-medium tabular-nums text-ink-gray-9">
-                {{ money(cur.max_spend, currency) }}
-              </p>
-            </div>
-            <div class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-4">
-              <p class="text-p-sm text-ink-gray-5">Paid to date</p>
-              <p class="mt-0.5 text-xl font-medium tabular-nums text-ink-gray-9">
-                {{ money(prog?.cumulative_paid, currency) }}
-              </p>
-              <p class="mt-0.5 text-p-sm text-ink-gray-5">
-                {{ prog?.paid_invoices ?? 0 }} paid invoice{{ prog?.paid_invoices === 1 ? '' : 's' }}
-              </p>
-            </div>
-          </section>
-
-          <!-- Progress to next tier -->
-          <section v-if="nxt" class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5">
-            <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h2 class="text-base text-ink-gray-9">Progress to {{ tierLabel(nxt) }}</h2>
-              <span class="text-p-sm text-ink-gray-5">
-                Raises your limit to {{ money(nxt.max_spend, currency) }}
-              </span>
-            </div>
-            <p class="mt-1 text-p-sm text-ink-gray-5">
-              Clear both requirements to be promoted automatically.
-            </p>
-
-            <div class="mt-5 space-y-4">
-              <div v-for="g in gates" :key="g.label">
-                <div class="mb-1.5 flex items-center justify-between text-p-sm">
-                  <span class="flex items-center gap-1.5 text-ink-gray-7">
-                    {{ g.label }}
-                    <span
-                      v-if="g.met"
-                      class="lucide-check size-3.5 text-ink-green-3"
-                      aria-hidden="true"
-                    />
-                  </span>
-                  <span class="tabular-nums text-ink-gray-6">
-                    {{ g.fmt(g.used) }} / {{ g.fmt(g.need) }}
+          <!-- Current standing -->
+          <div class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="flex flex-col gap-1">
+                <div class="text-sm text-ink-gray-6">Current tier</div>
+                <span class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9">
+                  {{ tierLabel(cur) }}
+                  <Badge v-if="tier.data?.is_top_tier" theme="green" label="Top tier" />
+                </span>
+                <div class="text-p-sm text-ink-gray-6">
+                  Spending limit
+                  <span class="font-medium text-ink-gray-9">{{ money(cur.max_spend, currency) }}</span>
+                </div>
+              </div>
+              <div class="flex flex-col gap-1 text-right">
+                <div class="text-sm text-ink-gray-6">
+                  Paid to date
+                  <span class="font-medium text-ink-gray-9">
+                    {{ money(prog?.cumulative_paid, currency) }}
                   </span>
                 </div>
-                <div class="h-2 overflow-hidden rounded-full bg-surface-gray-3">
-                  <div
-                    class="h-full rounded-full transition-all duration-500 ease-out"
-                    :class="g.met ? 'bg-surface-green-5' : 'bg-surface-gray-5'"
-                    :style="{ width: `${pct(g.used, g.need)}%` }"
-                  />
+                <div class="text-sm text-ink-gray-6">
+                  <span class="font-medium text-ink-gray-9">{{ prog?.paid_invoices ?? 0 }}</span>
+                  paid invoice{{ prog?.paid_invoices === 1 ? '' : 's' }}
                 </div>
               </div>
             </div>
-          </section>
+          </div>
 
-          <section
-            v-else
-            class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-elevation-1 px-5 py-4 text-p-sm text-ink-gray-6"
-          >
-            <span class="lucide-circle-check size-4 text-ink-green-3" aria-hidden="true" />
-            You're at the highest tier — the maximum spend and resource headroom.
-          </section>
-
-          <!-- Full ladder -->
-          <section class="overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1">
-            <header class="border-b border-outline-gray-1 px-4 py-3">
-              <h2 class="text-base text-ink-gray-8">All tiers</h2>
-            </header>
-            <table class="w-full text-sm">
+          <!-- Tiers table -->
+          <div class="overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1">
+            <table class="w-full text-left">
               <thead>
-                <tr class="border-b border-outline-gray-1 text-left text-p-sm text-ink-gray-5">
-                  <th class="px-4 py-2 font-normal">Tier</th>
-                  <th class="px-4 py-2 text-right font-normal">Spending limit</th>
-                  <th class="px-4 py-2 text-right font-normal">Resources</th>
+                <tr class="border-b border-outline-gray-2 bg-surface-gray-1 text-p-sm text-ink-gray-5">
+                  <th class="px-4 py-3 font-medium">Tier</th>
+                  <th class="px-4 py-3 font-medium">Requirements</th>
+                  <th class="px-4 py-3 text-right font-medium">Spending limit</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-outline-gray-1">
+              <tbody class="divide-y divide-outline-gray-2">
                 <tr
                   v-for="l in levels"
                   :key="l.tier"
+                  class="transition-colors hover:bg-surface-gray-1"
                   :class="l.state === 'current' && 'bg-surface-gray-1'"
                 >
-                  <td class="px-4 py-2.5">
-                    <div class="flex items-center gap-2">
-                      <span
-                        class="size-4 shrink-0"
-                        :class="
-                          l.state === 'reached'
-                            ? 'lucide-check text-ink-green-3'
-                            : l.state === 'locked'
-                              ? 'lucide-lock text-ink-gray-4'
-                              : 'lucide-circle-dot text-ink-gray-7'
-                        "
-                        aria-hidden="true"
-                      />
-                      <span class="text-ink-gray-8">{{ tierLabel(l) }}</span>
+                  <td class="px-4 py-4 align-top">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="text-sm font-semibold text-ink-gray-9">{{ tierLabel(l) }}</span>
                       <Badge v-if="l.state === 'current'" theme="blue" label="Current" />
                     </div>
                   </td>
-                  <td class="px-4 py-2.5 text-right tabular-nums text-ink-gray-7">
-                    {{ money(l.max_spend, currency) }}
+                  <td class="px-4 py-4 align-top">
+                    <ul class="flex flex-col gap-1.5">
+                      <li
+                        v-for="(req, i) in requirementsFor(l)"
+                        :key="i"
+                        class="flex items-center gap-2"
+                      >
+                        <span
+                          class="size-3.5 shrink-0"
+                          :class="
+                            req.met
+                              ? 'lucide-circle-check text-ink-green-3'
+                              : 'lucide-circle-dashed text-ink-gray-4'
+                          "
+                          aria-hidden="true"
+                        />
+                        <span class="text-sm" :class="req.met ? 'text-ink-gray-9' : 'text-ink-gray-6'">
+                          {{ req.text }}
+                        </span>
+                      </li>
+                      <li v-if="l.state !== 'reached' && l.state !== 'current' && hasUnmet(l)">
+                        <RouterLink
+                          :to="{ name: 'Billing' }"
+                          class="text-sm text-ink-blue-3 transition-opacity hover:opacity-80"
+                        >
+                          Go to Billing →
+                        </RouterLink>
+                      </li>
+                    </ul>
                   </td>
-                  <td class="px-4 py-2.5 text-right tabular-nums text-ink-gray-7">
-                    {{ l.max_resource_count ?? '—' }}
+                  <td class="px-4 py-4 text-right align-top">
+                    <span class="text-sm font-semibold tabular-nums text-ink-gray-9">
+                      {{ money(l.max_spend, currency) }}
+                    </span>
+                    <p v-if="l.max_resource_count != null" class="mt-0.5 text-p-xs text-ink-gray-5">
+                      up to {{ l.max_resource_count }} resource{{ l.max_resource_count === 1 ? '' : 's' }}
+                    </p>
                   </td>
                 </tr>
               </tbody>
             </table>
-          </section>
+          </div>
+
+          <!-- How tiers work -->
+          <div class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5">
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center gap-2">
+                <span class="lucide-info size-5 shrink-0 text-ink-gray-5" aria-hidden="true" />
+                <div class="text-base font-medium text-ink-gray-9">How tier upgrades work</div>
+              </div>
+              <ul class="flex list-disc flex-col gap-1.5 pl-5 text-p-sm text-ink-gray-7">
+                <li>
+                  Tiers cap how much your team can spend in a billing cycle and how many resources it
+                  can run.
+                </li>
+                <li>
+                  You're promoted automatically once you've cleared a tier's paid-invoice count and
+                  its cumulative-paid threshold.
+                </li>
+                <li>
+                  New teams start at the base tier — add a payment method or prepaid credits to keep
+                  running.
+                </li>
+                <li>Need a higher limit now? Contact support and we'll review your account.</li>
+              </ul>
+            </div>
+          </div>
         </template>
 
         <div v-else class="px-4 py-12 text-center text-p-sm text-ink-gray-5">

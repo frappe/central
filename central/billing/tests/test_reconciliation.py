@@ -60,6 +60,20 @@ class ReconTestBase(IntegrationTestCase):
 		frappe.db.set_value("Payment Attempt", name, "initiated_at", old)
 		return name
 
+	def _captured_attempt(self, invoice, txn="pi_x", minutes_old=60):
+		"""A sync charge that reached Captured but whose invoice never settled —
+		the lost-capture-webhook case (completed_at / resolved_by unset)."""
+		name = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt", "invoice": invoice, "team": TEAM, "gateway": GATEWAY,
+				"amount": 1000, "currency": "INR", "status": "Captured",
+				"gateway_transaction_id": txn,
+			}
+		).insert(ignore_permissions=True).name
+		old = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-minutes_old)
+		frappe.db.set_value("Payment Attempt", name, "initiated_at", old)
+		return name
+
 
 class TestReconcile(ReconTestBase):
 	def test_gateway_success_settles_invoice_idempotently(self):
@@ -111,6 +125,57 @@ class TestReconcile(ReconTestBase):
 			"Comment", {"reference_doctype": "Invoice", "reference_name": inv}, pluck="content"
 		)
 		self.assertTrue(any("Reconciliation" in c for c in comments))
+
+
+class TestCapturedUnsettled(ReconTestBase):
+	"""The lost-capture-webhook hole: attempt Captured, invoice stranded Open."""
+
+	def test_captured_but_open_invoice_is_settled_on_gateway_success(self):
+		inv = self._open_invoice()
+		attempt = self._captured_attempt(inv)
+		with gateway_status("succeeded") as adapter:
+			out = reconciliation.reconcile_captured_attempt(attempt)
+			reconciliation.reconcile_captured_attempt(attempt)  # idempotent rerun
+			adapter.charge.assert_not_called()  # read-only
+
+		self.assertEqual(out["resolved"], "paid")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+		a = frappe.get_doc("Payment Attempt", attempt)
+		self.assertEqual(a.status, "Captured")
+		self.assertEqual(a.resolved_by, "Reconciliation")
+		self.assertTrue(a.completed_at)
+
+	def test_captured_not_confirmed_by_gateway_leaves_invoice_open(self):
+		inv = self._open_invoice()
+		attempt = self._captured_attempt(inv)
+		with gateway_status("requires_action"):
+			out = reconciliation.reconcile_captured_attempt(attempt, now=frappe.utils.now_datetime())
+		self.assertEqual(out["unresolved"], "requires_action")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+
+	def test_captured_already_paid_invoice_is_skipped(self):
+		inv = self._open_invoice()
+		frappe.db.set_value("Invoice", inv, "status", "Paid")
+		attempt = self._captured_attempt(inv)
+		with gateway_status("succeeded") as adapter:
+			out = reconciliation.reconcile_captured_attempt(attempt)
+			adapter.get_transaction_status.assert_not_called()  # no gateway call once settled
+		self.assertEqual(out["skipped"], "invoice_settled")
+
+	def test_scan_settles_aged_captured_unsettled(self):
+		inv = self._open_invoice()
+		captured = self._captured_attempt(inv, minutes_old=60)
+		with gateway_status("succeeded"):
+			reconciliation.run_reconciliation()
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+
+	def test_scan_grace_window_excludes_fresh_captured(self):
+		inv = self._open_invoice()
+		fresh = self._captured_attempt(inv, minutes_old=5)  # within 30-min grace
+		with gateway_status("succeeded"):
+			results = reconciliation.run_reconciliation()
+		self.assertNotIn(fresh, [r.get("attempt") for r in results])
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
 
 
 class TestScan(ReconTestBase):
