@@ -52,8 +52,7 @@
   },
   {
    "fieldname": "section_break_includes",
-   "fieldtype": "Section Break",
-   "label": "Includes"
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "includes",

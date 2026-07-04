@@ -25,14 +25,15 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Quantity",
-   "description": "Included amount; also the metered allowance baseline"
+   "description": "The amount included with the plan — a VM plan's spec size, or a metered service's free allowance per cycle. Billing runs on this number directly; usage beyond it is charged at the Catalog Rate per Unit."
   },
   {
    "fieldname": "unit",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Unit",
-   "description": "vCPU / GB / unit"
+   "options": "\nvCPU\nGB\nTB\nNos\nHours\n1K tokens\n1K emails\n1K docs",
+   "description": "Label for one unit of Quantity (e.g. 100 with Unit “1K tokens” means 100 × 1K tokens). Reference only — never used in a calculation; the Catalog Rate is quoted per this unit."
   }
  ],
  "index_web_pages_for_search": 1,
