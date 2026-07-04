@@ -309,6 +309,42 @@ class StripeAdapter(GatewayAdapter):
 		self._configure()
 		return _to_dict(stripe.checkout.Session.retrieve(session_id))
 
+	def create_setup_checkout_session(self, customer: str, success_url: str, cancel_url: str) -> dict:
+		"""A hosted Stripe Checkout session in `setup` mode — the hosted "save a card"
+		page (the parallel of the top-up's `payment` mode). Saves the card to the
+		team's reused customer; no money moves. The UI redirects to `checkout_url`."""
+		self._configure()
+
+		session = _to_dict(stripe.checkout.Session.create(
+			mode="setup", customer=customer, payment_method_types=["card"],
+			success_url=success_url, cancel_url=cancel_url,
+		))
+
+		return {"checkout_url": session.get("url"), "session_id": session.get("id")}
+
+	def get_setup_result(self, session_id: str) -> dict:
+		"""Read a completed setup Checkout session back to the saved card: the gateway
+		payment-method id + card display fields, or `{}` while still pending."""
+		self._configure()
+
+		session = _to_dict(stripe.checkout.Session.retrieve(session_id))
+
+		setup_intent_id = session.get("setup_intent")
+
+		if not setup_intent_id:
+			return {}
+
+		intent = _to_dict(stripe.SetupIntent.retrieve(setup_intent_id))
+		method_id = intent.get("payment_method")
+
+		if intent.get("status") != "succeeded" or not method_id:
+			return {}
+
+		card = (_to_dict(stripe.PaymentMethod.retrieve(method_id)).get("card")) or {}
+
+		return {"payment_method": method_id, "brand": (card.get("brand") or "card").title(),
+				"last4": card.get("last4"), "exp_month": card.get("exp_month"), "exp_year": card.get("exp_year")}
+
 	def create_customer(self, team) -> str:
 		self._configure()
 		# Team.owner_user is a Link to User, whose name IS the email address.
