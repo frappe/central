@@ -118,7 +118,12 @@ def plan_name(key: str) -> str:
 
 
 def _catalog():
+	from central.billing.catalog.taxonomy_setup import ensure_catalog_masters
+
 	_atlas_instances()
+	# Seed the taxonomy masters (Plan Category / Resource Type) through the canonical
+	# seeder — the demo authors plans against these families, it does not invent them.
+	ensure_catalog_masters()
 	_PLAN_BY_KEY.clear()
 	_vm_plans()
 	_component_rate_card()
@@ -169,21 +174,12 @@ def _component_rate_card():
 def _service_catalog():
 	"""Team-level metered consumer services (AI tokens, email, PDF) — each authored
 	through the Plan Configurator's `simple` builder (configurator.create_simple_plan
-	+ apply_pricing): a single-resource metered Plan under its own family, per-unit
+	+ apply_pricing) against the canonical service families seeded by
+	ensure_catalog_masters: a single-resource metered Plan per family, per-unit
 	priced (ADR 0013/0015/0008)."""
 	from central.billing.catalog import configurator
 
 	for category, resource_type, slug, title, unit, allowance, rates in SERVICES:
-		if not frappe.db.exists("Resource Type", resource_type):
-			frappe.get_doc({"doctype": "Resource Type",
-							"resource_type_name": resource_type}).insert(ignore_permissions=True)
-		# The family: a metered, team-level (non-Server) service billed as postpaid overage.
-		_upsert("Plan Category", category, {
-			"category_name": category, "configurator_builder": "Simple",
-			"billing_type": "Metered", "billing_interval": "Monthly", "pricing_mode": "Grandfathered",
-			"settlement_mode": "Postpaid Overage", "reporting_mode": "Authoritative",
-			"provision_target": "", "is_active": 1,
-		}, newname=True)
 		name = configurator.create_simple_plan(
 			category=category, title=title, resource_type=resource_type,
 			quantity=allowance, unit=unit,
