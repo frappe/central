@@ -99,6 +99,42 @@ def team_service_subscriptions(team: str) -> list[dict]:
 	return out
 
 
+def service_allowance(team: str, subject: str) -> dict:
+	"""A service subject's allowance state (ADR 0015), for edge enforcement.
+
+	For a **Prepaid Pack** family the allowance is a purchased balance drawn down by
+	reported usage: `remaining = max(0, allowance - used)`, and the service is `blocked`
+	once it hits zero (the consumer service polls this and degrades, offline-enforcement
+	style). For a **Postpaid Overage** family nothing blocks — usage past the allowance
+	bills as overage — so `blocked` is always False. Returns `exists: False` for an
+	unknown/unsubscribed subject."""
+	from central.billing.catalog.subscriptions import active_segment_for_resource
+
+	seg = active_segment_for_resource(subject)
+	if not seg or seg.team != team:
+		return {"exists": False}
+
+	inc = _includes_by_plan([seg.plan]).get(seg.plan) if seg.plan else None
+	mode = _category_modes_by_plan([seg.plan]).get(seg.plan, frappe._dict()) if seg.plan else frappe._dict()
+	settlement = mode.get("settlement_mode") or "Postpaid Overage"
+	allowance = frappe.utils.flt(inc.quantity) if inc else 0.0
+	used = _current_period_usage(subject)
+	remaining = max(0.0, allowance - used)
+	prepaid = settlement == "Prepaid Pack"
+	return {
+		"exists": True,
+		"service_subject": subject,
+		"plan": seg.plan,
+		"settlement_mode": settlement,
+		"unit": inc.unit if inc else None,
+		"allowance": allowance,
+		"used": used,
+		"remaining": remaining,
+		# A prepaid pack with a real allowance blocks at exhaustion; postpaid never blocks.
+		"blocked": bool(prepaid and allowance and remaining <= 0),
+	}
+
+
 def _includes_by_plan(plan_names: list[str]) -> dict:
 	"""The single include row (resource_type, quantity, unit) per plan, in one query.
 	A team-level service plan is single-resource (ADR 0008), so at most one row matters."""

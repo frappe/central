@@ -135,6 +135,17 @@ def _reporting_mode_for(resource_type: str) -> str:
 	return frappe.db.get_value("Plan Category", category, "reporting_mode") or "Authoritative"
 
 
+def _settlement_mode_for(resource_type: str) -> str:
+	"""The settlement mode of the family that prices `resource_type` (ADR 0015), blank
+	resolving to Postpaid Overage. Prepaid Pack usage is not billed as overage — the
+	pack was paid up front and excess is blocked at the edge, not charged."""
+	plan = _metered_plan_for(resource_type)
+	if not plan:
+		return "Postpaid Overage"
+	category = frappe.db.get_value("Plan", plan.name, "category")
+	return frappe.db.get_value("Plan Category", category, "settlement_mode") or "Postpaid Overage"
+
+
 def ingest_rollup(meter: dict) -> str | None:
 	"""Idempotently store one meter rollup, keyed by the period-identity idempotency_key.
 	Both reporting modes (ADR 0015) land as one Usage Rollup row per period; the locked
@@ -223,6 +234,11 @@ def metered_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	unpriced = []  # (resource_type, reason) — collected so every problem surfaces at once
 	for r in rollups:
 		if r.period_start and not (period_start <= frappe.utils.getdate(r.period_start) <= period_end):
+			continue
+
+		# A prepaid-pack family bills nothing here: the pack was paid up front and usage
+		# beyond it is blocked at the edge, not charged as overage (ADR 0015).
+		if _settlement_mode_for(r.resource_type) == "Prepaid Pack":
 			continue
 
 		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate and has no

@@ -188,6 +188,17 @@ def get_service_subscription() -> dict:
 	return {"services": team_service_subscriptions(_team())}
 
 
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def check_service_allowance(service_subject: str) -> dict:
+	"""A service subject's allowance state for edge enforcement: `{allowance, used,
+	remaining, blocked, settlement_mode}`. A Prepaid Pack service polls this and degrades
+	when `blocked`; a Postpaid Overage service never blocks. Scoped to the team."""
+	from central.billing.catalog.services import service_allowance
+
+	return service_allowance(_team(), service_subject)
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def report_usage(

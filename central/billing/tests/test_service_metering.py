@@ -20,10 +20,14 @@ def _ensure_resource_type(name: str) -> str:
 	return name
 
 
-def _make_metered_family(category, resource_type, plan, reporting_mode="Authoritative", rate=0.5):
-	"""A metered single-resource Plan under a dedicated Plan Category carrying an explicit
-	reporting_mode — so a test can exercise incremental accumulation without mutating a
-	shared category. Returns the plan name."""
+def _make_metered_family(
+	category, resource_type, plan, reporting_mode="Authoritative",
+	settlement_mode="Postpaid Overage", allowance=0, rate=0.5,
+):
+	"""A metered single-resource Plan under a dedicated Plan Category carrying explicit
+	reporting + settlement modes and an included allowance — so a test can exercise
+	incremental accumulation / prepaid draw-down without mutating a shared category.
+	Returns the plan name."""
 	from central.billing.catalog.pricing import set_catalog_rates
 	from central.billing.tests.utils import _ensure_rate_instances
 
@@ -36,6 +40,7 @@ def _make_metered_family(category, resource_type, plan, reporting_mode="Authorit
 		{
 			"doctype": "Plan Category", "category_name": category, "billing_type": "Metered",
 			"pricing_mode": "Grandfathered", "reporting_mode": reporting_mode,
+			"settlement_mode": settlement_mode,
 		}
 	).insert(ignore_permissions=True)
 
@@ -43,7 +48,7 @@ def _make_metered_family(category, resource_type, plan, reporting_mode="Authorit
 		{
 			"doctype": "Plan", "title": plan, "category": category, "billing_cycle": "Monthly",
 			"is_active": 1,
-			"includes": [{"resource_type": resource_type, "quantity": 0, "unit": "unit"}],
+			"includes": [{"resource_type": resource_type, "quantity": allowance, "unit": "unit"}],
 		}
 	)
 	doc.name = plan
@@ -288,3 +293,57 @@ class TestServiceAPI(IntegrationTestCase):
 				period_start="2026-07-01 00:00:00", period_end="2026-07-31 23:59:59",
 				idempotency_key=f"{foreign}|Counter|2026-07",
 			)
+
+
+class TestPrepaidSettlement(IntegrationTestCase):
+	"""A Prepaid Pack family draws its allowance down as usage lands, blocks at zero,
+	and bills no overage — the pack is paid up front (ADR 0015)."""
+
+	TEAM = "svc-team-prepaid"
+
+	def setUp(self):
+		from central.billing.revenue import metering
+
+		self.metering = metering
+		ensure_team(self.TEAM)
+		complete_billing_profile(self.TEAM, currency="INR")
+		frappe.db.delete("Subscription", {"team": self.TEAM})
+		frappe.db.delete("Usage Rollup", {"team": self.TEAM})
+		self.plan = _make_metered_family(
+			"SM Prepaid Family", "Tokens Pre", "SM Tokens Pack",
+			settlement_mode="Prepaid Pack", allowance=1000, rate=0.01,
+		)
+		res = subscriptions.provision_service_subscription(self.TEAM, self.plan, cluster="mumbai")
+		self.subject = res["service_subject"]
+
+	def _report(self, qty):
+		self.metering.ingest_rollup({
+			"resource_id": self.subject, "resource_type": "Tokens Pre", "meter_type": "Counter",
+			"period_start": "2026-07-01 00:00:00", "period_end": "2026-07-31 23:59:59",
+			"quantity": qty, "unit": "unit", "idempotency_key": f"{self.subject}|Counter|2026-07",
+		})
+
+	def test_within_allowance_not_blocked(self):
+		from central.billing.catalog.services import service_allowance
+
+		self._report(400)
+		state = service_allowance(self.TEAM, self.subject)
+		self.assertEqual(state["remaining"], 600)
+		self.assertFalse(state["blocked"])
+
+	def test_exhausted_allowance_blocks(self):
+		from central.billing.catalog.services import service_allowance
+
+		self._report(1000)
+		state = service_allowance(self.TEAM, self.subject)
+		self.assertEqual(state["remaining"], 0)
+		self.assertTrue(state["blocked"])
+
+	def test_prepaid_usage_bills_no_overage(self):
+		# 1500 used against a 1000 pack — a postpaid family would bill 500 of overage; a
+		# prepaid one bills nothing (excess is blocked, not charged).
+		self._report(1500)
+		lines = self.metering.metered_line_items(
+			self.TEAM, "mumbai", "2026-07-01", "2026-07-31"
+		)
+		self.assertEqual(lines, [])
