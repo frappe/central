@@ -317,6 +317,20 @@ class TestServiceAPI(IntegrationTestCase):
 			500,
 		)
 
+	def test_global_service_reports_from_any_cluster(self):
+		# A globally-priced service is subscribed once with no cluster; a caller on any
+		# cluster (or none) reports to that one team-wide subject.
+		globally = self.subscribe_service(self.plan, cluster=None)["service_subject"]
+
+		from_mumbai = self.report_usage(service="PDF API", quantity=30, cluster="mumbai")
+		from_nowhere = self.report_usage(service="PDF API", quantity=70)  # authoritative replace
+		self.assertEqual(from_mumbai["service_subject"], globally)
+		self.assertEqual(from_nowhere["service_subject"], globally)
+		self.assertEqual(
+			frappe.utils.flt(frappe.db.get_value("Usage Rollup", {"resource_id": globally}, "quantity")),
+			70,
+		)
+
 	def test_report_usage_for_unsubscribed_service_is_rejected(self):
 		# A caller can only report for a service ITS OWN team is subscribed to — there is
 		# no subject to name, so another team's usage cannot be forged.
