@@ -4,9 +4,15 @@
 import re
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 from central.billing.india_gst import GST_STATE_CODES, INDIA
+
+# Once a team has been invoiced, these are frozen: invoices are denominated in the
+# currency and taxed by the country in force when they were issued, so changing
+# either would desync documents already sent to the customer.
+_INVOICE_LOCKED_FIELDS = {"country": "country", "currency": "currency"}
 
 # GSTIN: 2-digit state + 10-char PAN + entity digit + 'Z' + checksum char.
 GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
@@ -20,6 +26,30 @@ class BillingProfile(Document):
 	def validate(self):
 		self.validate_gstin()
 		self.validate_india_state()
+		self.lock_country_and_currency_after_invoicing()
+
+	def lock_country_and_currency_after_invoicing(self):
+		"""Freeze country and currency once the team has been invoiced.
+
+		A backstop that holds no matter how the profile is saved (dashboard, admin,
+		script); the dashboard also locks currency on any money activity. Legal name,
+		address and GSTIN stay editable — only the two invoice-defining fields lock."""
+		if self.is_new():
+			return
+
+		changed = [label for field, label in _INVOICE_LOCKED_FIELDS.items() if self.has_value_changed(field)]
+		if not changed:
+			return
+
+		if not frappe.db.exists("Invoice", {"team": self.team}):
+			return
+
+		frappe.throw(
+			_("This team has already been invoiced, so its billing {0} can no longer be changed.").format(
+				_(" and ").join(changed)
+			),
+			frappe.ValidationError,
+		)
 
 	def validate_gstin(self):
 		if not self.gstin:

@@ -26,9 +26,19 @@ def _profile(**overrides):
 	return doc
 
 
+def _invoice(team=TEAM, currency="INR"):
+	"""Minimal issued invoice so the team counts as "already invoiced"."""
+	return frappe.get_doc(
+		{"doctype": "Invoice", "team": team, "invoice_type": "Billable", "status": "Open",
+		 "period_start": "2099-01-01", "period_end": "2099-01-31", "currency": currency,
+		 "subtotal": 100, "total": 100, "amount_paid": 0}
+	).insert(ignore_permissions=True)
+
+
 class TestBillingProfile(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		frappe.db.delete("Invoice", {"team": TEAM})
 		frappe.db.delete("Billing Profile", {"team": TEAM})
 
 	def test_valid_gstin_matching_state_saves(self):
@@ -65,3 +75,29 @@ class TestBillingProfile(IntegrationTestCase):
 		# Profiles are often created incomplete (just team + currency); that must not throw.
 		doc = _profile(state="", gstin="", legal_name="", address_line1="", city="", pincode="")
 		self.assertEqual(doc.currency, "INR")
+
+	def test_country_and_currency_editable_before_any_invoice(self):
+		_profile(country="India", currency="INR")
+		doc = _profile(country="Germany", currency="USD", state="Hesse", gstin="")
+		self.assertEqual(doc.country, "Germany")
+		self.assertEqual(doc.currency, "USD")
+
+	def test_currency_locked_once_team_is_invoiced(self):
+		_profile(country="India", currency="INR")
+		_invoice()
+		with self.assertRaises(frappe.ValidationError):
+			_profile(currency="USD")
+
+	def test_country_locked_once_team_is_invoiced(self):
+		_profile(country="India", currency="INR")
+		_invoice()
+		with self.assertRaises(frappe.ValidationError):
+			_profile(country="Germany", state="Hesse", gstin="")
+
+	def test_other_fields_still_editable_after_invoicing(self):
+		# Legal name / address / GSTIN can change post-invoice — only the two
+		# invoice-defining fields lock.
+		_profile(country="India", currency="INR")
+		_invoice()
+		doc = _profile(legal_name="Renamed Ltd", address_line1="9 New Road", gstin="27AAPFU0939F1ZV")
+		self.assertEqual(doc.legal_name, "Renamed Ltd")
