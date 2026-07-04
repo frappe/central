@@ -145,6 +145,84 @@ def change_plan(asset: str, plan: str) -> dict:
 	return resize_server(subscription, plan=plan)
 
 
+# ── Metered services (team-level: AI tokens, email, PDF, …) ──────────────────
+# The in-app flow a consumer service drives (ADR 0013/0015): discover service plans,
+# subscribe (a synthesized subject, no VM), read what the team runs, and report usage.
+# The team is always the credential's — never a parameter — so a pilot reports only its
+# own team's consumption.
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def list_service_plans(cluster: str | None = None) -> dict:
+	"""Active team-level service plans (AI tokens, email, PDF, storage), priced for the
+	team's currency on `cluster`. Each entry carries the billing shape, family modes,
+	included allowance, and the resolved rate."""
+	from central.billing.catalog.services import list_service_plans as _list
+
+	team = _team()
+	currency = _team_currency(team)
+	return {"plans": _list(currency, cluster=cluster), "currency": currency}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def subscribe_service(plan: str, cluster: str | None = None) -> dict:
+	"""Subscribe the team to a team-level metered service. Mints a synthesized subject
+	(no VM) and opens the price-lock segment inline; idempotent per (team, plan, cluster).
+	Returns the subject + locked handles."""
+	from central.billing.catalog.subscriptions import provision_service_subscription
+
+	team = _team()
+	_require_billing_setup(team)
+	return provision_service_subscription(team, plan, cluster=cluster)
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def get_service_subscription() -> dict:
+	"""The team's active team-level service subscriptions: subject, plan, cluster, rate,
+	family modes, included allowance, and the current period's reported usage."""
+	from central.billing.catalog.services import team_service_subscriptions
+
+	return {"services": team_service_subscriptions(_team())}
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def report_usage(
+	service_subject: str,
+	resource_type: str,
+	quantity: float,
+	period_start: str,
+	period_end: str,
+	idempotency_key: str,
+	meter_type: str = "Counter",
+	sequence: int = 0,
+) -> dict:
+	"""Report metered usage for a team-level service subject. The subject must belong to
+	the credential's team (IDOR defence). Authoritative families send the period's
+	running total (replaced); Incremental families send a delta + a monotonic sequence
+	(accumulated, deduped). Returns the handled idempotency_key, or null if nothing was
+	recorded (e.g. no active segment for the subject)."""
+	from central.billing.revenue.metering import ingest_rollup
+
+	_assert_owns(frappe.db.get_value("Subscription", {"service_subject": service_subject}, "team"))
+	key = ingest_rollup(
+		{
+			"resource_id": service_subject,
+			"resource_type": resource_type,
+			"meter_type": meter_type,
+			"quantity": frappe.utils.flt(quantity),
+			"period_start": period_start,
+			"period_end": period_end,
+			"idempotency_key": idempotency_key,
+			"sequence": frappe.utils.cint(sequence),
+		}
+	)
+	return {"recorded": bool(key), "idempotency_key": key}
+
+
 # ── Credits ──────────────────────────────────────────────────────────────────
 
 

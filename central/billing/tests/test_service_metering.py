@@ -223,3 +223,68 @@ class TestDualModeIngestion(IntegrationTestCase):
 			self.metering.ingest_rollup(self._meter(subject, "PDF Incr", key, 1, sequence=seq))
 		self.assertEqual(frappe.db.count("Usage Rollup", {"resource_id": subject}), 1)
 		self.assertEqual(self._qty(subject), 20)
+
+
+class TestServiceAPI(IntegrationTestCase):
+	"""The pilot-authenticated service facade (ADR 0015): list/subscribe/get/report,
+	with the team fixed from the credential so a pilot only touches its own team."""
+
+	TEAM = "svc-team-api"
+	OTHER = "svc-team-other"
+
+	def setUp(self):
+		import inspect
+
+		from central.billing.api import billing_api
+
+		# Fully unwrap the whitelist + pilot-auth decorators to reach the facade body,
+		# then exercise it with a stubbed credential (there is no request in tests).
+		self.list_service_plans = inspect.unwrap(billing_api.list_service_plans)
+		self.subscribe_service = inspect.unwrap(billing_api.subscribe_service)
+		self.get_service_subscription = inspect.unwrap(billing_api.get_service_subscription)
+		self.report_usage = inspect.unwrap(billing_api.report_usage)
+		for t in (self.TEAM, self.OTHER):
+			ensure_team(t)
+			complete_billing_profile(t, currency="INR")
+			frappe.db.delete("Subscription", {"team": t})
+		frappe.db.delete("Usage Rollup", {"team": self.TEAM})
+		self.plan = _make_metered_family("SM API Family", "PDF API", "SM PDF API Plan")
+		self._act_as(self.TEAM)
+
+	def _act_as(self, team):
+		frappe.local.pilot_credential = frappe._dict(team=team)
+
+	def test_list_service_plans_priced_for_team_currency(self):
+		out = self.list_service_plans(cluster="mumbai")
+		self.assertEqual(out["currency"], "INR")
+		self.assertIn(self.plan, [p["plan"] for p in out["plans"]])
+
+	def test_subscribe_then_get_and_report(self):
+		sub = self.subscribe_service(self.plan, cluster="mumbai")
+		subject = sub["service_subject"]
+
+		services = self.get_service_subscription()["services"]
+		self.assertIn(subject, [s["service_subject"] for s in services])
+
+		res = self.report_usage(
+			service_subject=subject, resource_type="PDF API", quantity=500,
+			period_start="2026-07-01 00:00:00", period_end="2026-07-31 23:59:59",
+			idempotency_key=f"{subject}|Counter|2026-07",
+		)
+		self.assertTrue(res["recorded"])
+		self.assertEqual(
+			frappe.utils.flt(frappe.db.get_value("Usage Rollup", {"resource_id": subject}, "quantity")),
+			500,
+		)
+
+	def test_report_usage_for_foreign_subject_is_rejected(self):
+		# A subject owned by another team must not be reportable by this credential.
+		self._act_as(self.OTHER)
+		foreign = self.subscribe_service(self.plan, cluster="mumbai")["service_subject"]
+		self._act_as(self.TEAM)
+		with self.assertRaises(frappe.PermissionError):
+			self.report_usage(
+				service_subject=foreign, resource_type="PDF API", quantity=10,
+				period_start="2026-07-01 00:00:00", period_end="2026-07-31 23:59:59",
+				idempotency_key=f"{foreign}|Counter|2026-07",
+			)
