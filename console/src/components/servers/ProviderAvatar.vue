@@ -5,6 +5,7 @@ import doBadge from '@/assets/providers/Provider=DO.svg'
 import frappeBadge from '@/assets/providers/Provider=Frappe.svg'
 import hetznerBadge from '@/assets/providers/Provider=Hetzner.svg'
 import ociBadge from '@/assets/providers/Provider=OCI.svg'
+import scalewayBadge from '@/assets/providers/Provider=Scaleway.svg'
 
 const props = withDefaults(
   defineProps<{
@@ -21,6 +22,7 @@ const BADGES: Record<string, string> = {
   Frappe: frappeBadge,
   OCI: ociBadge,
   DigitalOcean: doBadge,
+  Scaleway: scalewayBadge,
 }
 
 const src = computed(() => (props.provider ? (BADGES[props.provider] ?? null) : null))
