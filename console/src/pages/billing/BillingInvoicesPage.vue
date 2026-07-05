@@ -68,7 +68,12 @@ watch(
 // the money is moving — show a "settling" status, never a second Pay button.
 const isOpen = computed(() => String(detail.data?.status).toLowerCase() === 'open')
 const settling = computed(() => isOpen.value && !!detail.data?.payment_in_progress)
-const canPay = computed(() => canManageBilling.value && isOpen.value && !settling.value)
+// Only offer Pay when something is actually collectable — a zero-due invoice
+// (e.g. a trial Cost Report) must never render a "Pay 0.00" button.
+const hasDue = computed(() => Number(detail.data?.expected_collection) > 0)
+const canPay = computed(
+  () => canManageBilling.value && isOpen.value && !settling.value && hasDue.value,
+)
 
 function refresh(): void {
   invoices.reload()
