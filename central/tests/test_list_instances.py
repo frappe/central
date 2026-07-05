@@ -1,13 +1,17 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.servers import INSTANCE_PUBLIC_FIELDS, list_instances, registry
+from central.api.servers import INSTANCE_LIVENESS_FIELDS, REGION_DISPLAY_FIELDS, list_instances, registry
 from central.central.doctype.asset.asset import Asset
 from central.tests.test_iam import ensure_user
 
+# The exact key set list_instances returns: an Active Atlas Instance's liveness
+# merged with its Region's display metadata.
+PUBLIC_FIELDS = INSTANCE_LIVENESS_FIELDS + REGION_DISPLAY_FIELDS
+
 # Fields that must never leave the server. `list_instances` bypasses DocType
-# RBAC (Atlas Instance is System Manager-only), so its allowlist is the only
-# thing between a team member and the Atlas admin credentials.
+# RBAC (Atlas Instance is System Manager-only), so reading only the non-secret
+# liveness fields is what keeps the Atlas admin credentials off the wire.
 SECRET_FIELDS = (
 	"api_key",
 	"api_secret",
@@ -42,6 +46,18 @@ class TestListInstances(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def _ensure_instance(self, region: str, status: str) -> str:
+		if not frappe.db.exists("Region", region):
+			frappe.get_doc(
+				{
+					"doctype": "Region",
+					"region": region,
+					"display_name": "Test City, Testland",
+					"provider": "AWS",
+					"country_code": "IN",
+					"latitude": 19.07,
+					"longitude": 72.87,
+				}
+			).insert()
 		if not frappe.db.exists("Atlas Instance", region):
 			frappe.get_doc(
 				{
@@ -51,11 +67,6 @@ class TestListInstances(IntegrationTestCase):
 					"status": status,
 					"api_key": "admin-key",
 					"api_secret": "admin-secret",
-					"display_name": "Test City, Testland",
-					"provider": "AWS",
-					"country_code": "IN",
-					"latitude": 19.07,
-					"longitude": 72.87,
 				}
 			).insert()
 		else:
@@ -68,7 +79,7 @@ class TestListInstances(IntegrationTestCase):
 
 		self.assertTrue(rows)
 		for row in rows:
-			self.assertEqual(set(row.keys()), set(INSTANCE_PUBLIC_FIELDS))
+			self.assertEqual(set(row.keys()), set(PUBLIC_FIELDS))
 			for field in SECRET_FIELDS:
 				self.assertNotIn(field, row)
 

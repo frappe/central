@@ -1,18 +1,31 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.servers import _stamp_frappe_version, create_server
+from central.api.servers import (
+	FALLBACK_FRAPPE_VERSIONS,
+	_stamp_frappe_version,
+	create_server,
+	frappe_versions,
+)
 from central.billing.tests.utils import complete_billing_profile
 from central.central.doctype.asset.asset import Asset
 from central.tests.test_iam import ensure_user
 
 
 class TestFrappeVersion(IntegrationTestCase):
-	"""The version chosen at create is validated before any Atlas call and, once
-	mirrored, survives Atlas events that don't carry it."""
+	"""The chosen version is validated against what Atlas can provision, resolved by
+	Atlas to a bench image and echoed back, and — once mirrored — survives later Atlas
+	events that omit it."""
 
 	def setUp(self):
 		frappe.set_user("Administrator")
+		# The offered versions come from Atlas; pin them so validation is deterministic
+		# and never touches the (dummy) Atlas over the network in these tests.
+		versions = patch("central.api.servers._available_versions", return_value=["v15", "v16", "nightly"])
+		versions.start()
+		self.addCleanup(versions.stop)
 		self.owner = ensure_user("version.owner@example.test")
 		self.team = frappe.get_doc(
 			{
@@ -26,6 +39,8 @@ class TestFrappeVersion(IntegrationTestCase):
 		# so the version logic under test is only reached once that's satisfied.
 		complete_billing_profile(self.team.name)
 		self.region = "fv-region-test"
+		if not frappe.db.exists("Region", self.region):
+			frappe.get_doc({"doctype": "Region", "region": self.region}).insert()
 		if not frappe.db.exists("Atlas Instance", self.region):
 			frappe.get_doc(
 				{
@@ -48,9 +63,8 @@ class TestFrappeVersion(IntegrationTestCase):
 
 	def test_planless_create_still_records_version(self):
 		# Without a plan the billing seam never writes a Pending Asset — create_server
-		# must mirror the VM Atlas returned so the chosen version has a row to land on.
-		from unittest.mock import patch
-
+		# must mirror the VM Atlas returned so the provisioned version has a row to land
+		# on. Atlas echoes the version it laid down in the create reply.
 		vm = {
 			"name": "fv-planless-test",
 			"team": self.team.name,
@@ -59,6 +73,7 @@ class TestFrappeVersion(IntegrationTestCase):
 			"vcpus": 1,
 			"memory_megabytes": 512,
 			"disk_gigabytes": 10,
+			"frappe_version": "v16",
 		}
 		frappe.set_user(self.owner)
 		with patch("central.integrations.atlas.AtlasClient.create_vm", return_value=vm):
@@ -103,3 +118,39 @@ class TestFrappeVersion(IntegrationTestCase):
 		asset = frappe.get_doc("Asset", "fv-vm-test")
 		self.assertEqual(asset.status, "Running")
 		self.assertEqual(asset.frappe_version, "v16")
+
+
+class TestVersionSource(IntegrationTestCase):
+	"""frappe_versions() derives the picker from Atlas's active bench images, and
+	fails soft to a static set when no Atlas answers."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		# At least one Active region must exist for the proxy path to be attempted.
+		if not frappe.db.exists("Region", "vs-region-test"):
+			frappe.get_doc({"doctype": "Region", "region": "vs-region-test"}).insert()
+		if not frappe.db.exists("Atlas Instance", "vs-region-test"):
+			frappe.get_doc(
+				{
+					"doctype": "Atlas Instance",
+					"region": "vs-region-test",
+					"base_url": "https://vs-region-test.atlas.example.test",
+					"status": "Active",
+					"api_key": "k",
+					"api_secret": "s",
+				}
+			).insert()
+
+	def test_proxies_atlas_when_reachable(self):
+		with patch(
+			"central.integrations.atlas.AtlasClient.available_frappe_versions",
+			return_value=["v15", "v16"],
+		):
+			self.assertEqual(frappe_versions(), ["v15", "v16"])
+
+	def test_falls_back_when_atlas_errors(self):
+		with patch(
+			"central.integrations.atlas.AtlasClient.available_frappe_versions",
+			side_effect=Exception("atlas down"),
+		):
+			self.assertEqual(frappe_versions(), list(FALLBACK_FRAPPE_VERSIONS))
