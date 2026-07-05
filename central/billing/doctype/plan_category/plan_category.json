@@ -56,20 +56,20 @@
    "label": "Configurator Builder",
    "options": "VM Rungs\nSimple",
    "reqd": 1,
-   "description": "Which Plan Configurator builder authors this category. VM Rungs = the vCPU/memory/disk/transfer ladder; Simple = name + included quantity + rate."
+   "description": "Which Configurator builder authors this category (VM Rungs or Simple)."
   },
   {
    "fieldname": "provision_target",
    "fieldtype": "Select",
    "label": "Provision Target",
    "options": "\nServer\nResource",
-   "description": "What a member plan provisions. 'Server' = a whole sellable machine, offered in the create-server flow (the Configurator builds a ladder of plans). 'Resource' = individual resource types (Compute / Memory / Disk) priced per unit, so custom configs can be composed and billed (the Configurator authors Resource Rates). Blank = not directly provisionable (e.g. metered AI Tokens, storage subscriptions)."
+   "description": "What a member plan provisions: Server, Resource (per-unit), or blank (not directly provisionable)."
   },
   {
    "fieldname": "sub_category_label",
    "fieldtype": "Data",
    "label": "Sub-Category Label",
-   "description": "What a sub-category means for this family (e.g. 'Optimization profile', 'Storage purpose'). Blank = this family has no sub-category axis; plans attach directly to the category."
+   "description": "What a sub-category means for this family; blank = no sub-category axis."
   },
   {
    "fieldname": "section_break_billing",
@@ -83,7 +83,7 @@
    "label": "Billing Type",
    "options": "Fixed\nMetered",
    "reqd": 1,
-   "description": "Fixed = a flat rate per billing cycle (a bundle). Metered = per-unit usage billing; a member plan with a single resource is a metering target resolved by its resource type (ADR 0008)."
+   "description": "Fixed = flat rate per cycle (bundle); Metered = per-unit usage billing (ADR 0008)."
   },
   {
    "fieldname": "billing_interval",
@@ -101,21 +101,21 @@
    "fieldtype": "Select",
    "label": "Pricing Mode",
    "options": "\nGrandfathered\nLive",
-   "description": "For a Metered family: Grandfathered bills the rate locked at provision (like bundles); Live reads the current Catalog Rate each period with no allowance, for depreciating storage (ADR 0002). Leave blank for Fixed families."
+   "description": "Metered families only: Grandfathered locks the provision rate, Live reads the current Catalog Rate each period (ADR 0002)."
   },
   {
    "fieldname": "settlement_mode",
    "fieldtype": "Select",
    "label": "Settlement Mode",
    "options": "\nPostpaid Overage\nPrepaid Pack",
-   "description": "What the included allowance means when it runs out (ADR 0015). Postpaid Overage (default): keep serving, bill max(0, qty-allowance) x rate at period close. Prepaid Pack: the allowance is a purchased balance drawn down as usage lands; blocked/degraded at zero until another pack is bought. Blank = Postpaid Overage."
+   "description": "What happens when the allowance runs out: Postpaid Overage (bill the excess) or Prepaid Pack (drawn-down balance) (ADR 0015)."
   },
   {
    "fieldname": "reporting_mode",
    "fieldtype": "Select",
    "label": "Reporting Mode",
    "options": "\nAuthoritative\nIncremental",
-   "description": "How a consumer service reports usage (ADR 0015). Authoritative (default): the service sends the period's running total; Central replaces the rollup. Incremental: the service posts deltas as consumed; Central accumulates and dedupes by a monotonic sequence cursor (assumes ordered delivery). Blank = Authoritative."
+   "description": "How a consumer service reports usage: Authoritative (running total) or Incremental (accumulated deltas) (ADR 0015)."
   },
   {
    "fieldname": "section_break_resources",

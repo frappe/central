@@ -69,7 +69,7 @@
    "label": "Category",
    "options": "Plan Category",
    "reqd": 1,
-   "description": "The Plan Category this plan belongs to (ADR 0007). Constrains the resource types its composition may use."
+   "description": "The Plan Category this plan belongs to (ADR 0007)."
   },
   {
    "fieldname": "sub_category",

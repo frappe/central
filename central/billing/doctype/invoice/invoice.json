@@ -127,13 +127,13 @@
    "fieldname": "commitment_discount",
    "fieldtype": "Currency",
    "label": "Commitment Discount",
-   "description": "Discount applied to fixed-bundle lines under an active Commitment (issue #30); reduces the taxable base. 0 when no commitment or floor not met."
+   "description": "Discount on fixed-bundle lines under an active Commitment (#30); 0 otherwise."
   },
   {
    "fieldname": "commitment_clawback",
    "fieldtype": "Currency",
    "label": "Commitment Clawback",
-   "description": "Discount repaid when the team dropped below its Commitment floor before term-end (issue #31); added to the taxable base. 0 otherwise."
+   "description": "Discount repaid when the team fell below its Commitment floor (#31); 0 otherwise."
   },
   {
    "default": "None",

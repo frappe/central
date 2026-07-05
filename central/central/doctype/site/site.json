@@ -81,7 +81,7 @@
    "read_only": 1
   },
   {
-   "description": "The one-click Administrator sign-in URL Atlas minted after the site went live (the tenant handoff, replacing the shared password). Short-lived (a 24h session); Central regenerates it if the tenant clicks after it expires. Written once, when the site reaches Running; empty before that.",
+   "description": "One-click Administrator sign-in URL Atlas minted when the site went live; short-lived, regenerated on expiry.",
    "fieldname": "login_url",
    "fieldtype": "Small Text",
    "label": "Login URL",
@@ -89,7 +89,7 @@
    "read_only": 1
   },
   {
-   "description": "When login_url stops working (Atlas's mint time + the session's 24h TTL). Central compares against this to decide 'use it' vs 'regenerate'.",
+   "description": "When login_url stops working (Atlas mint time + 24h session TTL).",
    "fieldname": "login_url_expires_at",
    "fieldtype": "Datetime",
    "label": "Login URL Expires At",
@@ -104,7 +104,7 @@
    "read_only": 1
   },
   {
-   "description": "occurred_at of the last applied Atlas event. Used for last-writer-wins so a stale or duplicate push can't overwrite newer state.",
+   "description": "occurred_at of the last applied Atlas event; drives last-writer-wins.",
    "fieldname": "last_event_at",
    "fieldtype": "Datetime",
    "label": "Last Event At",

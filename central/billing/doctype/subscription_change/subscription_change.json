@@ -58,7 +58,7 @@
    "fieldname": "locked_rate",
    "fieldtype": "Currency",
    "label": "Locked Rate",
-   "description": "Rate snapshot at this change, resolved from the catalog at the time it was written. Billing reads this for its segment, never the live catalog rate."
+   "description": "Rate snapshot at this change, resolved from the catalog; billing reads this, never the live rate."
   },
   {
    "fieldname": "currency",

@@ -25,7 +25,7 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Quantity",
-   "description": "The amount included with the plan — a VM plan's spec size, or a metered service's free allowance per cycle. Billing runs on this number directly; usage beyond it is charged at the Catalog Rate per Unit."
+   "description": "The amount included with the plan; usage beyond it bills at the Catalog Rate per Unit."
   },
   {
    "fieldname": "unit",
@@ -33,7 +33,7 @@
    "in_list_view": 1,
    "label": "Unit",
    "options": "\nvCPU\nGB\nTB\nNos\nHours",
-   "description": "Plain display label for one unit of Quantity (e.g. vCPU, GB, Nos). Reference only — nothing evaluates it; Quantity is the actual count and the Catalog Rate is quoted per this unit."
+   "description": "Display label for one unit of Quantity (e.g. vCPU, GB, Nos); reference only."
   }
  ],
  "index_web_pages_for_search": 1,

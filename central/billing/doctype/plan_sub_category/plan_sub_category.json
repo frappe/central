@@ -46,13 +46,13 @@
    "fieldname": "compose_section",
    "fieldtype": "Section Break",
    "label": "Composed-Config Bounds",
-   "description": "VM compute profiles only (ADR 0009): the runtime constraints a design-your-own config is validated against. Blank for non-compute families."
+   "description": "VM compute profiles only (ADR 0009): constraints a design-your-own config is validated against."
   },
   {
    "fieldname": "ram_ratio",
    "fieldtype": "Int",
    "label": "RAM Ratio",
-   "description": "GB RAM per vCPU for this optimisation profile (RAM = vCPU x ratio). Source of truth for the configurator's pinned ratio."
+   "description": "GB RAM per vCPU for this profile; source of truth for the configurator's pinned ratio."
   },
   {
    "fieldname": "vcpu_steps",
@@ -79,7 +79,7 @@
    "fieldtype": "Select",
    "label": "Memory Ratio (legacy)",
    "options": "\n1:2\n1:4\n1:6\n1:8",
-   "description": "Legacy display of ram_ratio as a 1:N string; ram_ratio is authoritative. Kept for backward-compatibility."
+   "description": "Legacy 1:N display of ram_ratio (authoritative); kept for backward-compatibility."
   }
  ],
  "index_web_pages_for_search": 1,
