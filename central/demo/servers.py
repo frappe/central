@@ -88,6 +88,9 @@ def seed() -> dict:
 
 	teams = _demo_teams()
 	synced_at = now_datetime()
+	# Region first — Atlas Instance.region links it (one Atlas = one Region).
+	for region in REGIONS:
+		_upsert_region(region)
 	for region in REGIONS:
 		_upsert_instance(region)
 	for index, asset in enumerate(ASSETS):
@@ -102,6 +105,7 @@ def summary() -> dict:
 	resource_ids = _seed_resource_ids()
 	regions = [region for region, *_ in REGIONS]
 	return {
+		"regions": frappe.db.count("Region", {"name": ["in", regions]}),
 		"atlas_instances": frappe.db.count("Atlas Instance", {"name": ["in", regions]}),
 		"assets": frappe.db.count("Asset", {"name": ["in", resource_ids]}),
 		"assets_by_status": dict(
@@ -128,6 +132,11 @@ def teardown() -> dict:
 			"Atlas Instance",
 			[region for region, *_ in REGIONS if frappe.db.exists("Atlas Instance", region)],
 		),
+		# After the instances that link them.
+		"regions": _delete_all(
+			"Region",
+			[region for region, *_ in REGIONS if frappe.db.exists("Region", region)],
+		),
 	}
 	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- command-style local teardown persists deletions.
 	return removed
@@ -142,8 +151,20 @@ def _demo_teams() -> list[str]:
 	return teams
 
 
+def _upsert_region(region_row: tuple) -> None:
+	region, provider, display_name, country_code, latitude, longitude, _status = region_row
+	doc = frappe.get_doc("Region", region) if frappe.db.exists("Region", region) else frappe.new_doc("Region")
+	doc.region = region
+	doc.display_name = display_name
+	doc.provider = provider
+	doc.country_code = country_code
+	doc.latitude = latitude
+	doc.longitude = longitude
+	doc.save(ignore_permissions=True)
+
+
 def _upsert_instance(region_row: tuple) -> None:
-	region, provider, display_name, country_code, latitude, longitude, status = region_row
+	region, *_, status = region_row
 	if frappe.db.exists("Atlas Instance", region):
 		instance = frappe.get_doc("Atlas Instance", region)
 	else:
@@ -156,11 +177,6 @@ def _upsert_instance(region_row: tuple) -> None:
 	instance.api_secret = "dev-seed-secret"
 	instance.skip_tunnel = 1
 	instance.status = status
-	instance.display_name = display_name
-	instance.provider = provider
-	instance.country_code = country_code
-	instance.latitude = latitude
-	instance.longitude = longitude
 	instance.save(ignore_permissions=True)
 
 

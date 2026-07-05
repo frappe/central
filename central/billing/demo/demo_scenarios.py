@@ -48,6 +48,7 @@ from central.billing.demo._factory import (
 	_tiers,
 	_wipe_all,
 	arm_emandate,
+	plan_name,
 	set_collection_mode,
 )
 
@@ -151,20 +152,15 @@ _FLEET = [
 				 "plan-2vcpu", "plan-1vcpu", "plan-8vcpu", "plan-2vcpu")
 ]
 
+# One demo team — Acme — billed in INR in the one region we run (Bengaluru), with a
+# short paid history and a current open invoice. Enough to show the billing + team
+# screens without generating a sprawling dataset.
 DEMO_TEAMS = [
-	# Most mature tier (t3): large fleet → invoice with 20+ line items, long
-	# paid history, card on file → current invoice Open (card Pay Now).
-	("northwind", "t3", "USD", 8, "Active", _FLEET),
-	# INR fleet that bills > ₹15,000 — its e-mandate trips to Action Required, so the
-	# dashboard banner shows the manual-vs-prepaid choice with real numbers (#50).
-	("daybreak", "t1", "INR", 3, "Active", [
-		("in-mumbai", "plan-8vcpu"), ("in-mumbai", "plan-4vcpu")]),
-	("harbor", "t2", "USD", 3, "credits_full", [
-		("eu-frankfurt", "plan-2vcpu"), ("me-dubai", "plan-1vcpu")]),
-	("rivulet", "t1", "INR", 1, "credits_partial", [
-		("in-mumbai", "plan-2vcpu")]),
-	("seedling", "t0", "INR", 0, "free_credits", [
-		("in-mumbai", "plan-1vcpu")]),
+	("acme", "t2", "INR", 2, "Active", [
+		("in-bengaluru", "plan-1vcpu"),
+		("in-bengaluru", "plan-2vcpu"),
+		("in-bengaluru", "plan-4vcpu"),
+	]),
 ]
 
 
@@ -260,15 +256,13 @@ def _build_team(team, slug, tier, currency, months, state, resources):
 	# sees a SINGLE consolidated invoice per month — generate_team_invoice rolls every
 	# cluster's day-weighted lines + overage into one Invoice per period.
 	subs = []
-	idx = 0
-	for cluster, plans in by_cluster.items():
-		idx += 1
-		plan = plans[0]
+	for idx, (cluster, plan) in enumerate(resources, 1):  # one server (subscription) per resource
+		pname = plan_name(plan)  # real (hash) Plan name — Plan is autonamed by hash
 		resource = f"srv-{slug}-{idx}"
-		catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
+		catalog = frappe.get_doc("Plan", pname).get_rate(currency, cluster)
 		rate = round(catalog * 0.78, 2) if (state == "Grandfathered" and idx == 1) else catalog
 		sub = subscriptions.create_subscription(
-			team=team, cluster=cluster, plan=plan, billing_cycle="Monthly",
+			team=team, cluster=cluster, plan=pname, billing_cycle="Monthly",
 			default_payment_method=pm, gateway=gateway,
 			start_date=first_start, resource_id=resource,
 		).name

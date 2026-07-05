@@ -7,7 +7,7 @@ from frappe.utils import cint
 
 @frappe.whitelist(methods=["POST"])
 def setup_local(
-	region: str = "in-mumbai",
+	region: str = "in-bengaluru",
 	atlas_base_url: str | None = None,
 	atlas_api_key: str | None = None,
 	atlas_api_secret: str | None = None,
@@ -58,6 +58,14 @@ def _require_developer_mode() -> None:
 		)
 
 
+def _ensure_region(region: str) -> None:
+	"""Atlas Instance.region links Region, so the region must exist first. Local
+	dev creates a bare Region (no map metadata); the operator or the demo seed
+	fills display_name/provider/coordinates in later."""
+	if not frappe.db.exists("Region", region):
+		frappe.get_doc({"doctype": "Region", "region": region}).insert(ignore_permissions=True)
+
+
 def _upsert_local_atlas_instance(
 	*,
 	region: str,
@@ -65,6 +73,7 @@ def _upsert_local_atlas_instance(
 	api_key: str | None,
 	api_secret: str | None,
 ):
+	_ensure_region(region)
 	if frappe.db.exists("Atlas Instance", region):
 		instance = frappe.get_doc("Atlas Instance", region)
 	else:

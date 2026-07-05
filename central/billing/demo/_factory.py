@@ -15,24 +15,23 @@ from central.billing.catalog.pricing import set_catalog_rates
 # --- catalog shape ----------------------------------------------------------
 
 # (slug, label, billing currency of the region)
+# Demo runs against the one real region we operate (blr.atlas.localhost = the
+# `in-bengaluru` Atlas Instance), billed in INR. Kept single-region on purpose.
 CLUSTERS = [
-	("in-mumbai", "India — Mumbai", "INR"),
-	("eu-frankfurt", "Europe — Frankfurt", "EUR"),
-	("me-dubai", "Middle East — Dubai", "USD"),
+	("in-bengaluru", "India — Bengaluru", "INR"),
 ]
-CURRENCIES = ["INR", "EUR", "USD"]
+CURRENCIES = ["INR"]
 # 1 unit of currency = N INR (rough FX, demo only).
-FX = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
+FX = {"INR": 1.0}
 # Regional cost multiplier on the INR base price.
-CLUSTER_MULT = {"in-mumbai": 1.0, "eu-frankfurt": 1.25, "me-dubai": 1.15}
+CLUSTER_MULT = {"in-bengaluru": 1.0}
 
+# A small catalog — three sizes is plenty to demo plan selection + billing.
 # (slug, title, vcpu, ram_gb, disk_gb, transfer_gb_included, base_inr_monthly)
 PLAN_SIZES = [
 	("plan-1vcpu", "Starter · 1 vCPU / 2 GB", 1, 2, 25, 100, 1500),
 	("plan-2vcpu", "Basic · 2 vCPU / 4 GB", 2, 4, 50, 200, 3000),
 	("plan-4vcpu", "Standard · 4 vCPU / 8 GB", 4, 8, 100, 400, 6000),
-	("plan-8vcpu", "Pro · 8 vCPU / 16 GB", 8, 16, 200, 800, 12000),
-	("plan-16vcpu", "Enterprise · 16 vCPU / 32 GB", 16, 32, 400, 1600, 24000),
 ]
 
 # Metered bandwidth overage, priced per GB per currency (cluster-agnostic).
@@ -81,20 +80,43 @@ def _tiers():
 		}, newname=True)
 
 
+# Map metadata per demo cluster, so seeded servers pin on the console map. On a
+# real deployment the operator maintains this on the Region; here we seed it.
+_CLUSTER_REGION = {
+	"in-bengaluru": {
+		"display_name": "Bengaluru, India", "provider": "Frappe",
+		"country_code": "IN", "latitude": 12.9716, "longitude": 77.5946,
+	},
+}
+
+
 def _atlas_instances():
-	"""Each demo cluster needs a real Atlas Instance — Catalog Rate scopes its
-	regional rates to one via a Link (autonamed by region)."""
-	for cslug, label, _cur in CLUSTERS:
-		if frappe.db.exists("Atlas Instance", cslug):
-			continue
-		frappe.get_doc({
-			"doctype": "Atlas Instance", "region": cslug,
-			"base_url": f"https://{cslug}.atlas.demo", "api_key": "demo", "api_secret": "demo",
-		}).insert(ignore_permissions=True)
+	"""Each demo cluster needs an Atlas Instance (Catalog Rate scopes its regional
+	rates to one) and a Region (the map's display metadata). A pre-existing, real
+	Atlas Instance is left untouched — only its Region metadata is (re)seeded."""
+	for cslug, _label, _cur in CLUSTERS:
+		if not frappe.db.exists("Atlas Instance", cslug):
+			frappe.get_doc({
+				"doctype": "Atlas Instance", "region": cslug,
+				"base_url": f"https://{cslug}.atlas.demo", "api_key": "demo", "api_secret": "demo",
+			}).insert(ignore_permissions=True)
+		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
+
+
+# Plan is autonamed by hash (naming_rule Random), so its `name` is not the demo
+# slug. This maps the readable slug → the created Plan's real name so callers can
+# resolve a plan without knowing the hash. Populated by _catalog().
+PLAN_BY_SLUG: dict[str, str] = {}
+
+
+def plan_name(slug: str) -> str:
+	"""The real (hash) name of a demo Plan, from its slug."""
+	return PLAN_BY_SLUG.get(slug, slug)
 
 
 def _catalog():
 	_atlas_instances()
+	PLAN_BY_SLUG.clear()
 	for slug, title, vcpu, ram, disk, transfer, base_inr in PLAN_SIZES:
 		rates = []
 		for cslug, _label, _cur in CLUSTERS:
@@ -110,6 +132,7 @@ def _catalog():
 				{"resource_type": "Transfer", "quantity": transfer, "unit": "GB"},
 			],
 		}, newname=True)
+		PLAN_BY_SLUG[slug] = plan
 		set_catalog_rates("Plan", plan, rates)
 
 	# Transfer overage is a metered single-resource Plan now (ADR 0008): one Transfer
@@ -166,10 +189,10 @@ def _tax(team, currency):
 
 # country must be a valid Country (Billing Profile.country is a Link); for India
 # the state must be a GST state whose code matches the GSTIN (27 = Maharashtra).
+# The company's billing address (not the server region) — kept as the Maharashtra
+# combo the demo GSTIN (27…) is valid for.
 _GEO_BY_CLUSTER = {
-	"in-mumbai": ("India", "Maharashtra", "Mumbai", "400001"),
-	"eu-frankfurt": ("Germany", "Hesse", "Frankfurt", "60311"),
-	"me-dubai": ("United Arab Emirates", "Dubai", "Dubai", "00000"),
+	"in-bengaluru": ("India", "Maharashtra", "Mumbai", "400001"),
 }
 
 
@@ -192,13 +215,13 @@ def _profile(team, slug, currency, cluster):
 # the Members & Roles screen shows the full spread. Roster users are created
 # DISABLED so User.after_insert never bootstraps a personal team for them; they
 # exist only as members of the demo team.
+# Owner comes from the team's owner_user; these are the other four system roles,
+# so Acme demos one member per role (owner + admin + developer + billing + viewer).
 _MEMBER_ROSTER = [
 	("admin", "Admin", "Active"),
-	("dev", "Developer", "Active"),
+	("developer", "Developer", "Active"),
 	("billing", "Billing", "Active"),
 	("viewer", "Viewer", "Active"),
-	("contractor", "Developer", "Suspended"),
-	("invitee", "Viewer", "Invited"),
 ]
 
 # One team-scoped CUSTOM role, to exercise the custom-role path end to end: read
@@ -210,10 +233,9 @@ def _team_members(team, slug):
 	"""Give the demo team a realistic roster — members on varied system roles with
 	status variety, plus one team-scoped custom role. Idempotent: resets the roster
 	(and the team's custom role) on every reseed, keeping only the Owner."""
-	role = _custom_role(team)
 	doc = frappe.get_doc("Team", team)
 	doc.members = [m for m in doc.members if m.user == doc.owner_user]
-	for suffix, member_role, status in _MEMBER_ROSTER + [("finance", role, "Active")]:
+	for suffix, member_role, status in _MEMBER_ROSTER:
 		email = f"{suffix}-{slug}@example.com"
 		_ensure_member_user(email, f"{suffix.title()} ({slug})")
 		doc.append("members", {"user": email, "role": member_role, "status": status})
