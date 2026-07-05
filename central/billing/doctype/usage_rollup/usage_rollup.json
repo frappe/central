@@ -115,14 +115,14 @@
    "fieldtype": "Data",
    "label": "Idempotency Key",
    "unique": 1,
-   "description": "Period identity (resource_id, meter_type, period) — one row per period. Authoritative re-push replaces the quantity; Incremental batches find the same row and accumulate."
+   "description": "Period identity (resource_id, meter_type, period); one row per period, re-push replaces or accumulates."
   },
   {
    "default": "0",
    "fieldname": "sequence",
    "fieldtype": "Int",
    "label": "Sequence",
-   "description": "Incremental reporting only (ADR 0015): the last applied batch sequence. A batch is accumulated only if its sequence exceeds this, so a retried/duplicate/out-of-order batch is a no-op. Unused (0) for Authoritative reporting."
+   "description": "Incremental reporting only (ADR 0015): last applied batch sequence; a batch accumulates only if it exceeds this."
   }
  ],
  "index_web_pages_for_search": 1,

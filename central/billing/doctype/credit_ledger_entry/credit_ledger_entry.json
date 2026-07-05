@@ -84,7 +84,7 @@
    "fieldname": "gateway_payment_id",
    "fieldtype": "Data",
    "label": "Gateway Payment ID",
-   "description": "Gateway payment id this credit settles (wallet top-ups). Unique — dedupes the synchronous confirm callback against the async webhook so one payment books exactly one credit.",
+   "description": "Gateway payment id this top-up credit settles; unique, so one payment books one credit.",
    "read_only": 1,
    "unique": 1,
    "search_index": 1

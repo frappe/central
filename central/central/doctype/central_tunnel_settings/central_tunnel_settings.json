@@ -22,7 +22,7 @@
   },
   {
    "default": "/etc/wireguard/wg0.key",
-   "description": "Path on the Central host to the hub's 0600 WireGuard private key. Generated here by Initialize Hub if absent; the key itself never enters the database.",
+   "description": "Path on the Central host to the hub's WireGuard private key; never enters the database.",
    "fieldname": "hub_private_key_path",
    "fieldtype": "Data",
    "label": "Hub Private Key Path",

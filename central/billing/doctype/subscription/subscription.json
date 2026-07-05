@@ -36,7 +36,7 @@
   },
   {
    "default": "Preset",
-   "description": "Preset = links a curated Plan, billed at its flat rate. Composed = a design-your-own config priced from its parts; carries `includes` as the locked composition and no Plan (ADR 0009).",
+   "description": "Preset links a curated Plan at its flat rate; Composed prices a design-your-own config from its parts (ADR 0009).",
    "fieldname": "pricing_mode",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -133,7 +133,7 @@
    "label": "Cluster"
   },
   {
-   "description": "A team-level metered service's synthesized virtual subject (ADR 0013/0015) — keyed per (team, service-plan, cluster), with no customer-owned Asset. Mutually exclusive with asset_id; metering resolves the segment through it just as it does through an Asset.",
+   "description": "A team-level metered service's synthesized subject (ADR 0013/0015); mutually exclusive with asset_id.",
    "fieldname": "service_subject",
    "fieldtype": "Data",
    "label": "Service Subject",
@@ -143,6 +143,12 @@
  "index_web_pages_for_search": 1,
  "links": [
   {
+   "group": "Billing",
+   "link_doctype": "Invoice",
+   "link_fieldname": "subscription"
+  },
+  {
+   "group": "Lifecycle",
    "link_doctype": "Subscription Change",
    "link_fieldname": "subscription"
   }
