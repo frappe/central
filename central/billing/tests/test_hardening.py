@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import frappe
 import stripe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central import billing
 from central.billing import authz

@@ -7,7 +7,7 @@ subscription has no open billing segment gets a mirrored `Created` segment; a
 subscription that already has an open segment is left untouched (idempotent)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.subscriptions import active_segment_for_resource
 from central.billing.patches.v25_retire_price_lock.retire_price_lock import (

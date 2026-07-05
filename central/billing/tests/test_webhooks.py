@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 import razorpay
 import stripe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway

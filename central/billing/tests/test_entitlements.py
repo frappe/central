@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.entitlements import evaluate_tier, get_ladder, recompute_trust_tier
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team

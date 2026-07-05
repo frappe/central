@@ -10,7 +10,7 @@ required to bill it).
 """
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import metering
 from central.billing.catalog.pricing import set_catalog_rates

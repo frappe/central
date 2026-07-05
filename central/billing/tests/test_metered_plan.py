@@ -9,7 +9,7 @@ uniqueness rule, and surfacing an overage for a resource no metered plan models.
 """
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.platform.sync import receive_meter_rollups
 from central.billing.revenue import metering

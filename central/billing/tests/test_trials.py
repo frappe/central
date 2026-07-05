@@ -8,7 +8,7 @@ Report helpers (is_trial_team, convert_to_paid, expire_trial, subsidy_total) are
 dormant, exercised here by hand until their separate cleanup."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import invoicing, credits
 from central.billing.catalog import trials

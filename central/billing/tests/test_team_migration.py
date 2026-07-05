@@ -10,7 +10,7 @@ un-migrated data) and running the patch helpers, then running them again.
 """
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.patches.v03_team_link_to_central_team import (
 	migrate_team_to_central_team as patch,

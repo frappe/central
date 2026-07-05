@@ -5,7 +5,7 @@
 from unittest.mock import call, patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from frappe.utils import get_first_day, get_last_day, nowdate
 
 from central.billing.api.admin.catalog import update_component_rate

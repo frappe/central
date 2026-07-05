@@ -3,7 +3,7 @@
 """E-mandate ≤₹15k off-session collection: pre-debit notice → debit (#50 item 3, ADR 0005)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.payments import emandate
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team

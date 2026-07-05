@@ -3,7 +3,7 @@
 """Team Notification feed — the console's unified in-app inbox (billing + server)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.tests.utils import ensure_team
 

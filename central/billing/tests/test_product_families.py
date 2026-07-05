@@ -4,7 +4,7 @@
 Frappe Box Remote Storage — each authored on the masters, billed by the existing spine."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.platform.sync import receive_meter_rollups
 from central.billing.revenue import metering
