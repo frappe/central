@@ -6,6 +6,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
+import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
@@ -48,6 +49,18 @@ const { refreshing, stale, busy, opening, refreshAssets, start, stop, terminate,
 const { activeTeam, loading: sessionLoading } = useSession()
 const createTeamOpen = ref(false)
 const hasNoTeam = computed(() => !sessionLoading.value && !activeTeam.value)
+
+// First-run onboarding nudge — shown until the team has a server or the user
+// dismisses it (remembered across visits so it never nags).
+const ONBOARDING_KEY = 'central.console.serverOnboardingDismissed'
+const onboardingDismissed = ref(localStorage.getItem(ONBOARDING_KEY) === '1')
+const showOnboarding = computed(
+  () => !loading.value && !rows.value.length && canCreateServer.value && !onboardingDismissed.value,
+)
+function dismissOnboarding(): void {
+  onboardingDismissed.value = true
+  localStorage.setItem(ONBOARDING_KEY, '1')
+}
 
 const q = ref('')
 const statusFilter = ref<ServerVisual['key'] | ''>('')
@@ -273,8 +286,10 @@ const pendingResize = ref<AssetRow | null>(null)
     <PageHeader title="Servers">
       <template #actions>
         <Button v-if="activeTeam" label="Refresh" icon-left="lucide-refresh-cw" :loading="refreshing" @click="doRefresh" />
+        <!-- Hidden while the onboarding card is up — that card carries the single
+             primary action then, so there's never two New-server buttons at once. -->
         <Button
-          v-if="activeTeam && canCreateServer"
+          v-if="activeTeam && canCreateServer && !showOnboarding"
           variant="solid"
           label="New server"
           icon-left="lucide-plus"
@@ -481,26 +496,13 @@ const pendingResize = ref<AssetRow | null>(null)
           <Button class="mt-3" label="Retry" @click="reloadAll" />
         </template>
       </MapMessageCard>
-      <MapMessageCard
-        v-else-if="!loading && !rows.length"
-        icon="lucide-server"
-        title="No servers yet"
-        :description="
-          canCreateServer
-            ? 'Create your first server to host your sites — or pick a spot on the map.'
-            : 'Servers your team creates will show up here.'
-        "
-      >
-        <template v-if="canCreateServer" #action>
-          <Button
-            class="mt-3"
-            variant="solid"
-            label="New server"
-            icon-left="lucide-plus"
-            @click="$router.push('/servers/new')"
-          />
-        </template>
-      </MapMessageCard>
+      <!-- First-run onboarding: a dismissible nudge toward the one right action.
+           Only while the team has no servers, and stays gone once dismissed. -->
+      <ServerOnboarding
+        v-else-if="showOnboarding"
+        @create="$router.push('/servers/new')"
+        @dismiss="dismissOnboarding"
+      />
     </div>
 
     <TerminateDialog
