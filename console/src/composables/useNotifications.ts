@@ -34,11 +34,14 @@ const markAll = useCall<{ unread: number }, Record<string, never>>({
 whenTeamReady(() => feedCall.reload())
 
 // Live badge: the writer emits `team_notification:<team>` (payload just the team).
-// Re-pull the feed for the active team when it fires.
-useFrappeEventListener<{ team: string }>(
-  () => (activeTeam.value ? `team_notification:${activeTeam.value}` : ''),
-  () => feedCall.reload(),
-)
+// Must run inside a component setup() (it needs the socket off the component
+// instance), so it can't live at module scope — AppShell calls this once on mount.
+export function useNotificationsRealtime(): void {
+  useFrappeEventListener<{ team: string }>(
+    () => (activeTeam.value ? `team_notification:${activeTeam.value}` : ''),
+    () => feedCall.reload(),
+  )
+}
 
 const items = computed<TeamNotification[]>(() => feedCall.data?.items ?? [])
 const unread = computed(() => feedCall.data?.unread ?? 0)
