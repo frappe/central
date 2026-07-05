@@ -1,7 +1,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import { emailError, frappeErrorMessage, postFrappe, queryString, requiredError } from '@/lib/auth'
-import { loadCountryData, type CountryOption } from '@/lib/countries'
 
 // Shared state + submit for both signup layouts (plain and ?product=).
 export function useSignup() {
@@ -12,17 +11,6 @@ export function useSignup() {
   const submitted = ref(false)
   const loading = ref(false)
   const error = ref('')
-
-  // UI-only for now: sign_up doesn't accept a country yet.
-  const country = ref('')
-  const countries = ref<CountryOption[]>([])
-  loadCountryData()
-    .then((data) => {
-      countries.value = data.options
-      country.value ||= data.defaultCountry
-    })
-    // Country is UI-only, so a failed load just leaves an empty dropdown — don't block signup.
-    .catch(() => {})
 
   // A server error describes the last attempt; drop it once the user edits the form.
   watch([fullName, email], () => {
@@ -66,5 +54,5 @@ export function useSignup() {
     }
   }
 
-  return { fullName, email, country, countries, submitted, loading, error, product, isProductSignup, signup }
+  return { fullName, email, submitted, loading, error, product, isProductSignup, signup }
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage } from 'frappe-ui'
 import MinimalAuthShell from '@/components/auth/MinimalAuthShell.vue'
 import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
@@ -9,8 +9,7 @@ import { useSignup } from '@/composables/useSignup'
 import { emailError, requiredError } from '@/lib/auth'
 
 const { providerLogins } = useAuth()
-const { fullName, email, country, countries, submitted, loading, error, product, isProductSignup, signup } =
-  useSignup()
+const { fullName, email, submitted, loading, error, product, isProductSignup, signup } = useSignup()
 
 // Product signups land straight in site onboarding after signing in — carry the
 // product so that screen keeps its name and logo instead of falling back to generic copy.
@@ -46,15 +45,6 @@ const signInRoute = computed(() => {
         :validator="emailError"
         :submitted="submitted"
       />
-      <FormControl
-        v-model="country"
-        type="select"
-        label="Country"
-        size="md"
-        variant="subtle"
-        :options="countries"
-      />
-
       <Transition name="error-fade">
         <ErrorMessage v-if="error" :message="error" />
       </Transition>
