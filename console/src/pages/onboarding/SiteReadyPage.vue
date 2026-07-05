@@ -19,6 +19,8 @@ type SiteState = {
 // Mirrors the backend's terminal set; any terminal status that isn't Running is a failure.
 const TERMINAL = new Set(['Running', 'Failed', 'Terminated'])
 const POLL_MS = 3000
+// A transient network blip shouldn't abort the poll during the ~15s provisioning window.
+const MAX_POLL_FAILURES = 3
 // The "Installing" line gets a beat on screen, then a shorter beat on the ready
 // confirmation, before we hand the tenant off to their site.
 const INSTALL_BEAT_MS = 1800
@@ -42,7 +44,9 @@ const site = ref<SiteState | null>(null)
 const error = ref('')
 const installing = ref(false)
 const revealed = ref(false)
+const signInFailed = ref(false)
 const progress = ref(6)
+let pollFailures = 0
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let creepTimer: ReturnType<typeof setInterval> | undefined
 let revealTimer: ReturnType<typeof setTimeout> | undefined
@@ -66,13 +70,17 @@ const statusLine = computed(() => {
 async function poll() {
   try {
     const result = await getFrappe<SiteState>(methodUrl(API.getSite), { name })
+    pollFailures = 0
     site.value = result
     if (result.status === 'Running') return becomeReady()
     // Failed or Terminated: stop polling; isFailed drives the error screen.
     if (TERMINAL.has(result.status)) return
   } catch (exception) {
-    error.value = frappeErrorMessage(exception, 'Lost track of your site. Refresh to retry.')
-    return
+    pollFailures += 1
+    if (pollFailures >= MAX_POLL_FAILURES) {
+      error.value = frappeErrorMessage(exception, 'Lost track of your site. Refresh to retry.')
+      return
+    }
   }
   pollTimer = setTimeout(poll, POLL_MS)
 }
@@ -93,6 +101,7 @@ function reveal() {
 
 function signIn() {
   if (site.value?.login_url) window.location.assign(site.value.login_url)
+  else signInFailed.value = true
 }
 
 function creep() {
@@ -129,17 +138,23 @@ onUnmounted(() => {
       <Transition name="status-swap" mode="out-in">
         <div v-if="isReady && site" key="ready" class="mt-6">
           <h1 class="text-xl font-semibold text-ink-gray-8">{{ name }} is ready</h1>
-          <p class="mt-1 text-p-sm text-ink-gray-5">
+          <p v-if="!signInFailed" class="mt-1 text-p-sm text-ink-gray-5">
             Signing you in as <span class="font-medium text-ink-gray-7">Administrator</span>...
           </p>
+          <p v-else class="mt-1 text-p-sm text-ink-gray-5">
+            We couldn't sign you in automatically. Head to your site to log in.
+          </p>
 
-          <div class="mt-6 flex items-center gap-2 text-p-base text-ink-gray-7">
+          <div v-if="!signInFailed" class="mt-6 flex items-center gap-2 text-p-base text-ink-gray-7">
             <span
               class="lucide-loader-circle size-4 shrink-0 animate-spin text-ink-gray-5"
               aria-hidden="true"
             />
             <span>Taking you to your site...</span>
           </div>
+          <a v-else-if="site.url" :href="site.url" class="mt-6 block">
+            <Button variant="solid" size="md" class="w-full">Go to your site</Button>
+          </a>
         </div>
 
         <div v-else key="provisioning" class="mt-6">
