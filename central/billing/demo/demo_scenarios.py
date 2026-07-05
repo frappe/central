@@ -57,6 +57,7 @@ from central.billing.demo._factory import (
 	activate_team_assets,
 	backdate_credit_debits,
 	backdate_invoice,
+	backdate_welcome_credit,
 	add_composed_subscription,
 	arm_emandate,
 	bank_pending_attempt,
@@ -430,6 +431,10 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 
 	periods = _month_periods(_PAID_MONTHS[tier])
 	first_start = periods[0][0] if periods else ANCHOR
+	# Welcome credits are granted at signup — backdate the grant to before the team's
+	# first period so the wallet timeline reads grant → apply (not apply → grant) and the
+	# balance is read off the actual draw, not the stale seed-time grant.
+	backdate_welcome_credit(team, f"{first_start} 00:00:00")
 
 	by_cluster = OrderedDict()
 	for cluster, plan in resources:

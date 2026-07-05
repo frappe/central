@@ -654,6 +654,31 @@ def backdate_credit_debits(invoice, when):
 		)
 
 
+def backdate_welcome_credit(team, when):
+	"""Pin the team's one-time welcome (Promotion) credit grant to `when` — its signup.
+
+	provision_billing_profile books the welcome credit at seed time, but the invoices that
+	draw it down are backdated. Two things break if the grant is left at seed time:
+
+	  * the wallet timeline shows the credit being *applied* (backdated) before it was
+	    *granted* (seed time) — an impossible order;
+	  * get_balance (no currency) reads the newest-by-`creation` entry's running_balance,
+	    so the stale seed-time grant wins and reports the pre-draw balance (the full grant)
+	    instead of what's actually left.
+
+	Backdating the grant's `creation`/`created_at` to before the first period restores
+	creation order == insert order, so the draw is the newest row and the balance is right."""
+	when = frappe.utils.get_datetime(when)
+	for e in frappe.get_all(
+		"Credit Ledger Entry",
+		filters={"team": team, "reference_type": "Promotion", "entry_type": "Credit"},
+		pluck="name",
+	):
+		frappe.db.set_value(
+			"Credit Ledger Entry", e, {"created_at": when, "creation": when}, update_modified=False
+		)
+
+
 def draw_wallet_credit(invoice) -> float:
 	"""Run the real credits-leg of settlement (invoicing.open_and_collect, collect=False):
 	draw the team's wallet credits against the invoice, recording a Credit Ledger debit and
