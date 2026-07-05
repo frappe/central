@@ -11,7 +11,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.report.mrr_and_ytd_revenue.mrr_and_ytd_revenue import execute as mrr_execute
-from central.billing.report.cluster_wise_revenue.cluster_wise_revenue import execute as cluster_execute
+from central.billing.report.atlas_based_revenue.atlas_based_revenue import execute as cluster_execute
 from central.billing.report.services_revenue.services_revenue import execute as services_execute
 from central.billing.tests.utils import ensure_team
 
