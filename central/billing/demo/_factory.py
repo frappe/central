@@ -9,6 +9,7 @@ demo_scenarios.
 """
 
 import frappe
+from frappe.utils.password import update_password
 
 # --- catalog shape ----------------------------------------------------------
 
@@ -69,6 +70,7 @@ RAZORPAY = "GW-Razorpay"
 # is NOT its default — Stripe stays the card default; PayPal is the opt-in rail.
 PAYPAL = "GW-PayPal"
 ANCHOR = "2026-06-01"  # the current (open) billing month
+DEMO_OWNER_PASSWORD = "abc@123"  # every demo owner logs into the console with this
 
 
 # --- catalog / config builders ----------------------------------------------
@@ -500,14 +502,18 @@ def _ensure_demo_team(slug):
 	(which is what produced two teams per email). Idempotent by `owner_user`:
 	`_wipe_all` leaves Teams intact, so a re-seed reuses the same team."""
 	owner = f"owner-{slug}@example.com"
-	existing = frappe.db.get_value("Team", {"owner_user": owner}, "name")
-	if existing:
-		return existing
 	if not frappe.db.exists("User", owner):
 		frappe.get_doc({
 			"doctype": "User", "email": owner, "send_welcome_email": 0,
 			"first_name": slug.replace("-", " ").title(),
 		}).insert(ignore_permissions=True)
+	# Every demo owner signs into the console with the same password. Set it on each
+	# seed (owners persist across reseeds) via update_password, which writes the hash
+	# directly and so bypasses the site's password-strength policy.
+	update_password(owner, DEMO_OWNER_PASSWORD)
+	existing = frappe.db.get_value("Team", {"owner_user": owner}, "name")
+	if existing:
+		return existing
 	# bootstrap_user_team should have created the team on user insert; fall back
 	# to an explicit one only if bootstrap was skipped.
 	team = frappe.db.get_value("Team", {"owner_user": owner}, "name")
