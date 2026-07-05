@@ -12,6 +12,7 @@ from central.billing.api.dashboard._shared import (
 	_default_team,
 	_has_money_activity,
 	_missing_profile_fields,
+	_missing_profile_labels,
 	_profile_complete,
 	_resolve_team,
 	_team_clusters,
@@ -58,6 +59,7 @@ def get_billing_profile(team: str | None = None) -> dict:
 	profile.update({
 		"complete": not missing,
 		"missing": missing,
+		"missing_labels": _missing_profile_labels(team),
 		"currency_locked": _has_money_activity(team),
 		"supported_currencies": supported_currencies(),
 	})
@@ -128,7 +130,8 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 		provision_billing_profile(team)
 
 	return {"saved": True, "team": team, "gstin": profile.gstin, "currency": profile.currency,
-			"setup_complete": setup_complete}
+			"setup_complete": setup_complete, "missing": _missing_profile_fields(team),
+			"missing_labels": _missing_profile_labels(team)}
 
 
 @frappe.whitelist()
