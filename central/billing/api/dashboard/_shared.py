@@ -240,17 +240,21 @@ def _describe_line(team: str, li) -> dict:
 		"subscription_resource": li.subscription_resource,
 		"days": li.days, "hours": li.hours, "quantity": li.quantity,
 		"rate": li.rate, "amount": li.amount, "unit": li.unit,
+		"charge_date": li.charge_date,
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
 		row["item"] = title or li.plan or "Subscription plan"
 		row["kind"] = "Plan"
-		# Hourly lines come from a churn day (multiple resizes within 24h); daily
-		# lines are a whole-day stable segment.
+		# Hourly lines come from a churn day (multiple resizes within 24h): they're
+		# tied to one calendar date, so name it. Daily lines span a range within the
+		# period — the invoice already carries the period dates, so no suffix.
 		if li.unit == "hour" and li.hours:
-			row["detail"] = f"{frappe.utils.flt(li.hours):g} hour(s) this period"
+			hours = f"{frappe.utils.flt(li.hours):g} hour(s)"
+			on = f" on {frappe.utils.getdate(li.charge_date).strftime('%-d %b')}" if li.charge_date else ""
+			row["detail"] = f"{hours}{on}"
 		elif li.days:
-			row["detail"] = f"{li.days} day(s) this period"
+			row["detail"] = f"{li.days} day(s)"
 		else:
 			row["detail"] = None
 	else:
