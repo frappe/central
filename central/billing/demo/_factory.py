@@ -44,10 +44,12 @@ COMPONENT_RATES_INR = {"Compute": 1200.0, "Memory": 400.0, "Disk": 30.0}
 # Unit is a plain label ("Nos") and Quantity is the ACTUAL count — allowances are real
 # item counts, and the rate is per item (a token costs a small fraction of a cent).
 # (family/category, resource_type, plan_slug, title, unit, allowance, per-unit rate by currency)
+# allowance is 0 — these services have NO free tier: every reported unit is billed at
+# the per-unit rate (pure pay-per-use), so nothing is included for free.
 SERVICES = [
-	("AI Tokens", "Tokens", "svc-ai-tokens", "AI Tokens", "Nos", 100000, {"INR": 0.012, "USD": 0.00015}),
-	("Emails", "Emails", "svc-emails", "Transactional Email", "Nos", 50000, {"INR": 0.007, "USD": 0.00009}),
-	("PDF Generation", "PDF", "svc-pdf", "PDF / Print Generation", "Nos", 20000, {"INR": 0.018, "USD": 0.00022}),
+	("AI Tokens", "Tokens", "svc-ai-tokens", "AI Tokens", "Nos", 0, {"INR": 0.012, "USD": 0.00015}),
+	("Emails", "Emails", "svc-emails", "Transactional Email", "Nos", 0, {"INR": 0.007, "USD": 0.00009}),
+	("PDF Generation", "PDF", "svc-pdf", "PDF / Print Generation", "Nos", 0, {"INR": 0.018, "USD": 0.00022}),
 ]
 
 # (level, sequence, is_default, max_spend_inr, max_resources, min_invoices, min_paid_inr)

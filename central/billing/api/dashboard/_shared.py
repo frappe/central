@@ -269,13 +269,15 @@ def _describe_line(team: str, li) -> dict:
 		# and the units actually billed (used − included). Unit is a plain label (Nos, GB).
 		unit = li.unit or "units"
 		billed = frappe.utils.flt(li.quantity)
-		if allowance is not None:
-			allowance = frappe.utils.flt(allowance)
+		allowance = frappe.utils.flt(allowance)
+		if allowance > 0:
+			# Legacy plans that still carry a free tier: show used vs included vs billed.
 			row["detail"] = (
 				f"Metered · {_qty(billed + allowance)} {unit} used · "
 				f"{_qty(billed)} billed over {_qty(allowance)} included"
 			)
 		else:
+			# No free tier — every used unit is billed at the per-unit rate.
 			row["detail"] = f"Metered · {_qty(billed)} {unit} used"
 	return row
 
