@@ -18,8 +18,9 @@ Across the ten teams every invoice/payment case is exercised at least once:
   * fixed (plan) billing + metered bandwidth overage
   * multiple VM resizes in a single day, and a second resize within 24h
   * settlement fully from credits; partial-credit-then-card; card capture
+  * autopay fallback: the primary card declines and a backup card captures (#28)
   * a payment attempt that fails with a reason, then a dunning (overdue) team
-  * a dispute (chargeback → source), a plain refund (→ source), a refund as credits (→ wallet)
+  * a dispute (chargeback → source), a double charge fully refunded (→ source), a partial refund as credits (→ wallet)
   * a charge stuck in-flight (Stripe still awaiting the bank) with the invoice frozen
 
 The catalog shape + record builders live in demo._factory; this module is the
@@ -39,8 +40,10 @@ from central.billing.demo._factory import (
 	_catalog,
 	_ensure_demo_team,
 	_ensure_signing_key,
+	_add_backup_card,
 	_failed_attempt,
 	_gateway_customer,
+	_settle_via_backup,
 	_gateways,
 	_month_periods,
 	_payment_setup,
@@ -134,8 +137,9 @@ TEAMS = [
 		("me-dubai", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu")], None),
 	# t1: a paid invoice later charged back — dispute → refunded to source.
 	("soylent", "t1", "USD", "dispute", [("me-dubai", "plan-2vcpu")], None),
-	# t1: a plain overcharge refunded back to the card (→ source).
-	("globex", "t1", "USD", "refund_source", [("me-dubai", "plan-2vcpu")], None),
+	# t1: primary card declines, settlement rotates to a backup card that captures (#28);
+	# then a double charge by mistake is refunded in full back to the card (→ source).
+	("globex", "t1", "USD", "fallback", [("me-dubai", "plan-2vcpu")], None),
 	# t0: no history; free credits granted, its first bill settles fully from them.
 	# Also resized its VM twice in a single day.
 	("harbor", "t0", "USD", "credits_full", [("me-dubai", "plan-1vcpu")], "same_day"),
@@ -419,6 +423,10 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	# A top-up-only team has no card, but its wallet top-up still mints a customer.
 	if pm is None and state in _TOPUP_STATES:
 		_gateway_customer(team, STRIPE[currency], f"cus_{slug}")
+	# A fallback team keeps a second, lower-priority card so settlement can rotate to it
+	# when the primary declines (#28).
+	if state == "fallback":
+		_add_backup_card(team, slug, gateway)
 
 	periods = _month_periods(_PAID_MONTHS[tier])
 	first_start = periods[0][0] if periods else ANCHOR
@@ -585,13 +593,22 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 			"Cardholder dispute — chargeback", chargeback=True)
 		return "Paid then disputed — full chargeback to source"
 
-	# --- plain refund back to the card (→ source) -------------------------------
-	if state == "refund_source":
-		frappe.db.set_value("Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": "2026-07-07"})
-		attempt = _capture_attempt(team, inv, pm, gateway, total, currency)
-		make_refund(team, inv, attempt, round(total * 0.25, 2), currency, "Source",
-			"Partial overcharge — refunded to card")
-		return "Paid + partial refund → source"
+	# --- autopay fallback: primary declines, a backup card captures -------------
+	# Then a double charge by mistake: the same invoice is captured a second time on
+	# the backup card, and that duplicate is refunded in FULL back to the card. A card
+	# (source) refund is always the full-amount case — a partial correction always goes
+	# to the wallet instead (see refund_wallet).
+	if state == "fallback":
+		# Open first, so the fallback reads as a real collection run before it settles.
+		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": "2026-07-07"})
+		_attempt, backup_pm = _settle_via_backup(team, inv, pm, gateway, collectable, currency,
+			when="2026-06-30 09:00:00")
+		# Duplicate capture on the same invoice, then its full refund to source.
+		dup = _capture_attempt(team, inv, backup_pm, gateway, collectable, currency,
+			when="2026-06-30 11:00:00")
+		make_refund(team, inv, dup, collectable, currency, "Source",
+			"Duplicate charge — full refund to card")
+		return "primary declined → backup captured (#28); duplicate charge refunded in full → source"
 
 	# --- refund as credits (→ wallet) -------------------------------------------
 	if state == "refund_wallet":

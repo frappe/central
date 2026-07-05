@@ -377,6 +377,19 @@ def _payment_setup(team, slug, currency, state):
 	return gateway, pm
 
 
+def _add_backup_card(team, slug, gateway, priority=1):
+	"""A second, lower-priority Card on the same gateway customer — the backup method
+	autopay rotates to when the primary declines (#28). The primary from `_payment_setup`
+	carries priority 0, so this one (priority 1) sits behind it in `ordered_methods`."""
+	return frappe.get_doc({
+		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
+		"status": "Active", "display_label": "Mastercard ····5454",
+		"gateway_method_id": f"pm_{slug}_backup", "gateway_customer_id": f"cus_{slug}",
+		"expiry_month": 8, "expiry_year": 2031, "is_default": 0, "priority": priority,
+		"validated_at": frappe.utils.now_datetime(),
+	}).insert(ignore_permissions=True).name
+
+
 def _gateway_customer(team, gateway, customer_id):
 	"""Mirror the production Gateway Customer store: one (team, gateway)→customer_id
 	row, the id every payment-method setup, recurring charge AND wallet top-up reuses.
@@ -422,6 +435,28 @@ def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
 		"status": "Paid", "amount_paid": amount,
 		"due_date": frappe.utils.add_days(period_end, 7),
 	})
+
+
+def _settle_via_backup(team, invoice, primary_pm, gateway, amount, currency, when=None):
+	"""Autopay fallback (#28): the primary method declines, so settlement rotates to the
+	team's backup method, which captures. The rotation target is chosen by the REAL
+	selector (collection.next_method_for) — the demo only stands in for the offline
+	gateway capture. Returns (backup_attempt, backup_pm) or (None, None) if there is no
+	backup to fall back to. Leaves the invoice Paid on the backup capture."""
+	from central.billing.payments import collection
+
+	when = frappe.utils.get_datetime(when or frappe.utils.now_datetime())
+	# 1) the primary declines (the Failed row is what the selector reads to skip it).
+	_failed_attempt(team, invoice, primary_pm, gateway, 0, when=when)
+	# 2) the real fallback selector picks the next untried, chargeable method.
+	backup = collection.next_method_for(invoice, team)
+	if not backup:
+		return None, None
+	# 3) the backup captures (stands in for the offline gateway), an hour later.
+	captured_at = frappe.utils.add_to_date(when, hours=1)
+	attempt = _capture_attempt(team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at)
+	frappe.db.set_value("Invoice", invoice, {"status": "Paid", "amount_paid": amount})
+	return attempt, backup.name
 
 
 # --- collection mode (ADR 0005, #50) ----------------------------------------
@@ -661,15 +696,19 @@ def bank_pending_attempt(team, invoice, pm, gateway, amount, currency):
 
 def make_refund(team, invoice, attempt, amount, currency, destination, reason, chargeback=False):
 	"""A completed Refund against a captured charge. `destination` is 'Source' (back to
-	the card — a plain refund or a dispute chargeback) or 'Wallet' (as credits). A
-	chargeback also flips the original attempt to Refunded; the invoice stays Paid."""
+	the card — a full double-charge refund or a dispute chargeback) or 'Wallet' (a partial
+	overcharge booked as credits). By policy a card/source refund is the FULL-amount case
+	and a partial correction always goes to the wallet (refunds.partial_overcharge). A full
+	refund to source flips the original attempt to Refunded (mirrors refunds._to_source);
+	`chargeback` forces that flip for a dispute. The invoice stays Paid throughout."""
 	frappe.get_doc({
 		"doctype": "Refund", "payment_attempt": attempt, "invoice": invoice, "team": team,
 		"amount": amount, "currency": currency, "destination": destination, "status": "Completed",
 		"reason": reason, "gateway_refund_id": f"re_{frappe.generate_hash(length=20)}",
 		"created_at": frappe.utils.now_datetime(), "completed_at": frappe.utils.now_datetime(),
 	}).insert(ignore_permissions=True)
-	if chargeback:
+	captured = frappe.utils.flt(frappe.db.get_value("Payment Attempt", attempt, "amount"))
+	if chargeback or (destination == "Source" and frappe.utils.flt(amount) >= captured):
 		frappe.db.set_value("Payment Attempt", attempt, "status", "Refunded")
 
 
