@@ -101,3 +101,4 @@ central.patches.v02_portal_central_users.make_central_users_portal_only
 # (retire Operator / Site Manager / Support, reassigning their members onto the
 # surviving roles). Server is the atomic unit now.
 central.patches.v03_strip_to_server_caps.strip_capabilities
+central.patches.v04_region_from_atlas_instance.backfill_region
