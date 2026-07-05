@@ -94,6 +94,12 @@ const sections = computed(() => [
     collapsible: true,
     items: [
       {
+        label: 'Notifications',
+        icon: 'lucide-bell',
+        to: '/notifications',
+        condition: () => isMember.value,
+      },
+      {
         label: 'Members & roles',
         icon: 'lucide-users',
         to: '/team/members',
