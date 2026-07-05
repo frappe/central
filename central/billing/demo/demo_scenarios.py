@@ -444,6 +444,12 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		if retries:
 			_settle_with_retries(team, inv, pm, gateway, retries, remainder, currency)
 		else:
+			# No dunning trail this month — a single card capture settles the remainder
+			# after credits. Record it (backdated to the morning after finalisation) so the
+			# payment history is complete; without it the invoice reads as Paid with the
+			# card portion collected but no card charge ever shown.
+			if remainder > 0 and pm:
+				_capture_attempt(team, inv, pm, gateway, remainder, currency, when=f"{end} 09:00:00")
 			frappe.db.set_value("Invoice", inv, {
 				"status": "Paid", "amount_paid": remainder, "due_date": frappe.utils.add_days(end, 7),
 			})
