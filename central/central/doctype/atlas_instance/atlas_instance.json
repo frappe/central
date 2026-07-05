@@ -12,13 +12,6 @@
   "column_break_auth",
   "api_key",
   "api_secret",
-  "section_break_display",
-  "display_name",
-  "provider",
-  "country_code",
-  "column_break_display",
-  "latitude",
-  "longitude",
   "section_break_tunnel",
   "skip_tunnel",
   "tunnel_status",
@@ -34,11 +27,12 @@
  ],
  "fields": [
   {
-   "description": "The cluster the user sees. One Atlas = one region.",
+   "description": "The cluster the user sees. One Atlas = one Region (joined by this code).",
    "fieldname": "region",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Region",
+   "options": "Region",
    "reqd": 1,
    "unique": 1
   },
@@ -73,7 +67,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Atlas admin API key. Central authenticates with the Atlas admin token for every Central→Atlas call (the registration handshake and, once Active, the data path over the tunnel).",
+   "description": "Atlas admin API key. Central authenticates with the Atlas admin token for every Central\u2192Atlas call (the registration handshake and, once Active, the data path over the tunnel).",
    "fieldname": "api_key",
    "fieldtype": "Data",
    "label": "Admin API Key",
@@ -87,51 +81,7 @@
    "reqd": 1
   },
   {
-   "description": "How the console presents this region — the map pin and region labels. Maintained by the operator for now; Atlas becomes the source of truth for these once it reports region metadata.",
-   "fieldname": "section_break_display",
-   "fieldtype": "Section Break",
-   "label": "Display"
-  },
-  {
-   "description": "Human region label shown in the console, e.g. Mumbai, India.",
-   "fieldname": "display_name",
-   "fieldtype": "Data",
-   "label": "Display Name"
-  },
-  {
-   "description": "Infrastructure provider hosting this region, shown as the pin's brand mark. Unknown providers fall back to a monogram in the console.",
-   "fieldname": "provider",
-   "fieldtype": "Select",
-   "label": "Provider",
-   "options": "\nAWS\nHetzner\nFrappe\nOCI\nDigitalOcean"
-  },
-  {
-   "description": "ISO 3166-1 alpha-2 code, e.g. IN. The console derives the flag emoji from it.",
-   "fieldname": "country_code",
-   "fieldtype": "Data",
-   "label": "Country Code",
-   "length": 2
-  },
-  {
-   "fieldname": "column_break_display",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Region latitude for the console's world map. Leave empty to keep the region off the map (it still lists normally).",
-   "fieldname": "latitude",
-   "fieldtype": "Float",
-   "label": "Latitude",
-   "precision": "6"
-  },
-  {
-   "description": "Region longitude for the console's world map.",
-   "fieldname": "longitude",
-   "fieldtype": "Float",
-   "label": "Longitude",
-   "precision": "6"
-  },
-  {
-   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register — not hand-entered.",
+   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register \u2014 not hand-entered.",
    "fieldname": "section_break_tunnel",
    "fieldtype": "Section Break",
    "label": "Tunnel"
@@ -145,7 +95,7 @@
   },
   {
    "default": "Unregistered",
-   "description": "Unregistered → Provisioning (wg0 up, firewall armed) → Active (confirmed over the tunnel). Inactive = still registered (keeps the service user) but the tunnel has been stripped down; Register again to bring it back up.",
+   "description": "Unregistered \u2192 Provisioning (wg0 up, firewall armed) \u2192 Active (confirmed over the tunnel). Inactive = still registered (keeps the service user) but the tunnel has been stripped down; Register again to bring it back up.",
    "fieldname": "tunnel_status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -154,7 +104,7 @@
    "read_only": 1
   },
   {
-   "description": "This Atlas's /32 on wg0, allocated from the pool, e.g. 10.88.0.2. Unique — the hard backstop against a double-allocation race.",
+   "description": "This Atlas's /32 on wg0, allocated from the pool, e.g. 10.88.0.2. Unique \u2014 the hard backstop against a double-allocation race.",
    "fieldname": "tunnel_ip",
    "fieldtype": "Data",
    "label": "Tunnel IP",
@@ -201,7 +151,7 @@
   },
   {
    "default": "0",
-   "description": "Result of the last Test Connection (over the current data path — base_url before/after the tunnel, tunnel_url while Active).",
+   "description": "Result of the last Test Connection (over the current data path \u2014 base_url before/after the tunnel, tunnel_url while Active).",
    "fieldname": "reachable",
    "fieldtype": "Check",
    "label": "Reachable",
@@ -215,7 +165,7 @@
   }
  ],
  "links": [],
- "modified": "2026-07-02 00:00:00.000000",
+ "modified": "2026-07-05 19:24:35.559462",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Atlas Instance",
