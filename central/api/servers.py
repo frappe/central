@@ -10,46 +10,57 @@ from central.integrations.atlas import AtlasClient, reconcile
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
 # here). Every call resolves and authorizes a team first.
 
-# The only Atlas Instance fields `list_instances` may return. The doctype holds
-# per-instance API credentials and tunnel internals, so exposure is allowlisted —
-# never add api_key/api_secret/base_url/tunnel_*/peer_*/service_user here.
-INSTANCE_PUBLIC_FIELDS = (
-	"region",
-	"status",
-	"reachable",
-	"display_name",
-	"provider",
-	"latitude",
-	"longitude",
-	"country_code",
-)
+# `list_instances` merges an Active Atlas Instance's liveness with its Region's
+# display metadata. Only these non-secret Atlas Instance fields are ever read —
+# the credentials/tunnel internals (api_key/api_secret/base_url/tunnel_*/peer_*/
+# service_user) now sit apart from the map metadata, which lives on Region.
+INSTANCE_LIVENESS_FIELDS = ("region", "status", "reachable")
+REGION_DISPLAY_FIELDS = ("display_name", "provider", "country_code", "latitude", "longitude")
 
-# Frappe versions a new VM can be provisioned with. Central validates the choice
-# and passes it to Atlas verbatim; Atlas owns what each token maps to.
-FRAPPE_VERSIONS = ("v15", "v16", "v14", "nightly")
+# Fallback version list for the new-server form when no Atlas is reachable. The
+# authoritative set is derived live from Atlas's active bench images (which token
+# maps to which image is Atlas's concern) — see `frappe_versions`.
+FALLBACK_FRAPPE_VERSIONS = ("v16", "v15", "nightly")
+
+
+def _available_versions() -> list[str]:
+	"""The versions Atlas can actually provision, from the first Active region's bench
+	images. Region-agnostic (images are fleet-wide); fail-soft to the static fallback
+	when no Atlas is reachable so the form is never empty."""
+	region = frappe.db.get_value("Atlas Instance", {"status": "Active"}, "name", order_by="region asc")
+	if region:
+		try:
+			versions = AtlasClient.for_region(region).available_frappe_versions()
+			if versions:
+				return versions
+		except Exception:
+			frappe.log_error(title="frappe_versions: Atlas unreachable, using fallback")
+	return list(FALLBACK_FRAPPE_VERSIONS)
 
 
 def _validate_frappe_version(frappe_version: str | None) -> None:
 	# The client value never goes back into the message — frappe.throw renders
 	# HTML in desk, so reflecting input is an XSS habit not worth having.
-	if frappe_version and frappe_version not in FRAPPE_VERSIONS:
+	if frappe_version and frappe_version not in _available_versions():
 		frappe.throw(
-			_("Unknown Frappe version. Choose one of: {0}.").format(", ".join(FRAPPE_VERSIONS)),
+			_("Unknown Frappe version. Choose one of: {0}.").format(", ".join(_available_versions())),
 			frappe.ValidationError,
 		)
 
 
 def _stamp_frappe_version(resource_id: str | None, frappe_version: str | None) -> None:
-	"""Record the chosen version on the Pending Asset the billing seam wrote. The
-	Atlas echo (`Asset._stamp`) keeps it current after that."""
+	"""Record on the Pending Asset the version Atlas actually provisioned (echoed in
+	the create reply / events), not merely what was requested. `Asset._stamp` keeps it
+	current from later events."""
 	if resource_id and frappe_version and frappe.db.exists("Asset", resource_id):
 		frappe.db.set_value("Asset", resource_id, "frappe_version", frappe_version)
 
 
 @frappe.whitelist(methods=["GET"])
 def frappe_versions() -> list[str]:
-	"""Versions offered on the new-server form, newest-stable first."""
-	return list(FRAPPE_VERSIONS)
+	"""Versions offered on the new-server form — derived from Atlas's active bench
+	images, so the picker never drifts from what can actually be provisioned."""
+	return _available_versions()
 
 
 @frappe.whitelist(methods=["GET"])
@@ -97,14 +108,28 @@ def list_instances(team: str | None = None) -> list[dict]:
 		frappe.throw(_("You can't view clusters for this team."), frappe.PermissionError)
 	# Atlas Instance is global infrastructure holding per-instance API credentials,
 	# so the DocType is locked to System Manager. `cluster:view` already authorizes
-	# this read, so we bypass DocType RBAC and curate the safe, non-secret fields
-	# here — otherwise a Central User (e.g. a team Owner) gets an empty list.
-	return frappe.get_all(
+	# this read, so we bypass DocType RBAC and read only the non-secret liveness
+	# fields — otherwise a Central User (e.g. a team Owner) gets an empty list.
+	instances = frappe.get_all(
 		"Atlas Instance",
 		filters={"status": "Active"},
-		fields=list(INSTANCE_PUBLIC_FIELDS),
+		fields=list(INSTANCE_LIVENESS_FIELDS),
 		order_by="region asc",
 	)
+	# Merge each region's display metadata (kept on Region, away from the secrets).
+	display = {
+		row.name: row
+		for row in frappe.get_all(
+			"Region",
+			filters={"name": ["in", [i.region for i in instances]]},
+			fields=["name", *REGION_DISPLAY_FIELDS],
+		)
+	}
+	for instance in instances:
+		meta = display.get(instance.region)
+		for field in REGION_DISPLAY_FIELDS:
+			instance[field] = meta.get(field) if meta else None
+	return instances
 
 
 @frappe.whitelist(methods=["POST"])
@@ -180,14 +205,16 @@ def create_server(
 			"subscription"
 		)
 	elif resource_id:
-		# No billing seam ran, so no Pending Asset exists for the stamp below to
-		# land on (the chosen version would be lost until Atlas happens to echo
-		# it). Mirror the VM Atlas returned — the vm.created event reconciles
-		# this same row (keyed on resource_id) instead of creating a second one.
+		# No billing seam ran, so no Pending Asset exists for the stamp below to land
+		# on. Mirror the VM Atlas returned — it already carries the provisioned version,
+		# and the vm.created event reconciles this same row (keyed on resource_id)
+		# instead of creating a second one.
 		from central.central.doctype.asset.asset import Asset
 
 		Asset.mirror_vm(region, vm)
-	_stamp_frappe_version(resource_id, frappe_version)
+	# Stamp the version Atlas actually laid down (echoed in `vm`), not the request —
+	# an unbuilt version resolves to the default image, and this reflects that.
+	_stamp_frappe_version(resource_id, vm.get("frappe_version"))
 	return {"resource_id": resource_id, "server": vm, "subscription": subscription}
 
 
@@ -248,7 +275,7 @@ def create_composed_server(
 	)
 	resource_id = vm.get("name")
 	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
-	_stamp_frappe_version(resource_id, frappe_version)
+	_stamp_frappe_version(resource_id, vm.get("frappe_version"))
 	return {"resource_id": resource_id, "server": vm}
 
 
