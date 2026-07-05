@@ -213,11 +213,10 @@ def create_server(
 		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get(
 			"subscription"
 		)
-	elif resource_id:
-		# No billing seam ran, so no Pending Asset exists for the stamp below to land
-		# on. Mirror the VM Atlas returned — it already carries the provisioned version,
-		# and the vm.created event reconciles this same row (keyed on resource_id)
-		# instead of creating a second one.
+	if resource_id:
+		# Mirror the VM Atlas returned even when billing already inserted the Pending
+		# Asset. Otherwise preset creates render the UUID/Pending shell until the next
+		# reconcile, instead of the user-facing title/status Atlas already returned.
 		from central.central.doctype.asset.asset import Asset
 
 		Asset.mirror_vm(region, vm)
@@ -284,6 +283,10 @@ def create_composed_server(
 	)
 	resource_id = vm.get("name")
 	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
+	if resource_id:
+		from central.central.doctype.asset.asset import Asset
+
+		Asset.mirror_vm(region, vm)
 	_stamp_frappe_version(resource_id, vm.get("frappe_version"))
 	return {"resource_id": resource_id, "server": vm}
 
