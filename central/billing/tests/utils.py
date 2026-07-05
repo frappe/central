@@ -39,7 +39,10 @@ DEFAULT_INCLUDES = [
 
 def ensure_atlas_instance(region):
 	"""Catalog Rate.cluster is a Link to Atlas Instance, so a per-region rate needs
-	that instance to exist. Atlas Instance is autonamed by region."""
+	that instance to exist. Atlas Instance is autonamed by region, and its `region`
+	is a required Link → Region, so the Region must exist first."""
+	if not frappe.db.exists("Region", region):
+		frappe.get_doc({"doctype": "Region", "region": region}).insert(ignore_permissions=True)
 	if not frappe.db.exists("Atlas Instance", region):
 		frappe.get_doc({
 			"doctype": "Atlas Instance", "region": region,
