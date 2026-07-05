@@ -28,6 +28,13 @@ export function methodUrl(path: string): string {
   return `/api/method/${path}`
 }
 
+// A router query value is string | string[] | null; collapse it to a plain string.
+export function queryString(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return queryString(value[0])
+  return ''
+}
+
 export function emailError(value: string): string {
   if (!value.trim()) return 'Email is required.'
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) return 'Enter a valid email.'

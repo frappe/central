@@ -1,25 +1,29 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
-import AuthShell from '@/components/auth/AuthShell.vue'
+import MinimalAuthShell from '@/components/auth/MinimalAuthShell.vue'
 import OtpInput from '@/components/common/OtpInput.vue'
 import { API } from '@/api/methods'
-import { frappeErrorMessage, methodUrl, postFrappe } from '@/lib/auth'
+import { frappeErrorMessage, methodUrl, postFrappe, queryString } from '@/lib/auth'
+import { successToast } from '@/lib/toast'
 
 const route = useRoute()
 const router = useRouter()
 const email = queryString(route.query.email)
 const product = computed(() => queryString(route.query.product))
 const isProductSignup = computed(() => Boolean(product.value))
-const signupSteps = computed(() => (isProductSignup.value ? 4 : 2))
 
 const otp = ref('')
 const loading = ref(false)
 const redirecting = ref(false)
-const resent = ref(false)
 const error = ref('')
 const devHint = import.meta.env.DEV
+
+// Errors clear once the user starts a new code (not on the programmatic reset to '').
+watch(otp, (value) => {
+  if (value) error.value = ''
+})
 
 async function verify() {
   if (loading.value || otp.value.length !== 6) return
@@ -43,11 +47,10 @@ async function verify() {
 async function resend() {
   if (loading.value || !email) return
   loading.value = true
-  resent.value = false
   error.value = ''
   try {
     await postFrappe(methodUrl(API.resendSignupCode), { email })
-    resent.value = true
+    successToast('A new code has been sent.')
   } catch (exception) {
     error.value = frappeErrorMessage(exception, 'Could not resend the code.')
   } finally {
@@ -56,30 +59,26 @@ async function resend() {
 }
 
 function signupDestination(): string {
-  return isProductSignup.value ? '/dashboard/onboarding/site' : '/dashboard/servers'
+  if (!isProductSignup.value) return '/dashboard/servers'
+  // Carry the product along so onboarding can show its name and logo.
+  return `/dashboard/onboarding/site?product=${encodeURIComponent(product.value)}`
 }
 
 function signupQuery(): LocationQueryRaw | undefined {
   if (!isProductSignup.value) return undefined
   return { product: product.value }
 }
-
-function queryString(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) return queryString(value[0])
-  return ''
-}
 </script>
 
 <template>
-  <AuthShell show-progress :step="2" :steps="signupSteps">
-    <h1 class="text-2xl font-semibold text-ink-gray-9">Verify your email</h1>
-    <p class="mt-2 text-base text-ink-gray-5">
+  <MinimalAuthShell>
+    <h1 class="text-xl font-semibold text-ink-gray-8">Verify your email</h1>
+    <p class="mt-1 text-p-sm text-ink-gray-5">
       Enter the 6-digit code we sent to
       <span class="font-medium text-ink-gray-8">{{ email || 'your email address' }}</span>.
     </p>
 
-    <form class="mt-8 space-y-4" @submit.prevent="verify">
+    <form class="mt-6 space-y-4" @submit.prevent="verify">
       <OtpInput
         v-model="otp"
         label="Verification code"
@@ -89,10 +88,9 @@ function queryString(value: unknown): string {
       />
       <p v-if="devHint" class="text-p-sm text-ink-gray-5">Demo — any 6 digits work.</p>
 
-      <p v-if="resent" class="rounded bg-surface-green-2 px-3 py-2 text-p-sm text-ink-green-3">
-        A new code has been sent.
-      </p>
-      <ErrorMessage v-if="error" :message="error" />
+      <Transition name="error-fade">
+        <ErrorMessage v-if="error" :message="error" />
+      </Transition>
 
       <Button
         type="submit"
@@ -106,7 +104,7 @@ function queryString(value: unknown): string {
       </Button>
     </form>
 
-    <div class="mt-6 flex items-center justify-between text-p-sm">
+    <div class="mt-4 flex items-center justify-between text-p-sm">
       <button
         type="button"
         class="font-medium text-ink-gray-8 hover:text-ink-gray-9"
@@ -123,5 +121,5 @@ function queryString(value: unknown): string {
         Resend code
       </button>
     </div>
-  </AuthShell>
+  </MinimalAuthShell>
 </template>

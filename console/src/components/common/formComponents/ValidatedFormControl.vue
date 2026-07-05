@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, useAttrs } from 'vue'
+import { computed, useAttrs } from 'vue'
 import { FormControl } from 'frappe-ui'
 
 defineOptions({ inheritAttrs: false })
@@ -27,21 +27,10 @@ const emit = defineEmits<{
 }>()
 
 const attrs = useAttrs()
-const touched = ref(false)
-const initialValue = props.modelValue
-const error = computed(() =>
-  touched.value || props.submitted ? props.validator(props.modelValue) : '',
-)
-
-const dirty = computed(() => props.modelValue !== initialValue)
-const valid = computed(() => !props.validator(props.modelValue))
-
-function validate(): boolean {
-  touched.value = true
-  return valid.value
-}
-
-defineExpose({ dirty, valid, validate })
+// Errors show only after a submit attempt (live from then on). Showing them on
+// blur inserts text above the submit button mid-click, moving it out from under
+// the pointer and swallowing the click.
+const error = computed(() => (props.submitted ? props.validator(props.modelValue) : ''))
 </script>
 
 <template>
@@ -55,7 +44,6 @@ defineExpose({ dirty, valid, validate })
     v-bind="attrs"
     :class="attrs.class"
     @update:model-value="emit('update:modelValue', String($event ?? ''))"
-    @blur="touched = true"
   >
     <template v-for="name in Object.keys($slots)" :key="name" #[name]="slotProps">
       <slot :name="name" v-bind="slotProps" />

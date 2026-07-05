@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { Button, ErrorMessage, TextInput } from 'frappe-ui'
-import { useRouter } from 'vue-router'
-import AuthShell from '@/components/auth/AuthShell.vue'
+import { useRoute, useRouter } from 'vue-router'
+import MinimalAuthShell from '@/components/auth/MinimalAuthShell.vue'
 import { API } from '@/api/methods'
 import { frappeErrorMessage, getFrappe, methodUrl, postFrappe } from '@/lib/auth'
+import { productInfo } from '@/lib/products'
 
 type Availability = { available: boolean; reason: string | null; fqdn: string | null; domain: string }
 
+const route = useRoute()
 const router = useRouter()
+const product = computed(() => {
+  const slug = route.query.product
+  return typeof slug === 'string' ? productInfo(slug) : null
+})
+
 const subdomain = ref('')
 const domain = ref('')
 const checking = ref(false)
@@ -58,7 +65,11 @@ async function createSite() {
     const result = await postFrappe<{ name: string }>(methodUrl(API.createSite), {
       subdomain: subdomain.value.trim(),
     })
-    router.push(`/onboarding/provisioning/${encodeURIComponent(result.name)}`)
+    router.push({
+      path: `/onboarding/provisioning/${encodeURIComponent(result.name)}`,
+      // Keep the product along so provisioning can say which app it installs.
+      query: typeof route.query.product === 'string' ? { product: route.query.product } : undefined,
+    })
   } catch (exception) {
     error.value = frappeErrorMessage(exception, 'Could not create your site.')
     creating.value = false
@@ -67,13 +78,15 @@ async function createSite() {
 </script>
 
 <template>
-  <AuthShell show-progress :step="3">
-    <h1 class="text-2xl font-semibold text-ink-gray-9">Name your site</h1>
-    <p class="mt-2 text-base text-ink-gray-5">
-      This is the web address you'll use to reach it. You can connect a custom domain later.
-    </p>
+  <MinimalAuthShell>
+    <div class="flex items-center gap-2">
+      <img v-if="product" :src="product.logo" alt="" class="size-6" />
+      <h1 class="text-xl font-semibold text-ink-gray-8">
+        {{ product ? `Set up ${product.name} on your site` : 'Set up your site' }}
+      </h1>
+    </div>
 
-    <form class="mt-8 space-y-4" @submit.prevent="createSite">
+    <form class="mt-6" @submit.prevent="createSite">
       <TextInput
         id="subdomain"
         v-model="subdomain"
@@ -101,17 +114,34 @@ async function createSite() {
         </template>
       </TextInput>
 
-      <ErrorMessage v-if="error" :message="error" />
+      <ul class="mt-4 space-y-2.5 text-p-sm text-ink-gray-6">
+        <li class="flex items-center gap-2">
+          <span class="lucide-server size-4" aria-hidden="true" />
+          Runs on its own private server near you.
+        </li>
+        <li class="flex items-center gap-2">
+          <span class="lucide-gift size-4" aria-hidden="true" />
+          Free with your $25 credits.
+        </li>
+        <li class="flex items-center gap-2">
+          <span class="lucide-pencil-line size-4" aria-hidden="true" />
+          Change plan anytime.
+        </li>
+      </ul>
+
+      <Transition name="error-fade">
+        <ErrorMessage v-if="error" class="mt-4" :message="error" />
+      </Transition>
       <Button
         type="submit"
         variant="solid"
         size="md"
-        class="w-full"
+        class="mt-6 w-full"
         :loading="creating"
         :disabled="!availability?.available || checking"
       >
-        Continue
+        Create my site
       </Button>
     </form>
-  </AuthShell>
+  </MinimalAuthShell>
 </template>

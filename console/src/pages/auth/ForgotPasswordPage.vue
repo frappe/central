@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
-import AuthShell from '@/components/auth/AuthShell.vue'
+import MinimalAuthShell from '@/components/auth/MinimalAuthShell.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { emailError, frappeErrorMessage, postFrappe } from '@/lib/auth'
 
@@ -10,6 +10,10 @@ const submitted = ref(false)
 const loading = ref(false)
 const sent = ref(false)
 const error = ref('')
+
+watch(email, () => {
+  error.value = ''
+})
 
 async function resetPassword() {
   submitted.value = true
@@ -31,24 +35,26 @@ async function resetPassword() {
 </script>
 
 <template>
-  <AuthShell>
+  <MinimalAuthShell>
     <template v-if="!sent">
-      <h1 class="text-2xl font-semibold text-ink-gray-9">Reset your password</h1>
-      <p class="mt-1 text-base text-ink-gray-5">
+      <h1 class="text-xl font-semibold text-ink-gray-8">Reset your password</h1>
+      <p class="mt-1 text-p-sm text-ink-gray-5">
         We’ll email you a secure link to choose a new password.
       </p>
 
-      <form class="mt-8 space-y-4" novalidate @submit.prevent="resetPassword">
+      <form class="mt-6 space-y-4" novalidate @submit.prevent="resetPassword">
         <ValidatedFormControl
           v-model="email"
           label="Work email"
           type="email"
           autocomplete="email"
-          placeholder="you@company.com"
+          placeholder="username@company.com"
           :validator="emailError"
           :submitted="submitted"
         />
-        <ErrorMessage v-if="error" :message="error" />
+        <Transition name="error-fade">
+          <ErrorMessage v-if="error" :message="error" />
+        </Transition>
         <Button type="submit" variant="solid" size="md" class="w-full" :loading="loading">
           Send reset link
         </Button>
@@ -59,17 +65,17 @@ async function resetPassword() {
       <div class="mb-6 grid size-10 place-items-center rounded-5 bg-surface-green-2 text-ink-green-3">
         <span class="lucide-mail-check size-5" aria-hidden="true" />
       </div>
-      <h1 class="text-2xl font-semibold text-ink-gray-9">Check your email</h1>
-      <p class="mt-2 text-base text-ink-gray-5">
+      <h1 class="text-xl font-semibold text-ink-gray-8">Check your email</h1>
+      <p class="mt-1 text-p-sm text-ink-gray-5">
         If an account exists for <span class="font-medium text-ink-gray-8">{{ email }}</span>,
         password reset instructions are on their way.
       </p>
     </template>
 
-    <p class="mt-6 text-center text-p-sm text-ink-gray-5">
+    <p class="mt-4 text-center text-p-sm text-ink-gray-5">
       <RouterLink class="font-medium text-ink-gray-8 hover:text-ink-gray-9" to="/login">
         Back to sign in
       </RouterLink>
     </p>
-  </AuthShell>
+  </MinimalAuthShell>
 </template>

@@ -3,6 +3,37 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /* Reserve the scrollbar gutter so centered content doesn't shift
+     horizontally when navigating between pages that do and don't scroll. */
+  html {
+    scrollbar-gutter: stable both-edges;
+  }
+}
+
+/* Error messages rise in (ease-out, entering) and fade out quicker on resolve.
+   Vue <Transition name="error-fade"> classes. */
+.error-fade-enter-active {
+  transition:
+    opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.error-fade-leave-active {
+  transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.error-fade-enter-from,
+.error-fade-leave-to {
+  opacity: 0;
+}
+.error-fade-enter-from {
+  transform: translateY(-4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .error-fade-enter-from {
+    transform: none;
+  }
+}
+
 @layer components {
   /* Standard reading-width page body. It is the growing child of the page's
      `flex h-full flex-col` (header + body), and owns the vertical scroll:

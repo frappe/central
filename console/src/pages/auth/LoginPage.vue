@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
 import { useRoute } from 'vue-router'
-import AuthShell from '@/components/auth/AuthShell.vue'
+import MinimalAuthShell from '@/components/auth/MinimalAuthShell.vue'
 import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
 import OtpInput from '@/components/common/OtpInput.vue'
 import { useAuth, type LoginResponse } from '@/composables/useAuth'
@@ -21,6 +21,11 @@ const loading = ref(false)
 const error = ref('')
 
 const { login, providerLogins } = useAuth()
+
+// A server error describes the last attempt; drop it once the user edits credentials.
+watch([email, password, otp], () => {
+  error.value = ''
+})
 
 async function submitPassword() {
   submitted.value = true
@@ -90,17 +95,28 @@ const isFormDisabled = computed(
   () => loading.value || !email.value.trim() || !password.value,
 )
 
+// One message below the button: the server error, or the first validation error
+// after a submit attempt. Inline field errors would push "Forgot password?"
+// away from the password field.
+const formError = computed(() => {
+  if (error.value) return error.value
+  if (!submitted.value) return ''
+  return emailError(email.value) || requiredError('Password')(password.value)
+})
+
 </script>
 
 <template>
-  <AuthShell>
+  <MinimalAuthShell>
     <template v-if="challenge">
-      <h1 class="text-2xl font-semibold text-ink-gray-9">Verify your login</h1>
-      <p class="mt-1 text-base text-ink-gray-5">{{ verificationPrompt() }}</p>
+      <h1 class="text-xl font-semibold text-ink-gray-8">Verify your login</h1>
+      <p class="mt-1 text-p-sm text-ink-gray-5">{{ verificationPrompt() }}</p>
 
-      <form class="mt-8 space-y-4" @submit.prevent="submitOtp">
+      <form class="mt-6 space-y-4" @submit.prevent="submitOtp">
         <OtpInput v-model="otp" label="Verification code" :disabled="loading" autofocus />
-        <ErrorMessage v-if="error" :message="error" />
+        <Transition name="error-fade">
+          <ErrorMessage v-if="error" :message="error" />
+        </Transition>
         <Button
           type="submit"
           variant="solid"
@@ -125,18 +141,15 @@ const isFormDisabled = computed(
     </template>
 
     <template v-else>
-      <h1 class="text-2xl font-semibold text-ink-gray-9">Welcome back</h1>
-      <p class="mt-1 text-base text-ink-gray-5">Sign in to manage your servers.</p>
+      <h1 class="text-xl font-semibold text-ink-gray-8">Welcome back</h1>
 
-      <form class="mt-8 space-y-4" novalidate @submit.prevent="submitPassword">
+      <form class="mt-6 space-y-4" novalidate @submit.prevent="submitPassword">
         <ValidatedFormControl
           v-model="email"
           label="Work email"
           type="email"
           autocomplete="username"
-          placeholder="you@company.com"
-          :validator="emailError"
-          :submitted="submitted"
+          placeholder="username@company.com"
         />
         <div>
           <ValidatedFormControl
@@ -145,8 +158,6 @@ const isFormDisabled = computed(
             :type="showPassword ? 'text' : 'password'"
             autocomplete="current-password"
             placeholder="Enter your password"
-            :validator="requiredError('Password')"
-            :submitted="submitted"
           >
             <template #suffix>
               <Button
@@ -166,20 +177,22 @@ const isFormDisabled = computed(
           </div>
         </div>
 
-        <ErrorMessage v-if="error" :message="error" />
         <Button type="submit" variant="solid" size="md" class="w-full" :loading="loading" :disabled="isFormDisabled">
           Sign in
         </Button>
+        <Transition name="error-fade">
+          <ErrorMessage v-if="formError" class="text-center" :message="formError" />
+        </Transition>
       </form>
 
       <SocialLoginButtons :providers="providerLogins" prefix="Continue with" />
 
-      <p class="mt-6 text-center text-p-sm text-ink-gray-5">
+      <p class="mt-4 text-center text-p-sm text-ink-gray-5">
         New to Frappe Cloud?
         <RouterLink class="font-medium text-ink-gray-8 hover:text-ink-gray-9" to="/signup">
           Create an account
         </RouterLink>
       </p>
     </template>
-  </AuthShell>
+  </MinimalAuthShell>
 </template>
