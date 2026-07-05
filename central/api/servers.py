@@ -23,14 +23,18 @@ REGION_DISPLAY_FIELDS = ("display_name", "provider", "country_code", "latitude",
 FALLBACK_FRAPPE_VERSIONS = ("v16", "v15", "nightly")
 
 
-def _available_versions() -> list[str]:
-	"""The versions Atlas can actually provision, from the first Active region's bench
-	images. Region-agnostic (images are fleet-wide); fail-soft to the static fallback
-	when no Atlas is reachable so the form is never empty."""
-	region = frappe.db.get_value("Atlas Instance", {"status": "Active"}, "name", order_by="region asc")
-	if region:
+def _available_versions(region: str | None = None) -> list[str]:
+	"""The versions Atlas can provision in `region` (its active bench images). Regions
+	can expose different images, so this must be scoped to the region the user picked —
+	validating against a different region would reject valid creates or pass ones the
+	target can't provision. Falls back to the first Active region when none is given
+	(the picker's initial load), and to the static set when no Atlas is reachable."""
+	target = region or frappe.db.get_value(
+		"Atlas Instance", {"status": "Active"}, "name", order_by="region asc"
+	)
+	if target:
 		try:
-			versions = AtlasClient.for_region(region).available_frappe_versions()
+			versions = AtlasClient.for_region(target).available_frappe_versions()
 			if versions:
 				return versions
 		except Exception:
@@ -38,12 +42,16 @@ def _available_versions() -> list[str]:
 	return list(FALLBACK_FRAPPE_VERSIONS)
 
 
-def _validate_frappe_version(frappe_version: str | None) -> None:
-	# The client value never goes back into the message — frappe.throw renders
-	# HTML in desk, so reflecting input is an XSS habit not worth having.
-	if frappe_version and frappe_version not in _available_versions():
+def _validate_frappe_version(frappe_version: str | None, region: str | None = None) -> None:
+	# Validate against the CHOSEN region's images, not a random active one.
+	if not frappe_version:
+		return
+	versions = _available_versions(region)
+	# The client value never goes back into the message — frappe.throw renders HTML in
+	# desk, so reflecting input is an XSS habit not worth having.
+	if frappe_version not in versions:
 		frappe.throw(
-			_("Unknown Frappe version. Choose one of: {0}.").format(", ".join(_available_versions())),
+			_("Unknown Frappe version. Choose one of: {0}.").format(", ".join(versions)),
 			frappe.ValidationError,
 		)
 
@@ -57,10 +65,11 @@ def _stamp_frappe_version(resource_id: str | None, frappe_version: str | None) -
 
 
 @frappe.whitelist(methods=["GET"])
-def frappe_versions() -> list[str]:
-	"""Versions offered on the new-server form — derived from Atlas's active bench
-	images, so the picker never drifts from what can actually be provisioned."""
-	return _available_versions()
+def frappe_versions(region: str | None = None) -> list[str]:
+	"""Versions offered on the new-server form for `region` — derived from that
+	region's active bench images, so the picker never drifts from what can actually
+	be provisioned there. The form passes the picked region and refetches on change."""
+	return _available_versions(region)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -181,7 +190,7 @@ def create_server(
 	require_billing_profile(team, "create servers")
 	if not region:
 		frappe.throw(_("Region is required."), frappe.ValidationError)
-	_validate_frappe_version(frappe_version)
+	_validate_frappe_version(frappe_version, region)
 
 	client = AtlasClient.for_region(region)
 	# Seed the Atlas tenant (first use) with the team owner's email.
@@ -254,7 +263,7 @@ def create_composed_server(
 		frappe.throw("region is required.", frappe.ValidationError)
 	if isinstance(includes, str):
 		includes = frappe.parse_json(includes)
-	_validate_frappe_version(frappe_version)
+	_validate_frappe_version(frappe_version, region)
 
 	# Validate the shape + cost before touching Atlas.
 	validate_composition(sub_category, includes)

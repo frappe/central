@@ -193,8 +193,20 @@ watch([plans, canDesign], () => {
 })
 
 // — Version step. Options come from the server (central.api.servers.frappe_versions)
-//   so the form can't offer something create_server would refuse.
-const versionsCall = useCall<string[]>({ url: method(API.frappeVersions) })
+//   for the PICKED region — images can differ per region, so refetch on change so
+//   the form can't offer something create_server would refuse for that region.
+const versionsCall = useCall<string[], { region: string }>({
+  url: method(API.frappeVersions),
+  params: () => ({ region: selectedRegion.value! }),
+  immediate: false,
+})
+watch(
+  selectedRegion,
+  (region) => {
+    if (region) versionsCall.reload()
+  },
+  { immediate: true },
+)
 const VERSION_LABELS: Record<string, string> = {
   v15: 'Version 15 — stable, what most teams run',
   v16: 'Version 16 — latest features, newest apps',
@@ -205,8 +217,11 @@ const version = ref('')
 const versionOptions = computed(() =>
   (versionsCall.data ?? []).map((v) => ({ label: VERSION_LABELS[v] ?? v, value: v })),
 )
+// Keep the selection valid: default to the first option, and reset if the picked
+// region no longer offers the current choice.
 watch(versionOptions, (options) => {
-  if (!version.value && options.length) version.value = options[0].value
+  const values = options.map((o) => o.value)
+  if (!values.includes(version.value)) version.value = values[0] ?? ''
 })
 
 // — Submit. The header CTA carries the monthly price once a plan is picked.
