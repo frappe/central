@@ -130,6 +130,7 @@ export interface InvoiceDetail {
   currency: Currency
   subtotal: number
   output_tax_type: string | null
+  output_tax_rate: number | null
   output_tax_amount: number
   zero_rating_reason: string | null
   total: number

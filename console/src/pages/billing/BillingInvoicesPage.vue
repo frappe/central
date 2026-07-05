@@ -191,7 +191,8 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
               <dd>{{ money(detail.data.subtotal, detail.data.currency) }}</dd>
             </div>
             <div v-if="detail.data.output_tax_amount" class="flex justify-between text-ink-gray-6">
-              <dt>{{ detail.data.output_tax_type || 'Tax' }}</dt>
+              <dt>{{ detail.data.output_tax_type || 'Tax'
+                }}<template v-if="detail.data.output_tax_rate"> ({{ detail.data.output_tax_rate }}%)</template></dt>
               <dd>{{ money(detail.data.output_tax_amount, detail.data.currency) }}</dd>
             </div>
             <p v-if="detail.data.zero_rating_reason" class="text-p-sm text-ink-gray-5">
