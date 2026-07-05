@@ -79,6 +79,13 @@ def _team_currency(team: str) -> str:
 _REQUIRED_PROFILE_FIELDS = (
 	"currency", "legal_name", "address_line1", "city", "country",
 )
+_PROFILE_FIELD_LABELS = {
+	"currency": "currency",
+	"legal_name": "legal name",
+	"address_line1": "address line 1",
+	"city": "city",
+	"country": "country",
+}
 
 
 def currency_for_country(country: str | None) -> str:
@@ -102,6 +109,10 @@ def _profile_complete(team: str) -> bool:
 	return not _missing_profile_fields(team)
 
 
+def _missing_profile_labels(team: str) -> list[str]:
+	return [_PROFILE_FIELD_LABELS.get(field, field) for field in _missing_profile_fields(team)]
+
+
 def require_billing_profile(team: str, action: str):
 	"""Refuse `action` until the team's billing profile is complete.
 
@@ -109,10 +120,11 @@ def require_billing_profile(team: str, action: str):
 	movement, provisioning a billable resource). The dashboard also blocks these;
 	this guarantees it can't be bypassed. `action` completes the sentence
 	"… before you can {action}"."""
-	if _missing_profile_fields(team):
+	missing = _missing_profile_labels(team)
+	if missing:
 		frappe.throw(
-			f"Set up your billing profile (currency, legal name and address) in "
-			f"Settings before you can {action}.",
+			f"Complete your billing profile before you can {action}. "
+			f"Missing: {', '.join(missing)}.",
 			frappe.ValidationError,
 		)
 

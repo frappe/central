@@ -7,7 +7,7 @@ no price ("—") and only its region — the resource shape and locked price wer
 It now surfaces the open segment's locked rate and a 'Profile — specs' title."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard.invoices import list_subscriptions
 from central.billing.catalog import subscriptions

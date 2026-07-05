@@ -4,7 +4,7 @@
 tax profile, and welcome credits (idempotent)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard import account
 from central.billing.payments.provisioning import WELCOME_CREDITS

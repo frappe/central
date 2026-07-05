@@ -9,7 +9,7 @@ locked with no reconciliation gap.
 """
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.catalog.subscriptions import active_segment_for_resource

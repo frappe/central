@@ -4,7 +4,7 @@
 re-validates composition, bounds, and headroom server-side (#83)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard.catalog import (
 	get_composed_config,

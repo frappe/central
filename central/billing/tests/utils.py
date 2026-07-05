@@ -3,8 +3,54 @@
 """Shared helpers for billing tests."""
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+
+
+class BillingTestCase(IntegrationTestCase):
+	"""Atomic base for billing/server tests: it snapshots every tracked doctype
+	before the test and deletes whatever the test added afterwards — so a test leaves
+	the site exactly as it found it, EVEN when it commits (the concurrency/load tests,
+	which the default per-test rollback can't undo, are the whole reason data leaks).
+
+	The snapshot + sweep hang off `run()`, not setUp/tearDown, so a subclass gets this
+	for free without having to remember a super() call — swap the base class and it's
+	atomic. Deleting only rows absent from the pre-test snapshot means it can never
+	touch data the test didn't create.
+	"""
+
+	# Top-level doctypes these tests create. Frappe links aren't DB foreign keys, so
+	# raw deletes (frappe.db.delete) need no dependency ordering; child rows (e.g.
+	# Team Member) are cleared via their parent below.
+	_TRACKED = (
+		"Payment Attempt", "Refund", "Credit Ledger Entry", "Credit Wallet",
+		"Invoice", "Subscription Change", "Subscription", "Gateway Customer",
+		"Entitlement Token", "Commitment", "Usage Rollup", "Payment Method",
+		"Tax Profile", "Billing Profile", "Team Invitation", "Team Role",
+		"Catalog Rate", "Plan", "Asset", "Team", "Atlas Instance", "Region", "User",
+		"Webhook Event", "Notification Log",
+	)
+
+	def run(self, result=None):
+		before = {doctype: set(frappe.get_all(doctype, pluck="name")) for doctype in self._TRACKED}
+		try:
+			return super().run(result)
+		finally:
+			self._sweep(before)
+
+	def _sweep(self, before: dict) -> None:
+		removed_teams: list[str] = []
+		for doctype in self._TRACKED:
+			added = list(set(frappe.get_all(doctype, pluck="name")) - before[doctype])
+			if not added:
+				continue
+			if doctype == "Team":
+				removed_teams = added
+			frappe.db.delete(doctype, {"name": ["in", added]})
+		if removed_teams:
+			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist the sweep past a test's own commit
 
 # frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to
 # execute an enqueued job synchronously — dropping the queue-control kwargs and calling

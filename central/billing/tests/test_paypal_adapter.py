@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 import requests
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.paypal_adapter import PayPalAdapter
 from central.billing.gateways.registry import get_adapter

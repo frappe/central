@@ -9,7 +9,7 @@ Covers:
 """
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
 

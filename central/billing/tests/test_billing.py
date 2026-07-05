@@ -5,7 +5,7 @@
 import threading
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.revenue import invoicing, credits
@@ -233,6 +233,13 @@ class TestOpenAndCollect(BillingTestBase):
 
 class TestTerminationCancelsBilling(BillingTestBase):
 	"""Terminating the VM must close the billing segment, not just pause it."""
+
+	def test_disabled_open_segment_does_not_consume_run_rate(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.set_value("Subscription", self.sub, "enabled", 0)
+
+		self.assertEqual(subscriptions.current_segment_rate(self.sub), 1000)
+		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)
 
 	def test_terminate_cancels_segment_and_frees_run_rate(self):
 		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")

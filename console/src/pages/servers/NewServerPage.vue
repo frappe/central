@@ -444,7 +444,7 @@ async function submit() {
               />
               <p v-if="selectedRegionRow" class="mt-4 flex items-center gap-1.5 text-p-xs text-ink-gray-5">
                 <span class="lucide-map-pin size-3.5" />
-                Runs in {{ regionLabel(selectedRegionRow) }} — this is where your data lives.
+                Runs in {{ regionLabel(selectedRegionRow) }} - this is where your data lives.
               </p>
               <Button
                 class="mt-8"

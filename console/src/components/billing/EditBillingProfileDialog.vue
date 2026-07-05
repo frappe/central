@@ -6,7 +6,7 @@ import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { successToast, errorToast } from '@/lib/toast'
+import { successToast, infoToast, errorToast } from '@/lib/toast'
 import type { BillingProfile, BillingGeo } from '@/types/billing'
 
 // Edit the billing profile — currency (locked after activity), contact, address,
@@ -74,17 +74,40 @@ function optionModel(field: string) {
 const countryModel = optionModel('country')
 const stateModel = optionModel('state')
 
-const save = useCall<unknown, Record<string, unknown>>({
+const requiredFields = [
+  ['legal_name', 'Legal name'],
+  ['address_line1', 'Address line 1'],
+  ['city', 'City'],
+  ['country', 'Country'],
+] as const
+const missingRequired = computed(() =>
+  requiredFields.filter(([field]) => !form[field]?.trim()).map(([, label]) => label),
+)
+
+type SaveBillingProfileResponse = {
+  setup_complete?: boolean
+  missing_labels?: string[]
+}
+const save = useCall<SaveBillingProfileResponse, Record<string, unknown>>({
   url: method(API.saveBillingProfile),
   method: 'POST',
   immediate: false,
 })
 async function submit(): Promise<void> {
+  if (missingRequired.value.length) {
+    infoToast(`Complete: ${missingRequired.value.join(', ')}.`)
+    return
+  }
   try {
     await save.submit({ team: activeTeam.value, ...form })
-    successToast('Billing details saved.')
     await reloadSetup()
     reloadProfile()
+    if (save.data?.setup_complete === false) {
+      const missing = save.data.missing_labels?.join(', ') || 'the required fields'
+      infoToast(`Billing profile saved, but still incomplete: ${missing}.`)
+      return
+    }
+    successToast('Billing details saved.')
     open.value = false
   } catch (e) {
     errorToast(e)

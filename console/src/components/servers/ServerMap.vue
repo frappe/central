@@ -35,6 +35,8 @@ const props = withDefaults(
     interactive?: boolean
     /** Show create affordances inside cards (page gates on server:create). */
     allowCreate?: boolean
+    /** Show direct bench-open affordances inside cluster cards. */
+    allowOpen?: boolean
   }>(),
   {
     pins: () => [],
@@ -45,12 +47,15 @@ const props = withDefaults(
     panelOffset: 0,
     interactive: true,
     allowCreate: false,
+    allowOpen: false,
   },
 )
 
 const emit = defineEmits<{
   /** A server pin (or a cluster-card row) was chosen. */
   open: [id: string]
+  /** A cluster-card row's external-link action was chosen. */
+  'open-server': [server: MapPin['server']]
   /** A + spot was chosen — the Atlas Instance region to create in. */
   'new-server': [region: string]
   /** A cluster was clicked; the page may narrow its list to these servers. */
@@ -338,6 +343,10 @@ function leaveNode(): void {
 function cancelHide(): void {
   window.clearTimeout(hideT)
 }
+
+function canOpenBench(server: MapPin['server']): boolean {
+  return props.allowOpen && server.status === 'Running' && !!server.gateway_url
+}
 function hideCard(): void {
   window.clearTimeout(showT)
   window.clearTimeout(hideT)
@@ -607,22 +616,31 @@ function clickNode(n: MapNode): void {
               <span class="lucide-plus size-3.5" />
             </button>
           </div>
-          <button
+          <div
             v-for="m in card.node.members"
             :key="m.id"
-            class="group flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-gray-2"
-            @click="emit('open', m.id)"
+            class="group flex w-full items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-surface-gray-2"
           >
-            <span class="relative shrink-0">
-              <ProviderAvatar :provider="m.provider" :size="28" />
-              <span class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]" :style="{ background: m.visual.dot }" />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-medium text-ink-gray-8">{{ m.name }}</span>
-              <span class="block truncate text-xs text-ink-gray-5">{{ m.specs }}</span>
-            </span>
-            <span class="lucide-arrow-up-right size-3.5 shrink-0 text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100" />
-          </button>
+            <button class="flex min-w-0 flex-1 items-center gap-2.5 text-left" @click="emit('open', m.id)">
+              <span class="relative shrink-0">
+                <ProviderAvatar :provider="m.provider" :size="28" />
+                <span class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]" :style="{ background: m.visual.dot }" />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium text-ink-gray-8">{{ m.name }}</span>
+                <span class="block truncate text-xs text-ink-gray-5">{{ m.specs }}</span>
+              </span>
+            </button>
+            <button
+              class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
+              :disabled="!canOpenBench(m.server)"
+              title="Open bench"
+              aria-label="Open bench"
+              @click.stop="emit('open-server', m.server)"
+            >
+              <span class="lucide-arrow-up-right size-3.5" />
+            </button>
+          </div>
         </template>
 
         <!-- Empty region: a direct path to create (markers never open cards) -->

@@ -54,15 +54,15 @@ const matchingPreset = computed<Plan | null>(() => {
 </script>
 
 <template>
-  <div class="space-y-3">
-    <!-- Presets in this profile -->
+  <div class="space-y-1.5">
+    <!-- Presets in this profile — one compact row each: name · specs · price. -->
     <label
       v-for="plan in presets"
       :key="plan.plan"
-      class="flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 transition-colors"
+      class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm transition-colors"
       :class="
         selectedPlan === plan.plan
-          ? 'border-outline-gray-4'
+          ? 'border-outline-gray-4 bg-surface-gray-1'
           : 'border-outline-gray-2 hover:border-outline-gray-3'
       "
     >
@@ -72,11 +72,13 @@ const matchingPreset = computed<Plan | null>(() => {
         v-model="selectedPlan"
         type="radio"
         :value="plan.plan"
-        class="text-ink-gray-9 focus:ring-outline-gray-3"
+        class="size-4 shrink-0 text-ink-gray-9 focus:ring-outline-gray-3"
       />
-      <span class="font-medium text-ink-gray-9">{{ plan.title }}</span>
-      <span class="text-p-sm text-ink-gray-5">{{ planSpecs(plan) }}</span>
-      <span class="ml-auto font-medium text-ink-gray-9">{{ planPrice(plan) }}</span>
+      <!-- Title carries the size too (e.g. "Starter · 1 vCPU / 2 GB"); the specs
+           already spell it out, so show just the tier name to avoid the echo. -->
+      <span class="shrink-0 font-medium text-ink-gray-9">{{ plan.title.split(' · ')[0] }}</span>
+      <span class="min-w-0 flex-1 truncate text-ink-gray-5">{{ planSpecs(plan) }}</span>
+      <span class="shrink-0 font-medium text-ink-gray-9">{{ planPrice(plan) }}</span>
     </label>
 
     <!-- Custom: a radio row that expands into the design slider for this profile. -->
@@ -85,17 +87,19 @@ const matchingPreset = computed<Plan | null>(() => {
       class="rounded-lg border transition-colors"
       :class="isCustom ? 'border-outline-gray-4' : 'border-outline-gray-2 hover:border-outline-gray-3'"
     >
-      <label class="flex cursor-pointer items-center gap-3 px-4 py-3">
+      <label class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
         <input
           v-model="selectedPlan"
           type="radio"
           :value="customKey"
-          class="text-ink-gray-9 focus:ring-outline-gray-3"
+          class="size-4 shrink-0 text-ink-gray-9 focus:ring-outline-gray-3"
         />
-        <span class="font-medium text-ink-gray-9">Custom</span>
-        <span class="lucide-sliders-horizontal size-4 text-ink-gray-5" aria-hidden="true" />
-        <span v-if="isCustom && customSpec" class="text-p-sm text-ink-gray-5">{{ customSpec }}</span>
-        <span class="ml-auto font-medium text-ink-gray-9">{{ isCustom ? customPrice : 'Design your own' }}</span>
+        <span class="flex shrink-0 items-center gap-1.5 font-medium text-ink-gray-9">
+          Custom
+          <span class="lucide-sliders-horizontal size-3.5 text-ink-gray-5" aria-hidden="true" />
+        </span>
+        <span class="min-w-0 flex-1 truncate text-ink-gray-5">{{ isCustom ? customSpec : '' }}</span>
+        <span class="shrink-0 font-medium text-ink-gray-9">{{ isCustom ? customPrice : 'Design your own' }}</span>
       </label>
 
       <!-- Smooth expand: animate grid rows 0fr → 1fr (CSS only). -->

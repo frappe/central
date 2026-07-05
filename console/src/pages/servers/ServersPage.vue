@@ -321,7 +321,9 @@ const pendingResize = ref<AssetRow | null>(null)
         :spots="spots"
         :highlight-id="hoverId"
         :allow-create="canCreateServer"
+        :allow-open="canOpenServer"
         @open="onOpen"
+        @open-server="open"
         @new-server="goNewServer"
         @cluster-open="onClusterOpen"
       >

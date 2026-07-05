@@ -3,7 +3,7 @@
 """Collection mode + the ₹15,000 Action Required threshold (issue #50, ADR 0005)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.payments import collection_mode
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team, set_team_tier

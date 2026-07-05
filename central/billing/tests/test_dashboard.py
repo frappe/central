@@ -3,7 +3,7 @@
 """Customer dashboard endpoints + forecast (issues #26, #18)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import credits
 from central.billing.api import dashboard

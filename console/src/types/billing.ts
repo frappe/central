@@ -214,6 +214,7 @@ export interface BillingProfile {
   // Derived (the gate fields):
   complete: boolean
   missing: string[]
+  missing_labels?: string[]
   currency_locked: boolean
   supported_currencies: Currency[]
 }
