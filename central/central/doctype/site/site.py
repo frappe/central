@@ -13,10 +13,11 @@ class Site(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		admin_password: DF.Password | None
 		cluster: DF.Link
 		last_event_at: DF.Datetime | None
 		last_synced_at: DF.Datetime | None
+		login_url: DF.SmallText | None
+		login_url_expires_at: DF.Datetime | None
 		region: DF.Data | None
 		site_name: DF.Data
 		status: DF.Literal["Pending", "Provisioning", "Deploying", "Running", "Failed", "Terminated"]
@@ -76,10 +77,12 @@ class Site(Document):
 		doc.region = site.get("region")
 		doc.status = site.get("status") or "Pending"
 		doc.url = site.get("url") or None
-		# Write-once: the handoff password only arrives once Running; never blank a
-		# password we've already stored on a later (e.g. status-only) event.
-		if site.get("admin_password"):
-			doc.admin_password = site["admin_password"]
+		# Write-once: the one-click login URL + its expiry only arrive once Running
+		# (Atlas gates them on status), so never blank a handoff we've already stored on
+		# a later (e.g. status-only) event. Same rule as Asset's login_url.
+		if site.get("login_url"):
+			doc.login_url = site["login_url"]
+			doc.login_url_expires_at = site.get("login_url_expires_at")
 		if occurred_at:
 			doc.last_event_at = occurred_at
 		if synced_at:

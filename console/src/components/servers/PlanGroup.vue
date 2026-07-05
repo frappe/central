@@ -4,7 +4,7 @@ import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
 import { planSpecs, planPrice } from '@/lib/plans'
 import { money } from '@/lib/format'
 import { configSpecs, estimateConfig } from '@/lib/composed'
-import type { ComposedConfig, Plan, Profile, RateCard } from '@/types/api'
+import type { Capacity, ComposedConfig, Plan, Profile, RateCard } from '@/types/api'
 
 // One optimisation profile's slice of the plan picker: its preset rows plus a
 // "Custom" row that designs a config within *this* profile (#84). Used flat (a
@@ -16,6 +16,8 @@ const props = defineProps<{
   rateCard: RateCard
   available: number
   currency: string
+  // The region's live capacity — passed through to cap the custom designer's sliders.
+  capacity?: Capacity | null
   // Pre-fill the custom designer with a running config's shape (resize, #82/#84).
   initial?: ComposedConfig | null
 }>()
@@ -110,6 +112,7 @@ const matchingPreset = computed<Plan | null>(() => {
               :profiles="[profile]"
               :rate-card="rateCard"
               :available="available"
+              :capacity="capacity"
               :initial="initial"
             />
             <p v-if="matchingPreset" class="mt-3 text-p-xs text-ink-gray-5">

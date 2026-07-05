@@ -79,3 +79,15 @@ class TestCreateServerRecordsSubscription(IntegrationTestCase):
 		self.assertEqual(out["resource_id"], VM_ID)
 		self.assertIsNone(out["subscription"])
 		self.assertFalse(frappe.db.exists("Subscription", {"asset_id": VM_ID}))
+
+	def test_refused_without_a_billing_profile(self):
+		# A team with no billing profile can't create servers — it must set one up
+		# first (a server bills the team). Atlas is never touched.
+		noprofile = "team-create-server-noprofile"
+		ensure_team(noprofile)
+		frappe.db.delete("Billing Profile", {"team": noprofile})
+		fake_client = MagicMock()
+		with patch.object(servers.AtlasClient, "for_region", return_value=fake_client):
+			with self.assertRaises(frappe.ValidationError):
+				servers.create_server(team=noprofile, region=REGION, title="web-1", plan=self.plan)
+		fake_client.create_vm.assert_not_called()

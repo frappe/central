@@ -45,11 +45,11 @@ const options = computed(() => {
 </script>
 
 <template>
-  <Dropdown v-if="options.length" :options="options" placement="right">
+  <Dropdown v-if="options.length" :options="options" placement="bottom-end">
     <template #trigger>
       <Button
         variant="ghost"
-        icon="lucide-ellipsis-vertical"
+        icon="lucide-ellipsis"
         :loading="busy"
         aria-label="Subscription actions"
       />

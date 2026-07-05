@@ -42,6 +42,18 @@ function done(res?: unknown): void {
 
 const { run, loading } = useAddPaymentMethod({ onDone: done })
 
+// Razorpay opens its own hosted sheet on <body>. Our dialog is a modal with an
+// overlay + focus trap, so leaving it open renders the sheet *behind* our overlay
+// — the user has to dismiss our layers first to reach it. Drop our dialog before
+// launching the sheet, and reopen it only if they cancel/it fails (on success
+// `done` keeps it closed). The Stripe path stays in-dialog and never comes here.
+async function launchGateway(methodType: string, contact?: string): Promise<void> {
+  open.value = false
+  await nextTick()
+  const res = await run(methodType, contact)
+  if (!res) open.value = true
+}
+
 const upiBlocked = computed(() => options.data && !options.data.allow_upi)
 
 // A Razorpay card mandate needs a customer contact; phone is optional on the
@@ -92,7 +104,7 @@ async function onCard(): Promise<void> {
     askPhone.value = true
     return
   }
-  run('Card', phone.value.trim() || undefined)
+  launchGateway('Card', phone.value.trim() || undefined)
 }
 
 function cancelStripe(): void {
@@ -100,10 +112,16 @@ function cancelStripe(): void {
   stripeMode.value = false
 }
 
-// Tear down the Element and reset inline state whenever the dialog closes, so a
+// On open, re-pull the currency-derived gateway options + profile: the team may
+// have just completed its billing profile (picking a non-INR currency) without a
+// team switch, so the reads warmed at mount would otherwise still offer the INR
+// gateway. On close, tear down the Stripe Element and reset inline state so a
 // reopen starts on the method picker (not a stale Stripe field).
 watch(open, (isOpen) => {
-  if (!isOpen) {
+  if (isOpen) {
+    options.reload()
+    profile.reload()
+  } else {
     destroyStripe()
     stripeMode.value = false
     stripeLoading.value = false
@@ -145,23 +163,41 @@ watch(open, (isOpen) => {
         </p>
       </div>
 
-      <div v-else-if="options.data" class="space-y-3">
-        <button
-          v-if="options.data.methods.includes('Card')"
-          class="flex w-full items-center justify-between rounded border border-outline-gray-2 px-4 py-3 text-left hover:border-outline-gray-3 disabled:opacity-50"
-          :disabled="loading"
-          @click="onCard"
-        >
-          <div>
-            <p class="text-sm text-ink-gray-8">Card</p>
-            <p class="text-p-sm text-ink-gray-5">
-              Saved securely with {{ options.data.adapter_key }} · {{ options.data.currency }}
-            </p>
-          </div>
-          <span class="lucide-credit-card size-5 text-ink-gray-5" aria-hidden="true" />
-        </button>
+      <div v-else-if="options.data" class="space-y-4">
+        <div>
+          <p class="mb-2 text-p-sm font-medium text-ink-gray-7">How do you want to pay?</p>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <button
+              v-if="options.data.methods.includes('Card')"
+              class="flex flex-col gap-1.5 rounded-lg border border-outline-gray-2 p-4 text-left transition-colors hover:border-outline-gray-3 disabled:opacity-50"
+              :disabled="loading"
+              @click="onCard"
+            >
+              <span class="lucide-credit-card size-5 text-ink-gray-7" aria-hidden="true" />
+              <span class="text-sm font-medium text-ink-gray-9">Card</span>
+              <span class="text-p-sm text-ink-gray-5">Visa, Mastercard, RuPay, Amex</span>
+            </button>
 
-        <div v-if="askPhone" class="space-y-2 rounded border border-outline-gray-2 px-4 py-3">
+            <button
+              v-if="options.data.methods.includes('UPI Autopay')"
+              class="flex flex-col gap-1.5 rounded-lg border border-outline-gray-2 p-4 text-left transition-colors hover:border-outline-gray-3 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="loading || !!upiBlocked"
+              @click="launchGateway('UPI Autopay')"
+            >
+              <span class="lucide-smartphone size-5 text-ink-gray-7" aria-hidden="true" />
+              <span class="text-sm font-medium text-ink-gray-9">UPI Autopay</span>
+              <span v-if="upiBlocked" class="text-p-sm text-ink-amber-7">
+                {{ options.data.upi_block_reason || 'Not available for your account yet.' }}
+              </span>
+              <span v-else class="text-p-sm text-ink-gray-5">
+                Mandate up to {{ money(options.data.upi_limit, options.data.currency) }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Razorpay card mandates need a contact; collect it inline when missing. -->
+        <div v-if="askPhone" class="space-y-2 rounded-lg border border-outline-gray-2 px-4 py-3">
           <FormControl
             v-model="phone"
             type="text"
@@ -174,32 +210,22 @@ watch(open, (isOpen) => {
             label="Continue"
             :loading="loading"
             :disabled="!phone.trim()"
-            @click="run('Card', phone.trim())"
+            @click="launchGateway('Card', phone.trim())"
           />
         </div>
 
-        <button
-          v-if="options.data.methods.includes('UPI Autopay')"
-          class="flex w-full items-center justify-between rounded border border-outline-gray-2 px-4 py-3 text-left hover:border-outline-gray-3 disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="loading || !!upiBlocked"
-          @click="run('UPI Autopay')"
+        <!-- Resolved gateway — central picks it from your billing currency; not a
+             chooser. -->
+        <div
+          class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
         >
-          <div>
-            <p class="text-sm text-ink-gray-8">UPI Autopay</p>
-            <p v-if="upiBlocked" class="text-p-sm text-ink-amber-3">
-              {{ options.data.upi_block_reason || 'Not available for your account yet.' }}
-            </p>
-            <p v-else class="text-p-sm text-ink-gray-5">
-              Recurring mandate up to {{ money(options.data.upi_limit, options.data.currency) }}
-            </p>
-          </div>
-          <span class="lucide-smartphone size-5 text-ink-gray-5" aria-hidden="true" />
-        </button>
-
-        <p class="text-p-sm text-ink-gray-5">
-          You'll authorise the method on {{ options.data.adapter_key }}'s secure sheet. We never
-          see your card or UPI credentials.
-        </p>
+          <span class="lucide-lock size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
+          <p class="text-p-sm text-ink-gray-6">
+            You'll authorise on
+            <span class="font-medium text-ink-gray-8">{{ options.data.adapter_key }}</span>'s secure
+            sheet — we never see your card or UPI credentials.
+          </p>
+        </div>
       </div>
     </template>
   </Dialog>

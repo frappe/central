@@ -72,13 +72,13 @@ const options = [
 <template>
   <div
     v-if="show && s"
-    class="flex flex-col gap-3 rounded-lg border border-outline-amber-1 bg-surface-amber-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+    class="flex flex-col gap-3 rounded-lg border border-outline-amber-2 bg-surface-amber-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
     role="status"
     aria-live="polite"
   >
     <div class="flex items-start gap-3">
       <span
-        class="lucide-triangle-alert mt-0.5 size-5 shrink-0 text-ink-amber-3"
+        class="lucide-triangle-alert mt-0.5 size-5 shrink-0 text-ink-amber-7"
         aria-hidden="true"
       />
       <div class="space-y-0.5">

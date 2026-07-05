@@ -52,6 +52,17 @@ const countryOptions = computed(() =>
 const stateOptions = computed(() => geo.data?.india_states ?? [])
 const isIndia = computed(() => form.country === 'India')
 
+// Currency follows the country (India → INR, else USD) — the backend derives it
+// on save; we mirror that here so the read-only field updates as they pick a
+// country. Never overridden once the currency is locked by billing activity.
+const currencyForCountry = (country: string) => (country === 'India' ? 'INR' : 'USD')
+watch(
+  () => form.country,
+  (country) => {
+    if (!currencyLocked.value) form.currency = currencyForCountry(country ?? '')
+  },
+)
+
 function optionModel(field: string) {
   return computed<{ label: string; value: string } | null>({
     get: () => (form[field] ? { label: form[field], value: form[field] } : null),
@@ -97,10 +108,14 @@ async function submit(): Promise<void> {
           <FormControl
             v-model="form.currency"
             type="select"
-            label="Billing currency *"
+            label="Billing currency"
             :options="currencyOptions"
-            :disabled="currencyLocked"
-            :description="currencyLocked ? 'Locked — your team already has billing activity.' : ''"
+            disabled
+            :description="
+              currencyLocked
+                ? 'Locked — your team already has billing activity.'
+                : 'Set automatically from your billing country.'
+            "
           />
         </div>
 
@@ -130,12 +145,12 @@ async function submit(): Promise<void> {
               v-if="isIndia"
               v-model="stateModel"
               type="autocomplete"
-              label="State *"
+              label="State"
               placeholder="Select state"
               :options="stateOptions"
             />
-            <FormControl v-else v-model="form.state" label="State *" />
-            <FormControl v-model="form.pincode" label="PIN code *" />
+            <FormControl v-else v-model="form.state" label="State" />
+            <FormControl v-model="form.pincode" label="PIN code" />
           </div>
         </div>
 

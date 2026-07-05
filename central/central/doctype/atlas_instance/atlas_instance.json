@@ -8,6 +8,7 @@
   "region",
   "base_url",
   "status",
+  "validate_capacity",
   "column_break_auth",
   "api_key",
   "api_secret",
@@ -59,6 +60,13 @@
    "label": "Status",
    "options": "Active\nDraining\nDisabled",
    "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "Only offer plans that fit this region's live capacity when creating or resizing a server (checked against the Atlas capacity API). Off = show the full priced menu and let placement's create-time gate have the final say.",
+   "fieldname": "validate_capacity",
+   "fieldtype": "Check",
+   "label": "Validate Capacity"
   },
   {
    "fieldname": "column_break_auth",

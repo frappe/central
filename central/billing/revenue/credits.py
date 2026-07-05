@@ -243,6 +243,18 @@ def refund_to_wallet(team, amount, currency="INR", reference_type=None, referenc
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
+def grant_promotional_credits(team, amount, currency, note=None) -> dict:
+	"""Book a promotional/welcome credit — free credits granted at signup.
+
+	Tagged `reference_type="Promotion"` so the one-time signup grant is
+	distinguishable from top-ups/refunds and can be checked for idempotently."""
+	entry, new_balance = _book_entry(
+		team, "Credit", amount, currency, reference_type="Promotion",
+		note=note or "Welcome credits",
+	)
+	return {"ledger_entry": entry.name, "new_balance": new_balance}
+
+
 @frappe.whitelist()
 def adjust_credits(team: str, amount: float, entry_type: str, currency: str = "INR",
 				   note: str | None = None) -> dict:

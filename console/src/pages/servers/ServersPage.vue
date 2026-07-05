@@ -2,9 +2,9 @@
   <div class="flex h-full flex-col">
     <PageHeader title="Servers">
       <template #actions>
-        <Button label="Refresh" icon-left="lucide-refresh-cw" :loading="refreshing" @click="doRefresh" />
+        <Button v-if="activeTeam" label="Refresh" icon-left="lucide-refresh-cw" :loading="refreshing" @click="doRefresh" />
         <Button
-          v-if="canCreateServer"
+          v-if="activeTeam && canCreateServer"
           variant="solid"
           label="New server"
           icon-left="lucide-plus"
@@ -13,9 +13,22 @@
       </template>
     </PageHeader>
 
+    <!-- No team at all: create one before anything else can be provisioned. -->
+    <div v-if="hasNoTeam" class="flex flex-1 items-center justify-center p-8">
+      <EmptyState
+        icon="lucide-users"
+        title="No team yet"
+        description="Create a team before provisioning servers. The team becomes the owner boundary for permissions, billing, and Atlas resources."
+      >
+        <template #action>
+          <Button variant="solid" label="Create team" icon-left="lucide-plus" @click="createTeamOpen = true" />
+        </template>
+      </EmptyState>
+    </div>
+
     <!-- The map is the page. Everything else floats above it. `isolate` keeps
          the overlays' z-indexes from leaking above body-portaled menus. -->
-    <div class="relative isolate flex-1 overflow-hidden">
+    <div v-else class="relative isolate flex-1 overflow-hidden">
       <ServerMap
         ref="mapRef"
         class="absolute inset-0"
@@ -224,6 +237,7 @@
     />
 
     <ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
+    <CreateTeamDialog v-model:open="createTeamOpen" />
   </div>
 </template>
 
@@ -232,6 +246,8 @@ import { computed, h, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Badge, Button, Dropdown, FormControl, Spinner } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
@@ -241,6 +257,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useServers } from '@/composables/useServers'
+import { useSession } from '@/composables/useSession'
 import {
   STATUS_FILTERS,
   flagEmoji,
@@ -267,6 +284,12 @@ const { regions } = useRegions()
 const { canPowerServer, canTerminateServer, canOpenServer, canCreateServer } = useCapabilities()
 // Actions only — list reads come from useServerMapData (unpaginated, map-shaped).
 const { refreshing, stale, busy, opening, refreshAssets, start, stop, terminate, open } = useServers()
+
+// A user in no team can't own servers/billing/regions — offer team creation
+// instead of the (empty, error-prone) map until a team exists.
+const { activeTeam, loading: sessionLoading } = useSession()
+const createTeamOpen = ref(false)
+const hasNoTeam = computed(() => !sessionLoading.value && !activeTeam.value)
 
 const q = ref('')
 const statusFilter = ref<ServerVisual['key'] | ''>('')

@@ -3,15 +3,18 @@ import { computed, ref, watch } from 'vue'
 import { Slider } from 'frappe-ui'
 import LadderSelect from '@/components/servers/LadderSelect.vue'
 import {
+  capacityLimits,
   clamp,
   estimateConfig,
   formatGb,
   formatVcpu,
   maxAffordableDisk,
   maxAffordableVcpu,
+  maxDiskForCapacity,
+  maxVcpuForCapacity,
   ramFor,
 } from '@/lib/composed'
-import type { ComposedConfig, Profile, RateCard } from '@/types/api'
+import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
 
 // Design-your-own config controls (#84). Compute and Storage are both discrete
 // ladders the slider snaps to (vCPU from the configurator's set incl. fractions;
@@ -23,6 +26,9 @@ const props = defineProps<{
   profiles: Profile[]
   rateCard: RateCard
   available: number
+  // The region's live capacity — the slider's second hard stop (below headroom), so a
+  // customer can't design a config the region can't currently seat. Absent → no cap.
+  capacity?: Capacity | null
   // Pre-fill the controls with a running config's shape (resize, #82/#84).
   initial?: ComposedConfig | null
 }>()
@@ -57,18 +63,42 @@ const diskModel = computed<number[]>({
 })
 const ram = computed<number>(() => (profile.value ? ramFor(vcpus.value, profile.value) : 0))
 
-// Hard stops: the largest vCPU / storage rung that still fits the remaining
-// headroom, each given the other's current value.
+// Hard stops: the largest vCPU / storage rung that still fits the remaining headroom
+// AND the region's live capacity (the more restrictive of the two), each given the
+// other's current value.
 const maxVcpuIndex = computed<number>(() =>
   profile.value
-    ? indexOf(vcpuSteps.value, maxAffordableVcpu(profile.value, props.rateCard, props.available, diskGb.value))
+    ? indexOf(
+        vcpuSteps.value,
+        Math.min(
+          maxAffordableVcpu(profile.value, props.rateCard, props.available, diskGb.value),
+          maxVcpuForCapacity(profile.value, props.capacity),
+        ),
+      )
     : 0,
 )
 const maxDiskIndex = computed<number>(() =>
   profile.value
-    ? indexOf(diskSteps.value, maxAffordableDisk(profile.value, props.rateCard, props.available, vcpus.value))
+    ? indexOf(
+        diskSteps.value,
+        Math.min(
+          maxAffordableDisk(profile.value, props.rateCard, props.available, vcpus.value),
+          maxDiskForCapacity(profile.value, props.capacity),
+        ),
+      )
     : 0,
 )
+
+// Whether the region's capacity — not headroom — is what's holding the slider back, so
+// the copy can name the real reason (a full region reads differently from a spent limit).
+const cappedByCapacity = computed<boolean>(() => {
+  if (!profile.value || !capacityLimits(props.capacity)) return false
+  const capVcpu = maxVcpuForCapacity(profile.value, props.capacity)
+  const capDisk = maxDiskForCapacity(profile.value, props.capacity)
+  const affordVcpu = maxAffordableVcpu(profile.value, props.rateCard, props.available, diskGb.value)
+  const affordDisk = maxAffordableDisk(profile.value, props.rateCard, props.available, vcpus.value)
+  return capVcpu <= affordVcpu || capDisk <= affordDisk
+})
 
 // Dropdown ladders (the precise-pick companion to the sliders). Rungs past the
 // headroom hard stop are disabled. RAM is keyed by its vCPU rung, so picking a RAM
@@ -208,8 +238,11 @@ function indexOf(ladder: number[], value: number): number {
         </button>
       </div>
 
-      <p v-if="overHeadroom" class="text-p-xs text-ink-red-5">
+      <p v-if="overHeadroom" class="text-p-xs text-ink-red-7">
         This config is over your remaining spending limit.
+      </p>
+      <p v-else-if="cappedByCapacity" class="text-p-xs text-ink-gray-5">
+        Sizes are limited by this region's available capacity right now.
       </p>
     </template>
   </div>

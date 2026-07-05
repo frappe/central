@@ -16,6 +16,12 @@ Terminal-state model (the resolved HITL decision — see issue #21):
   no gateway record -> failed (safe; never dangling)
   still pending     -> leave; alert ops past the threshold
   provenance: resolved_by = reconciliation (vs webhook)
+
+A second, symmetric hole: the sync charge path lands an attempt at Captured and
+defers settlement to the capture webhook. If that webhook is lost the invoice is
+stranded Open with money already taken, and — being terminal — the attempt is
+invisible to the ambiguous scan. reconcile_captured_attempt re-confirms success
+at the gateway and settles it through the same idempotent path.
 """
 
 import frappe
@@ -23,6 +29,8 @@ import frappe
 _AMBIGUOUS = ("Initiated", "Authorised")
 _GATEWAY_SUCCESS = {"succeeded", "captured", "paid", "completed"}
 _GATEWAY_FAILED = {"failed", "canceled", "cancelled", "declined", "expired", "voided"}
+# A Captured attempt whose invoice sits in one of these lost its settlement webhook.
+_UNSETTLED_INVOICE = ("Open", "Overdue")
 
 GRACE_MINUTES = 30
 ALERT_AFTER_HOURS = 24
@@ -65,8 +73,50 @@ def reconcile_attempt(attempt_name: str, now=None) -> dict:
 	return {"attempt": attempt_name, "unresolved": status}
 
 
+def reconcile_captured_attempt(attempt_name: str, now=None) -> dict:
+	"""Settle a Captured attempt whose invoice was never marked Paid (read-only).
+
+	The sync charge path (charges.pay_invoice) advances an attempt to Captured the
+	moment the gateway reports success, then leaves settlement to the capture
+	webhook. If that webhook is lost the money is taken but the invoice is stranded
+	Open — and the ambiguous-state scan never looks at a terminal (Captured)
+	attempt. This closes that hole: re-confirm success at the gateway, then settle
+	through the same idempotent path the webhook uses.
+	"""
+	attempt = frappe.get_doc("Payment Attempt", attempt_name)
+	if attempt.status != "Captured":
+		return {"attempt": attempt_name, "skipped": "not_captured"}
+
+	inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
+	if inv_status not in _UNSETTLED_INVOICE:
+		return {"attempt": attempt_name, "skipped": "invoice_settled"}
+
+	# Captured is local state; reconciliation only ever settles on fresh gateway
+	# truth. Without a confirmed success we don't guess — settle nothing.
+	status = ""
+	if attempt.gateway_transaction_id:
+		status = (_adapter(attempt.gateway).get_transaction_status(attempt.gateway_transaction_id) or "").lower()
+	if status not in _GATEWAY_SUCCESS:
+		now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
+		started = frappe.utils.get_datetime(attempt.initiated_at or attempt.creation)
+		if frappe.utils.time_diff_in_hours(now, started) >= ALERT_AFTER_HOURS:
+			_alert_ops(attempt, status or "unknown")
+			return {"attempt": attempt_name, "unresolved": status, "alerted": True}
+		return {"attempt": attempt_name, "unresolved": status}
+
+	from central.billing.payments import charges
+
+	settled = charges._settle_invoice(attempt)
+	if not attempt.completed_at or not attempt.resolved_by:
+		attempt.completed_at = attempt.completed_at or frappe.utils.now_datetime()
+		attempt.resolved_by = attempt.resolved_by or "Reconciliation"
+		attempt.save(ignore_permissions=True)
+	return {"attempt": attempt_name, "resolved": "paid", "gateway_status": status, "settled": settled}
+
+
 def run_reconciliation(now=None) -> list:
-	"""Daily scan: reconcile every ambiguous attempt past the grace window."""
+	"""Daily scan: resolve aged ambiguous attempts, then settle any captured-but-
+	open invoice whose capture webhook never landed."""
 	now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
 	cutoff = frappe.utils.add_to_date(now, minutes=-GRACE_MINUTES)
 	stuck = frappe.get_all(
@@ -74,7 +124,29 @@ def run_reconciliation(now=None) -> list:
 		filters=[["status", "in", list(_AMBIGUOUS)], ["initiated_at", "<=", cutoff]],
 		pluck="name",
 	)
-	return [reconcile_attempt(name, now=now) for name in stuck]
+	results = [reconcile_attempt(name, now=now) for name in stuck]
+
+	unsettled = _captured_unsettled_attempts(cutoff)
+	results += [reconcile_captured_attempt(name, now=now) for name in unsettled]
+	return results
+
+
+def _captured_unsettled_attempts(cutoff) -> list:
+	"""Captured attempts aged past the grace window whose invoice is still Open/
+	Overdue — a settlement webhook that never arrived. One join, no N+1."""
+	PA = frappe.qb.DocType("Payment Attempt")
+	INV = frappe.qb.DocType("Invoice")
+	return (
+		frappe.qb.from_(PA)
+		.join(INV)
+		.on(PA.invoice == INV.name)
+		.select(PA.name)
+		.where(
+			(PA.status == "Captured")
+			& (PA.initiated_at <= cutoff)
+			& (INV.status.isin(_UNSETTLED_INVOICE))
+		)
+	).run(pluck=True)
 
 
 def _resolve_paid(attempt):

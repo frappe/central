@@ -95,8 +95,8 @@ all teams. Teams may also define custom roles scoped to themselves.
 | `team:edit` | ✓ | ✓ | | | |
 | `team:manage_members` | ✓ | ✓ | | | |
 | `team:delete` | ✓ | | | | |
-| `billing:view` | ✓ | | | | ✓ |
-| `billing:manage` | ✓ | | | | ✓ |
+| `billing:view` | ✓ | ✓ | | | ✓ |
+| `billing:manage` | ✓ | ✓ | | | ✓ |
 | `cluster:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `server:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `server:create` | ✓ | ✓ | ✓ | | |
@@ -106,13 +106,13 @@ all teams. Teams may also define custom roles scoped to themselves.
 | `server:terminate` | ✓ | ✓ | ✓ | | |
 | `server:open` | ✓ | ✓ | ✓ | | |
 
-Totals: Owner 13, Admin 10, Developer 8, Viewer 2, Billing 4.
+Totals: Owner 13, Admin 12, Developer 8, Viewer 2, Billing 4.
 
 The ladder reads top to bottom: **Viewer** (look) → **Billing** (look + pay) →
 **Developer** (operate servers) → **Admin** (Developer + run the team) → **Owner**
-(Admin + billing + delete the team). A team has exactly one Owner, transferable via
-Transfer Ownership. Need a different mix (e.g. administration *and* billing)? Create
-a custom role.
+(Admin + delete the team). A team has exactly one Owner, transferable via Transfer
+Ownership. Need a different mix (e.g. server operations without billing)? Create a
+custom role.
 
 ## Changing the taxonomy
 

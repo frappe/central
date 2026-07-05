@@ -74,11 +74,11 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertNotIn("team:manage_members", developer_caps)
 		self.assertIn("team:delete", owner_caps)
 		self.assertNotIn("team:delete", admin_caps)
-		# Billing lives with Owner and Billing only.
+		# Billing is day-to-day team administration, so Owner/Admin/Billing carry it.
 		for cap in ("billing:view", "billing:manage"):
 			self.assertIn(cap, owner_caps)
+			self.assertIn(cap, admin_caps)
 			self.assertIn(cap, billing_caps)
-			self.assertNotIn(cap, admin_caps)
 			self.assertNotIn(cap, developer_caps)
 		# Viewer is a pure inventory auditor; Billing adds billing to that read view.
 		self.assertEqual(viewer_caps, {"cluster:view", "server:view"})

@@ -48,10 +48,8 @@ const subscription = computed(() => configCall.data?.subscription ?? null)
 
 // The region's menu, with this server's own spend freed back into the headroom so it
 // can grow into its own budget (exclude_subscription).
-const { groups, classes, plans, rateCard, profiles, available, currency, loading: plansLoading } = usePlans(
-  region,
-  subscription,
-)
+const { groups, classes, plans, rateCard, profiles, available, currency, capacity, loading: plansLoading } =
+  usePlans(region, subscription)
 
 const open = computed({
   get: () => !!props.server,
@@ -188,8 +186,8 @@ async function confirm() {
 </script>
 
 <template>
-  <Dialog v-model="open" :options="{ title: 'Resize server', size: '2xl' }">
-    <template #body-content>
+  <Dialog v-model="open" title="Resize server" size="2xl">
+    <template #default>
       <!-- Resize runs on the host and can take a while for a data-heavy server, so
            show a clear in-progress state and hold the dialog open until it lands. -->
       <div v-if="resizeCall.loading" class="flex flex-col items-center gap-3 py-10 text-center">
@@ -227,6 +225,7 @@ async function confirm() {
               :rate-card="rateCard"
               :available="available ?? 0"
               :currency="currency ?? 'USD'"
+              :capacity="capacity"
               :initial="initialFor(designableProfile(tab.label))"
               v-model:selected-plan="selectedPlan"
               v-model:composed-config="composedConfig"
@@ -240,6 +239,7 @@ async function confirm() {
           :rate-card="rateCard"
           :available="available ?? 0"
           :currency="currency ?? 'USD'"
+          :capacity="capacity"
           :initial="initialFor(flatProfile)"
           v-model:selected-plan="selectedPlan"
           v-model:composed-config="composedConfig"

@@ -118,8 +118,8 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		attempt.status = "Captured"  # gateway captured; invoice Paid waits on webhook
 	else:
 		attempt.status = "Failed"
-		attempt.failure_code = result.failure_code
-		attempt.failure_reason = result.failure_reason
+		_stamp_failure(attempt, result.failure_code, result.decline_code,
+					   result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
 	attempt.save(ignore_permissions=True)
 
@@ -263,6 +263,15 @@ def apply_webhook(event_name: str) -> dict:
 			return {"handled": False, "reason": "topup_not_captured"}
 		return _credit_topup(event, topup)
 
+	# Hosted-checkout invoice payments (create_invoice_checkout) also carry no Payment
+	# Attempt — they settle the invoice from the `invoice_payment` notes, same as top-ups.
+	inv_pay = _extract_invoice_payment(adapter_key, payload)
+	if inv_pay:
+		if not is_success:
+			_mark_event(event, "Ignored")
+			return {"handled": False, "reason": "invoice_payment_not_captured"}
+		return _settle_invoice_payment(event, inv_pay)
+
 	attempt_name = frappe.db.get_value("Payment Attempt", {"gateway_transaction_id": txn_id}, "name")
 	if not attempt_name:
 		_mark_event(event, "Ignored")
@@ -286,6 +295,12 @@ def apply_webhook(event_name: str) -> dict:
 		inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
 		if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
 			attempt.status = "Failed"
+			# Off-session declines surface their real reason here, not on the sync
+			# charge response — pull it off the event so the attempt records why.
+			detail = _extract_failure(adapter_key, payload)
+			if detail:
+				_stamp_failure(attempt, detail.get("failure_code"), detail.get("decline_code"),
+							   detail.get("failure_reason"), detail.get("raw"))
 			attempt.completed_at = frappe.utils.now_datetime()
 			attempt.save(ignore_permissions=True)
 			from central.billing.platform import notifications
@@ -315,14 +330,20 @@ def apply_webhook(event_name: str) -> dict:
 
 def _settle_invoice(attempt) -> bool:
 	"""Mark the attempt's invoice Paid (idempotent, under a row lock)."""
+	return _mark_invoice_paid(attempt.invoice, attempt.amount)
+
+
+def _mark_invoice_paid(invoice: str, amount) -> bool:
+	"""Mark an invoice Paid (idempotent, under a row lock). Shared by the Payment
+	Attempt capture path and the hosted-checkout invoice-payment path."""
 	invoice_tbl = frappe.qb.DocType("Invoice")
 	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
-		invoice_tbl.name == attempt.invoice
+		invoice_tbl.name == invoice
 	).for_update().run()
-	inv = frappe.get_doc("Invoice", attempt.invoice)
+	inv = frappe.get_doc("Invoice", invoice)
 	if inv.status == "Paid":
 		return False  # a duplicate webhook — already settled
-	inv.amount_paid = frappe.utils.flt(attempt.amount)
+	inv.amount_paid = frappe.utils.flt(amount)
 	inv.status = "Paid"
 	inv.save(ignore_permissions=True)
 
@@ -409,6 +430,47 @@ def _extract_transaction_id(adapter_key: str, payload: dict):
 	return None
 
 
+def _extract_failure(adapter_key: str, payload: dict) -> dict | None:
+	"""Pull the decline detail out of a failure webhook body, normalised to
+	{failure_code, decline_code, failure_reason, raw}. This is where an off-session
+	decline's real reason lives — the sync charge response often can't see it."""
+	if adapter_key == "Stripe":
+		obj = ((payload.get("data") or {}).get("object")) or {}
+		err = obj.get("last_payment_error") or {}
+		if not err:
+			return None
+		return {
+			"failure_code": err.get("code"),
+			"decline_code": err.get("decline_code"),
+			"failure_reason": err.get("message"),
+			"raw": err,
+		}
+	if adapter_key == "Razorpay":
+		entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
+		if not entity.get("error_code") and not entity.get("error_reason"):
+			return None
+		# Razorpay's error_reason is the granular bucket (payment_failed,
+		# insufficient_balance, …) — the decline_code analogue.
+		return {
+			"failure_code": entity.get("error_code"),
+			"decline_code": entity.get("error_reason"),
+			"failure_reason": entity.get("error_description"),
+			"raw": {k: entity.get(k) for k in (
+				"error_code", "error_description", "error_reason", "error_source", "error_step")},
+		}
+	return None
+
+
+def _stamp_failure(attempt, failure_code, decline_code, failure_reason, raw):
+	"""Record the decline detail on a Payment Attempt. `raw` is stored as JSON on
+	the Code field; failure_reason is trimmed to the Small Text column width."""
+	attempt.failure_code = failure_code
+	attempt.decline_code = decline_code
+	attempt.failure_reason = (failure_reason or "")[:140] or None
+	if raw:
+		attempt.gateway_response = frappe.as_json(raw)
+
+
 def _extract_topup(adapter_key: str, payload: dict):
 	"""If this event is a wallet top-up (`purpose=wallet_topup` in the gateway
 	notes/metadata set at create_topup_order), return its credit-able fields;
@@ -439,6 +501,49 @@ def _extract_topup(adapter_key: str, payload: dict):
 			"currency": (obj.get("currency") or "").upper() or None,
 		}
 	return None
+
+
+def _extract_invoice_payment(adapter_key: str, payload: dict):
+	"""If this event is a hosted-checkout invoice payment (`purpose=invoice_payment`
+	in the gateway notes/metadata set at create_invoice_checkout), return its invoice
+	+ captured amount; else None. Mirrors _extract_topup for the wallet-topup case —
+	a hosted invoice checkout carries no Payment Attempt, so it settles from notes."""
+	if adapter_key == "Razorpay":
+		entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
+		notes = entity.get("notes") or {}
+		if notes.get("purpose") != "invoice_payment":
+			return None
+		minor = entity.get("amount")
+		return {
+			"invoice": notes.get("invoice"),
+			"payment_id": entity.get("id"),
+			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+		}
+	if adapter_key == "Stripe":
+		obj = ((payload.get("data") or {}).get("object")) or {}
+		notes = obj.get("metadata") or {}
+		if notes.get("purpose") != "invoice_payment":
+			return None
+		minor = obj.get("amount_total") or obj.get("amount_received") or obj.get("amount")
+		return {
+			"invoice": notes.get("invoice"),
+			"payment_id": obj.get("payment_intent") or obj.get("id"),
+			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+		}
+	return None
+
+
+def _settle_invoice_payment(event, inv_pay: dict) -> dict:
+	"""Settle a hosted-checkout invoice from the capture webhook (idempotent on the
+	invoice's Paid state). A malformed event (missing invoice/amount) is Ignored
+	rather than settling a guess — an invoice never magically flips to Paid."""
+	invoice = inv_pay.get("invoice")
+	if not (invoice and inv_pay.get("amount") and frappe.db.exists("Invoice", invoice)):
+		_mark_event(event, "Ignored")
+		return {"handled": False, "reason": "invoice_payment_incomplete"}
+	settled = _mark_invoice_paid(invoice, inv_pay["amount"])
+	_mark_event(event, "Processed")
+	return {"handled": True, "result": "paid", "invoice": invoice, "settled": settled}
 
 
 def _credit_topup(event, topup: dict) -> dict:

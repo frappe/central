@@ -72,9 +72,22 @@ def _team_currency(team: str) -> str:
 # address — before any money moves (top-up, buy credits, add a payment method).
 # Currency is the load-bearing field: wallet, payment methods and invoices are
 # all denominated in it, so it must be chosen first and then held fixed.
+#
+# State and pincode are deliberately NOT required: they're irrelevant for foreign
+# customers, and for India the state is only enforced when a GSTIN is entered
+# (see BillingProfile.validate_india_state).
 _REQUIRED_PROFILE_FIELDS = (
-	"currency", "legal_name", "address_line1", "city", "state", "country", "pincode",
+	"currency", "legal_name", "address_line1", "city", "country",
 )
+
+
+def currency_for_country(country: str | None) -> str:
+	"""Billing currency follows the customer's country: India bills in INR, every
+	other country in USD. Derived, not chosen — so a customer can't pick a currency
+	that mismatches where they are."""
+	from central.billing.india_gst import INDIA
+
+	return "INR" if (country or "").strip() == INDIA else "USD"
 
 
 def _missing_profile_fields(team: str) -> list[str]:
@@ -89,15 +102,24 @@ def _profile_complete(team: str) -> bool:
 	return not _missing_profile_fields(team)
 
 
-def _require_billing_setup(team: str):
-	"""Server-side backstop: refuse money movement until the profile is complete.
-	The dashboard also blocks these actions; this guarantees it can't be bypassed."""
+def require_billing_profile(team: str, action: str):
+	"""Refuse `action` until the team's billing profile is complete.
+
+	Server-side backstop for anything that needs billing set up first (money
+	movement, provisioning a billable resource). The dashboard also blocks these;
+	this guarantees it can't be bypassed. `action` completes the sentence
+	"… before you can {action}"."""
 	if _missing_profile_fields(team):
 		frappe.throw(
-			"Complete your billing profile (currency, legal name and address) in "
-			"Settings before adding credits or a payment method.",
+			f"Set up your billing profile (currency, legal name and address) in "
+			f"Settings before you can {action}.",
 			frappe.ValidationError,
 		)
+
+
+def _require_billing_setup(team: str):
+	"""Server-side backstop: refuse money movement until the profile is complete."""
+	require_billing_profile(team, "add credits or a payment method")
 
 
 def _has_money_activity(team: str) -> bool:
@@ -193,6 +215,14 @@ def _add_method_gateway(currency: str):
 	return gw or frappe._dict()
 
 
+def _card_gateway(currency: str) -> str | None:
+	"""The gateway that saves cards for this currency. Saved cards are a Stripe-only
+	rail (ADR 0005) in every currency — INR included, where Razorpay handles only the
+	UPI Autopay e-mandate. Returns an enabled Stripe gateway that handles the
+	currency, or None if there is no card rail for it."""
+	return _enabled_gateway_for_currency(currency, "Stripe")
+
+
 def _from_inr(amount: float, currency: str) -> float:
 	return frappe.utils.flt(frappe.utils.flt(amount) / _FX_TO_INR.get(currency, 1.0), 2)
 
@@ -208,14 +238,21 @@ def _describe_line(team: str, li) -> dict:
 	row = {
 		"resource_type": li.resource_type, "plan": li.plan,
 		"subscription_resource": li.subscription_resource,
-		"days": li.days, "quantity": li.quantity, "rate": li.rate, "amount": li.amount,
-		"unit": li.unit,
+		"days": li.days, "hours": li.hours, "quantity": li.quantity,
+		"rate": li.rate, "amount": li.amount, "unit": li.unit,
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
 		row["item"] = title or li.plan or "Subscription plan"
 		row["kind"] = "Plan"
-		row["detail"] = f"{li.days} day(s) this period" if li.days else None
+		# Hourly lines come from a churn day (multiple resizes within 24h); daily
+		# lines are a whole-day stable segment.
+		if li.unit == "hour" and li.hours:
+			row["detail"] = f"{frappe.utils.flt(li.hours):g} hour(s) this period"
+		elif li.days:
+			row["detail"] = f"{li.days} day(s) this period"
+		else:
+			row["detail"] = None
 	else:
 		metered_plan = _metered_plan_for(li.resource_type)
 		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None

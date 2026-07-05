@@ -7,7 +7,7 @@ Billing defines no roles of its own. It reuses Central's capability IAM
 (`billing:view`), every **mutation** through `require_billing_manage`
 (`billing:manage`), and the cross-team admin console through `require_operator`
 (System Manager). Those capabilities ship in Central's fixtures, carried by the
-system `Owner` and `Billing` team roles.
+system `Owner`, `Admin`, and `Billing` team roles.
 
 A System Manager (operator) bypasses team scoping — they see/act across every
 team. The cluster Agent API key holds no billing capability and is not a System

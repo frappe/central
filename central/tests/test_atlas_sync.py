@@ -122,6 +122,134 @@ class TestAtlasMirror(IntegrationTestCase):
 		asset = frappe.get_doc("Asset", "vm-r")
 		self.assertEqual((asset.vcpus, asset.memory_megabytes, asset.disk_gigabytes), (4, 16384, 80))
 
+	def test_bench_login_handoff_mirrors_and_is_write_once(self):
+		# A bench VM reports its front door immediately, but the login URL + expiry only
+		# arrive once Running (Atlas gates them on status).
+		self._push(
+			"vm.created",
+			{"name": "vm-b", "team": self.team.name, "status": "Pending",
+			 "gateway_url": "https://acme.blr1.frappe.dev"},
+			"2026-06-18 10:00:00",
+		)
+		asset = frappe.get_doc("Asset", "vm-b")
+		self.assertEqual(asset.gateway_url, "https://acme.blr1.frappe.dev")
+		self.assertIsNone(asset.login_url)
+
+		# The Running event carries the minted handoff — it lands on the mirror.
+		self._push(
+			"vm.status_changed",
+			{"name": "vm-b", "team": self.team.name, "status": "Running",
+			 "gateway_url": "https://acme.blr1.frappe.dev",
+			 "login_url": "https://acme.blr1.frappe.dev/app?sid=abc",
+			 "login_url_expires_at": "2026-06-18 10:05:00"},
+			"2026-06-18 10:01:00",
+		)
+		asset.reload()
+		self.assertEqual(asset.login_url, "https://acme.blr1.frappe.dev/app?sid=abc")
+		self.assertEqual(str(asset.login_url_expires_at), "2026-06-18 10:05:00")
+
+		# Write-once: a later status-only event (no login_url in the payload — e.g. the
+		# reconcile shape before another Running) must not blank the stored handoff.
+		self._push(
+			"vm.status_changed",
+			{"name": "vm-b", "team": self.team.name, "status": "Stopped",
+			 "gateway_url": "https://acme.blr1.frappe.dev"},
+			"2026-06-18 10:10:00",
+		)
+		asset.reload()
+		self.assertEqual(asset.login_url, "https://acme.blr1.frappe.dev/app?sid=abc")
+
+	def test_site_login_handoff_mirrors_and_is_write_once(self):
+		# A self-serve Site's one-click login URL + expiry only arrive once Running
+		# (Atlas gates them on status), same contract as the bench VM's.
+		fqdn = "handoff.blr1.frappe.dev"
+		self._push(
+			"site.created",
+			{"name": fqdn, "team": self.team.name, "subdomain": "handoff", "status": "Provisioning"},
+			"2026-06-18 10:00:00",
+		)
+		site = frappe.get_doc("Site", fqdn)
+		self.assertIsNone(site.login_url)
+
+		# The Running event carries the minted handoff — it lands on the mirror.
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "handoff",
+			 "status": "Running", "url": f"https://{fqdn}",
+			 "login_url": f"https://{fqdn}/app?sid=xyz",
+			 "login_url_expires_at": "2026-06-19 10:00:00"},
+			"2026-06-18 10:05:00",
+		)
+		site.reload()
+		self.assertEqual(site.url, f"https://{fqdn}")
+		self.assertEqual(site.login_url, f"https://{fqdn}/app?sid=xyz")
+		self.assertEqual(str(site.login_url_expires_at), "2026-06-19 10:00:00")
+
+		# Write-once: a later status-only event without a login_url must not blank it.
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "handoff", "status": "Running"},
+			"2026-06-18 10:10:00",
+		)
+		site.reload()
+		self.assertEqual(site.login_url, f"https://{fqdn}/app?sid=xyz")
+
+	def test_get_site_returns_stored_login_url_when_fresh(self):
+		# A Running site with a not-yet-expired login URL: get_site returns it verbatim,
+		# no regenerate round-trip to Atlas.
+		from central.api import sites
+
+		fqdn = "fresh.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "fresh",
+			 "status": "Running", "url": f"https://{fqdn}",
+			 "login_url": f"https://{fqdn}/app?sid=fresh",
+			 "login_url_expires_at": "2099-01-01 00:00:00"},
+			"2026-06-18 10:05:00",
+		)
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login"
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=fresh")
+		regen.assert_not_called()
+
+	def test_get_site_regenerates_expired_login_url(self):
+		# A Running site whose stored login URL has expired: get_site re-mints it via
+		# Atlas, re-mirrors, and returns the fresh URL.
+		from central.api import sites
+
+		fqdn = "stale.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "stale",
+			 "status": "Running", "url": f"https://{fqdn}",
+			 "login_url": f"https://{fqdn}/app?sid=stale",
+			 "login_url_expires_at": "2000-01-01 00:00:00"},
+			"2026-06-18 10:05:00",
+		)
+		fresh = {
+			"name": fqdn, "team": self.team.name, "subdomain": "stale",
+			"status": "Running", "url": f"https://{fqdn}",
+			"login_url": f"https://{fqdn}/app?sid=fresh",
+			"login_url_expires_at": "2099-01-01 00:00:00",
+		}
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		regen.assert_called_once_with(fqdn)
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=fresh")
+
 	def test_resize_vm_posts_run_doc_method_with_args(self):
 		import json
 

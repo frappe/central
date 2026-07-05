@@ -186,12 +186,16 @@ class StripeAdapter(GatewayAdapter):
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
 		except stripe.error.CardError as e:
+			body = getattr(e, "json_body", None) or {}
+			# `code` for a declined card is almost always "card_declined"; the actual
+			# reason (insufficient_funds, lost_card, stolen_card, …) is the decline_code.
 			return PaymentResult(
 				success=False,
 				status="Failed",
 				failure_code=getattr(e, "code", None),
+				decline_code=(body.get("error") or {}).get("decline_code"),
 				failure_reason=getattr(e, "user_message", None) or str(e),
-				raw=getattr(e, "json_body", None) or {},
+				raw=body,
 			)
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
 			raise GatewayTimeout(str(e)) from e
@@ -308,6 +312,42 @@ class StripeAdapter(GatewayAdapter):
 	def get_checkout_session(self, session_id: str) -> dict:
 		self._configure()
 		return _to_dict(stripe.checkout.Session.retrieve(session_id))
+
+	def create_setup_checkout_session(self, customer: str, success_url: str, cancel_url: str) -> dict:
+		"""A hosted Stripe Checkout session in `setup` mode — the hosted "save a card"
+		page (the parallel of the top-up's `payment` mode). Saves the card to the
+		team's reused customer; no money moves. The UI redirects to `checkout_url`."""
+		self._configure()
+
+		session = _to_dict(stripe.checkout.Session.create(
+			mode="setup", customer=customer, payment_method_types=["card"],
+			success_url=success_url, cancel_url=cancel_url,
+		))
+
+		return {"checkout_url": session.get("url"), "session_id": session.get("id")}
+
+	def get_setup_result(self, session_id: str) -> dict:
+		"""Read a completed setup Checkout session back to the saved card: the gateway
+		payment-method id + card display fields, or `{}` while still pending."""
+		self._configure()
+
+		session = _to_dict(stripe.checkout.Session.retrieve(session_id))
+
+		setup_intent_id = session.get("setup_intent")
+
+		if not setup_intent_id:
+			return {}
+
+		intent = _to_dict(stripe.SetupIntent.retrieve(setup_intent_id))
+		method_id = intent.get("payment_method")
+
+		if intent.get("status") != "succeeded" or not method_id:
+			return {}
+
+		card = (_to_dict(stripe.PaymentMethod.retrieve(method_id)).get("card")) or {}
+
+		return {"payment_method": method_id, "brand": (card.get("brand") or "card").title(),
+				"last4": card.get("last4"), "exp_month": card.get("exp_month"), "exp_year": card.get("exp_year")}
 
 	def create_customer(self, team) -> str:
 		self._configure()

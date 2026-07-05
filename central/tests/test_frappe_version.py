@@ -2,6 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import _stamp_frappe_version, create_server
+from central.billing.tests.utils import complete_billing_profile
 from central.central.doctype.asset.asset import Asset
 from central.tests.test_iam import ensure_user
 
@@ -21,6 +22,9 @@ class TestFrappeVersion(IntegrationTestCase):
 				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
 			}
 		).insert()
+		# create_server now requires a complete billing profile (server-side gate),
+		# so the version logic under test is only reached once that's satisfied.
+		complete_billing_profile(self.team.name)
 		self.region = "fv-region-test"
 		if not frappe.db.exists("Atlas Instance", self.region):
 			frappe.get_doc(

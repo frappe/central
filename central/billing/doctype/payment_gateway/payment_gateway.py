@@ -9,6 +9,21 @@ from frappe.utils import get_url, now_datetime
 from central.billing.gateways.base import GatewayAuthError, GatewayUnsupported
 
 
+def _is_local_url(url: str) -> bool:
+	"""A callback URL a gateway's servers can't reach — a local/dev host, so webhook
+	auto-registration must be skipped (the gateway rejects such a URL)."""
+	from urllib.parse import urlparse
+
+	host = (urlparse(url).hostname or "").lower()
+	if host in ("localhost", "127.0.0.1", "::1"):
+		return True
+	if host.endswith(".localhost") or host.endswith(".local"):
+		return True
+	return host.startswith(("10.", "192.168.", "127.")) or any(
+		host.startswith(f"172.{block}.") for block in range(16, 32)
+	)
+
+
 class PaymentGateway(Document):
 	def get_adapter(self):
 		"""Resolve the GatewayAdapter for this gateway (by adapter_key).
@@ -105,8 +120,24 @@ class PaymentGateway(Document):
 		Gateways that can't self-register fall back to manual entry of the secret."""
 		if self.webhook_endpoint_id:
 			return
+		url = self.webhook_callback_url()
+		# The gateway's servers must be able to reach the callback. On a local/dev
+		# host (localhost, *.localhost, loopback/private IP) they can't — and the
+		# gateway rejects the registration — so skip it with a note. Keys still
+		# validate; the webhook secret can be set manually (or registered once the
+		# site is public).
+		if _is_local_url(url):
+			frappe.msgprint(
+				_(
+					"Webhook not auto-registered — {0} isn't publicly reachable. "
+					"Enter the webhook secret manually, or register it once the site is public."
+				).format(url),
+				title=_("Webhook Registration Skipped"),
+				indicator="orange",
+			)
+			return
 		try:
-			result = adapter.register_webhook(self.webhook_callback_url())
+			result = adapter.register_webhook(url)
 		except GatewayUnsupported:
 			return
 		self.webhook_endpoint_id = result.get("endpoint_id")

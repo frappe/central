@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Button } from 'frappe-ui'
+import { Button, Skeleton } from 'frappe-ui'
 import RoleMatrix from '@/components/team/RoleMatrix.vue'
 import RoleBuilderDialog from '@/components/team/RoleBuilderDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -38,7 +38,7 @@ async function onDeleteRole(role: TeamRoleRow): Promise<void> {
       />
     </div>
 
-    <div v-if="loading" class="h-64 animate-pulse rounded-lg bg-surface-gray-2" />
+    <Skeleton v-if="loading" class="h-64 rounded-lg" />
 
     <div
       v-else-if="error"

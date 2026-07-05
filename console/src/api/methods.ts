@@ -77,6 +77,7 @@ export const API = {
   paymentMethods: 'central.billing.api.dashboard.list_payment_methods',
   paymentMethodOptions: 'central.billing.api.dashboard.get_payment_method_options',
   subscriptions: 'central.billing.api.dashboard.list_subscriptions',
+  meteredServices: 'central.billing.api.dashboard.get_metered_services',
   billingProfile: 'central.billing.api.dashboard.get_billing_profile',
   billingGeo: 'central.billing.api.dashboard.get_billing_geo',
   billingSettings: 'central.billing.api.dashboard.get_billing_settings',
@@ -104,4 +105,5 @@ export const API = {
   saveNotificationPreferences: 'central.billing.api.dashboard.save_notification_preferences',
   pauseSubscription: 'central.billing.api.dashboard.pause_subscription',
   resumeSubscription: 'central.billing.api.dashboard.resume_subscription',
+  subscribeMeteredService: 'central.billing.api.dashboard.subscribe_metered_service',
 } as const

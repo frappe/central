@@ -10,6 +10,7 @@
   "enabled",
   "team",
   "asset_id",
+  "service_subject",
   "cluster",
   "pricing_mode",
   "plan",
@@ -130,6 +131,13 @@
    "fieldname": "cluster",
    "fieldtype": "Read Only",
    "label": "Cluster"
+  },
+  {
+   "description": "A team-level metered service's synthesized virtual subject (ADR 0013/0015) — keyed per (team, service-plan, cluster), with no customer-owned Asset. Mutually exclusive with asset_id; metering resolves the segment through it just as it does through an Asset.",
+   "fieldname": "service_subject",
+   "fieldtype": "Data",
+   "label": "Service Subject",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,

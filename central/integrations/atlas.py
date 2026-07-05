@@ -26,6 +26,12 @@ from central.host_task import run_host_task
 # --- outbound: Central → Atlas ----------------------------------------------
 
 
+# Hard timeout (seconds) for the capacity reads on the create-server / resize menu path.
+# Short on purpose: these run on every menu render and fail soft (a timeout just shows the
+# full menu), so a degraded Atlas must not hold a worker longer than a page can wait.
+CAPACITY_TIMEOUT = 3
+
+
 class AtlasError(frappe.ValidationError):
 	pass
 
@@ -114,7 +120,12 @@ class AtlasClient:
 		frappe_version: str | None = None,
 	) -> dict:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
-		Returns the new VM in the Asset-mirror shape so the caller can upsert it."""
+		Returns the new VM in the Asset-mirror shape so the caller can upsert it.
+
+		For a bench VM, `title` doubles as the subdomain — Atlas fronts it at
+		`title.<region domain>` and reports that back as gateway_url. The one-click
+		login URL is minted after boot, so it (and its expiry) arrive later on the
+		vm.status_changed event, not in this reply."""
 		params: dict = {
 			"team": team,
 			"title": title,
@@ -130,9 +141,52 @@ class AtlasClient:
 			params["frappe_version"] = frappe_version
 		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
 
+	def capacity(self) -> dict:
+		"""Ask this region what it can seat right now: `{available, unmeasured, largest_vm}`.
+
+		Central speaks in resources, never hosts — placement is Atlas's concern
+		(spec/16-central.md). `largest_vm` is the biggest single VM shape placeable now
+		(`{vcpus, memory_megabytes, disk_gigabytes}`, or null when no Active host exists);
+		the create-server menu hides plans that don't fit it. Advisory only — placement's
+		create-time gate is authoritative, since capacity can move between this read and
+		the create."""
+		return self._get_bounded("atlas.atlas.api.provision.capacity")
+
+	def resize_capacity(self, vm: str) -> dict:
+		"""The largest shape `vm` can resize to on its current host: `{available,
+		unmeasured, largest_vm}`. The in-place twin of `capacity()` — the ceiling includes
+		the VM's own footprint (a resize frees it before re-reserving), so the VM can always
+		keep its size or shrink. The create-server menu caps the resize slider to this so an
+		oversized resize can't be requested. Advisory — the host resize path is authoritative."""
+		return self._get_bounded("atlas.atlas.api.provision.resize_capacity", {"vm": vm})
+
+	def _get_bounded(self, method: str, params: dict | None = None, timeout: int = CAPACITY_TIMEOUT) -> dict:
+		"""Admin-auth GET against the data path with a HARD timeout — the bounded twin of
+		`client().get_api`. The capacity reads run on every create-server / resize menu
+		render, and FrappeClient (like requests) has no default timeout, so a silently-hung
+		Atlas (slow net, overloaded host) would otherwise pin a Gunicorn worker on the OS
+		TCP timeout and stall every user in that region. A timeout raises here and the
+		caller's fail-soft path treats it as 'don't gate' (show the full menu). Returns the
+		endpoint's `message` payload."""
+		if self.instance.status == "Disabled":
+			frappe.throw(f"Atlas '{self.instance.region}' is disabled.", AtlasError)
+		if not self.instance.api_key:
+			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+		url = self._data_url().rstrip("/") + "/api/method/" + method
+		secret = self.instance.get_password("api_secret")
+		response = requests.get(
+			url,
+			headers={"Authorization": f"token {self.instance.api_key}:{secret}"},
+			params=params or {},
+			timeout=timeout,
+		)
+		response.raise_for_status()
+		return response.json().get("message", {})
+
 	def central_vms(self, team: str | None = None) -> list[dict]:
 		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one
-		team). One dict per VM: name, team, status, gateway_url."""
+		team). One dict per VM in the Asset-mirror shape — including the bench login
+		handoff (gateway_url + login_url/expiry, the latter only once Running)."""
 		params = {"team": team} if team else None
 		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
 
@@ -249,10 +303,36 @@ class AtlasClient:
 	def get_site(self, name: str) -> dict:
 		"""
 		Poll one site's current state — the self-heal fallback to the site.* events.
-		Returns the mirror shape, with url + admin_password once the site is Running.
+		Returns the mirror shape, with url + the one-click login_url (and its expiry)
+		once the site is Running.
 		"""
 
 		return self.client().post_api("atlas.atlas.api.site.get_site", params={"name": name})
+
+	def regenerate_site_login(self, name: str) -> dict:
+		"""Re-mint a serving site's one-click login URL and return the fresh Site-mirror
+		shape (url + login_url + login_url_expires_at). Central calls this when a tenant
+		clicks their login link after the stored URL's 24h session has expired — the URL
+		is short-lived by design, so it is re-signed on demand. The Atlas Site controller
+		re-mints in the guest, re-stamps, and returns the mirror."""
+		return self.client().post_api(
+			"run_doc_method",
+			params={"dt": "Site", "dn": name, "method": "regenerate_login_url"},
+		)
+
+	def regenerate_vm_login(self, name: str) -> dict:
+		"""Re-mint a bench VM's one-click login URL and return the fresh Asset-mirror
+		shape (gateway_url + login_url + login_url_expires_at). Central calls this on
+		Open when the Asset's stored URL has expired (the admin JWT lasts 5 minutes, so
+		this is the common path).
+
+		A bench VM's login URL lives on the Pilot that owns the VM, not the pure-microVM
+		Virtual Machine, so this goes through Atlas's provision endpoint, which resolves
+		the VM to its Pilot and re-mints in the guest before returning the payload."""
+		return self.client().post_api(
+			"atlas.atlas.api.provision.regenerate_vm_login",
+			params={"name": name},
+		)
 
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""

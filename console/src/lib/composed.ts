@@ -3,7 +3,7 @@
 // composition, bounds, and headroom); these helpers just keep the slider on-shape
 // and inside headroom so the customer can't drag into a config they can't afford.
 
-import type { ComposedConfig, Profile, RateCard } from '@/types/api'
+import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
 
 /** RAM follows vCPU by the profile's ratio — never independently chosen, so an
  *  off-ratio shape can't be expressed. */
@@ -61,6 +61,39 @@ function largestAffordable(ladder: number[], costOf: (rung: number) => number, a
   let best = rungs[0] ?? 0
   for (const rung of rungs) if (costOf(rung) <= available) best = rung
   return best
+}
+
+/** The largest ladder rung that is ≤ `ceiling`; the smallest rung if none are. */
+function largestWithin(ladder: number[], ceiling: number): number {
+  const rungs = [...ladder].sort((a, b) => a - b)
+  let best = rungs[0] ?? 0
+  for (const rung of rungs) if (rung <= ceiling) best = rung
+  return best
+}
+
+/** Whether live capacity bounds the slider at all: gated, with a known shape. We clamp by
+ *  the raw `largest_vm` numbers — the same thing the backend preset filter (`_plan_fits`)
+ *  does — so the slider and the preset list agree. An axis the agent hasn't measured comes
+ *  back as a huge sentinel, which naturally imposes no limit on that axis, while a measured
+ *  axis (e.g. a slug-catalogued CPU) still clamps; hence `unmeasured` is NOT a bail-out. */
+export function capacityLimits(capacity: Capacity | null | undefined): boolean {
+  return !!(capacity?.gated && capacity.largest_vm)
+}
+
+/** The largest vCPU rung the region can physically seat: bounded by both the host's free
+ *  vCPU and its free RAM (RAM = vCPU × ratio, so a memory ceiling caps vCPU too). No
+ *  capacity limit → the top rung. */
+export function maxVcpuForCapacity(profile: Profile, capacity: Capacity | null | undefined): number {
+  if (!capacityLimits(capacity)) return largestWithin(profile.vcpu_steps, Infinity)
+  const lv = capacity!.largest_vm!
+  const byMemory = profile.ram_ratio > 0 ? lv.memory_megabytes / 1024 / profile.ram_ratio : Infinity
+  return largestWithin(profile.vcpu_steps, Math.min(lv.vcpus, byMemory))
+}
+
+/** The largest storage rung the region can physically seat. No capacity limit → the top rung. */
+export function maxDiskForCapacity(profile: Profile, capacity: Capacity | null | undefined): number {
+  const ceiling = capacityLimits(capacity) ? capacity!.largest_vm!.disk_gigabytes : Infinity
+  return largestWithin(profile.disk_steps, ceiling)
 }
 
 export function clamp(value: number, min: number, max: number): number {
