@@ -264,14 +264,24 @@ def _describe_line(team: str, li) -> dict:
 			{"team": team, "resource_id": li.subscription_resource, "resource_type": li.resource_type},
 			"locked_allowance",
 		)
-		# li.quantity is the BILLABLE overage (usage already minus the allowance), so it
-		# reads as the units charged *beyond* what's included — not a usage-vs-allowance
-		# ratio (which "40 over 50 included" wrongly implied, as if nothing was billed).
-		# Unit is a plain display label (Nos, GB); the quantity is the actual count.
+		# li.quantity is the BILLABLE overage (usage already minus the allowance). Spell
+		# out the metered story so the charge is legible: total used, what was included,
+		# and the units actually billed (used − included). Unit is a plain label (Nos, GB).
 		unit = li.unit or "units"
-		billed = f"{frappe.utils.flt(li.quantity):g} {unit}"
+		billed = frappe.utils.flt(li.quantity)
 		if allowance is not None:
-			row["detail"] = f"{billed} beyond {frappe.utils.flt(allowance):g} included"
+			allowance = frappe.utils.flt(allowance)
+			row["detail"] = (
+				f"Metered · {_qty(billed + allowance)} {unit} used · "
+				f"{_qty(billed)} billed over {_qty(allowance)} included"
+			)
 		else:
-			row["detail"] = f"{billed} metered"
+			row["detail"] = f"Metered · {_qty(billed)} {unit} used"
 	return row
+
+
+def _qty(value) -> str:
+	"""Format a metered quantity with thousands separators (90,000), keeping up to two
+	decimals only when the count is fractional (e.g. GB)."""
+	value = frappe.utils.flt(value)
+	return f"{value:,.0f}" if value == int(value) else f"{value:,.2f}"
