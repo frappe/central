@@ -15,6 +15,7 @@ class Asset(Document):
 
 		cluster: DF.Link
 		disk_gigabytes: DF.Int
+		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
 		ipv6_address: DF.Data | None
 		last_event_at: DF.Datetime | None
@@ -160,6 +161,8 @@ class Asset(Document):
 		doc.ipv6_address = vm.get("ipv6_address")
 		doc.public_ipv4 = vm.get("public_ipv4")
 		doc.gateway_url = vm.get("gateway_url") or None
+		# Provisioned version Atlas echoes; an event that omits it must not wipe it.
+		doc.frappe_version = vm.get("frappe_version") or doc.get("frappe_version")
 		# Write-once: the bench login URL + its expiry only arrive once the VM is
 		# Running (Atlas gates them on status), so never blank a handoff we've already
 		# stored on a later status-only event. Same rule as Site's login_url.

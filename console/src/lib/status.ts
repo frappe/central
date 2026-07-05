@@ -39,15 +39,15 @@ export function displayStatus(server: { status?: AssetStatus; resize_in_progress
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */
 export const POWER_ON_STATES: AssetStatus[] = ['Stopped', 'Paused', 'Failed']
 
-export function canStart(status: AssetStatus): boolean {
-  return POWER_ON_STATES.includes(status)
+export function canStart(status?: AssetStatus): boolean {
+  return status !== undefined && POWER_ON_STATES.includes(status)
 }
 
-export function canStop(status: AssetStatus): boolean {
+export function canStop(status?: AssetStatus): boolean {
   return status === 'Running'
 }
 
-export function isTerminated(status: AssetStatus): boolean {
+export function isTerminated(status?: AssetStatus): boolean {
   return status === 'Terminated'
 }
 

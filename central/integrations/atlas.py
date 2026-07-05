@@ -117,6 +117,7 @@ class AtlasClient:
 		disk_gigabytes: int,
 		email: str | None = None,
 		cpu_max_cores: float | None = None,
+		frappe_version: str | None = None,
 	) -> dict:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
 		Returns the new VM in the Asset-mirror shape so the caller can upsert it.
@@ -136,6 +137,8 @@ class AtlasClient:
 			params["email"] = email
 		if cpu_max_cores:
 			params["cpu_max_cores"] = cpu_max_cores
+		if frappe_version:
+			params["frappe_version"] = frappe_version
 		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
 
 	def capacity(self) -> dict:
@@ -183,9 +186,16 @@ class AtlasClient:
 	def central_vms(self, team: str | None = None) -> list[dict]:
 		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one
 		team). One dict per VM in the Asset-mirror shape — including the bench login
-		handoff (gateway_url + login_url/expiry, the latter only once Running)."""
+		handoff (gateway_url + login_url/expiry, the latter only once Running) and the
+		provisioned frappe_version."""
 		params = {"team": team} if team else None
 		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
+
+	def available_frappe_versions(self) -> list[str]:
+		"""The Frappe versions this region can provision — the tokens of its active
+		bench images. Bounded/fail-soft like the capacity reads (it feeds the same
+		new-server menu); the caller falls back to a static set if it raises."""
+		return self._get_bounded("atlas.atlas.api.inventory.available_frappe_versions") or []
 
 	# --- admin-auth path: the registration handshake (TUNNEL.md) -------------
 	# Central→Atlas authenticates with the Atlas ADMIN creds (api_key/api_secret on the

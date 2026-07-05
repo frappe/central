@@ -1,0 +1,99 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "field:region",
+ "creation": "2026-07-05 11:26:36.302438",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "region",
+  "display_name",
+  "provider",
+  "country_code",
+  "column_break_geo",
+  "latitude",
+  "longitude"
+ ],
+ "fields": [
+  {
+   "description": "Region code, e.g. in-mumbai. One Atlas Instance maps to one Region.",
+   "fieldname": "region",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Region",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Human region label shown in the console, e.g. Mumbai, India.",
+   "fieldname": "display_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Display Name"
+  },
+  {
+   "description": "Infrastructure provider hosting this region, shown as the pin's brand mark. Display vocabulary only \u2014 distinct from Atlas's Server.provider_type (DigitalOcean/Scaleway/Self-Managed/Fake); reconcile into a shared source if provider identity ever needs to be authoritative.",
+   "fieldname": "provider",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Provider",
+   "options": "\nAWS\nHetzner\nFrappe\nOCI\nDigitalOcean\nScaleway\nSelf-Managed\nFake"
+  },
+  {
+   "description": "ISO 3166-1 alpha-2 code, e.g. IN. The console derives the flag emoji from it.",
+   "fieldname": "country_code",
+   "fieldtype": "Data",
+   "label": "Country Code",
+   "length": 2
+  },
+  {
+   "fieldname": "column_break_geo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Region latitude for the console world map. 0/0 keeps the region off the map (it still lists).",
+   "fieldname": "latitude",
+   "fieldtype": "Float",
+   "label": "Latitude",
+   "precision": "6"
+  },
+  {
+   "description": "Region longitude for the console world map.",
+   "fieldname": "longitude",
+   "fieldtype": "Float",
+   "label": "Longitude",
+   "precision": "6"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-05 19:19:22.229140",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Region",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "region",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "display_name"
+}

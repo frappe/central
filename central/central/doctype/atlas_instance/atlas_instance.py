@@ -22,7 +22,7 @@ class AtlasInstance(Document):
 		peer_endpoint: DF.Data | None
 		peer_public_key: DF.SmallText | None
 		reachable: DF.Check
-		region: DF.Data
+		region: DF.Link
 		service_user: DF.Link | None
 		skip_tunnel: DF.Check
 		status: DF.Literal["Active", "Draining", "Disabled"]

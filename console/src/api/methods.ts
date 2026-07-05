@@ -38,6 +38,7 @@ export const API = {
   refreshAssets: 'central.api.servers.refresh_assets',
   createServer: 'central.api.servers.create_server',
   createComposedServer: 'central.api.servers.create_composed_server',
+  frappeVersions: 'central.api.servers.frappe_versions',
   startServer: 'central.api.servers.start_server',
   stopServer: 'central.api.servers.stop_server',
   terminateServer: 'central.api.servers.terminate_server',

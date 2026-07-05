@@ -27,11 +27,12 @@
  ],
  "fields": [
   {
-   "description": "The cluster the user sees. One Atlas = one region.",
+   "description": "The cluster the user sees. One Atlas = one Region (joined by this code).",
    "fieldname": "region",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Region",
+   "options": "Region",
    "reqd": 1,
    "unique": 1
   },
@@ -80,7 +81,7 @@
    "reqd": 1
   },
   {
-   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register — not hand-entered.",
+   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register \u2014 not hand-entered.",
    "fieldname": "section_break_tunnel",
    "fieldtype": "Section Break",
    "label": "Tunnel"
@@ -150,7 +151,7 @@
   },
   {
    "default": "0",
-   "description": "Result of the last Test Connection (over the current data path — base_url before/after the tunnel, tunnel_url while Active).",
+   "description": "Result of the last Test Connection (over the current data path \u2014 base_url before/after the tunnel, tunnel_url while Active).",
    "fieldname": "reachable",
    "fieldtype": "Check",
    "label": "Reachable",

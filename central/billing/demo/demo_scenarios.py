@@ -452,7 +452,7 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 		rate = round(catalog * 0.78, 2) if (state == "grandfathered" and idx == 1) else catalog
 		sub = subscriptions.create_subscription(
-			team=team, cluster=cluster, plan=plan, billing_cycle="Monthly",
+			team=team, cluster=cluster, plan=pname, billing_cycle="Monthly",
 			default_payment_method=pm, gateway=gateway,
 			start_date=first_start, resource_id=resource,
 		).name

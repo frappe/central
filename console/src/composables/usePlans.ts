@@ -59,6 +59,11 @@ export function usePlans(cluster: Ref<string | null>, excludeSubscription?: Ref<
     // Live provisioning capacity for this region: caps the custom slider and explains an
     // empty menu when the region is full (`available` false).
     capacity: computed<Capacity>(() => call.data?.capacity ?? UNGATED),
-    loading: computed(() => call.loading),
+    // Loading until the response *echo* matches the picked region — the fetch
+    // starts a tick after `cluster` changes, and without this gate the previous
+    // region's menu flashes through in that gap.
+    loading: computed(
+      () => call.loading || (!!cluster.value && call.data?.cluster !== cluster.value),
+    ),
   }
 }

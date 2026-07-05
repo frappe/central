@@ -62,9 +62,19 @@ class TestPermissionGuards(IntegrationTestCase):
 	def setUp(self):
 		# A unique user per test — grants must not leak across tests.
 		self.user = make_user(f"hardening-{frappe.generate_hash(6)}@example.com")
+		self._teams: list[str] = []
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		# make_billing_team/make_custom_role_team mint a unique-hash owner per call,
+		# so their teams accumulate across runs unless removed here.
+		from central.billing.tests.utils import purge_teams
+
+		purge_teams(self._teams)
+
+	def _team(self, team):
+		self._teams.append(team.name)
+		return team
 
 	def test_non_operator_is_denied_admin_endpoint(self):
 		# A user with no operator bypass (stands in for the Agent API key) → 403.
@@ -78,7 +88,7 @@ class TestPermissionGuards(IntegrationTestCase):
 		authz.require_operator()  # no raise
 
 	def test_team_scoping_rejects_other_team(self):
-		team = make_billing_team(self.user)  # Billing role → billing:view
+		team = self._team(make_billing_team(self.user))  # Billing role → billing:view
 		frappe.set_user(self.user)
 		authz.require_billing_view(team.name)  # own team ok
 		with self.assertRaises(frappe.PermissionError):
@@ -86,7 +96,7 @@ class TestPermissionGuards(IntegrationTestCase):
 
 	def test_member_without_capability_is_denied(self):
 		# A team member whose role carries no billing capability → 403.
-		team = make_billing_team(self.user, role="Viewer")
+		team = self._team(make_billing_team(self.user, role="Viewer"))
 		frappe.set_user(self.user)
 		with self.assertRaises(frappe.PermissionError):
 			authz.require_billing_view(team.name)
@@ -94,7 +104,7 @@ class TestPermissionGuards(IntegrationTestCase):
 	def test_view_only_capability_gates_manage(self):
 		# A custom role granting billing:view WITHOUT billing:manage: the view gate
 		# passes, the manage gate is denied — the split the system roles don't have.
-		team = make_custom_role_team(self.user, ["billing:view"])
+		team = self._team(make_custom_role_team(self.user, ["billing:view"]))
 		frappe.set_user(self.user)
 		authz.require_billing_view(team.name)  # view ok
 		with self.assertRaises(frappe.PermissionError):
@@ -174,19 +184,19 @@ class TestLoadTwoPhase(IntegrationTestCase):
 
 		make_plan(self.PLAN)
 		self._teams = [f"team-load-{i}" for i in range(self.N)]
+		self._purge()  # clear any leftovers from a prior run before seeding
 		for team in self._teams:
 			ensure_team(team)
-		self._purge()
 
 	def tearDown(self):
 		self._purge()
 
 	def _purge(self):
-		for team in self._teams:
-			frappe.db.delete("Invoice", {"team": team})
-			for sub in frappe.get_all("Subscription", {"team": team}, pluck="name"):
-				frappe.db.delete("Subscription Change", {"subscription": sub})
-				frappe.db.delete("Subscription", {"name": sub})
+		# Delete the teams and every billing row that links them — the load run
+		# commits, so nothing rolls back on its own.
+		from central.billing.tests.utils import purge_teams
+
+		purge_teams(self._teams)
 		frappe.db.commit()
 
 	def test_thousand_scale_run_no_double_processing(self):

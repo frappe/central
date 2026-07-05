@@ -39,7 +39,10 @@ DEFAULT_INCLUDES = [
 
 def ensure_atlas_instance(region):
 	"""Catalog Rate.cluster is a Link to Atlas Instance, so a per-region rate needs
-	that instance to exist. Atlas Instance is autonamed by region."""
+	that instance to exist. Atlas Instance is autonamed by region, and its `region`
+	is a required Link → Region, so the Region must exist first."""
+	if not frappe.db.exists("Region", region):
+		frappe.get_doc({"doctype": "Region", "region": region}).insert(ignore_permissions=True)
 	if not frappe.db.exists("Atlas Instance", region):
 		frappe.get_doc({
 			"doctype": "Atlas Instance", "region": region,
@@ -163,6 +166,30 @@ def ensure_team(slug, owner=None):
 	doc.name = slug
 	doc.insert(ignore_permissions=True)
 	return slug
+
+
+def purge_teams(teams):
+	"""Delete the given teams and every row that links them, for test teardown.
+
+	Tests that `frappe.db.commit()` (load/concurrency runs) escape the per-test
+	rollback, so anything they created — the Team plus its billing artifacts
+	(subscriptions, invoices, profiles, wallets, gateway customers, …) — leaks into
+	the site. Raw DELETEs across every `team`-linked table (discovered live) clear it
+	without tripping Link-integrity ordering, since Frappe links aren't DB FKs."""
+	teams = [t for t in teams if frappe.db.exists("Team", t)]
+	if not teams:
+		return
+	# Every doctype with a `team` Link column — discovered live so nothing is missed.
+	tables = frappe.db.sql_list(
+		"""SELECT DISTINCT TABLE_NAME FROM information_schema.COLUMNS
+		   WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'team' AND TABLE_NAME LIKE 'tab%%'"""
+	)
+	for table in tables:
+		doctype = table[len("tab") :]
+		if doctype != "Team":
+			frappe.db.delete(doctype, {"team": ["in", teams]})
+	frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", teams]})
+	frappe.db.delete("Team", {"name": ["in", teams]})
 
 
 def complete_billing_profile(team, currency="INR"):

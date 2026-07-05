@@ -11,6 +11,7 @@
   "team",
   "cluster",
   "plan",
+  "frappe_version",
   "status",
   "vcpus",
   "memory_megabytes",
@@ -69,6 +70,13 @@
    "in_standard_filter": 1,
    "label": "Plan",
    "options": "Plan"
+  },
+  {
+   "description": "Frappe version the VM was provisioned with — requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).",
+   "fieldname": "frappe_version",
+   "fieldtype": "Data",
+   "label": "Frappe Version",
+   "read_only": 1
   },
   {
    "default": "Pending",
