@@ -594,6 +594,25 @@ def backdate_invoice(invoice, when):
 	)
 
 
+def backdate_credit_debits(invoice, when):
+	"""Pin an invoice's credit-application moment to `when`.
+
+	The credits-then-card waterfall draws the wallet at invoice-open time — before
+	the card is charged — but draw_wallet_credit records the Credit Ledger debit at
+	seed time. Without this the 'Credits applied' event (and the 'Invoice settled'
+	marker pinned to the latest event) sorts AFTER a backdated card capture: an
+	invoice that reads as credited months after its card already settled it."""
+	when = frappe.utils.get_datetime(when)
+	for e in frappe.get_all(
+		"Credit Ledger Entry",
+		filters={"reference_type": "Invoice", "reference_name": invoice, "entry_type": "Debit"},
+		pluck="name",
+	):
+		frappe.db.set_value(
+			"Credit Ledger Entry", e, {"created_at": when, "creation": when}, update_modified=False
+		)
+
+
 def draw_wallet_credit(invoice) -> float:
 	"""Run the real credits-leg of settlement (invoicing.open_and_collect, collect=False):
 	draw the team's wallet credits against the invoice, recording a Credit Ledger debit and

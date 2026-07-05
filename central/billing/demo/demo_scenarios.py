@@ -52,6 +52,7 @@ from central.billing.demo._factory import (
 	_tiers,
 	_wipe_all,
 	activate_team_assets,
+	backdate_credit_debits,
 	backdate_invoice,
 	add_composed_subscription,
 	arm_emandate,
@@ -434,6 +435,9 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		remainder = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "expected_collection"))
 		if state not in _CREDIT_KEPT_STATES:
 			remainder = draw_wallet_credit(inv)
+			# Credits are drawn at invoice-open time, before the card — pin the debit to
+			# the finalisation moment so it sorts ahead of that month's card attempts.
+			backdate_credit_debits(inv, f"{end} 08:00:00")
 			if frappe.db.get_value("Invoice", inv, "status") == "Paid":
 				continue  # welcome credit covered it in full — no card needed
 		retries = _RETRY_HISTORY.get(i, 0) if pm else 0
