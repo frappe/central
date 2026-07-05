@@ -6,16 +6,15 @@ import AuthShell from '@/components/auth/AuthShell.vue'
 import { API } from '@/api/methods'
 import { frappeErrorMessage, getFrappe, methodUrl } from '@/lib/auth'
 
-type SiteState = { name: string; status: string; url: string | null; admin_password: string | null }
+type SiteState = { name: string; status: string; url: string | null; login_url: string | null }
 
-const POLL_MS = 3000
+const POLL_MS = 1000
 
 const route = useRoute()
 const name = String(route.params.name ?? '')
 
 const site = ref<SiteState | null>(null)
 const error = ref('')
-const copied = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined
 
 const isReady = computed(() => site.value?.status === 'Running')
@@ -25,7 +24,8 @@ async function poll() {
   try {
     const result = await getFrappe<SiteState>(methodUrl(API.getSite), { name })
     site.value = result
-    if (result.status === 'Running' || result.status === 'Failed') return
+    if (result.status === 'Running') return signIn()
+    if (result.status === 'Failed') return
   } catch (exception) {
     error.value = frappeErrorMessage(exception, 'Lost track of your site. Refresh to retry.')
     return
@@ -33,11 +33,14 @@ async function poll() {
   timer = setTimeout(poll, POLL_MS)
 }
 
-async function copyPassword() {
-  if (!site.value?.admin_password) return
-  await navigator.clipboard.writeText(site.value.admin_password)
-  copied.value = true
-  setTimeout(() => (copied.value = false), 2000)
+// The site is ready: log the tenant straight in by navigating this tab to the
+// one-click login URL. No button, no password — the poll landing on Running IS
+// the handoff. If the site somehow reported Running without a login URL, fall
+// through to the manual state so the tenant isn't stranded.
+function signIn() {
+  const url = site.value?.login_url
+  if (!url) return
+  window.location.assign(url)
 }
 
 onMounted(poll)
@@ -52,34 +55,14 @@ onUnmounted(() => clearTimeout(timer))
       </div>
       <h1 class="text-2xl font-semibold text-ink-gray-9">Your site is ready</h1>
       <p class="mt-2 text-base text-ink-gray-5">
-        Sign in as <span class="font-medium text-ink-gray-8">Administrator</span> with the password below.
+        Signing you in to <span class="font-medium text-ink-gray-8">{{ site.url }}</span> as
+        <span class="font-medium text-ink-gray-8">Administrator</span>…
       </p>
 
-      <div class="mt-8 space-y-3">
-        <div>
-          <span class="text-sm font-medium text-ink-gray-8">Site address</span>
-          <p class="mt-1 break-all text-base text-ink-gray-9">{{ site.url }}</p>
-        </div>
-        <div>
-          <span class="text-sm font-medium text-ink-gray-8">Administrator password</span>
-          <div class="mt-1 flex items-center gap-2">
-            <code class="flex-1 break-all rounded bg-surface-gray-2 px-3 py-2 text-base text-ink-gray-9">
-              {{ site.admin_password }}
-            </code>
-            <Button
-              variant="outline"
-              size="md"
-              :label="copied ? 'Copied' : 'Copy'"
-              :icon="copied ? 'lucide-check' : 'lucide-copy'"
-              @click="copyPassword"
-            />
-          </div>
-        </div>
+      <div class="mt-8 flex items-center gap-3 text-ink-gray-5">
+        <span class="lucide-loader-circle size-5 animate-spin" aria-hidden="true" />
+        <span class="text-base">Taking you to your site…</span>
       </div>
-
-      <a :href="site.url ?? '#'" target="_blank" rel="noopener" class="mt-8 block">
-        <Button variant="solid" size="md" class="w-full">Go to site</Button>
-      </a>
     </template>
 
     <template v-else-if="isFailed">
