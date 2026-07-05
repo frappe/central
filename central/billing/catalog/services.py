@@ -42,7 +42,8 @@ def list_service_plans(currency: str, cluster: str | None = None) -> list[dict]:
 	for p in plans:
 		cat = service_categories[p.category]
 		inc = includes.get(p.name)
-		rate = resolve_rate(get_catalog_rates("Plan", p.name), currency, cluster)
+		rate_rows = get_catalog_rates("Plan", p.name)
+		rate = resolve_rate(rate_rows, currency, cluster)
 		out.append(
 			{
 				"plan": p.name,
@@ -55,6 +56,11 @@ def list_service_plans(currency: str, cluster: str | None = None) -> list[dict]:
 				"unit": inc.unit if inc else None,
 				"allowance": frappe.utils.flt(inc.quantity) if inc else 0.0,
 				"rate": frappe.utils.flt(rate) if rate is not None else None,
+				# Clusters that carry their own rate in this currency. Empty for a
+				# globally-priced service — the console hides the cluster picker then.
+				"priced_clusters": sorted(
+					{r.cluster for r in rate_rows if r.currency == currency and r.cluster}
+				),
 				"currency": currency,
 			}
 		)
