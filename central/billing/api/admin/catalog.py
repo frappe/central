@@ -90,7 +90,7 @@ def get_cluster_consumption() -> list[dict]:
 	"""Cluster-wise resource consumption (active price-locks) + monthly run-rate.
 
 	Run-rate is normalised to INR (via each plan's INR catalog rate) so regions
-	billed in EUR/USD are comparable on one axis.
+	billed in INR/USD are comparable on one axis.
 	"""
 	require_operator()
 	out = {}

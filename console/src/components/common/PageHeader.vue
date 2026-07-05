@@ -1,7 +1,9 @@
 <script setup lang="ts">
-// Standard page header: title (+ optional subtitle) on the left, an #actions
-// slot on the right. Sits above the scrolling page body inside a
-// `flex h-full flex-col` page.
+// Standard page header: title (+ optional subtitle) on the left, page #actions
+// plus the global notification bell on the right. Sits above the scrolling page
+// body inside a `flex h-full flex-col` page — so the bell is reachable everywhere.
+import NotificationBell from '@/components/notifications/NotificationBell.vue'
+
 defineProps<{
   title: string
   subtitle?: string
@@ -18,6 +20,7 @@ defineProps<{
     </div>
     <div class="flex shrink-0 items-center gap-2">
       <slot name="actions" />
+      <NotificationBell />
     </div>
   </header>
 </template>

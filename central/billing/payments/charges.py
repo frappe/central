@@ -45,7 +45,8 @@ def _adapter_for(gateway: str):
 
 @frappe.whitelist()
 def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | None = None) -> dict:
-	"""Charge an Open invoice. Creates at most one in-flight Payment Attempt.
+	"""Charge an unsettled (Open or Overdue) invoice. Creates at most one in-flight
+	Payment Attempt.
 
 	The invoice row is locked FOR UPDATE for the whole attempt, so concurrent
 	callers serialise: the first creates and charges an attempt; the rest see it
@@ -58,7 +59,9 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 	).for_update().run()
 	inv = frappe.get_doc("Invoice", invoice)
 
-	if inv.status != "Open":
+	# An Overdue invoice is still collectable — retrying the card is exactly what a
+	# customer clicking Pay (or dunning) does — so allow both unsettled states.
+	if inv.status not in _UNSETTLED_INVOICE:
 		return {"charged": False, "reason": "not_open"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"charged": False, "reason": "nothing_due"}

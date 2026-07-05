@@ -69,6 +69,11 @@ const routes = [
         name: 'SpendingLimits',
         component: () => import('@/pages/billing/SpendingLimitsPage.vue'),
       },
+      {
+        path: 'notifications',
+        name: 'Notifications',
+        component: () => import('@/pages/notifications/NotificationsPage.vue'),
+      },
       { path: 'team', redirect: '/team/members' },
       // Members + roles share one tabbed page; /team/roles is kept as an alias.
       {

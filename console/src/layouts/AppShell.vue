@@ -7,6 +7,7 @@ import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 import { useSession } from '@/composables/useSession'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useNotificationsRealtime } from '@/composables/useNotifications'
 
 // App shell: the new frappe-ui Sidebar (collapsible, Espresso design system) +
 // the routed page. The header doubles as the team switcher — switching re-drives
@@ -47,6 +48,9 @@ function onEdgeMove(event: MouseEvent): void {
     edgeRaf = 0
   })
 }
+// Live notification badge — subscribe once from the app's single stable mount
+// (needs a component instance for the socket, so it can't run at module scope).
+useNotificationsRealtime()
 
 async function logoutAndRedirect() {
   await logout()
@@ -125,6 +129,12 @@ const sections = computed(() => [
     label: 'Team',
     collapsible: true,
     items: [
+      {
+        label: 'Notifications',
+        icon: 'lucide-bell',
+        to: '/notifications',
+        condition: () => isMember.value,
+      },
       {
         label: 'Members & roles',
         icon: 'lucide-users',

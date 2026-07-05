@@ -1,0 +1,22 @@
+{
+ "color": "#CB2929",
+ "creation": "2026-07-05 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "document_type": "Payment Attempt",
+ "dynamic_filters_json": "[]",
+ "filters_json": "[[\"Payment Attempt\",\"status\",\"=\",\"Failed\"],[\"Payment Attempt\",\"creation\",\"Timespan\",\"last 24 hours\"]]",
+ "function": "Count",
+ "idx": 0,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "Failed Payments (24h)",
+ "modified": "2026-07-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Failed Payments (24h)",
+ "owner": "Administrator",
+ "show_percentage_stats": 0,
+ "stats_time_interval": "Daily",
+ "type": "Document Type"
+}

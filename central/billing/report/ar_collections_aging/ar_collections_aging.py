@@ -11,6 +11,7 @@ The classic collections worklist: chase the 60+/90+ columns first.
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate, nowdate, date_diff
+from central.billing.report._currency import split_currency_columns
 
 BUCKETS = [
 	("current", _("Current"), 0),
@@ -26,6 +27,8 @@ def execute(filters: dict | None = None):
 	as_of = getdate(filters.get("as_of_date") or nowdate())
 	columns = get_columns()
 	rows, summary = get_data(filters, as_of)
+	money_fields = [fieldname for fieldname, _label, _days in BUCKETS] + ["outstanding"]
+	columns = split_currency_columns(columns, rows, money_fields)
 	return columns, rows, None, None, summary
 
 
@@ -71,25 +74,28 @@ def get_data(filters: dict, as_of):
 	)
 
 	rows = []
-	bucket_totals = {b[0]: 0.0 for b in BUCKETS}
-	total_outstanding = 0.0
+	# Outstanding is grouped by currency — INR and USD must not sum into one figure in no
+	# currency at all. The per-bucket breakdown lives in the (per-currency) columns and
+	# the total row; the summary carries the per-currency headline.
+	outstanding_by_currency: dict[str, float] = {}
 	for inv in invoices:
 		outstanding = flt(inv.expected_collection)
 		days_overdue = date_diff(as_of, inv.due_date) if inv.due_date else 0
 		bucket = _bucket_for(days_overdue)
 		row = {b[0]: 0.0 for b in BUCKETS}
 		row[bucket] = outstanding
+		currency = inv.currency or "INR"
 		row.update({
 			"invoice": inv.invoice, "team": inv.team, "status": inv.status,
 			"due_date": inv.due_date, "days_overdue": max(days_overdue, 0),
-			"currency": inv.currency or "INR", "outstanding": outstanding,
+			"currency": currency, "outstanding": outstanding,
 		})
 		rows.append(row)
-		bucket_totals[bucket] += outstanding
-		total_outstanding += outstanding
+		outstanding_by_currency[currency] = outstanding_by_currency.get(currency, 0.0) + outstanding
 
-	summary = [{"label": _("Outstanding"), "value": flt(total_outstanding, 2), "datatype": "Float",
-				"indicator": "red"}]
-	for fieldname, label, _days in BUCKETS:
-		summary.append({"label": label, "value": flt(bucket_totals[fieldname], 2), "datatype": "Float"})
+	summary = [
+		{"label": _("Outstanding ({0})").format(currency), "value": flt(amount, 2),
+		 "datatype": "Float", "indicator": "red"}
+		for currency, amount in sorted(outstanding_by_currency.items())
+	]
 	return rows, summary

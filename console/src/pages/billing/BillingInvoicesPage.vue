@@ -64,11 +64,20 @@ watch(
   { immediate: true },
 )
 
+// Open OR Overdue is still collectable — an overdue invoice is the one the customer
+// most needs to settle (dunning failed on the card), so it must offer Pay too.
+const isPayable = computed(() =>
+  ['open', 'overdue'].includes(String(detail.data?.status).toLowerCase()),
+)
 // A charge already in flight (or captured, awaiting the settlement webhook) means
 // the money is moving — show a "settling" status, never a second Pay button.
-const isOpen = computed(() => String(detail.data?.status).toLowerCase() === 'open')
-const settling = computed(() => isOpen.value && !!detail.data?.payment_in_progress)
-const canPay = computed(() => canManageBilling.value && isOpen.value && !settling.value)
+const settling = computed(() => isPayable.value && !!detail.data?.payment_in_progress)
+// Only offer Pay when something is actually collectable — a zero-due invoice
+// (e.g. a trial Cost Report) must never render a "Pay 0.00" button.
+const hasDue = computed(() => Number(detail.data?.expected_collection) > 0)
+const canPay = computed(
+  () => canManageBilling.value && isPayable.value && !settling.value && hasDue.value,
+)
 
 function refresh(): void {
   invoices.reload()
@@ -191,7 +200,8 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
               <dd>{{ money(detail.data.subtotal, detail.data.currency) }}</dd>
             </div>
             <div v-if="detail.data.output_tax_amount" class="flex justify-between text-ink-gray-6">
-              <dt>{{ detail.data.output_tax_type || 'Tax' }}</dt>
+              <dt>{{ detail.data.output_tax_type || 'Tax'
+                }}<template v-if="detail.data.output_tax_rate"> ({{ detail.data.output_tax_rate }}%)</template></dt>
               <dd>{{ money(detail.data.output_tax_amount, detail.data.currency) }}</dd>
             </div>
             <p v-if="detail.data.zero_rating_reason" class="text-p-sm text-ink-gray-5">

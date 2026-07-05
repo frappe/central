@@ -32,7 +32,7 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Balance",
-   "description": "Authoritative running balance, maintained under this row's lock. Equals the signed ledger sum."
+   "description": "Authoritative running balance under this row's lock; equals the signed ledger sum."
   }
  ],
  "index_web_pages_for_search": 1,

@@ -130,6 +130,7 @@ export interface InvoiceDetail {
   currency: Currency
   subtotal: number
   output_tax_type: string | null
+  output_tax_rate: number | null
   output_tax_amount: number
   zero_rating_reason: string | null
   total: number
@@ -243,17 +244,30 @@ export interface CollectionStatus {
   currency: Currency
 }
 
-/** list_notifications row — the billing notification feed (#20). */
-export interface NotificationLog {
+export type NotificationCategory = 'Billing' | 'Server' | 'Team'
+export type NotificationSeverity = 'Info' | 'Success' | 'Warning' | 'Error'
+
+/** A Team Notification — one item in the console's unified in-app feed. */
+export interface TeamNotification {
   name: string
-  event_type: string
-  channel: string
-  status: string
-  subject: string | null
+  category: NotificationCategory
+  event_type: string | null
+  severity: NotificationSeverity
+  title: string
   message: string | null
   reference_doctype: string | null
   reference_name: string | null
-  sent_at: string | null
+  action_label: string | null
+  action_route: string | null
+  is_read: 0 | 1
+  read_at: string | null
+  creation: string
+}
+
+/** list_notifications response — items plus the live unread count. */
+export interface NotificationFeed {
+  items: TeamNotification[]
+  unread: number
 }
 
 /** get_notification_preferences — per-event-type delivery toggles (0/1), keyed by event. */

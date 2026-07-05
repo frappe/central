@@ -18,6 +18,9 @@ export interface ServicePlanOption {
   unit: string | null
   allowance: number
   rate: number | null
+  // Clusters (Atlas Instance regions) that carry their own rate. Empty when the
+  // service is globally priced — the cluster picker is hidden in that case.
+  priced_clusters: string[]
 }
 
 const props = defineProps<{
@@ -41,14 +44,32 @@ const cluster = ref('')
 
 // Reset the selection each time the dialog opens, defaulting to the first plan.
 watch(open, (isOpen) => {
-  if (isOpen) {
-    plan.value = props.plans[0]?.plan ?? ''
-    cluster.value = ''
-  }
+  if (isOpen) plan.value = props.plans[0]?.plan ?? ''
 })
 
 const options = computed(() =>
   props.plans.map((p) => ({ label: planLabel(p), value: p.plan })),
+)
+
+const selectedPlan = computed(() => props.plans.find((p) => p.plan === plan.value))
+
+// A service is priced per cluster only when it has cluster-specific rates. When it
+// does, the team must pick one of those clusters; otherwise the field is hidden and
+// the subscription is globally priced.
+const clusterOptions = computed(() =>
+  (selectedPlan.value?.priced_clusters ?? []).map((c) => ({ label: c, value: c })),
+)
+const showCluster = computed(() => clusterOptions.value.length > 0)
+
+// Keep the cluster valid for the chosen plan: default to its first priced cluster
+// when the picker is shown, and clear it for a globally-priced plan.
+watch(
+  [plan, () => props.plans],
+  () => {
+    const priced = selectedPlan.value?.priced_clusters ?? []
+    cluster.value = priced.includes(cluster.value) ? cluster.value : (priced[0] ?? '')
+  },
+  { immediate: true },
 )
 
 function planLabel(p: ServicePlanOption): string {
@@ -92,7 +113,7 @@ const actions = computed(() => [
     label: 'Subscribe',
     variant: 'solid' as const,
     loading: subscribe.loading,
-    disabled: !plan.value,
+    disabled: !plan.value || (showCluster.value && !cluster.value),
     onClick: onSubmit,
   },
 ])
@@ -110,10 +131,12 @@ const actions = computed(() => [
           description="Metered services bill per unit of usage; a bundle includes an allowance."
         />
         <FormControl
+          v-if="showCluster"
+          type="select"
           v-model="cluster"
+          :options="clusterOptions"
           label="Cluster"
-          description="Optional — leave blank for a globally-priced service."
-          placeholder="e.g. mumbai"
+          description="This service is priced per cluster — pick where you'll consume it."
         />
       </div>
     </template>

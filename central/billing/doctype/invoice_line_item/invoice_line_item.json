@@ -18,6 +18,7 @@
   "rate",
   "days",
   "hours",
+  "charge_date",
   "amount"
  ],
  "fields": [
@@ -79,6 +80,12 @@
    "label": "Hours",
    "precision": "2",
    "description": "Hours active, for a segment billed hourly on a churn day (multiple resizes within 24h)"
+  },
+  {
+   "fieldname": "charge_date",
+   "fieldtype": "Date",
+   "label": "Charge Date",
+   "description": "The calendar date an hourly (churn-day) line was incurred; null for whole-day lines that span a range"
   },
   {
    "fieldname": "amount",

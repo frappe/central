@@ -83,6 +83,7 @@ export const API = {
   billingSettings: 'central.billing.api.dashboard.get_billing_settings',
   collectionStatus: 'central.billing.api.dashboard.get_collection_status',
   notifications: 'central.billing.api.dashboard.list_notifications',
+  notificationBadge: 'central.billing.api.dashboard.notification_badge',
   notificationPreferences: 'central.billing.api.dashboard.get_notification_preferences',
 
   // ── Billing: mutations (POST, billing:manage) ──
@@ -103,6 +104,8 @@ export const API = {
   saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',
   setCollectionMode: 'central.billing.api.dashboard.set_collection_mode',
   saveNotificationPreferences: 'central.billing.api.dashboard.save_notification_preferences',
+  markNotificationRead: 'central.billing.api.dashboard.mark_notification_read',
+  markAllNotificationsRead: 'central.billing.api.dashboard.mark_all_notifications_read',
   pauseSubscription: 'central.billing.api.dashboard.pause_subscription',
   resumeSubscription: 'central.billing.api.dashboard.resume_subscription',
   subscribeMeteredService: 'central.billing.api.dashboard.subscribe_metered_service',

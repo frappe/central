@@ -43,7 +43,7 @@
   {
    "default": "Direct",
    "depends_on": "eval:doc.adapter_key=='Paypal'",
-   "description": "Direct: own PayPal merchant account. Via Razorpay: collected inside the Razorpay sheet (no PayPal keys needed).",
+   "description": "Direct (own PayPal account) or Via Razorpay (collected in the Razorpay sheet).",
    "fieldname": "paypal_settlement_mode",
    "fieldtype": "Select",
    "label": "PayPal Settlement Mode",
@@ -76,7 +76,7 @@
    "fieldtype": "Table",
    "label": "Currencies",
    "options": "Payment Gateway Currency",
-   "description": "Currencies this gateway can settle. Mark is_default on a row to make this the default gateway for that currency."
+   "description": "Currencies this gateway can settle; mark is_default for the per-currency default."
   },
   {
    "fieldname": "section_break_secrets",
@@ -94,7 +94,7 @@
    "label": "API Secret"
   },
   {
-   "description": "Set when the credentials last validated against the gateway. Cleared when the keys change.",
+   "description": "When the credentials last validated against the gateway; cleared on key change.",
    "fieldname": "credentials_validated_at",
    "fieldtype": "Datetime",
    "label": "Credentials Validated At",
@@ -105,14 +105,14 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Auto-filled when the gateway can self-register its webhook. Enter manually only if the field is editable.",
+   "description": "Auto-filled when the gateway self-registers its webhook; else enter manually.",
    "fieldname": "webhook_secret",
    "fieldtype": "Password",
    "label": "Webhook Secret",
    "read_only_depends_on": "eval:doc.webhook_endpoint_id"
   },
   {
-   "description": "The gateway's id for the registered webhook endpoint. Used to rotate/de-register it.",
+   "description": "The gateway's registered webhook endpoint id, used to rotate/de-register it.",
    "fieldname": "webhook_endpoint_id",
    "fieldtype": "Data",
    "label": "Webhook Endpoint ID",
@@ -120,7 +120,33 @@
   }
  ],
  "index_web_pages_for_search": 1,
- "links": [],
+ "links": [
+  {
+   "group": "Customers",
+   "link_doctype": "Gateway Customer",
+   "link_fieldname": "gateway"
+  },
+  {
+   "group": "Customers",
+   "link_doctype": "Payment Method",
+   "link_fieldname": "gateway"
+  },
+  {
+   "group": "Transactions",
+   "link_doctype": "Payment Attempt",
+   "link_fieldname": "gateway"
+  },
+  {
+   "group": "Transactions",
+   "link_doctype": "Webhook Event",
+   "link_fieldname": "gateway"
+  },
+  {
+   "group": "Subscriptions",
+   "link_doctype": "Subscription",
+   "link_fieldname": "gateway"
+  }
+ ],
  "modified": "2026-06-02 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
