@@ -429,6 +429,15 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 			continue
 		# Finalised the morning the period closed — before that month's payment attempts.
 		backdate_invoice(inv, f"{end} 08:00:00")
+		# The overdue team's most recent bill is left unpaid and dunned to Overdue +
+		# suspended. Anchoring it to a CLOSED month (due 7 days after the month ended)
+		# means the whole cycle — decline retries, Day-7 Overdue, Day-14 suspend — sits
+		# in the past, so the timeline reads finalised -> declines -> overdue in order.
+		# A current-month bill can't: finalised only at month end, it has no room to go
+		# overdue before 'today'.
+		if state == "overdue" and i == len(periods) - 1:
+			_run_overdue_cycle(team, inv, pm, gateway, frappe.utils.add_days(end, 7))
+			continue
 		# Real credits-then-card waterfall: draw the wallet credit first (a Credit Ledger
 		# debit + credit_applied), then the card settles the remainder. Credit-scenario
 		# teams keep their welcome credit for the current-month story.
@@ -462,6 +471,25 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		arm_emandate(team)
 	final_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	return f"{len(resources)} instance(s) across {len(by_cluster)} region(s) — {note} [{final_mode}]"
+
+
+def _run_overdue_cycle(team, inv, pm, gateway, due):
+	"""Leave `inv` unpaid and drive it through the REAL dunning cycle to Overdue +
+	suspended. Three declined retries (a day apart from `due`) seed the failure trail;
+	dunning.process_invoice_dunning then escalates at Day 7 (Overdue + past_due +
+	notification) and Day 14 (suspend directive) — the real stages, not a hand-set
+	status. With `due` on a closed month, the whole cycle lands before 'today'."""
+	from central.billing.revenue import dunning
+
+	frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": due, "amount_paid": 0})
+	# Seed the declined retries (offline). With every method already failed, the real
+	# dunning has nothing left to charge, so it escalates without a gateway round-trip.
+	base = frappe.utils.get_datetime(f"{due} 09:00:00")
+	for n in range(3):
+		_failed_attempt(team, inv, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
+	due_d = frappe.utils.getdate(due)
+	dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(due_d, 7))
+	dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(due_d, 14))
 
 
 def _finish_current_month(team, sub, currency, state, pm, gateway):
@@ -523,25 +551,12 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 			reference_type="Refund", reference_name=f"{team}-refund", note="Partial overcharge → wallet")
 		return "Paid + partial refund → wallet (credits)"
 
-	# --- dunning: run the REAL dunning cycle across the calendar -----------------
+	# --- dunning: the overdue bill is the last CLOSED month (built + dunned in the
+	# historical loop, where the cycle fits before 'today'). The current month is a
+	# fresh, not-yet-due Open invoice — realistic for a team carrying an overdue bill.
 	if state == "overdue":
-		from central.billing.revenue import dunning
-
-		# Open with a due date far enough back that the real cycle reaches its Day 7
-		# (Overdue + Past Due) and Day 14 (suspend) stages.
-		due = "2026-06-10"
-		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": due, "amount_paid": 0})
-		# Seed the declined retries (offline). With every method already failed, the real
-		# dunning has nothing left to charge, so it escalates without a gateway round-trip.
-		base = frappe.utils.get_datetime(f"{due} 09:00:00")
-		for n in range(3):
-			_failed_attempt(team, inv, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
-		# Drive the real dunning stages (dunning.process_invoice_dunning), not a hand-set
-		# state: Day 7 → Overdue + past_due + notification, Day 14 → suspend directive.
-		due_d = frappe.utils.getdate(due)
-		dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(due_d, 7))
-		dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(due_d, 14))
-		return "dunning cycle: 3 declines → Overdue + past_due (day 7) → suspended (day 14)"
+		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": "2026-07-07", "amount_paid": 0})
+		return "prior month overdue → suspended; current month open"
 
 	# --- one failed attempt (with reason), then settled on retry ----------------
 	if state == "retry":
