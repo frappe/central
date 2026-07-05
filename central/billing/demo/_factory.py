@@ -10,8 +10,6 @@ demo_scenarios.
 
 import frappe
 
-from central.billing.catalog.pricing import set_catalog_rates
-
 # --- catalog shape ----------------------------------------------------------
 
 # (slug, label, billing currency of the region)
@@ -133,63 +131,86 @@ def _catalog():
 
 
 def _vm_plans():
-	"""Generate the VM bundle ladder + its prices through the Plan Configurator
-	(configurator.generate_plans + apply_pricing) — the same guided path the Desk
-	'Launch a plan' verb uses — rather than writing Plan / Catalog Rate rows by hand."""
-	from central.billing.catalog import configurator
+	"""Author the VM bundle ladder + its per-cluster prices through a real Plan
+	Configurator DOCUMENT — the exact doc the Desk 'Launch a plan' verb creates —
+	so the demo exercises the whole authoring flow (doc.generate_and_price), not just
+	its internal helpers, and the configurator list isn't empty.
 
-	# One rung per size; generate_plans mints a hash-named Plan per rung and writes
-	# the name back onto the rung.
-	rungs = [
-		{"key": slug, "label": title, "vcpu": vcpu, "memory_gb": ram,
-		 "disk_gb": disk, "transfer_gb": transfer}
-		for slug, title, vcpu, ram, disk, transfer, _base in PLAN_SIZES
-	]
-	configurator.generate_plans(rungs, category="VM Plans", sub_category="General")
-	for rung in rungs:
-		_PLAN_BY_KEY[rung["key"]] = rung["plan"]
+	The configurator prices `rate = base_rate(currency) × rung.multiplier`. We carry
+	each size's base INR price as its `multiplier`, and the per-cluster×FX factor as
+	the base_rate — so re-running generation per cluster (as an admin would when a
+	region onboards) yields the regional prices. The Plans are minted on the first
+	run and reused (idempotent) on the rest."""
+	doc = frappe.get_doc({
+		"doctype": "Plan Configurator",
+		"template_name": "VM Bundles (demo)",
+		"category": "VM Plans",
+		"sub_category": "General",
+		"start_vcpu": "1", "ceiling_vcpu": "16",
+		"billing_cycle": "Monthly",
+		"is_active": 1,
+		"plan_name_prefix": "Bundle",
+		"rungs": [
+			{"plan_name": slug, "label": title, "vcpu": vcpu, "memory_gb": ram,
+			 "disk_gb": disk, "transfer_gb": transfer, "multiplier": base}
+			for slug, title, vcpu, ram, disk, transfer, base in PLAN_SIZES
+		],
+	}).insert(ignore_permissions=True)
 
-	# Price each rung per currency × cluster: rate = base_inr × cluster_mult ÷ FX. One
-	# apply_pricing call per (currency, cluster), base_rate carrying the cluster/FX
-	# factor and each plan's multiplier carrying its base INR price.
-	base_by_key = {slug: base for slug, _t, _v, _r, _d, _tr, base in PLAN_SIZES}
-	for currency in CURRENCIES:
-		for cslug, _label, _cur in CLUSTERS:
-			multipliers = [{"plan": _PLAN_BY_KEY[key], "multiplier": base}
-						   for key, base in base_by_key.items()]
-			configurator.apply_pricing(
-				multipliers, currency=currency,
-				base_rate=CLUSTER_MULT[cslug] / FX[currency], cluster=cslug,
-			)
+	for cslug, _label, _cur in CLUSTERS:
+		doc.set("base_rates", [
+			{"currency": c, "base_rate": CLUSTER_MULT[cslug] / FX[c]} for c in CURRENCIES
+		])
+		doc.save(ignore_permissions=True)
+		doc.generate_and_price(cluster=cslug, currencies=list(CURRENCIES))
+
+	doc.reload()
+	for rung, size in zip(doc.rungs, PLAN_SIZES):
+		_PLAN_BY_KEY[size[0]] = rung.plan
 
 
 def _component_rate_card():
-	"""À-la-carte per-Resource-Type rates so a composed config prices from its parts
-	(ADR 0009). Global (blank-cluster) rate per currency for each component."""
-	for resource_type, base_inr in COMPONENT_RATES_INR.items():
-		set_catalog_rates(
-			"Resource Type", resource_type,
-			[{"cluster": "", "currency": c, "rate": round(base_inr / FX[c], 4)} for c in CURRENCIES],
-		)
+	"""À-la-carte per-Resource-Type rates (ADR 0009/0011) authored through the Plan
+	Configurator's component-rate card — the same 'Publish Rates' path the Desk tool
+	uses — rather than writing Catalog Rate rows by hand. Global (blank-cluster) rate
+	per currency for each priced component."""
+	doc = frappe.get_doc({
+		"doctype": "Plan Configurator",
+		"template_name": "Component Rate Card (demo)",
+		"category": "VM Plans",
+		"start_vcpu": "1", "ceiling_vcpu": "16",
+		"component_rates": [
+			{"resource_type": rt, "currency": c, "rate": round(base_inr / FX[c], 4)}
+			for rt, base_inr in COMPONENT_RATES_INR.items()
+			for c in CURRENCIES
+		],
+	}).insert(ignore_permissions=True)
+	doc.apply_component_card(cluster=None)
 
 
 def _service_catalog():
 	"""Team-level metered consumer services (AI tokens, email, PDF) — each authored
-	through the Plan Configurator's `simple` builder (configurator.create_simple_plan
-	+ apply_pricing) against the canonical service families seeded by
-	ensure_catalog_masters: a single-resource metered Plan per family, per-unit
-	priced (ADR 0013/0015/0008)."""
-	from central.billing.catalog import configurator
-
+	through a real Plan Configurator DOCUMENT on the `Simple` builder (one simple-plan
+	row + a per-currency base rate), against the canonical service families seeded by
+	ensure_catalog_masters. Single-resource metered Plan per family, per-unit priced,
+	globally (ADR 0013/0015/0008)."""
 	for category, resource_type, slug, title, unit, allowance, rates in SERVICES:
-		name = configurator.create_simple_plan(
-			category=category, title=title, resource_type=resource_type,
-			quantity=allowance, unit=unit,
-		)
-		_PLAN_BY_KEY[slug] = name
-		for currency, rate in rates.items():
-			configurator.apply_pricing([{"plan": name, "multiplier": 1}],
-									   currency=currency, base_rate=rate, cluster="")
+		doc = frappe.get_doc({
+			"doctype": "Plan Configurator",
+			"template_name": f"{title} (demo)",
+			"category": category,
+			"start_vcpu": "1", "ceiling_vcpu": "16",
+			"billing_cycle": "Monthly",
+			"is_active": 1,
+			"simple_plans": [
+				{"title": title, "resource_type": resource_type,
+				 "quantity": allowance, "unit": unit, "multiplier": 1}
+			],
+			"base_rates": [{"currency": c, "base_rate": rate} for c, rate in rates.items()],
+		}).insert(ignore_permissions=True)
+		doc.generate_and_price(cluster=None, currencies=list(rates.keys()))
+		doc.reload()
+		_PLAN_BY_KEY[slug] = doc.simple_plans[0].plan
 
 
 def _gateways():
@@ -496,7 +517,7 @@ def _wipe_all():
 					 "Billing Notification Log", "Team Notification",
 					 "Entitlement Token", "Webhook Event", "Subscription", "Asset")
 	config = ("Tax Profile", "Billing Profile")
-	catalog = ("Plan", "Payment Gateway", "Trust Tier Level")
+	catalog = ("Plan Configurator", "Plan", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:
 		try:
 			frappe.db.delete(dt)
