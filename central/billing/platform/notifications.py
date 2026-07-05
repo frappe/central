@@ -29,6 +29,22 @@ _TEMPLATES = {
 }
 
 
+# event_type -> (in-app severity, action label, action route). Drives the console
+# feed entry; the route deep-links the actionable events. Absent = Info, no action.
+_FEED_META = {
+	"Payment Success": ("Success", None, None),
+	"Payment Failure": ("Error", "Pay now", "/billing/invoices"),
+	"Payment Retry": ("Warning", "Pay now", "/billing/invoices"),
+	"Invoice Overdue": ("Error", "Pay now", "/billing/invoices"),
+	"Credit Low": ("Warning", "Top up", "/billing"),
+	"Card Expiry": ("Warning", "Update card", "/billing"),
+	"Mandate Reauth": ("Warning", "Re-authorise", "/billing"),
+	"Trial Expiring": ("Warning", "Add payment method", "/billing"),
+	"Action Required": ("Warning", "Choose how to pay", "/billing/invoices"),
+	"Pre-debit Notice": ("Info", None, None),
+}
+
+
 def _preference_enabled(team: str, event_type: str) -> bool:
 	"""A team's opt-out for an event; absent preference doc = all enabled."""
 	if not frappe.db.exists("Notification Preference", team):
@@ -54,6 +70,17 @@ def notify(
 	context = context or {}
 	subject, template = _TEMPLATES.get(event_type, (event_type, message or event_type))
 	body = message or template.format(**context)
+
+	# In-app feed entry — the console's unified inbox. Always recorded (a failure or
+	# warning belongs in the dashboard regardless of the team's *email* preference).
+	severity, action_label, action_route = _FEED_META.get(event_type, ("Info", None, None))
+	from central import notifications as feed
+
+	feed.create_notification(
+		team, subject, category="Billing", event_type=event_type, severity=severity,
+		message=body, reference_doctype=reference_doctype, reference_name=reference_name,
+		action_label=action_label, action_route=action_route,
+	)
 
 	enabled = _preference_enabled(team, event_type)
 	log = frappe.get_doc(

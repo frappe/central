@@ -436,8 +436,35 @@ def reconcile(team: str | None = None) -> dict:
 			synced.append(name)
 		except Exception:
 			frappe.log_error(title=f"Atlas reconcile failed: {name}")
+			_notify_cluster_degraded(name)
 			stale.append(name)
 	return {"synced": synced, "stale": stale}
+
+
+def _notify_cluster_degraded(cluster: str) -> None:
+	"""Warn teams running in an unreachable cluster that their console view may be
+	stale. Fans out one Server-category warning per affected team, deduped to a single
+	open notice per (team, cluster) so a flapping/slow Atlas doesn't spam the feed."""
+	from central.notifications import create_notification
+
+	teams = frappe.get_all(
+		"Asset", filters={"cluster": cluster, "status": ["!=", "Terminated"]},
+		pluck="team", distinct=True,
+	)
+	for team in {t for t in teams if t}:
+		if frappe.db.exists(
+			"Team Notification",
+			{"team": team, "event_type": "Cluster Degraded", "reference_name": cluster, "is_read": 0},
+		):
+			continue
+		create_notification(
+			team, f"Region {cluster} is temporarily unreachable",
+			category="Server", event_type="Cluster Degraded", severity="Warning",
+			message=f"Central couldn't reach {cluster} on the last sync. Your servers keep running; "
+			"their status in the console may be delayed until the region recovers.",
+			reference_doctype="Atlas Instance", reference_name=cluster,
+			action_label="View servers", action_route="/servers",
+		)
 
 
 def reconcile_atlas(instance, team: str | None = None) -> int:

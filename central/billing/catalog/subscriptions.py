@@ -461,10 +461,29 @@ def _apply_resize(
 		if asset_id:
 			frappe.db.rollback()
 			Asset.mark_resizing(asset_id, False)
+			_notify_resize_failed(subscription, asset_id)
 			frappe.db.commit()
 		raise
 	if asset_id:
 		Asset.mark_resizing(asset_id, False)
+
+
+def _notify_resize_failed(subscription: str, asset_id: str) -> None:
+	"""Feed a failed background resize into the team's console notifications, so a
+	resize that couldn't be applied on the host isn't silent once the flag clears."""
+	team = frappe.db.get_value("Subscription", subscription, "team")
+	if not team:
+		return
+	from central.notifications import create_notification
+
+	create_notification(
+		team, "Server resize failed",
+		category="Server", event_type="Resize Failed", severity="Error",
+		message=f"The resize of server {asset_id} could not be applied and was rolled back. "
+		"Billing stayed on the previous plan. You can retry the resize.",
+		reference_doctype="Asset", reference_name=asset_id,
+		action_label="View server", action_route="/servers",
+	)
 
 
 def resize_composed_subscription(
