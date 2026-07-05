@@ -1,7 +1,7 @@
 {
  "app": "central",
  "charts": [],
- "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>At a glance</b></span>\", \"col\": 12}, \"id\": \"blk_0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Open Invoices\", \"col\": 3}, \"id\": \"blk_1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Overdue Invoices\", \"col\": 3}, \"id\": \"blk_2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Subscriptions\", \"col\": 3}, \"id\": \"blk_3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Failed Payments (24h)\", \"col\": 3}, \"id\": \"blk_4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Manage catalog</b></span>\", \"col\": 12}, \"id\": \"blk_6\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Plans, add-ons and their prices are authored through the <b>Plan Configurator</b> \\u2014 one guided form. You never edit the raw tables; pick a verb.\", \"col\": 12}, \"id\": \"blk_7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Launch a plan\", \"col\": 3}, \"id\": \"blk_8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Launch an add-on (metered)\", \"col\": 3}, \"id\": \"blk_9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Update prices\", \"col\": 3}, \"id\": \"blk_10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Retire a plan / add-on\", \"col\": 3}, \"id\": \"blk_11\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_12\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Reports</b></span>\", \"col\": 12}, \"id\": \"blk_13\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Revenue & AR Reports\", \"col\": 3}, \"id\": \"blk_14\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Payment Reports\", \"col\": 3}, \"id\": \"blk_15\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Credit Reports\", \"col\": 3}, \"id\": \"blk_16\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Growth & Usage Reports\", \"col\": 3}, \"id\": \"blk_17\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_18\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Records</b></span>\", \"col\": 12}, \"id\": \"blk_19\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Revenue\", \"col\": 4}, \"id\": \"blk_20\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Subscriptions & Usage\", \"col\": 4}, \"id\": \"blk_21\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Credits\", \"col\": 4}, \"id\": \"blk_22\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Payments & Gateways\", \"col\": 4}, \"id\": \"blk_23\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Customer Configuration\", \"col\": 4}, \"id\": \"blk_24\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Notifications\", \"col\": 4}, \"id\": \"blk_25\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_26\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Advanced</b></span>\", \"col\": 12}, \"id\": \"blk_27\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Advanced (catalog masters)\", \"col\": 4}, \"id\": \"blk_28\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Trust & Entitlements\", \"col\": 4}, \"id\": \"blk_29\"}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>At a glance</b></span>\", \"col\": 12}, \"id\": \"blk_0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Open Invoices\", \"col\": 3}, \"id\": \"blk_1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Overdue Invoices\", \"col\": 3}, \"id\": \"blk_2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Subscriptions\", \"col\": 3}, \"id\": \"blk_3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Failed Payments (24h)\", \"col\": 3}, \"id\": \"blk_4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Manage catalog</b></span>\", \"col\": 12}, \"id\": \"blk_6\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Plans, add-ons and their prices are authored through the <b>Plan Configurator</b> \\u2014 one guided form. You never edit the raw tables; pick a verb.\", \"col\": 12}, \"id\": \"blk_7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Launch a plan\", \"col\": 3}, \"id\": \"blk_8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Launch an add-on (metered)\", \"col\": 3}, \"id\": \"blk_9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Update prices\", \"col\": 3}, \"id\": \"blk_10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Retire a plan / add-on\", \"col\": 3}, \"id\": \"blk_11\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_12\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Reports</b></span>\", \"col\": 12}, \"id\": \"blk_13\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Revenue & AR Reports\", \"col\": 3}, \"id\": \"blk_14\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Revenue Analytics\", \"col\": 3}, \"id\": \"blk_rev_analytics\"},{\"type\": \"card\", \"data\": {\"card_name\": \"Payment Reports\", \"col\": 3}, \"id\": \"blk_15\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Credit Reports\", \"col\": 3}, \"id\": \"blk_16\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Growth & Usage Reports\", \"col\": 3}, \"id\": \"blk_17\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_18\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Records</b></span>\", \"col\": 12}, \"id\": \"blk_19\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Revenue\", \"col\": 4}, \"id\": \"blk_20\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Subscriptions & Usage\", \"col\": 4}, \"id\": \"blk_21\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Credits\", \"col\": 4}, \"id\": \"blk_22\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Payments & Gateways\", \"col\": 4}, \"id\": \"blk_23\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Customer Configuration\", \"col\": 4}, \"id\": \"blk_24\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Notifications\", \"col\": 4}, \"id\": \"blk_25\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_26\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Advanced</b></span>\", \"col\": 12}, \"id\": \"blk_27\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Advanced (catalog masters)\", \"col\": 4}, \"id\": \"blk_28\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Trust & Entitlements\", \"col\": 4}, \"id\": \"blk_29\"}]",
  "creation": "2026-06-03 12:27:21.372328",
  "custom_blocks": [],
  "docstatus": 0,
@@ -49,6 +49,45 @@
    "label": "Refunds Report",
    "link_count": 0,
    "link_to": "Refunds Report",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Revenue Analytics",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "MRR and YTD Revenue",
+   "link_count": 0,
+   "link_to": "MRR and YTD Revenue",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Cluster-wise Revenue",
+   "link_count": 0,
+   "link_to": "Cluster-wise Revenue",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Services Revenue",
+   "link_count": 0,
+   "link_to": "Services Revenue",
    "link_type": "Report",
    "onboard": 0,
    "type": "Link"
