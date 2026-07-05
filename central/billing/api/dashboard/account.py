@@ -5,6 +5,7 @@ team header, and trust-tier progress.
 """
 
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -294,17 +295,72 @@ _NOTIFY_PREFS = (
 
 
 @frappe.whitelist()
-def list_notifications(team: str | None = None, limit: int = 50) -> list[dict]:
-	"""Recent billing notifications sent to (or suppressed for) the team."""
+def list_notifications(
+	team: str | None = None, limit: int = 50, category: str | None = None,
+	unread_only: bool = False,
+) -> dict:
+	"""The team's in-app notification feed — billing and server events — newest first.
+
+	Returns the items plus the current unread count so the bell badge and the list
+	stay consistent from one read. Optionally filtered to a `category` (Billing /
+	Server) or to unread items only.
+	"""
 	team = _resolve_team(team)
-	return frappe.get_all(
-		"Billing Notification Log",
-		filters={"team": team},
-		fields=["name", "event_type", "channel", "status", "subject", "message",
-				"reference_doctype", "reference_name", "sent_at"],
-		order_by="sent_at desc",
-		limit=limit,
+	filters = {"team": team}
+	if category:
+		filters["category"] = category
+	if frappe.utils.cint(unread_only):
+		filters["is_read"] = 0
+	items = frappe.get_all(
+		"Team Notification",
+		filters=filters,
+		fields=["name", "category", "event_type", "severity", "title", "message",
+				"reference_doctype", "reference_name", "action_label", "action_route",
+				"is_read", "read_at", "creation"],
+		order_by="creation desc",
+		limit=frappe.utils.cint(limit),
 	)
+	from central.notifications import unread_count
+
+	return {"items": items, "unread": unread_count(team)}
+
+
+@frappe.whitelist()
+def notification_badge(team: str | None = None) -> dict:
+	"""Lightweight unread count for the console bell badge (no item payload)."""
+	from central.notifications import unread_count
+
+	return {"unread": unread_count(_resolve_team(team))}
+
+
+@frappe.whitelist(methods=["POST"])
+def mark_notification_read(name: str, team: str | None = None, read: bool = True) -> dict:
+	"""Mark one of the team's notifications read (or unread). Team-scoped: the row
+	must belong to the caller's team, so a member can't touch another team's feed."""
+	team = _resolve_team(team)
+	if frappe.db.get_value("Team Notification", name, "team") != team:
+		frappe.throw(_("Notification not found for this team."), frappe.PermissionError)
+	read = bool(frappe.utils.cint(read))
+	frappe.db.set_value(
+		"Team Notification", name,
+		{"is_read": 1 if read else 0, "read_at": frappe.utils.now_datetime() if read else None},
+	)
+	from central.notifications import unread_count
+
+	return {"ok": True, "unread": unread_count(team)}
+
+
+@frappe.whitelist(methods=["POST"])
+def mark_all_notifications_read(team: str | None = None) -> dict:
+	"""Mark every unread notification for the team read — the bell's 'clear' action."""
+	team = _resolve_team(team)
+	names = frappe.get_all(
+		"Team Notification", filters={"team": team, "is_read": 0}, pluck="name"
+	)
+	now = frappe.utils.now_datetime()
+	for name in names:
+		frappe.db.set_value("Team Notification", name, {"is_read": 1, "read_at": now})
+	return {"ok": True, "updated": len(names), "unread": 0}
 
 
 @frappe.whitelist()

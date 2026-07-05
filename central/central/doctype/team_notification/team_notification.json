@@ -1,0 +1,64 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-07-05 00:00:00.000000",
+ "description": "A team-facing in-app notification: the console's unified feed across billing and server/infra events. Distinct from Frappe's per-user Notification Log and its alert-rule Notification doctype.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "category",
+  "event_type",
+  "severity",
+  "column_break_main",
+  "is_read",
+  "read_at",
+  "reference_doctype",
+  "reference_name",
+  "section_break_body",
+  "title",
+  "message",
+  "section_break_action",
+  "action_label",
+  "action_route"
+ ],
+ "fields": [
+  {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "reqd": 1, "search_index": 1},
+  {
+   "default": "Billing", "fieldname": "category", "fieldtype": "Select", "in_list_view": 1,
+   "label": "Category", "options": "Billing\nServer\nTeam"
+  },
+  {"fieldname": "event_type", "fieldtype": "Data", "in_list_view": 1, "label": "Event Type"},
+  {
+   "default": "Info", "fieldname": "severity", "fieldtype": "Select", "in_list_view": 1,
+   "label": "Severity", "options": "Info\nSuccess\nWarning\nError"
+  },
+  {"fieldname": "column_break_main", "fieldtype": "Column Break"},
+  {"default": "0", "fieldname": "is_read", "fieldtype": "Check", "label": "Read", "search_index": 1},
+  {"fieldname": "read_at", "fieldtype": "Datetime", "label": "Read At"},
+  {"fieldname": "reference_doctype", "fieldtype": "Data", "label": "Reference DocType"},
+  {"fieldname": "reference_name", "fieldtype": "Data", "label": "Reference Name"},
+  {"fieldname": "section_break_body", "fieldtype": "Section Break"},
+  {"fieldname": "title", "fieldtype": "Data", "label": "Title", "reqd": 1},
+  {"fieldname": "message", "fieldtype": "Small Text", "label": "Message"},
+  {"fieldname": "section_break_action", "fieldtype": "Section Break"},
+  {"fieldname": "action_label", "fieldtype": "Data", "label": "Action Label", "description": "Button text for an actionable notification, e.g. 'Pay now'."},
+  {"fieldname": "action_route", "fieldtype": "Data", "label": "Action Route", "description": "Console route the action button navigates to, e.g. '/billing/invoices'."}
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-05 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Team Notification",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -183,6 +183,32 @@ class TestOpenAndCollect(BillingTestBase):
 		self.assertTrue(inv.due_date)
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
 
+	def test_credit_debit_uses_invoice_currency(self):
+		# Regression: a USD team was credited in USD but debited in INR because
+		# open_and_collect didn't pass the invoice currency (apply_credit defaults INR).
+		usd_team = "team-invoice-usd"
+		for dt in ("Credit Ledger Entry", "Credit Wallet", "Subscription",
+				   "Asset", "Billing Profile", "Invoice"):
+			frappe.db.delete(dt, {"team": usd_team})
+		sub = make_billing_subscription(usd_team, CLUSTER, PLAN, billing_cycle="Monthly", currency="USD")
+		add_segment(sub, "Created", 100, "2026-06-01 00:00:00", currency="USD")
+		name = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
+		credits.purchase(usd_team, 50, "USD")
+		frappe.db.commit()
+
+		invoicing.open_and_collect(name)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual(inv.currency, "USD")
+		self.assertEqual(inv.credit_applied, 50.0)
+		debit = frappe.get_all(
+			"Credit Ledger Entry", {"team": usd_team, "entry_type": "Debit"}, ["currency"]
+		)
+		self.assertEqual(debit[0].currency, "USD")  # debited in the invoice currency, not INR
+		# The USD wallet is drawn to zero; there is no spurious INR balance.
+		self.assertEqual(credits.get_balance(usd_team, "USD")["balance"], 0)
+		self.assertEqual(credits.get_balance(usd_team, "INR")["balance"], 0)
+
 	def test_parallel_open_processes_invoice_once(self):
 		name = self._draft()
 		credits.purchase(TEAM, 200, "INR")

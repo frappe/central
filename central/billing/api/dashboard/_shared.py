@@ -12,8 +12,8 @@ from central.billing import authz
 from central.billing.catalog.subscriptions import team_active_segments
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
-# so a EUR/USD team sees a coherent cap-vs-spend comparison.
-_FX_TO_INR = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
+# so a USD team sees a coherent cap-vs-spend comparison.
+_FX_TO_INR = {"INR": 1.0, "USD": 83.0}
 
 
 def _default_team() -> str | None:
@@ -240,17 +240,21 @@ def _describe_line(team: str, li) -> dict:
 		"subscription_resource": li.subscription_resource,
 		"days": li.days, "hours": li.hours, "quantity": li.quantity,
 		"rate": li.rate, "amount": li.amount, "unit": li.unit,
+		"charge_date": li.charge_date,
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
 		row["item"] = title or li.plan or "Subscription plan"
 		row["kind"] = "Plan"
-		# Hourly lines come from a churn day (multiple resizes within 24h); daily
-		# lines are a whole-day stable segment.
+		# Hourly lines come from a churn day (multiple resizes within 24h): they're
+		# tied to one calendar date, so name it. Daily lines span a range within the
+		# period — the invoice already carries the period dates, so no suffix.
 		if li.unit == "hour" and li.hours:
-			row["detail"] = f"{frappe.utils.flt(li.hours):g} hour(s) this period"
+			hours = f"{frappe.utils.flt(li.hours):g} hour(s)"
+			on = f" on {frappe.utils.getdate(li.charge_date).strftime('%-d %b')}" if li.charge_date else ""
+			row["detail"] = f"{hours}{on}"
 		elif li.days:
-			row["detail"] = f"{li.days} day(s) this period"
+			row["detail"] = f"{li.days} day(s)"
 		else:
 			row["detail"] = None
 	else:
@@ -264,9 +268,26 @@ def _describe_line(team: str, li) -> dict:
 			{"team": team, "resource_id": li.subscription_resource, "resource_type": li.resource_type},
 			"locked_allowance",
 		)
+		# li.quantity is the BILLABLE overage (usage already minus the allowance). Spell
+		# out the metered story so the charge is legible: total used, what was included,
+		# and the units actually billed (used − included). Unit is a plain label (Nos, GB).
 		unit = li.unit or "units"
-		if allowance is not None:
-			row["detail"] = f"{frappe.utils.flt(li.quantity):g} {unit} over {frappe.utils.flt(allowance):g} {unit} included"
+		billed = frappe.utils.flt(li.quantity)
+		allowance = frappe.utils.flt(allowance)
+		if allowance > 0:
+			# Legacy plans that still carry a free tier: show used vs included vs billed.
+			row["detail"] = (
+				f"Metered · {_qty(billed + allowance)} {unit} used · "
+				f"{_qty(billed)} billed over {_qty(allowance)} included"
+			)
 		else:
-			row["detail"] = f"{frappe.utils.flt(li.quantity):g} {unit} metered"
+			# No free tier — every used unit is billed at the per-unit rate.
+			row["detail"] = f"Metered · {_qty(billed)} {unit} used"
 	return row
+
+
+def _qty(value) -> str:
+	"""Format a metered quantity with thousands separators (90,000), keeping up to two
+	decimals only when the count is fractional (e.g. GB)."""
+	value = frappe.utils.flt(value)
+	return f"{value:,.0f}" if value == int(value) else f"{value:,.2f}"

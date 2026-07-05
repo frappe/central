@@ -31,8 +31,17 @@ def is_trial_team(team: str) -> bool:
 
 
 def invoice_type_for(team: str) -> str:
-	"""`cost_report` for entry-tier teams, `billable` otherwise."""
-	return "Cost Report" if is_trial_team(team) else "Billable"
+	"""Every invoice is `billable`.
+
+	The product no longer runs free trials — every team is billable and simply
+	receives welcome credits, which the invoicing waterfall draws down first
+	(settling small first bills to Paid with no card touched). The entry tier is
+	just the lowest rung of the ladder now, not a trial, so it must NOT emit a
+	Cost Report (that path never applies the welcome credits, stranding the team
+	on an uncollectable Open invoice). `is_trial_team` and the Cost Report
+	machinery are left dormant for a separate cleanup.
+	"""
+	return "Billable"
 
 
 def convert_to_paid(team: str, level: str | None = None):

@@ -35,6 +35,26 @@ class Asset(Document):
 	def on_update(self):
 		if self.has_value_changed("status") or self.has_value_changed("plan"):
 			self.sync_subscription_on_status_change()
+		if self.has_value_changed("status") and self.status == "Failed":
+			self.notify_failure()
+
+	def notify_failure(self):
+		"""Surface a failed server in the team's console feed (a Server-category
+		notification), so a mirror flipping to Failed isn't silent in the UI."""
+		from central.notifications import create_notification
+
+		create_notification(
+			self.team,
+			f"Server {self.name} failed",
+			category="Server",
+			event_type="Server Failed",
+			severity="Error",
+			message=f"Your server in {self.cluster} entered a Failed state. Review it in the console.",
+			reference_doctype="Asset",
+			reference_name=self.name,
+			action_label="View server",
+			action_route="/servers",
+		)
 
 	def sync_subscription_on_status_change(self):
 		"""Provision/enable the subscription on Running; disable it on Terminated."""

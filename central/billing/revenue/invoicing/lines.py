@@ -125,7 +125,7 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 				day_end = min(s["end"], datetime.combine(cd + timedelta(days=1), time.min))
 				hours = (day_end - day_start).total_seconds() / 3600.0
 				if hours > 0:
-					lines.append(_hourly_line(s, hours, hour_units))
+					lines.append(_hourly_line(s, hours, hour_units, cd))
 	return lines
 
 
@@ -138,10 +138,10 @@ def _daily_line(seg: dict, days: int, day_units: int) -> dict:
 	}
 
 
-def _hourly_line(seg: dict, hours: float, hour_units: int) -> dict:
+def _hourly_line(seg: dict, hours: float, hour_units: int, charge_date) -> dict:
 	return {
 		"subscription_resource": seg["asset"], "plan": seg["plan"], "cluster": seg["cluster"],
 		"resource_type": "bundle", "unit": "hour", "quantity": 1, "rate": seg["rate"],
-		"days": None, "hours": frappe.utils.flt(hours, 2),
+		"days": None, "hours": frappe.utils.flt(hours, 2), "charge_date": charge_date,
 		"amount": frappe.utils.flt(hours * seg["rate"] / hour_units, 2),
 	}

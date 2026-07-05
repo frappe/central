@@ -9,22 +9,20 @@ demo_scenarios.
 """
 
 import frappe
-
-from central.billing.catalog.pricing import set_catalog_rates
+from frappe.utils.password import update_password
 
 # --- catalog shape ----------------------------------------------------------
 
 # (slug, label, billing currency of the region)
 CLUSTERS = [
 	("in-mumbai", "India — Mumbai", "INR"),
-	("eu-frankfurt", "Europe — Frankfurt", "EUR"),
 	("me-dubai", "Middle East — Dubai", "USD"),
 ]
-CURRENCIES = ["INR", "EUR", "USD"]
+CURRENCIES = ["INR", "USD"]
 # 1 unit of currency = N INR (rough FX, demo only).
-FX = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
+FX = {"INR": 1.0, "USD": 83.0}
 # Regional cost multiplier on the INR base price.
-CLUSTER_MULT = {"in-mumbai": 1.0, "eu-frankfurt": 1.25, "me-dubai": 1.15}
+CLUSTER_MULT = {"in-mumbai": 1.0, "me-dubai": 1.15}
 
 # (slug, title, vcpu, ram_gb, disk_gb, transfer_gb_included, base_inr_monthly)
 PLAN_SIZES = [
@@ -35,9 +33,25 @@ PLAN_SIZES = [
 	("plan-16vcpu", "Enterprise · 16 vCPU / 32 GB", 16, 32, 400, 1600, 24000),
 ]
 
-# Metered bandwidth overage, priced per GB per currency (cluster-agnostic).
-ADDON = "addon-transfer"
-ADDON_RATE = {"INR": 0.80, "EUR": 0.009, "USD": 0.010}
+# À-la-carte component rate card, per Resource Type (ADR 0009) — what powers the
+# "design your own" plan selector. A composed config prices as Σ(qty × component rate);
+# a config is only sellable when EVERY component it uses is priced. Base per-unit/month
+# in INR (Compute per vCPU, Memory/Disk per GB), converted per currency at seed time.
+COMPONENT_RATES_INR = {"Compute": 1200.0, "Memory": 400.0, "Disk": 30.0}
+
+# Team-level metered CONSUMER services (ADR 0013/0015) — the real metered story
+# (replaces the meaningless bandwidth overage). Each is a single-resource metered Plan
+# under its own family, billed as postpaid overage past a bundled allowance.
+# Unit is a plain label ("Nos") and Quantity is the ACTUAL count — allowances are real
+# item counts, and the rate is per item (a token costs a small fraction of a cent).
+# (family/category, resource_type, plan_slug, title, unit, allowance, per-unit rate by currency)
+# allowance is 0 — these services have NO free tier: every reported unit is billed at
+# the per-unit rate (pure pay-per-use), so nothing is included for free.
+SERVICES = [
+	("AI Tokens", "Tokens", "svc-ai-tokens", "AI Tokens", "Nos", 0, {"INR": 0.012, "USD": 0.00015}),
+	("Emails", "Emails", "svc-emails", "Transactional Email", "Nos", 0, {"INR": 0.007, "USD": 0.00009}),
+	("PDF Generation", "PDF", "svc-pdf", "PDF / Print Generation", "Nos", 0, {"INR": 0.018, "USD": 0.00022}),
+]
 
 # (level, sequence, is_default, max_spend_inr, max_resources, min_invoices, min_paid_inr)
 TIERS = [
@@ -48,14 +62,15 @@ TIERS = [
 ]
 
 # Output tax follows the customer's billing currency (place of supply).
-TAX_BY_CURRENCY = {"INR": ("GST", 18), "EUR": ("VAT", 19), "USD": ("VAT", 5)}
+TAX_BY_CURRENCY = {"INR": ("GST", 18), "USD": ("VAT", 5)}
 
-STRIPE = {"INR": "GW-Stripe-INR", "EUR": "GW-Stripe-EUR", "USD": "GW-Stripe-USD"}
+STRIPE = {"INR": "GW-Stripe-INR", "USD": "GW-Stripe-USD"}
 RAZORPAY = "GW-Razorpay"
-# PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD/EUR but
-# is NOT their default — Stripe stays the card default; PayPal is the opt-in rail.
+# PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD but
+# is NOT its default — Stripe stays the card default; PayPal is the opt-in rail.
 PAYPAL = "GW-PayPal"
 ANCHOR = "2026-06-01"  # the current (open) billing month
+DEMO_OWNER_PASSWORD = "abc@123"  # every demo owner logs into the console with this
 
 
 # --- catalog / config builders ----------------------------------------------
@@ -84,6 +99,16 @@ def _tiers():
 def _atlas_instances():
 	"""Each demo cluster needs a real Atlas Instance — Catalog Rate scopes its
 	regional rates to one via a Link (autonamed by region)."""
+	wanted = {cslug for cslug, _label, _cur in CLUSTERS}
+	# Drop demo regions no longer offered (e.g. a retired EUR cluster) so a re-seed on
+	# an existing site doesn't leave a stray instance behind. Scoped to demo-created
+	# instances (the `*.atlas.demo` base_url) so a real Atlas is never touched.
+	for stray in frappe.get_all(
+		"Atlas Instance",
+		filters={"region": ["not in", wanted], "base_url": ["like", "%.atlas.demo"]},
+		pluck="name",
+	):
+		frappe.delete_doc("Atlas Instance", stray, force=True, ignore_permissions=True)
 	for cslug, label, _cur in CLUSTERS:
 		if frappe.db.exists("Atlas Instance", cslug):
 			continue
@@ -93,35 +118,112 @@ def _atlas_instances():
 		}).insert(ignore_permissions=True)
 
 
-def _catalog():
-	_atlas_instances()
-	for slug, title, vcpu, ram, disk, transfer, base_inr in PLAN_SIZES:
-		rates = []
-		for cslug, _label, _cur in CLUSTERS:
-			for currency in CURRENCIES:
-				rate = round(base_inr * CLUSTER_MULT[cslug] / FX[currency], 2)
-				rates.append({"cluster": cslug, "currency": currency, "rate": rate})
-		plan = _upsert("Plan", slug, {
-			"title": title, "billing_cycle": "Monthly", "is_active": 1,
-			"includes": [
-				{"resource_type": "Compute", "quantity": vcpu, "unit": "vCPU"},
-				{"resource_type": "Memory", "quantity": ram, "unit": "GB"},
-				{"resource_type": "Disk", "quantity": disk, "unit": "GB"},
-				{"resource_type": "Transfer", "quantity": transfer, "unit": "GB"},
-			],
-		}, newname=True)
-		set_catalog_rates("Plan", plan, rates)
+# Logical plan key (PLAN_SIZES / SERVICES slug) -> the hash-named Plan the Plan
+# Configurator minted for it. Plans are authored through the configurator, so their
+# names are opaque hashes; the demo refers to them by these stable logical keys.
+_PLAN_BY_KEY: dict[str, str] = {}
 
-	# Transfer overage is a metered single-resource Plan now (ADR 0008): one Transfer
-	# include under the metered family, priced per GB.
-	overage = _upsert("Plan", ADDON, {
-		"title": "Bandwidth Overage", "category": "Metered Resources",
-		"billing_cycle": "Monthly", "is_active": 1,
-		"includes": [{"resource_type": "Transfer", "quantity": 0, "unit": "GB"}],
-	}, newname=True)
-	set_catalog_rates(
-		"Plan", overage, [{"cluster": "", "currency": c, "rate": ADDON_RATE[c]} for c in CURRENCIES]
-	)
+
+def plan_name(key: str) -> str:
+	"""Resolve a demo logical plan key (e.g. 'plan-2vcpu', 'svc-ai-tokens') to the
+	configurator-minted Plan name."""
+	return _PLAN_BY_KEY[key]
+
+
+def _catalog():
+	from central.billing.catalog.taxonomy_setup import ensure_catalog_masters
+
+	_atlas_instances()
+	# Seed the taxonomy masters (Plan Category / Resource Type) through the canonical
+	# seeder — the demo authors plans against these families, it does not invent them.
+	ensure_catalog_masters()
+	_PLAN_BY_KEY.clear()
+	_vm_plans()
+	_component_rate_card()
+	_service_catalog()
+
+
+def _vm_plans():
+	"""Author the VM bundle ladder + its per-cluster prices through a real Plan
+	Configurator DOCUMENT — the exact doc the Desk 'Launch a plan' verb creates —
+	so the demo exercises the whole authoring flow (doc.generate_and_price), not just
+	its internal helpers, and the configurator list isn't empty.
+
+	The configurator prices `rate = base_rate(currency) × rung.multiplier`. We carry
+	each size's base INR price as its `multiplier`, and the per-cluster×FX factor as
+	the base_rate — so re-running generation per cluster (as an admin would when a
+	region onboards) yields the regional prices. The Plans are minted on the first
+	run and reused (idempotent) on the rest."""
+	doc = frappe.get_doc({
+		"doctype": "Plan Configurator",
+		"template_name": "VM Bundles (demo)",
+		"category": "VM Plans",
+		"sub_category": "General",
+		"start_vcpu": "1", "ceiling_vcpu": "16",
+		"billing_cycle": "Monthly",
+		"is_active": 1,
+		"plan_name_prefix": "Bundle",
+		"rungs": [
+			{"plan_name": slug, "label": title, "vcpu": vcpu, "memory_gb": ram,
+			 "disk_gb": disk, "transfer_gb": transfer, "multiplier": base}
+			for slug, title, vcpu, ram, disk, transfer, base in PLAN_SIZES
+		],
+	}).insert(ignore_permissions=True)
+
+	for cslug, _label, _cur in CLUSTERS:
+		doc.set("base_rates", [
+			{"currency": c, "base_rate": CLUSTER_MULT[cslug] / FX[c]} for c in CURRENCIES
+		])
+		doc.save(ignore_permissions=True)
+		doc.generate_and_price(cluster=cslug, currencies=list(CURRENCIES))
+
+	doc.reload()
+	for rung, size in zip(doc.rungs, PLAN_SIZES):
+		_PLAN_BY_KEY[size[0]] = rung.plan
+
+
+def _component_rate_card():
+	"""À-la-carte per-Resource-Type rates (ADR 0009/0011) authored through the Plan
+	Configurator's component-rate card — the same 'Publish Rates' path the Desk tool
+	uses — rather than writing Catalog Rate rows by hand. Global (blank-cluster) rate
+	per currency for each priced component."""
+	doc = frappe.get_doc({
+		"doctype": "Plan Configurator",
+		"template_name": "Component Rate Card (demo)",
+		"category": "VM Plans",
+		"start_vcpu": "1", "ceiling_vcpu": "16",
+		"component_rates": [
+			{"resource_type": rt, "currency": c, "rate": round(base_inr / FX[c], 4)}
+			for rt, base_inr in COMPONENT_RATES_INR.items()
+			for c in CURRENCIES
+		],
+	}).insert(ignore_permissions=True)
+	doc.apply_component_card(cluster=None)
+
+
+def _service_catalog():
+	"""Team-level metered consumer services (AI tokens, email, PDF) — each authored
+	through a real Plan Configurator DOCUMENT on the `Simple` builder (one simple-plan
+	row + a per-currency base rate), against the canonical service families seeded by
+	ensure_catalog_masters. Single-resource metered Plan per family, per-unit priced,
+	globally (ADR 0013/0015/0008)."""
+	for category, resource_type, slug, title, unit, allowance, rates in SERVICES:
+		doc = frappe.get_doc({
+			"doctype": "Plan Configurator",
+			"template_name": f"{title} (demo)",
+			"category": category,
+			"start_vcpu": "1", "ceiling_vcpu": "16",
+			"billing_cycle": "Monthly",
+			"is_active": 1,
+			"simple_plans": [
+				{"title": title, "resource_type": resource_type,
+				 "quantity": allowance, "unit": unit, "multiplier": 1}
+			],
+			"base_rates": [{"currency": c, "base_rate": rate} for c, rate in rates.items()],
+		}).insert(ignore_permissions=True)
+		doc.generate_and_price(cluster=None, currencies=list(rates.keys()))
+		doc.reload()
+		_PLAN_BY_KEY[slug] = doc.simple_plans[0].plan
 
 
 def _gateways():
@@ -140,14 +242,14 @@ def _gateways():
 		"is_enabled": 1, "supports_mandates": 1,
 		"currencies": [{"currency": "INR", "is_default": 1}],
 	}, newname=True, flags=seed)
-	# PayPal — directly-settled standalone gateway (ADR 0007). Non-default for USD/EUR
-	# so Stripe stays their card default; PayPal is the opt-in international rail whose
+	# PayPal — directly-settled standalone gateway (ADR 0007). Non-default for USD
+	# so Stripe stays the card default; PayPal is the opt-in international rail whose
 	# capture ids reconcile against PayPal's own ledger.
 	_upsert("Payment Gateway", PAYPAL, {
 		"title": "PayPal (International)", "adapter_key": "Paypal",
 		"api_key": "paypal_client_id", "api_secret": "paypal_secret", "webhook_secret": "paypal_whid",
 		"is_enabled": 1,
-		"currencies": [{"currency": "USD", "is_default": 0}, {"currency": "EUR", "is_default": 0}],
+		"currencies": [{"currency": "USD", "is_default": 0}],
 	}, newname=True, flags=seed)
 
 
@@ -168,7 +270,6 @@ def _tax(team, currency):
 # the state must be a GST state whose code matches the GSTIN (27 = Maharashtra).
 _GEO_BY_CLUSTER = {
 	"in-mumbai": ("India", "Maharashtra", "Mumbai", "400001"),
-	"eu-frankfurt": ("Germany", "Hesse", "Frankfurt", "60311"),
 	"me-dubai": ("United Arab Emirates", "Dubai", "Dubai", "00000"),
 }
 
@@ -244,11 +345,17 @@ def _ensure_member_user(email, full_name):
 	return email
 
 
+# States that settle from the wallet / free credits — no card on file.
+_NO_CARD_STATES = ("credits", "credits_full", "free_credits", "trial")
+# INR teams on UPI Autopay (Razorpay e-mandate); the ceiling = the tier cap.
+_MANDATE_TEAMS = ("acme-corp",)
+
+
 def _payment_setup(team, slug, currency, state):
 	"""Return (gateway, payment_method) for the team's terminal state."""
-	if state in ("credits", "credits_full", "free_credits", "trial"):
+	if state in _NO_CARD_STATES:
 		return None, None  # settled from wallet / free credits — no card needed
-	if currency == "INR" and slug == "wayne-ent":
+	if currency == "INR" and slug in _MANDATE_TEAMS:
 		# An INR team on UPI Autopay (mandate ceiling = tier cap).
 		pm = frappe.get_doc({
 			"doctype": "Payment Method", "team": team, "gateway": RAZORPAY,
@@ -268,6 +375,19 @@ def _payment_setup(team, slug, currency, state):
 	}).insert(ignore_permissions=True).name
 	_gateway_customer(team, gateway, f"cus_{slug}")
 	return gateway, pm
+
+
+def _add_backup_card(team, slug, gateway, priority=1):
+	"""A second, lower-priority Card on the same gateway customer — the backup method
+	autopay rotates to when the primary declines (#28). The primary from `_payment_setup`
+	carries priority 0, so this one (priority 1) sits behind it in `ordered_methods`."""
+	return frappe.get_doc({
+		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
+		"status": "Active", "display_label": "Mastercard ····5454",
+		"gateway_method_id": f"pm_{slug}_backup", "gateway_customer_id": f"cus_{slug}",
+		"expiry_month": 8, "expiry_year": 2031, "is_default": 0, "priority": priority,
+		"validated_at": frappe.utils.now_datetime(),
+	}).insert(ignore_permissions=True).name
 
 
 def _gateway_customer(team, gateway, customer_id):
@@ -317,6 +437,28 @@ def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
 	})
 
 
+def _settle_via_backup(team, invoice, primary_pm, gateway, amount, currency, when=None):
+	"""Autopay fallback (#28): the primary method declines, so settlement rotates to the
+	team's backup method, which captures. The rotation target is chosen by the REAL
+	selector (collection.next_method_for) — the demo only stands in for the offline
+	gateway capture. Returns (backup_attempt, backup_pm) or (None, None) if there is no
+	backup to fall back to. Leaves the invoice Paid on the backup capture."""
+	from central.billing.payments import collection
+
+	when = frappe.utils.get_datetime(when or frappe.utils.now_datetime())
+	# 1) the primary declines (the Failed row is what the selector reads to skip it).
+	_failed_attempt(team, invoice, primary_pm, gateway, 0, when=when)
+	# 2) the real fallback selector picks the next untried, chargeable method.
+	backup = collection.next_method_for(invoice, team)
+	if not backup:
+		return None, None
+	# 3) the backup captures (stands in for the offline gateway), an hour later.
+	captured_at = frappe.utils.add_to_date(when, hours=1)
+	attempt = _capture_attempt(team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at)
+	frappe.db.set_value("Invoice", invoice, {"status": "Paid", "amount_paid": amount})
+	return attempt, backup.name
+
+
 # --- collection mode (ADR 0005, #50) ----------------------------------------
 
 
@@ -360,10 +502,13 @@ def _month_periods(n):
 def _upsert(doctype, name, values, newname=False, flags=None):
 	if frappe.db.exists(doctype, name):
 		frappe.delete_doc(doctype, name, force=True)
-	data = {"doctype": doctype, **values}
+	doc = frappe.get_doc({"doctype": doctype, **values})
 	if newname:
-		data["__newname"] = name
-	doc = frappe.get_doc(data)
+		# Plan (and other catalog masters) autoname by random hash, so `__newname` is
+		# ignored — pin the readable slug the same way the Team seed does, so Links
+		# like Subscription.plan / Catalog Rate.priced_for resolve to it.
+		doc.flags.name_set = True
+		doc.name = name
 	if flags:
 		doc.flags.update(flags)
 	return doc.insert(ignore_permissions=True).name
@@ -392,14 +537,18 @@ def _ensure_demo_team(slug):
 	(which is what produced two teams per email). Idempotent by `owner_user`:
 	`_wipe_all` leaves Teams intact, so a re-seed reuses the same team."""
 	owner = f"owner-{slug}@example.com"
-	existing = frappe.db.get_value("Team", {"owner_user": owner}, "name")
-	if existing:
-		return existing
 	if not frappe.db.exists("User", owner):
 		frappe.get_doc({
 			"doctype": "User", "email": owner, "send_welcome_email": 0,
 			"first_name": slug.replace("-", " ").title(),
 		}).insert(ignore_permissions=True)
+	# Every demo owner signs into the console with the same password. Set it on each
+	# seed (owners persist across reseeds) via update_password, which writes the hash
+	# directly and so bypasses the site's password-strength policy.
+	update_password(owner, DEMO_OWNER_PASSWORD)
+	existing = frappe.db.get_value("Team", {"owner_user": owner}, "name")
+	if existing:
+		return existing
 	# bootstrap_user_team should have created the team on user insert; fall back
 	# to an explicit one only if bootstrap was skipped.
 	team = frappe.db.get_value("Team", {"owner_user": owner}, "name")
@@ -412,16 +561,239 @@ def _ensure_demo_team(slug):
 
 def _wipe_all():
 	"""Drop every billing record so the demo is the only data present."""
+	# Child tables must be wiped explicitly — deleting a parent via frappe.db.delete
+	# does NOT cascade, so orphan rows (e.g. old EUR Trust Tier Thresholds, gateway
+	# currencies) would otherwise accumulate across re-seeds.
 	children = ("Catalog Rate", "Plan Includes", "Invoice Line Item",
-				"Subscription Change")
+				"Subscription Change", "Trust Tier Threshold", "Payment Gateway Currency",
+				"Plan Configurator Plan", "Plan Configurator Rate",
+				"Plan Configurator Simple Plan", "Plan Configurator Component Rate")
 	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Gateway Customer",
 					 "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
-					 "Billing Notification Log", "Entitlement Token", "Webhook Event", "Subscription", "Asset")
+					 "Billing Notification Log", "Team Notification",
+					 "Entitlement Token", "Webhook Event", "Subscription", "Asset")
 	config = ("Tax Profile", "Billing Profile")
-	catalog = ("Plan", "Payment Gateway", "Trust Tier Level")
+	catalog = ("Plan Configurator", "Plan", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:
 		try:
 			frappe.db.delete(dt)
 		except Exception:  # noqa: BLE001 — some doctypes may not exist on older sites
 			pass
 	frappe.db.commit()
+
+
+# --- resize (Plan Changed) segments -----------------------------------------
+
+
+def _plan_after(plan, steps=1):
+	"""The plan `steps` sizes up (or down, if negative) the PLAN_SIZES ladder,
+	clamped to the ends. Used to stage a realistic VM upsize/downsize."""
+	order = [p[0] for p in PLAN_SIZES]
+	i = order.index(plan) if plan in order else 0
+	return order[max(0, min(len(order) - 1, i + steps))]
+
+
+def _add_resize(sub, plan, currency, cluster, effective_at):
+	"""Author one 'Plan Changed' run-segment on the ledger (ADR 0010 — the ledger is
+	the price-lock). The invoice day-weights every segment, so back-to-back resizes in
+	a single period show up as distinct slivers in the bill and the change history."""
+	rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
+	frappe.get_doc({
+		"doctype": "Subscription Change", "subscription": sub, "change_type": "Plan Changed",
+		"new_value": plan, "locked_rate": rate, "currency": currency, "effective_at": effective_at,
+	}).insert(ignore_permissions=True)
+
+
+def stage_resizes(primary_sub, base_cluster, base_plan, currency, kind):
+	"""Two resizes on the current (June) invoice, in one of two shapes:
+
+	  * same_day    — an upsize and a downsize within the SAME calendar day, so the
+	                  bill carries two same-day Plan Changed slivers.
+	  * within_24h  — an upsize late one evening and a downsize the next morning,
+	                  i.e. a second resize inside 24h of the first (spanning midnight).
+	"""
+	up = plan_name(_plan_after(base_plan, +1))
+	down = plan_name(_plan_after(base_plan, 0))  # back to the original size
+	if kind == "same_day":
+		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-15 09:30:00")
+		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 16:45:00")
+	elif kind == "within_24h":
+		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-14 20:00:00")
+		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 08:00:00")
+
+
+# --- payment attempts + refunds (terminal-state builders) -------------------
+
+
+def backdate_invoice(invoice, when):
+	"""Pin an invoice's finalisation moment to `when`. The invoice Activity reads
+	`creation` as the 'Invoice finalised' event; a demo invoice is generated at seed
+	time, so without this it would sort AFTER its own backdated payments — an invoice
+	that reads as finalised months after it was paid."""
+	frappe.db.set_value(
+		"Invoice", invoice, "creation", frappe.utils.get_datetime(when), update_modified=False
+	)
+
+
+def backdate_credit_debits(invoice, when):
+	"""Pin an invoice's credit-application moment to `when`.
+
+	The credits-then-card waterfall draws the wallet at invoice-open time — before
+	the card is charged — but draw_wallet_credit records the Credit Ledger debit at
+	seed time. Without this the 'Credits applied' event (and the 'Invoice settled'
+	marker pinned to the latest event) sorts AFTER a backdated card capture: an
+	invoice that reads as credited months after its card already settled it."""
+	when = frappe.utils.get_datetime(when)
+	for e in frappe.get_all(
+		"Credit Ledger Entry",
+		filters={"reference_type": "Invoice", "reference_name": invoice, "entry_type": "Debit"},
+		pluck="name",
+	):
+		frappe.db.set_value(
+			"Credit Ledger Entry", e, {"created_at": when, "creation": when}, update_modified=False
+		)
+
+
+def backdate_welcome_credit(team, when):
+	"""Pin the team's one-time welcome (Promotion) credit grant to `when` — its signup.
+
+	provision_billing_profile books the welcome credit at seed time, but the invoices that
+	draw it down are backdated. Two things break if the grant is left at seed time:
+
+	  * the wallet timeline shows the credit being *applied* (backdated) before it was
+	    *granted* (seed time) — an impossible order;
+	  * get_balance (no currency) reads the newest-by-`creation` entry's running_balance,
+	    so the stale seed-time grant wins and reports the pre-draw balance (the full grant)
+	    instead of what's actually left.
+
+	Backdating the grant's `creation`/`created_at` to before the first period restores
+	creation order == insert order, so the draw is the newest row and the balance is right."""
+	when = frappe.utils.get_datetime(when)
+	for e in frappe.get_all(
+		"Credit Ledger Entry",
+		filters={"team": team, "reference_type": "Promotion", "entry_type": "Credit"},
+		pluck="name",
+	):
+		frappe.db.set_value(
+			"Credit Ledger Entry", e, {"created_at": when, "creation": when}, update_modified=False
+		)
+
+
+def draw_wallet_credit(invoice) -> float:
+	"""Run the real credits-leg of settlement (invoicing.open_and_collect, collect=False):
+	draw the team's wallet credits against the invoice, recording a Credit Ledger debit and
+	`credit_applied`, and leaving the invoice Open for the card to settle the remainder.
+
+	This is the same waterfall production uses (credits first, then card); collect=False
+	skips the gateway leg because the demo gateways are offline, so the caller simulates the
+	card capture for whatever is returned. Returns the remainder still due after credits."""
+	from central.billing.revenue import invoicing
+
+	if frappe.db.get_value("Invoice", invoice, "status") != "Draft":
+		frappe.db.set_value("Invoice", invoice, "status", "Draft", update_modified=False)
+	invoicing.open_and_collect(invoice, collect=False)
+	return frappe.utils.flt(frappe.db.get_value("Invoice", invoice, "expected_collection"))
+
+
+def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
+	"""A successful (Captured) card charge that settled the invoice."""
+	when = when or frappe.utils.now_datetime()
+	return frappe.get_doc({
+		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
+		"payment_method": pm, "amount": amount, "currency": currency, "status": "Captured",
+		"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}", "resolved_by": "Webhook",
+		"initiated_at": when, "completed_at": when,
+	}).insert(ignore_permissions=True).name
+
+
+def bank_pending_attempt(team, invoice, pm, gateway, amount, currency):
+	"""An in-flight charge: submitted to Stripe, which is still awaiting the bank's
+	response (no webhook yet). The attempt is 'Initiated' — reconciliation treats it
+	as ambiguous — so the invoice is frozen (no Pay Now / no retry) until it resolves."""
+	now = frappe.utils.now_datetime()
+	return frappe.get_doc({
+		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
+		"payment_method": pm, "amount": amount, "currency": currency, "status": "Initiated",
+		"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
+		"initiated_at": now,  # completed_at left blank — the bank hasn't answered
+	}).insert(ignore_permissions=True).name
+
+
+def make_refund(team, invoice, attempt, amount, currency, destination, reason, chargeback=False):
+	"""A completed Refund against a captured charge. `destination` is 'Source' (back to
+	the card — a full double-charge refund or a dispute chargeback) or 'Wallet' (a partial
+	overcharge booked as credits). By policy a card/source refund is the FULL-amount case
+	and a partial correction always goes to the wallet (refunds.partial_overcharge). A full
+	refund to source flips the original attempt to Refunded (mirrors refunds._to_source);
+	`chargeback` forces that flip for a dispute. The invoice stays Paid throughout."""
+	frappe.get_doc({
+		"doctype": "Refund", "payment_attempt": attempt, "invoice": invoice, "team": team,
+		"amount": amount, "currency": currency, "destination": destination, "status": "Completed",
+		"reason": reason, "gateway_refund_id": f"re_{frappe.generate_hash(length=20)}",
+		"created_at": frappe.utils.now_datetime(), "completed_at": frappe.utils.now_datetime(),
+	}).insert(ignore_permissions=True)
+	captured = frappe.utils.flt(frappe.db.get_value("Payment Attempt", attempt, "amount"))
+	if chargeback or (destination == "Source" and frappe.utils.flt(amount) >= captured):
+		frappe.db.set_value("Payment Attempt", attempt, "status", "Refunded")
+
+
+# --- activation, composed configs, metered services -------------------------
+
+
+def activate_team_assets(team):
+	"""Flip the team's Pending VM Assets to Running. The Asset.on_update hook then
+	enables the linked Subscription (ensure_subscription_enabled) — the same path a
+	real provisioned+running VM takes. Without this every subscription stays Disabled."""
+	for name in frappe.get_all("Asset", filters={"team": team, "status": "Pending"}, pluck="name"):
+		# Change status ON the doc (not via set_value first) so has_value_changed sees
+		# Pending→Running and on_update fires ensure_subscription_enabled.
+		asset = frappe.get_doc("Asset", name)
+		asset.status = "Running"
+		asset.save(ignore_permissions=True)
+
+
+# A valid design-your-own config on the "General" profile (ram = 4×vcpu, disk in range),
+# so the à-la-carte selector path is exercised end to end.
+_COMPOSED_INCLUDES = [
+	{"resource_type": "Compute", "quantity": 2, "unit": "vCPU"},
+	{"resource_type": "Memory", "quantity": 8, "unit": "GB"},
+	{"resource_type": "Disk", "quantity": 60, "unit": "GB"},
+]
+
+
+def add_composed_subscription(team, cluster, currency, start_date, pm, gateway, resource_id):
+	"""Provision a custom VM the customer composed in the selector (ADR 0009): no Plan,
+	priced from the à-la-carte component rate card. Returns the subscription name."""
+	from central.billing.catalog.subscriptions import provision_composed_subscription
+
+	res = provision_composed_subscription(
+		team=team, cluster=cluster, includes=_COMPOSED_INCLUDES, sub_category="General",
+		billing_cycle="Monthly", start_date=start_date,
+		default_payment_method=pm, gateway=gateway, resource_id=resource_id,
+	)
+	return res["subscription"]
+
+
+def subscribe_service(team, service_slug, cluster, pm, gateway):
+	"""Subscribe a team to a metered consumer service and return (subscription, subject)."""
+	from central.billing.catalog.subscriptions import provision_service_subscription
+
+	res = provision_service_subscription(
+		team=team, plan=service_slug, cluster=cluster,
+		default_payment_method=pm, gateway=gateway,
+	)
+	return res["subscription"], res["service_subject"]
+
+
+def meter_service_usage(subject, resource_type, quantity, unit, period_start, period_end):
+	"""Report metered usage for a service subject (resource_id = the synthesized subject).
+	ingest_rollup stamps the locked allowance + per-unit rate from the subject's segment,
+	so anything past the allowance bills as overage on the period's invoice."""
+	from central.billing.platform.sync import record_meter_rollups
+
+	record_meter_rollups([{
+		"resource_id": subject, "resource_type": resource_type, "meter_type": "Counter",
+		"period_start": f"{period_start} 00:00:00", "period_end": f"{period_end} 23:59:59",
+		"quantity": quantity, "unit": unit,
+		"idempotency_key": f"{subject}:counter:{period_start}", "status": "closed",
+	}])

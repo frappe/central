@@ -416,9 +416,18 @@ class TestFailedPaymentsReport(ChargeTestBase):
 	def test_lists_failures_with_reason_and_summary(self):
 		from central.billing.report.failed_payments import failed_payments
 
-		self._failed("insufficient_funds", "no funds")
+		a1 = self._failed("insufficient_funds", "no funds")
 		self._failed("insufficient_funds", "no funds")
 		self._failed("lost_card", "reported lost")
+		# A second failed attempt (a retry) on the SAME invoice as a1 — it must collapse
+		# into one row and NOT double-count the amount not collected.
+		inv1 = frappe.db.get_value("Payment Attempt", a1, "invoice")
+		frappe.get_doc({
+			"doctype": "Payment Attempt", "invoice": inv1, "team": TEAM, "gateway": GATEWAY,
+			"amount": 1000, "currency": "INR", "status": "Failed", "failure_code": "card_declined",
+			"decline_code": "insufficient_funds", "failure_reason": "no funds", "retry_number": 1,
+			"initiated_at": frappe.utils.now_datetime(),
+		}).insert(ignore_permissions=True)
 		# A captured attempt must never appear.
 		frappe.get_doc({
 			"doctype": "Payment Attempt", "invoice": self._open_invoice(1000), "team": TEAM,
@@ -427,11 +436,14 @@ class TestFailedPaymentsReport(ChargeTestBase):
 		}).insert(ignore_permissions=True)
 
 		columns, rows, _msg, chart, summary = failed_payments.execute({"team": TEAM})
+		# 3 distinct invoices (the retry on inv1 collapses into its row, showing 2 attempts).
 		self.assertEqual(len(rows), 3)
 		self.assertTrue(all(r["decline_code"] for r in rows))
-		# Summary: 3 failures, top reason is insufficient_funds (2).
+		self.assertEqual(next(r for r in rows if r["invoice"] == inv1)["attempts"], 2)
 		by_label = {s["label"]: s["value"] for s in summary}
-		self.assertEqual(by_label["Failed Payments"], 3)
+		self.assertEqual(by_label["Invoices Affected"], 3)
+		self.assertEqual(by_label["Failed Attempts"], 4)
+		# Amount not collected counts each invoice once (3 × 1000), not per attempt (4000).
+		self.assertEqual(by_label["Not Collected (INR)"], 3000)
 		self.assertIn("insufficient_funds", by_label["Top Reason"])
-		# Chart buckets by reason.
 		self.assertIn("insufficient_funds", chart["data"]["labels"])

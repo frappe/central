@@ -61,7 +61,8 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Rate",
-   "description": "A fixed bundle: the flat rate. A metered single-resource plan: the per-unit rate.",
+   "precision": "6",
+   "description": "A fixed bundle: the flat rate. A metered single-resource plan: the per-unit rate (6 dp — a per-Nos consumer rate like tokens can be a small fraction of a cent).",
    "reqd": 1
   }
  ],

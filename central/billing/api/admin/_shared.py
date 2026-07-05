@@ -11,7 +11,7 @@ import frappe
 AGING_BUCKETS = [("0-7", 0, 7), ("8-15", 8, 15), ("16-30", 16, 30), ("30+", 31, 10**9)]
 _BILLABLE_LIVE = ("Open", "Paid", "Overdue")
 # Teams bill in mixed currencies; normalise revenue to INR for one comparable axis.
-_FX_TO_INR = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
+_FX_TO_INR = {"INR": 1.0, "USD": 83.0}
 _MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 _STANDING_RANK = {"Current": 0, "Past Due": 1, "Suspended": 2}
 
@@ -27,7 +27,7 @@ def _period_filter(field, from_date, to_date):
 
 def _to_inr(amount, currency) -> float:
 	"""Normalise a native-currency amount to an INR-equivalent for cross-team
-	aggregates (teams bill in INR/EUR/USD; summing raw would be meaningless)."""
+	aggregates (teams bill in INR/USD; summing raw would be meaningless)."""
 	return frappe.utils.flt(amount) * _FX_TO_INR.get(currency, 1.0)
 
 

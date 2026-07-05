@@ -17,7 +17,8 @@ import frappe
 # Every value the catalog's `resource_type` links can hold. IP and Snapshot are valid
 # metered-resource dimensions but appear in no fixed category's allowed list (so never
 # bundle composition).
-RESOURCE_TYPES = ["Compute", "Memory", "Disk", "Transfer", "IP", "Snapshot", "Tokens", "Storage", "Backup"]
+RESOURCE_TYPES = ["Compute", "Memory", "Disk", "Transfer", "IP", "Snapshot", "Tokens",
+				  "Storage", "Backup", "Emails", "PDF"]
 
 # The vCPU ladder a composed-config slider snaps to — the configurator's choices,
 # fractional vCPUs through powers of two (final-plan-pricing.md §4).
@@ -68,7 +69,40 @@ CATEGORIES = [
 		"configurator_builder": "Simple",
 		"sub_category_label": "",
 		"description": "Token consumption — metered, and/or a bundled allowance with overage.",
+		"billing_type": "Metered",
+		"billing_interval": "Monthly",
+		"pricing_mode": "Grandfathered",
+		"settlement_mode": "Postpaid Overage",
+		"reporting_mode": "Authoritative",
 		"allowed": ["Tokens"],
+		"sub_categories": [],
+	},
+	{
+		# Team-level metered consumer services (ADR 0013/0015). Same shape as AI Tokens:
+		# a bundled allowance per cycle, postpaid overage per unit past it.
+		"category_name": "Emails",
+		"configurator_builder": "Simple",
+		"sub_category_label": "",
+		"description": "Transactional email delivery — metered per 1K emails past a bundled allowance.",
+		"billing_type": "Metered",
+		"billing_interval": "Monthly",
+		"pricing_mode": "Grandfathered",
+		"settlement_mode": "Postpaid Overage",
+		"reporting_mode": "Authoritative",
+		"allowed": ["Emails"],
+		"sub_categories": [],
+	},
+	{
+		"category_name": "PDF Generation",
+		"configurator_builder": "Simple",
+		"sub_category_label": "",
+		"description": "PDF / print document generation — metered per 1K docs past a bundled allowance.",
+		"billing_type": "Metered",
+		"billing_interval": "Monthly",
+		"pricing_mode": "Grandfathered",
+		"settlement_mode": "Postpaid Overage",
+		"reporting_mode": "Authoritative",
+		"allowed": ["PDF"],
 		"sub_categories": [],
 	},
 	{
@@ -135,7 +169,25 @@ def ensure_catalog_masters():
 	ensure_starter_plans()
 
 
+# The billing mechanics a category's spec is authoritative for — reconciled onto an
+# existing Plan Category on every seed run so a family seeded before it carried these
+# (e.g. AI Tokens, once seeded as Fixed) self-heals on the next migrate.
+_CATEGORY_BEHAVIOUR = ("billing_type", "billing_interval", "pricing_mode",
+					   "settlement_mode", "reporting_mode")
+
+
+def _behaviour(spec):
+	return {
+		"billing_type": spec.get("billing_type", "Fixed"),
+		"billing_interval": spec.get("billing_interval", ""),
+		"pricing_mode": spec.get("pricing_mode", ""),
+		"settlement_mode": spec.get("settlement_mode", ""),
+		"reporting_mode": spec.get("reporting_mode", ""),
+	}
+
+
 def _ensure_category(spec):
+	behaviour = _behaviour(spec)
 	if not frappe.db.exists("Plan Category", spec["category_name"]):
 		frappe.get_doc(
 			{
@@ -145,12 +197,15 @@ def _ensure_category(spec):
 				"provision_target": spec.get("provision_target", ""),
 				"sub_category_label": spec["sub_category_label"],
 				"description": spec["description"],
-				"billing_type": spec.get("billing_type", "Fixed"),
-				"billing_interval": spec.get("billing_interval", ""),
-				"pricing_mode": spec.get("pricing_mode", ""),
+				**behaviour,
 				"allowed_resource_types": [{"resource_type": rt} for rt in spec["allowed"]],
 			}
 		).insert(ignore_permissions=True)
+	else:
+		doc = frappe.get_doc("Plan Category", spec["category_name"])
+		if any(doc.get(f) != behaviour[f] for f in _CATEGORY_BEHAVIOUR):
+			doc.update(behaviour)
+			doc.save(ignore_permissions=True)
 	for sub in spec["sub_categories"]:
 		if not frappe.db.exists("Plan Sub-Category", sub["name"]):
 			ram_ratio = sub.get("ram_ratio")
