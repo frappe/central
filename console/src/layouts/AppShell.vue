@@ -33,10 +33,19 @@ watch(
 )
 
 // The collapse chevron follows the cursor down the sidebar's edge strip.
+// Coalesce mousemove to one update per frame — the ref only drives a CSS offset,
+// so more than one write per paint is wasted work.
 const edgeY = ref(60)
+let pendingEdgeY = 60
+let edgeRaf = 0
 function onEdgeMove(event: MouseEvent): void {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  edgeY.value = event.clientY - rect.top
+  pendingEdgeY = event.clientY - rect.top
+  if (edgeRaf) return
+  edgeRaf = requestAnimationFrame(() => {
+    edgeY.value = pendingEdgeY
+    edgeRaf = 0
+  })
 }
 
 async function logoutAndRedirect() {
@@ -140,7 +149,10 @@ const sections = computed(() => [
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-surface-base text-ink-gray-9">
+  <!-- `isolate`: a stacking context here contains the sidebar's z-10 (below), so it
+       can't leak to the body level and paint over body-teleported popovers — the team
+       switcher dropdown was rendering behind the sidebar without this. -->
+  <div class="isolate flex h-screen overflow-hidden bg-surface-base text-ink-gray-9">
     <!-- Collapse control: the whole right edge is the trigger; the chevron
          rides the cursor. The built-in bottom item is hidden below. z-10 lifts
          the sidebar's whole stacking context above the main pane — pages that

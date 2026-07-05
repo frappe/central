@@ -1,7 +1,4 @@
-// Mirrors the Atlas Instance doctype MINUS its secret fields (base_url,
-// api_key, api_secret, tunnel/peer internals). The console only ever receives
-// list_instances' INSTANCE_PUBLIC_FIELDS allowlist — keep the pruning if this
-// file is ever regenerated from the doctype.
+
 export interface AtlasInstance{
 	name: string
 	creation: string
@@ -13,21 +10,33 @@ export interface AtlasInstance{
 	parentfield?: string
 	parenttype?: string
 	idx?: number
-	/**	Region : Data - The cluster the user sees. One Atlas = one region.	*/
+	/**	Region : Link - Region - The cluster the user sees. One Atlas = one Region (joined by this code).	*/
 	region: string
+	/**	Base URL : Data - Base URL of the regional Atlas, e.g. https://blr.atlas.example.com	*/
+	base_url: string
 	/**	Status : Select	*/
 	status: "Active" | "Draining" | "Disabled"
-	/**	Display Name : Data - Human region label shown in the console, e.g. Mumbai, India.	*/
-	display_name?: string
-	/**	Provider : Select - Infrastructure provider hosting this region, shown as the pin's brand mark.	*/
-	provider?: "" | "AWS" | "Hetzner" | "Frappe" | "OCI" | "DigitalOcean"
-	/**	Country Code : Data - ISO 3166-1 alpha-2 code, e.g. IN. The console derives the flag emoji from it.	*/
-	country_code?: string
-	/**	Latitude : Float - Region latitude for the console's world map. 0/0 means "not placed".	*/
-	latitude?: number
-	/**	Longitude : Float - Region longitude for the console's world map.	*/
-	longitude?: number
-	/**	Reachable : Check	*/
+	/**	Validate Capacity : Check - Only offer plans that fit this region's live capacity when creating or resizing a server (checked against the Atlas capacity API). Off = show the full priced menu and let placement's create-time gate have the final say.	*/
+	validate_capacity?: 0 | 1
+	/**	Admin API Key : Data - Atlas admin API key. Central authenticates with the Atlas admin token for every Central→Atlas call (the registration handshake and, once Active, the data path over the tunnel).	*/
+	api_key: string
+	/**	Admin API Secret : Password - Atlas admin API secret, paired with the key (stored encrypted).	*/
+	api_secret: string
+	/**	Skip Tunnel (Local Dev) : Check - Local development only: register without a WireGuard tunnel. Central does the identity half (scoped service user, pushed creds) and leaves the data path on the public base_url. No hub peering, no firewall lockdown.	*/
+	skip_tunnel?: 0 | 1
+	/**	Tunnel Status : Select - Unregistered → Provisioning (wg0 up, firewall armed) → Active (confirmed over the tunnel). Inactive = still registered (keeps the service user) but the tunnel has been stripped down; Register again to bring it back up.	*/
+	tunnel_status?: "Unregistered" | "Provisioning" | "Active" | "Inactive"
+	/**	Tunnel IP : Data - This Atlas's /32 on wg0, allocated from the pool, e.g. 10.88.0.2. Unique — the hard backstop against a double-allocation race.	*/
+	tunnel_ip?: string
+	/**	Tunnel URL : Data - Derived from tunnel_ip (e.g. https://10.88.0.2). The post-registration data path; base_url is used only during bootstrap.	*/
+	tunnel_url?: string
+	/**	Service User : Link - User - The per-Atlas scoped Central service user this Atlas authenticates as when it reports events.	*/
+	service_user?: string
+	/**	Peer Public Key : Small Text - The Atlas's WireGuard public key, returned by provision_tunnel and added to the hub as a peer.	*/
+	peer_public_key?: string
+	/**	Peer Endpoint : Data - The Atlas's public wg endpoint (host of base_url : listen port) the hub dials.	*/
+	peer_endpoint?: string
+	/**	Reachable : Check - Result of the last Test Connection (over the current data path — base_url before/after the tunnel, tunnel_url while Active).	*/
 	reachable?: 0 | 1
 	/**	Last Synced At : Datetime	*/
 	last_synced_at?: string

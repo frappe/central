@@ -130,3 +130,195 @@ export interface MapSpot {
   regionLabel: string
   flag: string
 }
+
+// — Map geometry & clustering. Pure: the ServerMap component owns the stateful
+//   viewport (pan/zoom/RAF); everything here is deterministic from its inputs.
+
+// Equirectangular projection matching the WorldDots asset, generated on this exact
+// frame — lat/lng from Atlas Instances line up with the dots.
+export const MAP_WIDTH = 879
+export const MAP_HEIGHT = 443
+const LAT_TOP = 83
+const LAT_BOTTOM = -56
+export const MAX_ZOOM = 5
+export const ZOOM_STEP = 1.7
+// Past this zoom, servers sharing a spot stop counting ("3") and fan out into an
+// overlapping avatar stack. Two zoom-in clicks (1.7² ≈ 2.89) get you there.
+export const STACK_ZOOM = 2.8
+
+// Greedy proximity-cluster thresholds in SCREEN pixels (divided by scale k), so
+// groups split apart naturally as you zoom in.
+const SERVER_CLUSTER_PX = 46
+const STACK_FAN_PX = 24
+const SPOT_UNDER_SERVER_PX = 36
+const SPOT_CLUSTER_PX = 30
+
+export function project(point: { lat: number; lng: number }): { x: number; y: number } {
+  return {
+    x: ((point.lng + 180) / 360) * MAP_WIDTH,
+    y: ((LAT_TOP - point.lat) / (LAT_TOP - LAT_BOTTOM)) * MAP_HEIGHT,
+  }
+}
+
+export type PlacedPin = MapPin & { wx: number; wy: number }
+export type PlacedSpot = MapSpot & { wx: number; wy: number }
+
+export interface ServerNode {
+  type: 'server'
+  key: string
+  x: number
+  y: number
+  pin: PlacedPin
+  stacked?: boolean
+  stackZ?: number
+}
+export interface ClusterNode {
+  type: 'cluster'
+  key: string
+  x: number
+  y: number
+  members: PlacedPin[]
+  provider: string | null
+  broken: boolean
+  title: string
+}
+export interface PlusNode {
+  type: 'plus'
+  key: string
+  x: number
+  y: number
+  targets: PlacedSpot[]
+  title: string
+}
+export interface MarkerNode {
+  type: 'marker'
+  key: string
+  x: number
+  y: number
+  marker: PlacedSpot
+  selected: boolean
+}
+export type MapNode = ServerNode | ClusterNode | PlusNode | MarkerNode
+
+interface Group<T> {
+  x: number
+  y: number
+  members: T[]
+}
+
+function worldOf<T extends { lat: number; lng: number }>(point: T): T & { wx: number; wy: number } {
+  const { x, y } = project(point)
+  return { ...point, wx: x, wy: y }
+}
+
+function groupBy<T extends { wx: number; wy: number }>(items: T[], threshold: number): Group<T>[] {
+  const groups: Group<T>[] = []
+  for (const item of items) {
+    let best: Group<T> | null = null
+    let bestD = Infinity
+    for (const group of groups) {
+      const d = Math.hypot(group.x - item.wx, group.y - item.wy)
+      if (d < threshold && d < bestD) {
+        best = group
+        bestD = d
+      }
+    }
+    if (best) {
+      best.members.push(item)
+      best.x = best.members.reduce((sum, m) => sum + m.wx, 0) / best.members.length
+      best.y = best.members.reduce((sum, m) => sum + m.wy, 0) / best.members.length
+    } else {
+      groups.push({ x: item.wx, y: item.wy, members: [item] })
+    }
+  }
+  return groups
+}
+
+function dominantProvider(members: PlacedPin[]): string | null {
+  const counts: Record<string, number> = {}
+  for (const m of members) {
+    const key = m.provider ?? ''
+    counts[key] = (counts[key] || 0) + 1
+  }
+  return members.reduce((a, b) => (counts[b.provider ?? ''] > counts[a.provider ?? ''] ? b : a)).provider
+}
+
+export interface ComputeNodesInput {
+  pins: MapPin[]
+  spots: MapSpot[]
+  markers: MapSpot[]
+  selectedId: string | null
+  /** Current screen scale (base × zoom); cluster thresholds divide by it. */
+  k: number
+  zoom: number
+}
+
+/** Cluster the map's pins/spots (or lay out picker markers) into positioned
+ *  nodes. Greedy proximity clustering in world units, thresholds fixed in screen
+ *  pixels so groups split as you zoom in. */
+export function computeNodes({ pins, spots, markers, selectedId, k, zoom }: ComputeNodesInput): MapNode[] {
+  if (!k) return []
+  // Picker mode: every marker is its own node (a handful of regions — no
+  // clustering), keyed on selection so the dot↔pin swap animates.
+  if (markers.length) {
+    return markers.map((marker) => {
+      const placed = worldOf(marker)
+      return {
+        type: 'marker' as const,
+        key: `m-${marker.id}-${marker.id === selectedId}`,
+        x: placed.wx,
+        y: placed.wy,
+        marker: placed,
+        selected: marker.id === selectedId,
+      }
+    })
+  }
+  const placedPins = pins.map(worldOf)
+  const serverGroups = groupBy(placedPins, SERVER_CLUSTER_PX / k)
+  const out: MapNode[] = []
+  for (const group of serverGroups) {
+    if (group.members.length === 1) {
+      out.push({ type: 'server', key: `s-${group.members[0].id}`, x: group.x, y: group.y, pin: group.members[0] })
+    } else if (zoom >= STACK_ZOOM) {
+      const gap = STACK_FAN_PX / k
+      group.members.forEach((m, i) => {
+        out.push({
+          type: 'server',
+          key: `s-${m.id}`,
+          x: group.x + (i - (group.members.length - 1) / 2) * gap,
+          y: group.y,
+          pin: m,
+          stacked: true,
+          stackZ: group.members.length - i,
+        })
+      })
+    } else {
+      out.push({
+        type: 'cluster',
+        key: `c-${group.members.map((m) => m.id).sort().join('.')}`,
+        x: group.x,
+        y: group.y,
+        members: group.members,
+        provider: dominantProvider(group.members),
+        broken: group.members.some((m) => m.visual.pulse),
+        title: locationLabel(group.members.map((m) => m.regionLabel)),
+      })
+    }
+  }
+  // Empty regions collapse into one + per spot. A region under a server node is
+  // dropped individually, so its neighbours still show.
+  const placedSpots = spots
+    .map(worldOf)
+    .filter((s) => !serverGroups.some((g) => Math.hypot(g.x - s.wx, g.y - s.wy) < SPOT_UNDER_SERVER_PX / k))
+  for (const group of groupBy(placedSpots, SPOT_CLUSTER_PX / k)) {
+    out.push({
+      type: 'plus',
+      key: `p-${group.members.map((s) => s.id).sort().join('.')}`,
+      x: group.x,
+      y: group.y,
+      targets: group.members,
+      title: locationLabel(group.members.map((s) => s.regionLabel)),
+    })
+  }
+  return out
+}

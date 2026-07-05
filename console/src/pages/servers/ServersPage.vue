@@ -1,246 +1,3 @@
-<template>
-  <div class="flex h-full flex-col">
-    <PageHeader title="Servers">
-      <template #actions>
-        <Button v-if="activeTeam" label="Refresh" icon-left="lucide-refresh-cw" :loading="refreshing" @click="doRefresh" />
-        <Button
-          v-if="activeTeam && canCreateServer"
-          variant="solid"
-          label="New server"
-          icon-left="lucide-plus"
-          @click="$router.push('/servers/new')"
-        />
-      </template>
-    </PageHeader>
-
-    <!-- No team at all: create one before anything else can be provisioned. -->
-    <div v-if="hasNoTeam" class="flex flex-1 items-center justify-center p-8">
-      <EmptyState
-        icon="lucide-users"
-        title="No team yet"
-        description="Create a team before provisioning servers. The team becomes the owner boundary for permissions, billing, and Atlas resources."
-      >
-        <template #action>
-          <Button variant="solid" label="Create team" icon-left="lucide-plus" @click="createTeamOpen = true" />
-        </template>
-      </EmptyState>
-    </div>
-
-    <!-- The map is the page. Everything else floats above it. `isolate` keeps
-         the overlays' z-indexes from leaking above body-portaled menus. -->
-    <div v-else class="relative isolate flex-1 overflow-hidden">
-      <ServerMap
-        ref="mapRef"
-        class="absolute inset-0"
-        :pins="pins"
-        :spots="spots"
-        :highlight-id="hoverId"
-        :allow-create="canCreateServer"
-        @open="onOpen"
-        @new-server="goNewServer"
-        @cluster-open="onClusterOpen"
-      >
-        <template #card-actions="{ server }">
-          <ServerRowActions
-            :server="server"
-            :can-open="canOpenServer"
-            :can-power="canPowerServer"
-            :can-terminate="canTerminateServer"
-            :busy="busy === server.resource_id"
-            :opening="opening === server.resource_id"
-            @open="open"
-            @start="doStart"
-            @stop="doStop"
-            @resize="pendingResize = $event"
-            @terminate="pendingTerminate = $event"
-          />
-        </template>
-      </ServerMap>
-
-      <!-- Mirror-health strips (top center): reachability first, then load errors. -->
-      <div class="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
-        <p
-          v-if="stale.length"
-          class="pointer-events-auto rounded-md bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3 shadow-sm"
-        >
-          Showing last-known data — couldn't reach: {{ stale.join(', ') }}
-        </p>
-        <p
-          v-else-if="error && rows.length"
-          class="pointer-events-auto rounded-md bg-surface-red-1 px-3 py-2 text-p-sm text-ink-red-3 shadow-sm"
-        >
-          {{ error }}
-          <button class="ml-1 font-medium underline" @click="reloadAll">Retry</button>
-        </p>
-      </div>
-
-      <!-- Filters (top right) -->
-      <div class="absolute right-4 top-4 flex items-center gap-2">
-        <Dropdown :options="statusMenu" placement="right">
-          <button class="sp-pill">
-            <span class="size-2 rounded-full transition-colors" :style="{ background: statusDot }" />
-            {{ statusLabelText }}
-            <span class="lucide-chevron-down size-3.5 text-ink-gray-5" />
-          </button>
-        </Dropdown>
-        <!-- Region = provider → region, drilled through a nested menu. -->
-        <Dropdown :options="regionMenu" placement="right">
-          <button class="sp-pill">
-            {{ regionLabelText }}
-            <span class="lucide-chevron-down size-3.5 text-ink-gray-5" />
-          </button>
-        </Dropdown>
-      </div>
-
-      <!-- Your servers (top left): a floating card — the pill IS the panel,
-           collapsed. Opening expands it in place; content crossfades. -->
-      <section
-        class="sp-float absolute left-4 top-4 z-30 overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1"
-        :class="panelOpen && 'sp-float-open'"
-      >
-        <button class="sp-float-pill" :inert="panelOpen" @click="panelOpen = true">
-          <span class="truncate">{{ pillLabel }}</span>
-          <span class="lucide-maximize-2 size-3.5 shrink-0 text-ink-gray-6" />
-        </button>
-
-        <div
-          class="sp-float-panel flex h-full min-h-0 flex-col"
-          :inert="!panelOpen"
-          :aria-hidden="!panelOpen"
-        >
-          <div class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-4">
-            <h2 class="text-lg font-semibold text-ink-gray-9">Your servers ({{ filtered.length }})</h2>
-            <Button variant="ghost" icon="lucide-minimize-2" aria-label="Collapse list" @click="panelOpen = false" />
-          </div>
-          <div class="shrink-0 px-4 pb-3">
-            <FormControl v-model="q" type="text" placeholder="Search" autocomplete="off" class="[&_input]:w-full">
-              <template #prefix><span class="lucide-search size-4 text-ink-gray-5" /></template>
-            </FormControl>
-          </div>
-
-          <!-- Set by clicking a cluster on the map — the rows narrow to that spot. -->
-          <div v-if="locationFilter" class="flex shrink-0 items-center justify-between gap-3 px-4 pb-2.5">
-            <span class="min-w-0 truncate text-sm text-ink-gray-5">
-              Filtering for <span class="font-medium text-ink-gray-8">{{ locationFilter.label }}</span>
-            </span>
-            <button
-              class="flex shrink-0 items-center gap-1.5 text-sm text-ink-gray-6 transition-colors hover:text-ink-gray-8"
-              @click="locationFilter = null"
-            >
-              <span class="lucide-filter size-3.5" />
-              Clear
-            </button>
-          </div>
-
-          <div class="min-h-0 flex-1 divide-y divide-outline-alpha-gray-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2">
-            <div
-              v-for="(row, i) in panelRows"
-              :key="row.id"
-              class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-surface-gray-2"
-              :style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
-              @click="focusRow(row)"
-              @mouseenter="hoverId = row.id"
-              @mouseleave="hoverId = null"
-            >
-              <span class="relative shrink-0">
-                <ProviderAvatar :provider="row.provider" :size="32" />
-                <span
-                  class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
-                  :style="{ background: row.visual.dot }"
-                />
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="flex items-center gap-1.5">
-                  <span class="truncate text-sm font-medium text-ink-gray-9">{{ row.name }}</span>
-                  <Badge
-                    v-if="row.visual.key !== 'active'"
-                    :label="row.visual.label"
-                    :theme="row.visual.badgeTheme"
-                    variant="subtle"
-                    size="sm"
-                  />
-                </span>
-                <span class="block truncate text-sm text-ink-gray-5">{{ row.specs || row.regionLabel }}</span>
-              </span>
-              <span @click.stop>
-                <ServerRowActions
-                  :server="row.asset"
-                  :can-open="canOpenServer"
-                  :can-power="canPowerServer"
-                  :can-terminate="canTerminateServer"
-                  :busy="busy === row.id"
-                  :opening="opening === row.id"
-                  @open="open"
-                  @start="doStart"
-                  @stop="doStop"
-                  @resize="pendingResize = $event"
-                  @terminate="pendingTerminate = $event"
-                />
-              </span>
-            </div>
-
-            <div v-if="!panelRows.length" class="m-4 flex flex-col items-center gap-1 py-8 text-center">
-              <span :class="rows.length ? 'lucide-search' : 'lucide-server'" class="mb-2 size-6 text-ink-gray-4" />
-              <p class="text-base font-medium text-ink-gray-8">{{ rows.length ? 'No servers match' : 'No servers yet' }}</p>
-              <p class="text-sm text-ink-gray-5">
-                {{ rows.length ? 'Try a different search or clear the filters.' : 'Create your first server to host your sites.' }}
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Initial load / hard failure / first run — centered over the map -->
-      <div
-        v-if="loading && !rows.length"
-        class="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center"
-      >
-        <Spinner class="size-5 text-ink-gray-5" />
-      </div>
-      <div
-        v-else-if="error && !rows.length"
-        class="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center px-4"
-      >
-        <div class="pointer-events-auto flex w-[26rem] max-w-full flex-col items-center gap-1 rounded-xl border border-outline-gray-1 bg-surface-elevation-1 p-6 text-center shadow-lg">
-          <span class="lucide-circle-alert mb-2 size-6 text-ink-red-5" />
-          <p class="text-base font-medium text-ink-gray-8">Couldn't load your servers</p>
-          <p class="text-sm text-ink-gray-5">{{ error }}</p>
-          <Button class="mt-3" label="Retry" @click="reloadAll" />
-        </div>
-      </div>
-      <div
-        v-else-if="!loading && !rows.length"
-        class="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center px-4"
-      >
-        <div class="pointer-events-auto flex w-[26rem] max-w-full flex-col items-center gap-1 rounded-xl border border-outline-gray-1 bg-surface-elevation-1 p-6 text-center shadow-lg">
-          <span class="lucide-server mb-2 size-6 text-ink-gray-4" />
-          <p class="text-base font-medium text-ink-gray-8">No servers yet</p>
-          <p class="text-sm text-ink-gray-5">
-            {{ canCreateServer ? 'Create your first server to host your sites — or pick a spot on the map.' : 'Servers your team creates will show up here.' }}
-          </p>
-          <Button
-            v-if="canCreateServer"
-            class="mt-3"
-            variant="solid"
-            label="New server"
-            icon-left="lucide-plus"
-            @click="$router.push('/servers/new')"
-          />
-        </div>
-      </div>
-    </div>
-
-    <TerminateDialog
-      v-model:server="pendingTerminate"
-      :loading="busy === pendingTerminate?.resource_id"
-      @confirm="confirmTerminate"
-    />
-
-    <ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
-    <CreateTeamDialog v-model:open="createTeamOpen" />
-  </div>
-</template>
-
 <script setup lang="ts">
 import { computed, h, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -248,6 +5,7 @@ import { Badge, Button, Dropdown, FormControl, Spinner } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
+import MapMessageCard from '@/components/servers/MapMessageCard.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
@@ -270,7 +28,7 @@ import {
   type ServerVisual,
 } from '@/lib/serverMap'
 import type { AssetRow } from '@/composables/useServers'
-import type { Region } from '@/types/Region'
+import type { Region } from '@/types/Central/Region'
 
 // The servers page: the world map is the list (FC V2). The Asset mirror feeds
 // pins; Active Atlas Instances feed empty-region + spots; a slide-in panel
@@ -486,35 +244,275 @@ watch(panelOpen, (isOpen) => {
 })
 
 // — Commands. useServers reloads its own (reportview) list after each verb;
-//   the map reads through registry, so reload that too.
+//   the map reads through registry, so reload that too after every action.
 function reloadAll(): void {
   reload()
 }
-async function doRefresh(): Promise<void> {
-  await refreshAssets()
+async function withReload(action: Promise<unknown>): Promise<void> {
+  await action
   reload()
 }
-async function doStart(server: AssetRow): Promise<void> {
-  await start(server)
-  reload()
-}
-async function doStop(server: AssetRow): Promise<void> {
-  await stop(server)
-  reload()
-}
+const doRefresh = (): Promise<void> => withReload(refreshAssets())
+const doStart = (server: AssetRow): Promise<void> => withReload(start(server))
+const doStop = (server: AssetRow): Promise<void> => withReload(stop(server))
 
 // Terminate confirmation — the only destructive, irreversible action.
 const pendingTerminate = ref<AssetRow | null>(null)
 async function confirmTerminate(server: AssetRow): Promise<void> {
   pendingTerminate.value = null
-  await terminate(server)
-  reload()
+  await withReload(terminate(server))
 }
 
 // Resize a server (preset or custom) — the backend power-cycles the VM as needed, so
 // this is one action with no separate stop step.
 const pendingResize = ref<AssetRow | null>(null)
 </script>
+
+<template>
+  <div class="flex h-full flex-col">
+    <PageHeader title="Servers">
+      <template #actions>
+        <Button v-if="activeTeam" label="Refresh" icon-left="lucide-refresh-cw" :loading="refreshing" @click="doRefresh" />
+        <Button
+          v-if="activeTeam && canCreateServer"
+          variant="solid"
+          label="New server"
+          icon-left="lucide-plus"
+          @click="$router.push('/servers/new')"
+        />
+      </template>
+    </PageHeader>
+
+    <!-- No team at all: create one before anything else can be provisioned. -->
+    <div v-if="hasNoTeam" class="flex flex-1 items-center justify-center p-8">
+      <EmptyState
+        icon="lucide-users"
+        title="No team yet"
+        description="Create a team before provisioning servers. The team becomes the owner boundary for permissions, billing, and Atlas resources."
+      >
+        <template #action>
+          <Button variant="solid" label="Create team" icon-left="lucide-plus" @click="createTeamOpen = true" />
+        </template>
+      </EmptyState>
+    </div>
+
+    <!-- The map is the page. Everything else floats above it. `isolate` keeps
+         the overlays' z-indexes from leaking above body-portaled menus. -->
+    <div v-else class="relative isolate flex-1 overflow-hidden">
+      <ServerMap
+        ref="mapRef"
+        class="absolute inset-0"
+        :pins="pins"
+        :spots="spots"
+        :highlight-id="hoverId"
+        :allow-create="canCreateServer"
+        @open="onOpen"
+        @new-server="goNewServer"
+        @cluster-open="onClusterOpen"
+      >
+        <template #card-actions="{ server }">
+          <ServerRowActions
+            :server="server"
+            :can-open="canOpenServer"
+            :can-power="canPowerServer"
+            :can-terminate="canTerminateServer"
+            :busy="busy === server.resource_id"
+            :opening="opening === server.resource_id"
+            @open="open"
+            @start="doStart"
+            @stop="doStop"
+            @resize="pendingResize = $event"
+            @terminate="pendingTerminate = $event"
+          />
+        </template>
+      </ServerMap>
+
+      <!-- Mirror-health strips (top center): reachability first, then load errors. -->
+      <div class="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
+        <p
+          v-if="stale.length"
+          class="pointer-events-auto rounded-md bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3 shadow-sm"
+        >
+          Showing last-known data — couldn't reach: {{ stale.join(', ') }}
+        </p>
+        <p
+          v-else-if="error && rows.length"
+          class="pointer-events-auto rounded-md bg-surface-red-1 px-3 py-2 text-p-sm text-ink-red-3 shadow-sm"
+        >
+          {{ error }}
+          <button class="ml-1 font-medium underline" @click="reloadAll">Retry</button>
+        </p>
+      </div>
+
+      <!-- Filters (top right) -->
+      <div class="absolute right-4 top-4 flex items-center gap-2">
+        <Dropdown :options="statusMenu" placement="right">
+          <button class="sp-pill">
+            <span class="size-2 rounded-full transition-colors" :style="{ background: statusDot }" />
+            {{ statusLabelText }}
+            <span class="lucide-chevron-down size-3.5 text-ink-gray-5" />
+          </button>
+        </Dropdown>
+        <!-- Region = provider → region, drilled through a nested menu. -->
+        <Dropdown :options="regionMenu" placement="right">
+          <button class="sp-pill">
+            {{ regionLabelText }}
+            <span class="lucide-chevron-down size-3.5 text-ink-gray-5" />
+          </button>
+        </Dropdown>
+      </div>
+
+      <!-- Your servers (top left): a floating card — the pill IS the panel,
+           collapsed. Opening expands it in place; content crossfades. -->
+      <section
+        class="sp-float absolute left-4 top-4 z-30 overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1"
+        :class="panelOpen && 'sp-float-open'"
+        role="region"
+        aria-label="Your servers"
+        @keydown.esc="panelOpen = false"
+      >
+        <button class="sp-float-pill" :inert="panelOpen" @click="panelOpen = true">
+          <span class="truncate">{{ pillLabel }}</span>
+          <span class="lucide-maximize-2 size-3.5 shrink-0 text-ink-gray-6" />
+        </button>
+
+        <div
+          class="sp-float-panel flex h-full min-h-0 flex-col"
+          :inert="!panelOpen"
+          :aria-hidden="!panelOpen"
+        >
+          <div class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-4">
+            <h2 class="text-lg font-semibold text-ink-gray-9">Your servers ({{ filtered.length }})</h2>
+            <Button variant="ghost" icon="lucide-minimize-2" aria-label="Collapse list" @click="panelOpen = false" />
+          </div>
+          <div class="shrink-0 px-4 pb-3">
+            <FormControl v-model="q" type="text" placeholder="Search" autocomplete="off" class="[&_input]:w-full">
+              <template #prefix><span class="lucide-search size-4 text-ink-gray-5" /></template>
+            </FormControl>
+          </div>
+
+          <!-- Set by clicking a cluster on the map — the rows narrow to that spot. -->
+          <div v-if="locationFilter" class="flex shrink-0 items-center justify-between gap-3 px-4 pb-2.5">
+            <span class="min-w-0 truncate text-sm text-ink-gray-5">
+              Filtering for <span class="font-medium text-ink-gray-8">{{ locationFilter.label }}</span>
+            </span>
+            <button
+              class="flex shrink-0 items-center gap-1.5 text-sm text-ink-gray-6 transition-colors hover:text-ink-gray-8"
+              @click="locationFilter = null"
+            >
+              <span class="lucide-filter size-3.5" />
+              Clear
+            </button>
+          </div>
+
+          <div class="min-h-0 flex-1 divide-y divide-outline-alpha-gray-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2">
+            <div
+              v-for="(row, i) in panelRows"
+              :key="row.id"
+              class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-surface-gray-2"
+              :style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
+              @click="focusRow(row)"
+              @mouseenter="hoverId = row.id"
+              @mouseleave="hoverId = null"
+            >
+              <span class="relative shrink-0">
+                <ProviderAvatar :provider="row.provider" :size="32" />
+                <span
+                  class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
+                  :style="{ background: row.visual.dot }"
+                />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="flex items-center gap-1.5">
+                  <span class="truncate text-sm font-medium text-ink-gray-9">{{ row.name }}</span>
+                  <Badge
+                    v-if="row.visual.key !== 'active'"
+                    :label="row.visual.label"
+                    :theme="row.visual.badgeTheme"
+                    variant="subtle"
+                    size="sm"
+                  />
+                </span>
+                <span class="block truncate text-sm text-ink-gray-5">{{ row.specs || row.regionLabel }}</span>
+              </span>
+              <span @click.stop>
+                <ServerRowActions
+                  :server="row.asset"
+                  :can-open="canOpenServer"
+                  :can-power="canPowerServer"
+                  :can-terminate="canTerminateServer"
+                  :busy="busy === row.id"
+                  :opening="opening === row.id"
+                  @open="open"
+                  @start="doStart"
+                  @stop="doStop"
+                  @resize="pendingResize = $event"
+                  @terminate="pendingTerminate = $event"
+                />
+              </span>
+            </div>
+
+            <div v-if="!panelRows.length" class="m-4 flex flex-col items-center gap-1 py-8 text-center">
+              <span :class="rows.length ? 'lucide-search' : 'lucide-server'" class="mb-2 size-6 text-ink-gray-4" />
+              <p class="text-base font-medium text-ink-gray-8">{{ rows.length ? 'No servers match' : 'No servers yet' }}</p>
+              <p class="text-sm text-ink-gray-5">
+                {{ rows.length ? 'Try a different search or clear the filters.' : 'Create your first server to host your sites.' }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Initial load / hard failure / first run — centered over the map -->
+      <div
+        v-if="loading && !rows.length"
+        class="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center"
+      >
+        <Spinner class="size-5 text-ink-gray-5" />
+      </div>
+      <MapMessageCard
+        v-else-if="error && !rows.length"
+        icon="lucide-circle-alert"
+        icon-class="text-ink-red-5"
+        title="Couldn't load your servers"
+        :description="error"
+      >
+        <template #action>
+          <Button class="mt-3" label="Retry" @click="reloadAll" />
+        </template>
+      </MapMessageCard>
+      <MapMessageCard
+        v-else-if="!loading && !rows.length"
+        icon="lucide-server"
+        title="No servers yet"
+        :description="
+          canCreateServer
+            ? 'Create your first server to host your sites — or pick a spot on the map.'
+            : 'Servers your team creates will show up here.'
+        "
+      >
+        <template v-if="canCreateServer" #action>
+          <Button
+            class="mt-3"
+            variant="solid"
+            label="New server"
+            icon-left="lucide-plus"
+            @click="$router.push('/servers/new')"
+          />
+        </template>
+      </MapMessageCard>
+    </div>
+
+    <TerminateDialog
+      v-model:server="pendingTerminate"
+      :loading="busy === pendingTerminate?.resource_id"
+      @confirm="confirmTerminate"
+    />
+
+    <ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
+    <CreateTeamDialog v-model:open="createTeamOpen" />
+  </div>
+</template>
 
 <style scoped>
 .sp-pill {
