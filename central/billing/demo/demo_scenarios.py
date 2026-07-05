@@ -168,15 +168,91 @@ def seed() -> dict:
 	_ensure_signing_key()
 
 	results = {}
+	slug_to_team = {}
 	for slug, tier, currency, state, resources, resize in TEAMS:
 		team = _ensure_demo_team(slug)
+		slug_to_team[slug] = team
 		results[slug] = _build_team(team, slug, tier, currency, state, resources, resize)
+
+	# Populate the in-app notification feed so the console bell/inbox is demoable —
+	# emitted through the REAL writers (the billing sender + the Asset-failed hook),
+	# never hand-injected rows.
+	_seed_notification_feed(slug_to_team)
 
 	# NOTE: the demo does NOT touch the Billing workspace — the app ships the real
 	# "Catalog Administration" workspace as a file fixture (billing/workspace/billing),
 	# which `bench migrate` installs. Overwriting it here made the demo site diverge.
 	frappe.db.commit()
 	return results
+
+
+def _seed_notification_feed(slug_to_team: dict):
+	"""Exercise the notification code paths so every event type + both categories
+	(Billing / Server) show up in the console feed for the demo.
+
+	Billing events go through the real `notifications.notify` sender (which records a
+	Team Notification via the wired feed); Server Failed is triggered by flipping a
+	real Asset to Failed (the `Asset.on_update` hook emits it); Resize Failed and
+	Cluster Degraded use `create_notification` — the same writer the real hooks call.
+	The overdue team already emits Invoice Overdue + Server Suspended via real dunning.
+	"""
+	from central.billing.platform import notifications
+	from central.notifications import create_notification
+
+	# (slug, event_type, extra context) — one representative billing event per team,
+	# matched to its scenario. `invoice` context is filled from the team's latest bill.
+	billing = [
+		("initech", "Payment Success", {}),
+		("globex", "Payment Success", {}),
+		("globex", "Card Expiry", {"label": "Visa ···· 4242"}),
+		("hooli", "Payment Success", {}),
+		("stark-ind", "Payment Failure", {"reason": "card_declined"}),
+		("stark-ind", "Payment Success", {}),
+		("harbor", "Credit Low", {"utilisation": "88%"}),
+		("piedpiper", "Credit Low", {"utilisation": "91%"}),
+		("acme-corp", "Mandate Reauth", {}),
+		("northwind", "Pre-debit Notice", {"amount": "$4,200.00", "charge_on": "2026-07-07"}),
+	]
+	for slug, event, ctx in billing:
+		team = slug_to_team.get(slug)
+		if not team:
+			continue
+		inv = frappe.db.get_value("Invoice", {"team": team}, "name", order_by="creation desc")
+		context = dict(ctx)
+		context.setdefault("invoice", inv)
+		notifications.notify(
+			team, event, context=context,
+			reference_doctype="Invoice" if inv else None, reference_name=inv,
+		)
+
+	# Server Failed — flip one real Running Asset to Failed; the on_update hook fires.
+	nw = slug_to_team.get("northwind")
+	if nw:
+		asset = frappe.db.get_value("Asset", {"team": nw, "status": "Running"}, "name")
+		if asset:
+			doc = frappe.get_doc("Asset", asset)
+			doc.status = "Failed"
+			doc.save(ignore_permissions=True)
+
+	# Resize Failed + Cluster Degraded — the same writer the real hooks use.
+	acme = slug_to_team.get("acme-corp")
+	if acme:
+		create_notification(
+			acme, "Server resize failed", category="Server", event_type="Resize Failed",
+			severity="Error", message="A background resize could not be applied and was rolled "
+			"back. Billing stayed on the previous plan. You can retry the resize.",
+			action_label="View server", action_route="/servers",
+		)
+	umbrella = slug_to_team.get("umbrella")
+	if umbrella:
+		create_notification(
+			umbrella, "Region in-mumbai is temporarily unreachable", category="Server",
+			event_type="Cluster Degraded", severity="Warning",
+			message="Central couldn't reach in-mumbai on the last sync. Your servers keep running; "
+			"their status in the console may be delayed until the region recovers.",
+			reference_doctype="Atlas Instance", reference_name="in-mumbai",
+			action_label="View servers", action_route="/servers",
+		)
 
 
 # Back-compat alias — older docs/scripts call seed_all().

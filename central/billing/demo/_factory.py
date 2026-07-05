@@ -493,7 +493,8 @@ def _wipe_all():
 				"Subscription Change")
 	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Gateway Customer",
 					 "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
-					 "Billing Notification Log", "Entitlement Token", "Webhook Event", "Subscription", "Asset")
+					 "Billing Notification Log", "Team Notification",
+					 "Entitlement Token", "Webhook Event", "Subscription", "Asset")
 	config = ("Tax Profile", "Billing Profile")
 	catalog = ("Plan", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:
