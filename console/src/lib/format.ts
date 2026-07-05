@@ -5,7 +5,7 @@ import type { AssetRow } from '@/composables/useServers'
 // endpoints already serialize MAJOR-unit numbers plus a `currency`, so the UI
 // only formats what the backend returns — it never does money math.
 
-const CURRENCY_SYMBOL: Record<string, string> = { INR: '₹', EUR: '€', USD: '$' }
+const CURRENCY_SYMBOL: Record<string, string> = { INR: '₹', USD: '$' }
 
 export function currencySymbol(currency: string): string {
   return CURRENCY_SYMBOL[currency] ?? ''

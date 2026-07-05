@@ -115,7 +115,7 @@ _RETRY_HISTORY = {1: 1, 2: 2, 4: 1, 5: 2}
 # line-item table (one line per instance) plus a metered overage.
 _FLEET = [
 	(cluster, plan)
-	for cluster in ("me-dubai", "eu-frankfurt", "in-mumbai")
+	for cluster in ("me-dubai", "in-mumbai")
 	for plan in ("plan-1vcpu", "plan-2vcpu", "plan-1vcpu", "plan-4vcpu", "plan-2vcpu", "plan-8vcpu")
 ]
 
@@ -130,11 +130,11 @@ TEAMS = [
 	("northwind", "t3", "USD", "bank_pending", _FLEET, None),
 	# t2: current bill settled partly from wallet credits, the remainder on the card.
 	("initech", "t2", "USD", "partial_card", [
-		("me-dubai", "plan-4vcpu"), ("eu-frankfurt", "plan-2vcpu")], None),
+		("me-dubai", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu")], None),
 	# t1: a paid invoice later charged back — dispute → refunded to source.
 	("soylent", "t1", "USD", "dispute", [("me-dubai", "plan-2vcpu")], None),
 	# t1: a plain overcharge refunded back to the card (→ source).
-	("globex", "t1", "USD", "refund_source", [("eu-frankfurt", "plan-2vcpu")], None),
+	("globex", "t1", "USD", "refund_source", [("me-dubai", "plan-2vcpu")], None),
 	# t0: no history; free credits granted, its first bill settles fully from them.
 	# Also resized its VM twice in a single day.
 	("harbor", "t0", "USD", "credits_full", [("me-dubai", "plan-1vcpu")], "same_day"),

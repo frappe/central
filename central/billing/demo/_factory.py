@@ -15,14 +15,13 @@ import frappe
 # (slug, label, billing currency of the region)
 CLUSTERS = [
 	("in-mumbai", "India — Mumbai", "INR"),
-	("eu-frankfurt", "Europe — Frankfurt", "EUR"),
 	("me-dubai", "Middle East — Dubai", "USD"),
 ]
-CURRENCIES = ["INR", "EUR", "USD"]
+CURRENCIES = ["INR", "USD"]
 # 1 unit of currency = N INR (rough FX, demo only).
-FX = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
+FX = {"INR": 1.0, "USD": 83.0}
 # Regional cost multiplier on the INR base price.
-CLUSTER_MULT = {"in-mumbai": 1.0, "eu-frankfurt": 1.25, "me-dubai": 1.15}
+CLUSTER_MULT = {"in-mumbai": 1.0, "me-dubai": 1.15}
 
 # (slug, title, vcpu, ram_gb, disk_gb, transfer_gb_included, base_inr_monthly)
 PLAN_SIZES = [
@@ -60,12 +59,12 @@ TIERS = [
 ]
 
 # Output tax follows the customer's billing currency (place of supply).
-TAX_BY_CURRENCY = {"INR": ("GST", 18), "EUR": ("VAT", 19), "USD": ("VAT", 5)}
+TAX_BY_CURRENCY = {"INR": ("GST", 18), "USD": ("VAT", 5)}
 
-STRIPE = {"INR": "GW-Stripe-INR", "EUR": "GW-Stripe-EUR", "USD": "GW-Stripe-USD"}
+STRIPE = {"INR": "GW-Stripe-INR", "USD": "GW-Stripe-USD"}
 RAZORPAY = "GW-Razorpay"
-# PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD/EUR but
-# is NOT their default — Stripe stays the card default; PayPal is the opt-in rail.
+# PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD but
+# is NOT its default — Stripe stays the card default; PayPal is the opt-in rail.
 PAYPAL = "GW-PayPal"
 ANCHOR = "2026-06-01"  # the current (open) billing month
 
@@ -96,6 +95,16 @@ def _tiers():
 def _atlas_instances():
 	"""Each demo cluster needs a real Atlas Instance — Catalog Rate scopes its
 	regional rates to one via a Link (autonamed by region)."""
+	wanted = {cslug for cslug, _label, _cur in CLUSTERS}
+	# Drop demo regions no longer offered (e.g. a retired EUR cluster) so a re-seed on
+	# an existing site doesn't leave a stray instance behind. Scoped to demo-created
+	# instances (the `*.atlas.demo` base_url) so a real Atlas is never touched.
+	for stray in frappe.get_all(
+		"Atlas Instance",
+		filters={"region": ["not in", wanted], "base_url": ["like", "%.atlas.demo"]},
+		pluck="name",
+	):
+		frappe.delete_doc("Atlas Instance", stray, force=True, ignore_permissions=True)
 	for cslug, label, _cur in CLUSTERS:
 		if frappe.db.exists("Atlas Instance", cslug):
 			continue
@@ -229,14 +238,14 @@ def _gateways():
 		"is_enabled": 1, "supports_mandates": 1,
 		"currencies": [{"currency": "INR", "is_default": 1}],
 	}, newname=True, flags=seed)
-	# PayPal — directly-settled standalone gateway (ADR 0007). Non-default for USD/EUR
-	# so Stripe stays their card default; PayPal is the opt-in international rail whose
+	# PayPal — directly-settled standalone gateway (ADR 0007). Non-default for USD
+	# so Stripe stays the card default; PayPal is the opt-in international rail whose
 	# capture ids reconcile against PayPal's own ledger.
 	_upsert("Payment Gateway", PAYPAL, {
 		"title": "PayPal (International)", "adapter_key": "Paypal",
 		"api_key": "paypal_client_id", "api_secret": "paypal_secret", "webhook_secret": "paypal_whid",
 		"is_enabled": 1,
-		"currencies": [{"currency": "USD", "is_default": 0}, {"currency": "EUR", "is_default": 0}],
+		"currencies": [{"currency": "USD", "is_default": 0}],
 	}, newname=True, flags=seed)
 
 
@@ -257,7 +266,6 @@ def _tax(team, currency):
 # the state must be a GST state whose code matches the GSTIN (27 = Maharashtra).
 _GEO_BY_CLUSTER = {
 	"in-mumbai": ("India", "Maharashtra", "Mumbai", "400001"),
-	"eu-frankfurt": ("Germany", "Hesse", "Frankfurt", "60311"),
 	"me-dubai": ("United Arab Emirates", "Dubai", "Dubai", "00000"),
 }
 
@@ -510,8 +518,13 @@ def _ensure_demo_team(slug):
 
 def _wipe_all():
 	"""Drop every billing record so the demo is the only data present."""
+	# Child tables must be wiped explicitly — deleting a parent via frappe.db.delete
+	# does NOT cascade, so orphan rows (e.g. old EUR Trust Tier Thresholds, gateway
+	# currencies) would otherwise accumulate across re-seeds.
 	children = ("Catalog Rate", "Plan Includes", "Invoice Line Item",
-				"Subscription Change")
+				"Subscription Change", "Trust Tier Threshold", "Payment Gateway Currency",
+				"Plan Configurator Plan", "Plan Configurator Rate",
+				"Plan Configurator Simple Plan", "Plan Configurator Component Rate")
 	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Gateway Customer",
 					 "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
 					 "Billing Notification Log", "Team Notification",

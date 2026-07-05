@@ -12,8 +12,8 @@ from central.billing import authz
 from central.billing.catalog.subscriptions import team_active_segments
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
-# so a EUR/USD team sees a coherent cap-vs-spend comparison.
-_FX_TO_INR = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
+# so a USD team sees a coherent cap-vs-spend comparison.
+_FX_TO_INR = {"INR": 1.0, "USD": 83.0}
 
 
 def _default_team() -> str | None:
