@@ -141,7 +141,7 @@ class Asset(Document):
 		doc.ipv6_address = vm.get("ipv6_address")
 		doc.public_ipv4 = vm.get("public_ipv4")
 		doc.gateway_url = vm.get("gateway_url") or None
-		# Chosen at create; an event that omits it must not wipe it.
+		# Provisioned version Atlas echoes; an event that omits it must not wipe it.
 		doc.frappe_version = vm.get("frappe_version") or doc.get("frappe_version")
 		# Write-once: the bench login URL + its expiry only arrive once the VM is
 		# Running (Atlas gates them on status), so never blank a handoff we've already

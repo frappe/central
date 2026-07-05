@@ -72,7 +72,7 @@
    "options": "Plan"
   },
   {
-   "description": "Frappe version the VM was provisioned with (chosen at create, echoed by Atlas).",
+   "description": "Frappe version the VM was provisioned with — requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).",
    "fieldname": "frappe_version",
    "fieldtype": "Data",
    "label": "Frappe Version",
