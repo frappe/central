@@ -310,7 +310,9 @@ seed_all = seed
 
 
 def summary() -> dict:
-	"""Post-seed sanity counts — proves the demo covers each criterion.
+	"""Post-seed sanity view: a per-team roll-up of every seeded scenario, plus the
+	aggregate counts. `teams` reads the state of the demo data at a glance — invoices
+	generated, credits allocated vs applied, payments processed, and disputes/refunds.
 
 	    bench --site demo-billing.local execute central.billing.demo.demo_scenarios.summary
 	"""
@@ -325,19 +327,69 @@ def summary() -> dict:
 	top = max(line_counts, key=line_counts.get) if line_counts else None
 
 	return {
-		"teams_by_currency": by_currency,
-		"paid_invoices": frappe.db.count("Invoice", {"status": "Paid"}),
-		"open_invoices": frappe.db.count("Invoice", {"status": "Open"}),
-		"overdue_invoices": frappe.db.count("Invoice", {"status": "Overdue"}),
-		"failed_attempts": frappe.db.count("Payment Attempt", {"status": "Failed"}),
-		"in_flight_attempts": frappe.db.count("Payment Attempt", {"status": "Initiated"}),
-		"refunds": {r.destination: frappe.db.count("Refund", {"destination": r.destination})
-					for r in frappe.get_all("Refund", fields=["destination"], group_by="destination")},
-		"resizes": frappe.db.count("Subscription Change", {"change_type": "Plan Changed"}),
-		"credit_ledger_entries": frappe.db.count("Credit Ledger Entry"),
-		"usage_rollups": frappe.db.count("Usage Rollup"),
-		"largest_invoice": {"invoice": top, "line_items": line_counts.get(top)} if top else None,
-		"months_covered": sorted({str(d)[:7] for d in frappe.get_all("Invoice", pluck="period_start") if d}),
+		"teams": [_team_summary(slug, tier, currency, state)
+				  for slug, tier, currency, state, _resources, _resize in TEAMS],
+		"totals": {
+			"teams_by_currency": by_currency,
+			"paid_invoices": frappe.db.count("Invoice", {"status": "Paid"}),
+			"open_invoices": frappe.db.count("Invoice", {"status": "Open"}),
+			"overdue_invoices": frappe.db.count("Invoice", {"status": "Overdue"}),
+			"failed_attempts": frappe.db.count("Payment Attempt", {"status": "Failed"}),
+			"in_flight_attempts": frappe.db.count("Payment Attempt", {"status": "Initiated"}),
+			"refunds": {r.destination: frappe.db.count("Refund", {"destination": r.destination})
+						for r in frappe.get_all("Refund", fields=["destination"], group_by="destination")},
+			"resizes": frappe.db.count("Subscription Change", {"change_type": "Plan Changed"}),
+			"credit_ledger_entries": frappe.db.count("Credit Ledger Entry"),
+			"usage_rollups": frappe.db.count("Usage Rollup"),
+			"largest_invoice": {"invoice": top, "line_items": line_counts.get(top)} if top else None,
+			"months_covered": sorted({str(d)[:7] for d in frappe.get_all("Invoice", pluck="period_start") if d}),
+		},
+	}
+
+
+def _sum(doctype: str, filters: dict, field: str = "amount") -> float:
+	"""Total `field` over the rows matching `filters` (money stays in one currency
+	per team, so a plain sum is safe)."""
+	rows = frappe.get_all(doctype, filters=filters, fields=[field])
+	return frappe.utils.flt(sum(frappe.utils.flt(r.get(field)) for r in rows), 2)
+
+
+def _team_summary(slug: str, tier: str, currency: str, state: str) -> dict:
+	"""One team's scenario roll-up. Keyed by the readable demo slug and labelled with
+	its scenario `state`, so the demo data is legible without decoding TEAM-000N ids."""
+	team = frappe.db.get_value("Team", {"owner_user": f"owner-{slug}@example.com"}, "name")
+	if not team:
+		return {"team": slug, "state": state, "seeded": False}
+
+	invoices_by_status: dict[str, int] = {}
+	for status in frappe.get_all("Invoice", filters={"team": team}, pluck="status"):
+		invoices_by_status[status] = invoices_by_status.get(status, 0) + 1
+	# A chargeback (dispute) is the only path that flips a captured attempt to Refunded;
+	# a plain refund leaves the capture intact. So Refunded attempts == disputes.
+	return {
+		"team": slug,
+		"state": state,
+		"tier": tier,
+		"currency": currency,
+		"invoices": {"total": sum(invoices_by_status.values()), "by_status": invoices_by_status},
+		"credits_allocated": _sum("Credit Ledger Entry", {"team": team, "entry_type": "Credit"}),
+		"credits_applied": _sum("Credit Ledger Entry", {"team": team, "entry_type": "Debit"}),
+		"payments_captured": {
+			"count": frappe.db.count("Payment Attempt", {"team": team, "status": "Captured"}),
+			"amount": _sum("Payment Attempt", {"team": team, "status": "Captured"}),
+		},
+		"payments_failed": frappe.db.count("Payment Attempt", {"team": team, "status": "Failed"}),
+		"refunds": {
+			"count": frappe.db.count("Refund", {"team": team}),
+			"amount": _sum("Refund", {"team": team}),
+			"by_destination": {
+				r.destination: frappe.db.count("Refund", {"team": team, "destination": r.destination})
+				for r in frappe.get_all(
+					"Refund", filters={"team": team}, fields=["destination"], group_by="destination"
+				)
+			},
+		},
+		"disputes": frappe.db.count("Payment Attempt", {"team": team, "status": "Refunded"}),
 	}
 
 
