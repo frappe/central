@@ -155,11 +155,60 @@ TEAMS = [
 ]
 
 
+# The demo operator — the first System Manager, who administers billing from Desk
+# (the Billing workspace, Plan Configurator, reports).
+DEMO_ADMIN = "billing_admin@example.com"
+DEMO_ADMIN_PASSWORD = "Billing@2026"
+
+
+def _ensure_setup_wizard() -> None:
+	"""On a fresh (formatted) site the Frappe setup wizard is still pending — complete
+	it here so the demo isn't blocked behind it, creating billing_admin@example.com as
+	the first System Manager. Idempotent: once setup is complete this only makes sure
+	that operator exists (with a Desk login) and is a System Manager."""
+	from frappe.desk.page.setup_wizard.setup_wizard import setup_complete
+
+	if not frappe.is_setup_complete():
+		setup_complete({
+			"language": "English",
+			"country": "India",
+			"timezone": "Asia/Kolkata",
+			"currency": "INR",
+			"full_name": "Billing Admin",
+			"email": DEMO_ADMIN,
+			"password": DEMO_ADMIN_PASSWORD,
+		})
+		frappe.db.commit()
+	_ensure_billing_admin()
+
+
+def _ensure_billing_admin() -> None:
+	"""Guarantee the demo operator exists as a System Manager with a known password,
+	even on a site whose setup wizard was completed by someone else."""
+	from frappe.utils.password import update_password
+
+	if not frappe.db.exists("User", DEMO_ADMIN):
+		user = frappe.get_doc({
+			"doctype": "User", "email": DEMO_ADMIN, "first_name": "Billing Admin",
+			"send_welcome_email": 0,
+		})
+		user.flags.ignore_password_policy = True
+		user.append_roles("System Manager")
+		user.insert(ignore_permissions=True)
+	else:
+		user = frappe.get_doc("User", DEMO_ADMIN)
+		if "System Manager" not in {r.role for r in user.roles}:
+			user.append_roles("System Manager")
+			user.save(ignore_permissions=True)
+	update_password(DEMO_ADMIN, DEMO_ADMIN_PASSWORD)
+
+
 def seed() -> dict:
 	"""Wipe all billing data and rebuild the ten-team demo end to end.
 
 	    bench --site demo-billing.local execute central.billing.demo.demo_scenarios.seed
 	"""
+	_ensure_setup_wizard()
 	_wipe_all()
 	_drop_stray_demo_teams()
 	_tiers()
