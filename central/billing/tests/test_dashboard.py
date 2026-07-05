@@ -155,6 +155,18 @@ class TestCustomerReads(CustomerDataBase):
 
 
 class TestTeamScoping(CustomerDataBase):
+	def setUp(self):
+		super().setUp()
+		# These tests mint unique-hash teams inline (make_billing_team); snapshot the
+		# roster so tearDown can purge exactly what each test added.
+		self._teams_before = set(frappe.get_all("Team", pluck="name"))
+
+	def tearDown(self):
+		from central.billing.tests.utils import purge_teams
+
+		purge_teams(list(set(frappe.get_all("Team", pluck="name")) - self._teams_before))
+		super().tearDown()
+
 	def test_customer_scoped_to_their_capable_team(self):
 		"""A billing-capable member reads their own team (resolved as the default)
 		but is rejected for any team they're not a member of — never widened."""

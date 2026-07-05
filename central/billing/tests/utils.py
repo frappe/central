@@ -165,6 +165,30 @@ def ensure_team(slug, owner=None):
 	return slug
 
 
+def purge_teams(teams):
+	"""Delete the given teams and every row that links them, for test teardown.
+
+	Tests that `frappe.db.commit()` (load/concurrency runs) escape the per-test
+	rollback, so anything they created — the Team plus its billing artifacts
+	(subscriptions, invoices, profiles, wallets, gateway customers, …) — leaks into
+	the site. Raw DELETEs across every `team`-linked table (discovered live) clear it
+	without tripping Link-integrity ordering, since Frappe links aren't DB FKs."""
+	teams = [t for t in teams if frappe.db.exists("Team", t)]
+	if not teams:
+		return
+	# Every doctype with a `team` Link column — discovered live so nothing is missed.
+	tables = frappe.db.sql_list(
+		"""SELECT DISTINCT TABLE_NAME FROM information_schema.COLUMNS
+		   WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'team' AND TABLE_NAME LIKE 'tab%%'"""
+	)
+	for table in tables:
+		doctype = table[len("tab") :]
+		if doctype != "Team":
+			frappe.db.delete(doctype, {"team": ["in", teams]})
+	frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", teams]})
+	frappe.db.delete("Team", {"name": ["in", teams]})
+
+
 def complete_billing_profile(team, currency="INR"):
 	"""A minimal *complete* Billing Profile (currency + legal name + address) so the
 	money-movement gate (_require_billing_setup) passes. Saves the doc directly,
