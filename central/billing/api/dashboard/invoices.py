@@ -303,7 +303,8 @@ def _invoice_activity(doc) -> list[dict]:
 
 	events.sort(key=lambda x: x["at"])
 
-	# Closure marker, pinned to the last real event so it always reads last.
+	# Closure marker, pinned to the last real event so it stays the newest event —
+	# the list is returned newest-first, so this reads at the top.
 	if doc.status == "Paid":
 		events.append({
 			"at": events[-1]["at"] if events else str(doc.creation),
@@ -317,6 +318,7 @@ def _invoice_activity(doc) -> list[dict]:
 
 	for e in events:
 		e["at"] = _fmt_when(e["at"])
+	events.reverse()  # newest first — the latest state reads at the top
 	return events
 
 
