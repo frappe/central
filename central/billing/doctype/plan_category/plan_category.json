@@ -131,7 +131,23 @@
   }
  ],
  "index_web_pages_for_search": 1,
- "links": [],
+ "links": [
+  {
+   "group": "Catalog",
+   "link_doctype": "Plan",
+   "link_fieldname": "category"
+  },
+  {
+   "group": "Catalog",
+   "link_doctype": "Plan Sub-Category",
+   "link_fieldname": "category"
+  },
+  {
+   "group": "Authoring",
+   "link_doctype": "Plan Configurator",
+   "link_fieldname": "category"
+  }
+ ],
  "modified": "2026-06-23 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",

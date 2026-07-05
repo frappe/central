@@ -143,6 +143,12 @@
  "index_web_pages_for_search": 1,
  "links": [
   {
+   "group": "Billing",
+   "link_doctype": "Invoice",
+   "link_fieldname": "subscription"
+  },
+  {
+   "group": "Lifecycle",
    "link_doctype": "Subscription Change",
    "link_fieldname": "subscription"
   }

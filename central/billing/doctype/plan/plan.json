@@ -80,7 +80,23 @@
   }
  ],
  "index_web_pages_for_search": 1,
- "links": [],
+ "links": [
+  {
+   "group": "Pricing",
+   "link_doctype": "Catalog Rate",
+   "link_fieldname": "priced_for"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Subscription",
+   "link_fieldname": "plan"
+  },
+  {
+   "group": "Usage",
+   "link_doctype": "Asset",
+   "link_fieldname": "plan"
+  }
+ ],
  "modified": "2026-06-18 12:07:51.148692",
  "modified_by": "Administrator",
  "module": "Billing",

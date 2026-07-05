@@ -45,7 +45,21 @@
    "label": "Description"
   }
  ],
- "links": [],
+ "links": [
+  {
+   "group": "Access",
+   "is_child_table": 1,
+   "link_doctype": "Role Capability",
+   "link_fieldname": "capability",
+   "parent_doctype": "Team Role",
+   "table_fieldname": "capabilities"
+  },
+  {
+   "group": "Diagnostics",
+   "link_doctype": "IAM Permission Probe",
+   "link_fieldname": "capability"
+  }
+ ],
  "modified": "2026-06-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",

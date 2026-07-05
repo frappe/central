@@ -61,7 +61,123 @@
    "options": "Team Member"
   }
  ],
- "links": [],
+ "links": [
+  {
+   "group": "Billing",
+   "link_doctype": "Billing Profile",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Billing",
+   "link_doctype": "Subscription",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Billing",
+   "link_doctype": "Subscription Change",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Billing",
+   "link_doctype": "Invoice",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Billing",
+   "link_doctype": "Commitment",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Billing",
+   "link_doctype": "Usage Rollup",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Payments",
+   "link_doctype": "Payment Method",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Payments",
+   "link_doctype": "Payment Attempt",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Payments",
+   "link_doctype": "Refund",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Payments",
+   "link_doctype": "Gateway Customer",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Credit",
+   "link_doctype": "Credit Wallet",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Credit",
+   "link_doctype": "Credit Ledger Entry",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Compliance",
+   "link_doctype": "Tax Profile",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Compliance",
+   "link_doctype": "Entitlement Token",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Infrastructure",
+   "link_doctype": "Asset",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Infrastructure",
+   "link_doctype": "Site",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Infrastructure",
+   "link_doctype": "Pilot Credential",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Access",
+   "link_doctype": "Team Role",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Access",
+   "link_doctype": "Team Invitation",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Access",
+   "link_doctype": "IAM Permission Probe",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Notifications",
+   "link_doctype": "Team Notification",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Notifications",
+   "link_doctype": "Notification Preference",
+   "link_fieldname": "team"
+  },
+  {
+   "group": "Notifications",
+   "link_doctype": "Billing Notification Log",
+   "link_fieldname": "team"
+  }
+ ],
  "modified": "2026-06-08 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
