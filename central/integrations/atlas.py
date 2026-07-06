@@ -115,7 +115,6 @@ class AtlasClient:
 		vcpus: int,
 		memory_megabytes: int,
 		disk_gigabytes: int,
-		email: str | None = None,
 		cpu_max_cores: float | None = None,
 		frappe_version: str | None = None,
 	) -> dict:
@@ -133,8 +132,6 @@ class AtlasClient:
 			"memory_megabytes": memory_megabytes,
 			"disk_gigabytes": disk_gigabytes,
 		}
-		if email:
-			params["email"] = email
 		if cpu_max_cores:
 			params["cpu_max_cores"] = cpu_max_cores
 		if frappe_version:
@@ -265,7 +262,6 @@ class AtlasClient:
 		*,
 		team: str,
 		subdomain: str,
-		email: str | None = None,
 		region: str | None = None,
 	) -> dict:
 		"""
@@ -275,8 +271,6 @@ class AtlasClient:
 
 		params: dict = {"team": team, "subdomain": subdomain}
 
-		if email:
-			params["email"] = email
 		if region:
 			params["region"] = region
 		params.update(self._pilot_credential(team))
