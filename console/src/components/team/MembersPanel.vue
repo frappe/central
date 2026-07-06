@@ -83,6 +83,7 @@ function getMemberKey(member: TeamMemberRow): string {
 <template>
   <div class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
     <ListView
+      class="mx-auto flex h-full max-w-4xl flex-col"
       v-model:query="query"
       :rows="members"
       :columns="columns"

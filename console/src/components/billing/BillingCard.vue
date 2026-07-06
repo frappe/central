@@ -10,7 +10,7 @@ defineProps<{ title: string; description?: string; titleInfo?: string }>()
 
 <template>
   <section class="rounded-xl border border-outline-gray-2 bg-surface-elevation-1">
-    <header class="flex items-start justify-between gap-3 px-5 pt-4">
+    <header class="flex items-center justify-between gap-3 px-5 pt-4">
       <div class="min-w-0">
         <div class="flex items-center gap-1.5">
           <h2 class="truncate text-base font-semibold text-ink-gray-8">{{ title }}</h2>
@@ -24,7 +24,7 @@ defineProps<{ title: string; description?: string; titleInfo?: string }>()
         <slot name="action" />
       </div>
     </header>
-    <div class="px-5 pb-5 pt-2">
+    <div class="px-5 pb-5 pt-4">
       <slot />
     </div>
   </section>

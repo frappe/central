@@ -69,7 +69,7 @@ async function onDelete() {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Team settings" subtitle="Name, ownership, and deletion." />
+    <PageHeader title="Team settings" />
 
     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
       <div class="mx-auto max-w-2xl space-y-6">

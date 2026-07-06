@@ -18,7 +18,7 @@ withDefaults(
     class="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-outline-gray-3 px-6 py-12 text-center"
   >
     <div
-      class="flex size-10 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-5"
+      class="flex size-10 items-center justify-center rounded-lg bg-surface-gray-2 text-ink-gray-5"
     >
       <span :class="[icon, 'size-4']" aria-hidden="true" />
     </div>

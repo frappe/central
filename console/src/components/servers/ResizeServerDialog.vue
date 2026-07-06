@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Button, Dialog, LoadingIndicator, Tabs, useCall } from 'frappe-ui'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
+import Alert from '@/components/common/Alert.vue'
 import { API, method } from '@/api/methods'
 import { usePlans } from '@/composables/usePlans'
 import { useSession } from '@/composables/useSession'
@@ -203,12 +204,7 @@ async function confirm() {
         This server can't be resized right now.
       </p>
       <div v-else class="space-y-4">
-        <div
-          v-if="resizeError"
-          class="rounded-lg border border-outline-red-2 bg-surface-red-1 px-3 py-2.5 text-p-sm text-ink-red-4"
-        >
-          {{ resizeError }}
-        </div>
+        <Alert v-if="resizeError" theme="red" :title="resizeError" />
         <div
           v-if="needsRestart"
           class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"

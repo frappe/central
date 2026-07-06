@@ -16,6 +16,7 @@ import {
   type SortingState,
   type Updater,
 } from '@tanstack/vue-table'
+import Alert from '@/components/common/Alert.vue'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
 import {
@@ -418,16 +419,17 @@ label="Clear"
       </div>
     </div>
 
-    <div
+    <Alert
       v-if="error && hasRows"
-      class="mb-2 flex items-center justify-between gap-3 rounded bg-surface-red-1 px-3 py-2"
-      role="alert"
-    >
-      <p class="text-p-sm text-ink-red-7">{{ error }}</p>
-      <Button label="Retry" variant="ghost" @click="$emit('retry')" />
-    </div>
+      theme="red"
+      :title="error"
+      :action="{ label: 'Retry', onClick: () => $emit('retry') }"
+      class="mb-2"
+    />
 
-    <div class="relative min-w-0 overflow-x-auto">
+    <!-- flex-1 is inert unless the caller makes the root section a flex column
+         (class fall-through) to pin the pagination footer to the bottom. -->
+    <div class="relative min-w-0 flex-1 overflow-x-auto">
       <div role="table" class="min-w-[720px]">
         <div v-if="hasRows || loading" role="row"
           class="grid h-10 items-center gap-4 border-b border-outline-gray-2 px-2" :style="{ gridTemplateColumns }">
