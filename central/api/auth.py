@@ -117,9 +117,9 @@ def _send_signup_code(email: str, full_name: str) -> None:
 			recipients=[email],
 			subject=_("Your Frappe Cloud verification code"),
 			message=_(
-				"<p>Your verification code is <strong>{0}</strong>.</p>"
-				"<p>It expires in 10 minutes.</p>"
+				"<p>Your verification code is <strong>{0}</strong>.</p><p>It expires in 10 minutes.</p>"
 			).format(code),
+			now=True,
 		)
 	except Exception:
 		frappe.log_error(title="Signup verification email failed")
@@ -134,17 +134,15 @@ def _code_matches(pending: dict, code: str) -> bool:
 
 
 def _create_verified_user(email: str, full_name: str):
-	user = frappe.get_doc(
-		{
-			"doctype": "User",
-			"email": email,
-			"first_name": escape_html(full_name),
-			"enabled": 1,
-			"new_password": random_string(10),
-			"user_type": "Website User",
-			"roles": [{"role": role} for role in _signup_roles()],
-		}
-	)
+	user = frappe.get_doc({
+		"doctype": "User",
+		"email": email,
+		"first_name": escape_html(full_name),
+		"enabled": 1,
+		"new_password": random_string(10),
+		"user_type": "Website User",
+		"roles": [{"role": role} for role in _signup_roles()],
+	})
 	user.flags.ignore_permissions = True
 	user.flags.ignore_password_policy = True
 	user.flags.no_welcome_mail = True
