@@ -33,10 +33,10 @@ def create_site(subdomain: str, region: str | None = None) -> dict:
 	Server is the atomic unit, so deploying a site is authorized by the same
 	provisioning capability as standing up a server (site-level capabilities are
 	deferred). Central supplies *what* (the owning team + the subdomain); Atlas
-	owns placement, the fixed size, and the region/domain. We seed the Atlas tenant
-	with the team owner's email on first use, then mirror the returned Pending row
-	so the onboarding screen has something to poll immediately — the site.* events
-	keep it fresh from there."""
+	owns placement, the fixed size, and the region/domain. Atlas get-or-creates the
+	tenant (keyed on the team) and returns the Pending row, which we mirror so the
+	onboarding screen has something to poll immediately — the site.* events keep it
+	fresh from there."""
 	user = frappe.session.user
 	team = resolve_team(user)
 	if not can(user, team, "server:create"):
@@ -44,8 +44,7 @@ def create_site(subdomain: str, region: str | None = None) -> dict:
 
 	region = region or _default_region()
 	client = AtlasClient.for_region(region)
-	email = frappe.db.get_value("Team", team, "owner_user")
-	site = client.create_site(team=team, subdomain=subdomain, email=email)
+	site = client.create_site(team=team, subdomain=subdomain)
 
 	from central.central.doctype.site.site import Site
 

@@ -193,15 +193,12 @@ def create_server(
 	_validate_frappe_version(frappe_version, region)
 
 	client = AtlasClient.for_region(region)
-	# Seed the Atlas tenant (first use) with the team owner's email.
-	email = frappe.db.get_value("Team", team, "owner_user")
 	vm = client.create_vm(
 		team=team,
 		title=title or "server",
 		vcpus=int(vcpus or 1),
 		memory_megabytes=int(memory_megabytes or 512),
 		disk_gigabytes=int(disk_gigabytes or 10),
-		email=email,
 		cpu_max_cores=cpu_max_cores,
 		frappe_version=frappe_version,
 	)
@@ -271,14 +268,12 @@ def create_composed_server(
 
 	qty = composition_quantities(includes)
 	client = AtlasClient.for_region(region)
-	email = frappe.db.get_value("Team", team, "owner_user")
 	vm = client.create_vm(
 		team=team,
 		title=title or "server",
 		vcpus=int(qty.get(COMPUTE, 1)) or 1,
 		memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
 		disk_gigabytes=int(qty.get(DISK, 0)) or 10,
-		email=email,
 		frappe_version=frappe_version,
 	)
 	resource_id = vm.get("name")
