@@ -27,7 +27,9 @@ class Asset(Document):
 		public_ipv4: DF.Data | None
 		resize_in_progress: DF.Check
 		resource_id: DF.Data
-		status: DF.Literal["Pending", "Running", "Paused", "Stopped", "Failed", "Terminated"]
+		status: DF.Literal[
+			"Pending", "Provisioning", "Deploying", "Running", "Paused", "Stopped", "Failed", "Terminated"
+		]
 		team: DF.Link
 		title: DF.Data | None
 		vcpus: DF.Int

@@ -1,18 +1,17 @@
 import type { Asset } from '@/types/Central/Asset'
 import type { InvitationStatus } from '@/types/api'
 
-export type AssetStatus = NonNullable<Asset['status']> | 'Provisioning' | (string & {})
+export type AssetStatus = NonNullable<Asset['status']> | (string & {})
 
 type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue' | 'violet'
 
 // Asset status → Badge theme. Mirrors the Atlas lifecycle: Running is healthy,
 // transient states are amber, terminal/failure states are red, the rest neutral.
-// Keyed by string (not the AssetStatus union) since Atlas can report statuses
-// beyond the known set — anything unmapped falls back to neutral gray.
 const STATUS_THEME: Record<string, BadgeTheme> = {
   Running: 'green',
   Pending: 'orange',
   Provisioning: 'orange',
+  Deploying: 'orange',
   Resizing: 'orange',
   Paused: 'orange',
   Stopped: 'gray',

@@ -34,6 +34,7 @@ const STATUS_VISUAL: Record<string, ServerVisual> = {
   Running: VISUALS.active,
   Pending: VISUALS.settingUp,
   Provisioning: VISUALS.settingUp,
+  Deploying: VISUALS.settingUp,
   Paused: VISUALS.paused,
   Stopped: VISUALS.stopped,
   Failed: VISUALS.broken,

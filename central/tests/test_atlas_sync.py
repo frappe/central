@@ -104,6 +104,22 @@ class TestAtlasMirror(IntegrationTestCase):
 		self._push("vm.deleted", {"name": "vm-2"}, "2026-06-18 11:00:00")
 		self.assertEqual(frappe.db.get_value("Asset", "vm-2", "status"), "Terminated")
 
+	def test_site_front_door_statuses_mirror_onto_asset(self):
+		# Site-backed VMs report the Site's status on the VM payload (Provisioning /
+		# Deploying). Asset must accept those verbatim — same values as Site.
+		self._push(
+			"vm.created",
+			{"name": "vm-site", "team": self.team.name, "status": "Provisioning"},
+			"2026-06-18 10:00:00",
+		)
+		self.assertEqual(frappe.db.get_value("Asset", "vm-site", "status"), "Provisioning")
+		self._push(
+			"vm.status_changed",
+			{"name": "vm-site", "team": self.team.name, "status": "Deploying"},
+			"2026-06-18 10:05:00",
+		)
+		self.assertEqual(frappe.db.get_value("Asset", "vm-site", "status"), "Deploying")
+
 	def test_vm_resized_event_updates_mirror_shape(self):
 		self._push(
 			"vm.created",
