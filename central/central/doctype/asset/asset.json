@@ -80,13 +80,13 @@
   },
   {
    "default": "Pending",
-   "description": "Mirrors the Atlas Virtual Machine status verbatim.",
+   "description": "Mirrors the Atlas-reported status verbatim (raw VM, or Site/Pilot front-door status for bench/site VMs).",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nRunning\nPaused\nStopped\nFailed\nTerminated"
+   "options": "Pending\nProvisioning\nDeploying\nRunning\nPaused\nStopped\nFailed\nTerminated"
   },
   {
    "fieldname": "vcpus",

@@ -22,6 +22,15 @@ class TestAtlasMirror(IntegrationTestCase):
 			}
 		).insert()
 		self.region = "blr-sync"
+		if not frappe.db.exists("Region", self.region):
+			frappe.get_doc(
+				{
+					"doctype": "Region",
+					"region": self.region,
+					"display_name": "Sync Test",
+					"provider": "Fake",
+				}
+			).insert(ignore_permissions=True)
 		# The Atlas authenticates as its scoped service user; the sender (= cluster) is
 		# resolved from that session, so the instance is keyed on service_user.
 		self.service_user = ensure_user("atlas-blr-sync@example.test")
@@ -103,6 +112,55 @@ class TestAtlasMirror(IntegrationTestCase):
 		)
 		self._push("vm.deleted", {"name": "vm-2"}, "2026-06-18 11:00:00")
 		self.assertEqual(frappe.db.get_value("Asset", "vm-2", "status"), "Terminated")
+
+	def test_stale_vm_deleted_does_not_terminate(self):
+		# A delete whose occurred_at is older than the mirror's last_event_at must not
+		# overwrite — same LWW as status_changed, but mark_terminated must lock+read
+		# fresh (unlocked is_stale under RR can miss a concurrent newer event).
+		self._push(
+			"vm.created",
+			{"name": "vm-stale-del", "team": self.team.name, "status": "Running"},
+			"2026-06-18 12:00:00",
+		)
+		self._push("vm.deleted", {"name": "vm-stale-del"}, "2026-06-18 11:00:00")
+		self.assertEqual(frappe.db.get_value("Asset", "vm-stale-del", "status"), "Running")
+
+	def test_mark_terminated_loads_with_for_update(self):
+		from central.central.doctype.asset.asset import Asset
+
+		self._push(
+			"vm.created",
+			{"name": "vm-del-lock", "team": self.team.name, "status": "Running"},
+			"2026-06-18 10:00:00",
+		)
+		seen = {}
+		real_get_doc = frappe.get_doc
+
+		def tracking_get_doc(*args, **kwargs):
+			if args and args[0] == "Asset":
+				seen["for_update"] = kwargs.get("for_update")
+			return real_get_doc(*args, **kwargs)
+
+		with patch("frappe.get_doc", side_effect=tracking_get_doc):
+			Asset.mark_terminated("vm-del-lock", last_event_at="2026-06-18 11:00:00")
+		self.assertTrue(seen.get("for_update"))
+		self.assertEqual(frappe.db.get_value("Asset", "vm-del-lock", "status"), "Terminated")
+
+	def test_site_front_door_statuses_mirror_onto_asset(self):
+		# Site-backed VMs report the Site's status on the VM payload (Provisioning /
+		# Deploying). Asset must accept those verbatim — same values as Site.
+		self._push(
+			"vm.created",
+			{"name": "vm-site", "team": self.team.name, "status": "Provisioning"},
+			"2026-06-18 10:00:00",
+		)
+		self.assertEqual(frappe.db.get_value("Asset", "vm-site", "status"), "Provisioning")
+		self._push(
+			"vm.status_changed",
+			{"name": "vm-site", "team": self.team.name, "status": "Deploying"},
+			"2026-06-18 10:05:00",
+		)
+		self.assertEqual(frappe.db.get_value("Asset", "vm-site", "status"), "Deploying")
 
 	def test_vm_resized_event_updates_mirror_shape(self):
 		self._push(
@@ -312,6 +370,37 @@ class TestAtlasMirror(IntegrationTestCase):
 				occurred_at="2026-06-18 11:00:00",
 			)
 		self.assertEqual(frappe.db.get_value("Asset", "vm-race", "status"), "Running")
+
+	def test_update_mirror_loads_with_for_update(self):
+		# Recovery and concurrent poll/event writers must lock+load in one current
+		# read. A plain get_doc after get_value(for_update) reuses the RR snapshot and
+		# can raise DoesNotExistError / TimestampMismatchError (prod signup race).
+		from central.central.doctype.asset.asset import Asset
+
+		self._push(
+			"vm.created",
+			{"name": "vm-lock", "team": self.team.name, "status": "Pending"},
+			"2026-06-18 10:00:00",
+		)
+		seen = {}
+
+		real_get_doc = frappe.get_doc
+
+		def tracking_get_doc(*args, **kwargs):
+			if args and args[0] == "Asset":
+				seen["for_update"] = kwargs.get("for_update")
+			return real_get_doc(*args, **kwargs)
+
+		with patch("frappe.get_doc", side_effect=tracking_get_doc):
+			Asset._update_mirror(
+				"vm-lock",
+				self.region,
+				{"name": "vm-lock", "team": self.team.name, "status": "Deploying"},
+				"2026-06-18 10:05:00",
+				None,
+			)
+		self.assertTrue(seen.get("for_update"))
+		self.assertEqual(frappe.db.get_value("Asset", "vm-lock", "status"), "Deploying")
 
 	# --- pull / reconcile -----------------------------------------------------
 

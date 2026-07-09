@@ -27,7 +27,9 @@ class Asset(Document):
 		public_ipv4: DF.Data | None
 		resize_in_progress: DF.Check
 		resource_id: DF.Data
-		status: DF.Literal["Pending", "Running", "Paused", "Stopped", "Failed", "Terminated"]
+		status: DF.Literal[
+			"Pending", "Provisioning", "Deploying", "Running", "Paused", "Stopped", "Failed", "Terminated"
+		]
 		team: DF.Link
 		title: DF.Data | None
 		vcpus: DF.Int
@@ -108,12 +110,6 @@ class Asset(Document):
 	# (central.integrations.atlas) from both the event push and the reconcile pull.
 	# Source of truth stays in Atlas.
 
-	@staticmethod
-	def is_stale(resource_id: str, occurred_at) -> bool:
-		"""Last-writer-wins: True if a newer event has already been applied."""
-		last = frappe.db.get_value("Asset", resource_id, "last_event_at")
-		return bool(last and occurred_at and frappe.utils.get_datetime(last) > frappe.utils.get_datetime(occurred_at))
-
 	@classmethod
 	def mirror_vm(cls, cluster: str, vm: dict, *, occurred_at=None, synced_at=None) -> None:
 		"""Upsert one VM into the mirror. `occurred_at` (event push) drives LWW;
@@ -139,12 +135,15 @@ class Asset(Document):
 
 	@classmethod
 	def _update_mirror(cls, resource_id: str, cluster: str, vm: dict, occurred_at, synced_at) -> None:
-		# A locking read refreshes our snapshot so the row a concurrent insert just
-		# committed is visible here, even when we arrive via the lost-race recovery.
-		frappe.db.get_value("Asset", resource_id, "name", for_update=True)
-		if occurred_at and cls.is_stale(resource_id, occurred_at):
+		# Lock + load in one current read. A plain get_doc after get_value(for_update)
+		# still uses the REPEATABLE READ snapshot and can miss a row another writer
+		# just committed (DuplicateEntry recovery → DoesNotExistError), or load a
+		# stale `modified` (TimestampMismatchError against a concurrent save).
+		doc = frappe.get_doc("Asset", resource_id, for_update=True)
+		if occurred_at and doc.last_event_at and frappe.utils.get_datetime(doc.last_event_at) > frappe.utils.get_datetime(
+			occurred_at
+		):
 			return
-		doc = frappe.get_doc("Asset", resource_id)
 		cls._stamp(doc, cluster, vm, occurred_at, synced_at)
 		doc.save(ignore_permissions=True)
 
@@ -185,7 +184,20 @@ class Asset(Document):
 
 	@staticmethod
 	def mark_terminated(resource_id: str, *, last_event_at=None, last_synced_at=None) -> None:
-		"""Flag a VM that's gone (delete event, or vanished on reconcile) Terminated."""
+		"""Flag a VM that's gone (delete event, or vanished on reconcile) Terminated.
+
+		Locks the row first so LWW sees the committed `last_event_at` — an unlocked
+		read under REPEATABLE READ can miss a newer event and wrongly terminate."""
+		try:
+			doc = frappe.get_doc("Asset", resource_id, for_update=True)
+		except frappe.DoesNotExistError:
+			return
+		if (
+			last_event_at
+			and doc.last_event_at
+			and frappe.utils.get_datetime(doc.last_event_at) > frappe.utils.get_datetime(last_event_at)
+		):
+			return
 		stamp = {"status": "Terminated"}
 		if last_event_at:
 			stamp["last_event_at"] = last_event_at
@@ -193,4 +205,4 @@ class Asset(Document):
 			stamp["last_synced_at"] = last_synced_at
 		# db_set(notify=True) emits Frappe's list_update after commit so Console
 		# subscribers see terminal state changes without polling.
-		frappe.get_doc("Asset", resource_id).db_set(stamp, notify=True)
+		doc.db_set(stamp, notify=True)

@@ -402,11 +402,9 @@ def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
 
 def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
 	resource_id = payload.get("name")
-	if (
-		resource_id
-		and frappe.db.exists("Asset", resource_id)
-		and not Asset.is_stale(resource_id, occurred_at)
-	):
+	if resource_id:
+		# mark_terminated locks + applies LWW; a stale delete must not overwrite a
+		# newer status_changed that already landed on the mirror.
 		Asset.mark_terminated(resource_id, last_event_at=occurred_at)
 	# The pilot dies with its VM — kill its Central credential so a leaked token is inert.
 	PilotCredential.revoke_by_id(payload.get("pilot_credential_id"))
