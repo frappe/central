@@ -61,10 +61,12 @@ class Site(Document):
 
 	@classmethod
 	def _update_mirror(cls, site_name: str, cluster: str, site: dict, occurred_at, synced_at) -> None:
-		frappe.db.get_value("Site", site_name, "name", for_update=True)
-		if occurred_at and cls.is_stale(site_name, occurred_at):
+		# Lock + load in one current read — same RR trap as Asset._update_mirror.
+		doc = frappe.get_doc("Site", site_name, for_update=True)
+		if occurred_at and doc.last_event_at and frappe.utils.get_datetime(doc.last_event_at) > frappe.utils.get_datetime(
+			occurred_at
+		):
 			return
-		doc = frappe.get_doc("Site", site_name)
 		cls._stamp(doc, cluster, site, occurred_at, synced_at)
 		doc.save(ignore_permissions=True)
 

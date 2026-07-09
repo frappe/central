@@ -141,12 +141,15 @@ class Asset(Document):
 
 	@classmethod
 	def _update_mirror(cls, resource_id: str, cluster: str, vm: dict, occurred_at, synced_at) -> None:
-		# A locking read refreshes our snapshot so the row a concurrent insert just
-		# committed is visible here, even when we arrive via the lost-race recovery.
-		frappe.db.get_value("Asset", resource_id, "name", for_update=True)
-		if occurred_at and cls.is_stale(resource_id, occurred_at):
+		# Lock + load in one current read. A plain get_doc after get_value(for_update)
+		# still uses the REPEATABLE READ snapshot and can miss a row another writer
+		# just committed (DuplicateEntry recovery → DoesNotExistError), or load a
+		# stale `modified` (TimestampMismatchError against a concurrent save).
+		doc = frappe.get_doc("Asset", resource_id, for_update=True)
+		if occurred_at and doc.last_event_at and frappe.utils.get_datetime(doc.last_event_at) > frappe.utils.get_datetime(
+			occurred_at
+		):
 			return
-		doc = frappe.get_doc("Asset", resource_id)
 		cls._stamp(doc, cluster, vm, occurred_at, synced_at)
 		doc.save(ignore_permissions=True)
 

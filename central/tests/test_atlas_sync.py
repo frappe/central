@@ -22,6 +22,15 @@ class TestAtlasMirror(IntegrationTestCase):
 			}
 		).insert()
 		self.region = "blr-sync"
+		if not frappe.db.exists("Region", self.region):
+			frappe.get_doc(
+				{
+					"doctype": "Region",
+					"region": self.region,
+					"display_name": "Sync Test",
+					"provider": "Fake",
+				}
+			).insert(ignore_permissions=True)
 		# The Atlas authenticates as its scoped service user; the sender (= cluster) is
 		# resolved from that session, so the instance is keyed on service_user.
 		self.service_user = ensure_user("atlas-blr-sync@example.test")
@@ -328,6 +337,37 @@ class TestAtlasMirror(IntegrationTestCase):
 				occurred_at="2026-06-18 11:00:00",
 			)
 		self.assertEqual(frappe.db.get_value("Asset", "vm-race", "status"), "Running")
+
+	def test_update_mirror_loads_with_for_update(self):
+		# Recovery and concurrent poll/event writers must lock+load in one current
+		# read. A plain get_doc after get_value(for_update) reuses the RR snapshot and
+		# can raise DoesNotExistError / TimestampMismatchError (prod signup race).
+		from central.central.doctype.asset.asset import Asset
+
+		self._push(
+			"vm.created",
+			{"name": "vm-lock", "team": self.team.name, "status": "Pending"},
+			"2026-06-18 10:00:00",
+		)
+		seen = {}
+
+		real_get_doc = frappe.get_doc
+
+		def tracking_get_doc(*args, **kwargs):
+			if args and args[0] == "Asset":
+				seen["for_update"] = kwargs.get("for_update")
+			return real_get_doc(*args, **kwargs)
+
+		with patch("frappe.get_doc", side_effect=tracking_get_doc):
+			Asset._update_mirror(
+				"vm-lock",
+				self.region,
+				{"name": "vm-lock", "team": self.team.name, "status": "Deploying"},
+				"2026-06-18 10:05:00",
+				None,
+			)
+		self.assertTrue(seen.get("for_update"))
+		self.assertEqual(frappe.db.get_value("Asset", "vm-lock", "status"), "Deploying")
 
 	# --- pull / reconcile -----------------------------------------------------
 
