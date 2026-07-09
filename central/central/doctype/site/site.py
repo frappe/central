@@ -32,12 +32,6 @@ class Site(Document):
 	# tenant_sites reconcile pull, so get_site(name) is the only self-heal — there
 	# is no bulk reconcile here. Source of truth stays in Atlas.
 
-	@staticmethod
-	def is_stale(site_name: str, occurred_at) -> bool:
-		"""Last-writer-wins: True if a newer event has already been applied."""
-		last = frappe.db.get_value("Site", site_name, "last_event_at")
-		return bool(last and occurred_at and frappe.utils.get_datetime(last) > frappe.utils.get_datetime(occurred_at))
-
 	@classmethod
 	def mirror_site(cls, cluster: str, site: dict, *, occurred_at=None, synced_at=None) -> None:
 		"""Upsert one site into the mirror. `occurred_at` (event push) drives LWW;

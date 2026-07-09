@@ -113,6 +113,39 @@ class TestAtlasMirror(IntegrationTestCase):
 		self._push("vm.deleted", {"name": "vm-2"}, "2026-06-18 11:00:00")
 		self.assertEqual(frappe.db.get_value("Asset", "vm-2", "status"), "Terminated")
 
+	def test_stale_vm_deleted_does_not_terminate(self):
+		# A delete whose occurred_at is older than the mirror's last_event_at must not
+		# overwrite — same LWW as status_changed, but mark_terminated must lock+read
+		# fresh (unlocked is_stale under RR can miss a concurrent newer event).
+		self._push(
+			"vm.created",
+			{"name": "vm-stale-del", "team": self.team.name, "status": "Running"},
+			"2026-06-18 12:00:00",
+		)
+		self._push("vm.deleted", {"name": "vm-stale-del"}, "2026-06-18 11:00:00")
+		self.assertEqual(frappe.db.get_value("Asset", "vm-stale-del", "status"), "Running")
+
+	def test_mark_terminated_loads_with_for_update(self):
+		from central.central.doctype.asset.asset import Asset
+
+		self._push(
+			"vm.created",
+			{"name": "vm-del-lock", "team": self.team.name, "status": "Running"},
+			"2026-06-18 10:00:00",
+		)
+		seen = {}
+		real_get_doc = frappe.get_doc
+
+		def tracking_get_doc(*args, **kwargs):
+			if args and args[0] == "Asset":
+				seen["for_update"] = kwargs.get("for_update")
+			return real_get_doc(*args, **kwargs)
+
+		with patch("frappe.get_doc", side_effect=tracking_get_doc):
+			Asset.mark_terminated("vm-del-lock", last_event_at="2026-06-18 11:00:00")
+		self.assertTrue(seen.get("for_update"))
+		self.assertEqual(frappe.db.get_value("Asset", "vm-del-lock", "status"), "Terminated")
+
 	def test_site_front_door_statuses_mirror_onto_asset(self):
 		# Site-backed VMs report the Site's status on the VM payload (Provisioning /
 		# Deploying). Asset must accept those verbatim — same values as Site.

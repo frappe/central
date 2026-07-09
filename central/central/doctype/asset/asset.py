@@ -110,12 +110,6 @@ class Asset(Document):
 	# (central.integrations.atlas) from both the event push and the reconcile pull.
 	# Source of truth stays in Atlas.
 
-	@staticmethod
-	def is_stale(resource_id: str, occurred_at) -> bool:
-		"""Last-writer-wins: True if a newer event has already been applied."""
-		last = frappe.db.get_value("Asset", resource_id, "last_event_at")
-		return bool(last and occurred_at and frappe.utils.get_datetime(last) > frappe.utils.get_datetime(occurred_at))
-
 	@classmethod
 	def mirror_vm(cls, cluster: str, vm: dict, *, occurred_at=None, synced_at=None) -> None:
 		"""Upsert one VM into the mirror. `occurred_at` (event push) drives LWW;
@@ -190,7 +184,20 @@ class Asset(Document):
 
 	@staticmethod
 	def mark_terminated(resource_id: str, *, last_event_at=None, last_synced_at=None) -> None:
-		"""Flag a VM that's gone (delete event, or vanished on reconcile) Terminated."""
+		"""Flag a VM that's gone (delete event, or vanished on reconcile) Terminated.
+
+		Locks the row first so LWW sees the committed `last_event_at` — an unlocked
+		read under REPEATABLE READ can miss a newer event and wrongly terminate."""
+		try:
+			doc = frappe.get_doc("Asset", resource_id, for_update=True)
+		except frappe.DoesNotExistError:
+			return
+		if (
+			last_event_at
+			and doc.last_event_at
+			and frappe.utils.get_datetime(doc.last_event_at) > frappe.utils.get_datetime(last_event_at)
+		):
+			return
 		stamp = {"status": "Terminated"}
 		if last_event_at:
 			stamp["last_event_at"] = last_event_at
@@ -198,4 +205,4 @@ class Asset(Document):
 			stamp["last_synced_at"] = last_synced_at
 		# db_set(notify=True) emits Frappe's list_update after commit so Console
 		# subscribers see terminal state changes without polling.
-		frappe.get_doc("Asset", resource_id).db_set(stamp, notify=True)
+		doc.db_set(stamp, notify=True)
