@@ -107,7 +107,14 @@ website_user_home_page = "dashboard"
 # Seed the catalog taxonomy masters (Plan Category / Sub-Category / Resource Type) on a
 # fresh install — patches are skipped on fresh installs, so the seed can't live only
 # there. Idempotent (ADR 0007).
-after_install = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
+#
+# `ensure_constraints` is here for exactly the same reason: a CHECK constraint declared
+# only in a patch would exist on migrated sites and be silently ABSENT on fresh ones.
+# The money invariants are a property of the schema, not of a site's history (ADR 0018).
+after_install = [
+	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.platform.constraints.ensure_constraints",
+]
 
 # Uninstallation
 # ------------
@@ -203,15 +210,23 @@ scheduler_events = {
 # Billing (module): authorisation is Central's capability IAM (ADR 0004) — no
 # billing-owned roles or User->team field to provision. The catalog taxonomy masters,
 # however, are reference data the catalog can't run without, so re-assert them on every
-# migrate too (idempotent — ADR 0007).
-after_migrate = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
+# migrate too (idempotent — ADR 0007). The money CHECK constraints are re-asserted for
+# the same reason: a dropped or never-applied constraint must heal on migrate, not wait
+# for someone to notice the balance went negative (ADR 0018).
+after_migrate = [
+	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.platform.constraints.ensure_constraints",
+]
 
 # Testing
 # -------
 
 # Tests run on a fresh site (patches skipped), so seed the taxonomy masters the test
-# fixtures depend on before the suite runs.
-before_tests = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
+# fixtures depend on — and apply the money constraints — before the suite runs.
+before_tests = [
+	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.platform.constraints.ensure_constraints",
+]
 
 # Extend DocType Class
 # ------------------------------

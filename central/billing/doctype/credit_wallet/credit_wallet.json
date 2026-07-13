@@ -1,9 +1,9 @@
 {
  "actions": [],
  "allow_rename": 0,
- "autoname": "field:team",
+ "autoname": "format:{team}-{currency}",
  "creation": "2026-06-03 00:00:00.000000",
- "description": "Per-team lock anchor for credit-ledger bookings. Carries the authoritative running balance, maintained under the row's FOR UPDATE lock so a booking reads/writes the balance on this single primary-key row — no FOR UPDATE on the ledger, so cross-team bookings never gap-lock each other. The append-only Credit Ledger Entry remains the audit trail; balance is the running sum and stays in lockstep with the newest entry's running_balance.",
+ "description": "Per-(team, currency) lock anchor for credit-ledger bookings. The composite key lives in the NAME so the primary key itself enforces one wallet per team per currency, and the booking's FOR UPDATE stays on the clustered PK (a secondary composite index would reintroduce the lock-order deadlock the anchor exists to avoid). Carries the authoritative balance for that currency, maintained under the row's lock. A CHECK (balance >= 0) constraint makes a negative balance impossible for every caller, not only those routed through credits.py (ADR 0018). The append-only Credit Ledger Entry remains the audit trail; balance stays in lockstep with the newest entry's running_balance for the same currency.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -19,20 +19,24 @@
    "options": "Team",
    "in_list_view": 1,
    "label": "Team",
-   "unique": 1,
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "currency",
-   "fieldtype": "Data",
-   "label": "Currency"
+   "fieldtype": "Link",
+   "options": "Currency",
+   "in_list_view": 1,
+   "label": "Currency",
+   "reqd": 1
   },
   {
    "fieldname": "balance",
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Balance",
-   "description": "Authoritative running balance under this row's lock; equals the signed ledger sum."
+   "non_negative": 1,
+   "description": "Authoritative balance for this currency, under this row's lock; equals the signed ledger sum for the same (team, currency). Never negative — enforced by a CHECK constraint, since frappe.db.set_value skips this field's validation entirely."
   }
  ],
  "index_web_pages_for_search": 1,
