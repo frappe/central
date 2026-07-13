@@ -1,6 +1,6 @@
 # Central
 
-Central is the new control plane for [Frappe Cloud v2]. It
+Central is the new control plane for Frappe Cloud v2. It
 manages IAM, billing, add-ons and other services.
 The regional VM runtime is managed and operated by [Atlas](https://github.com/frappe/atlas).
 
