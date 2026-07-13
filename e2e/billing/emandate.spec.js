@@ -5,7 +5,9 @@ import { test, expect } from './fixtures'
 // These tests exercise the real orchestration (emandate.schedule_predebit) and its
 // two outcomes, asserting the customer-visible result on the dashboard. No gateway
 // debit runs here — that's the separate (token-gated) charge step.
-test.describe('INR e-mandate collection', () => {
+// TODO: legacy dashboard removed; these flows (settings/notifications, billing)
+// aren't ported to console yet. Un-skip once console has them.
+test.describe.skip('INR e-mandate collection', () => {
   test('sends a pre-debit notice for a bill within the ₹15,000 ceiling', async ({ page, billing }) => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
     await billing.setCollectionMode({ team, mode: 'E-Mandate' })

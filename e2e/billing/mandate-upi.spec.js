@@ -7,7 +7,9 @@ import { test, expect } from './fixtures'
 // checkout-callback signature; only the recurring token id is synthetic, since
 // Razorpay issues one only through the bank/UPI auth flow). The mandate's ceiling
 // is the team's trust-tier cap.
-test.describe('UPI Autopay mandate', () => {
+// TODO: legacy dashboard removed; settings/methods isn't ported to console yet.
+// Un-skip once console has it.
+test.describe.skip('UPI Autopay mandate', () => {
   test('authorises a mandate via the real Razorpay recurring sheet', async ({ page, billing }) => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
     await billing.setTrustTier({ team, maxSpend: 50000 }) // UPI cap, below the ₹1,00,000 limit

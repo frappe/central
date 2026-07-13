@@ -14,11 +14,9 @@ fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
 ]
 
-# The TypeScript UI owns the product route. Keep the previous dashboard
-# available while its remaining surfaces are migrated.
+# The TypeScript UI owns the product route.
 website_route_rules = [
 	{"from_route": "/dashboard/<path:app_path>", "to_route": "dashboard"},
-	{"from_route": "/legacy-dashboard/<path:app_path>", "to_route": "legacy-dashboard"},
 ]
 
 # Central is a website application. Portal users land in the console; Desk stays

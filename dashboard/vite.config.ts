@@ -3,8 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import frappeui from 'frappe-ui/vite'
 import path from 'path'
 
-// Primary Central frontend. The previous dashboard remains available under
-// /legacy-dashboard while its surfaces are migrated.
+// Primary Central frontend.
 export default defineConfig({
   plugins: [
     frappeui({
