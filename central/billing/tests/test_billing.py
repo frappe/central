@@ -164,6 +164,76 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertIsNone(name)
 
 
+class TestOneInvoicePerPeriod(BillingTestBase):
+	"""A team is billed at most once for a period — enforced, not merely intended.
+
+	`generate_team_invoice` read "does an invoice exist?" and then inserted, with no
+	lock and no constraint in between, while `generate_draft_invoices` enqueues one job
+	per team. Two workers could both read "no" and both insert. The unique index on
+	`Invoice.period_key` is what makes the double bill impossible (ADR 0018, I6).
+	"""
+
+	def test_concurrent_generation_bills_the_team_exactly_once(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()  # make the segment visible to the worker connections
+
+		results = run_workers(
+			6,
+			lambda i: invoicing.generate_team_invoice(TEAM, "2026-06-01", "2026-06-30"),
+		)
+		frappe.db.rollback()  # refresh this connection's snapshot
+
+		# Every worker returns the SAME invoice: the losers of the race yield to the
+		# winner instead of raising, so a concurrent caller is indistinguishable from a
+		# sequential one. Without the unique index all six inserted their own.
+		self.assertEqual(len(set(results.values())), 1, results)
+
+		live = frappe.get_all(
+			"Invoice",
+			filters={"team": TEAM, "period_start": "2026-06-01", "status": ["!=", "Cancelled"]},
+			pluck="name",
+		)
+		self.assertEqual(len(live), 1, f"team billed {len(live)}x for one period: {live}")
+		self.assertEqual(live, list(set(results.values())))
+
+	def test_cancel_and_reissue_reclaims_the_period_slot(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+
+		second = invoicing.reissue_invoice(first, reason="wrong rate")
+
+		self.assertIsNotNone(second)
+		self.assertNotEqual(first, second)
+		self.assertEqual(frappe.db.get_value("Invoice", first, "status"), "Cancelled")
+		# The cancelled invoice stepped out of the index so the reissue could take
+		# the period's slot — but only one invoice is live for it.
+		live = frappe.get_all(
+			"Invoice",
+			filters={"team": TEAM, "period_start": "2026-06-01", "status": ["!=", "Cancelled"]},
+			pluck="name",
+		)
+		self.assertEqual(live, [second])
+
+	def test_several_cancelled_invoices_coexist_for_one_period(self):
+		"""Cancelling twice must not trip the unique index.
+
+		The cancelled key is a per-invoice sentinel rather than NULL: Frappe coerces an
+		unset Data field to the empty string, and empty strings COLLIDE in a unique
+		index — so "null it on cancel" would have let the first cancellation through
+		and rejected the second.
+		"""
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		second = invoicing.reissue_invoice(first, reason="one")
+		third = invoicing.reissue_invoice(second, reason="two")
+
+		self.assertEqual(len({first, second, third}), 3)
+		cancelled = frappe.get_all(
+			"Invoice", filters={"team": TEAM, "status": "Cancelled"}, pluck="name"
+		)
+		self.assertCountEqual(cancelled, [first, second])
+
+
 class TestOpenAndCollect(BillingTestBase):
 	def _draft(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
