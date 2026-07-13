@@ -4,7 +4,10 @@ import { test, expect } from './fixtures'
 // wizard and completes the required Billing Profile step against the real
 // save_billing_profile endpoint — currency, legal name and a full address. Saving
 // flips the step to complete, which is what un-gates every money-moving action.
-test.describe('Onboarding', () => {
+// TODO: legacy dashboard removed; console's onboarding is a site-provisioning
+// flow (/onboarding/site), not this billing-profile wizard. Un-skip once
+// console has an equivalent.
+test.describe.skip('Onboarding', () => {
   test('completes the billing profile step', async ({ page, billing }) => {
     await billing.signIn({ scenario: 'profile_pending' })
 

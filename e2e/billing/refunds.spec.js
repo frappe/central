@@ -18,7 +18,9 @@ async function chargeAndSettle(billing) {
   return { team, invoice, attempt: res.attempt }
 }
 
-test.describe('Refunds', () => {
+// TODO: legacy dashboard removed; these flows (billing/invoices, billing/credits)
+// aren't ported to console yet. Un-skip once console has them.
+test.describe.skip('Refunds', () => {
   test('full dispute refunds to source; the invoice stays Paid', async ({ page, billing }) => {
     const { invoice, attempt } = await chargeAndSettle(billing)
 

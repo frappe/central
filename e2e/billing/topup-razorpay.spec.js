@@ -8,7 +8,9 @@ import { test, expect } from './fixtures'
 // the real test secret (the exact HMAC Razorpay's callback returns) and calls the
 // real confirm_topup, which verifies the signature and credits the wallet. The
 // only synthetic value is the payment-id string. See e2e.py:finish_razorpay_topup.
-test.describe('Wallet top-up (Razorpay)', () => {
+// TODO: legacy dashboard removed; billing/credits isn't ported to console yet.
+// Un-skip once console has it.
+test.describe.skip('Wallet top-up (Razorpay)', () => {
   test('opens the real Razorpay sheet for an INR order and credits the wallet', async ({ page, billing }) => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
 

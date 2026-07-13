@@ -1,11 +1,9 @@
-<script setup>
-import { FrappeUIProvider, Dialogs } from 'frappe-ui'
+<script setup lang="ts">
+import ErrorBoundary from '@/components/common/ErrorBoundary.vue'
 </script>
 
 <template>
-  <FrappeUIProvider>
+  <ErrorBoundary>
     <router-view />
-    <!-- Renders confirmDialog() overlays mounted imperatively. -->
-    <Dialogs />
-  </FrappeUIProvider>
+  </ErrorBoundary>
 </template>
