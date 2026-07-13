@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, h, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Badge, Button, Dropdown, FormControl, Spinner } from 'frappe-ui'
+import { Badge, Button, FormControl, Select, Spinner } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
@@ -105,22 +105,10 @@ const rows = computed<ServerRow[]>(() =>
 
 // — Filters. Status and region scope the map and the panel; search only
 //   narrows the panel rows.
-const check = () => h('span', { class: 'lucide-check size-4 text-ink-gray-7' })
-const statusMenu = computed(() => [
-  {
-    label: 'All statuses',
-    onClick: () => (statusFilter.value = ''),
-    slots: { suffix: () => (statusFilter.value === '' ? check() : null) },
-  },
-  ...STATUS_FILTERS.map((s) => ({
-    label: s.label,
-    onClick: () => (statusFilter.value = s.key),
-    slots: { suffix: () => (statusFilter.value === s.key ? check() : null) },
-  })),
+const statusOptions = computed(() => [
+  { label: 'All statuses', value: '' },
+  ...STATUS_FILTERS.map((s) => ({ label: s.label, value: s.key })),
 ])
-const statusLabelText = computed(
-  () => STATUS_FILTERS.find((s) => s.key === statusFilter.value)?.label || 'Status',
-)
 const statusDot = computed(
   () => STATUS_FILTERS.find((s) => s.key === statusFilter.value)?.dot || 'var(--ink-gray-4)',
 )
@@ -137,32 +125,34 @@ const providerGroups = computed(() => {
   return [...groups.entries()].map(([provider, list]) => ({ provider, regions: list }))
 })
 
-const regionMenu = computed(() => [
-  {
-    label: 'All regions',
-    onClick: () => (regionFilter.value = { provider: '', region: '' }),
-    slots: { suffix: () => (!regionFilter.value.provider && !regionFilter.value.region ? check() : null) },
-  },
-  ...providerGroups.value.map((group) => ({
-    label: group.provider,
-    submenu: [
-      {
-        label: `All ${group.provider} regions`,
-        onClick: () => (regionFilter.value = { provider: group.provider, region: '' }),
-      },
-      ...group.regions.map((r) => ({
-        label: `${flagEmoji(r.country_code)} ${regionLabel(r)}`.trim(),
-        onClick: () => (regionFilter.value = { provider: group.provider, region: r.region }),
-      })),
-    ],
-  })),
+// Flat option list for the Select: "All <provider> regions" rows stand in for
+// the old nested provider menu. Selection is encoded as '' | 'p:<provider>' |
+// 'r:<provider>|<region>' and mapped onto regionFilter.
+const regionOptions = computed(() => [
+  { label: 'All regions', value: '' },
+  ...providerGroups.value.flatMap((group) => [
+    { label: `All ${group.provider} regions`, value: `p:${group.provider}` },
+    ...group.regions.map((r) => ({
+      label: `${flagEmoji(r.country_code)} ${regionLabel(r)}`.trim(),
+      value: `r:${group.provider}|${r.region}`,
+    })),
+  ]),
 ])
-const regionLabelText = computed(() => {
-  const { provider, region } = regionFilter.value
-  if (!provider && !region) return 'All regions'
-  if (!region) return `${provider} regions`
-  const r = regionsByName.value.get(region)
-  return `${provider} · ${(r ? regionLabel(r) : region).split(',')[0]}`
+const regionSelection = computed({
+  get(): string {
+    const { provider, region } = regionFilter.value
+    if (!provider && !region) return ''
+    if (!region) return `p:${provider}`
+    return `r:${provider}|${region}`
+  },
+  set(value: string) {
+    if (!value) regionFilter.value = { provider: '', region: '' }
+    else if (value.startsWith('p:')) regionFilter.value = { provider: value.slice(2), region: '' }
+    else {
+      const [provider, region] = value.slice(2).split('|')
+      regionFilter.value = { provider, region }
+    }
+  },
 })
 
 const filtered = computed(() =>
@@ -363,20 +353,15 @@ const pendingResize = ref<AssetRow | null>(null)
 
       <!-- Filters (top right) -->
       <div class="absolute right-4 top-4 flex items-center gap-2">
-        <Dropdown :options="statusMenu" placement="right">
-          <button class="sp-pill">
-            <span class="size-2 rounded-full transition-colors" :style="{ background: statusDot }" />
-            {{ statusLabelText }}
-            <span class="lucide-chevron-down size-3.5 text-ink-gray-5" />
-          </button>
-        </Dropdown>
-        <!-- Region = provider → region, drilled through a nested menu. -->
-        <Dropdown :options="regionMenu" placement="right">
-          <button class="sp-pill">
-            {{ regionLabelText }}
-            <span class="lucide-chevron-down size-3.5 text-ink-gray-5" />
-          </button>
-        </Dropdown>
+        <Select v-model="statusFilter" variant="outline" size="md" :options="statusOptions">
+          <template #prefix>
+            <span
+              class="size-2 shrink-0 rounded-full transition-colors"
+              :style="{ background: statusDot }"
+            />
+          </template>
+        </Select>
+        <Select v-model="regionSelection" variant="outline" size="md" :options="regionOptions" />
       </div>
 
       <!-- Your servers (top left): a floating card — the pill IS the panel,
@@ -388,7 +373,7 @@ const pendingResize = ref<AssetRow | null>(null)
         aria-label="Your servers"
         @keydown.esc="panelOpen = false"
       >
-        <button class="sp-float-pill" :inert="panelOpen" @click="panelOpen = true">
+        <button class="sp-float-pill text-base" :inert="panelOpen" @click="panelOpen = true">
           <span class="truncate">{{ pillLabel }}</span>
           <span class="lucide-maximize-2 size-3.5 shrink-0 text-ink-gray-6" />
         </button>
@@ -398,8 +383,9 @@ const pendingResize = ref<AssetRow | null>(null)
           :inert="!panelOpen"
           :aria-hidden="!panelOpen"
         >
-          <div class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-4">
-            <h2 class="text-lg font-semibold text-ink-gray-9">Your servers ({{ filtered.length }})</h2>
+          <!-- Same label as the pill so the card reads as the pill expanding. -->
+          <div class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3">
+            <h2 class="truncate text-base font-semibold text-ink-gray-9">{{ pillLabel }}</h2>
             <Button variant="ghost" icon="lucide-minimize-2" aria-label="Collapse list" @click="panelOpen = false" />
           </div>
           <div class="shrink-0 px-4 pb-3">
@@ -519,35 +505,16 @@ const pendingResize = ref<AssetRow | null>(null)
 </template>
 
 <style scoped>
-.sp-pill {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  height: 2.25rem;
-  padding: 0 0.75rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--outline-gray-2);
-  background: var(--surface-elevation-1);
-  box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.05));
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--ink-gray-7);
-  transition: background-color 150ms ease, transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.sp-pill:hover {
-  background: var(--surface-gray-1);
-}
-.sp-pill:active {
-  transform: scale(0.97);
-}
-
 /* "Your servers" morph: one floating card whose size change carries the whole
    story — the pill grows into the panel in place. Faster on close than open,
-   one strong ease-out; the two faces just crossfade inside it. */
+   one strong ease-out; the two faces just crossfade inside it. Collapsed, the
+   pill matches the Select (outline / md) filters across the map: 2rem tall,
+   same radius, px-2.5, text-base. */
 .sp-float {
   --sp-ease: cubic-bezier(0.23, 1, 0.32, 1);
   width: 10.5rem;
-  height: 2.25rem;
+  height: 2rem;
+  border-radius: 0.5rem;
   box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.05));
   transition:
     width 180ms var(--sp-ease),
@@ -567,15 +534,14 @@ const pendingResize = ref<AssetRow | null>(null)
   left: 0;
   top: 0;
   display: flex;
-  height: 2.25rem;
+  height: 2rem;
   width: 10.5rem;
   align-items: center;
   justify-content: space-between;
   gap: 0.625rem;
-  padding: 0 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--ink-gray-9);
+  padding: 0 0.625rem;
+  font-weight: 420;
+  color: var(--ink-gray-7);
   transition: opacity 120ms ease-out, background-color 150ms ease;
 }
 .sp-float-pill:hover {

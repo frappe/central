@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Badge, Button, FormControl, Tabs, useCall } from 'frappe-ui'
 import { useRoute, useRouter } from 'vue-router'
 import PageHeader from '@/components/common/PageHeader.vue'
+import Alert from '@/components/common/Alert.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
@@ -373,16 +374,12 @@ async function submit() {
               </p>
               <p v-else-if="plansLoading" class="text-p-sm text-ink-gray-5">Loading plans…</p>
 
-              <div
+              <Alert
                 v-else-if="regionFull"
-                class="rounded-lg border border-outline-amber-1 bg-surface-amber-1 px-4 py-3"
-              >
-                <p class="text-p-sm font-medium text-ink-gray-8">This region is at capacity</p>
-                <p class="mt-1 text-p-sm text-ink-gray-6">
-                  {{ selectedRegion }} can't fit a new server right now. Try another region, or
-                  check back shortly — capacity frees up as machines are removed.
-                </p>
-              </div>
+                theme="yellow"
+                title="This region is at capacity"
+                :description="`${selectedRegion} can't fit a new server right now. Try another region, or check back shortly — capacity frees up as machines are removed.`"
+              />
 
               <div
                 v-else-if="bracketExhausted"

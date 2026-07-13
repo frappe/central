@@ -5,6 +5,7 @@
 // is an invitation to decide. Backend feed: get_collection_status.
 import { computed, ref } from 'vue'
 import { useCall, Dialog, Button } from 'frappe-ui'
+import Alert from '@/components/common/Alert.vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
@@ -70,39 +71,20 @@ const options = [
 </script>
 
 <template>
-  <div
+  <Alert
     v-if="show && s"
-    class="flex flex-col gap-3 rounded-lg border border-outline-amber-2 bg-surface-amber-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-    role="status"
-    aria-live="polite"
+    theme="yellow"
+    title="Action required — choose how to keep paying"
+    :action="canManageBilling ? { label: 'Choose how to pay', onClick: () => (choosing = true) } : null"
   >
-    <div class="flex items-start gap-3">
-      <span
-        class="lucide-triangle-alert mt-0.5 size-5 shrink-0 text-ink-amber-7"
-        aria-hidden="true"
-      />
-      <div class="space-y-0.5">
-        <p class="text-base font-medium text-ink-gray-9">
-          Action required — choose how to keep paying
-        </p>
-        <p class="text-p-sm text-ink-gray-7">
-          Your usage is trending to
-          <span class="font-medium">{{ money(s.projected_total, currency) }}</span>
-          this month, above the
-          <span class="font-medium">{{ money(s.threshold, currency) }}</span>
-          limit for automatic payments. Your services keep running.
-        </p>
-      </div>
-    </div>
-    <Button
-      v-if="canManageBilling"
-      variant="solid"
-      theme="gray"
-      label="Choose how to pay"
-      class="shrink-0"
-      @click="choosing = true"
-    />
-  </div>
+    <template #description>
+      Your usage is trending to
+      <span class="font-medium">{{ money(s.projected_total, currency) }}</span>
+      this month, above the
+      <span class="font-medium">{{ money(s.threshold, currency) }}</span>
+      limit for automatic payments. Your services keep running.
+    </template>
+  </Alert>
 
   <Dialog
     v-model:open="choosing"

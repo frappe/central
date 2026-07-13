@@ -79,10 +79,7 @@ function onAddCredit(): void {
         <span class="lucide-credit-card size-3.5 shrink-0 text-ink-gray-4" aria-hidden="true" />
         Card covers the rest
       </p>
-      <p v-else class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-gray-5">
-        <span class="lucide-circle-check size-3.5 shrink-0 text-ink-green-2" aria-hidden="true" />
-        Covers this invoice
-      </p>
+      <p v-else class="mt-1.5 text-p-sm text-ink-gray-5">Covers this invoice</p>
 
       <!-- Funding actions, once there's a method to charge. -->
       <div

@@ -24,3 +24,12 @@ const tabs = [
     </Tabs>
   </div>
 </template>
+
+<style scoped>
+/* frappe-ui's TabsContent doesn't grow; stretch the active panel so the list
+   fills the page and its pagination footer pins to the bottom. */
+:deep([role='tabpanel'][data-state='active']) {
+  flex: 1;
+  min-height: 0;
+}
+</style>

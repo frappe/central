@@ -107,7 +107,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Invoices" subtitle="Billing" />
+    <PageHeader title="Invoices" />
 
     <SplitView v-model:open="detailOpen" class="flex-1">
       <!-- The selected invoice's identity lives in the panel header (number +

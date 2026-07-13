@@ -116,6 +116,7 @@ function onAdd(): void {
       <Button
         v-if="canManageBilling"
         variant="ghost"
+        size="xs"
         icon="lucide-plus"
         :aria-label="ordered.length ? 'Add backup method' : 'Add payment method'"
         @click="onAdd"

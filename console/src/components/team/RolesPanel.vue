@@ -25,6 +25,7 @@ async function onDeleteRole(role: TeamRoleRow): Promise<void> {
 
 <template>
   <div class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+    <div class="mx-auto max-w-4xl">
     <div class="mb-4 flex items-center justify-between gap-3">
       <p class="text-p-sm text-ink-gray-5">
         Every role and exactly what it can do. Roles are named sets of capabilities.
@@ -57,6 +58,7 @@ async function onDeleteRole(role: TeamRoleRow): Promise<void> {
       :deleting-name="deleting"
       @delete="onDeleteRole"
     />
+    </div>
   </div>
 
   <RoleBuilderDialog v-model:open="builderOpen" @created="reload" />

@@ -32,6 +32,7 @@ const isIndia = computed(() => country.value === 'India')
       <Button
         v-if="canManageBilling"
         variant="ghost"
+        size="xs"
         icon="lucide-pencil"
         aria-label="Edit billing contact & tax"
         @click="$emit('edit')"

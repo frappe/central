@@ -84,7 +84,7 @@ const levels = computed(() => {
 
 <template>
   <div class="flex h-full flex-col">
-    <PageHeader title="Spending Limits" subtitle="Billing" />
+    <PageHeader title="Spending Limits" />
 
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">

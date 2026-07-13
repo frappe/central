@@ -39,9 +39,13 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 </script>
 
 <template>
+  <!-- The tray animates its width (see the page's .wallet-tray-* classes); the
+       inner column keeps its own fixed width so content is revealed by the
+       clipping shell instead of reflowing while the width changes. -->
   <aside
-    class="flex w-full shrink-0 flex-col overflow-hidden border-outline-gray-1 bg-surface-elevation-1 sm:w-[30rem] sm:border-l"
+    class="w-full shrink-0 overflow-hidden border-outline-gray-1 bg-surface-elevation-1 sm:w-[30rem] sm:border-l"
   >
+    <div class="flex h-full w-full flex-col sm:w-[30rem]">
     <header class="flex items-start justify-between gap-3 border-b border-outline-gray-1 px-5 py-4">
       <div>
         <h2 class="text-base font-medium text-ink-gray-9">Wallet history</h2>
@@ -114,6 +118,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
       </Button>
     </footer>
 
-    <TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+      <TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
+    </div>
   </aside>
 </template>

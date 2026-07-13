@@ -84,11 +84,7 @@ function exhausted(row: ServiceRow): boolean {
     title-info="Team-level services billed by usage (AI tokens, email, PDF, storage) — no server required."
   >
     <template v-if="canManageBilling && plans.length" #action>
-      <Button label="Add service" @click="dialogOpen = true">
-        <template #prefix>
-          <span class="lucide-plus size-4" aria-hidden="true" />
-        </template>
-      </Button>
+      <Button size="xs" label="Add service" icon-left="lucide-plus" @click="dialogOpen = true" />
     </template>
 
     <div v-if="loading" class="space-y-3 py-1">

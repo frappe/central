@@ -105,17 +105,18 @@ async function submitAlert(): Promise<void> {
         <template v-if="daysRemaining != null"> · {{ daysRemaining }} days left</template>
       </p>
 
-      <Button
-        v-if="canManageBilling"
-        variant="ghost"
-        size="sm"
-        class="mt-auto -ml-2 self-start"
-        :class="alertTint"
-        :label="alertLabel"
-        @click="openDialog"
-      >
-        <template #prefix><span class="lucide-bell size-4" aria-hidden="true" /></template>
-      </Button>
+      <div v-if="canManageBilling" class="mt-auto pt-4">
+        <Button
+          variant="ghost"
+          size="sm"
+          class="-ml-2"
+          :class="alertTint"
+          :label="alertLabel"
+          @click="openDialog"
+        >
+          <template #prefix><span class="lucide-bell size-4" aria-hidden="true" /></template>
+        </Button>
+      </div>
     </template>
 
     <Dialog v-model:open="dialogOpen" title="Set a budget alert">
