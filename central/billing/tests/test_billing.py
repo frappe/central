@@ -271,7 +271,7 @@ class TestCancelTerminatedPatch(BillingTestBase):
 	"""v26 backfill: close the open segment of VMs terminated before the runtime fix."""
 
 	def test_patch_cancels_open_segment_on_terminated_asset(self):
-		from central.billing.patches.v26_cancel_terminated_subscriptions.cancel_terminated_subscriptions import (
+		from central.patches.v0_0.cancel_terminated_subscriptions import (
 			cancel_terminated_subscriptions,
 		)
 
