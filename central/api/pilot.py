@@ -73,12 +73,13 @@ def enroll(bootstrap_token: str) -> dict:
 
 	grant = verify_bootstrap_token(bootstrap_token)
 
-	# Single-use: burn the token's jti before minting so a replay (e.g. the token leaking
-	# from VM metadata) can't re-enrol and rotate a live pilot's credential out from under it.
-	consumed_key = f"pilot:enroll:consumed:{grant['jti']}"
-	if frappe.cache.get_value(consumed_key):
+	# Single-use: atomically claim the token's jti before minting, so a replay (the token
+	# leaking from VM metadata) — or two concurrent enrolments racing — can't both succeed
+	# and rotate a live pilot's credential out from under it. SETNX is atomic; a check-then-set
+	# would leave a window where both callers pass. Keyed via make_key so it stays site-scoped.
+	consumed_key = frappe.cache.make_key(f"pilot:enroll:consumed:{grant['jti']}")
+	if not frappe.cache.set(consumed_key, 1, nx=True, ex=BOOTSTRAP_TTL):
 		frappe.throw(_("This enrollment token has already been used."), frappe.AuthenticationError)
-	frappe.cache.set_value(consumed_key, 1, expires_in_sec=BOOTSTRAP_TTL)
 
 	# The pilot_credential_id is this bench's audience id: every downward token Central mints
 	# for it carries `aud = pcid`, and the bench verifies against it. issue_for preserves any
