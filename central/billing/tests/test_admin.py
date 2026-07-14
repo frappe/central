@@ -90,10 +90,14 @@ class TestAggregates(AdminTestBase):
 class TestPanels(AdminTestBase):
 	def test_payment_analytics_success_rate_and_reasons(self):
 		inv = self._invoice(TEAM_A, 100, status="Open", paid=0)
-		for status, code in [("Captured", None), ("Captured", None), ("Failed", "card_declined")]:
+		# retry_number is part of the attempt's gateway key, so each attempt on one
+		# invoice carries its own — as the charge path does.
+		for retry, (status, code) in enumerate(
+			[("Captured", None), ("Captured", None), ("Failed", "card_declined")]
+		):
 			frappe.get_doc(
 				{"doctype": "Payment Attempt", "team": TEAM_A, "invoice": inv, "gateway": None,
-				 "amount": 100, "status": status, "failure_code": code,
+				 "amount": 100, "status": status, "failure_code": code, "retry_number": retry,
 				 "initiated_at": "2099-01-10 00:00:00"}
 			).insert(ignore_permissions=True)
 		out = admin.get_payment_analytics("2099-01-01", "2099-01-31")

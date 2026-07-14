@@ -133,10 +133,12 @@ class TestPaidNeverExceedsCaptured(InvariantTestBase):
 			"period_start": "2098-03-01", "period_end": "2098-03-31",
 			"subtotal": total, "total": total, "amount_paid": amount_paid,
 		}).insert(ignore_permissions=True)
-		for amount, status in attempts:
+		# retry_number is part of the attempt's gateway key, so each attempt on one
+		# invoice carries its own — as the charge path does.
+		for retry, (amount, status) in enumerate(attempts):
 			frappe.get_doc({
 				"doctype": "Payment Attempt", "invoice": inv.name, "team": TEAM,
-				"amount": amount, "currency": "INR", "status": status,
+				"amount": amount, "currency": "INR", "status": status, "retry_number": retry,
 			}).insert(ignore_permissions=True)
 		return inv.name
 
