@@ -10,7 +10,7 @@ fully linked.
 
 import frappe
 
-from central.billing.patches.v03_team_link_to_central_team.migrate_team_to_central_team import (
+from central.patches.v0_0.migrate_team_to_central_team import (
 	TEAM_DOCTYPES,
 )
 

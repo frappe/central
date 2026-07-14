@@ -24,7 +24,7 @@ Self-guarding + idempotent:
 import frappe
 from pypika import Table
 
-from central.billing.patches.v01_rates_to_standalone.snapshot_legacy_rate_children import (
+from central.patches.v0_0.snapshot_legacy_rate_children import (
 	raw_table_exists,
 	scratch_table,
 )
