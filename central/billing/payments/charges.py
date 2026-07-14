@@ -192,6 +192,20 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 	return {"charged": result.success, "attempt": attempt.name, "status": attempt.status}
 
 
+def resume_attempt(attempt: str) -> dict:
+	"""Finish a claimed charge we never got an answer to (used by reconciliation).
+
+	Re-sends the same request with the same key. If the gateway already took the
+	money, it replays that first result and no second charge happens; if the request
+	never reached it, it charges now — which is what the invoice was waiting for.
+	Either way the attempt ends up terminal instead of stuck.
+	"""
+	att = frappe.get_doc("Payment Attempt", attempt)
+	if att.status != "Initiated" or att.gateway_transaction_id or not att.payment_method:
+		return {"charged": False, "reason": "not_resumable", "attempt": attempt}
+	return _charge_claimed_attempt(attempt)
+
+
 def _persist():
 	"""Commit the gateway's answer — it must outlive whatever the caller does next.
 	Skipped under tests, where writes stay inside the test transaction."""
