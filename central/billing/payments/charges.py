@@ -2,20 +2,28 @@
 # For license information, please see license.txt
 """Charge an open invoice and settle it on the webhook (issue #10).
 
-The money loop: an `Open` invoice with an amount due gets a `Payment Attempt`
-(idempotency_key = the attempt's name), is charged through the adapter, and is
-marked `Paid` **only** when the gateway webhook confirms it — never on the
-synchronous charge response. Each retry is a new attempt; concurrent charges of
-one invoice produce at most one in-flight attempt, so only one reaches
-`captured`.
+The money loop: an `Open` invoice with an amount due gets a `Payment Attempt`, is
+charged through the adapter, and is marked `Paid` **only** when the gateway webhook
+confirms it — never on the synchronous charge response. Each retry is a new attempt;
+concurrent charges of one invoice produce at most one in-flight attempt, so only one
+reaches `captured`.
+
+The attempt is saved *and committed* before the gateway is called (ADR 0017). A
+crash mid-charge therefore leaves the attempt sitting at `Initiated` — a charge
+whose result we don't know yet, which reconciliation can go and ask the gateway
+about. It can never leave a charge with no record of it at all.
 """
 
 import frappe
 
+from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
 
 # An attempt occupying the invoice — a second charge must not start beside it.
 _IN_FLIGHT = ("Initiated", "Authorised", "Captured")
+
+# The unique idempotency key rejected the insert: this charge is already claimed.
+_ALREADY_CLAIMED = (frappe.UniqueValidationError, frappe.DuplicateEntryError)
 
 # Gateway event types the Payment Attempt listens to. An attempt's status is
 # advanced ONLY by the respective callback for its transaction:
@@ -48,10 +56,32 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 	"""Charge an unsettled (Open or Overdue) invoice. Creates at most one in-flight
 	Payment Attempt.
 
-	The invoice row is locked FOR UPDATE for the whole attempt, so concurrent
-	callers serialise: the first creates and charges an attempt; the rest see it
-	in flight and return without starting a second charge. The invoice is never
-	marked Paid here — that waits for the webhook.
+	Two steps, with the gateway call sitting between them:
+
+	  1. claim  — lock the invoice, check nothing is already in flight, save the
+	              Payment Attempt and commit it. We now have a durable record that
+	              we are about to charge this card.
+	  2. charge — call the gateway with the attempt's key, then write down what came
+	              back.
+
+	Splitting it this way is what makes a crash survivable: the money can only move
+	after step 1 is on disk, so there is always a record to reconcile against. The
+	invoice is never marked Paid here — that waits for the webhook.
+	"""
+	claim = _claim_attempt(invoice, payment_method, gateway)
+	if not claim.get("claimed"):
+		return claim
+	return _charge_claimed_attempt(claim["attempt"])
+
+
+def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None) -> dict:
+	"""Step 1: write down that we are about to charge, and commit it.
+
+	The invoice row is locked FOR UPDATE, so concurrent callers serialise: the first
+	claims an attempt, the rest see it in flight and return. The unique idempotency
+	key is the backstop for the case the lock can't cover — a worker that crashed
+	after charging, leaving no row to see — where a duplicate key means someone else
+	already owns this charge.
 	"""
 	invoice_tbl = frappe.qb.DocType("Invoice")
 	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
@@ -73,7 +103,6 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		return {"charged": False, "reason": "attempt_in_flight", "attempt": in_flight[0]}
 
 	method_name, gateway_name = _resolve_method(inv, payment_method, gateway)
-	method = frappe.get_doc("Payment Method", method_name)
 	adapter = _adapter_for(gateway_name)
 
 	# A debit the gateway can't pull silently (Razorpay > ₹15,000 — an RBI off-session
@@ -87,26 +116,58 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		collection_mode.trip(inv.team, "invoice_over_threshold")
 		return {"charged": False, "reason": "action_required", "invoice": invoice}
 
-	attempt = frappe.get_doc(
-		{
-			"doctype": "Payment Attempt",
-			"invoice": invoice,
-			"team": inv.team,
-			"gateway": gateway_name,
-			"payment_method": method_name,
-			"amount": inv.expected_collection,
-			"currency": inv.currency,
-			"status": "Initiated",
-			"initiated_at": frappe.utils.now_datetime(),
-			"retry_number": frappe.db.count("Payment Attempt", {"invoice": invoice}),
-		}
-	).insert(ignore_permissions=True)
+	retry_number = frappe.db.count("Payment Attempt", {"invoice": invoice})
+	save_point = "claim_payment_attempt"
+	frappe.db.savepoint(save_point)
+	try:
+		attempt = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": inv.team,
+				"gateway": gateway_name,
+				"payment_method": method_name,
+				"amount": inv.expected_collection,
+				"currency": inv.currency,
+				"status": "Initiated",
+				"initiated_at": frappe.utils.now_datetime(),
+				"retry_number": retry_number,
+			}
+		).insert(ignore_permissions=True)
+	except _ALREADY_CLAIMED:
+		# Someone else already claimed this exact charge (same invoice, same retry
+		# number, so the same key). They own it; we don't start a second one. Undo
+		# only the failed insert — whatever the caller did before this still stands.
+		frappe.db.rollback(save_point=save_point)
+		owner = frappe.db.get_value(
+			"Payment Attempt", {"idempotency_key": idempotency_key(invoice, retry_number)}, "name"
+		)
+		return {"charged": False, "reason": "attempt_in_flight", "attempt": owner}
+
+	# The record of intent must survive a crash during the charge, so it goes to disk
+	# now, before any money moves. (Skipped under tests, where the row stays visible
+	# inside the test transaction.)
+	if not frappe.in_test:
+		frappe.db.commit()
+	return {"claimed": True, "attempt": attempt.name}
+
+
+def _charge_claimed_attempt(attempt_name: str) -> dict:
+	"""Step 2: call the gateway for a claimed attempt and record the outcome.
+
+	Anything that goes wrong here — a timeout, an unmapped adapter error, the worker
+	being killed — leaves the attempt at `Initiated`, which reconciliation reads as
+	"we charged and don't know the result" and resolves against the gateway.
+	"""
+	attempt = frappe.get_doc("Payment Attempt", attempt_name)
+	method = frappe.get_doc("Payment Method", attempt.payment_method)
+	adapter = _adapter_for(attempt.gateway)
 
 	charge_input = frappe._dict(
-		amount=frappe.utils.flt(inv.expected_collection),
-		currency=inv.currency,
+		amount=frappe.utils.flt(attempt.amount),
+		currency=attempt.currency,
 		customer_id=method.gateway_customer_id,
-		name=invoice,
+		name=attempt.invoice,
 	)
 	try:
 		result = adapter.charge(charge_input, method, attempt.idempotency_key)
@@ -114,6 +175,7 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		# Transient: leave the attempt initiated so a retry reuses the same key.
 		attempt.failure_reason = str(e)[:140]
 		attempt.save(ignore_permissions=True)
+		_persist()
 		return {"charged": False, "reason": "timeout", "attempt": attempt.name}
 
 	attempt.gateway_transaction_id = result.gateway_transaction_id
@@ -125,8 +187,16 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 					   result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
 	attempt.save(ignore_permissions=True)
+	_persist()
 
 	return {"charged": result.success, "attempt": attempt.name, "status": attempt.status}
+
+
+def _persist():
+	"""Commit the gateway's answer — it must outlive whatever the caller does next.
+	Skipped under tests, where writes stay inside the test transaction."""
+	if not frappe.in_test:
+		frappe.db.commit()
 
 
 # --- on-session manual checkout (collection_mode = manual_checkout) ----------
