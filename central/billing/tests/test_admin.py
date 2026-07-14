@@ -6,7 +6,12 @@ import frappe
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api import admin
-from central.billing.tests.utils import ensure_team, make_plan, seed_running_resource
+from central.billing.tests.utils import (
+	ensure_atlas_instance,
+	ensure_team,
+	make_plan,
+	seed_running_resource,
+)
 
 PLAN = "bundle-admin-test"
 TEAM_A = "team-admin-a"
@@ -16,6 +21,7 @@ TEAM_B = "team-admin-b"
 class AdminTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM_A)
+		ensure_atlas_instance("ap-south-1")
 		ensure_team(TEAM_B)
 		make_plan(PLAN)
 		self._purge()

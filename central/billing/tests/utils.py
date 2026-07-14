@@ -84,17 +84,14 @@ DEFAULT_INCLUDES = [
 
 
 def ensure_atlas_instance(region):
-	"""Catalog Rate.cluster is a Link to Atlas Instance, so a per-region rate needs
-	that instance to exist. Atlas Instance is autonamed by region, and its `region`
-	is a required Link → Region, so the Region must exist first."""
-	if not frappe.db.exists("Region", region):
-		frappe.get_doc({"doctype": "Region", "region": region}).insert(ignore_permissions=True)
-	if not frappe.db.exists("Atlas Instance", region):
-		frappe.get_doc({
-			"doctype": "Atlas Instance", "region": region,
-			"base_url": f"https://{region}.atlas.test", "api_key": "test", "api_secret": "test",
-		}).insert(ignore_permissions=True)
-	return region
+	"""The cluster a billing test bills against.
+
+	Both Asset.cluster and Catalog Rate.cluster are required Links to Atlas Instance,
+	so any test that creates a subscription or a per-region rate needs the instance
+	(and its Region) to exist first."""
+	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
+
+	return _ensure_atlas_instance(region)
 
 
 def make_plan(name, rates=None, includes=None, **kwargs):

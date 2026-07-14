@@ -14,7 +14,7 @@ from central.billing.payments import charges, webhooks
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan
 
 TEAM = "team-charge"
 CLUSTER = "ap-south-1"
@@ -64,6 +64,7 @@ def stub_adapter(success=True, txn_id="pi_x"):
 class ChargeTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._purge()
@@ -106,15 +107,18 @@ class ChargeTestBase(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True).name
 
-	def _open_invoice(self, total=1000):
+	def _open_invoice(self, total=1000, month=6):
+		# A team gets one live invoice per period, so a test that wants several bills
+		# has to spread them across months.
+		last_day = 30 if month in (4, 6, 9, 11) else 31
 		return frappe.get_doc(
 			{
 				"doctype": "Invoice",
 				"team": TEAM,
 				"subscription": self.sub,
 				"status": "Open",
-				"period_start": "2026-06-01",
-				"period_end": "2026-06-30",
+				"period_start": f"2026-{month:02d}-01",
+				"period_end": f"2026-{month:02d}-{last_day}",
 				"currency": "INR",
 				"subtotal": total,
 				"total": total,
@@ -405,9 +409,9 @@ class TestDeclineDetail(ChargeTestBase):
 
 
 class TestFailedPaymentsReport(ChargeTestBase):
-	def _failed(self, decline_code, reason, amount=1000):
+	def _failed(self, decline_code, reason, amount=1000, month=6):
 		return frappe.get_doc({
-			"doctype": "Payment Attempt", "invoice": self._open_invoice(amount), "team": TEAM,
+			"doctype": "Payment Attempt", "invoice": self._open_invoice(amount, month), "team": TEAM,
 			"gateway": GATEWAY, "amount": amount, "currency": "INR", "status": "Failed",
 			"failure_code": "card_declined", "decline_code": decline_code,
 			"failure_reason": reason, "initiated_at": frappe.utils.now_datetime(),
@@ -416,9 +420,9 @@ class TestFailedPaymentsReport(ChargeTestBase):
 	def test_lists_failures_with_reason_and_summary(self):
 		from central.billing.report.failed_payments import failed_payments
 
-		a1 = self._failed("insufficient_funds", "no funds")
-		self._failed("insufficient_funds", "no funds")
-		self._failed("lost_card", "reported lost")
+		a1 = self._failed("insufficient_funds", "no funds", month=6)
+		self._failed("insufficient_funds", "no funds", month=7)
+		self._failed("lost_card", "reported lost", month=8)
 		# A second failed attempt (a retry) on the SAME invoice as a1 — it must collapse
 		# into one row and NOT double-count the amount not collected.
 		inv1 = frappe.db.get_value("Payment Attempt", a1, "invoice")
@@ -430,7 +434,7 @@ class TestFailedPaymentsReport(ChargeTestBase):
 		}).insert(ignore_permissions=True)
 		# A captured attempt must never appear.
 		frappe.get_doc({
-			"doctype": "Payment Attempt", "invoice": self._open_invoice(1000), "team": TEAM,
+			"doctype": "Payment Attempt", "invoice": self._open_invoice(1000, month=9), "team": TEAM,
 			"gateway": GATEWAY, "amount": 1000, "currency": "INR", "status": "Captured",
 			"initiated_at": frappe.utils.now_datetime(),
 		}).insert(ignore_permissions=True)

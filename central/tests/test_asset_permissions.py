@@ -2,6 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_region
 
 
 class TestAssetPermissions(IntegrationTestCase):
@@ -27,6 +28,7 @@ class TestAssetPermissions(IntegrationTestCase):
 		).insert()
 
 	def _cluster(self, region):
+		ensure_region(region)
 		if not frappe.db.exists("Atlas Instance", region):
 			frappe.get_doc(
 				{
