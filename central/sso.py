@@ -1,108 +1,85 @@
 from __future__ import annotations
 
-import json
 import time
 
 import frappe
 import jwt
 
-from central.iam import CAPABILITY_VERSION, resolve_user_grants
+from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 
-# The bench admin backend verifies these assertions (HS256, audience=client_id,
-# issuer=central_url, requiring exp/aud/iss/sub). Keep the mint in lockstep.
-APP_NAME = "local-bench"  # OAuth Client we look up / create
-ASSERTION_TTL = 60  # seconds — short-lived, stateless
+# Central signs every downward token — the bench-login SID and the first-boot enrollment
+# token — with its single RSA key. Benches verify offline against the published JWKS, so a
+# compromised bench (holding only the public key) can forge nothing. `aud` scopes a token to
+# one deployment (its VM resource_id), so a SID minted for bench A is rejected by bench B.
+
+BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
+BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
+ENROLL_SCOPE = "enroll"
 
 
-def _central_url() -> str:
+def central_url() -> str:
 	return frappe.conf.get("central_url") or frappe.utils.get_url()
 
 
-def _insecure_hs256_allowed() -> bool:
-	"""Explicit opt-in dev switch. Default (unset) is off, so the shared-secret path
-	can never ship to prod by accident — a dev site sets `sso_allow_insecure_hs256`."""
-	return bool(frappe.conf.get("sso_allow_insecure_hs256"))
+def jwks_url() -> str:
+	"""Where a bench fetches Central's public key(s) to verify minted tokens."""
+	return f"{central_url()}/api/method/central.api.jwks.get_jwks"
 
 
-def _bench_sso_url() -> str:
-	"""The bench's /sso endpoint. Until the Asset registry lands (#28) this is the
-	dev target; get_bench_link accepts an explicit gateway_url to override it."""
-	configured = frappe.conf.get("bench_sso_redirect")
-	if configured:
-		return configured
-	if not _insecure_hs256_allowed():
-		frappe.throw(
-			"No bench gateway configured — pass gateway_url or set bench_sso_redirect.",
-			frappe.ValidationError,
+def bench_gateway() -> str:
+	"""The dev bench's gateway base, used when opening by explicit gateway (no Asset). The
+	SID rides `/?sid=`, which the bench SPA consumes and exchanges at POST /api/login."""
+	return (frappe.conf.get("bench_sso_redirect") or "http://localhost:3030").rstrip("/")
+
+
+def mint_bench_login(audience: str) -> str:
+	"""A short-lived admin SID that opens a bench. The bench verifies it against the JWKS
+	and checks `aud` equals its own audience id."""
+	return _mint(audience, {"sub": "admin", "scope": "bench"}, BENCH_LOGIN_TTL)
+
+
+def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
+	"""A single-use enrollment token seeded into a VM at create time. The pilot presents it
+	once to `central.api.pilot.enroll` to fetch its long-lived credential.
+
+	`aud` is the `pilot_credential_id` — the per-deployment audience id. Central controls it
+	up front (the VM's resource_id isn't known until Atlas provisions), so it doubles as the
+	audience every downward token to this bench will carry."""
+	return _mint(pilot_credential_id, {"scope": ENROLL_SCOPE, "team": team}, BOOTSTRAP_TTL)
+
+
+def verify_bootstrap_token(token: str) -> dict:
+	"""Validate an enrollment token with Central's own public key and return the grant it
+	carries: ``{team, pcid, jti}`` (pcid = the `aud`). Raises on a bad/expired/wrong-scope
+	token."""
+	from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+	settings = CentralSSOSettings.instance()
+	if not settings.public_key:
+		frappe.throw("Central signing key is not initialised.", frappe.ValidationError)
+	try:
+		claims = jwt.decode(
+			token,
+			load_pem_public_key(settings.public_key.encode()),
+			algorithms=[ALGORITHM],
+			options={"verify_aud": False, "require": ["exp", "aud", "jti"]},
 		)
-	return "http://localhost:3030/sso"
+	except jwt.InvalidTokenError as exc:
+		frappe.throw(f"Invalid enrollment token: {exc}", frappe.AuthenticationError)
+	if claims.get("scope") != ENROLL_SCOPE:
+		frappe.throw("Not an enrollment token.", frappe.AuthenticationError)
+	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
-def _assert_insecure_signing_allowed() -> None:
-	"""Fail closed. Until RS256/JWKS (#21) lands, the mint uses a shared HS256 secret
-	— forgeable by any bench that holds it, so it is gated on the explicit
-	`sso_allow_insecure_hs256` flag and stays broken in prod until real signing
-	replaces it."""
-	if not _insecure_hs256_allowed():
-		frappe.throw(
-			"Refusing to mint a shared-secret (HS256) SSO assertion: set "
-			"sso_allow_insecure_hs256 in dev, or land RS256 signing (#21) for prod.",
-			frappe.ValidationError,
-		)
-
-
-def _ensure_oauth_client():
-	"""The `local-bench` OAuth Client — the shared-secret trust anchor. Idempotent."""
-	name = frappe.db.get_value("OAuth Client", {"app_name": APP_NAME})
-	if name:
-		return frappe.get_doc("OAuth Client", name)
-	return frappe.get_doc(
-		{
-			"doctype": "OAuth Client",
-			"app_name": APP_NAME,
-			"default_redirect_uri": _bench_sso_url(),
-			"grant_type": "Authorization Code",
-			"response_type": "Code",
-			"scopes": "openid",
-			"skip_authorization": 1,
-		}
-	).insert(ignore_permissions=True)
-
-
-def _bench_caps(user: str, team: str) -> list[str]:
-	"""The user's bench-plane capabilities on a team — the only caps the bench enforces."""
-	bench_plane = set(frappe.get_all("Capability", filters={"plane": "bench"}, pluck="name"))
-	granted = {c for g in resolve_user_grants(user).get(team, []) for c in g.get("caps", [])}
-	return sorted(granted & bench_plane)
-
-
-def mint_bench_assertion(user: str, team: str) -> str:
-	_assert_insecure_signing_allowed()
-	client = _ensure_oauth_client()
+def _mint(audience: str, claims: dict, ttl: int) -> str:
+	private_pem, kid = CentralSSOSettings.instance().signing_key()
 	now = int(time.time())
 	payload = {
-		"sub": user,
-		"team": team,
-		"caps": _bench_caps(user, team),
-		"cap_version": CAPABILITY_VERSION,
-		"aud": client.client_id,
-		"iss": _central_url(),
+		"iss": central_url(),
+		"aud": audience,
 		"iat": now,
-		"exp": now + ASSERTION_TTL,
+		"exp": now + ttl,
+		"jti": frappe.generate_hash(length=16),
+		**claims,
 	}
-	return jwt.encode(payload, client.client_secret, algorithm="HS256")
-
-
-def print_local_bench_credentials() -> None:
-	"""Emit the bench's SSO trust config for admin/scripts/setup_sso.sh to capture."""
-	_assert_insecure_signing_allowed()
-	client = _ensure_oauth_client()
-	# CLI helper: persist the just-created OAuth Client so the external setup script
-	# can read its credentials from stdout in a separate connection.
-	frappe.db.commit()
-	cfg = {
-		"central_url": _central_url(),
-		"client_id": client.client_id,
-		"client_secret": client.client_secret,
-	}
-	print(f"SSO_CONFIG={json.dumps(cfg)}")
+	return jwt.encode(payload, private_pem, algorithm=ALGORITHM, headers={"kid": kid})

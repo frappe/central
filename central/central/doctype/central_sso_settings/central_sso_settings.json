@@ -1,0 +1,70 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-07-14 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "signing_section",
+  "kid",
+  "public_key",
+  "private_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "signing_section",
+   "fieldtype": "Section Break",
+   "label": "Signing Key"
+  },
+  {
+   "description": "Key id of the active RSA signing key, stamped into every minted token's header and published in the JWKS.",
+   "fieldname": "kid",
+   "fieldtype": "Data",
+   "label": "Key ID",
+   "read_only": 1
+  },
+  {
+   "description": "PEM public key benches verify Central-minted tokens against. Published (as a JWK) at the JWKS endpoint.",
+   "fieldname": "public_key",
+   "fieldtype": "Code",
+   "label": "Public Key (PEM)",
+   "read_only": 1
+  },
+  {
+   "description": "PEM private key Central signs with. Encrypted at rest; never leaves Central.",
+   "fieldname": "private_key",
+   "fieldtype": "Password",
+   "label": "Private Key (PEM)",
+   "no_copy": 1,
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-07-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Central SSO Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

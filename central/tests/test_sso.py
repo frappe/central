@@ -1,25 +1,23 @@
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
+from jwt.algorithms import RSAAlgorithm
 
-from central.api.sso import get_bench_link
-from central.sso import _central_url, _ensure_oauth_client
+from central.api.jwks import jwks_document
+from central.api.sso import DEV_AUDIENCE, get_bench_link
+from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM
+from central.sso import central_url
 from central.tests.test_iam import ensure_user
 
 
 class TestCentralSSO(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
-		# The shared-secret mint is dev-gated; enable the opt-in for these tests so
-		# they don't depend on the site's config (CI's test_site has it off).
-		self._orig_insecure = frappe.conf.get("sso_allow_insecure_hs256")
-		frappe.conf.sso_allow_insecure_hs256 = 1
 		self.owner = ensure_user("sso.owner@example.test")
 		self.developer = ensure_user("sso.developer@example.test")
 		self.viewer = ensure_user("sso.viewer@example.test")
 
 	def tearDown(self):
-		frappe.conf.sso_allow_insecure_hs256 = self._orig_insecure
 		frappe.set_user("Administrator")
 
 	def make_team(self, user: str, role: str):
@@ -35,64 +33,42 @@ class TestCentralSSO(IntegrationTestCase):
 			}
 		).insert()
 
-	def _verify_like_bench(self, token: str) -> dict:
-		"""Decode exactly as admin/backend/auth.py:verify_assertion does."""
-		client = _ensure_oauth_client()
+	def _verify_like_bench(self, token: str, audience: str) -> dict:
+		"""Verify exactly as a bench would: reconstruct the public key from Central's JWKS
+		and check the signature, audience, and issuer."""
+		public_key = RSAAlgorithm.from_jwk(jwks_document()["keys"][0])
 		return jwt.decode(
 			token,
-			client.client_secret,
-			algorithms=["HS256"],
-			audience=client.client_id,
-			issuer=_central_url(),
+			public_key,
+			algorithms=[ALGORITHM],
+			audience=audience,
+			issuer=central_url(),
 			options={"require": ["exp", "aud", "iss", "sub"]},
 		)
 
-	def test_mint_is_bench_verifiable_and_carries_only_bench_caps(self):
-		team = self.make_team(self.developer, "Developer")
-		frappe.set_user(self.developer)
+	def _open(self, user: str, **kwargs) -> dict:
+		frappe.set_user(user)
 		try:
-			link = get_bench_link(team=team.name, gateway_url="http://localhost:3030")
+			return get_bench_link(**kwargs)
 		finally:
 			frappe.set_user("Administrator")
 
-		self.assertTrue(link["url"].startswith("http://localhost:3030/sso?assertion="))
-		claims = self._verify_like_bench(link["url"].split("assertion=", 1)[1])
-
-		self.assertEqual(claims["sub"], self.developer)
-		self.assertEqual(claims["team"], team.name)
-		# The bench plane is deferred (v3), so the token carries no caps yet — but the
-		# mint still filters by plane, so central/atlas caps never leak to the bench.
-		# When site:* returns under the bench plane it will flow through unchanged.
-		self.assertEqual(claims["caps"], [])
-		self.assertNotIn("billing:view", claims["caps"])
-		self.assertNotIn("server:view", claims["caps"])
-		self.assertNotIn("server:create", claims["caps"])
-
-	def test_production_site_refuses_shared_secret_mint(self):
-		# Fail closed: without the explicit sso_allow_insecure_hs256 opt-in (i.e. a
-		# prod site) the shared-secret mint must refuse until RS256 (#21) replaces it.
+	def test_dev_gateway_mint_is_bench_verifiable(self):
 		team = self.make_team(self.developer, "Developer")
-		original = frappe.conf.get("sso_allow_insecure_hs256")
-		frappe.conf.sso_allow_insecure_hs256 = 0
-		frappe.set_user(self.developer)
-		try:
-			with self.assertRaises(frappe.ValidationError):
-				get_bench_link(team=team.name, gateway_url="http://localhost:3030")
-		finally:
-			frappe.conf.sso_allow_insecure_hs256 = original
-			frappe.set_user("Administrator")
+		link = self._open(self.developer, team=team.name, gateway_url="http://localhost:3030")
+
+		self.assertTrue(link["url"].startswith("http://localhost:3030/?sid="))
+		claims = self._verify_like_bench(link["url"].split("sid=", 1)[1], DEV_AUDIENCE)
+		self.assertEqual(claims["sub"], "admin")
+		self.assertEqual(claims["scope"], "bench")
+		self.assertEqual(claims["aud"], DEV_AUDIENCE)
 
 	def test_server_open_gates_the_handoff(self):
-		# server:open (the old vm:open) is the console gate, distinct from server:view
-		# which only lists servers. A Developer carries it and can open; a Viewer sees
-		# servers in the inventory but cannot open the console.
+		# server:open is the console gate, distinct from server:view (which only lists).
+		# A Developer carries it and can open; a Viewer sees servers but cannot open one.
 		dev_team = self.make_team(self.developer, "Developer")
-		frappe.set_user(self.developer)
-		try:
-			link = get_bench_link(team=dev_team.name, gateway_url="http://localhost:3030")
-			self.assertIn("/sso?assertion=", link["url"])
-		finally:
-			frappe.set_user("Administrator")
+		link = self._open(self.developer, team=dev_team.name, gateway_url="http://localhost:3030")
+		self.assertIn("/?sid=", link["url"])
 
 		view_team = self.make_team(self.viewer, "Viewer")
 		frappe.set_user(self.viewer)

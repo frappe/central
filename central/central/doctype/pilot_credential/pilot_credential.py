@@ -19,6 +19,7 @@ class PilotCredential(Document):
 		from frappe.types import DF
 
 		asset: DF.Link | None
+		audience_id: DF.Data | None
 		pilot_credential_id: DF.Data
 		expires_at: DF.Datetime | None
 		last_used_at: DF.Datetime | None
@@ -36,7 +37,8 @@ class PilotCredential(Document):
 		return hashlib.sha256(token.encode()).hexdigest()
 
 	@classmethod
-	def mint(cls, team: str, pilot_credential_id: str, asset: str | None = None, expires_at=None) -> str:
+	def mint(cls, team: str, pilot_credential_id: str, asset: str | None = None,
+		expires_at=None, audience_id: str | None = None) -> str:
 		"""Issue a pilot's credential and return the plaintext token once. Idempotent per
 		pilot_credential_id: re-minting an existing pilot rotates its token in place."""
 		name, pcid = cls._DOCTYPE_NAME, pilot_credential_id
@@ -46,8 +48,36 @@ class PilotCredential(Document):
 		doc.pilot_credential_id = pcid
 		doc.team = team
 		doc.asset = asset
+		doc.audience_id = audience_id
 		doc.expires_at = expires_at
 
+		return doc._issue_token()
+
+	@classmethod
+	def reserve(cls, team: str, pilot_credential_id: str, audience_id: str) -> None:
+		"""Create the credential row at provision time WITHOUT issuing a token. The token is
+		issued only at enrollment, so the durable secret is never injected during
+		provisioning. Reserving early lets the `vm.*` events bind the Asset link (which
+		billing reads) no matter when the pilot boots and enrols."""
+		name = cls._DOCTYPE_NAME
+		doc = frappe.get_doc(name, pilot_credential_id) if frappe.db.exists(name, pilot_credential_id) else frappe.new_doc(name)
+		doc.pilot_credential_id = pilot_credential_id
+		doc.team = team
+		doc.audience_id = audience_id
+		doc.status = "Active"
+		# No token_hash: until enrollment issues one, no bearer token can resolve this row.
+		doc.save(ignore_permissions=True)
+
+	@classmethod
+	def issue_for(cls, team: str, pilot_credential_id: str, audience_id: str) -> str:
+		"""Issue (or re-issue) the token for a pilot at enrollment and return the plaintext
+		once. Upserts identity fields but deliberately leaves `asset` untouched — the VM
+		events own that link, and enrollment may land after they do."""
+		name = cls._DOCTYPE_NAME
+		doc = frappe.get_doc(name, pilot_credential_id) if frappe.db.exists(name, pilot_credential_id) else frappe.new_doc(name)
+		doc.pilot_credential_id = pilot_credential_id
+		doc.team = team
+		doc.audience_id = audience_id
 		return doc._issue_token()
 
 	@classmethod
