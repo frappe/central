@@ -33,7 +33,15 @@ def resolve_provision_options(plan: str | None) -> dict:
 
 	if tiers:
 		models = frappe.get_all("LLM Model", filters={"tier": ["in", tiers], "is_published": 1}, pluck="name")
-		allowed_models = ",".join(sorted(models)) or None
+		# An empty allow-list can't be sent to Grove (blank means "all"), so a policy
+		# that resolves to zero models is a misconfiguration — refuse, never grant all.
+		if not models:
+			frappe.throw(
+				frappe._("Plan {0} grants tiers ({1}) with no published models. Fix the model catalogue.").format(
+					plan, ", ".join(tiers)
+				)
+			)
+		allowed_models = ",".join(sorted(models))
 
 	return {"allowed_models": allowed_models, "token_limit": _token_limit(plan)}
 

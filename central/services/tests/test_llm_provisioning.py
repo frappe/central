@@ -140,6 +140,7 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 		frappe.get_doc({"doctype": "LLM Model", "model_key": "m-premium", "tier": "Premium", "is_published": 1}).insert()
 
 		plan = frappe.get_all("Plan", pluck="name", limit=1)[0]
+		frappe.db.delete("LLM Plan Tier", {"parent": plan})
 		frappe.db.delete("LLM Plan Policy", {"plan": plan})
 		frappe.get_doc(
 			{"doctype": "LLM Plan Policy", "plan": plan, "allowed_tiers": [{"tier": "Fast"}]}
@@ -148,6 +149,17 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 		options = self.llm.resolve_provision_options(plan)
 		self.assertIn("m-fast", options["allowed_models"])
 		self.assertNotIn("m-premium", options["allowed_models"])
+
+	def test_resolve_options_denies_when_tier_has_no_models(self):
+		frappe.db.delete("LLM Model", {"tier": "Premium"})
+		plan = frappe.get_all("Plan", pluck="name", limit=1)[0]
+		frappe.db.delete("LLM Plan Tier", {"parent": plan})
+		frappe.db.delete("LLM Plan Policy", {"plan": plan})
+		frappe.get_doc({"doctype": "LLM Plan Policy", "plan": plan, "allowed_tiers": [{"tier": "Premium"}]}).insert()
+
+		# A configured-but-empty policy must refuse, never fall through to unrestricted.
+		with self.assertRaises(frappe.ValidationError):
+			self.llm.resolve_provision_options(plan)
 
 	def test_pull_usage_sums_and_reports(self):
 		usage = {"users": ["x"], "month": "2026-07", "x@svc": {"billable_tokens": 100}, "y@svc": {"billable_tokens": 50}}
