@@ -190,7 +190,7 @@ function onEdgeMove(event: MouseEvent): void {
 <style scoped>
 /* frappe-ui Sidebar's built-in bottom Collapse/Expand item — replaced by the
    edge strip above. (Selector tracks Sidebar.vue's footer container.) */
-.sb-wrap :deep(.mt-auto > button:last-child) {
+.sb-wrap :deep(.mt-auto > [data-slot='sidebar-item']:last-child) {
 	display: none;
 }
 
