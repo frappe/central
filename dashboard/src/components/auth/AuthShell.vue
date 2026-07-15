@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import frappeCloudLogo from '@/assets/frappe-cloud-logo.png'
+import frappeCloudLogo from '@/assets/fc-logo.svg'
 
 withDefaults(
 	defineProps<{
