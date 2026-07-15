@@ -185,10 +185,14 @@ scheduler_events = {
 		"central.billing.payments.emandate.run_emandate_cycle",
 		# Backfill Subscriptions for any Running Asset missing an active one.
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
+		# Services (LLM): refresh the model catalog from the Grove backend.
+		"central.services.llm.sync_models",
 	],
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
 		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
+		# Services (LLM): reconcile Grove's cumulative token usage into billing.
+		"central.services.llm.pull_usage",
 	],
 	"monthly": [
 		# Billing: on the 1st, bill the just-closed month end-to-end for every team —

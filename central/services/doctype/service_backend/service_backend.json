@@ -1,0 +1,93 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "hash",
+ "creation": "2026-07-15 21:08:25.874149",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "service",
+  "region",
+  "base_url",
+  "is_active",
+  "control_section",
+  "control_api_key",
+  "control_api_secret"
+ ],
+ "fields": [
+  {
+   "fieldname": "service",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Service",
+   "options": "Add-on Service",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Region"
+  },
+  {
+   "fieldname": "base_url",
+   "fieldtype": "Data",
+   "label": "Base URL",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active"
+  },
+  {
+   "fieldname": "control_section",
+   "fieldtype": "Section Break",
+   "label": "Control Credentials"
+  },
+  {
+   "fieldname": "control_api_key",
+   "fieldtype": "Data",
+   "label": "Control API Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "control_api_secret",
+   "fieldtype": "Password",
+   "label": "Control API Secret",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-15 21:08:25.874149",
+ "modified_by": "Administrator",
+ "module": "Services",
+ "name": "Service Backend",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
