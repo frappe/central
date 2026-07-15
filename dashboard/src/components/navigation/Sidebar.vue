@@ -1,20 +1,27 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, h } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 import { useSession } from '@/composables/useSession'
 import { useCapabilities } from '@/composables/useCapabilities'
 
-import { Sidebar } from 'frappe-ui'
-import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
+import { Avatar, Dropdown, Sidebar } from 'frappe-ui'
+import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
+import frappeCloudLogo from '@/assets/fc-logo.svg'
 
-const { teams, activeTeam, activeTeamLabel, setActiveTeam } = useSession()
+const { activeTeamLabel } = useSession()
 const { canViewServers, canViewBilling, isMember } = useCapabilities()
-const { logout } = useAuth()
-const { currentTheme, toggleTheme } = useTheme()
+const { currentUser, logout } = useAuth()
+const { currentTheme, setTheme } = useTheme()
 
-const createTeamOpen = ref(false)
+const changeTeamOpen = ref(false)
+
+const themeOptions = [
+	{ label: 'Light', icon: 'lucide-sun', value: 'light' },
+	{ label: 'Dark', icon: 'lucide-moon', value: 'dark' },
+	{ label: 'System', icon: 'lucide-monitor', value: 'system' },
+]
 
 // The map pages want the full viewport, so the sidebar defaults collapsed
 // there and expanded everywhere else. Only crossing that boundary re-applies
@@ -31,46 +38,68 @@ watch(
 	},
 )
 
-async function logoutAndRedirect() {
+const logoutAndRedirect = async () => {
 	await logout()
 	window.location.replace('/dashboard/login')
 }
 
+// No profile page exists yet — the item stays visible but inert until one does.
+const profileMenuItems = [
+	{ label: 'Profile', icon: 'lucide-user', disabled: true },
+	{ label: 'Sign out', icon: 'lucide-log-out', onClick: logoutAndRedirect },
+]
+
 // SidebarHeader renders `menuItems` as a dropdown (title + subtitle + chevron) —
 // the team switcher. The active team carries a check; the rest switch on click.
 const header = computed(() => ({
-	title: 'Central Console',
+	title: 'Frappe Cloud',
 	subtitle: activeTeamLabel.value,
+	logo: frappeCloudLogo,
 	menuItems: [
-		...teams.value.map((team) => ({
-			label: team.label,
-			icon: team.name === activeTeam.value ? 'lucide-check' : 'lucide-users',
-			onClick: () => setActiveTeam(team.name),
-		})),
 		{
-			label: 'Create team',
-			icon: 'lucide-plus',
+			label: 'Change team',
+			icon: 'lucide-repeat',
 			onClick: () => {
-				createTeamOpen.value = true
+				changeTeamOpen.value = true
 			},
 		},
 		{
-			label: 'Toggle Theme',
-			icon: currentTheme.value === 'dark' ? 'lucide-sun' : 'lucide-moon',
-			onClick: toggleTheme,
-		},
-		{
-			label: 'Log out',
-			icon: 'lucide-log-out',
-			onClick: logoutAndRedirect,
+			label: 'Theme',
+			icon: 'lucide-sun-moon',
+			submenu: themeOptions.map((theme) => ({
+				label: theme.label,
+				icon: theme.icon,
+				selected: currentTheme.value === theme.value,
+				onClick: () => setTheme(theme.value),
+				slots: {
+					suffix: ({ selected }: { selected: boolean }) =>
+						selected
+							? h('span', { class: 'lucide-check size-4 text-ink-gray-6' })
+							: null,
+				},
+			})),
 		},
 	],
 }))
 
 const sections = computed(() => [
 	{
-		label: 'Compute',
-		collapsible: true,
+		items: [
+			{
+				label: 'Search',
+				icon: 'lucide-search',
+				// condition: () => isMember.value,
+			},
+
+			{
+				label: 'Notifications',
+				icon: 'lucide-bell',
+				to: '/notifications',
+				condition: () => isMember.value,
+			},
+		],
+	},
+	{
 		items: [
 			{
 				label: 'Servers',
@@ -78,11 +107,17 @@ const sections = computed(() => [
 				to: '/servers',
 				condition: () => canViewServers.value,
 			},
+
+			{
+				label: 'Teams',
+				icon: 'lucide-users',
+				to: '/team/members',
+				condition: () => isMember.value,
+			},
 		],
 	},
 	{
 		label: 'Billing',
-		collapsible: true,
 		items: [
 			{
 				label: 'Overview',
@@ -92,45 +127,15 @@ const sections = computed(() => [
 			},
 			{
 				label: 'Invoices',
-				icon: 'lucide-file-text',
+				icon: 'lucide-receipt',
 				to: '/billing/invoices',
 				condition: () => canViewBilling.value,
 			},
 			{
 				label: 'Limit Tiers',
-				icon: 'lucide-gauge',
+				icon: 'lucide-layers',
 				to: '/billing/limits',
 				condition: () => canViewBilling.value,
-			},
-		],
-	},
-	{
-		label: 'Team',
-		collapsible: true,
-		items: [
-			{
-				label: 'Notifications',
-				icon: 'lucide-bell',
-				to: '/notifications',
-				condition: () => isMember.value,
-			},
-			{
-				label: 'Members & roles',
-				icon: 'lucide-users',
-				to: '/team/members',
-				condition: () => isMember.value,
-			},
-			{
-				label: 'Invitations',
-				icon: 'lucide-mail',
-				to: '/team/invitations',
-				condition: () => isMember.value,
-			},
-			{
-				label: 'Settings',
-				icon: 'lucide-settings',
-				to: '/team/settings',
-				condition: () => isMember.value,
 			},
 		],
 	},
@@ -142,7 +147,7 @@ const sections = computed(() => [
 const edgeY = ref(60)
 let pendingEdgeY = 60
 let edgeRaf = 0
-function onEdgeMove(event: MouseEvent): void {
+const onEdgeMove = (event: MouseEvent): void => {
 	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
 	pendingEdgeY = event.clientY - rect.top
 	if (edgeRaf) return
@@ -152,6 +157,7 @@ function onEdgeMove(event: MouseEvent): void {
 	})
 }
 </script>
+
 <template>
 	<!-- Collapse control: the whole right edge is the trigger; the chevron
          rides the cursor. The built-in bottom item is hidden below. z-10 lifts
@@ -164,7 +170,44 @@ function onEdgeMove(event: MouseEvent): void {
 			:header="header"
 			:sections="sections"
 			class="h-full"
-		/>
+		>
+			<template #footer-items>
+				<Dropdown
+					:options="profileMenuItems"
+					side="top"
+					align="start"
+					match-trigger-width
+				>
+					<template #default="{ open }">
+						<button
+							class="flex h-10 w-full items-center rounded px-1.5 duration-300 ease-in-out"
+							:class="[
+								sidebarCollapsed ? 'justify-center' : '',
+								open ? 'bg-surface-elevation-2 shadow-sm' : 'hover:bg-surface-gray-3',
+							]"
+						>
+							<Avatar :label="currentUser ?? ''" size="md" />
+							<div
+								class="flex-1 truncate text-left text-sm text-ink-gray-8 duration-300 ease-in-out"
+								:class="
+									sidebarCollapsed
+										? 'ml-0 w-0 overflow-hidden opacity-0'
+										: 'ml-2 w-auto opacity-100'
+								"
+							>
+								{{ currentUser }}
+							</div>
+							<span
+								v-if="!sidebarCollapsed"
+								class="lucide-chevrons-up-down ml-2 size-4 shrink-0 text-ink-gray-5"
+							/>
+						</button>
+					</template>
+				</Dropdown>
+			</template>
+		</Sidebar>
+
+		<!-- sidebar collapse btn -->
 		<button
 			class="sb-edge absolute inset-y-0 -right-2 z-30 w-4 cursor-pointer"
 			:aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
@@ -184,13 +227,13 @@ function onEdgeMove(event: MouseEvent): void {
 		</button>
 	</div>
 
-	<CreateTeamDialog v-model:open="createTeamOpen" />
+	<ChangeTeamDialog v-model:open="changeTeamOpen" />
 </template>
 
 <style scoped>
 /* frappe-ui Sidebar's built-in bottom Collapse/Expand item — replaced by the
    edge strip above. (Selector tracks Sidebar.vue's footer container.) */
-.sb-wrap :deep(.mt-auto > button:last-child) {
+.sb-wrap :deep(.mt-auto > [data-slot="sidebar-item"]:last-child) {
 	display: none;
 }
 
