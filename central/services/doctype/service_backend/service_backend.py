@@ -25,9 +25,14 @@ class ServiceBackend(Document):
 	_DOCTYPE_NAME = "Service Backend"
 
 	@frappe.whitelist()
-	def enroll(self, bootstrap_secret: str) -> None:
-		"""Exchange a one-time bootstrap secret for this backend's own control
-		credential, minted by the executor. Stores it write-only and activates."""
+	def enroll(self) -> None:
+		"""Desk entry point. The one-time bootstrap secret is read from the raw request
+		and popped, so it is never recorded as a logged whitelist argument."""
+		self.apply_control_credential(pop_bootstrap_secret())
+
+	def apply_control_credential(self, bootstrap_secret: str) -> None:
+		"""Exchange a bootstrap secret for this backend's own control credential, minted
+		by the executor. Stores it write-only and activates."""
 		from central.services.drivers.base import get_driver
 
 		handler = frappe.db.get_value("Add-on Service", self.service, "handler_key")
@@ -38,3 +43,13 @@ class ServiceBackend(Document):
 		self.is_active = 1
 
 		self.save()
+
+
+def pop_bootstrap_secret() -> str:
+	"""Read and remove the bootstrap secret from the raw request so Frappe never
+	persists it as a whitelisted argument in the Request/Error log."""
+	secret = frappe.local.form_dict.pop("bootstrap_secret", None)
+	if not secret:
+		frappe.throw(frappe._("Bootstrap secret is required."))
+
+	return secret

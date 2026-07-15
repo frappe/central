@@ -185,3 +185,17 @@ class TestBackendEnroll(IntegrationTestCase):
 		backend = frappe.get_doc("Service Backend", result["backend"])
 		self.assertEqual(backend.control_api_key, "gr_key")
 		self.assertEqual(backend.get_password("control_api_secret"), "gr_sec")
+
+	def test_enroll_pops_secret_from_form_dict(self):
+		backend = frappe.get_doc(
+			{"doctype": "Service Backend", "service": "llm", "base_url": "http://grove.localhost:8001"}
+		).insert()
+
+		frappe.local.form_dict = frappe._dict(bootstrap_secret="one-time-secret")
+		minted = {"api_key": "gr_key", "api_secret": "gr_sec", "user": "central-control@frappe.cloud"}
+		with patch("central.services.drivers.grove.GroveDriver.enroll", return_value=minted):
+			backend.enroll()
+
+		self.assertNotIn("bootstrap_secret", frappe.local.form_dict)
+		self.assertEqual(backend.control_api_key, "gr_key")
+		self.assertTrue(backend.is_active)

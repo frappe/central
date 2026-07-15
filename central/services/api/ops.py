@@ -5,15 +5,14 @@ import frappe
 from central.services.permissions import assert_operator
 
 
-@frappe.whitelist()
 def register_backend(service: str, base_url: str, bootstrap_secret: str, region: str | None = None) -> dict:
-	"""Register (or re-enroll) an executor deployment for a service. Creates the
-	Service Backend if needed, then enrolls to mint and store its control credential.
-	Operator-only; the bootstrap secret is never persisted."""
+	"""Register (or re-enroll) an executor deployment for a service. CLI/ops helper —
+	deliberately NOT a web endpoint, so the bootstrap secret stays a plain argument and
+	is never logged. Operators use the Service Backend "Enroll" button in Desk instead."""
 	assert_operator()
 
 	backend = _get_or_create_backend(service, base_url, region)
-	backend.enroll(bootstrap_secret)
+	backend.apply_control_credential(bootstrap_secret)
 
 	return {"backend": backend.name, "service": service, "is_active": backend.is_active}
 
