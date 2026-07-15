@@ -17,46 +17,56 @@ import { openRazorpayCheckout, type GatewayOrder } from '@/lib/gateway'
 import { successToast, errorToast } from '@/lib/toast'
 
 interface MethodResult {
-  payment_method: string
-  status: string
+	payment_method: string
+	status: string
 }
 
-export function useAddPaymentMethod({ onDone }: { onDone?: (res?: MethodResult) => void } = {}) {
-  const { activeTeam } = useSession()
-  const setup = useCall<GatewayOrder, Record<string, unknown>>({
-    url: method(API.setupPaymentMethodOrder),
-    method: 'POST',
-    immediate: false,
-  })
-  const confirm = useCall<MethodResult, Record<string, unknown>>({
-    url: method(API.confirmPaymentMethodOrder),
-    method: 'POST',
-    immediate: false,
-  })
+export function useAddPaymentMethod({
+	onDone,
+}: {
+	onDone?: (res?: MethodResult) => void
+} = {}) {
+	const { activeTeam } = useSession()
+	const setup = useCall<GatewayOrder, Record<string, unknown>>({
+		url: method(API.setupPaymentMethodOrder),
+		method: 'POST',
+		immediate: false,
+	})
+	const confirm = useCall<MethodResult, Record<string, unknown>>({
+		url: method(API.confirmPaymentMethodOrder),
+		method: 'POST',
+		immediate: false,
+	})
 
-  async function run(methodType: string, contact?: string): Promise<MethodResult | undefined> {
-    try {
-      const params: Record<string, unknown> = { team: activeTeam.value, method_type: methodType }
-      // A Razorpay card mandate needs a customer contact; the dialog collects it
-      // inline when the billing profile has no phone.
-      if (contact) params.contact = contact
-      await setup.submit(params)
-      const order = setup.data
-      if (!order) throw new Error('Could not start the payment method setup.')
-      const handles = await openRazorpayCheckout(order, {
-        name: 'Central',
-        description: methodType === 'Card' ? 'Save card' : 'Set up UPI Autopay',
-      })
-      await confirm.submit({ payment_method: order.payment_method, ...handles })
-      const res = confirm.data ?? undefined
-      successToast(`${methodType} added.`)
-      onDone?.(res)
-      return res
-    } catch (e) {
-      if ((e as Error)?.message === 'cancelled') return
-      errorToast(e, `Could not add ${methodType}.`)
-    }
-  }
+	async function run(
+		methodType: string,
+		contact?: string,
+	): Promise<MethodResult | undefined> {
+		try {
+			const params: Record<string, unknown> = {
+				team: activeTeam.value,
+				method_type: methodType,
+			}
+			// A Razorpay card mandate needs a customer contact; the dialog collects it
+			// inline when the billing profile has no phone.
+			if (contact) params.contact = contact
+			await setup.submit(params)
+			const order = setup.data
+			if (!order) throw new Error('Could not start the payment method setup.')
+			const handles = await openRazorpayCheckout(order, {
+				name: 'Central',
+				description: methodType === 'Card' ? 'Save card' : 'Set up UPI Autopay',
+			})
+			await confirm.submit({ payment_method: order.payment_method, ...handles })
+			const res = confirm.data ?? undefined
+			successToast(`${methodType} added.`)
+			onDone?.(res)
+			return res
+		} catch (e) {
+			if ((e as Error)?.message === 'cancelled') return
+			errorToast(e, `Could not add ${methodType}.`)
+		}
+	}
 
-  return { run, loading: computed(() => setup.loading || confirm.loading) }
+	return { run, loading: computed(() => setup.loading || confirm.loading) }
 }

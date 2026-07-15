@@ -1,5 +1,4 @@
-
-export interface Capability{
+export interface Capability {
 	name: string
 	creation: string
 	modified: string
@@ -13,7 +12,7 @@ export interface Capability{
 	/**	Capability : Data	*/
 	capability: string
 	/**	Plane : Select	*/
-	plane: "central" | "atlas" | "bench"
+	plane: 'central' | 'atlas' | 'bench'
 	/**	Resource : Data	*/
 	resource: string
 	/**	Description : Small Text	*/

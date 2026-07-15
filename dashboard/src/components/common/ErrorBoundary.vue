@@ -11,33 +11,47 @@ const failed = ref(false)
 const route = useRoute()
 
 onErrorCaptured((error) => {
-  failed.value = true
-  console.error('[central] unhandled UI error:', error)
-  return false
+	failed.value = true
+	console.error('[central] unhandled UI error:', error)
+	return false
 })
 
-watch(() => route.fullPath, () => {
-  failed.value = false
-})
+watch(
+	() => route.fullPath,
+	() => {
+		failed.value = false
+	},
+)
 
 function reload(): void {
-  window.location.reload()
+	window.location.reload()
 }
 </script>
 
 <template>
-  <div
-    v-if="failed"
-    class="flex min-h-screen flex-col items-center justify-center px-6 py-12 text-center"
-  >
-    <div class="flex size-10 items-center justify-center rounded-lg bg-surface-red-1 text-ink-red-7">
-      <span class="lucide-triangle-alert size-5" aria-hidden="true" />
-    </div>
-    <p class="mt-4 text-base font-medium text-ink-gray-8">This page ran into a problem</p>
-    <p class="mt-1 max-w-sm text-p-sm text-ink-gray-5">
-      Reloading usually fixes it. If it keeps happening, check back in a few minutes.
-    </p>
-    <Button class="mt-5" variant="solid" label="Reload page" icon-left="lucide-refresh-cw" @click="reload" />
-  </div>
-  <slot v-else />
+	<div
+		v-if="failed"
+		class="flex min-h-screen flex-col items-center justify-center px-6 py-12 text-center"
+	>
+		<div
+			class="flex size-10 items-center justify-center rounded-lg bg-surface-red-1 text-ink-red-7"
+		>
+			<span class="lucide-triangle-alert size-5" aria-hidden="true" />
+		</div>
+		<p class="mt-4 text-base font-medium text-ink-gray-8">
+			This page ran into a problem
+		</p>
+		<p class="mt-1 max-w-sm text-p-sm text-ink-gray-5">
+			Reloading usually fixes it. If it keeps happening, check back in a few
+			minutes.
+		</p>
+		<Button
+			class="mt-5"
+			variant="solid"
+			label="Reload page"
+			icon-left="lucide-refresh-cw"
+			@click="reload"
+		/>
+	</div>
+	<slot v-else />
 </template>

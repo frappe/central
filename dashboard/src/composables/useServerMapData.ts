@@ -15,10 +15,10 @@ import type { AssetRow } from '@/composables/useServers'
 type RegistryResponse = { team: string; assets: AssetRow[] }
 
 const registry = useCall<RegistryResponse, { team: string }>({
-  url: method(API.registry),
-  params: teamParams,
-  refetch: true,
-  immediate: false,
+	url: method(API.registry),
+	params: teamParams,
+	refetch: true,
+	immediate: false,
 })
 
 whenTeamReady(() => registry.reload())
@@ -28,24 +28,28 @@ whenTeamReady(() => registry.reload())
 // simultaneous consumers still cause exactly one reload per event burst.
 let reloadTimer: number | undefined
 function reloadOnce(): void {
-  window.clearTimeout(reloadTimer)
-  reloadTimer = window.setTimeout(() => registry.reload(), 150)
+	window.clearTimeout(reloadTimer)
+	reloadTimer = window.setTimeout(() => registry.reload(), 150)
 }
 
 export function useServerMapData() {
-  // db_set(..., notify=True) writes (resize flag, termination) land live.
-  useFrappeListInvalidation('Asset', reloadOnce, { debounceMs: 0 })
+	// db_set(..., notify=True) writes (resize flag, termination) land live.
+	useFrappeListInvalidation('Asset', reloadOnce, { debounceMs: 0 })
 
-  return {
-    // Terminated servers are gone, not a state to render — excluded here so no
-    // consumer has to remember to.
-    assets: computed<AssetRow[]>(() =>
-      (registry.data?.assets ?? []).filter((asset) => asset.status !== 'Terminated'),
-    ),
-    loading: computed(() => registry.loading),
-    error: computed(() =>
-      registry.error ? getErrorMessage(registry.error, "Couldn't load servers.") : null,
-    ),
-    reload: () => registry.reload(),
-  }
+	return {
+		// Terminated servers are gone, not a state to render — excluded here so no
+		// consumer has to remember to.
+		assets: computed<AssetRow[]>(() =>
+			(registry.data?.assets ?? []).filter(
+				(asset) => asset.status !== 'Terminated',
+			),
+		),
+		loading: computed(() => registry.loading),
+		error: computed(() =>
+			registry.error
+				? getErrorMessage(registry.error, "Couldn't load servers.")
+				: null,
+		),
+		reload: () => registry.reload(),
+	}
 }

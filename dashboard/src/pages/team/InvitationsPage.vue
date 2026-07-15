@@ -14,11 +14,15 @@ const route = useRoute()
 const { canManageMembers } = useCapabilities()
 const { count } = useMyInvitations()
 
-const receivedLabel = computed(() => (count.value ? `Received (${count.value})` : 'Received'))
+const receivedLabel = computed(() =>
+	count.value ? `Received (${count.value})` : 'Received',
+)
 
 const tabs = computed(() => {
-  const received = { label: receivedLabel.value, icon: 'lucide-inbox' }
-  return canManageMembers.value ? [{ label: 'Sent', icon: 'lucide-send' }, received] : [received]
+	const received = { label: receivedLabel.value, icon: 'lucide-inbox' }
+	return canManageMembers.value
+		? [{ label: 'Sent', icon: 'lucide-send' }, received]
+		: [received]
 })
 
 // Managers default to Sent; everyone else (or an email deep-link) opens Received.
@@ -27,12 +31,12 @@ const tabIndex = ref(wantReceived && canManageMembers.value ? 1 : 0)
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <Tabs v-model="tabIndex" :tabs="tabs">
-      <template #tab-panel="{ tab }">
-        <SentInvitationsPanel v-if="tab.label === 'Sent'" />
-        <ReceivedInvitationsPanel v-else />
-      </template>
-    </Tabs>
-  </div>
+	<div class="flex h-full flex-col">
+		<Tabs v-model="tabIndex" :tabs="tabs">
+			<template #tab-panel="{ tab }">
+				<SentInvitationsPanel v-if="tab.label === 'Sent'" />
+				<ReceivedInvitationsPanel v-else />
+			</template>
+		</Tabs>
+	</div>
 </template>

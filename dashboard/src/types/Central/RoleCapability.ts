@@ -1,5 +1,4 @@
-
-export interface RoleCapability{
+export interface RoleCapability {
 	name: string
 	creation: string
 	modified: string

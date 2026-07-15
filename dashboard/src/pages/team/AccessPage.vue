@@ -9,27 +9,27 @@ import RolesPanel from '@/components/team/RolesPanel.vue'
 // The tab bar is the page's header; no separate title band above it.
 const tabIndex = ref(0)
 const tabs = [
-  { label: 'Members', icon: 'lucide-users' },
-  { label: 'Roles', icon: 'lucide-shield-check' },
+	{ label: 'Members', icon: 'lucide-users' },
+	{ label: 'Roles', icon: 'lucide-shield-check' },
 ]
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <Tabs v-model="tabIndex" :tabs="tabs">
-      <template #tab-panel="{ tab }">
-        <MembersPanel v-if="tab.label === 'Members'" />
-        <RolesPanel v-else />
-      </template>
-    </Tabs>
-  </div>
+	<div class="flex h-full flex-col">
+		<Tabs v-model="tabIndex" :tabs="tabs">
+			<template #tab-panel="{ tab }">
+				<MembersPanel v-if="tab.label === 'Members'" />
+				<RolesPanel v-else />
+			</template>
+		</Tabs>
+	</div>
 </template>
 
 <style scoped>
 /* frappe-ui's TabsContent doesn't grow; stretch the active panel so the list
    fills the page and its pagination footer pins to the bottom. */
-:deep([role='tabpanel'][data-state='active']) {
-  flex: 1;
-  min-height: 0;
+:deep([role="tabpanel"][data-state="active"]) {
+	flex: 1;
+	min-height: 0;
 }
 </style>

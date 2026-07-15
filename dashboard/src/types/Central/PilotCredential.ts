@@ -1,5 +1,4 @@
-
-export interface PilotCredential{
+export interface PilotCredential {
 	name: string
 	creation: string
 	modified: string
@@ -19,7 +18,7 @@ export interface PilotCredential{
 	/**	Token Hash : Data - Hash of the bearer token. The plaintext is returned once at mint and never stored.	*/
 	token_hash?: string
 	/**	Status : Select	*/
-	status?: "Active" | "Revoked"
+	status?: 'Active' | 'Revoked'
 	/**	Expires At : Datetime - Optional hard expiry. Empty means no expiry.	*/
 	expires_at?: string
 	/**	Last Used At : Datetime - Stamped on each successful bench to Central call.	*/

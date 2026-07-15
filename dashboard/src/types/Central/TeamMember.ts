@@ -1,5 +1,4 @@
-
-export interface TeamMember{
+export interface TeamMember {
 	name: string
 	creation: string
 	modified: string
@@ -15,5 +14,5 @@ export interface TeamMember{
 	/**	Role : Link - Team Role	*/
 	role: string
 	/**	Status : Select	*/
-	status: "Active" | "Invited" | "Suspended"
+	status: 'Active' | 'Invited' | 'Suspended'
 }

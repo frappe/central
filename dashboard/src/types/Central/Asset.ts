@@ -1,5 +1,4 @@
-
-export interface Asset{
+export interface Asset {
 	name: string
 	creation: string
 	modified: string
@@ -23,7 +22,15 @@ export interface Asset{
 	/**	Frappe Version : Data - Frappe version the VM was provisioned with — requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).	*/
 	frappe_version?: string
 	/**	Status : Select - Mirrors the Atlas-reported status verbatim (raw VM, or Site/Pilot front-door status for bench/site VMs).	*/
-	status?: "Pending" | "Provisioning" | "Deploying" | "Running" | "Paused" | "Stopped" | "Failed" | "Terminated"
+	status?:
+		| 'Pending'
+		| 'Provisioning'
+		| 'Deploying'
+		| 'Running'
+		| 'Paused'
+		| 'Stopped'
+		| 'Failed'
+		| 'Terminated'
 	/**	vCPUs : Int	*/
 	vcpus?: number
 	/**	Memory (MB) : Int	*/

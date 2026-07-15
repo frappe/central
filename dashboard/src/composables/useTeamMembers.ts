@@ -13,10 +13,10 @@ import type { MemberStatus, TeamMemberRow } from '@/types/api'
 // time; `busy` holds its user id so its row can show a spinner.
 
 const membersCall = useCall<TeamMemberRow[], { team: string }>({
-  url: method(API.listTeamMembers),
-  params: teamParams,
-  refetch: true,
-  immediate: false,
+	url: method(API.listTeamMembers),
+	params: teamParams,
+	refetch: true,
+	immediate: false,
 })
 
 whenTeamReady(() => membersCall.reload())
@@ -25,51 +25,66 @@ type RoleParams = { team: string; user: string; role: string }
 type StatusParams = { team: string; user: string; status: MemberStatus }
 type RemoveParams = { team: string; user: string }
 
-const setRoleCall = useCall<unknown, RoleParams>({ url: method(API.setTeamMemberRole), method: 'POST', immediate: false })
-const setStatusCall = useCall<unknown, StatusParams>({ url: method(API.setTeamMemberStatus), method: 'POST', immediate: false })
-const removeCall = useCall<unknown, RemoveParams>({ url: method(API.removeTeamMember), method: 'POST', immediate: false })
+const setRoleCall = useCall<unknown, RoleParams>({
+	url: method(API.setTeamMemberRole),
+	method: 'POST',
+	immediate: false,
+})
+const setStatusCall = useCall<unknown, StatusParams>({
+	url: method(API.setTeamMemberStatus),
+	method: 'POST',
+	immediate: false,
+})
+const removeCall = useCall<unknown, RemoveParams>({
+	url: method(API.removeTeamMember),
+	method: 'POST',
+	immediate: false,
+})
 
 const { busy, run } = useBusyRunner()
 
 export function useTeamMembers() {
-  function setRole(user: string, role: string) {
-    return run(
-      () => submitOrThrow(setRoleCall, { team: teamParams().team, user, role }),
-      `Updated ${user}'s role.`,
-      user,
-      () => membersCall.reload(),
-    )
-  }
+	function setRole(user: string, role: string) {
+		return run(
+			() => submitOrThrow(setRoleCall, { team: teamParams().team, user, role }),
+			`Updated ${user}'s role.`,
+			user,
+			() => membersCall.reload(),
+		)
+	}
 
-  function setStatus(user: string, status: MemberStatus) {
-    const verb = status === 'Suspended' ? 'Suspended' : 'Reactivated'
-    return run(
-      () => submitOrThrow(setStatusCall, { team: teamParams().team, user, status }),
-      `${verb} ${user}.`,
-      user,
-      () => membersCall.reload(),
-    )
-  }
+	function setStatus(user: string, status: MemberStatus) {
+		const verb = status === 'Suspended' ? 'Suspended' : 'Reactivated'
+		return run(
+			() =>
+				submitOrThrow(setStatusCall, { team: teamParams().team, user, status }),
+			`${verb} ${user}.`,
+			user,
+			() => membersCall.reload(),
+		)
+	}
 
-  function remove(user: string) {
-    return run(
-      () => submitOrThrow(removeCall, { team: teamParams().team, user }),
-      `Removed ${user} from the team.`,
-      user,
-      () => membersCall.reload(),
-    )
-  }
+	function remove(user: string) {
+		return run(
+			() => submitOrThrow(removeCall, { team: teamParams().team, user }),
+			`Removed ${user} from the team.`,
+			user,
+			() => membersCall.reload(),
+		)
+	}
 
-  return {
-    members: computed<TeamMemberRow[]>(() => membersCall.data ?? []),
-    loading: computed(() => membersCall.loading || !membersCall.isFinished),
-    error: computed(() =>
-      membersCall.error ? getErrorMessage(membersCall.error, "Couldn't load members.") : null,
-    ),
-    busy,
-    reload: () => membersCall.reload(),
-    setRole,
-    setStatus,
-    remove,
-  }
+	return {
+		members: computed<TeamMemberRow[]>(() => membersCall.data ?? []),
+		loading: computed(() => membersCall.loading || !membersCall.isFinished),
+		error: computed(() =>
+			membersCall.error
+				? getErrorMessage(membersCall.error, "Couldn't load members.")
+				: null,
+		),
+		busy,
+		reload: () => membersCall.reload(),
+		setRole,
+		setStatus,
+		remove,
+	}
 }

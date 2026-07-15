@@ -7,8 +7,8 @@ import { useTheme as useFrappeUITheme } from 'frappe-ui'
 // on every load. The first call (from main.ts) runs before frappe-ui reads the
 // stored value, so the default is in place before the initial paint.
 export function useTheme() {
-  if (!localStorage.getItem('theme')) {
-    localStorage.setItem('theme', 'light')
-  }
-  return useFrappeUITheme()
+	if (!localStorage.getItem('theme')) {
+		localStorage.setItem('theme', 'light')
+	}
+	return useFrappeUITheme()
 }

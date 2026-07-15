@@ -1,6 +1,6 @@
 import { RoleCapability } from './RoleCapability'
 
-export interface TeamRole{
+export interface TeamRole {
 	name: string
 	creation: string
 	modified: string

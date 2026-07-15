@@ -12,45 +12,51 @@ import { API, method } from '@/api/methods'
 import { openRazorpayCheckout, type GatewayOrder } from '@/lib/gateway'
 import { successToast, infoToast, errorToast } from '@/lib/toast'
 
-export function usePayInvoiceCheckout({ onDone }: { onDone?: (res: unknown) => void } = {}) {
-  const create = useCall<GatewayOrder, { invoice: string }>({
-    url: method(API.payInvoiceCheckout),
-    method: 'POST',
-    immediate: false,
-  })
-  const confirm = useCall<unknown, Record<string, unknown>>({
-    url: method(API.confirmInvoiceCheckout),
-    method: 'POST',
-    immediate: false,
-  })
+export function usePayInvoiceCheckout({
+	onDone,
+}: {
+	onDone?: (res: unknown) => void
+} = {}) {
+	const create = useCall<GatewayOrder, { invoice: string }>({
+		url: method(API.payInvoiceCheckout),
+		method: 'POST',
+		immediate: false,
+	})
+	const confirm = useCall<unknown, Record<string, unknown>>({
+		url: method(API.confirmInvoiceCheckout),
+		method: 'POST',
+		immediate: false,
+	})
 
-  async function run(invoice: string): Promise<unknown> {
-    try {
-      await create.submit({ invoice })
-      const order = create.data
-      if (!order || order.created === false) {
-        infoToast('No payment was started.')
-        return order
-      }
-      const handles = await openRazorpayCheckout(order, {
-        name: 'Central',
-        description: `Invoice ${invoice}`,
-      })
-      await confirm.submit({
-        attempt: order.attempt,
-        razorpay_order_id: handles.razorpay_order_id,
-        razorpay_payment_id: handles.razorpay_payment_id,
-        razorpay_signature: handles.razorpay_signature,
-      })
-      const res = confirm.data
-      successToast('Payment received — the invoice updates once the gateway confirms.')
-      onDone?.(res)
-      return res
-    } catch (e) {
-      if ((e as Error)?.message === 'cancelled') return
-      errorToast(e, 'Could not complete the payment.')
-    }
-  }
+	async function run(invoice: string): Promise<unknown> {
+		try {
+			await create.submit({ invoice })
+			const order = create.data
+			if (!order || order.created === false) {
+				infoToast('No payment was started.')
+				return order
+			}
+			const handles = await openRazorpayCheckout(order, {
+				name: 'Central',
+				description: `Invoice ${invoice}`,
+			})
+			await confirm.submit({
+				attempt: order.attempt,
+				razorpay_order_id: handles.razorpay_order_id,
+				razorpay_payment_id: handles.razorpay_payment_id,
+				razorpay_signature: handles.razorpay_signature,
+			})
+			const res = confirm.data
+			successToast(
+				'Payment received — the invoice updates once the gateway confirms.',
+			)
+			onDone?.(res)
+			return res
+		} catch (e) {
+			if ((e as Error)?.message === 'cancelled') return
+			errorToast(e, 'Could not complete the payment.')
+		}
+	}
 
-  return { run, loading: computed(() => create.loading || confirm.loading) }
+	return { run, loading: computed(() => create.loading || confirm.loading) }
 }

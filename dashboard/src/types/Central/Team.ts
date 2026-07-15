@@ -1,6 +1,6 @@
 import { TeamMember } from './TeamMember'
 
-export interface Team{
+export interface Team {
 	name: string
 	creation: string
 	modified: string
@@ -12,13 +12,13 @@ export interface Team{
 	parenttype?: string
 	idx?: number
 	/**	Naming Series : Select	*/
-	naming_series: "TEAM-.#####"
+	naming_series: 'TEAM-.#####'
 	/**	Team Name : Data	*/
 	team_name: string
 	/**	Owner User : Link - User	*/
 	owner_user: string
 	/**	Status : Select	*/
-	status: "Active" | "Suspended"
+	status: 'Active' | 'Suspended'
 	/**	Members : Table - Team Member	*/
 	members?: TeamMember[]
 }
