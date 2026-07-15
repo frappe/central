@@ -12,7 +12,7 @@
 	"dependencies": {
 		"@stripe/stripe-js": "^9.10.0",
 		"@tanstack/vue-table": "^8.21.3",
-		"frappe-ui": "github:frappe/frappe-ui#v1.0.0-beta.19",
+		"frappe-ui": "github:frappe/frappe-ui#v1.0.0-beta.24",
 		"reka-ui": "^2.10.1",
 		"vue": "^3.5.39",
 		"vue-router": "^4.6.4"

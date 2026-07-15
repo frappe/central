@@ -836,6 +836,13 @@
   resolved "https://registry.yarnpkg.com/@tiptap/extensions/-/extensions-3.27.1.tgz#cc0859ef6f6ad9333f0ab769e670a252904cd32b"
   integrity sha512-1Tdx9faw8k0/83V6X+xCDVhV8yElGt95JxeW3YMkKQJI56QdlPz0xOdJPlMiSGJKinPyVier+x9LJD/YZUZIaw==
 
+"@tiptap/markdown@^3.26.0":
+  version "3.27.4"
+  resolved "https://registry.yarnpkg.com/@tiptap/markdown/-/markdown-3.27.4.tgz#35ecacc4aa746eef888ff13e8c6dfe0f04521295"
+  integrity sha512-0TqNpVQ5W3FGpK/zej8ZPSp+xepqH3ihmH3Fv+nsCOf9tQazKJadpNXwFfhUj6PDIpTJmjxbQhTUAlxSNPEkRA==
+  dependencies:
+    marked "^17.0.1"
+
 "@tiptap/pm@^3.26.0", "@tiptap/pm@^3.27.1":
   version "3.27.1"
   resolved "https://registry.yarnpkg.com/@tiptap/pm/-/pm-3.27.1.tgz#9177f3ddfc58877d1790530a224abbeabdf10ccd"
@@ -1539,9 +1546,9 @@ fraction.js@^5.3.4:
   resolved "https://registry.yarnpkg.com/fraction.js/-/fraction.js-5.3.4.tgz#8c0fcc6a9908262df4ed197427bdeef563e0699a"
   integrity sha512-1X1NTtiJphryn/uLQz3whtY6jK3fTqoE3ohKs0tT+Ujr1W59oopxmoEh7Lu5p6vBaPbgoM0bzveAW4Qi5RyWDQ==
 
-"frappe-ui@github:frappe/frappe-ui#v1.0.0-beta.19":
-  version "1.0.0-beta.19"
-  resolved "https://codeload.github.com/frappe/frappe-ui/tar.gz/637e6cf1bdbdcbc49bab1c7b1558c71b0cd7527c"
+"frappe-ui@github:frappe/frappe-ui#v1.0.0-beta.24":
+  version "1.0.0-beta.24"
+  resolved "https://codeload.github.com/frappe/frappe-ui/tar.gz/e9a58979bd7f44f2325b76f117e68e10093f6d35"
   dependencies:
     "@codemirror/lang-css" "^6.3.0"
     "@codemirror/lang-html" "^6.4.9"
@@ -1590,6 +1597,7 @@ fraction.js@^5.3.4:
     "@tiptap/extension-typography" "^3.26.0"
     "@tiptap/extension-underline" "^3.26.0"
     "@tiptap/extensions" "^3.26.0"
+    "@tiptap/markdown" "^3.26.0"
     "@tiptap/pm" "^3.26.0"
     "@tiptap/starter-kit" "^3.26.0"
     "@tiptap/suggestion" "^3.26.0"
@@ -1884,6 +1892,11 @@ marked@^15.0.12:
   version "15.0.12"
   resolved "https://registry.yarnpkg.com/marked/-/marked-15.0.12.tgz#30722c7346e12d0a2d0207ab9b0c4f0102d86c4e"
   integrity sha512-8dD6FusOQSrpv9Z1rdNMdlSgQOIP880DHqnohobOmYLElGEqAL/JvxvuxZO16r4HtjTlfPRDC1hbvxC9dPN2nA==
+
+marked@^17.0.1:
+  version "17.0.6"
+  resolved "https://registry.yarnpkg.com/marked/-/marked-17.0.6.tgz#2a97586a272d3be5880f198e020b74ad27cf86ba"
+  integrity sha512-gB0gkNafnonOw0obSTEGZTT86IuhILt2Wfx0mWH/1Au83kybTayroZ/V6nS25mN7u8ASy+5fMhgB3XPNrOZdmA==
 
 merge2@^1.3.0:
   version "1.4.1"
