@@ -169,6 +169,24 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 		self.assertEqual(result["teams_reported"], 1)
 		self.assertEqual(captured["quantity"], 150)
 
+	def test_pull_usage_isolates_team_failures(self):
+		def _usage(backend, emails):
+			if emails == ["a@svc"]:
+				raise ValueError("grove failed for team A")
+			return {"b@svc": {"billable_tokens": 42}}
+
+		with (
+			patch("central.services.llm._team_credentials", return_value={"TEAM-A": ["a@svc"], "TEAM-B": ["b@svc"]}),
+			patch("central.services.drivers.grove.GroveDriver.fetch_usage", side_effect=_usage),
+			patch("central.services.llm._report_tokens", return_value=True) as report,
+			patch("frappe.log_error"),
+		):
+			result = self.llm.pull_usage()
+
+		self.assertEqual(result["teams_reported"], 1)
+		self.assertEqual(result["teams_failed"], 1)
+		report.assert_called_once_with("TEAM-B", 42)
+
 
 class TestBackendEnroll(IntegrationTestCase):
 	def setUp(self):

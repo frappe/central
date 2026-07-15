@@ -40,17 +40,31 @@ def resolve_provision_options(plan: str | None) -> dict:
 
 def pull_usage(service: str = _LLM_SERVICE) -> dict:
 	"""Reconcile Grove's cumulative monthly token usage into billing, per team. AI
-	Tokens is authoritative-metered, so the running total is reported (replaced)."""
+	Tokens is authoritative-metered, so the running total is reported (replaced). One
+	team's failure is isolated and skipped — the next run corrects it."""
 	driver, backend = _driver_and_backend(service)
 
-	reported = 0
+	reported, failures, first_traceback = 0, [], None
 	for team, emails in _team_credentials(service).items():
-		usage = driver.fetch_usage(backend, emails)
-		billable = sum(v["billable_tokens"] for v in usage.values() if isinstance(v, dict) and "billable_tokens" in v)
-		if _report_tokens(team, billable):
-			reported += 1
+		try:
+			usage = driver.fetch_usage(backend, emails)
+			billable = sum(
+				v["billable_tokens"] for v in usage.values() if isinstance(v, dict) and "billable_tokens" in v
+			)
+			if _report_tokens(team, billable):
+				reported += 1
+		except Exception:
+			failures.append(team)
+			first_traceback = first_traceback or frappe.get_traceback()
 
-	return {"teams_reported": reported}
+	if failures:
+		# Log once (not per team) so a backend outage can't flood the Error Log.
+		frappe.log_error(
+			title="LLM usage reconciliation failures",
+			message=f"{len(failures)} team(s) failed: {', '.join(failures[:20])}\n\n{first_traceback}",
+		)
+
+	return {"teams_reported": reported, "teams_failed": len(failures)}
 
 
 def _upsert_model(model_key: str, display_name: str | None, exists: bool) -> None:
