@@ -12,7 +12,11 @@
 // opens that edit dialog (shared via setupDialogOpen) instead of redirecting.
 
 import { computed, ref, watch } from 'vue'
-import { billingSetupState, fetchBillingSetup, invalidateBillingSetup } from '@/data/billingSetup'
+import {
+	billingSetupState,
+	fetchBillingSetup,
+	invalidateBillingSetup,
+} from '@/data/billingSetup'
 import { useSession } from '@/composables/useSession'
 import { infoToast } from '@/lib/toast'
 
@@ -21,42 +25,48 @@ import { infoToast } from '@/lib/toast'
 const setupDialogOpen = ref(false)
 
 export function useBillingSetup() {
-  const state = billingSetupState()
-  const { activeTeam } = useSession()
+	const state = billingSetupState()
+	const { activeTeam } = useSession()
 
-  // Fetch for the active team; refetch when it changes. Cached, so this is a
-  // no-op once the guard has already warmed the same team.
-  watch(activeTeam, (t) => { if (t) fetchBillingSetup(t) }, { immediate: true })
+	// Fetch for the active team; refetch when it changes. Cached, so this is a
+	// no-op once the guard has already warmed the same team.
+	watch(
+		activeTeam,
+		(t) => {
+			if (t) fetchBillingSetup(t)
+		},
+		{ immediate: true },
+	)
 
-  // Call at the start of a money-moving action. If the profile is incomplete it
-  // asks the user to fill their billing details first (opens the edit dialog) and
-  // returns false so the caller bails out; returns true when it's safe to proceed.
-  function requireSetup(): boolean {
-    if (state.data?.complete) return true
-    infoToast('Add your billing details to continue.')
-    setupDialogOpen.value = true
-    return false
-  }
+	// Call at the start of a money-moving action. If the profile is incomplete it
+	// asks the user to fill their billing details first (opens the edit dialog) and
+	// returns false so the caller bails out; returns true when it's safe to proceed.
+	function requireSetup(): boolean {
+		if (state.data?.complete) return true
+		infoToast('Add your billing details to continue.')
+		setupDialogOpen.value = true
+		return false
+	}
 
-  // After saving the profile, re-pull so every consumer reflects the new state.
-  async function refresh(): Promise<void> {
-    invalidateBillingSetup()
-    await fetchBillingSetup(activeTeam.value, { force: true })
-  }
+	// After saving the profile, re-pull so every consumer reflects the new state.
+	async function refresh(): Promise<void> {
+		invalidateBillingSetup()
+		await fetchBillingSetup(activeTeam.value, { force: true })
+	}
 
-  return {
-    complete: computed(() => !!state.data?.complete),
-    missing: computed(() => state.data?.missing ?? []),
-    currency: computed(() => state.data?.currency ?? null),
-    currencyLocked: computed(() => !!state.data?.currency_locked),
-    supportedCurrencies: computed(() => state.data?.supported_currencies ?? []),
-    loading: computed(() => state.loading),
-    profile: computed(() => state.data),
-    // Whether the billing-profile edit dialog should be open (shared).
-    setupDialogOpen,
-    requireSetup,
-    refresh,
-    // Legacy alias — force a re-pull of the shared state.
-    reload: refresh,
-  }
+	return {
+		complete: computed(() => !!state.data?.complete),
+		missing: computed(() => state.data?.missing ?? []),
+		currency: computed(() => state.data?.currency ?? null),
+		currencyLocked: computed(() => !!state.data?.currency_locked),
+		supportedCurrencies: computed(() => state.data?.supported_currencies ?? []),
+		loading: computed(() => state.loading),
+		profile: computed(() => state.data),
+		// Whether the billing-profile edit dialog should be open (shared).
+		setupDialogOpen,
+		requireSetup,
+		refresh,
+		// Legacy alias — force a re-pull of the shared state.
+		reload: refresh,
+	}
 }

@@ -14,21 +14,21 @@ import type { NotificationFeed, TeamNotification } from '@/types/billing'
 const { activeTeam } = useSession()
 
 const feedCall = useCall<NotificationFeed, { team: string; limit: number }>({
-  url: method(API.notifications),
-  params: () => ({ ...teamParams(), limit: 100 }),
-  immediate: false,
-  refetch: true,
+	url: method(API.notifications),
+	params: () => ({ ...teamParams(), limit: 100 }),
+	immediate: false,
+	refetch: true,
 })
 
 const markRead = useCall<{ unread: number }, { name: string }>({
-  url: method(API.markNotificationRead),
-  method: 'POST',
-  immediate: false,
+	url: method(API.markNotificationRead),
+	method: 'POST',
+	immediate: false,
 })
 const markAll = useCall<{ unread: number }, Record<string, never>>({
-  url: method(API.markAllNotificationsRead),
-  method: 'POST',
-  immediate: false,
+	url: method(API.markAllNotificationsRead),
+	method: 'POST',
+	immediate: false,
 })
 
 whenTeamReady(() => feedCall.reload())
@@ -37,28 +37,28 @@ whenTeamReady(() => feedCall.reload())
 // Must run inside a component setup() (it needs the socket off the component
 // instance), so it can't live at module scope — AppShell calls this once on mount.
 export function useNotificationsRealtime(): void {
-  useFrappeEventListener<{ team: string }>(
-    () => (activeTeam.value ? `team_notification:${activeTeam.value}` : ''),
-    () => feedCall.reload(),
-  )
+	useFrappeEventListener<{ team: string }>(
+		() => (activeTeam.value ? `team_notification:${activeTeam.value}` : ''),
+		() => feedCall.reload(),
+	)
 }
 
 const items = computed<TeamNotification[]>(() => feedCall.data?.items ?? [])
 const unread = computed(() => feedCall.data?.unread ?? 0)
 
 export function useNotifications() {
-  return {
-    items,
-    unread,
-    loading: computed(() => feedCall.loading),
-    reload: () => feedCall.reload(),
-    async markAsRead(name: string): Promise<void> {
-      await markRead.submit({ name })
-      await feedCall.reload()
-    },
-    async markAllAsRead(): Promise<void> {
-      await markAll.submit({})
-      await feedCall.reload()
-    },
-  }
+	return {
+		items,
+		unread,
+		loading: computed(() => feedCall.loading),
+		reload: () => feedCall.reload(),
+		async markAsRead(name: string): Promise<void> {
+			await markRead.submit({ name })
+			await feedCall.reload()
+		},
+		async markAllAsRead(): Promise<void> {
+			await markAll.submit({})
+			await feedCall.reload()
+		},
+	}
 }

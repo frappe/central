@@ -1,5 +1,4 @@
-
-export interface TeamInvitation{
+export interface TeamInvitation {
 	name: string
 	creation: string
 	modified: string
@@ -17,7 +16,7 @@ export interface TeamInvitation{
 	/**	Team Role : Link - Team Role	*/
 	role: string
 	/**	Status : Select	*/
-	status?: "Pending" | "Accepted" | "Expired" | "Revoked"
+	status?: 'Pending' | 'Accepted' | 'Expired' | 'Revoked'
 	/**	Invited By : Link - User	*/
 	invited_by?: string
 	/**	Expires On : Date	*/

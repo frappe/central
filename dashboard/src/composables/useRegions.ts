@@ -8,18 +8,18 @@ import type { Region } from '@/types/Region'
 // (central.api.servers.list_instances). Used by the New Server flow's region picker.
 
 const instances = useCall<Region[], { team: string }>({
-  url: method(API.listInstances),
-  params: teamParams,
-  refetch: true,
-  immediate: false,
+	url: method(API.listInstances),
+	params: teamParams,
+	refetch: true,
+	immediate: false,
 })
 
 whenTeamReady(() => instances.reload())
 
 export function useRegions() {
-  return {
-    regions: computed<Region[]>(() => instances.data ?? []),
-    loading: computed(() => instances.loading),
-    reload: () => instances.reload(),
-  }
+	return {
+		regions: computed<Region[]>(() => instances.data ?? []),
+		loading: computed(() => instances.loading),
+		reload: () => instances.reload(),
+	}
 }

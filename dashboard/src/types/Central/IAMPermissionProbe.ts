@@ -1,5 +1,4 @@
-
-export interface IAMPermissionProbe{
+export interface IAMPermissionProbe {
 	name: string
 	creation: string
 	modified: string

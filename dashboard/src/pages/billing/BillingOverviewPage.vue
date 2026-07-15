@@ -27,74 +27,77 @@ const showWalletHistory = ref(false)
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
-    <PageHeader title="Billing" />
+	<div class="flex h-full flex-col">
+		<PageHeader title="Billing" />
 
-    <!-- Content + docked wallet-history panel (like the invoice tray): the panel
+		<!-- Content + docked wallet-history panel (like the invoice tray): the panel
          shares the row, the content stays bright beside it — no modal overlay. -->
-    <div class="flex min-h-0 flex-1">
-      <div class="min-w-0 flex-1 overflow-y-auto">
-        <div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
-          <!-- Until the billing profile is filled, ask the team to complete it
+		<div class="flex min-h-0 flex-1">
+			<div class="min-w-0 flex-1 overflow-y-auto">
+				<div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
+					<!-- Until the billing profile is filled, ask the team to complete it
                first — money-moving actions stay gated on it. -->
-          <Alert
-            v-if="!complete"
-            theme="yellow"
-            title="Add your billing details"
-            description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
-            :action="{ label: 'Add billing details', onClick: () => (setupDialogOpen = true) }"
-          />
+					<Alert
+						v-if="!complete"
+						theme="yellow"
+						title="Add your billing details"
+						description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
+						:action="{ label: 'Add billing details', onClick: () => (setupDialogOpen = true) }"
+					/>
 
-          <CollectionActionBanner />
-          <div class="grid gap-4 sm:grid-cols-2">
-            <EstimatedCard />
-            <WalletCard :active="showWalletHistory" @open="showWalletHistory = true" />
-          </div>
-          <PaymentMethodsCard />
-          <BillingContactTaxCard @edit="setupDialogOpen = true" />
-          <SubscriptionsCard />
-          <MeteredServicesCard />
-          <StopBillingCard />
-        </div>
-      </div>
+					<CollectionActionBanner />
+					<div class="grid gap-4 sm:grid-cols-2">
+						<EstimatedCard />
+						<WalletCard
+							:active="showWalletHistory"
+							@open="showWalletHistory = true"
+						/>
+					</div>
+					<PaymentMethodsCard />
+					<BillingContactTaxCard @edit="setupDialogOpen = true" />
+					<SubscriptionsCard />
+					<MeteredServicesCard />
+					<StopBillingCard />
+				</div>
+			</div>
 
-      <!-- Stays mounted; opening/closing tweens the shell width so rapid toggles
+			<!-- Stays mounted; opening/closing tweens the shell width so rapid toggles
            retarget mid-flight instead of remounting. inert when closed. -->
-      <WalletHistoryPanel
-        v-model="showWalletHistory"
-        class="wallet-tray"
-        :class="!showWalletHistory && 'wallet-tray-closed'"
-        :inert="!showWalletHistory"
-      />
-    </div>
+			<WalletHistoryPanel
+				v-model="showWalletHistory"
+				class="wallet-tray"
+				:class="!showWalletHistory && 'wallet-tray-closed'"
+				:inert="!showWalletHistory"
+			/>
+		</div>
 
-    <EditBillingProfileDialog v-model="setupDialogOpen" />
-  </div>
+		<EditBillingProfileDialog v-model="setupDialogOpen" />
+	</div>
 </template>
 
 <style scoped>
 /* Docked-tray reveal: the shell's width animates while the fixed-width content
    inside is clipped — no reflow mid-flight. Exit is quicker than enter. */
 .wallet-tray {
-  transition:
-    width 300ms cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 300ms cubic-bezier(0.23, 1, 0.32, 1),
-    border-color 300ms cubic-bezier(0.23, 1, 0.32, 1);
+	transition:
+		width 300ms cubic-bezier(0.23, 1, 0.32, 1),
+		opacity 300ms cubic-bezier(0.23, 1, 0.32, 1),
+		border-color 300ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .wallet-tray-closed {
-  width: 0 !important;
-  opacity: 0;
-  border-color: transparent;
-  transition-duration: 200ms;
+	width: 0 !important;
+	opacity: 0;
+	border-color: transparent;
+	transition-duration: 200ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .wallet-tray {
-    transition: opacity 150ms ease;
-  }
-  .wallet-tray-closed {
-    width: auto !important;
-    display: none;
-  }
+	.wallet-tray {
+		transition: opacity 150ms ease;
+	}
+	.wallet-tray-closed {
+		width: auto !important;
+		display: none;
+	}
 }
 </style>

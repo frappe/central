@@ -3,7 +3,7 @@ import ErrorBoundary from '@/components/common/ErrorBoundary.vue'
 </script>
 
 <template>
-  <ErrorBoundary>
-    <router-view />
-  </ErrorBoundary>
+	<ErrorBoundary>
+		<router-view />
+	</ErrorBoundary>
 </template>

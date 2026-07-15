@@ -15,69 +15,73 @@ import type { MyInvitation } from '@/types/api'
 // is imported by AppShell, on every authenticated page). The first consumer
 // triggers the load inside useMyInvitations(), i.e. in component setup.
 const invitationsCall = useCall<MyInvitation[]>({
-  url: method(API.myInvitations),
-  immediate: false,
+	url: method(API.myInvitations),
+	immediate: false,
 })
 
-const acceptCall = useCall<{ team: string; role: string }, { invitation: string }>({
-  url: method(API.acceptInvitation),
-  method: 'POST',
-  immediate: false,
+const acceptCall = useCall<
+	{ team: string; role: string },
+	{ invitation: string }
+>({
+	url: method(API.acceptInvitation),
+	method: 'POST',
+	immediate: false,
 })
 const declineCall = useCall<{ declined: boolean }, { invitation: string }>({
-  url: method(API.declineInvitation),
-  method: 'POST',
-  immediate: false,
+	url: method(API.declineInvitation),
+	method: 'POST',
+	immediate: false,
 })
 
 const busy = ref<string>('')
 
 export function useMyInvitations() {
-  // Load on first use (component setup), not at import. Guarded so the shared
-  // singleton fetches once even when several consumers mount together.
-  if (!invitationsCall.data && !invitationsCall.loading) invitationsCall.reload()
+	// Load on first use (component setup), not at import. Guarded so the shared
+	// singleton fetches once even when several consumers mount together.
+	if (!invitationsCall.data && !invitationsCall.loading)
+		invitationsCall.reload()
 
-  const session = useSession()
-  const caps = useCapabilities()
+	const session = useSession()
+	const caps = useCapabilities()
 
-  async function accept(invitation: MyInvitation): Promise<void> {
-    busy.value = invitation.name
-    try {
-      await acceptCall.submit({ invitation: invitation.name })
-      if (acceptCall.error) throw acceptCall.error
-      successToast(`You joined ${invitation.team_name}.`)
-      await session.reload()
-      session.setActiveTeam(invitation.team)
-      caps.reload()
-      invitationsCall.reload()
-    } catch (e) {
-      errorToast(e)
-    } finally {
-      busy.value = ''
-    }
-  }
+	async function accept(invitation: MyInvitation): Promise<void> {
+		busy.value = invitation.name
+		try {
+			await acceptCall.submit({ invitation: invitation.name })
+			if (acceptCall.error) throw acceptCall.error
+			successToast(`You joined ${invitation.team_name}.`)
+			await session.reload()
+			session.setActiveTeam(invitation.team)
+			caps.reload()
+			invitationsCall.reload()
+		} catch (e) {
+			errorToast(e)
+		} finally {
+			busy.value = ''
+		}
+	}
 
-  async function decline(invitation: MyInvitation): Promise<void> {
-    busy.value = invitation.name
-    try {
-      await declineCall.submit({ invitation: invitation.name })
-      if (declineCall.error) throw declineCall.error
-      successToast(`Declined the invite to ${invitation.team_name}.`)
-      invitationsCall.reload()
-    } catch (e) {
-      errorToast(e)
-    } finally {
-      busy.value = ''
-    }
-  }
+	async function decline(invitation: MyInvitation): Promise<void> {
+		busy.value = invitation.name
+		try {
+			await declineCall.submit({ invitation: invitation.name })
+			if (declineCall.error) throw declineCall.error
+			successToast(`Declined the invite to ${invitation.team_name}.`)
+			invitationsCall.reload()
+		} catch (e) {
+			errorToast(e)
+		} finally {
+			busy.value = ''
+		}
+	}
 
-  return {
-    invitations: computed<MyInvitation[]>(() => invitationsCall.data ?? []),
-    count: computed<number>(() => invitationsCall.data?.length ?? 0),
-    loading: computed(() => invitationsCall.loading),
-    busy,
-    reload: () => invitationsCall.reload(),
-    accept,
-    decline,
-  }
+	return {
+		invitations: computed<MyInvitation[]>(() => invitationsCall.data ?? []),
+		count: computed<number>(() => invitationsCall.data?.length ?? 0),
+		loading: computed(() => invitationsCall.loading),
+		busy,
+		reload: () => invitationsCall.reload(),
+		accept,
+		decline,
+	}
 }
