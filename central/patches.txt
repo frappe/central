@@ -98,6 +98,12 @@ central.patches.v0_0.retire_price_lock
 # Close the open billing segment for VMs already Terminated before termination learned
 # to cancel — frees their run-rate + trust-tier headroom (ADR 0010).
 central.patches.v0_0.cancel_terminated_subscriptions
+# Re-key Credit Wallet from `team` to `(team, currency)` and add CHECK (balance >= 0).
+# The anchor was currency-blind while the ledger was per-currency: the invoice waterfall
+# READ a per-currency balance and DEBITED the blind anchor, so a two-currency team could
+# be driven negative in one of them. The composite key makes "never negative" true per
+# currency; the CHECK makes it true for callers that never reach credits.py — ADR 0018.
+central.patches.v0_0.rekey_wallet_per_currency
 central.patches.v0_0.rename_capabilities
 central.patches.v0_0.make_central_users_portal_only
 # Strip the capability catalog to v3: drop the bench plane (site:* + server:config)

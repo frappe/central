@@ -14,7 +14,9 @@ provisions/records/enforces directly. Authorisation is Central's capability IAM
 (ADR 0004), not billing-owned roles.
 
 - **36 DocTypes**, **~10 sub-packages**, **87 whitelisted endpoints**.
-- Money is **integer minor units** (paisa/cent) everywhere; rates are minor×10⁶ (ADR 0003).
+- Money is **float `Currency` in major units** (₹10.00 is stored `10.0`). Conversion to gateway minor
+  units (Razorpay paise / Stripe cents) happens **only at the gateway boundary**. ADR 0003
+  (integer minor units) is **DEPRECATED — it was never implemented**; don't design against it.
 
 ---
 
@@ -417,7 +419,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Card declined repeatedly | `collection` (escalate don't repeat), `mandates.effective_cap`, dunning Day 1/3/7 |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
 | Catalog masters missing | `taxonomy_setup.ensure_catalog_masters` (runs on install/migrate/before_tests) |
-| Money rounding off | minor-units (ADR 0003): rates are minor×10⁶, round **once**; check own ISO-4217 factor table |
+| Money rounding off | money is float `Currency` (major units); check the rate field's decimal **precision** holds sub-cent rates, and that minor-unit conversion happens *only* in `gateways/` |
 
 ---
 
