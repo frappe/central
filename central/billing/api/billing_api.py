@@ -193,7 +193,6 @@ def add_payment_method(method_type: str = "Card", contact: str | None = None,
 	currency = _team_currency(team)
 	gw = _resolve_add_gateway(currency, gateway)
 	gateway = gw.get("name")
-	print(f"gateway: {gateway}")
 	if not gateway:
 		frappe.throw(frappe._("No payment gateway is configured for {0}.").format(currency), frappe.ValidationError)
 
