@@ -13,6 +13,7 @@ package re-exports the public API so every `billing.api.admin.*` path holds.
 """
 
 from central.billing.api.admin.catalog import (
+	create_configured_plan,
 	get_catalog,
 	get_cluster_consumption,
 	get_conversion,
@@ -46,6 +47,6 @@ __all__ = [
 	"get_payment_analytics", "get_overdue_aging", "get_free_trial_costs", "list_all_invoices",
 	"get_team_billing", "get_retention", "get_metrics", "list_teams", "get_payment_failures",
 	"get_delinquent_teams", "adjust_team_credits",
-	"get_catalog", "update_plan_rate", "get_cluster_consumption", "get_plan_consumption",
+	"get_catalog", "update_plan_rate", "create_configured_plan", "get_cluster_consumption", "get_plan_consumption",
 	"get_conversion", "get_trial_detail", "get_trial_costs_detail",
 ]
