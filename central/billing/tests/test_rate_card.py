@@ -11,11 +11,13 @@ from central.billing.catalog.pricing import (
 	set_catalog_rate,
 )
 from central.billing.catalog.rate_card import ensure_component_rate_card
+from central.billing.tests.utils import ensure_atlas_instance
 
 
 class TestComponentRateCard(IntegrationTestCase):
 	def setUp(self):
 		ensure_component_rate_card()
+		ensure_atlas_instance("ap-south-1")
 
 	def test_resource_type_is_a_priceable_catalog_rate(self):
 		"""A Catalog Rate can price a Resource Type with an optional cluster + per-unit rate."""

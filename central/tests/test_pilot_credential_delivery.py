@@ -12,6 +12,7 @@ from central.central.doctype.pilot_credential.pilot_credential import PilotCrede
 from central.integrations.atlas import AtlasClient, _on_vm, _on_vm_deleted
 from central.sso import verify_bootstrap_token
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_region
 
 # What create_site now hands Atlas to seed on the bench: the endpoint + a single-use
 # bootstrap token. The long-lived auth_token is NOT here — the pilot mints it at enrollment.
@@ -30,9 +31,7 @@ class TestPilotCredentialDelivery(IntegrationTestCase):
 				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
 			}
 		).insert().name
-		self.region = "blr-delivery"
-		if not frappe.db.exists("Region", self.region):
-			frappe.get_doc({"doctype": "Region", "region": self.region}).insert()
+		self.region = ensure_region("blr-delivery")
 		if not frappe.db.exists("Atlas Instance", self.region):
 			frappe.get_doc(
 				{

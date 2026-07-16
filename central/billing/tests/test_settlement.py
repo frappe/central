@@ -20,7 +20,7 @@ from central.billing.payments.settlement import (
 	settlement_sources,
 )
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import ensure_team, make_plan, set_team_tier
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan, set_team_tier
 
 TEAM = "team-waterfall"
 CLUSTER = "ap-south-1"
@@ -48,6 +48,7 @@ def set_tier(team, max_spend):
 class SettlementTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._purge()

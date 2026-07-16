@@ -2,6 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.integrations.atlas import AtlasClient, AtlasError, get_atlas_instance
+from central.tests.utils import ensure_region
 
 
 class TestAtlasInstance(IntegrationTestCase):
@@ -9,6 +10,7 @@ class TestAtlasInstance(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def make_instance(self, region: str, status: str = "Active"):
+		ensure_region(region)
 		if frappe.db.exists("Atlas Instance", region):
 			frappe.delete_doc("Atlas Instance", region, force=True)
 		return frappe.get_doc(

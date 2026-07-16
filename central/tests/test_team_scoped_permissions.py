@@ -3,6 +3,7 @@ from frappe.desk.reportview import execute as reportview_execute
 from frappe.tests import IntegrationTestCase
 
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_region
 
 
 class TestTeamScopedPermissions(IntegrationTestCase):
@@ -68,7 +69,7 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 		return team
 
 	def _cluster(self) -> str:
-		region = f"scope-{self.suffix}"
+		region = ensure_region(f"scope-{self.suffix}")
 		frappe.get_doc(
 			{
 				"doctype": "Atlas Instance",

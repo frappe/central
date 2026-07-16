@@ -17,6 +17,7 @@ from central.integrations.atlas import (
 	register_atlas,
 	remove_tunnel,
 )
+from central.tests.utils import ensure_region
 
 PROVISION_RETURN = {"wg_public_key": "SPOKEPUBKEY=", "listen_port": 51820, "tunnel_ip": "10.88.0.2"}
 PLAIN_USER_EMAIL = "register-plain@example.com"
@@ -71,6 +72,7 @@ class TestAtlasRegister(IntegrationTestCase):
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- durably remove rows register_atlas committed mid-flow
 
 	def make_instance(self, region: str, **overrides):
+		ensure_region(region)
 		if frappe.db.exists("Atlas Instance", region):
 			frappe.delete_doc("Atlas Instance", region, force=True, ignore_permissions=True)
 		values = {

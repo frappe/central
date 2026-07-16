@@ -184,9 +184,8 @@ scheduler_events = {
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
 		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
-		# gateway reconciliation, and pruning Payment Attempt / Webhook Event logs.
+		# and pruning Payment Attempt / Webhook Event logs.
 		"central.billing.revenue.dunning.run_dunning",
-		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.charges.cleanup_payment_logs",
 		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
 		"central.billing.payments.emandate.run_emandate_cycle",
@@ -205,6 +204,11 @@ scheduler_events = {
 		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
 		# Services (LLM): reconcile Grove's cumulative token usage into billing.
 		"central.services.llm.pull_usage",
+		# A charge whose outcome we don't know is money in the air: ask the gateway and
+		# settle it. It waits 30 minutes for the webhook first, so a daily sweep left it
+		# hanging for up to a day — and the key it needs to re-send safely expires in
+		# about one (ADR 0017).
+		"central.billing.payments.reconciliation.run_reconciliation",
 	],
 	"monthly": [
 		# Billing: on the 1st, bill the just-closed month end-to-end for every team —
