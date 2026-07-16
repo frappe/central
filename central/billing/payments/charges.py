@@ -51,7 +51,6 @@ def _adapter_for(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
-@frappe.whitelist()
 def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | None = None) -> dict:
 	"""Charge an unsettled (Open or Overdue) invoice. Creates at most one in-flight
 	Payment Attempt.
