@@ -218,6 +218,12 @@ class RazorpayAdapter(GatewayAdapter):
 	def get_transaction_status(self, gateway_txn_id: str) -> str:
 		return self._client().payment.fetch(gateway_txn_id).get("status")
 
+	def get_payment(self, payment_id: str) -> dict:
+		"""Fetch a payment server-side — the authoritative captured amount/currency
+		(paise). The checkout-callback signature does not bind the amount, so any
+		crediting path must read it from here, never from the request."""
+		return self._client().payment.fetch(payment_id)
+
 	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None,
 					 customer: str | None = None) -> dict:
 		"""A one-time Razorpay order for a wallet top-up; the UI opens Checkout against it."""

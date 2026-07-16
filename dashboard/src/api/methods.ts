@@ -96,7 +96,6 @@ export const API = {
 		'central.billing.api.dashboard.confirm_invoice_checkout',
 	createTopupOrder: 'central.billing.api.dashboard.create_topup_order',
 	confirmTopup: 'central.billing.api.dashboard.confirm_topup',
-	purchaseCredits: 'central.billing.api.dashboard.purchase_credits',
 	initiateCardSetup: 'central.billing.api.dashboard.initiate_card_setup',
 	confirmCard: 'central.billing.api.dashboard.confirm_card',
 	setupPaymentMethodOrder:

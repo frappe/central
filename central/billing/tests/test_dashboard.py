@@ -239,7 +239,7 @@ class TestTeamScoping(CustomerDataBase):
 			with self.assertRaises(frappe.PermissionError):
 				dashboard.save_billing_settings(team=team.name, min_balance=5000)
 			with self.assertRaises(frappe.PermissionError):
-				dashboard.purchase_credits(team=team.name, amount=100)
+				dashboard.create_topup_order(team=team.name, amount=100)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -262,25 +262,27 @@ class TestCustomerActions(CustomerDataBase):
 			dashboard.save_billing_profile(TEAM, legal_name="Acme", state="Karnataka", gstin="27AAPFU0939F1ZV")
 
 
-	def test_purchase_credits(self):
-		complete_billing_profile(TEAM)
-		out = dashboard.purchase_credits(team=TEAM, amount=1500)
-		self.assertEqual(out["new_balance"], 1500)
-		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 1500)
-		with self.assertRaises(frappe.ValidationError):
-			dashboard.purchase_credits(team=TEAM, amount=0)
-
 	def test_money_movement_blocked_until_profile_complete(self):
-		# No profile yet → top-up / credits / payment-method setup are refused.
+		from unittest.mock import MagicMock, patch
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		# No profile yet → a top-up is refused before any gateway call.
 		with self.assertRaises(frappe.ValidationError):
-			dashboard.purchase_credits(team=TEAM, amount=1500)
+			dashboard.create_topup_order(team=TEAM, amount=1500)
 		setup = dashboard.get_billing_profile(TEAM)
 		self.assertFalse(setup["complete"])
 		self.assertIn("currency", setup["missing"])
-		# Once the profile is complete, the same call succeeds.
+		# Once the profile is complete, the same call reaches the gateway.
 		complete_billing_profile(TEAM)
 		self.assertTrue(dashboard.get_billing_profile(TEAM)["complete"])
-		self.assertEqual(dashboard.purchase_credits(team=TEAM, amount=1500)["new_balance"], 1500)
+		gw = make_razorpay_gateway("GW-Gate-RZP").name
+		adapter = MagicMock()
+		adapter.create_customer.return_value = "cus_gate"
+		adapter.create_order.return_value = {
+			"order_id": "order_gate", "key_id": "rzp_test", "amount_in_subunits": 150000}
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = dashboard.create_topup_order(team=TEAM, amount=1500, gateway=gw)
+		self.assertEqual(out["order_id"], "order_gate")
 
 	def test_billing_settings_roundtrip(self):
 		dashboard.save_billing_settings(team=TEAM, min_balance=5000)
@@ -372,10 +374,49 @@ class TestGatewayTopUp(CustomerDataBase):
 			# Wallet is NOT credited yet — only after the gateway confirms.
 			self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)
 
+			adapter.get_payment.return_value = {
+				"status": "captured", "amount": 500000, "currency": "INR"}
 			out = dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw,
 				razorpay_order_id="order_x", razorpay_payment_id="pay_x", razorpay_signature="sig")
 			adapter.verify_payment_signature.assert_called_once()
+			# The credit is the gateway's captured figure, read server-side.
+			adapter.get_payment.assert_called_once_with("pay_x")
 			self.assertEqual(out["new_balance"], 5000)
+
+	def test_topup_credits_gateway_amount_not_request_amount(self):
+		"""The Razorpay callback signature binds order|payment, NOT the amount — a
+		client claiming a bigger figure must be credited what the gateway captured."""
+		from unittest.mock import MagicMock, patch
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		gw = make_razorpay_gateway("GW-Cust-RZP-Amt").name
+		complete_billing_profile(TEAM)
+		adapter = MagicMock()
+		adapter.verify_payment_signature.return_value = True
+		adapter.get_payment.return_value = {
+			"status": "captured", "amount": 100, "currency": "INR"}  # ₹1 really captured
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = dashboard.confirm_topup(team=TEAM, amount=1000000, gateway=gw,
+				razorpay_order_id="order_a", razorpay_payment_id="pay_a", razorpay_signature="sig")
+		self.assertEqual(out["new_balance"], 1)  # the gateway figure, not the claim
+		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 1)
+
+	def test_topup_rejects_uncaptured_payment(self):
+		"""A signature-valid callback whose payment the gateway has not captured
+		credits nothing."""
+		from unittest.mock import MagicMock, patch
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		gw = make_razorpay_gateway("GW-Cust-RZP-Uncap").name
+		complete_billing_profile(TEAM)
+		adapter = MagicMock()
+		adapter.verify_payment_signature.return_value = True
+		adapter.get_payment.return_value = {"status": "authorized", "amount": 500000}
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			with self.assertRaises(frappe.ValidationError):
+				dashboard.confirm_topup(team=TEAM, amount=5000, gateway=gw,
+					razorpay_order_id="order_b", razorpay_payment_id="pay_b", razorpay_signature="sig")
+		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)
 
 	def test_second_topup_reuses_the_same_gateway_customer(self):
 		"""A team's customer is minted once and reused — the second top-up (or any
@@ -541,6 +582,8 @@ class TestGatewayTopUp(CustomerDataBase):
 		adapter.create_customer.return_value = "cus_rzp"
 		adapter.create_order.return_value = {"order_id": "order_rzp1", "key_id": "rzp_k"}
 		adapter.verify_payment_signature.return_value = True
+		adapter.get_payment.return_value = {
+			"status": "captured", "amount": 500000, "currency": "USD"}
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
 			order = dashboard.create_topup_order(team=TEAM, amount=5000, method="paypal")
 			# Settlement runs on a Razorpay gateway; the SPA opens the sheet on the
@@ -574,7 +617,7 @@ class TestWriteEndpointsRejectGet(IntegrationTestCase):
 		from central.billing.api.dashboard import invoices, methods, account
 
 		write_fns = [
-			invoices.purchase_credits, invoices.pay_invoice,
+			invoices.pay_invoice,
 			invoices.create_topup_order, invoices.confirm_topup,
 			methods.initiate_card_setup, methods.confirm_card, methods.add_demo_card,
 			methods.setup_payment_method_order, methods.confirm_payment_method_order,
