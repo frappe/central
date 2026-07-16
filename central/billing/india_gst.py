@@ -9,8 +9,6 @@ A GSTIN's first two digits are the registration state's code, so this map lets u
 saved GSTIN's state code matches the chosen state.
 """
 
-import frappe
-
 INDIA = "India"
 
 # State / UT name -> 2-digit GST state code (per the GST state code list).
@@ -65,7 +63,3 @@ def state_code(state: str | None) -> str | None:
 	return GST_STATE_CODES.get((state or "").strip())
 
 
-@frappe.whitelist()
-def india_states() -> list[str]:
-	"""Whitelisted feed for the Desk form's state dropdown."""
-	return india_state_options()
