@@ -194,6 +194,11 @@ scheduler_events = {
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
 		# Services (LLM): refresh the model catalog from the Grove backend.
 		"central.services.llm.sync_models",
+		# Assert the money invariants that no DB constraint can hold (they span
+		# tables): wallet == its ledger, invoice == its lines, captured == amount_paid.
+		# Silence is the success case; a violation is logged with its team and amount.
+		# Read it as the "Billing Invariant Violations" report.
+		"central.billing.platform.invariants.run_invariant_audit",
 	],
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
