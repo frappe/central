@@ -89,7 +89,6 @@ def ensure_gateway_customer(team: str, gateway: str, adapter, customer_id: str |
 	return cid
 
 
-@frappe.whitelist()
 def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: str | None = None) -> dict:
 	"""Begin adding a card: open a SetupIntent and a pending Payment Method.
 
@@ -132,7 +131,6 @@ def _discard_abandoned_setups(team: str, gateway: str):
 		frappe.delete_doc("Payment Method", name, ignore_permissions=True, force=True)
 
 
-@frappe.whitelist()
 def confirm_payment_method(
 	payment_method: str,
 	gateway_method_id: str,
@@ -212,7 +210,6 @@ def densify_priorities(team: str):
 		)
 
 
-@frappe.whitelist()
 def set_default_payment_method(payment_method: str) -> Document:
 	"""Make this the team's primary (priority 0). Only an active method can be."""
 	method = frappe.get_doc("Payment Method", payment_method)
@@ -224,7 +221,6 @@ def set_default_payment_method(payment_method: str) -> Document:
 	return frappe.get_doc("Payment Method", method.name)
 
 
-@frappe.whitelist()
 def reorder_payment_methods(team: str, ordered: list | str) -> dict:
 	"""Set the fallback order from a top-first list of method names."""
 	if isinstance(ordered, str):
@@ -237,7 +233,6 @@ def reorder_payment_methods(team: str, ordered: list | str) -> dict:
 	return {"team": team, "ordered": ordered}
 
 
-@frappe.whitelist()
 def delete_payment_method(payment_method: str) -> dict:
 	"""Remove a payment method and re-densify so the team keeps a dense, primary-
 	first order (or none if it was the last)."""
