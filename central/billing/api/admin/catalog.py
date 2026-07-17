@@ -40,6 +40,21 @@ def get_catalog() -> dict:
 	return {"plans": plans, "clusters": cluster_rows}
 
 
+@frappe.whitelist(methods=["POST"])
+def create_configured_plan(title: str, vcpu: float, ratio: str = "1:2", disk_gb: float = 0,
+						   memory_gb: float | None = None, billing_cycle: str = "Monthly",
+						   category: str = "VM Plans", sub_category: str | None = None) -> dict:
+	"""Author a bundle Plan from configurator inputs — operator only. The one HTTP
+	door to `plans.create_configured_plan`; the primitive itself is not whitelisted."""
+	require_operator()
+	from central.billing.catalog import plans
+
+	name = plans.create_configured_plan(
+		title, vcpu, ratio=ratio, disk_gb=disk_gb, memory_gb=memory_gb,
+		billing_cycle=billing_cycle, category=category, sub_category=sub_category)
+	return {"plan": name}
+
+
 @frappe.whitelist()
 def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> dict:
 	"""Price management: change a plan's Catalog Rate. Existing price-locks are

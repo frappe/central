@@ -53,6 +53,15 @@ def get_team_billing(team: str) -> dict:
 	}
 
 
+@frappe.whitelist(methods=["POST"])
+def adjust_team_credits(team: str, amount: float, entry_type: str,
+						currency: str | None = None, note: str | None = None) -> dict:
+	"""Manual wallet correction for any team — operator only. The one HTTP door to
+	`credits.adjust_credits`; the primitive itself is not whitelisted."""
+	require_operator()
+	return credits.adjust_credits(team, amount, entry_type, currency=currency, note=note)
+
+
 @frappe.whitelist()
 def get_retention() -> dict:
 	"""Customer retention snapshot: active vs at-risk vs churned, and a retention

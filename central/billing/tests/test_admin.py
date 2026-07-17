@@ -60,6 +60,20 @@ class TestAdminGating(AdminTestBase):
 		with self.assertRaises(frappe.PermissionError):
 			admin.get_summary()
 
+	def test_credit_adjustment_is_operator_only(self):
+		user = f"adm-{frappe.generate_hash(6)}@example.com"
+		frappe.get_doc({"doctype": "User", "email": user, "first_name": "X", "send_welcome_email": 0}).insert(ignore_permissions=True)
+		frappe.set_user(user)
+		with self.assertRaises(frappe.PermissionError):
+			admin.adjust_team_credits(TEAM_A, 100, "Credit", note="nope")
+
+	def test_credit_adjustment_books_with_audit_note(self):
+		out = admin.adjust_team_credits(TEAM_A, 100, "Credit", currency="INR", note="goodwill")
+		self.assertEqual(out["new_balance"], 100)
+		entry = frappe.get_doc("Credit Ledger Entry", out["ledger_entry"])
+		self.assertEqual(entry.reference_type, "Admin")
+		self.assertEqual(entry.note, "goodwill")
+
 
 class TestAggregates(AdminTestBase):
 	def test_summary_billed_collected_outstanding(self):

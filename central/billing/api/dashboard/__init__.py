@@ -50,7 +50,6 @@ from central.billing.api.dashboard.invoices import (
 	resume_subscription,
 	pay_invoice,
 	pay_invoice_checkout,
-	purchase_credits,
 )
 from central.billing.api.dashboard.methods import (
 	add_demo_card,
@@ -80,7 +79,7 @@ __all__ = [
 	"get_eligible_plans",
 	"get_forecast", "list_subscriptions", "pause_subscription", "resume_subscription",
 	"list_invoices", "get_invoice", "list_payment_attempts",
-	"get_credit_balance", "credit_ledger", "purchase_credits", "pay_invoice", "create_topup_order",
+	"get_credit_balance", "credit_ledger", "pay_invoice", "create_topup_order",
 	"confirm_topup", "pay_invoice_checkout", "confirm_invoice_checkout",
 	"list_payment_methods", "get_payment_method_options", "initiate_card_setup", "confirm_card",
 	"add_demo_card", "setup_payment_method_order", "confirm_payment_method_order",

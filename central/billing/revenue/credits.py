@@ -233,7 +233,6 @@ def _existing_payment_entry(gateway_payment_id: str | None):
 	return entry, frappe.utils.flt(balance)
 
 
-@frappe.whitelist()
 def purchase(team: str, amount: float, currency: str | None = None,
 			 payment_method: str | None = None,
 			 reference_name: str | None = None, note: str | None = None,
@@ -296,7 +295,6 @@ def grant_promotional_credits(team, amount, currency, note=None) -> dict:
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-@frappe.whitelist()
 def adjust_credits(team: str, amount: float, entry_type: str, currency: str | None = None,
 				   note: str | None = None) -> dict:
 	"""Admin manual correction — a credit or debit entry with an audit note."""
@@ -308,7 +306,6 @@ def adjust_credits(team: str, amount: float, entry_type: str, currency: str | No
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-@frappe.whitelist()
 def get_balance(team: str, currency: str | None = None) -> dict:
 	"""The team's credit balance in one currency — read off that currency's anchor.
 
@@ -328,7 +325,6 @@ def get_balance(team: str, currency: str | None = None) -> dict:
 	return {"balance": frappe.utils.flt(balance), "currency": currency}
 
 
-@frappe.whitelist()
 def get_balances(team: str) -> list[dict]:
 	"""Every currency this team holds credits in — never summed across currencies."""
 	return frappe.get_all(

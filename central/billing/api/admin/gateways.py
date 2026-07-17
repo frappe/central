@@ -18,7 +18,7 @@ def get_gateways() -> list[dict]:
 
 	Secrets (api_key, api_secret, webhook_secret) are never included.
 	"""
-	authz.require(authz.MANAGE)
+	authz.require_operator()
 	gateways = frappe.get_all(
 		"Payment Gateway",
 		fields=["name", "title", "adapter_key", "is_enabled", "supports_mandates",
@@ -43,7 +43,7 @@ def get_effective_routing() -> list[dict]:
 	an is_default row for it. Currencies that are configured but have no default
 	are listed with gateway = None so the admin can see the gap.
 	"""
-	authz.require(authz.MANAGE)
+	authz.require_operator()
 
 	# Collect every currency that appears in any gateway's child table.
 	all_rows = frappe.get_all(
@@ -78,7 +78,7 @@ def set_default_gateway(gateway: str, currency: str) -> dict:
 	The PaymentGateway controller's _enforce_default_uniqueness clears the flag on
 	any previously-default gateway for the same currency.
 	"""
-	authz.require(authz.MANAGE)
+	authz.require_operator()
 
 	gw_doc = frappe.get_doc("Payment Gateway", gateway)
 	row = next((r for r in gw_doc.currencies if r.currency == currency), None)

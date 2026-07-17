@@ -14,7 +14,7 @@ function set_state_options(frm) {
 		frm.set_df_property("state", "options", "");
 		return;
 	}
-	frappe.xcall("central.billing.india_gst.india_states").then((states) => {
-		frm.set_df_property("state", "options", states.join("\n"));
+	frappe.xcall("central.billing.api.dashboard.account.get_billing_geo").then((geo) => {
+		frm.set_df_property("state", "options", geo.india_states.join("\n"));
 	});
 }
