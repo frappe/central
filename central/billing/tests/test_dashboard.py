@@ -401,6 +401,23 @@ class TestGatewayTopUp(CustomerDataBase):
 		self.assertEqual(out["new_balance"], 1)  # the gateway figure, not the claim
 		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 1)
 
+	def test_topup_rejects_captured_payment_without_amount(self):
+		"""A captured payment whose fetch carries no amount must hard-fail, not
+		fall back to the client-supplied figure the signature never covered."""
+		from unittest.mock import MagicMock, patch
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+		gw = make_razorpay_gateway("GW-Cust-RZP-NoAmt").name
+		complete_billing_profile(TEAM)
+		adapter = MagicMock()
+		adapter.verify_payment_signature.return_value = True
+		adapter.get_payment.return_value = {"status": "captured", "currency": "INR"}
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			with self.assertRaises(frappe.ValidationError):
+				dashboard.confirm_topup(team=TEAM, amount=1000000, gateway=gw,
+					razorpay_order_id="order_n", razorpay_payment_id="pay_n", razorpay_signature="sig")
+		self.assertEqual(dashboard.get_credit_balance(TEAM)["balance"], 0)
+
 	def test_topup_rejects_uncaptured_payment(self):
 		"""A signature-valid callback whose payment the gateway has not captured
 		credits nothing."""

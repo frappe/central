@@ -501,8 +501,11 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 			payment = adapter.get_payment(razorpay_payment_id)
 			ok = payment.get("status") == "captured"
 			minor = payment.get("amount")
-			if minor:
-				amount = frappe.utils.flt(minor) / 100
+			if minor is None:
+				# A captured payment always carries an amount; a response without
+				# one must not fall through to the client-supplied figure.
+				frappe.throw("Razorpay reported no amount for this payment.", frappe.ValidationError)
+			amount = frappe.utils.flt(minor) / 100
 			if payment.get("currency"):
 				currency = payment["currency"].upper()
 	elif gw_doc.adapter_key == "Paypal":
@@ -511,8 +514,9 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 		capture = adapter.capture_order(paypal_order_id)
 		ok = capture.get("status") == "COMPLETED"
 		reference = capture.get("id")
-		if capture.get("amount"):
-			amount = frappe.utils.flt(capture["amount"])
+		if capture.get("amount") is None:
+			frappe.throw("PayPal reported no amount for this capture.", frappe.ValidationError)
+		amount = frappe.utils.flt(capture["amount"])
 		if capture.get("currency"):
 			currency = capture["currency"].upper()
 	else:
@@ -523,8 +527,9 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 		ok = intent.get("status") == "succeeded"
 		reference = intent.get("id")
 		minor = intent.get("amount_received") or intent.get("amount")
-		if minor:
-			amount = frappe.utils.flt(minor) / 100
+		if minor is None:
+			frappe.throw("Stripe reported no amount for this payment intent.", frappe.ValidationError)
+		amount = frappe.utils.flt(minor) / 100
 		if intent.get("currency"):
 			currency = intent["currency"].upper()
 	if not ok:
