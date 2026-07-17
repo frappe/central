@@ -1,103 +1,120 @@
 [pre_model_sync]
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://docs.frappe.io/framework/user/en/database-migrations
+# Patches live flat under central/patches/v0_0/ (v0_0 = the pre-1.0 series, frappe-style).
+# Re-key Patch Log rows from the old one-directory-per-patch dotted paths to the
+# v0_0 layout so already-run patches are not executed again. Must stay first.
+central.patches.v0_0.rename_patch_log_entries
 # Snapshot legacy Plan Rate / Add-on Rate child rows before they are merged into
 # the single Catalog Rate DocType (Item Price style, Dynamic Link).
-central.billing.patches.v01_rates_to_standalone.snapshot_legacy_rate_children
+central.patches.v0_0.snapshot_legacy_rate_children
 # Re-point billing `team` (Data slug) at the real Central `Team`: ensure a Team
 # per slug, rewrite values, backfill Team Members, drop User.billing_team. Runs
 # while `team` is still Data, before the Link field-type flip is synced (#43).
-central.billing.patches.v03_team_link_to_central_team.migrate_team_to_central_team
+central.patches.v0_0.migrate_team_to_central_team
 # Plan Configurator start_vcpu / ceiling_vcpu: Float -> Select (1/16 … 1024).
 # Widen the decimal columns to varchar before sync (the sync can't cast a '1/8'
 # default against a decimal column) and relabel stored values — issue #33.
-central.billing.patches.v20_configurator_vcpu_dropdown.configurator_vcpu_dropdown
+central.patches.v0_0.configurator_vcpu_dropdown
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
-central.billing.patches.v01_rates_to_standalone.migrate_rate_children_to_standalone
-central.billing.patches.v02_payment_method_priority.backfill_priority
+central.patches.v0_0.migrate_rate_children_to_standalone
+central.patches.v0_0.backfill_priority
 # Guard: every billing `team` is now a valid Link → Team, no orphans (#43).
-central.billing.patches.v03_team_link_to_central_team.validate_team_links
+central.patches.v0_0.validate_team_links
 # Delete the orphan Billing Admin / Billing User roles left by the retired
 # ensure_billing_roles bootstrap; authz is Central capability IAM now (#44).
-central.billing.patches.v04_drop_orphan_billing_roles.drop_billing_roles
+central.patches.v0_0.drop_billing_roles
 # Re-import the rebuilt (ERPNext-style) Billing desk Workspace over the thin one
 # carried from the standalone app; timestamp gating skips it otherwise (#44).
-central.billing.patches.v05_billing_workspace.reload_billing_workspace
+central.patches.v0_0.reload_billing_workspace
 # Migrate Payment Gateway single `currency` column to the new Payment Gateway
 # Currency child table (is_default row per currency) — issue #46.
-central.billing.patches.v06_payment_gateway_currency.migrate_gateway_currencies
+central.patches.v0_0.migrate_gateway_currencies
 # Backfill the new Credit Wallet `balance` from the ledger sum; the anchor now
 # holds the authoritative balance so bookings no longer FOR UPDATE the ledger
 # (which gap-locked the creation index and deadlocked cross-team bookings) — #06.
-central.billing.patches.v07_credit_wallet_balance.backfill_wallet_balance
+central.patches.v0_0.backfill_wallet_balance
 # Title-case every billing Select field's stored values (past_due -> Past Due,
 # stripe -> Stripe, …) to match the field option lists now rendered Title Case.
-central.billing.patches.v08_titlecase_select_options.titlecase_options
+central.patches.v0_0.titlecase_options
 # Billing Profile gains an explicit user-set `currency` (backfilled from the
 # team's price lock); the unused prepaid/postpaid `billing_mode` column is dropped.
-central.billing.patches.v09_billing_currency.billing_currency
+central.patches.v0_0.billing_currency
 # Per-(team, gateway) Gateway Customer store — seed it from the customer ids
 # already recorded on Payment Methods so existing teams reuse, not re-mint.
-central.billing.patches.v10_gateway_customer.backfill_gateway_customers
+central.patches.v0_0.backfill_gateway_customers
 # Front-load a Gateway Customer for every team that already has a billing profile
 # (resolve the gateway from the profile currency). Live gateway calls; per-team
 # isolated + idempotent.
-central.billing.patches.v11_provision_gateway_customers.provision_gateway_customers
+central.patches.v0_0.provision_gateway_customers
 # Trust Tier Level money limits move from single max_spend/min_cumulative_paid
 # columns to the per-currency Trust Tier Threshold child table; backfill the
 # legacy (INR) numbers as an INR row, then drop the columns — issue #61.
-central.billing.patches.v12_trust_tier_currency_thresholds.trust_tier_thresholds
+central.patches.v0_0.trust_tier_thresholds
 # The per-team Trust Tier doctype folds into the Billing Profile (trust_tier_level
 # link + audit + optional override_max_spend); caps resolve live now. Copy the
 # rows onto profiles, then drop the doctype — issue #62.
-central.billing.patches.v13_drop_trust_tier_doctype.drop_trust_tier
-# collection_mode landed after the v08 Select title-casing sweep, so its stored
+central.patches.v0_0.drop_trust_tier
+# collection_mode landed after the Select title-casing sweep, so its stored
 # values are still snake_case (stripe_auto/emandate/...). Title-case them to match
 # every other billing Select field (ADR 0005, #50).
-central.billing.patches.v14_titlecase_collection_mode.titlecase_collection_mode
+central.patches.v0_0.titlecase_collection_mode
 # Catalog taxonomy moves from VM-shaped Select enums to masters: Plan Category +
 # Plan Sub-Category (replacing plan_class) + Resource Type (Plan Includes/Add-on
 # links). Seeds the VM family, backfills plans, drops the plan_class column, flags
 # IP/Snapshot for reclassification — ADR 0007, issue #75.
-central.billing.patches.v15_catalog_taxonomy_masters.catalog_taxonomy
+central.patches.v0_0.catalog_taxonomy
 # Seed the non-VM product families on the ADR 0007 taxonomy: AI Tokens, SaaS Storage,
 # Remote Storage (Frappe Box) categories + Tokens/Storage/Backup resource types +
 # Remote Storage sub-categories. No schema change — issue #77.
-central.billing.patches.v16_product_families.product_families
+central.patches.v0_0.product_families
 # Title-case the configurator_builder Select (vm_rungs/simple -> VM Rungs/Simple) and
 # replace Plan Configurator's plan_class with the sub_category link — ADR 0007.
-central.billing.patches.v17_configurator_taxonomy_alignment.configurator_taxonomy_alignment
+central.patches.v0_0.configurator_taxonomy_alignment
 # Drop the Plan Category billing-metadata fields that no code path ever read:
 # default_billing_type, default_pricing_mode, billable_unit, meter_kind — ADR 0007.
-central.billing.patches.v18_drop_unused_category_billing_meta.drop_unused_category_billing_meta
+central.patches.v0_0.drop_unused_category_billing_meta
 # Backfill the configurable memory ratio onto the VM optimisation-profile
 # sub-categories (moved off a hardcoded dict onto the master) — ADR 0007.
-central.billing.patches.v19_sub_category_memory_ratio.sub_category_memory_ratio
+central.patches.v0_0.sub_category_memory_ratio
 # Backfill Plan Category.provision_target (VM Plans -> Server) so the create-server
 # flow lists only provisionable families, not AI Tokens / storage plans — issue #33.
-central.billing.patches.v21_category_provision_target.category_provision_target
+central.patches.v0_0.category_provision_target
 # Retire the Add-on doctype: each Add-on becomes a metered single-resource Plan, its
 # billing metadata moves onto Plan Category, and its Catalog Rate rows repoint to Plan.
 # Billing-neutral — ADR 0008, issue #78.
-central.billing.patches.v22_retire_addon_into_plan.retire_addon_into_plan
+central.patches.v0_0.retire_addon_into_plan
 # Promote the optimisation profile to a runtime constraint: backfill the numeric
 # ram_ratio + vcpu_steps + disk bounds onto the VM Plan Sub-Categories — ADR 0009, #81.
-central.billing.patches.v23_sub_category_compose_bounds.sub_category_compose_bounds
+central.patches.v0_0.sub_category_compose_bounds
 # Widen the VM profiles' vCPU ladder to the configurator's full fractional set so the
 # composed-config slider can reach a 1/8 vCPU micro config — #84.
-central.billing.patches.v24_widen_vcpu_ladder.widen_vcpu_ladder
+central.patches.v0_0.widen_vcpu_ladder
 # Retire the Price Lock doctype: the Subscription Change ledger is the only lock now.
 # Backfill any remaining open lock into the ledger, then drop the doctype — ADR 0010, #86.
-central.billing.patches.v25_retire_price_lock.retire_price_lock
+central.patches.v0_0.retire_price_lock
 # Close the open billing segment for VMs already Terminated before termination learned
 # to cancel — frees their run-rate + trust-tier headroom (ADR 0010).
-central.billing.patches.v26_cancel_terminated_subscriptions.cancel_terminated_subscriptions
-central.patches.v01_capability_model_v2.rename_capabilities
-central.patches.v02_portal_central_users.make_central_users_portal_only
+central.patches.v0_0.cancel_terminated_subscriptions
+# Re-key Credit Wallet from `team` to `(team, currency)` and add CHECK (balance >= 0).
+# The anchor was currency-blind while the ledger was per-currency: the invoice waterfall
+# READ a per-currency balance and DEBITED the blind anchor, so a two-currency team could
+# be driven negative in one of them. The composite key makes "never negative" true per
+# currency; the CHECK makes it true for callers that never reach credits.py — ADR 0018.
+central.patches.v0_0.rekey_wallet_per_currency
+# Backfill Invoice.period_key, the unique key behind "one live invoice per (team,
+# period)". generate_team_invoice read-then-inserted with no lock and no constraint,
+# while generate_draft_invoices enqueues one job per team — so a scheduler double-fire
+# billed the team twice. Pre-existing duplicates are flagged for review, never
+# auto-cancelled (a paid duplicate is real money) — ADR 0018, invariant I6.
+central.patches.v0_0.backfill_period_key
+central.patches.v0_0.rename_capabilities
+central.patches.v0_0.make_central_users_portal_only
 # Strip the capability catalog to v3: drop the bench plane (site:* + server:config)
 # and the redundant asset:view, and collapse the system roles from eight to five
 # (retire Operator / Site Manager / Support, reassigning their members onto the
 # surviving roles). Server is the atomic unit now.
-central.patches.v03_strip_to_server_caps.strip_capabilities
+central.patches.v0_0.strip_capabilities
+central.patches.v0_0.backfill_region

@@ -9,7 +9,7 @@ usage and one-off add-ons bill at list. See final-plan-pricing.md §5 / ADR 0001
 """
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import invoicing
 from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan

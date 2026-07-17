@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import time
 from urllib.parse import urlparse
@@ -9,8 +10,9 @@ import requests
 from frappe.frappeclient import FrappeClient
 
 from central.central.doctype.asset.asset import Asset
-from central.host_task import run_host_task
+from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.site.site import Site
+from central.host_task import run_host_task
 
 # Central's integration with the regional Atlas clusters (Edge B), all in one place:
 #   - outbound: AtlasClient calls Atlas over Frappe's FrappeClient (token auth from
@@ -22,6 +24,12 @@ from central.central.doctype.site.site import Site
 
 
 # --- outbound: Central → Atlas ----------------------------------------------
+
+
+# Hard timeout (seconds) for the capacity reads on the create-server / resize menu path.
+# Short on purpose: these run on every menu render and fail soft (a timeout just shows the
+# full menu), so a degraded Atlas must not hold a worker longer than a page can wait.
+CAPACITY_TIMEOUT = 3
 
 
 class AtlasError(frappe.ValidationError):
@@ -71,6 +79,34 @@ class AtlasClient:
 			"run_doc_method", params={"dt": "Virtual Machine", "dn": name, "method": method}
 		)
 
+	def resize_vm(
+		self,
+		name: str,
+		*,
+		vcpus: int,
+		memory_megabytes: int,
+		disk_gigabytes: int,
+	) -> str:
+		"""Resize a VM's compute shape (the resize() doc method takes kwargs, unlike
+		the arg-less lifecycle verbs, so it goes through run_doc_method's `args`).
+		Atlas refuses a resize on a running VM — the caller gates on Stopped first.
+		Returns the on-host resize Task name."""
+		return self.client().post_api(
+			"run_doc_method",
+			params={
+				"dt": "Virtual Machine",
+				"dn": name,
+				"method": "resize",
+				"args": json.dumps(
+					{
+						"vcpus": int(vcpus),
+						"memory_megabytes": int(memory_megabytes),
+						"disk_gigabytes": int(disk_gigabytes),
+					}
+				),
+			},
+		)
+
 	def create_vm(
 		self,
 		*,
@@ -79,11 +115,16 @@ class AtlasClient:
 		vcpus: int,
 		memory_megabytes: int,
 		disk_gigabytes: int,
-		email: str | None = None,
 		cpu_max_cores: float | None = None,
+		frappe_version: str | None = None,
 	) -> dict:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
-		Returns the new VM in the Asset-mirror shape so the caller can upsert it."""
+		Returns the new VM in the Asset-mirror shape so the caller can upsert it.
+
+		For a bench VM, `title` doubles as the subdomain — Atlas fronts it at
+		`title.<region domain>` and reports that back as gateway_url. The one-click
+		login URL is minted after boot, so it (and its expiry) arrive later on the
+		vm.status_changed event, not in this reply."""
 		params: dict = {
 			"team": team,
 			"title": title,
@@ -91,17 +132,67 @@ class AtlasClient:
 			"memory_megabytes": memory_megabytes,
 			"disk_gigabytes": disk_gigabytes,
 		}
-		if email:
-			params["email"] = email
 		if cpu_max_cores:
 			params["cpu_max_cores"] = cpu_max_cores
+		if frappe_version:
+			params["frappe_version"] = frappe_version
 		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
+
+	def capacity(self) -> dict:
+		"""Ask this region what it can seat right now: `{available, unmeasured, largest_vm}`.
+
+		Central speaks in resources, never hosts — placement is Atlas's concern
+		(spec/16-central.md). `largest_vm` is the biggest single VM shape placeable now
+		(`{vcpus, memory_megabytes, disk_gigabytes}`, or null when no Active host exists);
+		the create-server menu hides plans that don't fit it. Advisory only — placement's
+		create-time gate is authoritative, since capacity can move between this read and
+		the create."""
+		return self._get_bounded("atlas.atlas.api.provision.capacity")
+
+	def resize_capacity(self, vm: str) -> dict:
+		"""The largest shape `vm` can resize to on its current host: `{available,
+		unmeasured, largest_vm}`. The in-place twin of `capacity()` — the ceiling includes
+		the VM's own footprint (a resize frees it before re-reserving), so the VM can always
+		keep its size or shrink. The create-server menu caps the resize slider to this so an
+		oversized resize can't be requested. Advisory — the host resize path is authoritative."""
+		return self._get_bounded("atlas.atlas.api.provision.resize_capacity", {"vm": vm})
+
+	def _get_bounded(self, method: str, params: dict | None = None, timeout: int = CAPACITY_TIMEOUT) -> dict:
+		"""Admin-auth GET against the data path with a HARD timeout — the bounded twin of
+		`client().get_api`. The capacity reads run on every create-server / resize menu
+		render, and FrappeClient (like requests) has no default timeout, so a silently-hung
+		Atlas (slow net, overloaded host) would otherwise pin a Gunicorn worker on the OS
+		TCP timeout and stall every user in that region. A timeout raises here and the
+		caller's fail-soft path treats it as 'don't gate' (show the full menu). Returns the
+		endpoint's `message` payload."""
+		if self.instance.status == "Disabled":
+			frappe.throw(f"Atlas '{self.instance.region}' is disabled.", AtlasError)
+		if not self.instance.api_key:
+			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+		url = self._data_url().rstrip("/") + "/api/method/" + method
+		secret = self.instance.get_password("api_secret")
+		response = requests.get(
+			url,
+			headers={"Authorization": f"token {self.instance.api_key}:{secret}"},
+			params=params or {},
+			timeout=timeout,
+		)
+		response.raise_for_status()
+		return response.json().get("message", {})
 
 	def central_vms(self, team: str | None = None) -> list[dict]:
 		"""Tenant-tagged VMs on this Atlas for the mirror reconcile (optionally one
-		team). One dict per VM: name, team, status, gateway_url."""
+		team). One dict per VM in the Asset-mirror shape — including the bench login
+		handoff (gateway_url + login_url/expiry, the latter only once Running) and the
+		provisioned frappe_version."""
 		params = {"team": team} if team else None
 		return self.client().get_api("atlas.atlas.api.inventory.tenant_vms", params)
+
+	def available_frappe_versions(self) -> list[str]:
+		"""The Frappe versions this region can provision — the tokens of its active
+		bench images. Bounded/fail-soft like the capacity reads (it feeds the same
+		new-server menu); the caller falls back to a static set if it raises."""
+		return self._get_bounded("atlas.atlas.api.inventory.available_frappe_versions") or []
 
 	# --- admin-auth path: the registration handshake (TUNNEL.md) -------------
 	# Central→Atlas authenticates with the Atlas ADMIN creds (api_key/api_secret on the
@@ -171,7 +262,6 @@ class AtlasClient:
 		*,
 		team: str,
 		subdomain: str,
-		email: str | None = None,
 		region: str | None = None,
 	) -> dict:
 		"""
@@ -181,20 +271,60 @@ class AtlasClient:
 
 		params: dict = {"team": team, "subdomain": subdomain}
 
-		if email:
-			params["email"] = email
 		if region:
 			params["region"] = region
+		params.update(self._pilot_credential(team))
 
+		# Durability: minting the bootstrap token lazily generates Central's signing key on
+		# first use. Commit BEFORE the Atlas call so a rollback of the enclosing request
+		# can't discard a freshly-generated key while the bench boots with a token signed by
+		# it. The bootstrap token itself is stateless (a signed JWT, no DB row) and the
+		# long-lived credential is created only later at enrollment, so nothing else here
+		# needs committing; an unused token after a failed Atlas call is harmless.
+		frappe.db.commit()
 		return self.client().post_api("atlas.atlas.api.site.create_site", params=params)
+
+	def _pilot_credential(self, team: str) -> dict:
+		"""
+		Mint a single-use enrollment (bootstrap) token and hand Atlas the token + callback
+		URL to seed on the bench (bench.toml). On first boot the pilot exchanges it for its
+		long-lived credential (`central.api.pilot.enroll`) — the durable secret is never
+		injected during provisioning, only a short-lived, single-use one. Atlas binds
+		pilot_credential_id to the pilot and echoes it back to join events, which links the
+		enrolled credential to its VM.
+		"""
+		from central.sso import central_url, mint_bootstrap_token
+
+		pilot_credential_id = f"pcred-{frappe.generate_hash(length=16)}"
+		# Reserve the row now (no token) so the vm.* events can bind its Asset link even if
+		# they arrive before the pilot boots and enrols. The token is issued only at enroll.
+		PilotCredential.reserve(team=team, pilot_credential_id=pilot_credential_id, audience_id=pilot_credential_id)
+
+		return {
+			"pilot_credential_id": pilot_credential_id,
+			"central_endpoint": central_url(),
+			"bootstrap_token": mint_bootstrap_token(team=team, pilot_credential_id=pilot_credential_id),
+		}
 
 	def get_site(self, name: str) -> dict:
 		"""
 		Poll one site's current state — the self-heal fallback to the site.* events.
-		Returns the mirror shape, with url + admin_password once the site is Running.
+		Returns the mirror shape, with url + the one-click login_url (and its expiry)
+		once the site is Running.
 		"""
 
 		return self.client().post_api("atlas.atlas.api.site.get_site", params={"name": name})
+
+	def regenerate_site_login(self, name: str) -> dict:
+		"""Re-mint a serving site's one-click login URL and return the fresh Site-mirror
+		shape (url + login_url + login_url_expires_at). Central calls this when a tenant
+		clicks their login link after the stored URL's 24h session has expired — the URL
+		is short-lived by design, so it is re-signed on demand. The Atlas Site controller
+		re-mints in the guest, re-stamps, and returns the mirror."""
+		return self.client().post_api(
+			"run_doc_method",
+			params={"dt": "Site", "dn": name, "method": "regenerate_login_url"},
+		)
 
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""
@@ -257,16 +387,18 @@ def _atlas_cluster() -> str:
 
 def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
 	Asset.mirror_vm(cluster, payload, occurred_at=occurred_at)
+	# Once Atlas echoes the pilot_credential_id, bind the credential to its VM.
+	PilotCredential.link_asset(payload.get("pilot_credential_id"), payload.get("name"))
 
 
 def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
 	resource_id = payload.get("name")
-	if (
-		resource_id
-		and frappe.db.exists("Asset", resource_id)
-		and not Asset.is_stale(resource_id, occurred_at)
-	):
+	if resource_id:
+		# mark_terminated locks + applies LWW; a stale delete must not overwrite a
+		# newer status_changed that already landed on the mirror.
 		Asset.mark_terminated(resource_id, last_event_at=occurred_at)
+	# The pilot dies with its VM — kill its Central credential so a leaked token is inert.
+	PilotCredential.revoke_by_id(payload.get("pilot_credential_id"))
 
 
 def _on_site(cluster: str, payload: dict, occurred_at) -> None:
@@ -276,6 +408,7 @@ def _on_site(cluster: str, payload: dict, occurred_at) -> None:
 _EVENT_HANDLERS = {
 	"vm.created": _on_vm,
 	"vm.status_changed": _on_vm,
+	"vm.resized": _on_vm,
 	"vm.deleted": _on_vm_deleted,
 	"site.created": _on_site,
 	"site.status_changed": _on_site,
@@ -296,8 +429,35 @@ def reconcile(team: str | None = None) -> dict:
 			synced.append(name)
 		except Exception:
 			frappe.log_error(title=f"Atlas reconcile failed: {name}")
+			_notify_cluster_degraded(name)
 			stale.append(name)
 	return {"synced": synced, "stale": stale}
+
+
+def _notify_cluster_degraded(cluster: str) -> None:
+	"""Warn teams running in an unreachable cluster that their console view may be
+	stale. Fans out one Server-category warning per affected team, deduped to a single
+	open notice per (team, cluster) so a flapping/slow Atlas doesn't spam the feed."""
+	from central.notifications import create_notification
+
+	teams = frappe.get_all(
+		"Asset", filters={"cluster": cluster, "status": ["!=", "Terminated"]},
+		pluck="team", distinct=True,
+	)
+	for team in {t for t in teams if t}:
+		if frappe.db.exists(
+			"Team Notification",
+			{"team": team, "event_type": "Cluster Degraded", "reference_name": cluster, "is_read": 0},
+		):
+			continue
+		create_notification(
+			team, f"Region {cluster} is temporarily unreachable",
+			category="Server", event_type="Cluster Degraded", severity="Warning",
+			message=f"Central couldn't reach {cluster} on the last sync. Your servers keep running; "
+			"their status in the console may be delayed until the region recovers.",
+			reference_doctype="Atlas Instance", reference_name=cluster,
+			action_label="View servers", action_route="/servers",
+		)
 
 
 def reconcile_atlas(instance, team: str | None = None) -> int:

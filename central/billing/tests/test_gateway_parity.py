@@ -4,7 +4,7 @@
 covered is normalised by the new adapters. charge/refund/signature parity is
 covered by the shared contract suite (test_stripe_adapter / test_razorpay_adapter)."""
 
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 from central.billing.gateways.stripe_adapter import StripeAdapter

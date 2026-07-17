@@ -15,7 +15,7 @@
    "fieldtype": "Check",
    "in_list_view": 1,
    "label": "Default",
-   "description": "This gateway is the default handler for this currency. At most one enabled gateway may have this set per currency."
+   "description": "Default gateway for this currency; at most one enabled gateway per currency."
   },
   {
    "fieldname": "currency",

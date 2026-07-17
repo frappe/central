@@ -4,7 +4,16 @@
 
 Per team/subscription, compute day-weighted fixed lines (from Subscription
 Change rate-snapshot segments) plus metered overage, apply the commitment
-adjustment, and create a `Draft`. Idempotent per (team/subscription, period).
+adjustment, and create a `Draft`. Idempotent per (team, period) — and idempotent
+*under concurrency*, which is a different and stronger claim (ADR 0018).
+
+The "does an invoice already exist?" read below is a fast path, not the guarantee.
+The guarantee is the unique index on `Invoice.period_key`: two workers that both
+read "no invoice" and both insert will see one succeed and the other take a
+DuplicateEntryError, which `_insert_invoice` translates back into "the other worker
+billed this period". Without it the read-then-insert is a time-of-check /
+time-of-use gap, and `generate_draft_invoices` enqueues one job *per team* — so a
+scheduler double-fire or a manual run overlapping the cron double-billed the team.
 """
 
 import frappe
@@ -13,10 +22,8 @@ from central.billing.catalog import commitments
 from central.billing.revenue.invoicing.lines import compute_line_items
 
 
-def _existing_draft(team: str, billing_group: str | None, period_start, period_end) -> str | None:
-	"""The non-cancelled invoice already drafted for this (team, billing_group, period),
-	if any. Invoices are keyed by the team + its Billing Group scope (unset group =
-	the consolidated invoice), so generation is idempotent per scope per period."""
+def _live_invoice(team: str, billing_group: str | None, period_start, period_end) -> str | None:
+	"""The team's existing live (non-cancelled) invoice for the period, if any."""
 	return frappe.db.get_value(
 		"Invoice",
 		{
@@ -58,6 +65,33 @@ def _team_invoice_groups(team: str) -> list:
 		bg for bg in frappe.get_all("Subscription", filters={"team": team}, pluck="billing_group") if bg
 	})
 	return [None, *groups]
+# Frappe surfaces a unique-key conflict two ways: UniqueValidationError from its own
+# pre-insert check, and DuplicateEntryError when the write reaches the database first.
+# Under real concurrency both occur, so both mean the same thing here.
+_ALREADY_BILLED = (frappe.UniqueValidationError, frappe.DuplicateEntryError)
+
+
+def _insert_invoice(payload: dict) -> str:
+	"""Insert the draft, or yield to the worker that got there first.
+
+	A unique-key conflict here is not an error — it is the index doing its job. Another
+	worker billed this (team, period) between our check and our insert; its invoice is
+	the invoice, and we return it rather than billing the team a second time.
+	"""
+	try:
+		return frappe.get_doc(payload).insert(ignore_permissions=True).name
+	except _ALREADY_BILLED:
+		frappe.db.rollback()
+		existing = _live_invoice(
+			payload["team"], payload.get("billing_group"), payload["period_start"], payload["period_end"]
+		)
+		if not existing:
+			raise  # a conflict on some other unique key — don't swallow it
+		frappe.logger("billing").info(
+			f"({payload['team']}, {payload['period_start']}) was billed concurrently as "
+			f"{existing} — yielding to it"
+		)
+		return existing
 
 
 def reconcile_subscription(subscription_doc):
@@ -80,7 +114,10 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	sub = frappe.get_doc("Subscription", subscription)
 	reconcile_subscription(sub)
 
-	existing = _existing_draft(sub.team, sub.billing_group, period_start, period_end)
+	# Keyed on the TEAM, not the subscription: a team gets one bill per period across
+	# every subscription and cluster it runs (the same grain generate_team_invoice
+	# bills at, and the grain the unique index enforces).
+	existing = _live_invoice(sub.team, sub.billing_group, period_start, period_end)
 	if existing:
 		return existing
 
@@ -113,7 +150,7 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 
 	# The single branch point: an entry-tier (free/trial) team's invoice is a
 	# cost_report — computed identically, but a true cost rather than a bill.
-	invoice = frappe.get_doc(
+	name = _insert_invoice(
 		{
 			"doctype": "Invoice",
 			"team": sub.team,
@@ -139,9 +176,9 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 			"expected_collection": expected,
 			"amount_paid": 0,
 		}
-	).insert(ignore_permissions=True)
+	)
 	commitments.mark_breached(commitment)
-	return invoice.name
+	return name
 
 
 def generate_team_invoice(team: str, period_start, period_end, billing_group: str | None = None):
@@ -150,14 +187,16 @@ def generate_team_invoice(team: str, period_start, period_end, billing_group: st
 	A team that runs instances in several regions should see a SINGLE monthly
 	invoice, not one per region — so this aggregates the day-weighted fixed lines
 	plus metered overage from all of the team's clusters into one Invoice.
-	Idempotent per (team, billing_group, period): a second call returns the existing
-	invoice.
+	Idempotent per (team, period) — including under concurrency, which the read below
+	cannot deliver on its own. `generate_draft_invoices` enqueues one job per team, so
+	two workers could both read "no invoice" and both insert; the unique index on
+	`period_key` is what stops the team being billed twice (ADR 0018).
 
 	`billing_group` scopes the invoice: unset = the team's consolidated invoice; set
 	= the separate invoice for that group's assets. The team is always the biller;
 	the group only partitions how many invoices the team receives.
 	"""
-	existing = _existing_draft(team, billing_group, period_start, period_end)
+	existing = _live_invoice(team, billing_group, period_start, period_end)
 	if existing:
 		return existing
 
@@ -191,7 +230,7 @@ def generate_team_invoice(team: str, period_start, period_end, billing_group: st
 	total = frappe.utils.flt(taxable_base + tax["output_tax_amount"], 2)
 	expected = frappe.utils.flt(total - tax["tds_amount"], 2)
 
-	invoice = frappe.get_doc(
+	name = _insert_invoice(
 		{
 			"doctype": "Invoice",
 			"team": team,
@@ -217,9 +256,9 @@ def generate_team_invoice(team: str, period_start, period_end, billing_group: st
 			"expected_collection": expected,
 			"amount_paid": 0,
 		}
-	).insert(ignore_permissions=True)
+	)
 	commitments.mark_breached(commitment)
-	return invoice.name
+	return name
 
 
 def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> list[str]:

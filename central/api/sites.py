@@ -33,10 +33,10 @@ def create_site(subdomain: str, region: str | None = None) -> dict:
 	Server is the atomic unit, so deploying a site is authorized by the same
 	provisioning capability as standing up a server (site-level capabilities are
 	deferred). Central supplies *what* (the owning team + the subdomain); Atlas
-	owns placement, the fixed size, and the region/domain. We seed the Atlas tenant
-	with the team owner's email on first use, then mirror the returned Pending row
-	so the onboarding screen has something to poll immediately — the site.* events
-	keep it fresh from there."""
+	owns placement, the fixed size, and the region/domain. Atlas get-or-creates the
+	tenant (keyed on the team) and returns the Pending row, which we mirror so the
+	onboarding screen has something to poll immediately — the site.* events keep it
+	fresh from there."""
 	user = frappe.session.user
 	team = resolve_team(user)
 	if not can(user, team, "server:create"):
@@ -44,8 +44,7 @@ def create_site(subdomain: str, region: str | None = None) -> dict:
 
 	region = region or _default_region()
 	client = AtlasClient.for_region(region)
-	email = frappe.db.get_value("Team", team, "owner_user")
-	site = client.create_site(team=team, subdomain=subdomain, email=email)
+	site = client.create_site(team=team, subdomain=subdomain)
 
 	from central.central.doctype.site.site import Site
 
@@ -58,8 +57,11 @@ def get_site(name: str) -> dict:
 	"""Current state of a site for the onboarding poll. Gated on team membership.
 
 	Reads the mirror; while the site is still provisioning we pull Atlas's get_site
-	as the self-heal (in case an event delivery was missed) and re-mirror. The admin
-	password + URL are only surfaced once Running — the tenant handoff."""
+	as the self-heal (in case an event delivery was missed) and re-mirror. The
+	one-click login URL + live URL are only surfaced once Running — the tenant
+	handoff. The login URL is short-lived (a 24h session), so if the stored one has
+	expired by the time the tenant lands here we regenerate a fresh one on read, so
+	the link they click always works."""
 	user = frappe.session.user
 	mirror = frappe.db.get_value(
 		"Site", name, ["team", "cluster", "status"], as_dict=True
@@ -83,8 +85,45 @@ def get_site(name: str) -> dict:
 		"name": doc.name,
 		"status": doc.status,
 		"url": doc.url if running else None,
-		"admin_password": doc.get_password("admin_password") if running else None,
+		"login_url": _fresh_site_login_url(doc) if running else None,
 	}
+
+
+def _fresh_site_login_url(doc) -> str | None:
+	"""The site's usable one-click login URL: the stored one if it hasn't expired,
+	else a freshly-regenerated one. The URL is a short-lived (24h) session, so a
+	tenant who lands on a stale mirror row would otherwise get a dead link — we
+	re-mint on read instead. Best-effort: if the regenerate call fails (Atlas
+	unreachable), fall back to the stored URL rather than blocking the handoff."""
+	if doc.login_url and not _login_url_expired(doc.login_url_expires_at):
+		return doc.login_url
+	try:
+		return _regenerate_site_login(doc.name, doc.cluster).get("login_url") or doc.login_url
+	except Exception:
+		frappe.log_error(title=f"Regenerate login failed for site {doc.name}")
+		return doc.login_url or None
+
+
+def _login_url_expired(expires_at) -> bool:
+	"""True if a stored login URL is at/past its expiry (or carries no expiry — treat
+	an unstamped URL as unusable and force a regenerate). A small skew guard trims the
+	tail so we don't hand out a URL that dies mid-click."""
+	if not expires_at:
+		return True
+	skew = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=30)
+	return frappe.utils.get_datetime(expires_at) <= skew
+
+
+def _regenerate_site_login(name: str, cluster: str) -> dict:
+	"""Ask Atlas to re-mint the site's login URL, re-mirror the fresh handoff, and
+	return it. The Atlas Site controller re-signs the session in the guest and returns
+	the Site-mirror shape; we upsert it so the stored URL + expiry stay in lockstep."""
+	from central.central.doctype.site.site import Site
+
+	instance = frappe.get_doc("Atlas Instance", cluster)
+	fresh = AtlasClient(instance).regenerate_site_login(name)
+	Site.mirror_site(cluster, fresh, synced_at=frappe.utils.now_datetime())
+	return fresh
 
 
 @frappe.whitelist(methods=["GET"])

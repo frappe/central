@@ -216,14 +216,24 @@ def get_invoice(name: str) -> dict:
 	team = frappe.db.get_value("Invoice", name, "team")
 	_require_view(team)
 	doc = frappe.get_doc("Invoice", name)
+	from central.billing.payments.charges import _IN_FLIGHT
+
+	# An attempt already charging (or captured and awaiting the settlement webhook)
+	# means the money is moving — the UI must show a "settling" state, not a Pay
+	# button, so the customer can't fire a second charge (#10).
+	payment_in_progress = bool(
+		frappe.db.exists("Payment Attempt", {"invoice": name, "status": ["in", _IN_FLIGHT]})
+	)
 	return {
 		"name": doc.name, "team": doc.team, "status": doc.status, "invoice_type": doc.invoice_type,
 		"period_start": str(doc.period_start), "period_end": str(doc.period_end),
 		"currency": doc.currency, "subtotal": doc.subtotal,
-		"output_tax_type": doc.output_tax_type, "output_tax_amount": doc.output_tax_amount,
+		"output_tax_type": doc.output_tax_type, "output_tax_rate": doc.output_tax_rate,
+		"output_tax_amount": doc.output_tax_amount,
 		"zero_rating_reason": doc.zero_rating_reason, "total": doc.total,
 		"credit_applied": doc.credit_applied, "expected_collection": doc.expected_collection,
 		"amount_paid": doc.amount_paid, "due_date": str(doc.due_date) if doc.due_date else None,
+		"payment_in_progress": payment_in_progress,
 		"items": [_describe_line(doc.team, li) for li in doc.items],
 		"activity": _invoice_activity(doc),
 	}
@@ -294,7 +304,8 @@ def _invoice_activity(doc) -> list[dict]:
 
 	events.sort(key=lambda x: x["at"])
 
-	# Closure marker, pinned to the last real event so it always reads last.
+	# Closure marker, pinned to the last real event so it stays the newest event —
+	# the list is returned newest-first, so this reads at the top.
 	if doc.status == "Paid":
 		events.append({
 			"at": events[-1]["at"] if events else str(doc.creation),
@@ -308,6 +319,7 @@ def _invoice_activity(doc) -> list[dict]:
 
 	for e in events:
 		e["at"] = _fmt_when(e["at"])
+	events.reverse()  # newest first — the latest state reads at the top
 	return events
 
 

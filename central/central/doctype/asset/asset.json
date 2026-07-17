@@ -11,6 +11,7 @@
   "team",
   "cluster",
   "plan",
+  "frappe_version",
   "status",
   "vcpus",
   "memory_megabytes",
@@ -18,6 +19,9 @@
   "ipv6_address",
   "public_ipv4",
   "gateway_url",
+  "login_url",
+  "login_url_expires_at",
+  "resize_in_progress",
   "last_synced_at",
   "last_event_at"
  ],
@@ -68,14 +72,21 @@
    "options": "Plan"
   },
   {
+   "description": "Frappe version the VM was provisioned with — requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).",
+   "fieldname": "frappe_version",
+   "fieldtype": "Data",
+   "label": "Frappe Version",
+   "read_only": 1
+  },
+  {
    "default": "Pending",
-   "description": "Mirrors the Atlas Virtual Machine status verbatim.",
+   "description": "Mirrors the Atlas-reported status verbatim (raw VM, or Site/Pilot front-door status for bench/site VMs).",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Pending\nRunning\nPaused\nStopped\nFailed\nTerminated"
+   "options": "Pending\nProvisioning\nDeploying\nRunning\nPaused\nStopped\nFailed\nTerminated"
   },
   {
    "fieldname": "vcpus",
@@ -108,11 +119,35 @@
    "read_only": 1
   },
   {
-   "description": "The bench gateway Central deep-links into (VM leaf). Reserved — empty until the bench-gateway layer reports it.",
+   "description": "The URL a bench VM is fronted at, reported by Atlas; empty for a non-bench VM.",
    "fieldname": "gateway_url",
    "fieldtype": "Data",
    "label": "Gateway URL",
    "options": "URL"
+  },
+  {
+   "description": "One-click admin sign-in URL Atlas minted after boot; short-lived, regenerated on expiry.",
+   "fieldname": "login_url",
+   "fieldtype": "Small Text",
+   "label": "Login URL",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "When login_url stops working (Atlas mint time + token TTL).",
+   "fieldname": "login_url_expires_at",
+   "fieldtype": "Datetime",
+   "label": "Login URL Expires At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Set while a background hardware resize runs; blocks power actions and shows a Resizing state.",
+   "fieldname": "resize_in_progress",
+   "fieldtype": "Check",
+   "label": "Resize In Progress",
+   "read_only": 1
   },
   {
    "description": "When the last reconcile (pull) refreshed this row.",
@@ -122,14 +157,25 @@
    "read_only": 1
   },
   {
-   "description": "occurred_at of the last applied Atlas event. Used for last-writer-wins so a stale or duplicate push can't overwrite newer state.",
+   "description": "occurred_at of the last applied Atlas event; drives last-writer-wins.",
    "fieldname": "last_event_at",
    "fieldtype": "Datetime",
    "label": "Last Event At",
    "read_only": 1
   }
  ],
- "links": [],
+ "links": [
+  {
+   "group": "Billing",
+   "link_doctype": "Subscription",
+   "link_fieldname": "asset_id"
+  },
+  {
+   "group": "Access",
+   "link_doctype": "Pilot Credential",
+   "link_fieldname": "asset"
+  }
+ ],
  "modified": "2026-06-22 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",

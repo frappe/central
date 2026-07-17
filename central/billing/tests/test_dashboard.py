@@ -3,7 +3,7 @@
 """Customer dashboard endpoints + forecast (issues #26, #18)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import credits
 from central.billing.api import dashboard
@@ -48,7 +48,12 @@ class CustomerDataBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Credit Ledger Entry", "Gateway Customer"):
+		# Billing Profile + Tax Profile are purged too: completing a profile via the
+		# API now provisions a tax profile and welcome credits, so a profile left
+		# committed by one test would make a later test's partial save look complete
+		# and fire that provisioning under it.
+		for dt in ("Invoice", "Credit Ledger Entry", "Gateway Customer", "Tax Profile",
+				   "Billing Profile"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -106,6 +111,26 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertEqual(detail["output_tax_amount"], 180)
 		self.assertEqual(len(detail["items"]), 1)
 
+	def test_get_invoice_flags_payment_in_progress(self):
+		# An Open invoice with a captured-but-unsettled attempt is mid-settlement:
+		# the flag lets the UI show a "settling" status instead of a Pay button.
+		inv = frappe.get_doc(
+			{"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Open",
+			 "period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
+			 "subtotal": 1000, "total": 1000, "expected_collection": 1000}
+		).insert(ignore_permissions=True).name
+		self.assertFalse(dashboard.get_invoice(inv)["payment_in_progress"])
+
+		attempt = frappe.get_doc(
+			{"doctype": "Payment Attempt", "invoice": inv, "team": TEAM, "amount": 1000,
+			 "currency": "INR", "status": "Captured", "gateway_transaction_id": "pi_x"}
+		).insert(ignore_permissions=True)
+		self.assertTrue(dashboard.get_invoice(inv)["payment_in_progress"])
+
+		# Once it settles/fails (terminal), the flag clears and Pay is offered again.
+		attempt.db_set("status", "Failed")
+		self.assertFalse(dashboard.get_invoice(inv)["payment_in_progress"])
+
 	def test_payment_methods_never_expose_secrets(self):
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
@@ -130,6 +155,18 @@ class TestCustomerReads(CustomerDataBase):
 
 
 class TestTeamScoping(CustomerDataBase):
+	def setUp(self):
+		super().setUp()
+		# These tests mint unique-hash teams inline (make_billing_team); snapshot the
+		# roster so tearDown can purge exactly what each test added.
+		self._teams_before = set(frappe.get_all("Team", pluck="name"))
+
+	def tearDown(self):
+		from central.billing.tests.utils import purge_teams
+
+		purge_teams(list(set(frappe.get_all("Team", pluck="name")) - self._teams_before))
+		super().tearDown()
+
 	def test_customer_scoped_to_their_capable_team(self):
 		"""A billing-capable member reads their own team (resolved as the default)
 		but is rejected for any team they're not a member of — never widened."""
@@ -162,17 +199,23 @@ class TestTeamScoping(CustomerDataBase):
 					frappe.set_user("Administrator")
 
 	def test_billing_capable_roles_can_read_and_manage(self):
-		"""The system roles that carry both capabilities — Owner and Billing — can
-		read and run a manage mutation on their own team. (Owner is the team's
-		sole owner_user; Billing is a separate member.)"""
+		"""The system roles that carry both capabilities can read and run a manage
+		mutation on their own team. Owner is the team's sole owner_user; Admin and
+		Billing are separate members."""
 		user = make_user()
 		owner_team = frappe.get_doc(
 			{"doctype": "Team", "team_name": f"Owned {frappe.generate_hash(5)}", "owner_user": user}
 		).insert(ignore_permissions=True)  # user becomes the sole active Owner member
+		admin_user = make_user()
+		admin_team = make_billing_team(admin_user, role="Admin")
 		billing_user = make_user()
 		billing_team = make_billing_team(billing_user, role="Billing")
 
-		cases = {"Owner": (user, owner_team.name), "Billing": (billing_user, billing_team.name)}
+		cases = {
+			"Owner": (user, owner_team.name),
+			"Admin": (admin_user, admin_team.name),
+			"Billing": (billing_user, billing_team.name),
+		}
 		for role, (member, team_name) in cases.items():
 			with self.subTest(role=role):
 				frappe.set_user(member)
@@ -266,6 +309,21 @@ class TestBillingCurrency(CustomerDataBase):
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.save_billing_profile(TEAM, currency="XYZ")  # no gateway → rejected
 
+	def test_currency_follows_country(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		make_razorpay_gateway("GW-Cur-INR")  # INR supported
+		make_stripe_gateway("GW-Cur-USD")  # USD supported
+
+		# India → INR, regardless of any currency the client tries to send.
+		dashboard.save_billing_profile(TEAM, legal_name="Acme", country="India", currency="USD")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
+
+		# A foreign country → USD.
+		dashboard.save_billing_profile(TEAM, country="Germany")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "USD")
+
 	def test_currency_locks_after_money_activity(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 		from central.billing.revenue import credits
@@ -278,6 +336,9 @@ class TestBillingCurrency(CustomerDataBase):
 		self.assertTrue(dashboard.get_billing_profile(TEAM)["currency_locked"])
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.save_billing_profile(TEAM, currency="USD")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
+		# A locked INR team editing its (foreign) address does NOT get re-derived to USD.
+		dashboard.save_billing_profile(TEAM, country="Germany", legal_name="Acme")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
 
 
@@ -521,6 +582,7 @@ class TestWriteEndpointsRejectGet(IntegrationTestCase):
 			methods.reorder_payment_methods,
 			account.save_billing_profile, account.save_billing_settings,
 			account.save_notification_preferences,
+			account.mark_notification_read, account.mark_all_notifications_read,
 		]
 		allowed = frappe.allowed_http_methods_for_whitelisted_func
 		for fn in write_fns:
@@ -530,3 +592,81 @@ class TestWriteEndpointsRejectGet(IntegrationTestCase):
 					allowed[fn], ["POST"],
 					f"{fn.__name__} must be methods=['POST'] so a GET cannot silently roll back its writes",
 				)
+
+
+class TestPaymentMethodOptions(IntegrationTestCase):
+	"""Saved cards are a Stripe-only rail (ADR 0005): the Card option is Stripe in
+	every currency; INR also offers a Razorpay UPI Autopay e-mandate."""
+
+	TEAM = "team-method-opts"
+	STRIPE = "GW-Opts-Stripe"
+	RAZORPAY = "GW-Opts-Razorpay"
+
+	def setUp(self):
+		from central.billing.catalog.entitlements import recompute_trust_tier
+		from central.billing.tests.test_entitlements import make_ladder
+		from central.billing.tests.utils import clear_team_tier
+
+		ensure_team(self.TEAM)
+		make_ladder()
+		self._stripe_gateway(["INR", "USD"])
+		self._razorpay_gateway("INR")
+		complete_billing_profile(self.TEAM)
+		frappe.db.set_value("Billing Profile", self.TEAM, "currency", "INR")
+		clear_team_tier(self.TEAM)
+		recompute_trust_tier(self.TEAM, paid_invoice_count=0, cumulative_paid=0)
+
+	def _stripe_gateway(self, currencies):
+		if frappe.db.exists("Payment Gateway", self.STRIPE):
+			frappe.delete_doc("Payment Gateway", self.STRIPE, force=True)
+		frappe.get_doc({
+			"doctype": "Payment Gateway", "__newname": self.STRIPE, "title": "Stripe (Opts)",
+			"adapter_key": "Stripe", "api_key": "pk_test_opts", "api_secret": "sk_test_opts",
+			"webhook_secret": "whsec_opts", "is_enabled": 1,
+			# INR non-default (Razorpay owns the currency default), USD default.
+			"currencies": [{"currency": c, "is_default": 1 if c == "USD" else 0} for c in currencies],
+		}).insert(ignore_permissions=True)
+
+	def _razorpay_gateway(self, currency):
+		if frappe.db.exists("Payment Gateway", self.RAZORPAY):
+			frappe.delete_doc("Payment Gateway", self.RAZORPAY, force=True)
+		frappe.get_doc({
+			"doctype": "Payment Gateway", "__newname": self.RAZORPAY, "title": "Razorpay (Opts)",
+			"adapter_key": "Razorpay", "api_key": "rzp_test", "api_secret": "rzp_secret",
+			"webhook_secret": "rzp_whsec", "is_enabled": 1, "supports_mandates": 1,
+			"currencies": [{"currency": currency, "is_default": 1}],
+		}).insert(ignore_permissions=True)
+
+	def test_india_offers_stripe_card_and_razorpay_upi(self):
+		from central.billing.api.dashboard import methods
+
+		out = methods.get_payment_method_options(self.TEAM)
+		self.assertEqual(out["currency"], "INR")
+		self.assertEqual(out["adapter_key"], "Stripe")  # Card rides Stripe, not Razorpay
+		self.assertEqual(out["methods"], ["Card", "UPI Autopay"])  # Card is primary
+		self.assertEqual(out["gateway"], self.STRIPE)
+		self.assertTrue(out["publishable_key"])
+		self.assertIn("allow_upi", out)  # UPI eligibility carried through
+
+	def test_india_card_setup_uses_stripe_gateway(self):
+		from central.billing.api.dashboard import methods
+		from unittest.mock import patch
+
+		captured = {}
+
+		def fake_setup(team, gateway):
+			captured["gateway"] = gateway
+			return {"client_secret": "cs", "payment_method": "pm"}
+
+		with patch("central.billing.payments.payments.initiate_payment_method_setup", fake_setup):
+			methods.initiate_card_setup(self.TEAM)
+		self.assertEqual(captured["gateway"], self.STRIPE)
+
+	def test_foreign_currency_is_stripe_card_only(self):
+		from central.billing.api.dashboard import methods
+
+		frappe.db.set_value("Billing Profile", self.TEAM, "currency", "USD")
+		out = methods.get_payment_method_options(self.TEAM)
+		self.assertEqual(out["adapter_key"], "Stripe")
+		self.assertEqual(out["methods"], ["Card"])  # no UPI outside INR
+		self.assertFalse(out["allow_upi"])

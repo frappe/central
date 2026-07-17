@@ -143,6 +143,6 @@ the `allow_tests` gate.
    new backing data. **Restart the web worker** after editing it (the dev server
    caches imported modules).
 2. Add the spec under `e2e/billing/`. `import { test, expect } from './fixtures'`,
-   call `await billing.signIn({...})`, `page.goto('/legacy-dashboard/...')`, and assert on
+   call `await billing.signIn({...})`, `page.goto('/dashboard/...')`, and assert on
    user-visible state.
 3. For Stripe card entry, use `fillStripeCard()` from `./helpers/stripe.js`.

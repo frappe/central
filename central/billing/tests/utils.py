@@ -3,8 +3,68 @@
 """Shared helpers for billing tests."""
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+
+
+class BillingTestCase(IntegrationTestCase):
+	"""Atomic base for billing/server tests: it snapshots every tracked doctype
+	before the test and deletes whatever the test added afterwards — so a test leaves
+	the site exactly as it found it, EVEN when it commits (the concurrency/load tests,
+	which the default per-test rollback can't undo, are the whole reason data leaks).
+
+	The snapshot + sweep hang off `run()`, not setUp/tearDown, so a subclass gets this
+	for free without having to remember a super() call — swap the base class and it's
+	atomic. Deleting only rows absent from the pre-test snapshot means it can never
+	touch data the test didn't create.
+	"""
+
+	# Top-level doctypes these tests create. Frappe links aren't DB foreign keys, so
+	# raw deletes (frappe.db.delete) need no dependency ordering; child rows (e.g.
+	# Team Member) are cleared via their parent below.
+	_TRACKED = (
+		"Payment Attempt", "Refund", "Credit Ledger Entry", "Credit Wallet",
+		"Invoice", "Subscription Change", "Subscription", "Gateway Customer",
+		"Entitlement Token", "Commitment", "Usage Rollup", "Payment Method",
+		"Tax Profile", "Billing Profile", "Team Invitation", "Team Role",
+		"Catalog Rate", "Plan", "Asset", "Team", "Atlas Instance", "Region", "User",
+		"Webhook Event", "Notification Log",
+	)
+
+	def run(self, result=None):
+		before = {doctype: set(frappe.get_all(doctype, pluck="name")) for doctype in self._TRACKED}
+		try:
+			return super().run(result)
+		finally:
+			self._sweep(before)
+
+	def _sweep(self, before: dict) -> None:
+		removed_teams: list[str] = []
+		for doctype in self._TRACKED:
+			added = list(set(frappe.get_all(doctype, pluck="name")) - before[doctype])
+			if not added:
+				continue
+			if doctype == "Team":
+				removed_teams = added
+			frappe.db.delete(doctype, {"name": ["in", added]})
+		if removed_teams:
+			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist the sweep past a test's own commit
+
+# frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to
+# execute an enqueued job synchronously — dropping the queue-control kwargs and calling
+# the target with the real ones. Usage: patch("frappe.enqueue", side_effect=run_enqueued_inline).
+_ENQUEUE_CONTROL_KWARGS = (
+	"queue", "timeout", "enqueue_after_commit", "job_id", "at_front", "is_async", "now",
+	"deduplicate", "event", "on_success", "on_failure", "job_name",
+)
+
+
+def run_enqueued_inline(method, **kwargs):
+	for control in _ENQUEUE_CONTROL_KWARGS:
+		kwargs.pop(control, None)
+	return method(**kwargs)
 
 DEFAULT_RATES = [
 	{"cluster": "", "currency": "USD", "rate": 40},
@@ -24,14 +84,14 @@ DEFAULT_INCLUDES = [
 
 
 def ensure_atlas_instance(region):
-	"""Catalog Rate.cluster is a Link to Atlas Instance, so a per-region rate needs
-	that instance to exist. Atlas Instance is autonamed by region."""
-	if not frappe.db.exists("Atlas Instance", region):
-		frappe.get_doc({
-			"doctype": "Atlas Instance", "region": region,
-			"base_url": f"https://{region}.atlas.test", "api_key": "test", "api_secret": "test",
-		}).insert(ignore_permissions=True)
-	return region
+	"""The cluster a billing test bills against.
+
+	Both Asset.cluster and Catalog Rate.cluster are required Links to Atlas Instance,
+	so any test that creates a subscription or a per-region rate needs the instance
+	(and its Region) to exist first."""
+	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
+
+	return _ensure_atlas_instance(region)
 
 
 def make_plan(name, rates=None, includes=None, **kwargs):
@@ -149,6 +209,30 @@ def ensure_team(slug, owner=None):
 	doc.name = slug
 	doc.insert(ignore_permissions=True)
 	return slug
+
+
+def purge_teams(teams):
+	"""Delete the given teams and every row that links them, for test teardown.
+
+	Tests that `frappe.db.commit()` (load/concurrency runs) escape the per-test
+	rollback, so anything they created — the Team plus its billing artifacts
+	(subscriptions, invoices, profiles, wallets, gateway customers, …) — leaks into
+	the site. Raw DELETEs across every `team`-linked table (discovered live) clear it
+	without tripping Link-integrity ordering, since Frappe links aren't DB FKs."""
+	teams = [t for t in teams if frappe.db.exists("Team", t)]
+	if not teams:
+		return
+	# Every doctype with a `team` Link column — discovered live so nothing is missed.
+	tables = frappe.db.sql_list(
+		"""SELECT DISTINCT TABLE_NAME FROM information_schema.COLUMNS
+		   WHERE TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'team' AND TABLE_NAME LIKE 'tab%%'"""
+	)
+	for table in tables:
+		doctype = table[len("tab") :]
+		if doctype != "Team":
+			frappe.db.delete(doctype, {"team": ["in", teams]})
+	frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", teams]})
+	frappe.db.delete("Team", {"name": ["in", teams]})
 
 
 def complete_billing_profile(team, currency="INR"):

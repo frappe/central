@@ -23,7 +23,8 @@
   "locked_allowance",
   "locked_rate",
   "column_break_key",
-  "idempotency_key"
+  "idempotency_key",
+  "sequence"
  ],
  "fields": [
   {
@@ -114,7 +115,14 @@
    "fieldtype": "Data",
    "label": "Idempotency Key",
    "unique": 1,
-   "description": "(resource_id, meter_type, period) — re-push replaces, never adds"
+   "description": "Period identity (resource_id, meter_type, period); one row per period, re-push replaces or accumulates."
+  },
+  {
+   "default": "0",
+   "fieldname": "sequence",
+   "fieldtype": "Int",
+   "label": "Sequence",
+   "description": "Incremental reporting only (ADR 0015): last applied batch sequence; a batch accumulates only if it exceeds this."
   }
  ],
  "index_web_pages_for_search": 1,

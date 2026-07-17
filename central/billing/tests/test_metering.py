@@ -3,7 +3,7 @@
 """Central metered ingestion + metered line items (issue #12)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import invoicing, metering
 from central.billing.platform.sync import receive_meter_rollups

@@ -12,8 +12,8 @@ from central.billing import authz
 from central.billing.catalog.subscriptions import team_active_segments
 
 # Tier caps (max_spend) are stored in INR; convert to the team's billing currency
-# so a EUR/USD team sees a coherent cap-vs-spend comparison.
-_FX_TO_INR = {"INR": 1.0, "EUR": 90.0, "USD": 83.0}
+# so a USD team sees a coherent cap-vs-spend comparison.
+_FX_TO_INR = {"INR": 1.0, "USD": 83.0}
 
 
 def _default_team() -> str | None:
@@ -72,9 +72,29 @@ def _team_currency(team: str) -> str:
 # address — before any money moves (top-up, buy credits, add a payment method).
 # Currency is the load-bearing field: wallet, payment methods and invoices are
 # all denominated in it, so it must be chosen first and then held fixed.
+#
+# State and pincode are deliberately NOT required: they're irrelevant for foreign
+# customers, and for India the state is only enforced when a GSTIN is entered
+# (see BillingProfile.validate_india_state).
 _REQUIRED_PROFILE_FIELDS = (
-	"currency", "legal_name", "address_line1", "city", "state", "country", "pincode",
+	"currency", "legal_name", "address_line1", "city", "country",
 )
+_PROFILE_FIELD_LABELS = {
+	"currency": "currency",
+	"legal_name": "legal name",
+	"address_line1": "address line 1",
+	"city": "city",
+	"country": "country",
+}
+
+
+def currency_for_country(country: str | None) -> str:
+	"""Billing currency follows the customer's country: India bills in INR, every
+	other country in USD. Derived, not chosen — so a customer can't pick a currency
+	that mismatches where they are."""
+	from central.billing.india_gst import INDIA
+
+	return "INR" if (country or "").strip() == INDIA else "USD"
 
 
 def _missing_profile_fields(team: str) -> list[str]:
@@ -89,15 +109,29 @@ def _profile_complete(team: str) -> bool:
 	return not _missing_profile_fields(team)
 
 
-def _require_billing_setup(team: str):
-	"""Server-side backstop: refuse money movement until the profile is complete.
-	The dashboard also blocks these actions; this guarantees it can't be bypassed."""
-	if _missing_profile_fields(team):
+def _missing_profile_labels(team: str) -> list[str]:
+	return [_PROFILE_FIELD_LABELS.get(field, field) for field in _missing_profile_fields(team)]
+
+
+def require_billing_profile(team: str, action: str):
+	"""Refuse `action` until the team's billing profile is complete.
+
+	Server-side backstop for anything that needs billing set up first (money
+	movement, provisioning a billable resource). The dashboard also blocks these;
+	this guarantees it can't be bypassed. `action` completes the sentence
+	"… before you can {action}"."""
+	missing = _missing_profile_labels(team)
+	if missing:
 		frappe.throw(
-			"Complete your billing profile (currency, legal name and address) in "
-			"Settings before adding credits or a payment method.",
+			f"Complete your billing profile before you can {action}. "
+			f"Missing: {', '.join(missing)}.",
 			frappe.ValidationError,
 		)
+
+
+def _require_billing_setup(team: str):
+	"""Server-side backstop: refuse money movement until the profile is complete."""
+	require_billing_profile(team, "add credits or a payment method")
 
 
 def _has_money_activity(team: str) -> bool:
@@ -193,6 +227,14 @@ def _add_method_gateway(currency: str):
 	return gw or frappe._dict()
 
 
+def _card_gateway(currency: str) -> str | None:
+	"""The gateway that saves cards for this currency. Saved cards are a Stripe-only
+	rail (ADR 0005) in every currency — INR included, where Razorpay handles only the
+	UPI Autopay e-mandate. Returns an enabled Stripe gateway that handles the
+	currency, or None if there is no card rail for it."""
+	return _enabled_gateway_for_currency(currency, "Stripe")
+
+
 def _from_inr(amount: float, currency: str) -> float:
 	return frappe.utils.flt(frappe.utils.flt(amount) / _FX_TO_INR.get(currency, 1.0), 2)
 
@@ -208,14 +250,25 @@ def _describe_line(team: str, li) -> dict:
 	row = {
 		"resource_type": li.resource_type, "plan": li.plan,
 		"subscription_resource": li.subscription_resource,
-		"days": li.days, "quantity": li.quantity, "rate": li.rate, "amount": li.amount,
-		"unit": li.unit,
+		"days": li.days, "hours": li.hours, "quantity": li.quantity,
+		"rate": li.rate, "amount": li.amount, "unit": li.unit,
+		"charge_date": li.charge_date,
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
 		row["item"] = title or li.plan or "Subscription plan"
 		row["kind"] = "Plan"
-		row["detail"] = f"{li.days} day(s) this period" if li.days else None
+		# Hourly lines come from a churn day (multiple resizes within 24h): they're
+		# tied to one calendar date, so name it. Daily lines span a range within the
+		# period — the invoice already carries the period dates, so no suffix.
+		if li.unit == "hour" and li.hours:
+			hours = f"{frappe.utils.flt(li.hours):g} hour(s)"
+			on = f" on {frappe.utils.getdate(li.charge_date).strftime('%-d %b')}" if li.charge_date else ""
+			row["detail"] = f"{hours}{on}"
+		elif li.days:
+			row["detail"] = f"{li.days} day(s)"
+		else:
+			row["detail"] = None
 	else:
 		metered_plan = _metered_plan_for(li.resource_type)
 		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
@@ -227,9 +280,26 @@ def _describe_line(team: str, li) -> dict:
 			{"team": team, "resource_id": li.subscription_resource, "resource_type": li.resource_type},
 			"locked_allowance",
 		)
+		# li.quantity is the BILLABLE overage (usage already minus the allowance). Spell
+		# out the metered story so the charge is legible: total used, what was included,
+		# and the units actually billed (used − included). Unit is a plain label (Nos, GB).
 		unit = li.unit or "units"
-		if allowance is not None:
-			row["detail"] = f"{frappe.utils.flt(li.quantity):g} {unit} over {frappe.utils.flt(allowance):g} {unit} included"
+		billed = frappe.utils.flt(li.quantity)
+		allowance = frappe.utils.flt(allowance)
+		if allowance > 0:
+			# Legacy plans that still carry a free tier: show used vs included vs billed.
+			row["detail"] = (
+				f"Metered · {_qty(billed + allowance)} {unit} used · "
+				f"{_qty(billed)} billed over {_qty(allowance)} included"
+			)
 		else:
-			row["detail"] = f"{frappe.utils.flt(li.quantity):g} {unit} metered"
+			# No free tier — every used unit is billed at the per-unit rate.
+			row["detail"] = f"Metered · {_qty(billed)} {unit} used"
 	return row
+
+
+def _qty(value) -> str:
+	"""Format a metered quantity with thousands separators (90,000), keeping up to two
+	decimals only when the count is fractional (e.g. GB)."""
+	value = frappe.utils.flt(value)
+	return f"{value:,.0f}" if value == int(value) else f"{value:,.2f}"

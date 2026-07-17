@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-06-03 00:00:00.000000",
- "description": "One charge attempt against an invoice. idempotency_key = its own name, so a retry reuses the key and the gateway dedupes. Paid is set on the webhook, never on the charge response.",
+ "description": "One charge attempt against an invoice. The row is saved and committed before the gateway is called, so a charge can never happen without a record of it. Paid is set on the webhook, never on the charge response.",
  "doctype": "DocType",
  "editable_grid": 0,
  "engine": "InnoDB",
@@ -26,7 +26,9 @@
   "completed_at",
   "section_break_failure",
   "failure_code",
-  "failure_reason"
+  "decline_code",
+  "failure_reason",
+  "gateway_response"
  ],
  "fields": [
   {
@@ -75,7 +77,7 @@
    "fieldtype": "Data",
    "label": "Idempotency Key",
    "unique": 1,
-   "description": "= the attempt's own name; drives gateway dedupe on retry"
+   "description": "sha256(invoice:retry_number) — same charge, same key, so the gateway dedupes a repeat"
   },
   {
    "default": "0",
@@ -129,16 +131,36 @@
   {
    "fieldname": "failure_code",
    "fieldtype": "Data",
-   "label": "Failure Code"
+   "label": "Failure Code",
+   "description": "Gateway top-level error code (Stripe error.code / Razorpay error.reason)"
+  },
+  {
+   "fieldname": "decline_code",
+   "fieldtype": "Data",
+   "label": "Decline Code",
+   "description": "Granular decline reason (Stripe decline_code — insufficient_funds, lost_card, …); why the card_declined family actually failed"
   },
   {
    "fieldname": "failure_reason",
    "fieldtype": "Small Text",
    "label": "Failure Reason"
+  },
+  {
+   "fieldname": "gateway_response",
+   "fieldtype": "Code",
+   "label": "Gateway Response",
+   "options": "JSON",
+   "description": "Raw gateway error/response payload for audit (not shown to customers)"
   }
  ],
  "index_web_pages_for_search": 1,
- "links": [],
+ "links": [
+  {
+   "group": "Adjustments",
+   "link_doctype": "Refund",
+   "link_fieldname": "payment_attempt"
+  }
+ ],
  "modified": "2026-06-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",

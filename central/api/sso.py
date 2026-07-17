@@ -3,45 +3,63 @@ from __future__ import annotations
 import frappe
 
 from central.iam import can, resolve_team
-from central.sso import _bench_sso_url, mint_bench_assertion
+from central.sso import bench_gateway, mint_bench_login
 
-# Open-in-bench: mint a short-lived SSO assertion for the signed-in user and hand
-# back the bench URL to redirect to. The signing/minting lives in central.sso.
+# Open-in-bench: hand the signed-in user a one-click link into their bench. Central mints a
+# short-lived admin SID signed with its RSA key; the bench verifies it offline against the
+# JWKS (no Atlas round-trip, no per-bench secret). The SID rides `{gateway}/?sid=`, which the
+# bench SPA consumes and exchanges at POST /api/login. `aud` is the bench's audience id (its
+# pilot_credential_id), so a SID minted for one bench is rejected by any other. The SID is
+# single-use (jti + short TTL), so each Open mints a fresh one.
+
+DEV_AUDIENCE = "local-bench"  # audience for the explicit-gateway dev shortcut (no Asset)
 
 
 @frappe.whitelist(methods=["GET"])
 def get_bench_link(asset: str | None = None, team: str | None = None, gateway_url: str | None = None) -> dict:
-	"""Mint a scoped SSO assertion and return the bench URL to redirect to.
+	"""Return the URL to open a bench at, as ``{gateway}/sso?sid=<jwt>``.
 
-	Pass `asset` (a server resource_id) to open that server — its team and gateway
-	are resolved and validated (Running, has a gateway, Active cluster). `server:open`
-	on the team is the gate (distinct from `server:view`, which only lists it).
-	`gateway_url` is the dev path used until the registry "Open" wires `asset` in."""
+	Pass `asset` (a VM resource_id) to open that server: `server:open` on its team is the
+	gate (distinct from `server:view`, which only lists it), and the VM must be Running with
+	a bench gateway on an Active cluster. `gateway_url` (no asset) is the dev shortcut: open
+	an explicit gateway, minting against a fixed dev audience."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		frappe.throw("Sign in first.", frappe.PermissionError)
 	if asset:
-		team, gateway_url = _resolve_asset_target(asset, team)
+		return _asset_login_link(asset, team, user)
 	team = resolve_team(user, team)
 	if not can(user, team, "server:open"):
 		frappe.throw("You can't open servers for this team.", frappe.PermissionError)
-	target = (gateway_url or _bench_sso_url()).rstrip("/")
-	if not target.endswith("/sso"):
-		target += "/sso"
-	return {"url": f"{target}?assertion={mint_bench_assertion(user, team)}"}
+	target = gateway_url.rstrip("/") if gateway_url else bench_gateway()
+	return {"url": f"{target}/?sid={mint_bench_login(DEV_AUDIENCE)}"}
 
 
-def _resolve_asset_target(asset: str, team: str | None) -> tuple[str, str]:
-	"""Resolve a VM Asset to (team, gateway_url), refusing anything not openable.
-	get_doc enforces the team-scoped Asset read perm, so a user who can't see the
-	VM can't probe it here either."""
+def _asset_login_link(asset: str, team: str | None, user: str) -> dict:
+	"""Resolve a VM Asset to its one-click login URL, gated on `server:open`.
+
+	get_doc enforces the team-scoped Asset read perm, so a user who can't see the VM can't
+	probe it here either. The VM must be Running and live on an Active cluster, with a bench
+	gateway. The SID is Central-signed, scoped to the VM's resource_id, and freshly minted on
+	every Open (it is single-use)."""
 	doc = frappe.get_doc("Asset", asset)
 	if team and team != doc.team:
 		frappe.throw("That VM isn't in this team.", frappe.PermissionError)
+	if not can(user, doc.team, "server:open"):
+		frappe.throw("You can't open servers for this team.", frappe.PermissionError)
 	if doc.status != "Running":
 		frappe.throw(f"VM is {doc.status.lower()}, not running.", frappe.ValidationError)
-	if not doc.gateway_url:
-		frappe.throw("VM has no gateway yet.", frappe.ValidationError)
 	if frappe.db.get_value("Atlas Instance", doc.cluster, "status") != "Active":
 		frappe.throw("That cluster is not active.", frappe.ValidationError)
-	return doc.team, doc.gateway_url
+	gateway = (doc.gateway_url or "").rstrip("/")
+	if not gateway:
+		frappe.throw("This VM has no bench gateway yet.", frappe.ValidationError)
+	# The SID's audience is the bench's audience id (its pilot_credential_id), not the VM
+	# resource_id — that is what the bench verifies against. Resolve it from the pilot
+	# credential bound to this VM; a VM whose pilot hasn't enrolled yet can't be opened.
+	audience = frappe.db.get_value(
+		"Pilot Credential", {"asset": doc.resource_id, "status": "Active"}, "audience_id"
+	)
+	if not audience:
+		frappe.throw("This VM's pilot hasn't enrolled yet.", frappe.ValidationError)
+	return {"url": f"{gateway}/?sid={mint_bench_login(audience)}"}

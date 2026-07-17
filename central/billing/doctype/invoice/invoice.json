@@ -16,6 +16,7 @@
   "period_start",
   "period_end",
   "due_date",
+  "period_key",
   "section_break_items",
   "items",
   "section_break_totals",
@@ -99,6 +100,16 @@
    "label": "Due Date"
   },
   {
+   "fieldname": "period_key",
+   "fieldtype": "Data",
+   "label": "Period Key",
+   "unique": 1,
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "description": "Uniqueness key for 'one live invoice per (team, period)' — the constraint that makes double-billing impossible rather than merely unlikely (ADR 0018, invariant I6). Set from (team, period_start, period_end) while the invoice is live; replaced by a per-invoice sentinel on cancellation so a reissue can take the slot. Derived — never set it by hand."
+  },
+  {
    "fieldname": "section_break_items",
    "fieldtype": "Section Break",
    "label": "Line Items"
@@ -128,13 +139,13 @@
    "fieldname": "commitment_discount",
    "fieldtype": "Currency",
    "label": "Commitment Discount",
-   "description": "Discount applied to fixed-bundle lines under an active Commitment (issue #30); reduces the taxable base. 0 when no commitment or floor not met."
+   "description": "Discount on fixed-bundle lines under an active Commitment (#30); 0 otherwise."
   },
   {
    "fieldname": "commitment_clawback",
    "fieldtype": "Currency",
    "label": "Commitment Clawback",
-   "description": "Discount repaid when the team dropped below its Commitment floor before term-end (issue #31); added to the taxable base. 0 otherwise."
+   "description": "Discount repaid when the team fell below its Commitment floor (#31); 0 otherwise."
   },
   {
    "default": "None",
@@ -280,7 +291,18 @@
   }
  ],
  "index_web_pages_for_search": 1,
- "links": [],
+ "links": [
+  {
+   "group": "Payments",
+   "link_doctype": "Payment Attempt",
+   "link_fieldname": "invoice"
+  },
+  {
+   "group": "Adjustments",
+   "link_doctype": "Refund",
+   "link_fieldname": "invoice"
+  }
+ ],
  "modified": "2026-06-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",

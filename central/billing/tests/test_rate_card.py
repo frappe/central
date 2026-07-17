@@ -3,7 +3,7 @@
 """Composed-config component rate card — Resource Type priced via Catalog Rate (#79)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.pricing import (
 	resolve_component_rate,
@@ -11,11 +11,13 @@ from central.billing.catalog.pricing import (
 	set_catalog_rate,
 )
 from central.billing.catalog.rate_card import ensure_component_rate_card
+from central.billing.tests.utils import ensure_atlas_instance
 
 
 class TestComponentRateCard(IntegrationTestCase):
 	def setUp(self):
 		ensure_component_rate_card()
+		ensure_atlas_instance("ap-south-1")
 
 	def test_resource_type_is_a_priceable_catalog_rate(self):
 		"""A Catalog Rate can price a Resource Type with an optional cluster + per-unit rate."""
@@ -50,7 +52,7 @@ class TestComponentRateCard(IntegrationTestCase):
 		self.assertIsNone(resolve_component_rate("Compute", "JPY"))
 
 	def test_starter_card_seeded_for_shipped_currencies(self):
-		for currency in ("INR", "USD", "EUR"):
+		for currency in ("INR", "USD"):
 			for resource_type in ("Compute", "Memory", "Disk"):
 				self.assertIsNotNone(
 					resolve_component_rate(resource_type, currency),

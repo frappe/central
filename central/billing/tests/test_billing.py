@@ -5,7 +5,7 @@
 import threading
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.revenue import invoicing, credits
@@ -87,16 +87,59 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertEqual(inv.total, 1400.0)
 		self.assertEqual(inv.expected_collection, 1400.0)
 
-	def test_same_day_provision_destroy_floors_to_one_day(self):
-		# Provisioned and cancelled on the same day → 1 day, not 0.
-		add_segment(self.sub, "Created", 1000, "2026-06-05 00:00:00")
-		add_segment(self.sub, "Cancelled", None, "2026-06-05 00:00:00")
+	def test_same_day_churn_bills_by_the_hour(self):
+		# Provisioned 09:00 and cancelled 18:00 the same day: a sub-24h run bills its
+		# real hours (9h), not a floored full day.
+		add_segment(self.sub, "Created", 1000, "2026-06-05 09:00:00")
+		add_segment(self.sub, "Cancelled", None, "2026-06-05 18:00:00")
 
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual(len(inv.items), 1)  # cancelled marker is skipped
-		self.assertEqual(inv.items[0].days, 1)
-		self.assertEqual(inv.items[0].amount, round(1000 / 30, 2))
+		li = inv.items[0]
+		self.assertEqual(li.unit, "hour")
+		self.assertEqual(li.hours, 9.0)
+		self.assertEqual(li.amount, round(9 * 1000 / (30 * 24), 2))
+
+	def test_multiple_resizes_in_a_day_bill_that_day_hourly(self):
+		# 2000 all month; a peak-hours bump to 4000 (09:00) then back (18:00) on Jun 15.
+		# Only Jun 15 goes hourly; the rest of the month stays daily.
+		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 4000, "2026-06-15 09:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-15 18:00:00")
+
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		inv = frappe.get_doc("Invoice", name)
+
+		daily = [li for li in inv.items if li.unit == "day"]
+		hourly = [li for li in inv.items if li.unit == "hour"]
+		# Jun 1–14 (14 days) + Jun 16–30 (15 days) at 2000 stay daily.
+		self.assertEqual(sorted(li.days for li in daily), [14, 15])
+		# Jun 15 itemised by the hour: 9h@2000, 9h@4000, 6h@2000.
+		self.assertEqual(
+			sorted((li.hours, li.rate) for li in hourly),
+			[(6.0, 2000.0), (9.0, 2000.0), (9.0, 4000.0)],
+		)
+		# 29 daily days + 24 hourly hours = exactly one 30-day month of runtime, with
+		# 9h billed at the higher 4000 rate. No double-count, no gap.
+		self.assertEqual(inv.subtotal, 2025.0)
+
+	def test_cross_midnight_churn_bills_both_days_hourly(self):
+		# Bump 23:00 Jun 10 → drop 01:00 Jun 11 (2h, < 24h): the 24h window straddles
+		# midnight, so both dates go hourly even though each has one change.
+		add_segment(self.sub, "Created", 2000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 8000, "2026-06-10 23:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-11 01:00:00")
+
+		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		inv = frappe.get_doc("Invoice", name)
+
+		hourly = [li for li in inv.items if li.unit == "hour"]
+		# 8000 ran exactly 1h on each side of midnight.
+		self.assertEqual(sorted(li.hours for li in hourly if li.rate == 8000.0), [1.0, 1.0])
+		# Jun 10 and Jun 11 are excluded from the daily lines (billed hourly instead).
+		daily_days = sum(li.days for li in inv.items if li.unit == "day")
+		self.assertEqual(daily_days, 28)  # 30 days − Jun 10 − Jun 11
 
 	def test_partial_first_month_billed_for_join_window(self):
 		add_segment(self.sub, "Created", 3000, "2026-06-15 00:00:00")
@@ -122,6 +165,76 @@ class TestDraftGeneration(BillingTestBase):
 		self.assertIsNone(name)
 
 
+class TestOneInvoicePerPeriod(BillingTestBase):
+	"""A team is billed at most once for a period — enforced, not merely intended.
+
+	`generate_team_invoice` read "does an invoice exist?" and then inserted, with no
+	lock and no constraint in between, while `generate_draft_invoices` enqueues one job
+	per team. Two workers could both read "no" and both insert. The unique index on
+	`Invoice.period_key` is what makes the double bill impossible (ADR 0018, I6).
+	"""
+
+	def test_concurrent_generation_bills_the_team_exactly_once(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()  # make the segment visible to the worker connections
+
+		results = run_workers(
+			6,
+			lambda i: invoicing.generate_team_invoice(TEAM, "2026-06-01", "2026-06-30"),
+		)
+		frappe.db.rollback()  # refresh this connection's snapshot
+
+		# Every worker returns the SAME invoice: the losers of the race yield to the
+		# winner instead of raising, so a concurrent caller is indistinguishable from a
+		# sequential one. Without the unique index all six inserted their own.
+		self.assertEqual(len(set(results.values())), 1, results)
+
+		live = frappe.get_all(
+			"Invoice",
+			filters={"team": TEAM, "period_start": "2026-06-01", "status": ["!=", "Cancelled"]},
+			pluck="name",
+		)
+		self.assertEqual(len(live), 1, f"team billed {len(live)}x for one period: {live}")
+		self.assertEqual(live, list(set(results.values())))
+
+	def test_cancel_and_reissue_reclaims_the_period_slot(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+
+		second = invoicing.reissue_invoice(first, reason="wrong rate")
+
+		self.assertIsNotNone(second)
+		self.assertNotEqual(first, second)
+		self.assertEqual(frappe.db.get_value("Invoice", first, "status"), "Cancelled")
+		# The cancelled invoice stepped out of the index so the reissue could take
+		# the period's slot — but only one invoice is live for it.
+		live = frappe.get_all(
+			"Invoice",
+			filters={"team": TEAM, "period_start": "2026-06-01", "status": ["!=", "Cancelled"]},
+			pluck="name",
+		)
+		self.assertEqual(live, [second])
+
+	def test_several_cancelled_invoices_coexist_for_one_period(self):
+		"""Cancelling twice must not trip the unique index.
+
+		The cancelled key is a per-invoice sentinel rather than NULL: Frappe coerces an
+		unset Data field to the empty string, and empty strings COLLIDE in a unique
+		index — so "null it on cancel" would have let the first cancellation through
+		and rejected the second.
+		"""
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		second = invoicing.reissue_invoice(first, reason="one")
+		third = invoicing.reissue_invoice(second, reason="two")
+
+		self.assertEqual(len({first, second, third}), 3)
+		cancelled = frappe.get_all(
+			"Invoice", filters={"team": TEAM, "status": "Cancelled"}, pluck="name"
+		)
+		self.assertCountEqual(cancelled, [first, second])
+
+
 class TestOpenAndCollect(BillingTestBase):
 	def _draft(self):
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
@@ -140,6 +253,32 @@ class TestOpenAndCollect(BillingTestBase):
 		self.assertEqual(inv.expected_collection, 600.0)
 		self.assertTrue(inv.due_date)
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+
+	def test_credit_debit_uses_invoice_currency(self):
+		# Regression: a USD team was credited in USD but debited in INR because
+		# open_and_collect didn't pass the invoice currency (apply_credit defaults INR).
+		usd_team = "team-invoice-usd"
+		for dt in ("Credit Ledger Entry", "Credit Wallet", "Subscription",
+				   "Asset", "Billing Profile", "Invoice"):
+			frappe.db.delete(dt, {"team": usd_team})
+		sub = make_billing_subscription(usd_team, CLUSTER, PLAN, billing_cycle="Monthly", currency="USD")
+		add_segment(sub, "Created", 100, "2026-06-01 00:00:00", currency="USD")
+		name = invoicing.generate_draft_invoice(sub, "2026-06-01", "2026-06-30")
+		credits.purchase(usd_team, 50, "USD")
+		frappe.db.commit()
+
+		invoicing.open_and_collect(name)
+
+		inv = frappe.get_doc("Invoice", name)
+		self.assertEqual(inv.currency, "USD")
+		self.assertEqual(inv.credit_applied, 50.0)
+		debit = frappe.get_all(
+			"Credit Ledger Entry", {"team": usd_team, "entry_type": "Debit"}, ["currency"]
+		)
+		self.assertEqual(debit[0].currency, "USD")  # debited in the invoice currency, not INR
+		# The USD wallet is drawn to zero; there is no spurious INR balance.
+		self.assertEqual(credits.get_balance(usd_team, "USD")["balance"], 0)
+		self.assertEqual(credits.get_balance(usd_team, "INR")["balance"], 0)
 
 	def test_parallel_open_processes_invoice_once(self):
 		name = self._draft()
@@ -165,6 +304,13 @@ class TestOpenAndCollect(BillingTestBase):
 
 class TestTerminationCancelsBilling(BillingTestBase):
 	"""Terminating the VM must close the billing segment, not just pause it."""
+
+	def test_disabled_open_segment_does_not_consume_run_rate(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.set_value("Subscription", self.sub, "enabled", 0)
+
+		self.assertEqual(subscriptions.current_segment_rate(self.sub), 1000)
+		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)
 
 	def test_terminate_cancels_segment_and_frees_run_rate(self):
 		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")
@@ -196,7 +342,7 @@ class TestCancelTerminatedPatch(BillingTestBase):
 	"""v26 backfill: close the open segment of VMs terminated before the runtime fix."""
 
 	def test_patch_cancels_open_segment_on_terminated_asset(self):
-		from central.billing.patches.v26_cancel_terminated_subscriptions.cancel_terminated_subscriptions import (
+		from central.patches.v0_0.cancel_terminated_subscriptions import (
 			cancel_terminated_subscriptions,
 		)
 

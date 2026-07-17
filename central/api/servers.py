@@ -10,6 +10,67 @@ from central.integrations.atlas import AtlasClient, reconcile
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
 # here). Every call resolves and authorizes a team first.
 
+# `list_instances` merges an Active Atlas Instance's liveness with its Region's
+# display metadata. Only these non-secret Atlas Instance fields are ever read —
+# the credentials/tunnel internals (api_key/api_secret/base_url/tunnel_*/peer_*/
+# service_user) now sit apart from the map metadata, which lives on Region.
+INSTANCE_LIVENESS_FIELDS = ("region", "status", "reachable")
+REGION_DISPLAY_FIELDS = ("display_name", "provider", "country_code", "latitude", "longitude")
+
+# Fallback version list for the new-server form when no Atlas is reachable. The
+# authoritative set is derived live from Atlas's active bench images (which token
+# maps to which image is Atlas's concern) — see `frappe_versions`.
+FALLBACK_FRAPPE_VERSIONS = ("v16", "v15", "nightly")
+
+
+def _available_versions(region: str | None = None) -> list[str]:
+	"""The versions Atlas can provision in `region` (its active bench images). Regions
+	can expose different images, so this must be scoped to the region the user picked —
+	validating against a different region would reject valid creates or pass ones the
+	target can't provision. Falls back to the first Active region when none is given
+	(the picker's initial load), and to the static set when no Atlas is reachable."""
+	target = region or frappe.db.get_value(
+		"Atlas Instance", {"status": "Active"}, "name", order_by="region asc"
+	)
+	if target:
+		try:
+			versions = AtlasClient.for_region(target).available_frappe_versions()
+			if versions:
+				return versions
+		except Exception:
+			frappe.log_error(title="frappe_versions: Atlas unreachable, using fallback")
+	return list(FALLBACK_FRAPPE_VERSIONS)
+
+
+def _validate_frappe_version(frappe_version: str | None, region: str | None = None) -> None:
+	# Validate against the CHOSEN region's images, not a random active one.
+	if not frappe_version:
+		return
+	versions = _available_versions(region)
+	# The client value never goes back into the message — frappe.throw renders HTML in
+	# desk, so reflecting input is an XSS habit not worth having.
+	if frappe_version not in versions:
+		frappe.throw(
+			_("Unknown Frappe version. Choose one of: {0}.").format(", ".join(versions)),
+			frappe.ValidationError,
+		)
+
+
+def _stamp_frappe_version(resource_id: str | None, frappe_version: str | None) -> None:
+	"""Record on the Pending Asset the version Atlas actually provisioned (echoed in
+	the create reply / events), not merely what was requested. `Asset._stamp` keeps it
+	current from later events."""
+	if resource_id and frappe_version and frappe.db.exists("Asset", resource_id):
+		frappe.db.set_value("Asset", resource_id, "frappe_version", frappe_version)
+
+
+@frappe.whitelist(methods=["GET"])
+def frappe_versions(region: str | None = None) -> list[str]:
+	"""Versions offered on the new-server form for `region` — derived from that
+	region's active bench images, so the picker never drifts from what can actually
+	be provisioned there. The form passes the picked region and refetches on change."""
+	return _available_versions(region)
+
 
 @frappe.whitelist(methods=["GET"])
 def registry(team: str | None = None) -> dict:
@@ -23,16 +84,20 @@ def registry(team: str | None = None) -> dict:
 		"Asset",
 		filters={"team": team},
 		fields=[
+			"name",
 			"resource_id",
 			"title",
 			"cluster",
 			"status",
+			"plan",
+			"frappe_version",
 			"vcpus",
 			"memory_megabytes",
 			"disk_gigabytes",
 			"ipv6_address",
 			"public_ipv4",
 			"gateway_url",
+			"resize_in_progress",
 			"last_synced_at",
 		],
 		order_by="cluster asc, resource_id asc",
@@ -52,14 +117,28 @@ def list_instances(team: str | None = None) -> list[dict]:
 		frappe.throw(_("You can't view clusters for this team."), frappe.PermissionError)
 	# Atlas Instance is global infrastructure holding per-instance API credentials,
 	# so the DocType is locked to System Manager. `cluster:view` already authorizes
-	# this read, so we bypass DocType RBAC and curate the safe, non-secret fields
-	# here — otherwise a Central User (e.g. a team Owner) gets an empty list.
-	return frappe.get_all(
+	# this read, so we bypass DocType RBAC and read only the non-secret liveness
+	# fields — otherwise a Central User (e.g. a team Owner) gets an empty list.
+	instances = frappe.get_all(
 		"Atlas Instance",
 		filters={"status": "Active"},
-		fields=["region", "status", "reachable"],
+		fields=list(INSTANCE_LIVENESS_FIELDS),
 		order_by="region asc",
 	)
+	# Merge each region's display metadata (kept on Region, away from the secrets).
+	display = {
+		row.name: row
+		for row in frappe.get_all(
+			"Region",
+			filters={"name": ["in", [i.region for i in instances]]},
+			fields=["name", *REGION_DISPLAY_FIELDS],
+		)
+	}
+	for instance in instances:
+		meta = display.get(instance.region)
+		for field in REGION_DISPLAY_FIELDS:
+			instance[field] = meta.get(field) if meta else None
+	return instances
 
 
 @frappe.whitelist(methods=["POST"])
@@ -84,6 +163,7 @@ def create_server(
 	memory_megabytes: int | None = None,
 	disk_gigabytes: int | None = None,
 	cpu_max_cores: float | None = None,
+	frappe_version: str | None = None,
 ) -> dict:
 	"""Provision a new server for a team in a region from a preset bundle Plan. Gated
 	on `server:create`.
@@ -104,20 +184,23 @@ def create_server(
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
 		frappe.throw(_("You can't create servers for this team."), frappe.PermissionError)
+	# A server bills the team, so it needs a billing profile first.
+	from central.billing.api.dashboard._shared import require_billing_profile
+
+	require_billing_profile(team, "create servers")
 	if not region:
 		frappe.throw(_("Region is required."), frappe.ValidationError)
+	_validate_frappe_version(frappe_version, region)
 
 	client = AtlasClient.for_region(region)
-	# Seed the Atlas tenant (first use) with the team owner's email.
-	email = frappe.db.get_value("Team", team, "owner_user")
 	vm = client.create_vm(
 		team=team,
 		title=title or "server",
 		vcpus=int(vcpus or 1),
 		memory_megabytes=int(memory_megabytes or 512),
 		disk_gigabytes=int(disk_gigabytes or 10),
-		email=email,
 		cpu_max_cores=cpu_max_cores,
+		frappe_version=frappe_version,
 	)
 	resource_id = vm.get("name")
 	# Record the contract for the bundle. Guarded so a raw-size call (no plan) still
@@ -127,6 +210,16 @@ def create_server(
 		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get(
 			"subscription"
 		)
+	if resource_id:
+		# Mirror the VM Atlas returned even when billing already inserted the Pending
+		# Asset. Otherwise preset creates render the UUID/Pending shell until the next
+		# reconcile, instead of the user-facing title/status Atlas already returned.
+		from central.central.doctype.asset.asset import Asset
+
+		Asset.mirror_vm(region, vm)
+	# Stamp the version Atlas actually laid down (echoed in `vm`), not the request —
+	# an unbuilt version resolves to the default image, and this reflects that.
+	_stamp_frappe_version(resource_id, vm.get("frappe_version"))
 	return {"resource_id": resource_id, "server": vm, "subscription": subscription}
 
 
@@ -137,6 +230,7 @@ def create_composed_server(
 	title: str | None = None,
 	includes: list | str | None = None,
 	sub_category: str | None = None,
+	frappe_version: str | None = None,
 ) -> dict:
 	"""Provision a design-your-own config end-to-end (#84): create the Atlas VM from
 	the chosen composition, then record the composed Subscription (#80) that bills it
@@ -157,10 +251,15 @@ def create_composed_server(
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
 		frappe.throw("You can't create servers for this team.", frappe.PermissionError)
+	# A server bills the team, so it needs a billing profile first.
+	from central.billing.api.dashboard._shared import require_billing_profile
+
+	require_billing_profile(team, "create servers")
 	if not region:
 		frappe.throw("region is required.", frappe.ValidationError)
 	if isinstance(includes, str):
 		includes = frappe.parse_json(includes)
+	_validate_frappe_version(frappe_version, region)
 
 	# Validate the shape + cost before touching Atlas.
 	validate_composition(sub_category, includes)
@@ -169,17 +268,21 @@ def create_composed_server(
 
 	qty = composition_quantities(includes)
 	client = AtlasClient.for_region(region)
-	email = frappe.db.get_value("Team", team, "owner_user")
 	vm = client.create_vm(
 		team=team,
 		title=title or "server",
 		vcpus=int(qty.get(COMPUTE, 1)) or 1,
 		memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
 		disk_gigabytes=int(qty.get(DISK, 0)) or 10,
-		email=email,
+		frappe_version=frappe_version,
 	)
 	resource_id = vm.get("name")
 	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
+	if resource_id:
+		from central.central.doctype.asset.asset import Asset
+
+		Asset.mirror_vm(region, vm)
+	_stamp_frappe_version(resource_id, vm.get("frappe_version"))
 	return {"resource_id": resource_id, "server": vm}
 
 
@@ -212,10 +315,17 @@ def _run_command(action: str, capability: str, atlas_method: str, team: str | No
 		frappe.throw(_("resource_id is required."), frappe.ValidationError)
 
 	# The asset must be in this team's mirror — also how we route to its Atlas.
-	cluster = frappe.db.get_value("Asset", {"resource_id": resource_id, "team": team}, "cluster")
-	if not cluster:
+	asset = frappe.db.get_value(
+		"Asset", {"resource_id": resource_id, "team": team}, ["cluster", "resize_in_progress"], as_dict=True
+	)
+	if not asset:
 		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
 
-	instance = frappe.get_doc("Atlas Instance", cluster)
+	# A resize power-cycles the VM in the background; a manual start/stop mid-flight would
+	# race it. Terminate is still allowed — the user may want to abandon the machine.
+	if asset.resize_in_progress and action in ("start", "stop"):
+		frappe.throw(_("This server is resizing — you can {0} it once that finishes.").format(action))
+
+	instance = frappe.get_doc("Atlas Instance", asset.cluster)
 	task = AtlasClient(instance).vm_action(resource_id, atlas_method)
 	return {"resource_id": resource_id, "task": task}

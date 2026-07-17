@@ -1,0 +1,212 @@
+# Copyright (c) 2026, Frappe and contributors
+# For license information, please see license.txt
+"""Read models for team-level metered services (ADR 0013/0015).
+
+A team-level service (AI tokens, email, common PDF, snapshot storage) is a Plan whose
+family is not provisioned as a whole Server. These readers back both the pilot-facing
+in-app flow (`api/billing_api.py`) and the admin billing console (`api/admin`): what
+services a team can subscribe to, and what it currently runs.
+"""
+
+import frappe
+
+from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
+
+
+def list_service_plans(currency: str, cluster: str | None = None) -> list[dict]:
+	"""Active team-level service plans, priced for `currency` on `cluster`.
+
+	One entry per active Plan under a non-Server family, carrying its billing shape
+	(Fixed bundle vs Metered), the family's settlement + reporting mode, the included
+	allowance, and the resolved rate (a bundle's flat price, or a metered per-unit rate).
+	`rate` is None when the family has no rate for this currency/cluster."""
+	service_categories = {
+		c.name: c
+		for c in frappe.get_all(
+			"Plan Category",
+			filters={"is_active": 1, "provision_target": ["!=", "Server"]},
+			fields=["name", "billing_type", "settlement_mode", "reporting_mode"],
+		)
+	}
+	if not service_categories:
+		return []
+
+	plans = frappe.get_all(
+		"Plan",
+		filters={"category": ["in", list(service_categories)], "is_active": 1},
+		fields=["name", "title", "category"],
+	)
+	includes = _includes_by_plan([p.name for p in plans])
+
+	out = []
+	for p in plans:
+		cat = service_categories[p.category]
+		inc = includes.get(p.name)
+		rate_rows = get_catalog_rates("Plan", p.name)
+		rate = resolve_rate(rate_rows, currency, cluster)
+		out.append(
+			{
+				"plan": p.name,
+				"title": p.title,
+				"category": p.category,
+				"billing_type": cat.billing_type,
+				"settlement_mode": cat.settlement_mode or "Postpaid Overage",
+				"reporting_mode": cat.reporting_mode or "Authoritative",
+				"resource_type": inc.resource_type if inc else None,
+				"unit": inc.unit if inc else None,
+				"allowance": frappe.utils.flt(inc.quantity) if inc else 0.0,
+				"rate": frappe.utils.flt(rate) if rate is not None else None,
+				# Clusters that carry their own rate in this currency. Empty for a
+				# globally-priced service — the console hides the cluster picker then.
+				"priced_clusters": sorted(
+					{r.cluster for r in rate_rows if r.currency == currency and r.cluster}
+				),
+				"currency": currency,
+			}
+		)
+	return out
+
+
+def team_service_subscriptions(team: str) -> list[dict]:
+	"""A team's active team-level service subscriptions (ADR 0013): one per synthesized
+	subject, with its plan, cluster, locked rate, family modes, included allowance, and
+	the current period's reported usage. The console's view of a team's metered footprint."""
+	from central.billing.catalog.subscriptions import team_active_segments
+
+	segs = [s for s in team_active_segments(team) if s.service_subject]
+	if not segs:
+		return []
+
+	includes = _includes_by_plan([s.plan for s in segs if s.plan])
+	modes = _category_modes_by_plan([s.plan for s in segs if s.plan])
+
+	out = []
+	for s in segs:
+		inc = includes.get(s.plan)
+		mode = modes.get(s.plan, {})
+		out.append(
+			{
+				"subscription": s.subscription,
+				"service_subject": s.service_subject,
+				"plan": s.plan,
+				"title": frappe.db.get_value("Plan", s.plan, "title") if s.plan else None,
+				"cluster": s.cluster,
+				"currency": s.currency,
+				"locked_rate": s.locked_rate,
+				"billing_type": mode.get("billing_type"),
+				"settlement_mode": mode.get("settlement_mode") or "Postpaid Overage",
+				"reporting_mode": mode.get("reporting_mode") or "Authoritative",
+				"resource_type": inc.resource_type if inc else None,
+				"unit": inc.unit if inc else None,
+				"allowance": frappe.utils.flt(inc.quantity) if inc else 0.0,
+				"period_usage": _current_period_usage(s.service_subject),
+			}
+		)
+	return out
+
+
+def resolve_service_subject(team: str, service: str, cluster: str | None = None) -> str | None:
+	"""The team's active service subject for `service`, or None if it isn't subscribed
+	(ADR 0015). `service` is the Resource Type the family meters (one active metered plan
+	per resource type, ADR 0008), so a consumer service names the service it *is* and
+	Central resolves the synthesized subject — the caller never handles subjects.
+
+	Many services are globally priced (one team-wide subject, no cluster). So a caller's
+	`cluster` is a hint, not a requirement: a regional subject for that cluster wins, but
+	a **global (unclustered) subject is the fallback** — a caller on any cluster (or one
+	that passes no cluster at all) reports to it. So `cluster` stays genuinely optional."""
+	subs = [s for s in team_service_subscriptions(team) if s["resource_type"] == service]
+	if cluster:
+		exact = next((s for s in subs if s["cluster"] == cluster), None)
+		if exact:
+			return exact["service_subject"]
+	glob = next((s for s in subs if not s["cluster"]), None)
+	if glob:
+		return glob["service_subject"]
+	# No global subject: a caller that named no cluster still resolves a lone regional one.
+	return subs[0]["service_subject"] if len(subs) == 1 else None
+
+
+def service_allowance(team: str, subject: str) -> dict:
+	"""A service subject's allowance state (ADR 0015), for edge enforcement.
+
+	For a **Prepaid Pack** family the allowance is a purchased balance drawn down by
+	reported usage: `remaining = max(0, allowance - used)`, and the service is `blocked`
+	once it hits zero (the consumer service polls this and degrades, offline-enforcement
+	style). For a **Postpaid Overage** family nothing blocks — usage past the allowance
+	bills as overage — so `blocked` is always False. Returns `exists: False` for an
+	unknown/unsubscribed subject."""
+	from central.billing.catalog.subscriptions import active_segment_for_resource
+
+	seg = active_segment_for_resource(subject)
+	if not seg or seg.team != team:
+		return {"exists": False}
+
+	inc = _includes_by_plan([seg.plan]).get(seg.plan) if seg.plan else None
+	mode = _category_modes_by_plan([seg.plan]).get(seg.plan, frappe._dict()) if seg.plan else frappe._dict()
+	settlement = mode.get("settlement_mode") or "Postpaid Overage"
+	allowance = frappe.utils.flt(inc.quantity) if inc else 0.0
+	used = _current_period_usage(subject)
+	remaining = max(0.0, allowance - used)
+	prepaid = settlement == "Prepaid Pack"
+	return {
+		"exists": True,
+		"service_subject": subject,
+		"plan": seg.plan,
+		"settlement_mode": settlement,
+		"unit": inc.unit if inc else None,
+		"allowance": allowance,
+		"used": used,
+		"remaining": remaining,
+		# A prepaid pack with a real allowance blocks at exhaustion; postpaid never blocks.
+		"blocked": bool(prepaid and allowance and remaining <= 0),
+	}
+
+
+def _includes_by_plan(plan_names: list[str]) -> dict:
+	"""The single include row (resource_type, quantity, unit) per plan, in one query.
+	A team-level service plan is single-resource (ADR 0008), so at most one row matters."""
+	names = [n for n in set(plan_names) if n]
+	if not names:
+		return {}
+	by_plan: dict = {}
+	for row in frappe.get_all(
+		"Plan Includes",
+		filters={"parenttype": "Plan", "parent": ["in", names]},
+		fields=["parent", "resource_type", "quantity", "unit"],
+	):
+		by_plan.setdefault(row.parent, row)  # first (single) row per plan
+	return by_plan
+
+
+def _category_modes_by_plan(plan_names: list[str]) -> dict:
+	"""Plan -> its family's billing_type + settlement/reporting mode, in two queries."""
+	names = [n for n in set(plan_names) if n]
+	if not names:
+		return {}
+	plan_cat = {
+		p.name: p.category
+		for p in frappe.get_all("Plan", filters={"name": ["in", names]}, fields=["name", "category"])
+	}
+	cats = {
+		c.name: c
+		for c in frappe.get_all(
+			"Plan Category",
+			filters={"name": ["in", list(set(plan_cat.values()))]},
+			fields=["name", "billing_type", "settlement_mode", "reporting_mode"],
+		)
+	}
+	return {plan: cats.get(cat, frappe._dict()) for plan, cat in plan_cat.items()}
+
+
+def _current_period_usage(subject: str) -> float:
+	"""The reported usage for a subject in the current billing month (summed across its
+	rollup rows, though there is normally one per meter). A quick read for the console —
+	billing itself measures overage against the locked allowance at invoice time."""
+	month_start = frappe.utils.get_first_day(frappe.utils.nowdate())
+	rows = frappe.get_all(
+		"Usage Rollup",
+		filters={"resource_id": subject, "period_start": [">=", month_start]},
+		pluck="quantity",
+	)
+	return frappe.utils.flt(sum(frappe.utils.flt(q) for q in rows))

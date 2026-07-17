@@ -4,10 +4,12 @@
 
 Lists the active plans a team can actually provision on a given cluster: priced
 for the team's currency on that cluster, admitted by the trust tier's allow-lists,
-and within the team's *remaining* trust-tier headroom — the spend cap minus what
-its already-running resources consume. The cluster's provisioning check still has
-the final say at provision time (run-rate vs the live cap, ADR 0006); this read
-only narrows the menu the customer is shown.
+within the team's *remaining* trust-tier headroom — the spend cap minus what its
+already-running resources consume — and fitting the cluster's *live capacity* (the
+region's Atlas reports the largest VM it can seat right now; a plan bigger than that
+is hidden). The cluster's provisioning check still has the final say at provision
+time (run-rate vs the live cap, ADR 0006; placement's NoCapacityError vs the live
+fleet); this read only narrows the menu the customer is shown.
 """
 
 import frappe
@@ -15,7 +17,13 @@ from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import _resolve_team, _team_currency
-from central.billing.catalog.composition import parse_vcpu_steps
+from central.billing.catalog.composition import (
+	COMPUTE,
+	DISK,
+	MEMORY,
+	composition_quantities,
+	parse_vcpu_steps,
+)
 from central.billing.catalog.entitlements import get_team_caps
 from central.billing.catalog.pricing import resolve_component_rate, resolve_rate
 from central.billing.catalog.rate_card import COMPONENT_UNITS
@@ -40,7 +48,9 @@ _SUB_CATEGORY_ORDER = ["General", "CPU Optimised", "Memory Optimised", "Storage 
 
 
 @frappe.whitelist()
-def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> dict:
+def get_eligible_plans(
+	cluster: str | None = None, team: str | None = None, exclude_subscription: str | None = None
+) -> dict:
 	"""Active plans the team can provision on `cluster`, grouped by sub-category.
 
 	`plans` is a `{sub_category: [rows]}` map so the client can render one tab per
@@ -57,22 +67,50 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 	  - its rate fits the team's *remaining* headroom: the trust-tier spend cap
 	    (`max_spend`) minus the run-rate of its already-running resources. A team
 	    on a 4000 cap already running 1000 only sees plans priced 3000 or less.
-	    An untiered team has a 0 cap and so no headroom.
+	    An untiered team has a 0 cap and so no headroom;
+	  - its compute shape fits the cluster's live capacity — the largest VM the
+	    region's Atlas can seat right now (`Atlas Instance.validate_capacity`, on by
+	    default; off, or an unreachable Atlas, shows the full menu). A region with no
+	    room at all yields an empty map (nothing provisionable there).
+
+	The `capacity` block carries this last signal to the client: `{gated, available,
+	unmeasured, largest_vm}` — `available` False means "region full, show a message",
+	and `largest_vm` is the composed slider's hard ceiling.
+
+	`exclude_subscription` drops one subscription from the run-rate — passed when
+	resizing, so the server being resized frees its own spend back into the headroom
+	the new size (preset or custom) is measured against. It also marks the call as a
+	resize, which changes *which* capacity ceiling applies: a resize reshapes a VM in
+	place on the host it already occupies, so the ceiling is that host's free room with
+	the VM's own footprint added back (Atlas `resize_capacity`), not the fleet's best-host
+	free headroom used for a new machine. That guarantees the running size always fits
+	(no hidden current plan, downsizes allowed) while still capping growth to what the
+	host can actually seat — so an oversized resize can't be requested only to fail on the
+	host.
 	"""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
 	caps = get_team_caps(team)
 	spend_cap = frappe.utils.flt(caps.max_spend)
-	current_spend = _current_run_rate(team)
+	current_spend = _current_run_rate(team, exclude=exclude_subscription)
 	available = max(0.0, frappe.utils.flt(spend_cap - current_spend))
 	cluster = (cluster or "").strip() or None
 
 	allowed_plans = _allowlist(caps.allowed_plans)
 	allowed_clusters = _allowlist(caps.allowed_clusters)
 
+	# What can this region physically seat right now? A resize is capped by its own host's
+	# free room + own footprint (resize_capacity); a new machine by the best host's free
+	# headroom (capacity). None = don't gate — the flag is off, no Atlas is registered, or
+	# the check couldn't be reached (fail-soft).
+	is_resize = bool(exclude_subscription)
+	capacity = _resize_capacity(cluster, exclude_subscription, team) if is_resize else _region_capacity(cluster)
+	capacity_block = _capacity_block(capacity)
+
 	header = {
 		"team": team, "cluster": cluster, "currency": currency, "tier": caps.tier,
 		"max_spend": spend_cap, "current_spend": current_spend, "available": available,
+		"capacity": capacity_block,
 	}
 	# A "design your own" config needs the same three things the slider does: the
 	# per-resource rate card, the profile bounds, and the headroom ceiling (#83).
@@ -81,6 +119,14 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 	# The tier forbids this cluster outright — nothing is provisionable here, and the
 	# rate card / profiles come back empty too (no composed configs offered either).
 	if cluster and allowed_clusters is not None and cluster not in allowed_clusters:
+		return empty
+
+	# The region can't seat a new VM at all (no Active host with room, or not even the
+	# smallest preset fits) → nothing is provisionable here, presets and composed configs
+	# alike. The client reads `capacity.available` to show a "region is full" message.
+	# A resize is never a dead end this way — it always at least fits its current size —
+	# so this "region full" short-circuit is create-only; a resize just clamps to the host.
+	if capacity is not None and not is_resize and not capacity.get("available"):
 		return empty
 
 	# Only families that provision a server belong in the create-server menu — AI
@@ -123,7 +169,10 @@ def get_eligible_plans(cluster: str | None = None, team: str | None = None) -> d
 			continue  # not priced for this currency/cluster → not available here
 		if frappe.utils.flt(rate) > available:
 			continue  # would push the team past its remaining trust-tier headroom
-		plans.append(_plan_row(p, currency, cluster, rate, includes_by_plan.get(p.name, [])))
+		row = _plan_row(p, currency, cluster, rate, includes_by_plan.get(p.name, []))
+		if capacity and capacity.get("largest_vm") and not _plan_fits(row, capacity["largest_vm"]):
+			continue  # won't fit the largest VM the region can seat right now
+		plans.append(row)
 
 	# Cheapest first; the title-ordered iteration above is a stable tiebreaker.
 	plans.sort(key=lambda p: frappe.utils.flt(p["rate"]))
@@ -187,37 +236,56 @@ def provision_composed_config(
 
 @frappe.whitelist()
 def get_composed_config(asset: str, team: str | None = None) -> dict:
-	"""The composed config running on `asset` (for the resize slider, #84): its
-	subscription, optimisation profile, current composition, and the headroom a resize
-	has — the cap minus the team's *other* run-rate, so the running config's own spend
-	is available to it. Returns `{composed: False}` for a preset/legacy server."""
+	"""The config running on `asset`, pre-filling the resize slider (#84): its
+	subscription, current shape, and the resize headroom — the cap minus the team's
+	*other* run-rate, so the running config's own spend is available to it.
+
+	Works for both a composed server (its exact composition + optimisation profile)
+	and a preset one, whose shape is read off the mirrored VM; resizing a preset
+	slides it onto a custom config, so `sub_category` is None and the slider defaults
+	to the region's first profile. `{resizable: False}` when there's no live
+	subscription to resize."""
 	team = _resolve_team(team)
 	sub = frappe.db.get_value(
 		"Subscription",
-		{"asset_id": asset, "team": team, "pricing_mode": "Composed"},
-		["name", "sub_category"],
+		{"asset_id": asset, "team": team},
+		["name", "pricing_mode", "sub_category", "plan"],
 		as_dict=True,
 	)
 	if not sub:
-		return {"composed": False}
+		return {"resizable": False, "composed": False}
 
 	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
 	from central.billing.catalog.subscriptions import team_run_rate
 
-	includes = frappe.get_all(
-		"Plan Includes",
-		filters={"parenttype": "Subscription", "parent": sub.name},
-		fields=["resource_type", "quantity"],
-	)
-	qty = composition_quantities(includes)
+	composed = sub.pricing_mode == "Composed"
+	if composed:
+		includes = frappe.get_all(
+			"Plan Includes",
+			filters={"parenttype": "Subscription", "parent": sub.name},
+			fields=["resource_type", "quantity"],
+		)
+		qty = composition_quantities(includes)
+		vcpus, memory_gb, disk_gb = qty.get(COMPUTE, 0), qty.get(MEMORY, 0), qty.get(DISK, 0)
+	else:
+		# A preset carries no composition — its shape lives on the mirrored VM.
+		shape = frappe.db.get_value(
+			"Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
+		) or frappe._dict()
+		vcpus = shape.vcpus or 0
+		memory_gb = (shape.memory_megabytes or 0) / 1024
+		disk_gb = shape.disk_gigabytes or 0
+
 	cap = frappe.utils.flt(get_team_caps(team).max_spend)
 	return {
-		"composed": True,
+		"resizable": True,
+		"composed": composed,
 		"subscription": sub.name,
 		"sub_category": sub.sub_category,
-		"vcpus": qty.get(COMPUTE, 0),
-		"memory_gb": qty.get(MEMORY, 0),
-		"disk_gb": qty.get(DISK, 0),
+		"plan": sub.plan,  # the current preset, so the picker can pre-select it
+		"vcpus": vcpus,
+		"memory_gb": memory_gb,
+		"disk_gb": disk_gb,
 		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
 	}
 
@@ -241,6 +309,31 @@ def resize_composed_config(
 	resize_composed_subscription(subscription, includes, sub_category)
 	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
 	return {"subscription": subscription, "resized": after > before}
+
+
+@frappe.whitelist(methods=["POST"])
+def resize_server(
+	subscription: str,
+	plan: str | None = None,
+	includes: list | str | None = None,
+	sub_category: str | None = None,
+) -> dict:
+	"""Resize a server to a preset bundle (`plan`) or a custom shape (`includes` +
+	`sub_category`) — the console's single Resize action (#84). Validates synchronously,
+	then hands the slow VM reshape (stop→resize→start on the host) plus the current-rate
+	re-lock to a background job, marking the server "Resizing" for the console meanwhile.
+	Returns `{queued, resized}`: `queued` when a live VM is being reshaped in the
+	background, `resized` False only for a no-op or non-resizable config."""
+	team = frappe.db.get_value("Subscription", subscription, "team")
+	if not team:
+		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
+	authz.require_capability(team, authz.MANAGE)
+	from central.billing.catalog.subscriptions import begin_resize
+
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+	result = begin_resize(subscription, plan=plan, includes=includes, sub_category=sub_category)
+	return {"subscription": subscription, **result}
 
 
 def _rates_by_plan(names: list[str]) -> dict[str, list]:
@@ -286,13 +379,145 @@ def _group_by_sub_category(rows: list[dict]) -> dict[str, list]:
 	return {c: grouped[c] for c in [*known, *extra]}
 
 
-def _current_run_rate(team: str) -> float:
+def _current_run_rate(team: str, exclude: str | None = None) -> float:
 	"""The team's committed monthly run-rate: the summed open-segment locked rate of
 	its subscriptions, off the Subscription Change ledger (ADR 0010). Counts presets and
-	composed configs alike; a team bills in one currency, so the rates are comparable."""
+	composed configs alike; a team bills in one currency, so the rates are comparable.
+	`exclude` drops one subscription — used by resize to free the server's own spend."""
 	from central.billing.catalog.subscriptions import team_run_rate
 
-	return team_run_rate(team)
+	return team_run_rate(team, exclude=exclude)
+
+
+def _gated_capacity(cluster: str | None, fetch, *, log: str) -> dict | None:
+	"""Resolve `cluster`'s Atlas Instance and, when capacity gating is on and the Atlas
+	reachable, return `fetch(client)`'s capacity shape — else None (don't gate).
+
+	Gated by the region's `Atlas Instance.validate_capacity` (default on): off, no Atlas
+	registered, or a Disabled Atlas → show the full priced menu. Best-effort and
+	fail-soft — an unreachable Atlas returns None (let placement's create-time gate
+	decide), never an error to the customer."""
+	if not cluster:
+		return None
+	instance = frappe.db.get_value(
+		"Atlas Instance",
+		{"region": cluster},
+		["name", "validate_capacity", "status"],
+		as_dict=True,
+	)
+	if not instance or not instance.validate_capacity or instance.status == "Disabled":
+		return None
+
+	from central.integrations.atlas import AtlasClient
+
+	try:
+		raw = fetch(AtlasClient(frappe.get_doc("Atlas Instance", instance.name)))
+	except Exception:
+		# Unreachable / timed-out / auth failure — fail soft (show the full menu).
+		frappe.log_error(title=log)
+		return None
+
+	capacity = _valid_capacity(raw)
+	if capacity is None:
+		# A 200 with a shape we don't trust (partial JSON, schema drift). Treat it as
+		# "don't gate" rather than let a later `largest_vm["vcpus"]` KeyError 500 the
+		# whole menu — the fail-soft intent must hold for malformed-but-successful replies.
+		frappe.log_error(title=f"{log}: malformed capacity response", message=repr(raw))
+	return capacity
+
+
+def _valid_capacity(raw) -> dict | None:
+	"""Coerce a raw Atlas capacity reply into a trusted shape, or None if malformed.
+
+	Guarantees callers a well-formed `{available, unmeasured, largest_vm}` where
+	`largest_vm` is either None or a dict with numeric `vcpus`/`memory_megabytes`/
+	`disk_gigabytes` — so `_plan_fits`/`_capacity_block` can index it without a KeyError.
+	Anything that doesn't fit that shape returns None (→ don't gate); a successful call
+	must never crash the menu just because Atlas returned an unexpected body."""
+	if not isinstance(raw, dict) or not all(
+		key in raw for key in ("available", "unmeasured", "largest_vm")
+	):
+		return None
+	largest = raw.get("largest_vm")
+	if largest is not None:
+		if not isinstance(largest, dict) or not all(
+			isinstance(largest.get(axis), (int, float))
+			for axis in ("vcpus", "memory_megabytes", "disk_gigabytes")
+		):
+			return None
+	return {
+		"available": bool(raw.get("available")),
+		"unmeasured": bool(raw.get("unmeasured")),
+		"largest_vm": largest,
+	}
+
+
+def _region_capacity(cluster: str | None) -> dict | None:
+	"""What `cluster` can seat as a NEW machine right now, for narrowing the create-server
+	menu — the best host's free headroom (`{available, unmeasured, largest_vm}` from
+	atlas.atlas.api.provision.capacity), or None to skip the gate."""
+	return _gated_capacity(
+		cluster, lambda client: client.capacity(), log=f"Capacity check failed for region {cluster}"
+	)
+
+
+def _resize_capacity(cluster: str | None, subscription: str | None, team: str) -> dict | None:
+	"""The largest shape the server behind `subscription` can resize to on its current
+	host (atlas.atlas.api.provision.resize_capacity), or None to skip the gate.
+
+	A resize reshapes a VM in place, so the ceiling is its host's free room with its own
+	footprint added back — the running size always fits, and growth is capped to what the
+	host can seat. None when the subscription has no linked Asset yet (nothing to resize)
+	or the region isn't capacity-gated / reachable.
+
+	The subscription is scoped to `team`: a caller can only resize-gate against a
+	subscription their own team owns, so a supplied `exclude_subscription` can't be used
+	to read another team's host-capacity shape (`largest_vm`)."""
+	if not subscription:
+		return None
+	asset_id = frappe.db.get_value("Subscription", {"name": subscription, "team": team}, "asset_id")
+	if not asset_id:
+		return None
+	return _gated_capacity(
+		cluster,
+		lambda client: client.resize_capacity(asset_id),
+		log=f"Resize capacity check failed for {subscription}",
+	)
+
+
+def _capacity_block(capacity: dict | None) -> dict:
+	"""The client-facing capacity summary the create-server menu renders from.
+
+	`gated` says whether live capacity narrowed this menu at all; `available` whether
+	the region can seat any new VM right now (False → the client shows a "region is
+	full" message); `largest_vm` is the biggest placeable shape, the composed slider's
+	hard ceiling; `unmeasured` flags a host with an unreported axis (sentinel numbers,
+	so treat the ceiling as "size unknown"). Not gated → available with no ceiling; the
+	create-time gate on Atlas still has the final say."""
+	if capacity is None:
+		return {"gated": False, "available": True, "unmeasured": False, "largest_vm": None}
+	return {
+		"gated": True,
+		"available": bool(capacity.get("available")),
+		"unmeasured": bool(capacity.get("unmeasured")),
+		"largest_vm": capacity.get("largest_vm"),
+	}
+
+
+def _plan_fits(row: dict, largest: dict) -> bool:
+	"""Does this preset plan's compute shape fit the largest VM the region can seat now?
+
+	`largest` is Atlas's `{vcpus, memory_megabytes, disk_gigabytes}` — the free headroom
+	on the region's best host, a genuinely co-schedulable shape (a VM lands on one host).
+	Plan Memory is in GB, so scale to MB for the axis compare. A plan with no declared
+	composition (unknown shape → all-zero) trivially fits; placement's create-time gate
+	is authoritative regardless."""
+	qty = composition_quantities(row["includes"])
+	return (
+		qty.get(COMPUTE, 0.0) <= largest["vcpus"]
+		and qty.get(MEMORY, 0.0) * 1024 <= largest["memory_megabytes"]
+		and qty.get(DISK, 0.0) <= largest["disk_gigabytes"]
+	)
 
 
 def _plan_row(plan, currency: str, cluster: str | None, rate, includes) -> dict:

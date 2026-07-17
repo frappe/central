@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.entitlements import evaluate_tier, get_ladder, recompute_trust_tier
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
@@ -24,10 +24,15 @@ def make_ladder():
 	rungs stay INR-only — which also leaves a USD team unable to climb past entry."""
 	from central.billing.gateways.registry import supported_currencies
 
+	# Hermetic: wipe the whole ladder first (including the shipped Beginner→Elite
+	# fixtures) so get_ladder() resolves against exactly the t0/t1/t2 rungs these
+	# tests assert on — an extra qualifying rung or a second entry tier would skew
+	# evaluate_tier / recompute results.
+	for name in frappe.get_all("Trust Tier Level", pluck="name"):
+		frappe.delete_doc("Trust Tier Level", name, force=True)
+
 	entry_currencies = sorted(set(supported_currencies()) | {"INR"})
 	for level in LADDER:
-		if frappe.db.exists("Trust Tier Level", level["tier"]):
-			frappe.delete_doc("Trust Tier Level", level["tier"], force=True)
 		currencies = entry_currencies if level.get("is_default") else ["INR"]
 		frappe.get_doc(
 			{

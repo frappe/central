@@ -9,7 +9,9 @@ import { test, expect } from './fixtures'
 
 const open = (page) => page.locator('ul.divide-y > li')
 
-test.describe('Invoice settlement', () => {
+// TODO: legacy dashboard removed; these flows (billing/invoices, billing/credits)
+// aren't ported to console yet. Un-skip once console has them.
+test.describe.skip('Invoice settlement', () => {
   test('settles fully from wallet credits — no card charged', async ({ page, billing }) => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'USD' })
     await billing.addCredits({ team, amount: 2000 })

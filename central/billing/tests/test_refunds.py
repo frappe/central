@@ -6,14 +6,19 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import invoicing, credits
 from central.billing.payments import refunds
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import RefundResult
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import complete_billing_profile, ensure_team, make_plan
+from central.billing.tests.utils import (
+	complete_billing_profile,
+	ensure_atlas_instance,
+	ensure_team,
+	make_plan,
+)
 
 TEAM = "team-refund"
 CLUSTER = "ap-south-1"
@@ -34,6 +39,7 @@ def stub_refund(success=True, refund_id="rfnd_1"):
 class RefundTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		ensure_atlas_instance(CLUSTER)
 		complete_billing_profile(TEAM, currency="INR")  # so a provisioned segment is rated
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)

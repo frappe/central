@@ -71,11 +71,13 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	applied = 0
 	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
 	if collectable > 0:
-		balance = credits.get_balance(doc.team)["balance"]
+		# Draw and debit in the invoice's own currency — a USD team's wallet must be
+		# debited in USD, not the apply_credit default (INR).
+		balance = credits.get_balance(doc.team, doc.currency)["balance"]
 		applied = min(frappe.utils.flt(balance), collectable)
 		if applied > 0:
 			credits.apply_credit(
-				doc.team, applied, reference_type="Invoice", reference_name=invoice,
+				doc.team, applied, doc.currency, reference_type="Invoice", reference_name=invoice,
 				note=f"Credit applied to {invoice}",
 			)
 

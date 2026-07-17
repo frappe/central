@@ -24,11 +24,11 @@ COMPONENT_UNITS = {"Compute": "vCPU", "Memory": "GB", "Disk": "GB"}
 
 # Starter global (blank-cluster) rates per shipped currency, in major Currency
 # units per unit per month. Deliberately round so a hand-summed config is easy to
-# verify; admins tune them per region afterwards.
+# verify; admins tune them per region afterwards. We bill only in INR and USD for
+# now, so those are the only two cards seeded.
 STARTER_RATE_CARD = {
 	"INR": {"Compute": 500, "Memory": 250, "Disk": 10},
 	"USD": {"Compute": 6, "Memory": 3, "Disk": 0.12},
-	"EUR": {"Compute": 6, "Memory": 3, "Disk": 0.12},
 }
 
 

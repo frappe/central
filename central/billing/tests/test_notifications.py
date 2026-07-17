@@ -3,7 +3,7 @@
 """Notification suite — sole sender (issue #20)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.tests.utils import ensure_team
 

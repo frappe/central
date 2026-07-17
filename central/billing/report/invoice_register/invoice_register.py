@@ -12,6 +12,7 @@ Invoice Type filter so the register reflects real billing.
 import frappe
 from frappe import _
 from frappe.utils import flt, getdate
+from central.billing.report._currency import split_currency_columns
 
 STATUS_ORDER = ["Draft", "Open", "Paid", "Overdue", "Waived", "Cancelled"]
 
@@ -22,6 +23,9 @@ def execute(filters: dict | None = None):
 	rows = get_data(filters)
 	summary = get_summary(rows)
 	chart = get_chart(rows)
+	columns = split_currency_columns(
+		columns, rows, ["total", "credit_applied", "expected_collection", "amount_paid"]
+	)
 	return columns, rows, None, chart, summary
 
 
@@ -75,25 +79,30 @@ def get_data(filters: dict) -> list[dict]:
 
 def get_summary(rows: list[dict]) -> list[dict]:
 	counts = {s: 0 for s in STATUS_ORDER}
-	total_invoiced = total_paid = total_outstanding = 0.0
+	# Money is grouped by currency — invoices span INR and USD, and a summed total
+	# across the two would be meaningless.
+	by_currency: dict[str, dict] = {}
 	for r in rows:
 		counts[r.status] = counts.get(r.status, 0) + 1
-		total_invoiced += flt(r.total)
-		total_paid += flt(r.amount_paid)
+		g = by_currency.setdefault(r.currency or "INR", {"invoiced": 0.0, "outstanding": 0.0})
+		g["invoiced"] += flt(r.total)
 		if r.status in ("Open", "Overdue"):
-			total_outstanding += flt(r.expected_collection)
-	# Currency sums are cross-currency unless a currency filter is applied — labelled
-	# raw (no currency symbol) so a mixed-currency run isn't silently misread.
-	return [
+			g["outstanding"] += flt(r.expected_collection)
+
+	summary = [
 		{"label": _("Invoices"), "value": len(rows), "datatype": "Int"},
 		{"label": _("Paid"), "value": counts.get("Paid", 0), "datatype": "Int", "indicator": "green"},
 		{"label": _("Open + Overdue"), "value": counts.get("Open", 0) + counts.get("Overdue", 0),
 		 "datatype": "Int", "indicator": "orange"},
 		{"label": _("Draft"), "value": counts.get("Draft", 0), "datatype": "Int", "indicator": "grey"},
-		{"label": _("Total Invoiced"), "value": flt(total_invoiced, 2), "datatype": "Float"},
-		{"label": _("Total Paid"), "value": flt(total_paid, 2), "datatype": "Float", "indicator": "green"},
-		{"label": _("Outstanding"), "value": flt(total_outstanding, 2), "datatype": "Float", "indicator": "red"},
 	]
+	for currency in sorted(by_currency):
+		g = by_currency[currency]
+		summary.append({"label": _("Invoiced ({0})").format(currency),
+						"value": flt(g["invoiced"], 2), "datatype": "Float"})
+		summary.append({"label": _("Outstanding ({0})").format(currency),
+						"value": flt(g["outstanding"], 2), "datatype": "Float", "indicator": "red"})
+	return summary
 
 
 def get_chart(rows: list[dict]) -> dict | None:

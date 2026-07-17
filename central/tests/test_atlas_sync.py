@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.servers import refresh_assets, registry
+from central.api.servers import refresh_assets, registry, start_server
 from central.integrations.atlas import apply_event, ingest_event, reconcile, reconcile_atlas
 from central.tests.test_iam import ensure_user
 
@@ -22,6 +22,15 @@ class TestAtlasMirror(IntegrationTestCase):
 			}
 		).insert()
 		self.region = "blr-sync"
+		if not frappe.db.exists("Region", self.region):
+			frappe.get_doc(
+				{
+					"doctype": "Region",
+					"region": self.region,
+					"display_name": "Sync Test",
+					"provider": "Fake",
+				}
+			).insert(ignore_permissions=True)
 		# The Atlas authenticates as its scoped service user; the sender (= cluster) is
 		# resolved from that session, so the instance is keyed on service_user.
 		self.service_user = ensure_user("atlas-blr-sync@example.test")
@@ -104,6 +113,218 @@ class TestAtlasMirror(IntegrationTestCase):
 		self._push("vm.deleted", {"name": "vm-2"}, "2026-06-18 11:00:00")
 		self.assertEqual(frappe.db.get_value("Asset", "vm-2", "status"), "Terminated")
 
+	def test_stale_vm_deleted_does_not_terminate(self):
+		# A delete whose occurred_at is older than the mirror's last_event_at must not
+		# overwrite — same LWW as status_changed, but mark_terminated must lock+read
+		# fresh (unlocked is_stale under RR can miss a concurrent newer event).
+		self._push(
+			"vm.created",
+			{"name": "vm-stale-del", "team": self.team.name, "status": "Running"},
+			"2026-06-18 12:00:00",
+		)
+		self._push("vm.deleted", {"name": "vm-stale-del"}, "2026-06-18 11:00:00")
+		self.assertEqual(frappe.db.get_value("Asset", "vm-stale-del", "status"), "Running")
+
+	def test_mark_terminated_loads_with_for_update(self):
+		from central.central.doctype.asset.asset import Asset
+
+		self._push(
+			"vm.created",
+			{"name": "vm-del-lock", "team": self.team.name, "status": "Running"},
+			"2026-06-18 10:00:00",
+		)
+		seen = {}
+		real_get_doc = frappe.get_doc
+
+		def tracking_get_doc(*args, **kwargs):
+			if args and args[0] == "Asset":
+				seen["for_update"] = kwargs.get("for_update")
+			return real_get_doc(*args, **kwargs)
+
+		with patch("frappe.get_doc", side_effect=tracking_get_doc):
+			Asset.mark_terminated("vm-del-lock", last_event_at="2026-06-18 11:00:00")
+		self.assertTrue(seen.get("for_update"))
+		self.assertEqual(frappe.db.get_value("Asset", "vm-del-lock", "status"), "Terminated")
+
+	def test_site_front_door_statuses_mirror_onto_asset(self):
+		# Site-backed VMs report the Site's status on the VM payload (Provisioning /
+		# Deploying). Asset must accept those verbatim — same values as Site.
+		self._push(
+			"vm.created",
+			{"name": "vm-site", "team": self.team.name, "status": "Provisioning"},
+			"2026-06-18 10:00:00",
+		)
+		self.assertEqual(frappe.db.get_value("Asset", "vm-site", "status"), "Provisioning")
+		self._push(
+			"vm.status_changed",
+			{"name": "vm-site", "team": self.team.name, "status": "Deploying"},
+			"2026-06-18 10:05:00",
+		)
+		self.assertEqual(frappe.db.get_value("Asset", "vm-site", "status"), "Deploying")
+
+	def test_vm_resized_event_updates_mirror_shape(self):
+		self._push(
+			"vm.created",
+			{"name": "vm-r", "team": self.team.name, "status": "Stopped",
+			 "vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 40},
+			"2026-06-18 10:00:00",
+		)
+		# A resize leaves the VM Stopped, so no status_changed ever fires — the
+		# vm.resized event is how the mirror learns the new shape.
+		self._push(
+			"vm.resized",
+			{"name": "vm-r", "team": self.team.name, "status": "Stopped",
+			 "vcpus": 4, "memory_megabytes": 16384, "disk_gigabytes": 80},
+			"2026-06-18 10:05:00",
+		)
+		asset = frappe.get_doc("Asset", "vm-r")
+		self.assertEqual((asset.vcpus, asset.memory_megabytes, asset.disk_gigabytes), (4, 16384, 80))
+
+	def test_bench_login_handoff_mirrors_and_is_write_once(self):
+		# A bench VM reports its front door immediately, but the login URL + expiry only
+		# arrive once Running (Atlas gates them on status).
+		self._push(
+			"vm.created",
+			{"name": "vm-b", "team": self.team.name, "status": "Pending",
+			 "gateway_url": "https://acme.blr1.frappe.dev"},
+			"2026-06-18 10:00:00",
+		)
+		asset = frappe.get_doc("Asset", "vm-b")
+		self.assertEqual(asset.gateway_url, "https://acme.blr1.frappe.dev")
+		self.assertIsNone(asset.login_url)
+
+		# The Running event carries the minted handoff — it lands on the mirror.
+		self._push(
+			"vm.status_changed",
+			{"name": "vm-b", "team": self.team.name, "status": "Running",
+			 "gateway_url": "https://acme.blr1.frappe.dev",
+			 "login_url": "https://acme.blr1.frappe.dev/app?sid=abc",
+			 "login_url_expires_at": "2026-06-18 10:05:00"},
+			"2026-06-18 10:01:00",
+		)
+		asset.reload()
+		self.assertEqual(asset.login_url, "https://acme.blr1.frappe.dev/app?sid=abc")
+		self.assertEqual(str(asset.login_url_expires_at), "2026-06-18 10:05:00")
+
+		# Write-once: a later status-only event (no login_url in the payload — e.g. the
+		# reconcile shape before another Running) must not blank the stored handoff.
+		self._push(
+			"vm.status_changed",
+			{"name": "vm-b", "team": self.team.name, "status": "Stopped",
+			 "gateway_url": "https://acme.blr1.frappe.dev"},
+			"2026-06-18 10:10:00",
+		)
+		asset.reload()
+		self.assertEqual(asset.login_url, "https://acme.blr1.frappe.dev/app?sid=abc")
+
+	def test_site_login_handoff_mirrors_and_is_write_once(self):
+		# A self-serve Site's one-click login URL + expiry only arrive once Running
+		# (Atlas gates them on status), same contract as the bench VM's.
+		fqdn = "handoff.blr1.frappe.dev"
+		self._push(
+			"site.created",
+			{"name": fqdn, "team": self.team.name, "subdomain": "handoff", "status": "Provisioning"},
+			"2026-06-18 10:00:00",
+		)
+		site = frappe.get_doc("Site", fqdn)
+		self.assertIsNone(site.login_url)
+
+		# The Running event carries the minted handoff — it lands on the mirror.
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "handoff",
+			 "status": "Running", "url": f"https://{fqdn}",
+			 "login_url": f"https://{fqdn}/app?sid=xyz",
+			 "login_url_expires_at": "2026-06-19 10:00:00"},
+			"2026-06-18 10:05:00",
+		)
+		site.reload()
+		self.assertEqual(site.url, f"https://{fqdn}")
+		self.assertEqual(site.login_url, f"https://{fqdn}/app?sid=xyz")
+		self.assertEqual(str(site.login_url_expires_at), "2026-06-19 10:00:00")
+
+		# Write-once: a later status-only event without a login_url must not blank it.
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "handoff", "status": "Running"},
+			"2026-06-18 10:10:00",
+		)
+		site.reload()
+		self.assertEqual(site.login_url, f"https://{fqdn}/app?sid=xyz")
+
+	def test_get_site_returns_stored_login_url_when_fresh(self):
+		# A Running site with a not-yet-expired login URL: get_site returns it verbatim,
+		# no regenerate round-trip to Atlas.
+		from central.api import sites
+
+		fqdn = "fresh.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "fresh",
+			 "status": "Running", "url": f"https://{fqdn}",
+			 "login_url": f"https://{fqdn}/app?sid=fresh",
+			 "login_url_expires_at": "2099-01-01 00:00:00"},
+			"2026-06-18 10:05:00",
+		)
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login"
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=fresh")
+		regen.assert_not_called()
+
+	def test_get_site_regenerates_expired_login_url(self):
+		# A Running site whose stored login URL has expired: get_site re-mints it via
+		# Atlas, re-mirrors, and returns the fresh URL.
+		from central.api import sites
+
+		fqdn = "stale.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "stale",
+			 "status": "Running", "url": f"https://{fqdn}",
+			 "login_url": f"https://{fqdn}/app?sid=stale",
+			 "login_url_expires_at": "2000-01-01 00:00:00"},
+			"2026-06-18 10:05:00",
+		)
+		fresh = {
+			"name": fqdn, "team": self.team.name, "subdomain": "stale",
+			"status": "Running", "url": f"https://{fqdn}",
+			"login_url": f"https://{fqdn}/app?sid=fresh",
+			"login_url_expires_at": "2099-01-01 00:00:00",
+		}
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		regen.assert_called_once_with(fqdn)
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=fresh")
+
+	def test_resize_vm_posts_run_doc_method_with_args(self):
+		import json
+
+		from central.integrations.atlas import AtlasClient
+
+		client = AtlasClient(frappe.get_doc("Atlas Instance", self.region))
+		with patch.object(AtlasClient, "client") as make_client:
+			make_client.return_value.post_api.return_value = "task-9"
+			task = client.resize_vm("vm-x", vcpus=4, memory_megabytes=16384, disk_gigabytes=80)
+		self.assertEqual(task, "task-9")
+		params = make_client.return_value.post_api.call_args.kwargs["params"]
+		self.assertEqual((params["dt"], params["dn"], params["method"]), ("Virtual Machine", "vm-x", "resize"))
+		self.assertEqual(
+			json.loads(params["args"]),
+			{"vcpus": 4, "memory_megabytes": 16384, "disk_gigabytes": 80},
+		)
+
 	# --- dispatch: verify synchronously, mirror in the background -------------
 
 	def test_known_event_is_queued_not_applied_inline(self):
@@ -150,6 +371,37 @@ class TestAtlasMirror(IntegrationTestCase):
 			)
 		self.assertEqual(frappe.db.get_value("Asset", "vm-race", "status"), "Running")
 
+	def test_update_mirror_loads_with_for_update(self):
+		# Recovery and concurrent poll/event writers must lock+load in one current
+		# read. A plain get_doc after get_value(for_update) reuses the RR snapshot and
+		# can raise DoesNotExistError / TimestampMismatchError (prod signup race).
+		from central.central.doctype.asset.asset import Asset
+
+		self._push(
+			"vm.created",
+			{"name": "vm-lock", "team": self.team.name, "status": "Pending"},
+			"2026-06-18 10:00:00",
+		)
+		seen = {}
+
+		real_get_doc = frappe.get_doc
+
+		def tracking_get_doc(*args, **kwargs):
+			if args and args[0] == "Asset":
+				seen["for_update"] = kwargs.get("for_update")
+			return real_get_doc(*args, **kwargs)
+
+		with patch("frappe.get_doc", side_effect=tracking_get_doc):
+			Asset._update_mirror(
+				"vm-lock",
+				self.region,
+				{"name": "vm-lock", "team": self.team.name, "status": "Deploying"},
+				"2026-06-18 10:05:00",
+				None,
+			)
+		self.assertTrue(seen.get("for_update"))
+		self.assertEqual(frappe.db.get_value("Asset", "vm-lock", "status"), "Deploying")
+
 	# --- pull / reconcile -----------------------------------------------------
 
 	def test_reconcile_upserts_present_and_terminates_missing(self):
@@ -184,3 +436,24 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.outsider)
 		with self.assertRaises(frappe.PermissionError):
 			registry(team=self.team.name)
+
+	# --- power gate while resizing --------------------------------------------
+
+	def _stopped_asset(self, resource_id, **extra):
+		self._push("vm.created", {"name": resource_id, "team": self.team.name, "status": "Stopped"}, "2026-07-02 10:00:00")
+		if extra:
+			frappe.db.set_value("Asset", resource_id, extra)
+		return resource_id
+
+	def test_start_blocked_while_resizing(self):
+		asset = self._stopped_asset("vm-resizing", resize_in_progress=1)
+		frappe.set_user(self.owner)
+		with self.assertRaisesRegex(frappe.ValidationError, "resizing"):
+			start_server(team=self.team.name, resource_id=asset)
+
+	def test_start_allowed_once_resize_clears(self):
+		asset = self._stopped_asset("vm-idle", resize_in_progress=0)
+		frappe.set_user(self.owner)
+		with patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-1") as vm_action:
+			start_server(team=self.team.name, resource_id=asset)
+		vm_action.assert_called_once_with(asset, "start")

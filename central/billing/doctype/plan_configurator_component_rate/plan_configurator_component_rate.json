@@ -37,7 +37,7 @@
    "label": "Per-Unit Rate",
    "options": "currency",
    "columns": 4,
-   "description": "Price per unit of this Resource Type in this currency; a composed config is billed as the sum of quantity x this rate. A blank/zero row is not applied (it reads as 'not priced yet', not a free primitive)."
+   "description": "Per-unit rate of this Resource Type in this currency; a blank/zero row is treated as not priced."
   }
  ],
  "index_web_pages_for_search": 1,

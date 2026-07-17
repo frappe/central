@@ -8,13 +8,14 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.payments import charges, webhooks
 from central.billing.catalog import subscriptions
-from central.billing.gateways.base import PaymentResult
+from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
+from central.billing.gateways.base import GatewayError, PaymentResult
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan
 
 TEAM = "team-charge"
 CLUSTER = "ap-south-1"
@@ -64,6 +65,7 @@ def stub_adapter(success=True, txn_id="pi_x"):
 class ChargeTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._purge()
@@ -106,14 +108,17 @@ class ChargeTestBase(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True).name
 
-	def _open_invoice(self, total=1000):
+	def _open_invoice(self, total=1000, month=6):
+		# A team gets one live invoice per period, so a test that wants several bills
+		# has to spread them across months.
+		last_day = 30 if month in (4, 6, 9, 11) else 31
 		return frappe.get_doc(
 			{
 				"doctype": "Invoice",
 				"team": TEAM,
 				"status": "Open",
-				"period_start": "2026-06-01",
-				"period_end": "2026-06-30",
+				"period_start": f"2026-{month:02d}-01",
+				"period_end": f"2026-{month:02d}-{last_day}",
 				"currency": "INR",
 				"subtotal": total,
 				"total": total,
@@ -144,10 +149,10 @@ class TestChargeInvoice(ChargeTestBase):
 			result = charges.pay_invoice(inv)
 
 		adapter.charge.assert_called_once()
-		# Idempotency key handed to the gateway is the attempt's own name.
+		# The key handed to the gateway is worked out from the invoice + retry number.
 		attempt = frappe.get_doc("Payment Attempt", result["attempt"])
 		self.assertEqual(adapter.charge.call_args.args[2], attempt.idempotency_key)
-		self.assertEqual(attempt.idempotency_key, attempt.name)
+		self.assertEqual(attempt.idempotency_key, idempotency_key(inv, 0))
 		self.assertEqual(attempt.status, "Captured")
 		self.assertEqual(attempt.gateway_transaction_id, "pi_1")
 		# Crucially: invoice is NOT Paid on the charge response.
@@ -180,6 +185,34 @@ class TestChargeInvoice(ChargeTestBase):
 			"Comment", {"reference_doctype": "Invoice", "reference_name": inv, "comment_type": "Info"}
 		)
 		self.assertTrue(comments)
+
+	def _stripe_invoice_payment_event(self, gateway_event_id, invoice, amount_minor, txn_id="pi_hosted"):
+		"""A Stripe capture webhook for a hosted invoice checkout — carries the
+		`invoice_payment` metadata (no Payment Attempt exists for this flow)."""
+		payload = {"id": gateway_event_id, "type": "payment_intent.succeeded",
+				   "data": {"object": {"id": txn_id, "amount_received": amount_minor, "currency": "inr",
+									   "metadata": {"purpose": "invoice_payment", "invoice": invoice}}}}
+		return frappe.get_doc({
+			"doctype": "Webhook Event", "gateway": GATEWAY, "gateway_event_id": gateway_event_id,
+			"event_type": "payment_intent.succeeded", "raw_payload": json.dumps(payload),
+			"status": "Received",
+		}).insert(ignore_permissions=True).name
+
+	def test_hosted_checkout_webhook_settles_invoice_without_attempt(self):
+		# Hosted invoice checkout records no Payment Attempt; the invoice must still
+		# settle from the invoice_payment notes on the capture webhook.
+		inv = self._open_invoice(1000)
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 0)
+
+		out = charges.apply_webhook(self._stripe_invoice_payment_event("evt_hosted_1", inv, 100000))
+
+		self.assertEqual(out["result"], "paid")
+		invoice = frappe.get_doc("Invoice", inv)
+		self.assertEqual(invoice.status, "Paid")
+		self.assertEqual(invoice.amount_paid, 1000.0)
+		# Idempotent: a duplicate capture webhook does not re-settle.
+		second = charges.apply_webhook(self._stripe_invoice_payment_event("evt_hosted_2", inv, 100000))
+		self.assertFalse(second["settled"])
 
 	def test_duplicate_success_webhook_is_idempotent(self):
 		inv = self._open_invoice(1000)
@@ -231,6 +264,94 @@ class TestChargeInvoice(ChargeTestBase):
 		charges.apply_webhook(self._stripe_event("evt_late", "payment_intent.amount_capturable_updated", "pi_race"))
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt_name, "status"), "Captured")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+
+
+class TestDurableIntent(ChargeTestBase):
+	"""The attempt is written down before the gateway is called (ADR 0017).
+
+	The failure this prevents: the worker dies after the card is charged but before
+	we save anything, so the charge exists at the gateway and nowhere with us. The
+	customer gets billed, the invoice stays Open, dunning charges them again, and
+	nothing in our data shows any of it happened.
+	"""
+
+	def test_attempt_exists_before_the_gateway_is_called(self):
+		# Whatever the gateway does, by the time it is asked there is already a saved
+		# Initiated attempt naming the amount and the card.
+		inv = self._open_invoice(1000)
+		seen = {}
+
+		def spy_charge(charge_input, method, key):
+			row = frappe.get_all(
+				"Payment Attempt", {"invoice": inv}, ["name", "status", "idempotency_key", "amount"]
+			)
+			seen["attempt"] = row[0] if row else None
+			seen["key"] = key
+			return PaymentResult(success=True, status="Captured", gateway_transaction_id="pi_spy")
+
+		with stub_adapter(success=True) as adapter:
+			adapter.charge.side_effect = spy_charge
+			charges.pay_invoice(inv)
+
+		self.assertIsNotNone(seen["attempt"])
+		self.assertEqual(seen["attempt"].status, "Initiated")
+		self.assertEqual(seen["attempt"].amount, 1000.0)
+		self.assertEqual(seen["attempt"].idempotency_key, seen["key"])
+
+	def test_gateway_error_leaves_a_resolvable_attempt(self):
+		# An error the adapter doesn't map (auth failure, bad response, a crash) used
+		# to roll the attempt away. It must now survive, sitting at Initiated, so
+		# reconciliation can ask the gateway what actually happened.
+		inv = self._open_invoice(1000)
+		with stub_adapter(success=True) as adapter:
+			adapter.charge.side_effect = GatewayError("boom")
+			with self.assertRaises(GatewayError):
+				charges.pay_invoice(inv)
+
+		attempts = frappe.get_all("Payment Attempt", {"invoice": inv}, ["name", "status"])
+		self.assertEqual(len(attempts), 1)
+		self.assertEqual(attempts[0].status, "Initiated")
+
+	def test_lost_attempt_is_retried_with_the_same_key(self):
+		# Simulate the crash: the card was charged, then the attempt row was lost.
+		# The retry must offer the gateway the SAME key, so it replays the first
+		# charge instead of taking the money twice.
+		inv = self._open_invoice(1000)
+		with stub_adapter(success=True, txn_id="pi_lost") as first:
+			charges.pay_invoice(inv)
+		first_key = first.charge.call_args.args[2]
+
+		frappe.db.delete("Payment Attempt", {"invoice": inv})  # the crash
+
+		with stub_adapter(success=True, txn_id="pi_lost") as retry:
+			charges.pay_invoice(inv)
+		self.assertEqual(retry.charge.call_args.args[2], first_key)
+
+	def test_a_real_retry_gets_a_new_key(self):
+		# The other half: once a failed attempt is on record, the next charge is a
+		# genuinely new one and must be allowed through the gateway's dedupe.
+		inv = self._open_invoice(1000)
+		with stub_adapter(success=False) as declined:
+			charges.pay_invoice(inv)
+		with stub_adapter(success=True, txn_id="pi_retry") as second:
+			charges.pay_invoice(inv)
+
+		self.assertNotEqual(second.charge.call_args.args[2], declined.charge.call_args.args[2])
+		self.assertEqual(second.charge.call_args.args[2], idempotency_key(inv, 1))
+
+	def test_same_charge_cannot_be_claimed_twice(self):
+		# The idempotency key is unique, so a second claim of the same charge is
+		# refused by the database even if the in-flight check is bypassed.
+		inv = self._open_invoice(1000)
+		with stub_adapter(success=True, txn_id="pi_twice"):
+			charges.pay_invoice(inv)
+
+		with self.assertRaises((frappe.UniqueValidationError, frappe.DuplicateEntryError)):
+			frappe.get_doc({
+				"doctype": "Payment Attempt", "invoice": inv, "team": TEAM, "gateway": GATEWAY,
+				"payment_method": self.method, "amount": 1000, "currency": "INR",
+				"status": "Initiated", "retry_number": 0,
+			}).insert(ignore_permissions=True)
 
 
 class TestConcurrentPay(ChargeTestBase):
@@ -334,3 +455,87 @@ class TestLogRetention(ChargeTestBase):
 		with patch.dict(frappe.conf, {"payment_log_retention_days": 365}):
 			charges.cleanup_payment_logs()
 		self.assertTrue(frappe.db.exists("Payment Attempt", captured))
+
+
+class TestDeclineDetail(ChargeTestBase):
+	"""An off-session decline surfaces its real reason on the webhook, not the
+	sync charge response — apply_webhook must stamp it on the attempt."""
+
+	def _initiated_attempt(self, invoice, txn_id):
+		return frappe.get_doc({
+			"doctype": "Payment Attempt", "invoice": invoice, "team": TEAM,
+			"gateway": GATEWAY, "amount": 1000, "currency": "INR", "status": "Initiated",
+			"gateway_transaction_id": txn_id, "initiated_at": frappe.utils.now_datetime(),
+		}).insert(ignore_permissions=True).name
+
+	def _stripe_failed_event(self, gateway_event_id, txn_id, error):
+		payload = {"id": gateway_event_id, "type": "payment_intent.payment_failed",
+				   "data": {"object": {"id": txn_id, "last_payment_error": error}}}
+		return frappe.get_doc({
+			"doctype": "Webhook Event", "gateway": GATEWAY, "gateway_event_id": gateway_event_id,
+			"event_type": "payment_intent.payment_failed", "raw_payload": json.dumps(payload),
+			"status": "Received",
+		}).insert(ignore_permissions=True).name
+
+	def test_stripe_failure_webhook_records_decline_code(self):
+		inv = self._open_invoice(1000)
+		attempt = self._initiated_attempt(inv, "pi_decl")
+		event = self._stripe_failed_event("evt_decl", "pi_decl", {
+			"code": "card_declined", "decline_code": "insufficient_funds",
+			"message": "Your card has insufficient funds.",
+		})
+		# The failure branch also kicks off method fallback (#28); stub it so this
+		# test stays about decline-detail capture, not a live re-charge.
+		with patch("central.billing.payments.collection.collect_invoice", return_value=None):
+			charges.apply_webhook(event)
+		a = frappe.get_doc("Payment Attempt", attempt)
+		self.assertEqual(a.status, "Failed")
+		self.assertEqual(a.failure_code, "card_declined")
+		self.assertEqual(a.decline_code, "insufficient_funds")
+		self.assertIn("insufficient funds", a.failure_reason)
+		self.assertTrue(a.gateway_response)  # raw error persisted for audit
+
+
+class TestFailedPaymentsReport(ChargeTestBase):
+	def _failed(self, decline_code, reason, amount=1000, month=6):
+		return frappe.get_doc({
+			"doctype": "Payment Attempt", "invoice": self._open_invoice(amount, month), "team": TEAM,
+			"gateway": GATEWAY, "amount": amount, "currency": "INR", "status": "Failed",
+			"failure_code": "card_declined", "decline_code": decline_code,
+			"failure_reason": reason, "initiated_at": frappe.utils.now_datetime(),
+		}).insert(ignore_permissions=True).name
+
+	def test_lists_failures_with_reason_and_summary(self):
+		from central.billing.report.failed_payments import failed_payments
+
+		a1 = self._failed("insufficient_funds", "no funds", month=6)
+		self._failed("insufficient_funds", "no funds", month=7)
+		self._failed("lost_card", "reported lost", month=8)
+		# A second failed attempt (a retry) on the SAME invoice as a1 — it must collapse
+		# into one row and NOT double-count the amount not collected.
+		inv1 = frappe.db.get_value("Payment Attempt", a1, "invoice")
+		frappe.get_doc({
+			"doctype": "Payment Attempt", "invoice": inv1, "team": TEAM, "gateway": GATEWAY,
+			"amount": 1000, "currency": "INR", "status": "Failed", "failure_code": "card_declined",
+			"decline_code": "insufficient_funds", "failure_reason": "no funds", "retry_number": 1,
+			"initiated_at": frappe.utils.now_datetime(),
+		}).insert(ignore_permissions=True)
+		# A captured attempt must never appear.
+		frappe.get_doc({
+			"doctype": "Payment Attempt", "invoice": self._open_invoice(1000, month=9), "team": TEAM,
+			"gateway": GATEWAY, "amount": 1000, "currency": "INR", "status": "Captured",
+			"initiated_at": frappe.utils.now_datetime(),
+		}).insert(ignore_permissions=True)
+
+		columns, rows, _msg, chart, summary = failed_payments.execute({"team": TEAM})
+		# 3 distinct invoices (the retry on inv1 collapses into its row, showing 2 attempts).
+		self.assertEqual(len(rows), 3)
+		self.assertTrue(all(r["decline_code"] for r in rows))
+		self.assertEqual(next(r for r in rows if r["invoice"] == inv1)["attempts"], 2)
+		by_label = {s["label"]: s["value"] for s in summary}
+		self.assertEqual(by_label["Invoices Affected"], 3)
+		self.assertEqual(by_label["Failed Attempts"], 4)
+		# Amount not collected counts each invoice once (3 × 1000), not per attempt (4000).
+		self.assertEqual(by_label["Not Collected (INR)"], 3000)
+		self.assertIn("insufficient_funds", by_label["Top Reason"])
+		self.assertIn("insufficient_funds", chart["data"]["labels"])

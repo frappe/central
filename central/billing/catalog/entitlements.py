@@ -73,6 +73,11 @@ def _entry_tier(levels):
 	return min(pool, key=lambda level: level.sequence) if pool else None
 
 
+def entry_level():
+	"""The entry tier every new team lands on, or None if no ladder is seeded."""
+	return _entry_tier(get_ladder())
+
+
 def evaluate_tier(paid_invoice_count: int, cumulative_paid, currency, levels):
 	"""Highest rung whose thresholds the team's paid history meets *in its currency*.
 

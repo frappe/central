@@ -3,10 +3,11 @@
 """Create-server plan menu: cluster availability + trust-tier spend filter."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard.catalog import get_eligible_plans
 from central.billing.tests.utils import (
+	_clear_metered_plans,
 	clear_team_tier,
 	complete_billing_profile,
 	ensure_team,
@@ -68,6 +69,11 @@ class TestEligiblePlans(IntegrationTestCase):
 		make_plan(PRICEY, rates=_rates(5000))
 		# Priced only on CLUSTER (no global INR row) → invisible elsewhere.
 		make_plan(REGIONAL, rates=[{"cluster": CLUSTER, "currency": "INR", "rate": 1500}])
+		# These tests exercise the tier/currency filter, not live capacity — the pricing
+		# above created the CLUSTER Atlas Instance (validate_capacity on by default); turn
+		# it off so get_eligible_plans doesn't reach for the region's capacity API.
+		# The capacity gate has its own suite (test_capacity_filter.py).
+		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
 		frappe.set_user("Administrator")
 
 	def _titles(self, cluster=CLUSTER):
@@ -83,10 +89,13 @@ class TestEligiblePlans(IntegrationTestCase):
 
 	def test_excludes_non_server_families(self):
 		# An AI Tokens plan is billable but not provisioned via the create-server flow;
-		# its family's provision_target is blank, so it never appears in the menu.
+		# its family's provision_target is blank, so it never appears in the menu. AI
+		# Tokens is Metered, so clear any leftover metered Tokens plan first (one per
+		# resource type).
+		_clear_metered_plans("Tokens")
 		make_plan(
 			"tokens-100m", category="AI Tokens",
-			includes=[{"resource_type": "Tokens", "quantity": 100, "unit": "1M tokens"}],
+			includes=[{"resource_type": "Tokens", "quantity": 100, "unit": "Nos"}],
 			rates=_rates(800),
 		)
 		set_team_tier(TEAM, max_spend=100000)  # ample headroom — exclusion is by family, not price

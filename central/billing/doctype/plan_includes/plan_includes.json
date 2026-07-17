@@ -25,14 +25,15 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Quantity",
-   "description": "Included amount; also the metered allowance baseline"
+   "description": "The amount included with the plan; usage beyond it bills at the Catalog Rate per Unit."
   },
   {
    "fieldname": "unit",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Unit",
-   "description": "vCPU / GB / unit"
+   "options": "\nvCPU\nGB\nTB\nNos\nHours",
+   "description": "Display label for one unit of Quantity (e.g. vCPU, GB, Nos); reference only."
   }
  ],
  "index_web_pages_for_search": 1,

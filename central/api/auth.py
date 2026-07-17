@@ -79,7 +79,24 @@ def verify_signup(email: str, code: str) -> dict:
 	frappe.local.login_manager.login_as(user.name)
 
 	teams = get_user_team_names(user.name)
-	return {"user": user.name, "team": teams[0] if teams else None}
+	team = teams[0] if teams else None
+	if team:
+		_provision_signup_billing(team)
+	return {"user": user.name, "team": team}
+
+
+def _provision_signup_billing(team: str) -> None:
+	"""Seed the new team's billing currency from its signup IP and grant the
+	matching welcome credits. Best-effort: a geolocation or provisioning hiccup is
+	logged, never fatal — the user can still complete their profile from the
+	dashboard, which provisions the same way."""
+	try:
+		from central.billing.payments.provisioning import provision_signup_billing
+		from central.geo import get_country_from_ip
+
+		provision_signup_billing(team, get_country_from_ip())
+	except Exception:
+		frappe.log_error(title="Signup billing provisioning failed")
 
 
 def _otp_key(email: str) -> str:
@@ -100,9 +117,9 @@ def _send_signup_code(email: str, full_name: str) -> None:
 			recipients=[email],
 			subject=_("Your Frappe Cloud verification code"),
 			message=_(
-				"<p>Your verification code is <strong>{0}</strong>.</p>"
-				"<p>It expires in 10 minutes.</p>"
+				"<p>Your verification code is <strong>{0}</strong>.</p><p>It expires in 10 minutes.</p>"
 			).format(code),
+			now=True,
 		)
 	except Exception:
 		frappe.log_error(title="Signup verification email failed")
@@ -117,17 +134,15 @@ def _code_matches(pending: dict, code: str) -> bool:
 
 
 def _create_verified_user(email: str, full_name: str):
-	user = frappe.get_doc(
-		{
-			"doctype": "User",
-			"email": email,
-			"first_name": escape_html(full_name),
-			"enabled": 1,
-			"new_password": random_string(10),
-			"user_type": "Website User",
-			"roles": [{"role": role} for role in _signup_roles()],
-		}
-	)
+	user = frappe.get_doc({
+		"doctype": "User",
+		"email": email,
+		"first_name": escape_html(full_name),
+		"enabled": 1,
+		"new_password": random_string(10),
+		"user_type": "Website User",
+		"roles": [{"role": role} for role in _signup_roles()],
+	})
 	user.flags.ignore_permissions = True
 	user.flags.ignore_password_policy = True
 	user.flags.no_welcome_mail = True

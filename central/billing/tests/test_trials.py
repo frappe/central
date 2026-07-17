@@ -1,9 +1,14 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Free/trial as the entry trust tier — cost_report (issue #16)."""
+"""Entry-tier billing (issue #16).
+
+Free trials are retired — every team is billable and receives welcome credits, so
+an entry-tier team's invoice is Billable and settles from its wallet. The Cost
+Report helpers (is_trial_team, convert_to_paid, expire_trial, subsidy_total) are
+dormant, exercised here by hand until their separate cleanup."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import invoicing, credits
 from central.billing.catalog import trials
@@ -50,35 +55,37 @@ class TrialTestBase(IntegrationTestCase):
 		frappe.db.commit()
 
 
-class TestCostReportGeneration(TrialTestBase):
-	def test_entry_tier_invoice_is_cost_report(self):
-		self.assertTrue(trials.is_trial_team(TEAM))
+class TestEntryTierBilling(TrialTestBase):
+	def test_entry_tier_invoice_is_billable(self):
+		# No free trials any more — the entry tier is just the lowest rung, so its
+		# invoice is Billable (not a Cost Report that would never draw the credits).
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
-		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "Cost Report")
+		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "Billable")
 
-	def test_cost_report_is_computed_but_not_charged(self):
+	def test_entry_tier_bill_settles_from_welcome_credits(self):
+		# Regression: an entry-tier team used to get a Cost Report that never drew its
+		# credits, stranding it on an uncollectable Open invoice with a "Pay 0.00"
+		# button. Now the bill is billable and the wallet settles it to Paid with no
+		# card touched.
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
-		credits.purchase(TEAM, 500, "INR")  # even with a wallet, nothing is drawn
+		credits.purchase(TEAM, 5000, "INR")  # welcome-credit stand-in, covers the bill
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 
-		result = invoicing.open_and_collect(name)
+		invoicing.open_and_collect(name, collect=False)
 		inv = frappe.get_doc("Invoice", name)
-		self.assertTrue(result.get("cost_report"))
-		self.assertEqual(inv.status, "Open")
-		self.assertEqual(inv.subtotal, 1000.0)  # computed
-		self.assertEqual(inv.expected_collection, 0)  # but not charged
-		self.assertEqual(inv.credit_applied, 0)  # credits untouched
-		self.assertEqual(credits.get_balance(TEAM)["balance"], 500)
-		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)
+		self.assertEqual(inv.status, "Paid")
+		self.assertEqual(inv.expected_collection, 0)  # credits cover it in full
+		self.assertEqual(inv.credit_applied, inv.total)  # drawn from the wallet
+		self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": name}), 0)  # no card
 
 
 class TestConversion(TrialTestBase):
-	def test_convert_to_paid_flips_type_and_keeps_resources(self):
+	def test_convert_to_paid_promotes_tier_and_keeps_resources(self):
+		# convert_to_paid is dormant (invoices are billable regardless now), but it
+		# still promotes the tier off the entry rung without touching resources.
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")  # runs into July too
-		# June: trial → cost_report.
-		june = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
-		self.assertEqual(frappe.db.get_value("Invoice", june, "invoice_type"), "Cost Report")
+		self.assertTrue(trials.is_trial_team(TEAM))
 
 		trials.convert_to_paid(TEAM)
 		self.assertFalse(trials.is_trial_team(TEAM))
@@ -96,17 +103,25 @@ class TestConversion(TrialTestBase):
 
 class TestSubsidyAndExpiry(TrialTestBase):
 	def test_subsidy_total_sums_cost_report_invoices(self):
-		# A far-future period isolates this global aggregate from seeded demo data.
-		# Two run-segments in the team+cluster (1000 + 2000) — the consolidated draft
-		# day-weights both over the full month.
-		add_segment(self.sub, "Created", 1000, "2099-01-01 00:00:00")
-		sub_b = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
-		add_segment(sub_b, "Created", 2000, "2099-01-01 00:00:00")
-		name = invoicing.generate_draft_invoice(self.sub, "2099-01-01", "2099-01-31")
-		self.assertEqual(frappe.db.get_value("Invoice", name, "invoice_type"), "Cost Report")
+		# subsidy_total is dormant now (nothing emits Cost Reports), but it still sums
+		# any that exist — across teams. Build two by hand in a far-future period,
+		# isolated from seeded demo data, and check the aggregate.
+		#
+		# One invoice per TEAM, not two for the same one: a team may hold at most one
+		# live invoice per period (ADR 0018, invariant I6), and the unique index on
+		# period_key now enforces it. subsidy_total aggregates across teams anyway, so
+		# two teams is what this test always meant.
+		for i, subtotal in enumerate((1000.0, 2000.0)):
+			team = f"{TEAM}-subsidy-{i}"
+			ensure_team(team)
+			frappe.get_doc({
+				"doctype": "Invoice", "team": team, "invoice_type": "Cost Report",
+				"status": "Open", "period_start": "2099-01-01", "period_end": "2099-01-31",
+				"currency": "INR", "subtotal": subtotal, "total": subtotal,
+			}).insert(ignore_permissions=True)
 
 		subsidy = trials.subsidy_total("2099-01-01", "2099-01-31")
-		self.assertEqual(subsidy, 3000.0)  # 1000 + 2000, full month
+		self.assertEqual(subsidy, 3000.0)  # 1000 + 2000
 
 	def test_expired_trial_emits_suspend_directive(self):
 		priv, pub = generate_keypair()

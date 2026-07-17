@@ -3,7 +3,7 @@
 """Tax — GST + SEZ; TDS withholding seam (issue #13)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import invoicing, tax
 from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan

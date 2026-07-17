@@ -1,7 +1,7 @@
 {
  "app": "central",
  "charts": [],
- "content": "[{\"id\": \"hdr_title\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Billing \\u2014 Catalog Administration</b></span>\", \"col\": 12}}, {\"id\": \"how_it_works\", \"type\": \"paragraph\", \"data\": {\"text\": \"<b>How it works.</b> A <b>Plan</b> is something you sell, inside a <b>Family</b> (Plan Category). It lists <b>what's included</b> and its <b>price per currency</b>. A <b>metered add-on</b> is a plan that includes an <b>allowance</b>, then charges <b>per unit over it</b>. You never edit the raw tables: the <b>Plan Configurator</b> is the one guided form that writes a plan, an add-on, and its prices together. Use a verb below to launch, re-price, or retire an offering.\", \"col\": 12}}, {\"id\": \"hdr_tasks\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Do a task</b></span>\", \"col\": 12}}, {\"id\": \"sc_launch_plan\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Launch a plan\", \"col\": 3}}, {\"id\": \"sc_launch_addon\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Launch an add-on (metered)\", \"col\": 3}}, {\"id\": \"sc_update_prices\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Update prices\", \"col\": 3}}, {\"id\": \"sc_retire\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Retire a plan / add-on\", \"col\": 3}}, {\"id\": \"hdr_glance\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>At a glance</b></span>\", \"col\": 12}}, {\"id\": \"sc_metered\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Metered add-ons\", \"col\": 4}}, {\"id\": \"sc_plans\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"All plans\", \"col\": 4}}, {\"id\": \"hdr_records\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Records</b></span>\", \"col\": 12}}, {\"id\": \"card_revenue\", \"type\": \"card\", \"data\": {\"card_name\": \"Revenue\", \"col\": 4}}, {\"id\": \"card_credits\", \"type\": \"card\", \"data\": {\"card_name\": \"Credits\", \"col\": 4}}, {\"id\": \"card_subs\", \"type\": \"card\", \"data\": {\"card_name\": \"Subscriptions & Usage\", \"col\": 4}}, {\"id\": \"card_payments\", \"type\": \"card\", \"data\": {\"card_name\": \"Payments & Gateways\", \"col\": 4}}, {\"id\": \"card_customer\", \"type\": \"card\", \"data\": {\"card_name\": \"Customer Configuration\", \"col\": 4}}, {\"id\": \"card_notifications\", \"type\": \"card\", \"data\": {\"card_name\": \"Notifications\", \"col\": 4}}, {\"id\": \"hdr_advanced\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Advanced</b></span>\", \"col\": 12}}, {\"id\": \"card_advanced\", \"type\": \"card\", \"data\": {\"card_name\": \"Advanced (catalog masters)\", \"col\": 4}}, {\"id\": \"card_trust\", \"type\": \"card\", \"data\": {\"card_name\": \"Trust & Entitlements\", \"col\": 4}}]",
+ "content": "[{\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>At a glance</b></span>\", \"col\": 12}, \"id\": \"blk_0\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Open Invoices\", \"col\": 3}, \"id\": \"blk_1\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Overdue Invoices\", \"col\": 3}, \"id\": \"blk_2\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Subscriptions\", \"col\": 3}, \"id\": \"blk_3\"}, {\"type\": \"number_card\", \"data\": {\"number_card_name\": \"Failed Payments (24h)\", \"col\": 3}, \"id\": \"blk_4\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_5\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Manage catalog</b></span>\", \"col\": 12}, \"id\": \"blk_6\"}, {\"type\": \"paragraph\", \"data\": {\"text\": \"Plans, add-ons and their prices are authored through the <b>Plan Configurator</b> \\u2014 one guided form. You never edit the raw tables; pick a verb.\", \"col\": 12}, \"id\": \"blk_7\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Launch a plan\", \"col\": 3}, \"id\": \"blk_8\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Launch an add-on (metered)\", \"col\": 3}, \"id\": \"blk_9\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Update prices\", \"col\": 3}, \"id\": \"blk_10\"}, {\"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Retire a plan / add-on\", \"col\": 3}, \"id\": \"blk_11\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_12\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Reports</b></span>\", \"col\": 12}, \"id\": \"blk_13\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Revenue & AR Reports\", \"col\": 3}, \"id\": \"blk_14\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Revenue Analytics\", \"col\": 3}, \"id\": \"blk_rev_analytics\"},{\"type\": \"card\", \"data\": {\"card_name\": \"Payment Reports\", \"col\": 3}, \"id\": \"blk_15\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Credit Reports\", \"col\": 3}, \"id\": \"blk_16\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Growth & Usage Reports\", \"col\": 3}, \"id\": \"blk_17\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_18\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Records</b></span>\", \"col\": 12}, \"id\": \"blk_19\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Revenue\", \"col\": 4}, \"id\": \"blk_20\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Subscriptions & Usage\", \"col\": 4}, \"id\": \"blk_21\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Credits\", \"col\": 4}, \"id\": \"blk_22\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Payments & Gateways\", \"col\": 4}, \"id\": \"blk_23\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Customer Configuration\", \"col\": 4}, \"id\": \"blk_24\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Notifications\", \"col\": 4}, \"id\": \"blk_25\"}, {\"type\": \"spacer\", \"data\": {\"col\": 12}, \"id\": \"blk_26\"}, {\"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Advanced</b></span>\", \"col\": 12}, \"id\": \"blk_27\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Advanced (catalog masters)\", \"col\": 4}, \"id\": \"blk_28\"}, {\"type\": \"card\", \"data\": {\"card_name\": \"Trust & Entitlements\", \"col\": 4}, \"id\": \"blk_29\"}]",
  "creation": "2026-06-03 12:27:21.372328",
  "custom_blocks": [],
  "docstatus": 0,
@@ -14,6 +14,415 @@
  "label": "Billing",
  "link_type": "DocType",
  "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Revenue & AR Reports",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Invoice Register",
+   "link_count": 0,
+   "link_to": "Invoice Register",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "AR Collections Aging",
+   "link_count": 0,
+   "link_to": "AR Collections Aging",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Refunds Report",
+   "link_count": 0,
+   "link_to": "Refunds Report",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Revenue Analytics",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "MRR and YTD Revenue",
+   "link_count": 0,
+   "link_to": "MRR and YTD Revenue",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Atlas-based Revenue",
+   "link_count": 0,
+   "link_to": "Atlas-based Revenue",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Services Revenue",
+   "link_count": 0,
+   "link_to": "Services Revenue",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Reports",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Failed Payments",
+   "link_count": 0,
+   "link_to": "Failed Payments",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Gateway Payment Success Ratio",
+   "link_count": 0,
+   "link_to": "Gateway Payment Success Ratio",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Payment Method Mix",
+   "link_count": 0,
+   "link_to": "Payment Method Mix",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Credit Reports",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Credit Wallet Movements",
+   "link_count": 0,
+   "link_to": "Credit Wallet Movements",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Team Credit Balance",
+   "link_count": 0,
+   "link_to": "Team Credit Balance",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Growth & Usage Reports",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "New Signups",
+   "link_count": 0,
+   "link_to": "New Signups",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Metered Add-ons",
+   "link_count": 0,
+   "link_to": "Metered Add-ons",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Monthly Usage vs Invoiced",
+   "link_count": 0,
+   "link_to": "Monthly Usage vs Invoiced",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Revenue",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Invoice",
+   "link_count": 0,
+   "link_to": "Invoice",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Attempt",
+   "link_count": 0,
+   "link_to": "Payment Attempt",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Refund",
+   "link_count": 0,
+   "link_to": "Refund",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Subscriptions & Usage",
+   "link_count": 4,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Subscription",
+   "link_count": 0,
+   "link_to": "Subscription",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Subscription Change",
+   "link_count": 0,
+   "link_to": "Subscription Change",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Usage Rollup",
+   "link_count": 0,
+   "link_to": "Usage Rollup",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Commitment",
+   "link_count": 0,
+   "link_to": "Commitment",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Credits",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Credit Ledger Entry",
+   "link_count": 0,
+   "link_to": "Credit Ledger Entry",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Credit Wallet",
+   "link_count": 0,
+   "link_to": "Credit Wallet",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payments & Gateways",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Method",
+   "link_count": 0,
+   "link_to": "Payment Method",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Gateway",
+   "link_count": 0,
+   "link_to": "Payment Gateway",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Webhook Event",
+   "link_count": 0,
+   "link_to": "Webhook Event",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Customer Configuration",
+   "link_count": 2,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Billing Profile",
+   "link_count": 0,
+   "link_to": "Billing Profile",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Tax Profile",
+   "link_count": 0,
+   "link_to": "Tax Profile",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Notifications",
+   "link_count": 3,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Team Notification",
+   "link_count": 0,
+   "link_to": "Team Notification",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Billing Notification Log",
+   "link_count": 0,
+   "link_to": "Billing Notification Log",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Notification Preference",
+   "link_count": 0,
+   "link_to": "Notification Preference",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
   {
    "hidden": 0,
    "is_query_report": 0,
@@ -86,162 +495,6 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Revenue",
-   "link_count": 3,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Invoice",
-   "link_count": 0,
-   "link_to": "Invoice",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Payment Attempt",
-   "link_count": 0,
-   "link_to": "Payment Attempt",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Refund",
-   "link_count": 0,
-   "link_to": "Refund",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Credits",
-   "link_count": 2,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Credit Ledger Entry",
-   "link_count": 0,
-   "link_to": "Credit Ledger Entry",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Credit Wallet",
-   "link_count": 0,
-   "link_to": "Credit Wallet",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Subscriptions & Usage",
-   "link_count": 4,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Subscription",
-   "link_count": 0,
-   "link_to": "Subscription",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Subscription Change",
-   "link_count": 0,
-   "link_to": "Subscription Change",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Usage Rollup",
-   "link_count": 0,
-   "link_to": "Usage Rollup",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Commitment",
-   "link_count": 0,
-   "link_to": "Commitment",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Payments & Gateways",
-   "link_count": 3,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Payment Method",
-   "link_count": 0,
-   "link_to": "Payment Method",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Payment Gateway",
-   "link_count": 0,
-   "link_to": "Payment Gateway",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Webhook Event",
-   "link_count": 0,
-   "link_to": "Webhook Event",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
    "label": "Trust & Entitlements",
    "link_count": 2,
    "link_type": "DocType",
@@ -267,71 +520,30 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Customer Configuration",
-   "link_count": 2,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Billing Profile",
-   "link_count": 0,
-   "link_to": "Billing Profile",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Tax Profile",
-   "link_count": 0,
-   "link_to": "Tax Profile",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Notifications",
-   "link_count": 2,
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Card Break"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Billing Notification Log",
-   "link_count": 0,
-   "link_to": "Billing Notification Log",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Notification Preference",
-   "link_count": 0,
-   "link_to": "Notification Preference",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
   }
  ],
- "modified": "2026-07-01 00:00:00.000000",
+ "modified": "2026-07-06 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "Open Invoices",
+   "number_card_name": "Open Invoices"
+  },
+  {
+   "label": "Overdue Invoices",
+   "number_card_name": "Overdue Invoices"
+  },
+  {
+   "label": "Active Subscriptions",
+   "number_card_name": "Active Subscriptions"
+  },
+  {
+   "label": "Failed Payments (24h)",
+   "number_card_name": "Failed Payments (24h)"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
@@ -367,20 +579,6 @@
    "link_to": "",
    "type": "URL",
    "url": "/app/plan?is_active=1"
-  },
-  {
-   "color": "Purple",
-   "doc_view": "",
-   "label": "Metered add-ons",
-   "link_to": "Metered Add-ons",
-   "type": "Report"
-  },
-  {
-   "color": "Gray",
-   "doc_view": "",
-   "label": "All plans",
-   "link_to": "Plan",
-   "type": "DocType"
   }
  ],
  "title": "Billing",

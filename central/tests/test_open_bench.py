@@ -1,27 +1,45 @@
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
+from jwt.algorithms import RSAAlgorithm
 
+from central.api.jwks import jwks_document
 from central.api.sso import get_bench_link
-from central.sso import _central_url, _ensure_oauth_client
+from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM
+from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.sso import central_url
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_region
+
+# Open-in-bench for a real VM (asset) now hands back a Central-signed admin SID as
+# `{gateway}/?sid=<jwt>`. Central mints it locally against its RSA key, scoped to the bench's
+# audience id (its pilot_credential_id); the bench verifies it offline against the JWKS. No
+# Atlas round-trip: opening a Running VM on an Active cluster just needs a gateway + an
+# enrolled pilot. The SID is single-use (jti + short TTL), so a fresh one is minted on every Open.
+
+GATEWAY = "https://vm-open-1.blr1.frappe.dev"
 
 
 class TestOpenBench(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
-		self._orig = frappe.conf.get("sso_allow_insecure_hs256")
-		frappe.conf.sso_allow_insecure_hs256 = 1
 		self.owner = ensure_user("open.owner@example.test")
 		self.dev = ensure_user("open.dev@example.test")
 		self.viewer = ensure_user("open.viewer@example.test")
 		self.team = self._team()
 		self.cluster = self._cluster("blr-open")
-		self.asset = self._asset("vm-open-1", "Running", "http://localhost:3030")
+		self.asset = self._asset("vm-open-1", "Running")
+		self.pcid = "pcred-open-1"
+		self._credential(self.pcid, "vm-open-1")
 
 	def tearDown(self):
-		frappe.conf.sso_allow_insecure_hs256 = self._orig
 		frappe.set_user("Administrator")
+
+	def _credential(self, pcid, rid):
+		"""An enrolled pilot bound to the VM — its audience_id is what SIDs are minted for."""
+		if frappe.db.exists("Pilot Credential", pcid):
+			frappe.delete_doc("Pilot Credential", pcid, force=True)
+		PilotCredential.mint(team=self.team.name, pilot_credential_id=pcid, asset=rid, audience_id=pcid)
 
 	def _team(self):
 		name = "Open Bench Team"
@@ -42,6 +60,7 @@ class TestOpenBench(IntegrationTestCase):
 		).insert()
 
 	def _cluster(self, region):
+		ensure_region(region)
 		if frappe.db.exists("Atlas Instance", region):
 			frappe.delete_doc("Atlas Instance", region, force=True)
 		frappe.get_doc(
@@ -56,7 +75,7 @@ class TestOpenBench(IntegrationTestCase):
 		).insert()
 		return region
 
-	def _asset(self, rid, status, gateway):
+	def _asset(self, rid, status, *, gateway=GATEWAY):
 		if frappe.db.exists("Asset", rid):
 			frappe.delete_doc("Asset", rid, force=True, ignore_permissions=True)
 		return frappe.get_doc(
@@ -70,46 +89,53 @@ class TestOpenBench(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
-	def _verify(self, token):
-		client = _ensure_oauth_client()
-		return jwt.decode(
-			token,
-			client.client_secret,
-			algorithms=["HS256"],
-			audience=client.client_id,
-			issuer=_central_url(),
-			options={"require": ["exp", "aud", "iss", "sub"]},
-		)
-
-	def _as(self, user, fn):
+	def _open(self, user, **kwargs):
 		frappe.set_user(user)
 		try:
-			return fn()
+			return get_bench_link(**kwargs)
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_open_running_vm_mints_for_its_gateway(self):
-		link = self._as(self.dev, lambda: get_bench_link(asset="vm-open-1"))
-		self.assertTrue(link["url"].startswith("http://localhost:3030/sso?assertion="))
-		claims = self._verify(link["url"].split("assertion=", 1)[1])
-		self.assertEqual(claims["sub"], self.dev)
-		self.assertEqual(claims["team"], self.team.name)
+	def test_open_running_vm_mints_local_sid(self):
+		"""Opening a Running VM returns a Central-signed SID at the VM's gateway, scoped to
+		the bench's audience id (its pilot_credential_id) — verifiable against the JWKS, with
+		no Atlas call."""
+		link = self._open(self.dev, asset="vm-open-1")
+		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
+
+		public_key = RSAAlgorithm.from_jwk(jwks_document()["keys"][0])
+		claims = jwt.decode(
+			link["url"].split("sid=", 1)[1],
+			public_key,
+			algorithms=[ALGORITHM],
+			audience=self.pcid,
+			issuer=central_url(),
+		)
+		self.assertEqual(claims["sub"], "admin")
+		self.assertEqual(claims["scope"], "bench")
+
+	def test_unenrolled_vm_refused(self):
+		"""A Running VM whose pilot hasn't enrolled has no audience id yet — Open is refused
+		rather than minting a SID no bench would accept."""
+		frappe.delete_doc("Pilot Credential", self.pcid, force=True)
+		with self.assertRaises(frappe.ValidationError):
+			self._open(self.dev, asset="vm-open-1")
 
 	def test_viewer_without_vm_open_is_blocked(self):
 		with self.assertRaises(frappe.PermissionError):
-			self._as(self.viewer, lambda: get_bench_link(asset="vm-open-1"))
+			self._open(self.viewer, asset="vm-open-1")
 
 	def test_stopped_vm_refused(self):
-		self._asset("vm-open-1", "Stopped", "http://localhost:3030")
+		self._asset("vm-open-1", "Stopped")
 		with self.assertRaises(frappe.ValidationError):
-			self._as(self.dev, lambda: get_bench_link(asset="vm-open-1"))
+			self._open(self.dev, asset="vm-open-1")
 
 	def test_missing_gateway_refused(self):
-		self._asset("vm-open-1", "Running", "")
+		self._asset("vm-open-1", "Running", gateway=None)
 		with self.assertRaises(frappe.ValidationError):
-			self._as(self.dev, lambda: get_bench_link(asset="vm-open-1"))
+			self._open(self.dev, asset="vm-open-1")
 
 	def test_disabled_cluster_refused(self):
 		frappe.db.set_value("Atlas Instance", self.cluster, "status", "Disabled")
 		with self.assertRaises(frappe.ValidationError):
-			self._as(self.dev, lambda: get_bench_link(asset="vm-open-1"))
+			self._open(self.dev, asset="vm-open-1")

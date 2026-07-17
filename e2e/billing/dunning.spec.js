@@ -6,7 +6,10 @@ import { test, expect } from './fixtures'
 // Overdue and moves the subscription's account standing to Past Due. We walk the
 // real dunning state machine with a simulated clock (no waiting calendar days);
 // every charge, decline, and transition is real.
-test.describe('Dunning (declined card)', () => {
+// TODO: legacy dashboard removed; these flows (settings/notifications,
+// billing/invoices, billing/subscriptions) aren't ported to console yet.
+// Un-skip once console has them.
+test.describe.skip('Dunning (declined card)', () => {
   test('a declined charge goes Overdue and Past Due after the retry window', async ({ page, billing }) => {
     const { team } = await billing.signIn({ scenario: 'ready', currency: 'USD' })
     await billing.saveCard({ team, token: 'tok_chargeCustomerFail' }) // real card that declines on charge

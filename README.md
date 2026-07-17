@@ -1,177 +1,138 @@
-## Central
+# Central
 
-> [!WARNING]
-> This project is currently **experimental** with the intention of making it usable in production.
+Central is the new control plane for Frappe Cloud v2. It
+manages IAM, billing, add-ons and other services.
+The regional VM runtime is managed and operated by [Atlas](https://github.com/frappe/atlas).
 
-Central is the global control plane and front door(console) of Frappe Cloud. It holds the mission control: it decides who you are, which team you act for, and what you are allowed to do before Atlas touches a VM. 
+## Requirements
 
-Central's duty is to be the IAM authority and Asset Registry for Frappe Cloud. It owns identity, teams, roles, capabilities, OAuth claims etc. Atlas consumes those claims and enforces them locally to apply changes.
+- Python 3.14
+- Node.js 24 and Yarn
+- MariaDB 11.8 and Redis 6+
+- [Frappe Bench](https://docs.frappe.io/framework/user/en/installation)
 
+The Frappe installation guide covers the system dependencies and Bench setup.
 
+## Local development
 
-Atlas repo - [https://github.com/adityahase/atlas](https://github.com/adityahase/atlas)
-
-## Architecture
-
-```mermaid
-flowchart LR
-	User["User"]
-	CentralDesk["Central Desk"]
-	CentralIAM["Central IAM<br/>Teams, Roles, Capabilities"]
-	OAuth["Central OAuth/OIDC<br/>fc_teams claim"]
-	Atlas["Atlas"]
-	AtlasSession["Atlas Session<br/>team grants"]
-	VMs["VM Actions"]
-
-	User --> CentralDesk
-	CentralDesk --> CentralIAM
-	CentralIAM --> OAuth
-	User --> OAuth
-	OAuth --> Atlas
-	Atlas --> AtlasSession
-	AtlasSession --> VMs
-
-	Atlas -. "does not edit IAM" .-> CentralIAM
-```
-
-
-
-Central writes authority. Atlas reads authority.
-
-```mermaid
-sequenceDiagram
-	participant User
-	participant Central
-	participant Atlas
-	participant VM
-
-	User->>Central: Sign in
-	Central->>Central: Resolve Team Member -> Team Role -> Capabilities
-	Central-->>Atlas: OAuth userinfo / token with fc_teams
-	Atlas->>Atlas: Store team grants in session
-	User->>Atlas: Request VM action
-	Atlas->>Atlas: Check capability from session
-	Atlas-->>VM: Allow only if capability matches
-```
-
-
-
-## What Works
-
-- Desk workspace for `Team`, `Team Role`, `Capability`, and `IAM Permission Probe`.
-- Fixture-backed capability catalog.
-- System team roles: `Owner`, `Admin`, `Developer`, `Viewer`, `Billing`.
-- New enabled `User` records get `Central User`, one default team, and active
-`Owner` membership.
-- Owners and Admins can invite, suspend, remove, and change member roles.
-- Invitations support Desk notifications, best-effort email delivery, expiry,
-  acceptance, and signup-time acceptance for users who do not exist yet.
-- Team-scoped permission resolution through `Team Member -> Team Role -> Capability`.
-- OAuth/OpenID userinfo includes the `fc_teams` claim for Atlas.
-- Probe DocType can test `(user, team, capability)` from Desk.
-
-## Not Yet
-
-- Central frontend/team switcher.
-- Atlas VM enforcement using `fc_teams`. Scoped VM (granular) permissions.
-- Partner/support access flows.
-
-## Installation
-
-From a bench:
+The commands below create a fresh Bench and a Central site. Run them from the
+Bench root.
 
 ```bash
-bench get-app central <repo-url>
-bench --site <site-name> install-app central
-bench --site <site-name> migrate
+bench get-app central https://github.com/frappe/central.git
+bench setup requirements --dev
+
+bench new-site central.localhost --admin-password admin
+bench --site central.localhost install-app central
+bench --site central.localhost set-config developer_mode 1
+bench build --app central
 ```
 
-For local development:
+If MariaDB requires a root password, add `--db-root-password <password>` to
+`bench new-site`.
+
+Start the Bench:
 
 ```bash
-bench set-config -g developer_mode 1
-bench --site central.site migrate
 bench start
 ```
 
-Open Desk at:
+Open Central at <http://central.localhost:8000/app> and sign in as
+`Administrator` with password `admin`.
 
-```text
-http://central.site:8000/app
+### Seed demo data
+
+Enable developer mode before running the local bootstrap. It creates sample
+teams, users, billing records, and catalog data.
+
+```bash
+bench --site central.localhost execute central.api.developer_setup.setup_local
 ```
 
-## Test Teams
+To reseed without registering Atlas:
 
-1. Log in as `Administrator`.
-2. Create or open a `User`.
-3. Save the user. Central creates that user's default `Team` automatically.
-4. Open `Team` and confirm:
-  - `owner_user` is the new user.
-  - Members has the same user as `Owner` and `Active`.
-5. Add another user as `Viewer`, `Developer`, or `Admin`.
-
-To test invitations:
-
-1. Open a Team and click `Invite Member`.
-2. Choose an email and role. `Owner` must be assigned through ownership transfer,
-   not an invitation.
-3. Log in as the invited user and open `Team Invitation`.
-4. Click `Accept`.
-5. Confirm the user appears in the Team's Members table.
-
-The user's effective permissions are always resolved from team membership. The
-`owner_user` field is ownership metadata, not a permission bypass.
-
-## Test Probe
-
-Open:
-
-```text
-/app/iam-permission-probe/new
+```bash
+bench --site central.localhost execute central.api.developer_setup.setup_local \
+  --kwargs '{"register_atlas": 0}'
 ```
 
-Set:
+### Run Atlas locally (optional)
 
-- `User`: the user to test.
-- `Team`: the team they belong to.
-- `Capability`: for example `server:view` or `server:terminate`.
+Install Atlas on a second site when you need to test Central-to-Atlas flows:
 
-Save the document. `Allowed` and `Resolved Grants` are filled automatically.
+```bash
+bench get-app atlas https://github.com/frappe/atlas.git
 
-Good checks:
-
-- `Viewer` + `server:view` -> allowed.
-- `Viewer` + `server:terminate` -> denied.
-- `Developer` + `server:terminate` -> allowed.
-
-## Atlas
-
-Central already emits Atlas-ready IAM data through OAuth/OpenID:
-
-```json
-{
-  "fc_teams": {
-    "TEAM-00001": [
-      {
-        "role": "Viewer",
-        "source": "member",
-        "scope": "*",
-        "caps": ["cluster:view", "server:view"]
-      }
-    ]
-  }
-}
+bench new-site mumbai.atlas.localhost --admin-password admin
+bench --site mumbai.atlas.localhost install-app atlas
+bench --site mumbai.atlas.localhost migrate
 ```
 
-Atlas should read `fc_teams` during SSO, store it in the session, and enforce VM
-actions from that session. Atlas must not edit teams, roles, or capabilities.
+Generate an Administrator API key and secret in Atlas at
+`User > Administrator > API Access > Generate Keys`, then register the local
+Atlas site with Central:
+
+```bash
+bench --site central.localhost execute central.api.developer_setup.setup_local \
+  --kwargs '{"region":"in-mumbai","atlas_base_url":"http://mumbai.atlas.localhost:8000","atlas_api_key":"<atlas-api-key>","atlas_api_secret":"<atlas-api-secret>"}'
+```
+
+For a provider-free Atlas demo fleet:
+
+```bash
+bench --site mumbai.atlas.localhost execute atlas.atlas.demo.run --kwargs '{"reset": true}'
+```
+
+See the [Atlas bootstrap guide](https://github.com/frappe/atlas/blob/main/BOOTSTRAP.md)
+for real provider setup. It creates billable infrastructure.
+
+## Frontend development
+
+The console lives in `dashboard/`.
+
+```bash
+cd apps/central
+yarn install
+yarn dev
+```
+
+For a production-style build served by Frappe:
+
+```bash
+yarn build
+bench build --app central
+```
 
 ## Tests
 
+Run the Python test suite from the Bench root:
+
 ```bash
-bench --site central.site run-tests --app central
+bench --site central.localhost run-tests --app central
 ```
+
+Run the focused local bootstrap tests:
+
+```bash
+bench --site central.localhost run-tests \
+  --app central --module central.tests.test_developer_setup
+```
+
+The end-to-end suite requires a running Bench and payment-gateway test keys.
+See [`e2e/README.md`](e2e/README.md) for setup and commands.
+
+## Documentation
+
+- [IAM](spec/IAM.md)
+- [Capabilities](CAPABILITIES.md)
+- [Atlas tunnel](spec/TUNNEL.md)
+- [Execution plan](spec/EXECUTION_PLAN.md)
+
+## Related projects
+
+- [Atlas](https://github.com/frappe/atlas) — regional runtime
+- [Pilot](https://github.com/frappe/pilot) — local and remote Bench management
 
 ## License
 
-agpl-3.0
+[AGPL-3.0](license.txt)

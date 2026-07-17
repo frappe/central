@@ -2,20 +2,28 @@
 # For license information, please see license.txt
 """Charge an open invoice and settle it on the webhook (issue #10).
 
-The money loop: an `Open` invoice with an amount due gets a `Payment Attempt`
-(idempotency_key = the attempt's name), is charged through the adapter, and is
-marked `Paid` **only** when the gateway webhook confirms it — never on the
-synchronous charge response. Each retry is a new attempt; concurrent charges of
-one invoice produce at most one in-flight attempt, so only one reaches
-`captured`.
+The money loop: an `Open` invoice with an amount due gets a `Payment Attempt`, is
+charged through the adapter, and is marked `Paid` **only** when the gateway webhook
+confirms it — never on the synchronous charge response. Each retry is a new attempt;
+concurrent charges of one invoice produce at most one in-flight attempt, so only one
+reaches `captured`.
+
+The attempt is saved *and committed* before the gateway is called (ADR 0017). A
+crash mid-charge therefore leaves the attempt sitting at `Initiated` — a charge
+whose result we don't know yet, which reconciliation can go and ask the gateway
+about. It can never leave a charge with no record of it at all.
 """
 
 import frappe
 
+from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
 
 # An attempt occupying the invoice — a second charge must not start beside it.
 _IN_FLIGHT = ("Initiated", "Authorised", "Captured")
+
+# The unique idempotency key rejected the insert: this charge is already claimed.
+_ALREADY_CLAIMED = (frappe.UniqueValidationError, frappe.DuplicateEntryError)
 
 # Gateway event types the Payment Attempt listens to. An attempt's status is
 # advanced ONLY by the respective callback for its transaction:
@@ -45,12 +53,35 @@ def _adapter_for(gateway: str):
 
 @frappe.whitelist()
 def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | None = None) -> dict:
-	"""Charge an Open invoice. Creates at most one in-flight Payment Attempt.
+	"""Charge an unsettled (Open or Overdue) invoice. Creates at most one in-flight
+	Payment Attempt.
 
-	The invoice row is locked FOR UPDATE for the whole attempt, so concurrent
-	callers serialise: the first creates and charges an attempt; the rest see it
-	in flight and return without starting a second charge. The invoice is never
-	marked Paid here — that waits for the webhook.
+	Two steps, with the gateway call sitting between them:
+
+	  1. claim  — lock the invoice, check nothing is already in flight, save the
+	              Payment Attempt and commit it. We now have a durable record that
+	              we are about to charge this card.
+	  2. charge — call the gateway with the attempt's key, then write down what came
+	              back.
+
+	Splitting it this way is what makes a crash survivable: the money can only move
+	after step 1 is on disk, so there is always a record to reconcile against. The
+	invoice is never marked Paid here — that waits for the webhook.
+	"""
+	claim = _claim_attempt(invoice, payment_method, gateway)
+	if not claim.get("claimed"):
+		return claim
+	return _charge_claimed_attempt(claim["attempt"])
+
+
+def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None) -> dict:
+	"""Step 1: write down that we are about to charge, and commit it.
+
+	The invoice row is locked FOR UPDATE, so concurrent callers serialise: the first
+	claims an attempt, the rest see it in flight and return. The unique idempotency
+	key is the backstop for the case the lock can't cover — a worker that crashed
+	after charging, leaving no row to see — where a duplicate key means someone else
+	already owns this charge.
 	"""
 	invoice_tbl = frappe.qb.DocType("Invoice")
 	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
@@ -58,7 +89,9 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 	).for_update().run()
 	inv = frappe.get_doc("Invoice", invoice)
 
-	if inv.status != "Open":
+	# An Overdue invoice is still collectable — retrying the card is exactly what a
+	# customer clicking Pay (or dunning) does — so allow both unsettled states.
+	if inv.status not in _UNSETTLED_INVOICE:
 		return {"charged": False, "reason": "not_open"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
 		return {"charged": False, "reason": "nothing_due"}
@@ -70,7 +103,6 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		return {"charged": False, "reason": "attempt_in_flight", "attempt": in_flight[0]}
 
 	method_name, gateway_name = _resolve_method(inv, payment_method, gateway)
-	method = frappe.get_doc("Payment Method", method_name)
 	adapter = _adapter_for(gateway_name)
 
 	# A debit the gateway can't pull silently (Razorpay > ₹15,000 — an RBI off-session
@@ -84,26 +116,58 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		collection_mode.trip(inv.team, "invoice_over_threshold")
 		return {"charged": False, "reason": "action_required", "invoice": invoice}
 
-	attempt = frappe.get_doc(
-		{
-			"doctype": "Payment Attempt",
-			"invoice": invoice,
-			"team": inv.team,
-			"gateway": gateway_name,
-			"payment_method": method_name,
-			"amount": inv.expected_collection,
-			"currency": inv.currency,
-			"status": "Initiated",
-			"initiated_at": frappe.utils.now_datetime(),
-			"retry_number": frappe.db.count("Payment Attempt", {"invoice": invoice}),
-		}
-	).insert(ignore_permissions=True)
+	retry_number = frappe.db.count("Payment Attempt", {"invoice": invoice})
+	save_point = "claim_payment_attempt"
+	frappe.db.savepoint(save_point)
+	try:
+		attempt = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": inv.team,
+				"gateway": gateway_name,
+				"payment_method": method_name,
+				"amount": inv.expected_collection,
+				"currency": inv.currency,
+				"status": "Initiated",
+				"initiated_at": frappe.utils.now_datetime(),
+				"retry_number": retry_number,
+			}
+		).insert(ignore_permissions=True)
+	except _ALREADY_CLAIMED:
+		# Someone else already claimed this exact charge (same invoice, same retry
+		# number, so the same key). They own it; we don't start a second one. Undo
+		# only the failed insert — whatever the caller did before this still stands.
+		frappe.db.rollback(save_point=save_point)
+		owner = frappe.db.get_value(
+			"Payment Attempt", {"idempotency_key": idempotency_key(invoice, retry_number)}, "name"
+		)
+		return {"charged": False, "reason": "attempt_in_flight", "attempt": owner}
+
+	# The record of intent must survive a crash during the charge, so it goes to disk
+	# now, before any money moves. (Skipped under tests, where the row stays visible
+	# inside the test transaction.)
+	if not frappe.in_test:
+		frappe.db.commit()
+	return {"claimed": True, "attempt": attempt.name}
+
+
+def _charge_claimed_attempt(attempt_name: str) -> dict:
+	"""Step 2: call the gateway for a claimed attempt and record the outcome.
+
+	Anything that goes wrong here — a timeout, an unmapped adapter error, the worker
+	being killed — leaves the attempt at `Initiated`, which reconciliation reads as
+	"we charged and don't know the result" and resolves against the gateway.
+	"""
+	attempt = frappe.get_doc("Payment Attempt", attempt_name)
+	method = frappe.get_doc("Payment Method", attempt.payment_method)
+	adapter = _adapter_for(attempt.gateway)
 
 	charge_input = frappe._dict(
-		amount=frappe.utils.flt(inv.expected_collection),
-		currency=inv.currency,
+		amount=frappe.utils.flt(attempt.amount),
+		currency=attempt.currency,
 		customer_id=method.gateway_customer_id,
-		name=invoice,
+		name=attempt.invoice,
 	)
 	try:
 		result = adapter.charge(charge_input, method, attempt.idempotency_key)
@@ -111,6 +175,7 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		# Transient: leave the attempt initiated so a retry reuses the same key.
 		attempt.failure_reason = str(e)[:140]
 		attempt.save(ignore_permissions=True)
+		_persist()
 		return {"charged": False, "reason": "timeout", "attempt": attempt.name}
 
 	attempt.gateway_transaction_id = result.gateway_transaction_id
@@ -118,12 +183,34 @@ def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | 
 		attempt.status = "Captured"  # gateway captured; invoice Paid waits on webhook
 	else:
 		attempt.status = "Failed"
-		attempt.failure_code = result.failure_code
-		attempt.failure_reason = result.failure_reason
+		_stamp_failure(attempt, result.failure_code, result.decline_code,
+					   result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
 	attempt.save(ignore_permissions=True)
+	_persist()
 
 	return {"charged": result.success, "attempt": attempt.name, "status": attempt.status}
+
+
+def resume_attempt(attempt: str) -> dict:
+	"""Finish a claimed charge we never got an answer to (used by reconciliation).
+
+	Re-sends the same request with the same key. If the gateway already took the
+	money, it replays that first result and no second charge happens; if the request
+	never reached it, it charges now — which is what the invoice was waiting for.
+	Either way the attempt ends up terminal instead of stuck.
+	"""
+	att = frappe.get_doc("Payment Attempt", attempt)
+	if att.status != "Initiated" or att.gateway_transaction_id or not att.payment_method:
+		return {"charged": False, "reason": "not_resumable", "attempt": attempt}
+	return _charge_claimed_attempt(attempt)
+
+
+def _persist():
+	"""Commit the gateway's answer — it must outlive whatever the caller does next.
+	Skipped under tests, where writes stay inside the test transaction."""
+	if not frappe.in_test:
+		frappe.db.commit()
 
 
 # --- on-session manual checkout (collection_mode = manual_checkout) ----------
@@ -266,6 +353,15 @@ def apply_webhook(event_name: str) -> dict:
 			return {"handled": False, "reason": "topup_not_captured"}
 		return _credit_topup(event, topup)
 
+	# Hosted-checkout invoice payments (create_invoice_checkout) also carry no Payment
+	# Attempt — they settle the invoice from the `invoice_payment` notes, same as top-ups.
+	inv_pay = _extract_invoice_payment(adapter_key, payload)
+	if inv_pay:
+		if not is_success:
+			_mark_event(event, "Ignored")
+			return {"handled": False, "reason": "invoice_payment_not_captured"}
+		return _settle_invoice_payment(event, inv_pay)
+
 	attempt_name = frappe.db.get_value("Payment Attempt", {"gateway_transaction_id": txn_id}, "name")
 	if not attempt_name:
 		_mark_event(event, "Ignored")
@@ -289,6 +385,12 @@ def apply_webhook(event_name: str) -> dict:
 		inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
 		if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
 			attempt.status = "Failed"
+			# Off-session declines surface their real reason here, not on the sync
+			# charge response — pull it off the event so the attempt records why.
+			detail = _extract_failure(adapter_key, payload)
+			if detail:
+				_stamp_failure(attempt, detail.get("failure_code"), detail.get("decline_code"),
+							   detail.get("failure_reason"), detail.get("raw"))
 			attempt.completed_at = frappe.utils.now_datetime()
 			attempt.save(ignore_permissions=True)
 			from central.billing.platform import notifications
@@ -318,14 +420,20 @@ def apply_webhook(event_name: str) -> dict:
 
 def _settle_invoice(attempt) -> bool:
 	"""Mark the attempt's invoice Paid (idempotent, under a row lock)."""
+	return _mark_invoice_paid(attempt.invoice, attempt.amount)
+
+
+def _mark_invoice_paid(invoice: str, amount) -> bool:
+	"""Mark an invoice Paid (idempotent, under a row lock). Shared by the Payment
+	Attempt capture path and the hosted-checkout invoice-payment path."""
 	invoice_tbl = frappe.qb.DocType("Invoice")
 	frappe.qb.from_(invoice_tbl).select(invoice_tbl.name).where(
-		invoice_tbl.name == attempt.invoice
+		invoice_tbl.name == invoice
 	).for_update().run()
-	inv = frappe.get_doc("Invoice", attempt.invoice)
+	inv = frappe.get_doc("Invoice", invoice)
 	if inv.status == "Paid":
 		return False  # a duplicate webhook — already settled
-	inv.amount_paid = frappe.utils.flt(attempt.amount)
+	inv.amount_paid = frappe.utils.flt(amount)
 	inv.status = "Paid"
 	inv.save(ignore_permissions=True)
 
@@ -412,6 +520,47 @@ def _extract_transaction_id(adapter_key: str, payload: dict):
 	return None
 
 
+def _extract_failure(adapter_key: str, payload: dict) -> dict | None:
+	"""Pull the decline detail out of a failure webhook body, normalised to
+	{failure_code, decline_code, failure_reason, raw}. This is where an off-session
+	decline's real reason lives — the sync charge response often can't see it."""
+	if adapter_key == "Stripe":
+		obj = ((payload.get("data") or {}).get("object")) or {}
+		err = obj.get("last_payment_error") or {}
+		if not err:
+			return None
+		return {
+			"failure_code": err.get("code"),
+			"decline_code": err.get("decline_code"),
+			"failure_reason": err.get("message"),
+			"raw": err,
+		}
+	if adapter_key == "Razorpay":
+		entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
+		if not entity.get("error_code") and not entity.get("error_reason"):
+			return None
+		# Razorpay's error_reason is the granular bucket (payment_failed,
+		# insufficient_balance, …) — the decline_code analogue.
+		return {
+			"failure_code": entity.get("error_code"),
+			"decline_code": entity.get("error_reason"),
+			"failure_reason": entity.get("error_description"),
+			"raw": {k: entity.get(k) for k in (
+				"error_code", "error_description", "error_reason", "error_source", "error_step")},
+		}
+	return None
+
+
+def _stamp_failure(attempt, failure_code, decline_code, failure_reason, raw):
+	"""Record the decline detail on a Payment Attempt. `raw` is stored as JSON on
+	the Code field; failure_reason is trimmed to the Small Text column width."""
+	attempt.failure_code = failure_code
+	attempt.decline_code = decline_code
+	attempt.failure_reason = (failure_reason or "")[:140] or None
+	if raw:
+		attempt.gateway_response = frappe.as_json(raw)
+
+
 def _extract_topup(adapter_key: str, payload: dict):
 	"""If this event is a wallet top-up (`purpose=wallet_topup` in the gateway
 	notes/metadata set at create_topup_order), return its credit-able fields;
@@ -442,6 +591,49 @@ def _extract_topup(adapter_key: str, payload: dict):
 			"currency": (obj.get("currency") or "").upper() or None,
 		}
 	return None
+
+
+def _extract_invoice_payment(adapter_key: str, payload: dict):
+	"""If this event is a hosted-checkout invoice payment (`purpose=invoice_payment`
+	in the gateway notes/metadata set at create_invoice_checkout), return its invoice
+	+ captured amount; else None. Mirrors _extract_topup for the wallet-topup case —
+	a hosted invoice checkout carries no Payment Attempt, so it settles from notes."""
+	if adapter_key == "Razorpay":
+		entity = (((payload.get("payload") or {}).get("payment") or {}).get("entity")) or {}
+		notes = entity.get("notes") or {}
+		if notes.get("purpose") != "invoice_payment":
+			return None
+		minor = entity.get("amount")
+		return {
+			"invoice": notes.get("invoice"),
+			"payment_id": entity.get("id"),
+			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+		}
+	if adapter_key == "Stripe":
+		obj = ((payload.get("data") or {}).get("object")) or {}
+		notes = obj.get("metadata") or {}
+		if notes.get("purpose") != "invoice_payment":
+			return None
+		minor = obj.get("amount_total") or obj.get("amount_received") or obj.get("amount")
+		return {
+			"invoice": notes.get("invoice"),
+			"payment_id": obj.get("payment_intent") or obj.get("id"),
+			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
+		}
+	return None
+
+
+def _settle_invoice_payment(event, inv_pay: dict) -> dict:
+	"""Settle a hosted-checkout invoice from the capture webhook (idempotent on the
+	invoice's Paid state). A malformed event (missing invoice/amount) is Ignored
+	rather than settling a guess — an invoice never magically flips to Paid."""
+	invoice = inv_pay.get("invoice")
+	if not (invoice and inv_pay.get("amount") and frappe.db.exists("Invoice", invoice)):
+		_mark_event(event, "Ignored")
+		return {"handled": False, "reason": "invoice_payment_incomplete"}
+	settled = _mark_invoice_paid(invoice, inv_pay["amount"])
+	_mark_event(event, "Processed")
+	return {"handled": True, "result": "paid", "invoice": invoice, "settled": settled}
 
 
 def _credit_topup(event, topup: dict) -> dict:

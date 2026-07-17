@@ -54,7 +54,7 @@
   },
   {
    "default": "VM Plans",
-   "description": "The Plan Category these plans belong to. Its builder (VM Rungs / Simple) decides how you author them (ADR 0007).",
+   "description": "The Plan Category these plans belong to; its builder decides authoring (ADR 0007).",
    "fieldname": "category",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -71,7 +71,7 @@
    "read_only": 1
   },
   {
-   "description": "Resolved from the category. 'Server' / blank = this template authors sellable plans; 'Resource' = it prices resource types per unit for custom configs (the form switches to Resource Rates).",
+   "description": "Resolved from the category: Server/blank authors plans, Resource prices resource types per unit.",
    "fetch_from": "category.provision_target",
    "fieldname": "provision_target",
    "fieldtype": "Read Only",
@@ -79,7 +79,7 @@
    "read_only": 1
   },
   {
-   "description": "The optimisation profile / variant within the category (filtered to it). For VM plans this is the profile that pins the memory ratio configured on the Sub-Category. Leave blank, or create a new one inline if it isn't a preconfigured option.",
+   "description": "The optimisation profile within the category; for VM plans it pins the memory ratio.",
    "fieldname": "sub_category",
    "fieldtype": "Link",
    "label": "Sub-Category",
@@ -111,7 +111,7 @@
    "reqd": 1
   },
   {
-   "description": "GB RAM per vCPU. Pre-filled from the Sub-Category's optimisation profile, but authoritative once set — override it here and the override wins over the profile. Edit a generated Plan to go off-ratio.",
+   "description": "GB RAM per vCPU; pre-filled from the Sub-Category profile but authoritative once set.",
    "fieldname": "memory_ratio",
    "fieldtype": "Select",
    "label": "Memory Ratio",
@@ -128,7 +128,7 @@
   },
   {
    "default": "0",
-   "description": "Transfer for the smallest rung. 0 = no transfer line. Real transfer tiers are irregular \u2014 tune per rung below.",
+   "description": "Transfer for the smallest rung (0 = none); tune irregular tiers per rung below.",
    "fieldname": "base_transfer_gb",
    "fieldtype": "Float",
    "label": "Base Transfer (GB)",
@@ -220,7 +220,7 @@
    "label": "Resource Rates"
   },
   {
-   "description": "Per-unit rates for each resource type (Compute / Memory / Disk), one row per (resource type × currency). A custom config is billed as the sum of quantity × these rates — so a config is sellable in a currency/region only when every resource type is priced there (ADR 0011).",
+   "description": "Per-unit rates per (resource type × currency); a config is sellable only where every type is priced (ADR 0011).",
    "fieldname": "component_rates",
    "fieldtype": "Table",
    "label": "Resource Rates",

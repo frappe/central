@@ -4,7 +4,7 @@
 single billed line (#80)."""
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.admin.catalog import update_component_rate
 from central.billing.catalog import subscriptions

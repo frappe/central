@@ -12,7 +12,7 @@ Authoring-only resource math: millicores/ratio never reach the data or billing.
 """
 
 import frappe
-from frappe.tests import IntegrationTestCase
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import configurator, plans
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
@@ -362,8 +362,8 @@ class TestSimpleBuilder(IntegrationTestCase):
 			"category": self.CATEGORY, "billing_cycle": "Monthly", "is_active": 1,
 			"base_rates": [{"currency": "USD", "base_rate": 10}],
 			"simple_plans": simple_plans if simple_plans is not None else [
-				{"title": "Tokens 10M", "resource_type": "Tokens", "quantity": 10, "unit": "1M tokens", "multiplier": 1},
-				{"title": "Tokens 100M", "resource_type": "Tokens", "quantity": 100, "unit": "1M tokens", "multiplier": 10},
+				{"title": "Tokens 10M", "resource_type": "Tokens", "quantity": 10, "unit": "Nos", "multiplier": 1},
+				{"title": "Tokens 100M", "resource_type": "Tokens", "quantity": 100, "unit": "Nos", "multiplier": 10},
 			],
 			**extra,
 		}).insert(ignore_permissions=True)

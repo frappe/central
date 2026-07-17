@@ -10,11 +10,11 @@ path does (ADR 0006/0010)."""
 from unittest.mock import MagicMock, patch
 
 import frappe
-from frappe.tests import IntegrationTestCase
 
 from central.api import servers
 from central.billing.catalog import subscriptions
 from central.billing.tests.utils import (
+	BillingTestCase as IntegrationTestCase,
 	complete_billing_profile,
 	ensure_atlas_instance,
 	ensure_team,
@@ -49,7 +49,17 @@ class TestCreateServerRecordsSubscription(IntegrationTestCase):
 	def _create_from_bundle(self, plan):
 		"""Call the endpoint with Atlas stubbed to return our fixed VM id."""
 		fake_client = MagicMock()
-		fake_client.create_vm.return_value = {"name": VM_ID}
+		fake_client.create_vm.return_value = {
+			"name": VM_ID,
+			"team": TEAM,
+			"title": "web-1",
+			"status": "Running",
+			"vcpus": 2,
+			"memory_megabytes": 4096,
+			"disk_gigabytes": 40,
+			"ipv6_address": "2001:db8:create::1",
+			"gateway_url": "https://web-1.example.test",
+		}
 		with patch.object(servers.AtlasClient, "for_region", return_value=fake_client):
 			return servers.create_server(
 				team=TEAM, region=REGION, title="web-1", plan=plan,
@@ -67,6 +77,20 @@ class TestCreateServerRecordsSubscription(IntegrationTestCase):
 		self.assertEqual(sub.plan, self.plan)  # the bundle is recorded
 		self.assertEqual(sub.pricing_mode, "Preset")
 		self.assertEqual(sub.asset_id, VM_ID)  # linked to the provisioned VM
+		self.assertEqual(frappe.db.count("Subscription", {"team": TEAM, "asset_id": VM_ID}), 1)
+
+		asset = frappe.db.get_value(
+			"Asset",
+			VM_ID,
+			["title", "status", "vcpus", "memory_megabytes", "disk_gigabytes", "ipv6_address", "gateway_url", "plan"],
+			as_dict=True,
+		)
+		self.assertEqual(asset.title, "web-1")
+		self.assertEqual(asset.status, "Running")
+		self.assertEqual((asset.vcpus, asset.memory_megabytes, asset.disk_gigabytes), (2, 4096, 40))
+		self.assertEqual(asset.ipv6_address, "2001:db8:create::1")
+		self.assertEqual(asset.gateway_url, "https://web-1.example.test")
+		self.assertEqual(asset.plan, self.plan)
 
 		# The opening segment IS the price-lock (ADR 0010) at the catalog rate.
 		seg = subscriptions.current_segment_rate(sub.name)
@@ -79,3 +103,15 @@ class TestCreateServerRecordsSubscription(IntegrationTestCase):
 		self.assertEqual(out["resource_id"], VM_ID)
 		self.assertIsNone(out["subscription"])
 		self.assertFalse(frappe.db.exists("Subscription", {"asset_id": VM_ID}))
+
+	def test_refused_without_a_billing_profile(self):
+		# A team with no billing profile can't create servers — it must set one up
+		# first (a server bills the team). Atlas is never touched.
+		noprofile = "team-create-server-noprofile"
+		ensure_team(noprofile)
+		frappe.db.delete("Billing Profile", {"team": noprofile})
+		fake_client = MagicMock()
+		with patch.object(servers.AtlasClient, "for_region", return_value=fake_client):
+			with self.assertRaises(frappe.ValidationError):
+				servers.create_server(team=noprofile, region=REGION, title="web-1", plan=self.plan)
+		fake_client.create_vm.assert_not_called()

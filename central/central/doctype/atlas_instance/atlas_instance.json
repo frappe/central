@@ -8,6 +8,7 @@
   "region",
   "base_url",
   "status",
+  "validate_capacity",
   "column_break_auth",
   "api_key",
   "api_secret",
@@ -26,11 +27,12 @@
  ],
  "fields": [
   {
-   "description": "The cluster the user sees. One Atlas = one region.",
+   "description": "The cluster the user sees. One Atlas = one Region (joined by this code).",
    "fieldname": "region",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Region",
+   "options": "Region",
    "reqd": 1,
    "unique": 1
   },
@@ -54,11 +56,18 @@
    "reqd": 1
   },
   {
+   "default": "1",
+   "description": "Only offer plans that fit this region's live capacity when creating/resizing a server.",
+   "fieldname": "validate_capacity",
+   "fieldtype": "Check",
+   "label": "Validate Capacity"
+  },
+  {
    "fieldname": "column_break_auth",
    "fieldtype": "Column Break"
   },
   {
-   "description": "Atlas admin API key. Central authenticates with the Atlas admin token for every Central→Atlas call (the registration handshake and, once Active, the data path over the tunnel).",
+   "description": "Atlas admin API key; Central authenticates with it for every Central→Atlas call.",
    "fieldname": "api_key",
    "fieldtype": "Data",
    "label": "Admin API Key",
@@ -72,21 +81,21 @@
    "reqd": 1
   },
   {
-   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register — not hand-entered.",
+   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register \u2014 not hand-entered.",
    "fieldname": "section_break_tunnel",
    "fieldtype": "Section Break",
    "label": "Tunnel"
   },
   {
    "default": "0",
-   "description": "Local development only: register without a WireGuard tunnel. Central does the identity half (scoped service user, pushed creds) and leaves the data path on the public base_url. No hub peering, no firewall lockdown.",
+   "description": "Local development only: register without a WireGuard tunnel, leaving the data path on base_url.",
    "fieldname": "skip_tunnel",
    "fieldtype": "Check",
    "label": "Skip Tunnel (Local Dev)"
   },
   {
    "default": "Unregistered",
-   "description": "Unregistered → Provisioning (wg0 up, firewall armed) → Active (confirmed over the tunnel). Inactive = still registered (keeps the service user) but the tunnel has been stripped down; Register again to bring it back up.",
+   "description": "Unregistered → Provisioning → Active; Inactive = registered but tunnel stripped down.",
    "fieldname": "tunnel_status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -95,7 +104,7 @@
    "read_only": 1
   },
   {
-   "description": "This Atlas's /32 on wg0, allocated from the pool, e.g. 10.88.0.2. Unique — the hard backstop against a double-allocation race.",
+   "description": "This Atlas's /32 on wg0 from the pool; unique, guards against a double-allocation race.",
    "fieldname": "tunnel_ip",
    "fieldtype": "Data",
    "label": "Tunnel IP",
@@ -103,7 +112,7 @@
    "unique": 1
   },
   {
-   "description": "Derived from tunnel_ip (e.g. https://10.88.0.2). The post-registration data path; base_url is used only during bootstrap.",
+   "description": "Derived from tunnel_ip; the post-registration data path (base_url is bootstrap-only).",
    "fieldname": "tunnel_url",
    "fieldtype": "Data",
    "label": "Tunnel URL",
@@ -142,7 +151,7 @@
   },
   {
    "default": "0",
-   "description": "Result of the last Test Connection (over the current data path — base_url before/after the tunnel, tunnel_url while Active).",
+   "description": "Result of the last Test Connection (over the current data path \u2014 base_url before/after the tunnel, tunnel_url while Active).",
    "fieldname": "reachable",
    "fieldtype": "Check",
    "label": "Reachable",
@@ -155,7 +164,23 @@
    "read_only": 1
   }
  ],
- "links": [],
+ "links": [
+  {
+   "group": "Hosting",
+   "link_doctype": "Asset",
+   "link_fieldname": "cluster"
+  },
+  {
+   "group": "Hosting",
+   "link_doctype": "Site",
+   "link_fieldname": "cluster"
+  },
+  {
+   "group": "Pricing",
+   "link_doctype": "Catalog Rate",
+   "link_fieldname": "cluster"
+  }
+ ],
  "modified": "2026-06-22 17:27:10.707891",
  "modified_by": "Administrator",
  "module": "Central",
