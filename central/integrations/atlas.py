@@ -447,7 +447,7 @@ def _notify_cluster_degraded(cluster: str) -> None:
 	"""Warn teams running in an unreachable cluster that their console view may be
 	stale. Fans out one Server-category warning per affected team, deduped to a single
 	open notice per (team, cluster) so a flapping/slow Atlas doesn't spam the feed."""
-	from central.notifications import create_notification
+	from central.notification import create_notification
 
 	teams = frappe.get_all(
 		"Asset", filters={"cluster": cluster, "status": ["!=", "Terminated"]},

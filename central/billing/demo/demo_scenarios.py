@@ -252,7 +252,7 @@ def _seed_notification_feed(slug_to_team: dict):
 	The overdue team already emits Invoice Overdue + Server Suspended via real dunning.
 	"""
 	from central.billing.platform import notifications
-	from central.notifications import create_notification
+	from central.notification import create_notification
 
 	# (slug, event_type, extra context) — one representative billing event per team,
 	# matched to its scenario. `invoice` context is filled from the team's latest bill.

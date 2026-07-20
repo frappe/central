@@ -44,7 +44,7 @@ class Asset(Document):
 	def notify_failure(self):
 		"""Surface a failed server in the team's console feed (a Server-category
 		notification), so a mirror flipping to Failed isn't silent in the UI."""
-		from central.notifications import create_notification
+		from central.notification import create_notification
 
 		create_notification(
 			self.team,

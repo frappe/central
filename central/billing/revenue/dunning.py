@@ -152,7 +152,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 		if standing == "Suspended" and not _active_directive(sub.team, "suspend"):
 			issue_token(sub.team, {}, suspend=True)
 			_notify(inv, f"Suspended for non-payment (day {days}); resource stopped, data preserved.")
-			from central.notifications import create_notification
+			from central.notification import create_notification
 
 			create_notification(
 				inv.team, "Server suspended for non-payment",

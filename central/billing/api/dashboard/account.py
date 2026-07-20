@@ -323,7 +323,7 @@ def list_notifications(
 		order_by="creation desc",
 		limit=frappe.utils.cint(limit),
 	)
-	from central.notifications import unread_count
+	from central.notification import unread_count
 
 	return {"items": items, "unread": unread_count(team)}
 
@@ -331,7 +331,7 @@ def list_notifications(
 @frappe.whitelist()
 def notification_badge(team: str | None = None) -> dict:
 	"""Lightweight unread count for the console bell badge (no item payload)."""
-	from central.notifications import unread_count
+	from central.notification import unread_count
 
 	return {"unread": unread_count(_resolve_team(team))}
 
@@ -348,7 +348,7 @@ def mark_notification_read(name: str, team: str | None = None, read: bool = True
 		"Team Notification", name,
 		{"is_read": 1 if read else 0, "read_at": frappe.utils.now_datetime() if read else None},
 	)
-	from central.notifications import unread_count
+	from central.notification import unread_count
 
 	return {"ok": True, "unread": unread_count(team)}
 

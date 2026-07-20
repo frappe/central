@@ -74,7 +74,7 @@ def notify(
 	# In-app feed entry — the console's unified inbox. Always recorded (a failure or
 	# warning belongs in the dashboard regardless of the team's *email* preference).
 	severity, action_label, action_route = _FEED_META.get(event_type, ("Info", None, None))
-	from central import notifications as feed
+	from central import notification as feed
 
 	feed.create_notification(
 		team, subject, category="Billing", event_type=event_type, severity=severity,

@@ -474,7 +474,7 @@ def _notify_resize_failed(subscription: str, asset_id: str) -> None:
 	team = frappe.db.get_value("Subscription", subscription, "team")
 	if not team:
 		return
-	from central.notifications import create_notification
+	from central.notification import create_notification
 
 	create_notification(
 		team, "Server resize failed",
