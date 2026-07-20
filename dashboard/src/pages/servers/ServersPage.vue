@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Badge, Button, FormControl, Select, Spinner } from 'frappe-ui'
+import { Button, Spinner } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
-import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateDialog from '@/components/servers/TerminateDialog.vue'
+import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
+import ServerFilters from '@/components/servers/ServerFilters.vue'
+import ServerListPanel from '@/components/servers/ServerListPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
@@ -30,6 +32,7 @@ import {
 } from '@/lib/serverMap'
 import type { AssetRow } from '@/composables/useServers'
 import type { Region } from '@/types/Central/Region'
+import type { ServerRow } from '@/components/servers/ServerListPanel.vue'
 
 // The servers page: the world map is the list (FC V2). The Asset mirror feeds
 // pins; Active Atlas Instances feed empty-region + spots; a slide-in panel
@@ -89,19 +92,8 @@ const mapRef = ref<InstanceType<typeof ServerMap> | null>(null)
 
 // — Rows: every non-terminated server, decorated for display. A server whose
 //   region is unlisted (Draining/Disabled instance) or unplaced (no coords)
-//   still rows here — it just can't pin on the map.
-interface ServerRow {
-	id: string
-	name: string
-	asset: AssetRow
-	visual: ServerVisual
-	specs: string
-	region: Region | undefined
-	regionLabel: string
-	flag: string
-	provider: string | null
-}
-
+//   still rows here — it just can't pin on the map. (ServerRow type lives with
+//   the panel that renders it.)
 const regionsByName = computed(
 	() => new Map(regions.value.map((r) => [r.region, r])),
 )
@@ -390,192 +382,42 @@ const pendingResize = ref<AssetRow | null>(null)
 				</template>
 			</ServerMap>
 
-			<!-- Mirror-health strips (top center): reachability first, then load errors. -->
-			<div
-				class="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4"
-			>
-				<p
-					v-if="stale.length"
-					class="pointer-events-auto rounded-md bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3 shadow-sm"
-				>
-					Showing last-known data — couldn't reach: {{ stale.join(', ') }}
-				</p>
-				<p
-					v-else-if="error && rows.length"
-					class="pointer-events-auto rounded-md bg-surface-red-1 px-3 py-2 text-p-sm text-ink-red-3 shadow-sm"
-				>
-					{{ error }}
-					<button class="ml-1 font-medium underline" @click="reloadAll">
-						Retry
-					</button>
-				</p>
-			</div>
+			<MapHealthStrips
+				:stale="stale"
+				:error="error"
+				:has-rows="rows.length > 0"
+				@retry="reloadAll"
+			/>
 
-			<!-- Filters (top right) -->
-			<div class="absolute right-4 top-4 flex items-center gap-2">
-				<Select
-					v-model="statusFilter"
-					variant="outline"
-					size="md"
-					:options="statusOptions"
-				>
-					<template #prefix>
-						<span
-							class="size-2 shrink-0 rounded-full transition-colors"
-							:style="{ background: statusDot }"
-						/>
-					</template>
-				</Select>
-				<Select
-					v-model="regionSelection"
-					variant="outline"
-					size="md"
-					:options="regionOptions"
-				/>
-			</div>
+			<ServerFilters
+				v-model:status-filter="statusFilter"
+				v-model:region-selection="regionSelection"
+				:status-options="statusOptions"
+				:status-dot="statusDot"
+				:region-options="regionOptions"
+			/>
 
-			<!-- Your servers (top left): a floating card — the pill IS the panel,
-           collapsed. Opening expands it in place; content crossfades. -->
-			<section
-				class="sp-float absolute left-4 top-4 z-30 overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1"
-				:class="panelOpen && 'sp-float-open'"
-				role="region"
-				aria-label="Your servers"
-				@keydown.esc="panelOpen = false"
-			>
-				<button
-					class="sp-float-pill text-base"
-					:inert="panelOpen"
-					@click="panelOpen = true"
-				>
-					<span class="truncate">{{ pillLabel }}</span>
-					<span class="lucide-maximize-2 size-3.5 shrink-0 text-ink-gray-6" />
-				</button>
-
-				<div
-					class="sp-float-panel flex h-full min-h-0 flex-col"
-					:inert="!panelOpen"
-					:aria-hidden="!panelOpen"
-				>
-					<!-- Same label as the pill so the card reads as the pill expanding. -->
-					<div
-						class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3"
-					>
-						<h2 class="truncate text-base font-semibold text-ink-gray-9">
-							{{ pillLabel }}
-						</h2>
-						<Button
-							variant="ghost"
-							icon="lucide-minimize-2"
-							aria-label="Collapse list"
-							@click="panelOpen = false"
-						/>
-					</div>
-					<div class="shrink-0 px-4 pb-3">
-						<FormControl
-							v-model="q"
-							type="text"
-							placeholder="Search"
-							autocomplete="off"
-							class="[&_input]:w-full"
-						>
-							<template #prefix
-								><span class="lucide-search size-4 text-ink-gray-5" /></template
-							>
-						</FormControl>
-					</div>
-
-					<!-- Set by clicking a cluster on the map — the rows narrow to that spot. -->
-					<div
-						v-if="locationFilter"
-						class="flex shrink-0 items-center justify-between gap-3 px-4 pb-2.5"
-					>
-						<span class="min-w-0 truncate text-sm text-ink-gray-5">
-							Filtering for
-							<span class="font-medium text-ink-gray-8"
-								>{{ locationFilter.label }}</span
-							>
-						</span>
-						<button
-							class="flex shrink-0 items-center gap-1.5 text-sm text-ink-gray-6 transition-colors hover:text-ink-gray-8"
-							@click="locationFilter = null"
-						>
-							<span class="lucide-filter size-3.5" />
-							Clear
-						</button>
-					</div>
-
-					<div
-						class="min-h-0 flex-1 divide-y divide-outline-alpha-gray-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2"
-					>
-						<div
-							v-for="(row, i) in panelRows"
-							:key="row.id"
-							class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-surface-gray-2"
-							:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
-							@click="focusRow(row)"
-							@mouseenter="hoverId = row.id"
-							@mouseleave="hoverId = null"
-						>
-							<span class="relative shrink-0">
-								<ProviderAvatar :provider="row.provider" :size="32" />
-								<span
-									class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
-									:style="{ background: row.visual.dot }"
-								/>
-							</span>
-							<span class="min-w-0 flex-1">
-								<span class="flex items-center gap-1.5">
-									<span class="truncate text-sm font-medium text-ink-gray-9"
-										>{{ row.name }}</span
-									>
-									<Badge
-										v-if="row.visual.key !== 'active'"
-										:label="row.visual.label"
-										:theme="row.visual.badgeTheme"
-										variant="subtle"
-										size="sm"
-									/>
-								</span>
-								<span class="block truncate text-sm text-ink-gray-5"
-									>{{ row.specs || row.regionLabel }}</span
-								>
-							</span>
-							<span @click.stop>
-								<ServerRowActions
-									:server="row.asset"
-									:can-open="canOpenServer"
-									:can-power="canPowerServer"
-									:can-terminate="canTerminateServer"
-									:busy="busy === row.id"
-									:opening="opening === row.id"
-									@open="open"
-									@start="doStart"
-									@stop="doStop"
-									@resize="pendingResize = $event"
-									@terminate="pendingTerminate = $event"
-								/>
-							</span>
-						</div>
-
-						<div
-							v-if="!panelRows.length"
-							class="m-4 flex flex-col items-center gap-1 py-8 text-center"
-						>
-							<span
-								:class="rows.length ? 'lucide-search' : 'lucide-server'"
-								class="mb-2 size-6 text-ink-gray-4"
-							/>
-							<p class="text-base font-medium text-ink-gray-8">
-								{{ rows.length ? 'No servers match' : 'No servers yet' }}
-							</p>
-							<p class="text-sm text-ink-gray-5">
-								{{ rows.length ? 'Try a different search or clear the filters.' : 'Create your first server to host your sites.' }}
-							</p>
-						</div>
-					</div>
-				</div>
-			</section>
+			<ServerListPanel
+				v-model:open="panelOpen"
+				v-model:query="q"
+				v-model:hover-id="hoverId"
+				:pill-label="pillLabel"
+				:rows="panelRows"
+				:has-rows="rows.length > 0"
+				:location-filter="locationFilter"
+				:can-open="canOpenServer"
+				:can-power="canPowerServer"
+				:can-terminate="canTerminateServer"
+				:busy="busy"
+				:opening="opening"
+				@focus-row="focusRow"
+				@clear-location="locationFilter = null"
+				@open="open"
+				@start="doStart"
+				@stop="doStop"
+				@resize="pendingResize = $event"
+				@terminate="pendingTerminate = $event"
+			/>
 
 			<!-- Initial load / hard failure / first run — centered over the map -->
 			<div
@@ -614,96 +456,3 @@ const pendingResize = ref<AssetRow | null>(null)
 		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>
 </template>
-
-<style scoped>
-/* "Your servers" morph: one floating card whose size change carries the whole
-   story — the pill grows into the panel in place. Faster on close than open,
-   one strong ease-out; the two faces just crossfade inside it. Collapsed, the
-   pill matches the Select (outline / md) filters across the map: 2rem tall,
-   same radius, px-2.5, text-base. */
-.sp-float {
-	--sp-ease: cubic-bezier(0.23, 1, 0.32, 1);
-	width: 10.5rem;
-	height: 2rem;
-	border-radius: 0.5rem;
-	box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.05));
-	transition:
-		width 180ms var(--sp-ease),
-		height 180ms var(--sp-ease),
-		border-radius 180ms var(--sp-ease),
-		box-shadow 180ms var(--sp-ease);
-}
-.sp-float-open {
-	width: 24rem;
-	height: calc(100% - 2rem);
-	border-radius: 0.75rem;
-	box-shadow: var(
-		--shadow-xl,
-		0 20px 25px -5px rgb(0 0 0 / 0.1),
-		0 8px 10px -6px rgb(0 0 0 / 0.1)
-	);
-	transition-duration: 220ms;
-}
-.sp-float-pill {
-	position: absolute;
-	left: 0;
-	top: 0;
-	display: flex;
-	height: 2rem;
-	width: 10.5rem;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.625rem;
-	padding: 0 0.625rem;
-	font-weight: 420;
-	color: var(--ink-gray-7);
-	transition:
-		opacity 120ms ease-out,
-		background-color 150ms ease;
-}
-.sp-float-pill:hover {
-	background: var(--surface-gray-1);
-}
-.sp-float-open .sp-float-pill {
-	opacity: 0;
-}
-.sp-float-panel {
-	opacity: 0;
-	transform: translateY(4px);
-	transition:
-		opacity 140ms ease-out,
-		transform 220ms var(--sp-ease);
-}
-.sp-float-open .sp-float-panel {
-	opacity: 1;
-	transform: none;
-	transition-delay: 40ms;
-}
-
-/* Rows cascade in as the panel opens — brief, then out of the way. */
-.sp-row {
-	animation: sp-row-in 250ms cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-@keyframes sp-row-in {
-	from {
-		opacity: 0;
-		transform: translateY(6px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.sp-float,
-	.sp-float-pill,
-	.sp-float-panel {
-		transition-duration: 1ms;
-		transition-delay: 0ms;
-	}
-	.sp-row {
-		animation: none;
-	}
-}
-</style>
