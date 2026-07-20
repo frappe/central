@@ -23,6 +23,14 @@ class TestListResources(IntegrationTestCase):
 		self.assertIn(site[0].name, names)
 		self.assertTrue(all("region" in r for r in result["resources"]))
 
+	def test_list_resources_kind_site_returns_only_sites(self):
+		site = frappe.get_all("Site", fields=["name", "team"], limit=1)
+		if not site:
+			self.skipTest("No Site available.")
+
+		result = resources.list_resources(site[0].team, kind="site")
+		self.assertTrue(all(r["kind"] == "site" for r in result["resources"]))
+
 	def test_terminate_site_routes_to_atlas(self):
 		rows = frappe.get_all("Site", fields=["name", "cluster"], filters={"status": ["!=", "Terminated"]}, limit=25)
 		site = next((r for r in rows if r.cluster and frappe.db.exists("Atlas Instance", r.cluster)), None)

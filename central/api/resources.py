@@ -12,23 +12,29 @@ from central.iam import can, resolve_team
 
 
 @frappe.whitelist(methods=["GET"])
-def list_resources(team: str | None = None) -> dict:
+def list_resources(team: str | None = None, kind: str | None = None) -> dict:
 	"""A team's servers and sites as one list, so the console lands a single-site team
-	on its site and a server owner on their servers from one read. Each carries a region
+	on its site and a server owner on their servers from one read (optionally one `kind`). Each carries a region
 	so both share the map view."""
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:view"):
 		frappe.throw(_("You can't view this team's resources."), frappe.PermissionError)
 
-	servers = frappe.get_all(
-		"Asset",
-		filters={"team": team},
-		fields=["name", "title", "resource_id", "status", "public_ipv4", "cluster"],
-		order_by="title",
+	servers = (
+		frappe.get_all(
+			"Asset",
+			filters={"team": team},
+			fields=["name", "title", "resource_id", "status", "public_ipv4", "cluster"],
+			order_by="title",
+		)
+		if kind in (None, "server")
+		else []
 	)
-	sites = frappe.get_all(
-		"Site", filters={"team": team}, fields=["name", "status", "url", "region"], order_by="name"
+	sites = (
+		frappe.get_all("Site", filters={"team": team}, fields=["name", "status", "url", "region"], order_by="name")
+		if kind in (None, "site")
+		else []
 	)
 
 	# Servers carry a cluster, not a region — resolve every cluster's region in one query.
