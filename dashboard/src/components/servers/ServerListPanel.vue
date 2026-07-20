@@ -2,28 +2,33 @@
 import { Badge, Button, FormControl } from 'frappe-ui'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
+import SiteRowActions from '@/components/servers/SiteRowActions.vue'
 import type { AssetRow } from '@/composables/useServers'
 import type { ServerVisual } from '@/lib/serverMap'
 import type { Region } from '@/types/Central/Region'
 
-// The "Your servers" floating card: the pill IS the panel, collapsed. Opening
-// morphs it in place (see <style>). Presentational — the page owns the rows,
-// filters, and lifecycle commands; this forwards clicks and hover.
-export interface ServerRow {
+// The "Your assets" floating card: the pill IS the panel, collapsed. Opening
+// morphs it in place (see <style>). Renders both kinds — a site is a 1:1-backed
+// VM, so servers and sites list side by side, distinguished by their content
+// (a site shows its domain, a server its hostname), not a badge. Presentational.
+export interface ResourceRow {
+	kind: 'server' | 'site'
 	id: string
 	name: string
-	asset: AssetRow
 	visual: ServerVisual
 	specs: string
+	cluster: string
 	region: Region | undefined
 	regionLabel: string
 	flag: string
 	provider: string | null
+	asset?: AssetRow
+	site?: { name: string; url: string | null }
 }
 
 defineProps<{
 	pillLabel: string
-	rows: ServerRow[]
+	rows: ResourceRow[]
 	hasRows: boolean
 	locationFilter: { ids: string[]; label: string } | null
 	canOpen: boolean
@@ -34,13 +39,15 @@ defineProps<{
 }>()
 
 defineEmits<{
-	focusRow: [row: ServerRow]
+	focusRow: [row: ResourceRow]
 	clearLocation: []
 	open: [server: AssetRow]
 	start: [server: AssetRow]
 	stop: [server: AssetRow]
 	resize: [server: AssetRow]
 	terminate: [server: AssetRow]
+	openSite: [url: string]
+	terminateSite: [name: string]
 }>()
 
 const open = defineModel<boolean>('open', { required: true })
@@ -53,7 +60,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 		class="sp-float absolute left-4 top-4 z-30 overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1"
 		:class="open && 'sp-float-open'"
 		role="region"
-		aria-label="Your servers"
+		aria-label="Your assets"
 		@keydown.esc="open = false"
 	>
 		<button class="sp-float-pill text-base" :inert="open" @click="open = true">
@@ -102,7 +109,13 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 					@mouseleave="hoverId = null"
 				>
 					<span class="relative shrink-0">
-						<ProviderAvatar :provider="row.provider" :size="32" />
+						<ProviderAvatar v-if="row.kind === 'server'" :provider="row.provider" :size="32" />
+						<span
+							v-else
+							class="grid size-8 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-6"
+						>
+							<span class="lucide-globe size-4" />
+						</span>
 						<span
 							class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
 							:style="{ background: row.visual.dot }"
@@ -123,6 +136,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 					</span>
 					<span @click.stop>
 						<ServerRowActions
+							v-if="row.kind === 'server' && row.asset"
 							:server="row.asset"
 							:can-open="canOpen"
 							:can-power="canPower"
@@ -135,16 +149,25 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							@resize="$emit('resize', $event)"
 							@terminate="$emit('terminate', $event)"
 						/>
+						<SiteRowActions
+							v-else-if="row.site"
+							:site="row.site"
+							:can-open="canOpen"
+							:can-terminate="canTerminate"
+							:busy="busy === row.id"
+							@open="$emit('openSite', $event)"
+							@terminate="$emit('terminateSite', $event)"
+						/>
 					</span>
 				</div>
 
 				<div v-if="!rows.length" class="m-4 flex flex-col items-center gap-1 py-8 text-center">
 					<span :class="hasRows ? 'lucide-search' : 'lucide-server'" class="mb-2 size-6 text-ink-gray-4" />
 					<p class="text-base font-medium text-ink-gray-8">
-						{{ hasRows ? 'No servers match' : 'No servers yet' }}
+						{{ hasRows ? 'No assets match' : 'No assets yet' }}
 					</p>
 					<p class="text-sm text-ink-gray-5">
-						{{ hasRows ? 'Try a different search or clear the filters.' : 'Create your first server to host your sites.' }}
+						{{ hasRows ? 'Try a different search or clear the filters.' : 'Create a server or site to get started.' }}
 					</p>
 				</div>
 			</div>
@@ -153,7 +176,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 </template>
 
 <style scoped>
-/* "Your servers" morph: one floating card whose size change carries the whole
+/* "Your assets" morph: one floating card whose size change carries the whole
    story — the pill grows into the panel in place. The two faces crossfade inside. */
 .sp-float {
 	--sp-ease: cubic-bezier(0.23, 1, 0.32, 1);

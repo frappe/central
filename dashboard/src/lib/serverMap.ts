@@ -405,3 +405,13 @@ export function computeNodes({
 	}
 	return out
 }
+
+// A site's status mapped onto the shared server visual vocabulary, so the unified
+// assets list (and its status filter) can treat a site like the VM it is.
+export function siteVisual(status: string): ServerVisual {
+	if (status === 'Running')
+		return { key: 'active', label: 'Running', badgeTheme: 'green', dot: 'var(--ink-green-7)' }
+	if (status === 'Failed')
+		return { key: 'broken', label: 'Failed', badgeTheme: 'red', dot: 'var(--ink-red-7)' }
+	return { key: 'settingUp', label: status, badgeTheme: 'orange', dot: 'var(--ink-amber-7)' }
+}
