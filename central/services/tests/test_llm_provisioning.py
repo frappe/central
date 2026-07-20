@@ -102,6 +102,31 @@ class TestLLMProvisioning(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			pilot.config_for_site("TEAM-not-owner", self.site, "llm")
 
+	def test_list_offers_marks_activated(self):
+		offers = dashboard.list_offers(self.team)
+		llm_offer = next(o for o in offers if o["name"] == "llm")
+		self.assertEqual(llm_offer["managed_service"], self.managed.name)
+
+	def test_get_instance_returns_status_sites_models(self):
+		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
+			dashboard.enable_site(self.managed.name, self.site)
+
+		instance = dashboard.get_instance(self.managed.name)
+		self.assertEqual(instance["status"], "Active")
+		self.assertIn(self.site, instance["enabled_sites"])
+		self.assertIsInstance(instance["models"], list)
+
+	def test_list_sites_returns_team_sites(self):
+		names = [s["name"] for s in dashboard.list_sites(self.team)]
+		self.assertIn(self.site, names)
+
+	def test_reads_require_capability(self):
+		self.addCleanup(frappe.set_user, "Administrator")
+		frappe.set_user("Guest")
+
+		with self.assertRaises(frappe.PermissionError):
+			dashboard.list_sites(self.team)
+
 
 class TestLLMPolicyAndUsage(IntegrationTestCase):
 	def setUp(self):

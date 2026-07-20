@@ -18,9 +18,12 @@ def sync_models(service: str = _LLM_SERVICE) -> int:
 	for model_key, display_name in published.items():
 		_upsert_model(model_key, display_name, exists=model_key in known)
 
-	# Never delete (it would drop the assigned tier); just unpublish what Grove dropped.
-	for stale in known - set(published):
-		frappe.db.set_value("LLM Model", stale, "is_published", 0)
+	# Never delete (it would drop the assigned tier); just unpublish what Grove dropped,
+	# in one statement rather than a write per model.
+	stale = list(known - set(published))
+	if stale:
+		model = frappe.qb.DocType("LLM Model")
+		frappe.qb.update(model).set(model.is_published, 0).where(model.name.isin(stale)).run()
 
 	return len(published)
 
@@ -44,6 +47,17 @@ def resolve_provision_options(plan: str | None) -> dict:
 		allowed_models = ",".join(sorted(models))
 
 	return {"allowed_models": allowed_models, "token_limit": _token_limit(plan)}
+
+
+def included_models(plan: str | None) -> list[dict]:
+	"""Models a plan grants, for display. Non-throwing, unlike resolve_provision_options —
+	an empty result just means nothing is published yet."""
+	filters = {"is_published": 1}
+	tiers = _allowed_tiers(plan)
+	if tiers:
+		filters["tier"] = ["in", tiers]
+
+	return frappe.get_all("LLM Model", filters=filters, fields=["name", "tier"], order_by="tier, name")
 
 
 def pull_usage(service: str = _LLM_SERVICE) -> dict:

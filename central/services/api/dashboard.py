@@ -4,14 +4,14 @@ import frappe
 from frappe import _
 
 from central.services.drivers.base import get_driver
-from central.services.permissions import assert_service_manager, assert_site_owner
+from central.services.permissions import assert_capability, assert_site_owner
 
 
 @frappe.whitelist()
 def activate_service(team: str, service: str) -> dict:
 	"""Activate a team's add-on (idempotent). Needs an active billing subscription in
 	the service's plan category; LLM has no team-level provisioning, so it goes Active."""
-	assert_service_manager(team)
+	assert_capability(team, "service:manage")
 	add_on = _get_active_service(service)
 
 	subscription = _resolve_subscription(team, add_on)
@@ -40,7 +40,7 @@ def enable_site(managed_service: str, site: str) -> dict:
 	)
 	if not service:
 		frappe.throw(_("Unknown managed service."))
-	assert_service_manager(service.team)
+	assert_capability(service.team, "service:manage")
 
 	if service.status != "Active":
 		frappe.throw(_("Managed service is not active."))
@@ -83,7 +83,7 @@ def disable_site(managed_service: str, site: str) -> dict:
 	service = frappe.db.get_value("Managed Service", managed_service, ["team", "add_on_service"], as_dict=True)
 	if not service:
 		frappe.throw(_("Unknown managed service."))
-	assert_service_manager(service.team)
+	assert_capability(service.team, "service:manage")
 
 	credential_name = frappe.db.get_value(
 		"Site Service Credential", {"managed_service": managed_service, "site": site, "status": "Active"}, "name"
@@ -98,6 +98,70 @@ def disable_site(managed_service: str, site: str) -> dict:
 	credential.db_set("status", "Revoked")
 
 	return {"site": site, "status": "Revoked"}
+
+
+@frappe.whitelist(methods=["GET"])
+def list_offers(team: str) -> list[dict]:
+	"""Catalogue of active add-on services with the team's status for each. service:view."""
+	assert_capability(team, "service:view")
+
+	offers = frappe.get_all(
+		"Add-on Service", filters={"is_active": 1}, fields=["name", "title", "plan_category"], order_by="title"
+	)
+	activated = {
+		row.add_on_service: row.name
+		for row in frappe.get_all("Managed Service", filters={"team": team}, fields=["name", "add_on_service"])
+	}
+	for offer in offers:
+		offer["managed_service"] = activated.get(offer.name)
+
+	return offers
+
+
+@frappe.whitelist(methods=["GET"])
+def get_instance(managed_service: str) -> dict:
+	"""A managed service's status, enabled sites, and included models. service:view."""
+	instance = frappe.db.get_value(
+		"Managed Service", managed_service, ["name", "team", "add_on_service", "subscription", "status"], as_dict=True
+	)
+	if not instance:
+		frappe.throw(_("Unknown managed service."))
+	assert_capability(instance.team, "service:view")
+
+	sites = frappe.get_all(
+		"Site Service Credential",
+		filters={"managed_service": managed_service, "status": "Active"},
+		fields=["site", "gateway_url"],
+		order_by="site",
+	)
+	plan = frappe.db.get_value("Subscription", instance.subscription, "plan")
+
+	return {
+		"managed_service": instance.name,
+		"service": instance.add_on_service,
+		"status": instance.status,
+		"plan": plan,
+		"enabled_sites": [row.site for row in sites],
+		"models": _included_models(instance.add_on_service, plan),
+	}
+
+
+@frappe.whitelist(methods=["GET"])
+def list_sites(team: str) -> list[dict]:
+	"""A team's sites from the Site mirror. Backs the Sites tab and the site-first
+	console surface for single-site teams. service:view."""
+	assert_capability(team, "service:view")
+
+	return frappe.get_all("Site", filters={"team": team}, fields=["name", "status", "url"], order_by="name")
+
+
+def _included_models(service: str, plan: str | None) -> list[dict]:
+	if frappe.db.get_value("Add-on Service", service, "handler_key", cache=True) != "grove":
+		return []
+
+	from central.services import llm
+
+	return llm.included_models(plan)
 
 
 def _get_active_service(service: str):
