@@ -14,7 +14,7 @@ OPERATOR_BYPASS_ROLE = "System Manager"
 # redundant asset:view are dropped; role capabilities live at team + server level
 # only. The plane field and the bench-caps SSO mint stay, so site caps can return
 # under the bench plane later with no contract change.
-CAPABILITY_VERSION = 3
+CAPABILITY_VERSION = 4
 
 # Capability implications: granting the key implies every cap in the value. Acting
 # on a resource is meaningless without seeing it, so we close every grant under
@@ -28,6 +28,7 @@ CAP_IMPLICATIONS = {
 	"server:power": ("server:view",),
 	"server:resize": ("server:view",),
 	"server:snapshot": ("server:view",),
+	"service:manage": ("service:view",),
 }
 
 
