@@ -326,6 +326,15 @@ class AtlasClient:
 			params={"dt": "Site", "dn": name, "method": "regenerate_login_url"},
 		)
 
+	def terminate_site(self, name: str) -> dict:
+		"""Tear down a self-serve site and its 1:1 backing VM. The Atlas Site controller
+		terminates the guest + VM; the site.* events flip the mirror to Terminated."""
+		return self.client().post_api(
+			"run_doc_method",
+			params={"dt": "Site", "dn": name, "method": "terminate"},
+		)
+
+
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""
 		params = {"subdomain": subdomain}

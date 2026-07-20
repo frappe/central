@@ -141,3 +141,21 @@ def site_domain(region: str | None = None) -> dict:
 	the user types. Atlas returns `domain` regardless of label validity."""
 	region = region or _default_region()
 	return {"domain": AtlasClient.for_region(region).check_subdomain("", region=region).get("domain")}
+
+
+@frappe.whitelist(methods=["POST"])
+def terminate_site(name: str) -> dict:
+	"""Terminate a self-serve site (and its 1:1 backing VM). Gated on `server:terminate` —
+	a site is a VM, so removing it is authorized like tearing down a server (site-level
+	capabilities are deferred). The mirror flips to Terminated on the site.* event."""
+	user = frappe.session.user
+	site = frappe.db.get_value("Site", name, ["team", "cluster", "status"], as_dict=True)
+	if not site:
+		frappe.throw(_("Unknown site {0}.").format(name))
+	if not can(user, site.team, "server:terminate"):
+		frappe.throw(_("You can't terminate this team's sites."), frappe.PermissionError)
+
+	instance = frappe.get_doc("Atlas Instance", site.cluster)
+	AtlasClient(instance).terminate_site(name)
+
+	return {"name": name, "status": "Terminating"}
