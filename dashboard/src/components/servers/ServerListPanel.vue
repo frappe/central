@@ -7,7 +7,7 @@ import type { AssetRow } from '@/composables/useServers'
 import type { ServerVisual } from '@/lib/serverMap'
 import type { Region } from '@/types/Central/Region'
 
-// The "Your assets" floating card: the pill IS the panel, collapsed. Opening
+// The "Your servers" floating card: the pill IS the panel, collapsed. Opening
 // morphs it in place (see <style>). Renders both kinds — a site is a 1:1-backed
 // VM, so servers and sites list side by side, distinguished by their content
 // (a site shows its domain, a server its hostname), not a badge. Presentational.
@@ -60,7 +60,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 		class="sp-float absolute left-4 top-4 z-30 overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1"
 		:class="open && 'sp-float-open'"
 		role="region"
-		aria-label="Your assets"
+		aria-label="Your servers"
 		@keydown.esc="open = false"
 	>
 		<button class="sp-float-pill text-base" :inert="open" @click="open = true">
@@ -164,10 +164,10 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 				<div v-if="!rows.length" class="m-4 flex flex-col items-center gap-1 py-8 text-center">
 					<span :class="hasRows ? 'lucide-search' : 'lucide-server'" class="mb-2 size-6 text-ink-gray-4" />
 					<p class="text-base font-medium text-ink-gray-8">
-						{{ hasRows ? 'No assets match' : 'No assets yet' }}
+						{{ hasRows ? 'No servers match' : 'No servers yet' }}
 					</p>
 					<p class="text-sm text-ink-gray-5">
-						{{ hasRows ? 'Try a different search or clear the filters.' : 'Create a server or site to get started.' }}
+						{{ hasRows ? 'Try a different search or clear the filters.' : 'Create your first server to host your sites.' }}
 					</p>
 				</div>
 			</div>
@@ -176,7 +176,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 </template>
 
 <style scoped>
-/* "Your assets" morph: one floating card whose size change carries the whole
+/* "Your servers" morph: one floating card whose size change carries the whole
    story — the pill grows into the panel in place. The two faces crossfade inside. */
 .sp-float {
 	--sp-ease: cubic-bezier(0.23, 1, 0.32, 1);

@@ -37,7 +37,7 @@ import type { AssetRow } from '@/composables/useServers'
 import type { Region } from '@/types/Central/Region'
 import type { ResourceRow } from '@/components/servers/ServerListPanel.vue'
 
-// The assets page: the world map is the list (FC V2). Servers (the Asset mirror)
+// The servers page: the world map is the list (FC V2). Servers (the Asset mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) list together; a slide-in
 // panel carries the searchable rows. Lifecycle actions reuse useServers /
 // useSites so the map, panel, and ⋯ menus share one command path.
@@ -233,8 +233,8 @@ const panelRows = computed(() => {
 
 const pillLabel = computed(() =>
 	statusFilter.value || regionFilter.value.provider || regionFilter.value.region
-		? `Assets (${filtered.value.length})`
-		: `All assets (${filtered.value.length})`,
+		? `Servers (${filtered.value.length})`
+		: `All servers (${filtered.value.length})`,
 )
 
 // — Map data. Only servers pin today (a site's pin/hover card is a follow-up);
@@ -349,7 +349,7 @@ async function confirmSiteTerminate(): Promise<void> {
 
 <template>
 	<div class="flex h-full flex-col">
-		<PageHeader title="Assets">
+		<PageHeader title="Servers">
 			<template #actions>
 				<Button
 					v-if="activeTeam"
@@ -471,7 +471,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				v-else-if="error && !rows.length"
 				icon="lucide-circle-alert"
 				icon-class="text-ink-red-5"
-				title="Couldn't load your assets"
+				title="Couldn't load your servers"
 				:description="error"
 			>
 				<template #action>
