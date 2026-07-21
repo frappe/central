@@ -30,6 +30,7 @@ export interface ServiceInstance {
 	service: string
 	status: string
 	plan: string | null
+	plan_title: string | null
 	enabled_sites: string[]
 	models: ServiceModel[]
 }

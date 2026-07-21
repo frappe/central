@@ -139,6 +139,14 @@ class TestLLMProvisioning(IntegrationTestCase):
 		llm_offer = next(o for o in offers if o["name"] == "llm")
 		self.assertEqual(llm_offer["managed_service"], self.managed.name)
 
+	def test_activation_explains_how_to_get_access_when_the_plan_is_missing(self):
+		with patch.object(dashboard, "_resolve_subscription", return_value=None):
+			with self.assertRaisesRegex(
+				frappe.ValidationError,
+				"LLM Hosting is not available in this team's plan. Ask your account administrator to add it, then try again.",
+			):
+				dashboard.activate_service(self.team, "llm")
+
 	def test_get_instance_returns_status_sites_models(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
 			dashboard.enable_site(self.managed.name, self.site)

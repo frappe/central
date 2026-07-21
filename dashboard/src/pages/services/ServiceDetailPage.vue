@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Badge, Button, Spinner } from 'frappe-ui'
+import { Badge, Button, Spinner, Switch } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ConnectionDetailsDialog from '@/components/services/ConnectionDetailsDialog.vue'
 import DisableSiteDialog from '@/components/services/DisableSiteDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
-import { errorToast } from '@/lib/toast'
+import { errorToast, errorToastWithAction } from '@/lib/toast'
 
 // One service's management surface. Primary action: enable AI directly on a site.
 // Secondary: reveal that site's key + curl for bring-your-own use. Activation (once
@@ -18,7 +18,7 @@ const route = useRoute()
 const router = useRouter()
 const serviceKey = computed(() => String(route.params.service))
 
-const { canManageServices } = useCapabilities()
+const { canManageServices, canManageBilling } = useCapabilities()
 const {
 	offers,
 	offersLoading,
@@ -60,7 +60,18 @@ async function activateService(): Promise<void> {
 	try {
 		await activate(serviceKey.value)
 	} catch (e) {
-		errorToast(e)
+		// Activation fails when the team's plan doesn't include the service. A billing
+		// manager can fix that themselves — send them to Billing (its Metered Services
+		// card is where AI Tokens is added); everyone else just sees the message, which
+		// already tells them to ask their account administrator.
+		if (canManageBilling.value) {
+			errorToastWithAction(e, {
+				label: 'Set up billing',
+				onClick: () => router.push('/billing'),
+			})
+		} else {
+			errorToast(e)
+		}
 	} finally {
 		activating.value = false
 	}
@@ -69,6 +80,14 @@ async function activateService(): Promise<void> {
 // Connection (BYO) dialog + disable confirm are page-owned modal state.
 const connectSite = ref<string | null>(null)
 const pendingDisable = ref<string | null>(null)
+
+// The per-site switch: turning on provisions immediately (safe); turning off
+// routes through the confirm dialog, since it cuts a live key.
+function toggleSite(site: string, enabled: boolean): void {
+	if (!managedService.value) return
+	if (enabled) enableSite(managedService.value, site)
+	else pendingDisable.value = site
+}
 
 async function confirmDisable(site: string): Promise<void> {
 	pendingDisable.value = null
@@ -130,7 +149,7 @@ async function confirmDisable(site: string): Promise<void> {
 						<div>
 							<h2 class="text-base font-semibold text-ink-gray-9">Overview</h2>
 							<p class="mt-1 text-p-sm text-ink-gray-5">
-								Plan: {{ instance?.plan ?? '—' }}
+								Plan: {{ instance?.plan_title || instance?.plan || '—' }}
 							</p>
 						</div>
 						<Badge
@@ -152,7 +171,8 @@ async function confirmDisable(site: string): Promise<void> {
 							/>
 						</div>
 						<p v-else class="text-p-sm text-ink-gray-5">
-							Models will appear here once they're available on your plan.
+							No models yet — they appear once your plan grants a tier and the
+							provider has published models.
 						</p>
 					</div>
 
@@ -160,7 +180,7 @@ async function confirmDisable(site: string): Promise<void> {
 						class="mt-4 inline-flex items-center gap-1 text-p-sm font-medium text-ink-gray-7 hover:text-ink-gray-9"
 						@click="router.push('/billing')"
 					>
-						Token usage &amp; billing
+						View token usage in Billing
 						<span class="lucide-arrow-up-right size-3.5" />
 					</button>
 				</section>
@@ -204,30 +224,23 @@ async function confirmDisable(site: string): Promise<void> {
 								</p>
 							</div>
 
-							<template v-if="canManageServices">
-								<template v-if="row.enabled">
-									<Button
-										label="Connect"
-										icon-left="lucide-terminal"
-										@click="connectSite = row.name"
-									/>
-									<Button
-										label="Disable"
-										theme="red"
-										variant="ghost"
-										:loading="busySite === row.name"
-										@click="pendingDisable = row.name"
-									/>
-								</template>
-								<Button
-									v-else
-									variant="solid"
-									label="Enable"
-									icon-left="lucide-plus"
-									:loading="busySite === row.name"
-									@click="enableSite(managedService, row.name)"
-								/>
-							</template>
+							<!-- Reveal the key for external use, only once the site is on. -->
+							<Button
+								v-if="row.enabled && canManageServices"
+								label="Connect"
+								icon-left="lucide-terminal"
+								variant="subtle"
+								@click="connectSite = row.name"
+							/>
+							<Spinner v-if="busySite === row.name" class="size-4 text-ink-gray-4" />
+							<!-- Manager: the switch turns AI on/off for this site. -->
+							<Switch
+								v-if="canManageServices"
+								:model-value="row.enabled"
+								:disabled="busySite === row.name"
+								@update:model-value="(v: boolean) => toggleSite(row.name, v)"
+							/>
+							<!-- Viewer: read-only status. -->
 							<Badge
 								v-else-if="row.enabled"
 								label="Enabled"

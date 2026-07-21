@@ -16,7 +16,11 @@ def activate_service(team: str, service: str) -> dict:
 
 	subscription = _resolve_subscription(team, add_on)
 	if not subscription:
-		frappe.throw(_("Team {0} has no active subscription for {1}.").format(team, add_on.title))
+		frappe.throw(
+			_("{0} is not available in this team's plan. Ask your account administrator to add it, then try again.").format(
+				add_on.title
+			)
+		)
 
 	existing = frappe.db.get_value(
 		"Managed Service", {"team": team, "add_on_service": add_on.name}, ["name", "status"], as_dict=True
@@ -167,6 +171,7 @@ def get_instance(managed_service: str) -> dict:
 		"service": instance.add_on_service,
 		"status": instance.status,
 		"plan": plan,
+		"plan_title": frappe.db.get_value("Plan", plan, "title") if plan else None,
 		"enabled_sites": [row.site for row in sites],
 		"models": _included_models(instance.add_on_service, plan),
 	}
