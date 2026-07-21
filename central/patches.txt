@@ -124,3 +124,6 @@ central.patches.v0_0.billing_hot_indexes
 # Drop the duplicate non-unique index on Credit Ledger Entry.gateway_payment_id
 # (the unique constraint already indexes it).
 central.patches.v0_0.drop_dup_credit_ledger_index
+# Namespace existing Credit Ledger Entry gateway_payment_ids by provider so a
+# webhook pending across the deploy can't miss the bare row and double-credit.
+central.patches.v0_0.namespace_gateway_payment_ids
