@@ -11,7 +11,7 @@ export interface Asset {
 	idx?: number
 	/**	Resource ID : Data - The VM identifier in Atlas (the source of truth).	*/
 	resource_id: string
-	/**	Title : Data - Human label, mirrored from the Atlas VM (resource_id is a UUID).	*/
+	/**	Title : Data - Human label. Central-created servers retain the user-provided name; discovered servers use the Atlas VM title (resource_id is a UUID).	*/
 	title?: string
 	/**	Team : Link - Team - Owning Central team (mirrored from Atlas).	*/
 	team: string
