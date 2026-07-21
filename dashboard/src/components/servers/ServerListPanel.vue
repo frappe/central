@@ -105,12 +105,12 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			</div>
 
 			<div
-				class="min-h-0 flex-1 divide-y divide-outline-alpha-gray-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2"
+				class="min-h-0 flex-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2 pt-1"
 			>
 				<template v-for="(row, i) in rows" :key="row.id">
 					<div
 						v-if="isFirstSite(i)"
-						class="px-2.5 pb-1 pt-3 text-xs font-medium text-ink-gray-5"
+						class="mt-1 border-t border-outline-alpha-gray-1 px-2.5 pb-1 pt-2.5 text-xs font-medium text-ink-gray-5"
 					>
 						Sites · {{ siteCount }}
 					</div>
