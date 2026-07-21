@@ -55,6 +55,16 @@ const routes = [
 				component: () => import('@/pages/servers/NewServerPage.vue'),
 			},
 			{
+				path: 'services',
+				name: 'Services',
+				component: () => import('@/pages/services/ServicesPage.vue'),
+			},
+			{
+				path: 'services/:service',
+				name: 'ServiceDetail',
+				component: () => import('@/pages/services/ServiceDetailPage.vue'),
+			},
+			{
 				path: 'billing',
 				name: 'Billing',
 				component: () => import('@/pages/billing/BillingOverviewPage.vue'),

@@ -45,6 +45,16 @@ export const API = {
 	listResources: 'central.api.resources.list_resources',
 	listSiteGroups: 'central.api.resources.list_site_groups',
 
+	// ── Managed add-on services (central.services.api.dashboard) ──
+	// service:view for the reads, service:manage for the mutations + key reveal.
+	listOffers: 'central.services.api.dashboard.list_offers',
+	serviceInstance: 'central.services.api.dashboard.get_instance',
+	serviceSites: 'central.services.api.dashboard.list_sites',
+	activateService: 'central.services.api.dashboard.activate_service',
+	enableServiceSite: 'central.services.api.dashboard.enable_site',
+	disableServiceSite: 'central.services.api.dashboard.disable_site',
+	serviceCredential: 'central.services.api.dashboard.get_credential',
+
 	// ── Auth / SMB signup (central.api.auth) ──
 	signUp: 'central.api.auth.sign_up',
 	verifySignup: 'central.api.auth.verify_signup',

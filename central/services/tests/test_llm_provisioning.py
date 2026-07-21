@@ -120,6 +120,20 @@ class TestLLMProvisioning(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			pilot.config_for_site("TEAM-not-owner", self.site, "llm")
 
+	def test_get_credential_reveals_secret_for_byo(self):
+		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
+			dashboard.enable_site(self.managed.name, self.site)
+
+		cred = dashboard.get_credential(self.managed.name, self.site)
+		self.assertEqual(cred["gateway_url"], _FAKE["gateway_url"])
+		self.assertEqual(cred["api_key"], _FAKE["api_key"])
+		self.assertEqual(cred["status"], "Active")
+
+	def test_get_credential_rejects_disabled_site(self):
+		# Revealing a key only makes sense for an enabled site; a bare team site is not.
+		with self.assertRaises(frappe.ValidationError):
+			dashboard.get_credential(self.managed.name, self.site)
+
 	def test_list_offers_marks_activated(self):
 		offers = dashboard.list_offers(self.team)
 		llm_offer = next(o for o in offers if o["name"] == "llm")

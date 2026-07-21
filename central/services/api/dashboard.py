@@ -100,6 +100,32 @@ def disable_site(managed_service: str, site: str) -> dict:
 	return {"site": site, "status": "Revoked"}
 
 
+@frappe.whitelist(methods=["POST"])
+def get_credential(managed_service: str, site: str) -> dict:
+	"""Reveal one site's live connection config for bring-your-own use (curl, external
+	apps). Returns the secret, so it needs service:manage — this is the console's
+	explicit "reveal key" action, not a passive read."""
+	service = frappe.db.get_value("Managed Service", managed_service, ["team"], as_dict=True)
+	if not service:
+		frappe.throw(_("Unknown managed service."))
+	assert_capability(service.team, "service:manage")
+
+	credential_name = frappe.db.get_value(
+		"Site Service Credential", {"managed_service": managed_service, "site": site, "status": "Active"}, "name"
+	)
+	if not credential_name:
+		frappe.throw(_("Service is not enabled for site {0}.").format(site))
+
+	stored = frappe.get_doc("Site Service Credential", credential_name)
+	return {
+		"site": site,
+		"gateway_url": stored.gateway_url,
+		"api_key": stored.get_password("api_key"),
+		"provider_ref": stored.provider_ref,
+		"status": stored.status,
+	}
+
+
 @frappe.whitelist(methods=["GET"])
 def list_offers(team: str) -> list[dict]:
 	"""Catalogue of active add-on services with the team's status for each. service:view."""

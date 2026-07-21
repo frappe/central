@@ -11,7 +11,8 @@ import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 
 const { activeTeamLabel } = useSession()
-const { canViewServers, canViewBilling, isMember } = useCapabilities()
+const { canViewServers, canViewBilling, canViewServices, isMember } =
+	useCapabilities()
 const { currentUser, logout } = useAuth()
 const { currentTheme, setTheme } = useTheme()
 
@@ -106,6 +107,13 @@ const sections = computed(() => [
 				icon: 'lucide-server',
 				to: '/servers',
 				condition: () => canViewServers.value,
+			},
+
+			{
+				label: 'Services',
+				icon: 'lucide-sparkles',
+				to: '/services',
+				condition: () => canViewServices.value,
 			},
 
 			{
