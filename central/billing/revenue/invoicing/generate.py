@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Phase 1 (28th, off-peak): reconcile-if-stale, then draft.
+"""Phase 1 (heavy): reconcile-if-stale, then draft — one team at a time.
 
 Per team/subscription, compute day-weighted fixed lines (from Subscription
 Change rate-snapshot segments) plus metered overage, apply the commitment
@@ -225,30 +225,3 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	)
 	commitments.mark_breached(commitment)
 	return name
-
-
-def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> list[str]:
-	"""Phase-1 orchestrator: ONE consolidated draft per team for the period.
-
-	A team that runs instances across several clusters still gets a single
-	invoice (generate_team_invoice aggregates all its clusters). The team's first
-	subscription is the primary (its payment method funds the auto-charge).
-	"""
-	primary = {}
-	for s in frappe.get_all("Subscription", fields=["name", "team"], order_by="creation asc"):
-		primary.setdefault(s.team, s.name)
-	created = []
-	for team, sub in primary.items():
-		if enqueue:
-			frappe.enqueue(
-				"central.billing.revenue.invoicing.generate_team_invoice",
-				team=team,
-				period_start=period_start,
-				period_end=period_end,
-				subscription=sub,
-			)
-			continue
-		name = generate_team_invoice(team, period_start, period_end, subscription=sub)
-		if name:
-			created.append(name)
-	return created
