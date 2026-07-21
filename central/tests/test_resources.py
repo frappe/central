@@ -31,6 +31,22 @@ class TestListResources(IntegrationTestCase):
 		result = resources.list_resources(site[0].team, kind="site")
 		self.assertTrue(all(r["kind"] == "site" for r in result["resources"]))
 
+	def test_list_resources_excludes_terminated(self):
+		base = frappe.get_all("Site", fields=["team", "cluster"], filters={"cluster": ["is", "set"]}, limit=1)
+		if not base:
+			self.skipTest("No Site to derive a team/cluster from.")
+
+		name = "zz-terminated-resource-test.example.dev"
+		self.addCleanup(
+			lambda: frappe.db.exists("Site", name) and frappe.delete_doc("Site", name, ignore_permissions=True, force=True)
+		)
+		frappe.get_doc(
+			{"doctype": "Site", "site_name": name, "team": base[0].team, "cluster": base[0].cluster, "status": "Terminated"}
+		).insert(ignore_permissions=True)
+
+		result = resources.list_resources(base[0].team, kind="site")
+		self.assertNotIn(name, {r["name"] for r in result["resources"]})
+
 	def test_terminate_site_routes_to_atlas(self):
 		rows = frappe.get_all("Site", fields=["name", "cluster"], filters={"status": ["!=", "Terminated"]}, limit=25)
 		site = next((r for r in rows if r.cluster and frappe.db.exists("Atlas Instance", r.cluster)), None)

@@ -28,10 +28,12 @@ def list_resources(team: str | None = None, kind: str | None = None) -> dict:
 	if not can(user, team, "server:view"):
 		frappe.throw(_("You can't view this team's resources."), frappe.PermissionError)
 
+	# Terminated resources are gone, not a state to land on or render — exclude both
+	# kinds here (the map feeds already do), so no caller sees stale entries.
 	servers = (
 		frappe.get_all(
 			"Asset",
-			filters={"team": team},
+			filters={"team": team, "status": ["!=", "Terminated"]},
 			fields=["name", "title", "resource_id", "status", "public_ipv4", "cluster"],
 			order_by="title",
 		)
@@ -39,7 +41,12 @@ def list_resources(team: str | None = None, kind: str | None = None) -> dict:
 		else []
 	)
 	sites = (
-		frappe.get_all("Site", filters={"team": team}, fields=["name", "status", "url", "region"], order_by="name")
+		frappe.get_all(
+			"Site",
+			filters={"team": team, "status": ["!=", "Terminated"]},
+			fields=["name", "status", "url", "region"],
+			order_by="name",
+		)
 		if kind in (None, "site")
 		else []
 	)
