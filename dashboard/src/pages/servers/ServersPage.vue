@@ -46,7 +46,7 @@ import type { ResourceRow } from '@/components/servers/ServerListPanel.vue'
 const router = useRouter()
 
 const { assets, loading, error, reload } = useServerMapData()
-const { sites, reload: reloadSites } = useSites()
+const { sites, siteCountByRegion, reload: reloadSites } = useSites()
 const { regions } = useRegions()
 const { canPowerServer, canTerminateServer, canOpenServer, canCreateServer } =
 	useCapabilities()
@@ -263,18 +263,15 @@ const pins = computed<MapPin[]>(() =>
 		})),
 )
 
-// Sites grouped by region code for the map's hover cards. Grouped client-side —
-// the sites feed is already loaded and small; move the grouping/count into a SQL
-// aggregation in list_resources if a team's site count ever grows large.
-const sitesByRegion = computed<Record<string, MapSite[]>>(() => {
-	const grouped: Record<string, MapSite[]> = {}
-	for (const row of filtered.value) {
-		if (row.kind !== 'site' || !row.site) continue
-		;(grouped[row.cluster] ??= []).push({
-			name: row.site.name,
-			url: row.site.url,
-			visual: row.visual,
-		})
+// Sites grouped by region for the map's hover cards. The DB does the grouping,
+// counting and per-region capping (useSites → list_site_groups); `count` is the
+// exact total, `sites` the previewed rows the card lists.
+const sitesByRegion = computed<Record<string, { count: number; sites: MapSite[] }>>(() => {
+	const grouped: Record<string, { count: number; sites: MapSite[] }> = {}
+	for (const site of sites.value) {
+		const region = site.region ?? ''
+		const entry = (grouped[region] ??= { count: siteCountByRegion.value[region] ?? 0, sites: [] })
+		entry.sites.push({ name: site.name, url: site.detail, visual: siteVisual(site.status) })
 	}
 	return grouped
 })

@@ -31,8 +31,9 @@ const props = withDefaults(
 	defineProps<{
 		pins?: MapPin[]
 		spots?: MapSpot[]
-		/** Sites keyed by region code — surfaced in that region's hover card. */
-		sitesByRegion?: Record<string, MapSite[]>
+		/** Sites keyed by region code — surfaced in that region's hover card. `count`
+		 *  is the exact total; `sites` may be a capped preview of it. */
+		sitesByRegion?: Record<string, { count: number; sites: MapSite[] }>
 		/** Region-picker mode: render these as selectable dots instead of pins/spots. */
 		markers?: MapSpot[]
 		/** The picked marker — drawn as the provider-logo pin. */
@@ -395,12 +396,22 @@ function canOpenBench(server: MapPin['server']): boolean {
 
 // Sites don't pin; they surface in the hover card of the region they sit in. A
 // single pin shows its own region's sites; a cluster unions its members' regions.
-function sitesForPin(pin: MapPin): MapSite[] {
-	return props.sitesByRegion[pin.cluster] ?? []
+// The card lists a few and reports the true total (which may exceed the preview).
+const CARD_SITE_LIMIT = 5
+function sitesForPin(pin: MapPin): { count: number; sites: MapSite[] } {
+	return props.sitesByRegion[pin.cluster] ?? { count: 0, sites: [] }
 }
-function sitesForCluster(members: MapPin[]): MapSite[] {
+function sitesForCluster(members: MapPin[]): { count: number; sites: MapSite[] } {
 	const regions = new Set(members.map((m) => m.cluster))
-	return [...regions].flatMap((region) => props.sitesByRegion[region] ?? [])
+	let count = 0
+	const sites: MapSite[] = []
+	for (const region of regions) {
+		const group = props.sitesByRegion[region]
+		if (!group) continue
+		count += group.count
+		sites.push(...group.sites)
+	}
+	return { count, sites }
 }
 function hideCard(): void {
 	window.clearTimeout(showT)
@@ -470,6 +481,15 @@ const card = computed<CardPlacement | null>(() => {
 			'--smc-dx': side === 'right' ? '-6px' : '6px',
 		} as CSSProperties,
 	}
+})
+
+// The hovered region's sites (pin's own region, or a cluster's union) — resolved
+// once for the card templates.
+const cardSites = computed<{ count: number; sites: MapSite[] }>(() => {
+	const node = card.value?.node
+	if (node?.type === 'server') return sitesForPin(node.pin)
+	if (node?.type === 'cluster') return sitesForCluster(node.members)
+	return { count: 0, sites: [] }
 })
 
 // Let the page focus the map from the side panel: glide to the node that
@@ -696,14 +716,14 @@ function clickNode(n: MapNode): void {
 						>
 					</div>
 					<div
-						v-if="sitesForPin(card.node.pin).length"
+						v-if="cardSites.count"
 						class="mt-3 border-t border-outline-alpha-gray-1 pt-2"
 					>
 						<div class="px-0.5 pb-1 text-xs font-medium text-ink-gray-5">
-							Sites in this region
+							Sites in this region · {{ cardSites.count }}
 						</div>
 						<button
-							v-for="site in sitesForPin(card.node.pin)"
+							v-for="site in cardSites.sites.slice(0, CARD_SITE_LIMIT)"
 							:key="site.name"
 							class="group flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-gray-2 disabled:cursor-default"
 							:disabled="!allowOpen || !site.url"
@@ -723,6 +743,12 @@ function clickNode(n: MapNode): void {
 								class="lucide-arrow-up-right size-3.5 shrink-0 text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100 group-disabled:opacity-0"
 							/>
 						</button>
+						<div
+							v-if="cardSites.count > CARD_SITE_LIMIT"
+							class="px-1.5 pt-1 text-xs text-ink-gray-5"
+						>
+							+{{ cardSites.count - CARD_SITE_LIMIT }} more
+						</div>
 					</div>
 				</template>
 
@@ -780,14 +806,16 @@ function clickNode(n: MapNode): void {
 							<span class="lucide-arrow-up-right size-3.5" />
 						</button>
 					</div>
-					<!-- Sites at this spot's regions — discoverable, opened in place. -->
+					<!-- Sites across this spot's regions — discoverable, opened in place. -->
 					<div
-						v-if="sitesForCluster(card.node.members).length"
+						v-if="cardSites.count"
 						class="mt-1 border-t border-outline-alpha-gray-1 pt-1"
 					>
-						<div class="px-1.5 pb-1 pt-1 text-xs font-medium text-ink-gray-5">Sites</div>
+						<div class="px-1.5 pb-1 pt-1 text-xs font-medium text-ink-gray-5">
+							Sites · {{ cardSites.count }}
+						</div>
 						<button
-							v-for="site in sitesForCluster(card.node.members)"
+							v-for="site in cardSites.sites.slice(0, CARD_SITE_LIMIT)"
 							:key="site.name"
 							class="group flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-gray-2 disabled:cursor-default"
 							:disabled="!allowOpen || !site.url"
@@ -807,6 +835,12 @@ function clickNode(n: MapNode): void {
 								class="lucide-arrow-up-right size-3.5 shrink-0 text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100 group-disabled:opacity-0"
 							/>
 						</button>
+						<div
+							v-if="cardSites.count > CARD_SITE_LIMIT"
+							class="px-1.5 pt-1 text-xs text-ink-gray-5"
+						>
+							+{{ cardSites.count - CARD_SITE_LIMIT }} more
+						</div>
 					</div>
 				</template>
 

@@ -43,6 +43,7 @@ export const API = {
 	stopServer: 'central.api.servers.stop_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	listResources: 'central.api.resources.list_resources',
+	listSiteGroups: 'central.api.resources.list_site_groups',
 
 	// ── Auth / SMB signup (central.api.auth) ──
 	signUp: 'central.api.auth.sign_up',
