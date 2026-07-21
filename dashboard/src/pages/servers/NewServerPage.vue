@@ -1,24 +1,34 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { Badge, Button, FormControl, Tabs, useCall } from "frappe-ui";
-import { useRoute, useRouter } from "vue-router";
-import PageHeader from "@/components/common/PageHeader.vue";
-import Alert from "@/components/common/Alert.vue";
-import PlanGroup from "@/components/servers/PlanGroup.vue";
-import ProviderAvatar from "@/components/servers/ProviderAvatar.vue";
-import ServerMap from "@/components/servers/ServerMap.vue";
-import { API, method } from "@/api/methods";
-import { useRegions } from "@/composables/useRegions";
-import { useServers } from "@/composables/useServers";
-import { useCapabilities } from "@/composables/useCapabilities";
-import { useBillingSetup } from "@/composables/useBillingSetup";
-import { usePlans } from "@/composables/usePlans";
-import { money } from "@/lib/format";
-import { planPrice, planResources } from "@/lib/plans";
-import { configIncludes, estimateConfig, ramFor, rateCardComplete } from "@/lib/composed";
-import { flagEmoji, hasMapCoords, regionLabel, type MapSpot } from "@/lib/serverMap";
-import type { Region } from "@/types/Region";
-import type { ComposedConfig, Plan, Profile } from "@/types/api";
+import { computed, ref, watch } from 'vue'
+import { Badge, Button, FormControl, Tabs, useCall } from 'frappe-ui'
+import { useRoute, useRouter } from 'vue-router'
+import PageHeader from '@/components/common/PageHeader.vue'
+import Alert from '@/components/common/Alert.vue'
+import PlanGroup from '@/components/servers/PlanGroup.vue'
+import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
+import ServerMap from '@/components/servers/ServerMap.vue'
+import { API, method } from '@/api/methods'
+import { useRegions } from '@/composables/useRegions'
+import { useServers } from '@/composables/useServers'
+import { useCapabilities } from '@/composables/useCapabilities'
+import { useBillingSetup } from '@/composables/useBillingSetup'
+import { usePlans } from '@/composables/usePlans'
+import { money } from '@/lib/format'
+import { planPrice, planResources } from '@/lib/plans'
+import {
+	configIncludes,
+	estimateConfig,
+	ramFor,
+	rateCardComplete,
+} from '@/lib/composed'
+import {
+	flagEmoji,
+	hasMapCoords,
+	regionLabel,
+	type MapSpot,
+} from '@/lib/serverMap'
+import type { Region } from '@/types/Region'
+import type { ComposedConfig, Plan, Profile } from '@/types/api'
 
 // New server, the FC V2 way: a stepped form (name → provider → region → plan →
 // version) beside the same world map the servers list uses — static here, framing
@@ -26,113 +36,124 @@ import type { ComposedConfig, Plan, Profile } from "@/types/api";
 // derived from the real regions (Atlas Instances); plans come from the billing
 // catalog (usePlans) priced within the team's headroom. A preset routes through
 // create_server; a composed config through create_composed_server.
-const router = useRouter();
-const route = useRoute();
-const { regions, loading } = useRegions();
-const { create, createComposed, creating, creatingComposed } = useServers();
-const { canCreateServer } = useCapabilities();
-const { requireSetup } = useBillingSetup();
+const router = useRouter()
+const route = useRoute()
+const { regions, loading } = useRegions()
+const { create, createComposed, creating, creatingComposed } = useServers()
+const { canCreateServer } = useCapabilities()
+const { requireSetup } = useBillingSetup()
 
-const name = ref("");
-const subdomain = ref("");
-const subdomainEdited = ref(false);
-const selectedProvider = ref<string | null>(null);
-const selectedRegion = ref<string | null>(null);
-const hoverRegion = ref<string | null>(null);
+const name = ref('')
+const subdomain = ref('')
+const subdomainEdited = ref(false)
+const selectedProvider = ref<string | null>(null)
+const selectedRegion = ref<string | null>(null)
+const hoverRegion = ref<string | null>(null)
 
 // — Provider / region steps. A region with no provider files under "Other".
 function providerOf(region: Region): string {
-	return region.provider || "Other";
+	return region.provider || 'Other'
 }
 const providers = computed(() => {
-	const names = [...new Set(regions.value.map(providerOf))];
-	return names.sort((a, b) => (a === "Other" ? 1 : b === "Other" ? -1 : a.localeCompare(b)));
-});
+	const names = [...new Set(regions.value.map(providerOf))]
+	return names.sort((a, b) =>
+		a === 'Other' ? 1 : b === 'Other' ? -1 : a.localeCompare(b),
+	)
+})
 const providerRegions = computed(() =>
-	regions.value.filter((r) => providerOf(r) === selectedProvider.value)
-);
+	regions.value.filter((r) => providerOf(r) === selectedProvider.value),
+)
 const selectedRegionRow = computed(
-	() => regions.value.find((r) => r.region === selectedRegion.value) ?? null
-);
-const serverDomain = ref("");
+	() => regions.value.find((r) => r.region === selectedRegion.value) ?? null,
+)
+const serverDomain = ref('')
 const serverDomainCall = useCall<{ domain: string }, { region: string }>({
 	url: method(API.siteDomain),
 	params: () => ({ region: selectedRegion.value! }),
 	immediate: false,
-});
+})
 
 function slugifySubdomain(value: string): string {
 	return value
-		.normalize("NFKD")
-		.replace(/[\u0300-\u036f]/g, "")
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
 		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "")
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
 		.slice(0, 63)
-		.replace(/-+$/g, "");
+		.replace(/-+$/g, '')
 }
 
 function editSubdomain(value: string): void {
-	subdomainEdited.value = true;
-	subdomain.value = slugifySubdomain(value);
+	subdomainEdited.value = true
+	subdomain.value = slugifySubdomain(value)
 }
 
 function resetSubdomain(): void {
-	subdomainEdited.value = false;
-	subdomain.value = slugifySubdomain(name.value);
+	subdomainEdited.value = false
+	subdomain.value = slugifySubdomain(name.value)
 }
 
 watch(name, (value) => {
-	if (!subdomainEdited.value) subdomain.value = slugifySubdomain(value);
-});
+	if (!subdomainEdited.value) subdomain.value = slugifySubdomain(value)
+})
 
 watch(
 	selectedRegion,
 	async (region) => {
-		serverDomain.value = "";
-		if (!region) return;
-		await serverDomainCall.reload();
+		serverDomain.value = ''
+		if (!region) return
+		await serverDomainCall.reload()
 		if (selectedRegion.value === region) {
-			serverDomain.value = serverDomainCall.data?.domain ?? "";
+			serverDomain.value = serverDomainCall.data?.domain ?? ''
 		}
 	},
-	{ immediate: true }
-);
+	{ immediate: true },
+)
 
 function selectProvider(provider: string): void {
-	if (provider === selectedProvider.value) return;
-	selectedProvider.value = provider;
+	if (provider === selectedProvider.value) return
+	selectedProvider.value = provider
 	// Land on the first region that's actually reachable, else the first one.
-	const list = providerRegions.value;
-	selectedRegion.value = (list.find((r) => r.reachable) ?? list[0])?.region ?? null;
+	const list = providerRegions.value
+	selectedRegion.value =
+		(list.find((r) => r.reachable) ?? list[0])?.region ?? null
 }
 function selectRegion(id: string): void {
-	const region = regions.value.find((r) => r.region === id);
-	if (!region) return;
-	selectedProvider.value = providerOf(region);
-	selectedRegion.value = id;
+	const region = regions.value.find((r) => r.region === id)
+	if (!region) return
+	selectedProvider.value = providerOf(region)
+	selectedRegion.value = id
 }
 
 // Deep link from the servers map (+ spot → ?region=, or just ?provider=), once
 // regions load; otherwise land on the first provider so the map has a frame.
 // Each distinct ?region= applies exactly once — a data reload never stomps a
 // pick the user made after landing, but a fresh in-app link still wins.
-let appliedQueryRegion = "";
+let appliedQueryRegion = ''
 watch(
 	[regions, () => route.query.region],
 	([list]) => {
-		if (!list.length) return;
-		const wanted = typeof route.query.region === "string" ? route.query.region : "";
-		if (wanted && wanted !== appliedQueryRegion && list.some((r) => r.region === wanted)) {
-			appliedQueryRegion = wanted;
-			return selectRegion(wanted);
+		if (!list.length) return
+		const wanted =
+			typeof route.query.region === 'string' ? route.query.region : ''
+		if (
+			wanted &&
+			wanted !== appliedQueryRegion &&
+			list.some((r) => r.region === wanted)
+		) {
+			appliedQueryRegion = wanted
+			return selectRegion(wanted)
 		}
-		if (selectedRegion.value) return;
-		const provider = typeof route.query.provider === "string" ? route.query.provider : "";
-		selectProvider(providers.value.includes(provider) ? provider : providers.value[0]);
+		if (selectedRegion.value) return
+		const provider =
+			typeof route.query.provider === 'string' ? route.query.provider : ''
+		selectProvider(
+			providers.value.includes(provider) ? provider : providers.value[0],
+		)
 	},
-	{ immediate: true }
-);
+	{ immediate: true },
+)
 
 // The static map frames the chosen provider's placed regions; clicking a dot
 // picks that region (0/0 coords = unplaced, listed in chips only).
@@ -144,13 +165,13 @@ const markers = computed<MapSpot[]>(() =>
 		provider: r.provider || null,
 		regionLabel: regionLabel(r),
 		flag: flagEmoji(r.country_code),
-	}))
-);
+	})),
+)
 
 // — Plan step (unchanged mechanics: presets + scoped Custom, tabs per profile).
 // A preset name, or `custom:<profile>` for a designed config in that profile.
-const selectedPlan = ref<string | null>(null);
-const composedConfig = ref<ComposedConfig | null>(null);
+const selectedPlan = ref<string | null>(null)
+const composedConfig = ref<ComposedConfig | null>(null)
 const {
 	plans,
 	groups,
@@ -161,48 +182,52 @@ const {
 	currency,
 	capacity,
 	loading: plansLoading,
-} = usePlans(selectedRegion);
+} = usePlans(selectedRegion)
 
-const canDesign = computed(() => rateCardComplete(rateCard.value) && profiles.value.length > 0);
-const isCustom = computed(() => (selectedPlan.value ?? "").startsWith("custom:"));
+const canDesign = computed(
+	() => rateCardComplete(rateCard.value) && profiles.value.length > 0,
+)
+const isCustom = computed(() =>
+	(selectedPlan.value ?? '').startsWith('custom:'),
+)
 const selectedPlanObj = computed<Plan | null>(
-	() => plans.value.find((p) => p.plan === selectedPlan.value) ?? null
-);
+	() => plans.value.find((p) => p.plan === selectedPlan.value) ?? null,
+)
 
 function profileFor(cls: string): Profile | null {
-	return profiles.value.find((p) => p.sub_category === cls) ?? null;
+	return profiles.value.find((p) => p.sub_category === cls) ?? null
 }
 
 // Tabs when the region's presets span more than one profile; flat otherwise.
-const hasTabs = computed(() => classes.value.length > 1);
-const classTabs = computed(() => classes.value.map((label) => ({ label })));
-const activeTab = ref(0);
+const hasTabs = computed(() => classes.value.length > 1)
+const classTabs = computed(() => classes.value.map((label) => ({ label })))
+const activeTab = ref(0)
 
 // Flat layout: the sole preset class, or General when a region offers only a designer.
-const soleClass = computed(() => classes.value[0] ?? "General");
-const flatPresets = computed<Plan[]>(() => groups.value[soleClass.value] ?? []);
+const soleClass = computed(() => classes.value[0] ?? 'General')
+const flatPresets = computed<Plan[]>(() => groups.value[soleClass.value] ?? [])
 // Custom is only offered where the region actually prices every component (else the
 // estimate would be a $0 dead-end) — so a profile is "designable" only when canDesign.
 const flatProfile = computed<Profile | null>(() =>
 	canDesign.value
-		? profileFor(soleClass.value) ??
-		  profiles.value.find((p) => p.sub_category === "General") ??
-		  profiles.value[0] ??
-		  null
-		: null
-);
+		? (profileFor(soleClass.value) ??
+			profiles.value.find((p) => p.sub_category === 'General') ??
+			profiles.value[0] ??
+			null)
+		: null,
+)
 function designableProfile(cls: string): Profile | null {
-	return canDesign.value ? profileFor(cls) : null;
+	return canDesign.value ? profileFor(cls) : null
 }
 const nothingToShow = computed(
-	() => !hasTabs.value && !flatPresets.value.length && !flatProfile.value
-);
+	() => !hasTabs.value && !flatPresets.value.length && !flatProfile.value,
+)
 
 // The cheapest config a profile can be dragged to: its smallest vCPU rung (with the
 // RAM that ratio implies) on its smallest disk rung.
 function floorConfigCost(profile: Profile): number {
-	const vcpus = [...(profile.vcpu_steps ?? [])].sort((a, b) => a - b)[0] ?? 0;
-	const diskGb = [...(profile.disk_steps ?? [])].sort((a, b) => a - b)[0] ?? 0;
+	const vcpus = [...(profile.vcpu_steps ?? [])].sort((a, b) => a - b)[0] ?? 0
+	const diskGb = [...(profile.disk_steps ?? [])].sort((a, b) => a - b)[0] ?? 0
 	return estimateConfig(
 		{
 			sub_category: profile.sub_category,
@@ -210,28 +235,28 @@ function floorConfigCost(profile: Profile): number {
 			memory_gb: ramFor(vcpus, profile),
 			disk_gb: diskGb,
 		},
-		rateCard.value
-	);
+		rateCard.value,
+	)
 }
 const cheapestDesignCost = computed<number>(() =>
 	canDesign.value && profiles.value.length
 		? Math.min(...profiles.value.map(floorConfigCost))
-		: Infinity
-);
+		: Infinity,
+)
 
 // Tier bracket exhausted: a region is picked, no preset fits the remaining headroom
 // (the menu is already headroom-filtered server-side), and even the smallest custom
 // config is over the limit. Show a dead-end message rather than a Custom slider the
 // user can only ever drag into red.
-const availableHeadroom = computed(() => available.value ?? 0);
+const availableHeadroom = computed(() => available.value ?? 0)
 const bracketExhausted = computed(
 	() =>
 		!!selectedRegion.value &&
 		!plansLoading.value &&
 		!plans.value.length &&
 		canDesign.value &&
-		cheapestDesignCost.value > availableHeadroom.value
-);
+		cheapestDesignCost.value > availableHeadroom.value,
+)
 
 // The region itself is full: capacity gating is on and Atlas can't seat any new VM
 // right now. A capacity dead-end, not a budget one — show a distinct message (and it
@@ -241,23 +266,23 @@ const regionFull = computed(
 		!!selectedRegion.value &&
 		!plansLoading.value &&
 		capacity.value.gated &&
-		!capacity.value.available
-);
+		!capacity.value.available,
+)
 
 // Switching region re-prices the menu: reset the tab and drop a selection the new
 // region no longer offers (a preset that's gone, or a custom profile it lacks).
 watch(classes, () => {
-	activeTab.value = 0;
-});
+	activeTab.value = 0
+})
 watch([plans, canDesign], () => {
-	const sel = selectedPlan.value;
-	if (!sel) return;
-	if (sel.startsWith("custom:")) {
-		if (!profileFor(sel.slice("custom:".length))) selectedPlan.value = null;
+	const sel = selectedPlan.value
+	if (!sel) return
+	if (sel.startsWith('custom:')) {
+		if (!profileFor(sel.slice('custom:'.length))) selectedPlan.value = null
 	} else if (!plans.value.some((p) => p.plan === sel)) {
-		selectedPlan.value = null;
+		selectedPlan.value = null
 	}
-});
+})
 
 // — Version step. Options come from the server (central.api.servers.frappe_versions)
 //   for the PICKED region — images can differ per region, so refetch on change so
@@ -266,63 +291,72 @@ const versionsCall = useCall<string[], { region: string }>({
 	url: method(API.frappeVersions),
 	params: () => ({ region: selectedRegion.value! }),
 	immediate: false,
-});
+})
 watch(
 	selectedRegion,
 	(region) => {
-		if (region) versionsCall.reload();
+		if (region) versionsCall.reload()
 	},
-	{ immediate: true }
-);
+	{ immediate: true },
+)
 const VERSION_LABELS: Record<string, string> = {
-	v15: "Version 15 — stable, what most teams run",
-	v16: "Version 16 — latest features, newest apps",
-	v14: "Version 14 — older, for apps that need it",
-	nightly: "Nightly — develop branch, for testing only",
-};
-const version = ref("");
+	v15: 'Version 15 — stable, what most teams run',
+	v16: 'Version 16 — latest features, newest apps',
+	v14: 'Version 14 — older, for apps that need it',
+	nightly: 'Nightly — develop branch, for testing only',
+}
+const version = ref('')
 const versionOptions = computed(() =>
 	(versionsCall.data ?? []).map((v) => ({
 		label: VERSION_LABELS[v] ?? v,
 		value: v,
-	}))
-);
+	})),
+)
 // Keep the selection valid: default to the first option, and reset if the picked
 // region no longer offers the current choice.
 watch(versionOptions, (options) => {
-	const values = options.map((o) => o.value);
-	if (!values.includes(version.value)) version.value = values[0] ?? "";
-});
+	const values = options.map((o) => o.value)
+	if (!values.includes(version.value)) version.value = values[0] ?? ''
+})
 
 // — Submit. The header CTA carries the monthly price once a plan is picked.
 const price = computed<string | null>(() => {
-	if (isCustom.value && composedConfig.value && rateCardComplete(rateCard.value)) {
-		const monthly = estimateConfig(composedConfig.value, rateCard.value);
-		return `${money(monthly, currency.value ?? "USD", { trimTrailingZeros: true })} / mo`;
+	if (
+		isCustom.value &&
+		composedConfig.value &&
+		rateCardComplete(rateCard.value)
+	) {
+		const monthly = estimateConfig(composedConfig.value, rateCard.value)
+		return `${money(monthly, currency.value ?? 'USD', { trimTrailingZeros: true })} / mo`
 	}
-	return selectedPlanObj.value ? planPrice(selectedPlanObj.value) : null;
-});
+	return selectedPlanObj.value ? planPrice(selectedPlanObj.value) : null
+})
 const ctaLabel = computed(() =>
-	price.value ? `Create server — ${price.value}` : "Create server"
-);
+	price.value ? `Create server — ${price.value}` : 'Create server',
+)
 
-const submitting = computed(() => creating.value || creatingComposed.value);
+const submitting = computed(() => creating.value || creatingComposed.value)
 const canSubmit = computed(() => {
-	if (!canCreateServer.value || !selectedRegion.value || !name.value.trim() || !subdomain.value)
-		return false;
-	if (regionFull.value) return false; // the region can't seat a new server right now
-	if (bracketExhausted.value) return false; // nothing here fits the budget
-	return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value;
-});
+	if (
+		!canCreateServer.value ||
+		!selectedRegion.value ||
+		!name.value.trim() ||
+		!subdomain.value
+	)
+		return false
+	if (regionFull.value) return false // the region can't seat a new server right now
+	if (bracketExhausted.value) return false // nothing here fits the budget
+	return isCustom.value ? !!composedConfig.value : !!selectedPlanObj.value
+})
 
 async function submit() {
-	if (!canSubmit.value || !selectedRegion.value) return;
+	if (!canSubmit.value || !selectedRegion.value) return
 	// A server bills the team, so it needs a billing profile first. If it's
 	// incomplete, prompt (requireSetup toasts + flags the setup dialog) and send
 	// them to Billing, where that dialog opens.
 	if (!requireSetup()) {
-		router.push({ name: "Billing" });
-		return;
+		router.push({ name: 'Billing' })
+		return
 	}
 	try {
 		if (isCustom.value && composedConfig.value) {
@@ -333,7 +367,7 @@ async function submit() {
 				includes: configIncludes(composedConfig.value),
 				sub_category: composedConfig.value.sub_category,
 				frappe_version: version.value || undefined,
-			});
+			})
 		} else if (selectedPlanObj.value) {
 			await create({
 				region: selectedRegion.value,
@@ -342,9 +376,9 @@ async function submit() {
 				plan: selectedPlanObj.value.plan,
 				...planResources(selectedPlanObj.value),
 				frappe_version: version.value || undefined,
-			});
+			})
 		}
-		router.push("/servers");
+		router.push('/servers')
 	} catch {
 		// create() already surfaced the error; stay on the form.
 	}
@@ -371,27 +405,31 @@ async function submit() {
 					<!-- Step: name -->
 					<div class="flex gap-4">
 						<div class="flex flex-col items-center pt-1">
-							<span class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]" />
+							<span
+								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
+							/>
 							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
 						</div>
 						<div class="min-w-0 flex-1 pb-5">
-							<div class="text-sm font-medium text-ink-gray-7">Name the server</div>
+							<div class="text-sm font-medium text-ink-gray-7">
+								Name the server
+							</div>
 							<FormControl
 								v-model="name"
 								type="text"
-								placeholder="e.g. Acme Production 01"
+								placeholder="e.g. Acme Production"
 								:maxlength="60"
 								class="mt-2 max-w-xs"
 							/>
 							<div class="mt-3 max-w-xs">
-								<div class="flex items-center justify-between gap-3">
-									<label for="subdomain" class="text-p-sm text-ink-gray-6">
+								<div class="flex items-center justify-between">
+									<label for="subdomain" class="text-p-sm text-ink-gray-7">
 										Server address
 									</label>
 									<button
 										v-if="subdomainEdited"
 										type="button"
-										class="text-p-sm text-ink-gray-6 underline hover:text-ink-gray-9"
+										class="text-p-sm text-ink-gray-5 hover:text-ink-gray-7"
 										@click="resetSubdomain"
 									>
 										Reset
@@ -399,9 +437,9 @@ async function submit() {
 								</div>
 								<FormControl
 									id="subdomain"
-									v-model="subdomain"
+									:model-value="subdomain"
 									type="text"
-									placeholder="acme-production-01"
+									placeholder="acme-production"
 									:maxlength="63"
 									autocomplete="off"
 									autocapitalize="off"
@@ -409,10 +447,10 @@ async function submit() {
 									class="mt-1"
 									@update:model-value="editSubdomain"
 								>
-									<template #suffix>
-										<span v-if="serverDomain" class="text-p-sm text-ink-gray-4"
-											>.{{ serverDomain }}</span
-										>
+									<template v-if="serverDomain" #suffix>
+										<span class="text-p-sm text-ink-gray-5">
+											.{{ serverDomain }}
+										</span>
 									</template>
 								</FormControl>
 							</div>
@@ -422,7 +460,9 @@ async function submit() {
 					<!-- Step: provider -->
 					<div class="flex gap-4">
 						<div class="flex flex-col items-center pt-1">
-							<span class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]" />
+							<span
+								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
+							/>
 							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
 						</div>
 						<div class="min-w-0 flex-1 pb-5">
@@ -433,11 +473,14 @@ async function submit() {
 								<button
 									v-for="p in providers"
 									:key="p"
-									class="flex w-full flex-col items-center gap-1 rounded-lg border p-2 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4"
 									:class="
-										p === selectedProvider
-											? 'border-outline-gray-4 bg-surface-gray-1'
-											: 'border-outline-gray-2 hover:bg-surface-gray-1'
+										[
+											'flex w-full flex-col items-center gap-1 rounded-lg border p-2 transition-colors',
+											'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4',
+											p === selectedProvider
+												? 'border-outline-gray-4 bg-surface-gray-1'
+												: 'border-outline-gray-2 hover:bg-surface-gray-1',
+										]
 									"
 									@click="selectProvider(p)"
 								>
@@ -454,29 +497,34 @@ async function submit() {
 					<!-- Step: region -->
 					<div class="flex gap-4">
 						<div class="flex flex-col items-center pt-1">
-							<span class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]" />
+							<span
+								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
+							/>
 							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
 						</div>
 						<div class="min-w-0 flex-1 pb-5">
-							<div class="text-sm font-medium text-ink-gray-7">Select a region</div>
+							<div class="text-sm font-medium text-ink-gray-7">
+								Select a region
+							</div>
 							<div class="mt-2 flex flex-wrap gap-2">
 								<Button
 									v-for="r in providerRegions"
 									:key="r.region"
 									size="sm"
 									variant="outline"
-									:class="
+									:class="[
+										'!rounded-lg focus-visible:!ring-1 focus-visible:!ring-outline-gray-4',
 										r.region === selectedRegion
-											? 'border-outline-gray-4 bg-surface-gray-1'
-											: ''
-									"
+											? '!border-outline-gray-4 !bg-surface-gray-1 font-medium !text-ink-gray-9'
+											: '',
+									]"
 									@click="selectRegion(r.region)"
 									@mouseenter="hoverRegion = r.region"
 									@mouseleave="hoverRegion = null"
 								>
-									<span class="mr-0.5 text-sm leading-none">{{
-										flagEmoji(r.country_code)
-									}}</span>
+									<span class="mr-0.5 text-sm leading-none"
+										>{{ flagEmoji(r.country_code) }}</span
+									>
 									{{ regionLabel(r) }}
 									<Badge
 										v-if="!r.reachable"
@@ -493,7 +541,9 @@ async function submit() {
 					<!-- Step: plan (presets + a scoped Custom row, tabs by profile when needed) -->
 					<div class="flex gap-4">
 						<div class="flex flex-col items-center pt-1">
-							<span class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]" />
+							<span
+								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
+							/>
 							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
 						</div>
 						<div class="min-w-0 flex-1 pb-5">
@@ -512,7 +562,13 @@ async function submit() {
 								v-else-if="regionFull"
 								theme="yellow"
 								title="This region is at capacity"
-								:description="`${selectedRegion} can't fit a new server right now. Try another region, or check back shortly — capacity frees up as machines are removed.`"
+								:description="
+									[
+										`${selectedRegion} can't fit a new server right now.`,
+										'Try another region, or check back shortly —',
+										'capacity frees up as machines are removed.',
+									].join(' ')
+								"
 							/>
 
 							<div
@@ -530,8 +586,8 @@ async function submit() {
 							</div>
 
 							<p v-else-if="nothingToShow" class="text-p-sm text-ink-gray-5">
-								No plans are available for this region within your current spending
-								limit.
+								No plans are available for this region within your current
+								spending limit.
 							</p>
 
 							<Tabs v-else-if="hasTabs" v-model="activeTab" :tabs="classTabs">
@@ -567,7 +623,9 @@ async function submit() {
 					<!-- Step: version (last — no connector) -->
 					<div class="flex gap-4">
 						<div class="flex flex-col items-center pt-1">
-							<span class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]" />
+							<span
+								class="size-2.5 shrink-0 rounded-full bg-[var(--ink-gray-9)]"
+							/>
 						</div>
 						<div class="min-w-0 flex-1">
 							<FormControl
@@ -581,11 +639,14 @@ async function submit() {
 								v-if="selectedRegionRow"
 								class="mt-3 flex items-center gap-1.5 text-p-sm leading-5 text-ink-gray-5"
 							>
-								<span class="lucide-map-pin size-4 shrink-0" aria-hidden="true" />
 								<span
-									>Runs in {{ regionLabel(selectedRegionRow) }} · Your data lives
-									here.</span
-								>
+									class="lucide-map-pin size-4 shrink-0"
+									aria-hidden="true"
+								/>
+								<span>
+									Runs in {{ regionLabel(selectedRegionRow) }} · Your data lives
+									here.
+								</span>
 							</p>
 							<Button
 								class="mt-5"

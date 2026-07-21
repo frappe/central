@@ -24,6 +24,10 @@ REGION_DISPLAY_FIELDS = ("display_name", "provider", "country_code", "latitude",
 # authoritative set is derived live from Atlas's active bench images (which token
 # maps to which image is Atlas's concern) — see `frappe_versions`.
 FALLBACK_FRAPPE_VERSIONS = ("v16", "v15", "nightly")
+ASSET_TITLE_MAX_LENGTH = 140
+RESERVED_SERVER_ADDRESSES = frozenset(
+	{"www", "admin", "api", "proxy", "app", "dashboard", "mail", "ns", "root"}
+)
 
 
 def _available_versions(region: str | None = None) -> list[str]:
@@ -70,8 +74,15 @@ def _stamp_frappe_version(resource_id: str | None, frappe_version: str | None) -
 def _server_names(title: str | None, subdomain: str | None) -> tuple[str, str]:
 	"""Return the Central label and Atlas-safe address for a new server."""
 	friendly_title = (title or "").strip()
+	if len(friendly_title) > ASSET_TITLE_MAX_LENGTH:
+		frappe.throw(
+			_("Server name must be at most {0} characters.").format(ASSET_TITLE_MAX_LENGTH),
+			frappe.ValidationError,
+		)
 	address_source = friendly_title or "server" if subdomain is None else subdomain
 	atlas_title = _slugify_subdomain(address_source)
+	if atlas_title in RESERVED_SERVER_ADDRESSES:
+		frappe.throw(_("Server address is reserved. Choose another."), frappe.ValidationError)
 	return friendly_title or atlas_title, atlas_title
 
 
@@ -193,13 +204,13 @@ def create_server(
 	team: str | None = None,
 	region: str | None = None,
 	title: str | None = None,
-	subdomain: str | None = None,
 	plan: str | None = None,
 	vcpus: int | None = None,
 	memory_megabytes: int | None = None,
 	disk_gigabytes: int | None = None,
 	cpu_max_cores: float | None = None,
 	frappe_version: str | None = None,
+	subdomain: str | None = None,
 ) -> dict:
 	"""Provision a new server for a team in a region from a preset bundle Plan. Gated
 	on `server:create`.
@@ -244,7 +255,9 @@ def create_server(
 	# provisions a VM without a subscription, as before.
 	subscription = None
 	if plan:
-		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get("subscription")
+		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get(
+			"subscription"
+		)
 	# Mirror the VM Atlas returned even when billing already inserted the Pending
 	# Asset. Otherwise preset creates render the UUID/Pending shell until the next
 	# reconcile, instead of the user-facing title/status Atlas already returned.
@@ -257,10 +270,10 @@ def create_composed_server(
 	team: str | None = None,
 	region: str | None = None,
 	title: str | None = None,
-	subdomain: str | None = None,
 	includes: list | str | None = None,
 	sub_category: str | None = None,
 	frappe_version: str | None = None,
+	subdomain: str | None = None,
 ) -> dict:
 	"""Provision a design-your-own config end-to-end (#84): create the Atlas VM from
 	the chosen composition, then record the composed Subscription (#80) that bills it
@@ -275,7 +288,10 @@ def create_composed_server(
 		validate_composition,
 	)
 	from central.billing.catalog.pricing import resolve_config_rate
-	from central.billing.catalog.subscriptions import enforce_headroom, provision_composed_subscription
+	from central.billing.catalog.subscriptions import (
+		enforce_headroom,
+		provision_composed_subscription,
+	)
 
 	user = frappe.session.user
 	team = resolve_team(user, team)
@@ -345,7 +361,10 @@ def _run_command(
 
 	# The asset must be in this team's mirror — also how we route to its Atlas.
 	asset = frappe.db.get_value(
-		"Asset", {"resource_id": resource_id, "team": team}, ["cluster", "resize_in_progress"], as_dict=True
+		"Asset",
+		{"resource_id": resource_id, "team": team},
+		["cluster", "resize_in_progress"],
+		as_dict=True,
 	)
 	if not asset:
 		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)

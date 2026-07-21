@@ -135,6 +135,27 @@ class TestCreateServerRecordsSubscription(IntegrationTestCase):
 		)
 		self.assertEqual(frappe.db.get_value("Asset", VM_ID, "title"), "Acme Production 01")
 
+	def test_title_only_legacy_call_uses_derived_slug(self):
+		fake_client = MagicMock()
+		fake_client.create_vm.return_value = {
+			"name": VM_ID,
+			"team": TEAM,
+			"title": "acme-production-01",
+			"status": "Pending",
+		}
+		with patch.object(servers.AtlasClient, "for_region", return_value=fake_client):
+			servers.create_server(
+				TEAM,
+				REGION,
+				"Acme Production 01",
+				self.plan,
+				2,
+				4096,
+				40,
+			)
+
+		self.assertEqual(fake_client.create_vm.call_args.kwargs["title"], "acme-production-01")
+
 	def test_create_uses_custom_server_address(self):
 		_, client = self._create_from_bundle(
 			self.plan,
@@ -152,6 +173,30 @@ class TestCreateServerRecordsSubscription(IntegrationTestCase):
 					region=REGION,
 					title="Acme Production 01",
 					subdomain="!!!",
+					plan=self.plan,
+				)
+		for_region.assert_not_called()
+
+	def test_reserved_server_address_is_rejected_before_atlas(self):
+		with patch.object(servers.AtlasClient, "for_region") as for_region:
+			with self.assertRaises(frappe.ValidationError):
+				servers.create_server(
+					team=TEAM,
+					region=REGION,
+					title="Acme Production 01",
+					subdomain="admin",
+					plan=self.plan,
+				)
+		for_region.assert_not_called()
+
+	def test_overlong_server_name_is_rejected_before_atlas(self):
+		with patch.object(servers.AtlasClient, "for_region") as for_region:
+			with self.assertRaises(frappe.ValidationError):
+				servers.create_server(
+					team=TEAM,
+					region=REGION,
+					title="a" * 141,
+					subdomain="acme-production-01",
 					plan=self.plan,
 				)
 		for_region.assert_not_called()
@@ -191,6 +236,36 @@ class TestCreateServerRecordsSubscription(IntegrationTestCase):
 		self.assertEqual(out["resource_id"], VM_ID)
 		self.assertEqual(fake_client.create_vm.call_args.kwargs["title"], "custom-acme")
 		self.assertEqual(frappe.db.get_value("Asset", VM_ID, "title"), "Acme Production 01")
+
+	def test_composed_title_only_legacy_call_uses_derived_slug(self):
+		fake_client = MagicMock()
+		fake_client.create_vm.return_value = {
+			"name": VM_ID,
+			"team": TEAM,
+			"title": "acme-production-01",
+			"status": "Pending",
+		}
+		includes = [{"resource_type": "Compute", "quantity": 2, "unit": "vCPU"}]
+		with (
+			patch.object(servers.AtlasClient, "for_region", return_value=fake_client),
+			patch("central.billing.catalog.composition.validate_composition"),
+			patch(
+				"central.billing.catalog.composition.composition_quantities",
+				return_value={"Compute": 2, "Memory": 4, "Disk": 40},
+			),
+			patch("central.billing.catalog.pricing.resolve_config_rate", return_value=100),
+			patch("central.billing.catalog.subscriptions.enforce_headroom"),
+			patch("central.billing.catalog.subscriptions.provision_composed_subscription"),
+		):
+			servers.create_composed_server(
+				TEAM,
+				REGION,
+				"Acme Production 01",
+				includes,
+				"General",
+			)
+
+		self.assertEqual(fake_client.create_vm.call_args.kwargs["title"], "acme-production-01")
 
 	def test_refused_without_a_billing_profile(self):
 		# A team with no billing profile can't create servers — it must set one up
