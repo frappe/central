@@ -15,6 +15,10 @@ from central.billing.revenue.invoicing.lifecycle import open_and_collect
 # How many teams / invoices a single orchestrator query pulls back at a time.
 PAGE_SIZE = 500
 
+# Billing units are minutes-long and gateway-bound; they belong on the long queue,
+# away from the short jobs a user is waiting on.
+BILLING_QUEUE = "long"
+
 # Every unit failure is logged under this one title, so an operator (and
 # `billing_run_status`) can count a run's casualties with a single filter.
 BILLING_RUN_FAILURE = "Billing Run Failure"
@@ -101,16 +105,27 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 	A team that runs instances across several clusters still gets a single
 	invoice (generate_team_invoice aggregates all its clusters, and picks the
 	team's oldest subscription as the primary that funds the auto-charge).
+
+	With `enqueue` the orchestrator rates nothing itself: it pages the teams and
+	fans one job out per team, so the run scales with workers rather than with the
+	length of one scheduler tick. The job id is (period, team) and deduplicated —
+	a tick that fires twice, or overlaps a manual run, queues each team once.
+
+	Returns the invoices drafted (inline) or the teams fanned out (enqueue).
 	"""
 	created = []
 	for team in teams_to_bill():
 		if enqueue:
 			frappe.enqueue(
 				"central.billing.revenue.invoicing.draft_team_invoice",
+				queue=BILLING_QUEUE,
+				job_id=f"billing-draft::{period_end}::{team}",
+				deduplicate=True,
 				team=team,
 				period_start=period_start,
 				period_end=period_end,
 			)
+			created.append(team)
 			continue
 		name = draft_team_invoice(team, period_start, period_end)
 		if name:
@@ -140,12 +155,24 @@ def drafts_to_settle(period_end, page_size: int = PAGE_SIZE):
 
 
 def open_drafts(period_end, enqueue: bool = False) -> list[str]:
-	"""Phase-2 orchestrator: open every Draft for the billing month."""
+	"""Phase-2 orchestrator: open every Draft for the billing month.
+
+	One job per invoice, deduplicated on the invoice — collection is where the
+	gateway round-trips are, so this is the phase that must not be one long
+	sequential tick. Claiming Draft -> Open under a row lock already makes two
+	workers on one invoice harmless; the job id keeps them from queueing at all.
+	"""
 	drafts = []
 	for inv in drafts_to_settle(period_end):
 		drafts.append(inv)
 		if enqueue:
-			frappe.enqueue("central.billing.revenue.invoicing.settle_draft", invoice=inv)
+			frappe.enqueue(
+				"central.billing.revenue.invoicing.settle_draft",
+				queue=BILLING_QUEUE,
+				job_id=f"billing-settle::{inv}",
+				deduplicate=True,
+				invoice=inv,
+			)
 		else:
 			settle_draft(inv)
 	return drafts

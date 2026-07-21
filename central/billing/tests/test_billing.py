@@ -468,3 +468,26 @@ class TestFanOutRun(IntegrationTestCase):
 
 		for team in self.TEAMS:
 			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
+
+	def test_fan_out_enqueues_one_deduplicated_job_per_team(self):
+		with patch("frappe.enqueue") as enqueue:
+			run.generate_draft_invoices("2026-06-01", "2026-06-30", enqueue=True)
+
+		calls = {c.kwargs["team"]: c for c in enqueue.call_args_list}
+		self.assertTrue(set(self.TEAMS) <= set(calls))
+		call = calls["team-fanout-a"]
+		self.assertEqual(call.args[0], "central.billing.revenue.invoicing.draft_team_invoice")
+		self.assertEqual(call.kwargs["queue"], run.BILLING_QUEUE)
+		self.assertEqual(call.kwargs["job_id"], "billing-draft::2026-06-30::team-fanout-a")
+		self.assertTrue(call.kwargs["deduplicate"])
+		# The orchestrator hands out work; it must not rate anything itself.
+		self.assertFalse(frappe.db.exists("Invoice", {"team": "team-fanout-a"}))
+
+	def test_fanned_out_jobs_draft_exactly_what_the_inline_run_would(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30", enqueue=True)
+
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
