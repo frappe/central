@@ -124,6 +124,11 @@ def settle_draft(invoice: str) -> dict | None:
 		return open_and_collect(invoice)
 	except Exception as error:
 		_contain(f"Settling {invoice}", "Invoice", invoice, error, undo=False)
+		# The run broke down over this invoice; the customer is not late because we
+		# are. Their retry ladder restarts from a date we actually asked on.
+		from central.billing.revenue.dunning import defer_dunning
+
+		defer_dunning(invoice, f"collection failed in the run: {type(error).__name__}")
 		return None
 
 

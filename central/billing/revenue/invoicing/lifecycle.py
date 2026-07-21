@@ -73,7 +73,13 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	doc.expected_collection = frappe.utils.flt(
 		frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount) - applied, 2
 	)
+	# Both dates are set from *today*, not from the period end: an invoice the run
+	# opened three days late is due three days later, and its dunning ladder starts
+	# three days later. A backlog delays collection; it never shortens the customer's
+	# window. From here the two diverge — due_date is the accounting fact and stays
+	# put, while dunning_starts_on moves if we fail to ask again (dunning.defer_dunning).
 	doc.due_date = frappe.utils.add_days(frappe.utils.nowdate(), DEFAULT_DUE_DAYS)
+	doc.dunning_starts_on = doc.due_date
 
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:
