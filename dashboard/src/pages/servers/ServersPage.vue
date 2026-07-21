@@ -30,6 +30,7 @@ import {
 	specLine,
 	statusVisual,
 	type MapPin,
+	type MapSite,
 	type MapSpot,
 	type ServerVisual,
 } from '@/lib/serverMap'
@@ -237,8 +238,10 @@ const pillLabel = computed(() =>
 		: `All servers (${filtered.value.length})`,
 )
 
-// — Map data. Only servers pin today (a site's pin/hover card is a follow-up);
-//   pins carry everything their hover card shows so ServerMap stays presentational.
+// — Map data. Only servers pin; sites would clutter the map (a server can host
+//   many), so they surface in the hover card of the region they sit in (see
+//   sitesByRegion) and list flat in the panel's "Sites" group. Pins carry
+//   everything their hover card shows so ServerMap stays presentational.
 const pins = computed<MapPin[]>(() =>
 	filtered.value
 		.filter((row) => row.kind === 'server' && row.asset && row.region && hasMapCoords(row.region))
@@ -249,6 +252,7 @@ const pins = computed<MapPin[]>(() =>
 			lng: row.region!.longitude!,
 			provider: row.provider,
 			visual: row.visual,
+			cluster: row.cluster,
 			regionLabel: row.regionLabel,
 			flag: row.flag,
 			specs: row.specs,
@@ -258,6 +262,22 @@ const pins = computed<MapPin[]>(() =>
 			server: row.asset!,
 		})),
 )
+
+// Sites grouped by region code for the map's hover cards. Grouped client-side —
+// the sites feed is already loaded and small; move the grouping/count into a SQL
+// aggregation in list_resources if a team's site count ever grows large.
+const sitesByRegion = computed<Record<string, MapSite[]>>(() => {
+	const grouped: Record<string, MapSite[]> = {}
+	for (const row of filtered.value) {
+		if (row.kind !== 'site' || !row.site) continue
+		;(grouped[row.cluster] ??= []).push({
+			name: row.site.name,
+			url: row.site.url,
+			visual: row.visual,
+		})
+	}
+	return grouped
+})
 
 // Regions with no servers show as + spots — everywhere you could deploy next.
 const spots = computed<MapSpot[]>(() => {
@@ -396,11 +416,13 @@ async function confirmSiteTerminate(): Promise<void> {
 				class="absolute inset-0"
 				:pins="pins"
 				:spots="spots"
+				:sites-by-region="sitesByRegion"
 				:highlight-id="hoverId"
 				:allow-create="canCreateServer"
 				:allow-open="canOpenServer"
 				@open="onOpen"
 				@open-server="open"
+				@open-site="openSite"
 				@new-server="goNewServer"
 				@cluster-open="onClusterOpen"
 			>

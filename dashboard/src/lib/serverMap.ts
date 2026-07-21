@@ -155,6 +155,9 @@ export interface MapPin {
 	lng: number
 	provider: string | null
 	visual: ServerVisual
+	/** Region code — the region a cluster's "new server" routes to, and the key a
+	 *  region's sites are looked up under for the hover card. */
+	cluster: string
 	/** Clean "Mumbai, India" — cluster titles derive the country from it. */
 	regionLabel: string
 	/** Flag emoji for the hover card's region line ('' when unknown). */
@@ -165,6 +168,15 @@ export interface MapPin {
 	frappeVersion: string | null
 	/** The raw row, for the actions menu the page wires in. */
 	server: AssetRow
+}
+
+/** A site surfaced inside a region's hover card. Sites don't pin (they'd clutter
+ *  the map, and a server can host many); they're discovered through the region
+ *  they sit in and listed flat in the side panel's "Sites" group. */
+export interface MapSite {
+	name: string
+	url: string | null
+	visual: ServerVisual
 }
 
 /** An empty Active region — a "+" affordance on the map. */
@@ -410,8 +422,8 @@ export function computeNodes({
 // assets list (and its status filter) can treat a site like the VM it is.
 export function siteVisual(status: string): ServerVisual {
 	if (status === 'Running')
-		return { key: 'active', label: 'Running', badgeTheme: 'green', dot: 'var(--ink-green-7)' }
+		return { key: 'active', label: 'Running', badgeTheme: 'green', dot: 'var(--ink-green-7)', pulse: false }
 	if (status === 'Failed')
-		return { key: 'broken', label: 'Failed', badgeTheme: 'red', dot: 'var(--ink-red-7)' }
-	return { key: 'settingUp', label: status, badgeTheme: 'orange', dot: 'var(--ink-amber-7)' }
+		return { key: 'broken', label: 'Failed', badgeTheme: 'red', dot: 'var(--ink-red-7)', pulse: true }
+	return { key: 'settingUp', label: status, badgeTheme: 'orange', dot: 'var(--ink-amber-7)', pulse: false }
 }

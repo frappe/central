@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Badge, Button, FormControl } from 'frappe-ui'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
@@ -26,7 +27,7 @@ export interface ResourceRow {
 	site?: { name: string; url: string | null }
 }
 
-defineProps<{
+const props = defineProps<{
 	pillLabel: string
 	rows: ResourceRow[]
 	hasRows: boolean
@@ -37,6 +38,13 @@ defineProps<{
 	busy: string | null
 	opening: string | null
 }>()
+
+// Servers list flat; sites collect into one "Sites" group below them. Rows arrive
+// servers-first, so a lone header before the first site row splits the two.
+const siteCount = computed(() => props.rows.filter((row) => row.kind === 'site').length)
+function isFirstSite(index: number): boolean {
+	return props.rows[index].kind === 'site' && (index === 0 || props.rows[index - 1].kind === 'server')
+}
 
 defineEmits<{
 	focusRow: [row: ResourceRow]
@@ -99,15 +107,20 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			<div
 				class="min-h-0 flex-1 divide-y divide-outline-alpha-gray-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2"
 			>
-				<div
-					v-for="(row, i) in rows"
-					:key="row.id"
-					class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-surface-gray-2"
-					:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
-					@click="$emit('focusRow', row)"
-					@mouseenter="hoverId = row.id"
-					@mouseleave="hoverId = null"
-				>
+				<template v-for="(row, i) in rows" :key="row.id">
+					<div
+						v-if="isFirstSite(i)"
+						class="px-2.5 pb-1 pt-3 text-xs font-medium text-ink-gray-5"
+					>
+						Sites · {{ siteCount }}
+					</div>
+					<div
+						class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-surface-gray-2"
+						:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
+						@click="$emit('focusRow', row)"
+						@mouseenter="hoverId = row.id"
+						@mouseleave="hoverId = null"
+					>
 					<span class="relative shrink-0">
 						<ProviderAvatar v-if="row.kind === 'server'" :provider="row.provider" :size="32" />
 						<span
@@ -160,6 +173,8 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						/>
 					</span>
 				</div>
+
+				</template>
 
 				<div v-if="!rows.length" class="m-4 flex flex-col items-center gap-1 py-8 text-center">
 					<span :class="hasRows ? 'lucide-search' : 'lucide-server'" class="mb-2 size-6 text-ink-gray-4" />

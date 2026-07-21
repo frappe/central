@@ -19,6 +19,7 @@ import {
 	ZOOM_STEP,
 	type MapNode,
 	type MapPin,
+	type MapSite,
 	type MapSpot,
 } from '@/lib/serverMap'
 
@@ -30,6 +31,8 @@ const props = withDefaults(
 	defineProps<{
 		pins?: MapPin[]
 		spots?: MapSpot[]
+		/** Sites keyed by region code — surfaced in that region's hover card. */
+		sitesByRegion?: Record<string, MapSite[]>
 		/** Region-picker mode: render these as selectable dots instead of pins/spots. */
 		markers?: MapSpot[]
 		/** The picked marker — drawn as the provider-logo pin. */
@@ -48,6 +51,7 @@ const props = withDefaults(
 	{
 		pins: () => [],
 		spots: () => [],
+		sitesByRegion: () => ({}),
 		markers: () => [],
 		selectedId: null,
 		highlightId: null,
@@ -63,6 +67,8 @@ const emit = defineEmits<{
 	open: [id: string]
 	/** A cluster-card row's external-link action was chosen. */
 	'open-server': [server: MapPin['server']]
+	/** A site listed in a region's hover card opened its live site. */
+	'open-site': [url: string]
 	/** A + spot was chosen — the Atlas Instance region to create in. */
 	'new-server': [region: string]
 	/** A cluster was clicked; the page may narrow its list to these servers. */
@@ -386,6 +392,16 @@ function cancelHide(): void {
 function canOpenBench(server: MapPin['server']): boolean {
 	return props.allowOpen && server.status === 'Running' && !!server.gateway_url
 }
+
+// Sites don't pin; they surface in the hover card of the region they sit in. A
+// single pin shows its own region's sites; a cluster unions its members' regions.
+function sitesForPin(pin: MapPin): MapSite[] {
+	return props.sitesByRegion[pin.cluster] ?? []
+}
+function sitesForCluster(members: MapPin[]): MapSite[] {
+	const regions = new Set(members.map((m) => m.cluster))
+	return [...regions].flatMap((region) => props.sitesByRegion[region] ?? [])
+}
 function hideCard(): void {
 	window.clearTimeout(showT)
 	window.clearTimeout(hideT)
@@ -679,6 +695,35 @@ function clickNode(n: MapNode): void {
 							>{{ card.node.pin.frappeVersion }}</span
 						>
 					</div>
+					<div
+						v-if="sitesForPin(card.node.pin).length"
+						class="mt-3 border-t border-outline-alpha-gray-1 pt-2"
+					>
+						<div class="px-0.5 pb-1 text-xs font-medium text-ink-gray-5">
+							Sites in this region
+						</div>
+						<button
+							v-for="site in sitesForPin(card.node.pin)"
+							:key="site.name"
+							class="group flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-gray-2 disabled:cursor-default"
+							:disabled="!allowOpen || !site.url"
+							@click.stop="site.url && emit('open-site', site.url)"
+						>
+							<span
+								class="relative grid size-6 shrink-0 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-6"
+							>
+								<span class="lucide-globe size-3.5" />
+								<span
+									class="absolute -bottom-px -right-px size-2 rounded-full border-2 border-[var(--surface-elevation-1)]"
+									:style="{ background: site.visual.dot }"
+								/>
+							</span>
+							<span class="min-w-0 flex-1 truncate text-sm text-ink-gray-8">{{ site.name }}</span>
+							<span
+								class="lucide-arrow-up-right size-3.5 shrink-0 text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100 group-disabled:opacity-0"
+							/>
+						</button>
+					</div>
 				</template>
 
 				<!-- Cluster: the servers at this spot -->
@@ -733,6 +778,34 @@ function clickNode(n: MapNode): void {
 							@click.stop="emit('open-server', m.server)"
 						>
 							<span class="lucide-arrow-up-right size-3.5" />
+						</button>
+					</div>
+					<!-- Sites at this spot's regions — discoverable, opened in place. -->
+					<div
+						v-if="sitesForCluster(card.node.members).length"
+						class="mt-1 border-t border-outline-alpha-gray-1 pt-1"
+					>
+						<div class="px-1.5 pb-1 pt-1 text-xs font-medium text-ink-gray-5">Sites</div>
+						<button
+							v-for="site in sitesForCluster(card.node.members)"
+							:key="site.name"
+							class="group flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-gray-2 disabled:cursor-default"
+							:disabled="!allowOpen || !site.url"
+							@click.stop="site.url && emit('open-site', site.url)"
+						>
+							<span class="relative shrink-0">
+								<span class="grid size-7 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-6">
+									<span class="lucide-globe size-3.5" />
+								</span>
+								<span
+									class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
+									:style="{ background: site.visual.dot }"
+								/>
+							</span>
+							<span class="min-w-0 flex-1 truncate text-sm font-medium text-ink-gray-8">{{ site.name }}</span>
+							<span
+								class="lucide-arrow-up-right size-3.5 shrink-0 text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100 group-disabled:opacity-0"
+							/>
 						</button>
 					</div>
 				</template>
