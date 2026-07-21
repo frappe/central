@@ -65,6 +65,18 @@ def _insert_invoice(payload: dict) -> str:
 		return existing
 
 
+def primary_subscription(team: str) -> str | None:
+	"""The team's earliest subscription — its payment method funds the auto-charge.
+
+	Oldest-first is the contract the run has always billed under; it lives here so
+	the orchestrator can page bare team names and let each job resolve its own.
+	"""
+	names = frappe.get_all(
+		"Subscription", filters={"team": team}, pluck="name", order_by="creation asc", limit=1
+	)
+	return names[0] if names else None
+
+
 def reconcile_subscription(subscription_doc):
 	"""Refresh the current period's metered figures from the cluster manager if stale.
 
@@ -194,7 +206,7 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	total = frappe.utils.flt(taxable_base + tax["output_tax_amount"], 2)
 	expected = frappe.utils.flt(total - tax["tds_amount"], 2)
 	if subscription is None:
-		subscription = frappe.db.get_value("Subscription", {"team": team}, "name")
+		subscription = primary_subscription(team)
 
 	name = _insert_invoice(
 		{
