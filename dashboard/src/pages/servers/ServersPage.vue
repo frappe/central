@@ -151,14 +151,9 @@ const rows = computed<ResourceRow[]>(() => [
 // — Filters. Status and region scope the map and the panel; search only
 //   narrows the panel rows.
 const statusOptions = computed(() => [
-	{ label: 'All statuses', value: '' },
-	...STATUS_FILTERS.map((s) => ({ label: s.label, value: s.key })),
+	{ label: 'All statuses', value: '', dot: 'var(--ink-gray-4)' },
+	...STATUS_FILTERS.map((s) => ({ label: s.label, value: s.key, dot: s.dot })),
 ])
-const statusDot = computed(
-	() =>
-		STATUS_FILTERS.find((s) => s.key === statusFilter.value)?.dot ||
-		'var(--ink-gray-4)',
-)
 
 const providerGroups = computed(() => {
 	const groups = new Map<string, Region[]>()
@@ -450,7 +445,6 @@ async function confirmSiteTerminate(): Promise<void> {
 				v-model:status-filter="statusFilter"
 				v-model:region-selection="regionSelection"
 				:status-options="statusOptions"
-				:status-dot="statusDot"
 				:region-options="regionOptions"
 			/>
 
