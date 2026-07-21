@@ -8,6 +8,7 @@ work is spread over workers.
 """
 
 import frappe
+from frappe.query_builder.functions import Count
 
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import open_and_collect
@@ -210,9 +211,55 @@ def collect_monthly_invoices(today=None) -> dict:
 	get collected on time.
 	"""
 	period_start, period_end = billing_period(today)
+	# Logged before fanning out, so the record of what drafting achieved (and what it
+	# missed) exists even if collection then falls over.
+	frappe.logger("billing").info(f"billing run {period_end}: {billing_run_status(today)}")
 	fanned = open_drafts(period_end, enqueue=True)
 	frappe.logger("billing").info(f"billing run {period_end}: collection fanned out for {len(fanned)} invoices")
 	return {"period_start": str(period_start), "period_end": str(period_end), "invoices": len(fanned)}
+
+
+def billing_run_status(today=None) -> dict:
+	"""What the run for the just-closed month has actually achieved so far.
+
+	Derived from the tables, not tracked alongside them: a counter the run keeps is a
+	counter that lies the moment a worker dies mid-job. Teams, invoices and their
+	statuses are the truth, so this reads correctly for a run that only half
+	happened — which is the run you need to read. `pending_draft` and
+	`pending_collection` are what a re-fired tick would pick up.
+
+	`pending_draft` is an upper bound: a team with nothing billable produces no
+	invoice by design, and shows up here as one that was never drafted.
+	"""
+	period_start, period_end = billing_period(today)
+	sub = frappe.qb.DocType("Subscription")
+	teams = (frappe.qb.from_(sub).select(Count(sub.team).distinct())).run()[0][0]
+
+	inv = frappe.qb.DocType("Invoice")
+	counts = {
+		row.status: row.invoices
+		for row in (
+			frappe.qb.from_(inv)
+			.select(inv.status, Count(inv.name).as_("invoices"))
+			.where(inv.period_end == period_end)
+			.groupby(inv.status)
+		).run(as_dict=True)
+	}
+	drafted = sum(n for status, n in counts.items() if status != "Cancelled")
+	pending_collection = counts.get("Draft", 0)
+	return {
+		"period_start": str(period_start),
+		"period_end": str(period_end),
+		"teams": teams,
+		"drafted": drafted,
+		"pending_draft": max(teams - drafted, 0),
+		"pending_collection": pending_collection,
+		"collected": drafted - pending_collection,
+		"by_status": counts,
+		"failures": frappe.db.count(
+			"Error Log", {"method": BILLING_RUN_FAILURE, "creation": [">=", period_end]}
+		),
+	}
 
 
 def run_monthly_billing(today=None) -> dict:

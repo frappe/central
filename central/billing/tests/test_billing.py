@@ -517,3 +517,37 @@ class TestFanOutRun(IntegrationTestCase):
 		mine = frappe.get_all("Invoice", filters={"team": ["in", self.TEAMS]}, pluck="name")
 		self.assertEqual(mine, [])
 		self.assertEqual([i for i in fanned if i in mine], [])
+
+	def test_status_shows_a_half_finished_run(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		# Drafting only: every invoice is still waiting to be collected.
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.draft_monthly_invoices(today="2026-07-01")
+		mid = run.billing_run_status(today="2026-07-01")
+		self.assertEqual(mid["period_end"], "2026-06-30")
+		self.assertGreaterEqual(mid["drafted"], len(self.TEAMS))
+		self.assertEqual(mid["pending_collection"], mid["drafted"])
+		self.assertEqual(mid["collected"], 0)
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_monthly_invoices(today="2026-07-01")
+		done = run.billing_run_status(today="2026-07-01")
+		self.assertEqual(done["pending_collection"], 0)
+		self.assertEqual(done["collected"], done["drafted"])
+
+	def test_status_counts_the_teams_a_failed_run_still_owes(self):
+		real = run.generate_team_invoice
+
+		def explode(team, *args, **kwargs):
+			if team == "team-fanout-b":
+				raise ValueError("no rate for this team")
+			return real(team, *args, **kwargs)
+
+		before = run.billing_run_status(today="2026-07-01")
+		with patch.object(run, "generate_team_invoice", side_effect=explode):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30")
+		after = run.billing_run_status(today="2026-07-01")
+
+		self.assertEqual(after["failures"], before["failures"] + 1)
+		self.assertGreaterEqual(after["pending_draft"], 1)  # team b still owes a bill
