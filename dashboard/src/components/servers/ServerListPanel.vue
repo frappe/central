@@ -115,7 +115,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						Sites · {{ siteCount }}
 					</div>
 					<div
-						class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-surface-gray-2"
+						class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors"
 						:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
 						@click="$emit('focusRow', row)"
 						@mouseenter="hoverId = row.id"
@@ -147,7 +147,11 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						</span>
 						<span class="block truncate text-sm text-ink-gray-5">{{ row.specs || row.regionLabel }}</span>
 					</span>
-					<span @click.stop>
+					<span
+						class="sp-row-actions"
+						:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
+						@click.stop
+					>
 						<ServerRowActions
 							v-if="row.kind === 'server' && row.asset"
 							:server="row.asset"
@@ -252,6 +256,24 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 .sp-row {
 	animation: sp-row-in 250ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
+.sp-row:hover:not(:has(.sp-row-actions:hover)),
+.sp-row:focus-within:not(:has(.sp-row-actions:focus-within)) {
+	background: var(--surface-gray-2);
+}
+.sp-row-actions {
+	display: flex;
+	align-self: stretch;
+	align-items: center;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease-out;
+}
+.sp-row:hover .sp-row-actions,
+.sp-row:focus-within .sp-row-actions,
+.sp-row-actions-active {
+	opacity: 1;
+	pointer-events: auto;
+}
 @keyframes sp-row-in {
 	from {
 		opacity: 0;
@@ -272,6 +294,13 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 	}
 	.sp-row {
 		animation: none;
+	}
+}
+
+@media (hover: none), (pointer: coarse) {
+	.sp-row-actions {
+		opacity: 1;
+		pointer-events: auto;
 	}
 }
 </style>
