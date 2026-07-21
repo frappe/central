@@ -469,19 +469,32 @@ class TestFanOutRun(IntegrationTestCase):
 		for team in self.TEAMS:
 			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 
-	def test_fan_out_enqueues_one_deduplicated_job_per_team(self):
-		with patch("frappe.enqueue") as enqueue:
+	def test_the_tick_hands_out_pages_not_one_job_per_team(self):
+		# A job per team is a redis round-trip per team: at a million teams the tick
+		# never finishes inside its timeout. Pages keep the tick O(teams/page_size).
+		with patch("frappe.enqueue") as enqueue, patch.object(run, "PAGE_SIZE", 2):
 			run.generate_draft_invoices("2026-06-01", "2026-06-30", enqueue=True)
 
-		calls = {c.kwargs["team"]: c for c in enqueue.call_args_list}
-		self.assertTrue(set(self.TEAMS) <= set(calls))
-		call = calls["team-fanout-a"]
-		self.assertEqual(call.args[0], "central.billing.revenue.invoicing.draft_team_invoice")
-		self.assertEqual(call.kwargs["queue"], run.BILLING_QUEUE)
-		self.assertEqual(call.kwargs["job_id"], "billing-draft::2026-06-30::team-fanout-a")
+		calls = enqueue.call_args_list
+		self.assertLess(len(calls), frappe.db.count("Subscription"))
+		call = calls[0]
+		self.assertEqual(call.args[0], "central.billing.revenue.invoicing.draft_team_page")
+		self.assertEqual(call.kwargs["queue"], run.billing_queue())
 		self.assertTrue(call.kwargs["deduplicate"])
+		# Contiguous, non-overlapping slices: every team falls in exactly one page.
+		bounds = [(c.kwargs["after"], c.kwargs["until"]) for c in calls]
+		self.assertEqual([b[0] for b in bounds[1:]], [b[1] for b in bounds[:-1]])
+		self.assertEqual(bounds[0][0], "")
 		# The orchestrator hands out work; it must not rate anything itself.
 		self.assertFalse(frappe.db.exists("Invoice", {"team": "team-fanout-a"}))
+
+	def test_a_page_covers_every_team_in_its_slice(self):
+		covered = run.teams_in_range("team-fanout-a", "team-fanout-c")
+		self.assertEqual(covered, ["team-fanout-b", "team-fanout-c"])  # (after, until]
+
+		run.draft_team_page("", "team-fanout-c", "2026-06-01", "2026-06-30")
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 
 	def test_fanned_out_jobs_draft_exactly_what_the_inline_run_would(self):
 		from central.billing.tests.utils import run_enqueued_inline
@@ -502,7 +515,8 @@ class TestFanOutRun(IntegrationTestCase):
 		# Both ticks agree on the period: the month that closed, never a live one.
 		self.assertEqual(drafting["period_end"], "2026-06-30")
 		self.assertEqual(collecting["period_end"], "2026-06-30")
-		self.assertGreaterEqual(collecting["invoices"], len(self.TEAMS))
+		self.assertGreaterEqual(collecting["pages"], 1)
+		self.assertGreaterEqual(drafting["pages"], 1)
 		for team in self.TEAMS:
 			inv = frappe.get_doc("Invoice", {"team": team, "period_end": "2026-06-30"})
 			self.assertNotEqual(inv.status, "Draft")

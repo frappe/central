@@ -13,18 +13,49 @@ from frappe.query_builder.functions import Count
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import open_and_collect
 
-# How many teams / invoices a single orchestrator query pulls back at a time.
+# How many teams / invoices one page job is responsible for.
 PAGE_SIZE = 500
 
-# Billing units are minutes-long and gateway-bound; they belong on the long queue,
-# away from the short jobs a user is waiting on.
-BILLING_QUEUE = "long"
+# Collection pages are smaller than drafting pages: each invoice is a gateway
+# round-trip (~2s) rather than local arithmetic (~0.3s), and a page has to finish
+# inside its queue timeout.
+COLLECT_PAGE_SIZE = 100
+
+# The monthly run gets its own queue, not `long`. It is not a daily job sharing a
+# pool with everything else: its worker count is the throughput knob (how many
+# teams are billed at once) AND the gateway concurrency cap (how many charges are
+# in flight at once). Both need to be tuned for billing alone, and a saturated
+# billing run must not starve the rest of the site. Configure it in
+# common_site_config.json — the worker count is the number that matters:
+#
+#   "workers": {"billing": {"timeout": 3000, "background_workers": 8}}
+#
+# and give the queue a worker (`bench worker --queue billing`).
+BILLING_QUEUE = "billing"
+
 
 # Every unit failure is logged under this one title, so an operator (and
 # `billing_run_status`) can count a run's casualties with a single filter.
 BILLING_RUN_FAILURE = "Billing Run Failure"
 
 _SAVEPOINT = "billing_run_unit"
+
+
+def billing_queue() -> str:
+	"""The billing queue if the bench declares one, else `long`.
+
+	Enqueuing to a queue nobody consumes is silent death — the jobs sit in redis and
+	the month simply never gets billed. A bench that hasn't configured the billing
+	worker yet falls back to a queue that definitely has one, loudly.
+	"""
+	from frappe.utils.background_jobs import get_queues_timeout
+
+	if BILLING_QUEUE in get_queues_timeout():
+		return BILLING_QUEUE
+	frappe.logger("billing").warning(
+		f"no '{BILLING_QUEUE}' queue configured (common_site_config workers) — falling back to 'long'"
+	)
+	return "long"
 
 
 def _contain(unit: str, doctype: str, name: str, error: Exception, undo: bool) -> None:
@@ -96,13 +127,13 @@ def settle_draft(invoice: str) -> dict | None:
 		return None
 
 
-def teams_to_bill(page_size: int = PAGE_SIZE):
-	"""Yield every team holding a subscription, one page at a time.
+def team_pages(page_size: int = PAGE_SIZE):
+	"""Yield the teams holding a subscription, one bounded page at a time.
 
-	The orchestrator must not hold the whole subscription table in memory — at 50k
-	teams that is the run's first bottleneck. Keyset paging (`team > last seen`,
-	ordered) walks the `Subscription(team)` index in bounded pages and hands teams
-	out as it reads them, so memory is flat in team count.
+	The orchestrator must not hold the whole subscription table in memory — at a
+	million teams that is the run's first bottleneck. Keyset paging (`team > last
+	seen`, ordered) walks the `Subscription(team)` index in fixed-size pages, so
+	memory is flat in team count.
 	"""
 	sub = frappe.qb.DocType("Subscription")
 	after = ""
@@ -117,8 +148,47 @@ def teams_to_bill(page_size: int = PAGE_SIZE):
 		).run(pluck=True)
 		if not page:
 			return
-		yield from page
+		yield page
 		after = page[-1]
+
+
+def teams_to_bill(page_size: int = PAGE_SIZE):
+	"""Every team holding a subscription, page by page, flattened."""
+	for page in team_pages(page_size):
+		yield from page
+
+
+def teams_in_range(after: str, until: str) -> list[str]:
+	"""The teams in one cursor slice `(after, until]` — a page job's whole workload.
+
+	The slice is re-derived from the bounds rather than carried as a list of names:
+	the job argument stays two strings whatever the page size, and a team created
+	inside the slice after the tick read it is picked up rather than skipped.
+	"""
+	sub = frappe.qb.DocType("Subscription")
+	return (
+		frappe.qb.from_(sub)
+		.select(sub.team)
+		.distinct()
+		.where((sub.team > after) & (sub.team <= until))
+		.orderby(sub.team)
+	).run(pluck=True)
+
+
+def draft_team_page(after: str, until: str, period_start, period_end) -> dict:
+	"""Draft every team in one cursor slice — the unit a billing worker picks up.
+
+	Committing per team is the point of the loop: one team = one transaction = one
+	commit, so a page job killed at team 300 of 500 keeps the 299 it finished, and
+	re-running the page skips them (drafting is idempotent per (team, period)).
+	The page is the unit of *scheduling*; the team is still the unit of *work*.
+	"""
+	drafted = 0
+	for team in teams_in_range(after, until):
+		if draft_team_invoice(team, period_start, period_end):
+			drafted += 1
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one team, one transaction
+	return {"after": after, "until": until, "drafted": drafted}
 
 
 def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> list[str]:
@@ -128,38 +198,45 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 	invoice (generate_team_invoice aggregates all its clusters, and picks the
 	team's oldest subscription as the primary that funds the auto-charge).
 
-	With `enqueue` the orchestrator rates nothing itself: it pages the teams and
-	fans one job out per team, so the run scales with workers rather than with the
-	length of one scheduler tick. The job id is (period, team) and deduplicated —
-	a tick that fires twice, or overlaps a manual run, queues each team once.
+	With `enqueue` the orchestrator rates nothing itself, and — just as important —
+	enqueues nothing per team. It hands out **page jobs**: at a million teams, a
+	job-per-team tick is a million redis round-trips, which neither finishes inside
+	a scheduler timeout nor fits in redis. Two thousand page jobs do both. How many
+	run at once is the billing queue's worker count, which is also the number of
+	gateway calls phase 2 can have in flight — one knob, set by ops, not by code.
 
-	Returns the invoices drafted (inline) or the teams fanned out (enqueue).
+	Returns the invoices drafted (inline) or the page bounds fanned out (enqueue).
 	"""
 	created = []
-	for team in teams_to_bill():
+	after = ""
+	for page in team_pages():
+		until = page[-1]
 		if enqueue:
 			frappe.enqueue(
-				"central.billing.revenue.invoicing.draft_team_invoice",
-				queue=BILLING_QUEUE,
-				job_id=f"billing-draft::{period_end}::{team}",
+				"central.billing.revenue.invoicing.draft_team_page",
+				queue=billing_queue(),
+				job_id=f"billing-draft::{period_end}::{until}",
 				deduplicate=True,
-				team=team,
+				after=after,
+				until=until,
 				period_start=period_start,
 				period_end=period_end,
 			)
-			created.append(team)
+			created.append(until)
+			after = until
 			continue
-		name = draft_team_invoice(team, period_start, period_end)
-		if name:
-			created.append(name)
+		for team in page:
+			name = draft_team_invoice(team, period_start, period_end)
+			if name:
+				created.append(name)
 	return created
 
 
-def drafts_to_settle(period_end, page_size: int = PAGE_SIZE):
-	"""Yield the period's Draft invoices, one page at a time.
+def draft_pages(period_end, page_size: int = COLLECT_PAGE_SIZE):
+	"""Yield the period's Draft invoices, one bounded page at a time.
 
-	Keyset paging on the name, so it stays bounded at 50k invoices — and correct
-	even though settling a draft removes it from the filter as we walk.
+	Keyset paging on the name — correct even though settling a draft removes it
+	from the filter as we walk, because the cursor advances by name, not by offset.
 	"""
 	after = ""
 	while True:
@@ -172,31 +249,83 @@ def drafts_to_settle(period_end, page_size: int = PAGE_SIZE):
 		)
 		if not page:
 			return
-		yield from page
+		yield page
 		after = page[-1]
+
+
+def drafts_to_settle(period_end, page_size: int = COLLECT_PAGE_SIZE):
+	"""The period's Draft invoices, page by page, flattened."""
+	for page in draft_pages(period_end, page_size):
+		yield from page
+
+
+def drafts_in_range(period_end, after: str, until: str) -> list[str]:
+	"""The still-Draft invoices in one cursor slice `(after, until]`.
+
+	Re-read at run time, not carried in the job: by the time a page job starts, some
+	of its slice may already be settled (a retried tick, a customer paying
+	on-session), and those must not be touched again.
+	"""
+	return frappe.get_all(
+		"Invoice",
+		filters=[
+			["status", "=", "Draft"],
+			["period_end", "=", period_end],
+			["name", ">", after],
+			["name", "<=", until],
+		],
+		pluck="name",
+		order_by="name asc",
+	)
+
+
+def settle_draft_page(period_end, after: str, until: str) -> dict:
+	"""Settle every draft in one cursor slice — the unit a billing worker picks up.
+
+	Sequential within the page, deliberately: the gateway concurrency of the whole
+	run is the number of billing workers, and that is the only thing standing
+	between a million-invoice month and a wall of 429s. Widening the page would not
+	make it faster — it would make it rate-limited.
+	"""
+	settled = 0
+	for invoice in drafts_in_range(period_end, after, until):
+		if settle_draft(invoice):
+			settled += 1
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
+	return {"after": after, "until": until, "settled": settled}
 
 
 def open_drafts(period_end, enqueue: bool = False) -> list[str]:
 	"""Phase-2 orchestrator: open every Draft for the billing month.
 
-	One job per invoice, deduplicated on the invoice — collection is where the
-	gateway round-trips are, so this is the phase that must not be one long
-	sequential tick. Claiming Draft -> Open under a row lock already makes two
-	workers on one invoice harmless; the job id keeps them from queueing at all.
+	Page jobs, not a job per invoice — same reason as drafting, plus one specific to
+	collection: a job per invoice puts the run's gateway concurrency at the mercy of
+	how many workers happen to be free. A page job holds its invoices and works them
+	in order, so in-flight charges never exceed the billing worker count.
+
+	Claiming Draft -> Open under a row lock already makes two workers on one invoice
+	harmless; the deduplicated page job id keeps them from queueing at all.
 	"""
 	drafts = []
-	for inv in drafts_to_settle(period_end):
-		drafts.append(inv)
+	after = ""
+	for page in draft_pages(period_end):
+		until = page[-1]
 		if enqueue:
 			frappe.enqueue(
-				"central.billing.revenue.invoicing.settle_draft",
-				queue=BILLING_QUEUE,
-				job_id=f"billing-settle::{inv}",
+				"central.billing.revenue.invoicing.settle_draft_page",
+				queue=billing_queue(),
+				job_id=f"billing-settle::{period_end}::{until}",
 				deduplicate=True,
-				invoice=inv,
+				period_end=period_end,
+				after=after,
+				until=until,
 			)
-		else:
-			settle_draft(inv)
+			drafts.append(until)
+			after = until
+			continue
+		for invoice in page:
+			drafts.append(invoice)
+			settle_draft(invoice)
 	return drafts
 
 
@@ -220,8 +349,8 @@ def draft_monthly_invoices(today=None) -> dict:
 	"""
 	period_start, period_end = billing_period(today)
 	fanned = generate_draft_invoices(period_start, period_end, enqueue=True)
-	frappe.logger("billing").info(f"billing run {period_end}: drafting fanned out for {len(fanned)} teams")
-	return {"period_start": str(period_start), "period_end": str(period_end), "teams": len(fanned)}
+	frappe.logger("billing").info(f"billing run {period_end}: drafting handed out as {len(fanned)} pages")
+	return {"period_start": str(period_start), "period_end": str(period_end), "pages": len(fanned)}
 
 
 def collect_monthly_invoices(today=None) -> dict:
@@ -236,8 +365,8 @@ def collect_monthly_invoices(today=None) -> dict:
 	# missed) exists even if collection then falls over.
 	frappe.logger("billing").info(f"billing run {period_end}: {billing_run_status(today)}")
 	fanned = open_drafts(period_end, enqueue=True)
-	frappe.logger("billing").info(f"billing run {period_end}: collection fanned out for {len(fanned)} invoices")
-	return {"period_start": str(period_start), "period_end": str(period_end), "invoices": len(fanned)}
+	frappe.logger("billing").info(f"billing run {period_end}: collection handed out as {len(fanned)} pages")
+	return {"period_start": str(period_start), "period_end": str(period_end), "pages": len(fanned)}
 
 
 def billing_run_status(today=None) -> dict:

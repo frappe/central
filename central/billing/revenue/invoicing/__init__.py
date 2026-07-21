@@ -39,18 +39,20 @@ from central.billing.revenue.invoicing.run import (
 	collect_monthly_invoices,
 	draft_monthly_invoices,
 	draft_team_invoice,
+	draft_team_page,
 	generate_draft_invoices,
 	open_drafts,
 	run_monthly_billing,
 	settle_draft,
+	settle_draft_page,
 )
 
 __all__ = [
 	"compute_line_items",
 	"reconcile_subscription", "generate_draft_invoice", "generate_team_invoice",
-	"generate_draft_invoices", "draft_team_invoice",
+	"generate_draft_invoices", "draft_team_invoice", "draft_team_page",
 	"open_and_collect", "open_drafts", "cancel_invoice", "reissue_invoice", "DEFAULT_DUE_DAYS",
-	"settle_draft",
+	"settle_draft", "settle_draft_page",
 	"draft_monthly_invoices", "collect_monthly_invoices", "run_monthly_billing",
 	"billing_run_status",
 ]
