@@ -42,6 +42,8 @@ export const API = {
 	startServer: 'central.api.servers.start_server',
 	stopServer: 'central.api.servers.stop_server',
 	terminateServer: 'central.api.servers.terminate_server',
+	listResources: 'central.api.resources.list_resources',
+	listSiteGroups: 'central.api.resources.list_site_groups',
 
 	// ── Auth / SMB signup (central.api.auth) ──
 	signUp: 'central.api.auth.sign_up',
@@ -53,6 +55,7 @@ export const API = {
 	siteDomain: 'central.api.sites.site_domain',
 	createSite: 'central.api.sites.create_site',
 	getSite: 'central.api.sites.get_site',
+	terminateSite: 'central.api.sites.terminate_site',
 
 	// ── SSO open-in-bench (central.api.sso) ──
 	getBenchLink: 'central.api.sso.get_bench_link',

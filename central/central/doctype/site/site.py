@@ -83,3 +83,8 @@ class Site(Document):
 			doc.last_event_at = occurred_at
 		if synced_at:
 			doc.last_synced_at = synced_at
+
+
+def on_doctype_update():
+	# Backs the team-scoped, region-grouped read in central.api.resources; runs on migrate.
+	frappe.db.add_index("Site", ["team", "region"])
