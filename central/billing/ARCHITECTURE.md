@@ -174,8 +174,8 @@ flowchart LR
     D1 --> BF["backfill_missing_subscriptions"]
     H1 --> RF["retry_failed_syncs (ERPNext)"]
     M1 --> EX["expire_payment_methods"]
-    C1 --> DMI["draft_monthly_invoices → 1 job/team"]
-    C2 --> CMI["collect_monthly_invoices → 1 job/invoice"]
+    C1 --> DMI["draft_monthly_invoices → page jobs"]
+    C2 --> CMI["collect_monthly_invoices → page jobs"]
 
     subgraph MANUAL["manual/demo only"]
         RMB["run_monthly_billing (inline, both phases)"]
@@ -200,15 +200,45 @@ flowchart LR
 | daily | `catalog.subscriptions.backfill_missing_subscriptions` | Subscription for any Running Asset missing one |
 | hourly | `revenue.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
-| cron `0 1 1 * *` | `revenue.invoicing.draft_monthly_invoices` | phase 1 — fan one draft job out per team |
-| cron `0 6 1 * *` | `revenue.invoicing.collect_monthly_invoices` | phase 2 — fan one collect job out per invoice |
+| cron `0 1 1 * *` | `revenue.invoicing.draft_monthly_invoices` | phase 1 — hand the month's teams out as page jobs |
+| cron `0 6 1 * *` | `revenue.invoicing.collect_monthly_invoices` | phase 2 — hand the period's drafts out as page jobs |
 
 **The monthly run is two ticks, and neither of them does the work.** Each is an
-orchestrator: it pages its subjects and enqueues one job per team (drafting) or per
-invoice (collection) on the **long** queue, deduplicated on (period, team) /
-(invoice). One job = one team = one transaction = one commit, and a job that fails
-is contained — logged as `Billing Run Failure`, rolled back to its own savepoint,
-and re-attempted by the next tick, since both phases are idempotent.
+orchestrator: it keyset-pages its subjects and enqueues a **page job** per slice —
+`draft_team_page(after, until)` / `settle_draft_page(period_end, after, until)` —
+deduplicated on the slice's upper bound. A page job re-derives its slice from the
+bounds and works it in order, committing after **each team / each invoice**: the page
+is the unit of *scheduling*, the team is still the unit of *work*, so a job killed
+at team 300 of 500 keeps the 299 it finished.
+
+Not a job per team, deliberately. At a million teams that is a million redis
+round-trips in one scheduler tick — a cron job runs on a **300-second** timeout
+(`get_queue_name()` gives cron jobs the `default` queue), so it would be killed
+around 150k teams having never handed out the rest, and a million queued jobs is
+gigabytes of redis. Two thousand page jobs cost seconds and megabytes.
+
+**The billing queue is the throughput knob and the rate-limit cap, at once.** The run
+uses its own queue, not `long`, configured in `common_site_config.json`:
+
+```json
+"workers": {"billing": {"timeout": 3000, "background_workers": 8}}
+```
+
+Because a page job works its invoices *sequentially*, the number of billing workers
+is exactly the number of gateway charges in flight. That is the only thing standing
+between a million-invoice month and a wall of 429s — there is no token bucket yet, so
+**this number is the rate limit**. Set it against the gateway's documented ceiling
+(Stripe ≈ 100 req/s; a charge is ~2s, so W workers ≈ W/2 req/s). Raising it is how
+you go faster; there is no other dial. `billing_queue()` falls back to `long` with a
+warning if the bench hasn't declared the queue — enqueuing to a queue nobody consumes
+would mean the month silently never gets billed.
+
+A unit that fails is contained: logged to the billing log file *and* as a
+`Billing Run Failure` Error Log row, rolled back to its own savepoint, and re-attempted
+by the next tick since both phases are idempotent. If the savepoint itself is gone —
+the database restarted, the connection dropped — the failure is **re-raised** instead:
+that is the machinery breaking, not a bad team, and containing it would turn one
+outage into a silent run in which nobody was billed.
 
 Why both ticks land on the 1st rather than the documented 28th/1st: a calendar month
 billed in arrears is not closed until it ends, so drafting on the 28th would bill days
@@ -221,10 +251,21 @@ achieved (drafted / pending / collected / failures), derived from the tables rat
 than from a counter — read it before deciding to re-fire a tick.
 
 **Worker math.** One collected invoice ≈ 2s (rating is ~100ms; the rest is the gateway
-round-trip). Sequentially that is 50k × 2s ≈ 28h — longer than the billing day. Fanned
-out over N long-queue workers it is 50k × 2s / N: **20 workers ≈ 1.4h**, 40 ≈ 42min.
-Drafting is cheaper (~0.3s/team) and finishes well inside the five-hour gap before the
-collect tick. Size the queue to the team count, not to the invoice amount.
+round-trip). Sequentially, a million invoices is ≈ 23 days. Over W billing workers it is
+1M × 2s / W: **8 workers ≈ 69h, 32 ≈ 17h, 64 ≈ 9h** — and 64 workers is ~32 charges/s,
+still inside a 100 req/s gateway ceiling. Drafting is cheaper (~0.3s/team): 1M teams
+over 32 workers ≈ 2.6h, which does *not* fit the five-hour gap with much room to spare
+at that scale — widen the gap or the pool before you get there. Size the pool from the
+team count, never from the invoice amount.
+
+**A late run never costs the customer grace.** `due_date` and `dunning_starts_on` are
+both set from the day the invoice is actually *opened*, so a run three days behind
+bills three days later rather than three days overdue. Beyond that, any collection
+failure on our side — a 429, a dead worker, a contained run error — calls
+`dunning.defer_dunning`, which pushes `dunning_starts_on` (never `due_date`, which is
+an accounting fact AR aging depends on) forward to today + the standard window. It is
+monotonic and self-limiting: a successful ask stops pushing, so a broken gateway defers
+*escalation*, not collection.
 
 ### Lifecycle / install hooks
 - `after_install` / `after_migrate` / `before_tests` → `catalog.taxonomy_setup.ensure_catalog_masters` (idempotent seed of catalog masters — ADR 0007).
@@ -272,7 +313,7 @@ Resize: `resize_composed_config → resize_composed_subscription` → new Subscr
 ```mermaid
 flowchart TD
     DRAFTTICK(["1st 01:00 · draft tick"]) --> GDI["draft_monthly_invoices<br/>→ generate_draft_invoices (pages teams)"]
-    GDI --> DTI["draft_team_invoice<br/>(1 job/team, isolated)"]
+    GDI --> DTI["draft_team_page → draft_team_invoice<br/>(per team: isolated, committed)"]
     DTI --> GTI["generate_team_invoice (per team)"]
     GTI --> RS["reconcile_subscription (fix drift)"]
     GTI --> LINES["lines.compute_line_items<br/>day-weighted from Sub Change segments"]
@@ -283,7 +324,7 @@ flowchart TD
 
     COLLECTTICK(["1st 06:00 · collect tick"]) --> OD["collect_monthly_invoices<br/>→ open_drafts (pages drafts)"]
     DRAFT --> OD
-    OD --> OAC["settle_draft → open_and_collect<br/>(1 job/invoice, isolated)"]
+    OD --> OAC["settle_draft_page → settle_draft<br/>(per invoice: isolated, committed)"]
     OAC --> WF{"settlement waterfall"}
     WF -->|credits| CR["settlement.py"]
     WF -->|then card| CARD["charges.pay_invoice"]
@@ -293,8 +334,8 @@ flowchart TD
 ```
 ```
 [1st 01:00]  revenue.invoicing.draft_monthly_invoices
-  → generate_draft_invoices (pages teams, enqueues one job each)
-  → draft_team_invoice (one job = one team = one commit; failure contained + logged)
+  → generate_draft_invoices (pages teams, enqueues one page job per slice)
+  → draft_team_page → draft_team_invoice (one team = one transaction = one commit)
     → generate_team_invoice (per team, aggregates clusters)
       → reconcile_subscription (correct drift if stale)
       → lines.compute_line_items  (day-weighted, from Subscription Change rate-snapshot segments)
@@ -303,8 +344,8 @@ flowchart TD
   → Invoice (Draft)
 
 [1st 06:00]  revenue.invoicing.collect_monthly_invoices
-  → open_drafts (pages the period's drafts, enqueues one job each)
-  → settle_draft → open_and_collect (per invoice)
+  → open_drafts (pages the period's drafts, enqueues one page job per slice)
+  → settle_draft_page → settle_draft → open_and_collect (per invoice)
       → settlement waterfall: credits (settlement.py) → card (charges.pay_invoice)
       → Invoice Draft → Open → (on webhook) Paid
       → on Paid: erpnext_sync.enqueue_invoice_sync
@@ -437,6 +478,9 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 |---|---|
 | Invoice never generated | `billing_run_status()` — is the team in `pending_draft`? then Error Log `Billing Run Failure` for that team, the long queue for stuck jobs, and `lines.compute_line_items` for empty segments |
 | Half the teams billed, half not | a partial run: read `billing_run_status()`, fix the cause, re-fire `draft_monthly_invoices` — both phases are idempotent and resume |
+| Billing run never starts / jobs pile up | is there a worker on the `billing` queue? (`common_site_config.workers.billing` + `bench worker --queue billing`); the billing log warns and falls back to `long` if the queue is undeclared |
+| Run is far too slow | `background_workers` on the billing queue is the only throughput dial — but it is also the gateway concurrency cap; check for 429s (`Billing Run Failure` Error Logs, `dunning_starts_on` deferrals) before raising it |
+| Customer dunned during a backlog | should be impossible: `dunning_starts_on` is pushed by `dunning.defer_dunning` on every failure of ours. If it happened, find the collection path that failed without calling it |
 | Invoice wrong amount | `lines.compute_line_items` (day-weighting), `metering.metered_line_items`, `commitments` discount, `tax.resolve_tax`; verify Subscription Change `locked_rate` segments |
 | Charge stuck "Open"/unpaid | `payments/webhooks.py` (signature failed? Webhook Event row?), `charges.apply_webhook`, `collection.collect_invoice` fallback chain |
 | Webhook ignored | `webhooks.process_webhook` signature check; gateway `verify_signature`; dedupe against existing Webhook Event |
