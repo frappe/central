@@ -258,6 +258,34 @@ over 32 workers ≈ 2.6h, which does *not* fit the five-hour gap with much room 
 at that scale — widen the gap or the pool before you get there. Size the pool from the
 team count, never from the invoice amount.
 
+**What the run actually contends on.** The tables a draft reads — Subscription,
+Subscription Change, Payment Method, Catalog Rate, Usage Rollup — are read with plain
+consistent reads, which under InnoDB MVCC take **no locks at all**, so no number of
+workers can make them block each other. Credit Wallet *is* locked `FOR UPDATE`, but the
+key is (team, currency): a team only ever contends with its own concurrent top-up.
+
+There is exactly one **global** lock in the run, and it is not a data table. Every
+Invoice insert calls `make_autoname("INV-YYYY-MM-.#####")`, which takes the `tabSeries`
+row `FOR UPDATE` and holds it **until the transaction commits** — so every worker in
+the run queues behind one row. Measured on a dev bench: ~6ms held per invoice, i.e. a
+ceiling of **~169 invoices/sec however many workers you add**, or ~1.6h for a million.
+That sits *above* the worker-bound rate until roughly 50 billing workers (at ~0.3s of
+rating per team, W workers deliver W×3.3/sec), so it is a ceiling to know about, not
+one to design around yet. If you ever need past it, shard the series — `INV-YYYY-MM-A-`,
+`-B-`, … per page — which GST permits as long as each series is itself consecutive.
+
+Two things keep that lock short, and both are load-bearing:
+
+- **One team = one transaction = one commit**, inline and fanned out alike. A page job
+  that committed once at the end would hold the series row for 500 teams — minutes —
+  and every other worker would hit `innodb_lock_wait_timeout` (50s by default). The
+  commit inside the page loop is what makes the critical section milliseconds.
+- **Contention is retried, not contained.** A lock-wait timeout (1205) or deadlock
+  (1213) means the team lost a race, not that its data is bad. `draft_team_invoice`
+  retries it with jittered backoff (`CONTENTION_RETRIES`), because the draft tick comes
+  round once a *month* — a contained loser would go unbilled until someone noticed.
+  Only after the budget is exhausted is it recorded as a `Billing Run Failure`.
+
 **A late run never costs the customer grace.** `due_date` and `dunning_starts_on` are
 both set from the day the invoice is actually *opened*, so a run three days behind
 bills three days later rather than three days overdue. Beyond that, any collection
@@ -479,6 +507,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Invoice never generated | `billing_run_status()` — is the team in `pending_draft`? then Error Log `Billing Run Failure` for that team, the long queue for stuck jobs, and `lines.compute_line_items` for empty segments |
 | Half the teams billed, half not | a partial run: read `billing_run_status()`, fix the cause, re-fire `draft_monthly_invoices` — both phases are idempotent and resume |
 | Billing run never starts / jobs pile up | is there a worker on the `billing` queue? (`common_site_config.workers.billing` + `bench worker --queue billing`); the billing log warns and falls back to `long` if the queue is undeclared |
+| Lock wait timeouts during the run | check the per-unit `frappe.db.commit()` in `draft_team_page`/`settle_draft_page` is still there — without it the `tabSeries` lock is held for a whole page; then check nothing new writes a shared row inside the unit |
 | Run is far too slow | `background_workers` on the billing queue is the only throughput dial — but it is also the gateway concurrency cap; check for 429s (`Billing Run Failure` Error Logs, `dunning_starts_on` deferrals) before raising it |
 | Customer dunned during a backlog | should be impossible: `dunning_starts_on` is pushed by `dunning.defer_dunning` on every failure of ours. If it happened, find the collection path that failed without calling it |
 | Invoice wrong amount | `lines.compute_line_items` (day-weighting), `metering.metered_line_items`, `commitments` discount, `tax.resolve_tax`; verify Subscription Change `locked_rate` segments |
