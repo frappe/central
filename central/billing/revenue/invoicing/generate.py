@@ -22,8 +22,13 @@ from central.billing.catalog import commitments
 from central.billing.revenue.invoicing.lines import compute_line_items
 
 
-def _live_invoice(team: str, period_start, period_end) -> str | None:
-	"""The team's existing live (non-cancelled) invoice for the period, if any."""
+def _live_invoice(team: str, period_start, period_end, for_update: bool = False) -> str | None:
+	"""The team's existing live (non-cancelled) invoice for the period, if any.
+
+	`for_update` is how the loser of an insert race finds the winner: a locking read
+	sees the latest committed row, while a plain one is answered from the snapshot
+	this transaction started with — which predates the winner's commit.
+	"""
 	return frappe.db.get_value(
 		"Invoice",
 		{
@@ -33,6 +38,7 @@ def _live_invoice(team: str, period_start, period_end) -> str | None:
 			"status": ["!=", "Cancelled"],
 		},
 		"name",
+		for_update=for_update,
 	)
 
 
@@ -41,6 +47,8 @@ def _live_invoice(team: str, period_start, period_end) -> str | None:
 # Under real concurrency both occur, so both mean the same thing here.
 _ALREADY_BILLED = (frappe.UniqueValidationError, frappe.DuplicateEntryError)
 
+_INSERT_SAVEPOINT = "invoice_insert"
+
 
 def _insert_invoice(payload: dict) -> str:
 	"""Insert the draft, or yield to the worker that got there first.
@@ -48,13 +56,20 @@ def _insert_invoice(payload: dict) -> str:
 	A unique-key conflict here is not an error — it is the index doing its job. Another
 	worker billed this (team, period) between our check and our insert; its invoice is
 	the invoice, and we return it rather than billing the team a second time.
+
+	Clearing the failed insert is a rollback to a savepoint, not a blanket one: the
+	inline run bills many teams in a single transaction, and losing a race on this
+	team must not discard the teams already drafted. The transaction therefore
+	survives — so the read that finds the winner has to lock, or it would be
+	answered from a snapshot taken before the winner committed.
 	"""
+	frappe.db.savepoint(_INSERT_SAVEPOINT)
 	try:
 		return frappe.get_doc(payload).insert(ignore_permissions=True).name
 	except _ALREADY_BILLED:
-		frappe.db.rollback()
+		frappe.db.rollback(save_point=_INSERT_SAVEPOINT)
 		existing = _live_invoice(
-			payload["team"], payload["period_start"], payload["period_end"]
+			payload["team"], payload["period_start"], payload["period_end"], for_update=True
 		)
 		if not existing:
 			raise  # a conflict on some other unique key — don't swallow it

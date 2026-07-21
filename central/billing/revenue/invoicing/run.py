@@ -15,6 +15,60 @@ from central.billing.revenue.invoicing.lifecycle import open_and_collect
 # How many teams / invoices a single orchestrator query pulls back at a time.
 PAGE_SIZE = 500
 
+# Every unit failure is logged under this one title, so an operator (and
+# `billing_run_status`) can count a run's casualties with a single filter.
+BILLING_RUN_FAILURE = "Billing Run Failure"
+
+_SAVEPOINT = "billing_run_unit"
+
+
+def draft_team_invoice(team: str, period_start, period_end) -> str | None:
+	"""Draft one team's invoice — the unit of work phase 1 fans out.
+
+	One team = one job = one transaction = one commit. Failure is contained to the
+	team: a missing rate or a broken tax profile must not take the other 49,999
+	teams' invoices with it. The savepoint undoes only this team's writes — the
+	inline path bills many teams in one transaction, so a blanket rollback here
+	would discard the teams already billed.
+
+	Nothing is re-raised, and nothing needs to be: drafting is idempotent per
+	(team, period), so re-running the phase retries exactly the teams that failed.
+	A partial run is resumable for free.
+	"""
+	frappe.db.savepoint(_SAVEPOINT)
+	try:
+		return generate_team_invoice(team, period_start, period_end)
+	except Exception:
+		frappe.db.rollback(save_point=_SAVEPOINT)
+		frappe.log_error(
+			title=BILLING_RUN_FAILURE,
+			message=f"Drafting {team} for {period_start}..{period_end}\n\n{frappe.get_traceback()}",
+			reference_doctype="Team",
+			reference_name=team,
+		)
+		return None
+
+
+def settle_draft(invoice: str) -> dict | None:
+	"""Open + collect one invoice — the unit of work phase 2 fans out.
+
+	No savepoint here, unlike drafting: by ADR 0017 the charge leg commits its
+	`Initiated` Payment Attempt *before* calling the gateway, precisely so a crash
+	leaves a durable claim. Undoing that would be undoing the safety. A failed unit
+	is logged and left where it is — `run_reconciliation` asks the gateway what
+	really happened, and dunning picks up whatever stayed Open.
+	"""
+	try:
+		return open_and_collect(invoice)
+	except Exception:
+		frappe.log_error(
+			title=BILLING_RUN_FAILURE,
+			message=f"Settling {invoice}\n\n{frappe.get_traceback()}",
+			reference_doctype="Invoice",
+			reference_name=invoice,
+		)
+		return None
+
 
 def teams_to_bill(page_size: int = PAGE_SIZE):
 	"""Yield every team holding a subscription, one page at a time.
@@ -52,13 +106,13 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 	for team in teams_to_bill():
 		if enqueue:
 			frappe.enqueue(
-				"central.billing.revenue.invoicing.generate_team_invoice",
+				"central.billing.revenue.invoicing.draft_team_invoice",
 				team=team,
 				period_start=period_start,
 				period_end=period_end,
 			)
 			continue
-		name = generate_team_invoice(team, period_start, period_end)
+		name = draft_team_invoice(team, period_start, period_end)
 		if name:
 			created.append(name)
 	return created
@@ -77,7 +131,7 @@ def drafts_to_settle(period_end, page_size: int = PAGE_SIZE):
 			filters={"status": "Draft", "period_end": period_end, "name": (">", after)},
 			pluck="name",
 			order_by="name asc",
-			limit_page_length=page_size,
+			limit=page_size,
 		)
 		if not page:
 			return
@@ -91,9 +145,9 @@ def open_drafts(period_end, enqueue: bool = False) -> list[str]:
 	for inv in drafts_to_settle(period_end):
 		drafts.append(inv)
 		if enqueue:
-			frappe.enqueue("central.billing.revenue.invoicing.open_and_collect", invoice=inv)
+			frappe.enqueue("central.billing.revenue.invoicing.settle_draft", invoice=inv)
 		else:
-			open_and_collect(inv)
+			settle_draft(inv)
 	return drafts
 
 

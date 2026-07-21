@@ -3,12 +3,14 @@
 """Postpaid two-phase invoice generation (issue #09)."""
 
 import threading
+from unittest.mock import patch
 
 import frappe
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.revenue import invoicing, credits
+from central.billing.revenue.invoicing import run
 from central.billing.tests.utils import (
 	add_segment,
 	make_billing_subscription,
@@ -398,3 +400,71 @@ class TestMonthlyBillingRun(BillingTestBase):
 		self.assertEqual(
 			frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1
 		)
+
+
+class TestFanOutRun(IntegrationTestCase):
+	"""The monthly run as an orchestrator: paged, fanned out, failure-isolated."""
+
+	CLUSTER = "ap-south-1"
+	PLAN = "bundle-fanout-test"
+	TEAMS = ["team-fanout-a", "team-fanout-b", "team-fanout-c"]
+
+	def setUp(self):
+		make_plan(self.PLAN)
+		self._purge()
+		for team in self.TEAMS:
+			sub = make_billing_subscription(team, self.CLUSTER, self.PLAN, billing_cycle="Monthly")
+			add_segment(sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+	def tearDown(self):
+		self._purge()
+
+	def _purge(self):
+		from central.billing.tests.utils import purge_teams
+
+		purge_teams(self.TEAMS)
+		frappe.db.delete("Error Log", {"method": run.BILLING_RUN_FAILURE})
+		frappe.db.commit()
+
+	def test_one_failing_team_does_not_take_the_run_down(self):
+		# Team b blows up mid-run: the team drafted before it must survive (the unit
+		# rolls back to its own savepoint, not the whole transaction), and the team
+		# after it must still be billed.
+		real = run.generate_team_invoice
+
+		def explode(team, *args, **kwargs):
+			if team == "team-fanout-b":
+				raise ValueError("no rate for this team")
+			return real(team, *args, **kwargs)
+
+		with patch.object(run, "generate_team_invoice", side_effect=explode):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		self.assertTrue(frappe.db.exists("Invoice", {"team": "team-fanout-a"}))
+		self.assertFalse(frappe.db.exists("Invoice", {"team": "team-fanout-b"}))
+		self.assertTrue(frappe.db.exists("Invoice", {"team": "team-fanout-c"}))
+
+		# The casualty is logged under the one title an operator can count.
+		self.assertTrue(
+			frappe.db.exists(
+				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-b"}
+			)
+		)
+
+	def test_a_failed_team_is_redrafted_by_the_next_tick(self):
+		# Nothing is re-raised, so the run has to be resumable: the retry drafts the
+		# team that failed and does not double-bill the ones that succeeded.
+		real = run.generate_team_invoice
+
+		def explode(team, *args, **kwargs):
+			if team == "team-fanout-b":
+				raise ValueError("transient")
+			return real(team, *args, **kwargs)
+
+		with patch.object(run, "generate_team_invoice", side_effect=explode):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30")
+		run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
