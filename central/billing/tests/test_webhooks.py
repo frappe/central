@@ -173,9 +173,11 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		}).insert(ignore_permissions=True)
 
 	def _credits_for(self, payment_id):
+		# Stored keys are namespaced by provider; these fixtures are all Razorpay.
 		return frappe.get_all(
 			"Credit Ledger Entry",
-			filters={"gateway_payment_id": payment_id}, fields=["name", "amount", "entry_type"],
+			filters={"gateway_payment_id": f"Razorpay:{payment_id}"},
+			fields=["name", "amount", "entry_type"],
 		)
 
 	def test_captured_topup_webhook_books_one_credit(self):
@@ -194,8 +196,10 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 
 	def test_confirm_then_webhook_does_not_double_credit(self):
 		pid = "pay_backstop_2"
-		# Browser confirm landed first (what confirm_topup does).
-		credits.purchase(TOPUP_TEAM, 1000, "INR", reference_name=pid, gateway_payment_id=pid)
+		# Browser confirm landed first (what confirm_topup does) — same provider, so
+		# the webhook backstop dedupes to the same namespaced key.
+		credits.purchase(TOPUP_TEAM, 1000, "INR", reference_name=pid,
+						 gateway_payment_id=pid, gateway="Razorpay")
 		# Backstop webhook arrives for the same payment.
 		out = charges.apply_webhook(self._store_event(pid).name)
 

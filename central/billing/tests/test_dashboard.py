@@ -546,9 +546,10 @@ class TestGatewayTopUp(CustomerDataBase):
 				paypal_order_id="PPORDER1")
 			adapter.capture_order.assert_called_once_with("PPORDER1")
 			self.assertEqual(out["new_balance"], 5000)
-			# Wallet entry references the PayPal capture id (the reconcilable handle).
+			# Wallet entry references the PayPal capture id (the reconcilable handle),
+			# namespaced by provider.
 			self.assertTrue(frappe.db.exists(
-				"Credit Ledger Entry", {"team": TEAM, "gateway_payment_id": "CAP123"}))
+				"Credit Ledger Entry", {"team": TEAM, "gateway_payment_id": "Paypal:CAP123"}))
 
 	def test_topup_paypal_via_razorpay_delegates_to_razorpay(self):
 		"""A PayPal gateway in 'Via Razorpay' mode holds no PayPal merchant account: the
@@ -613,9 +614,10 @@ class TestGatewayTopUp(CustomerDataBase):
 				razorpay_order_id="order_rzp1", razorpay_payment_id="pay_rzp1",
 				razorpay_signature="sig")
 			self.assertEqual(out["new_balance"], 5000)
-			# Reference is the razorpay_payment_id (no PayPal capture id exists here).
+			# Reference is the razorpay_payment_id (no PayPal capture id exists here),
+			# namespaced by provider.
 			self.assertTrue(frappe.db.exists(
-				"Credit Ledger Entry", {"team": TEAM, "gateway_payment_id": "pay_rzp1"}))
+				"Credit Ledger Entry", {"team": TEAM, "gateway_payment_id": "Razorpay:pay_rzp1"}))
 
 
 class TestWriteEndpointsRejectGet(IntegrationTestCase):

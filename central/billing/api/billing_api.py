@@ -810,7 +810,8 @@ def get_checkout_status(reference: str) -> dict:
 		# (Falls back to the session id only if the gateway hasn't surfaced one yet.)
 		key = payment_id or session_id
 		credits.purchase(target, amount, currency, gateway_payment_id=key,
-						 reference_name=key, note=f"Wallet top-up ({key})")
+						 reference_name=key, note=f"Wallet top-up ({key})",
+						 gateway=gw_doc.adapter_key)
 		return {"status": "paid", "success": True, "message": "Wallet topped up.",
 				"balance": credits.get_balance(target)["balance"]}
 
