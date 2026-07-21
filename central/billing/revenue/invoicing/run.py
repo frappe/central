@@ -178,20 +178,51 @@ def open_drafts(period_end, enqueue: bool = False) -> list[str]:
 	return drafts
 
 
-def run_monthly_billing(today=None) -> dict:
-	"""Scheduled entrypoint (1st of the month): bill the just-closed calendar month
-	end-to-end for every team — the production trigger for the two-phase invoicing
-	(#09/#10) that otherwise only ran from demos and tests.
-
-	Phase 1 drafts one consolidated invoice per team for the previous month; phase 2
-	opens each Draft and runs the credits-then-card waterfall — settling it, or leaving
-	it Open for dunning (#14). Idempotent: drafting is idempotent per (team, period) and
-	open_drafts only touches invoices still in Draft, so a retried tick is safe.
-	"""
+def billing_period(today=None) -> tuple:
+	"""The calendar month that just closed — the period a run on `today` bills."""
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	period_start = frappe.utils.get_first_day(today, d_months=-1)
-	period_end = frappe.utils.get_last_day(period_start)
+	return period_start, frappe.utils.get_last_day(period_start)
 
+
+def draft_monthly_invoices(today=None) -> dict:
+	"""Tick 1 (1st, off-peak): draft the just-closed month, one job per team.
+
+	The two phases are separate scheduler ticks, not one job that does both: rating
+	is heavy and local, collection is slow and external, and a run that interleaves
+	them can only go as fast as its slowest gateway call.
+
+	They are hours apart on the same day rather than the 28th and the 1st, because a
+	calendar month billed in arrears is not closed until it ends — drafting on the
+	28th would bill days that had not happened yet.
+	"""
+	period_start, period_end = billing_period(today)
+	fanned = generate_draft_invoices(period_start, period_end, enqueue=True)
+	frappe.logger("billing").info(f"billing run {period_end}: drafting fanned out for {len(fanned)} teams")
+	return {"period_start": str(period_start), "period_end": str(period_end), "teams": len(fanned)}
+
+
+def collect_monthly_invoices(today=None) -> dict:
+	"""Tick 2 (1st, once drafting has settled): open + collect, one job per invoice.
+
+	Whatever tick 1 failed to draft simply isn't here yet; it is picked up by the
+	next run rather than blocking this one, and the invoices that did draft still
+	get collected on time.
+	"""
+	period_start, period_end = billing_period(today)
+	fanned = open_drafts(period_end, enqueue=True)
+	frappe.logger("billing").info(f"billing run {period_end}: collection fanned out for {len(fanned)} invoices")
+	return {"period_start": str(period_start), "period_end": str(period_end), "invoices": len(fanned)}
+
+
+def run_monthly_billing(today=None) -> dict:
+	"""Bill the just-closed month end-to-end, inline — the manual/demo/test path.
+
+	The scheduler runs the two ticks above instead. This stays as the one-call
+	version for a small site, a demo, or an operator re-running a period by hand:
+	same work, same idempotency, no workers involved.
+	"""
+	period_start, period_end = billing_period(today)
 	drafted = generate_draft_invoices(period_start, period_end)
 	opened = open_drafts(period_end)
 	return {

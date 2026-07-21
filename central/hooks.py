@@ -180,6 +180,13 @@ scheduler_events = {
 		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
 		# backstop that corrects drift the event push (central.api.atlas.event) missed.
 		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
+		# Billing: the monthly run, as two ticks on the 1st. The first drafts the
+		# just-closed month (one job per team); the second, once drafting has
+		# settled, opens and collects (one job per invoice). Rating is heavy and
+		# local, collection is slow and external — a single tick doing both runs at
+		# the speed of the gateway.
+		"0 1 1 * *": ["central.billing.revenue.invoicing.draft_monthly_invoices"],
+		"0 6 1 * *": ["central.billing.revenue.invoicing.collect_monthly_invoices"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
@@ -211,10 +218,6 @@ scheduler_events = {
 		"central.billing.payments.reconciliation.run_reconciliation",
 	],
 	"monthly": [
-		# Billing: on the 1st, bill the just-closed month end-to-end for every team —
-		# draft one consolidated invoice per team, then open + collect (credits→card).
-		# The production trigger for the two-phase invoicing (#09/#10).
-		"central.billing.revenue.invoicing.run_monthly_billing",
 		# Billing: cards expire at the end of their printed month; flip lapsed ones.
 		"central.billing.payments.payments.expire_payment_methods",
 	],

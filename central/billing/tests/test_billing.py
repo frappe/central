@@ -491,3 +491,29 @@ class TestFanOutRun(IntegrationTestCase):
 
 		for team in self.TEAMS:
 			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
+
+	def test_the_two_ticks_bill_the_closed_month_end_to_end(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			drafting = run.draft_monthly_invoices(today="2026-07-01")
+			collecting = run.collect_monthly_invoices(today="2026-07-01")
+
+		# Both ticks agree on the period: the month that closed, never a live one.
+		self.assertEqual(drafting["period_end"], "2026-06-30")
+		self.assertEqual(collecting["period_end"], "2026-06-30")
+		self.assertGreaterEqual(collecting["invoices"], len(self.TEAMS))
+		for team in self.TEAMS:
+			inv = frappe.get_doc("Invoice", {"team": team, "period_end": "2026-06-30"})
+			self.assertNotEqual(inv.status, "Draft")
+
+	def test_collection_tick_alone_settles_nothing(self):
+		# Order matters: the collect tick only ever touches drafts that already exist,
+		# so firing it before drafting is a no-op rather than a half-billed month.
+		with patch("frappe.enqueue") as enqueue:
+			run.collect_monthly_invoices(today="2026-07-01")
+
+		fanned = [c.kwargs["invoice"] for c in enqueue.call_args_list]
+		mine = frappe.get_all("Invoice", filters={"team": ["in", self.TEAMS]}, pluck="name")
+		self.assertEqual(mine, [])
+		self.assertEqual([i for i in fanned if i in mine], [])
