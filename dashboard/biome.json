@@ -1,4 +1,6 @@
 {
+	"$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+	"root": false,
 	"formatter": {
 		"enabled": true,
 		"formatWithErrors": false,
@@ -15,7 +17,7 @@
 	"linter": { "rules": { "recommended": false } },
 	"javascript": {
 		"formatter": {
-			"jsxQuoteStyle": "double",
+			"jsxQuoteStyle": "single",
 			"quoteProperties": "asNeeded",
 			"trailingCommas": "all",
 			"semicolons": "asNeeded",

@@ -83,12 +83,16 @@ const matchingPreset = computed<Plan | null>(() => {
 		<label
 			v-for="plan in presets"
 			:key="plan.plan"
-			class="flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm transition-colors"
 			:class="
-        selectedPlan === plan.plan
-          ? 'border-outline-gray-4 bg-surface-gray-1'
-          : 'border-outline-gray-2 hover:border-outline-gray-3'
-      "
+				[
+					'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm',
+					'transition-colors',
+					'focus-within:border-outline-gray-4 focus-within:ring-1 focus-within:ring-outline-gray-4',
+					selectedPlan === plan.plan
+						? 'border-outline-gray-4 bg-surface-gray-1'
+						: 'border-outline-gray-2 hover:border-outline-gray-3',
+				]
+			"
 		>
 			<!-- @tailwindcss/forms drives the checked fill from `currentColor`, so the
            espresso ink token goes on `text-`, not `accent-` (which it ignores). -->
@@ -114,8 +118,15 @@ const matchingPreset = computed<Plan | null>(() => {
 		<!-- Custom: a radio row that expands into the design slider for this profile. -->
 		<div
 			v-if="profile"
-			class="rounded-lg border transition-colors"
-			:class="isCustom ? 'border-outline-gray-4' : 'border-outline-gray-2 hover:border-outline-gray-3'"
+			:class="
+				[
+					'rounded-lg border transition-colors',
+					'focus-within:border-outline-gray-4 focus-within:ring-1 focus-within:ring-outline-gray-4',
+					isCustom
+						? 'border-outline-gray-4 bg-surface-gray-1'
+						: 'border-outline-gray-2 hover:border-outline-gray-3',
+				]
+			"
 		>
 			<label class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm">
 				<input
