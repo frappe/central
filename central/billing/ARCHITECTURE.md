@@ -164,6 +164,8 @@ flowchart LR
         D1["daily"]
         H1["hourly"]
         M1["monthly"]
+        C1["cron · 1st 01:00"]
+        C2["cron · 1st 06:00"]
     end
     D1 --> RD["run_dunning"]
     D1 --> RR["run_reconciliation"]
@@ -172,10 +174,11 @@ flowchart LR
     D1 --> BF["backfill_missing_subscriptions"]
     H1 --> RF["retry_failed_syncs (ERPNext)"]
     M1 --> EX["expire_payment_methods"]
+    C1 --> DMI["draft_monthly_invoices → 1 job/team"]
+    C2 --> CMI["collect_monthly_invoices → 1 job/invoice"]
 
-    subgraph MANUAL["⚠️ NOT scheduled — manual/demo"]
-        GDI["generate_draft_invoices (28th)"]
-        OD["open_drafts (1st)"]
+    subgraph MANUAL["manual/demo only"]
+        RMB["run_monthly_billing (inline, both phases)"]
     end
 
     subgraph INSTALL["install/migrate/before_tests"]
@@ -197,11 +200,31 @@ flowchart LR
 | daily | `catalog.subscriptions.backfill_missing_subscriptions` | Subscription for any Running Asset missing one |
 | hourly | `revenue.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
+| cron `0 1 1 * *` | `revenue.invoicing.draft_monthly_invoices` | phase 1 — fan one draft job out per team |
+| cron `0 6 1 * *` | `revenue.invoicing.collect_monthly_invoices` | phase 2 — fan one collect job out per invoice |
 
-> ⚠️ **Invoice generation is NOT in `scheduler_events`.** The 28th-draft / 1st-open phases
-> (`revenue.invoicing.generate_draft_invoices`, `open_drafts`) are designed for those dates
-> but are currently invoked **manually / by demo scenarios**, not by the scheduler. If
-> invoices "aren't appearing on the 28th", this is why — check who's calling them.
+**The monthly run is two ticks, and neither of them does the work.** Each is an
+orchestrator: it pages its subjects and enqueues one job per team (drafting) or per
+invoice (collection) on the **long** queue, deduplicated on (period, team) /
+(invoice). One job = one team = one transaction = one commit, and a job that fails
+is contained — logged as `Billing Run Failure`, rolled back to its own savepoint,
+and re-attempted by the next tick, since both phases are idempotent.
+
+Why both ticks land on the 1st rather than the documented 28th/1st: a calendar month
+billed in arrears is not closed until it ends, so drafting on the 28th would bill days
+that had not happened. The split that matters is heavy-local (rating) vs slow-external
+(gateway), and that is preserved — five hours apart on the same morning.
+
+`run_monthly_billing` still runs both phases inline for demos, small sites and manual
+re-runs. `billing_run_status()` reports what the current period's run has actually
+achieved (drafted / pending / collected / failures), derived from the tables rather
+than from a counter — read it before deciding to re-fire a tick.
+
+**Worker math.** One collected invoice ≈ 2s (rating is ~100ms; the rest is the gateway
+round-trip). Sequentially that is 50k × 2s ≈ 28h — longer than the billing day. Fanned
+out over N long-queue workers it is 50k × 2s / N: **20 workers ≈ 1.4h**, 40 ≈ 42min.
+Drafting is cheaper (~0.3s/team) and finishes well inside the five-hour gap before the
+collect tick. Size the queue to the team count, not to the invoice amount.
 
 ### Lifecycle / install hooks
 - `after_install` / `after_migrate` / `before_tests` → `catalog.taxonomy_setup.ensure_catalog_masters` (idempotent seed of catalog masters — ADR 0007).
@@ -248,8 +271,9 @@ Resize: `resize_composed_config → resize_composed_subscription` → new Subscr
 ### B. Bill a period (draft → open → collect)
 ```mermaid
 flowchart TD
-    S28(["28th · off-peak"]) --> GDI["generate_draft_invoices"]
-    GDI --> GTI["generate_team_invoice (per team)"]
+    DRAFTTICK(["1st 01:00 · draft tick"]) --> GDI["draft_monthly_invoices<br/>→ generate_draft_invoices (pages teams)"]
+    GDI --> DTI["draft_team_invoice<br/>(1 job/team, isolated)"]
+    DTI --> GTI["generate_team_invoice (per team)"]
     GTI --> RS["reconcile_subscription (fix drift)"]
     GTI --> LINES["lines.compute_line_items<br/>day-weighted from Sub Change segments"]
     GTI --> MET["+ metering.metered_line_items<br/>max(0, qty−allowance)×rate"]
@@ -257,9 +281,9 @@ flowchart TD
     GTI --> TAX["+ tax.resolve_tax<br/>GST / SEZ / TDS"]
     LINES & MET & DISC & TAX --> DRAFT[["Invoice: Draft"]]
 
-    S1(["1st · light/parallel"]) --> OD["open_drafts"]
+    COLLECTTICK(["1st 06:00 · collect tick"]) --> OD["collect_monthly_invoices<br/>→ open_drafts (pages drafts)"]
     DRAFT --> OD
-    OD --> OAC["open_and_collect (enqueued per invoice)"]
+    OD --> OAC["settle_draft → open_and_collect<br/>(1 job/invoice, isolated)"]
     OAC --> WF{"settlement waterfall"}
     WF -->|credits| CR["settlement.py"]
     WF -->|then card| CARD["charges.pay_invoice"]
@@ -268,16 +292,19 @@ flowchart TD
     PAID --> SYNC["erpnext_sync.enqueue_invoice_sync"]
 ```
 ```
-[28th, off-peak]  revenue.invoicing.generate_draft_invoices
-  → generate_team_invoice (per team, aggregates clusters)
+[1st 01:00]  revenue.invoicing.draft_monthly_invoices
+  → generate_draft_invoices (pages teams, enqueues one job each)
+  → draft_team_invoice (one job = one team = one commit; failure contained + logged)
+    → generate_team_invoice (per team, aggregates clusters)
       → reconcile_subscription (correct drift if stale)
       → lines.compute_line_items  (day-weighted, from Subscription Change rate-snapshot segments)
       → + metering.metered_line_items   (max(0, qty−allowance) × rate)
       → + commitments discount, + tax.resolve_tax (GST additive / SEZ zero / TDS withhold)
   → Invoice (Draft)
 
-[1st, light/parallel]  revenue.invoicing.open_drafts
-  → open_and_collect (per invoice; enqueued)
+[1st 06:00]  revenue.invoicing.collect_monthly_invoices
+  → open_drafts (pages the period's drafts, enqueues one job each)
+  → settle_draft → open_and_collect (per invoice)
       → settlement waterfall: credits (settlement.py) → card (charges.pay_invoice)
       → Invoice Draft → Open → (on webhook) Paid
       → on Paid: erpnext_sync.enqueue_invoice_sync
@@ -408,7 +435,8 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 | Symptom | Start at |
 |---|---|
-| Invoice never generated | invoicing not scheduled (§3 ⚠️); check caller of `generate_draft_invoices`; `lines.compute_line_items` for empty segments |
+| Invoice never generated | `billing_run_status()` — is the team in `pending_draft`? then Error Log `Billing Run Failure` for that team, the long queue for stuck jobs, and `lines.compute_line_items` for empty segments |
+| Half the teams billed, half not | a partial run: read `billing_run_status()`, fix the cause, re-fire `draft_monthly_invoices` — both phases are idempotent and resume |
 | Invoice wrong amount | `lines.compute_line_items` (day-weighting), `metering.metered_line_items`, `commitments` discount, `tax.resolve_tax`; verify Subscription Change `locked_rate` segments |
 | Charge stuck "Open"/unpaid | `payments/webhooks.py` (signature failed? Webhook Event row?), `charges.apply_webhook`, `collection.collect_invoice` fallback chain |
 | Webhook ignored | `webhooks.process_webhook` signature check; gateway `verify_signature`; dedupe against existing Webhook Event |
