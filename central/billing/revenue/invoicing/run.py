@@ -27,6 +27,38 @@ BILLING_RUN_FAILURE = "Billing Run Failure"
 _SAVEPOINT = "billing_run_unit"
 
 
+def _contain(unit: str, doctype: str, name: str, error: Exception, undo: bool) -> None:
+	"""Contain one unit's failure so the run survives it — or refuse to.
+
+	Order matters. The **file log** is written first and unconditionally, because it
+	is the only record that survives a transaction that never commits: "why was this
+	team not billed?" has to be answerable after a crash, not only after a tidy
+	failure. The Error Log row is the queryable copy (`billing_run_status` counts
+	it), but it is a database write like any other — a run whose worker is killed
+	before its commit keeps the file line and loses the row.
+
+	Then the judgement call. A savepoint exists only inside a live transaction: if
+	the database restarted, the connection dropped, or something in the unit
+	committed underneath us, `ROLLBACK TO SAVEPOINT` fails. That is not a bad team —
+	it is the machinery being broken, and swallowing it would convert one outage
+	into a silent run where every remaining team merely "wasn't billed". So the
+	original error is re-raised: the job dies, RQ records it, and the tick is
+	re-fired once the database is back.
+	"""
+	frappe.logger("billing").error(f"{BILLING_RUN_FAILURE}: {unit}", exc_info=error)
+	if undo:
+		try:
+			frappe.db.rollback(save_point=_SAVEPOINT)
+		except Exception as rollback_failed:
+			raise error from rollback_failed
+	frappe.log_error(
+		title=BILLING_RUN_FAILURE,
+		message=f"{unit}\n\n{frappe.get_traceback()}",
+		reference_doctype=doctype,
+		reference_name=name,
+	)
+
+
 def draft_team_invoice(team: str, period_start, period_end) -> str | None:
 	"""Draft one team's invoice — the unit of work phase 1 fans out.
 
@@ -36,42 +68,31 @@ def draft_team_invoice(team: str, period_start, period_end) -> str | None:
 	inline path bills many teams in one transaction, so a blanket rollback here
 	would discard the teams already billed.
 
-	Nothing is re-raised, and nothing needs to be: drafting is idempotent per
+	A contained failure is not re-raised, and needn't be: drafting is idempotent per
 	(team, period), so re-running the phase retries exactly the teams that failed.
 	A partial run is resumable for free.
 	"""
 	frappe.db.savepoint(_SAVEPOINT)
 	try:
 		return generate_team_invoice(team, period_start, period_end)
-	except Exception:
-		frappe.db.rollback(save_point=_SAVEPOINT)
-		frappe.log_error(
-			title=BILLING_RUN_FAILURE,
-			message=f"Drafting {team} for {period_start}..{period_end}\n\n{frappe.get_traceback()}",
-			reference_doctype="Team",
-			reference_name=team,
-		)
+	except Exception as error:
+		_contain(f"Drafting {team} for {period_start}..{period_end}", "Team", team, error, undo=True)
 		return None
 
 
 def settle_draft(invoice: str) -> dict | None:
 	"""Open + collect one invoice — the unit of work phase 2 fans out.
 
-	No savepoint here, unlike drafting: by ADR 0017 the charge leg commits its
+	Nothing is undone here, unlike drafting: by ADR 0017 the charge leg commits its
 	`Initiated` Payment Attempt *before* calling the gateway, precisely so a crash
-	leaves a durable claim. Undoing that would be undoing the safety. A failed unit
-	is logged and left where it is — `run_reconciliation` asks the gateway what
+	leaves a durable claim. Rolling that back would be undoing the safety. A failed
+	unit is logged and left where it is — `run_reconciliation` asks the gateway what
 	really happened, and dunning picks up whatever stayed Open.
 	"""
 	try:
 		return open_and_collect(invoice)
-	except Exception:
-		frappe.log_error(
-			title=BILLING_RUN_FAILURE,
-			message=f"Settling {invoice}\n\n{frappe.get_traceback()}",
-			reference_doctype="Invoice",
-			reference_name=invoice,
-		)
+	except Exception as error:
+		_contain(f"Settling {invoice}", "Invoice", invoice, error, undo=False)
 		return None
 
 

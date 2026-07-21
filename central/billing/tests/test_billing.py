@@ -551,3 +551,34 @@ class TestFanOutRun(IntegrationTestCase):
 
 		self.assertEqual(after["failures"], before["failures"] + 1)
 		self.assertGreaterEqual(after["pending_draft"], 1)  # team b still owes a bill
+
+	def test_a_lost_savepoint_stops_the_run_instead_of_silencing_it(self):
+		# The database restarted (or something committed underneath the unit), so the
+		# savepoint is gone and the failure cannot be contained. Swallowing it would
+		# leave every remaining team merely "not billed", with no cause recorded.
+		def gone(*args, **kwargs):
+			raise frappe.db.ProgrammingError("SAVEPOINT billing_run_unit does not exist")
+
+		with (
+			patch.object(run, "generate_team_invoice", side_effect=ValueError("the real cause")),
+			patch.object(frappe.db, "rollback", side_effect=gone),
+			self.assertRaises(ValueError) as raised,
+		):
+			run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30")
+
+		# The original cause survives — the rollback failure is its context, not a
+		# replacement for it.
+		self.assertEqual(str(raised.exception), "the real cause")
+
+	def test_a_contained_failure_is_written_to_the_log_file_too(self):
+		# The Error Log row is a database write: a worker killed before its commit
+		# loses it. The file line is what remains, so it must always be written.
+		with (
+			patch.object(run, "generate_team_invoice", side_effect=ValueError("boom")),
+			patch.object(frappe.logger("billing"), "error") as logged,
+		):
+			run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30")
+
+		self.assertEqual(logged.call_count, 1)
+		self.assertIn("team-fanout-a", logged.call_args.args[0])
+		self.assertIsInstance(logged.call_args.kwargs["exc_info"], ValueError)
