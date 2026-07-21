@@ -16,6 +16,23 @@ _FAKE = {
 }
 
 
+def _ensure_llm_service():
+	"""The LLM add-on's catalog entry. Operator-provisioned in prod (not seeded), so
+	tests must stand it up before linking a Service Backend / Managed Service to it.
+	Its Plan Category ("AI Tokens") is seeded on install by the billing taxonomy."""
+	if not frappe.db.exists("Add-on Service", "llm"):
+		frappe.get_doc(
+			{
+				"doctype": "Add-on Service",
+				"service_key": "llm",
+				"title": "LLM Hosting",
+				"handler_key": "grove",
+				"plan_category": "AI Tokens",
+				"is_active": 1,
+			}
+		).insert(ignore_permissions=True)
+
+
 class TestLLMProvisioning(IntegrationTestCase):
 	def setUp(self):
 		site = frappe.get_all("Site", fields=["name", "team"], limit=1)
@@ -25,6 +42,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 		self.site, self.team = site[0].name, site[0].team
 
+		_ensure_llm_service()
 		# Frappe rolls the suite back only at class teardown, so wipe our own rows
 		# between methods to avoid the composite-unique guard tripping on reuse.
 		frappe.db.delete("Site Service Credential", {"site": self.site})
@@ -108,6 +126,7 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 		from central.services import llm
 
 		self.llm = llm
+		_ensure_llm_service()
 		frappe.db.delete("Service Backend", {"service": "llm"})
 		frappe.db.delete("LLM Model", {"model_key": ["in", ["m-fast", "m-premium", "m-stale"]]})
 
@@ -139,7 +158,10 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 		frappe.get_doc({"doctype": "LLM Model", "model_key": "m-fast", "tier": "Fast", "is_published": 1}).insert()
 		frappe.get_doc({"doctype": "LLM Model", "model_key": "m-premium", "tier": "Premium", "is_published": 1}).insert()
 
-		plan = frappe.get_all("Plan", pluck="name", limit=1)[0]
+		plans = frappe.get_all("Plan", pluck="name", limit=1)
+		if not plans:
+			self.skipTest("Needs at least one Plan.")
+		plan = plans[0]
 		frappe.db.delete("LLM Plan Tier", {"parent": plan})
 		frappe.db.delete("LLM Plan Policy", {"plan": plan})
 		frappe.get_doc(
@@ -152,7 +174,10 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 
 	def test_resolve_options_denies_when_tier_has_no_models(self):
 		frappe.db.delete("LLM Model", {"tier": "Premium"})
-		plan = frappe.get_all("Plan", pluck="name", limit=1)[0]
+		plans = frappe.get_all("Plan", pluck="name", limit=1)
+		if not plans:
+			self.skipTest("Needs at least one Plan.")
+		plan = plans[0]
 		frappe.db.delete("LLM Plan Tier", {"parent": plan})
 		frappe.db.delete("LLM Plan Policy", {"plan": plan})
 		frappe.get_doc({"doctype": "LLM Plan Policy", "plan": plan, "allowed_tiers": [{"tier": "Premium"}]}).insert()
@@ -202,6 +227,7 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 
 class TestBackendEnroll(IntegrationTestCase):
 	def setUp(self):
+		_ensure_llm_service()
 		frappe.db.delete("Service Backend", {"service": "llm"})
 
 	def test_register_backend_stores_minted_credential(self):
