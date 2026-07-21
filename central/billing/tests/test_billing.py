@@ -11,6 +11,7 @@ from central.billing.catalog import subscriptions
 from central.billing.revenue import invoicing, credits
 from central.billing.tests.utils import (
 	add_segment,
+	ensure_team,
 	make_billing_subscription,
 	make_plan,
 )
@@ -435,3 +436,71 @@ class TestBillingGroupPartitioning(BillingTestBase):
 		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group"])
 		self.assertEqual(len(invoices), 1)
 		self.assertIsNone(invoices[0].billing_group or None)
+
+	def test_disabled_group_folds_its_assets_back_into_consolidated(self):
+		"""A disabled group stops partitioning — it must not stop the asset being billed.
+
+		The failure this guards against is silent: if generation stopped drafting the
+		group's invoice but still mapped the asset to the group, the asset would match
+		no scope and drop off every invoice the team receives.
+		"""
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+
+		grouped_sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		group = frappe.get_doc(
+			{"doctype": "Billing Group", "title": "Customer X", "team": TEAM}
+		).insert().name
+		frappe.db.set_value("Subscription", grouped_sub, "billing_group", group)
+		add_segment(grouped_sub, "Created", 2000, "2026-06-01 00:00:00")
+		# Tagged while the group was live, disabled afterwards — the real-world order.
+		frappe.db.set_value("Billing Group", group, "enabled", 0)
+		frappe.db.commit()
+
+		invoicing.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group", "subtotal"])
+		self.assertEqual(len(invoices), 1)
+		self.assertIsNone(invoices[0].billing_group or None)
+		# The disabled group's 2000 is ON the consolidated invoice, not lost.
+		self.assertEqual(invoices[0].subtotal, 3000.0)
+
+
+class TestBillingGroupValidation(BillingTestBase):
+	OTHER_TEAM = "team-invoice-other"
+
+	def tearDown(self):
+		frappe.db.delete("Billing Group", {"team": self.OTHER_TEAM})
+		frappe.db.commit()
+		super().tearDown()
+
+	def test_cannot_tag_another_teams_billing_group(self):
+		ensure_team(self.OTHER_TEAM)
+		foreign = frappe.get_doc(
+			{"doctype": "Billing Group", "title": "Someone Else", "team": self.OTHER_TEAM}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.billing_group = foreign
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_cannot_tag_a_disabled_billing_group(self):
+		group = frappe.get_doc(
+			{"doctype": "Billing Group", "title": "Archived", "team": TEAM, "enabled": 0}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.billing_group = group
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_tagging_an_own_active_group_is_allowed(self):
+		group = frappe.get_doc(
+			{"doctype": "Billing Group", "title": "Customer X", "team": TEAM}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.billing_group = group
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "billing_group"), group)

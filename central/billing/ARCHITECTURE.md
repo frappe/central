@@ -76,6 +76,7 @@ erDiagram
     Team ||--o{ Subscription : has
     Team ||--|| BillingProfile : has
     Team ||--o{ Invoice : billed
+    Team ||--o{ BillingGroup : "partitions its bill"
     Team ||--o{ PaymentMethod : owns
     Team ||--o{ CreditLedgerEntry : wallet
     Team ||--|| CreditWallet : balance
@@ -87,7 +88,8 @@ erDiagram
 
     Subscription ||--o{ SubscriptionChange : "append-only history (locked_rate)"
     Subscription ||--o| Asset : provisions
-    Subscription ||--o{ Invoice : "billed from"
+    BillingGroup ||--o{ Subscription : "tags (optional)"
+    BillingGroup ||--o{ Invoice : "billed on its own"
 
     Invoice ||--o{ InvoiceLineItem : contains
     Invoice ||--o{ PaymentAttempt : "settled by"
@@ -118,14 +120,15 @@ Plan Configurator ─→ Category, Sub-Category, [C]base_rates, [C]rungs(─→P
 **Subscription / state**
 ```
 Subscription ──team, ──plan, ──sub_category, ──includes, ──default_payment_method,
-             ──gateway, ──asset_id─→ Asset
+             ──gateway, ──asset_id─→ Asset, ──billing_group─→ Billing Group
+Billing Group ──team                                         (optional bill partition; see §2.1)
 Subscription Change ──subscription, ──team, ──currency      (append-only history + locked_rate)
 Price Lock ──team, ──plan                                    (RETIRED — see §6; rate now lives on Subscription Change)
 ```
 
 **Invoice / money**
 ```
-Invoice [S] ──team, ──subscription, ──items─→ [C]Invoice Line Item
+Invoice [S] ──team, ──billing_group, ──items─→ [C]Invoice Line Item
 Payment Attempt ──invoice, ──team, ──gateway, ──payment_method
 Refund ──payment_attempt, ──invoice, ──team
 Credit Ledger Entry ──team, ──currency        (append-only)
@@ -153,6 +156,36 @@ Entitlement Token ──team       (Ed25519-signed cap)
 ```
 Webhook Event ──gateway        | Billing Notification Log ──team | Notification Preference ──team
 ```
+
+### 2.1 The invoice grain — team, billing group, period
+
+An invoice bills **a scope of a team's assets for a period**, not a subscription. The
+scope is either a **Billing Group** (a user-defined tag on the team's subscriptions —
+typically one per end-customer a partner resells to) or, when `billing_group` is unset,
+the team's **consolidated** set of every ungrouped asset. So a team with no groups gets
+exactly one invoice per period; a team with two groups gets three: its consolidated one
+plus one per group.
+
+The team is always the biller and payer. A group only partitions *how many* invoices the
+team receives — it never changes who owes the money, which payment method funds it, or
+whose account standing moves.
+
+Three consequences worth knowing before touching this code:
+
+- **`Invoice.period_key` is `team|billing_group|period_start|period_end`** — the unique
+  index behind invariant I6 (ADR 0018). The group is part of the slot, not decoration:
+  keyed on the team alone, the index would refuse every invoice after the first.
+- **Dunning and charge-routing have no subscription to read.** Payment method, gateway
+  and account standing live on the Subscription, so they resolve a representative one
+  for the invoice's scope via `catalog.subscriptions.anchor_subscription(team, group)`.
+- **A disabled group folds back.** Its assets return to the consolidated invoice rather
+  than falling off every invoice. `_team_invoice_groups` and `_resource_group_map`
+  (`revenue/invoicing/generate.py`) both derive from one map so they cannot disagree —
+  a scope that gets an invoice is exactly a scope that can carry lines.
+
+Deferred, with TODOs at the call sites: how a team-level Commitment allocates across a
+team's several invoices (`catalog/commitments.py`), and per-group credit budgets
+(`revenue/invoicing/lifecycle.py`). Credits remain one team wallet.
 
 ---
 
@@ -401,6 +434,10 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 - **billing-owned roles + `platform/security.py` + `billing_team` field** → deleted; uses
   Central capability IAM (`authz.py` → `central.iam`). Team is a `Link(Team)`, not a Data slug.
 - **`billing_mode` field** → removed (v09); Billing Profile currency is the gate.
+- **`Invoice.subscription`** ("the primary subscription", whose payment method funded the
+  auto-charge) → replaced by `Invoice.billing_group` (§2.1). An invoice bills a team+group
+  scope, never a subscription. Anything that needs the old link wants
+  `catalog.subscriptions.anchor_subscription(team, billing_group)`.
 
 ---
 

@@ -107,7 +107,7 @@
    "read_only": 1,
    "hidden": 1,
    "no_copy": 1,
-   "description": "Uniqueness key for 'one live invoice per (team, period)' — the constraint that makes double-billing impossible rather than merely unlikely (ADR 0018, invariant I6). Set from (team, period_start, period_end) while the invoice is live; replaced by a per-invoice sentinel on cancellation so a reissue can take the slot. Derived — never set it by hand."
+   "description": "Uniqueness key for 'one live invoice per (team, billing group, period)' — the constraint that makes double-billing impossible rather than merely unlikely (ADR 0018, invariant I6). Set from (team, billing_group, period_start, period_end) while the invoice is live, with an empty group segment for the team's consolidated invoice; replaced by a per-invoice sentinel on cancellation so a reissue can take the slot. Derived — never set it by hand."
   },
   {
    "fieldname": "section_break_items",

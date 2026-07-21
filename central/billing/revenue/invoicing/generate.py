@@ -37,15 +37,30 @@ def _live_invoice(team: str, billing_group: str | None, period_start, period_end
 	)
 
 
-def _resource_group_map(team: str) -> dict:
-	"""asset_id -> billing_group for the team's *grouped* subscriptions.
+def _active_groups(team: str) -> set:
+	"""The team's own Billing Groups that are still partitioning its bill.
 
-	Only assets tagged into a Billing Group appear; anything absent is ungrouped
-	and belongs to the team's consolidated invoice."""
+	Filtered by team, so generation can never reach another team's group however a
+	subscription came to be tagged with one. A disabled group stops partitioning: its
+	assets fall back to the consolidated invoice rather than falling off every invoice.
+	"""
+	return set(
+		frappe.get_all("Billing Group", filters={"team": team, "enabled": 1}, pluck="name")
+	)
+
+
+def _resource_group_map(team: str) -> dict:
+	"""asset_id -> billing_group for the team's assets tagged into an *active* group.
+
+	Only assets tagged into one of the team's enabled Billing Groups appear; anything
+	absent — never tagged, or tagged into a disabled or another team's group — is
+	ungrouped and belongs to the team's consolidated invoice.
+	"""
+	active = _active_groups(team)
 	rows = frappe.get_all(
 		"Subscription", filters={"team": team}, fields=["asset_id", "billing_group"]
 	)
-	return {r.asset_id: r.billing_group for r in rows if r.asset_id and r.billing_group}
+	return {r.asset_id: r.billing_group for r in rows if r.asset_id and r.billing_group in active}
 
 
 def _scope_lines(lines: list[dict], team: str, billing_group: str | None) -> list[dict]:
@@ -60,11 +75,16 @@ def _scope_lines(lines: list[dict], team: str, billing_group: str | None) -> lis
 
 def _team_invoice_groups(team: str) -> list:
 	"""The invoice scopes to draft for a team this period: the consolidated bucket
-	(None) plus one per distinct Billing Group its subscriptions are tagged into."""
-	groups = sorted({
-		bg for bg in frappe.get_all("Subscription", filters={"team": team}, pluck="billing_group") if bg
-	})
-	return [None, *groups]
+	(None) plus one per active Billing Group its assets are tagged into.
+
+	Derived from the same map that scopes the lines, so the two cannot disagree about
+	what a scope is. That agreement is load-bearing, not tidiness: a resource that
+	mapped to a group no invoice was drafted for would match no scope at all, and its
+	lines would silently drop off every invoice the team receives.
+	"""
+	return [None, *sorted(set(_resource_group_map(team).values()))]
+
+
 # Frappe surfaces a unique-key conflict two ways: UniqueValidationError from its own
 # pre-insert check, and DuplicateEntryError when the write reaches the database first.
 # Under real concurrency both occur, so both mean the same thing here.

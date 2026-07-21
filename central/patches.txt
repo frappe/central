@@ -110,6 +110,10 @@ central.patches.v0_0.rekey_wallet_per_currency
 # billed the team twice. Pre-existing duplicates are flagged for review, never
 # auto-cancelled (a paid duplicate is real money) — ADR 0018, invariant I6.
 central.patches.v0_0.backfill_period_key
+# Widen that key to (team, billing_group, period): a team now receives its consolidated
+# invoice plus one per Billing Group for the same period, and the team-alone key made
+# the unique index refuse every invoice after the first.
+central.patches.v0_0.rekey_period_key_by_billing_group
 central.patches.v0_0.rename_capabilities
 central.patches.v0_0.make_central_users_portal_only
 # Strip the capability catalog to v3: drop the bench plane (site:* + server:config)
