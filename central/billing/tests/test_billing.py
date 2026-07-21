@@ -596,3 +596,44 @@ class TestFanOutRun(IntegrationTestCase):
 		self.assertEqual(logged.call_count, 1)
 		self.assertIn("team-fanout-a", logged.call_args.args[0])
 		self.assertIsInstance(logged.call_args.kwargs["exc_info"], ValueError)
+
+	def test_a_team_that_loses_a_lock_race_is_retried_not_dropped(self):
+		# Every Invoice insert takes the `tabSeries` row for its number, so workers do
+		# queue behind each other. Treating a lock-wait timeout like bad data would
+		# leave the team unbilled until the next tick — which is a MONTH away.
+		real = run.generate_team_invoice
+		calls = []
+
+		def contended(team, *args, **kwargs):
+			calls.append(team)
+			if team == "team-fanout-b" and calls.count("team-fanout-b") == 1:
+				raise frappe.QueryTimeoutError("Lock wait timeout exceeded")
+			return real(team, *args, **kwargs)
+
+		with patch.object(run, "generate_team_invoice", side_effect=contended):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		self.assertEqual(calls.count("team-fanout-b"), 2)  # retried, not contained
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
+		self.assertFalse(
+			frappe.db.exists(
+				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-b"}
+			)
+		)
+
+	def test_relentless_contention_gives_up_and_records_it(self):
+		# Retrying forever would hold a worker hostage; after the budget the team is
+		# recorded as a casualty and the run moves on.
+		with patch.object(
+			run, "generate_team_invoice",
+			side_effect=frappe.QueryDeadlockError("Deadlock found"),
+		) as blocked, patch.object(run, "CONTENTION_BACKOFF", 0):
+			self.assertIsNone(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"))
+
+		self.assertEqual(blocked.call_count, run.CONTENTION_RETRIES)
+		self.assertTrue(
+			frappe.db.exists(
+				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-a"}
+			)
+		)

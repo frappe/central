@@ -7,6 +7,9 @@ owns everything that spans them: which teams to visit, in what order, and how th
 work is spread over workers.
 """
 
+import random
+import time
+
 import frappe
 from frappe.query_builder.functions import Count
 
@@ -39,6 +42,17 @@ BILLING_QUEUE = "billing"
 BILLING_RUN_FAILURE = "Billing Run Failure"
 
 _SAVEPOINT = "billing_run_unit"
+
+# Drafting is the phase with a *global* lock in it: every Invoice insert takes the
+# `tabSeries` row for its number and holds it until commit, so every worker in the
+# run queues behind the same row for a few milliseconds. Nearly always invisible;
+# under a slow disk or a long page it surfaces as a lock-wait timeout (1205) or a
+# deadlock (1213). Containing those like a data error would be wrong — the team is
+# fine, it just lost a race — and the draft tick only comes round once a MONTH, so
+# a contained loser stays unbilled until someone notices. Retry instead.
+_CONTENTION = (frappe.QueryDeadlockError, frappe.QueryTimeoutError)
+CONTENTION_RETRIES = 4
+CONTENTION_BACKOFF = 0.1  # seconds; scaled by attempt, plus jitter
 
 
 def billing_queue() -> str:
@@ -93,22 +107,36 @@ def _contain(unit: str, doctype: str, name: str, error: Exception, undo: bool) -
 def draft_team_invoice(team: str, period_start, period_end) -> str | None:
 	"""Draft one team's invoice — the unit of work phase 1 fans out.
 
-	One team = one job = one transaction = one commit. Failure is contained to the
-	team: a missing rate or a broken tax profile must not take the other 49,999
-	teams' invoices with it. The savepoint undoes only this team's writes — the
-	inline path bills many teams in one transaction, so a blanket rollback here
-	would discard the teams already billed.
+	One team = one transaction = one commit, on every path. Failure is contained to
+	the team: a missing rate or a broken tax profile must not take the other 999,999
+	teams' invoices with it. The savepoint undoes only this team's writes, so a
+	caller part-way through a page keeps the teams it already billed.
 
 	A contained failure is not re-raised, and needn't be: drafting is idempotent per
 	(team, period), so re-running the phase retries exactly the teams that failed.
 	A partial run is resumable for free.
+
+	Lock contention is not a failure at all, though, and is retried here rather than
+	contained — see `_CONTENTION`. InnoDB has already rolled the transaction back by
+	the time we see it, which is safe precisely because the caller commits per team:
+	the rollback can only ever discard this one team's work.
 	"""
-	frappe.db.savepoint(_SAVEPOINT)
-	try:
-		return generate_team_invoice(team, period_start, period_end)
-	except Exception as error:
-		_contain(f"Drafting {team} for {period_start}..{period_end}", "Team", team, error, undo=True)
-		return None
+	unit = f"Drafting {team} for {period_start}..{period_end}"
+	for attempt in range(CONTENTION_RETRIES):
+		frappe.db.savepoint(_SAVEPOINT)
+		try:
+			return generate_team_invoice(team, period_start, period_end)
+		except _CONTENTION as error:
+			frappe.db.rollback()
+			if attempt == CONTENTION_RETRIES - 1:
+				# Out of patience: record it and let the next tick pick the team up.
+				_contain(unit, "Team", team, error, undo=False)
+				return None
+			# Jittered, so a whole page of retriers doesn't re-collide in lockstep.
+			time.sleep(CONTENTION_BACKOFF * (attempt + 1) + random.uniform(0, CONTENTION_BACKOFF))
+		except Exception as error:
+			_contain(unit, "Team", team, error, undo=True)
+			return None
 
 
 def settle_draft(invoice: str) -> dict | None:
@@ -234,6 +262,11 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 			name = draft_team_invoice(team, period_start, period_end)
 			if name:
 				created.append(name)
+			# Inline or fanned out, a team is a transaction. It bounds what a
+			# contention rollback can discard, and it stops the run holding the
+			# `tabSeries` row (taken by every Invoice insert) for a whole page —
+			# which is how one slow run becomes everyone else's lock-wait timeout.
+			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one team, one transaction
 	return created
 
 
@@ -331,6 +364,7 @@ def open_drafts(period_end, enqueue: bool = False) -> list[str]:
 		for invoice in page:
 			drafts.append(invoice)
 			settle_draft(invoice)
+			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
 	return drafts
 
 
