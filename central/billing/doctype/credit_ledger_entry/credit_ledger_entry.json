@@ -86,8 +86,7 @@
    "label": "Gateway Payment ID",
    "description": "Gateway payment id this top-up credit settles; unique, so one payment books one credit.",
    "read_only": 1,
-   "unique": 1,
-   "search_index": 1
+   "unique": 1
   },
   {
    "fieldname": "column_break_ref",
