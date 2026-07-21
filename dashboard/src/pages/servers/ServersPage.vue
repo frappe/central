@@ -335,7 +335,6 @@ const doRefresh = (): Promise<void> => withReload(refreshAssets())
 const doStart = (server: AssetRow): Promise<void> => withReload(start(server))
 const doStop = (server: AssetRow): Promise<void> => withReload(stop(server))
 
-// Terminate confirmation — the only destructive, irreversible actions.
 const pendingTerminate = ref<AssetRow | null>(null)
 async function confirmTerminate(server: AssetRow): Promise<void> {
 	pendingTerminate.value = null
@@ -513,21 +512,20 @@ async function confirmSiteTerminate(): Promise<void> {
 
 		<Dialog
 			v-model="siteTerminateOpen"
-			:options="{
-				title: 'Terminate site',
-				message: `Terminate ${pendingSiteTerminate?.name}? This permanently deletes the site and its backing VM. This can't be undone.`,
-				size: 'sm',
-				actions: [
-					{
-						label: 'Terminate site',
-						variant: 'solid',
-						theme: 'red',
-						loading: terminateSiteCall.loading,
-						onClick: confirmSiteTerminate,
-					},
-				],
-			}"
-		/>
+title="Terminate site" size="sm" :actions="[
+			{
+		label: 'Yes, terminate',
+		variant: 'solid',
+		theme: 'red',
+		loading: terminateSiteCall.loading,
+		onClick: confirmSiteTerminate,
+	},
+]">
+			<p class="text-p-base text-ink-gray-7">
+				Terminate <span class="font-semibold text-ink-gray-9">{{ pendingSiteTerminate?.name }}</span>?
+				This permanently deletes the site and its backing VM. This can't be undone.
+			</p>
+		</Dialog>
 
 		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
 		<CreateTeamDialog v-model:open="createTeamOpen" />
