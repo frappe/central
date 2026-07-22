@@ -46,6 +46,8 @@ class TestLLMProvisioning(IntegrationTestCase):
 		# Frappe rolls the suite back only at class teardown, so wipe our own rows
 		# between methods to avoid the composite-unique guard tripping on reuse.
 		frappe.db.delete("Site Service Credential", {"site": self.site})
+		for ms in frappe.get_all("Managed Service", {"team": self.team, "add_on_service": "llm"}, pluck="name"):
+			frappe.db.delete("Service API Key", {"managed_service": ms})
 		frappe.db.delete("Managed Service", {"team": self.team, "add_on_service": "llm"})
 		frappe.db.delete("Service Backend", {"service": "llm"})
 
@@ -133,6 +135,47 @@ class TestLLMProvisioning(IntegrationTestCase):
 		# Revealing a key only makes sense for an enabled site; a bare team site is not.
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.get_credential(self.managed.name, self.site)
+
+	def test_generate_api_key_mints_and_stores_secret(self):
+		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):
+			out = dashboard.generate_api_key(self.managed.name, "n8n prod")
+
+		self.assertEqual(out["status"], "Active")
+		self.assertEqual(out["api_key"], _FAKE["api_key"])
+		key = frappe.get_doc("Service API Key", out["name"])
+		self.assertEqual(key.label, "n8n prod")
+		self.assertEqual(key.get_password("api_key"), _FAKE["api_key"])
+		# list never leaks the secret
+		listed = dashboard.list_api_keys(self.managed.name)
+		self.assertEqual(listed[0]["name"], out["name"])
+		self.assertNotIn("api_key", listed[0])
+
+	def test_reveal_and_revoke_api_key(self):
+		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):
+			out = dashboard.generate_api_key(self.managed.name, "app")
+
+		revealed = dashboard.reveal_api_key(out["name"])
+		self.assertEqual(revealed["api_key"], _FAKE["api_key"])
+
+		with patch.object(GroveDriver, "revoke_site") as revoke:
+			dashboard.revoke_api_key(out["name"])
+		revoke.assert_called_once()
+		self.assertEqual(frappe.db.get_value("Service API Key", out["name"], "status"), "Revoked")
+		# a revoked key can't be revealed
+		with self.assertRaises(frappe.ValidationError):
+			dashboard.reveal_api_key(out["name"])
+
+	def test_usage_reconciliation_includes_api_keys(self):
+		from central.services import llm
+
+		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
+			dashboard.enable_site(self.managed.name, self.site)
+		with patch.object(GroveDriver, "provision_key", return_value={**_FAKE, "provider_ref": "key-abc@svc.frappe.cloud"}):
+			dashboard.generate_api_key(self.managed.name, "app")
+
+		emails = llm._team_credentials("llm").get(self.team, [])
+		self.assertIn(_FAKE["provider_ref"], emails)  # the site key
+		self.assertIn("key-abc@svc.frappe.cloud", emails)  # the api key
 
 	def test_list_offers_marks_activated(self):
 		offers = dashboard.list_offers(self.team)

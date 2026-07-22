@@ -6,6 +6,7 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ConnectionDetailsDialog from '@/components/services/ConnectionDetailsDialog.vue'
 import DisableSiteDialog from '@/components/services/DisableSiteDialog.vue'
+import ApiKeysPanel from '@/components/services/ApiKeysPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
 import { errorToast, errorToastWithAction } from '@/lib/toast'
@@ -250,6 +251,12 @@ async function confirmDisable(site: string): Promise<void> {
 						</li>
 					</ul>
 				</section>
+
+				<ApiKeysPanel
+					:managed-service="managedService"
+					:models="instance?.models ?? []"
+					:can-manage="canManageServices"
+				/>
 			</div>
 		</div>
 

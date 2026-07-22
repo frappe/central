@@ -49,6 +49,24 @@ export interface SiteCredential {
 	status: string
 }
 
+// A team-level issued key, as listed (no secret).
+export interface ServiceApiKey {
+	name: string
+	label: string
+	status: string
+	gateway_url: string | null
+	last_usage_total: number
+	creation: string
+}
+
+// The secret + endpoint, returned on generate and on reveal.
+export interface RevealedKey {
+	name: string
+	label: string
+	gateway_url: string
+	api_key: string
+}
+
 const { activeTeam } = useSession()
 
 const offersCall = useCall<ServiceOffer[], { team: string }>({
@@ -99,11 +117,40 @@ const credentialCall = useCall<
 	{ managed_service: string; site: string }
 >({ url: method(API.serviceCredential), method: 'POST', immediate: false })
 
-// Row-level busy: the site name currently mutating, so its button spins alone.
+// API keys: a list bound to a managed service, plus the three mutations.
+const apiKeysManagedRef = ref('')
+const apiKeysCall = useCall<ServiceApiKey[], { managed_service: string }>({
+	url: method(API.listApiKeys),
+	params: () => ({ managed_service: apiKeysManagedRef.value }),
+	immediate: false,
+})
+
+const generateKeyCall = useCall<
+	RevealedKey & { status: string },
+	{ managed_service: string; label: string }
+>({ url: method(API.generateApiKey), method: 'POST', immediate: false })
+
+const revealKeyCall = useCall<RevealedKey, { name: string }>({
+	url: method(API.revealApiKey),
+	method: 'POST',
+	immediate: false,
+})
+
+const revokeKeyCall = useCall<
+	{ name: string; status: string },
+	{ name: string }
+>({ url: method(API.revokeApiKey), method: 'POST', immediate: false })
+
+// Row-level busy: the site name (or key) currently mutating, so its control alone spins.
 const busySite = ref('')
+const busyKey = ref('')
 
 function reloadInstance(): Promise<unknown> | void {
 	if (managedRef.value) return instanceCall.reload()
+}
+
+function reloadApiKeys(): Promise<unknown> | void {
+	if (apiKeysManagedRef.value) return apiKeysCall.reload()
 }
 
 export function useServices() {
@@ -179,6 +226,47 @@ export function useServices() {
 				site,
 			})
 			return credentialCall.data!
+		},
+
+		// ── Team-level API keys ──
+		apiKeys: computed(() => apiKeysCall.data ?? []),
+		apiKeysLoading: computed(() => apiKeysCall.loading),
+		busyKey: computed(() => busyKey.value),
+		loadApiKeys(managedService: string): Promise<unknown> {
+			apiKeysManagedRef.value = managedService
+			return apiKeysCall.reload()
+		},
+
+		// Generate + reveal throw so the caller can show the secret (or an inline
+		// error) itself; revoke follows the toast+reload row pattern.
+		async generateApiKey(
+			managedService: string,
+			label: string,
+		): Promise<RevealedKey> {
+			await submitOrThrow(generateKeyCall, {
+				managed_service: managedService,
+				label,
+			})
+			await reloadApiKeys()
+			return generateKeyCall.data!
+		},
+
+		async revealKey(name: string): Promise<RevealedKey> {
+			await submitOrThrow(revealKeyCall, { name })
+			return revealKeyCall.data!
+		},
+
+		async revokeKey(name: string): Promise<void> {
+			busyKey.value = name
+			try {
+				await submitOrThrow(revokeKeyCall, { name })
+				successToast('API key revoked.')
+				await reloadApiKeys()
+			} catch (e) {
+				errorToast(e)
+			} finally {
+				busyKey.value = ''
+			}
 		},
 	}
 }

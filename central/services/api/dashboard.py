@@ -130,6 +130,105 @@ def get_credential(managed_service: str, site: str) -> dict:
 	}
 
 
+@frappe.whitelist(methods=["POST"])
+def generate_api_key(managed_service: str, label: str) -> dict:
+	"""Mint a team-level inference key for use in the customer's own apps. Same plan
+	gating and token meter as a site key — just not tied to a site. service:manage.
+	The secret is returned once here and re-readable later via reveal_api_key."""
+	service = _managed_service(managed_service, "service:manage")
+	if service.status != "Active":
+		frappe.throw(_("Managed service is not active."))
+
+	label = (label or "").strip()
+	if not label:
+		frappe.throw(_("A label is required."))
+
+	add_on = _get_active_service(service.add_on_service)
+	backend = _get_backend(add_on.name)
+	options = _provision_options(add_on.handler_key, service.subscription)
+
+	# Provision first, persist second: a provider failure leaves no orphan row. A random
+	# email is this key's meterable Grove identity, so usage attributes to it alone.
+	email = f"key-{frappe.generate_hash(length=12)}@svc.frappe.cloud"
+	result = get_driver(add_on.handler_key).provision_key(backend, label, email, options)
+
+	doc = frappe.new_doc("Service API Key")
+	doc.update(
+		{
+			"managed_service": managed_service,
+			"label": label,
+			"status": "Active",
+			"gateway_url": result["gateway_url"],
+			"provider_ref": result.get("provider_ref", email),
+			"api_key": result["api_key"],
+		}
+	)
+	doc.insert()
+
+	return {
+		"name": doc.name,
+		"label": label,
+		"gateway_url": result["gateway_url"],
+		"api_key": result["api_key"],
+		"status": "Active",
+	}
+
+
+@frappe.whitelist(methods=["GET"])
+def list_api_keys(managed_service: str) -> list[dict]:
+	"""A managed service's issued API keys (no secrets). service:view."""
+	_managed_service(managed_service, "service:view")
+
+	return frappe.get_all(
+		"Service API Key",
+		filters={"managed_service": managed_service},
+		fields=["name", "label", "status", "gateway_url", "last_usage_total", "creation"],
+		order_by="creation desc",
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+def reveal_api_key(name: str) -> dict:
+	"""Reveal one issued key's secret + endpoint for copy/curl. service:manage."""
+	doc = frappe.get_doc("Service API Key", name)
+	_managed_service(doc.managed_service, "service:manage")
+	if doc.status != "Active":
+		frappe.throw(_("This key has been revoked."))
+
+	return {
+		"name": doc.name,
+		"label": doc.label,
+		"gateway_url": doc.gateway_url,
+		"api_key": doc.get_password("api_key"),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def revoke_api_key(name: str) -> dict:
+	"""Revoke an issued key at the provider and mark it revoked. service:manage."""
+	doc = frappe.get_doc("Service API Key", name)
+	service = _managed_service(doc.managed_service, "service:manage")
+	if doc.status == "Revoked":
+		return {"name": name, "status": "Revoked"}
+
+	add_on = _get_active_service(service.add_on_service)
+	get_driver(add_on.handler_key).revoke_site(_get_backend(add_on.name), doc.get_password("api_key"))
+	doc.db_set("status", "Revoked")
+
+	return {"name": name, "status": "Revoked"}
+
+
+def _managed_service(managed_service: str, capability: str):
+	service = frappe.db.get_value(
+		"Managed Service", managed_service, ["name", "team", "status", "add_on_service", "subscription"], as_dict=True
+	)
+	if not service:
+		frappe.throw(_("Unknown managed service."))
+	assert_capability(service.team, capability)
+
+	return service
+
+
 @frappe.whitelist(methods=["GET"])
 def list_offers(team: str) -> list[dict]:
 	"""Catalogue of active add-on services with the team's status for each. service:view."""

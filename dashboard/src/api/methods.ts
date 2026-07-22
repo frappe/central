@@ -54,6 +54,10 @@ export const API = {
 	enableServiceSite: 'central.services.api.dashboard.enable_site',
 	disableServiceSite: 'central.services.api.dashboard.disable_site',
 	serviceCredential: 'central.services.api.dashboard.get_credential',
+	generateApiKey: 'central.services.api.dashboard.generate_api_key',
+	listApiKeys: 'central.services.api.dashboard.list_api_keys',
+	revealApiKey: 'central.services.api.dashboard.reveal_api_key',
+	revokeApiKey: 'central.services.api.dashboard.revoke_api_key',
 
 	// ── Auth / SMB signup (central.api.auth) ──
 	signUp: 'central.api.auth.sign_up',

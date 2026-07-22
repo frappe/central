@@ -117,25 +117,28 @@ def _token_limit(plan: str | None) -> int | None:
 
 
 def _team_credentials(service: str) -> dict[str, list[str]]:
-	# Active site credentials for the service, grouped team -> [grove emails].
-	credential = frappe.qb.DocType("Site Service Credential")
-	managed = frappe.qb.DocType("Managed Service")
-
-	rows = (
-		frappe.qb.from_(credential)
-		.join(managed)
-		.on(credential.managed_service == managed.name)
-		.select(managed.team.as_("team"), credential.provider_ref.as_("email"))
-		.where(
-			(managed.add_on_service == service)
-			& (credential.status == "Active")
-			& (credential.provider_ref.isnotnull())
-		)
-	).run(as_dict=True)
-
+	# Every active grove identity the service issued — both per-site credentials and
+	# team-level API keys — grouped team -> [grove emails]. Both drain the same team
+	# token meter, so both must be reconciled or a whole channel bills nothing.
 	grouped: dict[str, list[str]] = {}
-	for row in rows:
-		grouped.setdefault(row.team, []).append(row.email)
+	for doctype in ("Site Service Credential", "Service API Key"):
+		credential = frappe.qb.DocType(doctype)
+		managed = frappe.qb.DocType("Managed Service")
+
+		rows = (
+			frappe.qb.from_(credential)
+			.join(managed)
+			.on(credential.managed_service == managed.name)
+			.select(managed.team.as_("team"), credential.provider_ref.as_("email"))
+			.where(
+				(managed.add_on_service == service)
+				& (credential.status == "Active")
+				& (credential.provider_ref.isnotnull())
+			)
+		).run(as_dict=True)
+
+		for row in rows:
+			grouped.setdefault(row.team, []).append(row.email)
 
 	return grouped
 
