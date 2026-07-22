@@ -5,7 +5,6 @@ import { Button, Spinner, Tabs } from 'frappe-ui'
 import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import OverviewPanel from '@/components/services/OverviewPanel.vue'
-import SitesPanel from '@/components/services/SitesPanel.vue'
 import ApiKeysPanel from '@/components/services/ApiKeysPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
@@ -37,7 +36,6 @@ watch(
 const tabIndex = ref(0)
 const tabs = [
 	{ label: 'Overview', icon: 'lucide-layout-dashboard' },
-	{ label: 'Sites', icon: 'lucide-server' },
 	{ label: 'API Keys', icon: 'lucide-key-round' },
 ]
 
@@ -68,9 +66,10 @@ async function activateService(): Promise<void> {
 		<Tabs v-if="managedService" v-model="tabIndex" :tabs="tabs">
 			<template #tab-panel="{ tab }">
 				<OverviewPanel v-if="tab.label === 'Overview'" />
-				<SitesPanel v-else-if="tab.label === 'Sites'" :managed-service="managedService" :models="models"
-					:can-manage="canManageServices" />
-				<ApiKeysPanel v-else :managed-service="managedService" :models="models"
+				<ApiKeysPanel
+					v-else
+					:managed-service="managedService"
+					:models="models"
 					:can-manage="canManageServices"
 				/>
 			</template>
@@ -85,8 +84,10 @@ async function activateService(): Promise<void> {
 			</div>
 			<div v-else-if="!offer" class="flex flex-1 items-center justify-center p-8">
 				<EmptyState
-icon="lucide-box" title="Service not found"
-					description="This service isn't available for your team." />
+					icon="lucide-box"
+					title="Service not found"
+					description="This service isn't available for your team."
+				/>
 			</div>
 			<div v-else class="flex flex-1 items-center justify-center p-8">
 				<EmptyState
@@ -112,7 +113,7 @@ icon="lucide-box" title="Service not found"
 <style scoped>
 /* frappe-ui's TabsContent doesn't grow; stretch the active panel so the list
    fills the page and its pagination footer pins to the bottom. */
-:deep([role="tabpanel"][data-state="active"]) {
+:deep([role='tabpanel'][data-state='active']) {
 	flex: 1;
 	min-height: 0;
 }

@@ -47,13 +47,10 @@ export const API = {
 
 	// ── Managed add-on services (central.services.api.dashboard) ──
 	// service:view for the reads, service:manage for the mutations + key reveal.
+	// Per-site enable/disable is a bench (Pilot) surface, not a console method.
 	listOffers: 'central.services.api.dashboard.list_offers',
 	serviceInstance: 'central.services.api.dashboard.get_instance',
-	serviceSites: 'central.services.api.dashboard.list_sites',
 	activateService: 'central.services.api.dashboard.activate_service',
-	enableServiceSite: 'central.services.api.dashboard.enable_site',
-	disableServiceSite: 'central.services.api.dashboard.disable_site',
-	serviceCredential: 'central.services.api.dashboard.get_credential',
 	generateApiKey: 'central.services.api.dashboard.generate_api_key',
 	listApiKeys: 'central.services.api.dashboard.list_api_keys',
 	revealApiKey: 'central.services.api.dashboard.reveal_api_key',

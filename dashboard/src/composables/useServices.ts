@@ -7,11 +7,10 @@ import { submitOrThrow } from '@/lib/frappeCall'
 import { successToast, errorToast } from '@/lib/toast'
 
 // The team's add-on services (LLM hosting via Grove today). One module-level
-// composable so the catalogue and the detail page share one fetch of offers +
-// sites, and so row-level `busy` is consistent across the sites table. Mutations
-// follow the house shape: submitOrThrow → toast → reload, with errors surfaced as
-// toasts. The server re-checks every capability; the UI just avoids offering a
-// button the API would 403.
+// composable so the catalogue and the detail page share one fetch. Central owns team
+// activation + team-level API keys + the read surfaces; per-site enable lives on the
+// bench (Pilot), so it isn't here. Mutations follow the house shape: submitOrThrow →
+// toast → reload; the server re-checks every capability.
 
 export interface ServiceOffer {
 	name: string
@@ -33,20 +32,6 @@ export interface ServiceInstance {
 	plan_title: string | null
 	enabled_sites: string[]
 	models: ServiceModel[]
-}
-
-export interface TeamSite {
-	name: string
-	status: string
-	url: string
-}
-
-export interface SiteCredential {
-	site: string
-	gateway_url: string
-	api_key: string
-	provider_ref: string | null
-	status: string
 }
 
 // A team-level issued key, as listed (no secret).
@@ -76,17 +61,7 @@ const offersCall = useCall<ServiceOffer[], { team: string }>({
 	refetch: true,
 })
 
-const sitesCall = useCall<TeamSite[], { team: string }>({
-	url: method(API.serviceSites),
-	params: teamParams,
-	immediate: false,
-	refetch: true,
-})
-
-whenTeamReady(() => {
-	offersCall.reload()
-	sitesCall.reload()
-})
+whenTeamReady(() => offersCall.reload())
 
 // The detail page views one managed service at a time, so a single instance call
 // reloaded by a bound ref is enough (no per-instance fetch to juggle).
@@ -101,21 +76,6 @@ const activateCall = useCall<
 	{ managed_service: string; status: string },
 	{ team: string; service: string }
 >({ url: method(API.activateService), method: 'POST', immediate: false })
-
-const enableCall = useCall<
-	{ credential: string; site: string; status: string },
-	{ managed_service: string; site: string }
->({ url: method(API.enableServiceSite), method: 'POST', immediate: false })
-
-const disableCall = useCall<
-	{ site: string; status: string },
-	{ managed_service: string; site: string }
->({ url: method(API.disableServiceSite), method: 'POST', immediate: false })
-
-const credentialCall = useCall<
-	SiteCredential,
-	{ managed_service: string; site: string }
->({ url: method(API.serviceCredential), method: 'POST', immediate: false })
 
 // API keys: a list bound to a managed service, plus the three mutations.
 const apiKeysManagedRef = ref('')
@@ -141,13 +101,8 @@ const revokeKeyCall = useCall<
 	{ name: string }
 >({ url: method(API.revokeApiKey), method: 'POST', immediate: false })
 
-// Row-level busy: the site name (or key) currently mutating, so its control alone spins.
-const busySite = ref('')
+// Row-level busy: the key currently mutating, so its control alone spins.
 const busyKey = ref('')
-
-function reloadInstance(): Promise<unknown> | void {
-	if (managedRef.value) return instanceCall.reload()
-}
 
 function reloadApiKeys(): Promise<unknown> | void {
 	if (apiKeysManagedRef.value) return apiKeysCall.reload()
@@ -160,9 +115,6 @@ export function useServices() {
 		offersError: computed(() => offersCall.error),
 		reloadOffers: () => offersCall.reload(),
 
-		sites: computed(() => sitesCall.data ?? []),
-		sitesLoading: computed(() => sitesCall.loading),
-
 		instance: computed<ServiceInstance | null>(() => instanceCall.data ?? null),
 		instanceLoading: computed(() => instanceCall.loading),
 		instanceError: computed(() => instanceCall.error),
@@ -170,8 +122,6 @@ export function useServices() {
 			managedRef.value = managedService
 			return instanceCall.reload()
 		},
-
-		busySite: computed(() => busySite.value),
 
 		// Activate returns the new managed-service name so the caller can render its
 		// detail immediately. Errors bubble (the no-subscription case is a real,
@@ -181,51 +131,6 @@ export function useServices() {
 			await submitOrThrow(activateCall, { team, service })
 			await offersCall.reload()
 			return activateCall.data!.managed_service
-		},
-
-		async enableSite(managedService: string, site: string): Promise<void> {
-			busySite.value = site
-			try {
-				await submitOrThrow(enableCall, {
-					managed_service: managedService,
-					site,
-				})
-				successToast(`AI enabled for ${site}.`)
-				await reloadInstance()
-			} catch (e) {
-				errorToast(e)
-			} finally {
-				busySite.value = ''
-			}
-		},
-
-		async disableSite(managedService: string, site: string): Promise<void> {
-			busySite.value = site
-			try {
-				await submitOrThrow(disableCall, {
-					managed_service: managedService,
-					site,
-				})
-				successToast(`AI disabled for ${site}.`)
-				await reloadInstance()
-			} catch (e) {
-				errorToast(e)
-			} finally {
-				busySite.value = ''
-			}
-		},
-
-		// Reveal is on-demand (opens the connection dialog); it throws so the dialog
-		// can show its own inline error state rather than a toast.
-		async fetchCredential(
-			managedService: string,
-			site: string,
-		): Promise<SiteCredential> {
-			await submitOrThrow(credentialCall, {
-				managed_service: managedService,
-				site,
-			})
-			return credentialCall.data!
 		},
 
 		// ── Team-level API keys ──

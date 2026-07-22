@@ -1,21 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Badge, Spinner } from 'frappe-ui'
+import { Badge, Button, Spinner } from 'frappe-ui'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import { useServices } from '@/composables/useServices'
 
-// Overview: plan + status at a glance, then the models the plan grants. Same card
-// language as Billing Overview — summary surfaces sit in bordered cards, not flush
-// like the Sites/API Keys list tabs. Usage lives in Billing, linked from here.
+// Overview: plan + status, the models the plan grants, and which sites have AI on.
+// Enabling is done on the server (bench) dashboard — the bench owns its site list —
+// so Central shows what's enabled and links out. Usage lives in Billing.
 const router = useRouter()
-const { instance, instanceLoading, sites } = useServices()
+const { instance, instanceLoading } = useServices()
 
-const planTitle = computed(
-	() => instance.value?.plan_title || instance.value?.plan || '—',
-)
+const planTitle = computed(() => instance.value?.plan_title || instance.value?.plan || '—')
 const models = computed(() => instance.value?.models ?? [])
-const enabledCount = computed(() => instance.value?.enabled_sites.length ?? 0)
+const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 </script>
 
 <template>
@@ -41,8 +39,8 @@ const enabledCount = computed(() => instance.value?.enabled_sites.length ?? 0)
 						{{ planTitle }}
 					</p>
 					<p class="mt-1.5 text-p-sm text-ink-gray-5">
-						{{ enabledCount }} of {{ sites.length }}
-						{{ sites.length === 1 ? 'site' : 'sites' }} with AI enabled
+						{{ enabledSites.length }}
+						{{ enabledSites.length === 1 ? 'site' : 'sites' }} with AI enabled
 					</p>
 					<button
 						class="mt-4 inline-flex items-center gap-1 text-p-sm font-medium text-ink-gray-7 hover:text-ink-gray-9"
@@ -53,11 +51,32 @@ const enabledCount = computed(() => instance.value?.enabled_sites.length ?? 0)
 					</button>
 				</section>
 
+				<BillingCard title="Sites with AI enabled">
+					<ul v-if="enabledSites.length" class="divide-y divide-outline-gray-1">
+						<li
+							v-for="site in enabledSites"
+							:key="site"
+							class="flex items-center gap-2 py-2.5"
+						>
+							<span class="size-2 shrink-0 rounded-full bg-surface-green-3" />
+							<span class="truncate text-sm text-ink-gray-8">{{ site }}</span>
+						</li>
+					</ul>
+					<p v-else class="text-p-sm text-ink-gray-5">
+						No sites have AI enabled yet. Enable it from a server's dashboard.
+					</p>
+					<div class="mt-4">
+						<Button
+							label="Manage on your servers"
+							icon-right="lucide-arrow-up-right"
+							variant="subtle"
+							@click="router.push('/servers')"
+						/>
+					</div>
+				</BillingCard>
+
 				<BillingCard title="Included models">
-					<ul
-						v-if="models.length"
-						class="divide-y divide-outline-gray-1"
-					>
+					<ul v-if="models.length" class="divide-y divide-outline-gray-1">
 						<li
 							v-for="model in models"
 							:key="model.name"
@@ -72,8 +91,8 @@ const enabledCount = computed(() => instance.value?.enabled_sites.length ?? 0)
 						</li>
 					</ul>
 					<p v-else class="text-p-sm text-ink-gray-5">
-						No models yet. They appear once your plan grants a tier and the
-						provider publishes them.
+						No models yet. They appear once your plan grants a tier and the provider
+						publishes them.
 					</p>
 				</BillingCard>
 			</template>
