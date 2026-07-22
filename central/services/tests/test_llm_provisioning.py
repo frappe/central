@@ -183,10 +183,12 @@ class TestLLMProvisioning(IntegrationTestCase):
 		self.assertEqual(llm_offer["managed_service"], self.managed.name)
 
 	def test_activation_explains_how_to_get_access_when_the_plan_is_missing(self):
+		# Title-agnostic: the service's display title is operator-set, so assert the
+		# stable, actionable part of the message rather than the exact title.
 		with patch.object(dashboard, "_resolve_subscription", return_value=None):
 			with self.assertRaisesRegex(
 				frappe.ValidationError,
-				"LLM Hosting is not available in this team's plan. Ask your account administrator to add it, then try again.",
+				"is not available in this team's plan. Ask your account administrator to add it",
 			):
 				dashboard.activate_service(self.team, "llm")
 
