@@ -53,8 +53,7 @@ function copyCurl(): void {
 <template>
 	<div class="space-y-5">
 		<p class="text-p-sm text-ink-gray-6">
-			An OpenAI-compatible endpoint. Use it from any app, script, or tool — usage bills to
-			your team just like on-site AI.
+			Use it from any app, script, or tool. Usage bills to your team just like on-site AI.
 		</p>
 
 		<!-- Gateway URL -->
@@ -76,7 +75,7 @@ function copyCurl(): void {
 
 		<!-- API key -->
 		<div>
-			<label class="mb-1 block text-p-sm font-medium text-ink-gray-7"> API key </label>
+			<label class="mb-1 block text-p-sm font-medium text-ink-gray-7"> API Key </label>
 			<div class="flex items-center gap-2">
 				<code
 					class="min-w-0 flex-1 truncate rounded-md border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
