@@ -54,11 +54,9 @@ const routes = [
 				name: 'NewServer',
 				component: () => import('@/pages/servers/NewServerPage.vue'),
 			},
-			{
-				path: 'services',
-				name: 'Services',
-				component: () => import('@/pages/services/ServicesPage.vue'),
-			},
+			// Services are reached directly from the sidebar's Services group; a bare
+			// /services falls through to the one service today.
+			{ path: 'services', redirect: '/services/llm' },
 			{
 				path: 'services/:service',
 				name: 'ServiceDetail',

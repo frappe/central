@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { Badge, Button, Dialog, FormControl, Spinner } from 'frappe-ui'
+import { computed, h, ref, watch } from 'vue'
+import { Badge, Button, Dialog, FormControl } from 'frappe-ui'
 import ConnectionDetails from '@/components/services/ConnectionDetails.vue'
+import ApiKeyRowActions from '@/components/services/ApiKeyRowActions.vue'
+import { ListView, createListViewQuery, type ListViewColumn } from '@/components/common/list-view'
 import { useServices } from '@/composables/useServices'
 import { errorToast } from '@/lib/toast'
 import type { RevealedKey, ServiceApiKey, ServiceModel } from '@/composables/useServices'
 
-// The API-keys surface: keys Central issues from the provider for use in the
-// customer's own apps. Generate → shows the key + curl once; Reveal re-opens it
-// anytime (we store it); Revoke kills it at the provider. Usage bills to the team
-// like every other key.
+// The API Keys tab: keys Central issues from the provider for the customer's own
+// apps. Generate → shows the key + curl once; Reveal re-opens it anytime (we store
+// it); Revoke kills it at the provider. Usage bills to the team like every key.
 const props = defineProps<{
 	managedService: string
 	models: ServiceModel[]
@@ -26,6 +27,67 @@ watch(
 	},
 	{ immediate: true },
 )
+
+const query = ref(
+	createListViewQuery({
+		pageSize: 20,
+		sort: { key: 'creation', direction: 'desc' },
+	}),
+)
+
+const columns = computed<ListViewColumn<ServiceApiKey>[]>(() => [
+	{
+		accessorKey: 'label',
+		header: 'Label',
+		meta: { cellClass: 'truncate font-medium' },
+	},
+	{
+		accessorKey: 'status',
+		header: 'Status',
+		enableSorting: false,
+		cell: ({ row }) =>
+			h(Badge, {
+				theme: row.original.status === 'Active' ? 'green' : 'gray',
+				variant: 'subtle',
+				label: row.original.status,
+			}),
+	},
+	{
+		accessorKey: 'creation',
+		header: 'Created',
+		cell: ({ row }) => new Date(row.original.creation).toLocaleDateString(),
+	},
+	{
+		accessorKey: 'last_usage_total',
+		header: 'Usage (tokens)',
+		meta: { align: 'end' },
+		cell: ({ row }) => Math.round(row.original.last_usage_total || 0).toLocaleString(),
+	},
+	{
+		id: 'actions',
+		header: '',
+		enableSorting: false,
+		size: 1,
+		meta: { align: 'end' },
+		cell: ({ row }) => {
+			const key = row.original
+			if (!props.canManage || key.status !== 'Active') return null
+			return h(ApiKeyRowActions, {
+				apiKey: key,
+				busy: busyKey.value === key.name || revealingName.value === key.name,
+				onReveal: reveal,
+				onRevoke: (k: ServiceApiKey) => {
+					pendingRevoke.value = k
+				},
+			})
+		},
+	},
+])
+
+// Clicking a row reveals its key (managers only) — the same as the ⋯ Reveal.
+function onRowClick(key: ServiceApiKey): void {
+	if (props.canManage && key.status === 'Active') reveal(key)
+}
 
 // Generate dialog
 const generateOpen = ref(false)
@@ -51,14 +113,14 @@ async function generate(): Promise<void> {
 	}
 }
 
-// Details dialog (shown after generate, and on reveal) — reuses ConnectionDetails.
+// Details dialog (after generate, and on reveal) — reuses ConnectionDetails.
 const details = ref<RevealedKey | null>(null)
 const revealingName = ref('')
 
-async function reveal(row: ServiceApiKey): Promise<void> {
-	revealingName.value = row.name
+async function reveal(key: ServiceApiKey): Promise<void> {
+	revealingName.value = key.name
 	try {
-		details.value = await revealKey(row.name)
+		details.value = await revealKey(key.name)
 	} catch (e) {
 		errorToast(e)
 	} finally {
@@ -69,77 +131,30 @@ async function reveal(row: ServiceApiKey): Promise<void> {
 // Revoke confirm
 const pendingRevoke = ref<ServiceApiKey | null>(null)
 async function confirmRevoke(): Promise<void> {
-	const row = pendingRevoke.value
+	const key = pendingRevoke.value
 	pendingRevoke.value = null
-	if (row) await revokeKey(row.name)
+	if (key) await revokeKey(key.name)
 }
 </script>
 
 <template>
-	<section class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5">
-		<div class="flex items-start justify-between gap-3">
-			<div>
-				<h2 class="text-base font-semibold text-ink-gray-9">API keys</h2>
-				<p class="mt-1 text-p-sm text-ink-gray-5">
-					Keys for calling our models from your own apps, scripts, or tools.
-				</p>
-			</div>
-			<Button
-				v-if="canManage"
-				variant="solid"
-				label="Generate key"
-				icon-left="lucide-plus"
-				@click="openGenerate"
-			/>
-		</div>
-
-		<div v-if="apiKeysLoading && !apiKeys.length" class="flex justify-center py-6">
-			<Spinner class="size-4 text-ink-gray-4" />
-		</div>
-
-		<p v-else-if="!apiKeys.length" class="mt-4 py-6 text-center text-p-sm text-ink-gray-5">
-			No API keys yet. Generate one to use our models from your own apps.
-		</p>
-
-		<ul v-else class="mt-4 divide-y divide-outline-gray-1">
-			<li v-for="key in apiKeys" :key="key.name" class="flex items-center gap-3 py-3">
-				<div class="min-w-0 flex-1">
-					<div class="flex items-center gap-2">
-						<p class="truncate text-sm font-medium text-ink-gray-8">
-							{{ key.label }}
-						</p>
-						<Badge
-							v-if="key.status !== 'Active'"
-							:label="key.status"
-							theme="gray"
-							variant="subtle"
-							size="sm"
-						/>
-					</div>
-					<p class="truncate text-xs text-ink-gray-5">
-						Created {{ new Date(key.creation).toLocaleDateString() }}
-					</p>
-				</div>
-
-				<template v-if="canManage && key.status === 'Active'">
-					<Button
-						label="Reveal"
-						icon-left="lucide-eye"
-						variant="subtle"
-						:loading="revealingName === key.name"
-						@click="reveal(key)"
-					/>
-					<Button
-						label="Revoke"
-						theme="red"
-						variant="ghost"
-						:loading="busyKey === key.name"
-						@click="pendingRevoke = key"
-					/>
-				</template>
-			</li>
-		</ul>
-	</section>
+	<div class="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+		<ListView class="mx-auto flex h-full max-w-4xl flex-col" v-model:query="query" :rows="apiKeys"
+			:columns="columns" :row-key="(key: ServiceApiKey) => key.name" :loading="apiKeysLoading" searchable
+			search-placeholder="Search keys..." item-label="key" :empty-state="{
+				title: 'No API keys yet',
+				description: 'Generate a key to call our models from your own apps.',
+			}" @row-click="onRowClick">
+			<template v-if="canManage" #toolbar>
+				<Button
+variant="solid" label="Generate" icon-left="lucide-plus" @click="openGenerate" />
+			</template>
+			<template v-if="canManage" #empty-action>
+				<Button
+variant="solid" label="Generate Key" icon-left="lucide-plus" @click="openGenerate" />
+			</template>
+		</ListView>
+	</div>
 
 	<!-- Generate: name the key -->
 	<Dialog
@@ -169,10 +184,10 @@ async function confirmRevoke(): Promise<void> {
 	<!-- Details: the key + curl, on generate and on reveal -->
 	<Dialog
 		:model-value="!!details"
-		:title="details ? `API key — ${details.label}` : ''"
+:title="details ? `API key - ${details.label}` : ''"
 		size="2xl"
 		@update:model-value="
-			(v) => {
+	(v: boolean) => {
 				if (!v) details = null
 			}
 		"
@@ -190,7 +205,7 @@ async function confirmRevoke(): Promise<void> {
 	<!-- Revoke confirm -->
 	<Dialog
 		:model-value="!!pendingRevoke"
-		:title="'Revoke API key'"
+title="Revoke API key"
 		:message="`Revoke ${pendingRevoke?.label}? Any app using it will stop working immediately. This can't be undone.`"
 		:actions="[
 			{
@@ -202,7 +217,7 @@ async function confirmRevoke(): Promise<void> {
 			},
 		]"
 		@update:model-value="
-			(v) => {
+	(v: boolean) => {
 				if (!v) pendingRevoke = null
 			}
 		"

@@ -11,8 +11,7 @@ import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 
 const { activeTeamLabel } = useSession()
-const { canViewServers, canViewBilling, canViewServices, isMember } =
-	useCapabilities()
+const { canViewServers, canViewBilling, canViewServices, isMember } = useCapabilities()
 const { currentUser, logout } = useAuth()
 const { currentTheme, setTheme } = useTheme()
 
@@ -110,17 +109,22 @@ const sections = computed(() => [
 			},
 
 			{
-				label: 'Services',
-				icon: 'lucide-sparkles',
-				to: '/services',
-				condition: () => canViewServices.value,
-			},
-
-			{
 				label: 'Teams',
 				icon: 'lucide-users',
 				to: '/team/members',
 				condition: () => isMember.value,
+			},
+		],
+	},
+	{
+		label: 'Services',
+		collapsible: true,
+		items: [
+			{
+				label: 'LLM',
+				icon: 'lucide-sparkles',
+				to: '/services/llm',
+				condition: () => canViewServices.value,
 			},
 		],
 	},
@@ -180,18 +184,15 @@ const onEdgeMove = (event: MouseEvent): void => {
 			class="h-full"
 		>
 			<template #footer-items>
-				<Dropdown
-					:options="profileMenuItems"
-					side="top"
-					align="start"
-					match-trigger-width
-				>
+				<Dropdown :options="profileMenuItems" side="top" align="start" match-trigger-width>
 					<template #default="{ open }">
 						<button
 							class="flex h-10 w-full items-center rounded px-1.5 duration-300 ease-in-out"
 							:class="[
 								sidebarCollapsed ? 'justify-center' : '',
-								open ? 'bg-surface-elevation-2 shadow-sm' : 'hover:bg-surface-gray-3',
+	open
+		? 'bg-surface-elevation-2 shadow-sm'
+		: 'hover:bg-surface-gray-3',
 							]"
 						>
 							<Avatar :label="currentUser ?? ''" size="md" />
