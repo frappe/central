@@ -6,6 +6,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.services import provisioning
 from central.services.api import dashboard, pilot
 from central.services.drivers.grove import GroveDriver
 
@@ -46,6 +47,8 @@ class TestLLMProvisioning(IntegrationTestCase):
 		# Frappe rolls the suite back only at class teardown, so wipe our own rows
 		# between methods to avoid the composite-unique guard tripping on reuse.
 		frappe.db.delete("Site Service Credential", {"site": self.site})
+		for ms in frappe.get_all("Managed Service", {"team": self.team, "add_on_service": "llm"}, pluck="name"):
+			frappe.db.delete("Service API Key", {"managed_service": ms})
 		frappe.db.delete("Managed Service", {"team": self.team, "add_on_service": "llm"})
 		frappe.db.delete("Service Backend", {"service": "llm"})
 
@@ -84,7 +87,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 	def test_enable_site_stores_encrypted_credential(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			out = dashboard.enable_site(self.managed.name, self.site)
+			out = provisioning.enable_site(self.managed.name, self.site)
 
 		self.assertEqual(out["status"], "Active")
 		credential = frappe.get_doc("Site Service Credential", out["credential"])
@@ -93,57 +96,113 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 	def test_enable_site_is_idempotent(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			first = dashboard.enable_site(self.managed.name, self.site)
-			second = dashboard.enable_site(self.managed.name, self.site)
+			first = provisioning.enable_site(self.managed.name, self.site)
+			second = provisioning.enable_site(self.managed.name, self.site)
 
 		self.assertEqual(first["credential"], second["credential"])
 
 	def test_enable_after_revoke_reuses_row(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE), patch.object(GroveDriver, "revoke_site"):
-			first = dashboard.enable_site(self.managed.name, self.site)
-			dashboard.disable_site(self.managed.name, self.site)
-			again = dashboard.enable_site(self.managed.name, self.site)
+			first = provisioning.enable_site(self.managed.name, self.site)
+			provisioning.disable_site(self.managed.name, self.site)
+			again = provisioning.enable_site(self.managed.name, self.site)
 
 		self.assertEqual(first["credential"], again["credential"])
 		self.assertEqual(again["status"], "Active")
 
+	def test_enable_requires_active_entitlement(self):
+		# The bench can only enable once the team has activated the service — that's the
+		# Central-console billing gate.
+		frappe.db.set_value("Managed Service", self.managed.name, "status", "Draft")
+		with self.assertRaises(frappe.ValidationError):
+			provisioning.active_managed_service(self.team, "llm")
+
 	def test_get_config_returns_delivered_config(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			dashboard.enable_site(self.managed.name, self.site)
+			provisioning.enable_site(self.managed.name, self.site)
 
 		config = pilot.config_for_site(self.team, self.site, "llm")
 
 		self.assertEqual(config["gateway_url"], _FAKE["gateway_url"])
 		self.assertEqual(config["api_key"], _FAKE["api_key"])
 
-	def test_get_config_rejects_foreign_team(self):
-		with self.assertRaises(frappe.PermissionError):
+	def test_get_config_rejects_a_team_without_the_credential(self):
+		# Team-scoped by the credential lookup: another team resolves no credential, so
+		# it can't read one — no cross-team leak, and no site-mirror dependency.
+		with self.assertRaises(frappe.ValidationError):
 			pilot.config_for_site("TEAM-not-owner", self.site, "llm")
+
+	def test_generate_api_key_mints_and_stores_secret(self):
+		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):
+			out = dashboard.generate_api_key(self.managed.name, "n8n prod")
+
+		self.assertEqual(out["status"], "Active")
+		self.assertEqual(out["api_key"], _FAKE["api_key"])
+		key = frappe.get_doc("Service API Key", out["name"])
+		self.assertEqual(key.label, "n8n prod")
+		self.assertEqual(key.get_password("api_key"), _FAKE["api_key"])
+		# list never leaks the secret
+		listed = dashboard.list_api_keys(self.managed.name)
+		self.assertEqual(listed[0]["name"], out["name"])
+		self.assertNotIn("api_key", listed[0])
+
+	def test_reveal_and_revoke_api_key(self):
+		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):
+			out = dashboard.generate_api_key(self.managed.name, "app")
+
+		revealed = dashboard.reveal_api_key(out["name"])
+		self.assertEqual(revealed["api_key"], _FAKE["api_key"])
+
+		with patch.object(GroveDriver, "revoke_site") as revoke:
+			dashboard.revoke_api_key(out["name"])
+		revoke.assert_called_once()
+		self.assertEqual(frappe.db.get_value("Service API Key", out["name"], "status"), "Revoked")
+		# a revoked key can't be revealed
+		with self.assertRaises(frappe.ValidationError):
+			dashboard.reveal_api_key(out["name"])
+
+	def test_usage_reconciliation_includes_api_keys(self):
+		from central.services import llm
+
+		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
+			provisioning.enable_site(self.managed.name, self.site)
+		with patch.object(GroveDriver, "provision_key", return_value={**_FAKE, "provider_ref": "key-abc@svc.frappe.cloud"}):
+			dashboard.generate_api_key(self.managed.name, "app")
+
+		emails = llm._team_credentials("llm").get(self.team, [])
+		self.assertIn(_FAKE["provider_ref"], emails)  # the site key
+		self.assertIn("key-abc@svc.frappe.cloud", emails)  # the api key
 
 	def test_list_offers_marks_activated(self):
 		offers = dashboard.list_offers(self.team)
 		llm_offer = next(o for o in offers if o["name"] == "llm")
 		self.assertEqual(llm_offer["managed_service"], self.managed.name)
 
+	def test_activation_explains_how_to_get_access_when_the_plan_is_missing(self):
+		# Title-agnostic: the service's display title is operator-set, so assert the
+		# stable, actionable part of the message rather than the exact title.
+		with patch.object(dashboard, "_resolve_subscription", return_value=None):
+			with self.assertRaisesRegex(
+				frappe.ValidationError,
+				"is not available in this team's plan. Ask your account administrator to add it",
+			):
+				dashboard.activate_service(self.team, "llm")
+
 	def test_get_instance_returns_status_sites_models(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			dashboard.enable_site(self.managed.name, self.site)
+			provisioning.enable_site(self.managed.name, self.site)
 
 		instance = dashboard.get_instance(self.managed.name)
 		self.assertEqual(instance["status"], "Active")
 		self.assertIn(self.site, instance["enabled_sites"])
 		self.assertIsInstance(instance["models"], list)
 
-	def test_list_sites_returns_team_sites(self):
-		names = [s["name"] for s in dashboard.list_sites(self.team)]
-		self.assertIn(self.site, names)
-
 	def test_reads_require_capability(self):
 		self.addCleanup(frappe.set_user, "Administrator")
 		frappe.set_user("Guest")
 
 		with self.assertRaises(frappe.PermissionError):
-			dashboard.list_sites(self.team)
+			dashboard.list_offers(self.team)
 
 
 class TestLLMPolicyAndUsage(IntegrationTestCase):

@@ -1,9 +1,46 @@
 from __future__ import annotations
 
+import functools
+import inspect
+from collections.abc import Callable
+
 import frappe
 from frappe import _
 
 from central.iam import can
+
+
+def require_service_capability(capability: str) -> Callable:
+	"""Gate a service endpoint on a team capability. Team access to services is
+	capability-scoped (central.iam), not Frappe roles — so team users hold no DocType
+	permission and every endpoint passes through this instead. Resolves the team from
+	the call: a `team` arg, else the `managed_service`, else a Service API Key `name`."""
+
+	def decorator(func: Callable) -> Callable:
+		@functools.wraps(func)
+		def wrapper(*args, **kwargs):
+			assert_capability(_resolve_team(func, args, kwargs), capability)
+			return func(*args, **kwargs)
+
+		return wrapper
+
+	return decorator
+
+
+def _resolve_team(func: Callable, args: tuple, kwargs: dict) -> str:
+	bound = inspect.signature(func).bind_partial(*args, **kwargs).arguments
+	if bound.get("team"):
+		return bound["team"]
+
+	managed_service = bound.get("managed_service")
+	if not managed_service and bound.get("name"):
+		managed_service = frappe.db.get_value("Service API Key", bound["name"], "managed_service")
+
+	team = frappe.db.get_value("Managed Service", managed_service, "team") if managed_service else None
+	if not team:
+		frappe.throw(_("Unknown managed service."), frappe.DoesNotExistError)
+
+	return team
 
 
 def assert_site_owner(site: str, team: str) -> None:

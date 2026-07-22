@@ -14,12 +14,18 @@ class GroveDriver:
 	key = "grove"
 
 	def provision_site(self, backend, site: str, options: dict) -> dict:
+		# A site's key is just a key whose Grove identity is derived from the site.
+		return self.provision_key(backend, site, self._service_email(site), options)
+
+	def provision_key(self, backend, name: str, email: str, options: dict) -> dict:
+		# Mint a Grove key under `email` (its meterable identity). Central owns naming;
+		# Grove upserts the user and returns the ready endpoint + secret.
 		result = self._call(
 			backend,
 			"grove.api.provision_key",
 			{
-				"name": site,
-				"email": self._service_email(site),
+				"name": name,
+				"email": email,
 				"token_limit": options.get("token_limit"),
 				"allowed_models": options.get("allowed_models"),
 			},
@@ -28,7 +34,7 @@ class GroveDriver:
 		return {
 			"gateway_url": result["gateway_url"],
 			"api_key": result["api_key"],
-			"provider_ref": self._service_email(site),
+			"provider_ref": email,
 		}
 
 	def revoke_site(self, backend, api_key: str) -> None:

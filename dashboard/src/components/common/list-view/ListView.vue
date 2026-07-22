@@ -223,7 +223,11 @@ const gridTemplateColumns = computed(() =>
 	table
 		.getFlatHeaders()
 		.map((header) =>
-			header.id === '__selection' ? '14px' : `${header.getSize()}fr`,
+			header.id === '__selection'
+				? '14px'
+				: header.column.id === 'actions'
+					? '40px'
+					: `${header.getSize()}fr`,
 		)
 		.join(' '),
 )

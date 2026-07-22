@@ -25,6 +25,17 @@ export function errorToast(
 	toast.error(getErrorMessage(e, fallback))
 }
 
+// Like errorToast, but with a call-to-action button (e.g. "Set up billing" that
+// routes somewhere). Held longer than a plain toast so the user can act on it.
+export function errorToastWithAction(
+	e: unknown,
+	action: { label: string; onClick: () => void },
+	fallback?: string,
+): void {
+	if (isAbortError(e)) return
+	toast.error(getErrorMessage(e, fallback), { action, duration: 10000 })
+}
+
 // A fetch aborted because it was superseded (e.g. an in-flight list request when
 // the active team switches) rejects with a DOMException named 'AbortError'. It's
 // not a real failure — callers should ignore it rather than surface it.

@@ -109,6 +109,10 @@ async function onSubmit(): Promise<void> {
 			plan: plan.value,
 			cluster: cluster.value || undefined,
 		})
+		if (subscribe.error) throw subscribe.error
+		if (!subscribe.data) {
+			throw new Error('The service subscription did not return a result.')
+		}
 		successToast(
 			subscribe.data?.upgraded
 				? 'Service plan updated.'
