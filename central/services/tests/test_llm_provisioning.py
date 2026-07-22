@@ -6,6 +6,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.services import provisioning
 from central.services.api import dashboard, pilot
 from central.services.drivers.grove import GroveDriver
 
@@ -86,7 +87,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 	def test_enable_site_stores_encrypted_credential(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			out = dashboard.enable_site(self.managed.name, self.site)
+			out = provisioning.enable_site(self.managed.name, self.site)
 
 		self.assertEqual(out["status"], "Active")
 		credential = frappe.get_doc("Site Service Credential", out["credential"])
@@ -95,46 +96,41 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 	def test_enable_site_is_idempotent(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			first = dashboard.enable_site(self.managed.name, self.site)
-			second = dashboard.enable_site(self.managed.name, self.site)
+			first = provisioning.enable_site(self.managed.name, self.site)
+			second = provisioning.enable_site(self.managed.name, self.site)
 
 		self.assertEqual(first["credential"], second["credential"])
 
 	def test_enable_after_revoke_reuses_row(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE), patch.object(GroveDriver, "revoke_site"):
-			first = dashboard.enable_site(self.managed.name, self.site)
-			dashboard.disable_site(self.managed.name, self.site)
-			again = dashboard.enable_site(self.managed.name, self.site)
+			first = provisioning.enable_site(self.managed.name, self.site)
+			provisioning.disable_site(self.managed.name, self.site)
+			again = provisioning.enable_site(self.managed.name, self.site)
 
 		self.assertEqual(first["credential"], again["credential"])
 		self.assertEqual(again["status"], "Active")
 
+	def test_enable_requires_active_entitlement(self):
+		# The bench can only enable once the team has activated the service — that's the
+		# Central-console billing gate.
+		frappe.db.set_value("Managed Service", self.managed.name, "status", "Draft")
+		with self.assertRaises(frappe.ValidationError):
+			provisioning.active_managed_service(self.team, "llm")
+
 	def test_get_config_returns_delivered_config(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			dashboard.enable_site(self.managed.name, self.site)
+			provisioning.enable_site(self.managed.name, self.site)
 
 		config = pilot.config_for_site(self.team, self.site, "llm")
 
 		self.assertEqual(config["gateway_url"], _FAKE["gateway_url"])
 		self.assertEqual(config["api_key"], _FAKE["api_key"])
 
-	def test_get_config_rejects_foreign_team(self):
-		with self.assertRaises(frappe.PermissionError):
-			pilot.config_for_site("TEAM-not-owner", self.site, "llm")
-
-	def test_get_credential_reveals_secret_for_byo(self):
-		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			dashboard.enable_site(self.managed.name, self.site)
-
-		cred = dashboard.get_credential(self.managed.name, self.site)
-		self.assertEqual(cred["gateway_url"], _FAKE["gateway_url"])
-		self.assertEqual(cred["api_key"], _FAKE["api_key"])
-		self.assertEqual(cred["status"], "Active")
-
-	def test_get_credential_rejects_disabled_site(self):
-		# Revealing a key only makes sense for an enabled site; a bare team site is not.
+	def test_get_config_rejects_a_team_without_the_credential(self):
+		# Team-scoped by the credential lookup: another team resolves no credential, so
+		# it can't read one — no cross-team leak, and no site-mirror dependency.
 		with self.assertRaises(frappe.ValidationError):
-			dashboard.get_credential(self.managed.name, self.site)
+			pilot.config_for_site("TEAM-not-owner", self.site, "llm")
 
 	def test_generate_api_key_mints_and_stores_secret(self):
 		with patch.object(GroveDriver, "provision_key", return_value=_FAKE):
@@ -169,7 +165,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 		from central.services import llm
 
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			dashboard.enable_site(self.managed.name, self.site)
+			provisioning.enable_site(self.managed.name, self.site)
 		with patch.object(GroveDriver, "provision_key", return_value={**_FAKE, "provider_ref": "key-abc@svc.frappe.cloud"}):
 			dashboard.generate_api_key(self.managed.name, "app")
 
@@ -194,23 +190,19 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 	def test_get_instance_returns_status_sites_models(self):
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
-			dashboard.enable_site(self.managed.name, self.site)
+			provisioning.enable_site(self.managed.name, self.site)
 
 		instance = dashboard.get_instance(self.managed.name)
 		self.assertEqual(instance["status"], "Active")
 		self.assertIn(self.site, instance["enabled_sites"])
 		self.assertIsInstance(instance["models"], list)
 
-	def test_list_sites_returns_team_sites(self):
-		names = [s["name"] for s in dashboard.list_sites(self.team)]
-		self.assertIn(self.site, names)
-
 	def test_reads_require_capability(self):
 		self.addCleanup(frappe.set_user, "Administrator")
 		frappe.set_user("Guest")
 
 		with self.assertRaises(frappe.PermissionError):
-			dashboard.list_sites(self.team)
+			dashboard.list_offers(self.team)
 
 
 class TestLLMPolicyAndUsage(IntegrationTestCase):
