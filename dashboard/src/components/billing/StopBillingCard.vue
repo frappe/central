@@ -25,7 +25,7 @@ const { canManageBilling } = useCapabilities()
 				v-if="canManageBilling"
 				variant="subtle"
 				theme="red"
-				label="Stop billing"
+label="Stop"
 				:disabled="true"
 				class="shrink-0"
 			/>
