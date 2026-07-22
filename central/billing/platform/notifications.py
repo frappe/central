@@ -4,8 +4,8 @@
 
 v1 sent duplicate emails from both Press and the gateway. v2 routes every
 customer-facing billing notification through this one module: it records a
-Notification Log per team, honours the team's preferences, and is the only thing
-that sends. Gateways never email the customer.
+Notification Log per team and is the only thing that sends. Gateways never
+email the customer.
 
 Each call also drops an Info comment on the referenced doc (Desk audit trail);
 email dispatch is via frappe.sendmail in production (stubbed here — the
@@ -45,15 +45,6 @@ _FEED_META = {
 }
 
 
-def _preference_enabled(team: str, event_type: str) -> bool:
-	"""A team's opt-out for an event; absent preference doc = all enabled."""
-	if not frappe.db.exists("Notification Preference", team):
-		return True
-	fieldname = "notify_" + event_type.lower().replace(" ", "_")
-	value = frappe.db.get_value("Notification Preference", team, fieldname)
-	return value is None or bool(value)
-
-
 def notify(
 	team: str,
 	event_type: str,
@@ -64,8 +55,8 @@ def notify(
 ) -> dict:
 	"""Emit one notification, the single sender for all billing events.
 
-	Suppressed (by preference) events are still logged — as `suppressed` — so the
-	suppression itself is auditable, but nothing is sent.
+	Every event is logged and emailed. Per-user preference gating will be handled
+	by the notification engine.
 	"""
 	context = context or {}
 	subject, template = _TEMPLATES.get(event_type, (event_type, message or event_type))
@@ -82,24 +73,20 @@ def notify(
 		action_label=action_label, action_route=action_route,
 	)
 
-	enabled = _preference_enabled(team, event_type)
 	log = frappe.get_doc(
 		{
 			"doctype": "Billing Notification Log",
 			"team": team,
 			"event_type": event_type,
 			"channel": "email",
-			"status": "Sent" if enabled else "Suppressed",
+			"status": "Sent",
 			"subject": subject,
 			"message": body,
 			"reference_doctype": reference_doctype,
 			"reference_name": reference_name,
-			"sent_at": frappe.utils.now_datetime() if enabled else None,
+			"sent_at": frappe.utils.now_datetime(),
 		}
 	).insert(ignore_permissions=True)
-
-	if not enabled:
-		return {"sent": False, "reason": "suppressed", "log": log.name}
 
 	if reference_doctype and reference_name:
 		try:

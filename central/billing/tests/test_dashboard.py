@@ -641,7 +641,6 @@ class TestWriteEndpointsRejectGet(IntegrationTestCase):
 			methods.remove_payment_method, methods.set_default_payment_method,
 			methods.reorder_payment_methods,
 			account.save_billing_profile, account.save_billing_settings,
-			account.save_notification_preferences,
 			account.mark_notification_read, account.mark_all_notifications_read,
 		]
 		allowed = frappe.allowed_http_methods_for_whitelisted_func

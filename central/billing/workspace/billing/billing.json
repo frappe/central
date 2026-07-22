@@ -387,8 +387,8 @@
   {
    "hidden": 0,
    "is_query_report": 0,
-   "label": "Notifications",
-   "link_count": 3,
+    "label": "Notifications",
+    "link_count": 2,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -409,16 +409,6 @@
    "label": "Billing Notification Log",
    "link_count": 0,
    "link_to": "Billing Notification Log",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Notification Preference",
-   "link_count": 0,
-   "link_to": "Notification Preference",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"

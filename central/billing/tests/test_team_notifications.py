@@ -48,14 +48,10 @@ class TestFeedWriter(TeamNotificationBase):
 		self.assertEqual(rows[0].category, "Billing")
 		self.assertEqual(rows[0].action_route, "/billing/invoices")
 
-	def test_suppressed_email_still_feeds_in_app(self):
-		# Opting out of the *email* must not hide the event from the dashboard feed.
-		frappe.get_doc({"doctype": "Notification Preference", "team": TEAM,
-						"notify_payment_failure": 0}).insert(ignore_permissions=True)
+	def test_notify_writes_feed_in_app(self):
 		out = billing_notify.notify(TEAM, "Payment Failure", context={"invoice": "INV-2", "reason": "x"})
-		self.assertFalse(out["sent"])  # email suppressed
-		self.assertEqual(feed.unread_count(TEAM), 1)  # but the feed still recorded it
-		frappe.db.delete("Notification Preference", {"team": TEAM})
+		self.assertTrue(out["sent"])
+		self.assertEqual(feed.unread_count(TEAM), 1)
 
 
 class TestFeedAPI(TeamNotificationBase):

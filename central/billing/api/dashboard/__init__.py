@@ -21,7 +21,6 @@ from central.billing.api.dashboard.account import (
 	get_billing_profile,
 	get_billing_settings,
 	get_collection_status,
-	get_notification_preferences,
 	get_team_overview,
 	get_trust_tier,
 	list_notifications,
@@ -31,7 +30,6 @@ from central.billing.api.dashboard.account import (
 	notification_badge,
 	save_billing_profile,
 	save_billing_settings,
-	save_notification_preferences,
 	set_collection_mode,
 	whoami,
 )
@@ -75,7 +73,7 @@ __all__ = [
 	"list_switchable_teams",
 	"list_notifications", "notification_badge", "mark_notification_read",
 	"mark_all_notifications_read",
-	"get_notification_preferences", "save_notification_preferences",
+
 	"get_eligible_plans",
 	"get_forecast", "list_subscriptions", "pause_subscription", "resume_subscription",
 	"list_invoices", "get_invoice", "list_payment_attempts",

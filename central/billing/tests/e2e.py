@@ -89,7 +89,7 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 			"Refund", "Invoice", "Payment Attempt", "Subscription", "Payment Method",
 			"Credit Ledger Entry", "Credit Wallet", "Gateway Customer",
 			"Usage Rollup", "Billing Notification Log",
-			"Notification Preference", "Billing Profile", "Tax Profile",
+			"Billing Profile", "Tax Profile",
 		):
 			_safe(frappe.db.delete, dt, {"team": team})
 		_safe(frappe.delete_doc, "Team", team, force=True, ignore_permissions=True)

@@ -277,8 +277,4 @@ export interface NotificationFeed {
 	unread: number
 }
 
-/** get_notification_preferences — per-event-type delivery toggles (0/1), keyed by event. */
-export interface NotificationPreferences {
-	team: string
-	[event: string]: number | string
-}
+

@@ -169,11 +169,6 @@
   },
   {
    "group": "Notifications",
-   "link_doctype": "Notification Preference",
-   "link_fieldname": "team"
-  },
-  {
-   "group": "Notifications",
    "link_doctype": "Billing Notification Log",
    "link_fieldname": "team"
   }

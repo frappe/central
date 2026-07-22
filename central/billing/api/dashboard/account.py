@@ -286,16 +286,8 @@ def list_switchable_teams() -> list[dict]:
 
 
 # ── Notifications (#20) ──────────────────────────────────────────────────────
-# The team's billing notification feed and per-event-type delivery preferences.
-# The feed is the Billing Notification Log (what we actually sent or suppressed);
-# preferences toggle which event types reach the team.
-
-_NOTIFY_PREFS = (
-	"notify_payment_success", "notify_payment_failure", "notify_payment_retry",
-	"notify_invoice_overdue", "notify_credit_low", "notify_card_expiry",
-	"notify_mandate_reauth", "notify_trial_expiring",
-)
-
+# The team's in-app notification feed (Team Notification) and the email audit
+# trail (Billing Notification Log).
 
 @frappe.whitelist()
 def list_notifications(
@@ -366,27 +358,4 @@ def mark_all_notifications_read(team: str | None = None) -> dict:
 	return {"ok": True, "updated": len(names), "unread": 0}
 
 
-@frappe.whitelist()
-def get_notification_preferences(team: str | None = None) -> dict:
-	"""Per-event-type delivery toggles. Absent = everything on by default."""
-	team = _resolve_team(team)
-	prefs = {p: 1 for p in _NOTIFY_PREFS}
-	if frappe.db.exists("Notification Preference", team):
-		doc = frappe.get_doc("Notification Preference", team)
-		prefs = {p: int(doc.get(p) or 0) for p in _NOTIFY_PREFS}
-	prefs["team"] = team
-	return prefs
 
-
-@frappe.whitelist(methods=["POST"])
-def save_notification_preferences(team: str | None = None, **prefs) -> dict:
-	"""Update which event types notify the team (billing:manage)."""
-	team = _resolve_team(team, authz.MANAGE)
-	values = {p: int(frappe.utils.cint(prefs.get(p))) for p in _NOTIFY_PREFS if p in prefs}
-	if frappe.db.exists("Notification Preference", team):
-		doc = frappe.get_doc("Notification Preference", team)
-		doc.update(values)
-	else:
-		doc = frappe.get_doc({"doctype": "Notification Preference", "team": team, **values})
-	doc.save(ignore_permissions=True)
-	return {"saved": True, "team": team}
