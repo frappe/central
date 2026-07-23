@@ -115,6 +115,10 @@ export const API = {
 	markNotificationRead: 'central.billing.api.dashboard.mark_notification_read',
 	markAllNotificationsRead:
 		'central.billing.api.dashboard.mark_all_notifications_read',
+	saveNotificationPreferences:
+		'central.notification.api.save_user_preferences',
+	getNotificationPreferences:
+		'central.notification.api.get_user_preferences',
 	pauseSubscription: 'central.billing.api.dashboard.pause_subscription',
 	resumeSubscription: 'central.billing.api.dashboard.resume_subscription',
 	subscribeMeteredService:

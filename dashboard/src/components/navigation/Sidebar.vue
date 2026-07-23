@@ -97,6 +97,12 @@ const sections = computed(() => [
 				to: '/notifications',
 				condition: () => isMember.value,
 			},
+			{
+				label: 'Preferences',
+				icon: 'lucide-sliders-horizontal',
+				to: '/notifications/preferences',
+				condition: () => isMember.value,
+			},
 		],
 	},
 	{

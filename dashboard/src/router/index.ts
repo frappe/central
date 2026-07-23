@@ -74,6 +74,11 @@ const routes = [
 				name: 'Notifications',
 				component: () => import('@/pages/notifications/NotificationsPage.vue'),
 			},
+			{
+				path: 'notifications/preferences',
+				name: 'NotificationPreferences',
+				component: () => import('@/pages/notifications/NotificationPreferencesPage.vue'),
+			},
 			{ path: 'team', redirect: '/team/members' },
 			// Members + roles share one tabbed page; /team/roles is kept as an alias.
 			{
