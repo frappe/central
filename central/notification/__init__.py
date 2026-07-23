@@ -109,6 +109,23 @@ def list_notifications(
 			if not row.required_cap or can(user, team, row.required_cap)
 		]
 
+		# Filter out notifications where the user has disabled in-app for the category.
+		categories = {row.category for row in items}
+		if categories:
+			disabled_categories = set(
+				frappe.db.get_all(
+					"User Notification Preference",
+					filters={
+						"user": user,
+						"team": team,
+						"in_app_enabled": 0,
+						"category": ["in", list(categories)],
+					},
+					pluck="category",
+				)
+			)
+			items = [row for row in items if row.category not in disabled_categories]
+
 	return {
 		"items": items[: frappe.utils.cint(limit)],
 		"unread": unread_count(team),

@@ -29,7 +29,8 @@ class EngineTestBase(IntegrationTestCase):
 
 	def _ensure_event_type(self, event_type, *, category="Server", severity="Warning",
 						   required_cap="server:view", in_app_title="Event happened",
-						   in_app_body="Something broke"):
+						   in_app_body="Something broke", direct_recipients="None",
+						   create_in_app=True):
 		if frappe.db.exists("Notification Event Type", event_type):
 			return frappe.get_doc("Notification Event Type", event_type)
 		return frappe.get_doc({
@@ -40,6 +41,8 @@ class EngineTestBase(IntegrationTestCase):
 			"required_cap": required_cap,
 			"in_app_title": in_app_title,
 			"in_app_body": in_app_body,
+			"direct_recipients": direct_recipients,
+			"create_in_app": int(create_in_app),
 		}).insert(ignore_permissions=True)
 
 
@@ -391,3 +394,94 @@ class TestReportPilotEvent(EngineTestBase):
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].reference_name, "my-site")
 		self.assertEqual(rows[0].required_cap, "server:view")
+
+
+class TestTemplateContext(EngineTestBase):
+	def test_reference_doctype_in_template_context(self):
+		"""reference_doctype is available as a Jinja template variable."""
+		self._ensure_event_type(
+			"backup_failure",
+			in_app_title="Backup failed for {{ reference_name }} ({{ reference_doctype }})",
+			in_app_body="Type: {{ reference_doctype }}, Name: {{ reference_name }}",
+		)
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "backup_failure", message="pg_dump error",
+				 reference_doctype="Site", reference_name="my-site")
+
+		row = frappe.get_all(
+			"Team Notification",
+			{"team": TEAM, "event_type": "backup_failure"},
+			["title", "message"],
+		)[0]
+		self.assertIn("Site", row.title)
+		self.assertIn("Site", row.message)
+		self.assertIn("my-site", row.message)
+
+
+class TestInAppEnabledFilter(EngineTestBase):
+	def setUp(self):
+		super().setUp()
+		self.user_a = make_user("inapp-a@example.com")
+		self.user_b = make_user("inapp-b@example.com")
+		# Both users get Viewer role (has server:view and billing:view).
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.user_a, "role": "Viewer", "status": "Active"})
+		team.append("members", {"user": self.user_b, "role": "Viewer", "status": "Active"})
+		team.save(ignore_permissions=True)
+
+	def test_user_with_in_app_disabled_does_not_see_notification(self):
+		"""A user with in_app_enabled=0 for a category does not see those notifications."""
+		self._ensure_event_type("backup_failure", category="Server",
+							   required_cap="server:view")
+		# Disable in-app for user_a on Server category.
+		frappe.get_doc({
+			"doctype": "User Notification Preference",
+			"user": self.user_a,
+			"team": TEAM,
+			"category": "Server",
+			"email_enabled": 1,
+			"in_app_enabled": 0,
+		}).insert(ignore_permissions=True)
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "backup_failure", message="Backup failed",
+				 reference_doctype="Site", reference_name="my-site")
+
+		from central import notification as feed
+
+		# user_a should NOT see the notification.
+		out = feed.list_notifications(TEAM, user=self.user_a)
+		event_types = [i.event_type for i in out["items"]]
+		self.assertNotIn("backup_failure", event_types)
+
+		# user_b (no preference = default enabled) SHOULD see it.
+		out = feed.list_notifications(TEAM, user=self.user_b)
+		event_types = [i.event_type for i in out["items"]]
+		self.assertIn("backup_failure", event_types)
+
+
+class TestMemberInvitedSuppression(EngineTestBase):
+	def test_member_invited_does_not_create_team_notification(self):
+		"""member_invited event sends email but does NOT create a Team Notification."""
+		self._ensure_event_type(
+			"member_invited",
+			category="Team",
+			severity="Info",
+			required_cap="team:manage_members",
+			in_app_title="Team invitation",
+			in_app_body="You have been invited to join {{ team }}.",
+			direct_recipients="None",
+			create_in_app=False,
+		)
+
+		from central.notification.engine import dispatch
+
+		result = dispatch(TEAM, "member_invited", message="new-member@example.com")
+		self.assertFalse(result["created"])
+		self.assertIsNone(result["notification"])
+
+		count = frappe.db.count("Team Notification", {"team": TEAM, "event_type": "member_invited"})
+		self.assertEqual(count, 0)

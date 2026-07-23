@@ -32,7 +32,7 @@ def dispatch(
 	Returns ``{"created": True, "notification": <name>}`` on success, or
 	``{"created": False, "reason": "duplicate"}`` when dedup fires.
 	"""
-	ctx = _resolve_context(team, event_type, context, reference_name)
+	ctx = _resolve_context(team, event_type, context, reference_name, reference_doctype)
 	ctx["message"] = message or ""
 
 	event = _get_event_type(event_type)
@@ -50,32 +50,34 @@ def dispatch(
 	title = _render_template(event.in_app_title, ctx)
 	body = _render_template(event.in_app_body, ctx)
 
-	doc = frappe.get_doc(
-		{
-			"doctype": "Team Notification",
-			"team": team,
-			"category": event.category,
-			"event_type": event_type,
-			"severity": event.severity,
-			"required_cap": event.required_cap,
-			"title": title,
-			"message": body,
-			"reference_doctype": reference_doctype,
-			"reference_name": reference_name,
-			"action_label": event.action_label,
-			"action_route": _render_template(event.action_route, ctx) if event.action_route else None,
-			"is_read": 0,
-		}
-	).insert(ignore_permissions=True)
+	doc = None
+	if event.create_in_app:
+		doc = frappe.get_doc(
+			{
+				"doctype": "Team Notification",
+				"team": team,
+				"category": event.category,
+				"event_type": event_type,
+				"severity": event.severity,
+				"required_cap": event.required_cap,
+				"title": title,
+				"message": body,
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_name,
+				"action_label": event.action_label,
+				"action_route": _render_template(event.action_route, ctx) if event.action_route else None,
+				"is_read": 0,
+			}
+		).insert(ignore_permissions=True)
 
-	frappe.publish_realtime(
-		f"team_notification:{team}", {"team": team}, after_commit=True
-	)
+		frappe.publish_realtime(
+			f"team_notification:{team}", {"team": team}, after_commit=True
+		)
 
 	_fan_out_emails(team, event, ctx, message=message,
 					reference_doctype=reference_doctype, reference_name=reference_name)
 
-	return {"created": True, "notification": doc.name, "title": title, "body": body}
+	return {"created": bool(doc), "notification": doc.name if doc else None, "title": title, "body": body}
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +95,7 @@ def ensure_event_type(
 	action_label: str | None = None,
 	action_route: str | None = None,
 	direct_recipients: str = "None",
+	create_in_app: bool = True,
 	email_template: str | None = None,
 ):
 	"""Create the ``Notification Event Type`` row if it doesn't already exist.
@@ -114,6 +117,7 @@ def ensure_event_type(
 		"action_label": action_label,
 		"action_route": action_route,
 		"direct_recipients": direct_recipients,
+		"create_in_app": int(create_in_app),
 		"email_template": email_template,
 	}).insert(ignore_permissions=True)
 
@@ -124,18 +128,19 @@ def _get_event_type(event_type: str):
 		"Notification Event Type",
 		event_type,
 		["name", "category", "severity", "required_cap", "direct_recipients",
-		 "email_template", "in_app_title", "in_app_body", "action_label", "action_route"],
+		 "email_template", "in_app_title", "in_app_body", "action_label", "action_route",
+		 "create_in_app"],
 		as_dict=True,
 	)
 
 
-def _resolve_context(team, event_type, context, reference_name):
+def _resolve_context(team, event_type, context, reference_name, reference_doctype=None):
 	"""Build the template context dict shared by all Jinja renders."""
 	ctx = {
 		"team": team,
 		"event_type": event_type,
 		"reference_name": reference_name or "",
-		"reference_doctype": "",
+		"reference_doctype": reference_doctype or "",
 	}
 	if context:
 		ctx["context"] = context

@@ -275,6 +275,7 @@
   "action_label": null,
   "action_route": null,
   "category": "Team",
+  "create_in_app": 0,
   "direct_recipients": "None",
   "docstatus": 0,
   "doctype": "Notification Event Type",

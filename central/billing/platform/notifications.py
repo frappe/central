@@ -34,23 +34,20 @@ _BILLING_EVENT_TYPES = {
 
 def _ensure_event_type(slug: str):
 	"""Create the Event Type row if it doesn't already exist."""
-	if frappe.db.exists("Notification Event Type", slug):
-		return
 	spec = _BILLING_EVENT_TYPES.get(slug)
 	if not spec:
 		return
 	title, body, severity, cap, label, route = spec
-	frappe.get_doc({
-		"doctype": "Notification Event Type",
-		"event_type": slug,
-		"category": "Billing",
-		"severity": severity,
-		"required_cap": cap,
-		"in_app_title": title,
-		"in_app_body": body,
-		"action_label": label,
-		"action_route": route,
-	}).insert(ignore_permissions=True)
+	engine.ensure_event_type(
+		slug,
+		category="Billing",
+		severity=severity,
+		required_cap=cap,
+		in_app_title=title,
+		in_app_body=body,
+		action_label=label,
+		action_route=route,
+	)
 
 
 def _render_log_body(slug: str, ref: str | None, msg: str | None) -> str:
@@ -91,7 +88,7 @@ def notify(
 	slug = event_type.lower().replace(" ", "_")
 	_ensure_event_type(slug)
 
-	engine.dispatch(
+	result = engine.dispatch(
 		team,
 		slug,
 		context=src,
@@ -108,7 +105,7 @@ def notify(
 			"event_type": event_type,
 			"channel": "email",
 			"status": "Sent",
-			"subject": event_type,
+			"subject": result.get("title") or event_type,
 			"message": message or body,
 			"reference_doctype": reference_doctype,
 			"reference_name": ref,
