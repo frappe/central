@@ -74,10 +74,10 @@ def dispatch(
 			f"team_notification:{team}", {"team": team}, after_commit=True
 		)
 
-	_fan_out_emails(team, event, ctx, message=message,
+	emails_sent = _fan_out_emails(team, event, ctx, message=message,
 					reference_doctype=reference_doctype, reference_name=reference_name)
 
-	return {"created": bool(doc), "notification": doc.name if doc else None, "title": title, "body": body}
+	return {"created": bool(doc), "notification": doc.name if doc else None, "title": title, "body": body, "emails_sent": emails_sent}
 
 
 # ---------------------------------------------------------------------------
@@ -182,13 +182,16 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None, r
 
 	For ``direct_recipients = "Affected User"``, the affected user is included
 	regardless of capability.
+
+	Returns True if at least one email was sent.
 	"""
 	from central.iam import can
 
 	members = _get_active_members(team)
 	if not members:
-		return
+		return False
 
+	sent = False
 	for member_user in members:
 		# Capability gate (skip for direct recipients).
 		is_direct = event.direct_recipients == "Affected User" and ctx.get("reference_name")
@@ -201,6 +204,9 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None, r
 		_send_member_email(member_user, team, event, ctx,
 						   message=message, reference_doctype=reference_doctype,
 						   reference_name=reference_name)
+		sent = True
+
+	return sent
 
 
 def _get_active_members(team: str) -> list[str]:

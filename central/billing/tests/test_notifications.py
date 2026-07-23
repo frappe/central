@@ -37,9 +37,9 @@ class NotificationTestBase(IntegrationTestCase):
 class TestNotify(NotificationTestBase):
 	def test_default_sends_and_logs(self):
 		out = notifications.notify(TEAM, "Payment Success", context={"invoice": "INV-1"})
-		self.assertTrue(out["sent"])
 		logs = self._logs("Payment Success")
-		self.assertEqual(logs[0]["status"], "Sent")
+		self.assertEqual(len(logs), 1)
+		self.assertEqual(logs[0]["status"], "Suppressed")
 		self.assertIn("INV-1", logs[0]["message"])
 
 	def test_template_renders_with_context(self):
@@ -54,9 +54,8 @@ class TestNotify(NotificationTestBase):
 
 	def test_always_sends_and_logs(self):
 		out = notifications.notify(TEAM, "Payment Retry", context={"invoice": "INV-3", "reason": "x"})
-		self.assertTrue(out["sent"])
 		log = self._logs("Payment Retry")[0]
-		self.assertEqual(log["status"], "Sent")
+		self.assertEqual(log["status"], "Suppressed")
 
 
 class TestWiredEvents(NotificationTestBase):

@@ -98,18 +98,19 @@ def notify(
 	)
 
 	body = _render_log_body(slug, ref, msg)
+	enabled = result.get("emails_sent", False)
 	log = frappe.get_doc(
 		{
 			"doctype": "Billing Notification Log",
 			"team": team,
 			"event_type": event_type,
 			"channel": "email",
-			"status": "Sent",
+			"status": "Sent" if enabled else "Suppressed",
 			"subject": result.get("title") or event_type,
 			"message": message or body,
 			"reference_doctype": reference_doctype,
 			"reference_name": ref,
-			"sent_at": frappe.utils.now_datetime(),
+			"sent_at": frappe.utils.now_datetime() if enabled else None,
 		}
 	).insert(ignore_permissions=True)
 
@@ -121,4 +122,4 @@ def notify(
 		except Exception:  # noqa: BLE001 — audit comment is best-effort
 			pass
 
-	return {"sent": True, "log": log.name}
+	return {"sent": enabled, "log": log.name}
