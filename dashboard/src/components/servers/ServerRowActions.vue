@@ -18,6 +18,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+	overview: [server: AssetRow]
 	open: [server: AssetRow]
 	start: [server: AssetRow]
 	stop: [server: AssetRow]
@@ -35,6 +36,11 @@ interface ActionItem {
 
 const options = computed(() => {
 	const items: ActionItem[] = []
+	items.push({
+		label: 'Overview',
+		icon: 'lucide-gauge',
+		onClick: () => emit('overview', props.server),
+	})
 	// Mid-resize the VM is power-cycling in the background: power + resize actions are
 	// blocked (the API rejects them too) until the reshape job clears the flag.
 	const resizing = isResizing(props.server)

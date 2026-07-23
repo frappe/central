@@ -42,6 +42,7 @@ export const API = {
 	startServer: 'central.api.servers.start_server',
 	stopServer: 'central.api.servers.stop_server',
 	terminateServer: 'central.api.servers.terminate_server',
+	serverOverview: 'central.api.servers.server_overview',
 	listResources: 'central.api.resources.list_resources',
 
 	// ── Managed add-on services (central.services.api.dashboard) ──

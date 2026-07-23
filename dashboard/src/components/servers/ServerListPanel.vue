@@ -41,6 +41,7 @@ const props = defineProps<{
 defineEmits<{
 	focusRow: [row: ResourceRow]
 	clearLocation: []
+	overview: [server: AssetRow]
 	open: [server: AssetRow]
 	start: [server: AssetRow]
 	stop: [server: AssetRow]
@@ -140,6 +141,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							:can-terminate="canTerminate"
 							:busy="busy === row.id"
 							:opening="opening === row.id"
+							@overview="$emit('overview', $event)"
 							@open="$emit('open', $event)"
 							@start="$emit('start', $event)"
 							@stop="$emit('stop', $event)"

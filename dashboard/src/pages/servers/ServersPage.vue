@@ -8,6 +8,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
+import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
@@ -335,6 +336,13 @@ async function confirmTerminate(server: AssetRow): Promise<void> {
 }
 
 const pendingResize = ref<AssetRow | null>(null)
+const overviewServer = ref<AssetRow | null>(null)
+const overviewOpen = computed({
+	get: () => !!overviewServer.value,
+	set: (isOpen: boolean) => {
+		if (!isOpen) overviewServer.value = null
+	},
+})
 
 // — Sites. Open goes to the live site; terminate tears down the backing VM.
 function openSite(url: string): void {
@@ -423,6 +431,7 @@ async function confirmSiteTerminate(): Promise<void> {
 						:can-terminate="canTerminateServer"
 						:busy="busy === pin.server.resource_id"
 						:opening="opening === pin.server.resource_id"
+						@overview="overviewServer = $event"
 						@open="open"
 						@start="doStart"
 						@stop="doStop"
@@ -469,6 +478,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				:opening="opening"
 				@focus-row="focusRow"
 				@clear-location="locationFilter = null"
+				@overview="overviewServer = $event"
 				@open="open"
 				@start="doStart"
 				@stop="doStop"
@@ -528,6 +538,14 @@ title="Terminate site" size="sm" :actions="[
 		</Dialog>
 
 		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
+		<ServerOverviewDialog
+			v-model:open="overviewOpen"
+			:server="overviewServer"
+			:can-open="canOpenServer"
+			:can-resize="canPowerServer"
+			@open="open"
+			@resize="pendingResize = $event"
+		/>
 		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>
 </template>
