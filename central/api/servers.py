@@ -164,6 +164,162 @@ def registry(team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["GET"])
+def server_overview(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Return one server's Central mirror plus Pilot's cached operational metrics."""
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "server:view"):
+		frappe.throw(_("You can't view this team's servers."), frappe.PermissionError)
+	if not resource_id:
+		frappe.throw(_("resource_id is required."), frappe.ValidationError)
+
+	row = _overview_asset_row(resource_id, team)
+	if not row:
+		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+
+	asset = frappe._dict(
+		{
+			"resource_id": row.resource_id,
+			"title": row.title,
+			"cluster": row.cluster,
+			"status": row.status,
+			"plan": row.plan,
+			"frappe_version": row.frappe_version,
+			"vcpus": row.vcpus,
+			"memory_megabytes": row.memory_megabytes,
+			"disk_gigabytes": row.disk_gigabytes,
+			"ipv6_address": row.ipv6_address,
+			"public_ipv4": row.public_ipv4,
+			"gateway_url": row.gateway_url,
+			"creation": row.creation,
+		}
+	)
+	return {
+		"server": {
+			**asset,
+			**_overview_plan(asset, team),
+			"team_name": row.team_name or team,
+			"region": {
+				"display_name": row.region_display_name or asset.cluster,
+				"provider": row.region_provider,
+				"country_code": row.region_country_code,
+			},
+		},
+		"monitoring": _server_monitoring(asset, audience_id=row.audience_id),
+	}
+
+
+def _overview_asset_row(resource_id: str, team: str):
+	"""Asset + region + team + active Pilot audience in one query."""
+	asset = frappe.qb.DocType("Asset")
+	region = frappe.qb.DocType("Region")
+	team_table = frappe.qb.DocType("Team")
+	pilot = frappe.qb.DocType("Pilot Credential")
+	rows = (
+		frappe.qb.from_(asset)
+		.left_join(region)
+		.on(region.name == asset.cluster)
+		.left_join(team_table)
+		.on(team_table.name == asset.team)
+		.left_join(pilot)
+		.on((pilot.asset == asset.name) & (pilot.status == "Active"))
+		.select(
+			asset.resource_id,
+			asset.title,
+			asset.cluster,
+			asset.status,
+			asset.plan,
+			asset.frappe_version,
+			asset.vcpus,
+			asset.memory_megabytes,
+			asset.disk_gigabytes,
+			asset.ipv6_address,
+			asset.public_ipv4,
+			asset.gateway_url,
+			asset.creation,
+			region.display_name.as_("region_display_name"),
+			region.provider.as_("region_provider"),
+			region.country_code.as_("region_country_code"),
+			team_table.team_name.as_("team_name"),
+			pilot.audience_id.as_("audience_id"),
+		)
+		.where((asset.resource_id == resource_id) & (asset.team == team))
+		.limit(1)
+		.run(as_dict=True)
+	)
+	return rows[0] if rows else None
+
+
+def _overview_plan(asset: dict, team: str) -> dict:
+	"""Tier name + billed rate — scoped to this asset, not the team's full run-rate."""
+	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
+	billing_cycle = "Monthly"
+	title = None
+	rate = None
+	plan_name = asset.plan
+
+	subscription = frappe.qb.DocType("Subscription")
+	change = frappe.qb.DocType("Subscription Change")
+	segment_rows = (
+		frappe.qb.from_(subscription)
+		.left_join(change)
+		.on(
+			(change.subscription == subscription.name)
+			& (change.change_type.isin(("Created", "Plan Changed", "Cancelled")))
+		)
+		.select(
+			subscription.plan,
+			change.change_type,
+			change.locked_rate,
+			change.currency,
+			change.effective_at,
+			change.creation,
+		)
+		.where(subscription.asset_id == asset.resource_id)
+		.orderby(change.effective_at, order=frappe.qb.desc)
+		.orderby(change.creation, order=frappe.qb.desc)
+		.limit(1)
+		.run(as_dict=True)
+	)
+	if segment_rows:
+		segment = segment_rows[0]
+		plan_name = segment.plan or plan_name
+		if segment.change_type and segment.change_type != "Cancelled":
+			if segment.locked_rate is not None:
+				rate = frappe.utils.flt(segment.locked_rate)
+			currency = segment.currency or currency
+
+	if plan_name:
+		plan = frappe.db.get_value("Plan", plan_name, ["title", "billing_cycle"], as_dict=True)
+		if plan:
+			title = plan.title
+			billing_cycle = plan.billing_cycle or "Monthly"
+			if rate is None:
+				# Local import: Plan.get_rate pulls billing catalog; keep servers import-light.
+				rate = frappe.get_cached_doc("Plan", plan_name).get_rate(currency, asset.cluster)
+	else:
+		# Asset bootstrap may open a Subscription before a plan is attached — no rate to show.
+		rate = None
+
+	return {
+		"plan_title": title,
+		"plan_rate": rate,
+		"plan_currency": currency,
+		"plan_billing_cycle": billing_cycle,
+	}
+
+
+def _server_monitoring(asset: dict, audience_id: str | None = None) -> dict:
+	"""Pilot metrics are meaningful only for a live, enrolled bench VM."""
+	if asset.status != "Running" or not asset.gateway_url or not audience_id:
+		return {"available": False}
+
+	from central.integrations.pilot import get_cached_monitoring
+
+	return get_cached_monitoring(asset.resource_id, asset.gateway_url, audience_id)
+
+
+@frappe.whitelist(methods=["GET"])
 def list_instances(team: str | None = None) -> list[dict]:
 	"""List the regions a team can place servers in — every Active Atlas Instance.
 	A pure read for the console's New Server region picker. Gated on `cluster:view`
@@ -267,9 +423,7 @@ def create_server(
 	# provisions a VM without a subscription, as before.
 	subscription = None
 	if plan:
-		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get(
-			"subscription"
-		)
+		subscription = provision_subscription(team, region, plan, resource_id=resource_id).get("subscription")
 	# Mirror the VM Atlas returned even when billing already inserted the Pending
 	# Asset. Otherwise preset creates render the UUID/Pending shell until the next
 	# reconcile, instead of the user-facing title/status Atlas already returned.
