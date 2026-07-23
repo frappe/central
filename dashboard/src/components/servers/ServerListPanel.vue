@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Badge, Button, FormControl } from 'frappe-ui'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
@@ -9,9 +8,9 @@ import type { ServerVisual } from '@/lib/serverMap'
 import type { Region } from '@/types/Central/Region'
 
 // The "Your servers" floating card: the pill IS the panel, collapsed. Opening
-// morphs it in place (see <style>). Renders both kinds — a site is a 1:1-backed
-// VM, so servers and sites list side by side, distinguished by their content
-// (a site shows its domain, a server its hostname), not a badge. Presentational.
+// morphs it in place (see <style>). Renders both kinds indistinguishably — a site
+// is a 1:1-backed VM, so it wears the same provider avatar and lists in the same
+// sorted stream as a server; only its ⋯ actions differ. Presentational.
 export interface ResourceRow {
 	kind: 'server' | 'site'
 	id: string
@@ -38,13 +37,6 @@ const props = defineProps<{
 	busy: string | null
 	opening: string | null
 }>()
-
-// Servers list flat; sites collect into one "Sites" group below them. Rows arrive
-// servers-first, so a lone header before the first site row splits the two.
-const siteCount = computed(() => props.rows.filter((row) => row.kind === 'site').length)
-function isFirstSite(index: number): boolean {
-	return props.rows[index].kind === 'site' && (index === 0 || props.rows[index - 1].kind === 'server')
-}
 
 defineEmits<{
 	focusRow: [row: ResourceRow]
@@ -109,12 +101,6 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			>
 				<template v-for="(row, i) in rows" :key="row.id">
 					<div
-						v-if="isFirstSite(i)"
-						class="mt-1 border-t border-outline-alpha-gray-1 px-2.5 pb-1 pt-2.5 text-xs font-medium text-ink-gray-5"
-					>
-						Sites · {{ siteCount }}
-					</div>
-					<div
 						class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors"
 						:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
 						@click="$emit('focusRow', row)"
@@ -122,13 +108,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						@mouseleave="hoverId = null"
 					>
 					<span class="relative shrink-0">
-						<ProviderAvatar v-if="row.kind === 'server'" :provider="row.provider" :size="32" />
-						<span
-							v-else
-							class="grid size-8 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-6"
-						>
-							<span class="lucide-globe size-4" />
-						</span>
+						<ProviderAvatar :provider="row.provider" :size="32" />
 						<span
 							class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
 							:style="{ background: row.visual.dot }"

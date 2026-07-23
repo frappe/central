@@ -43,7 +43,6 @@ export const API = {
 	stopServer: 'central.api.servers.stop_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	listResources: 'central.api.resources.list_resources',
-	listSiteGroups: 'central.api.resources.list_site_groups',
 
 	// ── Managed add-on services (central.services.api.dashboard) ──
 	// service:view for the reads, service:manage for the mutations + key reveal.

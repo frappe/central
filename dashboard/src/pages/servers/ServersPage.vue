@@ -11,6 +11,7 @@ import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
+import SiteRowActions from '@/components/servers/SiteRowActions.vue'
 import TerminateDialog from '@/components/servers/TerminateDialog.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
@@ -19,7 +20,6 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useServers } from '@/composables/useServers'
-import { useSites } from '@/composables/useSites'
 import { useSession } from '@/composables/useSession'
 import {
 	STATUS_FILTERS,
@@ -30,7 +30,6 @@ import {
 	specLine,
 	statusVisual,
 	type MapPin,
-	type MapSite,
 	type MapSpot,
 	type ServerVisual,
 } from '@/lib/serverMap'
@@ -39,18 +38,17 @@ import type { Region } from '@/types/Central/Region'
 import type { ResourceRow } from '@/components/servers/ServerListPanel.vue'
 
 // The servers page: the world map is the list (FC V2). Servers (the Asset mirror)
-// and sites (the Site mirror — each a 1:1-backed VM) list together; a slide-in
-// panel carries the searchable rows. Lifecycle actions reuse useServers /
-// useSites so the map, panel, and ⋯ menus share one command path.
+// and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
+// together, indistinguishable — same provider avatar, same pin, one sorted list.
+// Lifecycle actions reuse useServers so the map, panel, and ⋯ menus share one path.
 
 const router = useRouter()
 
-const { assets, loading, error, reload } = useServerMapData()
-const { sites, siteCountByRegion, reload: reloadSites } = useSites()
+const { assets, sites, loading, error, reload } = useServerMapData()
 const { regions } = useRegions()
 const { canPowerServer, canTerminateServer, canOpenServer, canCreateServer } =
 	useCapabilities()
-// Actions only — list reads come from useServerMapData / useSites.
+// Actions only — list reads come from useServerMapData.
 const {
 	refreshing,
 	stale,
@@ -130,23 +128,27 @@ const siteRows = computed<ResourceRow[]>(() =>
 		return {
 			kind: 'site' as const,
 			id: site.name,
-			name: site.name,
+			// The user-entered name ("demo.in"); the full FQDN drops to the secondary
+			// line (specs) so a site reads like the VM it is, not a routing string.
+			name: site.subdomain || site.name,
 			visual: siteVisual(site.status),
-			specs: '',
+			specs: site.name,
 			cluster: site.region ?? '',
 			region,
 			regionLabel: region ? regionLabel(region) : (site.region ?? ''),
 			flag: flagEmoji(region?.country_code),
 			provider: region?.provider ?? null,
-			site: { name: site.name, url: site.detail },
+			site: { name: site.name, url: site.url },
 		}
 	}),
 )
 
-const rows = computed<ResourceRow[]>(() => [
-	...serverRows.value,
-	...siteRows.value,
-])
+// One list, sorted by name — no servers-then-sites tell; a site is just another VM.
+const rows = computed<ResourceRow[]>(() =>
+	[...serverRows.value, ...siteRows.value].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	),
+)
 
 // — Filters. Status and region scope the map and the panel; search only
 //   narrows the panel rows.
@@ -233,43 +235,40 @@ const pillLabel = computed(() =>
 		: `All servers (${filtered.value.length})`,
 )
 
-// — Map data. Only servers pin; sites would clutter the map (a server can host
-//   many), so they surface in the hover card of the region they sit in (see
-//   sitesByRegion) and list flat in the panel's "Sites" group. Pins carry
-//   everything their hover card shows so ServerMap stays presentational.
+// — Map data. Every VM pins — servers and sites alike; a site clusters with any
+//   server sharing its region, so co-located resources gather under one node. Pins
+//   carry everything their hover card shows so ServerMap stays presentational.
 const pins = computed<MapPin[]>(() =>
 	filtered.value
-		.filter((row) => row.kind === 'server' && row.asset && row.region && hasMapCoords(row.region))
-		.map((row) => ({
-			id: row.id,
-			name: row.name,
-			lat: row.region!.latitude!,
-			lng: row.region!.longitude!,
-			provider: row.provider,
-			visual: row.visual,
-			cluster: row.cluster,
-			regionLabel: row.regionLabel,
-			flag: row.flag,
-			specs: row.specs,
-			publicIpv4: row.asset!.public_ipv4 ?? null,
-			plan: row.asset!.plan ?? null,
-			frappeVersion: row.asset!.frappe_version ?? null,
-			server: row.asset!,
-		})),
+		.filter(
+			(row) =>
+				(row.asset || row.site) && row.region && hasMapCoords(row.region),
+		)
+		.map((row) => {
+			const base = {
+				id: row.id,
+				name: row.name,
+				lat: row.region!.latitude!,
+				lng: row.region!.longitude!,
+				provider: row.provider,
+				visual: row.visual,
+				cluster: row.cluster,
+				regionLabel: row.regionLabel,
+				flag: row.flag,
+				specs: row.specs,
+			}
+			return row.kind === 'server'
+				? {
+						...base,
+						kind: 'server' as const,
+						publicIpv4: row.asset!.public_ipv4 ?? null,
+						plan: row.asset!.plan ?? null,
+						frappeVersion: row.asset!.frappe_version ?? null,
+						server: row.asset!,
+					}
+				: { ...base, kind: 'site' as const, site: row.site! }
+		}),
 )
-
-// Sites grouped by region for the map's hover cards. The DB does the grouping,
-// counting and per-region capping (useSites → list_site_groups); `count` is the
-// exact total, `sites` the previewed rows the card lists.
-const sitesByRegion = computed<Record<string, { count: number; sites: MapSite[] }>>(() => {
-	const grouped: Record<string, { count: number; sites: MapSite[] }> = {}
-	for (const site of sites.value) {
-		const region = site.region ?? ''
-		const entry = (grouped[region] ??= { count: siteCountByRegion.value[region] ?? 0, sites: [] })
-		entry.sites.push({ name: site.name, url: site.detail, visual: siteVisual(site.status) })
-	}
-	return grouped
-})
 
 // Regions with no servers show as + spots — everywhere you could deploy next.
 const spots = computed<MapSpot[]>(() => {
@@ -317,10 +316,9 @@ watch(panelOpen, (isOpen) => {
 	if (!isOpen) locationFilter.value = null
 })
 
-// — Commands. Reload the map (servers) and the sites feed after every action.
+// — Commands. One feed carries servers and sites, so a single reload refreshes both.
 function reloadAll(): void {
 	reload()
-	reloadSites()
 }
 async function withReload(action: Promise<unknown>): Promise<void> {
 	await action
@@ -354,7 +352,7 @@ async function confirmSiteTerminate(): Promise<void> {
 	pendingSiteTerminate.value = null
 	if (!name) return
 	await terminateSiteCall.submit({ name })
-	reloadSites()
+	reload()
 }
 </script>
 
@@ -407,7 +405,6 @@ async function confirmSiteTerminate(): Promise<void> {
 				class="absolute inset-0"
 				:pins="pins"
 				:spots="spots"
-				:sites-by-region="sitesByRegion"
 				:highlight-id="hoverId"
 				:allow-create="canCreateServer"
 				:allow-open="canOpenServer"
@@ -417,19 +414,28 @@ async function confirmSiteTerminate(): Promise<void> {
 				@new-server="goNewServer"
 				@cluster-open="onClusterOpen"
 			>
-				<template #card-actions="{ server }">
+				<template #card-actions="{ pin }">
 					<ServerRowActions
-						:server="server"
+						v-if="pin.kind === 'server' && pin.server"
+						:server="pin.server"
 						:can-open="canOpenServer"
 						:can-power="canPowerServer"
 						:can-terminate="canTerminateServer"
-						:busy="busy === server.resource_id"
-						:opening="opening === server.resource_id"
+						:busy="busy === pin.server.resource_id"
+						:opening="opening === pin.server.resource_id"
 						@open="open"
 						@start="doStart"
 						@stop="doStop"
 						@resize="pendingResize = $event"
 						@terminate="pendingTerminate = $event"
+					/>
+					<SiteRowActions
+						v-else-if="pin.site"
+						:site="pin.site"
+						:can-open="canOpenServer"
+						:can-terminate="canTerminateServer"
+						@open="openSite"
+						@terminate="pendingSiteTerminate = { name: $event }"
 					/>
 				</template>
 			</ServerMap>
