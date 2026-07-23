@@ -132,7 +132,9 @@ function clampPan(): void {
 watch([base, cw, ch], clampPan)
 
 const mapStyle = computed(() => ({
-	transform: `translate3d(${tx.value}px, ${ty.value}px, 0) scale(${k.value})`,
+	transform: `translate3d(${tx.value}px, ${ty.value}px, 0)`,
+	width: `${W * k.value}px`,
+	height: `${H * k.value}px`,
 }))
 
 function zoomAt(ax: number, ay: number, factor: number): void {
@@ -502,14 +504,12 @@ function clickNode(n: MapNode): void {
 		@dblclick="onDblClick"
 		@wheel="onWheel"
 	>
-		<!-- Dotted world. One transformed layer; nodes ride the same transition
-         curve below so they track the dots through zooms. -->
-		<div class="sm-pos absolute left-0 top-0 origin-top-left" :style="mapStyle">
-			<WorldDots
-				class="block text-ink-gray-2"
-				:style="{ width: `${W}px`, height: `${H}px` }"
-			/>
-		</div>
+		<!-- Dotted world. Resize the SVG itself so it re-rasterizes at each zoom;
+		     nodes ride the same curve below so they track the dots. -->
+		<WorldDots
+			class="sm-map sm-pos absolute left-0 top-0 block text-ink-gray-2"
+			:style="mapStyle"
+		/>
 
 		<!-- Nodes: servers, clusters (2+ at one spot), and + spots for empty
          regions. Positioned in screen space; recluster as the zoom changes. -->
@@ -826,6 +826,12 @@ function clickNode(n: MapNode): void {
 }
 .sm-anim .sm-pos {
 	transition: transform 450ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+.sm-anim .sm-map {
+	transition:
+		transform 450ms cubic-bezier(0.77, 0, 0.175, 1),
+		width 450ms cubic-bezier(0.77, 0, 0.175, 1),
+		height 450ms cubic-bezier(0.77, 0, 0.175, 1);
 }
 .sm-drag .sm-pos {
 	transition: none;
