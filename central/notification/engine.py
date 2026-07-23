@@ -75,7 +75,7 @@ def dispatch(
 	_fan_out_emails(team, event, ctx, message=message,
 					reference_doctype=reference_doctype, reference_name=reference_name)
 
-	return {"created": True, "notification": doc.name}
+	return {"created": True, "notification": doc.name, "title": title, "body": body}
 
 
 # ---------------------------------------------------------------------------

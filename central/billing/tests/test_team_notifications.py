@@ -41,7 +41,7 @@ class TestFeedWriter(TeamNotificationBase):
 		# A billing event lands in the in-app feed with a mapped severity + action route.
 		billing_notify.notify(TEAM, "Payment Failure", context={"invoice": "INV-9", "reason": "declined"},
 							   reference_doctype="Invoice", reference_name="INV-9")
-		rows = frappe.get_all("Team Notification", {"team": TEAM, "event_type": "Payment Failure"},
+		rows = frappe.get_all("Team Notification", {"team": TEAM, "event_type": "payment_failure"},
 							  ["severity", "action_label", "action_route", "category", "message"])
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].severity, "Error")
