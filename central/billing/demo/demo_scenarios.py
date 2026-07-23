@@ -247,12 +247,12 @@ def _seed_notification_feed(slug_to_team: dict):
 
 	Billing events go through the real `notifications.notify` sender (which records a
 	Team Notification via the wired feed); Server Failed is triggered by flipping a
-	real Asset to Failed (the `Asset.on_update` hook emits it); Resize Failed and
-	Cluster Degraded use `create_notification` — the same writer the real hooks call.
+	real Asset to Failed (the `on_update` hook emits it); Resize Failed and
+	Cluster Degraded use `engine.dispatch` — the same writer the real hooks use.
 	The overdue team already emits Invoice Overdue + Server Suspended via real dunning.
 	"""
 	from central.billing.platform import notifications
-	from central.notification import create_notification
+	from central.notification import engine
 
 	# (slug, event_type, extra context) — one representative billing event per team,
 	# matched to its scenario. `invoice` context is filled from the team's latest bill.
@@ -292,21 +292,32 @@ def _seed_notification_feed(slug_to_team: dict):
 	# Resize Failed + Cluster Degraded — the same writer the real hooks use.
 	acme = slug_to_team.get("acme-corp")
 	if acme:
-		create_notification(
-			acme, "Server resize failed", category="Server", event_type="Resize Failed",
-			severity="Error", message="A background resize could not be applied and was rolled "
-			"back. Billing stayed on the previous plan. You can retry the resize.",
+		engine.ensure_event_type(
+			"resize_failed",
+			category="Server", severity="Error", required_cap="server:view",
+			in_app_title="Resize failed: {{ reference_name }}",
+			in_app_body="Server resize failed for {{ reference_name }}: {{ message }}",
 			action_label="View server", action_route="/servers",
+		)
+		engine.dispatch(
+			acme, "resize_failed",
+			message="A background resize could not be applied and was rolled "
+			"back. Billing stayed on the previous plan. You can retry the resize.",
 		)
 	umbrella = slug_to_team.get("umbrella")
 	if umbrella:
-		create_notification(
-			umbrella, "Region in-mumbai is temporarily unreachable", category="Server",
-			event_type="Cluster Degraded", severity="Warning",
+		engine.ensure_event_type(
+			"cluster_degraded",
+			category="Server", severity="Warning", required_cap="server:view",
+			in_app_title="Region unavailable: {{ reference_name }}",
+			in_app_body="Region {{ reference_name }}: {{ message }}",
+			action_label="View servers", action_route="/servers",
+		)
+		engine.dispatch(
+			umbrella, "cluster_degraded",
 			message="Central couldn't reach in-mumbai on the last sync. Your servers keep running; "
 			"their status in the console may be delayed until the region recovers.",
 			reference_doctype="Atlas Instance", reference_name="in-mumbai",
-			action_label="View servers", action_route="/servers",
 		)
 
 

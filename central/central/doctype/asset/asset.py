@@ -44,19 +44,19 @@ class Asset(Document):
 	def notify_failure(self):
 		"""Surface a failed server in the team's console feed (a Server-category
 		notification), so a mirror flipping to Failed isn't silent in the UI."""
-		from central.notification import create_notification
+		from central.notification import engine
 
-		create_notification(
-			self.team,
-			f"Server {self.name} failed",
-			category="Server",
-			event_type="Server Failed",
-			severity="Error",
+		engine.ensure_event_type(
+			"server_failed",
+			category="Server", severity="Error", required_cap="server:view",
+			in_app_title="Server failed: {{ reference_name }}",
+			in_app_body="Your server {{ reference_name }} entered a Failed state: {{ message }}",
+			action_label="View server", action_route="/servers",
+		)
+		engine.dispatch(
+			self.team, "server_failed",
 			message=f"Your server in {self.cluster} entered a Failed state. Review it in the console.",
-			reference_doctype="Asset",
-			reference_name=self.name,
-			action_label="View server",
-			action_route="/servers",
+			reference_doctype="Asset", reference_name=self.name,
 		)
 
 	def sync_subscription_on_status_change(self):

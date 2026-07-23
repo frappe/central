@@ -447,25 +447,25 @@ def _notify_cluster_degraded(cluster: str) -> None:
 	"""Warn teams running in an unreachable cluster that their console view may be
 	stale. Fans out one Server-category warning per affected team, deduped to a single
 	open notice per (team, cluster) so a flapping/slow Atlas doesn't spam the feed."""
-	from central.notification import create_notification
+	from central.notification import engine
 
 	teams = frappe.get_all(
 		"Asset", filters={"cluster": cluster, "status": ["!=", "Terminated"]},
 		pluck="team", distinct=True,
 	)
 	for team in {t for t in teams if t}:
-		if frappe.db.exists(
-			"Team Notification",
-			{"team": team, "event_type": "Cluster Degraded", "reference_name": cluster, "is_read": 0},
-		):
-			continue
-		create_notification(
-			team, f"Region {cluster} is temporarily unreachable",
-			category="Server", event_type="Cluster Degraded", severity="Warning",
+		engine.ensure_event_type(
+			"cluster_degraded",
+			category="Server", severity="Warning", required_cap="server:view",
+			in_app_title="Region unavailable: {{ reference_name }}",
+			in_app_body="Region {{ reference_name }}: {{ message }}",
+			action_label="View servers", action_route="/servers",
+		)
+		engine.dispatch(
+			team, "cluster_degraded",
 			message=f"Central couldn't reach {cluster} on the last sync. Your servers keep running; "
 			"their status in the console may be delayed until the region recovers.",
 			reference_doctype="Atlas Instance", reference_name=cluster,
-			action_label="View servers", action_route="/servers",
 		)
 
 

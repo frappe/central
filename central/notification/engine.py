@@ -82,6 +82,42 @@ def dispatch(
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def ensure_event_type(
+	event_type: str,
+	*,
+	category: str,
+	severity: str,
+	required_cap: str,
+	in_app_title: str,
+	in_app_body: str,
+	action_label: str | None = None,
+	action_route: str | None = None,
+	direct_recipients: str = "None",
+	email_template: str | None = None,
+):
+	"""Create the ``Notification Event Type`` row if it doesn't already exist.
+
+	Callers should invoke this before ``dispatch()`` when the fixture may not
+	have been loaded (e.g. in tests or isolated background jobs).  The
+	insertion is a no-op when the row is already present.
+	"""
+	if frappe.db.exists("Notification Event Type", event_type):
+		return
+	frappe.get_doc({
+		"doctype": "Notification Event Type",
+		"event_type": event_type,
+		"category": category,
+		"severity": severity,
+		"required_cap": required_cap,
+		"in_app_title": in_app_title,
+		"in_app_body": in_app_body,
+		"action_label": action_label,
+		"action_route": action_route,
+		"direct_recipients": direct_recipients,
+		"email_template": email_template,
+	}).insert(ignore_permissions=True)
+
+
 def _get_event_type(event_type: str):
 	"""Fetch the Event Type registry row (cached per request)."""
 	return frappe.db.get_value(

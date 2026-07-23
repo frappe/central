@@ -105,7 +105,7 @@ class TestServerFailureFeed(TeamNotificationBase):
 		asset.status = "Failed"
 		asset.save(ignore_permissions=True)
 		rows = frappe.get_all("Team Notification",
-							  {"team": TEAM, "event_type": "Server Failed"}, ["severity", "category"])
+							  {"team": TEAM, "event_type": "server_failed"}, ["severity", "category"])
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].severity, "Error")
 		self.assertEqual(rows[0].category, "Server")
