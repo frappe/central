@@ -12,6 +12,7 @@ fixtures = [
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
+	"Notification Event Type",
 ]
 
 # The TypeScript UI owns the product route.

@@ -66,3 +66,48 @@ def create_notification(
 def unread_count(team: str) -> int:
 	"""Unread in-app notifications for a team — the bell badge count."""
 	return frappe.db.count("Team Notification", {"team": team, "is_read": 0})
+
+
+def list_notifications(
+	team: str,
+	*,
+	user: str | None = None,
+	limit: int = 50,
+	category: str | None = None,
+	unread_only: bool = False,
+) -> dict:
+	"""The team's notification feed, filtered by the user's capabilities.
+
+	Only notifications whose ``required_cap`` the user possesses (or which
+	have no ``required_cap``) are returned.  Operators see everything.
+	"""
+	from central.iam import can, user_has_operator_bypass
+
+	user = user or frappe.session.user
+	filters = {"team": team}
+	if category:
+		filters["category"] = category
+	if frappe.utils.cint(unread_only):
+		filters["is_read"] = 0
+
+	items = frappe.get_all(
+		"Team Notification",
+		filters=filters,
+		fields=["name", "category", "event_type", "severity", "required_cap",
+				"title", "message", "reference_doctype", "reference_name",
+				"action_label", "action_route", "is_read", "read_at", "creation"],
+		order_by="creation desc",
+		limit=frappe.utils.cint(limit) * 3,  # over-fetch then filter
+	)
+
+	is_operator = user_has_operator_bypass(user)
+	if not is_operator:
+		items = [
+			row for row in items
+			if not row.required_cap or can(user, team, row.required_cap)
+		]
+
+	return {
+		"items": items[: frappe.utils.cint(limit)],
+		"unread": unread_count(team),
+	}
