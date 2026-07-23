@@ -296,28 +296,19 @@ def list_notifications(
 ) -> dict:
 	"""The team's in-app notification feed — billing and server events — newest first.
 
-	Returns the items plus the current unread count so the bell badge and the list
-	stay consistent from one read. Optionally filtered to a `category` (Billing /
-	Server) or to unread items only.
+	Delegates to :func:`central.notification.list_notifications` for
+	capability-filtered results.  Operators see everything; regular
+	members only see notifications whose ``required_cap`` they hold.
 	"""
-	team = _resolve_team(team)
-	filters = {"team": team}
-	if category:
-		filters["category"] = category
-	if frappe.utils.cint(unread_only):
-		filters["is_read"] = 0
-	items = frappe.get_all(
-		"Team Notification",
-		filters=filters,
-		fields=["name", "category", "event_type", "severity", "title", "message",
-				"reference_doctype", "reference_name", "action_label", "action_route",
-				"is_read", "read_at", "creation"],
-		order_by="creation desc",
-		limit=frappe.utils.cint(limit),
-	)
-	from central.notification import unread_count
+	from central.notification import list_notifications as _list
 
-	return {"items": items, "unread": unread_count(team)}
+	team = _resolve_team(team)
+	return _list(
+		team,
+		limit=limit,
+		category=category,
+		unread_only=unread_only,
+	)
 
 
 @frappe.whitelist()
