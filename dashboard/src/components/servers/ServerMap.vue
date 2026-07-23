@@ -19,7 +19,6 @@ import {
 	ZOOM_STEP,
 	type MapNode,
 	type MapPin,
-	type MapSite,
 	type MapSpot,
 } from '@/lib/serverMap'
 
@@ -31,9 +30,6 @@ const props = withDefaults(
 	defineProps<{
 		pins?: MapPin[]
 		spots?: MapSpot[]
-		/** Sites keyed by region code — surfaced in that region's hover card. `count`
-		 *  is the exact total; `sites` may be a capped preview of it. */
-		sitesByRegion?: Record<string, { count: number; sites: MapSite[] }>
 		/** Region-picker mode: render these as selectable dots instead of pins/spots. */
 		markers?: MapSpot[]
 		/** The picked marker — drawn as the provider-logo pin. */
@@ -52,7 +48,6 @@ const props = withDefaults(
 	{
 		pins: () => [],
 		spots: () => [],
-		sitesByRegion: () => ({}),
 		markers: () => [],
 		selectedId: null,
 		highlightId: null,
@@ -64,11 +59,11 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-	/** A server pin (or a cluster-card row) was chosen. */
+	/** A pin (or a cluster-card row) was chosen. */
 	open: [id: string]
-	/** A cluster-card row's external-link action was chosen. */
-	'open-server': [server: MapPin['server']]
-	/** A site listed in a region's hover card opened its live site. */
+	/** A server cluster-card row's open-bench action was chosen. */
+	'open-server': [server: NonNullable<MapPin['server']>]
+	/** A site pin/cluster-card row's open-live-site action was chosen. */
 	'open-site': [url: string]
 	/** A + spot was chosen — the Atlas Instance region to create in. */
 	'new-server': [region: string]
@@ -390,29 +385,10 @@ function cancelHide(): void {
 	window.clearTimeout(hideT)
 }
 
-function canOpenBench(server: MapPin['server']): boolean {
+function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 	return props.allowOpen && server.status === 'Running' && !!server.gateway_url
 }
 
-// Sites don't pin; they surface in the hover card of the region they sit in. A
-// single pin shows its own region's sites; a cluster unions its members' regions.
-// The card lists a few and reports the true total (which may exceed the preview).
-const CARD_SITE_LIMIT = 5
-function sitesForPin(pin: MapPin): { count: number; sites: MapSite[] } {
-	return props.sitesByRegion[pin.cluster] ?? { count: 0, sites: [] }
-}
-function sitesForCluster(members: MapPin[]): { count: number; sites: MapSite[] } {
-	const regions = new Set(members.map((m) => m.cluster))
-	let count = 0
-	const sites: MapSite[] = []
-	for (const region of regions) {
-		const group = props.sitesByRegion[region]
-		if (!group) continue
-		count += group.count
-		sites.push(...group.sites)
-	}
-	return { count, sites }
-}
 function hideCard(): void {
 	window.clearTimeout(showT)
 	window.clearTimeout(hideT)
@@ -481,15 +457,6 @@ const card = computed<CardPlacement | null>(() => {
 			'--smc-dx': side === 'right' ? '-6px' : '6px',
 		} as CSSProperties,
 	}
-})
-
-// The hovered region's sites (pin's own region, or a cluster's union) — resolved
-// once for the card templates.
-const cardSites = computed<{ count: number; sites: MapSite[] }>(() => {
-	const node = card.value?.node
-	if (node?.type === 'server') return sitesForPin(node.pin)
-	if (node?.type === 'cluster') return sitesForCluster(node.members)
-	return { count: 0, sites: [] }
 })
 
 // Let the page focus the map from the side panel: glide to the node that
@@ -658,8 +625,8 @@ function clickNode(n: MapNode): void {
 				@mouseleave="leaveNode"
 				@click.capture="cardLocked = true"
 			>
-				<!-- Server details: real mirror fields only. Usage metrics return here
-             once Atlas reports them. -->
+				<!-- Single VM (server or site): real mirror fields only. The IP/Plan/Version
+             rows are server-only and simply don't render for a site (fields absent). -->
 				<template v-if="card.node.type === 'server'">
 					<div class="flex items-start gap-2">
 						<div class="min-w-0 flex-1">
@@ -674,12 +641,15 @@ function clickNode(n: MapNode): void {
 									:label="card.node.pin.visual.label"
 								/>
 							</div>
-							<div class="mt-0.5 truncate text-sm text-ink-gray-5">
+							<div
+								v-if="card.node.pin.specs"
+								class="mt-0.5 truncate text-sm text-ink-gray-5"
+							>
 								{{ card.node.pin.specs }}
 							</div>
 						</div>
 						<div class="-mr-1.5 -mt-1" @click.stop>
-							<slot name="card-actions" :server="card.node.pin.server" />
+							<slot name="card-actions" :pin="card.node.pin" />
 						</div>
 					</div>
 					<div class="mt-3 flex items-baseline justify-between gap-3 text-sm">
@@ -715,41 +685,6 @@ function clickNode(n: MapNode): void {
 							>{{ card.node.pin.frappeVersion }}</span
 						>
 					</div>
-					<div
-						v-if="cardSites.count"
-						class="mt-3 border-t border-outline-alpha-gray-1 pt-2"
-					>
-						<div class="px-0.5 pb-1 text-xs font-medium text-ink-gray-5">
-							Sites in this region · {{ cardSites.count }}
-						</div>
-						<button
-							v-for="site in cardSites.sites.slice(0, CARD_SITE_LIMIT)"
-							:key="site.name"
-							class="group flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-gray-2 disabled:cursor-default"
-							:disabled="!allowOpen || !site.url"
-							@click.stop="site.url && emit('open-site', site.url)"
-						>
-							<span
-								class="relative grid size-6 shrink-0 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-6"
-							>
-								<span class="lucide-globe size-3.5" />
-								<span
-									class="absolute -bottom-px -right-px size-2 rounded-full border-2 border-[var(--surface-elevation-1)]"
-									:style="{ background: site.visual.dot }"
-								/>
-							</span>
-							<span class="min-w-0 flex-1 truncate text-sm text-ink-gray-8">{{ site.name }}</span>
-							<span
-								class="lucide-arrow-up-right size-3.5 shrink-0 text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100 group-disabled:opacity-0"
-							/>
-						</button>
-						<div
-							v-if="cardSites.count > CARD_SITE_LIMIT"
-							class="px-1.5 pt-1 text-xs text-ink-gray-5"
-						>
-							+{{ cardSites.count - CARD_SITE_LIMIT }} more
-						</div>
-					</div>
 				</template>
 
 				<!-- Cluster: the servers at this spot -->
@@ -766,7 +701,7 @@ function clickNode(n: MapNode): void {
 							class="grid size-5 shrink-0 place-items-center rounded-md text-ink-gray-6 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-8 active:scale-95"
 							:title="`New server in ${card.node.title}`"
 							:aria-label="`New server in ${card.node.title}`"
-							@click="emit('new-server', card.node.members[0].server.cluster)"
+							@click="emit('new-server', card.node.members[0].cluster)"
 						>
 							<span class="lucide-plus size-3.5" />
 						</button>
@@ -796,7 +731,9 @@ function clickNode(n: MapNode): void {
 								>
 							</span>
 						</button>
+						<!-- Server: open bench. Site: open its live URL. Same slot, per kind. -->
 						<button
+							v-if="m.kind === 'server' && m.server"
 							class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
 							:disabled="!canOpenBench(m.server)"
 							title="Open bench"
@@ -805,42 +742,16 @@ function clickNode(n: MapNode): void {
 						>
 							<span class="lucide-arrow-up-right size-3.5" />
 						</button>
-					</div>
-					<!-- Sites across this spot's regions — discoverable, opened in place. -->
-					<div
-						v-if="cardSites.count"
-						class="mt-1 border-t border-outline-alpha-gray-1 pt-1"
-					>
-						<div class="px-1.5 pb-1 pt-1 text-xs font-medium text-ink-gray-5">
-							Sites · {{ cardSites.count }}
-						</div>
 						<button
-							v-for="site in cardSites.sites.slice(0, CARD_SITE_LIMIT)"
-							:key="site.name"
-							class="group flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors hover:bg-surface-gray-2 disabled:cursor-default"
-							:disabled="!allowOpen || !site.url"
-							@click.stop="site.url && emit('open-site', site.url)"
+							v-else-if="m.site"
+							class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
+							:disabled="!allowOpen || !m.site.url"
+							title="Open site"
+							aria-label="Open site"
+							@click.stop="m.site.url && emit('open-site', m.site.url)"
 						>
-							<span class="relative shrink-0">
-								<span class="grid size-7 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-6">
-									<span class="lucide-globe size-3.5" />
-								</span>
-								<span
-									class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
-									:style="{ background: site.visual.dot }"
-								/>
-							</span>
-							<span class="min-w-0 flex-1 truncate text-sm font-medium text-ink-gray-8">{{ site.name }}</span>
-							<span
-								class="lucide-arrow-up-right size-3.5 shrink-0 text-ink-gray-5 opacity-0 transition-opacity group-hover:opacity-100 group-disabled:opacity-0"
-							/>
+							<span class="lucide-arrow-up-right size-3.5" />
 						</button>
-						<div
-							v-if="cardSites.count > CARD_SITE_LIMIT"
-							class="px-1.5 pt-1 text-xs text-ink-gray-5"
-						>
-							+{{ cardSites.count - CARD_SITE_LIMIT }} more
-						</div>
 					</div>
 				</template>
 

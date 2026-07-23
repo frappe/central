@@ -6,13 +6,24 @@ import { useFrappeListInvalidation } from '@/composables/common/useFrappeRealtim
 import { getErrorMessage } from '@/lib/toast'
 import type { AssetRow } from '@/composables/useServers'
 
-// The team's whole fleet in one read — the map clusters and filters client-side,
-// so unlike the reportview-backed useServers list there is no pagination. Reads
-// go through central.api.servers.registry (server:view gated, unpaginated by
-// design); the Asset mirror itself is kept fresh by Atlas's event push + the
-// reconcile pull.
+// The team's whole fleet in one read — servers (the Asset mirror) and self-serve
+// sites (the Site mirror, each a 1:1-backed VM), so the map/panel unify them from a
+// single call. The map clusters and filters client-side, so unlike the
+// reportview-backed useServers list there is no pagination. Reads go through
+// central.api.servers.registry (server:view gated, unpaginated by design); both
+// mirrors are kept fresh by Atlas's event push + the reconcile pull.
 
-type RegistryResponse = { team: string; assets: AssetRow[] }
+// A site is a VM peer of an asset: `name` is the FQDN (stable id + terminate key),
+// `subdomain` the user-entered display name (e.g. "demo.in").
+export interface SiteRow {
+	name: string
+	subdomain: string | null
+	status: string
+	region: string | null
+	url: string | null
+}
+
+type RegistryResponse = { team: string; assets: AssetRow[]; sites: SiteRow[] }
 
 const registry = useCall<RegistryResponse, { team: string }>({
 	url: method(API.registry),
@@ -33,17 +44,20 @@ function reloadOnce(): void {
 }
 
 export function useServerMapData() {
-	// db_set(..., notify=True) writes (resize flag, termination) land live.
-	useFrappeListInvalidation('Asset', reloadOnce, { debounceMs: 0 })
+	// Either mirror changing reloads the one feed; db_set(..., notify=True) writes
+	// (resize flag, termination) land live. One shared debounce coalesces a burst
+	// that touches both doctypes into a single reload.
+	useFrappeListInvalidation(['Asset', 'Site'], reloadOnce, { debounceMs: 0 })
 
 	return {
 		// Terminated servers are gone, not a state to render — excluded here so no
-		// consumer has to remember to.
+		// consumer has to remember to. (Sites exclude Terminated server-side.)
 		assets: computed<AssetRow[]>(() =>
 			(registry.data?.assets ?? []).filter(
 				(asset) => asset.status !== 'Terminated',
 			),
 		),
+		sites: computed<SiteRow[]>(() => registry.data?.sites ?? []),
 		loading: computed(() => registry.loading),
 		error: computed(() =>
 			registry.error
