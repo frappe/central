@@ -147,36 +147,33 @@ export function locationLabel(labels: string[]): string {
 	return countries.length === 1 ? countries[0] : 'This area'
 }
 
-/** A server placed on the map — everything its pin and hover card show. */
+/** A VM placed on the map — a server or a site (each a 1:1-backed VM). Everything its
+ *  pin and hover card show. Server-only fields (specs/IP/plan/version/`server`) are
+ *  absent on sites, which instead carry `site`; both share id/provider/visual/region. */
 export interface MapPin {
+	kind: 'server' | 'site'
 	id: string
 	name: string
 	lat: number
 	lng: number
 	provider: string | null
 	visual: ServerVisual
-	/** Region code — the region a cluster's "new server" routes to, and the key a
-	 *  region's sites are looked up under for the hover card. */
+	/** Region code — the region a cluster's "new server" routes to. */
 	cluster: string
 	/** Clean "Mumbai, India" — cluster titles derive the country from it. */
 	regionLabel: string
 	/** Flag emoji for the hover card's region line ('' when unknown). */
 	flag: string
+	/** Secondary line: a server's spec line, or a site's FQDN. */
 	specs: string
-	publicIpv4: string | null
-	plan: string | null
-	frappeVersion: string | null
-	/** The raw row, for the actions menu the page wires in. */
-	server: AssetRow
-}
-
-/** A site surfaced inside a region's hover card. Sites don't pin (they'd clutter
- *  the map, and a server can host many); they're discovered through the region
- *  they sit in and listed flat in the side panel's "Sites" group. */
-export interface MapSite {
-	name: string
-	url: string | null
-	visual: ServerVisual
+	// — Server-only (undefined on site pins) —
+	publicIpv4?: string | null
+	plan?: string | null
+	frappeVersion?: string | null
+	/** The raw asset row, for the server actions menu the page wires in. */
+	server?: AssetRow
+	// — Site-only (undefined on server pins) —
+	site?: { name: string; url: string | null }
 }
 
 /** An empty Active region — a "+" affordance on the map. */
