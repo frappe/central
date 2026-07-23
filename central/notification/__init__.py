@@ -65,9 +65,49 @@ def create_notification(
 	return doc
 
 
-def unread_count(team: str) -> int:
-	"""Unread in-app notifications for a team — the bell badge count."""
-	return frappe.db.count("Team Notification", {"team": team, "is_read": 0})
+def unread_count(team: str, *, user: str | None = None) -> int:
+	"""Unread in-app notifications for a team — the bell badge count.
+
+	When *user* is provided the count excludes notifications the user cannot
+	see (missing capability or ``in_app_enabled`` off).  Operators always see
+	the full count.
+	"""
+	from central.iam import can, user_has_operator_bypass
+
+	user = user or frappe.session.user
+	filters = {"team": team, "is_read": 0}
+
+	if user_has_operator_bypass(user):
+		return frappe.db.count("Team Notification", filters)
+
+	rows = frappe.get_all(
+		"Team Notification",
+		filters=filters,
+		fields=["name", "category", "required_cap"],
+	)
+
+	rows = [
+		row for row in rows
+		if not row.required_cap or can(user, team, row.required_cap)
+	]
+
+	if rows:
+		categories = {row.category for row in rows}
+		disabled_categories = set(
+			frappe.db.get_all(
+				"User Notification Preference",
+				filters={
+					"user": user,
+					"team": team,
+					"in_app_enabled": 0,
+					"category": ["in", list(categories)],
+				},
+				pluck="category",
+			)
+		)
+		rows = [row for row in rows if row.category not in disabled_categories]
+
+	return len(rows)
 
 
 def list_notifications(
@@ -128,5 +168,5 @@ def list_notifications(
 
 	return {
 		"items": items[: frappe.utils.cint(limit)],
-		"unread": unread_count(team),
+		"unread": unread_count(team, user=user),
 	}

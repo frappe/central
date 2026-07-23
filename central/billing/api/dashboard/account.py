@@ -316,7 +316,7 @@ def notification_badge(team: str | None = None) -> dict:
 	"""Lightweight unread count for the console bell badge (no item payload)."""
 	from central.notification import unread_count
 
-	return {"unread": unread_count(_resolve_team(team))}
+	return {"unread": unread_count(_resolve_team(team), user=frappe.session.user)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -333,7 +333,7 @@ def mark_notification_read(name: str, team: str | None = None, read: bool = True
 	)
 	from central.notification import unread_count
 
-	return {"ok": True, "unread": unread_count(team)}
+	return {"ok": True, "unread": unread_count(team, user=frappe.session.user)}
 
 
 @frappe.whitelist(methods=["POST"])
