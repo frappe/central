@@ -191,9 +191,26 @@ def _send_member_email(user, team, event, ctx, *, message=None,
 
 	Best-effort: if the outgoing email account is not configured the
 	notification is still recorded in the feed; the email is simply skipped.
+
+	When the Event Type has an ``email_template`` link, the Frappe Email
+	Template DocType is used for subject/body rendering.  Otherwise the
+	in-app Jinja templates are used (with the ``message`` override when
+	provided).
 	"""
-	subject = _render_template(event.in_app_title, ctx) or event.event_type
-	body = message or _render_template(event.in_app_body, ctx) or ctx.get("message", "")
+	if event.email_template:
+		try:
+			from frappe.email.doctype.email_template.email_template import (
+				get_email_template,
+			)
+			rendered = get_email_template(event.email_template, ctx)
+			subject = rendered["subject"]
+			body = rendered["message"]
+		except Exception:  # noqa: BLE001 — fall back to in-app templates
+			subject = _render_template(event.in_app_title, ctx) or event.event_type
+			body = message or _render_template(event.in_app_body, ctx) or ctx.get("message", "")
+	else:
+		subject = _render_template(event.in_app_title, ctx) or event.event_type
+		body = message or _render_template(event.in_app_body, ctx) or ctx.get("message", "")
 
 	try:
 		frappe.sendmail(
