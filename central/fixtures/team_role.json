@@ -1,19 +1,51 @@
 [
  {
   "capabilities": [
-   {"capability": "team:edit"},
-   {"capability": "team:manage_members"},
-   {"capability": "team:delete"},
-   {"capability": "billing:view"},
-   {"capability": "billing:manage"},
-   {"capability": "cluster:view"},
-   {"capability": "server:view"},
-   {"capability": "server:create"},
-   {"capability": "server:power"},
-   {"capability": "server:resize"},
-   {"capability": "server:snapshot"},
-   {"capability": "server:terminate"},
-   {"capability": "server:open"}
+   {
+    "capability": "team:edit"
+   },
+   {
+    "capability": "team:manage_members"
+   },
+   {
+    "capability": "team:delete"
+   },
+   {
+    "capability": "billing:view"
+   },
+   {
+    "capability": "billing:manage"
+   },
+   {
+    "capability": "cluster:view"
+   },
+   {
+    "capability": "server:view"
+   },
+   {
+    "capability": "server:create"
+   },
+   {
+    "capability": "server:power"
+   },
+   {
+    "capability": "server:resize"
+   },
+   {
+    "capability": "server:snapshot"
+   },
+   {
+    "capability": "server:terminate"
+   },
+   {
+    "capability": "server:open"
+   },
+   {
+    "capability": "service:view"
+   },
+   {
+    "capability": "service:manage"
+   }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
@@ -25,18 +57,48 @@
  },
  {
   "capabilities": [
-   {"capability": "team:edit"},
-   {"capability": "team:manage_members"},
-   {"capability": "billing:view"},
-   {"capability": "billing:manage"},
-   {"capability": "cluster:view"},
-   {"capability": "server:view"},
-   {"capability": "server:create"},
-   {"capability": "server:power"},
-   {"capability": "server:resize"},
-   {"capability": "server:snapshot"},
-   {"capability": "server:terminate"},
-   {"capability": "server:open"}
+   {
+    "capability": "team:edit"
+   },
+   {
+    "capability": "team:manage_members"
+   },
+   {
+    "capability": "billing:view"
+   },
+   {
+    "capability": "billing:manage"
+   },
+   {
+    "capability": "cluster:view"
+   },
+   {
+    "capability": "server:view"
+   },
+   {
+    "capability": "server:create"
+   },
+   {
+    "capability": "server:power"
+   },
+   {
+    "capability": "server:resize"
+   },
+   {
+    "capability": "server:snapshot"
+   },
+   {
+    "capability": "server:terminate"
+   },
+   {
+    "capability": "server:open"
+   },
+   {
+    "capability": "service:view"
+   },
+   {
+    "capability": "service:manage"
+   }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
@@ -48,14 +110,36 @@
  },
  {
   "capabilities": [
-   {"capability": "cluster:view"},
-   {"capability": "server:view"},
-   {"capability": "server:create"},
-   {"capability": "server:power"},
-   {"capability": "server:resize"},
-   {"capability": "server:snapshot"},
-   {"capability": "server:terminate"},
-   {"capability": "server:open"}
+   {
+    "capability": "cluster:view"
+   },
+   {
+    "capability": "server:view"
+   },
+   {
+    "capability": "server:create"
+   },
+   {
+    "capability": "server:power"
+   },
+   {
+    "capability": "server:resize"
+   },
+   {
+    "capability": "server:snapshot"
+   },
+   {
+    "capability": "server:terminate"
+   },
+   {
+    "capability": "server:open"
+   },
+   {
+    "capability": "service:view"
+   },
+   {
+    "capability": "service:manage"
+   }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
@@ -67,8 +151,15 @@
  },
  {
   "capabilities": [
-   {"capability": "cluster:view"},
-   {"capability": "server:view"}
+   {
+    "capability": "cluster:view"
+   },
+   {
+    "capability": "server:view"
+   },
+   {
+    "capability": "service:view"
+   }
   ],
   "docstatus": 0,
   "doctype": "Team Role",
@@ -80,10 +171,24 @@
  },
  {
   "capabilities": [
-   {"capability": "billing:view"},
-   {"capability": "billing:manage"},
-   {"capability": "cluster:view"},
-   {"capability": "server:view"}
+   {
+    "capability": "billing:view"
+   },
+   {
+    "capability": "billing:manage"
+   },
+   {
+    "capability": "cluster:view"
+   },
+   {
+    "capability": "server:view"
+   },
+   {
+    "capability": "service:view"
+   },
+   {
+    "capability": "service:manage"
+   }
   ],
   "docstatus": 0,
   "doctype": "Team Role",

@@ -8,9 +8,9 @@ import type { ServerVisual } from '@/lib/serverMap'
 import type { Region } from '@/types/Central/Region'
 
 // The "Your servers" floating card: the pill IS the panel, collapsed. Opening
-// morphs it in place (see <style>). Renders both kinds — a site is a 1:1-backed
-// VM, so servers and sites list side by side, distinguished by their content
-// (a site shows its domain, a server its hostname), not a badge. Presentational.
+// morphs it in place (see <style>). Renders both kinds indistinguishably — a site
+// is a 1:1-backed VM, so it wears the same provider avatar and lists in the same
+// sorted stream as a server; only its ⋯ actions differ. Presentational.
 export interface ResourceRow {
 	kind: 'server' | 'site'
 	id: string
@@ -26,7 +26,7 @@ export interface ResourceRow {
 	site?: { name: string; url: string | null }
 }
 
-defineProps<{
+const props = defineProps<{
 	pillLabel: string
 	rows: ResourceRow[]
 	hasRows: boolean
@@ -41,6 +41,7 @@ defineProps<{
 defineEmits<{
 	focusRow: [row: ResourceRow]
 	clearLocation: []
+	overview: [server: AssetRow]
 	open: [server: AssetRow]
 	start: [server: AssetRow]
 	stop: [server: AssetRow]
@@ -97,25 +98,18 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			</div>
 
 			<div
-				class="min-h-0 flex-1 divide-y divide-outline-alpha-gray-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2"
+				class="min-h-0 flex-1 overflow-y-auto border-t border-outline-alpha-gray-1 px-2 pb-2 pt-1"
 			>
-				<div
-					v-for="(row, i) in rows"
-					:key="row.id"
-					class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors hover:bg-surface-gray-2"
-					:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
-					@click="$emit('focusRow', row)"
-					@mouseenter="hoverId = row.id"
-					@mouseleave="hoverId = null"
-				>
+				<template v-for="(row, i) in rows" :key="row.id">
+					<div
+						class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors"
+						:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
+						@click="$emit('focusRow', row)"
+						@mouseenter="hoverId = row.id"
+						@mouseleave="hoverId = null"
+					>
 					<span class="relative shrink-0">
-						<ProviderAvatar v-if="row.kind === 'server'" :provider="row.provider" :size="32" />
-						<span
-							v-else
-							class="grid size-8 place-items-center rounded-full bg-surface-gray-2 text-ink-gray-6"
-						>
-							<span class="lucide-globe size-4" />
-						</span>
+						<ProviderAvatar :provider="row.provider" :size="32" />
 						<span
 							class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
 							:style="{ background: row.visual.dot }"
@@ -134,7 +128,11 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						</span>
 						<span class="block truncate text-sm text-ink-gray-5">{{ row.specs || row.regionLabel }}</span>
 					</span>
-					<span @click.stop>
+					<span
+						class="sp-row-actions"
+						:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
+						@click.stop
+					>
 						<ServerRowActions
 							v-if="row.kind === 'server' && row.asset"
 							:server="row.asset"
@@ -143,6 +141,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							:can-terminate="canTerminate"
 							:busy="busy === row.id"
 							:opening="opening === row.id"
+							@overview="$emit('overview', $event)"
 							@open="$emit('open', $event)"
 							@start="$emit('start', $event)"
 							@stop="$emit('stop', $event)"
@@ -160,6 +159,8 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						/>
 					</span>
 				</div>
+
+				</template>
 
 				<div v-if="!rows.length" class="m-4 flex flex-col items-center gap-1 py-8 text-center">
 					<span :class="hasRows ? 'lucide-search' : 'lucide-server'" class="mb-2 size-6 text-ink-gray-4" />
@@ -237,6 +238,24 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 .sp-row {
 	animation: sp-row-in 250ms cubic-bezier(0.23, 1, 0.32, 1) both;
 }
+.sp-row:hover:not(:has(.sp-row-actions:hover)),
+.sp-row:focus-within:not(:has(.sp-row-actions:focus-within)) {
+	background: var(--surface-gray-2);
+}
+.sp-row-actions {
+	display: flex;
+	align-self: stretch;
+	align-items: center;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 120ms ease-out;
+}
+.sp-row:hover .sp-row-actions,
+.sp-row:focus-within .sp-row-actions,
+.sp-row-actions-active {
+	opacity: 1;
+	pointer-events: auto;
+}
 @keyframes sp-row-in {
 	from {
 		opacity: 0;
@@ -257,6 +276,13 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 	}
 	.sp-row {
 		animation: none;
+	}
+}
+
+@media (hover: none), (pointer: coarse) {
+	.sp-row-actions {
+		opacity: 1;
+		pointer-events: auto;
 	}
 }
 </style>

@@ -29,6 +29,6 @@ const options = computed(() => {
 
 <template>
 	<Dropdown v-if="options.length" :options="options" placement="right">
-		<Button variant="ghost" icon="lucide-more-horizontal" :loading="busy" aria-label="Site actions" />
+		<Button variant="ghost" icon="lucide-ellipsis-vertical" :loading="busy" aria-label="Site actions" />
 	</Dropdown>
 </template>

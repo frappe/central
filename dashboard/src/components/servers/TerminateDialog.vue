@@ -3,8 +3,6 @@ import { computed } from 'vue'
 import { Dialog } from 'frappe-ui'
 import type { AssetRow } from '@/composables/useServers'
 
-// Destructive, irreversible confirm for terminating a server. Controlled by the
-// page: pass the pending server (or null) via v-model:server.
 const props = defineProps<{
 	server: AssetRow | null
 	loading?: boolean
@@ -22,16 +20,11 @@ const open = computed({
 	},
 })
 
-const name = computed(
-	() => props.server?.title || props.server?.resource_id || '',
-)
-
+const name = computed(() => props.server?.title || props.server?.resource_id || '')
 const dialogOptions = computed(() => ({
-	title: 'Terminate server',
-	message: `Permanently destroy ${name.value}? This can't be undone.`,
 	actions: [
 		{
-			label: 'Terminate',
+			label: 'Yes, terminate',
 			variant: 'solid' as const,
 			theme: 'red' as const,
 			loading: props.loading,
@@ -44,10 +37,9 @@ const dialogOptions = computed(() => ({
 </script>
 
 <template>
-	<Dialog
-		v-model="open"
-		:title="dialogOptions.title"
-		:message="dialogOptions.message"
-		:actions="dialogOptions.actions"
-	/>
+	<Dialog v-model="open" title="Terminate server" size="sm" :actions="dialogOptions.actions">
+		<p class="text-p-base text-ink-gray-7">
+			Permanently destroy <span class="font-semibold text-ink-gray-9">{{ name }}</span>? This can't be undone.
+		</p>
+	</Dialog>
 </template>

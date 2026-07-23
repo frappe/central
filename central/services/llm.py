@@ -18,9 +18,12 @@ def sync_models(service: str = _LLM_SERVICE) -> int:
 	for model_key, display_name in published.items():
 		_upsert_model(model_key, display_name, exists=model_key in known)
 
-	# Never delete (it would drop the assigned tier); just unpublish what Grove dropped.
-	for stale in known - set(published):
-		frappe.db.set_value("LLM Model", stale, "is_published", 0)
+	# Never delete (it would drop the assigned tier); just unpublish what Grove dropped,
+	# in one statement rather than a write per model.
+	stale = list(known - set(published))
+	if stale:
+		model = frappe.qb.DocType("LLM Model")
+		frappe.qb.update(model).set(model.is_published, 0).where(model.name.isin(stale)).run()
 
 	return len(published)
 
@@ -44,6 +47,17 @@ def resolve_provision_options(plan: str | None) -> dict:
 		allowed_models = ",".join(sorted(models))
 
 	return {"allowed_models": allowed_models, "token_limit": _token_limit(plan)}
+
+
+def included_models(plan: str | None) -> list[dict]:
+	"""Models a plan grants, for display. Non-throwing, unlike resolve_provision_options —
+	an empty result just means nothing is published yet."""
+	filters = {"is_published": 1}
+	tiers = _allowed_tiers(plan)
+	if tiers:
+		filters["tier"] = ["in", tiers]
+
+	return frappe.get_all("LLM Model", filters=filters, fields=["name", "tier"], order_by="tier, name")
 
 
 def pull_usage(service: str = _LLM_SERVICE) -> dict:
@@ -103,25 +117,28 @@ def _token_limit(plan: str | None) -> int | None:
 
 
 def _team_credentials(service: str) -> dict[str, list[str]]:
-	# Active site credentials for the service, grouped team -> [grove emails].
-	credential = frappe.qb.DocType("Site Service Credential")
-	managed = frappe.qb.DocType("Managed Service")
-
-	rows = (
-		frappe.qb.from_(credential)
-		.join(managed)
-		.on(credential.managed_service == managed.name)
-		.select(managed.team.as_("team"), credential.provider_ref.as_("email"))
-		.where(
-			(managed.add_on_service == service)
-			& (credential.status == "Active")
-			& (credential.provider_ref.isnotnull())
-		)
-	).run(as_dict=True)
-
+	# Every active grove identity the service issued — both per-site credentials and
+	# team-level API keys — grouped team -> [grove emails]. Both drain the same team
+	# token meter, so both must be reconciled or a whole channel bills nothing.
 	grouped: dict[str, list[str]] = {}
-	for row in rows:
-		grouped.setdefault(row.team, []).append(row.email)
+	for doctype in ("Site Service Credential", "Service API Key"):
+		credential = frappe.qb.DocType(doctype)
+		managed = frappe.qb.DocType("Managed Service")
+
+		rows = (
+			frappe.qb.from_(credential)
+			.join(managed)
+			.on(credential.managed_service == managed.name)
+			.select(managed.team.as_("team"), credential.provider_ref.as_("email"))
+			.where(
+				(managed.add_on_service == service)
+				& (credential.status == "Active")
+				& (credential.provider_ref.isnotnull())
+			)
+		).run(as_dict=True)
+
+		for row in rows:
+			grouped.setdefault(row.team, []).append(row.email)
 
 	return grouped
 

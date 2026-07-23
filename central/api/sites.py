@@ -155,6 +155,14 @@ def terminate_site(name: str) -> dict:
 	if not can(user, site.team, "server:terminate"):
 		frappe.throw(_("You can't terminate this team's sites."), frappe.PermissionError)
 
+	# Already gone — no-op, and never issue a second teardown to Atlas.
+	if site.status == "Terminated":
+		return {"name": name, "status": site.status}
+	# A site with no backing region was never placed on Atlas; without this,
+	# get_doc("Atlas Instance", None) below raises an opaque error.
+	if not site.cluster:
+		frappe.throw(_("Site {0} has no backing region to terminate.").format(name), frappe.ValidationError)
+
 	instance = frappe.get_doc("Atlas Instance", site.cluster)
 	AtlasClient(instance).terminate_site(name)
 

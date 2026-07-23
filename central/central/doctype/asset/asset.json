@@ -36,7 +36,7 @@
    "unique": 1
   },
   {
-   "description": "Human label, mirrored from the Atlas VM (resource_id is a UUID).",
+   "description": "Human label. Central-created servers retain the user-provided name; discovered servers use the Atlas VM title (resource_id is a UUID).",
    "fieldname": "title",
    "fieldtype": "Data",
    "in_list_view": 1,

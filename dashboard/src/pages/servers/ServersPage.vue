@@ -8,9 +8,11 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
+import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
+import SiteRowActions from '@/components/servers/SiteRowActions.vue'
 import TerminateDialog from '@/components/servers/TerminateDialog.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
@@ -19,7 +21,6 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useServers } from '@/composables/useServers'
-import { useSites } from '@/composables/useSites'
 import { useSession } from '@/composables/useSession'
 import {
 	STATUS_FILTERS,
@@ -38,18 +39,17 @@ import type { Region } from '@/types/Central/Region'
 import type { ResourceRow } from '@/components/servers/ServerListPanel.vue'
 
 // The servers page: the world map is the list (FC V2). Servers (the Asset mirror)
-// and sites (the Site mirror — each a 1:1-backed VM) list together; a slide-in
-// panel carries the searchable rows. Lifecycle actions reuse useServers /
-// useSites so the map, panel, and ⋯ menus share one command path.
+// and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
+// together, indistinguishable — same provider avatar, same pin, one sorted list.
+// Lifecycle actions reuse useServers so the map, panel, and ⋯ menus share one path.
 
 const router = useRouter()
 
-const { assets, loading, error, reload } = useServerMapData()
-const { sites, reload: reloadSites } = useSites()
+const { assets, sites, loading, error, reload } = useServerMapData()
 const { regions } = useRegions()
 const { canPowerServer, canTerminateServer, canOpenServer, canCreateServer } =
 	useCapabilities()
-// Actions only — list reads come from useServerMapData / useSites.
+// Actions only — list reads come from useServerMapData.
 const {
 	refreshing,
 	stale,
@@ -129,35 +129,34 @@ const siteRows = computed<ResourceRow[]>(() =>
 		return {
 			kind: 'site' as const,
 			id: site.name,
-			name: site.name,
+			// The user-entered name ("demo.in"); the full FQDN drops to the secondary
+			// line (specs) so a site reads like the VM it is, not a routing string.
+			name: site.subdomain || site.name,
 			visual: siteVisual(site.status),
-			specs: '',
+			specs: site.name,
 			cluster: site.region ?? '',
 			region,
 			regionLabel: region ? regionLabel(region) : (site.region ?? ''),
 			flag: flagEmoji(region?.country_code),
 			provider: region?.provider ?? null,
-			site: { name: site.name, url: site.detail },
+			site: { name: site.name, url: site.url },
 		}
 	}),
 )
 
-const rows = computed<ResourceRow[]>(() => [
-	...serverRows.value,
-	...siteRows.value,
-])
+// One list, sorted by name — no servers-then-sites tell; a site is just another VM.
+const rows = computed<ResourceRow[]>(() =>
+	[...serverRows.value, ...siteRows.value].sort((a, b) =>
+		a.name.localeCompare(b.name),
+	),
+)
 
 // — Filters. Status and region scope the map and the panel; search only
 //   narrows the panel rows.
 const statusOptions = computed(() => [
-	{ label: 'All statuses', value: '' },
-	...STATUS_FILTERS.map((s) => ({ label: s.label, value: s.key })),
+	{ label: 'All statuses', value: '', dot: 'var(--ink-gray-4)' },
+	...STATUS_FILTERS.map((s) => ({ label: s.label, value: s.key, dot: s.dot })),
 ])
-const statusDot = computed(
-	() =>
-		STATUS_FILTERS.find((s) => s.key === statusFilter.value)?.dot ||
-		'var(--ink-gray-4)',
-)
 
 const providerGroups = computed(() => {
 	const groups = new Map<string, Region[]>()
@@ -237,26 +236,39 @@ const pillLabel = computed(() =>
 		: `All servers (${filtered.value.length})`,
 )
 
-// — Map data. Only servers pin today (a site's pin/hover card is a follow-up);
-//   pins carry everything their hover card shows so ServerMap stays presentational.
+// — Map data. Every VM pins — servers and sites alike; a site clusters with any
+//   server sharing its region, so co-located resources gather under one node. Pins
+//   carry everything their hover card shows so ServerMap stays presentational.
 const pins = computed<MapPin[]>(() =>
 	filtered.value
-		.filter((row) => row.kind === 'server' && row.asset && row.region && hasMapCoords(row.region))
-		.map((row) => ({
-			id: row.id,
-			name: row.name,
-			lat: row.region!.latitude!,
-			lng: row.region!.longitude!,
-			provider: row.provider,
-			visual: row.visual,
-			regionLabel: row.regionLabel,
-			flag: row.flag,
-			specs: row.specs,
-			publicIpv4: row.asset!.public_ipv4 ?? null,
-			plan: row.asset!.plan ?? null,
-			frappeVersion: row.asset!.frappe_version ?? null,
-			server: row.asset!,
-		})),
+		.filter(
+			(row) =>
+				(row.asset || row.site) && row.region && hasMapCoords(row.region),
+		)
+		.map((row) => {
+			const base = {
+				id: row.id,
+				name: row.name,
+				lat: row.region!.latitude!,
+				lng: row.region!.longitude!,
+				provider: row.provider,
+				visual: row.visual,
+				cluster: row.cluster,
+				regionLabel: row.regionLabel,
+				flag: row.flag,
+				specs: row.specs,
+			}
+			return row.kind === 'server'
+				? {
+						...base,
+						kind: 'server' as const,
+						publicIpv4: row.asset!.public_ipv4 ?? null,
+						plan: row.asset!.plan ?? null,
+						frappeVersion: row.asset!.frappe_version ?? null,
+						server: row.asset!,
+					}
+				: { ...base, kind: 'site' as const, site: row.site! }
+		}),
 )
 
 // Regions with no servers show as + spots — everywhere you could deploy next.
@@ -305,10 +317,9 @@ watch(panelOpen, (isOpen) => {
 	if (!isOpen) locationFilter.value = null
 })
 
-// — Commands. Reload the map (servers) and the sites feed after every action.
+// — Commands. One feed carries servers and sites, so a single reload refreshes both.
 function reloadAll(): void {
 	reload()
-	reloadSites()
 }
 async function withReload(action: Promise<unknown>): Promise<void> {
 	await action
@@ -318,7 +329,6 @@ const doRefresh = (): Promise<void> => withReload(refreshAssets())
 const doStart = (server: AssetRow): Promise<void> => withReload(start(server))
 const doStop = (server: AssetRow): Promise<void> => withReload(stop(server))
 
-// Terminate confirmation — the only destructive, irreversible actions.
 const pendingTerminate = ref<AssetRow | null>(null)
 async function confirmTerminate(server: AssetRow): Promise<void> {
 	pendingTerminate.value = null
@@ -326,6 +336,13 @@ async function confirmTerminate(server: AssetRow): Promise<void> {
 }
 
 const pendingResize = ref<AssetRow | null>(null)
+const overviewServer = ref<AssetRow | null>(null)
+const overviewOpen = computed({
+	get: () => !!overviewServer.value,
+	set: (isOpen: boolean) => {
+		if (!isOpen) overviewServer.value = null
+	},
+})
 
 // — Sites. Open goes to the live site; terminate tears down the backing VM.
 function openSite(url: string): void {
@@ -343,7 +360,7 @@ async function confirmSiteTerminate(): Promise<void> {
 	pendingSiteTerminate.value = null
 	if (!name) return
 	await terminateSiteCall.submit({ name })
-	reloadSites()
+	reload()
 }
 </script>
 
@@ -401,22 +418,33 @@ async function confirmSiteTerminate(): Promise<void> {
 				:allow-open="canOpenServer"
 				@open="onOpen"
 				@open-server="open"
+				@open-site="openSite"
 				@new-server="goNewServer"
 				@cluster-open="onClusterOpen"
 			>
-				<template #card-actions="{ server }">
+				<template #card-actions="{ pin }">
 					<ServerRowActions
-						:server="server"
+						v-if="pin.kind === 'server' && pin.server"
+						:server="pin.server"
 						:can-open="canOpenServer"
 						:can-power="canPowerServer"
 						:can-terminate="canTerminateServer"
-						:busy="busy === server.resource_id"
-						:opening="opening === server.resource_id"
+						:busy="busy === pin.server.resource_id"
+						:opening="opening === pin.server.resource_id"
+						@overview="overviewServer = $event"
 						@open="open"
 						@start="doStart"
 						@stop="doStop"
 						@resize="pendingResize = $event"
 						@terminate="pendingTerminate = $event"
+					/>
+					<SiteRowActions
+						v-else-if="pin.site"
+						:site="pin.site"
+						:can-open="canOpenServer"
+						:can-terminate="canTerminateServer"
+						@open="openSite"
+						@terminate="pendingSiteTerminate = { name: $event }"
 					/>
 				</template>
 			</ServerMap>
@@ -432,7 +460,6 @@ async function confirmSiteTerminate(): Promise<void> {
 				v-model:status-filter="statusFilter"
 				v-model:region-selection="regionSelection"
 				:status-options="statusOptions"
-				:status-dot="statusDot"
 				:region-options="regionOptions"
 			/>
 
@@ -451,6 +478,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				:opening="opening"
 				@focus-row="focusRow"
 				@clear-location="locationFilter = null"
+				@overview="overviewServer = $event"
 				@open="open"
 				@start="doStart"
 				@stop="doStop"
@@ -494,23 +522,30 @@ async function confirmSiteTerminate(): Promise<void> {
 
 		<Dialog
 			v-model="siteTerminateOpen"
-			:options="{
-				title: 'Terminate site',
-				message: `Terminate ${pendingSiteTerminate?.name}? This permanently deletes the site and its backing VM. This can't be undone.`,
-				size: 'sm',
-				actions: [
-					{
-						label: 'Terminate site',
-						variant: 'solid',
-						theme: 'red',
-						loading: terminateSiteCall.loading,
-						onClick: confirmSiteTerminate,
-					},
-				],
-			}"
-		/>
+title="Terminate site" size="sm" :actions="[
+			{
+		label: 'Yes, terminate',
+		variant: 'solid',
+		theme: 'red',
+		loading: terminateSiteCall.loading,
+		onClick: confirmSiteTerminate,
+	},
+]">
+			<p class="text-p-base text-ink-gray-7">
+				Terminate <span class="font-semibold text-ink-gray-9">{{ pendingSiteTerminate?.name }}</span>?
+				This permanently deletes the site and its backing VM. This can't be undone.
+			</p>
+		</Dialog>
 
 		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
+		<ServerOverviewDialog
+			v-model:open="overviewOpen"
+			:server="overviewServer"
+			:can-open="canOpenServer"
+			:can-resize="canPowerServer"
+			@open="open"
+			@resize="pendingResize = $event"
+		/>
 		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>
 </template>

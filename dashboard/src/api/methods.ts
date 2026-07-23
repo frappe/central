@@ -42,7 +42,19 @@ export const API = {
 	startServer: 'central.api.servers.start_server',
 	stopServer: 'central.api.servers.stop_server',
 	terminateServer: 'central.api.servers.terminate_server',
+	serverOverview: 'central.api.servers.server_overview',
 	listResources: 'central.api.resources.list_resources',
+
+	// ── Managed add-on services (central.services.api.dashboard) ──
+	// service:view for the reads, service:manage for the mutations + key reveal.
+	// Per-site enable/disable is a bench (Pilot) surface, not a console method.
+	listOffers: 'central.services.api.dashboard.list_offers',
+	serviceInstance: 'central.services.api.dashboard.get_instance',
+	activateService: 'central.services.api.dashboard.activate_service',
+	generateApiKey: 'central.services.api.dashboard.generate_api_key',
+	listApiKeys: 'central.services.api.dashboard.list_api_keys',
+	revealApiKey: 'central.services.api.dashboard.reveal_api_key',
+	revokeApiKey: 'central.services.api.dashboard.revoke_api_key',
 
 	// ── Auth / SMB signup (central.api.auth) ──
 	signUp: 'central.api.auth.sign_up',
