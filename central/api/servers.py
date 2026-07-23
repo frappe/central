@@ -120,7 +120,11 @@ def frappe_versions(region: str | None = None) -> list[str]:
 
 @frappe.whitelist(methods=["GET"])
 def registry(team: str | None = None) -> dict:
-	"""List a team's VMs from the Asset mirror — a pure read. Gated on `server:view`."""
+	"""List a team's VMs — servers (the Asset mirror) and self-serve sites (the Site
+	mirror, each a 1:1-backed VM) — in one read, so the console's map/panel unify them
+	from a single call. A pure read; gated on `server:view`. Terminated sites are gone,
+	not a state to render, so they're excluded here (Terminated assets are filtered by
+	the map feed client-side)."""
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:view"):
@@ -148,7 +152,15 @@ def registry(team: str | None = None) -> dict:
 		],
 		order_by="cluster asc, resource_id asc",
 	)
-	return {"team": team, "assets": assets}
+	# A site is a VM too — flat and uncapped, symmetric with servers. `name` is the FQDN
+	# (the stable id + terminate key); `subdomain` is the user-entered display name.
+	sites = frappe.get_all(
+		"Site",
+		filters={"team": team, "status": ["!=", "Terminated"]},
+		fields=["name", "subdomain", "status", "url", "region"],
+		order_by="subdomain asc",
+	)
+	return {"team": team, "assets": assets, "sites": sites}
 
 
 @frappe.whitelist(methods=["GET"])
