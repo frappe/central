@@ -2,10 +2,10 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, Spinner, Tabs } from 'frappe-ui'
-import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import OverviewPanel from '@/components/services/OverviewPanel.vue'
 import ApiKeysPanel from '@/components/services/ApiKeysPanel.vue'
+import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
 import { errorToast, errorToastWithAction } from '@/lib/toast'
@@ -19,10 +19,12 @@ const serviceKey = computed(() => String(route.params.service))
 
 const { canManageServices, canManageBilling } = useCapabilities()
 const { offers, offersLoading, instance, loadInstance, activate } = useServices()
+const { setBreadcrumbs } = useBreadcrumbs()
 
 const offer = computed(() => offers.value.find((o) => o.name === serviceKey.value) ?? null)
 const managedService = computed(() => offer.value?.managed_service ?? null)
 const title = computed(() => offer.value?.title ?? 'Service')
+watch(title, (value) => setBreadcrumbs([{ label: value }]), { immediate: true })
 const models = computed(() => instance.value?.models ?? [])
 
 watch(
@@ -61,8 +63,6 @@ async function activateService(): Promise<void> {
 
 <template>
 	<div class="flex h-full flex-col">
-		<!-- Activated: the tabs are the page header (as Teams does it) — no separate
-		     title band. Overview carries the plan + status. -->
 		<Tabs v-if="managedService" v-model="tabIndex" :tabs="tabs">
 			<template #tab-panel="{ tab }">
 				<OverviewPanel v-if="tab.label === 'Overview'" />
@@ -75,10 +75,7 @@ async function activateService(): Promise<void> {
 			</template>
 		</Tabs>
 
-		<!-- Before activation there are no tabs, so a header carries the page's
-		     identity while the team sets the add-on up. -->
 		<template v-else>
-			<PageHeader :title="title" />
 			<div v-if="offersLoading && !offer" class="flex flex-1 justify-center py-16">
 				<Spinner class="size-5 text-ink-gray-5" />
 			</div>

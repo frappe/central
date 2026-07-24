@@ -48,11 +48,13 @@ const routes = [
 				path: 'servers',
 				name: 'Servers',
 				component: () => import('@/pages/servers/ServersPage.vue'),
+				meta: { title: 'Servers' },
 			},
 			{
 				path: 'servers/new',
 				name: 'NewServer',
 				component: () => import('@/pages/servers/NewServerPage.vue'),
+				meta: { title: 'New server' },
 			},
 			// Services are reached directly from the sidebar's Services group; a bare
 			// /services falls through to the one service today.
@@ -61,26 +63,31 @@ const routes = [
 				path: 'services/:service',
 				name: 'ServiceDetail',
 				component: () => import('@/pages/services/ServiceDetailPage.vue'),
+				meta: { title: 'Services' },
 			},
 			{
 				path: 'billing',
 				name: 'Billing',
 				component: () => import('@/pages/billing/BillingOverviewPage.vue'),
+				meta: { title: 'Billing' },
 			},
 			{
 				path: 'billing/invoices',
 				name: 'BillingInvoices',
 				component: () => import('@/pages/billing/BillingInvoicesPage.vue'),
+				meta: { title: 'Invoices' },
 			},
 			{
 				path: 'billing/limits',
 				name: 'SpendingLimits',
 				component: () => import('@/pages/billing/SpendingLimitsPage.vue'),
+				meta: { title: 'Spending Limits' },
 			},
 			{
 				path: 'notifications',
 				name: 'Notifications',
 				component: () => import('@/pages/notifications/NotificationsPage.vue'),
+				meta: { title: 'Notifications' },
 			},
 			{ path: 'team', redirect: '/team/members' },
 			// Members + roles share one tabbed page; /team/roles is kept as an alias.
@@ -88,17 +95,20 @@ const routes = [
 				path: 'team/members',
 				name: 'Members',
 				component: () => import('@/pages/team/AccessPage.vue'),
+				meta: { title: 'Team' },
 			},
 			{ path: 'team/roles', redirect: '/team/members' },
 			{
 				path: 'team/invitations',
 				name: 'TeamInvitations',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
+				meta: { title: 'Invitations' },
 			},
 			{
 				path: 'team/settings',
 				name: 'TeamSettings',
 				component: () => import('@/pages/team/TeamSettingsPage.vue'),
+				meta: { title: 'Team settings' },
 			},
 			// Personal invitation inbox + the email deep-link both open the Invitations
 			// page on its Received tab.
@@ -106,11 +116,13 @@ const routes = [
 				path: 'invitations',
 				name: 'MyInvitations',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
+				meta: { title: 'Invitations' },
 			},
 			{
 				path: 'invitations/:name',
 				name: 'FocusedInvitation',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
+				meta: { title: 'Invitations' },
 			},
 		],
 	},
