@@ -202,7 +202,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 
 	<!-- collapse knob -->
 	<button
-		class="sb-edge relative -mx-3 w-6 shrink-0 cursor-pointer"
+		class="sb-edge relative z-10 -mx-3 w-6 shrink-0 cursor-pointer"
 		:aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
 		@mousemove="onEdgeMove"
 		@focus="edgeY = 60"
