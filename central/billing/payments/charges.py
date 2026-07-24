@@ -51,7 +51,6 @@ def _adapter_for(gateway: str):
 	return get_adapter(frappe.get_doc("Payment Gateway", gateway))
 
 
-@frappe.whitelist()
 def pay_invoice(invoice: str, payment_method: str | None = None, gateway: str | None = None) -> dict:
 	"""Charge an unsettled (Open or Overdue) invoice. Creates at most one in-flight
 	Payment Attempt.
@@ -577,6 +576,7 @@ def _extract_topup(adapter_key: str, payload: dict):
 			"team": notes.get("team"),
 			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
 			"currency": (entity.get("currency") or "").upper() or None,
+			"gateway": adapter_key,
 		}
 	if adapter_key == "Stripe":
 		obj = ((payload.get("data") or {}).get("object")) or {}
@@ -589,6 +589,7 @@ def _extract_topup(adapter_key: str, payload: dict):
 			"team": notes.get("team"),
 			"amount": frappe.utils.flt(minor) / 100 if minor is not None else None,
 			"currency": (obj.get("currency") or "").upper() or None,
+			"gateway": adapter_key,
 		}
 	return None
 
@@ -652,6 +653,7 @@ def _credit_topup(event, topup: dict) -> dict:
 		reference_name=topup["payment_id"],
 		note=f"Wallet top-up ({topup['payment_id']})",
 		gateway_payment_id=topup["payment_id"],
+		gateway=topup.get("gateway"),
 	)
 	_mark_event(event, "Processed")
 	return {"handled": True, "result": "topup_credited", "team": topup["team"],

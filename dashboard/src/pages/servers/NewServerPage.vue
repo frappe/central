@@ -44,6 +44,8 @@ const { canCreateServer } = useCapabilities()
 const { requireSetup } = useBillingSetup()
 
 const name = ref('')
+const subdomain = ref('')
+const subdomainEdited = ref(false)
 const selectedProvider = ref<string | null>(null)
 const selectedRegion = ref<string | null>(null)
 const hoverRegion = ref<string | null>(null)
@@ -63,6 +65,50 @@ const providerRegions = computed(() =>
 )
 const selectedRegionRow = computed(
 	() => regions.value.find((r) => r.region === selectedRegion.value) ?? null,
+)
+const serverDomain = ref('')
+const serverDomainCall = useCall<{ domain: string }, { region: string }>({
+	url: method(API.siteDomain),
+	params: () => ({ region: selectedRegion.value! }),
+	immediate: false,
+})
+
+function slugifySubdomain(value: string): string {
+	return value
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 63)
+		.replace(/-+$/g, '')
+}
+
+function editSubdomain(value: string): void {
+	subdomainEdited.value = true
+	subdomain.value = slugifySubdomain(value)
+}
+
+function resetSubdomain(): void {
+	subdomainEdited.value = false
+	subdomain.value = slugifySubdomain(name.value)
+}
+
+watch(name, (value) => {
+	if (!subdomainEdited.value) subdomain.value = slugifySubdomain(value)
+})
+
+watch(
+	selectedRegion,
+	async (region) => {
+		serverDomain.value = ''
+		if (!region) return
+		await serverDomainCall.reload()
+		if (selectedRegion.value === region) {
+			serverDomain.value = serverDomainCall.data?.domain ?? ''
+		}
+	},
+	{ immediate: true },
 )
 
 function selectProvider(provider: string): void {
@@ -291,7 +337,12 @@ const ctaLabel = computed(() =>
 
 const submitting = computed(() => creating.value || creatingComposed.value)
 const canSubmit = computed(() => {
-	if (!canCreateServer.value || !selectedRegion.value || !name.value.trim())
+	if (
+		!canCreateServer.value ||
+		!selectedRegion.value ||
+		!name.value.trim() ||
+		!subdomain.value
+	)
 		return false
 	if (regionFull.value) return false // the region can't seat a new server right now
 	if (bracketExhausted.value) return false // nothing here fits the budget
@@ -312,6 +363,7 @@ async function submit() {
 			await createComposed({
 				region: selectedRegion.value,
 				title: name.value.trim(),
+				subdomain: subdomain.value,
 				includes: configIncludes(composedConfig.value),
 				sub_category: composedConfig.value.sub_category,
 				frappe_version: version.value || undefined,
@@ -320,6 +372,7 @@ async function submit() {
 			await create({
 				region: selectedRegion.value,
 				title: name.value.trim(),
+				subdomain: subdomain.value,
 				plan: selectedPlanObj.value.plan,
 				...planResources(selectedPlanObj.value),
 				frappe_version: version.value || undefined,
@@ -342,7 +395,7 @@ async function submit() {
 
 		<div class="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
 			<!-- Stepped form (left) -->
-			<div class="w-full overflow-y-auto p-6 lg:w-[40rem] lg:shrink-0">
+			<div class="w-full overflow-y-auto p-4 lg:w-[40rem] lg:shrink-0">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
 					No active regions are available right now.
@@ -357,17 +410,50 @@ async function submit() {
 							/>
 							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
 						</div>
-						<div class="min-w-0 flex-1 pb-8">
+						<div class="min-w-0 flex-1 pb-5">
 							<div class="text-sm font-medium text-ink-gray-7">
 								Name the server
 							</div>
 							<FormControl
 								v-model="name"
 								type="text"
-								placeholder="e.g. web-01"
+								placeholder="e.g. Acme Production"
 								:maxlength="60"
 								class="mt-2 max-w-xs"
 							/>
+							<div class="mt-3 max-w-xs">
+								<div class="flex items-center justify-between">
+									<label for="subdomain" class="text-p-sm text-ink-gray-7">
+										Server address
+									</label>
+									<button
+										v-if="subdomainEdited"
+										type="button"
+										class="text-p-sm text-ink-gray-5 hover:text-ink-gray-7"
+										@click="resetSubdomain"
+									>
+										Reset
+									</button>
+								</div>
+								<FormControl
+									id="subdomain"
+									:model-value="subdomain"
+									type="text"
+									placeholder="acme-production"
+									:maxlength="63"
+									autocomplete="off"
+									autocapitalize="off"
+									spellcheck="false"
+									class="mt-1"
+									@update:model-value="editSubdomain"
+								>
+									<template v-if="serverDomain" #suffix>
+										<span class="text-p-sm text-ink-gray-5">
+											.{{ serverDomain }}
+										</span>
+									</template>
+								</FormControl>
+							</div>
 						</div>
 					</div>
 
@@ -379,7 +465,7 @@ async function submit() {
 							/>
 							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
 						</div>
-						<div class="min-w-0 flex-1 pb-8">
+						<div class="min-w-0 flex-1 pb-5">
 							<div class="text-sm font-medium text-ink-gray-7">
 								Select a provider
 							</div>
@@ -387,17 +473,20 @@ async function submit() {
 								<button
 									v-for="p in providers"
 									:key="p"
-									class="flex w-full flex-col items-center gap-1.5 rounded-lg border p-2.5 transition-colors"
 									:class="
-                    p === selectedProvider
-                      ? 'border-outline-gray-4 ring-1 ring-outline-gray-4'
-                      : 'border-outline-gray-2 hover:bg-surface-gray-1'
-                  "
+										[
+											'flex w-full flex-col items-center gap-1 rounded-lg border p-2 transition-colors',
+											'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4',
+											p === selectedProvider
+												? 'border-outline-gray-4 bg-surface-gray-1'
+												: 'border-outline-gray-2 hover:bg-surface-gray-1',
+										]
+									"
 									@click="selectProvider(p)"
 								>
 									<ProviderAvatar
 										:provider="p === 'Other' ? null : p"
-										:size="32"
+										:size="28"
 									/>
 									<span class="truncate text-xs text-ink-gray-7">{{ p }}</span>
 								</button>
@@ -413,7 +502,7 @@ async function submit() {
 							/>
 							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
 						</div>
-						<div class="min-w-0 flex-1 pb-8">
+						<div class="min-w-0 flex-1 pb-5">
 							<div class="text-sm font-medium text-ink-gray-7">
 								Select a region
 							</div>
@@ -423,7 +512,12 @@ async function submit() {
 									:key="r.region"
 									size="sm"
 									variant="outline"
-									:class="r.region === selectedRegion ? '!border-outline-gray-5 font-medium !text-ink-gray-9' : ''"
+									:class="[
+										'!rounded-lg focus-visible:!ring-1 focus-visible:!ring-outline-gray-4',
+										r.region === selectedRegion
+											? '!border-outline-gray-4 !bg-surface-gray-1 font-medium !text-ink-gray-9'
+											: '',
+									]"
 									@click="selectRegion(r.region)"
 									@mouseenter="hoverRegion = r.region"
 									@mouseleave="hoverRegion = null"
@@ -452,7 +546,7 @@ async function submit() {
 							/>
 							<span class="mt-1.5 w-px grow bg-[var(--outline-gray-2)]" />
 						</div>
-						<div class="min-w-0 flex-1 pb-8">
+						<div class="min-w-0 flex-1 pb-5">
 							<div class="mb-2 text-sm font-medium text-ink-gray-7">
 								Select a plan
 							</div>
@@ -468,7 +562,13 @@ async function submit() {
 								v-else-if="regionFull"
 								theme="yellow"
 								title="This region is at capacity"
-								:description="`${selectedRegion} can't fit a new server right now. Try another region, or check back shortly — capacity frees up as machines are removed.`"
+								:description="
+									[
+										`${selectedRegion} can't fit a new server right now.`,
+										'Try another region, or check back shortly —',
+										'capacity frees up as machines are removed.',
+									].join(' ')
+								"
 							/>
 
 							<div
@@ -537,14 +637,19 @@ async function submit() {
 							/>
 							<p
 								v-if="selectedRegionRow"
-								class="mt-4 flex items-center gap-1.5 text-p-xs text-ink-gray-5"
+								class="mt-3 flex items-center gap-1.5 text-p-sm leading-5 text-ink-gray-5"
 							>
-								<span class="lucide-map-pin size-3.5" />
-								Runs in {{ regionLabel(selectedRegionRow) }} - this is where
-								your data lives.
+								<span
+									class="lucide-map-pin size-4 shrink-0"
+									aria-hidden="true"
+								/>
+								<span>
+									Runs in {{ regionLabel(selectedRegionRow) }} · Your data lives
+									here.
+								</span>
 							</p>
 							<Button
-								class="mt-8"
+								class="mt-5"
 								variant="solid"
 								:label="ctaLabel"
 								icon-left="lucide-plus"

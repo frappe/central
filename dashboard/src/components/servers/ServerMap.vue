@@ -59,10 +59,12 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-	/** A server pin (or a cluster-card row) was chosen. */
+	/** A pin (or a cluster-card row) was chosen. */
 	open: [id: string]
-	/** A cluster-card row's external-link action was chosen. */
-	'open-server': [server: MapPin['server']]
+	/** A server cluster-card row's open-bench action was chosen. */
+	'open-server': [server: NonNullable<MapPin['server']>]
+	/** A site pin/cluster-card row's open-live-site action was chosen. */
+	'open-site': [url: string]
 	/** A + spot was chosen — the Atlas Instance region to create in. */
 	'new-server': [region: string]
 	/** A cluster was clicked; the page may narrow its list to these servers. */
@@ -130,7 +132,9 @@ function clampPan(): void {
 watch([base, cw, ch], clampPan)
 
 const mapStyle = computed(() => ({
-	transform: `translate3d(${tx.value}px, ${ty.value}px, 0) scale(${k.value})`,
+	transform: `translate3d(${tx.value}px, ${ty.value}px, 0)`,
+	width: `${W * k.value}px`,
+	height: `${H * k.value}px`,
 }))
 
 function zoomAt(ax: number, ay: number, factor: number): void {
@@ -383,9 +387,10 @@ function cancelHide(): void {
 	window.clearTimeout(hideT)
 }
 
-function canOpenBench(server: MapPin['server']): boolean {
+function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 	return props.allowOpen && server.status === 'Running' && !!server.gateway_url
 }
+
 function hideCard(): void {
 	window.clearTimeout(showT)
 	window.clearTimeout(hideT)
@@ -499,14 +504,12 @@ function clickNode(n: MapNode): void {
 		@dblclick="onDblClick"
 		@wheel="onWheel"
 	>
-		<!-- Dotted world. One transformed layer; nodes ride the same transition
-         curve below so they track the dots through zooms. -->
-		<div class="sm-pos absolute left-0 top-0 origin-top-left" :style="mapStyle">
-			<WorldDots
-				class="block text-ink-gray-2"
-				:style="{ width: `${W}px`, height: `${H}px` }"
-			/>
-		</div>
+		<!-- Dotted world. Resize the SVG itself so it re-rasterizes at each zoom;
+		     nodes ride the same curve below so they track the dots. -->
+		<WorldDots
+			class="sm-map sm-pos absolute left-0 top-0 block text-ink-gray-2"
+			:style="mapStyle"
+		/>
 
 		<!-- Nodes: servers, clusters (2+ at one spot), and + spots for empty
          regions. Positioned in screen space; recluster as the zoom changes. -->
@@ -622,8 +625,8 @@ function clickNode(n: MapNode): void {
 				@mouseleave="leaveNode"
 				@click.capture="cardLocked = true"
 			>
-				<!-- Server details: real mirror fields only. Usage metrics return here
-             once Atlas reports them. -->
+				<!-- Single VM (server or site): real mirror fields only. The IP/Plan/Version
+             rows are server-only and simply don't render for a site (fields absent). -->
 				<template v-if="card.node.type === 'server'">
 					<div class="flex items-start gap-2">
 						<div class="min-w-0 flex-1">
@@ -638,12 +641,15 @@ function clickNode(n: MapNode): void {
 									:label="card.node.pin.visual.label"
 								/>
 							</div>
-							<div class="mt-0.5 truncate text-sm text-ink-gray-5">
+							<div
+								v-if="card.node.pin.specs"
+								class="mt-0.5 truncate text-sm text-ink-gray-5"
+							>
 								{{ card.node.pin.specs }}
 							</div>
 						</div>
 						<div class="-mr-1.5 -mt-1" @click.stop>
-							<slot name="card-actions" :server="card.node.pin.server" />
+							<slot name="card-actions" :pin="card.node.pin" />
 						</div>
 					</div>
 					<div class="mt-3 flex items-baseline justify-between gap-3 text-sm">
@@ -695,7 +701,7 @@ function clickNode(n: MapNode): void {
 							class="grid size-5 shrink-0 place-items-center rounded-md text-ink-gray-6 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-8 active:scale-95"
 							:title="`New server in ${card.node.title}`"
 							:aria-label="`New server in ${card.node.title}`"
-							@click="emit('new-server', card.node.members[0].server.cluster)"
+							@click="emit('new-server', card.node.members[0].cluster)"
 						>
 							<span class="lucide-plus size-3.5" />
 						</button>
@@ -725,12 +731,24 @@ function clickNode(n: MapNode): void {
 								>
 							</span>
 						</button>
+						<!-- Server: open bench. Site: open its live URL. Same slot, per kind. -->
 						<button
+							v-if="m.kind === 'server' && m.server"
 							class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
 							:disabled="!canOpenBench(m.server)"
 							title="Open bench"
 							aria-label="Open bench"
 							@click.stop="emit('open-server', m.server)"
+						>
+							<span class="lucide-arrow-up-right size-3.5" />
+						</button>
+						<button
+							v-else-if="m.site"
+							class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
+							:disabled="!allowOpen || !m.site.url"
+							title="Open site"
+							aria-label="Open site"
+							@click.stop="m.site.url && emit('open-site', m.site.url)"
 						>
 							<span class="lucide-arrow-up-right size-3.5" />
 						</button>
@@ -808,6 +826,12 @@ function clickNode(n: MapNode): void {
 }
 .sm-anim .sm-pos {
 	transition: transform 450ms cubic-bezier(0.77, 0, 0.175, 1);
+}
+.sm-anim .sm-map {
+	transition:
+		transform 450ms cubic-bezier(0.77, 0, 0.175, 1),
+		width 450ms cubic-bezier(0.77, 0, 0.175, 1),
+		height 450ms cubic-bezier(0.77, 0, 0.175, 1);
 }
 .sm-drag .sm-pos {
 	transition: none;

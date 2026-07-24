@@ -4,6 +4,36 @@ Central's control plane for team add-ons (LLM Hosting via Grove today; Object St
 via Satellite later). Central owns catalogue, entitlement, per-site credentials, and
 billing links; the executor (Grove) owns the runtime and mints the credentials.
 
+## Current DocTypes
+
+| DocType | What it records | Billing relationship |
+| --- | --- | --- |
+| **Add-on Service** | A service offered by Central, such as `llm`. | Links the service to the Plan Category that pays for it. |
+| **Service Backend** | An enrolled provider endpoint and Central's control credential. | None; it is runtime configuration. |
+| **LLM Model** | A model published by Grove and its `Fast`, `Balanced`, or `Premium` tier. | Its tier is what a plan policy permits. |
+| **LLM Plan Policy** | The LLM access policy for one Billing Plan. | Maps that plan to its allowed model tiers. One policy per Plan. |
+| **LLM Plan Tier** | One allowed-tier row inside an LLM Plan Policy. | Not managed on its own. |
+| **Managed Service** | A team's activated add-on and the subscription that entitles it. | Requires an active subscription in the service's Plan Category. |
+| **Site Service Credential** | One site's provider credential and status for an active managed service. | Provider usage is grouped through active credentials and reported to Billing. |
+
+## Billing setup for LLM Hosting
+
+1. Create the `AI Tokens` **Plan Category** as a metered `Tokens` family. Choose:
+   `Prepaid Pack` to hard-cap included tokens, or `Postpaid Overage` to bill excess.
+2. Create an active **Plan** in that category with one `Plan Includes` row for
+   `Tokens`, then add its **Catalog Rate**.
+3. Set `Add-on Service.plan_category` to `AI Tokens`.
+4. Sync published **LLM Models**, assign each a tier, and create an **LLM Plan
+   Policy** for each Plan with the tiers that Plan should receive.
+5. When a team activates LLM, Central uses its active subscription's Plan to set the
+   permitted models. For prepaid plans it also sends the Plan Includes token quantity
+   as the provider-side token limit. Usage is reconciled hourly into the `Tokens`
+   meter.
+
+**Important:** no LLM Plan Policy (or one with no tier rows) currently permits all
+published models. Tier changes apply when a site is provisioned; re-enable existing
+sites to apply a changed policy.
+
 ## Setting up LLM Hosting (Grove)
 
 ### 1. Install Grove on a Grove site (per deployment)

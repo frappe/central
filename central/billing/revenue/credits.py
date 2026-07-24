@@ -233,11 +233,25 @@ def _existing_payment_entry(gateway_payment_id: str | None):
 	return entry, frappe.utils.flt(balance)
 
 
-@frappe.whitelist()
+def _namespaced_payment_id(gateway: str | None, payment_id: str | None) -> str | None:
+	"""Prefix a gateway payment id with its provider so the stored key is unique
+	across gateways, not just within one.
+
+	A payment id is only guaranteed unique inside its own gateway — a Stripe id and
+	a Razorpay id can be the same string yet mean two different payments. Storing
+	`{gateway}:{payment_id}` keeps those apart, so the unique key never rejects a
+	real second payment. The confirm callback, the pilot poll and the capture webhook
+	all pass the same provider for a given payment, so they still dedupe to one credit.
+	"""
+	if not payment_id:
+		return None
+	return f"{gateway}:{payment_id}" if gateway else payment_id
+
+
 def purchase(team: str, amount: float, currency: str | None = None,
 			 payment_method: str | None = None,
 			 reference_name: str | None = None, note: str | None = None,
-			 gateway_payment_id: str | None = None) -> dict:
+			 gateway_payment_id: str | None = None, gateway: str | None = None) -> dict:
 	"""Top-up: book a credit entry for purchased credits.
 
 	(The card charge that funds the top-up is the payment flow's concern; this
@@ -246,6 +260,8 @@ def purchase(team: str, amount: float, currency: str | None = None,
 	`gateway_payment_id` dedupes a gateway-order top-up: the synchronous confirm
 	callback and the async `payment.captured` webhook both call this for the same
 	payment, and the unique-key + under-lock guard ensure it books one credit.
+	`gateway` (the provider/adapter key) namespaces that id so ids only unique within
+	a gateway can't collide across gateways — see `_namespaced_payment_id`.
 	"""
 	entry, new_balance = _book_entry(
 		team,
@@ -255,7 +271,7 @@ def purchase(team: str, amount: float, currency: str | None = None,
 		reference_type="Payment Method" if payment_method else "Top-up",
 		reference_name=payment_method or reference_name,
 		note=note or "Credit top-up",
-		gateway_payment_id=gateway_payment_id,
+		gateway_payment_id=_namespaced_payment_id(gateway, gateway_payment_id),
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -296,7 +312,6 @@ def grant_promotional_credits(team, amount, currency, note=None) -> dict:
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-@frappe.whitelist()
 def adjust_credits(team: str, amount: float, entry_type: str, currency: str | None = None,
 				   note: str | None = None) -> dict:
 	"""Admin manual correction — a credit or debit entry with an audit note."""
@@ -308,7 +323,6 @@ def adjust_credits(team: str, amount: float, entry_type: str, currency: str | No
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-@frappe.whitelist()
 def get_balance(team: str, currency: str | None = None) -> dict:
 	"""The team's credit balance in one currency — read off that currency's anchor.
 
@@ -328,7 +342,6 @@ def get_balance(team: str, currency: str | None = None) -> dict:
 	return {"balance": frappe.utils.flt(balance), "currency": currency}
 
 
-@frappe.whitelist()
 def get_balances(team: str) -> list[dict]:
 	"""Every currency this team holds credits in — never summed across currencies."""
 	return frappe.get_all(

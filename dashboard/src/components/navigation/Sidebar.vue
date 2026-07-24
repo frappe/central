@@ -11,7 +11,7 @@ import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 
 const { activeTeamLabel } = useSession()
-const { canViewServers, canViewBilling, isMember } = useCapabilities()
+const { canViewServers, canViewBilling, canViewServices, isMember } = useCapabilities()
 const { currentUser, logout } = useAuth()
 const { currentTheme, setTheme } = useTheme()
 
@@ -117,6 +117,18 @@ const sections = computed(() => [
 		],
 	},
 	{
+		label: 'Services',
+		collapsible: true,
+		items: [
+			{
+				label: 'LLM',
+				icon: 'lucide-sparkles',
+				to: '/services/llm',
+				condition: () => canViewServices.value,
+			},
+		],
+	},
+	{
 		label: 'Billing',
 		items: [
 			{
@@ -172,18 +184,15 @@ const onEdgeMove = (event: MouseEvent): void => {
 			class="h-full"
 		>
 			<template #footer-items>
-				<Dropdown
-					:options="profileMenuItems"
-					side="top"
-					align="start"
-					match-trigger-width
-				>
+				<Dropdown :options="profileMenuItems" side="top" align="start" match-trigger-width>
 					<template #default="{ open }">
 						<button
 							class="flex h-10 w-full items-center rounded px-1.5 duration-300 ease-in-out"
 							:class="[
 								sidebarCollapsed ? 'justify-center' : '',
-								open ? 'bg-surface-elevation-2 shadow-sm' : 'hover:bg-surface-gray-3',
+	open
+		? 'bg-surface-elevation-2 shadow-sm'
+		: 'hover:bg-surface-gray-3',
 							]"
 						>
 							<Avatar :label="currentUser ?? ''" size="md" />
@@ -231,9 +240,9 @@ const onEdgeMove = (event: MouseEvent): void => {
 </template>
 
 <style scoped>
-/* frappe-ui Sidebar's built-in bottom Collapse/Expand item — replaced by the
-   edge strip above. (Selector tracks Sidebar.vue's footer container.) */
-.sb-wrap :deep(.mt-auto > [data-slot="sidebar-item"]:last-child) {
+/* frappe-ui Sidebar's built-in bottom Collapse/Expand item is the last child of
+   the footer container (`.mt-auto`) — hide it; the edge strip above replaces it. */
+.sb-wrap :deep(.mt-auto > :last-child) {
 	display: none;
 }
 

@@ -3,20 +3,35 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
+from central.services import provisioning
 from central.services.drivers.base import get_driver
-from central.services.permissions import assert_service_manager, assert_site_owner
+from central.services.permissions import require_service_capability
+
+# Every endpoint is a capability-gated whitelisted method rather than the native
+# DocType list/get: team access to services is governed by capability IAM
+# (central.iam), not Frappe roles, so team users hold no DocType permission — and the
+# read shapes are curated for the console. @require_service_capability resolves the
+# team from the call (team | managed_service | key name) and checks the capability.
+#
+# Per-site enable/disable is NOT here: the bench (Pilot) is authoritative for its
+# sites and drives that via central.services.api.pilot. Central owns team activation
+# (below), team-level API keys, and the read surfaces.
 
 
 @frappe.whitelist()
+@require_service_capability("service:manage")
 def activate_service(team: str, service: str) -> dict:
 	"""Activate a team's add-on (idempotent). Needs an active billing subscription in
 	the service's plan category; LLM has no team-level provisioning, so it goes Active."""
-	assert_service_manager(team)
-	add_on = _get_active_service(service)
+	add_on = provisioning.get_active_service(service)
 
 	subscription = _resolve_subscription(team, add_on)
 	if not subscription:
-		frappe.throw(_("Team {0} has no active subscription for {1}.").format(team, add_on.title))
+		frappe.throw(
+			_("{0} is not available in this team's plan. Ask your account administrator to add it, then try again.").format(
+				add_on.title
+			)
+		)
 
 	existing = frappe.db.get_value(
 		"Managed Service", {"team": team, "add_on_service": add_on.name}, ["name", "status"], as_dict=True
@@ -31,101 +46,145 @@ def activate_service(team: str, service: str) -> dict:
 	return {"managed_service": doc.name, "status": doc.status}
 
 
-@frappe.whitelist()
-def enable_site(managed_service: str, site: str) -> dict:
-	"""Provision the per-site credential and store it. The secret is never returned
-	here — the site pulls it over the authenticated pilot channel via get_config."""
-	service = frappe.db.get_value(
-		"Managed Service", managed_service, ["team", "status", "add_on_service", "subscription"], as_dict=True
-	)
-	if not service:
-		frappe.throw(_("Unknown managed service."))
-	assert_service_manager(service.team)
-
+@frappe.whitelist(methods=["POST"])
+@require_service_capability("service:manage")
+def generate_api_key(managed_service: str, label: str) -> dict:
+	"""Mint a team-level inference key for use in the customer's own apps. Same plan
+	gating and token meter as a site key — just not tied to a site. The secret is
+	returned once here and re-readable later via reveal_api_key."""
+	service = provisioning.get_managed_service(managed_service)
 	if service.status != "Active":
 		frappe.throw(_("Managed service is not active."))
-	assert_site_owner(site, service.team)
 
-	# Reuse the (managed_service, site) row across enable/disable — a fresh insert
-	# would collide with a revoked credential on the unique index.
-	existing = frappe.db.get_value(
-		"Site Service Credential", {"managed_service": managed_service, "site": site}, ["name", "status"], as_dict=True
-	)
-	if existing and existing.status == "Active":
-		return {"credential": existing.name, "site": site, "status": "Active"}
+	label = (label or "").strip()
+	if not label:
+		frappe.throw(_("A label is required."))
 
-	add_on = _get_active_service(service.add_on_service)
-	backend = _get_backend(add_on.name)
-	options = _provision_options(add_on.handler_key, service.subscription)
-	result = get_driver(add_on.handler_key).provision_site(backend, site, options)
+	add_on = provisioning.get_active_service(service.add_on_service)
+	backend = provisioning.get_backend(add_on.name)
+	options = provisioning.provision_options(add_on.handler_key, service.subscription)
 
-	credential = frappe.get_doc("Site Service Credential", existing.name) if existing else frappe.new_doc(
-		"Site Service Credential"
-	)
-	credential.update(
+	# Provision first, persist second: a provider failure leaves no orphan row. A random
+	# email is this key's meterable Grove identity, so usage attributes to it alone. If
+	# insert dies after minting, the key's secret is never disclosed, so it's inert.
+	email = f"key-{frappe.generate_hash(length=12)}@svc.frappe.cloud"
+	result = get_driver(add_on.handler_key).provision_key(backend, label, email, options)
+
+	doc = frappe.new_doc("Service API Key")
+	doc.update(
 		{
 			"managed_service": managed_service,
-			"site": site,
+			"label": label,
 			"status": "Active",
 			"gateway_url": result["gateway_url"],
-			"provider_ref": result.get("provider_ref"),
+			"provider_ref": result.get("provider_ref", email),
 			"api_key": result["api_key"],
 		}
 	)
-	credential.save()
+	doc.insert()
 
-	return {"credential": credential.name, "site": site, "gateway_url": result["gateway_url"], "status": "Active"}
+	return {
+		"name": doc.name,
+		"label": label,
+		"gateway_url": result["gateway_url"],
+		"api_key": result["api_key"],
+		"status": "Active",
+	}
 
 
-@frappe.whitelist()
-def disable_site(managed_service: str, site: str) -> dict:
-	"""Revoke a site's credential at the provider and mark it revoked."""
-	service = frappe.db.get_value("Managed Service", managed_service, ["team", "add_on_service"], as_dict=True)
-	if not service:
-		frappe.throw(_("Unknown managed service."))
-	assert_service_manager(service.team)
-
-	credential_name = frappe.db.get_value(
-		"Site Service Credential", {"managed_service": managed_service, "site": site, "status": "Active"}, "name"
+@frappe.whitelist(methods=["GET"])
+@require_service_capability("service:view")
+def list_api_keys(managed_service: str) -> list[dict]:
+	"""A managed service's issued API keys (no secrets). service:view."""
+	return frappe.get_all(
+		"Service API Key",
+		filters={"managed_service": managed_service},
+		fields=["name", "label", "status", "gateway_url", "last_usage_total", "creation"],
+		order_by="creation desc",
 	)
-	if not credential_name:
-		return {"site": site, "status": "not_enabled"}
-
-	credential = frappe.get_doc("Site Service Credential", credential_name)
-	add_on = _get_active_service(service.add_on_service)
-	get_driver(add_on.handler_key).revoke_site(_get_backend(add_on.name), credential.get_password("api_key"))
-
-	credential.db_set("status", "Revoked")
-
-	return {"site": site, "status": "Revoked"}
 
 
-def _get_active_service(service: str):
-	add_on = frappe.db.get_value(
-		"Add-on Service", service, ["name", "title", "handler_key", "plan_category", "is_active"], as_dict=True, cache=True
+@frappe.whitelist(methods=["POST"])
+@require_service_capability("service:manage")
+def reveal_api_key(name: str) -> dict:
+	"""Reveal one issued key's secret + endpoint for copy/curl. service:manage."""
+	doc = frappe.get_doc("Service API Key", name)
+	if doc.status != "Active":
+		frappe.throw(_("This key has been revoked."))
+
+	return {
+		"name": doc.name,
+		"label": doc.label,
+		"gateway_url": doc.gateway_url,
+		"api_key": doc.get_password("api_key"),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+@require_service_capability("service:manage")
+def revoke_api_key(name: str) -> dict:
+	"""Revoke an issued key at the provider and mark it revoked. service:manage."""
+	doc = frappe.get_doc("Service API Key", name)
+	if doc.status == "Revoked":
+		return {"name": name, "status": "Revoked"}
+
+	add_on = provisioning.get_active_service(provisioning.get_managed_service(doc.managed_service).add_on_service)
+	get_driver(add_on.handler_key).revoke_site(provisioning.get_backend(add_on.name), doc.get_password("api_key"))
+	doc.db_set("status", "Revoked")
+
+	return {"name": name, "status": "Revoked"}
+
+
+@frappe.whitelist(methods=["GET"])
+@require_service_capability("service:view")
+def list_offers(team: str) -> list[dict]:
+	"""Catalogue of active add-on services with the team's status for each. service:view."""
+	offers = frappe.get_all(
+		"Add-on Service", filters={"is_active": 1}, fields=["name", "title", "plan_category"], order_by="title"
 	)
-	if not add_on or not add_on.is_active:
-		frappe.throw(_("Unknown or inactive service '{0}'.").format(service))
+	activated = {
+		row.add_on_service: row.name
+		for row in frappe.get_all("Managed Service", filters={"team": team}, fields=["name", "add_on_service"])
+	}
+	for offer in offers:
+		offer["managed_service"] = activated.get(offer.name)
 
-	return add_on
-
-
-def _get_backend(service: str):
-	name = frappe.db.get_value("Service Backend", {"service": service, "is_active": 1}, "name")
-	if not name:
-		frappe.throw(_("No active backend configured for {0}.").format(service))
-
-	return frappe.get_doc("Service Backend", name)
+	return offers
 
 
-def _provision_options(handler_key: str, subscription: str) -> dict:
-	# Only the LLM handler derives model/token policy from the plan today.
-	if handler_key != "grove":
-		return {}
+@frappe.whitelist(methods=["GET"])
+@require_service_capability("service:view")
+def get_instance(managed_service: str) -> dict:
+	"""A managed service's status, enabled sites, and included models. service:view.
+	`enabled_sites` are the sites Central has minted keys for — its own record, not a
+	VM scan (the bench owns the authoritative site list)."""
+	instance = provisioning.get_managed_service(managed_service)
+	sites = frappe.get_all(
+		"Site Service Credential",
+		filters={"managed_service": managed_service, "status": "Active"},
+		fields=["site", "gateway_url"],
+		order_by="site",
+	)
+	plan = frappe.db.get_value("Subscription", instance.subscription, "plan")
+
+	return {
+		"managed_service": instance.name,
+		"service": instance.add_on_service,
+		"status": instance.status,
+		"plan": plan,
+		"plan_title": frappe.db.get_value("Plan", plan, "title") if plan else None,
+		"enabled_sites": [row.site for row in sites],
+		"models": _included_models(instance.add_on_service, plan),
+	}
+
+
+def _included_models(service: str, plan: str | None) -> list[dict]:
+	if frappe.db.get_value("Add-on Service", service, "handler_key", cache=True) != "grove":
+		return []
 
 	from central.services import llm
 
-	return llm.resolve_provision_options(frappe.db.get_value("Subscription", subscription, "plan"))
+	return llm.included_models(plan)
 
 
 def _resolve_subscription(team: str, add_on) -> str | None:

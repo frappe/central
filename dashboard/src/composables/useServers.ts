@@ -89,6 +89,7 @@ type CreateParams = {
 	team: string
 	region: string
 	title: string
+	subdomain: string
 	plan: string
 	vcpus: number
 	memory_megabytes: number
@@ -109,6 +110,7 @@ type CreateComposedParams = {
 	team: string
 	region: string
 	title: string
+	subdomain: string
 	includes: ComposedInclude[]
 	sub_category: string
 	frappe_version?: string

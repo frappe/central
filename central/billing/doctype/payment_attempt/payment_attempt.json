@@ -101,7 +101,8 @@
   {
    "fieldname": "gateway_transaction_id",
    "fieldtype": "Data",
-   "label": "Gateway Transaction ID"
+   "label": "Gateway Transaction ID",
+   "search_index": 1
   },
   {
    "fieldname": "resolved_by",

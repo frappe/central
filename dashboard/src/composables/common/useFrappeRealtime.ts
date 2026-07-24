@@ -153,19 +153,23 @@ interface ListInvalidationOptions {
 	debounceMs?: number
 }
 
-/** Reload a list after Frappe commits a document change, coalescing event bursts. */
+/** Reload a list after Frappe commits a document change, coalescing event bursts.
+ *  Pass an array of doctypes to reload one list off several — they share a single
+ *  debounce timer, so a change touching more than one still causes exactly one reload. */
 export function useFrappeListInvalidation(
-	doctype: MaybeRefOrGetter<string>,
+	doctype: MaybeRefOrGetter<string> | string[],
 	reload: () => unknown,
 	options: ListInvalidationOptions = {},
 ): void {
 	const debounceMs = options.debounceMs ?? 150
 	let timer: number | undefined
-
-	useFrappeDocTypeEventListener(doctype, () => {
+	const schedule = () => {
 		window.clearTimeout(timer)
 		timer = window.setTimeout(reload, debounceMs)
-	})
+	}
+
+	const doctypes = Array.isArray(doctype) ? doctype : [doctype]
+	for (const dt of doctypes) useFrappeDocTypeEventListener(dt, schedule)
 
 	onScopeDispose(() => window.clearTimeout(timer))
 }
