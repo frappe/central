@@ -13,6 +13,12 @@ this package re-exports the public API so every `billing.api.dashboard.*` path
 stays stable.
 """
 
+from central.billing.api.dashboard.billing_groups import (
+	create_billing_group,
+	list_billing_groups,
+	rename_billing_group,
+	set_billing_group_enabled,
+)
 from central.billing.api.dashboard.catalog import (
 	get_eligible_plans,
 )
@@ -77,6 +83,7 @@ __all__ = [
 	"mark_all_notifications_read",
 	"get_notification_preferences", "save_notification_preferences",
 	"get_eligible_plans",
+	"list_billing_groups", "create_billing_group", "rename_billing_group", "set_billing_group_enabled",
 	"get_forecast", "list_subscriptions", "pause_subscription", "resume_subscription",
 	"list_invoices", "get_invoice", "list_payment_attempts",
 	"get_credit_balance", "credit_ledger", "pay_invoice", "create_topup_order",
