@@ -16,10 +16,20 @@ from central.iam import can, expand_capabilities, get_all_capabilities, user_has
 @frappe.whitelist(methods=["GET"])
 @require_team_member
 def list_team_members(team: str) -> list[dict[str, Any]]:
-	"""Roster of the team the caller belongs to (user, role, status, owner flag)."""
+	"""Roster of the team the caller belongs to (user, full name, role, status, owner flag)."""
 	doc = frappe.get_doc("Team", team)
+	full_names = {
+		u.name: u.full_name
+		for u in frappe.get_all("User", filters={"name": ["in", [m.user for m in doc.members]]}, fields=["name", "full_name"])
+	}
 	return [
-		{"user": m.user, "role": m.role, "status": m.status, "is_owner": m.user == doc.owner_user}
+		{
+			"user": m.user,
+			"full_name": full_names.get(m.user) or m.user,
+			"role": m.role,
+			"status": m.status,
+			"is_owner": m.user == doc.owner_user,
+		}
 		for m in doc.members
 	]
 

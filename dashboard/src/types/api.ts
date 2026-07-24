@@ -31,6 +31,7 @@ export type InvitationStatus =
 /** central.api.teams.list_team_members item. */
 export interface TeamMemberRow {
 	user: string
+	full_name: string
 	role: string
 	status: MemberStatus
 	is_owner: boolean
