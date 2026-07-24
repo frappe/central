@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useCall, Badge, Button, LoadingText } from 'frappe-ui'
-import PageHeader from '@/components/common/PageHeader.vue'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
 import SplitView from '@/components/common/SplitView.vue'
 import { API, method } from '@/api/methods'
@@ -128,7 +127,6 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 
 <template>
 	<div class="flex h-full flex-col">
-		<PageHeader title="Invoices" />
 
 		<SplitView v-model:open="detailOpen" class="flex-1">
 			<!-- The selected invoice's identity lives in the panel header (number +

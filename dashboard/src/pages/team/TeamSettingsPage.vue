@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, FormControl } from 'frappe-ui'
-import PageHeader from '@/components/common/PageHeader.vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 import { useTeamMembers } from '@/composables/useTeamMembers'
@@ -83,7 +82,6 @@ async function onDelete() {
 
 <template>
 	<div class="flex h-full flex-col">
-		<PageHeader title="Team settings" />
 
 		<div class="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
 			<div class="mx-auto max-w-2xl space-y-6">

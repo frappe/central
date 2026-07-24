@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { Badge, Button, FormControl, Tabs, useCall } from 'frappe-ui'
 import { useRoute, useRouter } from 'vue-router'
-import PageHeader from '@/components/common/PageHeader.vue'
 import Alert from '@/components/common/Alert.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
@@ -387,11 +386,9 @@ async function submit() {
 
 <template>
 	<div class="flex h-full flex-col">
-		<PageHeader title="New server">
-			<template #actions>
-				<Button label="Cancel" @click="router.push('/servers')" />
-			</template>
-		</PageHeader>
+		<Teleport to="#header-actions">
+			<Button label="Cancel" @click="router.push('/servers')" />
+		</Teleport>
 
 		<div class="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
 			<!-- Stepped form (left) -->

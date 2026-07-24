@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import PageHeader from '@/components/common/PageHeader.vue'
 import Alert from '@/components/common/Alert.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
@@ -28,7 +27,6 @@ const showWalletHistory = ref(false)
 
 <template>
 	<div class="flex h-full flex-col">
-		<PageHeader title="Billing" />
 
 		<!-- Content + docked wallet-history panel (like the invoice tray): the panel
          shares the row, the content stays bright beside it — no modal overlay. -->
