@@ -49,6 +49,19 @@ def _require_manage(team: str) -> str:
 	return team
 
 
+def _billing_group_titles(names) -> dict:
+	"""name -> title for a batch of Billing Group ids, one query regardless of how
+	many rows reference them (list_subscriptions / list_invoices resolve their
+	`billing_group` link to a display title this way instead of one lookup per row)."""
+	names = [n for n in set(names) if n]
+	if not names:
+		return {}
+	return {
+		g.name: g.title
+		for g in frappe.get_all("Billing Group", filters={"name": ["in", names]}, fields=["name", "title"])
+	}
+
+
 def _team_resource_count(team: str) -> int:
 	"""How many resources the team is running: its open billing segments (ADR 0010),
 	preset and composed alike (#86)."""

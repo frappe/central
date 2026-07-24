@@ -54,6 +54,7 @@ from central.billing.api.dashboard.invoices import (
 	list_subscriptions,
 	pause_subscription,
 	resume_subscription,
+	set_subscription_billing_group,
 	pay_invoice,
 	pay_invoice_checkout,
 )
@@ -85,6 +86,7 @@ __all__ = [
 	"get_eligible_plans",
 	"list_billing_groups", "create_billing_group", "rename_billing_group", "set_billing_group_enabled",
 	"get_forecast", "list_subscriptions", "pause_subscription", "resume_subscription",
+	"set_subscription_billing_group",
 	"list_invoices", "get_invoice", "list_payment_attempts",
 	"get_credit_balance", "credit_ledger", "pay_invoice", "create_topup_order",
 	"confirm_topup", "pay_invoice_checkout", "confirm_invoice_checkout",

@@ -12,6 +12,7 @@ from central.billing import authz
 from central.billing.revenue import credits, invoicing, metering
 from central.billing.revenue.tax import resolve_tax
 from central.billing.api.dashboard._shared import (
+	_billing_group_titles,
 	_describe_line,
 	_enabled_gateway_for_currency,
 	_gateway_for_currency,
@@ -80,10 +81,11 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 		"Subscription",
 		filters={"team": team},
 		fields=["name", "plan", "pricing_mode", "sub_category", "cluster", "asset_id",
-				"billing_cycle", "account_standing", "start_date", "enabled"],
+				"billing_cycle", "account_standing", "start_date", "enabled", "billing_group"],
 		order_by="creation desc",
 	)
 	currency = _team_currency(team)
+	group_titles = _billing_group_titles(r.billing_group for r in rows)
 	# Batch the asset lookup so a team with N subscriptions costs one query, not N.
 	asset_ids = list({r.asset_id for r in rows if r.asset_id})
 	assets = (
@@ -137,6 +139,8 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			"enabled": r.enabled,
 			"monthly_rate": monthly_rate,
 			"currency": currency,
+			"billing_group": r.billing_group,
+			"billing_group_title": group_titles.get(r.billing_group),
 		})
 	return out
 
@@ -197,17 +201,34 @@ def resume_subscription(subscription: str, team: str | None = None) -> dict:
 	return {"name": doc.name, "enabled": doc.enabled}
 
 
+@frappe.whitelist(methods=["POST"])
+def set_subscription_billing_group(subscription: str, billing_group: str | None = None) -> dict:
+	"""Tag a subscription into a Billing Group, or clear it (`billing_group=None`)
+	back onto the team's consolidated invoice. `Subscription.validate_billing_group`
+	is the authority on same-team / enabled — this only gates who may call it."""
+	owner = frappe.db.get_value("Subscription", subscription, "team")
+	_require_manage(owner)
+	doc = frappe.get_doc("Subscription", subscription)
+	doc.billing_group = billing_group or None
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name, "billing_group": doc.billing_group}
+
+
 @frappe.whitelist()
 def list_invoices(team: str | None = None) -> list[dict]:
 	"""Invoice history — summary only (no internal/admin fields)."""
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Invoice",
 		filters={"team": team},
 		fields=["name", "period_start", "period_end", "status", "invoice_type",
-				"total", "amount_paid", "currency", "due_date"],
+				"total", "amount_paid", "currency", "due_date", "billing_group"],
 		order_by="period_start desc",
 	)
+	group_titles = _billing_group_titles(r.billing_group for r in rows)
+	for r in rows:
+		r["billing_group_title"] = group_titles.get(r.billing_group)
+	return rows
 
 
 @frappe.whitelist()
@@ -226,6 +247,9 @@ def get_invoice(name: str) -> dict:
 	)
 	return {
 		"name": doc.name, "team": doc.team, "status": doc.status, "invoice_type": doc.invoice_type,
+		"billing_group": doc.billing_group,
+		"billing_group_title": frappe.db.get_value("Billing Group", doc.billing_group, "title")
+			if doc.billing_group else None,
 		"period_start": str(doc.period_start), "period_end": str(doc.period_end),
 		"currency": doc.currency, "subtotal": doc.subtotal,
 		"output_tax_type": doc.output_tax_type, "output_tax_rate": doc.output_tax_rate,
