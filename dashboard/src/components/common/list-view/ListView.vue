@@ -610,7 +610,14 @@ defineExpose({ table })
               ]"
 							@click="cell.column.id === '__selection' ? $event.stopPropagation() : undefined"
 						>
+							<slot
+								v-if="$slots[cell.column.id]"
+								:name="cell.column.id"
+								:row="row.original"
+								:value="cell.getValue()"
+							/>
 							<FlexRender
+								v-else
 								:render="cell.column.columnDef.cell"
 								:props="cell.getContext()"
 							/>
