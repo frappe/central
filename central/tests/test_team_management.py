@@ -16,7 +16,7 @@ from central.api.teams import (
 	rename_team,
 	resend_invitation,
 	revoke_invitation,
-	set_team_member_role,
+	set_team_member_roles,
 	transfer_team_ownership,
 )
 from central.central.doctype.team_invitation.team_invitation import expire_pending_invitations
@@ -166,12 +166,51 @@ class TestTeamManagement(IntegrationTestCase):
 		team = frappe.get_doc("Team", self.team.name)
 
 		with self.assertRaises(frappe.PermissionError):
-			team.set_member_role(self.admin, "Developer")
+			team.set_member_roles(self.admin, [{"role": "Developer", "resource_type": "All Servers"}])
 		with self.assertRaises(frappe.ValidationError):
-			team.set_member_role(self.viewer, "Owner")
+			team.set_member_roles(self.viewer, [{"role": "Owner", "resource_type": "All Servers"}])
 
-		team.set_member_role(self.viewer, "Developer")
+		team.set_member_roles(self.viewer, [{"role": "Developer", "resource_type": "All Servers"}])
 		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
+
+	def test_member_can_hold_multiple_roles_with_unioned_capabilities(self):
+		# Proves the IAM engine needed no changes: resolve_user_grants already
+		# keys grants by (team, role) and unions capabilities across every
+		# Team Member row a user holds, so adding a second role grant is enough.
+		frappe.set_user(self.owner)
+		team = frappe.get_doc("Team", self.team.name)
+		billing_only = create_custom_role(self.team.name, "Billing Only", ["server:view"])["role"]
+
+		team.set_member_roles(
+			self.viewer,
+			[
+				{"role": billing_only, "resource_type": "All Servers"},
+				{"role": "Developer", "resource_type": "Server", "resource_name": "some-server"},
+			],
+		)
+
+		self.assertTrue(can(self.viewer, self.team.name, "server:view"))
+		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
+
+	def test_duplicate_role_resource_grant_is_rejected(self):
+		frappe.set_user(self.owner)
+		team = frappe.get_doc("Team", self.team.name)
+
+		with self.assertRaises(frappe.ValidationError):
+			team.set_member_roles(
+				self.viewer,
+				[
+					{"role": "Developer", "resource_type": "All Servers"},
+					{"role": "Developer", "resource_type": "All Servers"},
+				],
+			)
+
+	def test_member_must_keep_at_least_one_role(self):
+		frappe.set_user(self.owner)
+		team = frappe.get_doc("Team", self.team.name)
+
+		with self.assertRaises(frappe.ValidationError):
+			team.set_member_roles(self.viewer, [])
 
 	def test_only_owner_can_transfer_ownership(self):
 		frappe.set_user(self.admin)
@@ -267,11 +306,11 @@ class TestTeamManagement(IntegrationTestCase):
 			delete_custom_role("Viewer")
 
 		# In use by a member -> refused until reassigned.
-		set_team_member_role(self.team.name, self.viewer, role)
+		set_team_member_roles(self.team.name, self.viewer, [{"role": role, "resource_type": "All Servers"}])
 		with self.assertRaises(frappe.ValidationError):
 			delete_custom_role(role)
 
-		set_team_member_role(self.team.name, self.viewer, "Viewer")
+		set_team_member_roles(self.team.name, self.viewer, [{"role": "Viewer", "resource_type": "All Servers"}])
 		self.assertTrue(delete_custom_role(role)["deleted"])
 		self.assertFalse(frappe.db.exists("Team Role", role))
 
