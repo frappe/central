@@ -45,6 +45,12 @@ const routes = [
 		children: [
 			{ path: '', redirect: '/servers' },
 			{
+				path: 'home',
+				name: 'Home',
+				component: () => import('@/pages/home/HomePage.vue'),
+				meta: { title: 'Home' },
+			},
+			{
 				path: 'servers',
 				name: 'Servers',
 				component: () => import('@/pages/servers/ServersPage.vue'),
@@ -88,6 +94,12 @@ const routes = [
 				name: 'Notifications',
 				component: () => import('@/pages/notifications/NotificationsPage.vue'),
 				meta: { title: 'Notifications' },
+			},
+			{
+				path: 'settings',
+				name: 'Settings',
+				component: () => import('@/pages/settings/SettingsPage.vue'),
+				meta: { title: 'Settings' },
 			},
 			{ path: 'team', redirect: '/team/members' },
 			// Members + roles share one tabbed page; /team/roles is kept as an alias.
