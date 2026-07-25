@@ -12,14 +12,16 @@ export function useBusyRunner() {
 		ok: string,
 		key: string,
 		onSuccess?: () => void,
-	): Promise<void> {
+	): Promise<boolean> {
 		busy.value = key
 		try {
 			await fn()
 			successToast(ok)
 			onSuccess?.()
+			return true
 		} catch (e) {
 			errorToast(e)
+			return false
 		} finally {
 			busy.value = ''
 		}

@@ -12,6 +12,8 @@ import {
 import CapabilityList from '@/components/team/CapabilityList.vue'
 import TeamMemberRowActions from '@/components/team/TeamMemberRowActions.vue'
 import InviteMemberDialog from '@/components/team/InviteMemberDialog.vue'
+import ManageRolesDialog from '@/components/team/ManageRolesDialog.vue'
+import RemoveMemberDialog from '@/components/team/RemoveMemberDialog.vue'
 
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useTeamMembers } from '@/composables/useTeamMembers'
@@ -21,9 +23,10 @@ import { roleDisplayByName } from '@/lib/roles'
 import type { TeamMemberRow } from '@/types/api'
 
 const inviteDialog = ref(false)
+const manageRolesFor = ref<TeamMemberRow | null>(null)
+const removeTarget = ref<TeamMemberRow | null>(null)
 
-const { members, loading, error, busy, reload, setRole, setStatus, remove } =
-	useTeamMembers()
+const { members, loading, error, busy, reload } = useTeamMembers()
 
 const { roles, capabilities, capsByRole, roleLabel } = useTeamRoles()
 const { canManageMembers } = useCapabilities()
@@ -39,12 +42,17 @@ const getMemberKey = (member: TeamMemberRow): string => member.user
 
 const { selected, select, clear } = useTeamRowSelection(members, getMemberKey)
 
-const selectedRoleCaps = computed(() =>
-	selected.value ? (capsByRole.value[selected.value.role] ?? []) : [],
-)
+const selectedRoleCaps = computed(() => {
+	if (!selected.value) return []
+	const caps = new Set<string>()
+	for (const grant of selected.value.roles) {
+		for (const cap of capsByRole.value[grant.role] ?? []) caps.add(cap)
+	}
+	return [...caps]
+})
 
-// Columns declare id/header/sorting only — the Member/Role/Actions markup is
-// filled in by the matching #member/#role/#actions slots in the template below.
+// Columns declare id/header/sorting only — the Member/Roles/Actions markup is
+// filled in by the matching #member/#roles/#actions slots in the template below.
 const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 	{
 		id: 'member',
@@ -53,9 +61,9 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 		meta: { cellClass: 'truncate' },
 	},
 	{
-		id: 'role',
-		header: 'Role',
-		accessorFn: (member) => roleLabel(member.role),
+		id: 'roles',
+		header: 'Roles',
+		accessorFn: (member) => member.roles.map((r) => roleLabel(r.role)).join(', '),
 		meta: { cellClass: 'truncate' },
 	},
 	{
@@ -113,29 +121,36 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 			</div>
 		</template>
 
-		<template #role="{ row }: { row: TeamMemberRow }">
-			<Badge
-				:theme="roleDisplayByName(roles, row.role).theme"
-				:label="roleLabel(row.role)"
-			>
-				<template #prefix>
-					<span
-						:class="`${roleDisplayByName(roles, row.role).icon} size-3`"
-						aria-hidden="true"
-					/>
-				</template>
-			</Badge>
+		<template #roles="{ row }: { row: TeamMemberRow }">
+			<div class="flex flex-wrap items-center gap-1">
+				<Badge
+					v-for="grant in row.roles.slice(0, 2)"
+					:key="grant.role"
+					:theme="roleDisplayByName(roles, grant.role).theme"
+					:label="roleLabel(grant.role)"
+				>
+					<template #prefix>
+						<span
+							:class="`${roleDisplayByName(roles, grant.role).icon} size-3`"
+							aria-hidden="true"
+						/>
+					</template>
+				</Badge>
+				<Badge
+					v-if="row.roles.length > 2"
+					theme="gray"
+					:label="`+${row.roles.length - 2}`"
+				/>
+			</div>
 		</template>
 
 		<template #actions="{ row }: { row: TeamMemberRow }">
 			<TeamMemberRowActions
 				:member="row"
-				:roles="roles"
 				:can-manage="canManageMembers"
 				:busy="busy === row.user"
-				@set-role="setRole"
-				@set-status="setStatus"
-				@remove="remove"
+				@manage-roles="manageRolesFor = $event"
+				@remove-requested="removeTarget = $event"
 			/>
 		</template>
 	</ListView>
@@ -143,7 +158,7 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 	<RightSidebar
 		:open="!!selected"
 		:title="selected?.full_name"
-		:subtitle="selected ? roleLabel(selected.role) : ''"
+		:subtitle="selected ? selected.roles.map((r) => roleLabel(r.role)).join(', ') : ''"
 		@close="clear"
 	>
 		<div v-if="selected" class="space-y-6">
@@ -154,6 +169,8 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 	</RightSidebar>
 
 	<InviteMemberDialog v-model:open="inviteDialog" />
+	<ManageRolesDialog v-model:member="manageRolesFor" />
+	<RemoveMemberDialog v-model:member="removeTarget" />
 </template>
 
 <style scoped>
