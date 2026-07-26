@@ -195,8 +195,8 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None,
 	"""
 	from central.iam import can
 
-	if event.direct_recipients == "Affected User" and affected_user:
-		if _email_enabled(affected_user, team, event.category):
+	if event.direct_recipients == "Affected User":
+		if affected_user and _email_enabled(affected_user, team, event.category):
 			_send_member_email(affected_user, team, event, ctx,
 							   message=message, reference_doctype=reference_doctype,
 							   reference_name=reference_name)
@@ -278,7 +278,6 @@ def _send_member_email(user, team, event, ctx, *, message=None,
 			recipients=[user],
 			subject=subject,
 			message=body,
-			delayed=True,
 		)
 	except Exception:  # noqa: BLE001 — email dispatch is best-effort
 		pass

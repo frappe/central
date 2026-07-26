@@ -5,6 +5,18 @@
 import frappe
 
 from central.api.pilot import pilot_credential_auth
+from central.iam import is_active_team_member, user_has_operator_bypass
+
+
+def _require_member(user: str, team: str) -> None:
+	"""Gate preference endpoints on team membership (operators bypass)."""
+	if user_has_operator_bypass(user):
+		return
+	if not is_active_team_member(user, team):
+		frappe.throw(
+			f"User {user} is not a member of team {team}.",
+			frappe.PermissionError,
+		)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -18,6 +30,7 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 
 	Upserts per (user, team, category). Returns the saved preferences."""
 	user = frappe.session.user
+	_require_member(user, team)
 	saved = []
 	for pref in preferences:
 		category = pref.get("category")
@@ -57,6 +70,7 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 def get_user_preferences(team: str) -> dict:
 	"""Return the calling user's notification preferences for *team*."""
 	user = frappe.session.user
+	_require_member(user, team)
 	rows = frappe.get_all(
 		"User Notification Preference",
 		filters={"user": user, "team": team},

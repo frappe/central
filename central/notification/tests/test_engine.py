@@ -240,6 +240,9 @@ class TestSaveUserPreferences(EngineTestBase):
 	def setUp(self):
 		super().setUp()
 		self.user = make_user("prefs-user@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.user, "role": "Viewer", "status": "Active"})
+		team.save(ignore_permissions=True)
 		frappe.set_user(self.user)
 
 	def test_creates_preferences_for_user(self):
@@ -516,12 +519,10 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_no_email_when_affected_user_not_set(self, mock_sendmail):
 		"""When direct_recipients='Affected User' but affected_user is None,
-		falls back to normal fan-out (all qualified members)."""
+		no email is sent — the mode requires an explicit target."""
 		self.user_a = make_user("direct-c@example.com")
-		self.user_b = make_user("direct-cb@example.com")
 		team = frappe.get_doc("Team", TEAM)
 		team.append("members", {"user": self.user_a, "role": "Viewer", "status": "Active"})
-		team.append("members", {"user": self.user_b, "role": "Viewer", "status": "Active"})
 		team.save(ignore_permissions=True)
 
 		self._ensure_event_type("server_down2", required_cap="server:view",
@@ -532,10 +533,7 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 		dispatch(TEAM, "server_down2", message="Server is down",
 				 reference_doctype="Server", reference_name="srv-2")
 
-		all_recipients = [r for call in mock_sendmail.call_args_list
-						  for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))]
-		self.assertIn(self.user_a, all_recipients)
-		self.assertIn(self.user_b, all_recipients)
+		self.assertEqual(mock_sendmail.call_count, 0)
 
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_affected_user_bypasses_capability(self, mock_sendmail):
