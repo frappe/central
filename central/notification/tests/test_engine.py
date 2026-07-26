@@ -369,21 +369,22 @@ class TestReportPilotEvent(EngineTestBase):
 
 	def test_pilot_event_creates_notification(self):
 		"""A valid pilot event dispatches through the engine and creates a notification."""
-		# Simulate a resolved pilot credential.
 		class FakeCredential:
 			team = TEAM
 
-		frappe.local.pilot_credential = FakeCredential()
+		fake = FakeCredential()
 
-		from central.notification.api import report_pilot_event
+		with patch("central.api.pilot.PilotCredential.verify", return_value=fake), \
+			 patch("frappe.get_request_header", return_value="fake-token"):
+			from central.notification.api import report_pilot_event
 
-		out = report_pilot_event(
-			event_type="backup_failure",
-			message="pg_dump exited with code 1",
-			reference_doctype="Site",
-			reference_name="my-site",
-			context={"error_code": "DISK_FULL"},
-		)
+			out = report_pilot_event(
+				event_type="backup_failure",
+				message="pg_dump exited with code 1",
+				reference_doctype="Site",
+				reference_name="my-site",
+				context={"error_code": "DISK_FULL"},
+			)
 		self.assertTrue(out["created"])
 
 		rows = frappe.get_all(
