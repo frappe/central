@@ -486,3 +486,86 @@ class TestMemberInvitedSuppression(EngineTestBase):
 
 		count = frappe.db.count("Team Notification", {"team": TEAM, "event_type": "member_invited"})
 		self.assertEqual(count, 0)
+
+
+class TestDirectRecipientsAffectedUser(EngineTestBase):
+	@patch("central.notification.engine.frappe.sendmail")
+	def test_affected_user_receives_email(self, mock_sendmail):
+		"""Only the affected_user gets the email when direct_recipients='Affected User'."""
+		self.user_a = make_user("direct-a@example.com")
+		self.user_b = make_user("direct-b@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.user_a, "role": "Viewer", "status": "Active"})
+		team.append("members", {"user": self.user_b, "role": "Viewer", "status": "Active"})
+		team.save(ignore_permissions=True)
+
+		self._ensure_event_type("server_down", required_cap="server:view",
+							   direct_recipients="Affected User")
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "server_down", message="Server is down",
+				 reference_doctype="Server", reference_name="srv-1",
+				 affected_user=self.user_a)
+
+		all_recipients = [r for call in mock_sendmail.call_args_list
+						  for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))]
+		self.assertIn(self.user_a, all_recipients)
+		self.assertNotIn(self.user_b, all_recipients)
+
+	@patch("central.notification.engine.frappe.sendmail")
+	def test_no_email_when_affected_user_not_set(self, mock_sendmail):
+		"""When direct_recipients='Affected User' but affected_user is None,
+		falls back to normal fan-out (all qualified members)."""
+		self.user_a = make_user("direct-c@example.com")
+		self.user_b = make_user("direct-cb@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.user_a, "role": "Viewer", "status": "Active"})
+		team.append("members", {"user": self.user_b, "role": "Viewer", "status": "Active"})
+		team.save(ignore_permissions=True)
+
+		self._ensure_event_type("server_down2", required_cap="server:view",
+							   direct_recipients="Affected User")
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "server_down2", message="Server is down",
+				 reference_doctype="Server", reference_name="srv-2")
+
+		all_recipients = [r for call in mock_sendmail.call_args_list
+						  for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))]
+		self.assertIn(self.user_a, all_recipients)
+		self.assertIn(self.user_b, all_recipients)
+
+	@patch("central.notification.engine.frappe.sendmail")
+	def test_affected_user_bypasses_capability(self, mock_sendmail):
+		"""The affected_user receives the email even without the required capability."""
+		self.user_a = make_user("direct-d@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.user_a, "role": "Viewer", "status": "Active"})
+		team.save(ignore_permissions=True)
+
+		role = frappe.get_doc({
+			"doctype": "Team Role",
+			"role_name": f"Billing Only {frappe.generate_hash(4)}",
+			"is_system": 0,
+			"team": TEAM,
+			"capabilities": [{"capability": "billing:view"}],
+		}).insert(ignore_permissions=True)
+		team = frappe.get_doc("Team", TEAM)
+		team.members = [m for m in team.members if m.user != self.user_a]
+		team.append("members", {"user": self.user_a, "role": role.name, "status": "Active"})
+		team.save(ignore_permissions=True)
+
+		self._ensure_event_type("server_down3", required_cap="server:view",
+							   direct_recipients="Affected User")
+
+		from central.notification.engine import dispatch
+
+		dispatch(TEAM, "server_down3", message="Server is down",
+				 reference_doctype="Server", reference_name="srv-3",
+				 affected_user=self.user_a)
+
+		all_recipients = [r for call in mock_sendmail.call_args_list
+						  for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))]
+		self.assertIn(self.user_a, all_recipients)

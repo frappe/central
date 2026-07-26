@@ -20,6 +20,7 @@ def dispatch(
 	context: dict | None = None,
 	reference_doctype: str | None = None,
 	reference_name: str | None = None,
+	affected_user: str | None = None,
 ) -> dict:
 	"""Dispatch a notification event for *team*.
 
@@ -28,6 +29,10 @@ def dispatch(
 	with the same event_type + reference_name already exists), writes one
 	``Team Notification`` with the event's ``required_cap``, and fans out emails
 	to qualified team members honoring their ``UserNotificationPreference``.
+
+	When ``direct_recipients = "Affected User"``, only *affected_user* receives
+	the email (capability check is bypassed for that user).  All other members
+	receive nothing for that event.
 
 	Returns ``{"created": True, "notification": <name>}`` on success, or
 	``{"created": False, "reason": "duplicate"}`` when dedup fires.
@@ -75,7 +80,8 @@ def dispatch(
 		)
 
 	emails_sent = _fan_out_emails(team, event, ctx, message=message,
-					reference_doctype=reference_doctype, reference_name=reference_name)
+					reference_doctype=reference_doctype, reference_name=reference_name,
+					affected_user=affected_user)
 
 	return {"created": bool(doc), "notification": doc.name if doc else None, "title": title, "body": body, "emails_sent": emails_sent}
 
@@ -171,7 +177,8 @@ def _is_duplicate(team, event_type, reference_name) -> bool:
 	)
 
 
-def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None, reference_name=None):
+def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None,
+					reference_name=None, affected_user=None):
 	"""Send individual emails to each qualified team member.
 
 	Members are qualified by:
@@ -180,12 +187,21 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None, r
 	  3. Having ``email_enabled`` in their ``UserNotificationPreference``
 	     (default: enabled when no preference record exists).
 
-	For ``direct_recipients = "Affected User"``, the affected user is included
-	regardless of capability.
+	For ``direct_recipients = "Affected User"``, only *affected_user* receives
+	the email — capability is bypassed for that user and no other members are
+	contacted.
 
 	Returns True if at least one email was sent.
 	"""
 	from central.iam import can
+
+	if event.direct_recipients == "Affected User" and affected_user:
+		if _email_enabled(affected_user, team, event.category):
+			_send_member_email(affected_user, team, event, ctx,
+							   message=message, reference_doctype=reference_doctype,
+							   reference_name=reference_name)
+			return True
+		return False
 
 	members = _get_active_members(team)
 	if not members:
@@ -193,9 +209,7 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None, r
 
 	sent = False
 	for member_user in members:
-		# Capability gate (skip for direct recipients).
-		is_direct = event.direct_recipients == "Affected User" and ctx.get("reference_name")
-		if not is_direct and event.required_cap and not can(member_user, team, event.required_cap):
+		if event.required_cap and not can(member_user, team, event.required_cap):
 			continue
 
 		if not _email_enabled(member_user, team, event.category):
