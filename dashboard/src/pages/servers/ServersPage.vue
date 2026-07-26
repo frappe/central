@@ -3,7 +3,6 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Spinner, useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
-import PageHeader from '@/components/common/PageHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
@@ -366,26 +365,24 @@ async function confirmSiteTerminate(): Promise<void> {
 
 <template>
 	<div class="flex h-full flex-col">
-		<PageHeader title="Servers">
-			<template #actions>
-				<Button
-					v-if="activeTeam"
-					label="Refresh"
-					icon-left="lucide-refresh-cw"
-					:loading="refreshing"
-					@click="doRefresh"
-				/>
-				<!-- Hidden while the onboarding card is up — that card carries the single
+		<Teleport defer to="#header-actions">
+			<Button
+				v-if="activeTeam"
+				label="Refresh"
+				icon-left="lucide-refresh-cw"
+				:loading="refreshing"
+				@click="doRefresh"
+			/>
+			<!-- Hidden while the onboarding card is up — that card carries the single
              primary action then, so there's never two New-server buttons at once. -->
-				<Button
-					v-if="activeTeam && canCreateServer && !showOnboarding"
-					variant="solid"
-					label="New server"
-					icon-left="lucide-plus"
-					@click="$router.push('/servers/new')"
-				/>
-			</template>
-		</PageHeader>
+			<Button
+				v-if="activeTeam && canCreateServer && !showOnboarding"
+				variant="solid"
+				label="New server"
+				icon-left="lucide-plus"
+				@click="$router.push('/servers/new')"
+			/>
+		</Teleport>
 
 		<!-- No team at all: create one before anything else can be provisioned. -->
 		<div v-if="hasNoTeam" class="flex flex-1 items-center justify-center p-8">

@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, LoadingText, TabButtons } from 'frappe-ui'
-import PageHeader from '@/components/common/PageHeader.vue'
+import { Button, Dialog, LoadingText, TabButtons } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import NotificationItem from '@/components/notifications/NotificationItem.vue'
 import { useNotifications } from '@/composables/useNotifications'
@@ -35,21 +34,20 @@ async function onAct(n: TeamNotification): Promise<void> {
 
 <template>
 	<div class="flex h-full flex-col">
-		<PageHeader title="Notifications">
-			<template #actions>
-				<Button
-					variant="subtle"
-					label="Preferences"
-					@click="router.push({ name: 'NotificationPreferences' })"
-				/>
-				<Button
-					v-if="unread > 0"
-					variant="subtle"
-					label="Mark all read"
-					@click="markAllAsRead"
-				/>
-			</template>
-		</PageHeader>
+		<Teleport defer to="#header-actions">
+			<Button
+				v-if="unread > 0"
+				variant="subtle"
+				label="Mark all read"
+				@click="markAllAsRead"
+			/>
+			<Button
+				variant="ghost"
+				icon="lucide-settings-2"
+				aria-label="Notification preferences"
+				@click="preferencesOpen = true"
+			/>
+		</Teleport>
 
 		<div class="min-h-0 flex-1 overflow-y-auto">
 			<div class="mx-auto max-w-2xl px-4 py-5 sm:px-6">
