@@ -29,7 +29,9 @@ const deletingName = ref('')
 const membersByRole = computed<Record<string, TeamMemberRow[]>>(() => {
 	const map: Record<string, TeamMemberRow[]> = {}
 	for (const member of members.value) {
-		;(map[member.role] ??= []).push(member)
+		for (const grant of member.roles) {
+			;(map[grant.role] ??= []).push(member)
+		}
 	}
 	return map
 })
@@ -120,11 +122,17 @@ const getRoleKey = (role: TeamRoleRow): string => role.name
 		<template #members="{ row }: { row: TeamRoleRow }">
 			<div class="flex items-center">
 				<Avatar
-					v-for="member in roleMembers(row)"
+					v-for="member in roleMembers(row).slice(0, 5)"
 					:key="member.user"
 					:label="member.full_name"
 					class="-ml-2 border-2 border-outline-base first:ml-0"
 				/>
+				<div
+					v-if="roleMembers(row).length > 5"
+					class="-ml-2 flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-outline-base bg-surface-gray-2 text-p-sm text-ink-gray-6"
+				>
+					+{{ roleMembers(row).length - 5 }}
+				</div>
 			</div>
 		</template>
 
