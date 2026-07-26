@@ -3,7 +3,8 @@
 """Notification dashboard API — customer-facing endpoints for preferences and events."""
 
 import frappe
-from frappe import _
+
+from central.api.pilot import pilot_credential_auth
 
 
 @frappe.whitelist(methods=["POST"])
@@ -65,6 +66,7 @@ def get_user_preferences(team: str) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
 def report_pilot_event(
 	event_type: str,
 	message: str | None = None,
@@ -77,11 +79,7 @@ def report_pilot_event(
 	Delegates to the notification engine. The team is resolved from the
 	authenticated pilot credential — never from the request body.
 	"""
-	credential = getattr(frappe.local, "pilot_credential", None)
-	if not credential:
-		frappe.throw(_("Authentication required."), frappe.AuthenticationError)
-
-	team = credential.team
+	team = frappe.local.pilot_credential.team
 	from central.notification.engine import dispatch
 
 	return dispatch(
