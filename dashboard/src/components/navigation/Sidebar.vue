@@ -100,7 +100,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 		</nav>
 
     <!-- user profile dropdown -->
-		<div class="mt-auto px-2 pb-2">
+		<div class="mt-auto px-2 pb-2" v-if='!isMobile'>
 			<Dropdown :options="footerMenuItems" side="top" align="start" match-trigger-width>
 				<template #default="{ open }">
 					<button
