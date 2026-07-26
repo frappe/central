@@ -60,7 +60,7 @@ const breadcrumbs = computed(
 					:active="route.name === 'Home'"
 				/>
 				<MobileNavItem label="Search" icon="lucide-search" />
-				<MobileNavItem label="Notifications" icon="lucide-bell" to="/notifications" />
+				<MobileNavItem label="Notifications" icon="lucide-bell" to="/notifications"  :active="route.name =='Notifications' "/>
 				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
 			</MobileNav>
 		</template>
