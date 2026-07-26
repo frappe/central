@@ -5,6 +5,9 @@ import PageHeader from '@/components/common/PageHeader.vue'
 import { useNotificationPreferences } from '@/composables/useNotificationPreferences'
 import type { NotificationPreference } from '@/composables/useNotificationPreferences'
 
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 const { preferences, loading, saving, save } = useNotificationPreferences()
 
 const local = ref<NotificationPreference[]>([])
@@ -35,6 +38,11 @@ async function onSave() {
 	<div class="flex h-full flex-col">
 		<PageHeader title="Notification preferences">
 			<template #actions>
+				<Button
+					variant="subtle"
+					label="Back to notifications"
+					@click="router.push({ name: 'Notifications' })"
+				/>
 				<Button
 					variant="solid"
 					label="Save"

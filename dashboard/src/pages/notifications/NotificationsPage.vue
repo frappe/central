@@ -38,6 +38,11 @@ async function onAct(n: TeamNotification): Promise<void> {
 		<PageHeader title="Notifications">
 			<template #actions>
 				<Button
+					variant="subtle"
+					label="Preferences"
+					@click="router.push({ name: 'NotificationPreferences' })"
+				/>
+				<Button
 					v-if="unread > 0"
 					variant="subtle"
 					label="Mark all read"

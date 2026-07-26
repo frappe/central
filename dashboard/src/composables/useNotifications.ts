@@ -53,11 +53,11 @@ export function useNotifications() {
 		loading: computed(() => feedCall.loading),
 		reload: () => feedCall.reload(),
 		async markAsRead(name: string): Promise<void> {
-			await markRead.submit({ name })
+			await markRead.submit({ name, ...teamParams() })
 			await feedCall.reload()
 		},
 		async markAllAsRead(): Promise<void> {
-			await markAll.submit({})
+			await markAll.submit({ ...teamParams() })
 			await feedCall.reload()
 		},
 	}
