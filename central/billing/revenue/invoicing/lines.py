@@ -19,6 +19,8 @@ from datetime import datetime, time, timedelta
 
 import frappe
 
+from central.billing.catalog.subscriptions import _asset_clusters
+
 CHURN_WINDOW_HOURS = 24
 
 
@@ -55,22 +57,20 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	subscriptions = frappe.get_all(
 		"Subscription", filters={"team": team}, fields=["name", "asset_id"]
 	)
-	subscriptions = [
-		s for s in subscriptions
-		if s.asset_id and frappe.db.get_value("Asset", s.asset_id, "cluster") == cluster
-	]
+	# Resolve every asset's cluster in one query (not a get_value per subscription),
+	# then keep only the subs whose asset runs in this cluster.
+	clusters = _asset_clusters([s.asset_id for s in subscriptions])
+	subscriptions = [s for s in subscriptions if clusters.get(s.asset_id) == cluster]
+	if not subscriptions:
+		return []
+
+	# All these subscriptions' changes in one query, grouped by subscription — not a
+	# query per subscription.
+	changes_by_sub = _changes_by_subscription([s.name for s in subscriptions])
 
 	lines = []
 	for sub in subscriptions:
-		changes = frappe.get_all(
-			"Subscription Change",
-			filters={"subscription": sub.name, "change_type": ["in", ["Created", "Plan Changed", "Cancelled"]]},
-			fields=["change_type", "new_value", "locked_rate", "effective_at"],
-			# Secondary sort on creation so changes sharing an effective_at (e.g. a
-			# same-instant provision then cancel) order deterministically by when they
-			# were recorded — otherwise a Cancelled could sort ahead of its Created.
-			order_by="effective_at asc, creation asc",
-		)
+		changes = changes_by_sub.get(sub.name, [])
 
 		# Build the billable segments (clamped to the period), flagging churn from the
 		# real held duration (unclamped) so a resize near the period edge still counts.
@@ -127,6 +127,30 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 				if hours > 0:
 					lines.append(_hourly_line(s, hours, hour_units, cd))
 	return lines
+
+
+def _changes_by_subscription(subscription_names: list[str]) -> dict:
+	"""Every billable-segment change for these subscriptions in one query, grouped by
+	subscription and kept in (effective_at, creation) order — the order the segment
+	builder in `compute_line_items` depends on."""
+	if not subscription_names:
+		return {}
+	rows = frappe.get_all(
+		"Subscription Change",
+		filters={
+			"subscription": ["in", subscription_names],
+			"change_type": ["in", ["Created", "Plan Changed", "Cancelled"]],
+		},
+		fields=["subscription", "change_type", "new_value", "locked_rate", "effective_at"],
+		# Secondary sort on creation so changes sharing an effective_at (e.g. a
+		# same-instant provision then cancel) order deterministically by when they were
+		# recorded — otherwise a Cancelled could sort ahead of its Created.
+		order_by="effective_at asc, creation asc",
+	)
+	grouped: dict = {}
+	for r in rows:
+		grouped.setdefault(r.subscription, []).append(r)
+	return grouped
 
 
 def _daily_line(seg: dict, days: int, day_units: int) -> dict:
