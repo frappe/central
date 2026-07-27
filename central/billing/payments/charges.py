@@ -18,6 +18,7 @@ import frappe
 
 from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
+from central.billing.states import transition
 
 # An attempt occupying the invoice — a second charge must not start beside it.
 _IN_FLIGHT = ("Initiated", "Authorised", "Captured")
@@ -435,7 +436,8 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 	if inv.status == "Paid":
 		return False  # a duplicate webhook — already settled
 	inv.amount_paid = frappe.utils.flt(amount)
-	inv.status = "Paid"
+	transition(inv, "Paid", reason="gateway capture settled", actor="webhook",
+			   correlation=inv.name, amount=inv.amount_paid)
 	inv.save(ignore_permissions=True)
 
 	from central.billing.platform import notifications

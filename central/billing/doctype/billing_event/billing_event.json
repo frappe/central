@@ -1,0 +1,136 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-07-27 00:00:00.000000",
+ "description": "Append-only, derived stream of billing state transitions and money movements (ADR 0016). Read model for humans and reports; the write path must never read it.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "team",
+  "occurred_at",
+  "event_type",
+  "subject_doctype",
+  "subject",
+  "from_state",
+  "to_state",
+  "column_break_money",
+  "amount",
+  "currency",
+  "actor",
+  "correlation",
+  "section_break_detail",
+  "reason",
+  "payload"
+ ],
+ "fields": [
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Team",
+   "options": "Team",
+   "search_index": 1
+  },
+  {
+   "fieldname": "occurred_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Occurred At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event Type"
+  },
+  {
+   "fieldname": "subject_doctype",
+   "fieldtype": "Link",
+   "label": "Subject DocType",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "subject",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Subject",
+   "options": "subject_doctype"
+  },
+  {
+   "fieldname": "from_state",
+   "fieldtype": "Data",
+   "label": "From State"
+  },
+  {
+   "fieldname": "to_state",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "To State"
+  },
+  {
+   "fieldname": "column_break_money",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount",
+   "options": "currency"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "actor",
+   "fieldtype": "Data",
+   "label": "Actor"
+  },
+  {
+   "fieldname": "correlation",
+   "fieldtype": "Data",
+   "label": "Correlation",
+   "search_index": 1
+  },
+  {
+   "fieldname": "section_break_detail",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  },
+  {
+   "fieldname": "payload",
+   "fieldtype": "Code",
+   "label": "Payload",
+   "options": "JSON"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-27 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing Event",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "export": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "occurred_at",
+ "sort_order": "DESC",
+ "states": []
+}
