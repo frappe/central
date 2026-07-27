@@ -139,7 +139,12 @@ def _settlement_mode_for(resource_type: str) -> str:
 	"""The settlement mode of the family that prices `resource_type` (ADR 0015), blank
 	resolving to Postpaid Overage. Prepaid Pack usage is not billed as overage — the
 	pack was paid up front and excess is blocked at the edge, not charged."""
-	plan = _metered_plan_for(resource_type)
+	return _settlement_from_plan(_metered_plan_for(resource_type))
+
+
+def _settlement_from_plan(plan) -> str:
+	"""Settlement mode off an already-resolved metered plan — split out so the billing
+	loop can resolve the plan once per resource_type instead of once per rollup row."""
 	if not plan:
 		return "Postpaid Overage"
 	category = frappe.db.get_value("Plan", plan.name, "category")
@@ -252,42 +257,81 @@ def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> 
 
 
 def metered_line_items(team: str, cluster: str, period_start, period_end) -> list[dict]:
-	"""Metered line items for a (team, cluster) over the billing month.
+	"""Metered line items for one (team, cluster) over the billing month.
 
 	One line per rollup whose period falls in the billing month:
 	`max(0, quantity - locked_allowance) x locked_rate`. A rollup entirely
-	within the allowance contributes no line.
+	within the allowance contributes no line. Single-cluster entry point — the monthly
+	run bills a whole team at once via `metered_line_items_for_clusters`.
 	"""
-	period_start = frappe.utils.getdate(period_start)
-	period_end = frappe.utils.getdate(period_end)
+	return _metered_lines(team, [cluster], period_start, period_end)
 
-	rollups = frappe.get_all(
-		"Usage Rollup",
-		filters={"team": team, "cluster": cluster},
-		fields=[
-			"resource_id", "resource_type", "meter_type", "quantity", "unit", "currency",
-			"locked_allowance", "locked_rate", "period_start",
-		],
-	)
+
+def metered_line_items_for_clusters(team: str, clusters, period_start, period_end) -> list[dict]:
+	"""Metered line items for a team across several clusters, from ONE rollup query.
+
+	The monthly run consolidates a team's clusters into a single invoice; scanning
+	rollups (and re-resolving each family's plan) once per cluster is the rating-path
+	N+1. This fetches every cluster's rollups in one query and resolves each metered
+	family once. The billed set is exactly the per-cluster union.
+	"""
+	return _metered_lines(team, list(clusters), period_start, period_end)
+
+
+def _metered_lines(team: str, clusters: list, period_start, period_end) -> list[dict]:
+	"""One line per overage rollup for `team` in any of `clusters` (see the two public
+	wrappers). The rollup carries its own cluster, so a multi-cluster run tags each line
+	correctly and prices Live plans against the rollup's cluster."""
+	if not clusters:
+		return []
+
+	# Filter the period in SQL, not Python. period_start is a Datetime, so the upper
+	# bound is the exclusive next-day midnight to keep the old date-inclusive semantics
+	# (a rollup dated on period_end still counts). Rows with no period_start are always
+	# included, as before.
+	Rollup = frappe.qb.DocType("Usage Rollup")
+	period_end_excl = frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
+	rollups = (
+		frappe.qb.from_(Rollup)
+		.select(
+			Rollup.resource_id, Rollup.resource_type, Rollup.meter_type, Rollup.quantity,
+			Rollup.unit, Rollup.currency, Rollup.locked_allowance, Rollup.locked_rate,
+			Rollup.cluster,
+		)
+		.where(Rollup.team == team)
+		.where(Rollup.cluster.isin(clusters))
+		.where(
+			Rollup.period_start.isnull()
+			| (
+				(Rollup.period_start >= frappe.utils.getdate(period_start))
+				& (Rollup.period_start < period_end_excl)
+			)
+		)
+	).run(as_dict=True)
+	if not rollups:
+		return []
+
+	# Resolve each family's pricing plan + settlement mode ONCE per resource_type — each
+	# resolution is several queries, and doing it per rollup row is the rating-path N+1.
+	types = {r.resource_type for r in rollups}
+	plan_by_type = {rt: _metered_plan_for(rt) for rt in types}
+	settlement_by_type = {rt: _settlement_from_plan(plan_by_type[rt]) for rt in types}
 
 	lines = []
 	unpriced = []  # (resource_type, reason) — collected so every problem surfaces at once
 	for r in rollups:
-		if r.period_start and not (period_start <= frappe.utils.getdate(r.period_start) <= period_end):
-			continue
-
 		# A prepaid-pack family bills nothing here: the pack was paid up front and usage
 		# beyond it is blocked at the edge, not charged as overage (ADR 0015).
-		if _settlement_mode_for(r.resource_type) == "Prepaid Pack":
+		if settlement_by_type[r.resource_type] == "Prepaid Pack":
 			continue
 
 		# A live metered plan (e.g. snapshot) reads the CURRENT catalog rate and has no
 		# allowance; a grandfathered one uses the terms locked at ingest. `resolved`
 		# stays None (not 0) when no rate is configured, so an unpriced overage is
 		# distinguishable from a genuinely free one below.
-		plan = _metered_plan_for(r.resource_type)
+		plan = plan_by_type[r.resource_type]
 		if plan and plan.pricing_mode == "Live":
-			resolved = resolve_rate(get_catalog_rates("Plan", plan.name), r.currency, cluster)
+			resolved = resolve_rate(get_catalog_rates("Plan", plan.name), r.currency, r.cluster)
 			allowance = 0.0
 		else:
 			resolved = r.locked_rate
@@ -310,7 +354,7 @@ def metered_line_items(team: str, cluster: str, period_start, period_end) -> lis
 				(
 					r.resource_type,
 					frappe._("metered plan {0} has no rate for {1} / {2}").format(
-						plan.name, r.currency, cluster or frappe._("default cluster")
+						plan.name, r.currency, r.cluster or frappe._("default cluster")
 					),
 				)
 			)
@@ -326,7 +370,7 @@ def metered_line_items(team: str, cluster: str, period_start, period_end) -> lis
 			{
 				"subscription_resource": r.resource_id,
 				"plan": None,
-				"cluster": cluster,
+				"cluster": r.cluster,
 				"resource_type": r.resource_type,
 				"unit": r.unit,
 				"quantity": billable_qty,
