@@ -125,7 +125,7 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 			<div class="flex flex-wrap items-center gap-1">
 				<Badge
 					v-for="grant in row.roles.slice(0, 2)"
-					:key="grant.role"
+					:key="`${grant.role}::${grant.resource_type}::${grant.resource_name}`"
 					:theme="roleDisplayByName(roles, grant.role).theme"
 					:label="roleLabel(grant.role)"
 				>

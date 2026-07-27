@@ -29,8 +29,9 @@ const deletingName = ref('')
 const membersByRole = computed<Record<string, TeamMemberRow[]>>(() => {
 	const map: Record<string, TeamMemberRow[]> = {}
 	for (const member of members.value) {
-		for (const grant of member.roles) {
-			;(map[grant.role] ??= []).push(member)
+		const uniqueRoles = new Set(member.roles.map((grant) => grant.role))
+		for (const role of uniqueRoles) {
+			;(map[role] ??= []).push(member)
 		}
 	}
 	return map
