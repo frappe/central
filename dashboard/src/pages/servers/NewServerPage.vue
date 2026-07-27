@@ -386,7 +386,7 @@ async function submit() {
 
 <template>
 	<div class="flex h-full flex-col">
-		<Teleport to="#header-actions">
+		<Teleport defer to="#header-actions">
 			<Button label="Cancel" @click="router.push('/servers')" />
 		</Teleport>
 

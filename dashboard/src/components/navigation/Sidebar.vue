@@ -1,116 +1,38 @@
 <script setup lang="ts">
-import { ref, watch, computed, h } from 'vue'
+import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useAuth } from '@/composables/useAuth'
-import { useTheme } from '@/composables/useTheme'
 import { useSession } from '@/composables/useSession'
-import { useCapabilities } from '@/composables/useCapabilities'
+import { useAppMenu } from '@/composables/useAppMenu'
+import { sidebarSections } from './list'
 
 import { Avatar, Dropdown, Sidebar, SidebarHeader, SidebarLabel, SidebarItem } from 'frappe-ui'
-import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 
+const props = defineProps<{ isMobile?: boolean }>()
+
 const { activeTeamLabel } = useSession()
-const { canViewServers, canViewBilling, canViewServices, isMember } = useCapabilities()
-const { currentUser, logout } = useAuth()
-const { currentTheme, setTheme } = useTheme()
-
-const changeTeamOpen = ref(false)
-
-const themeOptions = [
-	{ label: 'Light', icon: 'lucide-sun', value: 'light' },
-	{ label: 'Dark', icon: 'lucide-moon', value: 'dark' },
-	{ label: 'System', icon: 'lucide-monitor', value: 'system' },
-]
+const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
 
 // The map pages want the full viewport, so the sidebar defaults collapsed
 // there and expanded everywhere else. Only crossing that boundary re-applies
 // the default — toggling by hand sticks while you stay within a section.
 const route = useRoute()
 const inServersSection = (path: string) => path.startsWith('/servers')
-const sidebarCollapsed = ref(inServersSection(route.path))
+const sidebarCollapsed = ref(props.isMobile ? false : inServersSection(route.path))
 watch(
 	() => route.path,
 	(path, previous) => {
+		if (props.isMobile) return
 		if (inServersSection(path) !== inServersSection(previous)) {
 			sidebarCollapsed.value = inServersSection(path)
 		}
 	},
 )
 
-const logoutAndRedirect = async () => {
-	await logout()
-	window.location.replace('/dashboard/login')
-}
-
-// No profile page exists yet — the item stays visible but inert until one does.
-const profileMenuItems = [
-	{ label: 'Profile', icon: 'lucide-user', disabled: true },
-	{ label: 'Sign out', icon: 'lucide-log-out', onClick: logoutAndRedirect },
-]
-
-// SidebarHeader renders `menuItems` as a dropdown (title + subtitle + chevron) —
-// the team switcher. The active team carries a check; the rest switch on click.
-const menuItems = computed(() => [
-	{
-		label: 'Change team',
-		icon: 'lucide-repeat',
-		onClick: () => {
-			changeTeamOpen.value = true
-		},
-	},
-	{
-		label: 'Theme',
-		icon: 'lucide-sun-moon',
-		submenu: themeOptions.map((theme) => ({
-			label: theme.label,
-			icon: theme.icon,
-			selected: currentTheme.value === theme.value,
-			onClick: () => setTheme(theme.value as 'light' | 'dark' | 'system'),
-			slots: {
-				suffix: ({ selected }: { selected: boolean }) =>
-					selected
-						? h('span', { class: 'lucide-check size-4 text-ink-gray-6' })
-						: null,
-			},
-		})),
-	},
-])
-
-const sections = computed(() => [
-	{
-		items: [
-			{ label: 'Search', icon: 'lucide-search' },
-			{ label: 'Notifications', icon: 'lucide-bell', to: '/notifications', condition: isMember.value },
-		],
-	},
-	{
-		items: [
-			{ label: 'Servers', icon: 'lucide-server', to: '/servers', condition: canViewServers.value },
-			{ label: 'Teams', icon: 'lucide-users', to: '/team/members', condition: isMember.value },
-		],
-	},
-	{
-		label: 'Services',
-		collapsible: true,
-		items: [
-			{ label: 'LLM', icon: 'lucide-sparkles', to: '/services/llm', condition: canViewServices.value },
-		],
-	},
-	{
-		label: 'Billing',
-		items: [
-			{ label: 'Overview', icon: 'lucide-credit-card', to: '/billing', condition: canViewBilling.value },
-			{ label: 'Invoices', icon: 'lucide-receipt', to: '/billing/invoices', condition: canViewBilling.value },
-			{ label: 'Limit Tiers', icon: 'lucide-layers', to: '/billing/limits', condition: canViewBilling.value },
-		],
-	},
-])
-
 // Composition mode has no built-in per-section collapse (that was a Legacy
 // SidebarSection feature) — track collapsed labelled sections by label here.
 const collapsedSections = ref<Record<string, boolean>>({})
-function toggleSection(label: string) {
+const toggleSection = (label: string) => {
 	collapsedSections.value[label] = !collapsedSections.value[label]
 }
 
@@ -132,11 +54,22 @@ const onEdgeMove = (event: MouseEvent): void => {
 </script>
 
 <template>
-	<Sidebar v-model:collapsed="sidebarCollapsed" class="border-r">
-		<SidebarHeader title="Frappe Cloud" :subtitle="activeTeamLabel" :logo="frappeCloudLogo" :menu-items="menuItems" />
+	<Sidebar
+		v-model:collapsed="sidebarCollapsed"
+		:disable-collapse="isMobile"
+		class="border-r"
+		:class="isMobile ? '!w-full !border-r-0' : ''"
+	>
+		<SidebarHeader
+			v-if="!isMobile"
+			title="Frappe Cloud"
+			:subtitle="activeTeamLabel"
+			:logo="frappeCloudLogo"
+			:menu-items="headerMenuItems"
+		/>
 
 		<nav class="flex-1 overflow-y-auto pt-2" :class="sidebarCollapsed ? 'px-2.5' : 'px-2'">
-			<template v-for="section in sections" :key="section.label || 'main'">
+			<template v-for="section in sidebarSections" :key="section.label || 'main'">
 				<SidebarLabel
 					v-if="section.label"
 					class="mt-2"
@@ -167,8 +100,8 @@ const onEdgeMove = (event: MouseEvent): void => {
 		</nav>
 
     <!-- user profile dropdown -->
-		<div class="mt-auto px-2 pb-2">
-			<Dropdown :options="profileMenuItems" side="top" align="start" match-trigger-width>
+		<div class="mt-auto px-2 pb-2" v-if='!isMobile'>
+			<Dropdown :options="footerMenuItems" side="top" align="start" match-trigger-width>
 				<template #default="{ open }">
 					<button
 						class="flex h-10 w-full items-center rounded px-1.5 duration-300 ease-in-out"
@@ -202,6 +135,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 
 	<!-- collapse knob -->
 	<button
+		v-if="!isMobile"
 		class="sb-edge relative z-10 -mx-3 w-6 shrink-0 cursor-pointer"
 		:aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
 		@mousemove="onEdgeMove"
@@ -218,8 +152,6 @@ const onEdgeMove = (event: MouseEvent): void => {
 			/>
 		</span>
 	</button>
-
-	<ChangeTeamDialog v-model:open="changeTeamOpen" />
 </template>
 
 <style scoped>

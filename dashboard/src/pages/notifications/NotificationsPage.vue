@@ -39,7 +39,7 @@ async function onAct(n: TeamNotification): Promise<void> {
 
 <template>
 	<div class="flex h-full flex-col">
-		<Teleport to="#header-actions">
+		<Teleport defer to="#header-actions">
 			<Button
 				v-if="unread > 0"
 				variant="subtle"
