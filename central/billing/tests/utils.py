@@ -64,6 +64,8 @@ _ENQUEUE_CONTROL_KWARGS = (
 def run_enqueued_inline(method, **kwargs):
 	for control in _ENQUEUE_CONTROL_KWARGS:
 		kwargs.pop(control, None)
+	if isinstance(method, str):  # enqueue takes a dotted path or a callable
+		method = frappe.get_attr(method)
 	return method(**kwargs)
 
 DEFAULT_RATES = [

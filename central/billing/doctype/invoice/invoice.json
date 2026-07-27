@@ -16,6 +16,7 @@
   "period_start",
   "period_end",
   "due_date",
+  "dunning_starts_on",
   "period_key",
   "section_break_items",
   "items",
@@ -98,6 +99,13 @@
    "fieldname": "due_date",
    "fieldtype": "Date",
    "label": "Due Date"
+  },
+  {
+   "fieldname": "dunning_starts_on",
+   "fieldtype": "Date",
+   "label": "Dunning Starts On",
+   "read_only": 1,
+   "description": "When the retry ladder may begin. Starts at the due date, and is pushed forward whenever a collection attempt fails on our side — so a billing-run backlog never costs the customer their grace period."
   },
   {
    "fieldname": "period_key",
