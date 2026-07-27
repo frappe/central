@@ -119,6 +119,16 @@ WEBHOOK_EVENT = StateMachine(
 	},
 )
 
+COMMITMENT = StateMachine(
+	"Commitment",
+	"status",
+	{
+		"Active": {"Completed", "Breached"},
+		"Completed": set(),  # terminal — the term ran and was honoured
+		"Breached": set(),  # terminal — a period fell short; later periods get no discount
+	},
+)
+
 _MACHINES = {
 	m.doctype: m
 	for m in (
@@ -128,6 +138,7 @@ _MACHINES = {
 		REFUND,
 		PAYMENT_METHOD,
 		WEBHOOK_EVENT,
+		COMMITMENT,
 	)
 }
 
