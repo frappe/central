@@ -55,10 +55,11 @@
   },
   {
    "fieldname": "subject",
-   "fieldtype": "Dynamic Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Subject",
-   "options": "subject_doctype"
+   "search_index": 1,
+   "description": "Docname of the subject. Plain Data, not a Dynamic Link: this append-only log must outlive (and never block the deletion or pruning of) the documents it records."
   },
   {
    "fieldname": "from_state",

@@ -14,6 +14,8 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 
 import frappe
 
+from central.billing.states import transition
+
 MANDATE_METHOD = "UPI Autopay"
 CARD_METHOD = "Card"
 
@@ -244,12 +246,12 @@ def confirm_mandate(payment_method: str, callback: dict):
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		method.status = "Failed"
+		transition(method, "Failed", actor=frappe.session.user, reason="mandate signature invalid")
 		method.save(ignore_permissions=True)
 		frappe.throw("Mandate authorisation signature invalid", frappe.ValidationError)
 
 	method.gateway_method_id = callback.get("razorpay_token_id") or callback.get("token_id")
-	method.status = "Active"
+	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
 	method.save(ignore_permissions=True)
@@ -273,7 +275,7 @@ def cancel_mandate(payment_method: str):
 		_adapter(method.gateway).cancel_mandate(
 			method.gateway_method_id, customer_reference=method.gateway_customer_id
 		)
-	method.status = "Cancelled"
+	transition(method, "Cancelled", actor=frappe.session.user, reason="mandate revoked")
 	method.save(ignore_permissions=True)
 	return method
 

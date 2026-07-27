@@ -92,9 +92,43 @@ REFUND = StateMachine(
 	},
 )
 
+PAYMENT_METHOD = StateMachine(
+	"Payment Method",
+	"status",
+	{
+		"Pending Validation": {"Active", "Failed"},
+		"Active": {"Paused", "Cancelled", "Expired", "Failed"},
+		"Paused": {"Active", "Cancelled", "Expired"},
+		"Failed": set(),  # terminal — a fresh attempt is a new method
+		"Cancelled": set(),  # terminal
+		"Expired": set(),  # terminal
+	},
+)
+
+# Inbound gateway webhook processing. No team and no money of its own, but routed
+# through the authority so "why was this webhook ignored" is one query, and so the
+# single owner rule holds uniformly (the grep guard has no special cases).
+WEBHOOK_EVENT = StateMachine(
+	"Webhook Event",
+	"status",
+	{
+		"Received": {"Processed", "Failed", "Ignored"},
+		"Failed": {"Processed", "Ignored"},  # a retried webhook can still land
+		"Processed": set(),
+		"Ignored": set(),
+	},
+)
+
 _MACHINES = {
 	m.doctype: m
-	for m in (INVOICE, PAYMENT_ATTEMPT, SUBSCRIPTION_STANDING, REFUND)
+	for m in (
+		INVOICE,
+		PAYMENT_ATTEMPT,
+		SUBSCRIPTION_STANDING,
+		REFUND,
+		PAYMENT_METHOD,
+		WEBHOOK_EVENT,
+	)
 }
 
 

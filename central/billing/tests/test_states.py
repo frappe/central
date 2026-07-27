@@ -113,3 +113,15 @@ class TestDeclaredMachines(IntegrationTestCase):
 		self.assertTrue(states.REFUND.allows("Initiated", "Completed"))
 		self.assertTrue(states.REFUND.allows("Initiated", "Failed"))
 		self.assertFalse(states.REFUND.allows("Completed", "Failed"))
+
+	def test_payment_method_edges(self):
+		self.assertTrue(states.PAYMENT_METHOD.allows("Pending Validation", "Active"))
+		self.assertTrue(states.PAYMENT_METHOD.allows("Active", "Expired"))
+		self.assertTrue(states.PAYMENT_METHOD.allows("Active", "Cancelled"))
+		self.assertFalse(states.PAYMENT_METHOD.allows("Cancelled", "Active"))  # terminal
+		self.assertFalse(states.PAYMENT_METHOD.allows("Expired", "Active"))  # terminal
+
+	def test_webhook_event_edges(self):
+		self.assertTrue(states.WEBHOOK_EVENT.allows("Received", "Processed"))
+		self.assertTrue(states.WEBHOOK_EVENT.allows("Received", "Ignored"))
+		self.assertFalse(states.WEBHOOK_EVENT.allows("Processed", "Ignored"))

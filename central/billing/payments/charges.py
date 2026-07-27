@@ -668,7 +668,7 @@ def _credit_topup(event, topup: dict) -> dict:
 
 
 def _mark_event(event, status: str):
-	event.status = status
+	transition(event, status, actor="webhook", correlation=event.gateway_event_id)
 	event.processed_at = frappe.utils.now_datetime()
 	event.save(ignore_permissions=True)
 
