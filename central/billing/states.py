@@ -56,7 +56,46 @@ INVOICE = StateMachine(
 	},
 )
 
-_MACHINES = {m.doctype: m for m in (INVOICE,)}
+PAYMENT_ATTEMPT = StateMachine(
+	"Payment Attempt",
+	"status",
+	{
+		"Initiated": {"Authorised", "Captured", "Failed"},
+		"Authorised": {"Captured", "Failed"},
+		# A synced capture is not final until the webhook, and a failure webhook may still
+		# land first; a full refund sends it onward. Same-state re-captures no-op above.
+		"Captured": {"Failed", "Refunded"},
+		"Failed": set(),  # terminal
+		"Refunded": set(),  # terminal
+	},
+)
+
+# Account standing carries a mandatory grace step: Current cannot jump straight to
+# Suspended. Reactivation from either non-current state returns to Current.
+SUBSCRIPTION_STANDING = StateMachine(
+	"Subscription",
+	"account_standing",
+	{
+		"Current": {"Past Due"},
+		"Past Due": {"Current", "Suspended"},
+		"Suspended": {"Current"},
+	},
+)
+
+REFUND = StateMachine(
+	"Refund",
+	"status",
+	{
+		"Initiated": {"Completed", "Failed"},
+		"Completed": set(),  # terminal
+		"Failed": set(),  # terminal
+	},
+)
+
+_MACHINES = {
+	m.doctype: m
+	for m in (INVOICE, PAYMENT_ATTEMPT, SUBSCRIPTION_STANDING, REFUND)
+}
 
 
 def machine_for(doctype: str) -> StateMachine:
@@ -89,6 +128,11 @@ def transition(
 	"""
 	machine = machine_for(doc.doctype)
 	from_state = doc.get(machine.field)
+	if from_state == to_state:
+		# Idempotent no-op. A duplicate/late webhook, a reconciliation replay, or dunning
+		# re-applying a standing all re-drive the SAME outcome; that is not an illegal move
+		# and must not raise (or append a second event) — it simply already happened.
+		return
 	if not machine.allows(from_state, to_state):
 		frappe.throw(
 			f"{doc.doctype} {doc.name}: illegal transition {from_state} → {to_state}.",

@@ -5,6 +5,7 @@
 import frappe
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing import states
 from central.billing.revenue import invoicing
 from central.billing.states import InvalidTransition, transition
 from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
@@ -84,3 +85,31 @@ class TestInvoiceStateMachine(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Invoice", self.inv, "status"), "Open")
 		to_states = [e.to_state for e in self._events()]
 		self.assertIn("Open", to_states)
+
+
+class TestDeclaredMachines(IntegrationTestCase):
+	"""The legal edges each machine declares — locked down so a refactor can't quietly
+	widen a machine (e.g. let a refunded attempt be re-captured, or an invoice reopen)."""
+
+	def test_invoice_edges(self):
+		self.assertTrue(states.INVOICE.allows("Draft", "Open"))
+		self.assertTrue(states.INVOICE.allows("Open", "Paid"))
+		self.assertFalse(states.INVOICE.allows("Paid", "Open"))  # terminal
+		self.assertFalse(states.INVOICE.allows("Cancelled", "Paid"))  # can't pay a cancel
+
+	def test_payment_attempt_edges(self):
+		self.assertTrue(states.PAYMENT_ATTEMPT.allows("Initiated", "Captured"))
+		self.assertTrue(states.PAYMENT_ATTEMPT.allows("Captured", "Refunded"))
+		self.assertTrue(states.PAYMENT_ATTEMPT.allows("Captured", "Failed"))  # failure webhook races capture
+		self.assertFalse(states.PAYMENT_ATTEMPT.allows("Refunded", "Captured"))
+		self.assertFalse(states.PAYMENT_ATTEMPT.allows("Failed", "Captured"))
+
+	def test_standing_edges(self):
+		self.assertTrue(states.SUBSCRIPTION_STANDING.allows("Current", "Past Due"))
+		self.assertTrue(states.SUBSCRIPTION_STANDING.allows("Past Due", "Suspended"))
+		self.assertFalse(states.SUBSCRIPTION_STANDING.allows("Current", "Suspended"))  # grace step
+
+	def test_refund_edges(self):
+		self.assertTrue(states.REFUND.allows("Initiated", "Completed"))
+		self.assertTrue(states.REFUND.allows("Initiated", "Failed"))
+		self.assertFalse(states.REFUND.allows("Completed", "Failed"))

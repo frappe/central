@@ -28,6 +28,8 @@ at the gateway and settles it through the same idempotent path.
 
 import frappe
 
+from central.billing.states import transition
+
 _AMBIGUOUS = ("Initiated", "Authorised")
 _GATEWAY_SUCCESS = {"succeeded", "captured", "paid", "completed"}
 _GATEWAY_FAILED = {"failed", "canceled", "cancelled", "declined", "expired", "voided"}
@@ -192,7 +194,7 @@ def _resolve_paid(attempt):
 	"""Settle through the same idempotent path a webhook uses; tag provenance."""
 	from central.billing.payments import charges
 
-	attempt.status = "Captured"
+	transition(attempt, "Captured", actor="reconciliation", correlation=attempt.invoice)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
 	attempt.save(ignore_permissions=True)
@@ -200,7 +202,8 @@ def _resolve_paid(attempt):
 
 
 def _resolve_failed(attempt, reason: str):
-	attempt.status = "Failed"
+	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice,
+			   reason=reason[:140])
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
 	attempt.failure_reason = reason[:140]
