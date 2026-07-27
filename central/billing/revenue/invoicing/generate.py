@@ -19,7 +19,7 @@ scheduler double-fire or a manual run overlapping the cron double-billed the tea
 import frappe
 
 from central.billing.catalog import commitments
-from central.billing.revenue.invoicing.lines import compute_line_items
+from central.billing.revenue.invoicing.lines import compute_line_items, team_line_items
 
 
 def _live_invoice(team: str, period_start, period_end, for_update: bool = False) -> str | None:
@@ -194,18 +194,19 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	if existing:
 		return existing
 
-	from central.billing.revenue.metering import metered_line_items
+	from central.billing.revenue.metering import metered_line_items_for_clusters
 	from central.billing.revenue.tax import resolve_tax
 	from central.billing.catalog.trials import invoice_type_for
 
+	# Read the team once, not once per cluster: team_line_items pulls every
+	# subscription's fixed lines in one pass, and the metered rollups for all the
+	# team's clusters come back in a single query.
 	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
 	clusters = sorted({
 		c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c
 	})
-	lines = []
-	for cluster in clusters:
-		lines += compute_line_items(team, cluster, period_start, period_end)
-		lines += metered_line_items(team, cluster, period_start, period_end)
+	lines = team_line_items(team, period_start, period_end)
+	lines += metered_line_items_for_clusters(team, clusters, period_start, period_end)
 	if not lines:
 		return None
 

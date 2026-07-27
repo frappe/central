@@ -39,21 +39,18 @@ def _dates_touched(start_dt: datetime, end_dt: datetime) -> list:
 
 
 def compute_line_items(team: str, cluster: str, period_start, period_end) -> list[dict]:
-	"""Time-weighted line items for a (team, cluster) over the billing month.
+	"""Time-weighted fixed line items for one (team, cluster) over the billing month.
 
 	Each `Created`/`Plan Changed` Subscription-Change row opens a segment at its
 	`locked_rate` snapshot that runs until the subscription's next change (or the
 	period end). `Cancelled` rows close the prior segment and carry no rate. A
 	segment held < 24h marks every date it touches as a churn date; those dates
 	bill hourly, all others bill daily.
-	"""
-	ps = frappe.utils.getdate(period_start)
-	pe = frappe.utils.getdate(period_end)
-	period_start_dt = datetime.combine(ps, time.min)
-	period_end_excl_dt = datetime.combine(pe + timedelta(days=1), time.min)
-	day_units = _days_in_period(ps, pe)  # daily denominator
-	hour_units = day_units * 24  # hourly denominator
 
+	Single-cluster entry point — the dashboard forecast asks per cluster. The monthly
+	run bills a whole team at once and uses `team_line_items` instead, which reads the
+	team's subscriptions once rather than once per cluster.
+	"""
 	subscriptions = frappe.get_all(
 		"Subscription", filters={"team": team}, fields=["name", "asset_id"]
 	)
@@ -68,64 +65,116 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	# query per subscription.
 	changes_by_sub = _changes_by_subscription([s.name for s in subscriptions])
 
+	bounds = _period_bounds(period_start, period_end)
 	lines = []
 	for sub in subscriptions:
-		changes = changes_by_sub.get(sub.name, [])
+		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds)
+	return lines
 
-		# Build the billable segments (clamped to the period), flagging churn from the
-		# real held duration (unclamped) so a resize near the period edge still counts.
-		segs = []
-		for i, change in enumerate(changes):
-			if change.change_type == "Cancelled" or change.locked_rate is None:
-				continue  # terminal marker or no rate snapshot — not a billable segment
-			seg_start_dt = frappe.utils.get_datetime(change.effective_at)
-			seg_end_dt = (
-				frappe.utils.get_datetime(changes[i + 1].effective_at)
-				if i + 1 < len(changes)
-				else period_end_excl_dt
-			)
-			held_hours = (seg_end_dt - seg_start_dt).total_seconds() / 3600.0
-			start = max(seg_start_dt, period_start_dt)
-			end = min(seg_end_dt, period_end_excl_dt)
-			if start >= period_end_excl_dt or end <= period_start_dt:
-				continue  # no overlap with this month
-			segs.append({
-				"start": start, "end": end, "rate": frappe.utils.flt(change.locked_rate),
-				"plan": change.new_value, "asset": sub.asset_id, "cluster": cluster,
-				"churn": held_hours < CHURN_WINDOW_HOURS,
-			})
 
-		# A churn segment (< 24h) turns every date it touches into an hourly date; the
-		# 24h window spans midnight, so a cross-day churn marks both dates.
-		churn_dates = set()
-		for s in segs:
-			if s["churn"]:
-				churn_dates.update(_dates_touched(s["start"], s["end"]))
+def team_line_items(team: str, period_start, period_end) -> list[dict]:
+	"""Every fixed line item for a team across all the clusters it runs in, from ONE
+	read of its subscriptions, their asset clusters and their changes.
 
-		for s in segs:
-			# Daily pass — whole non-churn dates the segment owns. A date belongs to
-			# the config active at its start (the change-date boundary), so a single
-			# mid-day resize still sends the whole transition day to one plan.
-			d0 = max(s["start"].date(), ps)
-			d1 = min(s["end"].date(), pe + timedelta(days=1))  # exclusive
-			days = 0
-			d = d0
-			while d < d1:
-				if d not in churn_dates:
-					days += 1
-				d += timedelta(days=1)
-			if days:
-				lines.append(_daily_line(s, days, day_units))
+	The monthly run bills a team as one consolidated invoice, so it wants all the
+	team's lines together. Looping clusters and calling `compute_line_items` per cluster
+	re-reads the whole team once per cluster; this reads it once and tags each line with
+	its own subscription's cluster. The union of lines is identical either way.
+	"""
+	subscriptions = frappe.get_all(
+		"Subscription", filters={"team": team}, fields=["name", "asset_id"]
+	)
+	clusters = _asset_clusters([s.asset_id for s in subscriptions])
+	changes_by_sub = _changes_by_subscription([s.name for s in subscriptions])
 
-			# Hourly pass — this segment's real hours on each churn date it touches.
-			for cd in _dates_touched(s["start"], s["end"]):
-				if cd not in churn_dates:
-					continue
-				day_start = max(s["start"], datetime.combine(cd, time.min))
-				day_end = min(s["end"], datetime.combine(cd + timedelta(days=1), time.min))
-				hours = (day_end - day_start).total_seconds() / 3600.0
-				if hours > 0:
-					lines.append(_hourly_line(s, hours, hour_units, cd))
+	bounds = _period_bounds(period_start, period_end)
+	lines = []
+	for sub in subscriptions:
+		cluster = clusters.get(sub.asset_id)
+		if not cluster:
+			continue  # no live asset cluster — nothing to bill this subscription against
+		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds)
+	return lines
+
+
+def _period_bounds(period_start, period_end):
+	"""The period's date range and its daily/hourly denominators, computed once and
+	shared across every subscription instead of recomputed per (team, cluster) call."""
+	ps = frappe.utils.getdate(period_start)
+	pe = frappe.utils.getdate(period_end)
+	day_units = _days_in_period(ps, pe)  # daily denominator
+	return frappe._dict(
+		ps=ps,
+		pe=pe,
+		period_start_dt=datetime.combine(ps, time.min),
+		period_end_excl_dt=datetime.combine(pe + timedelta(days=1), time.min),
+		day_units=day_units,
+		hour_units=day_units * 24,  # hourly denominator
+	)
+
+
+def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
+	"""The daily/hourly fixed lines for one subscription in one cluster.
+
+	Splits the subscription's rate-snapshot changes into billable segments, marks the
+	churn dates (a segment held < 24h), then bills each date either daily or hourly —
+	never both — so the two passes partition the period and the total stays exact.
+	"""
+	# Build the billable segments (clamped to the period), flagging churn from the
+	# real held duration (unclamped) so a resize near the period edge still counts.
+	segs = []
+	for i, change in enumerate(changes):
+		if change.change_type == "Cancelled" or change.locked_rate is None:
+			continue  # terminal marker or no rate snapshot — not a billable segment
+		seg_start_dt = frappe.utils.get_datetime(change.effective_at)
+		seg_end_dt = (
+			frappe.utils.get_datetime(changes[i + 1].effective_at)
+			if i + 1 < len(changes)
+			else b.period_end_excl_dt
+		)
+		held_hours = (seg_end_dt - seg_start_dt).total_seconds() / 3600.0
+		start = max(seg_start_dt, b.period_start_dt)
+		end = min(seg_end_dt, b.period_end_excl_dt)
+		if start >= b.period_end_excl_dt or end <= b.period_start_dt:
+			continue  # no overlap with this month
+		segs.append({
+			"start": start, "end": end, "rate": frappe.utils.flt(change.locked_rate),
+			"plan": change.new_value, "asset": sub.asset_id, "cluster": cluster,
+			"churn": held_hours < CHURN_WINDOW_HOURS,
+		})
+
+	# A churn segment (< 24h) turns every date it touches into an hourly date; the
+	# 24h window spans midnight, so a cross-day churn marks both dates.
+	churn_dates = set()
+	for s in segs:
+		if s["churn"]:
+			churn_dates.update(_dates_touched(s["start"], s["end"]))
+
+	lines = []
+	for s in segs:
+		# Daily pass — whole non-churn dates the segment owns. A date belongs to
+		# the config active at its start (the change-date boundary), so a single
+		# mid-day resize still sends the whole transition day to one plan.
+		d0 = max(s["start"].date(), b.ps)
+		d1 = min(s["end"].date(), b.pe + timedelta(days=1))  # exclusive
+		days = 0
+		d = d0
+		while d < d1:
+			if d not in churn_dates:
+				days += 1
+			d += timedelta(days=1)
+		if days:
+			lines.append(_daily_line(s, days, b.day_units))
+
+		# Hourly pass — this segment's real hours on each churn date it touches.
+		for cd in _dates_touched(s["start"], s["end"]):
+			if cd not in churn_dates:
+				continue
+			day_start = max(s["start"], datetime.combine(cd, time.min))
+			day_end = min(s["end"], datetime.combine(cd + timedelta(days=1), time.min))
+			hours = (day_end - day_start).total_seconds() / 3600.0
+			if hours > 0:
+				lines.append(_hourly_line(s, hours, b.hour_units, cd))
 	return lines
 
 
