@@ -270,8 +270,14 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 	return created
 
 
-def draft_pages(period_end, page_size: int = COLLECT_PAGE_SIZE):
-	"""Yield the period's Draft invoices, one bounded page at a time.
+def draft_pages(cutoff, page_size: int = COLLECT_PAGE_SIZE):
+	"""Yield every still-Draft invoice for a month that closed on or before `cutoff`,
+	one bounded page at a time.
+
+	`<=`, not `==`: collection sweeps every draft whose period has ended, not one exact
+	month. That is what makes the sweep re-runnable — a draft that landed after the last
+	sweep (drafting hadn't caught up), or one a settle page left behind, is found by the
+	next sweep instead of being orphaned until (and then past) the next monthly tick.
 
 	Keyset paging on the name — correct even though settling a draft removes it
 	from the filter as we walk, because the cursor advances by name, not by offset.
@@ -280,7 +286,7 @@ def draft_pages(period_end, page_size: int = COLLECT_PAGE_SIZE):
 	while True:
 		page = frappe.get_all(
 			"Invoice",
-			filters={"status": "Draft", "period_end": period_end, "name": (">", after)},
+			filters={"status": "Draft", "period_end": ("<=", cutoff), "name": (">", after)},
 			pluck="name",
 			order_by="name asc",
 			limit=page_size,
@@ -291,14 +297,15 @@ def draft_pages(period_end, page_size: int = COLLECT_PAGE_SIZE):
 		after = page[-1]
 
 
-def drafts_to_settle(period_end, page_size: int = COLLECT_PAGE_SIZE):
-	"""The period's Draft invoices, page by page, flattened."""
-	for page in draft_pages(period_end, page_size):
+def drafts_to_settle(cutoff, page_size: int = COLLECT_PAGE_SIZE):
+	"""Every settleable Draft on or before `cutoff`, page by page, flattened."""
+	for page in draft_pages(cutoff, page_size):
 		yield from page
 
 
-def drafts_in_range(period_end, after: str, until: str) -> list[str]:
-	"""The still-Draft invoices in one cursor slice `(after, until]`.
+def drafts_in_range(cutoff, after: str, until: str) -> list[str]:
+	"""The still-Draft invoices in one cursor slice `(after, until]`, for any month
+	that closed on or before `cutoff`.
 
 	Re-read at run time, not carried in the job: by the time a page job starts, some
 	of its slice may already be settled (a retried tick, a customer paying
@@ -308,7 +315,7 @@ def drafts_in_range(period_end, after: str, until: str) -> list[str]:
 		"Invoice",
 		filters=[
 			["status", "=", "Draft"],
-			["period_end", "=", period_end],
+			["period_end", "<=", cutoff],
 			["name", ">", after],
 			["name", "<=", until],
 		],
@@ -317,7 +324,7 @@ def drafts_in_range(period_end, after: str, until: str) -> list[str]:
 	)
 
 
-def settle_draft_page(period_end, after: str, until: str) -> dict:
+def settle_draft_page(cutoff, after: str, until: str) -> dict:
 	"""Settle every draft in one cursor slice — the unit a billing worker picks up.
 
 	Sequential within the page, deliberately: the gateway concurrency of the whole
@@ -326,15 +333,15 @@ def settle_draft_page(period_end, after: str, until: str) -> dict:
 	make it faster — it would make it rate-limited.
 	"""
 	settled = 0
-	for invoice in drafts_in_range(period_end, after, until):
+	for invoice in drafts_in_range(cutoff, after, until):
 		if settle_draft(invoice):
 			settled += 1
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
 	return {"after": after, "until": until, "settled": settled}
 
 
-def open_drafts(period_end, enqueue: bool = False) -> list[str]:
-	"""Phase-2 orchestrator: open every Draft for the billing month.
+def open_drafts(cutoff, enqueue: bool = False) -> list[str]:
+	"""Phase-2 orchestrator: open every Draft for a month closed on or before `cutoff`.
 
 	Page jobs, not a job per invoice — same reason as drafting, plus one specific to
 	collection: a job per invoice puts the run's gateway concurrency at the mercy of
@@ -342,19 +349,21 @@ def open_drafts(period_end, enqueue: bool = False) -> list[str]:
 	in order, so in-flight charges never exceed the billing worker count.
 
 	Claiming Draft -> Open under a row lock already makes two workers on one invoice
-	harmless; the deduplicated page job id keeps them from queueing at all.
+	harmless; the deduplicated page job id keeps them from queueing at all. Because a
+	settled draft drops out of the scan, re-running this against the same cutoff only
+	ever picks up what is still owed — which is exactly what the daily sweep relies on.
 	"""
 	drafts = []
 	after = ""
-	for page in draft_pages(period_end):
+	for page in draft_pages(cutoff):
 		until = page[-1]
 		if enqueue:
 			frappe.enqueue(
 				"central.billing.revenue.invoicing.settle_draft_page",
 				queue=billing_queue(),
-				job_id=f"billing-settle::{period_end}::{until}",
+				job_id=f"billing-settle::{cutoff}::{until}",
 				deduplicate=True,
-				period_end=period_end,
+				cutoff=cutoff,
 				after=after,
 				until=until,
 			)
@@ -378,13 +387,15 @@ def billing_period(today=None) -> tuple:
 def draft_monthly_invoices(today=None) -> dict:
 	"""Tick 1 (1st, off-peak): draft the just-closed month, one job per team.
 
-	The two phases are separate scheduler ticks, not one job that does both: rating
-	is heavy and local, collection is slow and external, and a run that interleaves
-	them can only go as fast as its slowest gateway call.
+	Drafting and collection are separate ticks, not one job that does both: rating is
+	heavy and local, collection is slow and external, and a run that interleaves them
+	can only go as fast as its slowest gateway call.
 
-	They are hours apart on the same day rather than the 28th and the 1st, because a
-	calendar month billed in arrears is not closed until it ends — drafting on the
-	28th would bill days that had not happened yet.
+	Drafting fires once, on the 1st — not the 28th — because a month billed in arrears
+	is not closed until it ends; drafting on the 28th would bill days that had not
+	happened yet. Collection does not run a fixed few hours later hoping drafting is
+	done: it is a daily sweep (`collect_due_invoices`) that drains whatever has drafted,
+	so a run that overruns the day is finished by the next sweep, not abandoned.
 	"""
 	period_start, period_end = billing_period(today)
 	fanned = generate_draft_invoices(period_start, period_end, enqueue=True)
@@ -392,20 +403,31 @@ def draft_monthly_invoices(today=None) -> dict:
 	return {"period_start": str(period_start), "period_end": str(period_end), "pages": len(fanned)}
 
 
-def collect_monthly_invoices(today=None) -> dict:
-	"""Tick 2 (1st, once drafting has settled): open + collect, one job per invoice.
+def collect_due_invoices(today=None) -> dict:
+	"""Tick 2 (daily): open + collect every Draft whose month has already closed.
 
-	Whatever tick 1 failed to draft simply isn't here yet; it is picked up by the
-	next run rather than blocking this one, and the invoices that did draft still
-	get collected on time.
+	Daily, not a single tick a fixed few hours after drafting: at a million teams the
+	draft page jobs may still be finishing when collection first fires, and a one-shot
+	scan would collect only the drafts that existed at that instant and orphan every one
+	that landed later. Nor is there a second monthly pass to catch them — the tick comes
+	round once, pinned to one exact period.
+
+	So collection is a daily sweep of `period_end <= the just-closed month`. It re-runs
+	until nothing is owed: drafts that appeared after the previous sweep get collected on
+	the next one, and a draft a settle page left behind — this month's or an older run's
+	— is swept up rather than stranded. Once the run has drained it is a cheap indexed
+	no-op (no Draft for a closed period left to find).
+
+	`open_drafts` skips anything already Open/Paid, so re-firing never double-charges;
+	`settle_draft` defers dunning on failure, so a slow sweep never makes a customer late.
 	"""
-	period_start, period_end = billing_period(today)
-	# Logged before fanning out, so the record of what drafting achieved (and what it
-	# missed) exists even if collection then falls over.
+	_, period_end = billing_period(today)
+	# Logged before fanning out, so the record of what the run has achieved (and what it
+	# still owes) exists even if collection then falls over.
 	frappe.logger("billing").info(f"billing run {period_end}: {billing_run_status(today)}")
 	fanned = open_drafts(period_end, enqueue=True)
-	frappe.logger("billing").info(f"billing run {period_end}: collection handed out as {len(fanned)} pages")
-	return {"period_start": str(period_start), "period_end": str(period_end), "pages": len(fanned)}
+	frappe.logger("billing").info(f"billing collection <= {period_end}: handed out as {len(fanned)} pages")
+	return {"period_end": str(period_end), "pages": len(fanned)}
 
 
 def billing_run_status(today=None) -> dict:

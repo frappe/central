@@ -510,7 +510,7 @@ class TestFanOutRun(IntegrationTestCase):
 
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			drafting = run.draft_monthly_invoices(today="2026-07-01")
-			collecting = run.collect_monthly_invoices(today="2026-07-01")
+			collecting = run.collect_due_invoices(today="2026-07-01")
 
 		# Both ticks agree on the period: the month that closed, never a live one.
 		self.assertEqual(drafting["period_end"], "2026-06-30")
@@ -525,12 +525,55 @@ class TestFanOutRun(IntegrationTestCase):
 		# Order matters: the collect tick only ever touches drafts that already exist,
 		# so firing it before drafting is a no-op rather than a half-billed month.
 		with patch("frappe.enqueue") as enqueue:
-			run.collect_monthly_invoices(today="2026-07-01")
+			run.collect_due_invoices(today="2026-07-01")
 
 		fanned = [c.kwargs["invoice"] for c in enqueue.call_args_list]
 		mine = frappe.get_all("Invoice", filters={"team": ["in", self.TEAMS]}, pluck="name")
 		self.assertEqual(mine, [])
 		self.assertEqual([i for i in fanned if i in mine], [])
+
+	def test_a_draft_that_lands_after_a_sweep_is_collected_by_the_next(self):
+		# The reviewer's case: drafting is still running when collection first fires. A
+		# one-shot collect would settle only what had drafted and orphan the rest with
+		# no later pass. The daily sweep re-runs, so a draft that lands after it is
+		# collected by the next sweep instead of waiting a month.
+		from central.billing.tests.utils import run_enqueued_inline
+
+		# Only team-a has drafted so far.
+		run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30")
+		frappe.db.commit()
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+		self.assertNotEqual(
+			frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "status"), "Draft"
+		)
+
+		# Drafting catches up after the first sweep — team-b is now a Draft.
+		run.draft_team_invoice("team-fanout-b", "2026-06-01", "2026-06-30")
+		frappe.db.commit()
+		self.assertEqual(
+			frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft"
+		)
+
+		# The next daily sweep collects it — nothing is stranded.
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+		self.assertNotEqual(
+			frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft"
+		)
+
+	def test_the_sweep_takes_every_closed_period_draft_not_one_exact_month(self):
+		# period_end <= cutoff, not ==: a draft an earlier run left behind in an older
+		# month stays in scope of a later sweep rather than being orphaned once the tick
+		# has moved on; a draft whose month has not closed yet is out of scope.
+		run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30")
+		frappe.db.commit()
+		draft = frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "name")
+
+		# A sweep whose cutoff is a LATER month still finds the June draft (orphan case).
+		self.assertIn(draft, list(run.drafts_to_settle("2026-07-31")))
+		# A sweep whose cutoff predates the draft's closed month does not.
+		self.assertNotIn(draft, list(run.drafts_to_settle("2026-05-31")))
 
 	def test_status_shows_a_half_finished_run(self):
 		from central.billing.tests.utils import run_enqueued_inline
@@ -545,7 +588,7 @@ class TestFanOutRun(IntegrationTestCase):
 		self.assertEqual(mid["collected"], 0)
 
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
-			run.collect_monthly_invoices(today="2026-07-01")
+			run.collect_due_invoices(today="2026-07-01")
 		done = run.billing_run_status(today="2026-07-01")
 		self.assertEqual(done["pending_collection"], 0)
 		self.assertEqual(done["collected"], done["drafted"])

@@ -165,7 +165,6 @@ flowchart LR
         H1["hourly"]
         M1["monthly"]
         C1["cron · 1st 01:00"]
-        C2["cron · 1st 06:00"]
     end
     D1 --> RD["run_dunning"]
     D1 --> RR["run_reconciliation"]
@@ -175,7 +174,7 @@ flowchart LR
     H1 --> RF["retry_failed_syncs (ERPNext)"]
     M1 --> EX["expire_payment_methods"]
     C1 --> DMI["draft_monthly_invoices → page jobs"]
-    C2 --> CMI["collect_monthly_invoices → page jobs"]
+    D1 --> CDI["collect_due_invoices → page jobs (daily sweep)"]
 
     subgraph MANUAL["manual/demo only"]
         RMB["run_monthly_billing (inline, both phases)"]
@@ -193,6 +192,7 @@ flowchart LR
 ### Scheduled (`central/hooks.py` → `scheduler_events`)
 | Cadence | Entry point | Purpose |
 |---|---|---|
+| daily | `revenue.invoicing.collect_due_invoices` | phase 2 — sweep every Draft whose month has closed, fan drafts out as page jobs |
 | daily | `revenue.dunning.run_dunning` | Day 1/3/7 retries → past_due → suspend → terminate |
 | daily | `payments.reconciliation.run_reconciliation` | charged-but-never-webhooked gateway scan |
 | daily | `payments.charges.cleanup_payment_logs` | prune Payment Attempt / Webhook Event |
@@ -201,15 +201,23 @@ flowchart LR
 | hourly | `revenue.erpnext_sync.retry_failed_syncs` | retry Sales Invoice push (backoff window elapsed) |
 | monthly | `payments.payments.expire_payment_methods` | flip cards past their printed month |
 | cron `0 1 1 * *` | `revenue.invoicing.draft_monthly_invoices` | phase 1 — hand the month's teams out as page jobs |
-| cron `0 6 1 * *` | `revenue.invoicing.collect_monthly_invoices` | phase 2 — hand the period's drafts out as page jobs |
 
 **The monthly run is two ticks, and neither of them does the work.** Each is an
 orchestrator: it keyset-pages its subjects and enqueues a **page job** per slice —
-`draft_team_page(after, until)` / `settle_draft_page(period_end, after, until)` —
+`draft_team_page(after, until)` / `settle_draft_page(cutoff, after, until)` —
 deduplicated on the slice's upper bound. A page job re-derives its slice from the
 bounds and works it in order, committing after **each team / each invoice**: the page
 is the unit of *scheduling*, the team is still the unit of *work*, so a job killed
 at team 300 of 500 keeps the 299 it finished.
+
+Drafting fires once, on the 1st; collection is a **daily** sweep, not a single tick a
+fixed few hours later. At scale drafting can still be running when a one-shot collect
+would fire, and that scan would collect only the drafts that existed at that instant
+and orphan the rest — with no later pass to catch them. `collect_due_invoices` instead
+opens every Draft whose month has closed (`period_end <= the just-closed month`) and
+re-runs daily until nothing is owed, so a late draft, or one a settle page left behind
+(this month's or an older run's), is swept up rather than stranded. A settled draft
+drops out of the scan, so once the run has drained the sweep is a cheap indexed no-op.
 
 Not a job per team, deliberately. At a million teams that is a million redis
 round-trips in one scheduler tick — a cron job runs on a **300-second** timeout
@@ -350,7 +358,7 @@ flowchart TD
     GTI --> TAX["+ tax.resolve_tax<br/>GST / SEZ / TDS"]
     LINES & MET & DISC & TAX --> DRAFT[["Invoice: Draft"]]
 
-    COLLECTTICK(["1st 06:00 · collect tick"]) --> OD["collect_monthly_invoices<br/>→ open_drafts (pages drafts)"]
+    COLLECTTICK(["daily · collect sweep"]) --> OD["collect_due_invoices<br/>→ open_drafts (pages drafts, period_end ≤ closed month)"]
     DRAFT --> OD
     OD --> OAC["settle_draft_page → settle_draft<br/>(per invoice: isolated, committed)"]
     OAC --> WF{"settlement waterfall"}
@@ -371,8 +379,8 @@ flowchart TD
       → + commitments discount, + tax.resolve_tax (GST additive / SEZ zero / TDS withhold)
   → Invoice (Draft)
 
-[1st 06:00]  revenue.invoicing.collect_monthly_invoices
-  → open_drafts (pages the period's drafts, enqueues one page job per slice)
+[daily]      revenue.invoicing.collect_due_invoices   (sweeps until nothing is owed)
+  → open_drafts (pages every Draft with period_end ≤ the closed month, one page job per slice)
   → settle_draft_page → settle_draft → open_and_collect (per invoice)
       → settlement waterfall: credits (settlement.py) → card (charges.pay_invoice)
       → Invoice Draft → Open → (on webhook) Paid
