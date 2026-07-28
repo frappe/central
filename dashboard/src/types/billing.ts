@@ -71,6 +71,8 @@ export interface TrustTier {
 		resources_used: number
 		paid_invoices: number
 		cumulative_paid: number
+		first_paid_at: string | null
+		last_paid_invoice_amount: number
 	}
 	all_levels: (TierLevel | null)[]
 }

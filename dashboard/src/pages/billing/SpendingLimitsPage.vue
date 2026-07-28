@@ -4,6 +4,7 @@ import { useCall, Badge, LoadingText } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { useBillingOverview } from '@/composables/useBillingOverview'
 import { money } from '@/lib/format'
 import type { TrustTier, TierLevel } from '@/types/billing'
 
@@ -17,6 +18,7 @@ import type { TrustTier, TierLevel } from '@/types/billing'
 // whose Requirements column shows each rung's promotion gates against the team's
 // live progress, and a "how it works" explainer.
 const { activeTeam } = useSession()
+const { forecast, profile } = useBillingOverview()
 
 const tier = useCall<TrustTier, { team: string }>({
 	url: method(API.trustTier),
@@ -29,6 +31,21 @@ whenTeamReady(() => tier.reload())
 const currency = computed(() => tier.data?.currency || 'INR')
 const cur = computed(() => tier.data?.current)
 const prog = computed(() => tier.data?.progress)
+const monthlySpend = computed(() => forecast.data?.projected_total)
+
+// Whole months since the team's first paid invoice, for the "Paying since" stat.
+const payingSince = computed(() => {
+	const firstPaidAt = prog.value?.first_paid_at
+	if (!firstPaidAt) return null
+	const months = Math.max(
+		0,
+		Math.floor(
+			(Date.now() - new Date(firstPaidAt).getTime()) /
+				(1000 * 60 * 60 * 24 * 30),
+		),
+	)
+	return months < 1 ? '< 1 month' : `${months} month${months === 1 ? '' : 's'}`
+})
 
 // Customer-facing rung name: the tier's own title (Beginner, Growth, …), not a
 // "Tier N" derived from its sequence.
@@ -40,22 +57,31 @@ function tierLabel(level: TierLevel | null | undefined): string {
 interface Requirement {
 	text: string
 	met: boolean
+	nudge?: boolean
 }
 
 // A rung's promotion gates, checked against the team's live progress. The base
-// rung has no thresholds — it's where every team starts.
+// rung's gate is a payment method or prepaid credits — everything past it is
+// paid-invoice tenure + cumulative spend.
 function requirementsFor(level: TierLevel): Requirement[] {
 	const p = prog.value
 	const paid = Number(p?.paid_invoices ?? 0)
 	const cumulative = Number(p?.cumulative_paid ?? 0)
 	if (level.sequence <= 0) {
-		return [{ text: 'Starting tier — available to every team', met: true }]
+		const met = !!profile.data?.currency_locked
+		return [
+			{
+				text: 'Payment method added or prepaid credits available',
+				met,
+				nudge: !met,
+			},
+		]
 	}
 	const reqs: Requirement[] = []
 	if (level.min_paid_invoices) {
 		const n = level.min_paid_invoices
 		reqs.push({
-			text: `≥ ${n} paid invoice${n === 1 ? '' : 's'}`,
+			text: `Paying user for at least ${n} month${n === 1 ? '' : 's'}`,
 			met: paid >= n,
 		})
 	}
@@ -68,9 +94,6 @@ function requirementsFor(level: TierLevel): Requirement[] {
 	return reqs.length
 		? reqs
 		: [{ text: 'No additional requirements', met: true }]
-}
-function hasUnmet(level: TierLevel): boolean {
-	return requirementsFor(level).some((r) => !r.met)
 }
 
 type RungState = 'reached' | 'current' | 'locked'
@@ -87,194 +110,170 @@ const levels = computed(() => {
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
+	<div class="h-full overflow-y-auto">
+		<div class="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8">
+			<LoadingText v-if="tier.loading && !tier.data" :lines="6" />
 
-		<div class="min-h-0 flex-1 overflow-y-auto">
-			<div class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
-				<div v-if="tier.loading && !tier.data" class="space-y-3">
-					<LoadingText :lines="6" />
-				</div>
+			<template v-else-if="levels.length">
+				<div class="flex flex-col gap-1">
+					<h1 class="text-xl font-semibold text-ink-gray-9">Spending limits</h1>
 
-				<template v-else-if="cur">
-					<p class="max-w-2xl text-p-base text-ink-gray-5">
+					<p class="text-p-base text-ink-gray-5">
 						Your monthly spending limit. You move to a higher tier automatically
-						as your usage and payment history grow — which lifts these limits
-						and the UPI-Autopay mandate ceiling.
+						as your usage and payment history grow.
 					</p>
-
-					<!-- Current standing -->
-					<div
-						class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 p-4"
-					>
-						<div class="flex flex-wrap items-center justify-between gap-3">
-							<div class="flex flex-col gap-1">
-								<div class="text-sm text-ink-gray-6">Current tier</div>
-								<span
-									class="flex items-center gap-2 text-xl font-semibold text-ink-gray-9"
-								>
-									{{ tierLabel(cur) }}
-									<Badge
-										v-if="tier.data?.is_top_tier"
-										theme="green"
-										label="Top tier"
-									/>
-								</span>
-								<div class="text-p-sm text-ink-gray-6">
-									Spending limit
-									<span class="font-medium text-ink-gray-9"
-										>{{ money(cur.max_spend, currency) }}</span
-									>
-								</div>
-							</div>
-							<div class="flex flex-col gap-1 text-right">
-								<div class="text-sm text-ink-gray-6">
-									Paid to date
-									<span class="font-medium text-ink-gray-9">
-										{{ money(prog?.cumulative_paid, currency) }}
-									</span>
-								</div>
-								<div class="text-sm text-ink-gray-6">
-									<span class="font-medium text-ink-gray-9"
-										>{{ prog?.paid_invoices ?? 0 }}</span
-									>
-									paid invoice{{ prog?.paid_invoices === 1 ? '' : 's' }}
-								</div>
-							</div>
-						</div>
-					</div>
-
-					<!-- Tiers table -->
-					<div
-						class="overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1"
-					>
-						<table class="w-full text-left">
-							<thead>
-								<tr
-									class="border-b border-outline-gray-2 bg-surface-gray-1 text-p-sm text-ink-gray-5"
-								>
-									<th class="px-4 py-3 font-medium">Tier</th>
-									<th class="px-4 py-3 font-medium">Requirements</th>
-									<th class="px-4 py-3 text-right font-medium">
-										Spending limit
-									</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-outline-gray-2">
-								<tr
-									v-for="l in levels"
-									:key="l.tier"
-									class="transition-colors hover:bg-surface-gray-1"
-									:class="l.state === 'current' && 'bg-surface-gray-1'"
-								>
-									<td class="px-4 py-4 align-top">
-										<div class="flex flex-wrap items-center gap-2">
-											<span class="text-sm font-semibold text-ink-gray-9"
-												>{{ tierLabel(l) }}</span
-											>
-											<Badge
-												v-if="l.state === 'current'"
-												theme="blue"
-												label="Current"
-											/>
-										</div>
-									</td>
-									<td class="px-4 py-4 align-top">
-										<ul class="flex flex-col gap-1.5">
-											<li
-												v-for="(req, i) in requirementsFor(l)"
-												:key="i"
-												class="flex items-center gap-2"
-											>
-												<span
-													class="size-3.5 shrink-0"
-													:class="
-                            req.met
-                              ? 'lucide-circle-check text-ink-green-3'
-                              : 'lucide-circle-dashed text-ink-gray-4'
-                          "
-													aria-hidden="true"
-												/>
-												<span
-													class="text-sm"
-													:class="req.met ? 'text-ink-gray-9' : 'text-ink-gray-6'"
-												>
-													{{ req.text }}
-												</span>
-											</li>
-											<li
-												v-if="l.state !== 'reached' && l.state !== 'current' && hasUnmet(l)"
-											>
-												<RouterLink
-													:to="{ name: 'Billing' }"
-													class="text-sm text-ink-blue-3 transition-opacity hover:opacity-80"
-												>
-													Go to Billing →
-												</RouterLink>
-											</li>
-										</ul>
-									</td>
-									<td class="px-4 py-4 text-right align-top">
-										<span
-											class="text-sm font-semibold tabular-nums text-ink-gray-9"
-										>
-											{{ money(l.max_spend, currency) }}
-										</span>
-										<p
-											v-if="l.max_resource_count != null"
-											class="mt-0.5 text-p-xs text-ink-gray-5"
-										>
-											up to
-											{{ l.max_resource_count }}
-											resource{{ l.max_resource_count === 1 ? '' : 's' }}
-										</p>
-									</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-
-					<!-- How tiers work -->
-					<div
-						class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5"
-					>
-						<div class="flex flex-col gap-2">
-							<div class="flex items-center gap-2">
-								<span
-									class="lucide-info size-5 shrink-0 text-ink-gray-5"
-									aria-hidden="true"
-								/>
-								<div class="text-base font-medium text-ink-gray-9">
-									How tier upgrades work
-								</div>
-							</div>
-							<ul
-								class="flex list-disc flex-col gap-1.5 pl-5 text-p-sm text-ink-gray-7"
-							>
-								<li>
-									Tiers cap how much your team can spend in a billing cycle and
-									how many resources it can run.
-								</li>
-								<li>
-									You're promoted automatically once you've cleared a tier's
-									paid-invoice count and its cumulative-paid threshold.
-								</li>
-								<li>
-									New teams start at the base tier — add a payment method or
-									prepaid credits to keep running.
-								</li>
-								<li>
-									Need a higher limit now? Contact support and we'll review your
-									account.
-								</li>
-							</ul>
-						</div>
-					</div>
-				</template>
-
-				<div v-else class="px-4 py-12 text-center text-p-sm text-ink-gray-5">
-					No spending limit assigned yet.
 				</div>
-			</div>
+
+				<!-- Current standing: a flat stat strip, no box. -->
+				<div class="flex flex-wrap gap-x-12 gap-y-4 leading-relaxed">
+					<div class="flex flex-col gap-1">
+						<span class="text-sm text-ink-gray-5">Monthly spend</span>
+						<span class="text-xl font-semibold tabular-nums text-ink-gray-9">
+							{{ money(monthlySpend, currency, { trimTrailingZeros: true }) }}
+						</span>
+					</div>
+
+					<div class="flex flex-col gap-1">
+						<span class="text-sm text-ink-gray-5">Paying since</span>
+						<span class="text-xl font-semibold text-ink-gray-9"
+							>{{ payingSince ?? '—' }}</span
+						>
+					</div>
+
+					<div class="flex flex-col gap-1">
+						<span class="text-sm text-ink-gray-5">Last paid invoice</span>
+						<span class="text-xl font-semibold tabular-nums text-ink-gray-9">
+							{{ money(prog?.last_paid_invoice_amount, currency, { trimTrailingZeros: true }) }}
+						</span>
+					</div>
+				</div>
+
+				<!-- Tiers table: hairline rules, no outer box. -->
+				<table class="w-full text-left text-sm">
+					<thead>
+						<tr
+							class="border-b border-outline-gray-2 text-p-sm text-ink-gray-5"
+						>
+							<th class="w-28 py-2 font-medium">Tier</th>
+							<th class="py-2 font-medium">Requirements</th>
+							<th class="py-2 text-right font-medium">Spending limit</th>
+						</tr>
+					</thead>
+
+					<tbody>
+						<tr
+							v-for="l in levels"
+							:key="l.tier"
+							class="border-b border-outline-gray-1 last:border-b-0"
+						>
+							<td>
+								<span class="font-semibold text-ink-gray-9">
+									{{ tierLabel(l) }}
+								</span>
+								<Badge
+									v-if="l.state === 'current'"
+									class="ml-2"
+									theme="blue"
+									label="Current"
+								/>
+							</td>
+
+							<td>
+								<ul class="flex flex-col gap-1.5">
+									<li
+										v-for="(req, i) in requirementsFor(l)"
+										:key="i"
+										class="flex items-center gap-2"
+									>
+										<span
+											class="size-3.5 shrink-0"
+											:class="
+                          req.met
+                            ? 'lucide-circle-check text-ink-green-6'
+                            : 'lucide-circle-dashed text-ink-gray-4'
+                        "
+											aria-hidden="true"
+										/>
+										<span
+											:class="req.met ? 'text-ink-gray-9' : 'text-ink-gray-6'"
+										>
+											{{ req.text }}
+										</span>
+										<router-link
+											v-if="req.nudge"
+											:to="{ name: 'Billing' }"
+											class="text-ink-blue-7 "
+										>
+											Go to Billing →
+										</router-link>
+									</li>
+								</ul>
+							</td>
+
+							<td class="text-right">
+								<span class="font-semibold tabular-nums text-ink-gray-9">
+									{{ money(l.max_spend, currency) }}
+								</span>
+								<p
+									v-if="l.max_resource_count != null"
+									class="text-p-xs text-ink-gray-5"
+								>
+									up to
+									{{ l.max_resource_count }}
+									resource{{ l.max_resource_count === 1 ? '' : 's' }}
+								</p>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+
+				<!-- How tiers work: plain prose under a rule, not a card. -->
+				<section class="border-t border-outline-gray-1 pt-6">
+					<h2 class="text-base font-medium text-ink-gray-9">
+						How tier upgrades work
+					</h2>
+					<ul
+						class="mt-2.5 flex list-disc flex-col gap-1.5 pl-4 text-p-sm text-ink-gray-6"
+					>
+						<li>
+							Tiers control the maximum amount your team can spend in a billing
+							cycle.
+						</li>
+						<li>
+							You are automatically upgraded to a higher tier when your last
+							paid subscription invoice meets that tier's threshold and you have
+							at least three consecutive paid invoices.
+						</li>
+						<li>
+							New teams start at the base tier. Add a payment method or prepaid
+							credits to stay there.
+						</li>
+						<li>
+							Need a higher limit now? Contact
+							<a
+								href="https://support.frappe.io"
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-ink-blue-8 underline underline-offset-2 transition-opacity hover:opacity-80"
+								>support</a
+							>
+							and we'll review your account.
+						</li>
+					</ul>
+				</section>
+			</template>
+
+			<p v-else class="py-12 text-center text-p-sm text-ink-gray-5">
+				Spending tiers aren't configured yet.
+			</p>
 		</div>
 	</div>
 </template>
+
+<style scoped>
+td {
+	padding-top: 0.875rem;
+	padding-bottom: 0.875rem;
+	vertical-align: top;
+}
+</style>
