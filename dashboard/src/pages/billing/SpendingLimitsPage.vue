@@ -81,7 +81,7 @@ function requirementsFor(level: TierLevel): Requirement[] {
 	if (level.min_paid_invoices) {
 		const n = level.min_paid_invoices
 		reqs.push({
-			text: `Paying user for at least ${n} month${n === 1 ? '' : 's'}`,
+			text: `≥ ${n} paid invoice${n === 1 ? '' : 's'}`,
 			met: paid >= n,
 		})
 	}
@@ -240,9 +240,8 @@ const levels = computed(() => {
 							cycle.
 						</li>
 						<li>
-							You are automatically upgraded to a higher tier when your last
-							paid subscription invoice meets that tier's threshold and you have
-							at least three consecutive paid invoices.
+							You're automatically upgraded once you clear a tier's paid-invoice
+							count and cumulative-paid thresholds — each tier sets its own bar.
 						</li>
 						<li>
 							New teams start at the base tier. Add a payment method or prepaid
