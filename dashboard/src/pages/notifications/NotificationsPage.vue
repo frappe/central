@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, LoadingText, TabButtons } from 'frappe-ui'
+import { Button, LoadingText, TabButtons } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import NotificationItem from '@/components/notifications/NotificationItem.vue'
 import { useNotifications } from '@/composables/useNotifications'
@@ -40,12 +40,6 @@ async function onAct(n: TeamNotification): Promise<void> {
 				variant="subtle"
 				label="Mark all read"
 				@click="markAllAsRead"
-			/>
-			<Button
-				variant="ghost"
-				icon="lucide-settings-2"
-				aria-label="Notification preferences"
-				@click="preferencesOpen = true"
 			/>
 		</Teleport>
 
