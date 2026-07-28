@@ -154,16 +154,23 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertEqual(ledger[0]["entry_type"], "Credit")
 
 	def test_get_trust_tier_reports_first_paid_and_last_invoice_amount(self):
-		self._invoice()  # amount_paid 1180
-		frappe.get_doc(
+		first = self._invoice()  # amount_paid 1180
+		first_paid_at = frappe.utils.add_days(frappe.utils.now_datetime(), -10)
+		frappe.db.set_value("Invoice", first, "paid_at", first_paid_at)
+
+		second = frappe.get_doc(
 			{"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Paid",
 			 "period_start": "2026-06-01", "period_end": "2026-06-30", "currency": "INR",
 			 "subtotal": 2000, "total": 2000, "amount_paid": 2000,
 			 "items": [{"resource_type": "bundle", "plan": PLAN, "rate": 2000, "days": 30, "amount": 2000}]}
-		).insert(ignore_permissions=True)
+		).insert(ignore_permissions=True).name
+		frappe.db.set_value("Invoice", second, "paid_at", frappe.utils.now_datetime())
 
 		progress = dashboard.get_trust_tier(TEAM)["progress"]
-		self.assertIsNotNone(progress["first_paid_at"])
+		self.assertEqual(
+			frappe.utils.get_datetime(progress["first_paid_at"]),
+			frappe.utils.get_datetime(first_paid_at),
+		)
 		self.assertEqual(progress["last_paid_invoice_amount"], 2000)
 		self.assertEqual(progress["cumulative_paid"], 3180)
 
@@ -172,19 +179,16 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertIsNone(progress["first_paid_at"])
 		self.assertEqual(progress["last_paid_invoice_amount"], 0)
 
-	def test_get_trust_tier_prefers_paid_at_over_creation(self):
-		# An invoice can sit Draft/Open for a while before it actually settles — paid_at
-		# (the real settlement time) lands well after creation, and progress must report
-		# that, not the earlier creation time (which would overstate tenure).
-		inv = self._invoice()
-		paid_at = frappe.utils.add_days(frappe.utils.now_datetime(), 10)
-		frappe.db.set_value("Invoice", inv, "paid_at", paid_at)
+	def test_get_trust_tier_ignores_legacy_invoices_without_paid_at(self):
+		# An invoice paid before paid_at existed has no reliable settlement time — it
+		# must not be guessed at (via creation) for tenure, though its amount still
+		# counts toward cumulative paid.
+		self._invoice()  # amount_paid 1180, no paid_at set
 
 		progress = dashboard.get_trust_tier(TEAM)["progress"]
-		self.assertEqual(
-			frappe.utils.get_datetime(progress["first_paid_at"]),
-			frappe.utils.get_datetime(paid_at),
-		)
+		self.assertIsNone(progress["first_paid_at"])
+		self.assertEqual(progress["last_paid_invoice_amount"], 0)
+		self.assertEqual(progress["cumulative_paid"], 1180)
 
 
 class TestTeamScoping(CustomerDataBase):
