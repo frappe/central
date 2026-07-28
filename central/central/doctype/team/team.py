@@ -65,6 +65,14 @@ class Team(Document):
 		self._get_member(user).role = role
 		self.save()
 
+		from central.notification.engine import dispatch
+		dispatch(
+			team=self.name,
+			event_type="role_change",
+			message=role,
+			affected_user=user,
+		)
+
 	@frappe.whitelist(methods=["POST"])
 	def set_member_status(self, user: str, status: str) -> None:
 		self._require_capability("team:manage_members")
@@ -102,6 +110,13 @@ class Team(Document):
 		self.flags.from_team_invitation = True
 		# The accepted invitation authorizes this write before the invitee is a member.
 		self.save(ignore_permissions=True)
+
+		from central.notification.engine import dispatch
+		dispatch(
+			team=self.name,
+			event_type="member_joined",
+			message=user,
+		)
 
 	def _validate_unique_members(self) -> None:
 		users = [row.user for row in self.members if row.user]
