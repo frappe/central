@@ -153,6 +153,25 @@ class TestCustomerReads(CustomerDataBase):
 		ledger = dashboard.credit_ledger(TEAM)
 		self.assertEqual(ledger[0]["entry_type"], "Credit")
 
+	def test_get_trust_tier_reports_first_paid_and_last_invoice_amount(self):
+		self._invoice()  # amount_paid 1180
+		frappe.get_doc(
+			{"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Paid",
+			 "period_start": "2026-06-01", "period_end": "2026-06-30", "currency": "INR",
+			 "subtotal": 2000, "total": 2000, "amount_paid": 2000,
+			 "items": [{"resource_type": "bundle", "plan": PLAN, "rate": 2000, "days": 30, "amount": 2000}]}
+		).insert(ignore_permissions=True)
+
+		progress = dashboard.get_trust_tier(TEAM)["progress"]
+		self.assertIsNotNone(progress["first_paid_at"])
+		self.assertEqual(progress["last_paid_invoice_amount"], 2000)
+		self.assertEqual(progress["cumulative_paid"], 3180)
+
+	def test_get_trust_tier_progress_is_blank_with_no_paid_invoices(self):
+		progress = dashboard.get_trust_tier(TEAM)["progress"]
+		self.assertIsNone(progress["first_paid_at"])
+		self.assertEqual(progress["last_paid_invoice_amount"], 0)
+
 
 class TestTeamScoping(CustomerDataBase):
 	def setUp(self):

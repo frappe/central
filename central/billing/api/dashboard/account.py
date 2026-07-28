@@ -216,9 +216,9 @@ def get_trust_tier(team: str | None = None) -> dict:
 	"""What the team's trust tier offers, and how to reach the next level.
 
 	Returns the current tier's limits (spend cap in billing currency, resource
-	cap), the team's progress (resources used, paid invoices, cumulative paid),
-	and the NEXT tier's promotion criteria — so a customer can see what unlocks
-	more headroom.
+	cap), the team's progress (resources used, paid invoices, cumulative paid,
+	when it first paid, its last paid invoice amount), and the NEXT tier's
+	promotion criteria — so a customer can see what unlocks more headroom.
 	"""
 	from central.billing.catalog import entitlements
 
@@ -238,13 +238,19 @@ def get_trust_tier(team: str | None = None) -> dict:
 	resources_used = _team_resource_count(team)
 	paid_invoices = frappe.db.count("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"})
 	paid_rows = frappe.get_all("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"},
-							   ["amount_paid", "credit_applied"])
+							   ["amount_paid", "credit_applied", "creation"], order_by="creation asc")
 	# "Paid to date" is what actually settled each invoice — the card-collected
 	# `amount_paid` PLUS credits applied. A credits-settled invoice carries
 	# amount_paid=0 (no gateway charge), so summing amount_paid alone reports 0
 	# even though the customer's prepaid credits cleared the bill.
 	cumulative_paid = sum(
 		frappe.utils.flt(r.amount_paid) + frappe.utils.flt(r.credit_applied) for r in paid_rows
+	)
+	first_paid_at = paid_rows[0].creation if paid_rows else None
+	last_paid_row = paid_rows[-1] if paid_rows else None
+	last_paid_invoice_amount = (
+		frappe.utils.flt(last_paid_row.amount_paid) + frappe.utils.flt(last_paid_row.credit_applied)
+		if last_paid_row else 0
 	)
 
 	def level_view(l):
@@ -268,6 +274,8 @@ def get_trust_tier(team: str | None = None) -> dict:
 			"resources_used": resources_used,
 			"paid_invoices": paid_invoices,
 			"cumulative_paid": frappe.utils.flt(cumulative_paid),
+			"first_paid_at": first_paid_at,
+			"last_paid_invoice_amount": frappe.utils.flt(last_paid_invoice_amount),
 		},
 		"all_levels": [level_view(l) for l in levels],
 	}
