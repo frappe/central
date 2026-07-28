@@ -1,17 +1,18 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Phase 2 (1st, light/parallel) + pre-payment corrections.
+"""Phase 2 (light/parallel) + pre-payment corrections — one invoice at a time.
 
 `open_and_collect` runs the credits-then-card waterfall and claims Draft -> Open
 atomically. `cancel_invoice` / `reissue_invoice` are the pre-payment correction
 path — issued line items are never mutated; a whole invoice is cancelled and
-reissued from current data.
+reissued from current data. Who calls these across a whole period, and on which
+worker, is `run.py`'s business.
 """
 
 import frappe
 
 from central.billing.revenue import credits
-from central.billing.revenue.invoicing.generate import generate_draft_invoice, generate_draft_invoices
+from central.billing.revenue.invoicing.generate import generate_draft_invoice
 
 DEFAULT_DUE_DAYS = 7
 
@@ -76,7 +77,13 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	doc.expected_collection = frappe.utils.flt(
 		frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount) - applied, 2
 	)
+	# Both dates are set from *today*, not from the period end: an invoice the run
+	# opened three days late is due three days later, and its dunning ladder starts
+	# three days later. A backlog delays collection; it never shortens the customer's
+	# window. From here the two diverge — due_date is the accounting fact and stays
+	# put, while dunning_starts_on moves if we fail to ask again (dunning.defer_dunning).
 	doc.due_date = frappe.utils.add_days(frappe.utils.nowdate(), DEFAULT_DUE_DAYS)
+	doc.dunning_starts_on = doc.due_date
 
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:
@@ -108,41 +115,6 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		"expected_collection": doc.expected_collection,
 		"status": "Open",
 		"charge": charge,
-	}
-
-
-def open_drafts(period_end, enqueue: bool = False) -> list[str]:
-	"""Phase-2 orchestrator: open every Draft for the billing month."""
-	drafts = frappe.get_all("Invoice", filters={"status": "Draft", "period_end": period_end}, pluck="name")
-	for inv in drafts:
-		if enqueue:
-			frappe.enqueue("central.billing.revenue.invoicing.open_and_collect", invoice=inv)
-		else:
-			open_and_collect(inv)
-	return drafts
-
-
-def run_monthly_billing(today=None) -> dict:
-	"""Scheduled entrypoint (1st of the month): bill the just-closed calendar month
-	end-to-end for every team — the production trigger for the two-phase invoicing
-	(#09/#10) that otherwise only ran from demos and tests.
-
-	Phase 1 drafts one consolidated invoice per team for the previous month; phase 2
-	opens each Draft and runs the credits-then-card waterfall — settling it, or leaving
-	it Open for dunning (#14). Idempotent: drafting is idempotent per (team, period) and
-	open_drafts only touches invoices still in Draft, so a retried tick is safe.
-	"""
-	today = frappe.utils.getdate(today or frappe.utils.nowdate())
-	period_start = frappe.utils.get_first_day(today, d_months=-1)
-	period_end = frappe.utils.get_last_day(period_start)
-
-	drafted = generate_draft_invoices(period_start, period_end)
-	opened = open_drafts(period_end)
-	return {
-		"period_start": str(period_start),
-		"period_end": str(period_end),
-		"drafted": len(drafted),
-		"opened": len(opened),
 	}
 
 

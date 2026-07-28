@@ -157,13 +157,14 @@ Creates the **Subscription** (intent) + first **Subscription Change** row carryi
 `api/dashboard/catalog.provision_composed_config`.
 
 ### Step 7 · Generate the invoice
-> ⚠️ Invoice generation is **not on the scheduler** (see `ARCHITECTURE.md` §3) — drive it
-> by hand for a demo.
+> Invoice generation runs on the scheduler as two ticks on the 1st (see
+> `ARCHITECTURE.md` §3), each fanning work out to workers. For a demo, drive it by hand —
+> the calls below are the same work without the queue.
 ```bash
 # One team, one period (in arrears):
 bench --site central.local execute central.billing.revenue.invoicing.generate_team_invoice \
   --kwargs '{"team":"<TEAM>","period_start":"2026-06-01","period_end":"2026-06-30"}'
-# …or all teams for the period (the 28th "draft" phase):
+# …or all teams for the period (the draft phase, inline):
 bench --site central.local execute central.billing.revenue.invoicing.generate_draft_invoices \
   --kwargs '{"period_start":"2026-06-01","period_end":"2026-06-30"}'
 ```
@@ -172,7 +173,7 @@ segments) + metered overage + commitment discount + tax. Result: **Invoice (Draf
 
 ### Step 8 · Open & collect (settle)
 ```bash
-# The 1st "open" phase — runs the credits→card waterfall per draft:
+# The collect phase — runs the credits→card waterfall per draft:
 bench --site central.local execute central.billing.revenue.invoicing.open_drafts \
   --kwargs '{"period_end":"2026-06-30"}'
 ```
@@ -215,5 +216,5 @@ For e2e isolation, each Playwright spec seeds + tears down its own sandbox via
 | Plans + rates | — | ✅ Plan Configurator |
 | Trust tiers / Tax profiles | — | ✅ reference data |
 | Billing Profile (per team) | — | ✅ wizard (gates money) |
-| Invoice generation | ❌ **not scheduled** | ✅ run `generate_*` / `open_drafts` |
+| Invoice generation | ✅ two cron ticks on the 1st (draft, then collect) | ✅ `run_monthly_billing` / `generate_*` / `open_drafts` |
 | Dunning / reconciliation / e-mandate / card expiry | ✅ scheduled | — |

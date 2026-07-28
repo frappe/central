@@ -174,6 +174,11 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		# Transient: leave the attempt initiated so a retry reuses the same key.
 		attempt.failure_reason = str(e)[:140]
 		attempt.save(ignore_permissions=True)
+		# We never reached the customer — a rate limit or a network fault is ours, not
+		# theirs — so their retry ladder must not start ticking on it.
+		from central.billing.revenue.dunning import defer_dunning
+
+		defer_dunning(attempt.invoice, f"gateway unreachable: {str(e)[:80]}")
 		_persist()
 		return {"charged": False, "reason": "timeout", "attempt": attempt.name}
 
