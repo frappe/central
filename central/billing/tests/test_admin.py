@@ -3,9 +3,9 @@
 """Admin dashboard endpoints (issue #19)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api import admin
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	ensure_atlas_instance,
 	ensure_team,

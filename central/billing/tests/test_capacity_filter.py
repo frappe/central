@@ -10,9 +10,9 @@ suite proves the gate's wiring (fit compare, no-room → empty, flag off / unrea
 from unittest.mock import patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard.catalog import get_eligible_plans
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	clear_team_tier,
 	complete_billing_profile,

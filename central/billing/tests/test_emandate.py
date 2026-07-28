@@ -3,9 +3,9 @@
 """E-mandate ≤₹15k off-session collection: pre-debit notice → debit (#50 item 3, ADR 0005)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.payments import emandate
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
 TEAM = "team-emandate"
@@ -77,6 +77,7 @@ class TestEmandatePredebit(IntegrationTestCase):
 
 	def test_charge_due_only_after_window(self):
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.gateways.base import PaymentResult
 
 		inv = self._invoice(5000)

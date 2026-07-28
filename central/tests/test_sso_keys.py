@@ -1,14 +1,13 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
+import json
 import time
 
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
 from jwt.algorithms import RSAAlgorithm
-
-import json
 
 from central.api.jwks import get_jwks, jwks_document
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings

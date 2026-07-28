@@ -5,17 +5,20 @@
 from unittest.mock import patch
 
 import frappe
+
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team, make_user
-
 
 TEAM = "team-engine"
 
 
 class EngineTestBase(IntegrationTestCase):
+	_created_event_types: set[str] = set()
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 		ensure_team(TEAM)
+		self.__class__._created_event_types = set()
 		self._purge()
 
 	def tearDown(self):
@@ -23,7 +26,9 @@ class EngineTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		frappe.db.delete("Team Notification", {"team": TEAM})
-		frappe.db.delete("Notification Event Type")
+		created = self.__class__._created_event_types
+		if created:
+			frappe.db.delete("Notification Event Type", {"name": ["in", list(created)]})
 		frappe.db.delete("User Notification Preference", {"team": TEAM})
 		frappe.db.commit()
 
@@ -32,8 +37,9 @@ class EngineTestBase(IntegrationTestCase):
 						   in_app_body="Something broke", direct_recipients="None",
 						   create_in_app=True):
 		if frappe.db.exists("Notification Event Type", event_type):
-			return frappe.get_doc("Notification Event Type", event_type)
-		return frappe.get_doc({
+			frappe.db.delete("Notification Event Type", {"name": event_type})
+			frappe.db.commit()
+		doc = frappe.get_doc({
 			"doctype": "Notification Event Type",
 			"event_type": event_type,
 			"category": category,
@@ -44,6 +50,8 @@ class EngineTestBase(IntegrationTestCase):
 			"direct_recipients": direct_recipients,
 			"create_in_app": int(create_in_app),
 		}).insert(ignore_permissions=True)
+		self.__class__._created_event_types.add(event_type)
+		return doc
 
 
 class TestDispatchCreatesFeedEntry(EngineTestBase):

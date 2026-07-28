@@ -5,8 +5,8 @@ from typing import Any
 import frappe
 from frappe.query_builder import Order
 
-from central.utils.guards import require_capability, require_team_member
 from central.iam import can, expand_capabilities, get_all_capabilities, user_has_operator_bypass
+from central.utils.guards import require_capability, require_team_member
 
 # Team-roster reads + role management for the console's Team screens. Visibility
 # is "being a member" (any capability on the team); mutations delegate to the Team

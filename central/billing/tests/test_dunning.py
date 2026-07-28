@@ -6,13 +6,13 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import dunning
 from central.billing.catalog import subscriptions
-from central.billing.gateways.base import PaymentResult
 from central.billing.catalog.signing import generate_keypair
+from central.billing.gateways.base import PaymentResult
+from central.billing.revenue import dunning
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan, set_team_tier
 
 TEAM = "team-dunning"

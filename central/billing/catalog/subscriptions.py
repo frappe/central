@@ -125,7 +125,7 @@ def _asset_shape(includes) -> dict:
 	reflects what was provisioned. Empty for a preset (the Plan carries the shape)."""
 	if not includes:
 		return {}
-	from central.billing.catalog.composition import composition_quantities, COMPUTE, MEMORY, DISK
+	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
 
 	qty = composition_quantities(includes)
 	return {

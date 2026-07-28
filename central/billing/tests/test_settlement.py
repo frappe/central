@@ -6,12 +6,10 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import invoicing, credits
-from central.billing.payments import settlement
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
+from central.billing.payments import settlement
 from central.billing.payments.settlement import (
 	can_accept_spend,
 	credit_forecast,
@@ -19,7 +17,9 @@ from central.billing.payments.settlement import (
 	ensure_settlement_source,
 	settlement_sources,
 )
+from central.billing.revenue import credits, invoicing
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan, set_team_tier
 
 TEAM = "team-waterfall"

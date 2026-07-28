@@ -9,8 +9,6 @@ Top-ups credit the wallet only after the gateway confirms the money moved
 import frappe
 
 from central.billing import authz
-from central.billing.revenue import credits, invoicing, metering
-from central.billing.revenue.tax import resolve_tax
 from central.billing.api.dashboard._shared import (
 	_describe_line,
 	_enabled_gateway_for_currency,
@@ -23,6 +21,8 @@ from central.billing.api.dashboard._shared import (
 	_team_clusters,
 	_team_currency,
 )
+from central.billing.revenue import credits, invoicing, metering
+from central.billing.revenue.tax import resolve_tax
 
 
 @frappe.whitelist()

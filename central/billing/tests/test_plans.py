@@ -2,10 +2,10 @@
 # For license information, please see license.txt
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.plans import get_plan_pricing
 from central.billing.catalog.pricing import set_catalog_rates
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import make_plan
 
 

@@ -10,7 +10,8 @@ The classic collections worklist: chase the 60+/90+ columns first.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, nowdate, date_diff
+from frappe.utils import date_diff, flt, getdate, nowdate
+
 from central.billing.report._currency import split_currency_columns
 
 BUCKETS = [

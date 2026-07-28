@@ -18,10 +18,13 @@ class PlanConfigurator(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
+		from frappe.types import DF
+
 		from central.billing.doctype.plan_configurator_plan.plan_configurator_plan import PlanConfiguratorPlan
 		from central.billing.doctype.plan_configurator_rate.plan_configurator_rate import PlanConfiguratorRate
-		from central.billing.doctype.plan_configurator_simple_plan.plan_configurator_simple_plan import PlanConfiguratorSimplePlan
-		from frappe.types import DF
+		from central.billing.doctype.plan_configurator_simple_plan.plan_configurator_simple_plan import (
+			PlanConfiguratorSimplePlan,
+		)
 
 		base_disk_gb: DF.Float
 		base_rates: DF.Table[PlanConfiguratorRate]

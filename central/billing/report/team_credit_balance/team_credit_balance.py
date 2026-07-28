@@ -11,6 +11,7 @@ wallets that have run below it.
 
 import frappe
 from frappe import _
+
 from central.billing.report._currency import split_currency_columns
 
 

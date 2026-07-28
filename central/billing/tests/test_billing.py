@@ -5,10 +5,10 @@
 import threading
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
-from central.billing.revenue import invoicing, credits
+from central.billing.revenue import credits, invoicing
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
 	make_billing_subscription,

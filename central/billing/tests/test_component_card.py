@@ -9,10 +9,10 @@ and the preset-vs-component divergence warning."""
 from unittest.mock import patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import component_card
 from central.billing.catalog.pricing import resolve_component_rate, set_catalog_rate
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import make_plan
 
 # A currency with no seeded starter card, so tests author it from scratch.

@@ -3,10 +3,10 @@
 """Subscription intent + two-axis state model (issue #04)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.catalog.subscriptions import InvalidTransition
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan
 
 PLAN = "bundle-sub-test"

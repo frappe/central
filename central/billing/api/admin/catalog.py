@@ -6,8 +6,8 @@ cluster/plan run-rate consumption, and trial→paid conversion analysis.
 
 import frappe
 
-from central.billing.authz import require_operator
 from central.billing.api.admin._shared import _active_segments, _plan_monthly_inr, _to_inr
+from central.billing.authz import require_operator
 
 
 @frappe.whitelist()

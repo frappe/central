@@ -3,8 +3,8 @@
 """Billing Profile validation: GSTIN format + India state ↔ GST state code."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team
 
 TEAM = "team-billing-profile"

@@ -6,8 +6,6 @@ rollups, the team table, and the delinquency / payment-failure drill-downs.
 
 import frappe
 
-from central.billing.revenue import credits
-from central.billing.authz import require_operator
 from central.billing.api.admin._shared import (
 	_STANDING_RANK,
 	_active_segments,
@@ -16,6 +14,8 @@ from central.billing.api.admin._shared import (
 	_team_currency,
 	_to_inr,
 )
+from central.billing.authz import require_operator
+from central.billing.revenue import credits
 
 
 def _with_cluster(subs: list[dict]) -> list[dict]:

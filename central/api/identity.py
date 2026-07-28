@@ -5,7 +5,6 @@ from typing import Any
 import frappe
 from frappe.query_builder import Order
 
-from central.utils.guards import require_self_or_operator
 from central.iam import (
 	can,
 	get_all_capabilities,
@@ -14,6 +13,7 @@ from central.iam import (
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
+from central.utils.guards import require_self_or_operator
 
 # Identity and capability reads for the console, plus the observe-only endpoints
 # Atlas and operators use to inspect a user's grants (spec/IAM.md).

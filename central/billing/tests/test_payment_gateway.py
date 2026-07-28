@@ -4,11 +4,11 @@
 from unittest.mock import patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.base import GatewayAuthError, GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
 def _new_gateway(name="GW-Setup-Test", **overrides):

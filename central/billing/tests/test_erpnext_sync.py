@@ -6,11 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 import requests
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_team
 
 from central.billing.revenue import erpnext_sync
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_team
 
 TEAM = "team-erp"
 

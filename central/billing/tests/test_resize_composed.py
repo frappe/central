@@ -5,13 +5,13 @@
 from unittest.mock import call, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from frappe.utils import get_first_day, get_last_day, nowdate
 
 from central.billing.api.admin.catalog import update_component_rate
 from central.billing.catalog import subscriptions
 from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.revenue.invoicing import generate_team_invoice
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,

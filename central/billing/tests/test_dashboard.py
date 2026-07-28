@@ -3,10 +3,10 @@
 """Customer dashboard endpoints + forecast (issues #26, #18)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import credits
 from central.billing.api import dashboard
+from central.billing.revenue import credits
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
 	complete_billing_profile,
@@ -264,6 +264,7 @@ class TestCustomerActions(CustomerDataBase):
 
 	def test_money_movement_blocked_until_profile_complete(self):
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		# No profile yet → a top-up is refused before any gateway call.
@@ -327,8 +328,8 @@ class TestBillingCurrency(CustomerDataBase):
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "USD")
 
 	def test_currency_locks_after_money_activity(self):
-		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 		from central.billing.revenue import credits
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		make_razorpay_gateway("GW-Cur-Lock")
 		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
@@ -347,6 +348,7 @@ class TestBillingCurrency(CustomerDataBase):
 class TestGatewayTopUp(CustomerDataBase):
 	def test_topup_goes_through_gateway_and_verifies(self):
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		gw = make_razorpay_gateway("GW-Cust-RZP").name
@@ -387,6 +389,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		"""The Razorpay callback signature binds order|payment, NOT the amount — a
 		client claiming a bigger figure must be credited what the gateway captured."""
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		gw = make_razorpay_gateway("GW-Cust-RZP-Amt").name
@@ -405,6 +408,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		"""A captured payment whose fetch carries no amount must hard-fail, not
 		fall back to the client-supplied figure the signature never covered."""
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		gw = make_razorpay_gateway("GW-Cust-RZP-NoAmt").name
@@ -422,6 +426,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		"""A signature-valid callback whose payment the gateway has not captured
 		credits nothing."""
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		gw = make_razorpay_gateway("GW-Cust-RZP-Uncap").name
@@ -439,6 +444,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		"""A team's customer is minted once and reused — the second top-up (or any
 		later charge / payment-method setup) never mints a fresh one."""
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		gw = make_razorpay_gateway("GW-Cust-RZP-Reuse").name
@@ -456,6 +462,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 	def test_topup_rejects_bad_signature(self):
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		gw = make_razorpay_gateway("GW-Cust-RZP2").name
@@ -471,6 +478,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		redirect), and the wallet is credited from the server-confirmed intent
 		amount/currency — not INR, not a client-supplied figure."""
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
 		gw = make_stripe_gateway("GW-Cust-Stripe-T").name
@@ -496,6 +504,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 	def test_topup_stripe_rejects_unsucceeded_intent(self):
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
 		gw = make_stripe_gateway("GW-Cust-Stripe-T2").name
@@ -512,6 +521,7 @@ class TestGatewayTopUp(CustomerDataBase):
 		the order — crediting PayPal's server-confirmed amount and keying the wallet
 		entry on the capture id Finance reconciles against."""
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
 		stripe_def = make_stripe_gateway("GW-USD-Stripe-Def").name  # USD card default
@@ -633,7 +643,7 @@ class TestWriteEndpointsRejectGet(IntegrationTestCase):
 	"""
 
 	def test_write_endpoints_are_post_only(self):
-		from central.billing.api.dashboard import invoices, methods, account
+		from central.billing.api.dashboard import account, invoices, methods
 
 		write_fns = [
 			invoices.pay_invoice,
@@ -710,8 +720,9 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 		self.assertIn("allow_upi", out)  # UPI eligibility carried through
 
 	def test_india_card_setup_uses_stripe_gateway(self):
-		from central.billing.api.dashboard import methods
 		from unittest.mock import patch
+
+		from central.billing.api.dashboard import methods
 
 		captured = {}
 

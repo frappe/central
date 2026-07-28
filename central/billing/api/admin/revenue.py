@@ -6,14 +6,14 @@ trend chart, spend breakdowns, payment success rates, aging, and trial subsidy.
 
 import frappe
 
-from central.billing.authz import require_operator
 from central.billing.api.admin._shared import (
-	AGING_BUCKETS,
 	_FX_TO_INR,
 	_MONTHS,
+	AGING_BUCKETS,
 	_period_filter,
 	_to_inr,
 )
+from central.billing.authz import require_operator
 
 
 @frappe.whitelist()

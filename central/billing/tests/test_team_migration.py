@@ -10,12 +10,13 @@ un-migrated data) and running the patch helpers, then running them again.
 """
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import make_billing_team, make_user
 from central.patches.v0_0 import (
 	migrate_team_to_central_team as patch,
 )
-from central.billing.tests.utils import make_billing_team, make_user
+
 
 def _run_migration():
 	"""execute() minus the commit + field drop, so the test stays transactional."""

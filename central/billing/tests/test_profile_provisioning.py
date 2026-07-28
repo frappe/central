@@ -4,13 +4,13 @@
 tax profile, and welcome credits (idempotent)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard import account
 from central.billing.payments.provisioning import WELCOME_CREDITS
 from central.billing.revenue import credits
 from central.billing.tests.test_entitlements import make_ladder
 from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team
 
 TEAM = "team-prov"

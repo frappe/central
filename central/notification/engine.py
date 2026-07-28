@@ -79,16 +79,25 @@ def dispatch(
 			f"team_notification:{team}", {"team": team}, after_commit=True
 		)
 
-	emails_sent = _fan_out_emails(team, event, ctx, message=message,
+	email_result = _fan_out_emails(team, event, ctx, message=message,
 					reference_doctype=reference_doctype, reference_name=reference_name,
 					affected_user=affected_user)
 
-	return {"created": bool(doc), "notification": doc.name if doc else None, "title": title, "body": body, "emails_sent": emails_sent}
+	return {
+		"created": bool(doc),
+		"notification": doc.name if doc else None,
+		"title": title,
+		"body": body,
+		"emails_sent": email_result["sent"],
+		"email_attempted": email_result["attempted"],
+		"email_failed": email_result["failed"],
+	}
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def ensure_event_type(
 	event_type: str,
@@ -178,7 +187,7 @@ def _is_duplicate(team, event_type, reference_name) -> bool:
 
 
 def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None,
-					reference_name=None, affected_user=None):
+					reference_name=None, affected_user=None) -> dict:
 	"""Send individual emails to each qualified team member.
 
 	Members are qualified by:
@@ -191,23 +200,28 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None,
 	the email — capability is bypassed for that user and no other members are
 	contacted.
 
-	Returns True if at least one email was sent.
+	Returns ``{"sent": N, "attempted": N, "failed": N}``.
 	"""
 	from central.iam import can
 
+	result = {"sent": 0, "attempted": 0, "failed": 0}
+
 	if event.direct_recipients == "Affected User":
 		if affected_user and _email_enabled(affected_user, team, event.category):
-			_send_member_email(affected_user, team, event, ctx,
-							   message=message, reference_doctype=reference_doctype,
-							   reference_name=reference_name)
-			return True
-		return False
+			ok = _send_member_email(affected_user, team, event, ctx,
+								   message=message, reference_doctype=reference_doctype,
+								   reference_name=reference_name)
+			result["attempted"] = 1
+			if ok:
+				result["sent"] = 1
+			else:
+				result["failed"] = 1
+		return result
 
 	members = _get_active_members(team)
 	if not members:
-		return False
+		return result
 
-	sent = False
 	for member_user in members:
 		if event.required_cap and not can(member_user, team, event.required_cap):
 			continue
@@ -215,12 +229,16 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None,
 		if not _email_enabled(member_user, team, event.category):
 			continue
 
-		_send_member_email(member_user, team, event, ctx,
-						   message=message, reference_doctype=reference_doctype,
-						   reference_name=reference_name)
-		sent = True
+		result["attempted"] += 1
+		ok = _send_member_email(member_user, team, event, ctx,
+							   message=message, reference_doctype=reference_doctype,
+							   reference_name=reference_name)
+		if ok:
+			result["sent"] += 1
+		else:
+			result["failed"] += 1
 
-	return sent
+	return result
 
 
 def _get_active_members(team: str) -> list[str]:
@@ -242,16 +260,17 @@ def _email_enabled(user: str, team: str, category: str) -> bool:
 		{"user": user, "team": team, "category": category},
 		"email_enabled",
 	)
-	# None means no preference record — default is enabled.
 	return pref is None or bool(pref)
 
 
 def _send_member_email(user, team, event, ctx, *, message=None,
-					   reference_doctype=None, reference_name=None):
+					   reference_doctype=None, reference_name=None) -> bool:
 	"""Render and queue a single email for *user*.
 
 	Best-effort: if the outgoing email account is not configured the
 	notification is still recorded in the feed; the email is simply skipped.
+
+	Returns True if the email was sent successfully, False if it failed.
 
 	When the Event Type has an ``email_template`` link, the Frappe Email
 	Template DocType is used for subject/body rendering.  Otherwise the
@@ -279,5 +298,6 @@ def _send_member_email(user, team, event, ctx, *, message=None,
 			subject=subject,
 			message=body,
 		)
+		return True
 	except Exception:  # noqa: BLE001 — email dispatch is best-effort
-		pass
+		return False

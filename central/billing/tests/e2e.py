@@ -16,8 +16,8 @@ the seed/teardown surface can never be reached off a test bench.
 import frappe
 from frappe.utils.password import update_password
 
-from central.iam import get_user_team_names
 from central.billing.tests.utils import complete_billing_profile, make_user
+from central.iam import get_user_team_names
 
 # Shared login secret for every seeded user — the spec gets it back from seed() and
 # logs in with it. Not a real credential; only valid on an allow_tests bench.
@@ -133,6 +133,7 @@ def finish_razorpay_topup(team: str, gateway: str, order_id: str, amount: float)
 	# callback signature doesn't bind the amount) — but our payment id is synthetic,
 	# so Razorpay has nothing to fetch. Stub just that read; everything else is real.
 	from unittest.mock import patch
+
 	from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 
 	captured = {"status": "captured", "amount": int(round(frappe.utils.flt(amount) * 100)),

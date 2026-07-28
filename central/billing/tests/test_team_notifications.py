@@ -3,13 +3,12 @@
 """Team Notification feed — the console's unified in-app inbox (billing + server)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_atlas_instance, ensure_team
 
 from central import notification as feed
 from central.billing.api.dashboard import account
 from central.billing.platform import notifications as billing_notify
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team
 
 TEAM = "team-feed"
 OTHER = "team-feed-other"

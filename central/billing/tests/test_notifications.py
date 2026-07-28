@@ -3,12 +3,11 @@
 """Notification suite — sole sender (issue #20)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.tests.utils import ensure_team
-
-from central.billing.platform import notifications
 from central.billing.payments import settlement
+from central.billing.platform import notifications
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_team
 
 TEAM = "team-notify"
 

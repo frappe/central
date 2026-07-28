@@ -92,8 +92,8 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	if existing:
 		return existing
 
-	from central.billing.revenue.metering import metered_line_items
 	from central.billing.catalog.trials import invoice_type_for
+	from central.billing.revenue.metering import metered_line_items
 
 	cluster = frappe.db.get_value("Asset", sub.asset_id, "cluster") if sub.asset_id else None
 	lines = compute_line_items(sub.team, cluster, period_start, period_end)
@@ -167,9 +167,9 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	if existing:
 		return existing
 
+	from central.billing.catalog.trials import invoice_type_for
 	from central.billing.revenue.metering import metered_line_items
 	from central.billing.revenue.tax import resolve_tax
-	from central.billing.catalog.trials import invoice_type_for
 
 	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
 	clusters = sorted({

@@ -14,6 +14,7 @@ which gives the aggregate rate; this one names the individual failures.
 import frappe
 from frappe import _
 from frappe.utils import flt
+
 from central.billing.report._currency import split_currency_columns
 
 

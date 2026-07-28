@@ -24,8 +24,8 @@ The flow is deliberately split so curated, real-world catalogues (à la the clou
 import frappe
 from frappe.utils import flt
 
-from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.catalog.plans import RATIO_FACTORS
+from central.billing.catalog.pricing import set_catalog_rate
 
 _MAX_RUNGS = 24  # safety bound on the doubling loop
 

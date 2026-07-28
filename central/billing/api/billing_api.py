@@ -274,8 +274,8 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 	"""Start adding a card via hosted setup checkout. Returns `{checkout_url,
 	reference, gateway}`; redirect the payer to `checkout_url`, then poll
 	`confirm_payment_method_checkout`. Stripe only for now (hosted `setup` mode)."""
-	from central.billing.payments import payments
 	from central.billing.gateways.registry import get_adapter
+	from central.billing.payments import payments
 
 	team = _team()
 	_require_billing_setup(team)
@@ -304,8 +304,8 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 def _activate_setup(method_name: str, gateway: str, session_id: str) -> dict:
 	"""Read a completed hosted setup back and validate the card (micro-charge) → Active.
 	Returns `{status, active, label}`; `pending` while the gateway hasn't saved it yet."""
-	from central.billing.payments import payments
 	from central.billing.gateways.registry import get_adapter
+	from central.billing.payments import payments
 
 	result = get_adapter(frappe.get_doc("Payment Gateway", gateway)).get_setup_result(session_id)
 	if not result.get("payment_method"):

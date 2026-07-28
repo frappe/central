@@ -6,13 +6,13 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import invoicing, credits
-from central.billing.payments import refunds
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import RefundResult
+from central.billing.payments import refunds
+from central.billing.revenue import credits, invoicing
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,

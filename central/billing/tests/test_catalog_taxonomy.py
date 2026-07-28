@@ -3,9 +3,9 @@
 """Catalog taxonomy masters — Plan Category / Sub-Category / Resource Type (#75, ADR 0007)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import configurator
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import make_plan
 
 

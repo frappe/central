@@ -6,12 +6,11 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_team
 
 from central.billing.payments import payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_team
 
 TEAM = "team-cards"
 GATEWAY = "GW-Test-Stripe"

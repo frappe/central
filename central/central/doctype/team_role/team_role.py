@@ -14,8 +14,9 @@ class TeamRole(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.central.doctype.role_capability.role_capability import RoleCapability
 		from frappe.types import DF
+
+		from central.central.doctype.role_capability.role_capability import RoleCapability
 
 		capabilities: DF.Table[RoleCapability]
 		is_system: DF.Check

@@ -5,9 +5,9 @@ mode, synthesized team-level subjects, dual-mode usage ingestion, and the
 pilot-authenticated service API."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team, make_metered_plan
 
 

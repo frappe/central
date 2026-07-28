@@ -3,9 +3,9 @@
 """Create-server plan menu: cluster availability + trust-tier spend filter."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard.catalog import get_eligible_plans
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
 	clear_team_tier,

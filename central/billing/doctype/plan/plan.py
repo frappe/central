@@ -15,8 +15,9 @@ class Plan(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 		from frappe.types import DF
+
+		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 
 		annual_discount_pct: DF.Float
 		billing_cycle: DF.Literal["Monthly", "Annual"]

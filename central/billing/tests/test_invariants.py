@@ -8,10 +8,10 @@ cannot be made to fire is a check nobody should trust.
 """
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.platform import invariants
 from central.billing.revenue import credits
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team
 
 TEAM = "team-invariants"

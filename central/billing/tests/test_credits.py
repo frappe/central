@@ -5,13 +5,12 @@
 import threading
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_team
 
 from central.billing.platform.constraints import existing_constraints
 from central.billing.revenue import credits
 from central.billing.revenue.credits import InsufficientCredits
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_team
 
 TEAM = "team-wallet"
 

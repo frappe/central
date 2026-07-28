@@ -8,13 +8,13 @@ Report helpers (is_trial_team, convert_to_paid, expire_trial, subsidy_total) are
 dormant, exercised here by hand until their separate cleanup."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import invoicing, credits
 from central.billing.catalog import trials
 from central.billing.catalog.entitlements import recompute_trust_tier
 from central.billing.catalog.signing import generate_keypair
+from central.billing.revenue import credits, invoicing
 from central.billing.tests.test_entitlements import make_ladder
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
 	ensure_team,

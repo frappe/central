@@ -3,9 +3,9 @@
 """Collection mode + the ₹15,000 Action Required threshold (issue #50, ADR 0005)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.payments import collection_mode
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team, set_team_tier
 
 TEAM = "team-collection"
@@ -152,6 +152,7 @@ class TestManualCheckout(IntegrationTestCase):
 
 	def test_checkout_settles_only_on_webhook_for_any_amount(self):
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.payments import charges
 
 		inv = self._invoice(40000)  # ₹40,000 — far over the off-session ceiling, fine on-session
@@ -174,6 +175,7 @@ class TestManualCheckout(IntegrationTestCase):
 
 	def test_bad_signature_is_rejected(self):
 		from unittest.mock import MagicMock, patch
+
 		from central.billing.payments import charges
 
 		inv = self._invoice(5000)

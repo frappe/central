@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 import frappe
 import razorpay
 import stripe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing.payments.webhooks import process_webhook
 from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.payments.webhooks import process_webhook
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 EVENT_ID = "evt_webhook_500"
 PAYLOAD = (

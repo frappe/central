@@ -10,6 +10,7 @@ The summary cards headline credited vs debited vs net over the filtered window.
 import frappe
 from frappe import _
 from frappe.utils import flt
+
 from central.billing.report._currency import split_currency_columns
 
 

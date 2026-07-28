@@ -72,3 +72,6 @@ central/www/console.html
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Redis dump files
+dump.rdb

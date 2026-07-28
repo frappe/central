@@ -6,13 +6,13 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import complete_billing_profile, ensure_team
 from central.patches.v0_0 import (
 	provision_gateway_customers as provision,
 )
-from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
-from central.billing.tests.utils import complete_billing_profile, ensure_team
 
 TEAM = "team-gwcust"
 

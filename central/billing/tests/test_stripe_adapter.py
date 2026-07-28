@@ -6,11 +6,11 @@ from unittest.mock import patch
 
 import frappe
 import stripe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.base import GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
 def make_stripe_gateway(name="GW-Test-Stripe"):

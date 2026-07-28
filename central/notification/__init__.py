@@ -2,17 +2,22 @@
 # For license information, please see license.txt
 """The team-facing in-app notification feed — the console's unified inbox.
 
-One writer, `create_notification`, records a `Team Notification` and nudges the
+One writer, ``create_notification``, records a ``Team Notification`` and nudges the
 console over realtime so the bell badge updates live. Every subsystem (billing,
 server/infra) funnels through here, so the feed is one queryable source of truth —
-distinct from *email* delivery (billing's `platform.notifications`, which records a
-`Billing Notification Log` and honours the team's email preferences).
+distinct from *email* delivery (billing's ``platform.notifications``, which records a
+``Billing Notification Log`` and honours the team's email preferences).
 
 An in-app notification is NOT gated by email preferences: a failure or warning
 belongs in the dashboard regardless of whether the team wants an email about it.
+
+Read state is per-user: each member tracks which notifications they have read via
+the ``Notification Read`` doctype rather than mutating the shared ``is_read`` flag
+on ``Team Notification``.
 """
 
 import frappe
+from frappe import _
 
 CATEGORIES = ("Billing", "Server", "Team")
 SEVERITIES = ("Info", "Success", "Warning", "Error")
@@ -35,7 +40,7 @@ def create_notification(
 ):
 	"""Record one in-app notification for a team and nudge the console.
 
-	Returns the inserted `Team Notification`. The realtime nudge carries only the
+	Returns the inserted ``Team Notification``. The realtime nudge carries only the
 	team (no content), so it never leaks across sockets; the console refetches the
 	feed for the active team when it fires.
 	"""
@@ -58,27 +63,30 @@ def create_notification(
 	).insert(ignore_permissions=True)
 
 	if publish:
-		# Team-namespaced event so a member's socket only hears its own team's nudge.
 		frappe.publish_realtime(
 			f"team_notification:{team}", {"team": team}, after_commit=True
 		)
 	return doc
 
 
-def unread_count(team: str, *, user: str | None = None) -> int:
-	"""Unread in-app notifications for a team — the bell badge count.
+def _read_notification_names(team: str, user: str) -> set[str]:
+	"""Return the set of notification names the user has read for *team*."""
+	return set(
+		frappe.get_all(
+			"Notification Read",
+			filters={"user": user},
+			fields=["notification"],
+			pluck="notification",
+		)
+	)
 
-	When *user* is provided the count excludes notifications the user cannot
-	see (missing capability or ``in_app_enabled`` off).  Operators always see
-	the full count.
-	"""
+
+def _unread_notifications(team: str, user: str) -> list[str]:
+	"""Return notification names the user has NOT read (capability-filtered)."""
 	from central.iam import can, user_has_operator_bypass
 
-	user = user or frappe.session.user
-	filters = {"team": team, "is_read": 0}
-
-	if user_has_operator_bypass(user):
-		return frappe.db.count("Team Notification", filters)
+	read_names = _read_notification_names(team, user)
+	filters = {"team": team}
 
 	rows = frappe.get_all(
 		"Team Notification",
@@ -86,10 +94,11 @@ def unread_count(team: str, *, user: str | None = None) -> int:
 		fields=["name", "category", "required_cap"],
 	)
 
-	rows = [
-		row for row in rows
-		if not row.required_cap or can(user, team, row.required_cap)
-	]
+	if not user_has_operator_bypass(user):
+		rows = [
+			row for row in rows
+			if not row.required_cap or can(user, team, row.required_cap)
+		]
 
 	if rows:
 		categories = {row.category for row in rows}
@@ -107,7 +116,23 @@ def unread_count(team: str, *, user: str | None = None) -> int:
 		)
 		rows = [row for row in rows if row.category not in disabled_categories]
 
-	return len(rows)
+	return [row.name for row in rows if row.name not in read_names]
+
+
+def unread_count(team: str, *, user: str | None = None) -> int:
+	"""Unread in-app notifications for a team, per-user — the bell badge count.
+
+	Read state is per-user via ``Notification Read``.  Operators always see
+	the count of all notifications for the team.
+	"""
+	from central.iam import user_has_operator_bypass
+
+	user = user or frappe.session.user
+
+	if user_has_operator_bypass(user):
+		return frappe.db.count("Team Notification", {"team": team})
+
+	return len(_unread_notifications(team, user))
 
 
 def list_notifications(
@@ -118,10 +143,13 @@ def list_notifications(
 	category: str | None = None,
 	unread_only: bool = False,
 ) -> dict:
-	"""The team's notification feed, filtered by the user's capabilities.
+	"""The team's notification feed, filtered per-user.
 
 	Only notifications whose ``required_cap`` the user possesses (or which
 	have no ``required_cap``) are returned.  Operators see everything.
+
+	Read state is per-user (``Notification Read``), not the team-global
+	``is_read`` flag.
 	"""
 	from central.iam import can, user_has_operator_bypass
 
@@ -129,17 +157,15 @@ def list_notifications(
 	filters = {"team": team}
 	if category:
 		filters["category"] = category
-	if frappe.utils.cint(unread_only):
-		filters["is_read"] = 0
 
 	items = frappe.get_all(
 		"Team Notification",
 		filters=filters,
 		fields=["name", "category", "event_type", "severity", "required_cap",
 				"title", "message", "reference_doctype", "reference_name",
-				"action_label", "action_route", "is_read", "read_at", "creation"],
+				"action_label", "action_route", "creation"],
 		order_by="creation desc",
-		limit=frappe.utils.cint(limit) * 3,  # over-fetch then filter
+		limit=frappe.utils.cint(limit) * 3,
 	)
 
 	is_operator = user_has_operator_bypass(user)
@@ -149,7 +175,6 @@ def list_notifications(
 			if not row.required_cap or can(user, team, row.required_cap)
 		]
 
-		# Filter out notifications where the user has disabled in-app for the category.
 		categories = {row.category for row in items}
 		if categories:
 			disabled_categories = set(
@@ -165,6 +190,13 @@ def list_notifications(
 				)
 			)
 			items = [row for row in items if row.category not in disabled_categories]
+
+	read_names = _read_notification_names(team, user)
+	for row in items:
+		row["is_read"] = 1 if row.name in read_names else 0
+
+	if frappe.utils.cint(unread_only):
+		items = [row for row in items if row.name not in read_names]
 
 	return {
 		"items": items[: frappe.utils.cint(limit)],

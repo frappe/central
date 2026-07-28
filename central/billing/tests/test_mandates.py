@@ -12,13 +12,12 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
-
-from central.billing.payments import mandates
 from central.billing.catalog.entitlements import recompute_trust_tier
+from central.billing.payments import mandates
 from central.billing.tests.test_entitlements import make_ladder
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
 TEAM = "team-mandate"
 GATEWAY = "GW-Mandate-Razorpay"

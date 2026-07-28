@@ -7,11 +7,11 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.payments import charges, collection, payments
 from central.billing.gateways.base import PaymentResult
+from central.billing.payments import charges, collection, payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-fallback"

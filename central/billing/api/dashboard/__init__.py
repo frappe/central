@@ -13,9 +13,6 @@ this package re-exports the public API so every `billing.api.dashboard.*` path
 stays stable.
 """
 
-from central.billing.api.dashboard.catalog import (
-	get_eligible_plans,
-)
 from central.billing.api.dashboard.account import (
 	get_billing_geo,
 	get_billing_profile,
@@ -33,7 +30,11 @@ from central.billing.api.dashboard.account import (
 	set_collection_mode,
 	whoami,
 )
+from central.billing.api.dashboard.catalog import (
+	get_eligible_plans,
+)
 from central.billing.api.dashboard.invoices import (
+	confirm_invoice_checkout,
 	confirm_topup,
 	create_topup_order,
 	credit_ledger,
@@ -42,12 +43,11 @@ from central.billing.api.dashboard.invoices import (
 	get_invoice,
 	list_invoices,
 	list_payment_attempts,
-	confirm_invoice_checkout,
 	list_subscriptions,
 	pause_subscription,
-	resume_subscription,
 	pay_invoice,
 	pay_invoice_checkout,
+	resume_subscription,
 )
 from central.billing.api.dashboard.methods import (
 	add_demo_card,

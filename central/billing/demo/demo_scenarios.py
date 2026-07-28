@@ -29,25 +29,23 @@ orchestration.
 
 import frappe
 
-from central.billing.revenue import invoicing, credits
 from central.billing.catalog import subscriptions
-from central.billing.payments.provisioning import provision_billing_profile
 from central.billing.demo._factory import (
 	ANCHOR,
 	SERVICES,
 	STRIPE,
+	_add_backup_card,
 	_capture_attempt,
 	_catalog,
 	_ensure_demo_team,
 	_ensure_signing_key,
-	_add_backup_card,
 	_failed_attempt,
 	_gateway_customer,
-	_settle_via_backup,
 	_gateways,
 	_month_periods,
 	_payment_setup,
 	_profile,
+	_settle_via_backup,
 	_settle_with_retries,
 	_tax,
 	_team_members,
@@ -55,11 +53,11 @@ from central.billing.demo._factory import (
 	_tiers,
 	_wipe_all,
 	activate_team_assets,
+	add_composed_subscription,
+	arm_emandate,
 	backdate_credit_debits,
 	backdate_invoice,
 	backdate_welcome_credit,
-	add_composed_subscription,
-	arm_emandate,
 	bank_pending_attempt,
 	draw_wallet_credit,
 	make_refund,
@@ -69,6 +67,8 @@ from central.billing.demo._factory import (
 	stage_resizes,
 	subscribe_service,
 )
+from central.billing.payments.provisioning import provision_billing_profile
+from central.billing.revenue import credits, invoicing
 
 # service plan slug -> (resource_type, unit), for reporting usage against a subject.
 _SERVICE_META = {s[2]: (s[1], s[4]) for s in SERVICES}
