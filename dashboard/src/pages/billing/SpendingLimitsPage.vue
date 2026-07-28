@@ -18,7 +18,7 @@ import type { TrustTier, TierLevel } from '@/types/billing'
 // whose Requirements column shows each rung's promotion gates against the team's
 // live progress, and a "how it works" explainer.
 const { activeTeam } = useSession()
-const { forecast, profile } = useBillingOverview()
+const { forecast, credit, methods } = useBillingOverview()
 
 const tier = useCall<TrustTier, { team: string }>({
 	url: method(API.trustTier),
@@ -68,7 +68,7 @@ function requirementsFor(level: TierLevel): Requirement[] {
 	const paid = Number(p?.paid_invoices ?? 0)
 	const cumulative = Number(p?.cumulative_paid ?? 0)
 	if (level.sequence <= 0) {
-		const met = !!profile.data?.currency_locked
+		const met = (methods.data?.length ?? 0) > 0 || Number(credit.data?.balance ?? 0) > 0
 		return [
 			{
 				text: 'Payment method added or prepaid credits available',
