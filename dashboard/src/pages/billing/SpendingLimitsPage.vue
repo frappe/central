@@ -68,7 +68,10 @@ function requirementsFor(level: TierLevel): Requirement[] {
 	const paid = Number(p?.paid_invoices ?? 0)
 	const cumulative = Number(p?.cumulative_paid ?? 0)
 	if (level.sequence <= 0) {
-		const met = (methods.data?.length ?? 0) > 0 || Number(credit.data?.balance ?? 0) > 0
+		const hasChargeableMethod = (methods.data ?? []).some(
+			(m) => m.status === 'Active' && !m.reauth_required,
+		)
+		const met = hasChargeableMethod || Number(credit.data?.balance ?? 0) > 0
 		return [
 			{
 				text: 'Payment method added or prepaid credits available',
