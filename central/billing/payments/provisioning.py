@@ -88,16 +88,16 @@ def ensure_tax_profile(team: str) -> None:
 	if frappe.db.exists("Tax Profile", team):
 		return
 
-	profile = frappe.db.get_value(
-		"Billing Profile", team, ["country", "currency"], as_dict=True
-	) or frappe._dict()
-	india = (profile.country or "").strip() == "India" or profile.currency == "INR"
-	values = {"output_tax_type": "GST", "output_tax_rate": 18} if india else {
-		"output_tax_type": "None", "output_tax_rate": 0
-	}
-	frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(
-		ignore_permissions=True
+	profile = (
+		frappe.db.get_value("Billing Profile", team, ["country", "currency"], as_dict=True) or frappe._dict()
 	)
+	india = (profile.country or "").strip() == "India" or profile.currency == "INR"
+	values = (
+		{"output_tax_type": "GST", "output_tax_rate": 18}
+		if india
+		else {"output_tax_type": "None", "output_tax_rate": 0}
+	)
+	frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(ignore_permissions=True)
 
 
 def grant_welcome_credits(team: str) -> None:

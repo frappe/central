@@ -14,10 +14,10 @@ frappe.ui.form.on("Atlas Instance", {
 							: __("Unreachable: {0}", [result.error || ""]),
 						indicator: result.reachable ? "green" : "red",
 					},
-					5,
+					5
 				);
 				frm.reload_doc();
-			}),
+			})
 		);
 
 		// While the tunnel is up (Active) offer Remove Tunnel; otherwise offer Register,
@@ -28,7 +28,7 @@ frappe.ui.form.on("Atlas Instance", {
 				frappe.confirm(
 					__(
 						"Strip the tunnel + firewall for {0}? This reverts the Atlas's management firewall (restoring public access) and tears down wg0, but keeps it registered (Inactive) — Register brings the tunnel back.",
-						[frm.doc.region],
+						[frm.doc.region]
 					),
 					() =>
 						frm
@@ -42,20 +42,21 @@ frappe.ui.form.on("Atlas Instance", {
 										]),
 										indicator: "orange",
 									},
-									5,
+									5
 								);
 								frm.reload_doc();
 							})
-							.catch(() => frm.reload_doc()),
-				),
+							.catch(() => frm.reload_doc())
+				)
 			);
 		} else {
-			const label = frm.doc.tunnel_status === "Inactive" ? __("Register (re-tunnel)") : __("Register");
+			const label =
+				frm.doc.tunnel_status === "Inactive" ? __("Register (re-tunnel)") : __("Register");
 			frm.add_custom_button(label, () =>
 				frappe.confirm(
 					__(
 						"Register {0}? This brings up the tunnel and locks the Atlas's public interface behind it.",
-						[frm.doc.region],
+						[frm.doc.region]
 					),
 					() =>
 						frm
@@ -70,12 +71,12 @@ frappe.ui.form.on("Atlas Instance", {
 										]),
 										indicator: "green",
 									},
-									5,
+									5
 								);
 								frm.reload_doc();
 							})
-							.catch(() => frm.reload_doc()),
-				),
+							.catch(() => frm.reload_doc())
+				)
 			);
 		}
 	},

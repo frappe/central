@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Slider } from 'frappe-ui'
-import LadderSelect from '@/components/servers/LadderSelect.vue'
+import { computed, ref, watch } from "vue";
+import { Slider } from "frappe-ui";
+import LadderSelect from "@/components/servers/LadderSelect.vue";
 import {
 	capacityLimits,
 	clamp,
@@ -13,8 +13,8 @@ import {
 	maxDiskForCapacity,
 	maxVcpuForCapacity,
 	ramFor,
-} from '@/lib/composed'
-import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
+} from "@/lib/composed";
+import type { Capacity, ComposedConfig, Profile, RateCard } from "@/types/api";
 
 // Design-your-own config controls (#84). Compute and Storage are both discrete
 // ladders the slider snaps to (vCPU from the configurator's set incl. fractions;
@@ -23,43 +23,38 @@ import type { Capacity, ComposedConfig, Profile, RateCard } from '@/types/api'
 // can't be expressed. Both sliders have a hard stop at `available` headroom. The
 // price is shown by the parent; the server re-validates everything at provision (#83).
 const props = defineProps<{
-	profiles: Profile[]
-	rateCard: RateCard
-	available: number
+	profiles: Profile[];
+	rateCard: RateCard;
+	available: number;
 	// The region's live capacity — the slider's second hard stop (below headroom), so a
 	// customer can't design a config the region can't currently seat. Absent → no cap.
-	capacity?: Capacity | null
+	capacity?: Capacity | null;
 	// Pre-fill the controls with a running config's shape (resize, #82/#84).
-	initial?: ComposedConfig | null
-}>()
+	initial?: ComposedConfig | null;
+}>();
 
 // The chosen config (null while invalid / over headroom) — the parent provisions it.
-const config = defineModel<ComposedConfig | null>({ required: true })
+const config = defineModel<ComposedConfig | null>({ required: true });
 
 const profileName = ref<string>(
-	props.initial?.sub_category ?? props.profiles[0]?.sub_category ?? '',
-)
+	props.initial?.sub_category ?? props.profiles[0]?.sub_category ?? ""
+);
 const profile = computed<Profile | null>(
-	() =>
-		props.profiles.find((p) => p.sub_category === profileName.value) ?? null,
-)
+	() => props.profiles.find((p) => p.sub_category === profileName.value) ?? null
+);
 
 const vcpuSteps = computed<number[]>(() =>
-	[...(profile.value?.vcpu_steps ?? [])].sort((a, b) => a - b),
-)
+	[...(profile.value?.vcpu_steps ?? [])].sort((a, b) => a - b)
+);
 const diskSteps = computed<number[]>(() =>
-	[...(profile.value?.disk_steps ?? [])].sort((a, b) => a - b),
-)
+	[...(profile.value?.disk_steps ?? [])].sort((a, b) => a - b)
+);
 
 // Both sliders are index-based over their ladder, so dragging always lands on a rung.
-const vcpuIndex = ref(seedIndex(vcpuSteps.value, props.initial?.vcpus))
-const diskIndex = ref(seedIndex(diskSteps.value, props.initial?.disk_gb))
-const vcpus = computed<number>(
-	() => vcpuSteps.value[vcpuIndex.value] ?? vcpuSteps.value[0] ?? 0,
-)
-const diskGb = computed<number>(
-	() => diskSteps.value[diskIndex.value] ?? diskSteps.value[0] ?? 0,
-)
+const vcpuIndex = ref(seedIndex(vcpuSteps.value, props.initial?.vcpus));
+const diskIndex = ref(seedIndex(diskSteps.value, props.initial?.disk_gb));
+const vcpus = computed<number>(() => vcpuSteps.value[vcpuIndex.value] ?? vcpuSteps.value[0] ?? 0);
+const diskGb = computed<number>(() => diskSteps.value[diskIndex.value] ?? diskSteps.value[0] ?? 0);
 
 // frappe-ui's Slider is espresso-styled (dark surface-gray fill + white thumb) and
 // range-shaped — its v-model is a `number[]`. Wrap the single ladder index so the
@@ -67,14 +62,12 @@ const diskGb = computed<number>(
 const vcpuModel = computed<number[]>({
 	get: () => [vcpuIndex.value],
 	set: ([i]) => (vcpuIndex.value = i ?? 0),
-})
+});
 const diskModel = computed<number[]>({
 	get: () => [diskIndex.value],
 	set: ([i]) => (diskIndex.value = i ?? 0),
-})
-const ram = computed<number>(() =>
-	profile.value ? ramFor(vcpus.value, profile.value) : 0,
-)
+});
+const ram = computed<number>(() => (profile.value ? ramFor(vcpus.value, profile.value) : 0));
 
 // Hard stops: the largest vCPU / storage rung that still fits the remaining headroom
 // AND the region's live capacity (the more restrictive of the two), each given the
@@ -88,50 +81,45 @@ const maxVcpuIndex = computed<number>(() =>
 						profile.value,
 						props.rateCard,
 						props.available,
-						diskGb.value,
+						diskGb.value
 					),
-					maxVcpuForCapacity(profile.value, props.capacity),
-				),
-			)
-		: 0,
-)
+					maxVcpuForCapacity(profile.value, props.capacity)
+				)
+		  )
+		: 0
+);
 const maxDiskIndex = computed<number>(() =>
 	profile.value
 		? indexOf(
 				diskSteps.value,
 				Math.min(
-					maxAffordableDisk(
-						profile.value,
-						props.rateCard,
-						props.available,
-						vcpus.value,
-					),
-					maxDiskForCapacity(profile.value, props.capacity),
-				),
-			)
-		: 0,
-)
+					maxAffordableDisk(profile.value, props.rateCard, props.available, vcpus.value),
+					maxDiskForCapacity(profile.value, props.capacity)
+				)
+		  )
+		: 0
+);
 
 // Whether the region's capacity — not headroom — is what's holding the slider back, so
 // the copy can name the real reason (a full region reads differently from a spent limit).
 const cappedByCapacity = computed<boolean>(() => {
-	if (!profile.value || !capacityLimits(props.capacity)) return false
-	const capVcpu = maxVcpuForCapacity(profile.value, props.capacity)
-	const capDisk = maxDiskForCapacity(profile.value, props.capacity)
+	if (!profile.value || !capacityLimits(props.capacity)) return false;
+	const capVcpu = maxVcpuForCapacity(profile.value, props.capacity);
+	const capDisk = maxDiskForCapacity(profile.value, props.capacity);
 	const affordVcpu = maxAffordableVcpu(
 		profile.value,
 		props.rateCard,
 		props.available,
-		diskGb.value,
-	)
+		diskGb.value
+	);
 	const affordDisk = maxAffordableDisk(
 		profile.value,
 		props.rateCard,
 		props.available,
-		vcpus.value,
-	)
-	return capVcpu <= affordVcpu || capDisk <= affordDisk
-})
+		vcpus.value
+	);
+	return capVcpu <= affordVcpu || capDisk <= affordDisk;
+});
 
 // Dropdown ladders (the precise-pick companion to the sliders). Rungs past the
 // headroom hard stop are disabled. RAM is keyed by its vCPU rung, so picking a RAM
@@ -141,33 +129,33 @@ const vcpuOptions = computed(() =>
 		label: `${formatVcpu(v)} vCPU`,
 		value: v,
 		disabled: i > maxVcpuIndex.value,
-	})),
-)
+	}))
+);
 const ramOptions = computed(() =>
 	profile.value
 		? vcpuSteps.value.map((v, i) => ({
 				label: `${formatGb(ramFor(v, profile.value!))} GB RAM`,
 				value: v,
 				disabled: i > maxVcpuIndex.value,
-			}))
-		: [],
-)
+		  }))
+		: []
+);
 // The storage unit is driven from the Disk resource's unit on the rate card (#89),
 // single-sourced rather than a hardcoded "GB"; falls back to 'GB' until it loads.
-const diskUnit = computed<string>(() => props.rateCard.Disk?.unit ?? 'GB')
+const diskUnit = computed<string>(() => props.rateCard.Disk?.unit ?? "GB");
 const diskOptions = computed(() =>
 	diskSteps.value.map((d, i) => ({
 		label: `${formatGb(d)} ${diskUnit.value}`,
 		value: d,
 		disabled: i > maxDiskIndex.value,
-	})),
-)
+	}))
+);
 
 function setVcpu(v: number) {
-	vcpuIndex.value = indexOf(vcpuSteps.value, v)
+	vcpuIndex.value = indexOf(vcpuSteps.value, v);
 }
 function setDisk(d: number) {
-	diskIndex.value = indexOf(diskSteps.value, d)
+	diskIndex.value = indexOf(diskSteps.value, d);
 }
 
 const overHeadroom = computed<boolean>(() =>
@@ -179,26 +167,26 @@ const overHeadroom = computed<boolean>(() =>
 					memory_gb: ram.value,
 					disk_gb: diskGb.value,
 				},
-				props.rateCard,
-			) > props.available
-		: false,
-)
+				props.rateCard
+		  ) > props.available
+		: false
+);
 
 function stepDisk(delta: number) {
-	diskIndex.value = clamp(diskIndex.value + delta, 0, maxDiskIndex.value)
+	diskIndex.value = clamp(diskIndex.value + delta, 0, maxDiskIndex.value);
 }
 
 // Reset to each ladder's floor when the profile changes (not on first mount).
 watch(profile, () => {
-	vcpuIndex.value = 0
-	diskIndex.value = 0
-})
+	vcpuIndex.value = 0;
+	diskIndex.value = 0;
+});
 
 // Keep both sliders inside the live hard stops (clamp down only, so this converges).
 watch([maxVcpuIndex, maxDiskIndex], () => {
-	if (vcpuIndex.value > maxVcpuIndex.value) vcpuIndex.value = maxVcpuIndex.value
-	if (diskIndex.value > maxDiskIndex.value) diskIndex.value = maxDiskIndex.value
-})
+	if (vcpuIndex.value > maxVcpuIndex.value) vcpuIndex.value = maxVcpuIndex.value;
+	if (diskIndex.value > maxDiskIndex.value) diskIndex.value = maxDiskIndex.value;
+});
 
 // Publish the chosen config — null while there's no priceable, in-headroom shape.
 watch(
@@ -211,19 +199,19 @@ watch(
 						vcpus: vcpus.value,
 						memory_gb: ram.value,
 						disk_gb: diskGb.value,
-					}
-				: null
+				  }
+				: null;
 	},
-	{ immediate: true },
-)
+	{ immediate: true }
+);
 
 function seedIndex(ladder: number[], value: number | undefined): number {
-	const i = value === undefined ? -1 : ladder.indexOf(value)
-	return i < 0 ? 0 : i
+	const i = value === undefined ? -1 : ladder.indexOf(value);
+	return i < 0 ? 0 : i;
 }
 function indexOf(ladder: number[], value: number): number {
-	const i = ladder.indexOf(value)
-	return i < 0 ? 0 : i
+	const i = ladder.indexOf(value);
+	return i < 0 ? 0 : i;
 }
 </script>
 
@@ -237,10 +225,10 @@ function indexOf(ladder: number[], value: number): number {
 				type="button"
 				class="rounded-md border px-2.5 py-1 text-p-xs transition-colors"
 				:class="
-          profileName === p.sub_category
-            ? 'border-outline-gray-4 bg-surface-gray-2 text-ink-gray-9'
-            : 'border-outline-gray-2 text-ink-gray-6 hover:border-outline-gray-3'
-        "
+					profileName === p.sub_category
+						? 'border-outline-gray-4 bg-surface-gray-2 text-ink-gray-9'
+						: 'border-outline-gray-2 text-ink-gray-6 hover:border-outline-gray-3'
+				"
 				@click="profileName = p.sub_category"
 			>
 				{{ p.sub_category }}

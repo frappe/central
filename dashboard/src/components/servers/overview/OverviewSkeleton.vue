@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Skeleton } from 'frappe-ui'
+import { Skeleton } from "frappe-ui";
 </script>
 
 <template>
@@ -24,11 +24,7 @@ import { Skeleton } from 'frappe-ui'
 			<section class="rounded-xl border border-outline-gray-2 p-5">
 				<Skeleton class="mb-5 h-4 w-36 rounded" />
 				<div class="space-y-3.5">
-					<div
-						v-for="n in 6"
-						:key="n"
-						class="flex items-center justify-between gap-4"
-					>
+					<div v-for="n in 6" :key="n" class="flex items-center justify-between gap-4">
 						<Skeleton class="h-3 w-20 rounded" />
 						<Skeleton class="h-3 w-32 rounded" />
 					</div>

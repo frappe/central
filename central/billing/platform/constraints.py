@@ -51,9 +51,7 @@ def ensure_constraints() -> list[str]:
 			continue
 		if name in existing_constraints(table):
 			continue
-		frappe.db.sql_ddl(
-			f"alter table `{table}` add constraint `{name}` check ({clause})"
-		)
+		frappe.db.sql_ddl(f"alter table `{table}` add constraint `{name}` check ({clause})")
 		added.append(name)
 		frappe.logger("billing").info(f"added CHECK constraint {name} on {table}")
 	return added

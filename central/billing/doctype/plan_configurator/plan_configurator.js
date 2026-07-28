@@ -23,10 +23,12 @@ frappe.ui.form.on("Plan Configurator", {
 	sub_category(frm) {
 		if (!frm.doc.sub_category) return;
 		// Pre-fill the memory ratio from the profile; the admin can override it after.
-		frappe.db.get_value("Plan Sub-Category", frm.doc.sub_category, "memory_ratio").then((r) => {
-			const ratio = r.message && r.message.memory_ratio;
-			if (ratio) frm.set_value("memory_ratio", ratio);
-		});
+		frappe.db
+			.get_value("Plan Sub-Category", frm.doc.sub_category, "memory_ratio")
+			.then((r) => {
+				const ratio = r.message && r.message.memory_ratio;
+				if (ratio) frm.set_value("memory_ratio", ratio);
+			});
 		if (!frm.doc.__user_set_prefix) frm.set_value("plan_name_prefix", frm.doc.sub_category);
 	},
 
@@ -112,7 +114,9 @@ function show_preview(data) {
 		`<th>${__("Size")}</th><th class="text-right">${__("vCPU")}</th>` +
 		`<th class="text-right">${__("RAM")}</th><th class="text-right">${__("Disk")}</th>` +
 		`<th class="text-right">${__("Transfer")}</th>` +
-		currencies.map((c) => `<th class="text-right">${frappe.utils.escape_html(c)}</th>`).join("");
+		currencies
+			.map((c) => `<th class="text-right">${frappe.utils.escape_html(c)}</th>`)
+			.join("");
 	const body = rungs
 		.map(
 			(r) => `<tr>
@@ -211,14 +215,17 @@ function generate_dialog(frm) {
 				fieldtype: "Link",
 				options: "Atlas Instance",
 				label: __("Atlas Instance"),
-				description: __("Blank = global rate (every Atlas Instance). Else pick one. Re-run per Atlas Instance."),
+				description: __(
+					"Blank = global rate (every Atlas Instance). Else pick one. Re-run per Atlas Instance."
+				),
 			},
 			{ fieldname: "sb_cur", fieldtype: "Section Break", label: __("Currencies") },
 			{
 				fieldname: "currencies",
 				fieldtype: "MultiCheck",
 				columns: 3,
-				get_data: () => base.map((r) => ({ label: r.currency, value: r.currency, checked: 1 })),
+				get_data: () =>
+					base.map((r) => ({ label: r.currency, value: r.currency, checked: 1 })),
 			},
 			{ fieldname: "sb_plans", fieldtype: "Section Break", label: __("Plans to generate") },
 			{
@@ -228,16 +235,18 @@ function generate_dialog(frm) {
 				get_data: () =>
 					frm.doc.builder === "Simple"
 						? (frm.doc.simple_plans || []).map((p) => ({
-								label: `${p.title}  ·  ${p.quantity || 0} ${p.unit || ""}${price_hint(
-									p.multiplier || 1
-								)}`,
+								label: `${p.title}  ·  ${p.quantity || 0} ${
+									p.unit || ""
+								}${price_hint(p.multiplier || 1)}`,
 								value: p.title,
 								checked: 1,
 						  }))
 						: (frm.doc.rungs || []).map((p) => ({
-								label: `${p.label || p.plan_name}  ·  ${p.disk_gb || 0} GB disk · ${
-									p.transfer_gb || 0
-								} GB xfer${price_hint(p.multiplier)}`,
+								label: `${p.label || p.plan_name}  ·  ${
+									p.disk_gb || 0
+								} GB disk · ${p.transfer_gb || 0} GB xfer${price_hint(
+									p.multiplier
+								)}`,
 								value: p.plan_name,
 								checked: 1,
 						  })),
@@ -245,7 +254,8 @@ function generate_dialog(frm) {
 		],
 		primary_action_label: __("Generate in Background"),
 		primary_action(values) {
-			if (!(values.plans || []).length) return frappe.msgprint(__("Select at least one plan."));
+			if (!(values.plans || []).length)
+				return frappe.msgprint(__("Select at least one plan."));
 			if (!(values.currencies || []).length)
 				return frappe.msgprint(__("Select at least one currency."));
 			frm.call("enqueue_generation", {
@@ -276,7 +286,9 @@ function apply_component_card_dialog(frm) {
 				fieldtype: "Link",
 				options: "Atlas Instance",
 				label: __("Atlas Instance"),
-				description: __("Blank = global rate (every Atlas Instance). Else price one region. Re-run per Atlas Instance."),
+				description: __(
+					"Blank = global rate (every Atlas Instance). Else price one region. Re-run per Atlas Instance."
+				),
 			},
 		],
 		primary_action_label: __("Publish"),
@@ -298,7 +310,9 @@ function apply_component_card_dialog(frm) {
 				const rows = gaps
 					.map(
 						(c) =>
-							`<li><b>${frappe.utils.escape_html(c)}</b>: ${__("missing")} ${incomplete[c]
+							`<li><b>${frappe.utils.escape_html(c)}</b>: ${__(
+								"missing"
+							)} ${incomplete[c]
 								.map((rt) => frappe.utils.escape_html(rt))
 								.join(", ")}</li>`
 					)
@@ -307,8 +321,9 @@ function apply_component_card_dialog(frm) {
 					title: __("Rates published — but incomplete for some currencies"),
 					indicator: "orange",
 					message:
-						__("These currencies can't offer custom configs until every resource type is priced:") +
-						`<ul>${rows}</ul>`,
+						__(
+							"These currencies can't offer custom configs until every resource type is priced:"
+						) + `<ul>${rows}</ul>`,
 				});
 			});
 		},

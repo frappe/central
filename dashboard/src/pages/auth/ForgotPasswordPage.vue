@@ -1,37 +1,31 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Button, ErrorMessage } from 'frappe-ui'
-import AuthShell from '@/components/auth/AuthShell.vue'
-import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
-import { emailError, frappeErrorMessage, postFrappe } from '@/lib/auth'
+import { ref } from "vue";
+import { Button, ErrorMessage } from "frappe-ui";
+import AuthShell from "@/components/auth/AuthShell.vue";
+import ValidatedFormControl from "@/components/common/formComponents/ValidatedFormControl.vue";
+import { emailError, frappeErrorMessage, postFrappe } from "@/lib/auth";
 
-const email = ref('')
-const submitted = ref(false)
-const loading = ref(false)
-const sent = ref(false)
-const error = ref('')
+const email = ref("");
+const submitted = ref(false);
+const loading = ref(false);
+const sent = ref(false);
+const error = ref("");
 
 async function resetPassword() {
-	submitted.value = true
-	error.value = ''
-	if (emailError(email.value)) return
+	submitted.value = true;
+	error.value = "";
+	if (emailError(email.value)) return;
 
-	loading.value = true
+	loading.value = true;
 	try {
-		await postFrappe(
-			'/api/method/frappe.core.doctype.user.user.reset_password',
-			{
-				user: email.value.trim(),
-			},
-		)
-		sent.value = true
+		await postFrappe("/api/method/frappe.core.doctype.user.user.reset_password", {
+			user: email.value.trim(),
+		});
+		sent.value = true;
 	} catch (exception) {
-		error.value = frappeErrorMessage(
-			exception,
-			'Could not send reset instructions.',
-		)
+		error.value = frappeErrorMessage(exception, "Could not send reset instructions.");
 	} finally {
-		loading.value = false
+		loading.value = false;
 	}
 }
 </script>
@@ -39,9 +33,7 @@ async function resetPassword() {
 <template>
 	<AuthShell>
 		<template v-if="!sent">
-			<h1 class="text-2xl font-semibold text-ink-gray-9">
-				Reset your password
-			</h1>
+			<h1 class="text-2xl font-semibold text-ink-gray-9">Reset your password</h1>
 			<p class="mt-1 text-base text-ink-gray-5">
 				We’ll email you a secure link to choose a new password.
 			</p>
@@ -57,13 +49,7 @@ async function resetPassword() {
 					:submitted="submitted"
 				/>
 				<ErrorMessage v-if="error" :message="error" />
-				<Button
-					type="submit"
-					variant="solid"
-					size="md"
-					class="w-full"
-					:loading="loading"
-				>
+				<Button type="submit" variant="solid" size="md" class="w-full" :loading="loading">
 					Send reset link
 				</Button>
 			</form>
@@ -78,16 +64,13 @@ async function resetPassword() {
 			<h1 class="text-2xl font-semibold text-ink-gray-9">Check your email</h1>
 			<p class="mt-2 text-base text-ink-gray-5">
 				If an account exists for
-				<span class="font-medium text-ink-gray-8">{{ email }}</span>, password
-				reset instructions are on their way.
+				<span class="font-medium text-ink-gray-8">{{ email }}</span
+				>, password reset instructions are on their way.
 			</p>
 		</template>
 
 		<p class="mt-6 text-center text-p-sm text-ink-gray-5">
-			<RouterLink
-				class="font-medium text-ink-gray-8 hover:text-ink-gray-9"
-				to="/login"
-			>
+			<RouterLink class="font-medium text-ink-gray-8 hover:text-ink-gray-9" to="/login">
 				Back to sign in
 			</RouterLink>
 		</p>

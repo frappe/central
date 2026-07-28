@@ -11,7 +11,6 @@ EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
-
 class IntegrationTestCreditLedgerEntry(IntegrationTestCase):
 	"""
 	Integration tests for CreditLedgerEntry.

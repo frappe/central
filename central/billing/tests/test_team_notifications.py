@@ -38,10 +38,18 @@ class TestFeedWriter(TeamNotificationBase):
 
 	def test_billing_notify_writes_feed_entry_with_action(self):
 		# A billing event lands in the in-app feed with a mapped severity + action route.
-		billing_notify.notify(TEAM, "Payment Failure", context={"invoice": "INV-9", "reason": "declined"},
-							   reference_doctype="Invoice", reference_name="INV-9")
-		rows = frappe.get_all("Team Notification", {"team": TEAM, "event_type": "payment_failure"},
-							  ["severity", "action_label", "action_route", "category", "message"])
+		billing_notify.notify(
+			TEAM,
+			"Payment Failure",
+			context={"invoice": "INV-9", "reason": "declined"},
+			reference_doctype="Invoice",
+			reference_name="INV-9",
+		)
+		rows = frappe.get_all(
+			"Team Notification",
+			{"team": TEAM, "event_type": "payment_failure"},
+			["severity", "action_label", "action_route", "category", "message"],
+		)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].severity, "Error")
 		self.assertEqual(rows[0].category, "Billing")
@@ -97,14 +105,20 @@ class TestServerFailureFeed(TeamNotificationBase):
 
 	def test_asset_failed_emits_server_notification(self):
 		# A mirror flipping to Failed drops a Server-category error into the feed.
-		asset = frappe.get_doc({
-			"doctype": "Asset", "resource_id": "vm-feed-1", "team": TEAM,
-			"cluster": self.CLUSTER, "status": "Pending",
-		}).insert(ignore_permissions=True)
+		asset = frappe.get_doc(
+			{
+				"doctype": "Asset",
+				"resource_id": "vm-feed-1",
+				"team": TEAM,
+				"cluster": self.CLUSTER,
+				"status": "Pending",
+			}
+		).insert(ignore_permissions=True)
 		asset.status = "Failed"
 		asset.save(ignore_permissions=True)
-		rows = frappe.get_all("Team Notification",
-							  {"team": TEAM, "event_type": "server_failed"}, ["severity", "category"])
+		rows = frappe.get_all(
+			"Team Notification", {"team": TEAM, "event_type": "server_failed"}, ["severity", "category"]
+		)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].severity, "Error")
 		self.assertEqual(rows[0].category, "Server")

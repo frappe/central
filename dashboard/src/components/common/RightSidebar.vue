@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue'
-import { Button } from 'frappe-ui'
+import { onBeforeUnmount, watch } from "vue";
+import { Button } from "frappe-ui";
 
 // Shared detail slide-over. It is NOT a docked column — it overlays from the right
 // and is only present while `open` (a row is selected). Pages own the body via the
@@ -11,34 +11,34 @@ import { Button } from 'frappe-ui'
 // The scrim fades; the panel slides. Esc and scrim-click close it; the background
 // scroll is locked while open.
 const props = defineProps<{
-	open: boolean
-	title?: string
-	subtitle?: string
-}>()
+	open: boolean;
+	title?: string;
+	subtitle?: string;
+}>();
 
-const emit = defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [] }>();
 
 function onKeydown(event: KeyboardEvent): void {
-	if (event.key === 'Escape') emit('close')
+	if (event.key === "Escape") emit("close");
 }
 
 function lockScroll(locked: boolean): void {
-	document.body.style.overflow = locked ? 'hidden' : ''
+	document.body.style.overflow = locked ? "hidden" : "";
 }
 
 watch(
 	() => props.open,
 	(open) => {
-		lockScroll(open)
-		if (open) document.addEventListener('keydown', onKeydown)
-		else document.removeEventListener('keydown', onKeydown)
-	},
-)
+		lockScroll(open);
+		if (open) document.addEventListener("keydown", onKeydown);
+		else document.removeEventListener("keydown", onKeydown);
+	}
+);
 
 onBeforeUnmount(() => {
-	document.removeEventListener('keydown', onKeydown)
-	lockScroll(false)
-})
+	document.removeEventListener("keydown", onKeydown);
+	lockScroll(false);
+});
 </script>
 
 <template>
@@ -65,29 +65,18 @@ onBeforeUnmount(() => {
 						<h2 class="truncate text-lg font-semibold text-ink-gray-9">
 							{{ title }}
 						</h2>
-						<p
-							v-if="subtitle"
-							class="mt-0.5 truncate text-p-sm text-ink-gray-5"
-						>
+						<p v-if="subtitle" class="mt-0.5 truncate text-p-sm text-ink-gray-5">
 							{{ subtitle }}
 						</p>
 					</div>
-					<Button
-						variant="ghost"
-						icon="x"
-						aria-label="Close"
-						@click="emit('close')"
-					/>
+					<Button variant="ghost" icon="x" aria-label="Close" @click="emit('close')" />
 				</header>
 
 				<div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
 					<slot />
 				</div>
 
-				<footer
-					v-if="$slots.footer"
-					class="border-t border-outline-gray-2 px-5 py-4"
-				>
+				<footer v-if="$slots.footer" class="border-t border-outline-gray-2 px-5 py-4">
 					<slot name="footer" />
 				</footer>
 			</aside>

@@ -66,7 +66,14 @@ class TestCentralIAM(IntegrationTestCase):
 
 		# Full server lifecycle is shared by Owner, Admin, and Developer.
 		for caps in (owner_caps, admin_caps, developer_caps):
-			for cap in ("server:create", "server:power", "server:resize", "server:snapshot", "server:terminate", "server:open"):
+			for cap in (
+				"server:create",
+				"server:power",
+				"server:resize",
+				"server:snapshot",
+				"server:terminate",
+				"server:open",
+			):
 				self.assertIn(cap, caps)
 		# Team management is Owner/Admin; deleting the team is Owner-only.
 		for caps in (owner_caps, admin_caps):

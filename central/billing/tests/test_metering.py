@@ -86,9 +86,7 @@ class TestIngestRollup(MeteringTestBase):
 		receive_meter_rollups([meter("a", 220)])  # outage catch-up re-push
 
 		self.assertEqual(frappe.db.count("Usage Rollup", {"resource_id": RESOURCE}), 1)
-		self.assertEqual(
-			frappe.db.get_value("Usage Rollup", {"resource_id": RESOURCE}, "quantity"), 220
-		)
+		self.assertEqual(frappe.db.get_value("Usage Rollup", {"resource_id": RESOURCE}, "quantity"), 220)
 
 	def test_rollup_for_unprovisioned_resource_is_skipped(self):
 		# Close the resource's segment so it has no open segment to bill against.

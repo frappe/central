@@ -58,20 +58,41 @@ class RefundTestBase(IntegrationTestCase):
 		frappe.db.commit()
 
 	def _paid_invoice_with_attempt(self, total=1000):
-		inv = frappe.get_doc(
-			{
-				"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Paid",
-				"period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
-				"subtotal": total, "total": total, "expected_collection": total, "amount_paid": total,
-			}
-		).insert(ignore_permissions=True).name
-		attempt = frappe.get_doc(
-			{
-				"doctype": "Payment Attempt", "invoice": inv, "team": TEAM, "gateway": GATEWAY,
-				"amount": total, "currency": "INR", "status": "Captured",
-				"gateway_transaction_id": "pi_paid",
-			}
-		).insert(ignore_permissions=True).name
+		inv = (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": "Billable",
+					"status": "Paid",
+					"period_start": "2026-05-01",
+					"period_end": "2026-05-31",
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"expected_collection": total,
+					"amount_paid": total,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+		attempt = (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": inv,
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"amount": total,
+					"currency": "INR",
+					"status": "Captured",
+					"gateway_transaction_id": "pi_paid",
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 		return inv, attempt
 
 

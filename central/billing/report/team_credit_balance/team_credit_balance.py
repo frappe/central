@@ -101,12 +101,14 @@ def get_data(filters: dict) -> list[dict]:
 		balance = frappe.utils.flt(w.balance)
 		# "Low" only when a positive threshold is configured and the wallet is under it.
 		status = "Low" if min_balance and balance < min_balance else "OK"
-		rows.append({
-			"team": w.team,
-			"team_name": team_names.get(w.team),
-			"currency": w.currency or "INR",
-			"balance": balance,
-			"min_balance": min_balance,
-			"status": status,
-		})
+		rows.append(
+			{
+				"team": w.team,
+				"team_name": team_names.get(w.team),
+				"currency": w.currency or "INR",
+				"balance": balance,
+				"min_balance": min_balance,
+				"status": status,
+			}
+		)
 	return rows

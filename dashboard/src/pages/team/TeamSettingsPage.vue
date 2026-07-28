@@ -1,88 +1,86 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { Button, Dialog, FormControl } from 'frappe-ui'
-import { useSession } from '@/composables/useSession'
-import { useTeamSettings } from '@/composables/useTeamSettings'
-import { useTeamMembers } from '@/composables/useTeamMembers'
-import { useCapabilities } from '@/composables/useCapabilities'
+import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import { Button, Dialog, FormControl } from "frappe-ui";
+import { useSession } from "@/composables/useSession";
+import { useTeamSettings } from "@/composables/useTeamSettings";
+import { useTeamMembers } from "@/composables/useTeamMembers";
+import { useCapabilities } from "@/composables/useCapabilities";
 
 // Team settings: rename (team:edit), transfer ownership (owner only), and the
 // danger-zone delete (team:delete). Each control is shown only when the signed-in
 // user may use it — the server enforces the same gates.
-const router = useRouter()
-const { activeTeam, activeTeamLabel } = useSession()
-const { isOwner, saving, rename, transferOwnership, deleteTeam } =
-	useTeamSettings()
-const { members } = useTeamMembers()
-const { canEditTeam, canDeleteTeam } = useCapabilities()
+const router = useRouter();
+const { activeTeam, activeTeamLabel } = useSession();
+const { isOwner, saving, rename, transferOwnership, deleteTeam } = useTeamSettings();
+const { members } = useTeamMembers();
+const { canEditTeam, canDeleteTeam } = useCapabilities();
 
-const name = ref(activeTeamLabel.value)
+const name = ref(activeTeamLabel.value);
 watch([activeTeam, activeTeamLabel], () => {
-	name.value = activeTeamLabel.value
-})
+	name.value = activeTeamLabel.value;
+});
 const renameChanged = computed(
-	() => !!name.value.trim() && name.value.trim() !== activeTeamLabel.value,
-)
+	() => !!name.value.trim() && name.value.trim() !== activeTeamLabel.value
+);
 
 const transferTargets = computed(() =>
 	members.value
-		.filter((m) => m.status === 'Active' && !m.is_owner)
-		.map((m) => ({ label: m.user, value: m.user })),
-)
-const newOwner = ref('')
+		.filter((m) => m.status === "Active" && !m.is_owner)
+		.map((m) => ({ label: m.user, value: m.user }))
+);
+const newOwner = ref("");
 
-const confirmTransfer = ref(false)
-const confirmDelete = ref(false)
+const confirmTransfer = ref(false);
+const confirmDelete = ref(false);
 
 const transferOptions = computed(() => ({
-	title: 'Transfer ownership',
+	title: "Transfer ownership",
 	message: newOwner.value
 		? `Make ${newOwner.value} the owner of this team? You will become an Admin.`
-		: '',
+		: "",
 	actions: [
 		{
-			label: 'Transfer ownership',
-			variant: 'solid' as const,
+			label: "Transfer ownership",
+			variant: "solid" as const,
 			loading: saving.value,
 			onClick: onTransfer,
 		},
 	],
-}))
+}));
 
 const deleteOptions = computed(() => ({
-	title: 'Delete team',
+	title: "Delete team",
 	message: `Permanently delete “${activeTeamLabel.value}”? This can't be undone.`,
 	actions: [
 		{
-			label: 'Delete team',
-			variant: 'solid' as const,
-			theme: 'red' as const,
+			label: "Delete team",
+			variant: "solid" as const,
+			theme: "red" as const,
 			loading: saving.value,
 			onClick: onDelete,
 		},
 	],
-}))
+}));
 
 async function onTransfer() {
-	if (!newOwner.value) return
+	if (!newOwner.value) return;
 	if (await transferOwnership(newOwner.value)) {
-		confirmTransfer.value = false
-		newOwner.value = ''
+		confirmTransfer.value = false;
+		newOwner.value = "";
 	}
 }
 
 async function onDelete() {
 	if (await deleteTeam()) {
-		confirmDelete.value = false
-		router.push('/servers')
+		confirmDelete.value = false;
+		router.push("/servers");
 	}
 }
 </script>
 
 <template>
 	<div class="flex h-full flex-col">
-
 		<div class="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
 			<div class="mx-auto max-w-2xl space-y-6">
 				<!-- General -->
@@ -115,9 +113,7 @@ async function onDelete() {
 					v-if="isOwner"
 					class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5"
 				>
-					<h2 class="text-base font-semibold text-ink-gray-9">
-						Transfer ownership
-					</h2>
+					<h2 class="text-base font-semibold text-ink-gray-9">Transfer ownership</h2>
 					<p class="mt-1 text-p-sm text-ink-gray-5">
 						Hand the Owner role to another active member. You become an Admin.
 					</p>
@@ -136,10 +132,7 @@ async function onDelete() {
 							@click="confirmTransfer = true"
 						/>
 					</div>
-					<p
-						v-if="!transferTargets.length"
-						class="mt-2 text-xs text-ink-gray-5"
-					>
+					<p v-if="!transferTargets.length" class="mt-2 text-xs text-ink-gray-5">
 						Add another active member first.
 					</p>
 				</section>
@@ -151,8 +144,8 @@ async function onDelete() {
 				>
 					<h2 class="text-base font-semibold text-ink-gray-9">Danger zone</h2>
 					<p class="mt-1 text-p-sm text-ink-gray-5">
-						Deleting a team is permanent and removes everyone's access. Its
-						servers and sites must be removed first.
+						Deleting a team is permanent and removes everyone's access. Its servers and
+						sites must be removed first.
 					</p>
 					<Button
 						class="mt-4"

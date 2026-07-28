@@ -51,7 +51,8 @@ class TestMeteredPlanUniqueness(IntegrationTestCase):
 
 	def test_second_active_metered_plan_for_resource_rejected(self):
 		make_metered_plan(
-			"meter-uniq-1", resource_type="Transfer",
+			"meter-uniq-1",
+			resource_type="Transfer",
 			rates=[{"cluster": "", "currency": "INR", "rate": 0.5}],
 		)
 		dup = _metered_plan_doc("Duplicate Transfer meter", "Transfer")
@@ -60,7 +61,8 @@ class TestMeteredPlanUniqueness(IntegrationTestCase):
 
 	def test_inactive_duplicate_is_allowed(self):
 		make_metered_plan(
-			"meter-uniq-2", resource_type="Transfer",
+			"meter-uniq-2",
+			resource_type="Transfer",
 			rates=[{"cluster": "", "currency": "INR", "rate": 0.5}],
 		)
 		# An *inactive* second plan does not collide — only one may be active at a time.
@@ -70,12 +72,14 @@ class TestMeteredPlanUniqueness(IntegrationTestCase):
 
 	def test_different_resource_types_coexist(self):
 		make_metered_plan(
-			"meter-uniq-transfer", resource_type="Transfer",
+			"meter-uniq-transfer",
+			resource_type="Transfer",
 			rates=[{"cluster": "", "currency": "INR", "rate": 0.5}],
 		)
 		# A metered plan for a *different* resource is fine.
 		name = make_metered_plan(
-			"meter-uniq-tokens", resource_type="Tokens",
+			"meter-uniq-tokens",
+			resource_type="Tokens",
 			rates=[{"cluster": "", "currency": "INR", "rate": 5}],
 		)
 		self.assertTrue(frappe.get_doc("Plan", name).is_metered_single_resource())
@@ -108,10 +112,15 @@ class TestUnmodelledMeteredResource(IntegrationTestCase):
 
 	def _backup_meter(self, qty):
 		return {
-			"resource_id": self.RESOURCE, "resource_type": "Backup", "meter_type": "Gauge",
-			"period_start": "2026-06-01 00:00:00", "period_end": "2026-06-30 23:59:59",
-			"quantity": qty, "unit": "GB",
-			"idempotency_key": f"{self.RESOURCE}:Backup:2026-06-01", "status": "open",
+			"resource_id": self.RESOURCE,
+			"resource_type": "Backup",
+			"meter_type": "Gauge",
+			"period_start": "2026-06-01 00:00:00",
+			"period_end": "2026-06-30 23:59:59",
+			"quantity": qty,
+			"unit": "GB",
+			"idempotency_key": f"{self.RESOURCE}:Backup:2026-06-01",
+			"status": "open",
 		}
 
 	def test_overage_with_no_metered_plan_errors(self):
@@ -137,7 +146,8 @@ class TestFreeTierMeteredResource(IntegrationTestCase):
 		make_plan(self.PLAN, includes=[{"resource_type": "Transfer", "quantity": 0, "unit": "GB"}])
 		# A metered plan that DOES price Transfer — at a rate of 0 (free tier).
 		make_metered_plan(
-			"meter-freetier", resource_type="Transfer",
+			"meter-freetier",
+			resource_type="Transfer",
 			rates=[{"cluster": "", "currency": "INR", "rate": 0}],
 		)
 		self._purge()
@@ -155,10 +165,15 @@ class TestFreeTierMeteredResource(IntegrationTestCase):
 
 	def _transfer_meter(self, qty):
 		return {
-			"resource_id": self.RESOURCE, "resource_type": "Transfer", "meter_type": "Gauge",
-			"period_start": "2026-06-01 00:00:00", "period_end": "2026-06-30 23:59:59",
-			"quantity": qty, "unit": "GB",
-			"idempotency_key": f"{self.RESOURCE}:Transfer:2026-06-01", "status": "open",
+			"resource_id": self.RESOURCE,
+			"resource_type": "Transfer",
+			"meter_type": "Gauge",
+			"period_start": "2026-06-01 00:00:00",
+			"period_end": "2026-06-30 23:59:59",
+			"quantity": qty,
+			"unit": "GB",
+			"idempotency_key": f"{self.RESOURCE}:Transfer:2026-06-01",
+			"status": "open",
 		}
 
 	def test_zero_priced_overage_bills_a_zero_line(self):

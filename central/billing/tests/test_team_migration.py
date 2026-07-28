@@ -37,9 +37,7 @@ class TestTeamMigration(IntegrationTestCase):
 		self.slug = f"legacy-mig-{frappe.generate_hash(6)}"
 		# A real Team to hang valid docs off, then demote them to a legacy slug.
 		real_team = make_billing_team(make_user()).name
-		sub = frappe.get_doc({"doctype": "Subscription", "team": real_team}).insert(
-			ignore_permissions=True
-		)
+		sub = frappe.get_doc({"doctype": "Subscription", "team": real_team}).insert(ignore_permissions=True)
 		frappe.get_doc({"doctype": "Tax Profile", "team": real_team}).insert(
 			ignore_permissions=True
 		)  # field:team → name == real_team
@@ -51,9 +49,9 @@ class TestTeamMigration(IntegrationTestCase):
 			subscription.name == sub.name
 		).run()
 		tax_profile = frappe.qb.DocType("Tax Profile")
-		frappe.qb.update(tax_profile).set(tax_profile.name, self.slug).set(
-			tax_profile.team, self.slug
-		).where(tax_profile.name == real_team).run()
+		frappe.qb.update(tax_profile).set(tax_profile.name, self.slug).set(tax_profile.team, self.slug).where(
+			tax_profile.name == real_team
+		).run()
 		self.sub = sub.name
 
 	def test_slug_is_repointed_to_a_real_team(self):
@@ -67,9 +65,7 @@ class TestTeamMigration(IntegrationTestCase):
 		_run_migration()
 		team_name = frappe.db.get_value("Team", {"team_name": self.slug}, "name")
 
-		self.assertFalse(
-			frappe.db.exists("Tax Profile", self.slug), "slug-named tax profile should be gone"
-		)
+		self.assertFalse(frappe.db.exists("Tax Profile", self.slug), "slug-named tax profile should be gone")
 		self.assertTrue(frappe.db.exists("Tax Profile", team_name))
 		# the invariant code relies on: get_doc("Tax Profile", team) still works.
 		self.assertEqual(frappe.db.get_value("Tax Profile", team_name, "team"), team_name)

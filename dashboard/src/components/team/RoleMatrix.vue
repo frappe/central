@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Badge } from 'frappe-ui'
-import RoleRowActions from '@/components/team/RoleRowActions.vue'
-import { groupCapabilitiesByPlane } from '@/lib/capabilities'
-import type { CapabilityInfo, TeamRoleRow } from '@/types/api'
+import { computed } from "vue";
+import { Badge } from "frappe-ui";
+import RoleRowActions from "@/components/team/RoleRowActions.vue";
+import { groupCapabilitiesByPlane } from "@/lib/capabilities";
+import type { CapabilityInfo, TeamRoleRow } from "@/types/api";
 
 // Capability × role matrix: capabilities down the side (grouped by plane, each with
 // its plain-English meaning), roles across the top, a check where the role grants
@@ -11,25 +11,23 @@ import type { CapabilityInfo, TeamRoleRow } from '@/types/api'
 // side by side — far clearer than reading one role at a time. The capability column
 // is sticky horizontally and the role header sticky vertically so both stay in view.
 const props = defineProps<{
-	roles: TeamRoleRow[]
-	capabilities: CapabilityInfo[]
-	canManage: boolean
-	deletingName?: string
-}>()
+	roles: TeamRoleRow[];
+	capabilities: CapabilityInfo[];
+	canManage: boolean;
+	deletingName?: string;
+}>();
 
-const emit = defineEmits<{ delete: [role: TeamRoleRow] }>()
+const emit = defineEmits<{ delete: [role: TeamRoleRow] }>();
 
-const groups = computed(() => groupCapabilitiesByPlane(props.capabilities))
+const groups = computed(() => groupCapabilitiesByPlane(props.capabilities));
 
 // role name -> set of granted capabilities, for O(1) cell lookups.
 const grantedByRole = computed<Record<string, Set<string>>>(() =>
-	Object.fromEntries(
-		props.roles.map((role) => [role.name, new Set(role.capabilities)]),
-	),
-)
+	Object.fromEntries(props.roles.map((role) => [role.name, new Set(role.capabilities)]))
+);
 
 function grants(role: TeamRoleRow, capability: string): boolean {
-	return grantedByRole.value[role.name]?.has(capability) ?? false
+	return grantedByRole.value[role.name]?.has(capability) ?? false;
 }
 </script>
 
@@ -115,9 +113,7 @@ function grants(role: TeamRoleRow, capability: string): boolean {
 									stroke-linejoin="round"
 								/>
 							</svg>
-							<span v-else class="text-ink-gray-4" aria-label="not granted"
-								>–</span
-							>
+							<span v-else class="text-ink-gray-4" aria-label="not granted">–</span>
 						</td>
 					</tr>
 				</template>

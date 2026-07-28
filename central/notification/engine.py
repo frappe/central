@@ -75,13 +75,17 @@ def dispatch(
 			}
 		).insert(ignore_permissions=True)
 
-		frappe.publish_realtime(
-			f"team_notification:{team}", {"team": team}, after_commit=True
-		)
+		frappe.publish_realtime(f"team_notification:{team}", {"team": team}, after_commit=True)
 
-	email_result = _fan_out_emails(team, event, ctx, message=message,
-					reference_doctype=reference_doctype, reference_name=reference_name,
-					affected_user=affected_user)
+	email_result = _fan_out_emails(
+		team,
+		event,
+		ctx,
+		message=message,
+		reference_doctype=reference_doctype,
+		reference_name=reference_name,
+		affected_user=affected_user,
+	)
 
 	return {
 		"created": bool(doc),
@@ -121,20 +125,22 @@ def ensure_event_type(
 	"""
 	if frappe.db.exists("Notification Event Type", event_type):
 		return
-	frappe.get_doc({
-		"doctype": "Notification Event Type",
-		"event_type": event_type,
-		"category": category,
-		"severity": severity,
-		"required_cap": required_cap,
-		"in_app_title": in_app_title,
-		"in_app_body": in_app_body,
-		"action_label": action_label,
-		"action_route": action_route,
-		"direct_recipients": direct_recipients,
-		"create_in_app": int(create_in_app),
-		"email_template": email_template,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Notification Event Type",
+			"event_type": event_type,
+			"category": category,
+			"severity": severity,
+			"required_cap": required_cap,
+			"in_app_title": in_app_title,
+			"in_app_body": in_app_body,
+			"action_label": action_label,
+			"action_route": action_route,
+			"direct_recipients": direct_recipients,
+			"create_in_app": int(create_in_app),
+			"email_template": email_template,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _get_event_type(event_type: str):
@@ -142,9 +148,19 @@ def _get_event_type(event_type: str):
 	return frappe.db.get_value(
 		"Notification Event Type",
 		event_type,
-		["name", "category", "severity", "required_cap", "direct_recipients",
-		 "email_template", "in_app_title", "in_app_body", "action_label", "action_route",
-		 "create_in_app"],
+		[
+			"name",
+			"category",
+			"severity",
+			"required_cap",
+			"direct_recipients",
+			"email_template",
+			"in_app_title",
+			"in_app_body",
+			"action_label",
+			"action_route",
+			"create_in_app",
+		],
 		as_dict=True,
 	)
 
@@ -169,10 +185,21 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 	return frappe.render_template(template_str, ctx)
 
 
+DEDUP_WINDOW_MINUTES = 60
+
+
 def _is_duplicate(team, event_type, reference_name) -> bool:
-	"""True if an unread Team Notification with the same event_type + reference_name exists."""
+	"""True if a Team Notification with the same event_type + reference_name
+	was created within the dedup window (default 60 minutes).
+
+	Read state is per-user (Notification Read) so the old ``is_read`` flag
+	cannot gate dedup.  Instead we use a time window: the same event for the
+	same document is suppressed for *DEDUP_WINDOW_MINUTES* regardless of read
+	state.  After the window elapses a new notification is allowed.
+	"""
 	if not reference_name:
 		return False
+	cutoff = frappe.utils.add_to_date(None, minutes=-DEDUP_WINDOW_MINUTES, as_datetime=True)
 	return bool(
 		frappe.db.exists(
 			"Team Notification",
@@ -180,14 +207,15 @@ def _is_duplicate(team, event_type, reference_name) -> bool:
 				"team": team,
 				"event_type": event_type,
 				"reference_name": reference_name,
-				"is_read": 0,
+				"creation": [">=", cutoff],
 			},
 		)
 	)
 
 
-def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None,
-					reference_name=None, affected_user=None) -> dict:
+def _fan_out_emails(
+	team, event, ctx, *, message=None, reference_doctype=None, reference_name=None, affected_user=None
+) -> dict:
 	"""Send individual emails to each qualified team member.
 
 	Members are qualified by:
@@ -208,9 +236,15 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None,
 
 	if event.direct_recipients == "Affected User":
 		if affected_user and _email_enabled(affected_user, team, event.category):
-			ok = _send_member_email(affected_user, team, event, ctx,
-								   message=message, reference_doctype=reference_doctype,
-								   reference_name=reference_name)
+			ok = _send_member_email(
+				affected_user,
+				team,
+				event,
+				ctx,
+				message=message,
+				reference_doctype=reference_doctype,
+				reference_name=reference_name,
+			)
 			result["attempted"] = 1
 			if ok:
 				result["sent"] = 1
@@ -230,9 +264,15 @@ def _fan_out_emails(team, event, ctx, *, message=None, reference_doctype=None,
 			continue
 
 		result["attempted"] += 1
-		ok = _send_member_email(member_user, team, event, ctx,
-							   message=message, reference_doctype=reference_doctype,
-							   reference_name=reference_name)
+		ok = _send_member_email(
+			member_user,
+			team,
+			event,
+			ctx,
+			message=message,
+			reference_doctype=reference_doctype,
+			reference_name=reference_name,
+		)
 		if ok:
 			result["sent"] += 1
 		else:
@@ -263,8 +303,9 @@ def _email_enabled(user: str, team: str, category: str) -> bool:
 	return pref is None or bool(pref)
 
 
-def _send_member_email(user, team, event, ctx, *, message=None,
-					   reference_doctype=None, reference_name=None) -> bool:
+def _send_member_email(
+	user, team, event, ctx, *, message=None, reference_doctype=None, reference_name=None
+) -> bool:
 	"""Render and queue a single email for *user*.
 
 	Best-effort: if the outgoing email account is not configured the
@@ -282,6 +323,7 @@ def _send_member_email(user, team, event, ctx, *, message=None,
 			from frappe.email.doctype.email_template.email_template import (
 				get_email_template,
 			)
+
 			rendered = get_email_template(event.email_template, ctx)
 			subject = rendered["subject"]
 			body = rendered["message"]

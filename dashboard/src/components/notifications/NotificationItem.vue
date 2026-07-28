@@ -1,51 +1,45 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { NotificationSeverity, TeamNotification } from '@/types/billing'
+import { computed } from "vue";
+import type { NotificationSeverity, TeamNotification } from "@/types/billing";
 
 // One feed row, shared by the bell dropdown (compact) and the /notifications page.
 // Plain list row: no background, no border — unread is the blue dot by the time.
 // Category is not shown here; it only drives the page's filter tabs.
 const props = defineProps<{
-	notification: TeamNotification
-	compact?: boolean
-}>()
-const emit = defineEmits<{ act: []; read: [] }>()
+	notification: TeamNotification;
+	compact?: boolean;
+}>();
+const emit = defineEmits<{ act: []; read: [] }>();
 
-const SEVERITY: Record<NotificationSeverity, { icon: string; color: string }> =
-	{
-		Error: { icon: 'lucide-alert-circle', color: 'text-[var(--ink-red-8)]' },
-		Warning: { icon: 'lucide-alert-triangle', color: 'text-ink-amber-3' },
-		Success: { icon: 'lucide-check-circle-2', color: 'text-ink-green-3' },
-		Info: { icon: 'lucide-info', color: 'text-ink-blue-3' },
-	}
+const SEVERITY: Record<NotificationSeverity, { icon: string; color: string }> = {
+	Error: { icon: "lucide-alert-circle", color: "text-[var(--ink-red-8)]" },
+	Warning: { icon: "lucide-alert-triangle", color: "text-ink-amber-3" },
+	Success: { icon: "lucide-check-circle-2", color: "text-ink-green-3" },
+	Info: { icon: "lucide-info", color: "text-ink-blue-3" },
+};
 
-const look = computed(
-	() => SEVERITY[props.notification.severity] ?? SEVERITY.Info,
-)
+const look = computed(() => SEVERITY[props.notification.severity] ?? SEVERITY.Info);
 
-const when = computed(() => timeAgo(props.notification.creation))
+const when = computed(() => timeAgo(props.notification.creation));
 
 function timeAgo(ts: string): string {
-	const then = new Date(ts.replace(' ', 'T')).getTime()
-	if (Number.isNaN(then)) return ''
-	const secs = Math.max(0, Math.floor((Date.now() - then) / 1000))
-	if (secs < 60) return 'just now'
-	const mins = Math.floor(secs / 60)
-	if (mins < 60) return `${mins}m ago`
-	const hrs = Math.floor(mins / 60)
-	if (hrs < 24) return `${hrs}h ago`
-	const days = Math.floor(hrs / 24)
-	if (days < 30) return `${days}d ago`
-	return new Date(then).toLocaleDateString()
+	const then = new Date(ts.replace(" ", "T")).getTime();
+	if (Number.isNaN(then)) return "";
+	const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
+	if (secs < 60) return "just now";
+	const mins = Math.floor(secs / 60);
+	if (mins < 60) return `${mins}m ago`;
+	const hrs = Math.floor(mins / 60);
+	if (hrs < 24) return `${hrs}h ago`;
+	const days = Math.floor(hrs / 24);
+	if (days < 30) return `${days}d ago`;
+	return new Date(then).toLocaleDateString();
 }
 </script>
 
 <template>
 	<div class="flex gap-3 py-3" :class="compact ? 'px-3' : ''">
-		<span
-			:class="[look.icon, look.color, 'mt-0.5 size-4 shrink-0']"
-			aria-hidden="true"
-		/>
+		<span :class="[look.icon, look.color, 'mt-0.5 size-4 shrink-0']" aria-hidden="true" />
 
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2">
@@ -55,9 +49,9 @@ function timeAgo(ts: string): string {
 				>
 					{{ notification.title }}
 				</p>
-				<span class="shrink-0 whitespace-nowrap text-p-sm text-ink-gray-4"
-					>{{ when }}</span
-				>
+				<span class="shrink-0 whitespace-nowrap text-p-sm text-ink-gray-4">{{
+					when
+				}}</span>
 				<span
 					v-if="!notification.is_read"
 					class="size-1.5 shrink-0 rounded-full bg-surface-blue-5"

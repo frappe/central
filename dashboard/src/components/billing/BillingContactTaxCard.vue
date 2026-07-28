@@ -1,36 +1,29 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Button, Badge, LoadingText } from 'frappe-ui'
-import BillingCard from '@/components/billing/BillingCard.vue'
-import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useCapabilities } from '@/composables/useCapabilities'
+import { computed } from "vue";
+import { Button, Badge, LoadingText } from "frappe-ui";
+import BillingCard from "@/components/billing/BillingCard.vue";
+import { useBillingOverview } from "@/composables/useBillingOverview";
+import { useCapabilities } from "@/composables/useCapabilities";
 
 // Billing contact & tax — one card combining the invoice contact (email +
 // address) and tax details (region + GSTIN). Edit opens the shared profile dialog
 // (owned by the page).
-defineEmits<{ edit: [] }>()
-const { profile } = useBillingOverview()
-const { canManageBilling } = useCapabilities()
+defineEmits<{ edit: [] }>();
+const { profile } = useBillingOverview();
+const { canManageBilling } = useCapabilities();
 
-const loading = computed(() => profile.loading && !profile.data)
-const email = computed(() => profile.data?.email || '')
+const loading = computed(() => profile.loading && !profile.data);
+const email = computed(() => profile.data?.email || "");
 const address = computed(() => {
-	const p = profile.data
-	if (!p) return ''
-	return [
-		p.address_line1,
-		p.address_line2,
-		p.city,
-		p.state,
-		p.country,
-		p.pincode,
-	]
+	const p = profile.data;
+	if (!p) return "";
+	return [p.address_line1, p.address_line2, p.city, p.state, p.country, p.pincode]
 		.filter(Boolean)
-		.join(', ')
-})
-const country = computed(() => profile.data?.country || '')
-const gstin = computed(() => profile.data?.gstin || '')
-const isIndia = computed(() => country.value === 'India')
+		.join(", ");
+});
+const country = computed(() => profile.data?.country || "");
+const gstin = computed(() => profile.data?.gstin || "");
+const isIndia = computed(() => country.value === "India");
 </script>
 
 <template>
@@ -57,25 +50,19 @@ const isIndia = computed(() => country.value === 'India')
 					class="truncate text-right"
 					:class="email ? 'text-ink-gray-8' : 'text-ink-gray-5'"
 				>
-					{{ email || 'Not set' }}
+					{{ email || "Not set" }}
 				</dd>
 			</div>
 			<div class="flex justify-between gap-3">
 				<dt class="shrink-0 text-ink-gray-5">Billing address</dt>
-				<dd
-					class="text-right"
-					:class="address ? 'text-ink-gray-8' : 'text-ink-gray-5'"
-				>
-					{{ address || 'No address on file' }}
+				<dd class="text-right" :class="address ? 'text-ink-gray-8' : 'text-ink-gray-5'">
+					{{ address || "No address on file" }}
 				</dd>
 			</div>
 			<div class="flex justify-between gap-3">
 				<dt class="text-ink-gray-5">Tax region</dt>
-				<dd
-					class="text-right"
-					:class="country ? 'text-ink-gray-8' : 'text-ink-gray-5'"
-				>
-					{{ country || 'Not set' }}
+				<dd class="text-right" :class="country ? 'text-ink-gray-8' : 'text-ink-gray-5'">
+					{{ country || "Not set" }}
 				</dd>
 			</div>
 			<div v-if="isIndia" class="flex items-center justify-between gap-3">

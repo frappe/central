@@ -72,7 +72,9 @@ def _rename_permission_probes() -> None:
 	if not frappe.db.has_table("IAM Permission Probe"):
 		return
 	for old, new in RENAME.items():
-		frappe.db.set_value("IAM Permission Probe", {"capability": old}, "capability", new, update_modified=False)
+		frappe.db.set_value(
+			"IAM Permission Probe", {"capability": old}, "capability", new, update_modified=False
+		)
 
 
 def _drop_orphan_capabilities() -> None:

@@ -6,16 +6,13 @@
 // `open` (v-model) tracks whether a row is selected, so the parent can clear it.
 // The panel owns its own dismiss control: "← Back" on mobile, a close (✕) on
 // desktop — the list underneath stays put, so closing is always one click away.
-const open = defineModel<boolean>('open', { default: false })
+const open = defineModel<boolean>("open", { default: false });
 </script>
 
 <template>
 	<div class="flex min-h-0 flex-1">
 		<!-- List -->
-		<div
-			class="min-w-0 flex-1 overflow-y-auto"
-			:class="open ? 'hidden sm:block' : 'block'"
-		>
+		<div class="min-w-0 flex-1 overflow-y-auto" :class="open ? 'hidden sm:block' : 'block'">
 			<slot name="list" />
 		</div>
 

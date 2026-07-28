@@ -24,12 +24,31 @@ class BillingTestCase(IntegrationTestCase):
 	# raw deletes (frappe.db.delete) need no dependency ordering; child rows (e.g.
 	# Team Member) are cleared via their parent below.
 	_TRACKED = (
-		"Payment Attempt", "Refund", "Credit Ledger Entry", "Credit Wallet",
-		"Invoice", "Subscription Change", "Subscription", "Gateway Customer",
-		"Entitlement Token", "Commitment", "Usage Rollup", "Payment Method",
-		"Tax Profile", "Billing Profile", "Team Invitation", "Team Role",
-		"Catalog Rate", "Plan", "Asset", "Team", "Atlas Instance", "Region", "User",
-		"Webhook Event", "Notification Log",
+		"Payment Attempt",
+		"Refund",
+		"Credit Ledger Entry",
+		"Credit Wallet",
+		"Invoice",
+		"Subscription Change",
+		"Subscription",
+		"Gateway Customer",
+		"Entitlement Token",
+		"Commitment",
+		"Usage Rollup",
+		"Payment Method",
+		"Tax Profile",
+		"Billing Profile",
+		"Team Invitation",
+		"Team Role",
+		"Catalog Rate",
+		"Plan",
+		"Asset",
+		"Team",
+		"Atlas Instance",
+		"Region",
+		"User",
+		"Webhook Event",
+		"Notification Log",
 	)
 
 	def run(self, result=None):
@@ -52,12 +71,23 @@ class BillingTestCase(IntegrationTestCase):
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist the sweep past a test's own commit
 
+
 # frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to
 # execute an enqueued job synchronously — dropping the queue-control kwargs and calling
 # the target with the real ones. Usage: patch("frappe.enqueue", side_effect=run_enqueued_inline).
 _ENQUEUE_CONTROL_KWARGS = (
-	"queue", "timeout", "enqueue_after_commit", "job_id", "at_front", "is_async", "now",
-	"deduplicate", "event", "on_success", "on_failure", "job_name",
+	"queue",
+	"timeout",
+	"enqueue_after_commit",
+	"job_id",
+	"at_front",
+	"is_async",
+	"now",
+	"deduplicate",
+	"event",
+	"on_success",
+	"on_failure",
+	"job_name",
 )
 
 
@@ -65,6 +95,7 @@ def run_enqueued_inline(method, **kwargs):
 	for control in _ENQUEUE_CONTROL_KWARGS:
 		kwargs.pop(control, None)
 	return method(**kwargs)
+
 
 DEFAULT_RATES = [
 	{"cluster": "", "currency": "USD", "rate": 40},
@@ -241,10 +272,17 @@ def complete_billing_profile(team, currency="INR"):
 	bypassing the API's gateway-supported-currency check, so it works regardless of
 	which gateways a given test has configured."""
 	values = {
-		"doctype": "Billing Profile", "team": team, "currency": currency,
-		"legal_name": f"{team} Ltd", "email": "billing@test.example", "phone": "9999999999",
-		"address_line1": "1 Test Street", "city": "Pune",
-		"state": "Maharashtra", "country": "India", "pincode": "411001",
+		"doctype": "Billing Profile",
+		"team": team,
+		"currency": currency,
+		"legal_name": f"{team} Ltd",
+		"email": "billing@test.example",
+		"phone": "9999999999",
+		"address_line1": "1 Test Street",
+		"city": "Pune",
+		"state": "Maharashtra",
+		"country": "India",
+		"pincode": "411001",
 	}
 	if frappe.db.exists("Billing Profile", team):
 		doc = frappe.get_doc("Billing Profile", team)
@@ -276,8 +314,9 @@ def make_billing_subscription(team, cluster, plan, start_date=None, clear_change
 	return sub.name
 
 
-def seed_running_resource(team, resource_id, cluster, plan, rate=1000, currency="INR",
-						  effective_at="2026-06-01 00:00:00"):
+def seed_running_resource(
+	team, resource_id, cluster, plan, rate=1000, currency="INR", effective_at="2026-06-01 00:00:00"
+):
 	"""Seed a provisioned, running resource on the Subscription Change ledger (ADR 0010):
 	its Asset (named by `resource_id`) + Subscription + an open `Created` segment at
 	`rate`/`currency`. The ledger replacement for the retired price-lock event seeding
@@ -311,9 +350,9 @@ def set_team_tier(team, level="t1", max_spend=None, manual_override=1):
 	exists; an explicit `max_spend` is stored as a bespoke `override_max_spend` so
 	get_team_caps returns exactly it regardless of the level's currency thresholds."""
 	if not frappe.db.exists("Billing Profile", team):
-		frappe.get_doc(
-			{"doctype": "Billing Profile", "team": team, "currency": "INR"}
-		).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "Billing Profile", "team": team, "currency": "INR"}).insert(
+			ignore_permissions=True
+		)
 	values = {
 		"trust_tier_level": level,
 		"trust_tier": level,

@@ -16,20 +16,31 @@ frappe.ui.form.on("Asset", {
 				.then((r) => {
 					if (r.exc) return;
 					frappe.show_alert(
-						{ message: __("{0} requested (task {1})", [label, r.message.task]), indicator },
-						5,
+						{
+							message: __("{0} requested (task {1})", [label, r.message.task]),
+							indicator,
+						},
+						5
 					);
 				});
 
-		frm.add_custom_button(__("Start"), () => run(__("Start"), "start_server", "green"), __("Server"));
-		frm.add_custom_button(__("Stop"), () => run(__("Stop"), "stop_server", "orange"), __("Server"));
+		frm.add_custom_button(
+			__("Start"),
+			() => run(__("Start"), "start_server", "green"),
+			__("Server")
+		);
+		frm.add_custom_button(
+			__("Stop"),
+			() => run(__("Stop"), "stop_server", "orange"),
+			__("Server")
+		);
 		frm.add_custom_button(
 			__("Terminate"),
 			() =>
 				frappe.confirm(__("Terminate {0}?", [frm.doc.resource_id]), () =>
-					run(__("Terminate"), "terminate_server", "red"),
+					run(__("Terminate"), "terminate_server", "red")
 				),
-			__("Server"),
+			__("Server")
 		);
 	},
 });

@@ -9,7 +9,6 @@ from central.iam import can, user_has_operator_bypass
 
 
 class Team(Document):
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -66,6 +65,7 @@ class Team(Document):
 		self.save()
 
 		from central.notification.engine import dispatch
+
 		dispatch(
 			team=self.name,
 			event_type="role_change",
@@ -112,6 +112,7 @@ class Team(Document):
 		self.save(ignore_permissions=True)
 
 		from central.notification.engine import dispatch
+
 		dispatch(
 			team=self.name,
 			event_type="member_joined",

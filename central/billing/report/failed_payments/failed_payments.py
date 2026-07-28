@@ -65,9 +65,18 @@ def _failed_attempts(filters: dict) -> list[dict]:
 		"Payment Attempt",
 		filters=conditions,
 		fields=[
-			"name", "initiated_at", "team", "invoice", "gateway", "payment_method",
-			"amount", "currency", "retry_number",
-			"failure_code", "decline_code", "failure_reason",
+			"name",
+			"initiated_at",
+			"team",
+			"invoice",
+			"gateway",
+			"payment_method",
+			"amount",
+			"currency",
+			"retry_number",
+			"failure_code",
+			"decline_code",
+			"failure_reason",
 		],
 		order_by="initiated_at desc",
 	)
@@ -75,17 +84,35 @@ def _failed_attempts(filters: dict) -> list[dict]:
 
 def _columns() -> list[dict]:
 	return [
-		{"label": _("Invoice"), "fieldname": "invoice", "fieldtype": "Link", "options": "Invoice", "width": 150},
+		{
+			"label": _("Invoice"),
+			"fieldname": "invoice",
+			"fieldtype": "Link",
+			"options": "Invoice",
+			"width": 150,
+		},
 		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 140},
 		{"label": _("Last Failed At"), "fieldname": "initiated_at", "fieldtype": "Datetime", "width": 165},
 		{"label": _("Attempts"), "fieldname": "attempts", "fieldtype": "Int", "width": 90},
 		{"label": _("Amount"), "fieldname": "amount", "fieldtype": "Float", "width": 100},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 80},
-		{"label": _("Gateway"), "fieldname": "gateway", "fieldtype": "Link", "options": "Payment Gateway", "width": 120},
+		{
+			"label": _("Gateway"),
+			"fieldname": "gateway",
+			"fieldtype": "Link",
+			"options": "Payment Gateway",
+			"width": 120,
+		},
 		{"label": _("Failure Code"), "fieldname": "failure_code", "fieldtype": "Data", "width": 150},
 		{"label": _("Decline Code"), "fieldname": "decline_code", "fieldtype": "Data", "width": 160},
 		{"label": _("Reason"), "fieldname": "failure_reason", "fieldtype": "Data", "width": 280},
-		{"label": _("Latest Attempt"), "fieldname": "name", "fieldtype": "Link", "options": "Payment Attempt", "width": 150},
+		{
+			"label": _("Latest Attempt"),
+			"fieldname": "name",
+			"fieldtype": "Link",
+			"options": "Payment Attempt",
+			"width": 150,
+		},
 	]
 
 
@@ -103,8 +130,10 @@ def _reason_chart(rows: list[dict]) -> dict | None:
 		counts[_reason(r)] = counts.get(_reason(r), 0) + 1
 	top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:10]
 	return {
-		"data": {"labels": [k for k, _c in top],
-				 "datasets": [{"name": _("Failures"), "values": [c for _k, c in top]}]},
+		"data": {
+			"labels": [k for k, _c in top],
+			"datasets": [{"name": _("Failures"), "values": [c for _k, c in top]}],
+		},
 		"type": "bar",
 	}
 
@@ -117,9 +146,9 @@ def _summary(rows: list[dict], attempts: list[dict]) -> list[dict]:
 	# currency — INR and USD don't sum together.
 	amount_by_currency: dict[str, float] = {}
 	for r in rows:
-		amount_by_currency[r.get("currency") or "?"] = (
-			amount_by_currency.get(r.get("currency") or "?", 0.0) + flt(r.get("amount"))
-		)
+		amount_by_currency[r.get("currency") or "?"] = amount_by_currency.get(
+			r.get("currency") or "?", 0.0
+		) + flt(r.get("amount"))
 	# Top reason counts distinct invoices (their latest failure), consistent with the rows.
 	counts: dict[str, int] = {}
 	for r in rows:
@@ -131,8 +160,14 @@ def _summary(rows: list[dict], attempts: list[dict]) -> list[dict]:
 		{"label": _("Failed Attempts"), "value": len(attempts), "datatype": "Int", "indicator": "orange"},
 	]
 	for currency in sorted(amount_by_currency):
-		summary.append({"label": _("Not Collected ({0})").format(currency),
-						"value": flt(amount_by_currency[currency], 2), "datatype": "Float", "indicator": "red"})
+		summary.append(
+			{
+				"label": _("Not Collected ({0})").format(currency),
+				"value": flt(amount_by_currency[currency], 2),
+				"datatype": "Float",
+				"indicator": "red",
+			}
+		)
 	summary.append({"label": _("Teams Affected"), "value": teams, "datatype": "Int", "indicator": "orange"})
 	summary.append({"label": _("Top Reason"), "value": f"{top_reason} ({top_count})", "datatype": "Data"})
 	return summary

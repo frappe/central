@@ -1,29 +1,29 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { Popover } from 'frappe-ui'
-import { useNotifications } from '@/composables/useNotifications'
-import NotificationItem from '@/components/notifications/NotificationItem.vue'
-import type { TeamNotification } from '@/types/billing'
+import { ref, computed } from "vue";
+import { useRouter } from "vue-router";
+import { Popover } from "frappe-ui";
+import { useNotifications } from "@/composables/useNotifications";
+import NotificationItem from "@/components/notifications/NotificationItem.vue";
+import type { TeamNotification } from "@/types/billing";
 
 // Topbar bell: an unread badge + a dropdown of the most recent items with inline
 // actions. The full history + preferences live on the /notifications page.
-const { items, unread, markAsRead, markAllAsRead } = useNotifications()
-const router = useRouter()
-const open = ref(false)
+const { items, unread, markAsRead, markAllAsRead } = useNotifications();
+const router = useRouter();
+const open = ref(false);
 
-const recent = computed<TeamNotification[]>(() => items.value.slice(0, 6))
-const badge = computed(() => (unread.value > 9 ? '9+' : String(unread.value)))
+const recent = computed<TeamNotification[]>(() => items.value.slice(0, 6));
+const badge = computed(() => (unread.value > 9 ? "9+" : String(unread.value)));
 
 async function onAct(n: TeamNotification): Promise<void> {
-	if (!n.is_read) await markAsRead(n.name)
-	open.value = false
-	if (n.action_route) router.push(n.action_route)
+	if (!n.is_read) await markAsRead(n.name);
+	open.value = false;
+	if (n.action_route) router.push(n.action_route);
 }
 
 function seeAll(): void {
-	open.value = false
-	router.push('/notifications')
+	open.value = false;
+	router.push("/notifications");
 }
 </script>
 
@@ -50,9 +50,7 @@ function seeAll(): void {
 				<header
 					class="flex items-center justify-between border-b border-outline-gray-1 px-3 py-2"
 				>
-					<span class="text-base font-semibold text-ink-gray-9"
-						>Notifications</span
-					>
+					<span class="text-base font-semibold text-ink-gray-9">Notifications</span>
 					<button
 						v-if="unread > 0"
 						class="text-p-sm text-ink-gray-6 hover:text-ink-gray-9"

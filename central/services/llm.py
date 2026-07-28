@@ -40,9 +40,9 @@ def resolve_provision_options(plan: str | None) -> dict:
 		# that resolves to zero models is a misconfiguration — refuse, never grant all.
 		if not models:
 			frappe.throw(
-				frappe._("Plan {0} grants tiers ({1}) with no published models. Fix the model catalogue.").format(
-					plan, ", ".join(tiers)
-				)
+				frappe._(
+					"Plan {0} grants tiers ({1}) with no published models. Fix the model catalogue."
+				).format(plan, ", ".join(tiers))
 			)
 		allowed_models = ",".join(sorted(models))
 
@@ -95,7 +95,13 @@ def _upsert_model(model_key: str, display_name: str | None, exists: bool) -> Non
 		return
 
 	frappe.get_doc(
-		{"doctype": "LLM Model", "model_key": model_key, "display_name": display_name, "tier": "Balanced", "is_published": 1}
+		{
+			"doctype": "LLM Model",
+			"model_key": model_key,
+			"display_name": display_name,
+			"tier": "Balanced",
+			"is_published": 1,
+		}
 	).insert(ignore_permissions=True)
 
 
@@ -109,10 +115,15 @@ def _allowed_tiers(plan: str | None) -> list[str]:
 def _token_limit(plan: str | None) -> int | None:
 	# Prepaid plans hard-cap at the bundled allowance; postpaid bills overage, no cap.
 	category = frappe.db.get_value("Plan", plan, "category", cache=True) if plan else None
-	if not category or frappe.db.get_value("Plan Category", category, "settlement_mode", cache=True) != "Prepaid Pack":
+	if (
+		not category
+		or frappe.db.get_value("Plan Category", category, "settlement_mode", cache=True) != "Prepaid Pack"
+	):
 		return None
 
-	allowance = frappe.db.get_value("Plan Includes", {"parent": plan, "resource_type": _TOKEN_RESOURCE}, "quantity")
+	allowance = frappe.db.get_value(
+		"Plan Includes", {"parent": plan, "resource_type": _TOKEN_RESOURCE}, "quantity"
+	)
 	return int(allowance) if allowance else None
 
 

@@ -32,6 +32,4 @@ class UserNotificationPreference(Document):
 			},
 		)
 		if existing:
-			frappe.throw(
-				f"Preference for {self.category} already exists on this team"
-			)
+			frappe.throw(f"Preference for {self.category} already exists on this team")

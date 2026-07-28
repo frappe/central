@@ -41,28 +41,55 @@ class AdminTestBase(IntegrationTestCase):
 			frappe.db.delete("Asset", {"team": team})
 		frappe.db.commit()
 
-	def _invoice(self, team, total, status="Paid", itype="Billable", cluster="ap-south-1",
-				 due_date=None, paid=None):
-		return frappe.get_doc(
-			{"doctype": "Invoice", "team": team, "invoice_type": itype, "status": status,
-			 "period_start": "2099-01-01", "period_end": "2099-01-31", "currency": "INR",
-			 "subtotal": total, "total": total, "amount_paid": paid if paid is not None else (total if status == "Paid" else 0),
-			 "due_date": due_date,
-			 "items": [{"resource_type": "bundle", "plan": PLAN, "cluster": cluster, "rate": total, "days": 30, "amount": total}]}
-		).insert(ignore_permissions=True).name
+	def _invoice(
+		self, team, total, status="Paid", itype="Billable", cluster="ap-south-1", due_date=None, paid=None
+	):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": team,
+					"invoice_type": itype,
+					"status": status,
+					"period_start": "2099-01-01",
+					"period_end": "2099-01-31",
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"amount_paid": paid if paid is not None else (total if status == "Paid" else 0),
+					"due_date": due_date,
+					"items": [
+						{
+							"resource_type": "bundle",
+							"plan": PLAN,
+							"cluster": cluster,
+							"rate": total,
+							"days": 30,
+							"amount": total,
+						}
+					],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 
 class TestAdminGating(AdminTestBase):
 	def test_non_admin_gets_403(self):
 		user = f"adm-{frappe.generate_hash(6)}@example.com"
-		frappe.get_doc({"doctype": "User", "email": user, "first_name": "X", "send_welcome_email": 0}).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "User", "email": user, "first_name": "X", "send_welcome_email": 0}).insert(
+			ignore_permissions=True
+		)
 		frappe.set_user(user)
 		with self.assertRaises(frappe.PermissionError):
 			admin.get_summary()
 
 	def test_credit_adjustment_is_operator_only(self):
 		user = f"adm-{frappe.generate_hash(6)}@example.com"
-		frappe.get_doc({"doctype": "User", "email": user, "first_name": "X", "send_welcome_email": 0}).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "User", "email": user, "first_name": "X", "send_welcome_email": 0}).insert(
+			ignore_permissions=True
+		)
 		frappe.set_user(user)
 		with self.assertRaises(frappe.PermissionError):
 			admin.adjust_team_credits(TEAM_A, 100, "Credit", note="nope")
@@ -87,7 +114,9 @@ class TestAggregates(AdminTestBase):
 	def test_cluster_and_team_breakdown(self):
 		self._invoice(TEAM_A, 1000, cluster="ap-south-1")
 		self._invoice(TEAM_B, 400, cluster="us-east-1")
-		clusters = {r["cluster"]: r["amount"] for r in admin.get_cluster_breakdown("2099-01-01", "2099-01-31")}
+		clusters = {
+			r["cluster"]: r["amount"] for r in admin.get_cluster_breakdown("2099-01-01", "2099-01-31")
+		}
 		self.assertEqual(clusters["ap-south-1"], 1000)
 		self.assertEqual(clusters["us-east-1"], 400)
 		teams = {r["team"]: r["amount"] for r in admin.get_team_breakdown("2099-01-01", "2099-01-31")}
@@ -110,9 +139,17 @@ class TestPanels(AdminTestBase):
 			[("Captured", None), ("Captured", None), ("Failed", "card_declined")]
 		):
 			frappe.get_doc(
-				{"doctype": "Payment Attempt", "team": TEAM_A, "invoice": inv, "gateway": None,
-				 "amount": 100, "status": status, "failure_code": code, "retry_number": retry,
-				 "initiated_at": "2099-01-10 00:00:00"}
+				{
+					"doctype": "Payment Attempt",
+					"team": TEAM_A,
+					"invoice": inv,
+					"gateway": None,
+					"amount": 100,
+					"status": status,
+					"failure_code": code,
+					"retry_number": retry,
+					"initiated_at": "2099-01-10 00:00:00",
+				}
 			).insert(ignore_permissions=True)
 		out = admin.get_payment_analytics("2099-01-01", "2099-01-31")
 		gw = out["by_gateway"]["unknown"]
@@ -155,8 +192,12 @@ class TestMetricsReports(AdminTestBase):
 	def test_metrics_counts_and_mrr(self):
 		from central.billing.catalog import subscriptions
 
-		subscriptions.create_subscription(team=TEAM_A, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly")
-		sub_b = subscriptions.create_subscription(team=TEAM_B, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly")
+		subscriptions.create_subscription(
+			team=TEAM_A, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly"
+		)
+		sub_b = subscriptions.create_subscription(
+			team=TEAM_B, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly"
+		)
 		subscriptions.set_standing(sub_b.name, "Past Due")
 
 		m = admin.get_metrics()

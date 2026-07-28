@@ -41,8 +41,13 @@ def _ensure_tier_level(name):
 	if not frappe.db.exists("Trust Tier Level", name):
 		frappe.get_doc(
 			{
-				"doctype": "Trust Tier Level", "__newname": name, "tier": name,
-				"sequence": 1, "is_default": 0, "max_resource_count": 50, "min_paid_invoices": 0,
+				"doctype": "Trust Tier Level",
+				"__newname": name,
+				"tier": name,
+				"sequence": 1,
+				"is_default": 0,
+				"max_resource_count": 50,
+				"min_paid_invoices": 0,
 				"thresholds": [{"currency": "INR", "max_spend": 100000, "min_cumulative_paid": 0}],
 			}
 		).insert(ignore_permissions=True)

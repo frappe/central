@@ -17,13 +17,17 @@ function enroll(frm) {
 	}
 
 	frappe.prompt(
-		{ fieldname: "bootstrap_secret", label: __("Bootstrap Secret"), fieldtype: "Password", reqd: 1 },
+		{
+			fieldname: "bootstrap_secret",
+			label: __("Bootstrap Secret"),
+			fieldtype: "Password",
+			reqd: 1,
+		},
 		({ bootstrap_secret }) => {
-			frm.call("enroll", { bootstrap_secret })
-				.then(() => {
-					frappe.show_alert({ message: __("Enrolled and activated."), indicator: "green" });
-					frm.reload_doc();
-				});
+			frm.call("enroll", { bootstrap_secret }).then(() => {
+				frappe.show_alert({ message: __("Enrolled and activated."), indicator: "green" });
+				frm.reload_doc();
+			});
 		},
 		__("Enroll {0}", [frm.doc.service]),
 		__("Enroll")

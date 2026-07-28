@@ -1,24 +1,18 @@
 <script setup lang="ts">
-import { useSession } from '@/composables/useSession'
-import { useAppMenu } from '@/composables/useAppMenu'
-import { Button } from 'frappe-ui'
+import { useSession } from "@/composables/useSession";
+import { useAppMenu } from "@/composables/useAppMenu";
+import { Button } from "frappe-ui";
 
-const { activeTeamLabel } = useSession()
-const {
-	currentUser,
-	themeOptions,
-	currentTheme,
-	setTheme,
-	changeTeamOpen,
-	logoutAndRedirect,
-} = useAppMenu()
+const { activeTeamLabel } = useSession();
+const { currentUser, themeOptions, currentTheme, setTheme, changeTeamOpen, logoutAndRedirect } =
+	useAppMenu();
 </script>
 
 <template>
-	<div class="m-2  divide-y divide-outline-gray-1 rounded border">
+	<div class="m-2 divide-y divide-outline-gray-1 rounded border">
 		<Button
 			variant="ghost"
-			class=" w-full !justify-between text-base"
+			class="w-full !justify-between text-base"
 			size="lg"
 			@click="changeTeamOpen = true"
 		>
@@ -33,9 +27,7 @@ const {
 
 		<div class="flex items-center justify-between gap-4 px-4 py-3">
 			<span class="text-ink-gray-8">Account</span>
-			<span class="truncate text-p-base text-ink-gray-5"
-				>{{ currentUser }}</span
-			>
+			<span class="truncate text-p-base text-ink-gray-5">{{ currentUser }}</span>
 		</div>
 
 		<div class="flex items-center gap-4 px-4 py-3">

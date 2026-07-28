@@ -20,11 +20,20 @@ TEAM = "team-revenue-report"
 
 def _invoice(period_start, period_end, items, status="Paid", currency="INR"):
 	total = sum(i["amount"] for i in items)
-	frappe.get_doc({
-		"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": status,
-		"period_start": period_start, "period_end": period_end, "currency": currency,
-		"subtotal": total, "total": total, "items": items,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Invoice",
+			"team": TEAM,
+			"invoice_type": "Billable",
+			"status": status,
+			"period_start": period_start,
+			"period_end": period_end,
+			"currency": currency,
+			"subtotal": total,
+			"total": total,
+			"items": items,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _bundle(amount, cluster="in-mumbai", plan=""):

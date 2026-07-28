@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import {
 	BottomSheet,
 	Breadcrumbs,
@@ -9,30 +9,31 @@ import {
 	MobileNavItem,
 	MobileShell,
 	ToastProvider,
-} from 'frappe-ui'
-import Sidebar from '@/components/navigation/Sidebar.vue'
-import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
-import { useNotificationsRealtime } from '@/composables/useNotifications'
-import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
-import { useIsMobile } from '@/composables/common/useIsMobile'
-import { useAppMenu } from '@/composables/useAppMenu'
+} from "frappe-ui";
+import Sidebar from "@/components/navigation/Sidebar.vue";
+import ChangeTeamDialog from "@/components/team/ChangeTeamDialog.vue";
+import { useNotificationsRealtime } from "@/composables/useNotifications";
+import { useBreadcrumbs } from "@/composables/useBreadcrumbs";
+import { useIsMobile } from "@/composables/common/useIsMobile";
+import { useAppMenu } from "@/composables/useAppMenu";
 
-useNotificationsRealtime()
+useNotificationsRealtime();
 
-const route = useRoute()
-const { items, resetBreadcrumbs } = useBreadcrumbs()
-const isMobile = useIsMobile()
-const { changeTeamOpen } = useAppMenu()
+const route = useRoute();
+const { items, resetBreadcrumbs } = useBreadcrumbs();
+const isMobile = useIsMobile();
+const { changeTeamOpen } = useAppMenu();
 
-const mobileNavDrawer = ref(false)
-watch(() => route.name, () => {
-	resetBreadcrumbs()
-	mobileNavDrawer.value = false
-})
+const mobileNavDrawer = ref(false);
+watch(
+	() => route.name,
+	() => {
+		resetBreadcrumbs();
+		mobileNavDrawer.value = false;
+	}
+);
 
-const breadcrumbs = computed(
-	() => items.value ?? [{ label: (route.meta.title as string) ?? '' }],
-)
+const breadcrumbs = computed(() => items.value ?? [{ label: (route.meta.title as string) ?? "" }]);
 </script>
 
 <template>
@@ -60,7 +61,12 @@ const breadcrumbs = computed(
 					:active="route.name === 'Home'"
 				/>
 				<MobileNavItem label="Search" icon="lucide-search" />
-				<MobileNavItem label="Notifications" icon="lucide-bell" to="/notifications"  :active="route.name =='Notifications' "/>
+				<MobileNavItem
+					label="Notifications"
+					icon="lucide-bell"
+					to="/notifications"
+					:active="route.name == 'Notifications'"
+				/>
 				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
 			</MobileNav>
 		</template>

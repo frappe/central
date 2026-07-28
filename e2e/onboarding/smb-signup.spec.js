@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from "@playwright/test";
 
 // Signup routing, driven against the real bench with NO MOCKS. It uses the
 // developer_mode OTP bypass (any 6 digits), so no mailbox is needed.
@@ -13,41 +13,41 @@ import { test, expect } from '@playwright/test'
 
 // Unique per run: sign_up rejects an existing User, so a fixed email would only
 // pass once.
-const uniqueEmail = () => `smb-${Date.now()}@example.com`
+const uniqueEmail = () => `smb-${Date.now()}@example.com`;
 
-test('product signup → OTP verify → reaches Name your site', async ({ page }) => {
-  const email = uniqueEmail()
+test("product signup → OTP verify → reaches Name your site", async ({ page }) => {
+	const email = uniqueEmail();
 
-  await page.goto('/dashboard/signup?product=erpnext')
-  await page.getByLabel('Full name').fill('SMB Tester')
-  await page.getByLabel('Work email').fill(email)
-  await page.getByRole('button', { name: 'Continue' }).click()
+	await page.goto("/dashboard/signup?product=erpnext");
+	await page.getByLabel("Full name").fill("SMB Tester");
+	await page.getByLabel("Work email").fill(email);
+	await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByRole('heading', { name: 'Verify your email' })).toBeVisible()
-  await expect(page.getByText(email)).toBeVisible()
+	await expect(page.getByRole("heading", { name: "Verify your email" })).toBeVisible();
+	await expect(page.getByText(email)).toBeVisible();
 
-  // Typing 6 digits fills the PIN inputs and fires @complete → verify().
-  await page.locator('[data-otp-input]').first().click()
-  await page.keyboard.type('123456')
+	// Typing 6 digits fills the PIN inputs and fires @complete → verify().
+	await page.locator("[data-otp-input]").first().click();
+	await page.keyboard.type("123456");
 
-  // verify() creates the User + personal Team, logs in, and full-navigates to the
-  // authenticated onboarding route.
-  await expect(page.getByRole('heading', { name: 'Name your site' })).toBeVisible()
-})
+	// verify() creates the User + personal Team, logs in, and full-navigates to the
+	// authenticated onboarding route.
+	await expect(page.getByRole("heading", { name: "Name your site" })).toBeVisible();
+});
 
-test('central signup → OTP verify → reaches Servers', async ({ page }) => {
-  const email = uniqueEmail()
+test("central signup → OTP verify → reaches Servers", async ({ page }) => {
+	const email = uniqueEmail();
 
-  await page.goto('/dashboard/signup')
-  await page.getByLabel('Full name').fill('Central Tester')
-  await page.getByLabel('Work email').fill(email)
-  await page.getByRole('button', { name: 'Continue' }).click()
+	await page.goto("/dashboard/signup");
+	await page.getByLabel("Full name").fill("Central Tester");
+	await page.getByLabel("Work email").fill(email);
+	await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByRole('heading', { name: 'Verify your email' })).toBeVisible()
+	await expect(page.getByRole("heading", { name: "Verify your email" })).toBeVisible();
 
-  await page.locator('[data-otp-input]').first().click()
-  await page.keyboard.type('123456')
+	await page.locator("[data-otp-input]").first().click();
+	await page.keyboard.type("123456");
 
-  await expect(page).toHaveURL(/\/dashboard\/servers$/)
-  await expect(page.getByRole('heading', { name: 'Servers' })).toBeVisible()
-})
+	await expect(page).toHaveURL(/\/dashboard\/servers$/);
+	await expect(page.getByRole("heading", { name: "Servers" })).toBeVisible();
+});

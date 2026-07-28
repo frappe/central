@@ -39,6 +39,9 @@ def execute():
 		if not provider:
 			continue
 		frappe.db.set_value(
-			"Credit Ledger Entry", row.name,
-			"gateway_payment_id", f"{provider}:{pid}", update_modified=False,
+			"Credit Ledger Entry",
+			row.name,
+			"gateway_payment_id",
+			f"{provider}:{pid}",
+			update_modified=False,
 		)

@@ -1,6 +1,6 @@
 <script setup lang="ts" generic="TData extends object">
-import { computed, h, ref } from 'vue'
-import { Button, Checkbox, Combobox, TextInput, Skeleton } from 'frappe-ui'
+import { computed, h, ref } from "vue";
+import { Button, Checkbox, Combobox, TextInput, Skeleton } from "frappe-ui";
 import {
 	FlexRender,
 	getCoreRowModel,
@@ -15,73 +15,73 @@ import {
 	type RowSelectionState,
 	type SortingState,
 	type Updater,
-} from '@tanstack/vue-table'
-import Alert from '@/components/common/Alert.vue'
-import ListViewPagination from './ListViewPagination.vue'
-import ListViewState from './ListViewState.vue'
+} from "@tanstack/vue-table";
+import Alert from "@/components/common/Alert.vue";
+import ListViewPagination from "./ListViewPagination.vue";
+import ListViewState from "./ListViewState.vue";
 import {
 	createListViewQuery,
 	type ListViewEmptyState,
 	type ListViewFilter,
 	type ListViewQuery,
-} from './types'
+} from "./types";
 
 const props = withDefaults(
 	defineProps<{
-		rows: TData[]
-		columns: ColumnDef<TData, unknown>[]
-		rowKey: (row: TData) => string
-		loading?: boolean
-		error?: string | null
-		searchable?: boolean
-		searchPlaceholder?: string
-		filters?: ListViewFilter[]
-		selectable?: boolean
-		paginated?: boolean
-		serverSide?: boolean
-		totalRows?: number
-		countLoading?: boolean
-		itemLabel?: string
-		showCount?: boolean
-		emptyState?: ListViewEmptyState
+		rows: TData[];
+		columns: ColumnDef<TData, unknown>[];
+		rowKey: (row: TData) => string;
+		loading?: boolean;
+		error?: string | null;
+		searchable?: boolean;
+		searchPlaceholder?: string;
+		filters?: ListViewFilter[];
+		selectable?: boolean;
+		paginated?: boolean;
+		serverSide?: boolean;
+		totalRows?: number;
+		countLoading?: boolean;
+		itemLabel?: string;
+		showCount?: boolean;
+		emptyState?: ListViewEmptyState;
 		/** Highlight the row whose rowKey matches this — for master/detail lists. */
-		activeKey?: string | null
+		activeKey?: string | null;
 	}>(),
 	{
 		loading: false,
 		error: null,
 		searchable: false,
-		searchPlaceholder: 'Search…',
+		searchPlaceholder: "Search…",
 		filters: () => [],
 		selectable: false,
 		paginated: true,
 		serverSide: false,
 		totalRows: 0,
 		countLoading: false,
-		itemLabel: 'row',
+		itemLabel: "row",
 		showCount: true,
 		activeKey: null,
 		emptyState: () => ({
-			title: 'No data',
-			description: 'There is nothing to show yet.',
+			title: "No data",
+			description: "There is nothing to show yet.",
 		}),
-	},
-)
+	}
+);
 
-const query = defineModel<ListViewQuery>('query', {
+const query = defineModel<ListViewQuery>("query", {
 	default: () => createListViewQuery(),
-})
+});
 
 const emit = defineEmits<{
-	retry: []
-	rowClick: [row: TData]
-	selectionChange: [rows: TData[]]
-}>()
+	retry: [];
+	rowClick: [row: TData];
+	selectionChange: [rows: TData[]];
+}>();
 
-const rowSelection = ref<RowSelectionState>({})
+const rowSelection = ref<RowSelectionState>({});
 
 const selectionColumn = computed<ColumnDef<TData, unknown>>(() => ({
-	id: '__selection',
+	id: "__selection",
 	size: 1,
 	minSize: 1,
 	maxSize: 1,
@@ -89,27 +89,26 @@ const selectionColumn = computed<ColumnDef<TData, unknown>>(() => ({
 	enableHiding: false,
 	header: ({ table }) =>
 		h(Checkbox, {
-			class: 'cursor-pointer shrink-0',
+			class: "cursor-pointer shrink-0",
 			modelValue: table.getIsAllPageRowsSelected(),
-			'aria-label': 'Select all rows on this page',
-			'onUpdate:modelValue': (...args: unknown[]) =>
+			"aria-label": "Select all rows on this page",
+			"onUpdate:modelValue": (...args: unknown[]) =>
 				table.toggleAllPageRowsSelected(Boolean(args[0])),
 		}),
 	cell: ({ row }) =>
 		h(Checkbox, {
-			class: 'cursor-pointer shrink-0',
+			class: "cursor-pointer shrink-0",
 			modelValue: row.getIsSelected(),
 			disabled: !row.getCanSelect(),
-			'aria-label': `Select row ${row.id}`,
+			"aria-label": `Select row ${row.id}`,
 			onClick: (event: Event) => event.stopPropagation(),
-			'onUpdate:modelValue': (...args: unknown[]) =>
-				row.toggleSelected(Boolean(args[0])),
+			"onUpdate:modelValue": (...args: unknown[]) => row.toggleSelected(Boolean(args[0])),
 		}),
-}))
+}));
 
 const tableColumns = computed(() =>
-	props.selectable ? [selectionColumn.value, ...props.columns] : props.columns,
-)
+	props.selectable ? [selectionColumn.value, ...props.columns] : props.columns
+);
 
 // TanStack state derived from the query model. These MUST be stable references:
 // the sorted/filtered/paginated row models (active in client-side mode) memoize on
@@ -121,27 +120,27 @@ const sortingState = computed<SortingState>(() =>
 		? [
 				{
 					id: query.value.sort.key,
-					desc: query.value.sort.direction === 'desc',
+					desc: query.value.sort.direction === "desc",
 				},
-			]
-		: [],
-)
+		  ]
+		: []
+);
 const columnFiltersState = computed<ColumnFiltersState>(() =>
 	Object.entries(query.value.filters)
-		.filter(([, value]) => value !== '')
-		.map(([id, value]) => ({ id, value })),
-)
+		.filter(([, value]) => value !== "")
+		.map(([id, value]) => ({ id, value }))
+);
 const paginationState = computed<PaginationState>(() => ({
 	pageIndex: query.value.page - 1,
 	pageSize: query.value.pageSize,
-}))
+}));
 
 const table = useVueTable({
 	get data() {
-		return props.rows
+		return props.rows;
 	},
 	get columns() {
-		return tableColumns.value
+		return tableColumns.value;
 	},
 	getRowId: (row) => props.rowKey(row),
 	// Keep tanstack from auto-resetting the page on every row-model recompute. Our
@@ -157,7 +156,7 @@ const table = useVueTable({
 	manualPagination: props.serverSide,
 	manualSorting: props.serverSide,
 	get rowCount() {
-		return props.serverSide ? props.totalRows : undefined
+		return props.serverSide ? props.totalRows : undefined;
 	},
 	getCoreRowModel: getCoreRowModel(),
 	getFilteredRowModel: getFilteredRowModel(),
@@ -166,19 +165,19 @@ const table = useVueTable({
 		props.paginated && !props.serverSide ? getPaginationRowModel() : undefined,
 	state: {
 		get sorting() {
-			return sortingState.value
+			return sortingState.value;
 		},
 		get globalFilter() {
-			return query.value.search
+			return query.value.search;
 		},
 		get columnFilters() {
-			return columnFiltersState.value
+			return columnFiltersState.value;
 		},
 		get pagination() {
-			return paginationState.value
+			return paginationState.value;
 		},
 		get rowSelection() {
-			return rowSelection.value
+			return rowSelection.value;
 		},
 	},
 	onSortingChange: updateSorting,
@@ -186,66 +185,63 @@ const table = useVueTable({
 	onColumnFiltersChange: updateColumnFilters,
 	onPaginationChange: updatePagination,
 	onRowSelectionChange: (updater) => {
-		updateRef(updater, rowSelection)
+		updateRef(updater, rowSelection);
 		emit(
-			'selectionChange',
-			table.getSelectedRowModel().rows.map((row) => row.original),
-		)
+			"selectionChange",
+			table.getSelectedRowModel().rows.map((row) => row.original)
+		);
 	},
-})
+});
 
-const visibleColumnCount = computed(() => table.getVisibleLeafColumns().length)
-const filteredRows = computed(() => table.getFilteredRowModel().rows)
-const pageRows = computed(() => table.getRowModel().rows)
-const hasRows = computed(() => props.rows.length > 0)
+const visibleColumnCount = computed(() => table.getVisibleLeafColumns().length);
+const filteredRows = computed(() => table.getFilteredRowModel().rows);
+const pageRows = computed(() => table.getRowModel().rows);
+const hasRows = computed(() => props.rows.length > 0);
 const hasActiveQuery = computed(
-	() =>
-		query.value.search !== '' ||
-		Object.values(query.value.filters).some(Boolean),
-)
+	() => query.value.search !== "" || Object.values(query.value.filters).some(Boolean)
+);
 const resultCount = computed(() =>
-	props.serverSide ? props.totalRows : filteredRows.value.length,
-)
+	props.serverSide ? props.totalRows : filteredRows.value.length
+);
 const countText = computed(() => {
-	const label =
-		resultCount.value === 1 ? props.itemLabel : `${props.itemLabel}s`
-	return `${resultCount.value.toLocaleString()} ${label}`
-})
+	const label = resultCount.value === 1 ? props.itemLabel : `${props.itemLabel}s`;
+	return `${resultCount.value.toLocaleString()} ${label}`;
+});
 // Footer visibility deliberately ignores `loading`: a refetch (e.g. changing
 // the page size) keeps the row count stable, so unmounting the footer mid-load
 // only causes a flicker and layout shift. It stays put while new rows arrive.
-const showPagination = computed(() => props.paginated && resultCount.value > 0)
+const showPagination = computed(() => props.paginated && resultCount.value > 0);
 const showFooter = computed(
-	() => (props.showCount && resultCount.value > 0) || showPagination.value,
-)
-const pagination = computed(() => table.getState().pagination)
+	() => (props.showCount && resultCount.value > 0) || showPagination.value
+);
+const pagination = computed(() => table.getState().pagination);
 const gridTemplateColumns = computed(() =>
 	table
 		.getFlatHeaders()
 		.map((header) =>
-			header.id === '__selection'
-				? '14px'
-				: header.column.id === 'actions'
-					? '40px'
-					: `${header.getSize()}fr`,
+			header.id === "__selection"
+				? "14px"
+				: header.column.id === "actions"
+				? "40px"
+				: `${header.getSize()}fr`
 		)
-		.join(' '),
-)
+		.join(" ")
+);
 
 function clearFilters(): void {
-	if (!hasActiveQuery.value && query.value.page === 1) return
+	if (!hasActiveQuery.value && query.value.page === 1) return;
 
 	query.value = {
 		...query.value,
 		page: 1,
-		search: '',
+		search: "",
 		filters: {},
-	}
+	};
 }
 
 function updateFilter(key: string, value: unknown): void {
-	const nextValue = typeof value === 'string' ? value : ''
-	if (query.value.filters[key] === nextValue && query.value.page === 1) return
+	const nextValue = typeof value === "string" ? value : "";
+	if (query.value.filters[key] === nextValue && query.value.page === 1) return;
 
 	query.value = {
 		...query.value,
@@ -254,14 +250,14 @@ function updateFilter(key: string, value: unknown): void {
 			...query.value.filters,
 			[key]: nextValue,
 		},
-	}
+	};
 }
 
 function updateSearch(updater: Updater<unknown>): void {
-	const nextSearch = String(applyUpdater(updater, query.value.search) ?? '')
-	if (query.value.search === nextSearch && query.value.page === 1) return
+	const nextSearch = String(applyUpdater(updater, query.value.search) ?? "");
+	if (query.value.search === nextSearch && query.value.page === 1) return;
 
-	query.value = { ...query.value, page: 1, search: nextSearch }
+	query.value = { ...query.value, page: 1, search: nextSearch };
 }
 
 function updateSorting(updater: Updater<SortingState>): void {
@@ -269,109 +265,90 @@ function updateSorting(updater: Updater<SortingState>): void {
 		? [
 				{
 					id: query.value.sort.key,
-					desc: query.value.sort.direction === 'desc',
+					desc: query.value.sort.direction === "desc",
 				},
-			]
-		: []
-	const next = applyUpdater(updater, current)[0]
-	const nextSort: ListViewQuery['sort'] = next
-		? { key: next.id, direction: next.desc ? 'desc' : 'asc' }
-		: null
-	if (sameSort(query.value.sort, nextSort) && query.value.page === 1) return
+		  ]
+		: [];
+	const next = applyUpdater(updater, current)[0];
+	const nextSort: ListViewQuery["sort"] = next
+		? { key: next.id, direction: next.desc ? "desc" : "asc" }
+		: null;
+	if (sameSort(query.value.sort, nextSort) && query.value.page === 1) return;
 
 	query.value = {
 		...query.value,
 		page: 1,
 		sort: nextSort,
-	}
+	};
 }
 
 function updateColumnFilters(updater: Updater<ColumnFiltersState>): void {
 	const current = Object.entries(query.value.filters).map(([id, value]) => ({
 		id,
 		value,
-	}))
-	const next = applyUpdater(updater, current)
-	const nextFilters = Object.fromEntries(
-		next.map(({ id, value }) => [id, String(value ?? '')]),
-	)
-	if (
-		sameStringRecord(query.value.filters, nextFilters) &&
-		query.value.page === 1
-	)
-		return
+	}));
+	const next = applyUpdater(updater, current);
+	const nextFilters = Object.fromEntries(next.map(({ id, value }) => [id, String(value ?? "")]));
+	if (sameStringRecord(query.value.filters, nextFilters) && query.value.page === 1) return;
 
 	query.value = {
 		...query.value,
 		page: 1,
 		filters: nextFilters,
-	}
+	};
 }
 
 function updatePagination(updater: Updater<PaginationState>): void {
-	const next = applyUpdater(updater, pagination.value)
-	const nextPage = next.pageIndex + 1
-	if (query.value.page === nextPage && query.value.pageSize === next.pageSize)
-		return
+	const next = applyUpdater(updater, pagination.value);
+	const nextPage = next.pageIndex + 1;
+	if (query.value.page === nextPage && query.value.pageSize === next.pageSize) return;
 
 	query.value = {
 		...query.value,
 		page: nextPage,
 		pageSize: next.pageSize,
-	}
+	};
 }
 
 function sortAria(column: ReturnType<typeof table.getAllLeafColumns>[number]) {
-	const sorted = column.getIsSorted()
-	return sorted === 'asc'
-		? 'ascending'
-		: sorted === 'desc'
-			? 'descending'
-			: 'none'
+	const sorted = column.getIsSorted();
+	return sorted === "asc" ? "ascending" : sorted === "desc" ? "descending" : "none";
 }
 
-function justifyClass(align?: 'start' | 'center' | 'end'): string {
-	if (align === 'center') return 'justify-center'
-	if (align === 'end') return 'justify-end'
-	return 'justify-start'
+function justifyClass(align?: "start" | "center" | "end"): string {
+	if (align === "center") return "justify-center";
+	if (align === "end") return "justify-end";
+	return "justify-start";
 }
 
 function metaClass(className?: string): string {
-	return className?.replace(/\btable-cell\b/g, 'block') ?? ''
+	return className?.replace(/\btable-cell\b/g, "block") ?? "";
 }
 
 function handleRowClick(row: Row<TData>): void {
-	emit('rowClick', row.original)
+	emit("rowClick", row.original);
 }
 
 function updateRef<T>(updater: Updater<T>, target: { value: T }): void {
-	target.value = applyUpdater(updater, target.value)
+	target.value = applyUpdater(updater, target.value);
 }
 
 function applyUpdater<T>(updater: Updater<T>, previous: T): T {
-	return typeof updater === 'function'
-		? (updater as (value: T) => T)(previous)
-		: updater
+	return typeof updater === "function" ? (updater as (value: T) => T)(previous) : updater;
 }
 
-function sameSort(
-	current: ListViewQuery['sort'],
-	next: ListViewQuery['sort'],
-): boolean {
-	if (!current || !next) return current === next
-	return current.key === next.key && current.direction === next.direction
+function sameSort(current: ListViewQuery["sort"], next: ListViewQuery["sort"]): boolean {
+	if (!current || !next) return current === next;
+	return current.key === next.key && current.direction === next.direction;
 }
 
-function sameStringRecord(
-	current: Record<string, string>,
-	next: Record<string, string>,
-): boolean {
-	const currentKeys = Object.keys(current)
-	const nextKeys = Object.keys(next)
+function sameStringRecord(current: Record<string, string>, next: Record<string, string>): boolean {
+	const currentKeys = Object.keys(current);
+	const nextKeys = Object.keys(next);
 	return (
 		currentKeys.length === nextKeys.length &&
 		currentKeys.every((key) => current[key] === next[key])
-	)
+	);
 }
 
 // Search + filters are only useful once there's data (or an active query). On a
@@ -380,10 +357,10 @@ function sameStringRecord(
 const showListControls = computed(
 	() =>
 		(props.searchable || props.filters.length > 0) &&
-		(hasRows.value || hasActiveQuery.value || props.loading),
-)
+		(hasRows.value || hasActiveQuery.value || props.loading)
+);
 
-defineExpose({ table })
+defineExpose({ table });
 </script>
 
 <template>
@@ -392,10 +369,7 @@ defineExpose({ table })
 			v-if="showListControls || $slots.toolbar"
 			class="flex flex-wrap items-center justify-between gap-3 pb-3"
 		>
-			<div
-				v-if="showListControls"
-				class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
-			>
+			<div v-if="showListControls" class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
 				<TextInput
 					v-if="searchable"
 					:model-value="query.search"
@@ -417,12 +391,12 @@ defineExpose({ table })
 					variant="outline"
 					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
 					:options="[
-            {
-              label: filter.allLabel || `All ${filter.label.toLowerCase()}`,
-              value: '',
-            },
-            ...filter.options,
-          ]"
+						{
+							label: filter.allLabel || `All ${filter.label.toLowerCase()}`,
+							value: '',
+						},
+						...filter.options,
+					]"
 					@update:model-value="updateFilter(filter.key, $event)"
 				/>
 				<Button
@@ -432,10 +406,7 @@ defineExpose({ table })
 					@click="clearFilters"
 				/>
 			</div>
-			<div
-				v-if="$slots.toolbar"
-				class="ml-auto flex shrink-0 items-center gap-3"
-			>
+			<div v-if="$slots.toolbar" class="ml-auto flex shrink-0 items-center gap-3">
 				<slot name="toolbar" :table="table" />
 			</div>
 		</div>
@@ -454,11 +425,7 @@ defineExpose({ table })
 					:rows="table.getSelectedRowModel().rows.map((row) => row.original)"
 					:clear="table.resetRowSelection"
 				/>
-				<Button
-					label="Clear"
-					variant="ghost"
-					@click="table.resetRowSelection()"
-				/>
+				<Button label="Clear" variant="ghost" @click="table.resetRowSelection()" />
 			</div>
 		</div>
 
@@ -484,12 +451,16 @@ defineExpose({ table })
 						v-for="header in table.getFlatHeaders()"
 						:key="header.id"
 						role="columnheader"
-						:aria-sort="header.column.getCanSort() ? sortAria(header.column) : undefined"
+						:aria-sort="
+							header.column.getCanSort() ? sortAria(header.column) : undefined
+						"
 						class="flex min-w-0 items-center gap-2 truncate text-sm text-ink-gray-5"
 						:class="[
-              header.id === '__selection' ? 'shrink-0' : justifyClass(header.column.columnDef.meta?.align),
-              metaClass(header.column.columnDef.meta?.headerClass),
-            ]"
+							header.id === '__selection'
+								? 'shrink-0'
+								: justifyClass(header.column.columnDef.meta?.align),
+							metaClass(header.column.columnDef.meta?.headerClass),
+						]"
 					>
 						<button
 							v-if="!header.isPlaceholder && header.column.getCanSort()"
@@ -503,13 +474,13 @@ defineExpose({ table })
 							/>
 							<span
 								:class="[
-                header.column.getIsSorted() === 'asc'
-                  ? 'lucide-arrow-up'
-                  : header.column.getIsSorted() === 'desc'
-                    ? 'lucide-arrow-down'
-                    : 'lucide-arrow-up-down opacity-60',
-  'size-3.5 shrink-0',
-]"
+									header.column.getIsSorted() === 'asc'
+										? 'lucide-arrow-up'
+										: header.column.getIsSorted() === 'desc'
+										? 'lucide-arrow-down'
+										: 'lucide-arrow-up-down opacity-60',
+									'size-3.5 shrink-0',
+								]"
 								aria-hidden="true"
 							/>
 						</button>
@@ -546,11 +517,7 @@ defineExpose({ table })
 				<!-- State messages stay inside the table, so they're wrapped in a
              row/cell: every non-rowgroup child of role="table" must be a row. -->
 				<div v-else-if="!hasRows" role="row">
-					<div
-						role="cell"
-						:aria-colindex="1"
-						:aria-colspan="visibleColumnCount"
-					>
+					<div role="cell" :aria-colindex="1" :aria-colspan="visibleColumnCount">
 						<ListViewState
 							v-if="error"
 							kind="error"
@@ -585,10 +552,10 @@ defineExpose({ table })
 						role="row"
 						class="grid h-10 cursor-default items-center gap-4 border-b border-outline-gray-1 px-2 text-sm transition-colors duration-150 ease-in-out hover:bg-surface-sidebar"
 						:class="
-              row.getIsSelected() || activeKey === row.id
-                ? 'bg-surface-gray-2 hover:bg-surface-gray-3'
-                : ''
-            "
+							row.getIsSelected() || activeKey === row.id
+								? 'bg-surface-gray-2 hover:bg-surface-gray-3'
+								: ''
+						"
 						:style="{ gridTemplateColumns }"
 						@click="handleRowClick(row)"
 					>
@@ -598,15 +565,21 @@ defineExpose({ table })
 							role="cell"
 							class="flex min-w-0 overflow-x-hidden"
 							:class="[
-  cell.column.id === '__selection'
-    ? 'w-fit shrink-0 pe-2'
-    : [
-      cellIndex === (selectable ? 1 : 0) ? 'text-ink-gray-9' : 'text-ink-gray-7',
-      justifyClass(cell.column.columnDef.meta?.align),
-    ],
-  metaClass(cell.column.columnDef.meta?.cellClass),
-              ]"
-							@click="cell.column.id === '__selection' ? $event.stopPropagation() : undefined"
+								cell.column.id === '__selection'
+									? 'w-fit shrink-0 pe-2'
+									: [
+											cellIndex === (selectable ? 1 : 0)
+												? 'text-ink-gray-9'
+												: 'text-ink-gray-7',
+											justifyClass(cell.column.columnDef.meta?.align),
+									  ],
+								metaClass(cell.column.columnDef.meta?.cellClass),
+							]"
+							@click="
+								cell.column.id === '__selection'
+									? $event.stopPropagation()
+									: undefined
+							"
 						>
 							<FlexRender
 								:render="cell.column.columnDef.cell"

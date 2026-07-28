@@ -22,9 +22,10 @@ def stub(gateway, customer_id="cus_prov"):
 	"""Pin gateway resolution + a mock adapter so the patch makes no live call."""
 	adapter = MagicMock()
 	adapter.create_customer.return_value = customer_id
-	with patch(
-		"central.billing.gateways.registry.resolve_gateway_for_currency", return_value=gateway
-	), patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+	with (
+		patch("central.billing.gateways.registry.resolve_gateway_for_currency", return_value=gateway),
+		patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+	):
 		yield adapter
 
 

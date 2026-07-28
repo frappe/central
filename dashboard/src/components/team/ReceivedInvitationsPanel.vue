@@ -1,32 +1,30 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
-import { Avatar, Button, Skeleton } from 'frappe-ui'
-import EmptyState from '@/components/common/EmptyState.vue'
-import ListViewState from '@/components/common/list-view/ListViewState.vue'
-import { useMyInvitations } from '@/composables/useMyInvitations'
-import { formatDate } from '@/lib/format'
-import type { MyInvitation } from '@/types/api'
+import { computed } from "vue";
+import { useRoute } from "vue-router";
+import { Avatar, Button, Skeleton } from "frappe-ui";
+import EmptyState from "@/components/common/EmptyState.vue";
+import ListViewState from "@/components/common/list-view/ListViewState.vue";
+import { useMyInvitations } from "@/composables/useMyInvitations";
+import { formatDate } from "@/lib/format";
+import type { MyInvitation } from "@/types/api";
 
 // The signed-in user's pending invitations across teams. Reached from the
 // Invitations tab or an email link (/invitations/:name focuses one invite).
 // Accepting joins the team and switches to it; declining clears the invite.
-const route = useRoute()
-const { invitations, loading, busy, accept, decline } = useMyInvitations()
+const route = useRoute();
+const { invitations, loading, busy, accept, decline } = useMyInvitations();
 
-const focusedName = computed(
-	() => (route.params.name as string | undefined) ?? null,
-)
+const focusedName = computed(() => (route.params.name as string | undefined) ?? null);
 
 const shown = computed<MyInvitation[]>(() =>
 	focusedName.value
 		? invitations.value.filter((i) => i.name === focusedName.value)
-		: invitations.value,
-)
+		: invitations.value
+);
 
 const focusedMissing = computed(
-	() => !!focusedName.value && !loading.value && shown.value.length === 0,
-)
+	() => !!focusedName.value && !loading.value && shown.value.length === 0
+);
 </script>
 
 <template>

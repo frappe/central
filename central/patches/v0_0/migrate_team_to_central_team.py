@@ -142,9 +142,7 @@ def _ensure_team(slug: str, member_users: list[str]) -> str:
 			"doctype": "Team",
 			"team_name": slug,
 			"owner_user": owner,
-			"members": [
-				{"user": u, "role": MEMBER_ROLE, "status": "Active"} for u in others
-			],
+			"members": [{"user": u, "role": MEMBER_ROLE, "status": "Active"} for u in others],
 		}
 	).insert(ignore_permissions=True)
 	return team.name
@@ -192,9 +190,7 @@ def _rewrite_team_values(mapping: dict[str, str]) -> None:
 		for slug, team_name in mapping.items():
 			if slug == team_name:
 				continue
-			frappe.qb.update(table).set(table.team, team_name).where(
-				table.team == slug
-			).run()
+			frappe.qb.update(table).set(table.team, team_name).where(table.team == slug).run()
 
 
 def _rename_field_team_docs(mapping: dict[str, str]) -> None:
@@ -243,9 +239,7 @@ def _drop_billing_team_field() -> None:
 	keeps no field of its own on User; the `team` link is the identity. Frappe does
 	not auto-drop orphaned columns, so the DDL is explicit."""
 	if frappe.db.exists("Custom Field", "User-billing_team"):
-		frappe.delete_doc(
-			"Custom Field", "User-billing_team", force=True, ignore_permissions=True
-		)
+		frappe.delete_doc("Custom Field", "User-billing_team", force=True, ignore_permissions=True)
 	if "billing_team" in frappe.db.get_table_columns("User"):
 		# IF EXISTS so a stale column cache can't make a re-run error.
 		frappe.db.sql_ddl("ALTER TABLE `tabUser` DROP COLUMN IF EXISTS `billing_team`")

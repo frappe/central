@@ -1,33 +1,33 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Button, Select } from 'frappe-ui'
-import { successToast } from '@/lib/toast'
-import type { ServiceModel } from '@/composables/useServices'
+import { computed, ref } from "vue";
+import { Button, Select } from "frappe-ui";
+import { successToast } from "@/lib/toast";
+import type { ServiceModel } from "@/composables/useServices";
 
 // Presentational: given a resolved gateway URL + key + the plan's models, render the
 // endpoint, a masked/reveal-able key, and a ready-to-run curl. Shared by the site
 // Connect dialog and the API-keys flow so there's one copy of this UI.
 const props = defineProps<{
-	gatewayUrl: string
-	apiKey: string
-	models: ServiceModel[]
-}>()
+	gatewayUrl: string;
+	apiKey: string;
+	models: ServiceModel[];
+}>();
 
-const revealed = ref(false)
-const selectedModel = ref(props.models[0]?.name ?? '')
+const revealed = ref(false);
+const selectedModel = ref(props.models[0]?.name ?? "");
 
 const modelOptions = computed(() =>
 	props.models.length
 		? props.models.map((m) => ({ label: `${m.name} (${m.tier})`, value: m.name }))
-		: [{ label: 'MODEL_ID', value: '' }],
-)
-const modelId = computed(() => selectedModel.value || 'MODEL_ID')
+		: [{ label: "MODEL_ID", value: "" }]
+);
+const modelId = computed(() => selectedModel.value || "MODEL_ID");
 
 const maskedKey = computed(() =>
 	revealed.value
 		? props.apiKey
-		: `${props.apiKey.slice(0, 6)}${'•'.repeat(24)}${props.apiKey.slice(-4)}`,
-)
+		: `${props.apiKey.slice(0, 6)}${"•".repeat(24)}${props.apiKey.slice(-4)}`
+);
 
 // Placeholder token in the shown command (so a screenshot can't leak it); the copy
 // button swaps in the real key.
@@ -38,15 +38,15 @@ const curlTemplate = computed(
   -d '{
     "model": "${modelId.value}",
     "messages": [{"role": "user", "content": "Hello"}]
-  }'`,
-)
+  }'`
+);
 
 async function copy(value: string, label: string): Promise<void> {
-	await navigator.clipboard.writeText(value)
-	successToast(`${label} copied.`)
+	await navigator.clipboard.writeText(value);
+	successToast(`${label} copied.`);
 }
 function copyCurl(): void {
-	void copy(curlTemplate.value.replace('$LLM_API_KEY', props.apiKey), 'Command')
+	void copy(curlTemplate.value.replace("$LLM_API_KEY", props.apiKey), "Command");
 }
 </script>
 

@@ -1,35 +1,30 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { AxisChart } from 'frappe-ui'
-import {
-	LOAD_SERIES,
-	peakLoad,
-	toLoadChartRows,
-	type LoadPoint,
-} from '@/utils/loadChart'
+import { computed } from "vue";
+import { AxisChart } from "frappe-ui";
+import { LOAD_SERIES, peakLoad, toLoadChartRows, type LoadPoint } from "@/utils/loadChart";
 
 const props = defineProps<{
-	points: LoadPoint[]
-}>()
+	points: LoadPoint[];
+}>();
 
-const peak = computed(() => peakLoad(props.points))
-const hasSeries = computed(() => props.points.length > 1)
+const peak = computed(() => peakLoad(props.points));
+const hasSeries = computed(() => props.points.length > 1);
 
 const chartConfig = computed(() => ({
 	data: toLoadChartRows(props.points),
-	title: '',
+	title: "",
 	colors: LOAD_SERIES.map((series) => series.color),
 	xAxis: {
-		key: 'time',
-		type: 'time' as const,
-		timeGrain: 'hour' as const,
+		key: "time",
+		type: "time" as const,
+		timeGrain: "hour" as const,
 	},
 	yAxis: {
 		yMin: 0,
 	},
 	series: LOAD_SERIES.map((series) => ({
 		name: series.label,
-		type: 'line' as const,
+		type: "line" as const,
 		color: series.color,
 		lineWidth: 2,
 		showDataPoints: false,
@@ -44,12 +39,12 @@ const chartConfig = computed(() => ({
 		},
 		legend: {
 			bottom: 0,
-			icon: 'circle',
+			icon: "circle",
 			itemWidth: 8,
 			itemHeight: 8,
 		},
 	},
-}))
+}));
 </script>
 
 <template>
@@ -65,10 +60,7 @@ const chartConfig = computed(() => ({
 		<div v-if="hasSeries" class="load-chart h-44">
 			<AxisChart :config="chartConfig" />
 		</div>
-		<p
-			v-else
-			class="grid h-44 place-items-center text-sm text-ink-gray-5"
-		>
+		<p v-else class="grid h-44 place-items-center text-sm text-ink-gray-5">
 			Monitoring has not collected enough history yet.
 		</p>
 	</section>
@@ -76,7 +68,7 @@ const chartConfig = computed(() => ({
 
 <style scoped>
 /* AxisChart's ECharts shell defaults to min-h-[300px]; keep the card compact. */
-.load-chart :deep([dir='ltr']) {
+.load-chart :deep([dir="ltr"]) {
 	height: 100%;
 	min-height: 0;
 	min-width: 0;

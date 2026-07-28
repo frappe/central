@@ -1,43 +1,41 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted } from 'vue'
-import { PinInputInput, PinInputRoot } from 'reka-ui'
+import { computed, nextTick, onMounted } from "vue";
+import { PinInputInput, PinInputRoot } from "reka-ui";
 
 const props = withDefaults(
 	defineProps<{
-		modelValue: string
-		label?: string
-		length?: number
-		disabled?: boolean
-		autofocus?: boolean
+		modelValue: string;
+		label?: string;
+		length?: number;
+		disabled?: boolean;
+		autofocus?: boolean;
 	}>(),
 	{
-		label: 'Verification code',
+		label: "Verification code",
 		length: 6,
 		disabled: false,
 		autofocus: false,
-	},
-)
+	}
+);
 
 const emit = defineEmits<{
-	'update:modelValue': [value: string]
-	complete: [value: string]
-}>()
+	"update:modelValue": [value: string];
+	complete: [value: string];
+}>();
 
 const digits = computed({
-	get: () => props.modelValue.split('').slice(0, props.length).map(Number),
-	set: (value: number[]) => emit('update:modelValue', value.join('')),
-})
+	get: () => props.modelValue.split("").slice(0, props.length).map(Number),
+	set: (value: number[]) => emit("update:modelValue", value.join("")),
+});
 
 function complete(value: number[]) {
-	emit('complete', value.join(''))
+	emit("complete", value.join(""));
 }
 
 onMounted(() => {
-	if (!props.autofocus) return
-	nextTick(() =>
-		document.querySelector<HTMLInputElement>('[data-otp-input]')?.focus(),
-	)
-})
+	if (!props.autofocus) return;
+	nextTick(() => document.querySelector<HTMLInputElement>("[data-otp-input]")?.focus());
+});
 </script>
 
 <template>

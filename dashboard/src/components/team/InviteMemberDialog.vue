@@ -1,96 +1,94 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Dialog, FormControl, useCall } from 'frappe-ui'
-import CapabilityList from '@/components/team/CapabilityList.vue'
-import { API, method } from '@/api/methods'
-import { useTeamRoles } from '@/composables/useTeamRoles'
-import { useSession } from '@/composables/useSession'
-import { successToast, errorToast } from '@/lib/toast'
-import type { CapabilityInfo } from '@/types/api'
+import { computed, ref, watch } from "vue";
+import { Dialog, FormControl, useCall } from "frappe-ui";
+import CapabilityList from "@/components/team/CapabilityList.vue";
+import { API, method } from "@/api/methods";
+import { useTeamRoles } from "@/composables/useTeamRoles";
+import { useSession } from "@/composables/useSession";
+import { successToast, errorToast } from "@/lib/toast";
+import type { CapabilityInfo } from "@/types/api";
 
 // Invite a person to the active team with a role. The role picker excludes Owner
 // (invitations can never grant Owner — Transfer Ownership does that) and shows a
 // live preview of exactly what the chosen role will let them do.
-const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ 'update:open': [v: boolean]; invited: [] }>()
+const props = defineProps<{ open: boolean }>();
+const emit = defineEmits<{ "update:open": [v: boolean]; invited: [] }>();
 
-const { activeTeam } = useSession()
-const { roles, capabilities, capsByRole } = useTeamRoles()
+const { activeTeam } = useSession();
+const { roles, capabilities, capsByRole } = useTeamRoles();
 
 const open = computed({
 	get: () => props.open,
-	set: (v: boolean) => emit('update:open', v),
-})
+	set: (v: boolean) => emit("update:open", v),
+});
 
-const email = ref('')
-const role = ref('')
-const expiresInDays = ref(7)
+const email = ref("");
+const role = ref("");
+const expiresInDays = ref(7);
 
 const roleOptions = computed(() =>
 	roles.value
-		.filter((r) => r.role_name !== 'Owner')
-		.map((r) => ({ label: r.role_name, value: r.name })),
-)
+		.filter((r) => r.role_name !== "Owner")
+		.map((r) => ({ label: r.role_name, value: r.name }))
+);
 
 const previewCaps = computed<string[]>(() =>
-	role.value ? (capsByRole.value[role.value] ?? []) : [],
-)
-const palette = computed<CapabilityInfo[]>(() => capabilities.value)
+	role.value ? capsByRole.value[role.value] ?? [] : []
+);
+const palette = computed<CapabilityInfo[]>(() => capabilities.value);
 
 // Reset the form each time the dialog opens.
 watch(open, (isOpen) => {
 	if (isOpen) {
-		email.value = ''
-		role.value = ''
-		expiresInDays.value = 7
+		email.value = "";
+		role.value = "";
+		expiresInDays.value = 7;
 	}
-})
+});
 
 type InviteParams = {
-	team: string
-	email: string
-	role: string
-	expires_in_days: number
-}
+	team: string;
+	email: string;
+	role: string;
+	expires_in_days: number;
+};
 const inviteCall = useCall<string, InviteParams>({
 	url: method(API.inviteTeamMember),
-	method: 'POST',
+	method: "POST",
 	immediate: false,
-})
+});
 
-const canSubmit = computed(
-	() => /\S+@\S+\.\S+/.test(email.value) && !!role.value,
-)
+const canSubmit = computed(() => /\S+@\S+\.\S+/.test(email.value) && !!role.value);
 
 const dialogOptions = computed(() => ({
-	title: 'Invite member',
-	size: 'xl' as const,
+	title: "Invite member",
+	size: "xl" as const,
 	actions: [
 		{
-			label: 'Send invite',
-			variant: 'solid' as const,
+			label: "Send invite",
+			variant: "solid" as const,
 			loading: inviteCall.loading,
 			disabled: !canSubmit.value,
 			onClick: submit,
 		},
 	],
-}))
+}));
 
 async function submit() {
-	if (!canSubmit.value) return
+	if (!canSubmit.value) return;
 	try {
 		await inviteCall.submit({
 			team: activeTeam.value!,
 			email: email.value.trim().toLowerCase(),
 			role: role.value,
 			expires_in_days: expiresInDays.value,
-		})
-		if (inviteCall.error) throw inviteCall.error
-		successToast(`Invitation sent to ${email.value.trim().toLowerCase()}.`)
-		emit('invited')
-		open.value = false
+		});
+		if (inviteCall.error) throw inviteCall.error;
+		successToast(`Invitation sent to ${email.value.trim().toLowerCase()}.`);
+		emit("invited");
+		open.value = false;
 	} catch (e) {
-		errorToast(e)
+		errorToast(e);
 	}
 }
 </script>
@@ -130,9 +128,7 @@ async function submit() {
 					v-if="role"
 					class="max-h-[40vh] overflow-y-auto rounded-md border border-outline-gray-2 bg-surface-gray-1 p-3"
 				>
-					<p class="mb-3 text-p-sm font-medium text-ink-gray-7">
-						This role can:
-					</p>
+					<p class="mb-3 text-p-sm font-medium text-ink-gray-7">This role can:</p>
 					<CapabilityList :caps="previewCaps" :palette="palette" />
 				</div>
 			</div>

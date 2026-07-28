@@ -48,15 +48,20 @@ class Asset(Document):
 
 		engine.ensure_event_type(
 			"server_failed",
-			category="Server", severity="Error", required_cap="server:view",
+			category="Server",
+			severity="Error",
+			required_cap="server:view",
 			in_app_title="Server failed: {{ reference_name }}",
 			in_app_body="Your server {{ reference_name }} entered a Failed state: {{ message }}",
-			action_label="View server", action_route="/servers",
+			action_label="View server",
+			action_route="/servers",
 		)
 		engine.dispatch(
-			self.team, "server_failed",
+			self.team,
+			"server_failed",
 			message=f"Your server in {self.cluster} entered a Failed state. Review it in the console.",
-			reference_doctype="Asset", reference_name=self.name,
+			reference_doctype="Asset",
+			reference_name=self.name,
 		)
 
 	def sync_subscription_on_status_change(self):

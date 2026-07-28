@@ -228,9 +228,7 @@ class TestOneInvoicePerPeriod(BillingTestBase):
 		third = invoicing.reissue_invoice(second, reason="two")
 
 		self.assertEqual(len({first, second, third}), 3)
-		cancelled = frappe.get_all(
-			"Invoice", filters={"team": TEAM, "status": "Cancelled"}, pluck="name"
-		)
+		cancelled = frappe.get_all("Invoice", filters={"team": TEAM, "status": "Cancelled"}, pluck="name")
 		self.assertCountEqual(cancelled, [first, second])
 
 
@@ -257,8 +255,14 @@ class TestOpenAndCollect(BillingTestBase):
 		# Regression: a USD team was credited in USD but debited in INR because
 		# open_and_collect didn't pass the invoice currency (apply_credit defaults INR).
 		usd_team = "team-invoice-usd"
-		for dt in ("Credit Ledger Entry", "Credit Wallet", "Subscription",
-				   "Asset", "Billing Profile", "Invoice"):
+		for dt in (
+			"Credit Ledger Entry",
+			"Credit Wallet",
+			"Subscription",
+			"Asset",
+			"Billing Profile",
+			"Invoice",
+		):
 			frappe.db.delete(dt, {"team": usd_team})
 		sub = make_billing_subscription(usd_team, CLUSTER, PLAN, billing_cycle="Monthly", currency="USD")
 		add_segment(sub, "Created", 100, "2026-06-01 00:00:00", currency="USD")
@@ -271,9 +275,7 @@ class TestOpenAndCollect(BillingTestBase):
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual(inv.currency, "USD")
 		self.assertEqual(inv.credit_applied, 50.0)
-		debit = frappe.get_all(
-			"Credit Ledger Entry", {"team": usd_team, "entry_type": "Debit"}, ["currency"]
-		)
+		debit = frappe.get_all("Credit Ledger Entry", {"team": usd_team, "entry_type": "Debit"}, ["currency"])
 		self.assertEqual(debit[0].currency, "USD")  # debited in the invoice currency, not INR
 		# The USD wallet is drawn to zero; there is no spurious INR balance.
 		self.assertEqual(credits.get_balance(usd_team, "USD")["balance"], 0)
@@ -328,9 +330,7 @@ class TestTerminationCancelsBilling(BillingTestBase):
 		asset.save(ignore_permissions=True)
 
 		# A Cancelled change closed the segment; the sub is disabled and stops counting.
-		changes = frappe.get_all(
-			"Subscription Change", {"subscription": self.sub}, pluck="change_type"
-		)
+		changes = frappe.get_all("Subscription Change", {"subscription": self.sub}, pluck="change_type")
 		self.assertIn("Cancelled", changes)
 		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
 		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
@@ -395,6 +395,4 @@ class TestMonthlyBillingRun(BillingTestBase):
 		# A second tick must not double-bill the period.
 		invoicing.run_monthly_billing(today="2026-07-01")
 
-		self.assertEqual(
-			frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1
-		)
+		self.assertEqual(frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1)

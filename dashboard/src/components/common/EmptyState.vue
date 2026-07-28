@@ -5,12 +5,12 @@
 // you do, it should be the only primary action in view.
 withDefaults(
 	defineProps<{
-		icon?: string
-		title: string
-		description?: string
+		icon?: string;
+		title: string;
+		description?: string;
 	}>(),
-	{ icon: 'lucide-inbox' },
-)
+	{ icon: "lucide-inbox" }
+);
 </script>
 
 <template>

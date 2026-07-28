@@ -18,7 +18,9 @@ class Region(Document):
 		display_name: DF.Data | None
 		latitude: DF.Float
 		longitude: DF.Float
-		provider: DF.Literal["", "AWS", "Hetzner", "Frappe", "OCI", "DigitalOcean", "Scaleway", "Self-Managed", "Fake"]
+		provider: DF.Literal[
+			"", "AWS", "Hetzner", "Frappe", "OCI", "DigitalOcean", "Scaleway", "Self-Managed", "Fake"
+		]
 		region: DF.Data
 	# end: auto-generated types
 

@@ -63,9 +63,7 @@ def create_notification(
 	).insert(ignore_permissions=True)
 
 	if publish:
-		frappe.publish_realtime(
-			f"team_notification:{team}", {"team": team}, after_commit=True
-		)
+		frappe.publish_realtime(f"team_notification:{team}", {"team": team}, after_commit=True)
 	return doc
 
 
@@ -95,10 +93,7 @@ def _unread_notifications(team: str, user: str) -> list[str]:
 	)
 
 	if not user_has_operator_bypass(user):
-		rows = [
-			row for row in rows
-			if not row.required_cap or can(user, team, row.required_cap)
-		]
+		rows = [row for row in rows if not row.required_cap or can(user, team, row.required_cap)]
 
 	if rows:
 		categories = {row.category for row in rows}
@@ -161,19 +156,27 @@ def list_notifications(
 	items = frappe.get_all(
 		"Team Notification",
 		filters=filters,
-		fields=["name", "category", "event_type", "severity", "required_cap",
-				"title", "message", "reference_doctype", "reference_name",
-				"action_label", "action_route", "creation"],
+		fields=[
+			"name",
+			"category",
+			"event_type",
+			"severity",
+			"required_cap",
+			"title",
+			"message",
+			"reference_doctype",
+			"reference_name",
+			"action_label",
+			"action_route",
+			"creation",
+		],
 		order_by="creation desc",
 		limit=frappe.utils.cint(limit) * 3,
 	)
 
 	is_operator = user_has_operator_bypass(user)
 	if not is_operator:
-		items = [
-			row for row in items
-			if not row.required_cap or can(user, team, row.required_cap)
-		]
+		items = [row for row in items if not row.required_cap or can(user, team, row.required_cap)]
 
 		categories = {row.category for row in items}
 		if categories:

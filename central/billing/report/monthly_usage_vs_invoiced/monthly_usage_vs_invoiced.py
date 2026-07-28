@@ -37,9 +37,27 @@ def get_columns() -> list[dict]:
 		{"label": _("Month"), "fieldname": "month", "fieldtype": "Data", "width": 100},
 		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 160},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 80},
-		{"label": _("Usage Value"), "fieldname": "usage_value", "fieldtype": "Currency", "options": "currency", "width": 140},
-		{"label": _("Invoiced"), "fieldname": "invoiced", "fieldtype": "Currency", "options": "currency", "width": 140},
-		{"label": _("Variance"), "fieldname": "variance", "fieldtype": "Currency", "options": "currency", "width": 140},
+		{
+			"label": _("Usage Value"),
+			"fieldname": "usage_value",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 140,
+		},
+		{
+			"label": _("Invoiced"),
+			"fieldname": "invoiced",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 140,
+		},
+		{
+			"label": _("Variance"),
+			"fieldname": "variance",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 140,
+		},
 		{"label": _("Coverage %"), "fieldname": "coverage_pct", "fieldtype": "Percent", "width": 110},
 	]
 
@@ -75,7 +93,8 @@ def get_data(filters: dict):
 
 	# Usage side: billable overage worth (usage within the allowance is free).
 	for r in frappe.get_all(
-		"Usage Rollup", filters=usage_conditions,
+		"Usage Rollup",
+		filters=usage_conditions,
 		fields=["team", "period_start", "quantity", "locked_allowance", "locked_rate", "currency"],
 	):
 		key = (_month(r.period_start), r.team)
@@ -86,7 +105,8 @@ def get_data(filters: dict):
 
 	# Invoiced side: only the METERED line items on the month's billable invoices.
 	invoices = frappe.get_all(
-		"Invoice", filters=invoice_conditions,
+		"Invoice",
+		filters=invoice_conditions,
 		fields=["name", "team", "period_start", "currency"],
 	)
 	inv_key = {inv.name: (_month(inv.period_start), inv.team, inv.currency) for inv in invoices}
@@ -112,11 +132,17 @@ def get_data(filters: dict):
 		if usage_value == 0 and invoiced == 0:
 			continue
 		coverage = (invoiced / usage_value * 100) if usage_value else 0.0
-		rows.append({
-			"month": month, "team": tm, "currency": currency,
-			"usage_value": usage_value, "invoiced": invoiced,
-			"variance": flt(invoiced - usage_value, 2), "coverage_pct": flt(coverage, 2),
-		})
+		rows.append(
+			{
+				"month": month,
+				"team": tm,
+				"currency": currency,
+				"usage_value": usage_value,
+				"invoiced": invoiced,
+				"variance": flt(invoiced - usage_value, 2),
+				"coverage_pct": flt(coverage, 2),
+			}
+		)
 		t = totals.setdefault(currency, {"usage": 0.0, "invoiced": 0.0})
 		t["usage"] += usage_value
 		t["invoiced"] += invoiced
@@ -125,11 +151,26 @@ def get_data(filters: dict):
 	summary = []
 	for currency in sorted(totals):
 		t = totals[currency]
-		summary.append({"label": _("Usage Value ({0})").format(currency),
-						"value": flt(t["usage"], 2), "datatype": "Float"})
-		summary.append({"label": _("Invoiced ({0})").format(currency),
-						"value": flt(t["invoiced"], 2), "datatype": "Float"})
-		summary.append({"label": _("Variance ({0})").format(currency),
-						"value": flt(t["invoiced"] - t["usage"], 2), "datatype": "Float",
-						"indicator": "green" if abs(t["invoiced"] - t["usage"]) < 0.01 else "red"})
+		summary.append(
+			{
+				"label": _("Usage Value ({0})").format(currency),
+				"value": flt(t["usage"], 2),
+				"datatype": "Float",
+			}
+		)
+		summary.append(
+			{
+				"label": _("Invoiced ({0})").format(currency),
+				"value": flt(t["invoiced"], 2),
+				"datatype": "Float",
+			}
+		)
+		summary.append(
+			{
+				"label": _("Variance ({0})").format(currency),
+				"value": flt(t["invoiced"] - t["usage"], 2),
+				"datatype": "Float",
+				"indicator": "green" if abs(t["invoiced"] - t["usage"]) < 0.01 else "red",
+			}
+		)
 	return rows, summary

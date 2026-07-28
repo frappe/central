@@ -1,34 +1,34 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { Button, LoadingText, TabButtons } from 'frappe-ui'
-import EmptyState from '@/components/common/EmptyState.vue'
-import NotificationItem from '@/components/notifications/NotificationItem.vue'
-import { useNotifications } from '@/composables/useNotifications'
-import type { TeamNotification } from '@/types/billing'
+import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
+import { Button, LoadingText, TabButtons } from "frappe-ui";
+import EmptyState from "@/components/common/EmptyState.vue";
+import NotificationItem from "@/components/notifications/NotificationItem.vue";
+import { useNotifications } from "@/composables/useNotifications";
+import type { TeamNotification } from "@/types/billing";
 
-const { items, unread, loading, markAsRead, markAllAsRead } = useNotifications()
-const router = useRouter()
+const { items, unread, loading, markAsRead, markAllAsRead } = useNotifications();
+const router = useRouter();
 
-type Filter = 'all' | 'unread' | 'Billing' | 'Server'
-const filter = ref<Filter>('all')
+type Filter = "all" | "unread" | "Billing" | "Server";
+const filter = ref<Filter>("all");
 
 const FILTERS: { label: string; value: Filter }[] = [
-	{ label: 'All', value: 'all' },
-	{ label: 'Unread', value: 'unread' },
-	{ label: 'Billing', value: 'Billing' },
-	{ label: 'Server', value: 'Server' },
-]
+	{ label: "All", value: "all" },
+	{ label: "Unread", value: "unread" },
+	{ label: "Billing", value: "Billing" },
+	{ label: "Server", value: "Server" },
+];
 
 const visible = computed<TeamNotification[]>(() => {
-	if (filter.value === 'all') return items.value
-	if (filter.value === 'unread') return items.value.filter((n) => !n.is_read)
-	return items.value.filter((n) => n.category === filter.value)
-})
+	if (filter.value === "all") return items.value;
+	if (filter.value === "unread") return items.value.filter((n) => !n.is_read);
+	return items.value.filter((n) => n.category === filter.value);
+});
 
 async function onAct(n: TeamNotification): Promise<void> {
-	if (!n.is_read) await markAsRead(n.name)
-	if (n.action_route) router.push(n.action_route)
+	if (!n.is_read) await markAsRead(n.name);
+	if (n.action_route) router.push(n.action_route);
 }
 </script>
 

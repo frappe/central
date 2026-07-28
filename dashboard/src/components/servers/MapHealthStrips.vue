@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Top-center strips over the map: stale-mirror warning first, then a load error
 // with retry. Presentational — the page owns the data and the retry action.
-defineProps<{ stale: string[]; error: string | null; hasRows: boolean }>()
-defineEmits<{ retry: [] }>()
+defineProps<{ stale: string[]; error: string | null; hasRows: boolean }>();
+defineEmits<{ retry: [] }>();
 </script>
 
 <template>
@@ -11,7 +11,7 @@ defineEmits<{ retry: [] }>()
 			v-if="stale.length"
 			class="pointer-events-auto rounded-md bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3 shadow-sm"
 		>
-			Showing last-known data — couldn't reach: {{ stale.join(', ') }}
+			Showing last-known data — couldn't reach: {{ stale.join(", ") }}
 		</p>
 		<p
 			v-else-if="error && hasRows"

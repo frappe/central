@@ -20,9 +20,9 @@ TEAM = "team-srv-catalog"
 CLUSTER = "ap-south-1"
 OTHER_CLUSTER = "eu-central-1"
 
-CHEAP = "bundle-cheap"      # 1000 INR
-MID = "bundle-mid"          # 2000 INR
-PRICEY = "bundle-pricey"    # 5000 INR
+CHEAP = "bundle-cheap"  # 1000 INR
+MID = "bundle-mid"  # 2000 INR
+PRICEY = "bundle-pricey"  # 5000 INR
 REGIONAL = "bundle-regional"  # priced only on CLUSTER
 
 
@@ -34,8 +34,13 @@ def _ensure_tier_level(name):
 		frappe.delete_doc("Trust Tier Level", name, force=True)
 	frappe.get_doc(
 		{
-			"doctype": "Trust Tier Level", "__newname": name, "tier": name,
-			"sequence": 1, "is_default": 0, "max_resource_count": 50, "min_paid_invoices": 0,
+			"doctype": "Trust Tier Level",
+			"__newname": name,
+			"tier": name,
+			"sequence": 1,
+			"is_default": 0,
+			"max_resource_count": 50,
+			"min_paid_invoices": 0,
 			"thresholds": [{"currency": "INR", "max_spend": 100000, "min_cumulative_paid": 0}],
 		}
 	).insert(ignore_permissions=True)
@@ -94,13 +99,14 @@ class TestEligiblePlans(IntegrationTestCase):
 		# resource type).
 		_clear_metered_plans("Tokens")
 		make_plan(
-			"tokens-100m", category="AI Tokens",
+			"tokens-100m",
+			category="AI Tokens",
 			includes=[{"resource_type": "Tokens", "quantity": 100, "unit": "Nos"}],
 			rates=_rates(800),
 		)
 		set_team_tier(TEAM, max_spend=100000)  # ample headroom — exclusion is by family, not price
 		plans, _ = self._titles()
-		self.assertIn(CHEAP, plans)            # a VM Plans (Server) family member shows
+		self.assertIn(CHEAP, plans)  # a VM Plans (Server) family member shows
 		self.assertNotIn("tokens-100m", plans)  # the AI Tokens family does not
 
 	def test_excludes_metered_plans(self):
@@ -108,13 +114,14 @@ class TestEligiblePlans(IntegrationTestCase):
 		# not provisioned via create-server. Its family carries no provision_target, so
 		# it must never surface in the menu (ADR 0008).
 		make_metered_plan(
-			"meter-menu-transfer", resource_type="Transfer",
+			"meter-menu-transfer",
+			resource_type="Transfer",
 			rates=[{"cluster": "", "currency": "INR", "rate": 1}],
 		)
 		set_team_tier(TEAM, max_spend=100000)  # ample headroom — exclusion is by family
 		plans, _ = self._titles()
-		self.assertIn(CHEAP, plans)                      # a VM Plans (Server) member shows
-		self.assertNotIn("meter-menu-transfer", plans)   # the metered plan does not
+		self.assertIn(CHEAP, plans)  # a VM Plans (Server) member shows
+		self.assertNotIn("meter-menu-transfer", plans)  # the metered plan does not
 
 	def test_spend_cap_hides_plans_above_the_ceiling(self):
 		set_team_tier(TEAM, max_spend=2000)  # admits CHEAP (1000) + MID (2000), not PRICEY

@@ -1,84 +1,81 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
-import { Badge, Button } from 'frappe-ui'
-import RightSidebar from '@/components/common/RightSidebar.vue'
+import { computed, h, ref } from "vue";
+import { Badge, Button } from "frappe-ui";
+import RightSidebar from "@/components/common/RightSidebar.vue";
 import {
 	ListView,
 	createListViewQuery,
 	type ListViewColumn,
 	type ListViewFilter,
-} from '@/components/common/list-view'
-import CapabilityList from '@/components/team/CapabilityList.vue'
-import InviteMemberDialog from '@/components/team/InviteMemberDialog.vue'
-import TeamMemberRowActions from '@/components/team/TeamMemberRowActions.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useTeamMembers } from '@/composables/useTeamMembers'
-import { useTeamRoles } from '@/composables/useTeamRoles'
-import { useTeamRowSelection } from '@/composables/useTeamRowSelection'
-import type { TeamMemberRow } from '@/types/api'
+} from "@/components/common/list-view";
+import CapabilityList from "@/components/team/CapabilityList.vue";
+import InviteMemberDialog from "@/components/team/InviteMemberDialog.vue";
+import TeamMemberRowActions from "@/components/team/TeamMemberRowActions.vue";
+import { useCapabilities } from "@/composables/useCapabilities";
+import { useTeamMembers } from "@/composables/useTeamMembers";
+import { useTeamRoles } from "@/composables/useTeamRoles";
+import { useTeamRowSelection } from "@/composables/useTeamRowSelection";
+import type { TeamMemberRow } from "@/types/api";
 
-const { members, loading, error, busy, reload, setRole, setStatus, remove } =
-	useTeamMembers()
-const { roles, capabilities, capsByRole, roleLabel } = useTeamRoles()
-const { canManageMembers } = useCapabilities()
+const { members, loading, error, busy, reload, setRole, setStatus, remove } = useTeamMembers();
+const { roles, capabilities, capsByRole, roleLabel } = useTeamRoles();
+const { canManageMembers } = useCapabilities();
 
 const query = ref(
 	createListViewQuery({
 		pageSize: 20,
-		sort: { key: 'user', direction: 'asc' },
-	}),
-)
-const inviteOpen = ref(false)
-const { selected, select, clear } = useTeamRowSelection(members, getMemberKey)
+		sort: { key: "user", direction: "asc" },
+	})
+);
+const inviteOpen = ref(false);
+const { selected, select, clear } = useTeamRowSelection(members, getMemberKey);
 
 const selectedRoleCaps = computed(() =>
-	selected.value ? (capsByRole.value[selected.value.role] ?? []) : [],
-)
+	selected.value ? capsByRole.value[selected.value.role] ?? [] : []
+);
 
 const filters: ListViewFilter[] = [
 	{
-		key: 'status',
-		label: 'Status',
+		key: "status",
+		label: "Status",
 		options: [
-			{ label: 'Active', value: 'Active' },
-			{ label: 'Suspended', value: 'Suspended' },
+			{ label: "Active", value: "Active" },
+			{ label: "Suspended", value: "Suspended" },
 		],
 	},
-]
+];
 
 const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 	{
-		accessorKey: 'user',
-		header: 'Member',
-		meta: { cellClass: 'truncate font-medium' },
+		accessorKey: "user",
+		header: "Member",
+		meta: { cellClass: "truncate font-medium" },
 	},
 	{
-		id: 'role',
-		header: 'Role',
+		id: "role",
+		header: "Role",
 		accessorFn: (member) => roleLabel(member.role),
-		meta: { cellClass: 'truncate' },
+		meta: { cellClass: "truncate" },
 	},
 	{
-		accessorKey: 'status',
-		header: 'Status',
+		accessorKey: "status",
+		header: "Status",
 		enableSorting: false,
 		cell: ({ row }) =>
-			h('div', { class: 'flex items-center gap-2' }, [
+			h("div", { class: "flex items-center gap-2" }, [
 				h(Badge, {
-					theme: row.original.status === 'Active' ? 'green' : 'orange',
+					theme: row.original.status === "Active" ? "green" : "orange",
 					label: row.original.status,
 				}),
-				row.original.is_owner
-					? h(Badge, { theme: 'gray', label: 'Owner' })
-					: null,
+				row.original.is_owner ? h(Badge, { theme: "gray", label: "Owner" }) : null,
 			]),
 	},
 	{
-		id: 'actions',
-		header: '',
+		id: "actions",
+		header: "",
 		enableSorting: false,
 		size: 1,
-		meta: { align: 'end' },
+		meta: { align: "end" },
 		cell: ({ row }) =>
 			h(TeamMemberRowActions, {
 				member: row.original,
@@ -90,10 +87,10 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 				onRemove: remove,
 			}),
 	},
-])
+]);
 
 function getMemberKey(member: TeamMemberRow): string {
-	return member.user
+	return member.user;
 }
 </script>
 
@@ -111,7 +108,10 @@ function getMemberKey(member: TeamMemberRow): string {
 			searchable
 			search-placeholder="Search members..."
 			item-label="member"
-			:empty-state="{ title: 'No members yet', description: 'The active team roster is empty.' }"
+			:empty-state="{
+				title: 'No members yet',
+				description: 'The active team roster is empty.',
+			}"
 			@retry="reload"
 			@row-click="select"
 		>

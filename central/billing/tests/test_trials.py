@@ -96,9 +96,7 @@ class TestConversion(TrialTestBase):
 		from central.billing.catalog.subscriptions import current_segment_rate
 
 		self.assertEqual(current_segment_rate(self.sub), 1000.0)
-		self.assertEqual(
-			frappe.db.get_value("Subscription", self.sub, "account_standing"), "Current"
-		)
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "account_standing"), "Current")
 
 
 class TestSubsidyAndExpiry(TrialTestBase):
@@ -114,11 +112,19 @@ class TestSubsidyAndExpiry(TrialTestBase):
 		for i, subtotal in enumerate((1000.0, 2000.0)):
 			team = f"{TEAM}-subsidy-{i}"
 			ensure_team(team)
-			frappe.get_doc({
-				"doctype": "Invoice", "team": team, "invoice_type": "Cost Report",
-				"status": "Open", "period_start": "2099-01-01", "period_end": "2099-01-31",
-				"currency": "INR", "subtotal": subtotal, "total": subtotal,
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": team,
+					"invoice_type": "Cost Report",
+					"status": "Open",
+					"period_start": "2099-01-01",
+					"period_end": "2099-01-31",
+					"currency": "INR",
+					"subtotal": subtotal,
+					"total": subtotal,
+				}
+			).insert(ignore_permissions=True)
 
 		subsidy = trials.subsidy_total("2099-01-01", "2099-01-31")
 		self.assertEqual(subsidy, 3000.0)  # 1000 + 2000

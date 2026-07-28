@@ -15,14 +15,18 @@ class IntegrationTestPilotCredential(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.owner = ensure_user("bench.cred.owner@example.test")
-		self.team = frappe.get_doc(
-			{
-				"doctype": "Team",
-				"team_name": "Pilot Credential Team",
-				"owner_user": self.owner,
-				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
-			}
-		).insert().name
+		self.team = (
+			frappe.get_doc(
+				{
+					"doctype": "Team",
+					"team_name": "Pilot Credential Team",
+					"owner_user": self.owner,
+					"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
+				}
+			)
+			.insert()
+			.name
+		)
 
 	def mint(self, pilot_credential_id: str = "pilot-1", **kwargs) -> str:
 		return PilotCredential.mint(team=self.team, pilot_credential_id=pilot_credential_id, **kwargs)

@@ -42,23 +42,43 @@ class ErpnextSyncTestBase(IntegrationTestCase):
 
 	def _paid_invoice(self, status="Paid", invoice_type="Billable", month=5):
 		# One live invoice per team per period, so two invoices means two periods.
-		return frappe.get_doc(
-			{
-				"doctype": "Invoice", "team": TEAM, "invoice_type": invoice_type, "status": status,
-				"period_start": f"2026-{month:02d}-01", "period_end": f"2026-{month:02d}-28", "currency": "INR",
-				"subtotal": 1000, "total": 1180, "expected_collection": 1180, "amount_paid": 1180,
-				"items": [
-					{"subscription_resource": "srv-1", "plan": "bundle-2vcpu", "resource_type": "bundle",
-					 "rate": 1000, "days": 30, "amount": 1000},
-				],
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": invoice_type,
+					"status": status,
+					"period_start": f"2026-{month:02d}-01",
+					"period_end": f"2026-{month:02d}-28",
+					"currency": "INR",
+					"subtotal": 1000,
+					"total": 1180,
+					"expected_collection": 1180,
+					"amount_paid": 1180,
+					"items": [
+						{
+							"subscription_resource": "srv-1",
+							"plan": "bundle-2vcpu",
+							"resource_type": "bundle",
+							"rate": 1000,
+							"days": 30,
+							"amount": 1000,
+						},
+					],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 
 class TestSyncSuccess(ErpnextSyncTestBase):
 	def test_paid_invoice_syncs_and_stores_reference(self):
 		inv = self._paid_invoice()
-		with patch("central.billing.revenue.erpnext_sync.requests.post", return_value=ok_response("SINV-9")) as post:
+		with patch(
+			"central.billing.revenue.erpnext_sync.requests.post", return_value=ok_response("SINV-9")
+		) as post:
 			out = erpnext_sync.sync_invoice(inv)
 
 		self.assertEqual(out["synced"], "SINV-9")
@@ -118,7 +138,8 @@ class TestFailureIsolation(ErpnextSyncTestBase):
 		self.assertEqual(doc.erpnext_sync_attempts, 3)
 		# Ops alerted (not the customer).
 		comments = frappe.get_all(
-			"Comment", {"reference_doctype": "Invoice", "reference_name": inv, "comment_type": "Info"},
+			"Comment",
+			{"reference_doctype": "Invoice", "reference_name": inv, "comment_type": "Info"},
 			pluck="content",
 		)
 		self.assertTrue(any("ERPNext sync failed" in c for c in comments))
@@ -129,7 +150,9 @@ class TestFailureIsolation(ErpnextSyncTestBase):
 			erpnext_sync.sync_invoice(inv)  # → pending, next_retry_at in ~60s
 
 		future = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=120)
-		with patch("central.billing.revenue.erpnext_sync.requests.post", return_value=ok_response("SINV-RETRY")):
+		with patch(
+			"central.billing.revenue.erpnext_sync.requests.post", return_value=ok_response("SINV-RETRY")
+		):
 			erpnext_sync.retry_failed_syncs(now=future)
 
 		doc = frappe.get_doc("Invoice", inv)

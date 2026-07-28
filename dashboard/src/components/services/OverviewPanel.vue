@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { Badge, Button, Spinner } from 'frappe-ui'
-import BillingCard from '@/components/billing/BillingCard.vue'
-import { useServices } from '@/composables/useServices'
+import { computed } from "vue";
+import { useRouter } from "vue-router";
+import { Badge, Button, Spinner } from "frappe-ui";
+import BillingCard from "@/components/billing/BillingCard.vue";
+import { useServices } from "@/composables/useServices";
 
 // Overview: plan + status, the models the plan grants, and which sites have AI on.
 // Enabling is done on the server (bench) dashboard — the bench owns its site list —
 // so Central shows what's enabled and links out. Usage lives in Billing.
-const router = useRouter()
-const { instance, instanceLoading } = useServices()
+const router = useRouter();
+const { instance, instanceLoading } = useServices();
 
-const planTitle = computed(() => instance.value?.plan_title || instance.value?.plan || '—')
-const models = computed(() => instance.value?.models ?? [])
-const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
+const planTitle = computed(() => instance.value?.plan_title || instance.value?.plan || "—");
+const models = computed(() => instance.value?.models ?? []);
+const enabledSites = computed(() => instance.value?.enabled_sites ?? []);
 </script>
 
 <template>
@@ -40,7 +40,7 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 					</p>
 					<p class="mt-1.5 text-p-sm text-ink-gray-5">
 						{{ enabledSites.length }}
-						{{ enabledSites.length === 1 ? 'site' : 'sites' }} with AI enabled
+						{{ enabledSites.length === 1 ? "site" : "sites" }} with AI enabled
 					</p>
 					<button
 						class="mt-4 inline-flex items-center gap-1 text-p-sm font-medium text-ink-gray-7 hover:text-ink-gray-9"

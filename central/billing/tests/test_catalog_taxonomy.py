@@ -69,7 +69,16 @@ class TestCatalogTaxonomy(IntegrationTestCase):
 	def test_configurator_sets_category_and_maps_sub_category(self):
 		"""generate_plans authors the VM family (hash-named) and carries the profile."""
 		out = configurator.generate_plans(
-			rungs=[{"plan_name": "tax-cfg-mem", "label": "Mem", "vcpu": 1, "memory_gb": 4, "disk_gb": 20, "transfer_gb": 0}],
+			rungs=[
+				{
+					"plan_name": "tax-cfg-mem",
+					"label": "Mem",
+					"vcpu": 1,
+					"memory_gb": 4,
+					"disk_gb": 20,
+					"transfer_gb": 0,
+				}
+			],
 			sub_category="Memory Optimised",
 		)
 		plan = frappe.get_doc("Plan", out["created"][0])
@@ -78,7 +87,14 @@ class TestCatalogTaxonomy(IntegrationTestCase):
 		self.assertEqual(plan.title, "Memory Optimised — Mem")
 
 	def test_configurator_without_sub_category_carries_none(self):
-		rung = {"plan_name": "tax-cfg-custom", "label": "Cust", "vcpu": 1, "memory_gb": 2, "disk_gb": 10, "transfer_gb": 0}
+		rung = {
+			"plan_name": "tax-cfg-custom",
+			"label": "Cust",
+			"vcpu": 1,
+			"memory_gb": 2,
+			"disk_gb": 10,
+			"transfer_gb": 0,
+		}
 		out = configurator.generate_plans(rungs=[rung])
 		plan = frappe.get_doc("Plan", out["created"][0])
 		self.assertEqual(plan.category, "VM Plans")

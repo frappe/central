@@ -32,10 +32,34 @@ def get_columns() -> list[dict]:
 	return [
 		{"label": _("Month"), "fieldname": "month", "fieldtype": "Data", "width": 110},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 90},
-		{"label": _("MRR (Recurring)"), "fieldname": "mrr", "fieldtype": "Currency", "options": "currency", "width": 150},
-		{"label": _("Usage & Services"), "fieldname": "usage", "fieldtype": "Currency", "options": "currency", "width": 150},
-		{"label": _("Revenue"), "fieldname": "revenue", "fieldtype": "Currency", "options": "currency", "width": 150},
-		{"label": _("YTD Revenue"), "fieldname": "ytd", "fieldtype": "Currency", "options": "currency", "width": 160},
+		{
+			"label": _("MRR (Recurring)"),
+			"fieldname": "mrr",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 150,
+		},
+		{
+			"label": _("Usage & Services"),
+			"fieldname": "usage",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 150,
+		},
+		{
+			"label": _("Revenue"),
+			"fieldname": "revenue",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 150,
+		},
+		{
+			"label": _("YTD Revenue"),
+			"fieldname": "ytd",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 160,
+		},
 	]
 
 
@@ -57,11 +81,15 @@ def get_data(filters: dict) -> list[dict]:
 	rows = []
 	for (month, currency), g in agg.items():
 		revenue = g["mrr"] + g["usage"]
-		rows.append({
-			"month": month, "currency": currency,
-			"mrr": flt(g["mrr"], 2), "usage": flt(g["usage"], 2),
-			"revenue": flt(revenue, 2),
-		})
+		rows.append(
+			{
+				"month": month,
+				"currency": currency,
+				"mrr": flt(g["mrr"], 2),
+				"usage": flt(g["usage"], 2),
+				"revenue": flt(revenue, 2),
+			}
+		)
 	rows.sort(key=lambda r: (r["currency"], r["month"]))
 
 	# Year-to-date running total per currency, reset at each calendar-year boundary.
@@ -81,12 +109,17 @@ def get_chart(rows: list[dict]) -> dict | None:
 	currencies = sorted({r["currency"] for r in rows})
 	by_key = {(r["month"], r["currency"]): r["revenue"] for r in rows}
 	datasets = [
-		{"name": _("Revenue ({0})").format(currency),
-		 "values": [flt(by_key.get((m, currency), 0.0), 2) for m in months]}
+		{
+			"name": _("Revenue ({0})").format(currency),
+			"values": [flt(by_key.get((m, currency), 0.0), 2) for m in months],
+		}
 		for currency in currencies
 	]
-	return {"data": {"labels": months, "datasets": datasets}, "type": "line",
-			"lineOptions": {"regionFill": 1}}
+	return {
+		"data": {"labels": months, "datasets": datasets},
+		"type": "line",
+		"lineOptions": {"regionFill": 1},
+	}
 
 
 def get_summary(rows: list[dict]) -> list[dict]:
@@ -96,8 +129,20 @@ def get_summary(rows: list[dict]) -> list[dict]:
 	for currency in sorted({r["currency"] for r in rows}):
 		mrr = sum(flt(r["mrr"]) for r in rows if r["currency"] == currency and r["month"] == latest_month)
 		ytd = max((flt(r["ytd"]) for r in rows if r["currency"] == currency), default=0.0)
-		summary.append({"label": _("MRR ({0})").format(currency), "value": flt(mrr, 2),
-						"datatype": "Float", "indicator": "green"})
-		summary.append({"label": _("YTD Revenue ({0})").format(currency), "value": flt(ytd, 2),
-						"datatype": "Float", "indicator": "blue"})
+		summary.append(
+			{
+				"label": _("MRR ({0})").format(currency),
+				"value": flt(mrr, 2),
+				"datatype": "Float",
+				"indicator": "green",
+			}
+		)
+		summary.append(
+			{
+				"label": _("YTD Revenue ({0})").format(currency),
+				"value": flt(ytd, 2),
+				"datatype": "Float",
+				"indicator": "blue",
+			}
+		)
 	return summary

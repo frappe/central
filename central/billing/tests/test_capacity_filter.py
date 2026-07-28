@@ -27,7 +27,7 @@ TEAM = "team-capacity-filter"
 CLUSTER = "ap-south-1"
 
 SMALL = "cap-small"  # 1 vCPU / 2 GB / 20 GB
-BIG = "cap-big"      # 8 vCPU / 32 GB / 500 GB
+BIG = "cap-big"  # 8 vCPU / 32 GB / 500 GB
 
 
 def _shape(vcpu, memory_gb, disk_gb):
@@ -43,8 +43,13 @@ def _ensure_tier_level(name):
 		frappe.delete_doc("Trust Tier Level", name, force=True)
 	frappe.get_doc(
 		{
-			"doctype": "Trust Tier Level", "__newname": name, "tier": name,
-			"sequence": 1, "is_default": 0, "max_resource_count": 50, "min_paid_invoices": 0,
+			"doctype": "Trust Tier Level",
+			"__newname": name,
+			"tier": name,
+			"sequence": 1,
+			"is_default": 0,
+			"max_resource_count": 50,
+			"min_paid_invoices": 0,
 			"thresholds": [{"currency": "INR", "max_spend": 100000, "min_cumulative_paid": 0}],
 		}
 	).insert(ignore_permissions=True)
@@ -113,7 +118,9 @@ class TestCapacityFilter(IntegrationTestCase):
 		self.assertEqual(out["plans"], {})
 		self.assertEqual(out["rate_card"], {})
 		self.assertEqual(out["profiles"], [])
-		self.assertEqual(out["capacity"], {"gated": True, "available": False, "unmeasured": False, "largest_vm": None})
+		self.assertEqual(
+			out["capacity"], {"gated": True, "available": False, "unmeasured": False, "largest_vm": None}
+		)
 
 	def test_smallest_preset_not_fitting_yields_empty_menu(self):
 		# `available` False even with a (tiny) largest_vm — Atlas says nothing provisions
@@ -131,8 +138,12 @@ class TestCapacityFilter(IntegrationTestCase):
 			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		self.assertEqual(
 			out["capacity"],
-			{"gated": True, "available": True, "unmeasured": False,
-			 "largest_vm": {"vcpus": 4, "memory_megabytes": 8 * 1024, "disk_gigabytes": 200}},
+			{
+				"gated": True,
+				"available": True,
+				"unmeasured": False,
+				"largest_vm": {"vcpus": 4, "memory_megabytes": 8 * 1024, "disk_gigabytes": 200},
+			},
 		)
 
 	def test_resize_uses_per_host_capacity(self):
@@ -147,11 +158,11 @@ class TestCapacityFilter(IntegrationTestCase):
 			patch.object(AtlasClient, "capacity") as mock_create,
 		):
 			out = get_eligible_plans(cluster=CLUSTER, team=TEAM, exclude_subscription=sub)
-		mock_create.assert_not_called()   # the create-machine ceiling isn't used for a resize
+		mock_create.assert_not_called()  # the create-machine ceiling isn't used for a resize
 		mock_resize.assert_called_once()  # the per-host resize ceiling is
 		plans = _titles(out)
-		self.assertIn(SMALL, plans)       # the running size always fits its own host
-		self.assertNotIn(BIG, plans)      # growth capped to what the host can seat
+		self.assertIn(SMALL, plans)  # the running size always fits its own host
+		self.assertNotIn(BIG, plans)  # growth capped to what the host can seat
 		self.assertTrue(out["capacity"]["gated"])
 
 	def test_resize_cannot_gate_on_another_teams_subscription(self):
@@ -226,7 +237,8 @@ class TestCapacityFilter(IntegrationTestCase):
 		# An unreported axis surfaces as a huge sentinel → every plan fits (uncatalogued
 		# = unlimited, the same vouch-by-Active rule placement uses).
 		cap = {
-			"available": True, "unmeasured": True,
+			"available": True,
+			"unmeasured": True,
 			"largest_vm": {"vcpus": 1024, "memory_megabytes": 1024 * 1024, "disk_gigabytes": 1024 * 1024},
 		}
 		with patch.object(AtlasClient, "capacity", return_value=cap):

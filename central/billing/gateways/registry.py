@@ -21,9 +21,7 @@ def resolve_gateway_for_currency(currency: str) -> str:
 	)
 	if name and frappe.db.get_value("Payment Gateway", name, "is_enabled"):
 		return name
-	raise GatewayNotFound(
-		f"No enabled payment gateway is configured as the default for {currency}."
-	)
+	raise GatewayNotFound(f"No enabled payment gateway is configured as the default for {currency}.")
 
 
 def supported_currencies() -> list[str]:

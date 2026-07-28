@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
-import type { ProviderLogin } from '@/types/api'
+import { Button } from "frappe-ui";
+import type { ProviderLogin } from "@/types/api";
 
 defineProps<{
-	providers: readonly ProviderLogin[]
-	prefix: string
-}>()
+	providers: readonly ProviderLogin[];
+	prefix: string;
+}>();
 
 function openProvider(url: string) {
-	window.location.href = url
+	window.location.href = url;
 }
 </script>
 

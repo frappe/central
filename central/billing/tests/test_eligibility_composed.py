@@ -129,7 +129,10 @@ class TestEligibilityComposed(IntegrationTestCase):
 		self.assertEqual(got["subscription"], out["subscription"])
 		self.assertEqual((got["vcpus"], got["memory_gb"], got["disk_gb"]), (2, 8, 40))
 		# Resize headroom excludes this config's own spend, so it has the full cap back.
-		self.assertEqual(got["available"], got_max := frappe.utils.flt(get_eligible_plans(cluster=CLUSTER, team=TEAM)["max_spend"]))
+		self.assertEqual(
+			got["available"],
+			got_max := frappe.utils.flt(get_eligible_plans(cluster=CLUSTER, team=TEAM)["max_spend"]),
+		)
 
 	def test_get_composed_config_preset_returns_vm_shape_for_resize(self):
 		from central.billing.catalog import subscriptions
@@ -168,7 +171,9 @@ class TestEligibilityComposed(IntegrationTestCase):
 			result = resize_composed_config(out["subscription"], bigger, "General")
 		self.assertTrue(result["resized"])
 		self.assertEqual(
-			frappe.db.count("Subscription Change", {"subscription": out["subscription"], "change_type": "Plan Changed"}),
+			frappe.db.count(
+				"Subscription Change", {"subscription": out["subscription"], "change_type": "Plan Changed"}
+			),
 			1,
 		)
 

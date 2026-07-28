@@ -1,25 +1,24 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Button, Skeleton } from 'frappe-ui'
-import RoleMatrix from '@/components/team/RoleMatrix.vue'
-import RoleBuilderDialog from '@/components/team/RoleBuilderDialog.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useTeamRoles } from '@/composables/useTeamRoles'
-import type { TeamRoleRow } from '@/types/api'
+import { ref } from "vue";
+import { Button, Skeleton } from "frappe-ui";
+import RoleMatrix from "@/components/team/RoleMatrix.vue";
+import RoleBuilderDialog from "@/components/team/RoleBuilderDialog.vue";
+import { useCapabilities } from "@/composables/useCapabilities";
+import { useTeamRoles } from "@/composables/useTeamRoles";
+import type { TeamRoleRow } from "@/types/api";
 
-const { roles, capabilities, loading, error, reload, deleteRole } =
-	useTeamRoles()
-const { canManageMembers } = useCapabilities()
+const { roles, capabilities, loading, error, reload, deleteRole } = useTeamRoles();
+const { canManageMembers } = useCapabilities();
 
-const builderOpen = ref(false)
-const deleting = ref('')
+const builderOpen = ref(false);
+const deleting = ref("");
 
 async function onDeleteRole(role: TeamRoleRow): Promise<void> {
-	deleting.value = role.name
+	deleting.value = role.name;
 	try {
-		await deleteRole(role.name, role.role_name)
+		await deleteRole(role.name, role.role_name);
 	} finally {
-		deleting.value = ''
+		deleting.value = "";
 	}
 }
 </script>
@@ -29,8 +28,7 @@ async function onDeleteRole(role: TeamRoleRow): Promise<void> {
 		<div class="mx-auto max-w-4xl">
 			<div class="mb-4 flex items-center justify-between gap-3">
 				<p class="text-p-sm text-ink-gray-5">
-					Every role and exactly what it can do. Roles are named sets of
-					capabilities.
+					Every role and exactly what it can do. Roles are named sets of capabilities.
 				</p>
 				<Button
 					v-if="canManageMembers"

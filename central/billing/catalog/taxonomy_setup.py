@@ -17,8 +17,19 @@ import frappe
 # Every value the catalog's `resource_type` links can hold. IP and Snapshot are valid
 # metered-resource dimensions but appear in no fixed category's allowed list (so never
 # bundle composition).
-RESOURCE_TYPES = ["Compute", "Memory", "Disk", "Transfer", "IP", "Snapshot", "Tokens",
-				  "Storage", "Backup", "Emails", "PDF"]
+RESOURCE_TYPES = [
+	"Compute",
+	"Memory",
+	"Disk",
+	"Transfer",
+	"IP",
+	"Snapshot",
+	"Tokens",
+	"Storage",
+	"Backup",
+	"Emails",
+	"PDF",
+]
 
 # The vCPU ladder a composed-config slider snaps to — the configurator's choices,
 # fractional vCPUs through powers of two (final-plan-pricing.md §4).
@@ -45,9 +56,27 @@ CATEGORIES = [
 		# so a slider can reach a 1/8 vCPU micro config; RAM derives from the ratio.
 		"sub_categories": [
 			{"name": "General", "ram_ratio": 4, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 2000},
-			{"name": "CPU Optimised", "ram_ratio": 2, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 1000},
-			{"name": "Memory Optimised", "ram_ratio": 8, "vcpu_steps": VCPU_LADDER, "disk_min": 10, "disk_max": 2000},
-			{"name": "Storage Optimised", "ram_ratio": 8, "vcpu_steps": VCPU_LADDER, "disk_min": 100, "disk_max": 10000},
+			{
+				"name": "CPU Optimised",
+				"ram_ratio": 2,
+				"vcpu_steps": VCPU_LADDER,
+				"disk_min": 10,
+				"disk_max": 1000,
+			},
+			{
+				"name": "Memory Optimised",
+				"ram_ratio": 8,
+				"vcpu_steps": VCPU_LADDER,
+				"disk_min": 10,
+				"disk_max": 2000,
+			},
+			{
+				"name": "Storage Optimised",
+				"ram_ratio": 8,
+				"vcpu_steps": VCPU_LADDER,
+				"disk_min": 100,
+				"disk_max": 10000,
+			},
 		],
 	},
 	{
@@ -172,8 +201,13 @@ def ensure_catalog_masters():
 # The billing mechanics a category's spec is authoritative for — reconciled onto an
 # existing Plan Category on every seed run so a family seeded before it carried these
 # (e.g. AI Tokens, once seeded as Fixed) self-heals on the next migrate.
-_CATEGORY_BEHAVIOUR = ("billing_type", "billing_interval", "pricing_mode",
-					   "settlement_mode", "reporting_mode")
+_CATEGORY_BEHAVIOUR = (
+	"billing_type",
+	"billing_interval",
+	"pricing_mode",
+	"settlement_mode",
+	"reporting_mode",
+)
 
 
 def _behaviour(spec):

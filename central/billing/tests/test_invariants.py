@@ -49,9 +49,7 @@ class TestWalletMatchesLedger(InvariantTestBase):
 
 		# Raw SQL: every code path is now guarded, so drift can only be simulated by
 		# going around them — which is exactly the scenario the audit exists for.
-		frappe.db.sql(
-			"update `tabCredit Wallet` set balance = 430 where name = %s", (wallet,)
-		)
+		frappe.db.sql("update `tabCredit Wallet` set balance = 430 where name = %s", (wallet,))
 
 		found = self._mine(invariants.audit("C2"), "C2")
 		self.assertEqual(len(found), 1)
@@ -128,18 +126,33 @@ class TestPaidNeverExceedsCaptured(InvariantTestBase):
 	"""
 
 	def _paid_invoice(self, total, amount_paid, attempts):
-		inv = frappe.get_doc({
-			"doctype": "Invoice", "team": TEAM, "status": "Paid", "currency": "INR",
-			"period_start": "2098-03-01", "period_end": "2098-03-31",
-			"subtotal": total, "total": total, "amount_paid": amount_paid,
-		}).insert(ignore_permissions=True)
+		inv = frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"status": "Paid",
+				"currency": "INR",
+				"period_start": "2098-03-01",
+				"period_end": "2098-03-31",
+				"subtotal": total,
+				"total": total,
+				"amount_paid": amount_paid,
+			}
+		).insert(ignore_permissions=True)
 		# retry_number is part of the attempt's gateway key, so each attempt on one
 		# invoice carries its own — as the charge path does.
 		for retry, (amount, status) in enumerate(attempts):
-			frappe.get_doc({
-				"doctype": "Payment Attempt", "invoice": inv.name, "team": TEAM,
-				"amount": amount, "currency": "INR", "status": status, "retry_number": retry,
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": inv.name,
+					"team": TEAM,
+					"amount": amount,
+					"currency": "INR",
+					"status": status,
+					"retry_number": retry,
+				}
+			).insert(ignore_permissions=True)
 		return inv.name
 
 	def tearDown(self):

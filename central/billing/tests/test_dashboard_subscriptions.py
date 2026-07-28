@@ -50,8 +50,13 @@ class TestDashboardSubscriptions(IntegrationTestCase):
 	def test_composed_row_shows_locked_rate_and_spec_title(self):
 		# create_subscription (not provision) skips headroom — no trust tier needed here.
 		sub = subscriptions.create_subscription(
-			TEAM, CLUSTER, plan=None, pricing_mode="Composed",
-			includes=GENERAL, sub_category="General", resource_id="res-dash-composed",
+			TEAM,
+			CLUSTER,
+			plan=None,
+			pricing_mode="Composed",
+			includes=GENERAL,
+			sub_category="General",
+			resource_id="res-dash-composed",
 		)
 		row = self._row(list_subscriptions(TEAM), sub.name)
 

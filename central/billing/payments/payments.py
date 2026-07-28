@@ -68,13 +68,15 @@ def ensure_gateway_customer(team: str, gateway: str, adapter, customer_id: str |
 
 	cid = adapter.create_customer(gateway_customer_info(team))  # external side-effect
 	try:
-		frappe.get_doc({
-			"doctype": "Gateway Customer",
-			"team": team,
-			"gateway": gateway,
-			"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
-			"gateway_customer_id": cid,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Gateway Customer",
+				"team": team,
+				"gateway": gateway,
+				"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
+				"gateway_customer_id": cid,
+			}
+		).insert(ignore_permissions=True)
 	except frappe.DuplicateEntryError:
 		# A concurrent setup minted+stored one first — use the stored id (and let
 		# the just-created duplicate at the gateway lie idle; harmless).
@@ -123,8 +125,10 @@ def _discard_abandoned_setups(team: str, gateway: str):
 	for name in frappe.get_all(
 		"Payment Method",
 		filters={
-			"team": team, "gateway": gateway,
-			"status": "Pending Validation", "gateway_method_id": ["in", [None, ""]],
+			"team": team,
+			"gateway": gateway,
+			"status": "Pending Validation",
+			"gateway_method_id": ["in", [None, ""]],
 		},
 		pluck="name",
 	):
@@ -268,7 +272,10 @@ def expire_payment_methods(now=None) -> dict:
 			frappe.db.set_value("Payment Method", m.name, "status", "Expired")
 			expired.append(m.name)
 			notifications.notify(
-				m.team, "Card Expiry", context={"label": m.display_label or "Card"},
-				reference_doctype="Payment Method", reference_name=m.name,
+				m.team,
+				"Card Expiry",
+				context={"label": m.display_label or "Card"},
+				reference_doctype="Payment Method",
+				reference_name=m.name,
 			)
 	return {"expired": expired}

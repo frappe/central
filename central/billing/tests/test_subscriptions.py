@@ -129,7 +129,10 @@ class TestReconciliation(SubscriptionTestBase):
 		# Provisioning the resource opens its billing segment (ADR 0010 — the ledger is
 		# the lock); reconcile resolves the resource's open segment for its plan.
 		sub = subscriptions.create_subscription(
-			team=TEAM, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly",
+			team=TEAM,
+			cluster="ap-south-1",
+			plan=PLAN,
+			billing_cycle="Monthly",
 			resource_id="srv-sub-1",
 		)
 		result = subscriptions.reconcile_with_agent_event(sub.name, "srv-sub-1")

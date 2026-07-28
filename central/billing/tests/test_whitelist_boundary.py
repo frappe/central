@@ -107,7 +107,8 @@ class TestWhitelistBoundary(BillingTestCase):
 					continue  # controller action; frappe gates it on doc permissions
 				violations.append(f"{rel}::{fn.name}")
 		self.assertEqual(
-			violations, [],
+			violations,
+			[],
 			"@frappe.whitelist() outside billing/api/** — move the endpoint to the "
 			f"API layer (do not just add a guard): {violations}",
 		)
@@ -131,7 +132,8 @@ class TestWhitelistBoundary(BillingTestCase):
 				if not any(token in body for token in GUARD_TOKENS):
 					unguarded.append(f"{rel}::{fn.name}")
 		self.assertEqual(
-			unguarded, [],
+			unguarded,
+			[],
 			f"whitelisted endpoints with no authz guard on entry: {unguarded}",
 		)
 

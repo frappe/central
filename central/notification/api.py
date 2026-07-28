@@ -46,19 +46,22 @@ def save_user_preferences(team: str, preferences: list[dict]) -> dict:
 		)
 		if existing:
 			frappe.db.set_value(
-				"User Notification Preference", existing,
+				"User Notification Preference",
+				existing,
 				{"email_enabled": int(email), "in_app_enabled": int(in_app)},
 			)
 			name = existing
 		else:
-			doc = frappe.get_doc({
-				"doctype": "User Notification Preference",
-				"user": user,
-				"team": team,
-				"category": category,
-				"email_enabled": int(email),
-				"in_app_enabled": int(in_app),
-			}).insert(ignore_permissions=True)
+			doc = frappe.get_doc(
+				{
+					"doctype": "User Notification Preference",
+					"user": user,
+					"team": team,
+					"category": category,
+					"email_enabled": int(email),
+					"in_app_enabled": int(in_app),
+				}
+			).insert(ignore_permissions=True)
 			name = doc.name
 
 		saved.append({"category": category, "email_enabled": email, "in_app_enabled": in_app, "name": name})

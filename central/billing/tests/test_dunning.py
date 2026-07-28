@@ -63,30 +63,54 @@ class DunningTestBase(IntegrationTestCase):
 		frappe.db.commit()
 
 	def _card(self):
-		return frappe.get_doc(
-			{
-				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY,
-				"method_type": "Card", "status": "Active",
-				"gateway_method_id": "pm_x", "gateway_customer_id": "cus_x", "is_default": 1,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"method_type": "Card",
+					"status": "Active",
+					"gateway_method_id": "pm_x",
+					"gateway_customer_id": "cus_x",
+					"is_default": 1,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _subscription(self, with_card=True):
 		return subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly",
+			team=TEAM,
+			cluster=CLUSTER,
+			plan=PLAN,
+			billing_cycle="Monthly",
 			default_payment_method=self._card() if with_card else None,
 			gateway=GATEWAY if with_card else None,
 		).name
 
 	def _open_invoice(self, sub, total=1000):
-		return frappe.get_doc(
-			{
-				"doctype": "Invoice", "team": TEAM, "subscription": sub, "invoice_type": "Billable",
-				"status": "Open", "period_start": "2026-05-01", "period_end": "2026-05-31",
-				"currency": "INR", "subtotal": total, "total": total,
-				"expected_collection": total, "due_date": DUE,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"subscription": sub,
+					"invoice_type": "Billable",
+					"status": "Open",
+					"period_start": "2026-05-01",
+					"period_end": "2026-05-31",
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"expected_collection": total,
+					"due_date": DUE,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _attempts(self, inv):
 		return frappe.db.count("Payment Attempt", {"invoice": inv})
@@ -125,9 +149,14 @@ class TestRetrySchedule(DunningTestBase):
 		sub = self._subscription()  # primary card pm_x (priority 0)
 		frappe.get_doc(
 			{
-				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY,
-				"method_type": "Card", "status": "Active", "gateway_method_id": "pm_y",
-				"gateway_customer_id": "cus_x", "priority": 1,
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": GATEWAY,
+				"method_type": "Card",
+				"status": "Active",
+				"gateway_method_id": "pm_y",
+				"gateway_customer_id": "cus_x",
+				"priority": 1,
 			}
 		).insert(ignore_permissions=True)
 		inv = self._open_invoice(sub)

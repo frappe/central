@@ -32,24 +32,34 @@ class EngineTestBase(IntegrationTestCase):
 		frappe.db.delete("User Notification Preference", {"team": TEAM})
 		frappe.db.commit()
 
-	def _ensure_event_type(self, event_type, *, category="Server", severity="Warning",
-						   required_cap="server:view", in_app_title="Event happened",
-						   in_app_body="Something broke", direct_recipients="None",
-						   create_in_app=True):
+	def _ensure_event_type(
+		self,
+		event_type,
+		*,
+		category="Server",
+		severity="Warning",
+		required_cap="server:view",
+		in_app_title="Event happened",
+		in_app_body="Something broke",
+		direct_recipients="None",
+		create_in_app=True,
+	):
 		if frappe.db.exists("Notification Event Type", event_type):
 			frappe.db.delete("Notification Event Type", {"name": event_type})
 			frappe.db.commit()
-		doc = frappe.get_doc({
-			"doctype": "Notification Event Type",
-			"event_type": event_type,
-			"category": category,
-			"severity": severity,
-			"required_cap": required_cap,
-			"in_app_title": in_app_title,
-			"in_app_body": in_app_body,
-			"direct_recipients": direct_recipients,
-			"create_in_app": int(create_in_app),
-		}).insert(ignore_permissions=True)
+		doc = frappe.get_doc(
+			{
+				"doctype": "Notification Event Type",
+				"event_type": event_type,
+				"category": category,
+				"severity": severity,
+				"required_cap": required_cap,
+				"in_app_title": in_app_title,
+				"in_app_body": in_app_body,
+				"direct_recipients": direct_recipients,
+				"create_in_app": int(create_in_app),
+			}
+		).insert(ignore_permissions=True)
 		self.__class__._created_event_types.add(event_type)
 		return doc
 
@@ -61,14 +71,26 @@ class TestDispatchCreatesFeedEntry(EngineTestBase):
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "backup_failure", message="Backup failed",
-				 reference_doctype="Site", reference_name="my-site")
+		dispatch(
+			TEAM,
+			"backup_failure",
+			message="Backup failed",
+			reference_doctype="Site",
+			reference_name="my-site",
+		)
 
 		rows = frappe.get_all(
 			"Team Notification",
 			{"team": TEAM, "event_type": "backup_failure"},
-			["title", "message", "category", "severity", "required_cap",
-			 "reference_doctype", "reference_name"],
+			[
+				"title",
+				"message",
+				"category",
+				"severity",
+				"required_cap",
+				"reference_doctype",
+				"reference_name",
+			],
 		)
 		self.assertEqual(len(rows), 1)
 		row = rows[0]
@@ -88,8 +110,13 @@ class TestDispatchCreatesFeedEntry(EngineTestBase):
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "backup_failure", message="pg_dump error",
-				 reference_doctype="Site", reference_name="my-site")
+		dispatch(
+			TEAM,
+			"backup_failure",
+			message="pg_dump error",
+			reference_doctype="Site",
+			reference_name="my-site",
+		)
 
 		row = frappe.get_all(
 			"Team Notification",
@@ -107,31 +134,40 @@ class TestDeduplication(EngineTestBase):
 
 		from central.notification.engine import dispatch
 
-		first = dispatch(TEAM, "backup_failure", message="first",
-						 reference_doctype="Site", reference_name="my-site")
+		first = dispatch(
+			TEAM, "backup_failure", message="first", reference_doctype="Site", reference_name="my-site"
+		)
 		self.assertTrue(first["created"])
 
-		second = dispatch(TEAM, "backup_failure", message="second",
-						  reference_doctype="Site", reference_name="my-site")
+		second = dispatch(
+			TEAM, "backup_failure", message="second", reference_doctype="Site", reference_name="my-site"
+		)
 		self.assertFalse(second["created"])
 		self.assertEqual(second["reason"], "duplicate")
 
 		count = frappe.db.count("Team Notification", {"team": TEAM, "event_type": "backup_failure"})
 		self.assertEqual(count, 1)
 
-	def test_allows_same_event_after_read(self):
-		"""Once the existing notification is read, a new one can be created."""
+	def test_allows_same_event_after_dedup_window(self):
+		"""After the dedup window (60 min) expires, a new notification can be created."""
+		from central.notification.engine import DEDUP_WINDOW_MINUTES, dispatch
+
 		self._ensure_event_type("backup_failure")
 
-		from central.notification.engine import dispatch
+		first = dispatch(
+			TEAM, "backup_failure", message="first", reference_doctype="Site", reference_name="my-site"
+		)
+		# Backdate the first notification to be outside the dedup window.
+		cutoff = frappe.utils.add_to_date(None, minutes=-(DEDUP_WINDOW_MINUTES + 1), as_datetime=True)
+		frappe.db.set_value(
+			"Team Notification",
+			first["notification"],
+			{"creation": cutoff, "modified": cutoff},
+		)
 
-		result = dispatch(TEAM, "backup_failure", message="first",
-						  reference_doctype="Site", reference_name="my-site")
-		doc_name = result["notification"]
-		frappe.db.set_value("Team Notification", doc_name, {"is_read": 1})
-
-		second = dispatch(TEAM, "backup_failure", message="second",
-						  reference_doctype="Site", reference_name="my-site")
+		second = dispatch(
+			TEAM, "backup_failure", message="second", reference_doctype="Site", reference_name="my-site"
+		)
 		self.assertTrue(second["created"])
 
 	def test_allows_different_reference_name(self):
@@ -140,10 +176,10 @@ class TestDeduplication(EngineTestBase):
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "backup_failure", message="a",
-				 reference_doctype="Site", reference_name="site-a")
-		second = dispatch(TEAM, "backup_failure", message="b",
-						  reference_doctype="Site", reference_name="site-b")
+		dispatch(TEAM, "backup_failure", message="a", reference_doctype="Site", reference_name="site-a")
+		second = dispatch(
+			TEAM, "backup_failure", message="b", reference_doctype="Site", reference_name="site-b"
+		)
 		self.assertTrue(second["created"])
 		self.assertEqual(frappe.db.count("Team Notification", {"team": TEAM}), 2)
 
@@ -176,42 +212,68 @@ class TestEmailFanout(EngineTestBase):
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_emails_qualified_members(self, mock_sendmail):
 		"""All active members with the required capability receive an email."""
-		self._ensure_event_type("payment_failure", category="Billing",
-							   severity="Error", required_cap="billing:view",
-							   in_app_title="Payment failed", in_app_body="Payment failed")
+		self._ensure_event_type(
+			"payment_failure",
+			category="Billing",
+			severity="Error",
+			required_cap="billing:view",
+			in_app_title="Payment failed",
+			in_app_body="Payment failed",
+		)
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "payment_failure", message="Card declined",
-				 reference_doctype="Invoice", reference_name="INV-1")
+		dispatch(
+			TEAM,
+			"payment_failure",
+			message="Card declined",
+			reference_doctype="Invoice",
+			reference_name="INV-1",
+		)
 
-		recipients = sorted(call.kwargs.get("recipients", call.args[0] if call.args else [])
-						   for call in mock_sendmail.call_args_list)
+		recipients = sorted(
+			call.kwargs.get("recipients", call.args[0] if call.args else [])
+			for call in mock_sendmail.call_args_list
+		)
 		self.assertIn([self.user_a], recipients)
 		self.assertIn([self.user_b], recipients)
 
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_skips_member_with_email_disabled(self, mock_sendmail):
 		"""A member with email_enabled=False for the category does not receive an email."""
-		self._ensure_event_type("payment_failure", category="Billing",
-							   severity="Error", required_cap="billing:view",
-							   in_app_title="Payment failed", in_app_body="Payment failed")
-		frappe.get_doc({
-			"doctype": "User Notification Preference",
-			"user": self.user_a,
-			"team": TEAM,
-			"category": "Billing",
-			"email_enabled": 0,
-			"in_app_enabled": 1,
-		}).insert(ignore_permissions=True)
+		self._ensure_event_type(
+			"payment_failure",
+			category="Billing",
+			severity="Error",
+			required_cap="billing:view",
+			in_app_title="Payment failed",
+			in_app_body="Payment failed",
+		)
+		frappe.get_doc(
+			{
+				"doctype": "User Notification Preference",
+				"user": self.user_a,
+				"team": TEAM,
+				"category": "Billing",
+				"email_enabled": 0,
+				"in_app_enabled": 1,
+			}
+		).insert(ignore_permissions=True)
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "payment_failure", message="Card declined",
-				 reference_doctype="Invoice", reference_name="INV-1")
+		dispatch(
+			TEAM,
+			"payment_failure",
+			message="Card declined",
+			reference_doctype="Invoice",
+			reference_name="INV-1",
+		)
 
-		recipients = [call.kwargs.get("recipients", call.args[0] if call.args else [])
-					  for call in mock_sendmail.call_args_list]
+		recipients = [
+			call.kwargs.get("recipients", call.args[0] if call.args else [])
+			for call in mock_sendmail.call_args_list
+		]
 		self.assertNotIn([self.user_a], recipients)
 		self.assertIn([self.user_b], recipients)
 
@@ -220,13 +282,15 @@ class TestEmailFanout(EngineTestBase):
 		"""A member who lacks the required_cap does not receive an email."""
 		self._ensure_event_type("backup_failure", required_cap="server:view")
 		# Create a custom role with only billing:view (no server:view).
-		role = frappe.get_doc({
-			"doctype": "Team Role",
-			"role_name": f"Billing Only {frappe.generate_hash(4)}",
-			"is_system": 0,
-			"team": TEAM,
-			"capabilities": [{"capability": "billing:view"}],
-		}).insert(ignore_permissions=True)
+		role = frappe.get_doc(
+			{
+				"doctype": "Team Role",
+				"role_name": f"Billing Only {frappe.generate_hash(4)}",
+				"is_system": 0,
+				"team": TEAM,
+				"capabilities": [{"capability": "billing:view"}],
+			}
+		).insert(ignore_permissions=True)
 		# Re-add user_b with the limited role.
 		team = frappe.get_doc("Team", TEAM)
 		team.members = [m for m in team.members if m.user != self.user_b]
@@ -235,11 +299,19 @@ class TestEmailFanout(EngineTestBase):
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "backup_failure", message="Backup failed",
-				 reference_doctype="Site", reference_name="my-site")
+		dispatch(
+			TEAM,
+			"backup_failure",
+			message="Backup failed",
+			reference_doctype="Site",
+			reference_name="my-site",
+		)
 
-		all_recipients = [r for call in mock_sendmail.call_args_list
-						  for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))]
+		all_recipients = [
+			r
+			for call in mock_sendmail.call_args_list
+			for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))
+		]
 		# user_b (lacking server:view) must not receive an email.
 		self.assertNotIn(self.user_b, all_recipients)
 
@@ -329,31 +401,43 @@ class TestCapabilityFilteredList(EngineTestBase):
 		self.user_billing_only = make_user("list-billing-only@example.com")
 		self.user_viewer = make_user("list-viewer@example.com")
 		# Custom role with only billing:view (no server:view) for the billing user.
-		billing_only_role = frappe.get_doc({
-			"doctype": "Team Role",
-			"role_name": f"Billing Only {frappe.generate_hash(4)}",
-			"is_system": 0,
-			"team": TEAM,
-			"capabilities": [{"capability": "billing:view"}],
-		}).insert(ignore_permissions=True)
+		billing_only_role = frappe.get_doc(
+			{
+				"doctype": "Team Role",
+				"role_name": f"Billing Only {frappe.generate_hash(4)}",
+				"is_system": 0,
+				"team": TEAM,
+				"capabilities": [{"capability": "billing:view"}],
+			}
+		).insert(ignore_permissions=True)
 		team = frappe.get_doc("Team", TEAM)
-		team.append("members", {"user": self.user_billing_only, "role": billing_only_role.name, "status": "Active"})
+		team.append(
+			"members", {"user": self.user_billing_only, "role": billing_only_role.name, "status": "Active"}
+		)
 		team.append("members", {"user": self.user_viewer, "role": "Viewer", "status": "Active"})
 		team.save(ignore_permissions=True)
 
 	def test_list_filters_by_required_cap(self):
 		"""A notification with required_cap=billing:view is invisible to a user lacking it."""
-		self._ensure_event_type("payment_failure", category="Billing",
-							   required_cap="billing:view")
-		self._ensure_event_type("backup_failure", category="Server",
-							   required_cap="server:view")
+		self._ensure_event_type("payment_failure", category="Billing", required_cap="billing:view")
+		self._ensure_event_type("backup_failure", category="Server", required_cap="server:view")
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "payment_failure", message="Card declined",
-				 reference_doctype="Invoice", reference_name="INV-1")
-		dispatch(TEAM, "backup_failure", message="Backup failed",
-				 reference_doctype="Site", reference_name="my-site")
+		dispatch(
+			TEAM,
+			"payment_failure",
+			message="Card declined",
+			reference_doctype="Invoice",
+			reference_name="INV-1",
+		)
+		dispatch(
+			TEAM,
+			"backup_failure",
+			message="Backup failed",
+			reference_doctype="Site",
+			reference_name="my-site",
+		)
 
 		from central import notification as feed
 
@@ -373,20 +457,27 @@ class TestCapabilityFilteredList(EngineTestBase):
 class TestReportPilotEvent(EngineTestBase):
 	def setUp(self):
 		super().setUp()
-		self._ensure_event_type("backup_failure", category="Server",
-							   severity="Warning", required_cap="server:view",
-							   in_app_title="Backup failed for {{ reference_name }}",
-							   in_app_body="{{ message }}")
+		self._ensure_event_type(
+			"backup_failure",
+			category="Server",
+			severity="Warning",
+			required_cap="server:view",
+			in_app_title="Backup failed for {{ reference_name }}",
+			in_app_body="{{ message }}",
+		)
 
 	def test_pilot_event_creates_notification(self):
 		"""A valid pilot event dispatches through the engine and creates a notification."""
+
 		class FakeCredential:
 			team = TEAM
 
 		fake = FakeCredential()
 
-		with patch("central.api.pilot.PilotCredential.verify", return_value=fake), \
-			 patch("frappe.get_request_header", return_value="fake-token"):
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=fake),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
 			from central.notification.api import report_pilot_event
 
 			out = report_pilot_event(
@@ -419,8 +510,13 @@ class TestTemplateContext(EngineTestBase):
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "backup_failure", message="pg_dump error",
-				 reference_doctype="Site", reference_name="my-site")
+		dispatch(
+			TEAM,
+			"backup_failure",
+			message="pg_dump error",
+			reference_doctype="Site",
+			reference_name="my-site",
+		)
 
 		row = frappe.get_all(
 			"Team Notification",
@@ -445,22 +541,28 @@ class TestInAppEnabledFilter(EngineTestBase):
 
 	def test_user_with_in_app_disabled_does_not_see_notification(self):
 		"""A user with in_app_enabled=0 for a category does not see those notifications."""
-		self._ensure_event_type("backup_failure", category="Server",
-							   required_cap="server:view")
+		self._ensure_event_type("backup_failure", category="Server", required_cap="server:view")
 		# Disable in-app for user_a on Server category.
-		frappe.get_doc({
-			"doctype": "User Notification Preference",
-			"user": self.user_a,
-			"team": TEAM,
-			"category": "Server",
-			"email_enabled": 1,
-			"in_app_enabled": 0,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "User Notification Preference",
+				"user": self.user_a,
+				"team": TEAM,
+				"category": "Server",
+				"email_enabled": 1,
+				"in_app_enabled": 0,
+			}
+		).insert(ignore_permissions=True)
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "backup_failure", message="Backup failed",
-				 reference_doctype="Site", reference_name="my-site")
+		dispatch(
+			TEAM,
+			"backup_failure",
+			message="Backup failed",
+			reference_doctype="Site",
+			reference_name="my-site",
+		)
 
 		from central import notification as feed
 
@@ -510,17 +612,24 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 		team.append("members", {"user": self.user_b, "role": "Viewer", "status": "Active"})
 		team.save(ignore_permissions=True)
 
-		self._ensure_event_type("server_down", required_cap="server:view",
-							   direct_recipients="Affected User")
+		self._ensure_event_type("server_down", required_cap="server:view", direct_recipients="Affected User")
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "server_down", message="Server is down",
-				 reference_doctype="Server", reference_name="srv-1",
-				 affected_user=self.user_a)
+		dispatch(
+			TEAM,
+			"server_down",
+			message="Server is down",
+			reference_doctype="Server",
+			reference_name="srv-1",
+			affected_user=self.user_a,
+		)
 
-		all_recipients = [r for call in mock_sendmail.call_args_list
-						  for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))]
+		all_recipients = [
+			r
+			for call in mock_sendmail.call_args_list
+			for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))
+		]
 		self.assertIn(self.user_a, all_recipients)
 		self.assertNotIn(self.user_b, all_recipients)
 
@@ -533,13 +642,13 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 		team.append("members", {"user": self.user_a, "role": "Viewer", "status": "Active"})
 		team.save(ignore_permissions=True)
 
-		self._ensure_event_type("server_down2", required_cap="server:view",
-							   direct_recipients="Affected User")
+		self._ensure_event_type("server_down2", required_cap="server:view", direct_recipients="Affected User")
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "server_down2", message="Server is down",
-				 reference_doctype="Server", reference_name="srv-2")
+		dispatch(
+			TEAM, "server_down2", message="Server is down", reference_doctype="Server", reference_name="srv-2"
+		)
 
 		self.assertEqual(mock_sendmail.call_count, 0)
 
@@ -551,27 +660,36 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 		team.append("members", {"user": self.user_a, "role": "Viewer", "status": "Active"})
 		team.save(ignore_permissions=True)
 
-		role = frappe.get_doc({
-			"doctype": "Team Role",
-			"role_name": f"Billing Only {frappe.generate_hash(4)}",
-			"is_system": 0,
-			"team": TEAM,
-			"capabilities": [{"capability": "billing:view"}],
-		}).insert(ignore_permissions=True)
+		role = frappe.get_doc(
+			{
+				"doctype": "Team Role",
+				"role_name": f"Billing Only {frappe.generate_hash(4)}",
+				"is_system": 0,
+				"team": TEAM,
+				"capabilities": [{"capability": "billing:view"}],
+			}
+		).insert(ignore_permissions=True)
 		team = frappe.get_doc("Team", TEAM)
 		team.members = [m for m in team.members if m.user != self.user_a]
 		team.append("members", {"user": self.user_a, "role": role.name, "status": "Active"})
 		team.save(ignore_permissions=True)
 
-		self._ensure_event_type("server_down3", required_cap="server:view",
-							   direct_recipients="Affected User")
+		self._ensure_event_type("server_down3", required_cap="server:view", direct_recipients="Affected User")
 
 		from central.notification.engine import dispatch
 
-		dispatch(TEAM, "server_down3", message="Server is down",
-				 reference_doctype="Server", reference_name="srv-3",
-				 affected_user=self.user_a)
+		dispatch(
+			TEAM,
+			"server_down3",
+			message="Server is down",
+			reference_doctype="Server",
+			reference_name="srv-3",
+			affected_user=self.user_a,
+		)
 
-		all_recipients = [r for call in mock_sendmail.call_args_list
-						  for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))]
+		all_recipients = [
+			r
+			for call in mock_sendmail.call_args_list
+			for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))
+		]
 		self.assertIn(self.user_a, all_recipients)

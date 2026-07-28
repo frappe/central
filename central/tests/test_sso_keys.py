@@ -71,14 +71,19 @@ class TestSSOKeys(IntegrationTestCase):
 		from cryptography.hazmat.primitives import serialization
 		from cryptography.hazmat.primitives.asymmetric import rsa
 
-		attacker = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
-			encoding=serialization.Encoding.PEM,
-			format=serialization.PrivateFormat.PKCS8,
-			encryption_algorithm=serialization.NoEncryption(),
-		).decode()
+		attacker = (
+			rsa.generate_private_key(public_exponent=65537, key_size=2048)
+			.private_bytes(
+				encoding=serialization.Encoding.PEM,
+				format=serialization.PrivateFormat.PKCS8,
+				encryption_algorithm=serialization.NoEncryption(),
+			)
+			.decode()
+		)
 		now = int(time.time())
-		token = jwt.encode({"sub": "admin", "iat": now, "exp": now + 60}, attacker, algorithm=ALGORITHM,
-				   headers={"kid": kid})
+		token = jwt.encode(
+			{"sub": "admin", "iat": now, "exp": now + 60}, attacker, algorithm=ALGORITHM, headers={"kid": kid}
+		)
 
 		public_key = RSAAlgorithm.from_jwk(jwks_document()["keys"][0])
 		with self.assertRaises(jwt.InvalidSignatureError):

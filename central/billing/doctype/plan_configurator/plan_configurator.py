@@ -32,14 +32,18 @@ class PlanConfigurator(Document):
 		billing_cycle: DF.Literal["Monthly", "Annual"]
 		builder: DF.ReadOnly | None
 		category: DF.Link
-		ceiling_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
+		ceiling_vcpu: DF.Literal[
+			"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"
+		]
 		is_active: DF.Check
 		memory_ratio: DF.Literal["1:2", "1:4", "1:6", "1:8"]
 		plan_name_prefix: DF.Data
 		provision_target: DF.ReadOnly | None
 		rungs: DF.Table[PlanConfiguratorPlan]
 		simple_plans: DF.Table[PlanConfiguratorSimplePlan]
-		start_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
+		start_vcpu: DF.Literal[
+			"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"
+		]
 		sub_category: DF.Link | None
 		template_name: DF.Data
 		transfer_step_gb: DF.Float

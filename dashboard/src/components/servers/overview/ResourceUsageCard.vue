@@ -1,27 +1,27 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import UsageMeter from '@/components/servers/overview/UsageMeter.vue'
-import { formatBytes, usagePercent } from '@/utils/bytes'
+import { computed } from "vue";
+import UsageMeter from "@/components/servers/overview/UsageMeter.vue";
+import { formatBytes, usagePercent } from "@/utils/bytes";
 
 const props = defineProps<{
-	available: boolean
-	vcpus?: number | null
-	cpuPercent?: number | null
-	memoryUsed?: number | null
-	memoryTotal?: number | null
-	diskUsed?: number | null
-	diskTotal?: number | null
-	canExpandStorage?: boolean
-}>()
+	available: boolean;
+	vcpus?: number | null;
+	cpuPercent?: number | null;
+	memoryUsed?: number | null;
+	memoryTotal?: number | null;
+	diskUsed?: number | null;
+	diskTotal?: number | null;
+	canExpandStorage?: boolean;
+}>();
 
-defineEmits<{ expandStorage: [] }>()
+defineEmits<{ expandStorage: [] }>();
 
 const cpuLabel = computed(() => {
-	const used = props.cpuPercent
-	const cores = props.vcpus
-	if (used == null) return `— of ${cores ?? '—'} vCPU`
-	return `${used.toFixed(0)}% of ${cores ?? '—'} vCPU`
-})
+	const used = props.cpuPercent;
+	const cores = props.vcpus;
+	if (used == null) return `— of ${cores ?? "—"} vCPU`;
+	return `${used.toFixed(0)}% of ${cores ?? "—"} vCPU`;
+});
 </script>
 
 <template>

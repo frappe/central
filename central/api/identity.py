@@ -97,8 +97,7 @@ def my_teams() -> list[dict[str, Any]]:
 	).run(as_dict=True)
 
 	return [
-		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user}
-		for r in rows
+		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user} for r in rows
 	]
 
 
@@ -161,6 +160,5 @@ def search_teams(query: str = "", limit: int = 20) -> list[dict[str, Any]]:
 		limit=limit,
 	)
 	return [
-		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user}
-		for r in rows
+		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user} for r in rows
 	]

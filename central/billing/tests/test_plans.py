@@ -52,7 +52,10 @@ class TestPlanIdentity(IntegrationTestCase):
 		set_catalog_rates(
 			"Plan",
 			name,
-			[{"cluster": "", "currency": "USD", "rate": 99}, {"cluster": "", "currency": "INR", "rate": 3200}],
+			[
+				{"cluster": "", "currency": "USD", "rate": 99},
+				{"cluster": "", "currency": "INR", "rate": 3200},
+			],
 		)
 
 		self.assertEqual(frappe.db.count("Plan"), count_before)

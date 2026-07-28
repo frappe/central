@@ -53,9 +53,7 @@ def _insert_invoice(payload: dict) -> str:
 		return frappe.get_doc(payload).insert(ignore_permissions=True).name
 	except _ALREADY_BILLED:
 		frappe.db.rollback()
-		existing = _live_invoice(
-			payload["team"], payload["period_start"], payload["period_end"]
-		)
+		existing = _live_invoice(payload["team"], payload["period_start"], payload["period_end"])
 		if not existing:
 			raise  # a conflict on some other unique key — don't swallow it
 		frappe.logger("billing").info(
@@ -172,9 +170,9 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	from central.billing.revenue.tax import resolve_tax
 
 	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
-	clusters = sorted({
-		c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c
-	})
+	clusters = sorted(
+		{c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c}
+	)
 	lines = []
 	for cluster in clusters:
 		lines += compute_line_items(team, cluster, period_start, period_end)

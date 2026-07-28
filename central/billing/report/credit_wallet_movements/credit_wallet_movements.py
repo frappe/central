@@ -25,13 +25,31 @@ def execute(filters: dict | None = None):
 
 def get_columns() -> list[dict]:
 	return [
-		{"label": _("Entry"), "fieldname": "entry", "fieldtype": "Link", "options": "Credit Ledger Entry", "width": 200},
+		{
+			"label": _("Entry"),
+			"fieldname": "entry",
+			"fieldtype": "Link",
+			"options": "Credit Ledger Entry",
+			"width": 200,
+		},
 		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 130},
 		{"label": _("Date"), "fieldname": "created_at", "fieldtype": "Datetime", "width": 160},
 		{"label": _("Type"), "fieldname": "entry_type", "fieldtype": "Data", "width": 80},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 80},
-		{"label": _("Amount"), "fieldname": "amount", "fieldtype": "Currency", "options": "currency", "width": 120},
-		{"label": _("Running Balance"), "fieldname": "running_balance", "fieldtype": "Currency", "options": "currency", "width": 140},
+		{
+			"label": _("Amount"),
+			"fieldname": "amount",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+		},
+		{
+			"label": _("Running Balance"),
+			"fieldname": "running_balance",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 140,
+		},
 		{"label": _("Reference"), "fieldname": "reference", "fieldtype": "Data", "width": 200},
 		{"label": _("Note"), "fieldname": "note", "fieldtype": "Data", "width": 220},
 	]
@@ -55,8 +73,18 @@ def get_data(filters: dict) -> list[dict]:
 	entries = frappe.get_all(
 		"Credit Ledger Entry",
 		filters=conditions,
-		fields=["name as entry", "team", "created_at", "entry_type", "currency", "amount",
-				"running_balance", "reference_type", "reference_name", "note"],
+		fields=[
+			"name as entry",
+			"team",
+			"created_at",
+			"entry_type",
+			"currency",
+			"amount",
+			"running_balance",
+			"reference_type",
+			"reference_name",
+			"note",
+		],
 		order_by="created_at desc, creation desc",
 	)
 	for e in entries:
@@ -80,8 +108,20 @@ def get_summary(rows: list[dict]) -> list[dict]:
 	for currency in sorted(by_currency):
 		g = by_currency[currency]
 		net = g["credited"] - g["debited"]
-		summary.append({"label": _("Credited ({0})").format(currency),
-						"value": flt(g["credited"], 2), "datatype": "Float", "indicator": "green"})
-		summary.append({"label": _("Net ({0})").format(currency), "value": flt(net, 2),
-						"datatype": "Float", "indicator": "green" if net >= 0 else "red"})
+		summary.append(
+			{
+				"label": _("Credited ({0})").format(currency),
+				"value": flt(g["credited"], 2),
+				"datatype": "Float",
+				"indicator": "green",
+			}
+		)
+		summary.append(
+			{
+				"label": _("Net ({0})").format(currency),
+				"value": flt(net, 2),
+				"datatype": "Float",
+				"indicator": "green" if net >= 0 else "red",
+			}
+		)
 	return summary

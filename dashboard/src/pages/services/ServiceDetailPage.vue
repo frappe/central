@@ -1,62 +1,62 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { Button, Spinner, Tabs } from 'frappe-ui'
-import EmptyState from '@/components/common/EmptyState.vue'
-import OverviewPanel from '@/components/services/OverviewPanel.vue'
-import ApiKeysPanel from '@/components/services/ApiKeysPanel.vue'
-import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useServices } from '@/composables/useServices'
-import { errorToast, errorToastWithAction } from '@/lib/toast'
+import { computed, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { Button, Spinner, Tabs } from "frappe-ui";
+import EmptyState from "@/components/common/EmptyState.vue";
+import OverviewPanel from "@/components/services/OverviewPanel.vue";
+import ApiKeysPanel from "@/components/services/ApiKeysPanel.vue";
+import { useBreadcrumbs } from "@/composables/useBreadcrumbs";
+import { useCapabilities } from "@/composables/useCapabilities";
+import { useServices } from "@/composables/useServices";
+import { errorToast, errorToastWithAction } from "@/lib/toast";
 
 // One service's management surface, reached from the sidebar's Services group.
 // Activation (once per team, gated by a billing subscription) is the first step;
 // after that the work lives behind tabs — Overview, Sites, API keys.
-const route = useRoute()
-const router = useRouter()
-const serviceKey = computed(() => String(route.params.service))
+const route = useRoute();
+const router = useRouter();
+const serviceKey = computed(() => String(route.params.service));
 
-const { canManageServices, canManageBilling } = useCapabilities()
-const { offers, offersLoading, instance, loadInstance, activate } = useServices()
-const { setBreadcrumbs } = useBreadcrumbs()
+const { canManageServices, canManageBilling } = useCapabilities();
+const { offers, offersLoading, instance, loadInstance, activate } = useServices();
+const { setBreadcrumbs } = useBreadcrumbs();
 
-const offer = computed(() => offers.value.find((o) => o.name === serviceKey.value) ?? null)
-const managedService = computed(() => offer.value?.managed_service ?? null)
-const title = computed(() => offer.value?.title ?? 'Service')
-watch(title, (value) => setBreadcrumbs([{ label: value }]), { immediate: true })
-const models = computed(() => instance.value?.models ?? [])
+const offer = computed(() => offers.value.find((o) => o.name === serviceKey.value) ?? null);
+const managedService = computed(() => offer.value?.managed_service ?? null);
+const title = computed(() => offer.value?.title ?? "Service");
+watch(title, (value) => setBreadcrumbs([{ label: value }]), { immediate: true });
+const models = computed(() => instance.value?.models ?? []);
 
 watch(
 	managedService,
 	(managed) => {
-		if (managed) loadInstance(managed)
+		if (managed) loadInstance(managed);
 	},
-	{ immediate: true },
-)
+	{ immediate: true }
+);
 
-const tabIndex = ref(0)
+const tabIndex = ref(0);
 const tabs = [
-	{ label: 'Overview', icon: 'lucide-layout-dashboard' },
-	{ label: 'API Keys', icon: 'lucide-key-round' },
-]
+	{ label: "Overview", icon: "lucide-layout-dashboard" },
+	{ label: "API Keys", icon: "lucide-key-round" },
+];
 
-const activating = ref(false)
+const activating = ref(false);
 async function activateService(): Promise<void> {
-	activating.value = true
+	activating.value = true;
 	try {
-		await activate(serviceKey.value)
+		await activate(serviceKey.value);
 	} catch (e) {
 		if (canManageBilling.value) {
 			errorToastWithAction(e, {
-				label: 'Set up billing',
-				onClick: () => router.push('/billing'),
-			})
+				label: "Set up billing",
+				onClick: () => router.push("/billing"),
+			});
 		} else {
-			errorToast(e)
+			errorToast(e);
 		}
 	} finally {
-		activating.value = false
+		activating.value = false;
 	}
 }
 </script>
@@ -110,7 +110,7 @@ async function activateService(): Promise<void> {
 <style scoped>
 /* frappe-ui's TabsContent doesn't grow; stretch the active panel so the list
    fills the page and its pagination footer pins to the bottom. */
-:deep([role='tabpanel'][data-state='active']) {
+:deep([role="tabpanel"][data-state="active"]) {
 	flex: 1;
 	min-height: 0;
 }

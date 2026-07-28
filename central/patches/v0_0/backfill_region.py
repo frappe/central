@@ -25,9 +25,7 @@ def execute():
 		return
 
 	columns = ", ".join(f"`{c}`" for c in _DISPLAY_COLUMNS)
-	rows = frappe.db.sql(
-		f"SELECT `name`, {columns} FROM `tabAtlas Instance`", as_dict=True
-	)
+	rows = frappe.db.sql(f"SELECT `name`, {columns} FROM `tabAtlas Instance`", as_dict=True)
 	for row in rows:
 		if frappe.db.exists("Region", row.name):
 			continue

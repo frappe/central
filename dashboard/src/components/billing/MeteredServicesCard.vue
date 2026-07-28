@@ -1,82 +1,80 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Badge, Button, useCall } from 'frappe-ui'
-import BillingCard from '@/components/billing/BillingCard.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
-import SubscribeServiceDialog from '@/components/billing/SubscribeServiceDialog.vue'
-import type { ServicePlanOption } from '@/components/billing/SubscribeServiceDialog.vue'
-import { API, method } from '@/api/methods'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
-import { useCapabilities } from '@/composables/useCapabilities'
+import { computed, ref } from "vue";
+import { Badge, Button, useCall } from "frappe-ui";
+import BillingCard from "@/components/billing/BillingCard.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
+import SubscribeServiceDialog from "@/components/billing/SubscribeServiceDialog.vue";
+import type { ServicePlanOption } from "@/components/billing/SubscribeServiceDialog.vue";
+import { API, method } from "@/api/methods";
+import { useSession } from "@/composables/useSession";
+import { whenTeamReady } from "@/composables/useTeamScope";
+import { useCapabilities } from "@/composables/useCapabilities";
 
 // Metered services (ADR 0015) — the team-level services it has subscribed to (AI
 // tokens, email, PDF, storage), each with its allowance draw-down / usage this
 // period, plus a subscribe/upgrade action. A metered service has no VM: it is a
 // synthesized subject billed off the same rollup + price-lock spine as a server.
 interface ServiceRow {
-	service_subject: string
-	plan: string
-	title: string | null
-	cluster: string | null
-	currency: string
-	unit: string | null
-	billing_type: string | null
-	settlement_mode: string
-	reporting_mode: string
-	allowance: number
-	period_usage: number
+	service_subject: string;
+	plan: string;
+	title: string | null;
+	cluster: string | null;
+	currency: string;
+	unit: string | null;
+	billing_type: string | null;
+	settlement_mode: string;
+	reporting_mode: string;
+	allowance: number;
+	period_usage: number;
 }
 interface MeteredServices {
-	currency: string
-	services: ServiceRow[]
-	available_plans: ServicePlanOption[]
+	currency: string;
+	services: ServiceRow[];
+	available_plans: ServicePlanOption[];
 }
 
-const { canManageBilling } = useCapabilities()
-const { activeTeam } = useSession()
+const { canManageBilling } = useCapabilities();
+const { activeTeam } = useSession();
 
 const data = useCall<MeteredServices, { team: string }>({
 	url: method(API.meteredServices),
 	params: () => ({ team: activeTeam.value! }),
 	immediate: false,
 	refetch: true,
-})
-whenTeamReady(() => data.reload())
+});
+whenTeamReady(() => data.reload());
 
-const loading = computed(() => data.loading && !data.data)
-const rows = computed(() => data.data?.services ?? [])
-const plans = computed(() => data.data?.available_plans ?? [])
-const currency = computed(() => data.data?.currency ?? 'INR')
+const loading = computed(() => data.loading && !data.data);
+const rows = computed(() => data.data?.services ?? []);
+const plans = computed(() => data.data?.available_plans ?? []);
+const currency = computed(() => data.data?.currency ?? "INR");
 
-const dialogOpen = ref(false)
+const dialogOpen = ref(false);
 
 function subtitle(row: ServiceRow): string {
-	const parts: string[] = []
-	if (row.title) parts.push(row.title)
-	if (row.cluster) parts.push(row.cluster)
-	return parts.join(' · ') || row.service_subject
+	const parts: string[] = [];
+	if (row.title) parts.push(row.title);
+	if (row.cluster) parts.push(row.cluster);
+	return parts.join(" · ") || row.service_subject;
 }
 
 // A prepaid pack shows remaining allowance; a postpaid meter shows usage this period.
 function usageLabel(row: ServiceRow): string {
-	const unit = row.unit || 'units'
-	if (row.settlement_mode === 'Prepaid Pack' && row.allowance) {
-		const remaining = Math.max(0, row.allowance - row.period_usage)
-		return `${remaining.toLocaleString()} / ${row.allowance.toLocaleString()} ${unit} left`
+	const unit = row.unit || "units";
+	if (row.settlement_mode === "Prepaid Pack" && row.allowance) {
+		const remaining = Math.max(0, row.allowance - row.period_usage);
+		return `${remaining.toLocaleString()} / ${row.allowance.toLocaleString()} ${unit} left`;
 	}
-	const included = row.allowance
-		? ` of ${row.allowance.toLocaleString()} incl.`
-		: ''
-	return `${row.period_usage.toLocaleString()} ${unit}${included} this period`
+	const included = row.allowance ? ` of ${row.allowance.toLocaleString()} incl.` : "";
+	return `${row.period_usage.toLocaleString()} ${unit}${included} this period`;
 }
 
 function exhausted(row: ServiceRow): boolean {
 	return (
-		row.settlement_mode === 'Prepaid Pack' &&
+		row.settlement_mode === "Prepaid Pack" &&
 		row.allowance > 0 &&
 		row.period_usage >= row.allowance
-	)
+	);
 }
 </script>
 
@@ -98,12 +96,8 @@ function exhausted(row: ServiceRow): boolean {
 			<div v-for="i in 2" :key="i" class="flex items-center gap-3">
 				<span class="size-4 shrink-0 animate-pulse rounded bg-surface-gray-2" />
 				<div class="flex-1 space-y-1.5">
-					<span
-						class="block h-3.5 w-40 animate-pulse rounded bg-surface-gray-2"
-					/>
-					<span
-						class="block h-3 w-28 animate-pulse rounded bg-surface-gray-2"
-					/>
+					<span class="block h-3.5 w-40 animate-pulse rounded bg-surface-gray-2" />
+					<span class="block h-3 w-28 animate-pulse rounded bg-surface-gray-2" />
 				</div>
 			</div>
 		</div>

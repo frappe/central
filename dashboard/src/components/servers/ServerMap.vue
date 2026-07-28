@@ -1,15 +1,8 @@
 <script setup lang="ts">
-import {
-	computed,
-	onBeforeUnmount,
-	onMounted,
-	ref,
-	watch,
-	type CSSProperties,
-} from 'vue'
-import { Badge, Button } from 'frappe-ui'
-import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
-import WorldDots from '@/components/servers/WorldDots.vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type CSSProperties } from "vue";
+import { Badge, Button } from "frappe-ui";
+import ProviderAvatar from "@/components/servers/ProviderAvatar.vue";
+import WorldDots from "@/components/servers/WorldDots.vue";
 import {
 	computeNodes,
 	project,
@@ -20,7 +13,7 @@ import {
 	type MapNode,
 	type MapPin,
 	type MapSpot,
-} from '@/lib/serverMap'
+} from "@/lib/serverMap";
 
 // The interactive servers map, ported from the FC V2 prototype. Purely
 // presentational: pins/spots arrive display-ready from the page, actions leave
@@ -28,22 +21,22 @@ import {
 
 const props = withDefaults(
 	defineProps<{
-		pins?: MapPin[]
-		spots?: MapSpot[]
+		pins?: MapPin[];
+		spots?: MapSpot[];
 		/** Region-picker mode: render these as selectable dots instead of pins/spots. */
-		markers?: MapSpot[]
+		markers?: MapSpot[];
 		/** The picked marker — drawn as the provider-logo pin. */
-		selectedId?: string | null
+		selectedId?: string | null;
 		/** Server id hovered elsewhere (the side panel) — bumps its node. */
-		highlightId?: string | null
+		highlightId?: string | null;
 		/** Push the zoom controls left when a panel overlays the right edge (px). */
-		panelOffset?: number
+		panelOffset?: number;
 		/** False = no drag/wheel/dblclick/controls; the map frames itself (markers). */
-		interactive?: boolean
+		interactive?: boolean;
 		/** Show create affordances inside cards (page gates on server:create). */
-		allowCreate?: boolean
+		allowCreate?: boolean;
 		/** Show direct bench-open affordances inside cluster cards. */
-		allowOpen?: boolean
+		allowOpen?: boolean;
 	}>(),
 	{
 		pins: () => [],
@@ -55,194 +48,179 @@ const props = withDefaults(
 		interactive: true,
 		allowCreate: false,
 		allowOpen: false,
-	},
-)
+	}
+);
 
 const emit = defineEmits<{
 	/** A pin (or a cluster-card row) was chosen. */
-	open: [id: string]
+	open: [id: string];
 	/** A server cluster-card row's open-bench action was chosen. */
-	'open-server': [server: NonNullable<MapPin['server']>]
+	"open-server": [server: NonNullable<MapPin["server"]>];
 	/** A site pin/cluster-card row's open-live-site action was chosen. */
-	'open-site': [url: string]
+	"open-site": [url: string];
 	/** A + spot was chosen — the Atlas Instance region to create in. */
-	'new-server': [region: string]
+	"new-server": [region: string];
 	/** A cluster was clicked; the page may narrow its list to these servers. */
-	'cluster-open': [payload: { ids: string[]; label: string }]
+	"cluster-open": [payload: { ids: string[]; label: string }];
 	/** A picker marker was chosen. */
-	select: [region: string]
-}>()
+	select: [region: string];
+}>();
 
 // Aliases for the projection frame the lib owns, so the pan/zoom math below reads
 // unchanged. project() and computeNodes() (clustering) live in lib/serverMap.
-const W = MAP_WIDTH
-const H = MAP_HEIGHT
-const MAX_Z = MAX_ZOOM
-const STEP = ZOOM_STEP
+const W = MAP_WIDTH;
+const H = MAP_HEIGHT;
+const MAX_Z = MAX_ZOOM;
+const STEP = ZOOM_STEP;
 
 // — Viewport: contain-fit the world, then zoom/pan on top. At zoom 1 the map
 //   is centered and locked; zoomed in, it pans within the map's own bounds.
-const el = ref<HTMLDivElement | null>(null)
-const cw = ref(0)
-const ch = ref(0)
-const zoom = ref(1)
-const tx = ref(0)
-const ty = ref(0)
-const dragging = ref(false)
-const wheeling = ref(false)
-const focusing = ref(false)
+const el = ref<HTMLDivElement | null>(null);
+const cw = ref(0);
+const ch = ref(0);
+const zoom = ref(1);
+const tx = ref(0);
+const ty = ref(0);
+const dragging = ref(false);
+const wheeling = ref(false);
+const focusing = ref(false);
 
-const base = computed(() =>
-	cw.value && ch.value ? Math.min(cw.value / W, ch.value / H) : 0,
-)
-const k = computed(() => base.value * zoom.value)
+const base = computed(() => (cw.value && ch.value ? Math.min(cw.value / W, ch.value / H) : 0));
+const k = computed(() => base.value * zoom.value);
 
 // Transitions stay off until the first layout lands — the map must appear in
 // place instantly, not zoom in from nothing.
-const ready = ref(false)
+const ready = ref(false);
 watch(base, (v) => {
 	if (v && !ready.value)
-		requestAnimationFrame(() =>
-			requestAnimationFrame(() => (ready.value = true)),
-		)
-})
+		requestAnimationFrame(() => requestAnimationFrame(() => (ready.value = true)));
+});
 
-let ro: ResizeObserver | undefined
+let ro: ResizeObserver | undefined;
 onMounted(() => {
 	ro = new ResizeObserver(([entry]) => {
-		cw.value = entry.contentRect.width
-		ch.value = entry.contentRect.height
-	})
-	if (el.value) ro.observe(el.value)
-})
-onBeforeUnmount(() => ro?.disconnect())
+		cw.value = entry.contentRect.width;
+		ch.value = entry.contentRect.height;
+	});
+	if (el.value) ro.observe(el.value);
+});
+onBeforeUnmount(() => ro?.disconnect());
 
 function clampPan(): void {
-	const w = W * k.value
-	const h = H * k.value
-	tx.value =
-		w <= cw.value
-			? (cw.value - w) / 2
-			: Math.min(0, Math.max(cw.value - w, tx.value))
-	ty.value =
-		h <= ch.value
-			? (ch.value - h) / 2
-			: Math.min(0, Math.max(ch.value - h, ty.value))
+	const w = W * k.value;
+	const h = H * k.value;
+	tx.value = w <= cw.value ? (cw.value - w) / 2 : Math.min(0, Math.max(cw.value - w, tx.value));
+	ty.value = h <= ch.value ? (ch.value - h) / 2 : Math.min(0, Math.max(ch.value - h, ty.value));
 }
-watch([base, cw, ch], clampPan)
+watch([base, cw, ch], clampPan);
 
 const mapStyle = computed(() => ({
 	transform: `translate3d(${tx.value}px, ${ty.value}px, 0)`,
 	width: `${W * k.value}px`,
 	height: `${H * k.value}px`,
-}))
+}));
 
 function zoomAt(ax: number, ay: number, factor: number): void {
-	cancelFocus()
-	const zNew = Math.min(MAX_Z, Math.max(1, zoom.value * factor))
-	if (zNew === zoom.value) return
-	const kOld = k.value
-	const kNew = base.value * zNew
-	tx.value = ax - ((ax - tx.value) / kOld) * kNew
-	ty.value = ay - ((ay - ty.value) / kOld) * kNew
-	zoom.value = zNew
-	hideCard()
-	clampPan()
+	cancelFocus();
+	const zNew = Math.min(MAX_Z, Math.max(1, zoom.value * factor));
+	if (zNew === zoom.value) return;
+	const kOld = k.value;
+	const kNew = base.value * zNew;
+	tx.value = ax - ((ax - tx.value) / kOld) * kNew;
+	ty.value = ay - ((ay - ty.value) / kOld) * kNew;
+	zoom.value = zNew;
+	hideCard();
+	clampPan();
 }
 function zoomStep(dir: number): void {
-	zoomAt(cw.value / 2, ch.value / 2, dir > 0 ? STEP : 1 / STEP)
+	zoomAt(cw.value / 2, ch.value / 2, dir > 0 ? STEP : 1 / STEP);
 }
 
 // Focus a node in one continuous move: zoom to (at least) the stack level
 // while the node glides to the viewport centre. Driven frame-by-frame (CSS
 // transitions off) — zoom interpolates in log space and the node's on-screen
 // path is eased explicitly, so the combined motion never swings.
-let focusRaf = 0
+let focusRaf = 0;
 function cancelFocus(): void {
-	cancelAnimationFrame(focusRaf)
-	focusing.value = false
+	cancelAnimationFrame(focusRaf);
+	focusing.value = false;
 }
 function flyTo(wx: number, wy: number, z1: number): void {
-	cancelFocus()
-	hideCard()
-	const z0 = zoom.value
-	const from = { sx: wx * k.value + tx.value, sy: wy * k.value + ty.value }
-	const to = { sx: cw.value / 2, sy: ch.value / 2 }
-	const D = 600
-	const start = performance.now()
-	const ease = (t: number) =>
-		t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
-	focusing.value = true
+	cancelFocus();
+	hideCard();
+	const z0 = zoom.value;
+	const from = { sx: wx * k.value + tx.value, sy: wy * k.value + ty.value };
+	const to = { sx: cw.value / 2, sy: ch.value / 2 };
+	const D = 600;
+	const start = performance.now();
+	const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+	focusing.value = true;
 	const frame = (now: number) => {
-		const e = ease(Math.min(1, (now - start) / D))
-		zoom.value = z0 * Math.pow(z1 / z0, e)
-		tx.value = from.sx + (to.sx - from.sx) * e - wx * k.value
-		ty.value = from.sy + (to.sy - from.sy) * e - wy * k.value
-		clampPan()
-		if (now - start < D) focusRaf = requestAnimationFrame(frame)
-		else focusing.value = false
-	}
-	focusRaf = requestAnimationFrame(frame)
+		const e = ease(Math.min(1, (now - start) / D));
+		zoom.value = z0 * Math.pow(z1 / z0, e);
+		tx.value = from.sx + (to.sx - from.sx) * e - wx * k.value;
+		ty.value = from.sy + (to.sy - from.sy) * e - wy * k.value;
+		clampPan();
+		if (now - start < D) focusRaf = requestAnimationFrame(frame);
+		else focusing.value = false;
+	};
+	focusRaf = requestAnimationFrame(frame);
 }
 function focusOn(n: MapNode): void {
-	flyTo(n.x, n.y, Math.min(MAX_Z, Math.max(zoom.value, STEP * STEP)))
+	flyTo(n.x, n.y, Math.min(MAX_Z, Math.max(zoom.value, STEP * STEP)));
 }
 
 // Picker mode frames itself: fit the marker set (new provider = new frame).
 // First layout lands in place; later changes glide.
 function fitMarkers(): void {
-	if (!base.value) return
-	const pts = props.markers.map(project)
+	if (!base.value) return;
+	const pts = props.markers.map(project);
 	if (!pts.length) {
 		// A provider with no placed regions frames the whole world instead of
 		// staying wherever the last fit left the map.
-		if (!props.interactive && ready.value && zoom.value > 1)
-			flyTo(W / 2, H / 2, 1)
-		return
+		if (!props.interactive && ready.value && zoom.value > 1) flyTo(W / 2, H / 2, 1);
+		return;
 	}
-	const pad = 48
-	const xs = pts.map((p) => p.x)
-	const ys = pts.map((p) => p.y)
-	const bw = Math.max(...xs) - Math.min(...xs) + pad * 2
-	const bh = Math.max(...ys) - Math.min(...ys) + pad * 2
-	const z1 = Math.min(
-		MAX_Z,
-		Math.max(1, Math.min(cw.value / bw, ch.value / bh) / base.value),
-	)
-	const wx = (Math.min(...xs) + Math.max(...xs)) / 2
-	const wy = (Math.min(...ys) + Math.max(...ys)) / 2
+	const pad = 48;
+	const xs = pts.map((p) => p.x);
+	const ys = pts.map((p) => p.y);
+	const bw = Math.max(...xs) - Math.min(...xs) + pad * 2;
+	const bh = Math.max(...ys) - Math.min(...ys) + pad * 2;
+	const z1 = Math.min(MAX_Z, Math.max(1, Math.min(cw.value / bw, ch.value / bh) / base.value));
+	const wx = (Math.min(...xs) + Math.max(...xs)) / 2;
+	const wy = (Math.min(...ys) + Math.max(...ys)) / 2;
 	if (!ready.value) {
-		zoom.value = z1
-		tx.value = cw.value / 2 - wx * k.value
-		ty.value = ch.value / 2 - wy * k.value
-		clampPan()
-		return
+		zoom.value = z1;
+		tx.value = cw.value / 2 - wx * k.value;
+		ty.value = ch.value / 2 - wy * k.value;
+		clampPan();
+		return;
 	}
-	flyTo(wx, wy, z1)
+	flyTo(wx, wy, z1);
 }
-watch([() => props.markers, base], fitMarkers)
+watch([() => props.markers, base], fitMarkers);
 
 // — Drag to pan (only when zoomed in). A real click is distinguished from a
 //   drag by a 4px slop; after a drag the trailing click is swallowed.
 interface DragState {
-	x: number
-	y: number
-	tx: number
-	ty: number
-	id: number
-	moved: boolean
+	x: number;
+	y: number;
+	tx: number;
+	ty: number;
+	id: number;
+	moved: boolean;
 }
-let drag: DragState | null = null
-let suppressClick = false
+let drag: DragState | null = null;
+let suppressClick = false;
 function closestOf(e: Event, selector: string): Element | null {
-	return (e.target as Element | null)?.closest(selector) ?? null
+	return (e.target as Element | null)?.closest(selector) ?? null;
 }
 function onDown(e: PointerEvent): void {
-	if (e.button !== 0 || !props.interactive) return
+	if (e.button !== 0 || !props.interactive) return;
 	// A locked card (its ⋯ menu was opened) closes on any press outside it.
-	if (cardLocked.value && !closestOf(e, '[data-map-card]')) hideCard()
-	if (zoom.value <= 1) return
-	if (closestOf(e, '[data-map-card],[data-map-controls]')) return
+	if (cardLocked.value && !closestOf(e, "[data-map-card]")) hideCard();
+	if (zoom.value <= 1) return;
+	if (closestOf(e, "[data-map-card],[data-map-controls]")) return;
 	drag = {
 		x: e.clientX,
 		y: e.clientY,
@@ -250,61 +228,61 @@ function onDown(e: PointerEvent): void {
 		ty: ty.value,
 		id: e.pointerId,
 		moved: false,
-	}
+	};
 }
 function onMove(e: PointerEvent): void {
-	if (!drag) return
-	const dx = e.clientX - drag.x
-	const dy = e.clientY - drag.y
-	if (!drag.moved && Math.hypot(dx, dy) < 4) return
+	if (!drag) return;
+	const dx = e.clientX - drag.x;
+	const dy = e.clientY - drag.y;
+	if (!drag.moved && Math.hypot(dx, dy) < 4) return;
 	if (!drag.moved) {
-		drag.moved = true
-		dragging.value = true
-		cancelFocus() // don't fight the user for the viewport
-		hideCard()
-		el.value?.setPointerCapture?.(drag.id)
+		drag.moved = true;
+		dragging.value = true;
+		cancelFocus(); // don't fight the user for the viewport
+		hideCard();
+		el.value?.setPointerCapture?.(drag.id);
 	}
-	tx.value = drag.tx + dx
-	ty.value = drag.ty + dy
-	clampPan()
+	tx.value = drag.tx + dx;
+	ty.value = drag.ty + dy;
+	clampPan();
 }
 function onUp(): void {
 	if (drag?.moved) {
-		suppressClick = true
-		setTimeout(() => (suppressClick = false), 0)
+		suppressClick = true;
+		setTimeout(() => (suppressClick = false), 0);
 	}
-	drag = null
-	dragging.value = false
+	drag = null;
+	dragging.value = false;
 }
 function onDblClick(e: MouseEvent): void {
-	if (!props.interactive) return
-	if (closestOf(e, '[data-map-card],[data-map-controls]')) return
-	if (!el.value) return
-	const r = el.value.getBoundingClientRect()
-	zoomAt(e.clientX - r.left, e.clientY - r.top, STEP)
+	if (!props.interactive) return;
+	if (closestOf(e, "[data-map-card],[data-map-controls]")) return;
+	if (!el.value) return;
+	const r = el.value.getBoundingClientRect();
+	zoomAt(e.clientX - r.left, e.clientY - r.top, STEP);
 }
 
 // Trackpad: pinch (ctrl+wheel) zooms at the cursor; two-finger scroll pans
 // when zoomed in. Both move without the zoom transition.
-let wheelT: number | undefined
+let wheelT: number | undefined;
 function onWheel(e: WheelEvent): void {
-	if (!props.interactive) return
-	const pinch = e.ctrlKey || e.metaKey
-	if (!pinch && zoom.value <= 1) return
-	e.preventDefault()
-	wheeling.value = true
-	cancelFocus()
-	window.clearTimeout(wheelT)
-	wheelT = window.setTimeout(() => (wheeling.value = false), 140)
-	hideCard()
+	if (!props.interactive) return;
+	const pinch = e.ctrlKey || e.metaKey;
+	if (!pinch && zoom.value <= 1) return;
+	e.preventDefault();
+	wheeling.value = true;
+	cancelFocus();
+	window.clearTimeout(wheelT);
+	wheelT = window.setTimeout(() => (wheeling.value = false), 140);
+	hideCard();
 	if (pinch) {
-		if (!el.value) return
-		const r = el.value.getBoundingClientRect()
-		zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01))
+		if (!el.value) return;
+		const r = el.value.getBoundingClientRect();
+		zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01));
 	} else {
-		tx.value -= e.deltaX
-		ty.value -= e.deltaY
-		clampPan()
+		tx.value -= e.deltaX;
+		ty.value -= e.deltaY;
+		clampPan();
 	}
 }
 
@@ -318,11 +296,11 @@ const nodes = computed<MapNode[]>(() =>
 		selectedId: props.selectedId ?? null,
 		k: k.value,
 		zoom: zoom.value,
-	}),
-)
+	})
+);
 
 function screenOf(n: { x: number; y: number }): { sx: number; sy: number } {
-	return { sx: tx.value + n.x * k.value, sy: ty.value + n.y * k.value }
+	return { sx: tx.value + n.x * k.value, sy: ty.value + n.y * k.value };
 }
 
 // The node that holds a given server id — its own pin, the cluster it grouped
@@ -330,96 +308,91 @@ function screenOf(n: { x: number; y: number }): { sx: number; sy: number } {
 function nodeForServer(id: string): MapNode | undefined {
 	return nodes.value.find(
 		(node) =>
-			(node.type === 'server' && node.pin.id === id) ||
-			(node.type === 'cluster' && node.members.some((m) => m.id === id)) ||
-			(node.type === 'marker' && node.marker.id === id),
-	)
+			(node.type === "server" && node.pin.id === id) ||
+			(node.type === "cluster" && node.members.some((m) => m.id === id)) ||
+			(node.type === "marker" && node.marker.id === id)
+	);
 }
 
 const highlightKey = computed(() =>
-	props.highlightId ? nodeForServer(props.highlightId)?.key || null : null,
-)
+	props.highlightId ? nodeForServer(props.highlightId)?.key || null : null
+);
 
 function isHot(n: MapNode): boolean {
-	return n.key === hoverKey.value || n.key === highlightKey.value
+	return n.key === hoverKey.value || n.key === highlightKey.value;
 }
 
 function posStyle(n: MapNode): CSSProperties {
 	const zBase =
-		n.type === 'marker'
+		n.type === "marker"
 			? n.selected
 				? 21
 				: 12
-			: n.type === 'plus'
-				? 10
-				: n.type === 'cluster'
-					? 21
-					: 20
-	const { sx, sy } = screenOf(n)
+			: n.type === "plus"
+			? 10
+			: n.type === "cluster"
+			? 21
+			: 20;
+	const { sx, sy } = screenOf(n);
 	return {
 		transform: `translate3d(${sx}px, ${sy}px, 0)`,
-		zIndex: isHot(n) ? 30 : zBase + (n.type === 'server' ? n.stackZ || 0 : 0),
-	}
+		zIndex: isHot(n) ? 30 : zBase + (n.type === "server" ? n.stackZ || 0 : 0),
+	};
 }
 
 // — Hover intent: a short delay in, a grace period out so the pointer can
 //   travel from node to card without the card blinking away.
-const hoverKey = ref<string | null>(null)
+const hoverKey = ref<string | null>(null);
 // Opening a menu inside the card portals its items to <body>, which fires a
 // mouseleave on the card. Any click inside the card locks it open; a press
 // anywhere outside closes it (see onDown).
-const cardLocked = ref(false)
-let showT: number | undefined
-let hideT: number | undefined
+const cardLocked = ref(false);
+let showT: number | undefined;
+let hideT: number | undefined;
 function enterNode(n: MapNode): void {
-	if (dragging.value || cardLocked.value) return
-	window.clearTimeout(hideT)
-	window.clearTimeout(showT)
-	showT = window.setTimeout(() => (hoverKey.value = n.key), 40)
+	if (dragging.value || cardLocked.value) return;
+	window.clearTimeout(hideT);
+	window.clearTimeout(showT);
+	showT = window.setTimeout(() => (hoverKey.value = n.key), 40);
 }
 function leaveNode(): void {
-	if (cardLocked.value) return
-	window.clearTimeout(showT)
-	window.clearTimeout(hideT)
-	hideT = window.setTimeout(() => (hoverKey.value = null), 140)
+	if (cardLocked.value) return;
+	window.clearTimeout(showT);
+	window.clearTimeout(hideT);
+	hideT = window.setTimeout(() => (hoverKey.value = null), 140);
 }
 function cancelHide(): void {
-	window.clearTimeout(hideT)
+	window.clearTimeout(hideT);
 }
 
-function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
-	return props.allowOpen && server.status === 'Running' && !!server.gateway_url
+function canOpenBench(server: NonNullable<MapPin["server"]>): boolean {
+	return props.allowOpen && server.status === "Running" && !!server.gateway_url;
 }
 
 function hideCard(): void {
-	window.clearTimeout(showT)
-	window.clearTimeout(hideT)
-	cardLocked.value = false
-	hoverKey.value = null
+	window.clearTimeout(showT);
+	window.clearTimeout(hideT);
+	cardLocked.value = false;
+	hoverKey.value = null;
 }
 
 interface CardPlacement {
-	node: MapNode
-	style: CSSProperties
+	node: MapNode;
+	style: CSSProperties;
 }
 
 const card = computed<CardPlacement | null>(() => {
-	const node = hoverKey.value
-		? nodes.value.find((n) => n.key === hoverKey.value)
-		: undefined
-	if (!node) return null
-	const { sx, sy } = screenOf(node)
-	const width = node.type === 'server' ? 320 : 288
+	const node = hoverKey.value ? nodes.value.find((n) => n.key === hoverKey.value) : undefined;
+	if (!node) return null;
+	const { sx, sy } = screenOf(node);
+	const width = node.type === "server" ? 320 : 288;
 	// The side panel overlays the map's right edge, so the card clamps to the
 	// uncovered width — same treatment as the zoom controls.
-	const visibleW = cw.value - props.panelOffset
+	const visibleW = cw.value - props.panelOffset;
 	// Stacked avatars overlap sideways, so their card drops below instead of
 	// covering the neighbours to the right.
-	if (node.type === 'server' && node.stacked) {
-		const left = Math.min(
-			Math.max(sx - width / 2, 12),
-			Math.max(12, visibleW - width - 12),
-		)
+	if (node.type === "server" && node.stacked) {
+		const left = Math.min(Math.max(sx - width / 2, 12), Math.max(12, visibleW - width - 12));
 		return {
 			node,
 			style: {
@@ -427,66 +400,63 @@ const card = computed<CardPlacement | null>(() => {
 				top: `${sy + 28}px`,
 				width: `${width}px`,
 				transformOrigin: `${sx - left}px top`,
-				'--smc-dy': '-6px',
+				"--smc-dy": "-6px",
 			} as CSSProperties,
-		}
+		};
 	}
-	const r = node.type === 'cluster' ? 28 : node.type === 'server' ? 24 : 18
-	let side: 'left' | 'right' = 'right'
-	let left = sx + r + 12
+	const r = node.type === "cluster" ? 28 : node.type === "server" ? 24 : 18;
+	let side: "left" | "right" = "right";
+	let left = sx + r + 12;
 	if (left + width > visibleW - 12) {
-		side = 'left'
-		left = sx - r - 12 - width
+		side = "left";
+		left = sx - r - 12 - width;
 	}
-	left = Math.max(12, Math.min(left, visibleW - width - 12))
+	left = Math.max(12, Math.min(left, visibleW - width - 12));
 	const estH =
-		node.type === 'server'
+		node.type === "server"
 			? 220
-			: node.type === 'cluster'
-				? 40 + node.members.length * 48
-				: 160
-	const top = Math.min(
-		Math.max(sy - 36, 12),
-		Math.max(12, ch.value - estH - 12),
-	)
+			: node.type === "cluster"
+			? 40 + node.members.length * 48
+			: 160;
+	const top = Math.min(Math.max(sy - 36, 12), Math.max(12, ch.value - estH - 12));
 	return {
 		node,
 		style: {
 			left: `${left}px`,
 			top: `${top}px`,
 			width: `${width}px`,
-			transformOrigin: side === 'right' ? 'left 44px' : 'right 44px',
-			'--smc-dx': side === 'right' ? '-6px' : '6px',
+			transformOrigin: side === "right" ? "left 44px" : "right 44px",
+			"--smc-dx": side === "right" ? "-6px" : "6px",
 		} as CSSProperties,
-	}
-})
+	};
+});
 
 // Let the page focus the map from the side panel: glide to the node that
 // holds this server (its own pin, or the cluster it's grouped into).
 function focusPin(id: string): void {
-	const n = nodeForServer(id)
-	if (n) focusOn(n)
+	const n = nodeForServer(id);
+	if (n) focusOn(n);
 }
-defineExpose({ focusPin })
+defineExpose({ focusPin });
 
 function clickNode(n: MapNode): void {
-	if (suppressClick) return
-	if (n.type === 'marker') {
-		emit('select', n.marker.id)
-	} else if (n.type === 'server') {
+	if (suppressClick) return;
+	if (n.type === "marker") {
+		emit("select", n.marker.id);
+	} else if (n.type === "server") {
 		// No per-server page exists (yet) — the card is the detail surface, so a
 		// click pins it open with its actions menu reachable.
-		window.clearTimeout(showT)
-		hoverKey.value = n.key
-		cardLocked.value = true
-		emit('open', n.pin.id)
-	} else if (n.type === 'plus') {
-		emit('new-server', n.targets[0].id)
+		window.clearTimeout(showT);
+		hoverKey.value = n.key;
+		cardLocked.value = true;
+		emit("open", n.pin.id);
+	} else if (n.type === "plus") {
+		emit("new-server", n.targets[0].id);
 	} else {
 		// A cluster focuses the map on itself, zooming to the stack level. The
 		// page narrows the list to this spot if the panel happens to be open.
-		focusOn(n)
-		emit('cluster-open', { ids: n.members.map((m) => m.id), label: n.title })
+		focusOn(n);
+		emit("cluster-open", { ids: n.members.map((m) => m.id), label: n.title });
 	}
 }
 </script>
@@ -495,7 +465,11 @@ function clickNode(n: MapNode): void {
 	<div
 		ref="el"
 		class="relative isolate h-full w-full select-none overflow-hidden bg-surface-base"
-		:class="[ready && 'sm-anim', (dragging || wheeling || focusing) && 'sm-drag', dragging ? 'cursor-grabbing' : interactive && zoom > 1 ? 'cursor-grab' : '']"
+		:class="[
+			ready && 'sm-anim',
+			(dragging || wheeling || focusing) && 'sm-drag',
+			dragging ? 'cursor-grabbing' : interactive && zoom > 1 ? 'cursor-grab' : '',
+		]"
 		:style="interactive && zoom > 1 ? { touchAction: 'none' } : undefined"
 		@pointerdown="onDown"
 		@pointermove="onMove"
@@ -564,7 +538,11 @@ function clickNode(n: MapNode): void {
 					>
 						<span
 							class="absolute -inset-2 rounded-full transition-colors"
-							:class="n.broken ? 'sm-pulse bg-surface-red-4' : 'bg-surface-gray-3 opacity-60'"
+							:class="
+								n.broken
+									? 'sm-pulse bg-surface-red-4'
+									: 'bg-surface-gray-3 opacity-60'
+							"
 						/>
 						<span
 							class="relative grid size-11 place-items-center rounded-full bg-surface-gray-1 text-base font-semibold text-ink-gray-9 shadow-md transition-transform duration-150 ease-out group-active:scale-95"
@@ -631,9 +609,9 @@ function clickNode(n: MapNode): void {
 					<div class="flex items-start gap-2">
 						<div class="min-w-0 flex-1">
 							<div class="flex items-center gap-2">
-								<span class="truncate text-base font-semibold text-ink-gray-9"
-									>{{ card.node.pin.name }}</span
-								>
+								<span class="truncate text-base font-semibold text-ink-gray-9">{{
+									card.node.pin.name
+								}}</span>
 								<Badge
 									:theme="card.node.pin.visual.badgeTheme"
 									variant="subtle"
@@ -663,35 +641,31 @@ function clickNode(n: MapNode): void {
 						class="mt-2 flex items-baseline justify-between gap-3 text-sm"
 					>
 						<span class="shrink-0 font-medium text-ink-gray-8">IP</span>
-						<span class="truncate font-mono text-[13px] text-ink-gray-9"
-							>{{ card.node.pin.publicIpv4 }}</span
-						>
+						<span class="truncate font-mono text-[13px] text-ink-gray-9">{{
+							card.node.pin.publicIpv4
+						}}</span>
 					</div>
 					<div
 						v-if="card.node.pin.plan"
 						class="mt-2 flex items-baseline justify-between gap-3 text-sm"
 					>
 						<span class="shrink-0 font-medium text-ink-gray-8">Plan</span>
-						<span class="truncate text-ink-gray-9"
-							>{{ card.node.pin.plan }}</span
-						>
+						<span class="truncate text-ink-gray-9">{{ card.node.pin.plan }}</span>
 					</div>
 					<div
 						v-if="card.node.pin.frappeVersion"
 						class="mt-2 flex items-baseline justify-between gap-3 text-sm"
 					>
 						<span class="shrink-0 font-medium text-ink-gray-8">Version</span>
-						<span class="truncate text-ink-gray-9"
-							>{{ card.node.pin.frappeVersion }}</span
-						>
+						<span class="truncate text-ink-gray-9">{{
+							card.node.pin.frappeVersion
+						}}</span>
 					</div>
 				</template>
 
 				<!-- Cluster: the servers at this spot -->
 				<template v-else-if="card.node.type === 'cluster'">
-					<div
-						class="flex items-center justify-between gap-2 px-1.5 pb-1 pt-0.5"
-					>
+					<div class="flex items-center justify-between gap-2 px-1.5 pb-1 pt-0.5">
 						<span class="min-w-0 truncate text-xs font-medium text-ink-gray-5">
 							{{ card.node.members[0].flag }} {{ card.node.title }} ·
 							{{ card.node.members.length }} servers
@@ -723,12 +697,12 @@ function clickNode(n: MapNode): void {
 								/>
 							</span>
 							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium text-ink-gray-8"
-									>{{ m.name }}</span
-								>
-								<span class="block truncate text-xs text-ink-gray-5"
-									>{{ m.specs }}</span
-								>
+								<span class="block truncate text-sm font-medium text-ink-gray-8">{{
+									m.name
+								}}</span>
+								<span class="block truncate text-xs text-ink-gray-5">{{
+									m.specs
+								}}</span>
 							</span>
 						</button>
 						<!-- Server: open bench. Site: open its live URL. Same slot, per kind. -->
@@ -764,9 +738,9 @@ function clickNode(n: MapNode): void {
 						{{ card.node.title }}
 					</div>
 					<div class="mt-3 flex items-center gap-2">
-						<span class="text-sm text-ink-gray-6"
-							>{{ card.node.targets.length > 1 ? 'Regions here' : 'Region' }}</span
-						>
+						<span class="text-sm text-ink-gray-6">{{
+							card.node.targets.length > 1 ? "Regions here" : "Region"
+						}}</span>
 						<button
 							v-for="t in card.node.targets"
 							:key="t.id"
@@ -828,19 +802,15 @@ function clickNode(n: MapNode): void {
 	transition: transform 450ms cubic-bezier(0.77, 0, 0.175, 1);
 }
 .sm-anim .sm-map {
-	transition:
-		transform 450ms cubic-bezier(0.77, 0, 0.175, 1),
-		width 450ms cubic-bezier(0.77, 0, 0.175, 1),
-		height 450ms cubic-bezier(0.77, 0, 0.175, 1);
+	transition: transform 450ms cubic-bezier(0.77, 0, 0.175, 1),
+		width 450ms cubic-bezier(0.77, 0, 0.175, 1), height 450ms cubic-bezier(0.77, 0, 0.175, 1);
 }
 .sm-drag .sm-pos {
 	transition: none;
 }
 .sm-center {
 	transform: translate(-50%, -50%);
-	transition:
-		transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
-		opacity 200ms ease-out;
+	transition: transform 250ms cubic-bezier(0.23, 1, 0.32, 1), opacity 200ms ease-out;
 }
 
 /* Recluster: merged/split nodes scale in from something, never from nothing. */
@@ -857,8 +827,7 @@ function clickNode(n: MapNode): void {
 
 /* Hover card: origin-aware scale from the node's side; exit is faster. */
 .smc-enter-active {
-	transition:
-		opacity 150ms cubic-bezier(0.23, 1, 0.32, 1),
+	transition: opacity 150ms cubic-bezier(0.23, 1, 0.32, 1),
 		transform 150ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .smc-enter-from {

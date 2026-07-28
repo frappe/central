@@ -1,40 +1,40 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { Button, Switch, LoadingText } from 'frappe-ui'
-import TopupDialog from '@/components/TopupDialog.vue'
-import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useBillingSetup } from '@/composables/useBillingSetup'
-import { money, signedMoney } from '@/lib/format'
-import { infoToast } from '@/lib/toast'
-import type { CreditLedgerEntry } from '@/types/billing'
+import { computed, ref } from "vue";
+import { Button, Switch, LoadingText } from "frappe-ui";
+import TopupDialog from "@/components/TopupDialog.vue";
+import { useBillingOverview } from "@/composables/useBillingOverview";
+import { useCapabilities } from "@/composables/useCapabilities";
+import { useBillingSetup } from "@/composables/useBillingSetup";
+import { money, signedMoney } from "@/lib/format";
+import { infoToast } from "@/lib/toast";
+import type { CreditLedgerEntry } from "@/types/billing";
 
 // Wallet history — a docked side panel (like the invoice detail tray), opened
 // from the compact Wallet card. Balance header, auto-recharge toggle, the credit
 // ledger, and Add credit (TopupDialog → #67). The page owns whether it's mounted;
 // the close button clears that.
-const open = defineModel<boolean>({ default: false })
-const { credit, ledger, currency, reloadMoney } = useBillingOverview()
-const { canManageBilling } = useCapabilities()
-const { requireSetup } = useBillingSetup()
+const open = defineModel<boolean>({ default: false });
+const { credit, ledger, currency, reloadMoney } = useBillingOverview();
+const { canManageBilling } = useCapabilities();
+const { requireSetup } = useBillingSetup();
 
-const balance = computed(() => Number(credit.data?.balance ?? 0))
+const balance = computed(() => Number(credit.data?.balance ?? 0));
 
 // GROUNDING GAP (#69): no auto-recharge endpoint yet. The toggle is rendered to
 // match the design but is inert until one lands.
-const autoRecharge = ref(false)
+const autoRecharge = ref(false);
 function onAutoRecharge(): void {
-	autoRecharge.value = false
-	infoToast('Auto-recharge isn’t available yet.')
+	autoRecharge.value = false;
+	infoToast("Auto-recharge isn’t available yet.");
 }
 
-const showTopup = ref(false)
+const showTopup = ref(false);
 function onAddCredit(): void {
-	if (requireSetup()) showTopup.value = true
+	if (requireSetup()) showTopup.value = true;
 }
 
 function isCredit(entry: CreditLedgerEntry): boolean {
-	return Number(entry.amount) >= 0 && entry.entry_type !== 'Debit'
+	return Number(entry.amount) >= 0 && entry.entry_type !== "Debit";
 }
 </script>
 
@@ -105,10 +105,10 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 							<span
 								class="size-4"
 								:class="
-                isCredit(e)
-                  ? 'lucide-arrow-down-left text-ink-green-8'
-                  : 'lucide-arrow-up-right text-ink-gray-6'
-              "
+									isCredit(e)
+										? 'lucide-arrow-down-left text-ink-green-8'
+										: 'lucide-arrow-up-right text-ink-gray-6'
+								"
 								aria-hidden="true"
 							/>
 						</span>
@@ -129,10 +129,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 			</div>
 
 			<!-- Add credit -->
-			<footer
-				v-if="canManageBilling"
-				class="border-t border-outline-gray-1 px-5 py-4"
-			>
+			<footer v-if="canManageBilling" class="border-t border-outline-gray-1 px-5 py-4">
 				<Button
 					variant="solid"
 					theme="gray"
@@ -141,16 +138,12 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 					@click="onAddCredit"
 				>
 					<template #prefix
-						><span class="lucide-plus size-4" aria-hidden="true" /></template
-					>
+						><span class="lucide-plus size-4" aria-hidden="true"
+					/></template>
 				</Button>
 			</footer>
 
-			<TopupDialog
-				v-model="showTopup"
-				:currency="currency"
-				@done="reloadMoney"
-			/>
+			<TopupDialog v-model="showTopup" :currency="currency" @done="reloadMoney" />
 		</div>
 	</aside>
 </template>

@@ -1,133 +1,120 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useCall, Badge, Button, LoadingText } from 'frappe-ui'
-import InvoiceListView from '@/components/billing/InvoiceListView.vue'
-import SplitView from '@/components/common/SplitView.vue'
-import { API, method } from '@/api/methods'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { usePayInvoice } from '@/composables/usePayInvoice'
-import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
-import { money } from '@/lib/format'
-import { billingPeriod, shortDate } from '@/lib/date'
-import { invoiceTheme } from '@/lib/status'
-import type {
-	InvoiceSummary,
-	InvoiceDetail,
-	CollectionStatus,
-} from '@/types/billing'
+import { computed, ref, watch } from "vue";
+import { useCall, Badge, Button, LoadingText } from "frappe-ui";
+import InvoiceListView from "@/components/billing/InvoiceListView.vue";
+import SplitView from "@/components/common/SplitView.vue";
+import { API, method } from "@/api/methods";
+import { useSession } from "@/composables/useSession";
+import { whenTeamReady } from "@/composables/useTeamScope";
+import { useCapabilities } from "@/composables/useCapabilities";
+import { usePayInvoice } from "@/composables/usePayInvoice";
+import { usePayInvoiceCheckout } from "@/composables/usePayInvoiceCheckout";
+import { money } from "@/lib/format";
+import { billingPeriod, shortDate } from "@/lib/date";
+import { invoiceTheme } from "@/lib/status";
+import type { InvoiceSummary, InvoiceDetail, CollectionStatus } from "@/types/billing";
 
 // Billing › Invoices (#70) — split list (left) + ~480px detail panel (right), not
 // a modal. Invoices come from the team-scoped list_invoices/get_invoice endpoints
 // (curated fields, not raw reportview), so we filter client-side over that list.
-const { activeTeam } = useSession()
-const { canManageBilling } = useCapabilities()
+const { activeTeam } = useSession();
+const { canManageBilling } = useCapabilities();
 
-const params = () => ({ team: activeTeam.value! })
+const params = () => ({ team: activeTeam.value! });
 const invoices = useCall<InvoiceSummary[], { team: string }>({
 	url: method(API.invoices),
 	params,
 	immediate: false,
 	refetch: true,
-})
+});
 const collection = useCall<CollectionStatus, { team: string }>({
 	url: method(API.collectionStatus),
 	params,
 	immediate: false,
 	refetch: true,
-})
+});
 whenTeamReady(() => {
-	invoices.reload()
-	collection.reload()
-})
+	invoices.reload();
+	collection.reload();
+});
 
 // ── Detail panel ──
-const selected = ref<InvoiceSummary | null>(null)
+const selected = ref<InvoiceSummary | null>(null);
 const detailOpen = computed({
 	get: () => !!selected.value,
 	set: (v) => {
-		if (!v) selected.value = null
+		if (!v) selected.value = null;
 	},
-})
+});
 const detail = useCall<InvoiceDetail, { name: string }>({
 	url: method(API.invoice),
 	immediate: false,
-})
+});
 
 async function selectRow(inv: InvoiceSummary): Promise<void> {
-	selected.value = inv
-	await detail.submit({ name: inv.name })
+	selected.value = inv;
+	await detail.submit({ name: inv.name });
 }
 
 // Open the latest invoice expanded on first load — list_invoices is ordered newest
 // first, so that's row 0. Only auto-select once: after the user closes the panel
 // (or a refetch arrives), we leave their choice alone.
-let autoSelected = false
+let autoSelected = false;
 watch(
 	() => invoices.data,
 	(rows) => {
-		if (autoSelected || selected.value || !rows?.length) return
-		autoSelected = true
-		selectRow(rows[0])
+		if (autoSelected || selected.value || !rows?.length) return;
+		autoSelected = true;
+		selectRow(rows[0]);
 	},
-	{ immediate: true },
-)
+	{ immediate: true }
+);
 
 // Open OR Overdue is still collectable — an overdue invoice is the one the customer
 // most needs to settle (dunning failed on the card), so it must offer Pay too.
 const isPayable = computed(() =>
-	['open', 'overdue'].includes(String(detail.data?.status).toLowerCase()),
-)
+	["open", "overdue"].includes(String(detail.data?.status).toLowerCase())
+);
 // A charge already in flight (or captured, awaiting the settlement webhook) means
 // the money is moving — show a "settling" status, never a second Pay button.
-const settling = computed(
-	() => isPayable.value && !!detail.data?.payment_in_progress,
-)
+const settling = computed(() => isPayable.value && !!detail.data?.payment_in_progress);
 // Only offer Pay when something is actually collectable — a zero-due invoice
 // (e.g. a trial Cost Report) must never render a "Pay 0.00" button.
-const hasDue = computed(() => Number(detail.data?.expected_collection) > 0)
+const hasDue = computed(() => Number(detail.data?.expected_collection) > 0);
 const canPay = computed(
-	() =>
-		canManageBilling.value &&
-		isPayable.value &&
-		!settling.value &&
-		hasDue.value,
-)
+	() => canManageBilling.value && isPayable.value && !settling.value && hasDue.value
+);
 
 function refresh(): void {
-	invoices.reload()
-	if (selected.value) detail.submit({ name: selected.value.name })
+	invoices.reload();
+	if (selected.value) detail.submit({ name: selected.value.name });
 }
-const { run: payInvoice, loading: paying } = usePayInvoice({ onDone: refresh })
+const { run: payInvoice, loading: paying } = usePayInvoice({ onDone: refresh });
 const { run: payCheckout, loading: payingCheckout } = usePayInvoiceCheckout({
 	onDone: refresh,
-})
+});
 
 // manual_checkout teams settle on-session (any amount, no ₹15k limit); everyone
 // else uses the off-session charge against their saved method.
-const manualMode = computed(
-	() => collection.data?.collection_mode === 'Manual Checkout',
-)
-const payBusy = computed(() => paying.value || payingCheckout.value)
+const manualMode = computed(() => collection.data?.collection_mode === "Manual Checkout");
+const payBusy = computed(() => paying.value || payingCheckout.value);
 function pay(name: string): Promise<unknown> {
-	return manualMode.value ? payCheckout(name) : payInvoice(name)
+	return manualMode.value ? payCheckout(name) : payInvoice(name);
 }
 
 // Timeline dot colour per event theme.
 const DOTS: Record<string, string> = {
-	green: 'bg-surface-green-5',
-	red: 'bg-surface-red-5',
-	blue: 'bg-surface-blue-5',
-	orange: 'bg-surface-amber-5',
-	gray: 'bg-surface-gray-4',
-}
-const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
+	green: "bg-surface-green-5",
+	red: "bg-surface-red-5",
+	blue: "bg-surface-blue-5",
+	orange: "bg-surface-amber-5",
+	gray: "bg-surface-gray-4",
+};
+const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray;
 </script>
 
 <template>
 	<div class="flex h-full flex-col">
-
 		<SplitView v-model:open="detailOpen" class="flex-1">
 			<!-- The selected invoice's identity lives in the panel header (number +
            period + due), driven by the summary row so it shows instantly while the
@@ -140,9 +127,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 					{{ selected.invoice_type }}
 					·
 					{{ billingPeriod(selected.period_start, selected.period_end) }}
-					<span v-if="selected.due_date">
-						· Due {{ shortDate(selected.due_date) }}</span
-					>
+					<span v-if="selected.due_date"> · Due {{ shortDate(selected.due_date) }}</span>
 				</p>
 			</template>
 
@@ -150,10 +135,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
            (#70): no email-invoice / download-PDF endpoints yet, so these stay
            disabled until the backend lands them. -->
 			<template v-if="selected" #actions>
-				<Badge
-					:theme="invoiceTheme(selected.status)"
-					:label="selected.status"
-				/>
+				<Badge :theme="invoiceTheme(selected.status)" :label="selected.status" />
 				<Button
 					variant="ghost"
 					icon="lucide-mail"
@@ -197,7 +179,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 							</p>
 							<span class="text-p-sm text-ink-gray-5">
 								{{ detail.data.items.length }}
-								item{{ detail.data.items.length === 1 ? '' : 's' }}
+								item{{ detail.data.items.length === 1 ? "" : "s" }}
 							</span>
 						</div>
 						<div
@@ -240,7 +222,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 							class="flex justify-between text-ink-gray-6"
 						>
 							<dt>
-								{{ detail.data.output_tax_type || 'Tax' }}
+								{{ detail.data.output_tax_type || "Tax" }}
 								<template v-if="detail.data.output_tax_rate">
 									({{ detail.data.output_tax_rate }}%)</template
 								>
@@ -249,10 +231,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 								{{ money(detail.data.output_tax_amount, detail.data.currency) }}
 							</dd>
 						</div>
-						<p
-							v-if="detail.data.zero_rating_reason"
-							class="text-p-sm text-ink-gray-5"
-						>
+						<p v-if="detail.data.zero_rating_reason" class="text-p-sm text-ink-gray-5">
 							{{ detail.data.zero_rating_reason }}
 						</p>
 						<div
@@ -312,7 +291,12 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 											v-if="ev.amount"
 											class="shrink-0 text-sm text-ink-gray-7"
 										>
-											{{ money(ev.amount, ev.currency || detail.data.currency) }}
+											{{
+												money(
+													ev.amount,
+													ev.currency || detail.data.currency
+												)
+											}}
 										</span>
 									</div>
 									<p
@@ -335,7 +319,10 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 						<Button
 							v-if="canPay"
 							variant="solid"
-							:label="`Pay ${money(detail.data.expected_collection, detail.data.currency)}`"
+							:label="`Pay ${money(
+								detail.data.expected_collection,
+								detail.data.currency
+							)}`"
 							:loading="payBusy"
 							class="w-full"
 							@click="pay(detail.data.name)"
@@ -348,9 +335,7 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 								class="lucide-loader-circle size-4 animate-spin"
 								aria-hidden="true"
 							/>
-							<span
-								>Waiting for the bank or gateway to confirm your payment…</span
-							>
+							<span>Waiting for the bank or gateway to confirm your payment…</span>
 						</div>
 					</div>
 				</div>

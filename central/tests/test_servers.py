@@ -11,9 +11,7 @@ class TestRegistry(IntegrationTestCase):
 	"""registry() unifies servers (Asset) and sites (Site) — each a VM — in one read."""
 
 	def _team_and_cluster(self) -> tuple[str, str]:
-		base = frappe.get_all(
-			"Site", fields=["team", "cluster"], filters={"cluster": ["is", "set"]}, limit=1
-		)
+		base = frappe.get_all("Site", fields=["team", "cluster"], filters={"cluster": ["is", "set"]}, limit=1)
 		if not base:
 			self.skipTest("No Site to derive a team/cluster from.")
 		return base[0].team, base[0].cluster

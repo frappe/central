@@ -57,13 +57,15 @@ def get_billing_profile(team: str | None = None) -> dict:
 		else {"team": team}
 	)
 	missing = _missing_profile_fields(team)
-	profile.update({
-		"complete": not missing,
-		"missing": missing,
-		"missing_labels": _missing_profile_labels(team),
-		"currency_locked": _has_money_activity(team),
-		"supported_currencies": supported_currencies(),
-	})
+	profile.update(
+		{
+			"complete": not missing,
+			"missing": missing,
+			"missing_labels": _missing_profile_labels(team),
+			"currency_locked": _has_money_activity(team),
+			"supported_currencies": supported_currencies(),
+		}
+	)
 	return profile
 
 
@@ -108,8 +110,19 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 	GSTIN (validated in the controller). Currency is constrained to gateway-
 	supported values and locked once the team has money activity."""
 	team = _resolve_team(team, authz.MANAGE)
-	allowed = ("currency", "legal_name", "email", "phone", "gstin", "address_line1",
-			   "address_line2", "city", "state", "country", "pincode")
+	allowed = (
+		"currency",
+		"legal_name",
+		"email",
+		"phone",
+		"gstin",
+		"address_line1",
+		"address_line2",
+		"city",
+		"state",
+		"country",
+		"pincode",
+	)
 	values = {k: v for k, v in fields.items() if k in allowed}
 
 	# Billing currency is derived from the country (India → INR, else USD), not
@@ -119,6 +132,7 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 	_validate_currency(team, values.get("currency"))
 
 	from central.billing.payments import profile
+
 	profile = profile.create_or_update_billing_profile(team, **values)
 
 	# Once the profile is complete the team is a real customer: assign its entry
@@ -130,9 +144,15 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 
 		provision_billing_profile(team)
 
-	return {"saved": True, "team": team, "gstin": profile.gstin, "currency": profile.currency,
-			"setup_complete": setup_complete, "missing": _missing_profile_fields(team),
-			"missing_labels": _missing_profile_labels(team)}
+	return {
+		"saved": True,
+		"team": team,
+		"gstin": profile.gstin,
+		"currency": profile.currency,
+		"setup_complete": setup_complete,
+		"missing": _missing_profile_fields(team),
+		"missing_labels": _missing_profile_labels(team),
+	}
 
 
 @frappe.whitelist()
@@ -143,13 +163,13 @@ def get_billing_settings(team: str | None = None) -> dict:
 	if not frappe.db.exists("Billing Profile", team):
 		return {"team": team, "min_balance": 0, "spend_alert_threshold": 0}
 	p = frappe.get_doc("Billing Profile", team)
-	return {"team": team, "min_balance": p.min_balance,
-			"spend_alert_threshold": p.spend_alert_threshold}
+	return {"team": team, "min_balance": p.min_balance, "spend_alert_threshold": p.spend_alert_threshold}
 
 
 @frappe.whitelist(methods=["POST"])
-def save_billing_settings(team: str | None = None, min_balance: float | None = None,
-						  spend_alert_threshold: float | None = None) -> dict:
+def save_billing_settings(
+	team: str | None = None, min_balance: float | None = None, spend_alert_threshold: float | None = None
+) -> dict:
 	"""Update the low-balance / spend alert thresholds."""
 	team = _resolve_team(team, authz.MANAGE)
 	if frappe.db.exists("Billing Profile", team):
@@ -180,9 +200,13 @@ def get_collection_status(team: str | None = None) -> dict:
 	projected = frappe.utils.flt(get_forecast(team).get("projected_total"))
 	st = collection_mode.evaluate(team, projected_amount=projected)
 	wallet = frappe.utils.flt(credits.get_balance(team)["balance"])
-	return {**st, "projected_total": projected, "wallet_balance": wallet,
-			"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
-			"currency": _team_currency(team)}
+	return {
+		**st,
+		"projected_total": projected,
+		"wallet_balance": wallet,
+		"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
+		"currency": _team_currency(team),
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -206,10 +230,15 @@ def get_team_overview(team: str | None = None) -> dict:
 	clusters = len(_team_clusters(team))
 	currency = _team_currency(team)
 	# Caps resolve live from the team's tier level × its currency — no FX.
-	return {"team": team, "tier": caps.tier,
-			"max_spend": frappe.utils.flt(caps.max_spend),
-			"standing": standing, "resources": resources, "clusters": clusters,
-			"currency": currency}
+	return {
+		"team": team,
+		"tier": caps.tier,
+		"max_spend": frappe.utils.flt(caps.max_spend),
+		"standing": standing,
+		"resources": resources,
+		"clusters": clusters,
+		"currency": currency,
+	}
 
 
 @frappe.whitelist()
@@ -238,8 +267,11 @@ def get_trust_tier(team: str | None = None) -> dict:
 	# paid invoices are already in that currency — sum them directly.
 	resources_used = _team_resource_count(team)
 	paid_invoices = frappe.db.count("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"})
-	paid_rows = frappe.get_all("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"},
-							   ["amount_paid", "credit_applied"])
+	paid_rows = frappe.get_all(
+		"Invoice",
+		{"team": team, "status": "Paid", "invoice_type": "Billable"},
+		["amount_paid", "credit_applied"],
+	)
 	# "Paid to date" is what actually settled each invoice — the card-collected
 	# `amount_paid` PLUS credits applied. A credits-settled invoice carries
 	# amount_paid=0 (no gateway charge), so summing amount_paid alone reports 0
@@ -253,7 +285,8 @@ def get_trust_tier(team: str | None = None) -> dict:
 			return None
 		row = entitlements.threshold_for(l, currency)
 		return {
-			"tier": l.tier, "sequence": l.sequence,
+			"tier": l.tier,
+			"sequence": l.sequence,
 			"max_spend": frappe.utils.flt(row.max_spend) if row else None,
 			"max_resource_count": l.max_resource_count,
 			"min_paid_invoices": l.min_paid_invoices,
@@ -261,7 +294,8 @@ def get_trust_tier(team: str | None = None) -> dict:
 		}
 
 	return {
-		"team": team, "currency": currency,
+		"team": team,
+		"currency": currency,
 		"current": level_view(current),
 		"next": level_view(nxt),
 		"is_top_tier": nxt is None,
@@ -277,12 +311,21 @@ def get_trust_tier(team: str | None = None) -> dict:
 @frappe.whitelist()
 def list_switchable_teams() -> list[dict]:
 	"""POC team switcher — teams that have billing data, with their tier/standing."""
-	teams = sorted(t for t in set(frappe.get_all("Subscription", pluck="team"))
-				   | set(frappe.get_all("Billing Profile", pluck="team")) if t)
+	teams = sorted(
+		t
+		for t in set(frappe.get_all("Subscription", pluck="team"))
+		| set(frappe.get_all("Billing Profile", pluck="team"))
+		if t
+	)
 	out = []
 	for t in teams:
-		out.append({"team": t, "tier": frappe.db.get_value("Billing Profile", t, "trust_tier"),
-					"standing": frappe.db.get_value("Subscription", {"team": t}, "account_standing") or "Current"})
+		out.append(
+			{
+				"team": t,
+				"tier": frappe.db.get_value("Billing Profile", t, "trust_tier"),
+				"standing": frappe.db.get_value("Subscription", {"team": t}, "account_standing") or "Current",
+			}
+		)
 	return out
 
 
@@ -290,9 +333,12 @@ def list_switchable_teams() -> list[dict]:
 # The team's in-app notification feed (Team Notification) and the email audit
 # trail (Billing Notification Log).
 
+
 @frappe.whitelist()
 def list_notifications(
-	team: str | None = None, limit: int = 50, category: str | None = None,
+	team: str | None = None,
+	limit: int = 50,
+	category: str | None = None,
 	unread_only: bool = False,
 ) -> dict:
 	"""The team's in-app notification feed — billing and server events — newest first.
@@ -334,16 +380,19 @@ def mark_notification_read(name: str, team: str | None = None, read: bool = True
 
 	if read:
 		if not frappe.db.exists("Notification Read", {"user": user, "notification": name}):
-			frappe.get_doc({
-				"doctype": "Notification Read",
-				"user": user,
-				"notification": name,
-				"read_at": frappe.utils.now_datetime(),
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Notification Read",
+					"user": user,
+					"notification": name,
+					"read_at": frappe.utils.now_datetime(),
+				}
+			).insert(ignore_permissions=True)
 	else:
 		frappe.db.delete("Notification Read", {"user": user, "notification": name})
 
 	from central.notification import unread_count
+
 	return {"ok": True, "unread": unread_count(team, user=user)}
 
 
@@ -362,15 +411,16 @@ def mark_all_notifications_read(team: str | None = None) -> dict:
 	updated = 0
 	for item in feed["items"]:
 		if not item["is_read"]:
-			if not frappe.db.exists("Notification Read", {"user": frappe.session.user, "notification": item["name"]}):
-				frappe.get_doc({
-					"doctype": "Notification Read",
-					"user": frappe.session.user,
-					"notification": item["name"],
-					"read_at": now,
-				}).insert(ignore_permissions=True)
+			if not frappe.db.exists(
+				"Notification Read", {"user": frappe.session.user, "notification": item["name"]}
+			):
+				frappe.get_doc(
+					{
+						"doctype": "Notification Read",
+						"user": frappe.session.user,
+						"notification": item["name"],
+						"read_at": now,
+					}
+				).insert(ignore_permissions=True)
 				updated += 1
 	return {"ok": True, "updated": updated, "unread": 0}
-
-
-

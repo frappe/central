@@ -32,7 +32,13 @@ def execute(filters: dict | None = None):
 
 def get_columns() -> list[dict]:
 	return [
-		{"label": _("Invoice"), "fieldname": "invoice", "fieldtype": "Link", "options": "Invoice", "width": 160},
+		{
+			"label": _("Invoice"),
+			"fieldname": "invoice",
+			"fieldtype": "Link",
+			"options": "Invoice",
+			"width": 160,
+		},
 		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 140},
 		{"label": _("Type"), "fieldname": "invoice_type", "fieldtype": "Data", "width": 100},
 		{"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 90},
@@ -40,10 +46,34 @@ def get_columns() -> list[dict]:
 		{"label": _("Period End"), "fieldname": "period_end", "fieldtype": "Date", "width": 100},
 		{"label": _("Due Date"), "fieldname": "due_date", "fieldtype": "Date", "width": 100},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 80},
-		{"label": _("Total"), "fieldname": "total", "fieldtype": "Currency", "options": "currency", "width": 120},
-		{"label": _("Credit Applied"), "fieldname": "credit_applied", "fieldtype": "Currency", "options": "currency", "width": 120},
-		{"label": _("Expected Collection"), "fieldname": "expected_collection", "fieldtype": "Currency", "options": "currency", "width": 140},
-		{"label": _("Amount Paid"), "fieldname": "amount_paid", "fieldtype": "Currency", "options": "currency", "width": 120},
+		{
+			"label": _("Total"),
+			"fieldname": "total",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+		},
+		{
+			"label": _("Credit Applied"),
+			"fieldname": "credit_applied",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+		},
+		{
+			"label": _("Expected Collection"),
+			"fieldname": "expected_collection",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 140,
+		},
+		{
+			"label": _("Amount Paid"),
+			"fieldname": "amount_paid",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+		},
 	]
 
 
@@ -70,9 +100,18 @@ def get_data(filters: dict) -> list[dict]:
 		"Invoice",
 		filters=conditions,
 		fields=[
-			"name as invoice", "team", "invoice_type", "status",
-			"period_start", "period_end", "due_date", "currency",
-			"total", "credit_applied", "expected_collection", "amount_paid",
+			"name as invoice",
+			"team",
+			"invoice_type",
+			"status",
+			"period_start",
+			"period_end",
+			"due_date",
+			"currency",
+			"total",
+			"credit_applied",
+			"expected_collection",
+			"amount_paid",
 		],
 		order_by="period_start desc, creation desc",
 	)
@@ -93,16 +132,31 @@ def get_summary(rows: list[dict]) -> list[dict]:
 	summary = [
 		{"label": _("Invoices"), "value": len(rows), "datatype": "Int"},
 		{"label": _("Paid"), "value": counts.get("Paid", 0), "datatype": "Int", "indicator": "green"},
-		{"label": _("Open + Overdue"), "value": counts.get("Open", 0) + counts.get("Overdue", 0),
-		 "datatype": "Int", "indicator": "orange"},
+		{
+			"label": _("Open + Overdue"),
+			"value": counts.get("Open", 0) + counts.get("Overdue", 0),
+			"datatype": "Int",
+			"indicator": "orange",
+		},
 		{"label": _("Draft"), "value": counts.get("Draft", 0), "datatype": "Int", "indicator": "grey"},
 	]
 	for currency in sorted(by_currency):
 		g = by_currency[currency]
-		summary.append({"label": _("Invoiced ({0})").format(currency),
-						"value": flt(g["invoiced"], 2), "datatype": "Float"})
-		summary.append({"label": _("Outstanding ({0})").format(currency),
-						"value": flt(g["outstanding"], 2), "datatype": "Float", "indicator": "red"})
+		summary.append(
+			{
+				"label": _("Invoiced ({0})").format(currency),
+				"value": flt(g["invoiced"], 2),
+				"datatype": "Float",
+			}
+		)
+		summary.append(
+			{
+				"label": _("Outstanding ({0})").format(currency),
+				"value": flt(g["outstanding"], 2),
+				"datatype": "Float",
+				"indicator": "red",
+			}
+		)
 	return summary
 
 

@@ -1,160 +1,153 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { Badge, Button, Dialog, useCall } from 'frappe-ui'
-import { API, method } from '@/api/methods'
-import ListViewState from '@/components/common/list-view/ListViewState.vue'
-import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
-import LoadAverageCard from '@/components/servers/overview/LoadAverageCard.vue'
-import OverviewSkeleton from '@/components/servers/overview/OverviewSkeleton.vue'
-import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.vue'
-import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
-import { useRegions } from '@/composables/useRegions'
-import { useSession } from '@/composables/useSession'
-import { statusVisual } from '@/lib/serverMap'
-import { getErrorMessage } from '@/lib/toast'
-import type { AssetRow } from '@/composables/useServers'
-import type { LoadPoint } from '@/utils/loadChart'
-import { formatPlanLabel } from '@/utils/planLabel'
+import { computed, ref, watch } from "vue";
+import { Badge, Button, Dialog, useCall } from "frappe-ui";
+import { API, method } from "@/api/methods";
+import ListViewState from "@/components/common/list-view/ListViewState.vue";
+import ProviderAvatar from "@/components/servers/ProviderAvatar.vue";
+import LoadAverageCard from "@/components/servers/overview/LoadAverageCard.vue";
+import OverviewSkeleton from "@/components/servers/overview/OverviewSkeleton.vue";
+import ResourceUsageCard from "@/components/servers/overview/ResourceUsageCard.vue";
+import ServerInfoCard from "@/components/servers/overview/ServerInfoCard.vue";
+import { useRegions } from "@/composables/useRegions";
+import { useSession } from "@/composables/useSession";
+import { statusVisual } from "@/lib/serverMap";
+import { getErrorMessage } from "@/lib/toast";
+import type { AssetRow } from "@/composables/useServers";
+import type { LoadPoint } from "@/utils/loadChart";
+import { formatPlanLabel } from "@/utils/planLabel";
 
 type Overview = {
 	server: AssetRow & {
-		creation: string
-		plan_title: string | null
-		plan_rate: number | null
-		plan_currency: string | null
-		plan_billing_cycle: string | null
-		team_name: string
-		region: { display_name?: string | null; provider?: string | null }
-	}
+		creation: string;
+		plan_title: string | null;
+		plan_rate: number | null;
+		plan_currency: string | null;
+		plan_billing_cycle: string | null;
+		team_name: string;
+		region: { display_name?: string | null; provider?: string | null };
+	};
 	monitoring: {
-		available: boolean
+		available: boolean;
 		current?: {
-			cpu_percent?: number
-			memory_used?: number
-			memory_total?: number
-			disk_used?: number
-			disk_total?: number
-		}
-		history?: { system?: { points?: LoadPoint[] } }
-	}
-}
+			cpu_percent?: number;
+			memory_used?: number;
+			memory_total?: number;
+			disk_used?: number;
+			disk_total?: number;
+		};
+		history?: { system?: { points?: LoadPoint[] } };
+	};
+};
 
 const props = defineProps<{
-	server: AssetRow | null
-	canOpen: boolean
-	canResize?: boolean
-}>()
+	server: AssetRow | null;
+	canOpen: boolean;
+	canResize?: boolean;
+}>();
 
 const emit = defineEmits<{
-	open: [server: AssetRow]
-	resize: [server: AssetRow]
-}>()
+	open: [server: AssetRow];
+	resize: [server: AssetRow];
+}>();
 
-const open = defineModel<boolean>('open', { required: true })
-const { activeTeam } = useSession()
-const { regions } = useRegions()
-const overview = ref<Overview | null>(null)
-const hasLoaded = ref(false)
-const overviewError = ref('')
+const open = defineModel<boolean>("open", { required: true });
+const { activeTeam } = useSession();
+const { regions } = useRegions();
+const overview = ref<Overview | null>(null);
+const hasLoaded = ref(false);
+const overviewError = ref("");
 
 const overviewCall = useCall<Overview, { team: string; resource_id: string }>({
 	url: method(API.serverOverview),
-	method: 'GET',
+	method: "GET",
 	immediate: false,
-})
+});
 
 watch([open, () => props.server?.resource_id], ([isOpen, resourceId]) => {
 	if (!isOpen) {
-		overview.value = null
-		overviewError.value = ''
-		hasLoaded.value = false
-		return
+		overview.value = null;
+		overviewError.value = "";
+		hasLoaded.value = false;
+		return;
 	}
-	if (!resourceId || !activeTeam.value) return
-	void load(resourceId)
-})
+	if (!resourceId || !activeTeam.value) return;
+	void load(resourceId);
+});
 
 async function load(resourceId: string): Promise<void> {
-	overview.value = null
-	overviewError.value = ''
-	hasLoaded.value = false
+	overview.value = null;
+	overviewError.value = "";
+	hasLoaded.value = false;
 	try {
 		await overviewCall.submit({
 			team: activeTeam.value!,
 			resource_id: resourceId,
-		})
-		if (overviewCall.error) throw overviewCall.error
-		overview.value = overviewCall.data ?? null
+		});
+		if (overviewCall.error) throw overviewCall.error;
+		overview.value = overviewCall.data ?? null;
 	} catch (error) {
-		overviewError.value = getErrorMessage(
-			error,
-			"We couldn't load this server. Try again.",
-		)
+		overviewError.value = getErrorMessage(error, "We couldn't load this server. Try again.");
 	} finally {
-		hasLoaded.value = true
+		hasLoaded.value = true;
 	}
 }
 
 function close(): void {
-	open.value = false
+	open.value = false;
 }
 
 function openServer(): void {
-	if (!props.server) return
-	close()
-	emit('open', props.server)
+	if (!props.server) return;
+	close();
+	emit("open", props.server);
 }
 
 function expandStorage(): void {
-	if (!props.server) return
-	close()
-	emit('resize', props.server)
+	if (!props.server) return;
+	close();
+	emit("resize", props.server);
 }
 
-const server = computed(() => overview.value?.server)
-const current = computed(() => overview.value?.monitoring.current)
-const loadPoints = computed(
-	() => overview.value?.monitoring.history?.system?.points ?? [],
-)
+const server = computed(() => overview.value?.server);
+const current = computed(() => overview.value?.monitoring.current);
+const loadPoints = computed(() => overview.value?.monitoring.history?.system?.points ?? []);
 const visual = computed(() => {
-	const row = server.value ?? props.server
-	return row ? statusVisual(row) : null
-})
+	const row = server.value ?? props.server;
+	return row ? statusVisual(row) : null;
+});
 const provider = computed(() => {
-	if (server.value?.region.provider) return server.value.region.provider
-	const cluster = props.server?.cluster
-	if (!cluster) return null
-	return (
-		regions.value.find((region) => region.region === cluster)?.provider || null
-	)
-})
+	if (server.value?.region.provider) return server.value.region.provider;
+	const cluster = props.server?.cluster;
+	if (!cluster) return null;
+	return regions.value.find((region) => region.region === cluster)?.provider || null;
+});
 const locationLine = computed(() => {
 	if (server.value) {
-		const location = server.value.region.display_name || server.value.cluster
-		const name = server.value.region.provider
-		return name ? `${location} · ${name}` : location
+		const location = server.value.region.display_name || server.value.cluster;
+		const name = server.value.region.provider;
+		return name ? `${location} · ${name}` : location;
 	}
-	const cluster = props.server?.cluster
-	if (!cluster) return ''
-	const region = regions.value.find((entry) => entry.region === cluster)
-	const location = region?.display_name || cluster
-	return region?.provider ? `${location} · ${region.provider}` : location
-})
+	const cluster = props.server?.cluster;
+	if (!cluster) return "";
+	const region = regions.value.find((entry) => entry.region === cluster);
+	const location = region?.display_name || cluster;
+	return region?.provider ? `${location} · ${region.provider}` : location;
+});
 const title = computed(
 	() =>
 		props.server?.title ||
 		props.server?.resource_id ||
 		server.value?.title ||
-		'Server overview',
-)
+		"Server overview"
+);
 const planLabel = computed(() =>
 	formatPlanLabel({
 		title: server.value?.plan_title,
 		rate: server.value?.plan_rate,
 		currency: server.value?.plan_currency,
 		billingCycle: server.value?.plan_billing_cycle,
-	}),
-)
+	})
+);
 </script>
 
 <template>
@@ -166,7 +159,9 @@ const planLabel = computed(() =>
 					<div class="min-w-0">
 						<div class="flex flex-wrap items-center gap-2">
 							<Dialog.Title as-child>
-								<h2 class="truncate text-xl font-semibold leading-6 text-ink-gray-9">
+								<h2
+									class="truncate text-xl font-semibold leading-6 text-ink-gray-9"
+								>
 									{{ title }}
 								</h2>
 							</Dialog.Title>
@@ -179,7 +174,7 @@ const planLabel = computed(() =>
 							/>
 						</div>
 						<p class="mt-0.5 truncate text-sm text-ink-gray-5">
-							{{ locationLine || '—' }}
+							{{ locationLine || "—" }}
 						</p>
 					</div>
 				</div>

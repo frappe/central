@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { groupCapabilitiesByPlane } from '@/lib/capabilities'
-import type { CapabilityInfo } from '@/types/api'
+import { computed } from "vue";
+import { groupCapabilitiesByPlane } from "@/lib/capabilities";
+import type { CapabilityInfo } from "@/types/api";
 
 // Renders a set of granted capabilities grouped by plane, each with its human
 // description — the "what this role allows" transparency panel shown in the right
@@ -9,26 +9,22 @@ import type { CapabilityInfo } from '@/types/api'
 // are omitted; pass the full palette so names resolve to descriptions.
 const props = withDefaults(
 	defineProps<{
-		caps: string[]
-		palette: CapabilityInfo[]
+		caps: string[];
+		palette: CapabilityInfo[];
 	}>(),
 	{
 		caps: () => [],
 		palette: () => [],
-	},
-)
+	}
+);
 
-const groups = computed(() =>
-	groupCapabilitiesByPlane(props.palette, props.caps),
-)
+const groups = computed(() => groupCapabilitiesByPlane(props.palette, props.caps));
 </script>
 
 <template>
 	<div v-if="caps.length" class="space-y-4">
 		<section v-for="group in groups" :key="group.plane">
-			<h4
-				class="mb-2 text-xs font-medium uppercase tracking-wide text-ink-gray-4"
-			>
+			<h4 class="mb-2 text-xs font-medium uppercase tracking-wide text-ink-gray-4">
 				{{ group.label }}
 			</h4>
 			<ul class="space-y-2">
@@ -54,7 +50,5 @@ const groups = computed(() =>
 			</ul>
 		</section>
 	</div>
-	<p v-else class="text-p-sm text-ink-gray-5">
-		This role grants no capabilities.
-	</p>
+	<p v-else class="text-p-sm text-ink-gray-5">This role grants no capabilities.</p>
 </template>

@@ -33,8 +33,21 @@ _MAX_RUNGS = 24  # safety bound on the doubling loop
 # from 1/16 up to 1024 (final-plan-pricing.md §4). Stored as the fraction string
 # (what the admin sees); `parse_vcpu` turns it into the float the ladder uses.
 VCPU_CHOICES = (
-	"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8",
-	"16", "32", "64", "128", "256", "512", "1024",
+	"1/16",
+	"1/8",
+	"1/4",
+	"1/2",
+	"1",
+	"2",
+	"4",
+	"8",
+	"16",
+	"32",
+	"64",
+	"128",
+	"256",
+	"512",
+	"1024",
 )
 
 

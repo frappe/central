@@ -1,32 +1,28 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Avatar, Button, Dialog } from 'frappe-ui'
-import { useSession } from '@/composables/useSession'
-import CreateTeamDialog from './CreateTeamDialog.vue'
-import type { Team } from '@/types/api'
+import { ref } from "vue";
+import { Avatar, Button, Dialog } from "frappe-ui";
+import { useSession } from "@/composables/useSession";
+import CreateTeamDialog from "./CreateTeamDialog.vue";
+import type { Team } from "@/types/api";
 
-const open = defineModel<boolean>('open')
+const open = defineModel<boolean>("open");
 
-const { teams, activeTeam, setActiveTeam } = useSession()
+const { teams, activeTeam, setActiveTeam } = useSession();
 
 const selectTeam = (team: Team) => {
-	setActiveTeam(team.name)
-	open.value = false
-}
+	setActiveTeam(team.name);
+	open.value = false;
+};
 
-const createTeamOpen = ref(false)
+const createTeamOpen = ref(false);
 const createTeam = () => {
-	open.value = false
-	createTeamOpen.value = true
-}
+	open.value = false;
+	createTeamOpen.value = true;
+};
 </script>
 
 <template>
-	<Dialog
-		v-model="open"
-		title="Change team"
-		message="Switch to another team you belong to."
-	>
+	<Dialog v-model="open" title="Change team" message="Switch to another team you belong to.">
 		<template #default>
 			<button
 				v-for="team in teams"
@@ -34,10 +30,10 @@ const createTeam = () => {
 				type="button"
 				class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left duration-150 ease-in-out"
 				:class="
-						team.name === activeTeam
-							? 'border border-outline-gray-2 bg-surface-gray-2'
-							: 'border border-transparent hover:bg-surface-gray-2'
-					"
+					team.name === activeTeam
+						? 'border border-outline-gray-2 bg-surface-gray-2'
+						: 'border border-transparent hover:bg-surface-gray-2'
+				"
 				@click="selectTeam(team)"
 			>
 				<Avatar :label="team.label" size="lg" shape="square" />

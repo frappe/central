@@ -28,9 +28,9 @@ def activate_service(team: str, service: str) -> dict:
 	subscription = _resolve_subscription(team, add_on)
 	if not subscription:
 		frappe.throw(
-			_("{0} is not available in this team's plan. Ask your account administrator to add it, then try again.").format(
-				add_on.title
-			)
+			_(
+				"{0} is not available in this team's plan. Ask your account administrator to add it, then try again."
+			).format(add_on.title)
 		)
 
 	existing = frappe.db.get_value(
@@ -40,7 +40,9 @@ def activate_service(team: str, service: str) -> dict:
 		return {"managed_service": existing.name, "status": existing.status}
 
 	doc = frappe.new_doc("Managed Service")
-	doc.update({"team": team, "add_on_service": add_on.name, "subscription": subscription, "status": "Active"})
+	doc.update(
+		{"team": team, "add_on_service": add_on.name, "subscription": subscription, "status": "Active"}
+	)
 	doc.insert()
 
 	return {"managed_service": doc.name, "status": doc.status}
@@ -128,8 +130,12 @@ def revoke_api_key(name: str) -> dict:
 	if doc.status == "Revoked":
 		return {"name": name, "status": "Revoked"}
 
-	add_on = provisioning.get_active_service(provisioning.get_managed_service(doc.managed_service).add_on_service)
-	get_driver(add_on.handler_key).revoke_site(provisioning.get_backend(add_on.name), doc.get_password("api_key"))
+	add_on = provisioning.get_active_service(
+		provisioning.get_managed_service(doc.managed_service).add_on_service
+	)
+	get_driver(add_on.handler_key).revoke_site(
+		provisioning.get_backend(add_on.name), doc.get_password("api_key")
+	)
 	doc.db_set("status", "Revoked")
 
 	return {"name": name, "status": "Revoked"}
@@ -140,11 +146,16 @@ def revoke_api_key(name: str) -> dict:
 def list_offers(team: str) -> list[dict]:
 	"""Catalogue of active add-on services with the team's status for each. service:view."""
 	offers = frappe.get_all(
-		"Add-on Service", filters={"is_active": 1}, fields=["name", "title", "plan_category"], order_by="title"
+		"Add-on Service",
+		filters={"is_active": 1},
+		fields=["name", "title", "plan_category"],
+		order_by="title",
 	)
 	activated = {
 		row.add_on_service: row.name
-		for row in frappe.get_all("Managed Service", filters={"team": team}, fields=["name", "add_on_service"])
+		for row in frappe.get_all(
+			"Managed Service", filters={"team": team}, fields=["name", "add_on_service"]
+		)
 	}
 	for offer in offers:
 		offer["managed_service"] = activated.get(offer.name)

@@ -16,7 +16,9 @@ def _new_gateway(name="GW-Setup-Test", **overrides):
 	if frappe.db.exists("Payment Gateway", name):
 		frappe.delete_doc("Payment Gateway", name, force=True)
 	values = {
-		"doctype": "Payment Gateway", "__newname": name, "title": "Stripe (Setup)",
+		"doctype": "Payment Gateway",
+		"__newname": name,
+		"title": "Stripe (Setup)",
 		"adapter_key": "Stripe",
 		"currencies": [{"currency": "USD", "is_default": 1}],
 		"api_secret": "sk_live_xyz",
@@ -80,11 +82,13 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 		doc = _new_gateway()  # configured USD
 		with (
 			patch.object(
-				StripeAdapter, "validate_credentials",
+				StripeAdapter,
+				"validate_credentials",
 				return_value={"account_id": "a", "currency": "EUR"},
 			),
 			patch.object(
-				StripeAdapter, "register_webhook",
+				StripeAdapter,
+				"register_webhook",
 				return_value={"endpoint_id": "we_x", "secret": "whsec_x"},
 			),
 		):
@@ -101,7 +105,8 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 		doc = _new_gateway(webhook_secret="whsec_manual")
 		with (
 			patch.object(
-				StripeAdapter, "validate_credentials",
+				StripeAdapter,
+				"validate_credentials",
 				return_value={"account_id": "a", "currency": "USD"},
 			),
 			patch.object(StripeAdapter, "register_webhook", side_effect=GatewayUnsupported("nope")),
@@ -114,10 +119,13 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 		doc = _new_gateway()
 		with (
 			patch.object(
-				StripeAdapter, "validate_credentials",
+				StripeAdapter,
+				"validate_credentials",
 				return_value={"account_id": "a", "currency": "USD"},
 			),
-			patch.object(StripeAdapter, "register_webhook", return_value={"endpoint_id": "we", "secret": "s"}),
+			patch.object(
+				StripeAdapter, "register_webhook", return_value={"endpoint_id": "we", "secret": "s"}
+			),
 		):
 			doc.insert(ignore_permissions=True)
 

@@ -158,7 +158,9 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		adapter = self.make_adapter()
 		endpoint = frappe._dict(id="we_123", secret="whsec_live_xyz")
 		with patch.object(stripe.WebhookEndpoint, "create", return_value=endpoint) as m:
-			result = adapter.register_webhook("https://site/api/method/central.billing.payments.webhooks.stripe")
+			result = adapter.register_webhook(
+				"https://site/api/method/central.billing.payments.webhooks.stripe"
+			)
 		self.assertEqual(result["endpoint_id"], "we_123")
 		self.assertEqual(result["secret"], "whsec_live_xyz")
 		self.assertEqual(
@@ -192,7 +194,8 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 	def test_create_checkout_session_handles_real_stripe_object(self):
 		adapter = self.make_adapter()
 		session = stripe.checkout.Session.construct_from(
-			{"id": "cs_x", "url": "https://checkout.stripe/cs_x"}, "sk_test")
+			{"id": "cs_x", "url": "https://checkout.stripe/cs_x"}, "sk_test"
+		)
 		with patch.object(stripe.checkout.Session, "create", return_value=session):
 			out = adapter.create_checkout_session(50.0, "EUR", "rcpt", "https://ok", "https://no")
 		self.assertEqual(out["checkout_url"], "https://checkout.stripe/cs_x")
@@ -201,8 +204,15 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 	def test_get_checkout_session_normalises_real_stripe_object(self):
 		adapter = self.make_adapter()
 		session = stripe.checkout.Session.construct_from(
-			{"id": "cs_x", "payment_status": "paid", "payment_intent": "pi_x",
-			 "amount_total": 5000, "currency": "eur"}, "sk_test")
+			{
+				"id": "cs_x",
+				"payment_status": "paid",
+				"payment_intent": "pi_x",
+				"amount_total": 5000,
+				"currency": "eur",
+			},
+			"sk_test",
+		)
 		with patch.object(stripe.checkout.Session, "retrieve", return_value=session):
 			out = adapter.get_checkout_session("cs_x")
 		self.assertEqual(out["payment_status"], "paid")
@@ -219,7 +229,8 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		from what Stripe actually charged, so it must normalise a real StripeObject."""
 		adapter = self.make_adapter()
 		intent = stripe.PaymentIntent.construct_from(
-			{"id": "pi_x", "status": "succeeded", "amount_received": 5000, "currency": "eur"}, "sk_test")
+			{"id": "pi_x", "status": "succeeded", "amount_received": 5000, "currency": "eur"}, "sk_test"
+		)
 		with patch.object(stripe.PaymentIntent, "retrieve", return_value=intent):
 			out = adapter.get_payment_intent("pi_x")
 		self.assertEqual(out["status"], "succeeded")

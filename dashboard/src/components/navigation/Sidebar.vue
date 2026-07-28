@@ -1,56 +1,56 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { useSession } from '@/composables/useSession'
-import { useAppMenu } from '@/composables/useAppMenu'
-import { sidebarSections } from './list'
+import { ref, watch } from "vue";
+import { useRoute } from "vue-router";
+import { useSession } from "@/composables/useSession";
+import { useAppMenu } from "@/composables/useAppMenu";
+import { sidebarSections } from "./list";
 
-import { Avatar, Dropdown, Sidebar, SidebarHeader, SidebarLabel, SidebarItem } from 'frappe-ui'
-import frappeCloudLogo from '@/assets/fc-logo.svg'
+import { Avatar, Dropdown, Sidebar, SidebarHeader, SidebarLabel, SidebarItem } from "frappe-ui";
+import frappeCloudLogo from "@/assets/fc-logo.svg";
 
-const props = defineProps<{ isMobile?: boolean }>()
+const props = defineProps<{ isMobile?: boolean }>();
 
-const { activeTeamLabel } = useSession()
-const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
+const { activeTeamLabel } = useSession();
+const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu();
 
 // The map pages want the full viewport, so the sidebar defaults collapsed
 // there and expanded everywhere else. Only crossing that boundary re-applies
 // the default — toggling by hand sticks while you stay within a section.
-const route = useRoute()
-const inServersSection = (path: string) => path.startsWith('/servers')
-const sidebarCollapsed = ref(props.isMobile ? false : inServersSection(route.path))
+const route = useRoute();
+const inServersSection = (path: string) => path.startsWith("/servers");
+const sidebarCollapsed = ref(props.isMobile ? false : inServersSection(route.path));
 watch(
 	() => route.path,
 	(path, previous) => {
-		if (props.isMobile) return
+		if (props.isMobile) return;
 		if (inServersSection(path) !== inServersSection(previous)) {
-			sidebarCollapsed.value = inServersSection(path)
+			sidebarCollapsed.value = inServersSection(path);
 		}
-	},
-)
+	}
+);
 
 // Composition mode has no built-in per-section collapse (that was a Legacy
 // SidebarSection feature) — track collapsed labelled sections by label here.
-const collapsedSections = ref<Record<string, boolean>>({})
+const collapsedSections = ref<Record<string, boolean>>({});
 const toggleSection = (label: string) => {
-	collapsedSections.value[label] = !collapsedSections.value[label]
-}
+	collapsedSections.value[label] = !collapsedSections.value[label];
+};
 
 // The collapse chevron follows the cursor down the sidebar's edge strip.
 // Coalesce mousemove to one update per frame — the ref only drives a CSS offset,
 // so more than one write per paint is wasted work.
-const edgeY = ref(60)
-let pendingEdgeY = 60
-let edgeRaf = 0
+const edgeY = ref(60);
+let pendingEdgeY = 60;
+let edgeRaf = 0;
 const onEdgeMove = (event: MouseEvent): void => {
-	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-	pendingEdgeY = event.clientY - rect.top
-	if (edgeRaf) return
+	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+	pendingEdgeY = event.clientY - rect.top;
+	if (edgeRaf) return;
 	edgeRaf = requestAnimationFrame(() => {
-		edgeY.value = pendingEdgeY
-		edgeRaf = 0
-	})
-}
+		edgeY.value = pendingEdgeY;
+		edgeRaf = 0;
+	});
+};
 </script>
 
 <template>
@@ -99,17 +99,15 @@ const onEdgeMove = (event: MouseEvent): void => {
 			</template>
 		</nav>
 
-    <!-- user profile dropdown -->
-		<div class="mt-auto px-2 pb-2" v-if='!isMobile'>
+		<!-- user profile dropdown -->
+		<div class="mt-auto px-2 pb-2" v-if="!isMobile">
 			<Dropdown :options="footerMenuItems" side="top" align="start" match-trigger-width>
 				<template #default="{ open }">
 					<button
 						class="flex h-10 w-full items-center rounded px-1.5 duration-300 ease-in-out"
 						:class="[
 							sidebarCollapsed ? 'justify-center' : '',
-							open
-								? 'bg-surface-elevation-2 shadow-sm'
-								: 'hover:bg-surface-gray-3',
+							open ? 'bg-surface-elevation-2 shadow-sm' : 'hover:bg-surface-gray-3',
 						]"
 					>
 						<Avatar :label="currentUser ?? ''" size="md" />
@@ -146,10 +144,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 			class="sb-edge-knob pointer-events-none absolute left-1/2 top-0 grid size-6 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 shadow-sm"
 			:style="{ transform: `translate(-50%, calc(${edgeY}px - 50%))` }"
 		>
-			<lucide-chevron-left
-				class="size-3.5"
-        :class='sidebarCollapsed? "rotate-180" : ""'
-			/>
+			<lucide-chevron-left class="size-3.5" :class="sidebarCollapsed ? 'rotate-180' : ''" />
 		</span>
 	</button>
 </template>

@@ -1,35 +1,35 @@
 <script setup lang="ts">
-import { Button, TabButtons, Skeleton } from 'frappe-ui'
+import { Button, TabButtons, Skeleton } from "frappe-ui";
 
-const pageSizeOptions = [10, 20, 50] as const
+const pageSizeOptions = [10, 20, 50] as const;
 
 withDefaults(
 	defineProps<{
-		page: number
-		pageCount: number
-		pageSize: number
-		canPrevious: boolean
-		canNext: boolean
-		paginated?: boolean
-		showCount?: boolean
-		countText?: string
-		countLoading?: boolean
+		page: number;
+		pageCount: number;
+		pageSize: number;
+		canPrevious: boolean;
+		canNext: boolean;
+		paginated?: boolean;
+		showCount?: boolean;
+		countText?: string;
+		countLoading?: boolean;
 	}>(),
 	{
 		paginated: true,
 		showCount: true,
-		countText: '',
+		countText: "",
 		countLoading: false,
-	},
-)
+	}
+);
 
 defineEmits<{
-	first: []
-	previous: []
-	next: []
-	last: []
-	pageSizeChange: [pageSize: number]
-}>()
+	first: [];
+	previous: [];
+	next: [];
+	last: [];
+	pageSizeChange: [pageSize: number];
+}>();
 </script>
 
 <template>

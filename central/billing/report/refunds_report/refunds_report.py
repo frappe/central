@@ -28,12 +28,30 @@ def get_columns() -> list[dict]:
 	return [
 		{"label": _("Refund"), "fieldname": "refund", "fieldtype": "Link", "options": "Refund", "width": 180},
 		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 130},
-		{"label": _("Invoice"), "fieldname": "invoice", "fieldtype": "Link", "options": "Invoice", "width": 150},
-		{"label": _("Payment Attempt"), "fieldname": "payment_attempt", "fieldtype": "Link", "options": "Payment Attempt", "width": 160},
+		{
+			"label": _("Invoice"),
+			"fieldname": "invoice",
+			"fieldtype": "Link",
+			"options": "Invoice",
+			"width": 150,
+		},
+		{
+			"label": _("Payment Attempt"),
+			"fieldname": "payment_attempt",
+			"fieldtype": "Link",
+			"options": "Payment Attempt",
+			"width": 160,
+		},
 		{"label": _("Destination"), "fieldname": "destination", "fieldtype": "Data", "width": 100},
 		{"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 90},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 80},
-		{"label": _("Amount"), "fieldname": "amount", "fieldtype": "Currency", "options": "currency", "width": 120},
+		{
+			"label": _("Amount"),
+			"fieldname": "amount",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 120,
+		},
 		{"label": _("Created"), "fieldname": "created_at", "fieldtype": "Datetime", "width": 160},
 		{"label": _("Completed"), "fieldname": "completed_at", "fieldtype": "Datetime", "width": 160},
 		{"label": _("Reason"), "fieldname": "reason", "fieldtype": "Data", "width": 220},
@@ -58,8 +76,19 @@ def get_data(filters: dict) -> list[dict]:
 	return frappe.get_all(
 		"Refund",
 		filters=conditions,
-		fields=["name as refund", "team", "invoice", "payment_attempt", "destination",
-				"status", "currency", "amount", "created_at", "completed_at", "reason"],
+		fields=[
+			"name as refund",
+			"team",
+			"invoice",
+			"payment_attempt",
+			"destination",
+			"status",
+			"currency",
+			"amount",
+			"created_at",
+			"completed_at",
+			"reason",
+		],
 		order_by="created_at desc, creation desc",
 	)
 
@@ -71,8 +100,9 @@ def get_summary(rows: list[dict]) -> list[dict]:
 	completed_by_currency: dict[str, float] = {}
 	for r in rows:
 		if r.status == "Completed":
-			completed_by_currency[r.currency or "INR"] = \
-				completed_by_currency.get(r.currency or "INR", 0.0) + flt(r.amount)
+			completed_by_currency[r.currency or "INR"] = completed_by_currency.get(
+				r.currency or "INR", 0.0
+			) + flt(r.amount)
 
 	summary = [
 		{"label": _("Refunds"), "value": len(rows), "datatype": "Int"},
@@ -80,7 +110,12 @@ def get_summary(rows: list[dict]) -> list[dict]:
 		{"label": _("Failed"), "value": failed, "datatype": "Int", "indicator": "red"},
 	]
 	for currency in sorted(completed_by_currency):
-		summary.append({"label": _("Completed ({0})").format(currency),
-						"value": flt(completed_by_currency[currency], 2), "datatype": "Float",
-						"indicator": "green"})
+		summary.append(
+			{
+				"label": _("Completed ({0})").format(currency),
+				"value": flt(completed_by_currency[currency], 2),
+				"datatype": "Float",
+				"indicator": "green",
+			}
+		)
 	return summary

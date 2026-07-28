@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Button } from "frappe-ui";
 
 // First-run nudge on the servers map: one clear action (create a server), and a
 // close button so it never gets in the way. Purely presentational — the parent
 // decides when to show it and remembers the dismissal.
-defineEmits<{ create: []; dismiss: [] }>()
+defineEmits<{ create: []; dismiss: [] }>();
 </script>
 
 <template>
@@ -25,9 +25,7 @@ defineEmits<{ create: []; dismiss: [] }>()
 			>
 				<span class="lucide-server size-4" />
 			</div>
-			<p class="mt-3 text-base font-medium text-ink-gray-9">
-				Create your first server
-			</p>
+			<p class="mt-3 text-base font-medium text-ink-gray-9">Create your first server</p>
 			<p class="mt-1 text-p-sm text-ink-gray-5">
 				Spin one up to host your sites — or pick a
 				<span class="font-medium text-ink-gray-7">+</span> spot on the map.

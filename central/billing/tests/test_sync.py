@@ -55,9 +55,7 @@ class TestProvisionOpensSegment(IntegrationTestCase):
 	def test_provision_segment_drives_invoice_generation(self):
 		from central.billing.revenue import invoicing
 
-		res = subscriptions.provision_subscription(
-			TEAM, CLUSTER, PLAN, start_date="2026-06-01"
-		)
+		res = subscriptions.provision_subscription(TEAM, CLUSTER, PLAN, start_date="2026-06-01")
 		name = invoicing.generate_draft_invoice(res["subscription"], "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 		# A full June on the locked ₹3200 plan → a non-zero draft generated straight

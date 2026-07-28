@@ -16,9 +16,7 @@ import frappe
 def execute():
 	gateways = frappe.get_all("Payment Gateway", fields=["name"])
 	for gw in gateways:
-		existing = frappe.get_all(
-			"Payment Gateway Currency", {"parent": gw.name}, pluck="name"
-		)
+		existing = frappe.get_all("Payment Gateway Currency", {"parent": gw.name}, pluck="name")
 		if existing:
 			continue
 

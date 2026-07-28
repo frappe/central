@@ -23,14 +23,18 @@ class TestPilotCredentialDelivery(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.owner = ensure_user("delivery.owner@example.test")
-		self.team = frappe.get_doc(
-			{
-				"doctype": "Team",
-				"team_name": "Delivery Team",
-				"owner_user": self.owner,
-				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
-			}
-		).insert().name
+		self.team = (
+			frappe.get_doc(
+				{
+					"doctype": "Team",
+					"team_name": "Delivery Team",
+					"owner_user": self.owner,
+					"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
+				}
+			)
+			.insert()
+			.name
+		)
 		self.region = ensure_region("blr-delivery")
 		if not frappe.db.exists("Atlas Instance", self.region):
 			frappe.get_doc(

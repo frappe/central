@@ -1,13 +1,13 @@
 <script setup lang="ts">
 defineProps<{
-	label: string
-	value: string
-	percent: number
+	label: string;
+	value: string;
+	percent: number;
 	/** Optional trailing control next to the label (e.g. expand storage). */
-	actionLabel?: string
-}>()
+	actionLabel?: string;
+}>();
 
-defineEmits<{ action: [] }>()
+defineEmits<{ action: [] }>();
 </script>
 
 <template>

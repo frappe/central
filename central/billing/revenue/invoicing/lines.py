@@ -52,11 +52,10 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	day_units = _days_in_period(ps, pe)  # daily denominator
 	hour_units = day_units * 24  # hourly denominator
 
-	subscriptions = frappe.get_all(
-		"Subscription", filters={"team": team}, fields=["name", "asset_id"]
-	)
+	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
 	subscriptions = [
-		s for s in subscriptions
+		s
+		for s in subscriptions
 		if s.asset_id and frappe.db.get_value("Asset", s.asset_id, "cluster") == cluster
 	]
 
@@ -64,7 +63,10 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	for sub in subscriptions:
 		changes = frappe.get_all(
 			"Subscription Change",
-			filters={"subscription": sub.name, "change_type": ["in", ["Created", "Plan Changed", "Cancelled"]]},
+			filters={
+				"subscription": sub.name,
+				"change_type": ["in", ["Created", "Plan Changed", "Cancelled"]],
+			},
 			fields=["change_type", "new_value", "locked_rate", "effective_at"],
 			# Secondary sort on creation so changes sharing an effective_at (e.g. a
 			# same-instant provision then cancel) order deterministically by when they
@@ -89,11 +91,17 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 			end = min(seg_end_dt, period_end_excl_dt)
 			if start >= period_end_excl_dt or end <= period_start_dt:
 				continue  # no overlap with this month
-			segs.append({
-				"start": start, "end": end, "rate": frappe.utils.flt(change.locked_rate),
-				"plan": change.new_value, "asset": sub.asset_id, "cluster": cluster,
-				"churn": held_hours < CHURN_WINDOW_HOURS,
-			})
+			segs.append(
+				{
+					"start": start,
+					"end": end,
+					"rate": frappe.utils.flt(change.locked_rate),
+					"plan": change.new_value,
+					"asset": sub.asset_id,
+					"cluster": cluster,
+					"churn": held_hours < CHURN_WINDOW_HOURS,
+				}
+			)
 
 		# A churn segment (< 24h) turns every date it touches into an hourly date; the
 		# 24h window spans midnight, so a cross-day churn marks both dates.
@@ -131,17 +139,30 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 
 def _daily_line(seg: dict, days: int, day_units: int) -> dict:
 	return {
-		"subscription_resource": seg["asset"], "plan": seg["plan"], "cluster": seg["cluster"],
-		"resource_type": "bundle", "unit": "day", "quantity": 1, "rate": seg["rate"],
-		"days": days, "hours": None,
+		"subscription_resource": seg["asset"],
+		"plan": seg["plan"],
+		"cluster": seg["cluster"],
+		"resource_type": "bundle",
+		"unit": "day",
+		"quantity": 1,
+		"rate": seg["rate"],
+		"days": days,
+		"hours": None,
 		"amount": frappe.utils.flt(days * seg["rate"] / day_units, 2),
 	}
 
 
 def _hourly_line(seg: dict, hours: float, hour_units: int, charge_date) -> dict:
 	return {
-		"subscription_resource": seg["asset"], "plan": seg["plan"], "cluster": seg["cluster"],
-		"resource_type": "bundle", "unit": "hour", "quantity": 1, "rate": seg["rate"],
-		"days": None, "hours": frappe.utils.flt(hours, 2), "charge_date": charge_date,
+		"subscription_resource": seg["asset"],
+		"plan": seg["plan"],
+		"cluster": seg["cluster"],
+		"resource_type": "bundle",
+		"unit": "hour",
+		"quantity": 1,
+		"rate": seg["rate"],
+		"days": None,
+		"hours": frappe.utils.flt(hours, 2),
+		"charge_date": charge_date,
 		"amount": frappe.utils.flt(hours * seg["rate"] / hour_units, 2),
 	}

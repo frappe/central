@@ -298,7 +298,9 @@ class AtlasClient:
 		pilot_credential_id = f"pcred-{frappe.generate_hash(length=16)}"
 		# Reserve the row now (no token) so the vm.* events can bind its Asset link even if
 		# they arrive before the pilot boots and enrols. The token is issued only at enroll.
-		PilotCredential.reserve(team=team, pilot_credential_id=pilot_credential_id, audience_id=pilot_credential_id)
+		PilotCredential.reserve(
+			team=team, pilot_credential_id=pilot_credential_id, audience_id=pilot_credential_id
+		)
 
 		return {
 			"pilot_credential_id": pilot_credential_id,
@@ -333,7 +335,6 @@ class AtlasClient:
 			"run_doc_method",
 			params={"dt": "Site", "dn": name, "method": "terminate"},
 		)
-
 
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""
@@ -450,22 +451,29 @@ def _notify_cluster_degraded(cluster: str) -> None:
 	from central.notification import engine
 
 	teams = frappe.get_all(
-		"Asset", filters={"cluster": cluster, "status": ["!=", "Terminated"]},
-		pluck="team", distinct=True,
+		"Asset",
+		filters={"cluster": cluster, "status": ["!=", "Terminated"]},
+		pluck="team",
+		distinct=True,
 	)
 	for team in {t for t in teams if t}:
 		engine.ensure_event_type(
 			"cluster_degraded",
-			category="Server", severity="Warning", required_cap="server:view",
+			category="Server",
+			severity="Warning",
+			required_cap="server:view",
 			in_app_title="Region unavailable: {{ reference_name }}",
 			in_app_body="Region {{ reference_name }}: {{ message }}",
-			action_label="View servers", action_route="/servers",
+			action_label="View servers",
+			action_route="/servers",
 		)
 		engine.dispatch(
-			team, "cluster_degraded",
+			team,
+			"cluster_degraded",
 			message=f"Central couldn't reach {cluster} on the last sync. Your servers keep running; "
 			"their status in the console may be delayed until the region recovers.",
-			reference_doctype="Atlas Instance", reference_name=cluster,
+			reference_doctype="Atlas Instance",
+			reference_name=cluster,
 		)
 
 
@@ -626,14 +634,16 @@ def _ensure_service_user(instance) -> str:
 	if frappe.db.exists("User", email):
 		user = frappe.get_doc("User", email)
 	else:
-		user = frappe.get_doc({
-			"doctype": "User",
-			"email": email,
-			"first_name": f"Atlas {instance.region}",
-			"user_type": "System User",
-			"send_welcome_email": 0,
-			"enabled": 1,
-		}).insert(ignore_permissions=True)
+		user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": email,
+				"first_name": f"Atlas {instance.region}",
+				"user_type": "System User",
+				"send_welcome_email": 0,
+				"enabled": 1,
+			}
+		).insert(ignore_permissions=True)
 	_ensure_service_role(user)
 	return user.name
 

@@ -77,7 +77,11 @@ def _team_currency(team: str) -> str:
 # customers, and for India the state is only enforced when a GSTIN is entered
 # (see BillingProfile.validate_india_state).
 _REQUIRED_PROFILE_FIELDS = (
-	"currency", "legal_name", "address_line1", "city", "country",
+	"currency",
+	"legal_name",
+	"address_line1",
+	"city",
+	"country",
 )
 _PROFILE_FIELD_LABELS = {
 	"currency": "currency",
@@ -123,8 +127,7 @@ def require_billing_profile(team: str, action: str):
 	missing = _missing_profile_labels(team)
 	if missing:
 		frappe.throw(
-			f"Complete your billing profile before you can {action}. "
-			f"Missing: {', '.join(missing)}.",
+			f"Complete your billing profile before you can {action}. Missing: {', '.join(missing)}.",
 			frappe.ValidationError,
 		)
 
@@ -163,9 +166,7 @@ def _enabled_gateway_for_currency(currency: str, adapter_key: str) -> str | None
 	or None. Unlike the default-resolver, this picks by adapter regardless of the
 	is_default flag — used when a flow needs a specific rail (PayPal, or the Razorpay
 	a Via-Razorpay PayPal row delegates to)."""
-	rows = frappe.get_all(
-		"Payment Gateway Currency", filters={"currency": currency}, fields=["parent"]
-	)
+	rows = frappe.get_all("Payment Gateway Currency", filters={"currency": currency}, fields=["parent"])
 	for r in rows:
 		gw = frappe.db.get_value(
 			"Payment Gateway", r.parent, ["name", "adapter_key", "is_enabled"], as_dict=True
@@ -247,11 +248,17 @@ def _describe_line(team: str, li) -> dict:
 	(prorated days), or a metered overage above the plan's included allowance.
 	"""
 	from central.billing.revenue.metering import _metered_plan_for
+
 	row = {
-		"resource_type": li.resource_type, "plan": li.plan,
+		"resource_type": li.resource_type,
+		"plan": li.plan,
 		"subscription_resource": li.subscription_resource,
-		"days": li.days, "hours": li.hours, "quantity": li.quantity,
-		"rate": li.rate, "amount": li.amount, "unit": li.unit,
+		"days": li.days,
+		"hours": li.hours,
+		"quantity": li.quantity,
+		"rate": li.rate,
+		"amount": li.amount,
+		"unit": li.unit,
 		"charge_date": li.charge_date,
 	}
 	if li.resource_type == "bundle":
