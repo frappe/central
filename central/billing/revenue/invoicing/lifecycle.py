@@ -84,6 +84,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:
 		doc.status = "Paid"
+		doc.paid_at = frappe.utils.now_datetime()
 		doc.save(ignore_permissions=True)
 		return {"invoice": invoice, "claimed": True, "credit_applied": applied,
 				"expected_collection": 0, "status": "Paid"}

@@ -172,6 +172,20 @@ class TestCustomerReads(CustomerDataBase):
 		self.assertIsNone(progress["first_paid_at"])
 		self.assertEqual(progress["last_paid_invoice_amount"], 0)
 
+	def test_get_trust_tier_prefers_paid_at_over_creation(self):
+		# An invoice can sit Draft/Open for a while before it actually settles — paid_at
+		# (the real settlement time) lands well after creation, and progress must report
+		# that, not the earlier creation time (which would overstate tenure).
+		inv = self._invoice()
+		paid_at = frappe.utils.add_days(frappe.utils.now_datetime(), 10)
+		frappe.db.set_value("Invoice", inv, "paid_at", paid_at)
+
+		progress = dashboard.get_trust_tier(TEAM)["progress"]
+		self.assertEqual(
+			frappe.utils.get_datetime(progress["first_paid_at"]),
+			frappe.utils.get_datetime(paid_at),
+		)
+
 
 class TestTeamScoping(CustomerDataBase):
 	def setUp(self):

@@ -436,6 +436,7 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 		return False  # a duplicate webhook — already settled
 	inv.amount_paid = frappe.utils.flt(amount)
 	inv.status = "Paid"
+	inv.paid_at = frappe.utils.now_datetime()
 	inv.save(ignore_permissions=True)
 
 	from central.billing.platform import notifications

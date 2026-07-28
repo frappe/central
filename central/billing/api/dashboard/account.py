@@ -238,7 +238,7 @@ def get_trust_tier(team: str | None = None) -> dict:
 	resources_used = _team_resource_count(team)
 	paid_invoices = frappe.db.count("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"})
 	paid_rows = frappe.get_all("Invoice", {"team": team, "status": "Paid", "invoice_type": "Billable"},
-							   ["amount_paid", "credit_applied", "creation"], order_by="creation asc")
+							   ["amount_paid", "credit_applied", "paid_at", "creation"])
 	# "Paid to date" is what actually settled each invoice — the card-collected
 	# `amount_paid` PLUS credits applied. A credits-settled invoice carries
 	# amount_paid=0 (no gateway charge), so summing amount_paid alone reports 0
@@ -246,7 +246,11 @@ def get_trust_tier(team: str | None = None) -> dict:
 	cumulative_paid = sum(
 		frappe.utils.flt(r.amount_paid) + frappe.utils.flt(r.credit_applied) for r in paid_rows
 	)
-	first_paid_at = paid_rows[0].creation if paid_rows else None
+	# `paid_at` is the real settlement time; `creation` is only a fallback for rows
+	# from before that field existed (an invoice can sit Draft/Open for days before
+	# it's actually paid, so `creation` alone overstates tenure).
+	paid_rows.sort(key=lambda r: r.paid_at or r.creation)
+	first_paid_at = paid_rows[0].paid_at or paid_rows[0].creation if paid_rows else None
 	last_paid_row = paid_rows[-1] if paid_rows else None
 	last_paid_invoice_amount = (
 		frappe.utils.flt(last_paid_row.amount_paid) + frappe.utils.flt(last_paid_row.credit_applied)
