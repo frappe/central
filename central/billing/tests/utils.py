@@ -21,8 +21,8 @@ class BillingTestCase(IntegrationTestCase):
 	"""
 
 	# Top-level doctypes these tests create. Frappe links aren't DB foreign keys, so
-	# raw deletes (frappe.db.delete) need no dependency ordering; child rows (e.g.
-	# Team Member) are cleared via their parent below.
+	# raw deletes (frappe.db.delete) need no dependency ordering. Child rows need
+	# explicit cleanup because raw deletes do not run the parent document hooks.
 	_TRACKED = (
 		"Payment Attempt", "Refund", "Credit Ledger Entry", "Credit Wallet",
 		"Invoice", "Subscription Change", "Subscription", "Gateway Customer",
@@ -47,6 +47,8 @@ class BillingTestCase(IntegrationTestCase):
 				continue
 			if doctype == "Team":
 				removed_teams = added
+			if doctype == "Plan":
+				frappe.db.delete("Plan Includes", {"parent": ["in", added]})
 			frappe.db.delete(doctype, {"name": ["in", added]})
 		if removed_teams:
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
