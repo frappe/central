@@ -105,7 +105,7 @@ const isFormDisabled = computed(
 	<AuthShell>
 		<template v-if="challenge">
 			<h1 class="text-2xl font-semibold text-ink-gray-9">Verify your login</h1>
-			<p class="mt-1 text-base text-ink-gray-5">{{ verificationPrompt() }}</p>
+			<p class="mt-1 text-p-base text-ink-gray-5">{{ verificationPrompt() }}</p>
 
 			<form class="mt-8 space-y-4" @submit.prevent="submitOtp">
 				<OtpInput
@@ -140,7 +140,7 @@ const isFormDisabled = computed(
 
 		<template v-else>
 			<h1 class="text-2xl font-semibold text-ink-gray-9">Welcome back</h1>
-			<p class="mt-1 text-base text-ink-gray-5">
+			<p class="mt-1 text-p-base text-ink-gray-5">
 				Sign in to manage your servers.
 			</p>
 

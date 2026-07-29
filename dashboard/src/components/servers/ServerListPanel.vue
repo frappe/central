@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Badge, Button, FormControl } from 'frappe-ui'
+import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import SiteRowActions from '@/components/servers/SiteRowActions.vue'
@@ -162,15 +163,17 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 
 				</template>
 
-				<div v-if="!rows.length" class="m-4 flex flex-col items-center gap-1 py-8 text-center">
-					<span :class="hasRows ? 'lucide-search' : 'lucide-server'" class="mb-2 size-6 text-ink-gray-4" />
-					<p class="text-base font-medium text-ink-gray-8">
-						{{ hasRows ? 'No servers match' : 'No servers yet' }}
-					</p>
-					<p class="text-sm text-ink-gray-5">
-						{{ hasRows ? 'Try a different search or clear the filters.' : 'Create your first server to host your sites.' }}
-					</p>
-				</div>
+				<EmptyState
+					v-if="!rows.length"
+					class="m-2"
+					:icon="hasRows ? 'lucide-search-x' : 'lucide-server'"
+					:title="hasRows ? 'No servers match' : 'No servers yet'"
+					:description="
+						hasRows
+							? 'Try a different search or clear the filters.'
+							: 'Create your first server to host your sites.'
+					"
+				/>
 			</div>
 		</div>
 	</section>
