@@ -58,6 +58,46 @@ def provision_signup_billing(team: str, country: str | None) -> None:
 		profile.insert(ignore_permissions=True, ignore_mandatory=True)
 
 	provision_billing_profile(team)
+	complete_trial_billing_profile(team)
+
+
+# Placeholder billing details for a staging-trial team, so its profile clears the
+# completeness gate (the console blocks server creation until the profile is complete)
+# without the user filling the form. Staging only — never a real customer's data.
+_STAGING_TRIAL_PROFILE = {
+	"legal_name": "Staging Trial",
+	"address_line1": "Staging — no address on file",
+	"city": "Staging",
+}
+
+
+def complete_trial_billing_profile(team: str) -> None:
+	"""Fill a staging-trial team's Billing Profile with placeholder legal/address details
+	so it passes the completeness gate. Idempotent: only blank required fields are set,
+	the currency/country stamped at signup are kept, and a team that isn't a staging
+	trial (or has no profile yet) is left untouched — signup creates the profile with the
+	IP-derived currency first, then calls this."""
+	from central.billing.india_gst import INDIA
+
+	if not frappe.db.get_value("Team", team, "is_staging_trial"):
+		return
+	if not frappe.db.exists("Billing Profile", team):
+		return
+	profile = frappe.get_doc("Billing Profile", team)
+	dirty = False
+	for field, value in {**_STAGING_TRIAL_PROFILE, "country": profile.country or INDIA}.items():
+		if not str(profile.get(field) or "").strip():
+			profile.set(field, value)
+			dirty = True
+	if dirty:
+		profile.save(ignore_permissions=True)
+
+
+def on_team_update(doc, method: str | None = None) -> None:
+	"""Keep a staging-trial team's billing profile complete, so it can create servers
+	without the setup prompt. Fires on every Team save; a no-op for non-trial teams and
+	when the profile is already complete."""
+	complete_trial_billing_profile(doc.name)
 
 
 def assign_entry_tier(team: str) -> None:

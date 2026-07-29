@@ -217,25 +217,36 @@ class TestEligiblePlans(IntegrationTestCase):
 
 
 class TestTrialPlanMenu(IntegrationTestCase):
-	"""A staging trial team's create-server menu is narrowed to the configured entry
-	plans (`trial_plans`), with design-your-own suppressed."""
+	"""A staging trial team's create-server menu: narrowed to the configured entry plans
+	(`trial_plans`), design-your-own suppressed, and — crucially — NOT gated by the
+	trust-tier spend cap. The team here is deliberately untiered (0 headroom), the state
+	that hid every plan before the fix; a trial's spend is bounded by credits + the
+	server cap, not the tier."""
 
 	def setUp(self):
 		ensure_team(TEAM)
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 1)
 		self.addCleanup(frappe.db.set_value, "Team", TEAM, "is_staging_trial", 0)
 		complete_billing_profile(TEAM, currency="INR")
-		clear_team_tier(TEAM)
+		clear_team_tier(TEAM)  # untiered → 0 headroom; trials must still see plans
 		for name in frappe.get_all("Subscription", filters={"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.delete_doc("Subscription", name, force=True)
-		_ensure_tier_level("t1")
 		make_plan(CHEAP, rates=_rates(1000))
 		make_plan(MID, rates=_rates(2000))
 		make_plan(PRICEY, rates=_rates(5000))
 		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
-		set_team_tier(TEAM, max_spend=100000)  # ample headroom — narrowing is by the trial list
 		frappe.set_user("Administrator")
+
+	def test_untiered_trial_sees_plans_despite_zero_headroom(self):
+		from unittest.mock import patch
+
+		with patch.dict(frappe.conf, {"trial_plans": []}):  # no narrowing
+			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+		self.assertEqual(out["available"], 0)  # untiered: the tier cap would hide everything
+		plans = {p["plan"] for p in _flat(out)}
+		self.assertTrue({CHEAP, MID, PRICEY}.issubset(plans))  # trial bypasses the headroom filter
+		self.assertEqual(out["profiles"], [])  # composed still suppressed for a trial
 
 	def test_menu_limited_to_configured_trial_plans(self):
 		from unittest.mock import patch
@@ -243,15 +254,12 @@ class TestTrialPlanMenu(IntegrationTestCase):
 		with patch.dict(frappe.conf, {"trial_plans": [CHEAP, MID]}):
 			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		plans = {p["plan"] for p in _flat(out)}
-		self.assertEqual(plans, {CHEAP, MID})  # PRICEY hidden even though it fits headroom
+		self.assertEqual(plans, {CHEAP, MID})  # PRICEY excluded by the allow-list
 		self.assertEqual(out["profiles"], [])  # no design-your-own for a trial
 		self.assertEqual(out["rate_card"], {})
 
-	def test_unset_trial_plans_does_not_narrow_the_list(self):
-		from unittest.mock import patch
-
-		with patch.dict(frappe.conf, {"trial_plans": []}):
-			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
-		plans = {p["plan"] for p in _flat(out)}
-		self.assertTrue({CHEAP, MID, PRICEY}.issubset(plans))
-		self.assertEqual(out["profiles"], [])  # composed still suppressed for a trial
+	def test_non_trial_untiered_team_still_sees_nothing(self):
+		# The bypass is trial-only: a normal untiered team is still headroom-gated to empty.
+		frappe.db.set_value("Team", TEAM, "is_staging_trial", 0)
+		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+		self.assertEqual({CHEAP, MID, PRICEY} & {p["plan"] for p in _flat(out)}, set())
