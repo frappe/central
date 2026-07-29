@@ -38,21 +38,8 @@ export const sidebarSections = computed(() => {
           label: 'Addons',
           icon: 'lucide-blocks',
           to: '/addons',
-          condition: isMember.value,
+          condition: canViewServices.value,
         }
-			],
-		},
-
-		{
-			label: 'Services',
-			collapsible: true,
-			items: [
-				{
-					label: 'LLM',
-					icon: 'lucide-sparkles',
-					to: '/services/llm',
-					condition: canViewServices.value,
-				},
 			],
 		},
 

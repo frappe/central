@@ -58,7 +58,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 		v-model:collapsed="sidebarCollapsed"
 		:disable-collapse="isMobile"
 		class="border-r"
-		:class="isMobile ? '!w-full !border-r-0' : ''"
+		:class="isMobile ? '!w-full !border-r-0 bg-transparent' : ''"
 	>
 		<SidebarHeader
 			v-if="!isMobile"

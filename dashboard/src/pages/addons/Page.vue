@@ -36,7 +36,7 @@ const services = computed(() => [
 			'Open models on Frappe hardware, through an OpenAI-compatible API.',
 		costValue: aiUsage.value ?? '—',
 		costSuffix: 'this cycle',
-		to: '/services/llm',
+		to: '/addons/ai',
 		disabled: false,
 	},
 	{
@@ -87,11 +87,11 @@ const services = computed(() => [
 			>
 		</div>
 
-		<section class="grid grid-cols-2 gap-3 mt-5">
+		<section class="grid md:grid-cols-2 gap-3 mt-5">
 			<router-link
 				v-for="service in services"
 				:key="service.title"
-				:to="service.to"
+				:to="service.disabled ? '' : service.to"
 				class="p-4 rounded-lg flex flex-col gap-3 border border-outline-gray-2 transition-all duration-300 hover:border-outline-gray-6"
 				:class="service.disabled ? 'opacity-50' : ''"
 			>

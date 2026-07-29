@@ -62,14 +62,11 @@ const routes = [
 				component: () => import('@/pages/servers/NewServerPage.vue'),
 				meta: { title: 'New server' },
 			},
-			// Services are reached directly from the sidebar's Services group; a bare
-			// /services falls through to the one service today.
-			{ path: 'services', redirect: '/services/llm' },
 			{
-				path: 'services/:service',
-				name: 'ServiceDetail',
-				component: () => import('@/pages/services/ServiceDetailPage.vue'),
-				meta: { title: 'Services' },
+				path: 'addons/ai',
+				name: 'AIInference',
+				component: () => import('@/pages/addons/AIInference.vue'),
+				meta: { title: 'Add-on services' },
 			},
 			{
 				path: 'billing',
