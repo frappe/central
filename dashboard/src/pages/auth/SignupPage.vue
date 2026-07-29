@@ -87,7 +87,7 @@ function queryString(value: unknown): string {
 <template>
 	<AuthShell show-progress :steps="signupSteps">
 		<h1 class="text-2xl font-semibold text-ink-gray-9">Create your account</h1>
-		<p class="mt-1 text-base text-ink-gray-5">
+		<p class="mt-1 text-p-base text-ink-gray-5">
 			{{ subheading }}
 		</p>
 

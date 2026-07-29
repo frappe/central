@@ -87,7 +87,7 @@ async function createSite() {
 <template>
 	<AuthShell show-progress :step="3">
 		<h1 class="text-2xl font-semibold text-ink-gray-9">Name your site</h1>
-		<p class="mt-2 text-base text-ink-gray-5">
+		<p class="mt-2 text-p-base text-ink-gray-5">
 			This is the web address you'll use to reach it. You can connect a custom
 			domain later.
 		</p>
