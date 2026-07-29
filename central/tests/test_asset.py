@@ -3,6 +3,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import make_plan
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_region
 
 
 class TestAsset(IntegrationTestCase):
@@ -18,6 +19,7 @@ class TestAsset(IntegrationTestCase):
 			}
 		).insert()
 		self.cluster = "blr-asset"
+		ensure_region(self.cluster)
 		if not frappe.db.exists("Atlas Instance", self.cluster):
 			frappe.get_doc(
 				{
@@ -59,6 +61,7 @@ class TestAssetSubscriptionSync(IntegrationTestCase):
 			}
 		).insert().name
 		self.cluster = "blr-asset-sub"
+		ensure_region(self.cluster)
 		if not frappe.db.exists("Atlas Instance", self.cluster):
 			frappe.get_doc(
 				{

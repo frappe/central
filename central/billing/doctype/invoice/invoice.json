@@ -16,6 +16,8 @@
   "period_start",
   "period_end",
   "due_date",
+  "dunning_starts_on",
+  "period_key",
   "section_break_items",
   "items",
   "section_break_totals",
@@ -53,7 +55,8 @@
    "options": "Team",
    "in_list_view": 1,
    "label": "Team",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "subscription",
@@ -96,6 +99,23 @@
    "fieldname": "due_date",
    "fieldtype": "Date",
    "label": "Due Date"
+  },
+  {
+   "fieldname": "dunning_starts_on",
+   "fieldtype": "Date",
+   "label": "Dunning Starts On",
+   "read_only": 1,
+   "description": "When the retry ladder may begin. Starts at the due date, and is pushed forward whenever a collection attempt fails on our side — so a billing-run backlog never costs the customer their grace period."
+  },
+  {
+   "fieldname": "period_key",
+   "fieldtype": "Data",
+   "label": "Period Key",
+   "unique": 1,
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "description": "Uniqueness key for 'one live invoice per (team, period)' — the constraint that makes double-billing impossible rather than merely unlikely (ADR 0018, invariant I6). Set from (team, period_start, period_end) while the invoice is live; replaced by a per-invoice sentinel on cancellation so a reissue can take the slot. Derived — never set it by hand."
   },
   {
    "fieldname": "section_break_items",

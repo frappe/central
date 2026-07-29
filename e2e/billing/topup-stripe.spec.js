@@ -7,7 +7,9 @@ import { fillStripeCard } from './helpers/stripe.js'
 // to the embedded Stripe card Element. We type the 4242 test card into Stripe's
 // own iframe, confirm a genuine test-mode PaymentIntent, and the backend credits
 // the wallet only after Stripe confirms the charge. Nothing is stubbed.
-test.describe('Wallet top-up (Stripe)', () => {
+// TODO: legacy dashboard removed; billing/credits isn't ported to console yet.
+// Un-skip once console has it.
+test.describe.skip('Wallet top-up (Stripe)', () => {
   test('tops up a USD wallet via a real Stripe test-mode PaymentIntent', async ({ page, billing }) => {
     await billing.signIn({ scenario: 'ready', currency: 'USD' })
 

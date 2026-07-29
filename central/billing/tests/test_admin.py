@@ -6,7 +6,12 @@ import frappe
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api import admin
-from central.billing.tests.utils import ensure_team, make_plan, seed_running_resource
+from central.billing.tests.utils import (
+	ensure_atlas_instance,
+	ensure_team,
+	make_plan,
+	seed_running_resource,
+)
 
 PLAN = "bundle-admin-test"
 TEAM_A = "team-admin-a"
@@ -16,6 +21,7 @@ TEAM_B = "team-admin-b"
 class AdminTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM_A)
+		ensure_atlas_instance("ap-south-1")
 		ensure_team(TEAM_B)
 		make_plan(PLAN)
 		self._purge()
@@ -54,6 +60,20 @@ class TestAdminGating(AdminTestBase):
 		with self.assertRaises(frappe.PermissionError):
 			admin.get_summary()
 
+	def test_credit_adjustment_is_operator_only(self):
+		user = f"adm-{frappe.generate_hash(6)}@example.com"
+		frappe.get_doc({"doctype": "User", "email": user, "first_name": "X", "send_welcome_email": 0}).insert(ignore_permissions=True)
+		frappe.set_user(user)
+		with self.assertRaises(frappe.PermissionError):
+			admin.adjust_team_credits(TEAM_A, 100, "Credit", note="nope")
+
+	def test_credit_adjustment_books_with_audit_note(self):
+		out = admin.adjust_team_credits(TEAM_A, 100, "Credit", currency="INR", note="goodwill")
+		self.assertEqual(out["new_balance"], 100)
+		entry = frappe.get_doc("Credit Ledger Entry", out["ledger_entry"])
+		self.assertEqual(entry.reference_type, "Admin")
+		self.assertEqual(entry.note, "goodwill")
+
 
 class TestAggregates(AdminTestBase):
 	def test_summary_billed_collected_outstanding(self):
@@ -84,10 +104,14 @@ class TestAggregates(AdminTestBase):
 class TestPanels(AdminTestBase):
 	def test_payment_analytics_success_rate_and_reasons(self):
 		inv = self._invoice(TEAM_A, 100, status="Open", paid=0)
-		for status, code in [("Captured", None), ("Captured", None), ("Failed", "card_declined")]:
+		# retry_number is part of the attempt's gateway key, so each attempt on one
+		# invoice carries its own — as the charge path does.
+		for retry, (status, code) in enumerate(
+			[("Captured", None), ("Captured", None), ("Failed", "card_declined")]
+		):
 			frappe.get_doc(
 				{"doctype": "Payment Attempt", "team": TEAM_A, "invoice": inv, "gateway": None,
-				 "amount": 100, "status": status, "failure_code": code,
+				 "amount": 100, "status": status, "failure_code": code, "retry_number": retry,
 				 "initiated_at": "2099-01-10 00:00:00"}
 			).insert(ignore_permissions=True)
 		out = admin.get_payment_analytics("2099-01-01", "2099-01-31")

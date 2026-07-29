@@ -13,7 +13,7 @@ from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
 from central.billing.catalog.signing import generate_keypair
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import ensure_team, make_plan, set_team_tier
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan, set_team_tier
 
 TEAM = "team-dunning"
 CLUSTER = "ap-south-1"
@@ -39,6 +39,7 @@ def day(n):
 class DunningTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._priv, self._pub = generate_keypair()
@@ -194,3 +195,71 @@ class TestCreditsOnlyDunning(DunningTestBase):
 
 		self.assertEqual(self._attempts(inv), 0)  # nothing to retry against
 		self.assertEqual(self._standing(sub), "Suspended")  # but still escalates
+
+
+class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
+	"""A backlogged billing run must not cost the customer their grace period.
+
+	Every dunning stage is counted from a date that assumes we asked for the money
+	when we said we would. When the run is late, rate-limited, or broken, that
+	assumption is false — and starting the retry ladder, the Overdue notice and the
+	suspension countdown anyway would charge the customer for our outage.
+	"""
+
+	def test_a_gateway_that_rate_limits_us_defers_the_ladder(self):
+		sub = self._subscription()
+		inv = self._open_invoice(sub)
+
+		# Day 7 with no deferral: the invoice would go Overdue and the team past_due.
+		# The rate limit lands first, so the same day must do nothing instead.
+		dunning.defer_dunning(inv, "429 from the gateway")
+		result = dunning.process_invoice_dunning(inv, now=day(7))
+
+		self.assertEqual(result["action"], "none")
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
+		self.assertNotEqual(self._standing(sub), "Past Due")
+
+	def test_the_deferred_ladder_still_runs_from_the_fair_date(self):
+		from central.billing.revenue.invoicing import DEFAULT_DUE_DAYS
+
+		sub = self._subscription()
+		inv = self._open_invoice(sub)
+		dunning.defer_dunning(inv, "the run backed up")
+
+		# Deferral is grace, not amnesty: a week after the date we could actually
+		# have asked on, the ladder escalates exactly as it always would.
+		fair = frappe.db.get_value("Invoice", inv, "dunning_starts_on")
+		self.assertEqual(fair, frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), DEFAULT_DUE_DAYS)))
+		with declining_gateway():
+			dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(fair, 7))
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+
+	def test_deferral_only_ever_moves_forward(self):
+		# Day 2 of a three-day backlog must not hand back the grace day 1 granted,
+		# and a stale failure arriving late must not rewind an already-fair clock.
+		sub = self._subscription()
+		inv = self._open_invoice(sub)
+		dunning.defer_dunning(inv, "first failure")
+		granted = frappe.db.get_value("Invoice", inv, "dunning_starts_on")
+
+		self.assertFalse(dunning.defer_dunning(inv, "same day, second failure"))
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "dunning_starts_on"), granted)
+
+	def test_an_invoice_that_collected_normally_keeps_the_due_date_clock(self):
+		# The fairness rule must not slow down dunning for everyone else.
+		sub = self._subscription()
+		inv = self._open_invoice(sub)
+		frappe.db.set_value("Invoice", inv, "dunning_starts_on", DUE)
+
+		with declining_gateway():
+			result = dunning.process_invoice_dunning(inv, now=day(7))
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+		self.assertEqual(result["days_overdue"], 7)
+
+	def test_deferring_never_touches_the_due_date(self):
+		# What the customer owed and when is an accounting fact; AR aging keeps
+		# reading it. Only the escalation clock moves.
+		sub = self._subscription()
+		inv = self._open_invoice(sub)
+		dunning.defer_dunning(inv, "the run backed up")
+		self.assertEqual(str(frappe.db.get_value("Invoice", inv, "due_date")), DUE)

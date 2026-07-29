@@ -275,30 +275,35 @@ class AtlasClient:
 			params["region"] = region
 		params.update(self._pilot_credential(team))
 
-		# Durability handoff: the token is about to leave for Atlas → the bench's
-		# bench.toml. Commit it BEFORE the call so a rollback of the enclosing
-		# request (e.g. the Site-mirror save right after this returns) can't wipe the
-		# credential and strand the bench with a token Central can't verify — a permanent
-		# 401 with no self-heal. The inverse failure is benign: if the Atlas call fails,
-		# the committed credential is simply unused (no one holds the plaintext), which we
-		# deliberately prefer over revoking here — a lost response could mean Atlas *did*
-		# provision, and revoking would then be what strands the bench.
+		# Durability: minting the bootstrap token lazily generates Central's signing key on
+		# first use. Commit BEFORE the Atlas call so a rollback of the enclosing request
+		# can't discard a freshly-generated key while the bench boots with a token signed by
+		# it. The bootstrap token itself is stateless (a signed JWT, no DB row) and the
+		# long-lived credential is created only later at enrollment, so nothing else here
+		# needs committing; an unused token after a failed Atlas call is harmless.
 		frappe.db.commit()
 		return self.client().post_api("atlas.atlas.api.site.create_site", params=params)
 
 	def _pilot_credential(self, team: str) -> dict:
 		"""
-		Mint this pilot's Central credential and hand Atlas the token + callback URL to
-		store on the bench (bench.toml), so later pilot→Central calls authenticate.
-		Atlas binds pilot_credential_id to the pilot and echoes it back to join events. The
-		plaintext token leaves Central only here — never in the reply to Central's caller
+		Mint a single-use enrollment (bootstrap) token and hand Atlas the token + callback
+		URL to seed on the bench (bench.toml). On first boot the pilot exchanges it for its
+		long-lived credential (`central.api.pilot.enroll`) — the durable secret is never
+		injected during provisioning, only a short-lived, single-use one. Atlas binds
+		pilot_credential_id to the pilot and echoes it back to join events, which links the
+		enrolled credential to its VM.
 		"""
+		from central.sso import central_url, mint_bootstrap_token
+
 		pilot_credential_id = f"pcred-{frappe.generate_hash(length=16)}"
+		# Reserve the row now (no token) so the vm.* events can bind its Asset link even if
+		# they arrive before the pilot boots and enrols. The token is issued only at enroll.
+		PilotCredential.reserve(team=team, pilot_credential_id=pilot_credential_id, audience_id=pilot_credential_id)
 
 		return {
 			"pilot_credential_id": pilot_credential_id,
-			"central_endpoint": frappe.conf.get("central_url") or frappe.utils.get_url(),
-			"central_auth_token": PilotCredential.mint(team=team, pilot_credential_id=pilot_credential_id),
+			"central_endpoint": central_url(),
+			"bootstrap_token": mint_bootstrap_token(team=team, pilot_credential_id=pilot_credential_id),
 		}
 
 	def get_site(self, name: str) -> dict:
@@ -321,19 +326,14 @@ class AtlasClient:
 			params={"dt": "Site", "dn": name, "method": "regenerate_login_url"},
 		)
 
-	def regenerate_vm_login(self, name: str) -> dict:
-		"""Re-mint a bench VM's one-click login URL and return the fresh Asset-mirror
-		shape (gateway_url + login_url + login_url_expires_at). Central calls this on
-		Open when the Asset's stored URL has expired (the admin JWT lasts 5 minutes, so
-		this is the common path).
-
-		A bench VM's login URL lives on the Pilot that owns the VM, not the pure-microVM
-		Virtual Machine, so this goes through Atlas's provision endpoint, which resolves
-		the VM to its Pilot and re-mints in the guest before returning the payload."""
+	def terminate_site(self, name: str) -> dict:
+		"""Tear down a self-serve site and its 1:1 backing VM. The Atlas Site controller
+		terminates the guest + VM; the site.* events flip the mirror to Terminated."""
 		return self.client().post_api(
-			"atlas.atlas.api.provision.regenerate_vm_login",
-			params={"name": name},
+			"run_doc_method",
+			params={"dt": "Site", "dn": name, "method": "terminate"},
 		)
+
 
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""

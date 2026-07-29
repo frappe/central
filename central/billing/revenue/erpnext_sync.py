@@ -30,7 +30,6 @@ def enqueue_invoice_sync(invoice: str):
 	)
 
 
-@frappe.whitelist()
 def sync_invoice(invoice: str) -> dict:
 	"""Create the ERPNext Sales Invoice for a Paid invoice (idempotent, one-way).
 

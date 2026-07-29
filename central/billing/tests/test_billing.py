@@ -3,12 +3,14 @@
 """Postpaid two-phase invoice generation (issue #09)."""
 
 import threading
+from unittest.mock import patch
 
 import frappe
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.revenue import invoicing, credits
+from central.billing.revenue.invoicing import run
 from central.billing.tests.utils import (
 	add_segment,
 	make_billing_subscription,
@@ -162,6 +164,76 @@ class TestDraftGeneration(BillingTestBase):
 	def test_no_runtime_yields_no_invoice(self):
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertIsNone(name)
+
+
+class TestOneInvoicePerPeriod(BillingTestBase):
+	"""A team is billed at most once for a period — enforced, not merely intended.
+
+	`generate_team_invoice` read "does an invoice exist?" and then inserted, with no
+	lock and no constraint in between, while `generate_draft_invoices` enqueues one job
+	per team. Two workers could both read "no" and both insert. The unique index on
+	`Invoice.period_key` is what makes the double bill impossible (ADR 0018, I6).
+	"""
+
+	def test_concurrent_generation_bills_the_team_exactly_once(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()  # make the segment visible to the worker connections
+
+		results = run_workers(
+			6,
+			lambda i: invoicing.generate_team_invoice(TEAM, "2026-06-01", "2026-06-30"),
+		)
+		frappe.db.rollback()  # refresh this connection's snapshot
+
+		# Every worker returns the SAME invoice: the losers of the race yield to the
+		# winner instead of raising, so a concurrent caller is indistinguishable from a
+		# sequential one. Without the unique index all six inserted their own.
+		self.assertEqual(len(set(results.values())), 1, results)
+
+		live = frappe.get_all(
+			"Invoice",
+			filters={"team": TEAM, "period_start": "2026-06-01", "status": ["!=", "Cancelled"]},
+			pluck="name",
+		)
+		self.assertEqual(len(live), 1, f"team billed {len(live)}x for one period: {live}")
+		self.assertEqual(live, list(set(results.values())))
+
+	def test_cancel_and_reissue_reclaims_the_period_slot(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+
+		second = invoicing.reissue_invoice(first, reason="wrong rate")
+
+		self.assertIsNotNone(second)
+		self.assertNotEqual(first, second)
+		self.assertEqual(frappe.db.get_value("Invoice", first, "status"), "Cancelled")
+		# The cancelled invoice stepped out of the index so the reissue could take
+		# the period's slot — but only one invoice is live for it.
+		live = frappe.get_all(
+			"Invoice",
+			filters={"team": TEAM, "period_start": "2026-06-01", "status": ["!=", "Cancelled"]},
+			pluck="name",
+		)
+		self.assertEqual(live, [second])
+
+	def test_several_cancelled_invoices_coexist_for_one_period(self):
+		"""Cancelling twice must not trip the unique index.
+
+		The cancelled key is a per-invoice sentinel rather than NULL: Frappe coerces an
+		unset Data field to the empty string, and empty strings COLLIDE in a unique
+		index — so "null it on cancel" would have let the first cancellation through
+		and rejected the second.
+		"""
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		second = invoicing.reissue_invoice(first, reason="one")
+		third = invoicing.reissue_invoice(second, reason="two")
+
+		self.assertEqual(len({first, second, third}), 3)
+		cancelled = frappe.get_all(
+			"Invoice", filters={"team": TEAM, "status": "Cancelled"}, pluck="name"
+		)
+		self.assertCountEqual(cancelled, [first, second])
 
 
 class TestOpenAndCollect(BillingTestBase):
@@ -327,4 +399,284 @@ class TestMonthlyBillingRun(BillingTestBase):
 
 		self.assertEqual(
 			frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1
+		)
+
+
+class TestFanOutRun(IntegrationTestCase):
+	"""The monthly run as an orchestrator: paged, fanned out, failure-isolated."""
+
+	CLUSTER = "ap-south-1"
+	PLAN = "bundle-fanout-test"
+	TEAMS = ["team-fanout-a", "team-fanout-b", "team-fanout-c"]
+
+	def setUp(self):
+		make_plan(self.PLAN)
+		self._purge()
+		for team in self.TEAMS:
+			sub = make_billing_subscription(team, self.CLUSTER, self.PLAN, billing_cycle="Monthly")
+			add_segment(sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+	def tearDown(self):
+		self._purge()
+
+	def _purge(self):
+		from central.billing.tests.utils import purge_teams
+
+		purge_teams(self.TEAMS)
+		frappe.db.delete("Error Log", {"method": run.BILLING_RUN_FAILURE})
+		frappe.db.commit()
+
+	def test_one_failing_team_does_not_take_the_run_down(self):
+		# Team b blows up mid-run: the team drafted before it must survive (the unit
+		# rolls back to its own savepoint, not the whole transaction), and the team
+		# after it must still be billed.
+		real = run.generate_team_invoice
+
+		def explode(team, *args, **kwargs):
+			if team == "team-fanout-b":
+				raise ValueError("no rate for this team")
+			return real(team, *args, **kwargs)
+
+		with patch.object(run, "generate_team_invoice", side_effect=explode):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		self.assertTrue(frappe.db.exists("Invoice", {"team": "team-fanout-a"}))
+		self.assertFalse(frappe.db.exists("Invoice", {"team": "team-fanout-b"}))
+		self.assertTrue(frappe.db.exists("Invoice", {"team": "team-fanout-c"}))
+
+		# The casualty is logged under the one title an operator can count.
+		self.assertTrue(
+			frappe.db.exists(
+				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-b"}
+			)
+		)
+
+	def test_a_failed_team_is_redrafted_by_the_next_tick(self):
+		# Nothing is re-raised, so the run has to be resumable: the retry drafts the
+		# team that failed and does not double-bill the ones that succeeded.
+		real = run.generate_team_invoice
+
+		def explode(team, *args, **kwargs):
+			if team == "team-fanout-b":
+				raise ValueError("transient")
+			return real(team, *args, **kwargs)
+
+		with patch.object(run, "generate_team_invoice", side_effect=explode):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30")
+		run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
+
+	def test_the_tick_hands_out_pages_not_one_job_per_team(self):
+		# A job per team is a redis round-trip per team: at a million teams the tick
+		# never finishes inside its timeout. Pages keep the tick O(teams/page_size).
+		with patch("frappe.enqueue") as enqueue, patch.object(run, "PAGE_SIZE", 2):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30", enqueue=True)
+
+		calls = enqueue.call_args_list
+		self.assertLess(len(calls), frappe.db.count("Subscription"))
+		call = calls[0]
+		self.assertEqual(call.args[0], "central.billing.revenue.invoicing.draft_team_page")
+		self.assertEqual(call.kwargs["queue"], run.billing_queue())
+		self.assertTrue(call.kwargs["deduplicate"])
+		# Contiguous, non-overlapping slices: every team falls in exactly one page.
+		bounds = [(c.kwargs["after"], c.kwargs["until"]) for c in calls]
+		self.assertEqual([b[0] for b in bounds[1:]], [b[1] for b in bounds[:-1]])
+		self.assertEqual(bounds[0][0], "")
+		# The orchestrator hands out work; it must not rate anything itself.
+		self.assertFalse(frappe.db.exists("Invoice", {"team": "team-fanout-a"}))
+
+	def test_a_page_covers_every_team_in_its_slice(self):
+		covered = run.teams_in_range("team-fanout-a", "team-fanout-c")
+		self.assertEqual(covered, ["team-fanout-b", "team-fanout-c"])  # (after, until]
+
+		run.draft_team_page("", "team-fanout-c", "2026-06-01", "2026-06-30")
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
+
+	def test_fanned_out_jobs_draft_exactly_what_the_inline_run_would(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30", enqueue=True)
+
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
+
+	def test_the_two_ticks_bill_the_closed_month_end_to_end(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			drafting = run.draft_monthly_invoices(today="2026-07-01")
+			collecting = run.collect_due_invoices(today="2026-07-01")
+
+		# Both ticks agree on the period: the month that closed, never a live one.
+		self.assertEqual(drafting["period_end"], "2026-06-30")
+		self.assertEqual(collecting["period_end"], "2026-06-30")
+		self.assertGreaterEqual(collecting["pages"], 1)
+		self.assertGreaterEqual(drafting["pages"], 1)
+		for team in self.TEAMS:
+			inv = frappe.get_doc("Invoice", {"team": team, "period_end": "2026-06-30"})
+			self.assertNotEqual(inv.status, "Draft")
+
+	def test_collection_tick_alone_settles_nothing(self):
+		# Order matters: the collect tick only ever touches drafts that already exist,
+		# so firing it before drafting is a no-op rather than a half-billed month.
+		with patch("frappe.enqueue") as enqueue:
+			run.collect_due_invoices(today="2026-07-01")
+
+		fanned = [c.kwargs["invoice"] for c in enqueue.call_args_list]
+		mine = frappe.get_all("Invoice", filters={"team": ["in", self.TEAMS]}, pluck="name")
+		self.assertEqual(mine, [])
+		self.assertEqual([i for i in fanned if i in mine], [])
+
+	def test_a_draft_that_lands_after_a_sweep_is_collected_by_the_next(self):
+		# The reviewer's case: drafting is still running when collection first fires. A
+		# one-shot collect would settle only what had drafted and orphan the rest with
+		# no later pass. The daily sweep re-runs, so a draft that lands after it is
+		# collected by the next sweep instead of waiting a month.
+		from central.billing.tests.utils import run_enqueued_inline
+
+		# Only team-a has drafted so far.
+		run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30")
+		frappe.db.commit()
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+		self.assertNotEqual(
+			frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "status"), "Draft"
+		)
+
+		# Drafting catches up after the first sweep — team-b is now a Draft.
+		run.draft_team_invoice("team-fanout-b", "2026-06-01", "2026-06-30")
+		frappe.db.commit()
+		self.assertEqual(
+			frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft"
+		)
+
+		# The next daily sweep collects it — nothing is stranded.
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+		self.assertNotEqual(
+			frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft"
+		)
+
+	def test_the_sweep_takes_every_closed_period_draft_not_one_exact_month(self):
+		# period_end <= cutoff, not ==: a draft an earlier run left behind in an older
+		# month stays in scope of a later sweep rather than being orphaned once the tick
+		# has moved on; a draft whose month has not closed yet is out of scope.
+		run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30")
+		frappe.db.commit()
+		draft = frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "name")
+
+		# A sweep whose cutoff is a LATER month still finds the June draft (orphan case).
+		self.assertIn(draft, list(run.drafts_to_settle("2026-07-31")))
+		# A sweep whose cutoff predates the draft's closed month does not.
+		self.assertNotIn(draft, list(run.drafts_to_settle("2026-05-31")))
+
+	def test_status_shows_a_half_finished_run(self):
+		from central.billing.tests.utils import run_enqueued_inline
+
+		# Drafting only: every invoice is still waiting to be collected.
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.draft_monthly_invoices(today="2026-07-01")
+		mid = run.billing_run_status(today="2026-07-01")
+		self.assertEqual(mid["period_end"], "2026-06-30")
+		self.assertGreaterEqual(mid["drafted"], len(self.TEAMS))
+		self.assertEqual(mid["pending_collection"], mid["drafted"])
+		self.assertEqual(mid["collected"], 0)
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			run.collect_due_invoices(today="2026-07-01")
+		done = run.billing_run_status(today="2026-07-01")
+		self.assertEqual(done["pending_collection"], 0)
+		self.assertEqual(done["collected"], done["drafted"])
+
+	def test_status_counts_the_teams_a_failed_run_still_owes(self):
+		real = run.generate_team_invoice
+
+		def explode(team, *args, **kwargs):
+			if team == "team-fanout-b":
+				raise ValueError("no rate for this team")
+			return real(team, *args, **kwargs)
+
+		before = run.billing_run_status(today="2026-07-01")
+		with patch.object(run, "generate_team_invoice", side_effect=explode):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30")
+		after = run.billing_run_status(today="2026-07-01")
+
+		self.assertEqual(after["failures"], before["failures"] + 1)
+		self.assertGreaterEqual(after["pending_draft"], 1)  # team b still owes a bill
+
+	def test_a_lost_savepoint_stops_the_run_instead_of_silencing_it(self):
+		# The database restarted (or something committed underneath the unit), so the
+		# savepoint is gone and the failure cannot be contained. Swallowing it would
+		# leave every remaining team merely "not billed", with no cause recorded.
+		def gone(*args, **kwargs):
+			raise frappe.db.ProgrammingError("SAVEPOINT billing_run_unit does not exist")
+
+		with (
+			patch.object(run, "generate_team_invoice", side_effect=ValueError("the real cause")),
+			patch.object(frappe.db, "rollback", side_effect=gone),
+			self.assertRaises(ValueError) as raised,
+		):
+			run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30")
+
+		# The original cause survives — the rollback failure is its context, not a
+		# replacement for it.
+		self.assertEqual(str(raised.exception), "the real cause")
+
+	def test_a_contained_failure_is_written_to_the_log_file_too(self):
+		# The Error Log row is a database write: a worker killed before its commit
+		# loses it. The file line is what remains, so it must always be written.
+		with (
+			patch.object(run, "generate_team_invoice", side_effect=ValueError("boom")),
+			patch.object(frappe.logger("billing"), "error") as logged,
+		):
+			run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30")
+
+		self.assertEqual(logged.call_count, 1)
+		self.assertIn("team-fanout-a", logged.call_args.args[0])
+		self.assertIsInstance(logged.call_args.kwargs["exc_info"], ValueError)
+
+	def test_a_team_that_loses_a_lock_race_is_retried_not_dropped(self):
+		# Every Invoice insert takes the `tabSeries` row for its number, so workers do
+		# queue behind each other. Treating a lock-wait timeout like bad data would
+		# leave the team unbilled until the next tick — which is a MONTH away.
+		real = run.generate_team_invoice
+		calls = []
+
+		def contended(team, *args, **kwargs):
+			calls.append(team)
+			if team == "team-fanout-b" and calls.count("team-fanout-b") == 1:
+				raise frappe.QueryTimeoutError("Lock wait timeout exceeded")
+			return real(team, *args, **kwargs)
+
+		with patch.object(run, "generate_team_invoice", side_effect=contended):
+			run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		self.assertEqual(calls.count("team-fanout-b"), 2)  # retried, not contained
+		for team in self.TEAMS:
+			self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
+		self.assertFalse(
+			frappe.db.exists(
+				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-b"}
+			)
+		)
+
+	def test_relentless_contention_gives_up_and_records_it(self):
+		# Retrying forever would hold a worker hostage; after the budget the team is
+		# recorded as a casualty and the run moves on.
+		with patch.object(
+			run, "generate_team_invoice",
+			side_effect=frappe.QueryDeadlockError("Deadlock found"),
+		) as blocked, patch.object(run, "CONTENTION_BACKOFF", 0):
+			self.assertIsNone(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"))
+
+		self.assertEqual(blocked.call_count, run.CONTENTION_RETRIES)
+		self.assertTrue(
+			frappe.db.exists(
+				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-a"}
+			)
 		)

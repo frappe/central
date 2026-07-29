@@ -129,10 +129,19 @@ def finish_razorpay_topup(team: str, gateway: str, order_id: str, amount: float)
 		secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256
 	).hexdigest()
 
-	return confirm_topup(
-		team=team, amount=amount, gateway=gateway,
-		razorpay_order_id=order_id, razorpay_payment_id=payment_id, razorpay_signature=signature,
-	)
+	# confirm_topup now reads the captured amount back from the gateway (the
+	# callback signature doesn't bind the amount) — but our payment id is synthetic,
+	# so Razorpay has nothing to fetch. Stub just that read; everything else is real.
+	from unittest.mock import patch
+	from central.billing.gateways.razorpay_adapter import RazorpayAdapter
+
+	captured = {"status": "captured", "amount": int(round(frappe.utils.flt(amount) * 100)),
+				"currency": "INR"}
+	with patch.object(RazorpayAdapter, "get_payment", return_value=captured):
+		return confirm_topup(
+			team=team, amount=amount, gateway=gateway,
+			razorpay_order_id=order_id, razorpay_payment_id=payment_id, razorpay_signature=signature,
+		)
 
 
 # --- settlement helpers (invoice charge + credits waterfall) -----------------

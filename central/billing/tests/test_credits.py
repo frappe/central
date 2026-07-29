@@ -9,6 +9,7 @@ from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.tests.utils import ensure_team
 
+from central.billing.platform.constraints import existing_constraints
 from central.billing.revenue import credits
 from central.billing.revenue.credits import InsufficientCredits
 
@@ -127,12 +128,96 @@ class TestLedgerBasics(CreditTestBase):
 		self.assertEqual(credits.get_balance(TEAM, currency="INR")["balance"], 600)
 		self.assertEqual(credits.get_balance(TEAM, currency="USD")["balance"], 100)
 
-	def test_get_balance_unfiltered_returns_latest_overall(self):
+	def test_get_balance_unfiltered_uses_the_team_currency(self):
+		"""Omitting currency reads the team's BILLING currency, not a blind sum.
+
+		It used to return the newest entry's currency-blind `running_balance` — i.e.
+		INR + USD added together as bare floats. Nothing is summed across currencies
+		now; the unfiltered read is simply the team's own currency (ADR 0018).
+		"""
 		credits.purchase(TEAM, 300, "INR")
 		credits.purchase(TEAM, 50, "USD")
-		# Omitting currency returns the running balance of the most recent entry.
+
 		result = credits.get_balance(TEAM)
-		self.assertGreater(result["balance"], 0)
+		self.assertEqual(result["currency"], "INR")  # TEAM's billing currency
+		self.assertEqual(result["balance"], 300)  # NOT 350
+
+	def test_get_balances_lists_each_currency_separately(self):
+		credits.purchase(TEAM, 300, "INR")
+		credits.purchase(TEAM, 50, "USD")
+
+		balances = {b["currency"]: b["balance"] for b in credits.get_balances(TEAM)}
+		self.assertEqual(balances, {"INR": 300, "USD": 50})
+
+
+class TestNonNegativePerCurrency(CreditTestBase):
+	"""The wallet may not go negative — in EVERY currency it holds, not just overall.
+
+	The anchor was once one currency-blind float per team, so the debit guard compared
+	a USD debit against a balance that included the team's INR credits. A team could be
+	driven negative in USD while the anchor stayed positive. The anchor is now keyed
+	(team, currency), so the guard is per-currency by construction (ADR 0018).
+	"""
+
+	def test_usd_debit_cannot_be_funded_by_inr_credits(self):
+		credits.purchase(TEAM, 1000, "INR")
+		credits.purchase(TEAM, 10, "USD")
+
+		# 50 USD against a 10 USD balance. The team holds 1000 INR, which under the
+		# old currency-blind anchor would have made this debit "affordable".
+		with self.assertRaises(InsufficientCredits):
+			credits.apply_credit(TEAM, 50, "USD", reference_name="INV-USD")
+
+		self.assertEqual(credits.get_balance(TEAM, "USD")["balance"], 10)
+		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 1000)
+
+	def test_debiting_one_currency_leaves_the_other_untouched(self):
+		credits.purchase(TEAM, 1000, "INR")
+		credits.purchase(TEAM, 80, "USD")
+
+		credits.apply_credit(TEAM, 30, "USD", reference_name="INV-USD")
+
+		self.assertEqual(credits.get_balance(TEAM, "USD")["balance"], 50)
+		self.assertEqual(credits.get_balance(TEAM, "INR")["balance"], 1000)
+
+	def test_anchor_agrees_with_the_ledger_per_currency(self):
+		"""Invariant C2: the anchor equals the signed ledger sum, for each currency."""
+		credits.purchase(TEAM, 500, "INR")
+		credits.purchase(TEAM, 90, "USD")
+		credits.apply_credit(TEAM, 200, "INR", reference_name="INV-1")
+		credits.apply_credit(TEAM, 40, "USD", reference_name="INV-2")
+
+		for currency, expected in (("INR", 300), ("USD", 50)):
+			self.assertEqual(credits.get_balance(TEAM, currency)["balance"], expected)
+			self.assertEqual(credits.ledger_balance(TEAM, currency), expected)
+
+	def test_the_check_constraint_is_actually_installed(self):
+		"""The constraint must exist on EVERY site, not just ones that migrated.
+
+		Frappe marks patches as executed without running them on a fresh install, so a
+		constraint declared only in a patch is silently absent on new sites — a fresh
+		site quietly weaker than a migrated one. It is applied from an
+		after_install/after_migrate hook instead, and this test is what keeps that true.
+		"""
+		self.assertIn(
+			"credit_wallet_balance_non_negative",
+			existing_constraints("tabCredit Wallet"),
+		)
+
+	def test_check_constraint_refuses_a_negative_balance_from_raw_sql(self):
+		"""The rung that actually holds: `set_value` skips the controller entirely.
+
+		This is the write `credits.py` itself performs, so a Python guard alone would
+		leave the invariant unenforced against our own code.
+		"""
+		credits.purchase(TEAM, 100, "INR")
+		wallet = credits.wallet_name(TEAM, "INR")
+
+		with self.assertRaises(Exception) as ctx:
+			frappe.db.set_value("Credit Wallet", wallet, "balance", -1, update_modified=False)
+			frappe.db.commit()
+		frappe.db.rollback()
+		self.assertIn("credit_wallet_balance_non_negative", str(ctx.exception).lower())
 
 
 class TestConcurrency(CreditTestBase):
@@ -209,7 +294,8 @@ class TestConcurrency(CreditTestBase):
 			for t in teams:
 				# 1000 seed − 5×10 debited; anchor and ledger agree.
 				self.assertEqual(credits.get_balance(t)["balance"], 950)
-				self.assertEqual(frappe.db.get_value("Credit Wallet", t, "balance"), 950)
+				anchor = credits.wallet_name(t, "INR")
+				self.assertEqual(frappe.db.get_value("Credit Wallet", anchor, "balance"), 950)
 		finally:
 			for t in teams:
 				frappe.db.delete("Credit Ledger Entry", {"team": t})

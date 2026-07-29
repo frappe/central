@@ -14,11 +14,9 @@ fixtures = [
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
 ]
 
-# The TypeScript UI owns the product route. Keep the previous dashboard
-# available while its remaining surfaces are migrated.
+# The TypeScript UI owns the product route.
 website_route_rules = [
 	{"from_route": "/dashboard/<path:app_path>", "to_route": "dashboard"},
-	{"from_route": "/legacy-dashboard/<path:app_path>", "to_route": "legacy-dashboard"},
 ]
 
 # Central is a website application. Portal users land in the console; Desk stays
@@ -109,7 +107,14 @@ website_user_home_page = "dashboard"
 # Seed the catalog taxonomy masters (Plan Category / Sub-Category / Resource Type) on a
 # fresh install — patches are skipped on fresh installs, so the seed can't live only
 # there. Idempotent (ADR 0007).
-after_install = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
+#
+# `ensure_constraints` is here for exactly the same reason: a CHECK constraint declared
+# only in a patch would exist on migrated sites and be silently ABSENT on fresh ones.
+# The money invariants are a property of the schema, not of a site's history (ADR 0018).
+after_install = [
+	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.platform.constraints.ensure_constraints",
+]
 
 # Uninstallation
 # ------------
@@ -175,28 +180,52 @@ scheduler_events = {
 		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
 		# backstop that corrects drift the event push (central.api.atlas.event) missed.
 		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
+		# Billing: the monthly run. Drafting fires once, on the 1st, and fans the
+		# just-closed month out as one page job per team. Collection is NOT a second
+		# tick a fixed few hours later — at scale drafting may still be running then,
+		# and a one-shot scan would collect only what existed at that instant and
+		# orphan the rest. It is a daily sweep instead (see the `daily` list below):
+		# `collect_due_invoices` drains every Draft whose month has closed, re-running
+		# until nothing is owed. Rating is heavy and local, collection slow and
+		# external, so they stay separate ticks.
+		"0 1 1 * *": ["central.billing.revenue.invoicing.draft_monthly_invoices"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
+		# Billing: collect the monthly run. A daily sweep of every Draft whose month
+		# has closed (period_end <= the just-closed month), fanned out as page jobs.
+		# Re-runs harmlessly: a settled draft drops out of the scan, so once the run
+		# has drained this is a cheap indexed no-op. Runs before dunning so a fresh
+		# charge is attempted before any retry ladder is considered.
+		"central.billing.revenue.invoicing.collect_due_invoices",
 		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
-		# gateway reconciliation, and pruning Payment Attempt / Webhook Event logs.
+		# and pruning Payment Attempt / Webhook Event logs.
 		"central.billing.revenue.dunning.run_dunning",
-		"central.billing.payments.reconciliation.run_reconciliation",
 		"central.billing.payments.charges.cleanup_payment_logs",
 		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
 		"central.billing.payments.emandate.run_emandate_cycle",
 		# Backfill Subscriptions for any Running Asset missing an active one.
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
+		# Services (LLM): refresh the model catalog from the Grove backend.
+		"central.services.llm.sync_models",
+		# Assert the money invariants that no DB constraint can hold (they span
+		# tables): wallet == its ledger, invoice == its lines, captured == amount_paid.
+		# Silence is the success case; a violation is logged with its team and amount.
+		# Read it as the "Billing Invariant Violations" report.
+		"central.billing.platform.invariants.run_invariant_audit",
 	],
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
 		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
+		# Services (LLM): reconcile Grove's cumulative token usage into billing.
+		"central.services.llm.pull_usage",
+		# A charge whose outcome we don't know is money in the air: ask the gateway and
+		# settle it. It waits 30 minutes for the webhook first, so a daily sweep left it
+		# hanging for up to a day — and the key it needs to re-send safely expires in
+		# about one (ADR 0017).
+		"central.billing.payments.reconciliation.run_reconciliation",
 	],
 	"monthly": [
-		# Billing: on the 1st, bill the just-closed month end-to-end for every team —
-		# draft one consolidated invoice per team, then open + collect (credits→card).
-		# The production trigger for the two-phase invoicing (#09/#10).
-		"central.billing.revenue.invoicing.run_monthly_billing",
 		# Billing: cards expire at the end of their printed month; flip lapsed ones.
 		"central.billing.payments.payments.expire_payment_methods",
 	],
@@ -205,15 +234,23 @@ scheduler_events = {
 # Billing (module): authorisation is Central's capability IAM (ADR 0004) — no
 # billing-owned roles or User->team field to provision. The catalog taxonomy masters,
 # however, are reference data the catalog can't run without, so re-assert them on every
-# migrate too (idempotent — ADR 0007).
-after_migrate = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
+# migrate too (idempotent — ADR 0007). The money CHECK constraints are re-asserted for
+# the same reason: a dropped or never-applied constraint must heal on migrate, not wait
+# for someone to notice the balance went negative (ADR 0018).
+after_migrate = [
+	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.platform.constraints.ensure_constraints",
+]
 
 # Testing
 # -------
 
 # Tests run on a fresh site (patches skipped), so seed the taxonomy masters the test
-# fixtures depend on before the suite runs.
-before_tests = "central.billing.catalog.taxonomy_setup.ensure_catalog_masters"
+# fixtures depend on — and apply the money constraints — before the suite runs.
+before_tests = [
+	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.platform.constraints.ensure_constraints",
+]
 
 # Extend DocType Class
 # ------------------------------

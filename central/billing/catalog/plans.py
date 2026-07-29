@@ -33,7 +33,6 @@ def configure_includes(vcpu: float, ratio: str = "1:2", disk_gb: float = 0, memo
 	]
 
 
-@frappe.whitelist()
 def create_configured_plan(
 	title: str,
 	vcpu: float,
@@ -65,7 +64,6 @@ def create_configured_plan(
 	return doc.name
 
 
-@frappe.whitelist()
 def get_plan_pricing(plan: str, currency: str | None = None, cluster: str | None = None) -> dict:
 	"""Return the live catalog snapshot for a bundle.
 

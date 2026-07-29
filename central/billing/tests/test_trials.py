@@ -104,11 +104,18 @@ class TestConversion(TrialTestBase):
 class TestSubsidyAndExpiry(TrialTestBase):
 	def test_subsidy_total_sums_cost_report_invoices(self):
 		# subsidy_total is dormant now (nothing emits Cost Reports), but it still sums
-		# any that exist. Build two by hand in a far-future period — isolated from
-		# seeded demo data — and check the aggregate.
-		for subtotal in (1000.0, 2000.0):
+		# any that exist — across teams. Build two by hand in a far-future period,
+		# isolated from seeded demo data, and check the aggregate.
+		#
+		# One invoice per TEAM, not two for the same one: a team may hold at most one
+		# live invoice per period (ADR 0018, invariant I6), and the unique index on
+		# period_key now enforces it. subsidy_total aggregates across teams anyway, so
+		# two teams is what this test always meant.
+		for i, subtotal in enumerate((1000.0, 2000.0)):
+			team = f"{TEAM}-subsidy-{i}"
+			ensure_team(team)
 			frappe.get_doc({
-				"doctype": "Invoice", "team": TEAM, "invoice_type": "Cost Report",
+				"doctype": "Invoice", "team": team, "invoice_type": "Cost Report",
 				"status": "Open", "period_start": "2099-01-01", "period_end": "2099-01-31",
 				"currency": "INR", "subtotal": subtotal, "total": subtotal,
 			}).insert(ignore_permissions=True)

@@ -41,11 +41,12 @@ class ErpnextSyncTestBase(IntegrationTestCase):
 		frappe.db.delete("Invoice", {"team": TEAM})
 		frappe.db.commit()
 
-	def _paid_invoice(self, status="Paid", invoice_type="Billable"):
+	def _paid_invoice(self, status="Paid", invoice_type="Billable", month=5):
+		# One live invoice per team per period, so two invoices means two periods.
 		return frappe.get_doc(
 			{
 				"doctype": "Invoice", "team": TEAM, "invoice_type": invoice_type, "status": status,
-				"period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
+				"period_start": f"2026-{month:02d}-01", "period_end": f"2026-{month:02d}-28", "currency": "INR",
 				"subtotal": 1000, "total": 1180, "expected_collection": 1180, "amount_paid": 1180,
 				"items": [
 					{"subscription_resource": "srv-1", "plan": "bundle-2vcpu", "resource_type": "bundle",
@@ -80,8 +81,8 @@ class TestSyncSuccess(ErpnextSyncTestBase):
 		self.assertEqual(out["skipped"], "already_synced")
 
 	def test_cost_report_and_unpaid_are_skipped(self):
-		cost = self._paid_invoice(invoice_type="Cost Report")
-		draft = self._paid_invoice(status="Open")
+		cost = self._paid_invoice(invoice_type="Cost Report", month=5)
+		draft = self._paid_invoice(status="Open", month=6)
 		with patch("central.billing.revenue.erpnext_sync.requests.post") as post:
 			self.assertEqual(erpnext_sync.sync_invoice(cost)["skipped"], "not_billable")
 			self.assertEqual(erpnext_sync.sync_invoice(draft)["skipped"], "not_paid")

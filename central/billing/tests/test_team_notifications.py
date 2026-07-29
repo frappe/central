@@ -5,7 +5,7 @@
 import frappe
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.tests.utils import ensure_team
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team
 
 from central import notifications as feed
 from central.billing.api.dashboard import account
@@ -97,12 +97,7 @@ class TestServerFailureFeed(TeamNotificationBase):
 
 	def setUp(self):
 		super().setUp()
-		if not frappe.db.exists("Atlas Instance", self.CLUSTER):
-			frappe.get_doc({
-				"doctype": "Atlas Instance", "region": self.CLUSTER,
-				"base_url": "https://feed.atlas.local", "status": "Active",
-				"api_key": "k", "api_secret": "s",
-			}).insert(ignore_permissions=True)
+		ensure_atlas_instance(self.CLUSTER)
 		frappe.db.delete("Asset", {"resource_id": "vm-feed-1"})
 
 	def test_asset_failed_emits_server_notification(self):

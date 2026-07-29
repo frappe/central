@@ -1,0 +1,81 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "field:service_key",
+ "creation": "2026-07-15 21:04:29.620081",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "service_key",
+  "title",
+  "handler_key",
+  "plan_category",
+  "is_active"
+ ],
+ "fields": [
+  {
+   "fieldname": "service_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Service Key",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "handler_key",
+   "fieldtype": "Data",
+   "label": "Handler Key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "plan_category",
+   "fieldtype": "Link",
+   "label": "Plan Category",
+   "options": "Plan Category",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-15 21:04:29.620081",
+ "modified_by": "Administrator",
+ "module": "Services",
+ "name": "Add-on Service",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

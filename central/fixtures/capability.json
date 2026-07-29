@@ -41,7 +41,7 @@
  },
  {
   "capability": "server:open",
-"description": "Open a server's console(bench admin).",
+  "description": "Open a server's console(bench admin).",
   "docstatus": 0,
   "doctype": "Capability",
   "modified": "2026-06-17 00:00:00",
@@ -98,6 +98,26 @@
   "name": "server:view",
   "plane": "atlas",
   "resource": "server"
+ },
+ {
+  "capability": "service:manage",
+  "description": "Set up, configure, and remove add-on services.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-07-16 00:00:00.000000",
+  "name": "service:manage",
+  "plane": "central",
+  "resource": "service"
+ },
+ {
+  "capability": "service:view",
+  "description": "View add-on services, instances, and usage.",
+  "docstatus": 0,
+  "doctype": "Capability",
+  "modified": "2026-07-16 00:00:00.000000",
+  "name": "service:view",
+  "plane": "central",
+  "resource": "service"
  },
  {
   "capability": "team:delete",

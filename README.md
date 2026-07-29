@@ -88,14 +88,12 @@ for real provider setup. It creates billable infrastructure.
 
 ## Frontend development
 
-The primary console is in `console/`. The older dashboard remains in
-`dashboard/` while it is being migrated.
+The console lives in `dashboard/`.
 
 ```bash
 cd apps/central
 yarn install
-yarn dev              # primary console
-yarn dev:legacy-dashboard
+yarn dev
 ```
 
 For a production-style build served by Frappe:

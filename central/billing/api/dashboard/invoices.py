@@ -370,20 +370,6 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 
 
 @frappe.whitelist(methods=["POST"])
-def purchase_credits(team: str | None = None, amount: float | None = None,
-					 payment_method: str | None = None) -> dict:
-	"""Top up the prepaid wallet. (The card charge that funds it is the payment
-	flow's concern; this books the resulting advance-liability credit.)"""
-	team = _resolve_team(team, authz.MANAGE)
-	_require_billing_setup(team)
-	amount = frappe.utils.flt(amount)
-	if amount <= 0:
-		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
-	return credits.purchase(team, amount, _team_currency(team),
-							payment_method=payment_method, note="Wallet top-up")
-
-
-@frappe.whitelist(methods=["POST"])
 def pay_invoice(invoice: str | None = None) -> dict:
 	"""Postpaid one-off settlement of an outstanding invoice (team-scoped)."""
 	team = frappe.db.get_value("Invoice", invoice, "team")
@@ -502,20 +488,35 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 	gw_doc = frappe.get_doc("Payment Gateway", gateway)
 	adapter = get_adapter(gw_doc)
 	if gw_doc.adapter_key == "Razorpay":
+		# The callback signature binds order_id|payment_id, NOT the amount — so the
+		# request figure can't be trusted. Fetch the payment server-side and credit
+		# what Razorpay actually captured, mirroring the Stripe/PayPal branches.
 		ok = adapter.verify_payment_signature({
 			"razorpay_order_id": razorpay_order_id,
 			"razorpay_payment_id": razorpay_payment_id,
 			"razorpay_signature": razorpay_signature,
 		})
 		reference = razorpay_payment_id
+		if ok:
+			payment = adapter.get_payment(razorpay_payment_id)
+			ok = payment.get("status") == "captured"
+			minor = payment.get("amount")
+			if minor is None:
+				# A captured payment always carries an amount; a response without
+				# one must not fall through to the client-supplied figure.
+				frappe.throw("Razorpay reported no amount for this payment.", frappe.ValidationError)
+			amount = frappe.utils.flt(minor) / 100
+			if payment.get("currency"):
+				currency = payment["currency"].upper()
 	elif gw_doc.adapter_key == "Paypal":
 		# Capture the order the buyer approved in PayPal Buttons; credit what PayPal
 		# actually took (major units already) and key the wallet entry on the capture id.
 		capture = adapter.capture_order(paypal_order_id)
 		ok = capture.get("status") == "COMPLETED"
 		reference = capture.get("id")
-		if capture.get("amount"):
-			amount = frappe.utils.flt(capture["amount"])
+		if capture.get("amount") is None:
+			frappe.throw("PayPal reported no amount for this capture.", frappe.ValidationError)
+		amount = frappe.utils.flt(capture["amount"])
 		if capture.get("currency"):
 			currency = capture["currency"].upper()
 	else:
@@ -526,12 +527,13 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 		ok = intent.get("status") == "succeeded"
 		reference = intent.get("id")
 		minor = intent.get("amount_received") or intent.get("amount")
-		if minor:
-			amount = frappe.utils.flt(minor) / 100
+		if minor is None:
+			frappe.throw("Stripe reported no amount for this payment intent.", frappe.ValidationError)
+		amount = frappe.utils.flt(minor) / 100
 		if intent.get("currency"):
 			currency = intent["currency"].upper()
 	if not ok:
 		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
 	return credits.purchase(team, amount, currency,
 		reference_name=reference, note=f"Wallet top-up ({reference})",
-		gateway_payment_id=reference)
+		gateway_payment_id=reference, gateway=gw_doc.adapter_key)

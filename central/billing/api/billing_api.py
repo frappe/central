@@ -10,6 +10,8 @@ Record-scoped methods additionally check the record belongs to that team. No bus
 logic lives here; each method delegates to the existing billing service layer.
 """
 
+from contextlib import contextmanager
+
 import frappe
 
 from central.api.pilot import pilot_credential_auth
@@ -29,6 +31,19 @@ def _assert_owns(team_of_record: str | None) -> None:
 	"""Guard a record-scoped call: the record must belong to the credential's team."""
 	if team_of_record != _team():
 		frappe.throw("Not permitted for this team.", frappe.PermissionError)
+
+
+@contextmanager
+def _as_operator():
+	"""Run a delegated capability-gated call as Administrator — the pilot is a Guest
+	session and the team/asset are fixed by the verified credential. Restores the
+	prior user on exit, so nothing later in the request keeps operator rights."""
+	user = frappe.session.user
+	frappe.set_user("Administrator")
+	try:
+		yield
+	finally:
+		frappe.set_user(user)
 
 
 def _asset() -> str:
@@ -167,8 +182,8 @@ def get_payment_gateways() -> list[dict]:
 	"""The gateways the team can pay through (one per adapter, default first) — the
 	'Pay through' options the Add-payment card renders."""
 	team = _team()
-	frappe.set_user("Administrator")
-	return _gateway_options(_team_currency(team))
+	with _as_operator():
+		return _gateway_options(_team_currency(team))
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -193,7 +208,6 @@ def add_payment_method(method_type: str = "Card", contact: str | None = None,
 	currency = _team_currency(team)
 	gw = _resolve_add_gateway(currency, gateway)
 	gateway = gw.get("name")
-	print(f"gateway: {gateway}")
 	if not gateway:
 		frappe.throw(frappe._("No payment gateway is configured for {0}.").format(currency), frappe.ValidationError)
 
@@ -320,8 +334,9 @@ def confirm_payment_method_checkout(reference: str) -> dict:
 	if not method_row.setup_reference:
 		return {"status": "pending", "active": False, "message": "No hosted setup for this method."}
 
-	frappe.set_user("Administrator")  # confirm gates on capability; team fixed by credential
-	result = _activate_setup(method_name, method_row.gateway, method_row.setup_reference)
+	# confirm gates on capability; team fixed by credential
+	with _as_operator():
+		result = _activate_setup(method_name, method_row.gateway, method_row.setup_reference)
 	if result["status"] == "pending":
 		result["message"] = "Awaiting card entry."
 	return result
@@ -336,8 +351,8 @@ def remove_payment_method(payment_method: str) -> dict:
 
 	method_row = frappe.db.get_value("Payment Method", payment_method, ["team"], as_dict=True)
 	_assert_owns(method_row.team if method_row else None)
-	frappe.set_user("Administrator")
-	return payments.delete_payment_method(payment_method)
+	with _as_operator():
+		return payments.delete_payment_method(payment_method)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -347,22 +362,22 @@ def reconcile_payment_setup() -> dict:
 	no-webhook backstop the Billing tab calls on open, so a card added on the gateway's
 	page shows up on return without the poll button. Returns `{activated}`."""
 	team = _team()
-	frappe.set_user("Administrator")
-	pending = frappe.get_all(
-		"Payment Method",
-		filters={"team": team, "method_type": "Card", "status": "Pending Validation",
-				 "gateway_method_id": ["in", [None, ""]]},
-		fields=["name", "gateway", "setup_reference"],
-	)
-	activated = 0
-	for row in pending:
-		if not row.setup_reference:
-			continue
-		try:
-			if _activate_setup(row.name, row.gateway, row.setup_reference).get("active"):
-				activated += 1
-		except Exception:
-			frappe.clear_last_message()  # a decline/gateway hiccup must not break the tab load
+	with _as_operator():
+		pending = frappe.get_all(
+			"Payment Method",
+			filters={"team": team, "method_type": "Card", "status": "Pending Validation",
+					 "gateway_method_id": ["in", [None, ""]]},
+			fields=["name", "gateway", "setup_reference"],
+		)
+		activated = 0
+		for row in pending:
+			if not row.setup_reference:
+				continue
+			try:
+				if _activate_setup(row.name, row.gateway, row.setup_reference).get("active"):
+					activated += 1
+			except Exception:
+				frappe.clear_last_message()  # a decline/gateway hiccup must not break the tab load
 	return {"activated": activated}
 
 
@@ -380,14 +395,14 @@ def get_available_plans() -> dict:
 
 	team = _team()
 	cluster = frappe.db.get_value("Asset", _asset(), "cluster")
-	# The delegated menu gates on the session user's capability; the pilot is a Guest
-	# session, so act as operator — the team is fixed from the verified credential.
-	frappe.set_user("Administrator")
 	# No provisioned cluster → offer nothing; a cluster-less menu skips the
 	# allowed-clusters guard and would leak plans from other regions.
 	if not cluster:
 		return {"plans": {}}
-	return get_eligible_plans(cluster=cluster, team=team)
+	# The delegated menu gates on the session user's capability; the pilot is a Guest
+	# session, so act as operator — the team is fixed from the verified credential.
+	with _as_operator():
+		return get_eligible_plans(cluster=cluster, team=team)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -407,8 +422,8 @@ def change_plan(plan: str | None = None) -> dict:
 		frappe.throw(frappe._("No subscription for asset {0} on this team.").format(asset), frappe.ValidationError)
 	# resize_server gates on the session user's capability; act as operator (team is
 	# fixed by the subscription lookup above, which is already scoped to the credential).
-	frappe.set_user("Administrator")
-	return resize_server(subscription, plan=plan)
+	with _as_operator():
+		return resize_server(subscription, plan=plan)
 
 
 # ── Metered services (team-level: AI tokens, email, PDF, …) ──────────────────
@@ -570,8 +585,8 @@ def get_billing_profile() -> dict:
 	team = _team()
 	# The delegated read gates on the session user's capability; act as operator (team
 	# is fixed from the verified credential).
-	frappe.set_user("Administrator")
-	return _get(team)
+	with _as_operator():
+		return _get(team)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -585,8 +600,8 @@ def save_billing_profile(**fields) -> dict:
 	values = {k: v for k, v in fields.items() if k in _PROFILE_FIELDS}
 	# Write gates on the session user's capability; the pilot is a Guest session, so
 	# act as operator — the team is fixed from the verified credential.
-	frappe.set_user("Administrator")
-	doc = profile.create_or_update_billing_profile(team, **values)
+	with _as_operator():
+		doc = profile.create_or_update_billing_profile(team, **values)
 	return {"saved": True, "team": team, "currency": doc.currency, "gstin": doc.gstin}
 
 
@@ -605,22 +620,21 @@ def get_billing_summary() -> dict:
 	from central.billing.revenue import credits
 
 	team, asset = _team(), _asset()
-	frappe.set_user("Administrator")  # act as operator; team + asset fixed by credential
+	with _as_operator():  # team + asset fixed by credential
+		currency = _team_currency(team)
+		fields = ["title", "plan", "vcpus", "memory_megabytes", "disk_gigabytes"]
+		row = frappe.db.get_value("Asset", asset, fields, as_dict=True) or frappe._dict()
+		specs = _resolve_specs(row, row.plan)
+		subtitle = " · ".join(value for value in specs.values() if value)
+		plan_title = frappe.db.get_value("Plan", row.plan, "title") if row.plan else None
 
-	currency = _team_currency(team)
-	fields = ["title", "plan", "vcpus", "memory_megabytes", "disk_gigabytes"]
-	row = frappe.db.get_value("Asset", asset, fields, as_dict=True) or frappe._dict()
-	specs = _resolve_specs(row, row.plan)
-	subtitle = " · ".join(value for value in specs.values() if value)
-	plan_title = frappe.db.get_value("Plan", row.plan, "title") if row.plan else None
-
-	forecast = get_forecast(team)
-	projected = frappe.utils.flt(forecast.get("projected_total"))
-	balance = frappe.utils.flt(credits.get_balance(team, currency)["balance"])
-	# Only an Active method counts as "set up" — a Pending Validation / Failed one
-	# must not masquerade as the team's payment method on the summary.
-	methods = [m for m in _payment_method_rows(team) if m["status"] == "Active"]
-	default = next((m for m in methods if m["is_default"]), methods[0] if methods else None)
+		forecast = get_forecast(team)
+		projected = frappe.utils.flt(forecast.get("projected_total"))
+		balance = frappe.utils.flt(credits.get_balance(team, currency)["balance"])
+		# Only an Active method counts as "set up" — a Pending Validation / Failed one
+		# must not masquerade as the team's payment method on the summary.
+		methods = [m for m in _payment_method_rows(team) if m["status"] == "Active"]
+		default = next((m for m in methods if m["is_default"]), methods[0] if methods else None)
 
 	return {
 		"currency": currency,
@@ -654,7 +668,6 @@ def get_plan_options() -> dict:
 	team, asset = _team(), _asset()
 	row = frappe.db.get_value("Asset", asset, ["cluster", "plan"], as_dict=True) or frappe._dict()
 	subscription = frappe.db.get_value("Subscription", {"team": team, "asset_id": asset}, "name")
-	frappe.set_user("Administrator")
 
 	# No provisioned asset/cluster → offer nothing. A cluster-less menu would skip
 	# get_eligible_plans' allowed-clusters guard and leak plans from other regions.
@@ -662,7 +675,8 @@ def get_plan_options() -> dict:
 		return {"currency": _team_currency(team), "provider": None, "region": None,
 				"current": row.plan, "plans": [], "sufficient": False}
 
-	menu = get_eligible_plans(cluster=row.cluster, team=team, exclude_subscription=subscription or None)
+	with _as_operator():
+		menu = get_eligible_plans(cluster=row.cluster, team=team, exclude_subscription=subscription or None)
 	currency = menu.get("currency") or _team_currency(team)
 	provider, region = _provider_region(row.cluster)
 
@@ -691,8 +705,8 @@ def get_plan_options() -> dict:
 def list_payment_methods() -> list[dict]:
 	"""The team's saved payment methods (label, type, default), default first."""
 	team = _team()
-	frappe.set_user("Administrator")
-	return _payment_method_rows(team)
+	with _as_operator():
+		return _payment_method_rows(team)
 
 
 # ── Checkout (hosted URL + poll for status) ──────────────────────────────────
@@ -796,7 +810,8 @@ def get_checkout_status(reference: str) -> dict:
 		# (Falls back to the session id only if the gateway hasn't surfaced one yet.)
 		key = payment_id or session_id
 		credits.purchase(target, amount, currency, gateway_payment_id=key,
-						 reference_name=key, note=f"Wallet top-up ({key})")
+						 reference_name=key, note=f"Wallet top-up ({key})",
+						 gateway=gw_doc.adapter_key)
 		return {"status": "paid", "success": True, "message": "Wallet topped up.",
 				"balance": credits.get_balance(target)["balance"]}
 

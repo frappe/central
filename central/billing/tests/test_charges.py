@@ -12,9 +12,10 @@ from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.payments import charges, webhooks
 from central.billing.catalog import subscriptions
-from central.billing.gateways.base import PaymentResult
+from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
+from central.billing.gateways.base import GatewayError, PaymentResult
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import ensure_team, make_plan
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan
 
 TEAM = "team-charge"
 CLUSTER = "ap-south-1"
@@ -64,6 +65,7 @@ def stub_adapter(success=True, txn_id="pi_x"):
 class ChargeTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
+		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
 		make_stripe_gateway(GATEWAY)
 		self._purge()
@@ -106,15 +108,18 @@ class ChargeTestBase(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True).name
 
-	def _open_invoice(self, total=1000):
+	def _open_invoice(self, total=1000, month=6):
+		# A team gets one live invoice per period, so a test that wants several bills
+		# has to spread them across months.
+		last_day = 30 if month in (4, 6, 9, 11) else 31
 		return frappe.get_doc(
 			{
 				"doctype": "Invoice",
 				"team": TEAM,
 				"subscription": self.sub,
 				"status": "Open",
-				"period_start": "2026-06-01",
-				"period_end": "2026-06-30",
+				"period_start": f"2026-{month:02d}-01",
+				"period_end": f"2026-{month:02d}-{last_day}",
 				"currency": "INR",
 				"subtotal": total,
 				"total": total,
@@ -145,10 +150,10 @@ class TestChargeInvoice(ChargeTestBase):
 			result = charges.pay_invoice(inv)
 
 		adapter.charge.assert_called_once()
-		# Idempotency key handed to the gateway is the attempt's own name.
+		# The key handed to the gateway is worked out from the invoice + retry number.
 		attempt = frappe.get_doc("Payment Attempt", result["attempt"])
 		self.assertEqual(adapter.charge.call_args.args[2], attempt.idempotency_key)
-		self.assertEqual(attempt.idempotency_key, attempt.name)
+		self.assertEqual(attempt.idempotency_key, idempotency_key(inv, 0))
 		self.assertEqual(attempt.status, "Captured")
 		self.assertEqual(attempt.gateway_transaction_id, "pi_1")
 		# Crucially: invoice is NOT Paid on the charge response.
@@ -260,6 +265,94 @@ class TestChargeInvoice(ChargeTestBase):
 		charges.apply_webhook(self._stripe_event("evt_late", "payment_intent.amount_capturable_updated", "pi_race"))
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt_name, "status"), "Captured")
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
+
+
+class TestDurableIntent(ChargeTestBase):
+	"""The attempt is written down before the gateway is called (ADR 0017).
+
+	The failure this prevents: the worker dies after the card is charged but before
+	we save anything, so the charge exists at the gateway and nowhere with us. The
+	customer gets billed, the invoice stays Open, dunning charges them again, and
+	nothing in our data shows any of it happened.
+	"""
+
+	def test_attempt_exists_before_the_gateway_is_called(self):
+		# Whatever the gateway does, by the time it is asked there is already a saved
+		# Initiated attempt naming the amount and the card.
+		inv = self._open_invoice(1000)
+		seen = {}
+
+		def spy_charge(charge_input, method, key):
+			row = frappe.get_all(
+				"Payment Attempt", {"invoice": inv}, ["name", "status", "idempotency_key", "amount"]
+			)
+			seen["attempt"] = row[0] if row else None
+			seen["key"] = key
+			return PaymentResult(success=True, status="Captured", gateway_transaction_id="pi_spy")
+
+		with stub_adapter(success=True) as adapter:
+			adapter.charge.side_effect = spy_charge
+			charges.pay_invoice(inv)
+
+		self.assertIsNotNone(seen["attempt"])
+		self.assertEqual(seen["attempt"].status, "Initiated")
+		self.assertEqual(seen["attempt"].amount, 1000.0)
+		self.assertEqual(seen["attempt"].idempotency_key, seen["key"])
+
+	def test_gateway_error_leaves_a_resolvable_attempt(self):
+		# An error the adapter doesn't map (auth failure, bad response, a crash) used
+		# to roll the attempt away. It must now survive, sitting at Initiated, so
+		# reconciliation can ask the gateway what actually happened.
+		inv = self._open_invoice(1000)
+		with stub_adapter(success=True) as adapter:
+			adapter.charge.side_effect = GatewayError("boom")
+			with self.assertRaises(GatewayError):
+				charges.pay_invoice(inv)
+
+		attempts = frappe.get_all("Payment Attempt", {"invoice": inv}, ["name", "status"])
+		self.assertEqual(len(attempts), 1)
+		self.assertEqual(attempts[0].status, "Initiated")
+
+	def test_lost_attempt_is_retried_with_the_same_key(self):
+		# Simulate the crash: the card was charged, then the attempt row was lost.
+		# The retry must offer the gateway the SAME key, so it replays the first
+		# charge instead of taking the money twice.
+		inv = self._open_invoice(1000)
+		with stub_adapter(success=True, txn_id="pi_lost") as first:
+			charges.pay_invoice(inv)
+		first_key = first.charge.call_args.args[2]
+
+		frappe.db.delete("Payment Attempt", {"invoice": inv})  # the crash
+
+		with stub_adapter(success=True, txn_id="pi_lost") as retry:
+			charges.pay_invoice(inv)
+		self.assertEqual(retry.charge.call_args.args[2], first_key)
+
+	def test_a_real_retry_gets_a_new_key(self):
+		# The other half: once a failed attempt is on record, the next charge is a
+		# genuinely new one and must be allowed through the gateway's dedupe.
+		inv = self._open_invoice(1000)
+		with stub_adapter(success=False) as declined:
+			charges.pay_invoice(inv)
+		with stub_adapter(success=True, txn_id="pi_retry") as second:
+			charges.pay_invoice(inv)
+
+		self.assertNotEqual(second.charge.call_args.args[2], declined.charge.call_args.args[2])
+		self.assertEqual(second.charge.call_args.args[2], idempotency_key(inv, 1))
+
+	def test_same_charge_cannot_be_claimed_twice(self):
+		# The idempotency key is unique, so a second claim of the same charge is
+		# refused by the database even if the in-flight check is bypassed.
+		inv = self._open_invoice(1000)
+		with stub_adapter(success=True, txn_id="pi_twice"):
+			charges.pay_invoice(inv)
+
+		with self.assertRaises((frappe.UniqueValidationError, frappe.DuplicateEntryError)):
+			frappe.get_doc({
+				"doctype": "Payment Attempt", "invoice": inv, "team": TEAM, "gateway": GATEWAY,
+				"payment_method": self.method, "amount": 1000, "currency": "INR",
+				"status": "Initiated", "retry_number": 0,
+			}).insert(ignore_permissions=True)
 
 
 class TestConcurrentPay(ChargeTestBase):
@@ -405,9 +498,9 @@ class TestDeclineDetail(ChargeTestBase):
 
 
 class TestFailedPaymentsReport(ChargeTestBase):
-	def _failed(self, decline_code, reason, amount=1000):
+	def _failed(self, decline_code, reason, amount=1000, month=6):
 		return frappe.get_doc({
-			"doctype": "Payment Attempt", "invoice": self._open_invoice(amount), "team": TEAM,
+			"doctype": "Payment Attempt", "invoice": self._open_invoice(amount, month), "team": TEAM,
 			"gateway": GATEWAY, "amount": amount, "currency": "INR", "status": "Failed",
 			"failure_code": "card_declined", "decline_code": decline_code,
 			"failure_reason": reason, "initiated_at": frappe.utils.now_datetime(),
@@ -416,9 +509,9 @@ class TestFailedPaymentsReport(ChargeTestBase):
 	def test_lists_failures_with_reason_and_summary(self):
 		from central.billing.report.failed_payments import failed_payments
 
-		a1 = self._failed("insufficient_funds", "no funds")
-		self._failed("insufficient_funds", "no funds")
-		self._failed("lost_card", "reported lost")
+		a1 = self._failed("insufficient_funds", "no funds", month=6)
+		self._failed("insufficient_funds", "no funds", month=7)
+		self._failed("lost_card", "reported lost", month=8)
 		# A second failed attempt (a retry) on the SAME invoice as a1 — it must collapse
 		# into one row and NOT double-count the amount not collected.
 		inv1 = frappe.db.get_value("Payment Attempt", a1, "invoice")
@@ -430,7 +523,7 @@ class TestFailedPaymentsReport(ChargeTestBase):
 		}).insert(ignore_permissions=True)
 		# A captured attempt must never appear.
 		frappe.get_doc({
-			"doctype": "Payment Attempt", "invoice": self._open_invoice(1000), "team": TEAM,
+			"doctype": "Payment Attempt", "invoice": self._open_invoice(1000, month=9), "team": TEAM,
 			"gateway": GATEWAY, "amount": 1000, "currency": "INR", "status": "Captured",
 			"initiated_at": frappe.utils.now_datetime(),
 		}).insert(ignore_permissions=True)
