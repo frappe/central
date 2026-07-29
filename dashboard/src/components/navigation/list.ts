@@ -33,6 +33,13 @@ export const sidebarSections = computed(() => {
 					to: '/team/members',
 					condition: isMember.value,
 				},
+
+        {
+          label: 'Addons',
+          icon: 'lucide-blocks',
+          to: '/addons',
+          condition: isMember.value,
+        }
 			],
 		},
 
