@@ -29,6 +29,12 @@ RESERVED_SERVER_ADDRESSES = frozenset(
 	{"www", "admin", "api", "proxy", "app", "dashboard", "mail", "ns", "root"}
 )
 
+# Staging trials: a team flagged `is_staging_trial` provisions on its free welcome credits
+# without a full billing profile, up to TRIAL_SERVER_LIMIT servers. Size and price come
+# from the chosen catalog plan (the same as a normal create); which plans a trial may
+# pick — the entry tiers — is a front-end concern in the New Server form.
+TRIAL_SERVER_LIMIT = 3
+
 
 def _available_versions(region: str | None = None) -> list[str]:
 	"""The versions Atlas can provision in `region` (its active bench images). Regions
@@ -367,6 +373,31 @@ def refresh_assets(team: str | None = None) -> dict:
 	return reconcile(team)
 
 
+def _is_staging_trial_team(team: str) -> bool:
+	return bool(frappe.db.get_value("Team", team, "is_staging_trial"))
+
+
+def _require_trial_provisioning(team: str, plan: str | None) -> None:
+	"""Trial teams provision on free welcome credits instead of a full billing profile:
+	they need a billing currency, a plan (so usage meters against the credits), unspent
+	credits, and room under the server cap. Size/price come from the plan, exactly as a
+	normal create; the New Server form is what limits a trial to the entry tiers."""
+	from central.billing.revenue.credits import get_balance
+
+	if not plan:
+		frappe.throw(_("Pick a plan to create a trial server."), frappe.ValidationError)
+	if not frappe.db.get_value("Billing Profile", team, "currency"):
+		frappe.throw(_("Set up your team's billing currency before creating servers."), frappe.ValidationError)
+	if get_balance(team).get("balance", 0) <= 0:
+		frappe.throw(
+			_("Your trial credits are used up. Add a payment method to keep creating servers."),
+			frappe.ValidationError,
+		)
+	running = frappe.db.count("Asset", {"team": team, "status": ["!=", "Terminated"]})
+	if running >= TRIAL_SERVER_LIMIT:
+		frappe.throw(_("Trial teams can run up to {0} servers.").format(TRIAL_SERVER_LIMIT), frappe.ValidationError)
+
+
 @frappe.whitelist(methods=["POST"])
 def create_server(
 	team: str | None = None,
@@ -392,17 +423,24 @@ def create_server(
 	provisioned from is captured and its price-lock opened (ADR 0006/0010). That
 	writes a Pending Asset keyed on the VM's id; the `vm.created` event Atlas emits
 	then reconciles that same Asset (keyed on `resource_id`) instead of racing to
-	create a second one."""
+	create a second one.
+
+	Trial teams (staging) skip the billing-profile gate and pay from free welcome
+	credits; size and price still come from the chosen plan like any other create."""
 	from central.billing.catalog.subscriptions import provision_subscription
 
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
 		frappe.throw(_("You can't create servers for this team."), frappe.PermissionError)
-	# A server bills the team, so it needs a billing profile first.
-	from central.billing.api.dashboard._shared import require_billing_profile
+	if _is_staging_trial_team(team):
+		# Trial: free credits fund it, no full profile. Size/price come from the plan.
+		_require_trial_provisioning(team, plan)
+	else:
+		# A server bills the team, so it needs a billing profile first.
+		from central.billing.api.dashboard._shared import require_billing_profile
 
-	require_billing_profile(team, "create servers")
+		require_billing_profile(team, "create servers")
 	if not region:
 		frappe.throw(_("Region is required."), frappe.ValidationError)
 	_validate_frappe_version(frappe_version, region)
