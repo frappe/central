@@ -214,3 +214,44 @@ class TestEligiblePlans(IntegrationTestCase):
 		make_plan(MID, rates=_rates(2000), is_active=0)
 		plans, _ = self._titles()
 		self.assertNotIn(MID, plans)
+
+
+class TestTrialPlanMenu(IntegrationTestCase):
+	"""A staging trial team's create-server menu is narrowed to the configured entry
+	plans (`trial_plans`), with design-your-own suppressed."""
+
+	def setUp(self):
+		ensure_team(TEAM)
+		frappe.db.set_value("Team", TEAM, "is_staging_trial", 1)
+		self.addCleanup(frappe.db.set_value, "Team", TEAM, "is_staging_trial", 0)
+		complete_billing_profile(TEAM, currency="INR")
+		clear_team_tier(TEAM)
+		for name in frappe.get_all("Subscription", filters={"team": TEAM}, pluck="name"):
+			frappe.db.delete("Subscription Change", {"subscription": name})
+			frappe.delete_doc("Subscription", name, force=True)
+		_ensure_tier_level("t1")
+		make_plan(CHEAP, rates=_rates(1000))
+		make_plan(MID, rates=_rates(2000))
+		make_plan(PRICEY, rates=_rates(5000))
+		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
+		set_team_tier(TEAM, max_spend=100000)  # ample headroom — narrowing is by the trial list
+		frappe.set_user("Administrator")
+
+	def test_menu_limited_to_configured_trial_plans(self):
+		from unittest.mock import patch
+
+		with patch.dict(frappe.conf, {"trial_plans": [CHEAP, MID]}):
+			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+		plans = {p["plan"] for p in _flat(out)}
+		self.assertEqual(plans, {CHEAP, MID})  # PRICEY hidden even though it fits headroom
+		self.assertEqual(out["profiles"], [])  # no design-your-own for a trial
+		self.assertEqual(out["rate_card"], {})
+
+	def test_unset_trial_plans_does_not_narrow_the_list(self):
+		from unittest.mock import patch
+
+		with patch.dict(frappe.conf, {"trial_plans": []}):
+			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
+		plans = {p["plan"] for p in _flat(out)}
+		self.assertTrue({CHEAP, MID, PRICEY}.issubset(plans))
+		self.assertEqual(out["profiles"], [])  # composed still suppressed for a trial

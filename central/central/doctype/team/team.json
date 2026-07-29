@@ -12,6 +12,7 @@
   "owner_user",
   "column_break_header",
   "status",
+  "is_staging_trial",
   "members"
  ],
  "fields": [
@@ -53,6 +54,13 @@
    "label": "Status",
    "options": "Active\nSuspended",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Staging trials: create servers on free welcome credits without a full billing profile.",
+   "fieldname": "is_staging_trial",
+   "fieldtype": "Check",
+   "label": "Staging Trial"
   },
   {
    "fieldname": "members",
