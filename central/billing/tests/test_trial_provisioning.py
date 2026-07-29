@@ -149,6 +149,32 @@ class TestTrialProvisioning(IntegrationTestCase):
 		out, _ = self._create(self.plan)
 		self.assertEqual(out["resource_id"], VM_ID)
 
+	def test_staging_trial_profile_is_autocompleted(self):
+		# The console blocks server creation until the billing profile is complete; a
+		# trial's currency-only profile is filled with staging placeholders so it passes.
+		from central.billing.api.dashboard._shared import _profile_complete
+		from central.billing.payments.provisioning import complete_trial_billing_profile
+
+		self.assertFalse(_profile_complete(TEAM))  # currency only
+		complete_trial_billing_profile(TEAM)
+		self.assertTrue(_profile_complete(TEAM))
+
+	def test_autocomplete_skips_non_trial_team(self):
+		from central.billing.api.dashboard._shared import _profile_complete
+		from central.billing.payments.provisioning import complete_trial_billing_profile
+
+		frappe.db.set_value("Team", TEAM, "is_staging_trial", 0)
+		complete_trial_billing_profile(TEAM)
+		self.assertFalse(_profile_complete(TEAM))  # left incomplete for a normal team
+
+	def test_team_save_autocompletes_trial_profile(self):
+		# Flipping the flag in Desk (a Team save) completes the profile via the on_update hook.
+		from central.billing.api.dashboard._shared import _profile_complete
+
+		self.assertFalse(_profile_complete(TEAM))
+		frappe.get_doc("Team", TEAM).save(ignore_permissions=True)
+		self.assertTrue(_profile_complete(TEAM))
+
 	def test_non_trial_team_still_needs_full_profile(self):
 		# Same currency-only profile, but not a trial → the billing-profile gate holds.
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 0)

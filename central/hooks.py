@@ -169,7 +169,12 @@ after_install = [
 doc_events = {
 	"User": {
 		"after_insert": "central.users.bootstrap_user_team",
-	}
+	},
+	"Team": {
+		# Keep a staging-trial team's billing profile complete so it can create servers
+		# without the setup prompt (the profile gate is otherwise enforced in the console).
+		"on_update": "central.billing.payments.provisioning.on_team_update",
+	},
 }
 
 # Scheduled Tasks
