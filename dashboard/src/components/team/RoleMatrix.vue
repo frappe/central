@@ -90,7 +90,7 @@ function grants(role: TeamRoleRow, capability: string): boolean {
 						class="border-b border-outline-gray-1 last:border-0"
 					>
 						<td class="sticky left-0 z-10 bg-surface-elevation-1 px-4 py-2.5">
-							<p class="text-sm text-ink-gray-8">{{ cap.description }}</p>
+							<p class="text-p-sm text-ink-gray-8">{{ cap.description }}</p>
 							<p class="mt-0.5 font-mono text-xs text-ink-gray-4">
 								{{ cap.name }}
 							</p>
