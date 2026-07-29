@@ -14,6 +14,7 @@ from central.integrations.atlas import (
 	SERVICE_ROLE,
 	AtlasClient,
 	TunnelRegistrationError,
+	_service_user_email,
 	register_atlas,
 	remove_tunnel,
 )
@@ -193,7 +194,7 @@ class TestAtlasRegister(IntegrationTestCase):
 			register_atlas(instance)
 
 		instance.reload()
-		expected = f"atlas-blr-svc@{frappe.local.site}"
+		expected = _service_user_email("blr-svc")
 		self.assertEqual(instance.service_user, expected)
 		user = frappe.get_doc("User", expected)
 		roles = {row.role for row in user.roles}
@@ -339,7 +340,7 @@ class TestAtlasRegister(IntegrationTestCase):
 		# Peer was never added, so no hub-peer-remove either.
 		run_host_task.assert_not_called()
 		# The scoped service user was cleaned up.
-		self.assertFalse(frappe.db.exists("User", f"atlas-blr-provfail@{frappe.local.site}"))
+		self.assertFalse(frappe.db.exists("User", _service_user_email("blr-provfail")))
 
 	def test_rollback_when_confirm_fails_removes_peer(self) -> None:
 		instance = self.make_instance("blr-confirmfail")
@@ -357,4 +358,4 @@ class TestAtlasRegister(IntegrationTestCase):
 		scripts = [call.kwargs["script"] for call in run_host_task.call_args_list]
 		self.assertIn("hub-peer-add.py", scripts)
 		self.assertIn("hub-peer-remove.py", scripts)
-		self.assertFalse(frappe.db.exists("User", f"atlas-blr-confirmfail@{frappe.local.site}"))
+		self.assertFalse(frappe.db.exists("User", _service_user_email("blr-confirmfail")))

@@ -622,7 +622,7 @@ def _ensure_service_user(instance) -> str:
 	it calls in (`atlas-<region>@<central-site>`). Its only role is `Atlas Service`
 	(desk-less) — it holds no operator powers; the inbound event/sizes/images/ping
 	endpoints are all it ever needs to reach."""
-	email = f"atlas-{_slug(instance.region)}@{frappe.local.site}"
+	email = _service_user_email(instance.region)
 	if frappe.db.exists("User", email):
 		user = frappe.get_doc("User", email)
 	else:
@@ -690,6 +690,13 @@ def _peer_endpoint(base_url: str, listen_port: int) -> str:
 
 def _slug(text: str) -> str:
 	return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _service_user_email(region: str) -> str:
+	"""Build a valid service-user address for both hosted and local site names."""
+	site = frappe.local.site
+	domain = site if "." in site else f"{_slug(site)}.local"
+	return f"atlas-{_slug(region)}@{domain}"
 
 
 def _rollback(instance, service_user: str | None, peer_added: bool, was_registered: bool) -> None:
