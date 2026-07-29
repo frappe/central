@@ -111,7 +111,7 @@ jobs:
         # The demo seed builds the plan catalog, trust tiers and the Stripe/Razorpay
         # gateways the suite charges against. Their stored keys are placeholders; the
         # adapters prefer the real test keys we just put in site config at runtime.
-        run: bench --site "$SITE" execute central.billing.demo.demo.seed
+        run: bench --site "$SITE" execute central.billing.demo.demo_scenarios.seed
 
       - name: Serve bench
         working-directory: /home/runner/frappe-bench
