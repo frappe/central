@@ -34,9 +34,26 @@ class TestTrialProvisioning(IntegrationTestCase):
 		ensure_team(TEAM)
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 1)
 		self._minimal_profile(TEAM, "INR")
-		self.plan = make_plan("trial-starter", rates=[{"cluster": "", "currency": "INR", "rate": 500}])
+		# A 1 vCPU / 2 GB / 10 GB plan — the size the VM must take, whatever the caller asks.
+		self.plan = self._fresh_plan(
+			"trial-starter",
+			[
+				{"resource_type": "Compute", "quantity": 1, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 2, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 10, "unit": "GB"},
+			],
+			rate=500,
+		)
 		self._reset_team()
 		frappe.set_user("Administrator")
+
+	def _fresh_plan(self, name, includes, rate):
+		"""make_plan, but with the plan's child `Plan Includes` cleared first and after.
+		make_plan's force-delete doesn't cascade to that child table, so committed reruns
+		would otherwise stack duplicate rows and inflate the plan's derived size."""
+		frappe.db.delete("Plan Includes", {"parent": name})
+		self.addCleanup(frappe.db.delete, "Plan Includes", {"parent": name})
+		return make_plan(name, includes=includes, rates=[{"cluster": "", "currency": "INR", "rate": rate}])
 
 	def _minimal_profile(self, team, currency):
 		"""A currency-only Billing Profile — the state signup leaves a trial team in."""
@@ -74,15 +91,30 @@ class TestTrialProvisioning(IntegrationTestCase):
 			)
 		return result, fake_client
 
-	def test_trial_creates_server_without_full_profile(self):
+	def test_trial_creates_server_at_plan_size_ignoring_oversized_request(self):
 		self._fund()
-		out, client = self._create(self.plan, vcpus=1, memory_megabytes=2048, disk_gigabytes=20)
+		# The caller asks for a huge VM; the plan sells 1/2 GB/10 GB — the plan wins, so a
+		# trial can't over-allocate at the plan's cheap rate.
+		out, client = self._create(self.plan, vcpus=64, memory_megabytes=999999, disk_gigabytes=9999)
 
 		self.assertEqual(out["resource_id"], VM_ID)
 		self.assertTrue(out["subscription"])  # metered on the chosen plan
 		self.assertEqual(frappe.get_doc("Subscription", out["subscription"]).plan, self.plan)
-		# Size flows through from the caller (the form derives it from the plan), untouched.
-		self.assertEqual(client.create_vm.call_args.kwargs["memory_megabytes"], 2048)
+		size = client.create_vm.call_args.kwargs
+		self.assertEqual(
+			(size["vcpus"], size["memory_megabytes"], size["disk_gigabytes"]),
+			(1, 2048, 10),  # the plan's size, not the caller's oversized dimensions
+		)
+
+	def test_rejects_plan_outside_the_trial_allowlist(self):
+		self._fund()
+		other = self._fresh_plan("trial-enterprise", None, rate=9000)
+		fake_client = MagicMock()
+		with patch.dict(frappe.conf, {"trial_plans": [self.plan]}):
+			with patch.object(servers.AtlasClient, "for_region", return_value=fake_client):
+				with self.assertRaises(frappe.ValidationError):
+					servers.create_server(team=TEAM, region=REGION, title="web-1", plan=other)
+		fake_client.create_vm.assert_not_called()
 
 	def test_requires_a_plan_so_it_is_metered(self):
 		self._fund()
