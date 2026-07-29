@@ -8,12 +8,6 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { money } from '@/lib/format'
 import type { TrustTier, TierLevel } from '@/types/billing'
 
-// Billing › Limit Tiers, shown to customers as "Spending Limits". A team's tier
-// sets how much it can spend and how many resources it can run; paying invoices on
-// time promotes it to higher tiers (#07/#08). Backend stays "Trust Tier"; the UI
-// shows each rung's own title (Beginner, Growth, …) rather than a "Tier N" derived
-// from the sequence. Reads get_trust_tier (current + next + full ladder).
-//
 // Layout mirrors the frappe-cloud-v2 prototype: a standing band, a tiers table
 // whose Requirements column shows each rung's promotion gates against the team's
 // live progress, and a "how it works" explainer.
@@ -26,6 +20,7 @@ const tier = useCall<TrustTier, { team: string }>({
 	immediate: false,
 	refetch: true,
 })
+
 whenTeamReady(() => tier.reload())
 
 const currency = computed(() => tier.data?.currency || 'INR')
@@ -36,7 +31,9 @@ const monthlySpend = computed(() => forecast.data?.projected_total)
 // Whole months since the team's first paid invoice, for the "Paying since" stat.
 const payingSince = computed(() => {
 	const firstPaidAt = prog.value?.first_paid_at
+
 	if (!firstPaidAt) return null
+
 	const months = Math.max(
 		0,
 		Math.floor(
@@ -44,12 +41,11 @@ const payingSince = computed(() => {
 				(1000 * 60 * 60 * 24 * 30),
 		),
 	)
+
 	return months < 1 ? '< 1 month' : `${months} month${months === 1 ? '' : 's'}`
 })
 
-// Customer-facing rung name: the tier's own title (Beginner, Growth, …), not a
-// "Tier N" derived from its sequence.
-function tierLabel(level: TierLevel | null | undefined): string {
+const tierLabel = (level: TierLevel | null | undefined): string => {
 	if (!level) return '—'
 	return level.tier || '—'
 }
@@ -63,10 +59,11 @@ interface Requirement {
 // A rung's promotion gates, checked against the team's live progress. The base
 // rung's gate is a payment method or prepaid credits — everything past it is
 // paid-invoice tenure + cumulative spend.
-function requirementsFor(level: TierLevel): Requirement[] {
+const requirementsFor = (level: TierLevel): Requirement[] => {
 	const p = prog.value
 	const paid = Number(p?.paid_invoices ?? 0)
 	const cumulative = Number(p?.cumulative_paid ?? 0)
+
 	if (level.sequence <= 0) {
 		const hasChargeableMethod = (methods.data ?? []).some(
 			(m) => m.status === 'Active' && !m.reauth_required,
@@ -80,20 +77,25 @@ function requirementsFor(level: TierLevel): Requirement[] {
 			},
 		]
 	}
+
 	const reqs: Requirement[] = []
+
 	if (level.min_paid_invoices) {
 		const n = level.min_paid_invoices
+
 		reqs.push({
 			text: `≥ ${n} paid invoice${n === 1 ? '' : 's'}`,
 			met: paid >= n,
 		})
 	}
+
 	if (level.min_cumulative_paid) {
 		reqs.push({
 			text: `≥ ${money(level.min_cumulative_paid, currency.value)} paid to date`,
 			met: cumulative >= Number(level.min_cumulative_paid),
 		})
 	}
+
 	return reqs.length
 		? reqs
 		: [{ text: 'No additional requirements', met: true }]
@@ -127,7 +129,7 @@ const levels = computed(() => {
 					</p>
 				</div>
 
-				<!-- Current standing: a flat stat strip, no box. -->
+				<!-- Current spending stats -->
 				<div class="flex flex-wrap gap-x-12 gap-y-4 leading-relaxed">
 					<div class="flex flex-col gap-1">
 						<span class="text-sm text-ink-gray-5">Monthly spend</span>
@@ -139,8 +141,8 @@ const levels = computed(() => {
 					<div class="flex flex-col gap-1">
 						<span class="text-sm text-ink-gray-5">Paying since</span>
 						<span class="text-xl font-semibold text-ink-gray-9"
-							>{{ payingSince ?? '—' }}</span
-						>
+							>{{ payingSince ?? '—' }}
+						</span>
 					</div>
 
 					<div class="flex flex-col gap-1">
@@ -151,7 +153,7 @@ const levels = computed(() => {
 					</div>
 				</div>
 
-				<!-- Tiers table: hairline rules, no outer box. -->
+				<!-- Tiers table -->
 				<table class="w-full text-left text-sm">
 					<thead>
 						<tr
@@ -202,10 +204,11 @@ const levels = computed(() => {
 										>
 											{{ req.text }}
 										</span>
+
 										<router-link
 											v-if="req.nudge"
 											:to="{ name: 'Billing' }"
-											class="text-ink-blue-7 "
+											class="hover:underline-offset-4 hover:underline"
 										>
 											Go to Billing →
 										</router-link>
@@ -230,7 +233,6 @@ const levels = computed(() => {
 					</tbody>
 				</table>
 
-				<!-- How tiers work: plain prose under a rule, not a card. -->
 				<section class="border-t border-outline-gray-1 pt-6">
 					<h2 class="text-base font-medium text-ink-gray-9">
 						How tier upgrades work
