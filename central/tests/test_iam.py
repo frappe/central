@@ -47,10 +47,10 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 13 capabilities across two live planes: central (5) + atlas (8). v3 makes
+		# 15 capabilities across two live planes: central (7) + atlas (8). v3 makes
 		# server the atomic unit — the bench plane and asset:view are dropped.
-		self.assertEqual(frappe.db.count("Capability"), 13)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 5)
+		self.assertEqual(frappe.db.count("Capability"), 15)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 7)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 8)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
 		# The retired roles are gone; the five-rung ladder is all that remains.
@@ -80,9 +80,19 @@ class TestCentralIAM(IntegrationTestCase):
 			self.assertIn(cap, admin_caps)
 			self.assertIn(cap, billing_caps)
 			self.assertNotIn(cap, developer_caps)
-		# Viewer is a pure inventory auditor; Billing adds billing to that read view.
-		self.assertEqual(viewer_caps, {"cluster:view", "server:view"})
-		self.assertEqual(billing_caps, {"billing:view", "billing:manage", "cluster:view", "server:view"})
+		# Viewer can read services; Billing can configure them as well.
+		self.assertEqual(viewer_caps, {"cluster:view", "server:view", "service:view"})
+		self.assertEqual(
+			billing_caps,
+			{
+				"billing:view",
+				"billing:manage",
+				"cluster:view",
+				"server:view",
+				"service:view",
+				"service:manage",
+			},
+		)
 
 		# server:open is the console gate; the read-only Viewer and Billing lack it.
 		for caps in (owner_caps, admin_caps, developer_caps):
@@ -134,7 +144,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertEqual(effective["user"], self.viewer)
 		self.assertEqual(
 			effective["teams"][team.name]["caps"],
-			["cluster:view", "server:view"],
+			["cluster:view", "server:view", "service:view"],
 		)
 		self.assertEqual(effective["teams"][team.name]["grants"][0]["source"], "member")
 
