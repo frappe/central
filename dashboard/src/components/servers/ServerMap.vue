@@ -64,7 +64,7 @@ const emit = defineEmits<{
 	/** A server cluster-card row's open-bench action was chosen. */
 	'open-server': [server: NonNullable<MapPin['server']>]
 	/** A site pin/cluster-card row's open-live-site action was chosen. */
-	'open-site': [url: string]
+	'open-site': [name: string]
 	/** A + spot was chosen — the Atlas Instance region to create in. */
 	'new-server': [region: string]
 	/** A cluster was clicked; the page may narrow its list to these servers. */
@@ -752,7 +752,7 @@ function clickNode(n: MapNode): void {
 							:disabled="!allowOpen || !m.site.url"
 							title="Open site"
 							aria-label="Open site"
-							@click.stop="m.site.url && emit('open-site', m.site.url)"
+							@click.stop="m.site.url && emit('open-site', m.site.name)"
 						>
 							<span class="lucide-arrow-up-right size-3.5" />
 						</button>
