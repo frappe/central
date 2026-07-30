@@ -63,7 +63,8 @@ def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str |
 			allow_redirects=False,
 		)
 		response.raise_for_status()
-		url = response.json().get("url")
+		payload = response.json()
+		url = payload.get("url") if isinstance(payload, dict) else None
 	except (requests.RequestException, ValueError, PilotMonitoringError) as exc:
 		frappe.log_error(title=f"Site login relay failed: {site}", message=f"{gateway_url}: {exc}")
 		return None
