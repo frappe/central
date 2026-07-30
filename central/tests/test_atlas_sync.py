@@ -398,6 +398,35 @@ class TestAtlasMirror(IntegrationTestCase):
 		regen.assert_called_once_with(fqdn)
 		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=atlas")
 
+	def test_relay_mint_failure_is_logged_then_falls_back_to_atlas(self):
+		# A signing/mint failure must degrade to Atlas with a log, not surface as a 500.
+		from central.api import sites
+
+		fqdn = "mintfail.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "mintfail", "status": "Running",
+			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-mintfail"},
+			"2026-06-18 10:05:00",
+		)
+		self._backing_pilot("pcred-mintfail", "vm-mintfail")
+		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "mintfail", "status": "Running",
+			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
+			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.pilot.mint_site_login", side_effect=RuntimeError("signing key")
+			), patch("central.integrations.pilot.frappe.log_error") as log, patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		log.assert_called()
+		regen.assert_called_once_with(fqdn)
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=atlas")
+
 	def test_site_pilot_credential_id_is_write_once(self):
 		fqdn = "woc.blr1.frappe.dev"
 		self._push(

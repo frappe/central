@@ -53,8 +53,9 @@ class PilotMonitoringClient:
 
 def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str | None:
 	"""Relay a Central-signed site assertion to the bench's login endpoint and return the desk
-	URL it mints (a fresh local session). None on failure — logged, so a bench that consistently
-	fails the relay is diagnosable, then the caller falls back to Atlas."""
+	URL it mints (a fresh local session). None on any failure — minting, request, or an unusable
+	response — logged so a consistently-failing bench or Central is diagnosable, then the caller
+	falls back to Atlas."""
 	try:
 		response = requests.post(
 			f"{_gateway_url(gateway_url)}/api/v1/sites/{site}/login",
@@ -65,7 +66,7 @@ def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str |
 		response.raise_for_status()
 		payload = response.json()
 		url = payload.get("url") if isinstance(payload, dict) else None
-	except (requests.RequestException, ValueError, PilotMonitoringError) as exc:
+	except Exception as exc:  # minting (signing key / DB / encode) must also fall back, not 500
 		frappe.log_error(title=f"Site login relay failed: {site}", message=f"{gateway_url}: {exc}")
 		return None
 	if not isinstance(url, str) or not url:
