@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
-import { canStart, canStop, isResizing, isTerminated } from '@/lib/status'
+import {
+	canStart,
+	canStop,
+	isResizing,
+	isSettingUp,
+	isTerminated,
+} from '@/lib/status'
 import type { AssetRow } from '@/composables/useServers'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
@@ -44,7 +50,9 @@ const options = computed(() => {
 	// Mid-resize the VM is power-cycling in the background: power + resize actions are
 	// blocked (the API rejects them too) until the reshape job clears the flag.
 	const resizing = isResizing(props.server)
-	if (props.canOpen)
+	// Still provisioning — Open/Resize/Terminate wait until the VM leaves Setting up.
+	const settingUp = isSettingUp(props.server.status)
+	if (props.canOpen && !settingUp)
 		items.push({
 			label: 'Open',
 			icon: 'lucide-external-link',
@@ -70,14 +78,18 @@ const options = computed(() => {
 		})
 	// Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
 	// custom config.
-	if (props.canPower && !isTerminated(props.server.status))
+	if (props.canPower && !isTerminated(props.server.status) && !settingUp)
 		items.push({
 			label: 'Resize',
 			icon: 'lucide-sliders-horizontal',
 			disabled: resizing,
 			onClick: () => emit('resize', props.server),
 		})
-	if (props.canTerminate && !isTerminated(props.server.status))
+	if (
+		props.canTerminate &&
+		!isTerminated(props.server.status) &&
+		!settingUp
+	)
 		items.push({
 			label: 'Terminate',
 			icon: 'lucide-trash-2',

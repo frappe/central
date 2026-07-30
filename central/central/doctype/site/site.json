@@ -13,6 +13,7 @@
   "region",
   "status",
   "url",
+  "pilot_credential_id",
   "login_url",
   "login_url_expires_at",
   "last_synced_at",
@@ -78,6 +79,14 @@
    "fieldtype": "Data",
    "label": "URL",
    "options": "URL",
+   "read_only": 1
+  },
+  {
+   "description": "The hosting bench's pilot credential / JWT audience — set at create_site, the key for a Central-minted site login.",
+   "fieldname": "pilot_credential_id",
+   "fieldtype": "Data",
+   "label": "Pilot Credential ID",
+   "no_copy": 1,
    "read_only": 1
   },
   {

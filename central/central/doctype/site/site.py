@@ -18,6 +18,7 @@ class Site(Document):
 		last_synced_at: DF.Datetime | None
 		login_url: DF.SmallText | None
 		login_url_expires_at: DF.Datetime | None
+		pilot_credential_id: DF.Data | None
 		region: DF.Data | None
 		site_name: DF.Data
 		status: DF.Literal["Pending", "Provisioning", "Deploying", "Running", "Failed", "Terminated"]
@@ -73,6 +74,10 @@ class Site(Document):
 		doc.region = site.get("region")
 		doc.status = site.get("status") or "Pending"
 		doc.url = site.get("url") or None
+		# Write-once: create_site stamps the pilot credential once; later status events
+		# omit it and must not blank the binding a site login resolves through.
+		if site.get("pilot_credential_id") and not doc.pilot_credential_id:
+			doc.pilot_credential_id = site["pilot_credential_id"]
 		# Write-once: the one-click login URL + its expiry only arrive once Running
 		# (Atlas gates them on status), so never blank a handoff we've already stored on
 		# a later (e.g. status-only) event. Same rule as Asset's login_url.
