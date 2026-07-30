@@ -322,9 +322,11 @@ class TestAtlasMirror(IntegrationTestCase):
 			frappe.delete_doc("Pilot Credential", pcid, force=True)
 		PilotCredential.mint(team=self.team.name, pilot_credential_id=pcid, asset=rid, audience_id=pcid)
 
-	def test_get_site_mints_pilot_direct_login(self):
-		# An enrolled pilot: get_site hands back a Central-signed site assertion at the bench's
-		# own gateway (no Atlas regenerate); the pilot exchanges it locally for the session.
+	def test_get_site_relays_to_pilot_for_login(self):
+		# An enrolled pilot: get_site POSTs a Central-signed site assertion to the bench's own
+		# gateway (no Atlas regenerate) and returns the desk URL the bench mints.
+		from unittest.mock import MagicMock
+
 		import jwt
 		from jwt.algorithms import RSAAlgorithm
 
@@ -334,6 +336,7 @@ class TestAtlasMirror(IntegrationTestCase):
 		from central.sso import central_url
 
 		fqdn = "direct.blr1.frappe.dev"
+		desk_url = f"https://{fqdn}/desk?sid=real-session"
 		self._push(
 			"site.status_changed",
 			{"name": fqdn, "team": self.team.name, "subdomain": "direct", "status": "Running",
@@ -342,22 +345,87 @@ class TestAtlasMirror(IntegrationTestCase):
 		)
 		self._backing_pilot("pcred-direct", "vm-direct")
 
+		response = MagicMock()
+		response.json.return_value = {"url": desk_url}
 		frappe.set_user(self.owner)
 		try:
-			with patch("central.integrations.atlas.AtlasClient.regenerate_site_login") as regen:
+			with patch("central.integrations.pilot.requests.post", return_value=response) as post, patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login"
+			) as regen:
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
+
 		regen.assert_not_called()
-		self.assertTrue(
-			got["login_url"].startswith(f"https://vm.blr1.frappe.dev/api/v1/sites/{fqdn}/login?sid=")
-		)
+		self.assertEqual(got["login_url"], desk_url)
+		self.assertEqual(post.call_args.args[0], f"https://vm.blr1.frappe.dev/api/v1/sites/{fqdn}/login")
+		token = post.call_args.kwargs["headers"]["Authorization"].split(" ", 1)[1]
 		claims = jwt.decode(
-			got["login_url"].split("sid=", 1)[1],
-			RSAAlgorithm.from_jwk(jwks_document()["keys"][0]),
+			token, RSAAlgorithm.from_jwk(jwks_document()["keys"][0]),
 			algorithms=[ALGORITHM], audience="pcred-direct", issuer=central_url(),
 		)
 		self.assertEqual((claims["scope"], claims["site"]), ("site", fqdn))
+
+	def test_relay_failure_is_logged_then_falls_back_to_atlas(self):
+		# The pilot is enrolled and Running, but the relay POST fails: log it (so a broken bench
+		# is diagnosable) and fall back to Atlas rather than dropping the login.
+		import requests
+
+		from central.api import sites
+
+		fqdn = "relayfail.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "relayfail", "status": "Running",
+			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-relayfail"},
+			"2026-06-18 10:05:00",
+		)
+		self._backing_pilot("pcred-relayfail", "vm-relayfail")
+		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "relayfail", "status": "Running",
+			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
+			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.pilot.requests.post", side_effect=requests.RequestException("boom")
+			), patch("central.integrations.pilot.frappe.log_error") as log, patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		log.assert_called()
+		regen.assert_called_once_with(fqdn)
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=atlas")
+
+	def test_relay_mint_failure_is_logged_then_falls_back_to_atlas(self):
+		# A signing/mint failure must degrade to Atlas with a log, not surface as a 500.
+		from central.api import sites
+
+		fqdn = "mintfail.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "mintfail", "status": "Running",
+			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-mintfail"},
+			"2026-06-18 10:05:00",
+		)
+		self._backing_pilot("pcred-mintfail", "vm-mintfail")
+		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "mintfail", "status": "Running",
+			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
+			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.pilot.mint_site_login", side_effect=RuntimeError("signing key")
+			), patch("central.integrations.pilot.frappe.log_error") as log, patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		log.assert_called()
+		regen.assert_called_once_with(fqdn)
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=atlas")
 
 	def test_site_pilot_credential_id_is_write_once(self):
 		fqdn = "woc.blr1.frappe.dev"

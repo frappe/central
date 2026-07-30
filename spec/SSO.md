@@ -12,14 +12,17 @@ offline against Central's published JWKS. Atlas is not in the login path.
 **Site login** — `central.api.sites.get_site` → `_pilot_site_login_url`
 1. Central resolves the site's hosting bench (audience + gateway) from `Site.pilot_credential_id`
    → `Pilot Credential` → `Asset.gateway_url`, then mints `mint_site_login(aud, site)` —
-   `scope=site`, `site` claim, 5 min, single jti.
-2. Browser → `{gateway}/api/v1/sites/<site>/login?sid=<jwt>`.
-3. The bench verifies the assertion (JWKS, `aud`, `site`-match, single-use), logs into the
-   Frappe site locally, and 302s to `.../desk?sid=<real session id>`.
+   `scope=site`, `site` claim, 5 min.
+2. Central POSTs it to `{gateway}/api/v1/sites/<site>/login` as the `Bearer`
+   (`central.integrations.pilot.fetch_site_login_url`).
+3. The bench verifies the assertion (JWKS, `aud`, `site`-match), logs into the Frappe site
+   locally, and returns `{url: .../desk?sid=<real session id>}`. Central redirects the user there.
 
 If the pilot hasn't enrolled or its VM isn't Running, Central falls back to the Atlas-minted
 `login_url` (`AtlasClient.regenerate_site_login`). Retiring that fallback + the deploy-time mint
 is a follow-up once every bench is enrolled.
+
+The console (bench) login stays browser-carried; only the site login is a Central→bench relay.
 
 ## Where tokens live
 
@@ -41,7 +44,9 @@ the real site session id lives in the Frappe site's own session store.
 - **RS256 + JWKS**, verified offline. Benches hold only the public key.
 - **`aud` = the bench's `pilot_credential_id`**, assigned by Central. A SID for bench A is
   rejected by bench B; a pilot cannot self-declare its audience.
-- **5-minute TTL + single-use jti.** Redeemable once, within five minutes; then dead.
+- **5-minute TTL.** The bench login SID is browser-carried and single-use (jti tracked at the
+  bench); the site assertion is server-to-server (Central→bench, never browser-exposed), bounded
+  by its short TTL.
 - **Fail closed.** A bench rejects any assertion whose scope it does not understand
   (`Session.has_scope` is an allowlist) rather than downgrading to Administrator.
 - **Extensibility (distinct scope).** Site login is Administrator today. A future constrained,
