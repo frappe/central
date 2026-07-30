@@ -764,9 +764,7 @@ function clickNode(n: MapNode): void {
 						{{ card.node.title }}
 					</div>
 					<div class="mt-3 flex items-center gap-2">
-						<span class="text-sm text-ink-gray-6"
-							>{{ card.node.targets.length > 1 ? 'Regions here' : 'Region' }}</span
-						>
+						<span class="text-sm text-ink-gray-6">Providers available</span>
 						<button
 							v-for="t in card.node.targets"
 							:key="t.id"
