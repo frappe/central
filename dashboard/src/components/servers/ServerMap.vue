@@ -59,7 +59,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-	/** A pin (or a cluster-card row) was chosen. */
+	/** A pin (or a cluster-card row) was chosen — page opens the site/server. */
 	open: [id: string]
 	/** A server cluster-card row's open-bench action was chosen. */
 	'open-server': [server: NonNullable<MapPin['server']>]
@@ -474,11 +474,15 @@ function clickNode(n: MapNode): void {
 	if (n.type === 'marker') {
 		emit('select', n.marker.id)
 	} else if (n.type === 'server') {
-		// No per-server page exists (yet) — the card is the detail surface, so a
-		// click pins it open with its actions menu reachable.
-		window.clearTimeout(showT)
-		hoverKey.value = n.key
-		cardLocked.value = true
+		// A pin click opens the resource. A site that can't be opened yet has no
+		// overview to fall back on, so keep its card open instead of a dead click.
+		if (n.pin.kind === 'site' && (!props.allowOpen || !n.pin.site?.url)) {
+			window.clearTimeout(showT)
+			hoverKey.value = n.key
+			cardLocked.value = true
+			return
+		}
+		hideCard()
 		emit('open', n.pin.id)
 	} else if (n.type === 'plus') {
 		emit('new-server', n.targets[0].id)
