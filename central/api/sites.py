@@ -5,6 +5,7 @@ from frappe import _
 
 from central.iam import can, get_user_team_names, resolve_team
 from central.integrations.atlas import AtlasClient
+from central.sso import mint_site_login
 
 # Self-serve site endpoints for the SMB onboarding flow. Reads come from the Site
 # mirror (kept fresh by the site.* events Atlas pushes); writes go to Atlas as the
@@ -85,8 +86,37 @@ def get_site(name: str) -> dict:
 		"name": doc.name,
 		"status": doc.status,
 		"url": doc.url if running else None,
-		"login_url": _fresh_site_login_url(doc) if running else None,
+		"login_url": _site_login_url(doc) if running else None,
 	}
+
+
+def _site_login_url(doc) -> str | None:
+	"""Prefer a Central-signed assertion the site's own pilot exchanges (no Atlas hop);
+	fall back to Atlas's regenerated URL when the pilot isn't enrolled or reachable yet."""
+	return _pilot_site_login_url(doc) or _fresh_site_login_url(doc)
+
+
+def _pilot_site_login_url(doc) -> str | None:
+	"""Mint a one-time site assertion the pilot exchanges locally. Resolves the hosting bench's
+	audience + gateway from the credential Central bound at create_site; None (→ Atlas fallback)
+	until the pilot has enrolled and its VM reports a Running gateway."""
+	if not doc.pilot_credential_id:
+		return None
+	credential = frappe.qb.DocType("Pilot Credential")
+	asset = frappe.qb.DocType("Asset")
+	row = (
+		frappe.qb.from_(credential)
+		.inner_join(asset)
+		.on(credential.asset == asset.name)
+		.select(credential.audience_id, asset.gateway_url, asset.status)
+		.where((credential.name == doc.pilot_credential_id) & (credential.status == "Active"))
+	).run(as_dict=True)
+	if not row or row[0].status != "Running":
+		return None
+	gateway = (row[0].gateway_url or "").rstrip("/")
+	if not gateway:
+		return None
+	return f"{gateway}/api/v1/sites/{doc.name}/login?sid={mint_site_login(row[0].audience_id, doc.name)}"
 
 
 def _fresh_site_login_url(doc) -> str | None:
