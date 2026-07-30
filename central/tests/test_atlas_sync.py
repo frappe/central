@@ -366,6 +366,38 @@ class TestAtlasMirror(IntegrationTestCase):
 		)
 		self.assertEqual((claims["scope"], claims["site"]), ("site", fqdn))
 
+	def test_relay_failure_is_logged_then_falls_back_to_atlas(self):
+		# The pilot is enrolled and Running, but the relay POST fails: log it (so a broken bench
+		# is diagnosable) and fall back to Atlas rather than dropping the login.
+		import requests
+
+		from central.api import sites
+
+		fqdn = "relayfail.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "relayfail", "status": "Running",
+			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-relayfail"},
+			"2026-06-18 10:05:00",
+		)
+		self._backing_pilot("pcred-relayfail", "vm-relayfail")
+		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "relayfail", "status": "Running",
+			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
+			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.pilot.requests.post", side_effect=requests.RequestException("boom")
+			), patch("central.integrations.pilot.frappe.log_error") as log, patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		log.assert_called()
+		regen.assert_called_once_with(fqdn)
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=atlas")
+
 	def test_site_pilot_credential_id_is_write_once(self):
 		fqdn = "woc.blr1.frappe.dev"
 		self._push(
