@@ -308,6 +308,102 @@ class TestAtlasMirror(IntegrationTestCase):
 		regen.assert_called_once_with(fqdn)
 		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=fresh")
 
+	def _backing_pilot(self, pcid, rid, *, status="Running", gateway="https://vm.blr1.frappe.dev"):
+		"""The site's 1:1 VM: the Asset carries the gateway, the Pilot Credential the audience."""
+		from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+
+		if frappe.db.exists("Asset", rid):
+			frappe.delete_doc("Asset", rid, force=True, ignore_permissions=True)
+		frappe.get_doc(
+			{"doctype": "Asset", "resource_id": rid, "team": self.team.name,
+			 "cluster": self.region, "status": status, "gateway_url": gateway or None}
+		).insert(ignore_permissions=True)
+		if frappe.db.exists("Pilot Credential", pcid):
+			frappe.delete_doc("Pilot Credential", pcid, force=True)
+		PilotCredential.mint(team=self.team.name, pilot_credential_id=pcid, asset=rid, audience_id=pcid)
+
+	def test_get_site_mints_pilot_direct_login(self):
+		# An enrolled pilot: get_site hands back a Central-signed site assertion at the bench's
+		# own gateway (no Atlas regenerate); the pilot exchanges it locally for the session.
+		import jwt
+		from jwt.algorithms import RSAAlgorithm
+
+		from central.api import sites
+		from central.api.jwks import jwks_document
+		from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM
+		from central.sso import central_url
+
+		fqdn = "direct.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "direct", "status": "Running",
+			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-direct"},
+			"2026-06-18 10:05:00",
+		)
+		self._backing_pilot("pcred-direct", "vm-direct")
+
+		frappe.set_user(self.owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.regenerate_site_login") as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		regen.assert_not_called()
+		self.assertTrue(
+			got["login_url"].startswith(f"https://vm.blr1.frappe.dev/api/v1/sites/{fqdn}/login?sid=")
+		)
+		claims = jwt.decode(
+			got["login_url"].split("sid=", 1)[1],
+			RSAAlgorithm.from_jwk(jwks_document()["keys"][0]),
+			algorithms=[ALGORITHM], audience="pcred-direct", issuer=central_url(),
+		)
+		self.assertEqual((claims["scope"], claims["site"]), ("site", fqdn))
+
+	def test_site_pilot_credential_id_is_write_once(self):
+		fqdn = "woc.blr1.frappe.dev"
+		self._push(
+			"site.created",
+			{"name": fqdn, "team": self.team.name, "subdomain": "woc",
+			 "status": "Provisioning", "pilot_credential_id": "pcred-woc"},
+			"2026-06-18 10:00:00",
+		)
+		self.assertEqual(frappe.db.get_value("Site", fqdn, "pilot_credential_id"), "pcred-woc")
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "woc", "status": "Running"},
+			"2026-06-18 10:05:00",
+		)
+		self.assertEqual(frappe.db.get_value("Site", fqdn, "pilot_credential_id"), "pcred-woc")
+
+	def test_get_site_falls_back_to_atlas_when_pilot_not_ready(self):
+		# pilot_credential_id is stamped but the VM isn't Running (no gateway) — the resolver
+		# returns None and get_site falls back to Atlas's regenerated URL.
+		from central.api import sites
+
+		fqdn = "notready.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{"name": fqdn, "team": self.team.name, "subdomain": "notready", "status": "Running",
+			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-notready",
+			 "login_url": f"https://{fqdn}/app?sid=stale",
+			 "login_url_expires_at": "2000-01-01 00:00:00"},
+			"2026-06-18 10:05:00",
+		)
+		self._backing_pilot("pcred-notready", "vm-notready", status="Stopped")
+		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "notready", "status": "Running",
+			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
+			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+			) as regen:
+				got = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+		regen.assert_called_once_with(fqdn)
+		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=atlas")
+
 	def test_resize_vm_posts_run_doc_method_with_args(self):
 		import json
 

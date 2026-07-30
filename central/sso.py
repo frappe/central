@@ -38,6 +38,12 @@ def mint_bench_login(audience: str) -> str:
 	return _mint(audience, {"sub": "admin", "scope": "bench"}, BENCH_LOGIN_TTL)
 
 
+def mint_site_login(audience: str, site: str) -> str:
+	"""A one-time assertion the site's pilot exchanges for an Administrator session, scoped to
+	one site. `aud` is the hosting bench's audience id; the pilot verifies it against the JWKS."""
+	return _mint(audience, {"sub": "admin", "scope": "site", "site": site}, BENCH_LOGIN_TTL)
+
+
 def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
 	"""A single-use enrollment token seeded into a VM at create time. The pilot presents it
 	once to `central.api.pilot.enroll` to fetch its long-lived credential.

@@ -356,7 +356,10 @@ class AtlasClient:
 		# long-lived credential is created only later at enrollment, so nothing else here
 		# needs committing; an unused token after a failed Atlas call is harmless.
 		frappe.db.commit()
-		return self._post("atlas.atlas.api.site.create_site", params, action="create this site")
+		site = self._post("atlas.atlas.api.site.create_site", params, action="create this site")
+		# Central minted this credential, so carry it onto the mirror as the site→pilot key.
+		site["pilot_credential_id"] = params["pilot_credential_id"]
+		return site
 
 	def _pilot_credential(self, team: str) -> dict:
 		"""
