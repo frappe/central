@@ -53,6 +53,13 @@ export function isTerminated(status?: AssetStatus): boolean {
 	return status === 'Terminated'
 }
 
+/** Atlas is still provisioning the VM — power/open/terminate aren't available yet. */
+const SETTING_UP_STATES: AssetStatus[] = ['Pending', 'Provisioning', 'Deploying']
+
+export function isSettingUp(status?: AssetStatus): boolean {
+	return status === undefined || SETTING_UP_STATES.includes(status)
+}
+
 // Team Invitation status → Badge theme. Pending is in-flight (amber), Accepted is
 // done (green), everything else is inactive/neutral or a hard stop.
 const INVITATION_STATUS_THEME: Record<InvitationStatus, BadgeTheme> = {

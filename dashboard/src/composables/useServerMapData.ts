@@ -3,7 +3,7 @@ import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { useFrappeListInvalidation } from '@/composables/common/useFrappeRealtime'
-import { getErrorMessage } from '@/lib/toast'
+import { getErrorMessage, isAbortError } from '@/lib/toast'
 import type { AssetRow } from '@/composables/useServers'
 
 // The team's whole fleet in one read — servers (the Asset mirror) and self-serve
@@ -59,11 +59,10 @@ export function useServerMapData() {
 		),
 		sites: computed<SiteRow[]>(() => registry.data?.sites ?? []),
 		loading: computed(() => registry.loading),
-		error: computed(() =>
-			registry.error
-				? getErrorMessage(registry.error, "Couldn't load servers.")
-				: null,
-		),
+		error: computed(() => {
+			if (!registry.error || isAbortError(registry.error)) return null
+			return getErrorMessage(registry.error, "Couldn't load servers.")
+		}),
 		reload: () => registry.reload(),
 	}
 }
