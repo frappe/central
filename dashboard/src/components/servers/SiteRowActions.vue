@@ -13,14 +13,14 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-	open: [url: string]
+	open: [name: string]
 	terminate: [name: string]
 }>()
 
 const options = computed(() => {
 	const items = []
 	if (props.canOpen && props.site.url)
-		items.push({ label: 'Open site', icon: 'lucide-external-link', onClick: () => emit('open', props.site.url!) })
+		items.push({ label: 'Open site', icon: 'lucide-external-link', onClick: () => emit('open', props.site.name) })
 	if (props.canTerminate)
 		items.push({ label: 'Terminate', icon: 'lucide-trash-2', theme: 'red' as const, onClick: () => emit('terminate', props.site.name) })
 	return items
