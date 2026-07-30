@@ -76,7 +76,7 @@ class Site(Document):
 		doc.url = site.get("url") or None
 		# Write-once: create_site stamps the pilot credential once; later status events
 		# omit it and must not blank the binding a site login resolves through.
-		if site.get("pilot_credential_id"):
+		if site.get("pilot_credential_id") and not doc.pilot_credential_id:
 			doc.pilot_credential_id = site["pilot_credential_id"]
 		# Write-once: the one-click login URL + its expiry only arrive once Running
 		# (Atlas gates them on status), so never blank a handoff we've already stored on
