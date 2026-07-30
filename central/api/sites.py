@@ -5,7 +5,7 @@ from frappe import _
 
 from central.iam import can, get_user_team_names, resolve_team
 from central.integrations.atlas import AtlasClient
-from central.sso import mint_site_login
+from central.integrations.pilot import fetch_site_login_url
 
 # Self-serve site endpoints for the SMB onboarding flow. Reads come from the Site
 # mirror (kept fresh by the site.* events Atlas pushes); writes go to Atlas as the
@@ -97,9 +97,10 @@ def _site_login_url(doc) -> str | None:
 
 
 def _pilot_site_login_url(doc) -> str | None:
-	"""Mint a one-time site assertion the pilot exchanges locally. Resolves the hosting bench's
-	audience + gateway from the credential Central bound at create_site; None (→ Atlas fallback)
-	until the pilot has enrolled and its VM reports a Running gateway."""
+	"""Relay a Central-signed assertion to the site's own pilot, which returns a desk URL with a
+	fresh local session. Resolves the hosting bench's audience + gateway from the credential
+	Central bound at create_site; None (→ Atlas fallback) until the pilot enrolled and its VM is
+	Running."""
 	if not doc.pilot_credential_id:
 		return None
 	credential = frappe.qb.DocType("Pilot Credential")
@@ -116,7 +117,7 @@ def _pilot_site_login_url(doc) -> str | None:
 	gateway = (row[0].gateway_url or "").rstrip("/")
 	if not gateway:
 		return None
-	return f"{gateway}/api/v1/sites/{doc.name}/login?sid={mint_site_login(row[0].audience_id, doc.name)}"
+	return fetch_site_login_url(gateway, row[0].audience_id, doc.name)
 
 
 def _fresh_site_login_url(doc) -> str | None:
