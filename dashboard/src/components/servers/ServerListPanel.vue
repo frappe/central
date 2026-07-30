@@ -48,7 +48,7 @@ defineEmits<{
 	stop: [server: AssetRow]
 	resize: [server: AssetRow]
 	terminate: [server: AssetRow]
-	openSite: [url: string]
+	openSite: [name: string]
 	terminateSite: [name: string]
 }>()
 
