@@ -3,7 +3,7 @@ import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { useBusyRunner } from '@/composables/useBusyRunner'
-import { getErrorMessage } from '@/lib/toast'
+import { getErrorMessage, isAbortError } from '@/lib/toast'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { InvitationRow } from '@/types/api'
 
@@ -57,11 +57,14 @@ export function useTeamInvitations() {
 		loading: computed(
 			() => invitationsCall.loading || !invitationsCall.isFinished,
 		),
-		error: computed(() =>
-			invitationsCall.error
-				? getErrorMessage(invitationsCall.error, "Couldn't load invitations.")
-				: null,
-		),
+		error: computed(() => {
+			if (!invitationsCall.error || isAbortError(invitationsCall.error))
+				return null
+			return getErrorMessage(
+				invitationsCall.error,
+				"Couldn't load invitations.",
+			)
+		}),
 		busy,
 		reload: () => invitationsCall.reload(),
 		resend,
