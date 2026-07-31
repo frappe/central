@@ -5,10 +5,11 @@
 import frappe
 
 from central.billing.report.dunning_recovery import dunning_recovery
+from central.billing.report.gateway_payment_success_ratio import gateway_payment_success_ratio
 from central.billing.report.involuntary_churn import involuntary_churn
 from central.billing.report.webhook_lag import webhook_lag
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import BillingTestCase
+from central.billing.tests.utils import BillingTestCase, ensure_team
 
 MONTH = "2026-06"
 
@@ -112,6 +113,55 @@ class TestDunningRecovery(BillingTestCase):
 		# The window selects who entered dunning; being paid in July is still a recovery.
 		self.assertEqual({r["month"] for r in rows}, {MONTH})
 		self.assertEqual(_row(rows)["recovered"], 1)
+
+
+class TestGatewayAuthRateOverTime(BillingTestCase):
+	def setUp(self):
+		self.gateway = make_stripe_gateway("GW-Trend-Stripe").name
+		self.team = ensure_team("team-authrate")
+		self.invoice = frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": self.team,
+				"status": "Open",
+				"period_start": "2026-05-01",
+				"period_end": "2026-05-31",
+				"currency": "USD",
+				"subtotal": 100,
+				"total": 100,
+				"expected_collection": 100,
+			}
+		).insert(ignore_permissions=True).name
+
+	def _attempt(self, status, when):
+		# Each attempt needs its own retry number: the idempotency key is derived from
+		# (invoice, retry_number), so two attempts sharing both would be the same charge.
+		self.retry = getattr(self, "retry", 0) + 1
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": self.invoice,
+				"gateway": self.gateway,
+				"amount": 100,
+				"currency": "USD",
+				"status": status,
+				"retry_number": self.retry,
+				"initiated_at": when,
+			}
+		).insert(ignore_permissions=True)
+
+	def test_success_rate_is_reported_per_month(self):
+		self._attempt("Captured", "2026-05-10 10:00:00")
+		self._attempt("Failed", "2026-05-11 10:00:00")
+		self._attempt("Captured", "2026-06-10 10:00:00")
+
+		_columns, rows, _msg, chart, _summary = gateway_payment_success_ratio.execute(
+			{"group_by": "Month", "from_date": "2026-05-01", "to_date": "2026-06-30", "gateway": self.gateway}
+		)
+		by_month = {r["month"]: r for r in rows}
+		self.assertEqual(by_month["2026-05"]["success_rate"], 50.0)
+		self.assertEqual(by_month["2026-06"]["success_rate"], 100.0)
+		self.assertEqual(chart["data"]["labels"], ["2026-05", "2026-06"])
 
 
 class TestInvoluntaryChurn(BillingTestCase):
