@@ -56,6 +56,27 @@ export function shortDate(d: string | null | undefined): string {
 	return `${p.day} ${ABBR[p.m - 1]} ${p.y}`
 }
 
+const ordinalSuffix = (day: number): string => {
+	if (day % 100 >= 11 && day % 100 <= 13) return 'th'
+	switch (day % 10) {
+		case 1:
+			return 'st'
+		case 2:
+			return 'nd'
+		case 3:
+			return 'rd'
+		default:
+			return 'th'
+	}
+}
+
+/** For example 31st July */
+export const ordinalDate = (d: string | null | undefined): string => {
+	const p = parts(d)
+	if (!p) return d || ''
+	return `${p.day}${ordinalSuffix(p.day)} ${FULL[p.m - 1]}`
+}
+
 // Collapse a [start, end] span to the shortest unambiguous phrasing:
 //   whole calendar month   → "January 2026"
 //   range within one month → "1–15 Jan 2026"
