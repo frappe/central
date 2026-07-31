@@ -23,6 +23,8 @@ def execute(filters: dict | None = None):
 	filters = filters or {}
 	if filters.get("group_by") == "Failure Code":
 		return execute_failure_breakdown(filters)
+	if filters.get("group_by") == "Month":
+		return execute_by_month(filters)
 	return execute_by_gateway(filters)
 
 
@@ -41,8 +43,62 @@ def _attempts(filters: dict) -> list[dict]:
 	return frappe.get_all(
 		"Payment Attempt",
 		filters=conditions,
-		fields=["gateway", "status", "amount", "currency", "failure_code", "failure_reason"],
+		fields=["gateway", "status", "amount", "currency", "failure_code", "failure_reason", "initiated_at"],
 	)
+
+
+# ── Auth rate over time ──────────────────────────────────────────────────────
+
+def execute_by_month(filters: dict):
+	"""The same success rate, per gateway per month — a dip is only legible against a trend."""
+	columns = [
+		{"label": _("Month"), "fieldname": "month", "fieldtype": "Data", "width": 110},
+		{"label": _("Gateway"), "fieldname": "gateway", "fieldtype": "Link", "options": "Payment Gateway", "width": 180},
+		{"label": _("Attempts"), "fieldname": "attempts", "fieldtype": "Int", "width": 100},
+		{"label": _("Captured"), "fieldname": "captured", "fieldtype": "Int", "width": 100},
+		{"label": _("Failed"), "fieldname": "failed", "fieldtype": "Int", "width": 90},
+		{"label": _("Success Rate"), "fieldname": "success_rate", "fieldtype": "Percent", "width": 120},
+	]
+
+	agg: dict[tuple, dict] = {}
+	for a in _attempts(filters):
+		if not a.initiated_at:
+			continue
+		key = (frappe.utils.getdate(a.initiated_at).strftime("%Y-%m"), a.gateway or _("(none)"))
+		g = agg.setdefault(key, {"attempts": 0, "captured": 0, "failed": 0})
+		g["attempts"] += 1
+		if a.status == "Captured":
+			g["captured"] += 1
+		elif a.status == "Failed":
+			g["failed"] += 1
+
+	rows = [
+		{
+			"month": month,
+			"gateway": gateway,
+			**g,
+			"success_rate": flt(g["captured"] / g["attempts"] * 100, 2) if g["attempts"] else 0.0,
+		}
+		for (month, gateway), g in sorted(agg.items(), reverse=True)
+	]
+
+	chart = None
+	if rows:
+		months = sorted({r["month"] for r in rows})
+		by_gateway: dict[str, dict] = {}
+		for r in rows:
+			by_gateway.setdefault(r["gateway"], {})[r["month"]] = r["success_rate"]
+		chart = {
+			"data": {
+				"labels": months,
+				"datasets": [
+					{"name": gateway, "values": [series.get(m, 0.0) for m in months]}
+					for gateway, series in sorted(by_gateway.items())
+				],
+			},
+			"type": "line",
+		}
+	return columns, rows, None, chart, None
 
 
 # ── Per-gateway ratio ────────────────────────────────────────────────────────

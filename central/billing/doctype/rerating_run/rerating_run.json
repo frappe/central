@@ -1,0 +1,153 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-07-31 00:00:00.000000",
+ "description": "The audit record of one bulk re-issue: what was corrected, what it would change, and what it actually changed.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "field_order": [
+  "resource_type",
+  "period_start",
+  "period_end",
+  "column_break_state",
+  "status",
+  "started_at",
+  "completed_at",
+  "section_break_counts",
+  "invoices_affected",
+  "reissued",
+  "failed",
+  "column_break_money",
+  "net_delta",
+  "section_break_detail",
+  "reason",
+  "preview",
+  "result"
+ ],
+ "fields": [
+  {
+   "fieldname": "resource_type",
+   "fieldtype": "Link",
+   "options": "Resource Type",
+   "label": "Resource Type",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Date",
+   "label": "Period Start",
+   "reqd": 1
+  },
+  {
+   "fieldname": "period_end",
+   "fieldtype": "Date",
+   "label": "Period End",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Running",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Running\nComplete\nFailed",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_counts",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "invoices_affected",
+   "fieldtype": "Int",
+   "label": "Invoices Affected",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reissued",
+   "fieldtype": "Int",
+   "label": "Reissued",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failed",
+   "fieldtype": "Int",
+   "label": "Failed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_money",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "net_delta",
+   "fieldtype": "Float",
+   "label": "Net Delta",
+   "read_only": 1,
+   "description": "Sum of per-invoice differences at preview time. Mixed currencies are not netted meaningfully; read the preview for the breakdown."
+  },
+  {
+   "fieldname": "section_break_detail",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "reqd": 1
+  },
+  {
+   "fieldname": "preview",
+   "fieldtype": "Code",
+   "options": "JSON",
+   "label": "Preview",
+   "read_only": 1
+  },
+  {
+   "fieldname": "result",
+   "fieldtype": "Code",
+   "options": "JSON",
+   "label": "Result",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-31 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Rerating Run",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "export": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

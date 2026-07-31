@@ -229,6 +229,9 @@ scheduler_events = {
 		# hanging for up to a day — and the key it needs to re-send safely expires in
 		# about one (ADR 0017).
 		"central.billing.payments.reconciliation.run_reconciliation",
+		# The sweeps above detect what they cannot fix; this is what pages a human
+		# about it — unresolved invariants, failed webhooks, attempts still in flight.
+		"central.billing.platform.alerts.run_operator_alerts",
 	],
 	"monthly": [
 		# Billing: cards expire at the end of their printed month; flip lapsed ones.

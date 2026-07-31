@@ -119,6 +119,31 @@ WEBHOOK_EVENT = StateMachine(
 	},
 )
 
+# The monthly run's own progress. No money of its own, but routed through the
+# authority so the single owner rule holds with no special cases.
+BILLING_RUN = StateMachine(
+	"Billing Run",
+	"status",
+	{
+		# Straight to Complete is legal: a month where no team had anything billable is
+		# finished without ever having something to collect.
+		"Drafting": {"Collecting", "Complete"},
+		"Collecting": {"Complete"},
+		"Complete": {"Collecting"},  # a late draft reopens collection for the period
+	},
+)
+
+# One bulk re-issue of a period's invoices.
+RERATING_RUN = StateMachine(
+	"Rerating Run",
+	"status",
+	{
+		"Running": {"Complete", "Failed"},
+		"Complete": set(),  # terminal — a further correction is a new run
+		"Failed": set(),  # terminal
+	},
+)
+
 COMMITMENT = StateMachine(
 	"Commitment",
 	"status",
@@ -138,6 +163,8 @@ _MACHINES = {
 		REFUND,
 		PAYMENT_METHOD,
 		WEBHOOK_EVENT,
+		BILLING_RUN,
+		RERATING_RUN,
 		COMMITMENT,
 	)
 }
