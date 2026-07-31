@@ -44,6 +44,8 @@ const props = withDefaults(
 		allowCreate?: boolean
 		/** Show direct bench-open affordances inside cluster cards. */
 		allowOpen?: boolean
+		/** Site name currently being opened — spins its cluster-card open button. */
+		openingSite?: string | null
 	}>(),
 	{
 		pins: () => [],
@@ -55,6 +57,7 @@ const props = withDefaults(
 		interactive: true,
 		allowCreate: false,
 		allowOpen: false,
+		openingSite: null,
 	},
 )
 
@@ -749,12 +752,15 @@ function clickNode(n: MapNode): void {
 						<button
 							v-else-if="m.site"
 							class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
-							:disabled="!allowOpen || !m.site.url"
+							:class="{ '!opacity-100': openingSite === m.site.name }"
+							:disabled="!allowOpen || !m.site.url || openingSite === m.site.name"
 							title="Open site"
 							aria-label="Open site"
 							@click.stop="m.site.url && emit('open-site', m.site.name)"
 						>
-							<span class="lucide-arrow-up-right size-3.5" />
+							<span
+								:class="openingSite === m.site.name ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
+							/>
 						</button>
 					</div>
 				</template>
