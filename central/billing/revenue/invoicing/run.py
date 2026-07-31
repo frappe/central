@@ -13,6 +13,7 @@ import time
 import frappe
 from frappe.query_builder.functions import Count
 
+from central.billing.doctype.billing_run.billing_run import snapshot
 from central.billing.platform import metrics
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import open_and_collect
@@ -414,6 +415,7 @@ def draft_monthly_invoices(today=None) -> dict:
 	so a run that overruns the day is finished by the next sweep, not abandoned.
 	"""
 	period_start, period_end = billing_period(today)
+	snapshot(billing_run_status(today), "Drafting")
 	fanned = generate_draft_invoices(period_start, period_end, enqueue=True)
 	metrics.emit("billing.draft_tick", period_end=str(period_end), pages=len(fanned))
 	return {"period_start": str(period_start), "period_end": str(period_end), "pages": len(fanned)}
@@ -438,11 +440,18 @@ def collect_due_invoices(today=None) -> dict:
 	`settle_draft` defers dunning on failure, so a slow sweep never makes a customer late.
 	"""
 	_, period_end = billing_period(today)
-	# Emitted before fanning out, so the record of what the run has achieved (and what it
+	# Recorded before fanning out, so the record of what the run has achieved (and what it
 	# still owes) exists even if collection then falls over.
-	metrics.emit("billing.run_status", **billing_run_status(today))
+	status = billing_run_status(today)
+	metrics.emit("billing.run_status", **status)
+	# Only claim to be collecting when something is owed, so a period that finished
+	# does not flip Complete -> Collecting -> Complete on every later sweep.
+	snapshot(status, "Collecting" if status["pending_collection"] else None)
 	fanned = open_drafts(period_end, enqueue=True)
 	metrics.emit("billing.collect_tick", period_end=str(period_end), pages=len(fanned))
+	# Re-derived after the sweep has been handed out: nothing owed means the period is done.
+	done = billing_run_status(today)
+	snapshot(done, "Complete" if not done["pending_collection"] else None)
 	return {"period_end": str(period_end), "pages": len(fanned)}
 
 

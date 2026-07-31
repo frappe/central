@@ -29,7 +29,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Entitlement Token", "Commitment", "Usage Rollup", "Payment Method",
 		"Tax Profile", "Billing Profile", "Team Invitation", "Team Role",
 		"Catalog Rate", "Plan", "Asset", "Team", "Atlas Instance", "Region", "User",
-		"Webhook Event", "Notification Log",
+		"Webhook Event", "Notification Log", "Billing Event", "Billing Run",
 	)
 
 	def run(self, result=None):

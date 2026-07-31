@@ -119,6 +119,18 @@ WEBHOOK_EVENT = StateMachine(
 	},
 )
 
+# The monthly run's own progress. No money of its own, but routed through the
+# authority so the single owner rule holds with no special cases.
+BILLING_RUN = StateMachine(
+	"Billing Run",
+	"status",
+	{
+		"Drafting": {"Collecting"},
+		"Collecting": {"Complete"},
+		"Complete": {"Collecting"},  # a late draft reopens collection for the period
+	},
+)
+
 COMMITMENT = StateMachine(
 	"Commitment",
 	"status",
@@ -138,6 +150,7 @@ _MACHINES = {
 		REFUND,
 		PAYMENT_METHOD,
 		WEBHOOK_EVENT,
+		BILLING_RUN,
 		COMMITMENT,
 	)
 }
