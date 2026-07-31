@@ -29,12 +29,12 @@
    "reqd": 1
   },
   {
-   "default": "All Servers",
+   "default": "*",
    "fieldname": "resource_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Resource Type",
-   "options": "All Servers\nAll Sites\nServer\nSite",
+   "options": "*\nServer\nSite",
    "reqd": 1
   },
   {

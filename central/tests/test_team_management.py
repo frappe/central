@@ -166,11 +166,11 @@ class TestTeamManagement(IntegrationTestCase):
 		team = frappe.get_doc("Team", self.team.name)
 
 		with self.assertRaises(frappe.PermissionError):
-			team.set_member_roles(self.admin, [{"role": "Developer", "resource_type": "All Servers"}])
+			team.set_member_roles(self.admin, [{"role": "Developer", "resource_type": "*"}])
 		with self.assertRaises(frappe.ValidationError):
-			team.set_member_roles(self.viewer, [{"role": "Owner", "resource_type": "All Servers"}])
+			team.set_member_roles(self.viewer, [{"role": "Owner", "resource_type": "*"}])
 
-		team.set_member_roles(self.viewer, [{"role": "Developer", "resource_type": "All Servers"}])
+		team.set_member_roles(self.viewer, [{"role": "Developer", "resource_type": "*"}])
 		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
 
 	def test_member_can_hold_multiple_roles_with_unioned_capabilities(self):
@@ -184,7 +184,7 @@ class TestTeamManagement(IntegrationTestCase):
 		team.set_member_roles(
 			self.viewer,
 			[
-				{"role": billing_only, "resource_type": "All Servers"},
+				{"role": billing_only, "resource_type": "*"},
 				{"role": "Developer", "resource_type": "Server", "resource_name": "some-server"},
 			],
 		)
@@ -200,8 +200,8 @@ class TestTeamManagement(IntegrationTestCase):
 			team.set_member_roles(
 				self.viewer,
 				[
-					{"role": "Developer", "resource_type": "All Servers"},
-					{"role": "Developer", "resource_type": "All Servers"},
+					{"role": "Developer", "resource_type": "*"},
+					{"role": "Developer", "resource_type": "*"},
 				],
 			)
 
@@ -306,11 +306,11 @@ class TestTeamManagement(IntegrationTestCase):
 			delete_custom_role("Viewer")
 
 		# In use by a member -> refused until reassigned.
-		set_team_member_roles(self.team.name, self.viewer, [{"role": role, "resource_type": "All Servers"}])
+		set_team_member_roles(self.team.name, self.viewer, [{"role": role, "resource_type": "*"}])
 		with self.assertRaises(frappe.ValidationError):
 			delete_custom_role(role)
 
-		set_team_member_roles(self.team.name, self.viewer, [{"role": "Viewer", "resource_type": "All Servers"}])
+		set_team_member_roles(self.team.name, self.viewer, [{"role": "Viewer", "resource_type": "*"}])
 		self.assertTrue(delete_custom_role(role)["deleted"])
 		self.assertFalse(frappe.db.exists("Team Role", role))
 

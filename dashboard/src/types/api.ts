@@ -28,7 +28,7 @@ export type InvitationStatus =
 	| 'Revoked'
 	| 'Declined'
 
-export type ResourceType = 'All Servers' | 'All Sites' | 'Server' | 'Site'
+export type ResourceType = '*' | 'Server' | 'Site'
 
 export interface TeamMemberRoleAssignment {
 	role: string

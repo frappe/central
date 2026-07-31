@@ -34,7 +34,7 @@ class Team(Document):
 		if not any(member.user == self.owner_user for member in self.members):
 			self.append(
 				"members",
-				{"user": self.owner_user, "role": "Owner", "resource_type": "All Servers", "status": "Active"},
+				{"user": self.owner_user, "role": "Owner", "resource_type": "*", "status": "Active"},
 			)
 
 	def validate(self) -> None:
@@ -87,7 +87,7 @@ class Team(Document):
 				{
 					"user": user,
 					"role": grant["role"],
-					"resource_type": grant.get("resource_type") or "All Servers",
+					"resource_type": grant.get("resource_type") or "*",
 					"resource_name": grant.get("resource_name"),
 					"status": status,
 				},
@@ -134,7 +134,7 @@ class Team(Document):
 			self.remove(row)
 		self.append(
 			"members",
-			{"user": user, "role": "Owner", "resource_type": "All Servers", "status": "Active"},
+			{"user": user, "role": "Owner", "resource_type": "*", "status": "Active"},
 		)
 		self.owner_user = user
 		self.flags.transferring_ownership = True
@@ -145,7 +145,7 @@ class Team(Document):
 			return
 		self.append(
 			"members",
-			{"user": user, "role": role, "resource_type": "All Servers", "status": "Active"},
+			{"user": user, "role": role, "resource_type": "*", "status": "Active"},
 		)
 		self.flags.from_team_invitation = True
 		# The accepted invitation authorizes this write before the invitee is a member.

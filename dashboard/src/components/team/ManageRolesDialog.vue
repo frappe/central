@@ -71,8 +71,7 @@ const resourceOptions = computed(() => {
 	const assets = registryCall.data?.assets ?? []
 	const sites = registryCall.data?.sites ?? []
 	return [
-		{ label: 'All servers', value: resourceKey('All Servers', null) },
-		{ label: 'All sites', value: resourceKey('All Sites', null) },
+		{ label: 'All resources', value: resourceKey('*', null) },
 		...assets.map((a) => ({
 			label: a.title || a.resource_id,
 			value: resourceKey('Server', a.name),
@@ -89,7 +88,7 @@ const resourceOptions = computed(() => {
 const addRow = (): void => {
 	rows.value = [
 		...rows.value,
-		{ role: '', resource_type: 'All Servers', resource_name: null },
+		{ role: '', resource_type: '*', resource_name: null },
 	]
 }
 
