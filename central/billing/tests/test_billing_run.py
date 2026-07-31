@@ -55,10 +55,15 @@ class TestBillingRun(BillingTestCase):
 		snapshot({**PERIOD, "pending_collection": 1}, "Collecting")
 		self.assertEqual(frappe.db.get_value("Billing Run", "2026-06-30", "status"), "Collecting")
 
-	def test_drafting_cannot_jump_straight_to_complete(self):
-		snapshot(PERIOD)
+	def test_a_period_with_nothing_to_collect_completes_without_collecting(self):
+		snapshot({**PERIOD, "pending_collection": 0})
+		snapshot({**PERIOD, "pending_collection": 0}, "Complete")
+		self.assertEqual(frappe.db.get_value("Billing Run", "2026-06-30", "status"), "Complete")
+
+	def test_a_finished_period_cannot_go_back_to_drafting(self):
+		snapshot(PERIOD, "Collecting")
 		with self.assertRaises(InvalidTransition):
-			snapshot(PERIOD, "Complete")
+			snapshot(PERIOD, "Drafting")
 
 	def test_every_move_is_recorded_on_the_event_stream(self):
 		snapshot(PERIOD, "Collecting")

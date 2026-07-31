@@ -125,7 +125,9 @@ BILLING_RUN = StateMachine(
 	"Billing Run",
 	"status",
 	{
-		"Drafting": {"Collecting"},
+		# Straight to Complete is legal: a month where no team had anything billable is
+		# finished without ever having something to collect.
+		"Drafting": {"Collecting", "Complete"},
 		"Collecting": {"Complete"},
 		"Complete": {"Collecting"},  # a late draft reopens collection for the period
 	},
