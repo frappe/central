@@ -18,6 +18,7 @@ import frappe
 
 from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
+from central.billing.states import transition
 
 # An attempt occupying the invoice — a second charge must not start beside it.
 _IN_FLIGHT = ("Initiated", "Authorised", "Captured")
@@ -184,9 +185,11 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 
 	attempt.gateway_transaction_id = result.gateway_transaction_id
 	if result.success:
-		attempt.status = "Captured"  # gateway captured; invoice Paid waits on webhook
+		# gateway captured; invoice Paid waits on the webhook
+		transition(attempt, "Captured", actor="gateway", correlation=attempt.invoice)
 	else:
-		attempt.status = "Failed"
+		transition(attempt, "Failed", actor="gateway", correlation=attempt.invoice,
+				   reason=result.failure_reason)
 		_stamp_failure(attempt, result.failure_code, result.decline_code,
 					   result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
@@ -285,7 +288,8 @@ def confirm_invoice_payment(attempt: str, razorpay_order_id: str | None = None,
 	if not ok:
 		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
 	att.gateway_transaction_id = razorpay_payment_id
-	att.status = "Captured"  # gateway captured; invoice Paid waits on the webhook
+	# gateway captured; invoice Paid waits on the webhook
+	transition(att, "Captured", actor="gateway", correlation=att.invoice)
 	att.save(ignore_permissions=True)
 	return {"confirmed": True, "attempt": att.name, "status": att.status}
 
@@ -373,7 +377,7 @@ def apply_webhook(event_name: str) -> dict:
 		# Funds held, capture pending. Advance only from initiated — never walk a
 		# terminal attempt backwards if the capture/fail webhook arrived first.
 		if attempt.status == "Initiated":
-			attempt.status = "Authorised"
+			transition(attempt, "Authorised", actor="webhook", correlation=attempt.invoice)
 			attempt.save(ignore_permissions=True)
 		_mark_event(event, "Processed")
 		return {"handled": True, "result": "Authorised", "attempt": attempt_name}
@@ -385,7 +389,7 @@ def apply_webhook(event_name: str) -> dict:
 		# webhook). Gate on invoice status, not attempt status, and act once.
 		inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
 		if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
-			attempt.status = "Failed"
+			transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
 			# Off-session declines surface their real reason here, not on the sync
 			# charge response — pull it off the event so the attempt records why.
 			detail = _extract_failure(adapter_key, payload)
@@ -411,7 +415,7 @@ def apply_webhook(event_name: str) -> dict:
 		return {"handled": True, "result": "Failed", "attempt": attempt_name, "fell_back": fell_back}
 
 	settled = _settle_invoice(attempt)
-	attempt.status = "Captured"
+	transition(attempt, "Captured", actor="webhook", correlation=attempt.invoice)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Webhook"
 	attempt.save(ignore_permissions=True)
@@ -435,7 +439,8 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 	if inv.status == "Paid":
 		return False  # a duplicate webhook — already settled
 	inv.amount_paid = frappe.utils.flt(amount)
-	inv.status = "Paid"
+	transition(inv, "Paid", reason="gateway capture settled", actor="webhook",
+			   correlation=inv.name, amount=inv.amount_paid)
 	inv.save(ignore_permissions=True)
 
 	from central.billing.platform import notifications
@@ -663,7 +668,7 @@ def _credit_topup(event, topup: dict) -> dict:
 
 
 def _mark_event(event, status: str):
-	event.status = status
+	transition(event, status, actor="webhook", correlation=event.gateway_event_id)
 	event.processed_at = frappe.utils.now_datetime()
 	event.save(ignore_permissions=True)
 

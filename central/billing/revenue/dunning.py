@@ -22,6 +22,7 @@ import frappe
 
 from central.billing.catalog import subscriptions
 from central.billing.catalog.entitlements import issue_token
+from central.billing.states import transition
 
 RETRY_DAYS = [1, 3, 7]
 SUSPEND_AFTER_DAYS = 14
@@ -172,7 +173,8 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# --- Day 7: Overdue + past_due, still running --------------------------
 	if days >= RETRY_DAYS[-1]:
 		if inv.status == "Open":
-			inv.db_set("status", "Overdue")
+			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
+			inv.save(ignore_permissions=True)
 			actions.append("overdue")
 			from central.billing.platform import notifications
 
