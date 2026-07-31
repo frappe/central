@@ -37,6 +37,7 @@ const props = defineProps<{
 	canTerminate: boolean
 	busy: string | null
 	opening: string | null
+	openingSite: string | null
 }>()
 
 defineEmits<{
@@ -131,7 +132,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 					</span>
 					<span
 						class="sp-row-actions"
-						:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
+						:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id || openingSite === row.id }"
 						@click.stop
 					>
 						<ServerRowActions
@@ -154,7 +155,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							:site="row.site"
 							:can-open="canOpen"
 							:can-terminate="canTerminate"
-							:busy="busy === row.id"
+							:busy="busy === row.id || openingSite === row.id"
 							@open="$emit('openSite', $event)"
 							@terminate="$emit('terminateSite', $event)"
 						/>
