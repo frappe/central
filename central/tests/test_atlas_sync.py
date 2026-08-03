@@ -53,10 +53,20 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def _push(self, event_type, vm, occurred_at):
-		# ingest_event verifies the sender then queues the work; here we run the
-		# worker (apply_event) directly to assert its mirror effect. The
-		# verify-and-queue path is covered by the dispatch tests below.
-		apply_event(self.region, event_type, vm, occurred_at)
+		# ingest_event verifies the sender, persists the event, then queues the work;
+		# here we store the row and run the worker (apply_event) directly to assert
+		# its mirror effect. The verify-and-queue path is covered by the dispatch
+		# tests below.
+		event = frappe.get_doc(
+			{
+				"doctype": "Atlas Event",
+				"cluster": self.region,
+				"event_type": event_type,
+				"occurred_at": occurred_at,
+				"raw_payload": frappe.as_json(vm),
+			}
+		).insert(ignore_permissions=True)
+		apply_event(event.name)
 
 	# --- push -----------------------------------------------------------------
 

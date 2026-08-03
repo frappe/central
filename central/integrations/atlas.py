@@ -428,13 +428,18 @@ class AtlasClient:
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
 
 
-def ingest_event(event_type: str, payload: dict, occurred_at) -> dict:
+def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | None = None) -> dict:
 	"""
-	Resolve the sender from its authenticated session, then queue the mirror write so
-	Atlas gets a fast ack. The write runs in a background job — it's idempotent and
-	last-writer-wins, and the periodic reconcile is the backstop if a job is ever lost.
-	ping and unknown event types have nothing to mirror, so they're acknowledged
-	without queuing.
+	Resolve the sender from its authenticated session, persist the event, then queue
+	the mirror write so Atlas gets a fast ack. Persisting first means a lost or failed
+	background job leaves a row to inspect/retry instead of vanishing silently. The
+	write itself is idempotent and last-writer-wins, and the periodic reconcile is the
+	backstop if a job is ever lost. ping and unknown event types have nothing to
+	mirror, so they're acknowledged without storing or queuing.
+
+	event_id is the sending Atlas's own delivery id (its Central Event Log row
+	name) — stable across a redelivery of the same event, distinct per genuine new
+	event. Stored as-is for now; dedup enforcement on it is a follow-up.
 	"""
 
 	cluster = _atlas_cluster()
@@ -442,22 +447,44 @@ def ingest_event(event_type: str, payload: dict, occurred_at) -> dict:
 	if event_type not in _EVENT_HANDLERS:
 		return {"ok": True, "queued": False}
 
+	event = frappe.get_doc(
+		{
+			"doctype": "Atlas Event",
+			"cluster": cluster,
+			"event_id": event_id,
+			"event_type": event_type,
+			"occurred_at": occurred_at,
+			"raw_payload": frappe.as_json(payload or {}),
+			"status": "Received",
+		}
+	).insert(ignore_permissions=True)
+
 	frappe.enqueue(
 		apply_event,
 		queue="short",
 		enqueue_after_commit=True,
-		cluster=cluster,
-		event_type=event_type,
-		payload=payload or {},
-		occurred_at=occurred_at,
+		event_name=event.name,
 	)
 
 	return {"ok": True, "queued": True}
 
 
-def apply_event(cluster: str, event_type: str, payload: dict, occurred_at) -> None:
-	"""Background job: apply one verified Atlas event to the Asset mirror."""
-	_EVENT_HANDLERS[event_type](cluster, payload or {}, occurred_at)
+def apply_event(event_name: str) -> None:
+	"""Background job: apply one stored Atlas event to the Asset mirror."""
+	event = frappe.get_doc("Atlas Event", event_name)
+	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
+
+	try:
+		_EVENT_HANDLERS[event.event_type](event.cluster, payload, event.occurred_at)
+	except Exception as e:
+		event.status = "Failed"
+		event.error = str(e)
+		event.save(ignore_permissions=True)
+		raise
+
+	event.status = "Processed"
+	event.processed_at = frappe.utils.now_datetime()
+	event.save(ignore_permissions=True)
 
 
 def _atlas_cluster() -> str:
