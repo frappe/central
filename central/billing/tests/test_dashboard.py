@@ -153,6 +153,19 @@ class TestCustomerReads(CustomerDataBase):
 		ledger = dashboard.credit_ledger(TEAM)
 		self.assertEqual(ledger[0]["entry_type"], "Credit")
 
+	def test_balance_reports_promotional_credit_on_a_clock(self):
+		"""Purchased credit is not listed as expiring; a grant with a date is."""
+		credits.purchase(TEAM, 500, "INR")
+		credits.grant_promotional_credits(
+			TEAM, 100, "INR", expires_on=frappe.utils.add_days(frappe.utils.nowdate(), 20)
+		)
+
+		balance = dashboard.get_credit_balance(TEAM)
+
+		self.assertEqual(balance["balance"], 600)
+		self.assertEqual(len(balance["expiring"]), 1)
+		self.assertEqual(balance["expiring"][0]["amount"], 100)
+
 
 class TestTeamScoping(CustomerDataBase):
 	def setUp(self):
