@@ -119,9 +119,9 @@ def assign_entry_tier(team: str) -> None:
 def ensure_tax_profile(team: str) -> None:
 	"""Create the team's Tax Profile if absent.
 
-	India is GST at 18% (the launch default output tax); everywhere else ships an
-	untaxed profile (output tax None) — a real row an admin can edit, rather than
-	the implicit no-profile default."""
+	India is GST at the rate on Billing Settings; everywhere else ships an untaxed
+	profile (output tax None) — a real row an admin can edit, rather than the
+	implicit no-profile default."""
 	if frappe.db.exists("Tax Profile", team):
 		return
 
@@ -129,7 +129,7 @@ def ensure_tax_profile(team: str) -> None:
 		"Billing Profile", team, ["country", "currency"], as_dict=True
 	) or frappe._dict()
 	india = (profile.country or "").strip() == "India" or profile.currency == "INR"
-	values = {"output_tax_type": "GST", "output_tax_rate": 18} if india else {
+	values = {"output_tax_type": "GST", "output_tax_rate": settings.default_gst_rate()} if india else {
 		"output_tax_type": "None", "output_tax_rate": 0
 	}
 	frappe.get_doc({"doctype": "Tax Profile", "team": team, **values}).insert(
