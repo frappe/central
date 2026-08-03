@@ -416,8 +416,8 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
 	_tier(team, tier)  # tier lives on the Billing Profile, so set it after _profile
-	# Signup provisioning grants the ruled welcome credits ($25 / ₹2500) once, in the
-	# team's currency — the same rule production runs (WELCOME_CREDITS), not a random grant.
+	# Signup provisioning grants the welcome credits once, in the team's currency and at
+	# the amount Billing Settings carries — the same rule production runs, not a random grant.
 	provision_billing_profile(team)
 	_team_members(team, slug)  # members on varied system roles + a custom role
 	gateway, pm = _payment_setup(team, slug, currency, state)

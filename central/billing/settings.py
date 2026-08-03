@@ -76,17 +76,22 @@ def forecast_notify_ratio() -> float:
 
 
 def ensure_welcome_credit_amounts() -> None:
-	"""Seed the launch grant amounts, once, on a Billing Settings nobody has saved.
+	"""Seed the launch grant amounts if no currency has an amount yet.
 
-	Runs on install and on every migrate, so a fresh site and an existing one both
-	end up configured. It deliberately does nothing once the Single has been saved:
-	re-adding a currency an admin removed would quietly undo their decision, and
-	overwriting an amount they changed would undo it every migrate.
+	Called from install (fresh sites, where patches are skipped), before tests, and
+	a one-time patch (existing sites). Each of those runs once, which is what makes
+	this safe: it is a starting point, not a value re-asserted on every migrate. Were
+	it re-asserted, removing a currency's grant would be undone the next time anyone
+	migrated — the admin would keep losing an argument with the deploy.
+
+	The guard is "nothing is configured", not "the Single was never saved": an admin
+	who opens and saves the form before this ever runs would otherwise leave the grant
+	permanently unseeded, and welcome credits would quietly stop.
 	"""
-	if frappe.db.count("Singles", {"doctype": SETTINGS}):
+	settings = frappe.get_doc(SETTINGS)
+	if settings.welcome_credit_amounts:
 		return
 
-	settings = frappe.get_doc(SETTINGS)
 	for currency, amount in LAUNCH_WELCOME_CREDITS.items():
 		settings.append("welcome_credit_amounts", {"currency": currency, "amount": amount})
 	settings.save(ignore_permissions=True)

@@ -16,10 +16,7 @@ profile exists, credits granted) is skipped.
 
 import frappe
 
-# Welcome credits granted once, in the team's own billing currency. A currency we
-# don't list gets no grant (rather than a wrong-currency one). We bill only in INR
-# and USD for now, so those are the only grants.
-WELCOME_CREDITS = {"INR": 2500.0, "USD": 25.0}
+from central.billing import settings
 
 
 def provision_billing_profile(team: str) -> None:
@@ -144,11 +141,16 @@ def grant_welcome_credits(team: str) -> None:
 	"""Grant the one-time welcome credits in the team's currency, if not already.
 
 	Needs a currency (so the credit is booked in the right one) and grants only
-	once — guarded on any prior Promotion entry for the team."""
+	once — guarded on any prior Promotion entry for the team. The amount comes from
+	Billing Settings, so it can be changed, or the grant switched off entirely,
+	without a release; a currency with no configured amount gets no grant (rather
+	than a wrong-currency one). What a team has already been granted is never
+	revisited — the guard makes this a one-shot per team.
+	"""
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	if not currency:
 		return
-	amount = WELCOME_CREDITS.get(currency)
+	amount = settings.welcome_credit_amount(currency)
 	if not amount:
 		return
 	if frappe.db.exists("Credit Ledger Entry", {"team": team, "reference_type": "Promotion"}):

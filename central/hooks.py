@@ -249,9 +249,6 @@ scheduler_events = {
 after_migrate = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
-	# The per-currency welcome grant can't be a field default (it's a child table),
-	# so it is seeded here — once, on a Billing Settings nobody has saved yet.
-	"central.billing.settings.ensure_welcome_credit_amounts",
 ]
 
 # Testing
