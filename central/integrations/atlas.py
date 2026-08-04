@@ -439,25 +439,32 @@ def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | No
 
 	event_id is the sending Atlas's own delivery id (its Central Event Log row
 	name) — stable across a redelivery of the same event, distinct per genuine new
-	event. Stored as-is for now; dedup enforcement on it is a follow-up.
+	event. Empty for an Atlas build predating event_id, so dedup is skipped rather
+	than enforced for those (the unique constraint tolerates multiple NULLs).
 	"""
 
 	cluster = _atlas_cluster()
-
 	if event_type not in _EVENT_HANDLERS:
 		return {"ok": True, "queued": False}
 
-	event = frappe.get_doc(
-		{
-			"doctype": "Atlas Event",
-			"cluster": cluster,
-			"event_id": event_id,
-			"event_type": event_type,
-			"occurred_at": occurred_at,
-			"raw_payload": frappe.as_json(payload or {}),
-			"status": "Received",
-		}
-	).insert(ignore_permissions=True)
+	if event_id and frappe.db.exists("Atlas Event", {"event_id": event_id}):
+		return {"ok": True, "queued": False}
+
+	try:
+		event = frappe.get_doc(
+			{
+				"doctype": "Atlas Event",
+				"cluster": cluster,
+				"event_id": event_id,
+				"event_type": event_type,
+				"occurred_at": occurred_at,
+				"raw_payload": frappe.as_json(payload or {}),
+				"status": "Received",
+			}
+		).insert(ignore_permissions=True)
+	except frappe.UniqueValidationError:
+		# lost the race — another request stored this event_id first
+		return {"ok": True, "queued": False}
 
 	frappe.enqueue(
 		apply_event,
