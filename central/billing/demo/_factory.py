@@ -464,7 +464,7 @@ def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
 		"resolved_by": "Webhook", "initiated_at": captured_at, "completed_at": captured_at,
 	}).insert(ignore_permissions=True)
 	frappe.db.set_value("Invoice", invoice, {
-		"status": "Paid", "amount_paid": amount,
+		"status": "Paid", "amount_paid": amount, "paid_at": captured_at,
 		"due_date": frappe.utils.add_days(period_end, 7),
 	})
 
@@ -487,7 +487,7 @@ def _settle_via_backup(team, invoice, primary_pm, gateway, amount, currency, whe
 	# 3) the backup captures (stands in for the offline gateway), an hour later.
 	captured_at = frappe.utils.add_to_date(when, hours=1)
 	attempt = _capture_attempt(team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at)
-	frappe.db.set_value("Invoice", invoice, {"status": "Paid", "amount_paid": amount})
+	frappe.db.set_value("Invoice", invoice, {"status": "Paid", "amount_paid": amount, "paid_at": captured_at})
 	return attempt, backup.name
 
 
