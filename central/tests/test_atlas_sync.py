@@ -629,6 +629,51 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertEqual(result, {"ok": True, "queued": False})
 		enqueue.assert_not_called()
 
+	def test_duplicate_event_id_is_deduped_not_requeued(self):
+		vm = {"name": "vm-dup", "team": self.team.name, "status": "Running"}
+		frappe.set_user(self.service_user)
+		try:
+			with patch("frappe.enqueue") as enqueue:
+				first = ingest_event("vm.created", vm, "2026-06-18 10:00:00", "evt-dup-1")
+				second = ingest_event("vm.created", vm, "2026-06-18 10:00:01", "evt-dup-1")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(first["queued"])
+		self.assertFalse(second["queued"])
+		enqueue.assert_called_once()
+		self.assertEqual(frappe.db.count("Atlas Event", {"event_id": "evt-dup-1"}), 1)
+
+	def test_events_without_event_id_are_never_deduped_against_each_other(self):
+		vm = {"name": "vm-noid", "team": self.team.name, "status": "Running"}
+		frappe.set_user(self.service_user)
+		try:
+			with patch("frappe.enqueue") as enqueue:
+				first = ingest_event("vm.created", vm, "2026-06-18 10:00:00")
+				second = ingest_event("vm.created", vm, "2026-06-18 10:00:01")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(first["queued"])
+		self.assertTrue(second["queued"])
+		self.assertEqual(enqueue.call_count, 2)
+
+	def test_ingest_event_recovers_when_exists_check_loses_insert_race(self):
+		# Simulate the same REPEATABLE READ race as mirror writes: a concurrent
+		# request's exists-check misses a row another request just committed, so it
+		# takes the insert path and hits the duplicate key. ingest_event must treat
+		# that as an already-stored replay, not let UniqueValidationError escape.
+		vm = {"name": "vm-race-evt", "team": self.team.name, "status": "Running"}
+		frappe.set_user(self.service_user)
+		try:
+			ingest_event("vm.created", vm, "2026-06-18 10:00:00", "evt-race-1")
+			with patch("frappe.db.exists", return_value=False):
+				with patch("frappe.enqueue") as enqueue:
+					result = ingest_event("vm.created", vm, "2026-06-18 10:00:01", "evt-race-1")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertFalse(result["queued"])
+		enqueue.assert_not_called()
+		self.assertEqual(frappe.db.count("Atlas Event", {"event_id": "evt-race-1"}), 1)
+
 	def test_mirror_recovers_when_exists_check_loses_insert_race(self):
 		from central.central.doctype.asset.asset import Asset
 
