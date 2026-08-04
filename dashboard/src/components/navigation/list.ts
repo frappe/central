@@ -33,19 +33,13 @@ export const sidebarSections = computed(() => {
 					to: '/team/members',
 					condition: isMember.value,
 				},
-			],
-		},
 
-		{
-			label: 'Services',
-			collapsible: true,
-			items: [
-				{
-					label: 'LLM',
-					icon: 'lucide-sparkles',
-					to: '/services/llm',
-					condition: canViewServices.value,
-				},
+        {
+          label: 'Addons',
+          icon: 'lucide-blocks',
+          to: '/addons',
+          condition: canViewServices.value,
+        }
 			],
 		},
 
