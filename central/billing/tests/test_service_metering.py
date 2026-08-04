@@ -491,16 +491,18 @@ class TestPrepaidSettlement(IntegrationTestCase):
 		self.subject = res["service_subject"]
 
 	def _report(self, qty):
+		period_start = frappe.utils.get_first_day(frappe.utils.nowdate())
+		period_end = frappe.utils.get_last_day(frappe.utils.nowdate())
 		self.metering.ingest_rollup(
 			{
 				"resource_id": self.subject,
 				"resource_type": "Tokens Pre",
 				"meter_type": "Counter",
-				"period_start": "2026-07-01 00:00:00",
-				"period_end": "2026-07-31 23:59:59",
+				"period_start": period_start,
+				"period_end": period_end,
 				"quantity": qty,
 				"unit": "Nos",
-				"idempotency_key": f"{self.subject}|Counter|2026-07",
+				"idempotency_key": f"{self.subject}|Counter|{period_start}",
 			}
 		)
 

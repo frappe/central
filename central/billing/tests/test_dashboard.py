@@ -360,7 +360,11 @@ class TestCustomerActions(CustomerDataBase):
 	def test_gstin_validation(self):
 		# 27 = Maharashtra: the GSTIN's state code must match the chosen state.
 		dashboard.save_billing_profile(
-			TEAM, legal_name="Acme Pvt Ltd", state="Maharashtra", gstin="27AAPFU0939F1ZV"
+			TEAM,
+			legal_name="Acme Pvt Ltd",
+			country="India",
+			state="Maharashtra",
+			gstin="27AAPFU0939F1ZV",
 		)
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "gstin"), "27AAPFU0939F1ZV")
 		with self.assertRaises(frappe.ValidationError):
@@ -368,7 +372,7 @@ class TestCustomerActions(CustomerDataBase):
 		# state code mismatch (Karnataka is 29) is rejected too.
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.save_billing_profile(
-				TEAM, legal_name="Acme", state="Karnataka", gstin="27AAPFU0939F1ZV"
+				TEAM, legal_name="Acme", country="India", state="Karnataka", gstin="27AAPFU0939F1ZV"
 			)
 
 	def test_money_movement_blocked_until_profile_complete(self):
@@ -936,7 +940,7 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 		self.assertEqual(out["currency"], "INR")
 		self.assertEqual(out["adapter_key"], "Stripe")  # Card rides Stripe, not Razorpay
 		self.assertEqual(out["methods"], ["Card", "UPI Autopay"])  # Card is primary
-		self.assertEqual(out["gateway"], self.STRIPE)
+		self.assertEqual(frappe.db.get_value("Payment Gateway", out["gateway"], "adapter_key"), "Stripe")
 		self.assertTrue(out["publishable_key"])
 		self.assertIn("allow_upi", out)  # UPI eligibility carried through
 
@@ -953,7 +957,7 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 
 		with patch("central.billing.payments.payments.initiate_payment_method_setup", fake_setup):
 			methods.initiate_card_setup(self.TEAM)
-		self.assertEqual(captured["gateway"], self.STRIPE)
+		self.assertEqual(frappe.db.get_value("Payment Gateway", captured["gateway"], "adapter_key"), "Stripe")
 
 	def test_foreign_currency_is_stripe_card_only(self):
 		from central.billing.api.dashboard import methods

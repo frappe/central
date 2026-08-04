@@ -18,6 +18,7 @@ is 0 at launch (no team self-declares yet).
 """
 
 import frappe
+from frappe import _
 
 _ZERO_BLOCK = {
 	"output_tax_type": "None",
@@ -48,7 +49,7 @@ def resolve_tax(team: str, subtotal) -> dict:
 	if p.zero_rated:
 		# Zero-rated WITH a reason — the tax is 0 but auditable.
 		if not p.zero_rating_reason:
-			frappe.throw("Zero-rated team has no zero_rating_reason.", frappe.ValidationError)
+			frappe.throw(_("Zero-rated team has no zero-rating reason."), frappe.ValidationError)
 		block["zero_rating_reason"] = p.zero_rating_reason
 		block["output_tax_amount"] = 0
 	else:

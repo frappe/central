@@ -226,6 +226,7 @@ def get_payment_gateways() -> list[dict]:
 		return _gateway_options(_team_currency(team))
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def add_payment_method(
@@ -266,6 +267,7 @@ def add_payment_method(
 	return {**handles, "gateway": gateway, "adapter_key": adapter_key, "method_type": method_type}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def confirm_payment_method(
@@ -317,6 +319,7 @@ def confirm_payment_method(
 # (micro-charge) → Active. No card data ever touches the site.
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def create_payment_method_checkout(redirect_url: str, gateway: str | None = None) -> dict:
@@ -423,6 +426,7 @@ def remove_payment_method(payment_method: str) -> dict:
 		return payments.delete_payment_method(payment_method)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def reconcile_payment_setup() -> dict:
@@ -477,6 +481,7 @@ def get_available_plans() -> dict:
 		return get_eligible_plans(cluster=cluster, team=team)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def change_plan(plan: str | None = None) -> dict:
@@ -741,6 +746,7 @@ def _estimate_note(forecast: dict) -> str | None:
 	return frappe._("Due {0} · {1}d left").format(frappe.utils.formatdate(end), max(0, days_left))
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def get_plan_options() -> dict:
@@ -830,6 +836,7 @@ def list_payment_methods() -> list[dict]:
 # and the webhook backstop dedupe to a single credit.
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def create_topup_checkout(amount: float, redirect_url: str) -> dict:
@@ -854,6 +861,7 @@ def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
@@ -911,6 +919,7 @@ def _create_hosted_checkout(team, currency, amount, purpose, target, redirect_ur
 	}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def get_checkout_status(reference: str) -> dict:

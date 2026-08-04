@@ -16,6 +16,8 @@ time-of-use gap, and `generate_draft_invoices` enqueues one job *per team* — s
 scheduler double-fire or a manual run overlapping the cron double-billed the team.
 """
 
+import time
+
 import frappe
 
 from central.billing.catalog import commitments
@@ -176,7 +178,7 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	return name
 
 
-def generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
+def _generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
 	"""One consolidated invoice per team per period, across every cluster it runs in.
 
 	A team that runs instances in several regions should see a SINGLE monthly
@@ -253,3 +255,26 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	)
 	commitments.mark_breached(commitment)
 	return name
+
+
+_INVOICE_DEADLOCK_RETRIES = 5
+
+
+def generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
+	"""Generate one team's invoice, yielding cleanly when concurrent workers contend.
+
+	The unique period key still decides the winner. A database deadlock is merely the
+	lock manager picking a loser before that key can report the winner, so retry it and
+	return the already-created invoice just like a duplicate-key race.
+	"""
+	for attempt in range(_INVOICE_DEADLOCK_RETRIES):
+		try:
+			return _generate_team_invoice(team, period_start, period_end, subscription)
+		except frappe.QueryDeadlockError:
+			frappe.db.rollback()
+			if attempt == _INVOICE_DEADLOCK_RETRIES - 1:
+				existing = _live_invoice(team, period_start, period_end, for_update=True)
+				if existing:
+					return existing
+				raise
+			time.sleep(0.05 * (attempt + 1))

@@ -2,12 +2,15 @@
 # For license information, please see license.txt
 """Shared helpers for billing tests."""
 
+import time
 from contextlib import contextmanager
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+
+_SWEEP_DEADLOCK_RETRIES = 3
 
 
 @contextmanager
@@ -97,6 +100,18 @@ class BillingTestCase(IntegrationTestCase):
 			self._sweep(before)
 
 	def _sweep(self, before: dict) -> None:
+		for attempt in range(_SWEEP_DEADLOCK_RETRIES):
+			try:
+				self._sweep_once(before)
+				frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist the sweep past a test's own commit
+				return
+			except frappe.QueryDeadlockError:
+				frappe.db.rollback()
+				if attempt == _SWEEP_DEADLOCK_RETRIES - 1:
+					raise
+				time.sleep(0.05 * (attempt + 1))
+
+	def _sweep_once(self, before: dict) -> None:
 		removed_teams: list[str] = []
 		for doctype in self._TRACKED:
 			added = list(set(frappe.get_all(doctype, pluck="name")) - before[doctype])
@@ -109,7 +124,6 @@ class BillingTestCase(IntegrationTestCase):
 			frappe.db.delete(doctype, {"name": ["in", added]})
 		if removed_teams:
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist the sweep past a test's own commit
 
 
 # frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to

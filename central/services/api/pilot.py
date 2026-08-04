@@ -12,6 +12,7 @@ from central.services import provisioning
 # not Central's site mirror — so these serve sites Central never mirrored.
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def enable(site: str, service: str) -> dict:
@@ -30,6 +31,7 @@ def enable(site: str, service: str) -> dict:
 	}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def disable(site: str, service: str) -> dict:
@@ -44,6 +46,7 @@ def disable(site: str, service: str) -> dict:
 	return provisioning.disable_site(managed_service, site)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def get_config(site: str, service: str) -> dict:

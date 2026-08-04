@@ -806,7 +806,7 @@ def team_run_rate(team: str, exclude: str | None = None) -> float:
 	measure headroom as if the config being resized weren't there. One batched query
 	via `team_active_segments` (no per-subscription N+1, review notes #2)."""
 	return frappe.utils.flt(
-		sum(s.locked_rate for s in team_active_segments(team) if s.subscription != exclude)
+		sum(s.locked_rate for s in active_segments({"team": team, "enabled": 1}) if s.subscription != exclude)
 	)
 
 

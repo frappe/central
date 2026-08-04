@@ -16,6 +16,10 @@ by raw SQL. Idempotent: a Region that already exists is left untouched.
 import frappe
 
 _DISPLAY_COLUMNS = ("display_name", "provider", "country_code", "latitude", "longitude")
+_SELECT_LEGACY_ATLAS_COLUMNS = (
+	"SELECT `name`, `display_name`, `provider`, `country_code`, `latitude`, `longitude` "
+	"FROM `tabAtlas Instance`"
+)
 
 
 def execute():
@@ -24,8 +28,7 @@ def execute():
 	if not frappe.db.has_column("Atlas Instance", "latitude"):
 		return
 
-	columns = ", ".join(f"`{c}`" for c in _DISPLAY_COLUMNS)
-	rows = frappe.db.sql(f"SELECT `name`, {columns} FROM `tabAtlas Instance`", as_dict=True)
+	rows = frappe.db.sql(_SELECT_LEGACY_ATLAS_COLUMNS, as_dict=True)
 	for row in rows:
 		if frappe.db.exists("Region", row.name):
 			continue

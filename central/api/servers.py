@@ -290,7 +290,7 @@ def _overview_plan(asset: dict, team: str) -> dict:
 	if segment_rows:
 		segment = segment_rows[0]
 		plan_name = segment.plan or plan_name
-		if segment.change_type and segment.change_type != "Cancelled":
+		if plan_name and segment.change_type and segment.change_type != "Cancelled":
 			if segment.locked_rate is not None:
 				rate = frappe.utils.flt(segment.locked_rate)
 			currency = segment.currency or currency

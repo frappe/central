@@ -56,8 +56,9 @@ def create_notification(
 	).insert(ignore_permissions=True)
 
 	if publish:
-		# Team-namespaced event so a member's socket only hears its own team's nudge.
-		frappe.publish_realtime(f"team_notification:{team}", {"team": team}, after_commit=True)
+		# Fan out only to active team members: an event name is not an access boundary.
+		for user in frappe.get_all("Team Member", filters={"parent": team, "status": "Active"}, pluck="user"):
+			frappe.publish_realtime(f"team_notification:{team}", {"team": team}, user=user, after_commit=True)
 	return doc
 
 
