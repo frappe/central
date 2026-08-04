@@ -44,7 +44,7 @@ export function useSearchIndex() {
 	} = useCapabilities()
 
 	const { open: openServer } = useServers()
-	const { assets, sites } = useServerMapData()
+	const { assets } = useServerMapData()
 	const { members } = useTeamMembers()
 	const { invoices } = useInvoices()
 
@@ -75,19 +75,6 @@ export function useSearchIndex() {
 					description: server.cluster,
 					icon: 'lucide-server',
 					onSelect: canOpenServer.value ? () => openServer(server) : undefined,
-				})),
-			}
-		}
-
-		if (canViewServers.value && sites.value.length) {
-			groups.Sites = {
-				items: sites.value.map((site) => ({
-					name: site.subdomain || site.name,
-					description: site.region ? `on ${site.region}` : undefined,
-					icon: 'lucide-globe',
-					onSelect: site.url
-						? () => window.open(site.url as string, '_blank', 'noopener')
-						: undefined,
 				})),
 			}
 		}
