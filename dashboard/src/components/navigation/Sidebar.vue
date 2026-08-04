@@ -58,7 +58,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 		v-model:collapsed="sidebarCollapsed"
 		:disable-collapse="isMobile"
 		class="border-r"
-		:class="isMobile ? '!w-full !border-r-0' : ''"
+		:class="isMobile ? '!w-full !border-r-0 bg-transparent' : ''"
 	>
 		<SidebarHeader
 			v-if="!isMobile"
@@ -91,6 +91,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 						:icon="item.icon"
 						:to="item.to"
 						class="mb-0.5"
+            :class="item.class"
 						:active="!!item.to && item.to === route.path"
 					>
 						<span class="truncate text-sm">{{ item.label }}</span>

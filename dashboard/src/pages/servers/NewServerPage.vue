@@ -304,12 +304,17 @@ const VERSION_LABELS: Record<string, string> = {
 	v14: 'Version 14 — older, for apps that need it',
 	nightly: 'Nightly — develop branch, for testing only',
 }
+// Versions offered in the picker for now — only v16; others stay hidden until we're
+// ready to provision them. Widen this list to bring them back.
+const OFFERED_VERSIONS = ['v16']
 const version = ref('')
 const versionOptions = computed(() =>
-	(versionsCall.data ?? []).map((v) => ({
-		label: VERSION_LABELS[v] ?? v,
-		value: v,
-	})),
+	(versionsCall.data ?? [])
+		.filter((v) => OFFERED_VERSIONS.includes(v))
+		.map((v) => ({
+			label: VERSION_LABELS[v] ?? v,
+			value: v,
+		})),
 )
 // Keep the selection valid: default to the first option, and reset if the picked
 // region no longer offers the current choice.

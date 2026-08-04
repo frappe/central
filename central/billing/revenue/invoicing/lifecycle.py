@@ -13,6 +13,7 @@ import frappe
 
 from central.billing.revenue import credits
 from central.billing.revenue.invoicing.generate import generate_draft_invoice
+from central.billing.states import transition
 
 DEFAULT_DUE_DAYS = 7
 
@@ -50,7 +51,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	if doc.invoice_type == "Cost Report":
 		doc.credit_applied = 0
 		doc.expected_collection = 0
-		doc.status = "Open"
+		transition(doc, "Open", reason="cost report opened", actor="scheduler")
 		doc.save(ignore_permissions=True)
 		return {"invoice": invoice, "claimed": True, "cost_report": True, "expected_collection": 0}
 
@@ -83,13 +84,14 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:
-		doc.status = "Paid"
 		doc.paid_at = frappe.utils.now_datetime()
+		transition(doc, "Paid", reason="credits covered in full", actor="scheduler",
+				   amount=applied)
 		doc.save(ignore_permissions=True)
 		return {"invoice": invoice, "claimed": True, "credit_applied": applied,
 				"expected_collection": 0, "status": "Paid"}
 
-	doc.status = "Open"
+	transition(doc, "Open", reason="drafted invoice opened for collection", actor="scheduler")
 	doc.save(ignore_permissions=True)
 
 	# Leg 2 — charge the remainder, walking the team's methods primary→backup
@@ -115,7 +117,7 @@ def cancel_invoice(invoice: str, reason: str | None = None) -> str:
 		frappe.throw("A paid invoice cannot be cancelled — issue a refund instead.", frappe.ValidationError)
 	if doc.status == "Cancelled":
 		return invoice
-	doc.status = "Cancelled"
+	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)
 	doc.save(ignore_permissions=True)
 	if reason:
 		doc.add_comment("Info", f"Cancelled: {reason}")

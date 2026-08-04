@@ -42,7 +42,7 @@ async function resetPassword() {
 			<h1 class="text-2xl font-semibold text-ink-gray-9">
 				Reset your password
 			</h1>
-			<p class="mt-1 text-base text-ink-gray-5">
+			<p class="mt-1 text-p-base text-ink-gray-5">
 				We’ll email you a secure link to choose a new password.
 			</p>
 
@@ -76,7 +76,7 @@ async function resetPassword() {
 				<span class="lucide-mail-check size-5" aria-hidden="true" />
 			</div>
 			<h1 class="text-2xl font-semibold text-ink-gray-9">Check your email</h1>
-			<p class="mt-2 text-base text-ink-gray-5">
+			<p class="mt-2 text-p-base text-ink-gray-5">
 				If an account exists for
 				<span class="font-medium text-ink-gray-8">{{ email }}</span>, password
 				reset instructions are on their way.

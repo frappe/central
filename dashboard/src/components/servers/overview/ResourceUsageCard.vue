@@ -53,7 +53,7 @@ const cpuLabel = computed(() => {
 				@action="$emit('expandStorage')"
 			/>
 		</div>
-		<p v-else class="text-sm text-ink-gray-5">
+		<p v-else class="text-p-sm text-ink-gray-5">
 			Live metrics are unavailable for this server right now.
 		</p>
 	</section>
