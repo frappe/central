@@ -12,12 +12,15 @@ import {
 } from 'frappe-ui'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
+import SearchDialog from '@/components/search/SearchDialog.vue'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useAppMenu } from '@/composables/useAppMenu'
+import { openSearch, searchOpen, useSearchShortcut } from '@/composables/useSearch'
 
 useNotificationsRealtime()
+useSearchShortcut()
 
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
@@ -59,7 +62,7 @@ const breadcrumbs = computed(
 					to="/home"
 					:active="route.name === 'Home'"
 				/>
-				<MobileNavItem label="Search" icon="lucide-search" />
+				<MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
 				<MobileNavItem label="Notifications" icon="lucide-bell" to="/notifications"  :active="route.name =='Notifications' "/>
 				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
 			</MobileNav>
@@ -89,4 +92,5 @@ const breadcrumbs = computed(
 
 	<ToastProvider />
 	<ChangeTeamDialog v-model:open="changeTeamOpen" />
+	<SearchDialog v-model:open="searchOpen" />
 </template>

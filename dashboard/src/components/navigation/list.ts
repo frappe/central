@@ -1,14 +1,29 @@
 import { computed } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { openSearch } from '@/composables/useSearch'
 
-export const sidebarSections = computed(() => {
+export interface SidebarItem {
+	label: string
+	icon: string
+	to?: string
+	condition?: boolean
+	class?: string
+	onClick?: () => void
+}
+
+export interface SidebarSection {
+	label?: string
+	items: SidebarItem[]
+}
+
+export const sidebarSections = computed((): SidebarSection[] => {
 	const { canViewServers, canViewBilling, canViewServices, isMember } =
 		useCapabilities()
 
 	return [
 		{
 			items: [
-				{ label: 'Search', icon: 'lucide-search' },
+				{ label: 'Search', icon: 'lucide-search', onClick: openSearch },
 				{
 					label: 'Notifications',
 					icon: 'lucide-bell',
