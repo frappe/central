@@ -30,7 +30,7 @@
 	},
 	"css": {
 		"parser": { "tailwindDirectives": true },
-		"formatter": { "enabled": false },
+		"formatter": { "enabled": true },
 		"linter": null,
 		"assist": null
 	},
