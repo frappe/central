@@ -96,7 +96,8 @@ class TestEligibilityComposed(IntegrationTestCase):
 	def test_run_rate_counts_a_composed_config(self):
 		from central.billing.catalog import subscriptions
 
-		subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		provisioned = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		frappe.db.set_value("Subscription", provisioned["subscription"], "enabled", 1)
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		self.assertEqual(out["current_spend"], 3400)
 		self.assertEqual(out["available"], out["max_spend"] - 3400)

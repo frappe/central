@@ -90,7 +90,8 @@ class TestEligiblePlans(IntegrationTestCase):
 		opening Created segment on the ledger)."""
 		from central.billing.catalog import subscriptions
 
-		subscriptions.create_subscription(TEAM, cluster, plan=plan)
+		subscription = subscriptions.create_subscription(TEAM, cluster, plan=plan)
+		frappe.db.set_value("Subscription", subscription.name, "enabled", 1)
 
 	def test_excludes_non_server_families(self):
 		# An AI Tokens plan is billable but not provisioned via the create-server flow;
