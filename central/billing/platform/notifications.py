@@ -19,13 +19,31 @@ _TEMPLATES = {
 	"Payment Success": ("Payment received", "Payment received for invoice {invoice}."),
 	"Payment Failure": ("Payment failed", "Payment for invoice {invoice} failed: {reason}."),
 	"Payment Retry": ("Payment retry failed", "Payment retry for invoice {invoice} failed: {reason}."),
-	"Invoice Overdue": ("Invoice overdue", "Invoice {invoice} is overdue. Please settle it to avoid suspension."),
-	"Credit Low": ("Credit balance low", "Your credit balance is low (projected use {utilisation}). Top up to avoid interruption."),
+	"Invoice Overdue": (
+		"Invoice overdue",
+		"Invoice {invoice} is overdue. Please settle it to avoid suspension.",
+	),
+	"Credit Low": (
+		"Credit balance low",
+		"Your credit balance is low (projected use {utilisation}). Top up to avoid interruption.",
+	),
 	"Card Expiry": ("Card expired", "Your card {label} has expired. Please add a new payment method."),
-	"Mandate Reauth": ("Mandate re-authorisation needed", "Your UPI Autopay mandate needs re-authorisation for the new limit."),
-	"Action Required": ("Action required — choose how to pay", "Your usage is above the ₹{threshold:,.0f} limit for automatic payments. Your services keep running — please choose to pay each invoice or prepay your wallet."),
-	"Pre-debit Notice": ("Upcoming auto-payment", "We’ll auto-debit {amount} for invoice {invoice} on {charge_on}. No action needed; this is a heads-up before the payment."),
-	"Trial Expiring": ("Trial ending", "Your trial is ending. Add a payment method to keep your resources running."),
+	"Mandate Reauth": (
+		"Mandate re-authorisation needed",
+		"Your UPI Autopay mandate needs re-authorisation for the new limit.",
+	),
+	"Action Required": (
+		"Action required — choose how to pay",
+		"Your usage is above the ₹{threshold:,.0f} limit for automatic payments. Your services keep running — please choose to pay each invoice or prepay your wallet.",
+	),
+	"Pre-debit Notice": (
+		"Upcoming auto-payment",
+		"We’ll auto-debit {amount} for invoice {invoice} on {charge_on}. No action needed; this is a heads-up before the payment.",
+	),
+	"Trial Expiring": (
+		"Trial ending",
+		"Your trial is ending. Add a payment method to keep your resources running.",
+	),
 }
 
 
@@ -77,9 +95,16 @@ def notify(
 	from central import notifications as feed
 
 	feed.create_notification(
-		team, subject, category="Billing", event_type=event_type, severity=severity,
-		message=body, reference_doctype=reference_doctype, reference_name=reference_name,
-		action_label=action_label, action_route=action_route,
+		team,
+		subject,
+		category="Billing",
+		event_type=event_type,
+		severity=severity,
+		message=body,
+		reference_doctype=reference_doctype,
+		reference_name=reference_name,
+		action_label=action_label,
+		action_route=action_route,
 	)
 
 	enabled = _preference_enabled(team, event_type)

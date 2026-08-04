@@ -4,12 +4,11 @@
 covered is normalised by the new adapters. charge/refund/signature parity is
 covered by the shared contract suite (test_stripe_adapter / test_razorpay_adapter)."""
 
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
 from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 # Event types the working press integrations handled.
 STRIPE_EVENTS = ["payment_intent.succeeded", "payment_intent.payment_failed", "charge.refunded"]

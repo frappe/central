@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Dialog } from 'frappe-ui'
+import { computed } from 'vue'
 import type { PaymentMethod } from '@/types/billing'
 
 // Confirm for removing a payment method. Controlled by the card: pass the pending

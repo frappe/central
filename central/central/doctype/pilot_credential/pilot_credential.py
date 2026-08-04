@@ -37,8 +37,14 @@ class PilotCredential(Document):
 		return hashlib.sha256(token.encode()).hexdigest()
 
 	@classmethod
-	def mint(cls, team: str, pilot_credential_id: str, asset: str | None = None,
-		expires_at=None, audience_id: str | None = None) -> str:
+	def mint(
+		cls,
+		team: str,
+		pilot_credential_id: str,
+		asset: str | None = None,
+		expires_at=None,
+		audience_id: str | None = None,
+	) -> str:
 		"""Issue a pilot's credential and return the plaintext token once. Idempotent per
 		pilot_credential_id: re-minting an existing pilot rotates its token in place."""
 		name, pcid = cls._DOCTYPE_NAME, pilot_credential_id
@@ -60,7 +66,11 @@ class PilotCredential(Document):
 		provisioning. Reserving early lets the `vm.*` events bind the Asset link (which
 		billing reads) no matter when the pilot boots and enrols."""
 		name = cls._DOCTYPE_NAME
-		doc = frappe.get_doc(name, pilot_credential_id) if frappe.db.exists(name, pilot_credential_id) else frappe.new_doc(name)
+		doc = (
+			frappe.get_doc(name, pilot_credential_id)
+			if frappe.db.exists(name, pilot_credential_id)
+			else frappe.new_doc(name)
+		)
 		doc.pilot_credential_id = pilot_credential_id
 		doc.team = team
 		doc.audience_id = audience_id
@@ -74,7 +84,11 @@ class PilotCredential(Document):
 		once. Upserts identity fields but deliberately leaves `asset` untouched — the VM
 		events own that link, and enrollment may land after they do."""
 		name = cls._DOCTYPE_NAME
-		doc = frappe.get_doc(name, pilot_credential_id) if frappe.db.exists(name, pilot_credential_id) else frappe.new_doc(name)
+		doc = (
+			frappe.get_doc(name, pilot_credential_id)
+			if frappe.db.exists(name, pilot_credential_id)
+			else frappe.new_doc(name)
+		)
 		doc.pilot_credential_id = pilot_credential_id
 		doc.team = team
 		doc.audience_id = audience_id

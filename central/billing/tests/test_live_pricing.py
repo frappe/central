@@ -10,11 +10,11 @@ required to bill it).
 """
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import metering
 from central.billing.catalog.pricing import set_catalog_rates
 from central.billing.platform.sync import receive_meter_rollups
+from central.billing.revenue import metering
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team, make_metered_plan
 
 TEAM = "team-live"

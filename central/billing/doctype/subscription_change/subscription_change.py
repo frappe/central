@@ -20,7 +20,15 @@ class SubscriptionChange(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		change_type: DF.Literal["Created", "Plan Changed", "Payment Method Changed", "Past Due", "Suspended", "Reactivated", "Cancelled"]
+		change_type: DF.Literal[
+			"Created",
+			"Plan Changed",
+			"Payment Method Changed",
+			"Past Due",
+			"Suspended",
+			"Reactivated",
+			"Cancelled",
+		]
 		changed_by: DF.Data | None
 		currency: DF.Link | None
 		effective_at: DF.Datetime | None

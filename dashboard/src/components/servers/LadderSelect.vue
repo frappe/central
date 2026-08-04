@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Dropdown } from 'frappe-ui'
+import { computed } from 'vue'
 
 // A compact value dropdown over a discrete ladder (vCPU / RAM / Storage), styled as
 // a pill — the precise-picking companion to the slider (#84). Rungs past the

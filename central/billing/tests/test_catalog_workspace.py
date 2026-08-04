@@ -3,9 +3,9 @@
 """Verb-first catalog Desk workspace + the Metered Add-ons report (ADR 0012, #88)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.report.metered_add_ons.metered_add_ons import execute
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import make_metered_plan
 
 

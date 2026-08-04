@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { Tabs } from 'frappe-ui'
+import { ref } from 'vue'
 import MembersPanel from '@/components/team/MembersPanel.vue'
 import RolesPanel from '@/components/team/RolesPanel.vue'
 

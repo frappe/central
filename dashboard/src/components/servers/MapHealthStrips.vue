@@ -6,7 +6,9 @@ defineEmits<{ retry: [] }>()
 </script>
 
 <template>
-	<div class="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4">
+	<div
+		class="pointer-events-none absolute inset-x-0 top-4 flex justify-center px-4"
+	>
 		<p
 			v-if="stale.length"
 			class="pointer-events-auto rounded-md bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-3 shadow-sm"
@@ -18,7 +20,9 @@ defineEmits<{ retry: [] }>()
 			class="pointer-events-auto rounded-md bg-surface-red-1 px-3 py-2 text-p-sm text-ink-red-3 shadow-sm"
 		>
 			{{ error }}
-			<button class="ml-1 font-medium underline" @click="$emit('retry')">Retry</button>
+			<button class="ml-1 font-medium underline" @click="$emit('retry')">
+				Retry
+			</button>
 		</p>
 	</div>
 </template>

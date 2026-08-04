@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { Button, Skeleton } from 'frappe-ui'
-import RoleMatrix from '@/components/team/RoleMatrix.vue'
+import { ref } from 'vue'
 import RoleBuilderDialog from '@/components/team/RoleBuilderDialog.vue'
+import RoleMatrix from '@/components/team/RoleMatrix.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import type { TeamRoleRow } from '@/types/api'

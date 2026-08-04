@@ -6,12 +6,10 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import invoicing, credits
-from central.billing.payments import settlement
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import PaymentResult
+from central.billing.payments import settlement
 from central.billing.payments.settlement import (
 	can_accept_spend,
 	credit_forecast,
@@ -19,7 +17,9 @@ from central.billing.payments.settlement import (
 	ensure_settlement_source,
 	settlement_sources,
 )
+from central.billing.revenue import credits, invoicing
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan, set_team_tier
 
 TEAM = "team-waterfall"
@@ -69,18 +69,22 @@ class SettlementTestBase(IntegrationTestCase):
 		frappe.db.commit()
 
 	def _card(self):
-		return frappe.get_doc(
-			{
-				"doctype": "Payment Method",
-				"team": TEAM,
-				"gateway": GATEWAY,
-				"method_type": "Card",
-				"status": "Active",
-				"gateway_method_id": "pm_card",
-				"gateway_customer_id": "cus_1",
-				"is_default": 1,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"method_type": "Card",
+					"status": "Active",
+					"gateway_method_id": "pm_card",
+					"gateway_customer_id": "cus_1",
+					"is_default": 1,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _subscription(self, with_card=True):
 		method = self._card() if with_card else None
@@ -94,20 +98,24 @@ class SettlementTestBase(IntegrationTestCase):
 		).name
 
 	def _draft(self, subscription, total):
-		return frappe.get_doc(
-			{
-				"doctype": "Invoice",
-				"team": TEAM,
-				"subscription": subscription,
-				"status": "Draft",
-				"period_start": "2026-06-01",
-				"period_end": "2026-06-30",
-				"currency": "INR",
-				"subtotal": total,
-				"total": total,
-				"expected_collection": total,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"subscription": subscription,
+					"status": "Draft",
+					"period_start": "2026-06-01",
+					"period_end": "2026-06-30",
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"expected_collection": total,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 
 class TestWaterfall(SettlementTestBase):
@@ -152,9 +160,7 @@ class TestWaterfall(SettlementTestBase):
 
 		# Declined remainder: invoice stays Open for dunning (#14), not stopped.
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Open")
-		self.assertEqual(
-			frappe.db.get_value("Subscription", sub, "account_standing"), "Current"
-		)
+		self.assertEqual(frappe.db.get_value("Subscription", sub, "account_standing"), "Current")
 		attempt = frappe.get_all("Payment Attempt", {"invoice": inv}, ["status"])[0]
 		self.assertEqual(attempt.status, "Failed")
 

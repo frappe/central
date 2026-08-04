@@ -35,7 +35,9 @@ def enable(site: str, service: str) -> dict:
 def disable(site: str, service: str) -> dict:
 	"""Disable a managed service on one of the bench's sites — revokes the key."""
 	team = frappe.local.pilot_credential.team
-	managed_service = frappe.db.get_value("Managed Service", {"team": team, "add_on_service": service}, "name")
+	managed_service = frappe.db.get_value(
+		"Managed Service", {"team": team, "add_on_service": service}, "name"
+	)
 	if not managed_service:
 		return {"site": site, "status": "not_enabled"}
 
@@ -74,5 +76,7 @@ def _resolve_credential(team: str, service: str, site: str) -> str | None:
 		return None
 
 	return frappe.db.get_value(
-		"Site Service Credential", {"managed_service": managed_service, "site": site, "status": "Active"}, "name"
+		"Site Service Credential",
+		{"managed_service": managed_service, "site": site, "status": "Active"},
+		"name",
 	)

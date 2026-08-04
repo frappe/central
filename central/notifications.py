@@ -57,9 +57,7 @@ def create_notification(
 
 	if publish:
 		# Team-namespaced event so a member's socket only hears its own team's nudge.
-		frappe.publish_realtime(
-			f"team_notification:{team}", {"team": team}, after_commit=True
-		)
+		frappe.publish_realtime(f"team_notification:{team}", {"team": team}, after_commit=True)
 	return doc
 
 

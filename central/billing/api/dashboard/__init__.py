@@ -13,9 +13,6 @@ this package re-exports the public API so every `billing.api.dashboard.*` path
 stays stable.
 """
 
-from central.billing.api.dashboard.catalog import (
-	get_eligible_plans,
-)
 from central.billing.api.dashboard.account import (
 	get_billing_geo,
 	get_billing_profile,
@@ -35,7 +32,11 @@ from central.billing.api.dashboard.account import (
 	set_collection_mode,
 	whoami,
 )
+from central.billing.api.dashboard.catalog import (
+	get_eligible_plans,
+)
 from central.billing.api.dashboard.invoices import (
+	confirm_invoice_checkout,
 	confirm_topup,
 	create_topup_order,
 	credit_ledger,
@@ -44,12 +45,11 @@ from central.billing.api.dashboard.invoices import (
 	get_invoice,
 	list_invoices,
 	list_payment_attempts,
-	confirm_invoice_checkout,
 	list_subscriptions,
 	pause_subscription,
-	resume_subscription,
 	pay_invoice,
 	pay_invoice_checkout,
+	resume_subscription,
 )
 from central.billing.api.dashboard.methods import (
 	add_demo_card,
@@ -69,20 +69,48 @@ from central.billing.api.dashboard.services import (
 )
 
 __all__ = [
-	"whoami", "get_billing_profile", "get_billing_geo", "save_billing_profile", "get_billing_settings",
-	"save_billing_settings", "get_team_overview", "get_trust_tier",
-	"get_collection_status", "set_collection_mode",
+	"whoami",
+	"get_billing_profile",
+	"get_billing_geo",
+	"save_billing_profile",
+	"get_billing_settings",
+	"save_billing_settings",
+	"get_team_overview",
+	"get_trust_tier",
+	"get_collection_status",
+	"set_collection_mode",
 	"list_switchable_teams",
-	"list_notifications", "notification_badge", "mark_notification_read",
+	"list_notifications",
+	"notification_badge",
+	"mark_notification_read",
 	"mark_all_notifications_read",
-	"get_notification_preferences", "save_notification_preferences",
+	"get_notification_preferences",
+	"save_notification_preferences",
 	"get_eligible_plans",
-	"get_forecast", "list_subscriptions", "pause_subscription", "resume_subscription",
-	"list_invoices", "get_invoice", "list_payment_attempts",
-	"get_credit_balance", "credit_ledger", "pay_invoice", "create_topup_order",
-	"confirm_topup", "pay_invoice_checkout", "confirm_invoice_checkout",
-	"list_payment_methods", "get_payment_method_options", "initiate_card_setup", "confirm_card",
-	"add_demo_card", "setup_payment_method_order", "confirm_payment_method_order",
-	"remove_payment_method", "set_default_payment_method", "reorder_payment_methods",
-	"get_metered_services", "subscribe_metered_service",
+	"get_forecast",
+	"list_subscriptions",
+	"pause_subscription",
+	"resume_subscription",
+	"list_invoices",
+	"get_invoice",
+	"list_payment_attempts",
+	"get_credit_balance",
+	"credit_ledger",
+	"pay_invoice",
+	"create_topup_order",
+	"confirm_topup",
+	"pay_invoice_checkout",
+	"confirm_invoice_checkout",
+	"list_payment_methods",
+	"get_payment_method_options",
+	"initiate_card_setup",
+	"confirm_card",
+	"add_demo_card",
+	"setup_payment_method_order",
+	"confirm_payment_method_order",
+	"remove_payment_method",
+	"set_default_payment_method",
+	"reorder_payment_methods",
+	"get_metered_services",
+	"subscribe_metered_service",
 ]

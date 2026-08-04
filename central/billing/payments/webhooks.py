@@ -47,9 +47,7 @@ def process_webhook(adapter_key: str, payload: bytes, headers: dict) -> dict:
 
 
 def _resolve_gateway(adapter_key: str):
-	name = frappe.db.get_value(
-		"Payment Gateway", {"adapter_key": adapter_key, "is_enabled": 1}, "name"
-	)
+	name = frappe.db.get_value("Payment Gateway", {"adapter_key": adapter_key, "is_enabled": 1}, "name")
 	if not name:
 		frappe.throw(f"No enabled Payment Gateway for adapter '{adapter_key}'")
 	return frappe.get_doc("Payment Gateway", name)

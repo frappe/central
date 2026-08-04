@@ -33,6 +33,4 @@ def execute() -> None:
 			.run(pluck=True)
 		)
 		if orphans:
-			frappe.throw(
-				f"{doctype} has {len(orphans)} team value(s) linking to no Team: {orphans}"
-			)
+			frappe.throw(f"{doctype} has {len(orphans)} team value(s) linking to no Team: {orphans}")

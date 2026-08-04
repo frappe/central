@@ -6,14 +6,14 @@ trend chart, spend breakdowns, payment success rates, aging, and trial subsidy.
 
 import frappe
 
-from central.billing.authz import require_operator
 from central.billing.api.admin._shared import (
-	AGING_BUCKETS,
 	_FX_TO_INR,
 	_MONTHS,
+	AGING_BUCKETS,
 	_period_filter,
 	_to_inr,
 )
+from central.billing.authz import require_operator
 
 
 @frappe.whitelist()
@@ -29,7 +29,8 @@ def get_summary(from_date: str | None = None, to_date: str | None = None) -> dic
 	collected = sum(_to_inr(i.amount_paid, i.currency) for i in invoices)
 	outstanding = sum(
 		_to_inr(i.total, i.currency) - _to_inr(i.amount_paid, i.currency)
-		for i in invoices if i.status in ("Open", "Overdue")
+		for i in invoices
+		if i.status in ("Open", "Overdue")
 	)
 	by_status = {}
 	for i in invoices:
@@ -68,12 +69,14 @@ def get_revenue_trend(months: int = 12) -> list[dict]:
 	rows = []
 	for key in sorted(buckets)[-months:]:
 		y, m = key.split("-")
-		rows.append({
-			"month": key,
-			"label": f"{_MONTHS[int(m) - 1]} {y[2:]}",
-			"billed": frappe.utils.flt(buckets[key]["billed"], 2),
-			"collected": frappe.utils.flt(buckets[key]["collected"], 2),
-		})
+		rows.append(
+			{
+				"month": key,
+				"label": f"{_MONTHS[int(m) - 1]} {y[2:]}",
+				"billed": frappe.utils.flt(buckets[key]["billed"], 2),
+				"collected": frappe.utils.flt(buckets[key]["collected"], 2),
+			}
+		)
 	return rows
 
 
@@ -128,7 +131,9 @@ def get_payment_analytics(from_date: str | None = None, to_date: str | None = No
 		if a.status == "Captured":
 			g["captured"] += 1
 		elif a.status == "Failed":
-			failure_reasons[a.failure_code or "unknown"] = failure_reasons.get(a.failure_code or "unknown", 0) + 1
+			failure_reasons[a.failure_code or "unknown"] = (
+				failure_reasons.get(a.failure_code or "unknown", 0) + 1
+			)
 	for g in by_gateway.values():
 		g["success_rate"] = round(g["captured"] / g["total"], 3) if g["total"] else 0
 	return {"by_gateway": by_gateway, "failure_reasons": failure_reasons}
@@ -172,10 +177,13 @@ def get_free_trial_costs(from_date: str | None = None, to_date: str | None = Non
 	by_cluster, by_plan = {}, {}
 	if invoices:
 		for li in frappe.get_all(
-			"Invoice Line Item", filters={"parent": ["in", [i.name for i in invoices]]},
+			"Invoice Line Item",
+			filters={"parent": ["in", [i.name for i in invoices]]},
 			fields=["cluster", "plan", "amount"],
 		):
-			by_cluster[li.cluster or "global"] = by_cluster.get(li.cluster or "global", 0) + frappe.utils.flt(li.amount)
+			by_cluster[li.cluster or "global"] = by_cluster.get(li.cluster or "global", 0) + frappe.utils.flt(
+				li.amount
+			)
 			if li.plan:
 				by_plan[li.plan] = by_plan.get(li.plan, 0) + frappe.utils.flt(li.amount)
 	return {
@@ -204,10 +212,21 @@ def list_all_invoices(status: str = None, team: str = None, limit: int = 500) ->
 	elif status:
 		filters["status"] = status.title()
 	rows = frappe.get_all(
-		"Invoice", filters=filters,
-		fields=["name", "team", "status", "total", "amount_paid", "currency",
-				"period_start", "period_end", "due_date"],
-		order_by="period_start desc, team asc", limit=limit,
+		"Invoice",
+		filters=filters,
+		fields=[
+			"name",
+			"team",
+			"status",
+			"total",
+			"amount_paid",
+			"currency",
+			"period_start",
+			"period_end",
+			"due_date",
+		],
+		order_by="period_start desc, team asc",
+		limit=limit,
 	)
 	for r in rows:
 		r["outstanding"] = frappe.utils.flt(frappe.utils.flt(r.total) - frappe.utils.flt(r.amount_paid), 2)

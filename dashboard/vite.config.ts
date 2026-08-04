@@ -1,7 +1,7 @@
-import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import frappeui from 'frappe-ui/vite'
 import path from 'path'
+import { defineConfig } from 'vite'
 
 // Primary Central frontend.
 export default defineConfig({

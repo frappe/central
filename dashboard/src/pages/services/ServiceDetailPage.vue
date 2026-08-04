@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { Button, Spinner, Tabs } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Button, Spinner, Tabs } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
-import OverviewPanel from '@/components/services/OverviewPanel.vue'
 import ApiKeysPanel from '@/components/services/ApiKeysPanel.vue'
+import OverviewPanel from '@/components/services/OverviewPanel.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
@@ -18,10 +18,13 @@ const router = useRouter()
 const serviceKey = computed(() => String(route.params.service))
 
 const { canManageServices, canManageBilling } = useCapabilities()
-const { offers, offersLoading, instance, loadInstance, activate } = useServices()
+const { offers, offersLoading, instance, loadInstance, activate } =
+	useServices()
 const { setBreadcrumbs } = useBreadcrumbs()
 
-const offer = computed(() => offers.value.find((o) => o.name === serviceKey.value) ?? null)
+const offer = computed(
+	() => offers.value.find((o) => o.name === serviceKey.value) ?? null,
+)
 const managedService = computed(() => offer.value?.managed_service ?? null)
 const title = computed(() => offer.value?.title ?? 'Service')
 watch(title, (value) => setBreadcrumbs([{ label: value }]), { immediate: true })
@@ -76,10 +79,16 @@ async function activateService(): Promise<void> {
 		</Tabs>
 
 		<template v-else>
-			<div v-if="offersLoading && !offer" class="flex flex-1 justify-center py-16">
+			<div
+				v-if="offersLoading && !offer"
+				class="flex flex-1 justify-center py-16"
+			>
 				<Spinner class="size-5 text-ink-gray-5" />
 			</div>
-			<div v-else-if="!offer" class="flex flex-1 items-center justify-center p-8">
+			<div
+				v-else-if="!offer"
+				class="flex flex-1 items-center justify-center p-8"
+			>
 				<EmptyState
 					icon="lucide-box"
 					title="Service not found"
@@ -110,7 +119,7 @@ async function activateService(): Promise<void> {
 <style scoped>
 /* frappe-ui's TabsContent doesn't grow; stretch the active panel so the list
    fills the page and its pagination footer pins to the bottom. */
-:deep([role='tabpanel'][data-state='active']) {
+:deep([role="tabpanel"][data-state="active"]) {
 	flex: 1;
 	min-height: 0;
 }

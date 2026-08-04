@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, watch } from 'vue'
 import { Button } from 'frappe-ui'
+import { onBeforeUnmount, watch } from 'vue'
 
 // Shared detail slide-over. It is NOT a docked column — it overlays from the right
 // and is only present while `open` (a row is selected). Pages own the body via the

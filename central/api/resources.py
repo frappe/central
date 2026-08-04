@@ -47,7 +47,14 @@ def list_resources(team: str | None = None, kind: str | None = None) -> dict:
 	# Servers carry a cluster, not a region — resolve every cluster's region in one query.
 	clusters = {row.cluster for row in servers if row.cluster}
 	region_by_cluster = (
-		dict(frappe.get_all("Atlas Instance", filters={"name": ["in", list(clusters)]}, fields=["name", "region"], as_list=True))
+		dict(
+			frappe.get_all(
+				"Atlas Instance",
+				filters={"name": ["in", list(clusters)]},
+				fields=["name", "region"],
+				as_list=True,
+			)
+		)
 		if clusters
 		else {}
 	)
@@ -63,7 +70,14 @@ def list_resources(team: str | None = None, kind: str | None = None) -> dict:
 		}
 		for a in servers
 	] + [
-		{"kind": "site", "name": s.name, "label": s.subdomain or s.name, "status": s.status, "region": s.region, "detail": s.url}
+		{
+			"kind": "site",
+			"name": s.name,
+			"label": s.subdomain or s.name,
+			"status": s.status,
+			"region": s.region,
+			"detail": s.url,
+		}
 		for s in sites
 	]
 

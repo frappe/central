@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Dialog } from 'frappe-ui'
+import { computed } from 'vue'
 import type { SubscriptionRow } from '@/types/billing'
 
 // Confirm for pausing a subscription — pausing stops the server. Controlled by the

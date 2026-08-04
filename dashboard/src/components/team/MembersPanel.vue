@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
 import { Badge, Button } from 'frappe-ui'
-import RightSidebar from '@/components/common/RightSidebar.vue'
+import { computed, h, ref } from 'vue'
 import {
-	ListView,
 	createListViewQuery,
+	ListView,
 	type ListViewColumn,
 	type ListViewFilter,
 } from '@/components/common/list-view'
+import RightSidebar from '@/components/common/RightSidebar.vue'
 import CapabilityList from '@/components/team/CapabilityList.vue'
 import InviteMemberDialog from '@/components/team/InviteMemberDialog.vue'
 import TeamMemberRowActions from '@/components/team/TeamMemberRowActions.vue'

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, watch, onErrorCaptured } from 'vue'
-import { useRoute } from 'vue-router'
 import { Button } from 'frappe-ui'
+import { onErrorCaptured, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 // App-wide safety net: catches an unexpected render/lifecycle error anywhere
 // below it and shows a recoverable fallback instead of a white screen. Routine

@@ -11,10 +11,11 @@ class PlanCategory(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
+		from frappe.types import DF
+
 		from central.billing.doctype.plan_category_resource_type.plan_category_resource_type import (
 			PlanCategoryResourceType,
 		)
-		from frappe.types import DF
 
 		allowed_resource_types: DF.Table[PlanCategoryResourceType]
 		billing_interval: DF.Literal["", "Hourly", "Daily", "Monthly"]

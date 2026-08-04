@@ -1,21 +1,21 @@
 <script setup lang="ts" generic="TData extends object">
-import { computed, h, ref } from 'vue'
-import { Button, Checkbox, Combobox, TextInput, Skeleton } from 'frappe-ui'
 import {
+	type ColumnDef,
+	type ColumnFiltersState,
 	FlexRender,
 	getCoreRowModel,
 	getFilteredRowModel,
 	getPaginationRowModel,
 	getSortedRowModel,
-	useVueTable,
-	type ColumnDef,
-	type ColumnFiltersState,
 	type PaginationState,
 	type Row,
 	type RowSelectionState,
 	type SortingState,
 	type Updater,
+	useVueTable,
 } from '@tanstack/vue-table'
+import { Button, Checkbox, Combobox, Skeleton, TextInput } from 'frappe-ui'
+import { computed, h, ref } from 'vue'
 import Alert from '@/components/common/Alert.vue'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'

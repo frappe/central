@@ -5,13 +5,12 @@
 import threading
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_team
 
 from central.billing.platform.constraints import existing_constraints
 from central.billing.revenue import credits
 from central.billing.revenue.credits import InsufficientCredits
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_team
 
 TEAM = "team-wallet"
 
@@ -74,9 +73,7 @@ class TestLedgerBasics(CreditTestBase):
 		credits.apply_credit(TEAM, 120, reference_type="Invoice", reference_name="INV-1")
 		credits.purchase(TEAM, 30)
 
-		entries = frappe.get_all(
-			"Credit Ledger Entry", {"team": TEAM}, ["entry_type", "amount"]
-		)
+		entries = frappe.get_all("Credit Ledger Entry", {"team": TEAM}, ["entry_type", "amount"])
 		signed = sum((e.amount if e.entry_type == "Credit" else -e.amount) for e in entries)
 		self.assertEqual(signed, 410)
 		# Balance read equals the ledger sum — it is never a stored scalar.

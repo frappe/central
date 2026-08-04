@@ -21,8 +21,15 @@ def get_gateways() -> list[dict]:
 	authz.require_operator()
 	gateways = frappe.get_all(
 		"Payment Gateway",
-		fields=["name", "title", "adapter_key", "is_enabled", "supports_mandates",
-				"credentials_validated_at", "webhook_endpoint_id"],
+		fields=[
+			"name",
+			"title",
+			"adapter_key",
+			"is_enabled",
+			"supports_mandates",
+			"credentials_validated_at",
+			"webhook_endpoint_id",
+		],
 		order_by="creation asc",
 	)
 	for gw in gateways:
@@ -56,17 +63,21 @@ def get_effective_routing() -> list[dict]:
 	routing = []
 	for currency in currencies:
 		default_rows = [
-			r for r in all_rows
-			if r.currency == currency and r.is_default
+			r
+			for r in all_rows
+			if r.currency == currency
+			and r.is_default
 			and frappe.db.get_value("Payment Gateway", r.parent, "is_enabled")
 		]
 		gateway = default_rows[0].parent if default_rows else None
 		adapter_key = frappe.db.get_value("Payment Gateway", gateway, "adapter_key") if gateway else None
-		routing.append({
-			"currency": currency,
-			"gateway": gateway,
-			"adapter_key": adapter_key,
-		})
+		routing.append(
+			{
+				"currency": currency,
+				"gateway": gateway,
+				"adapter_key": adapter_key,
+			}
+		)
 	return routing
 
 

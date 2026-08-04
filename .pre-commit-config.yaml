@@ -24,9 +24,6 @@ repos:
         name: "Run ruff import sorter"
         args: ["--select=I", "--fix"]
 
-      - id: ruff
-        name: "Run ruff linter"
-
       - id: ruff-format
         name: "Run ruff formatter"
 

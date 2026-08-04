@@ -16,8 +16,8 @@ the seed/teardown surface can never be reached off a test bench.
 import frappe
 from frappe.utils.password import update_password
 
-from central.iam import get_user_team_names
 from central.billing.tests.utils import complete_billing_profile, make_user
+from central.iam import get_user_team_names
 
 # Shared login secret for every seeded user — the spec gets it back from seed() and
 # logs in with it. Not a real credential; only valid on an allow_tests bench.
@@ -71,7 +71,13 @@ def seed(scenario: str = "profile_pending", currency: str = "INR") -> dict:
 		_seed_invoices(team, currency)
 
 	frappe.db.commit()
-	return {"team": team, "email": member, "password": E2E_PASSWORD, "currency": currency, "scenario": scenario}
+	return {
+		"team": team,
+		"email": member,
+		"password": E2E_PASSWORD,
+		"currency": currency,
+		"scenario": scenario,
+	}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -86,10 +92,19 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 	if team and frappe.db.exists("Team", team):
 		owner = frappe.db.get_value("Team", team, "owner_user")
 		for dt in (
-			"Refund", "Invoice", "Payment Attempt", "Subscription", "Payment Method",
-			"Credit Ledger Entry", "Credit Wallet", "Gateway Customer",
-			"Usage Rollup", "Billing Notification Log",
-			"Notification Preference", "Billing Profile", "Tax Profile",
+			"Refund",
+			"Invoice",
+			"Payment Attempt",
+			"Subscription",
+			"Payment Method",
+			"Credit Ledger Entry",
+			"Credit Wallet",
+			"Gateway Customer",
+			"Usage Rollup",
+			"Billing Notification Log",
+			"Notification Preference",
+			"Billing Profile",
+			"Tax Profile",
 		):
 			_safe(frappe.db.delete, dt, {"team": team})
 		_safe(frappe.delete_doc, "Team", team, force=True, ignore_permissions=True)
@@ -125,22 +140,24 @@ def finish_razorpay_topup(team: str, gateway: str, order_id: str, amount: float)
 	adapter = get_adapter(frappe.get_doc("Payment Gateway", gateway))
 	secret = adapter.get_credential("api_secret")
 	payment_id = f"pay_e2e{frappe.generate_hash(length=14)}"
-	signature = hmac.new(
-		secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256
-	).hexdigest()
+	signature = hmac.new(secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256).hexdigest()
 
 	# confirm_topup now reads the captured amount back from the gateway (the
 	# callback signature doesn't bind the amount) — but our payment id is synthetic,
 	# so Razorpay has nothing to fetch. Stub just that read; everything else is real.
 	from unittest.mock import patch
+
 	from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 
-	captured = {"status": "captured", "amount": int(round(frappe.utils.flt(amount) * 100)),
-				"currency": "INR"}
+	captured = {"status": "captured", "amount": int(round(frappe.utils.flt(amount) * 100)), "currency": "INR"}
 	with patch.object(RazorpayAdapter, "get_payment", return_value=captured):
 		return confirm_topup(
-			team=team, amount=amount, gateway=gateway,
-			razorpay_order_id=order_id, razorpay_payment_id=payment_id, razorpay_signature=signature,
+			team=team,
+			amount=amount,
+			gateway=gateway,
+			razorpay_order_id=order_id,
+			razorpay_payment_id=payment_id,
+			razorpay_signature=signature,
 		)
 
 
@@ -186,20 +203,33 @@ def save_test_card(team: str, token: str = "tok_visa") -> dict:
 	stripe.PaymentMethod.attach(pm.id, customer=customer_id)
 
 	declined = token != "tok_visa"
-	name = frappe.get_doc({
-		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
-		"status": "Active", "display_label": "Visa ····0341" if declined else "Visa ····4242",
-		"is_default": 1, "gateway_method_id": pm.id, "gateway_customer_id": customer_id,
-		"expiry_month": 12, "expiry_year": 2034, "validated_at": frappe.utils.now_datetime(),
-	}).insert(ignore_permissions=True).name
+	name = (
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": team,
+				"gateway": gateway,
+				"method_type": "Card",
+				"status": "Active",
+				"display_label": "Visa ····0341" if declined else "Visa ····4242",
+				"is_default": 1,
+				"gateway_method_id": pm.id,
+				"gateway_customer_id": customer_id,
+				"expiry_month": 12,
+				"expiry_year": 2034,
+				"validated_at": frappe.utils.now_datetime(),
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 	densify_priorities(team)
 	frappe.db.commit()
 	return {"payment_method": name, "gateway": gateway, "gateway_method_id": pm.id}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def make_invoice(team: str, total: float = 1180, currency: str | None = None,
-				 link_card: int = 0) -> dict:
+def make_invoice(team: str, total: float = 1180, currency: str | None = None, link_card: int = 0) -> dict:
 	"""Create a Draft Billable invoice (subtotal + tax = total) the waterfall can
 	open and collect. Returns its name.
 
@@ -218,20 +248,44 @@ def make_invoice(team: str, total: float = 1180, currency: str | None = None,
 			"Payment Method", {"team": team, "status": "Active"}, ["name", "gateway"], as_dict=True
 		)
 		if card:
-			subscription = frappe.get_doc({
-				"doctype": "Subscription", "team": team, "status": "Active",
-				"account_standing": "Current",
-				"default_payment_method": card.name, "gateway": card.gateway,
-			}).insert(ignore_permissions=True).name
+			subscription = (
+				frappe.get_doc(
+					{
+						"doctype": "Subscription",
+						"team": team,
+						"status": "Active",
+						"account_standing": "Current",
+						"default_payment_method": card.name,
+						"gateway": card.gateway,
+					}
+				)
+				.insert(ignore_permissions=True)
+				.name
+			)
 
-	name = frappe.get_doc({
-		"doctype": "Invoice", "team": team, "invoice_type": "Billable", "status": "Draft",
-		"subscription": subscription,
-		"period_start": "2026-06-01", "period_end": "2026-06-30", "currency": currency,
-		"subtotal": subtotal, "output_tax_type": "GST" if currency == "INR" else "VAT",
-		"output_tax_amount": tax, "total": total, "tds_amount": 0, "expected_collection": total,
-		"items": [{"resource_type": "bundle", "rate": subtotal, "days": 30, "amount": subtotal}],
-	}).insert(ignore_permissions=True).name
+	name = (
+		frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": team,
+				"invoice_type": "Billable",
+				"status": "Draft",
+				"subscription": subscription,
+				"period_start": "2026-06-01",
+				"period_end": "2026-06-30",
+				"currency": currency,
+				"subtotal": subtotal,
+				"output_tax_type": "GST" if currency == "INR" else "VAT",
+				"output_tax_amount": tax,
+				"total": total,
+				"tds_amount": 0,
+				"expected_collection": total,
+				"items": [{"resource_type": "bundle", "rate": subtotal, "days": 30, "amount": subtotal}],
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 	frappe.db.commit()
 	return {"invoice": name, "total": total, "currency": currency, "subscription": subscription}
 
@@ -247,9 +301,7 @@ def settle(team: str, invoice: str, collect: int = 1) -> dict:
 	from central.billing.revenue.invoicing.lifecycle import open_and_collect
 
 	result = open_and_collect(invoice, collect=bool(int(collect)))
-	attempt = frappe.db.get_value(
-		"Payment Attempt", {"invoice": invoice, "status": "Captured"}, "name"
-	)
+	attempt = frappe.db.get_value("Payment Attempt", {"invoice": invoice, "status": "Captured"}, "name")
 	frappe.db.commit()
 	return {**result, "attempt": attempt}
 
@@ -270,18 +322,28 @@ def deliver_webhook(attempt: str) -> dict:
 	adapter_key = frappe.db.get_value("Payment Gateway", att.gateway, "adapter_key")
 	if adapter_key == "Stripe":
 		event_type = "payment_intent.succeeded"
-		payload = {"id": f"evt_e2e{frappe.generate_hash(10)}", "type": event_type,
-				   "data": {"object": {"id": att.gateway_transaction_id}}}
+		payload = {
+			"id": f"evt_e2e{frappe.generate_hash(10)}",
+			"type": event_type,
+			"data": {"object": {"id": att.gateway_transaction_id}},
+		}
 	else:
 		event_type = "payment.captured"
-		payload = {"event": event_type,
-				   "payload": {"payment": {"entity": {"id": att.gateway_transaction_id}}}}
+		payload = {
+			"event": event_type,
+			"payload": {"payment": {"entity": {"id": att.gateway_transaction_id}}},
+		}
 
-	event = frappe.get_doc({
-		"doctype": "Webhook Event", "gateway": att.gateway, "event_type": event_type,
-		"gateway_event_id": payload.get("id") or frappe.generate_hash(12),
-		"status": "Received", "raw_payload": frappe.as_json(payload),
-	}).insert(ignore_permissions=True)
+	event = frappe.get_doc(
+		{
+			"doctype": "Webhook Event",
+			"gateway": att.gateway,
+			"event_type": event_type,
+			"gateway_event_id": payload.get("id") or frappe.generate_hash(12),
+			"status": "Received",
+			"raw_payload": frappe.as_json(payload),
+		}
+	).insert(ignore_permissions=True)
 	result = charges.apply_webhook(event.name)
 	frappe.db.commit()
 	return result
@@ -297,12 +359,18 @@ def refund(payment_attempt: str, amount: float | None = None, destination: str =
 	from central.billing.payments import refunds
 
 	doc = refunds.issue_refund(
-		payment_attempt, amount=frappe.utils.flt(amount) if amount else None,
-		destination=destination, reason=None,  # wallet note defaults to "Overcharge refund for …"
+		payment_attempt,
+		amount=frappe.utils.flt(amount) if amount else None,
+		destination=destination,
+		reason=None,  # wallet note defaults to "Overcharge refund for …"
 	)
 	frappe.db.commit()
-	return {"refund": doc.name, "status": doc.status, "destination": destination,
-			"amount": frappe.utils.flt(doc.amount)}
+	return {
+		"refund": doc.name,
+		"status": doc.status,
+		"destination": destination,
+		"amount": frappe.utils.flt(doc.amount),
+	}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
@@ -322,8 +390,9 @@ def dun(invoice: str, days: int = 7) -> dict:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def generate_invoice(team: str, monthly_rate: float = 3000,
-					 period_start: str = "2026-06-01", period_end: str = "2026-06-30") -> dict:
+def generate_invoice(
+	team: str, monthly_rate: float = 3000, period_start: str = "2026-06-01", period_end: str = "2026-06-30"
+) -> dict:
 	"""Generate an invoice through the **real agentless pipeline** (no fabrication):
 	provision a subscription (which writes the price-lock at the catalog rate, ADR
 	0006) → `generate_draft_invoice` computes line items from that lock over the
@@ -341,9 +410,14 @@ def generate_invoice(team: str, monthly_rate: float = 3000,
 	invoice = invoicing.generate_draft_invoice(prov["subscription"], period_start, period_end)
 	doc = frappe.get_doc("Invoice", invoice)
 	frappe.db.commit()
-	return {"invoice": invoice, "subscription": prov["subscription"],
-			"resource_id": prov["resource_id"], "subtotal": doc.subtotal,
-			"total": doc.total, "currency": doc.currency}
+	return {
+		"invoice": invoice,
+		"subscription": prov["subscription"],
+		"resource_id": prov["resource_id"],
+		"subtotal": doc.subtotal,
+		"total": doc.total,
+		"currency": doc.currency,
+	}
 
 
 # --- INR rails (e-mandate + UPI Autopay mandate) -----------------------------
@@ -361,10 +435,16 @@ def set_trust_tier(team: str, max_spend: float = 50000) -> dict:
 		frappe.get_doc({"doctype": "Billing Profile", "team": team, "currency": "INR"}).insert(
 			ignore_permissions=True
 		)
-	frappe.db.set_value("Billing Profile", team, {
-		"trust_tier_level": "t1", "trust_tier": "t1", "manual_override": 1,
-		"override_max_spend": frappe.utils.flt(max_spend),
-	})
+	frappe.db.set_value(
+		"Billing Profile",
+		team,
+		{
+			"trust_tier_level": "t1",
+			"trust_tier": "t1",
+			"manual_override": 1,
+			"override_max_spend": frappe.utils.flt(max_spend),
+		},
+	)
 	frappe.db.commit()
 	return {"team": team, "max_spend": frappe.utils.flt(max_spend)}
 
@@ -413,17 +493,23 @@ def finish_mandate(payment_method: str, order_id: str) -> dict:
 	adapter = get_adapter(frappe.get_doc("Payment Gateway", method.gateway))
 	secret = adapter.get_credential("api_secret")
 	payment_id = f"pay_e2e{frappe.generate_hash(length=14)}"
-	signature = hmac.new(
-		secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256
-	).hexdigest()
+	signature = hmac.new(secret.encode(), f"{order_id}|{payment_id}".encode(), hashlib.sha256).hexdigest()
 
-	confirmed = mandates.confirm_mandate(payment_method, {
-		"razorpay_order_id": order_id, "razorpay_payment_id": payment_id,
-		"razorpay_signature": signature, "razorpay_token_id": f"token_e2e{frappe.generate_hash(12)}",
-	})
+	confirmed = mandates.confirm_mandate(
+		payment_method,
+		{
+			"razorpay_order_id": order_id,
+			"razorpay_payment_id": payment_id,
+			"razorpay_signature": signature,
+			"razorpay_token_id": f"token_e2e{frappe.generate_hash(12)}",
+		},
+	)
 	frappe.db.commit()
-	return {"payment_method": confirmed.name, "status": confirmed.status,
-			"mandate_max_amount": confirmed.mandate_max_amount}
+	return {
+		"payment_method": confirmed.name,
+		"status": confirmed.status,
+		"mandate_max_amount": confirmed.mandate_max_amount,
+	}
 
 
 # --- scenario builders -------------------------------------------------------
@@ -437,13 +523,23 @@ def _seed_invoices(team: str, currency: str) -> None:
 		("Paid", ("2026-05-01", "2026-05-31"), True),
 		("Open", ("2026-06-01", "2026-06-30"), False),
 	):
-		frappe.get_doc({
-			"doctype": "Invoice", "team": team, "invoice_type": "Billable", "status": status,
-			"period_start": period[0], "period_end": period[1], "currency": currency,
-			"subtotal": 1000, "output_tax_type": tax_type, "output_tax_amount": 180, "total": 1180,
-			"amount_paid": 1180 if paid else 0,
-			"items": [{"resource_type": "bundle", "rate": 1000, "days": 30, "amount": 1000}],
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": team,
+				"invoice_type": "Billable",
+				"status": status,
+				"period_start": period[0],
+				"period_end": period[1],
+				"currency": currency,
+				"subtotal": 1000,
+				"output_tax_type": tax_type,
+				"output_tax_amount": 180,
+				"total": 1180,
+				"amount_paid": 1180 if paid else 0,
+				"items": [{"resource_type": "bundle", "rate": 1000, "days": 30, "amount": 1000}],
+			}
+		).insert(ignore_permissions=True)
 
 
 # --- helpers -----------------------------------------------------------------

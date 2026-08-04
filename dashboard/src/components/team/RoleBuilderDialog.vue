@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Checkbox, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { Dialog, FormControl, Checkbox } from 'frappe-ui'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { groupCapabilitiesByPlane } from '@/lib/capabilities'
 

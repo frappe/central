@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
 import { Button, ErrorMessage, TextInput } from 'frappe-ui'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import AuthShell from '@/components/auth/AuthShell.vue'
 import { API } from '@/api/methods'
+import AuthShell from '@/components/auth/AuthShell.vue'
 import {
 	frappeErrorMessage,
 	getFrappe,

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { Popover } from 'frappe-ui'
-import { useNotifications } from '@/composables/useNotifications'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import NotificationItem from '@/components/notifications/NotificationItem.vue'
+import { useNotifications } from '@/composables/useNotifications'
 import type { TeamNotification } from '@/types/billing'
 
 // Topbar bell: an unread badge + a dropdown of the most recent items with inline

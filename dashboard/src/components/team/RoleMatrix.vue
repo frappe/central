@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Badge } from 'frappe-ui'
+import { computed } from 'vue'
 import RoleRowActions from '@/components/team/RoleRowActions.vue'
 import { groupCapabilitiesByPlane } from '@/lib/capabilities'
 import type { CapabilityInfo, TeamRoleRow } from '@/types/api'

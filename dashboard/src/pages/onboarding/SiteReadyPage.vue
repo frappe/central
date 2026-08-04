@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import AuthShell from '@/components/auth/AuthShell.vue'
 import { API } from '@/api/methods'
+import AuthShell from '@/components/auth/AuthShell.vue'
 import { frappeErrorMessage, getFrappe, methodUrl } from '@/lib/auth'
 
 type SiteState = {
@@ -66,7 +66,8 @@ onUnmounted(() => clearTimeout(timer))
 			<h1 class="text-2xl font-semibold text-ink-gray-9">Your site is ready</h1>
 			<p class="mt-2 text-p-base text-ink-gray-5">
 				Signing you in to
-				<span class="font-medium text-ink-gray-8">{{ site.url }}</span> as
+				<span class="font-medium text-ink-gray-8">{{ site.url }}</span>
+				as
 				<span class="font-medium text-ink-gray-8">Administrator</span>…
 			</p>
 

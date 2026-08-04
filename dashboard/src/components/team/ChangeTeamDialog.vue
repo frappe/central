@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { Avatar, Button, Dialog } from 'frappe-ui'
+import { ref } from 'vue'
 import { useSession } from '@/composables/useSession'
-import CreateTeamDialog from './CreateTeamDialog.vue'
 import type { Team } from '@/types/api'
+import CreateTeamDialog from './CreateTeamDialog.vue'
 
 const open = defineModel<boolean>('open')
 

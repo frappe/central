@@ -9,9 +9,9 @@ usage and one-off add-ons bill at list. See final-plan-pricing.md §5 / ADR 0001
 """
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import invoicing
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
 
 TEAM = "team-commitment"
@@ -32,18 +32,22 @@ def push_event(event_id, resource_id, rate, effective_from, event_type="subscrib
 
 def make_commitment(team, floor, discount_pct, started_at="2026-06-01", term_months=12, currency="INR"):
 	frappe.db.delete("Commitment", {"team": team})
-	return frappe.get_doc(
-		{
-			"doctype": "Commitment",
-			"team": team,
-			"floor": floor,
-			"currency": currency,
-			"discount_pct": discount_pct,
-			"term_months": term_months,
-			"started_at": started_at,
-			"status": "Active",
-		}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Commitment",
+				"team": team,
+				"floor": floor,
+				"currency": currency,
+				"discount_pct": discount_pct,
+				"term_months": term_months,
+				"started_at": started_at,
+				"status": "Active",
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 class CommitmentTestBase(IntegrationTestCase):

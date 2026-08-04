@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Button, Dialog, LoadingIndicator, Tabs, useCall } from 'frappe-ui'
-import PlanGroup from '@/components/servers/PlanGroup.vue'
-import Alert from '@/components/common/Alert.vue'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import Alert from '@/components/common/Alert.vue'
+import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { usePlans } from '@/composables/usePlans'
+import type { AssetRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { configIncludes, rateCardComplete } from '@/lib/composed'
 import { getErrorMessage, successToast } from '@/lib/toast'
-import type { AssetRow } from '@/composables/useServers'
 import type { ComposedConfig, Profile } from '@/types/api'
 
 // Resize a server with the same plan picker used to create it (#84): its region's

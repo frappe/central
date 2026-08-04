@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, h, ref } from 'vue'
 import { Badge, Button } from 'frappe-ui'
+import { computed, h, ref } from 'vue'
 import {
-	ListView,
 	createListViewQuery,
+	ListView,
 	type ListViewColumn,
 	type ListViewFilter,
 } from '@/components/common/list-view'

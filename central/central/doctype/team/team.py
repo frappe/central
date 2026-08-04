@@ -9,7 +9,6 @@ from central.iam import can, user_has_operator_bypass
 
 
 class Team(Document):
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 

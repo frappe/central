@@ -88,5 +88,7 @@ class IntegrationTestSubscriptionChange(IntegrationTestCase):
 		sub.plan = self.plan_b
 		sub.save()
 
-		all_changes = frappe.get_all("Subscription Change", filters={"subscription": sub.name}, pluck="change_type")
+		all_changes = frappe.get_all(
+			"Subscription Change", filters={"subscription": sub.name}, pluck="change_type"
+		)
 		self.assertEqual(sorted(all_changes), sorted(["Created", "Plan Changed"]))

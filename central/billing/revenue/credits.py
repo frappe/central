@@ -67,9 +67,9 @@ def _ensure_wallet(team: str, currency: str):
 	if frappe.db.exists("Credit Wallet", wallet_name(team, currency)):
 		return
 	try:
-		frappe.get_doc(
-			{"doctype": "Credit Wallet", "team": team, "currency": currency}
-		).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "Credit Wallet", "team": team, "currency": currency}).insert(
+			ignore_permissions=True
+		)
 	except frappe.DuplicateEntryError:
 		pass  # a concurrent booking created it first — fine
 
@@ -140,7 +140,13 @@ def _book_entry(
 	for attempt in range(_DEADLOCK_RETRIES):
 		try:
 			return _book_entry_once(
-				team, entry_type, amount, currency, reference_type, reference_name, note,
+				team,
+				entry_type,
+				amount,
+				currency,
+				reference_type,
+				reference_name,
+				note,
 				gateway_payment_id,
 			)
 		except frappe.QueryDeadlockError:
@@ -196,7 +202,10 @@ def _book_entry_once(
 	# level check — the CHECK (balance >= 0) constraint on the column is what makes
 	# a negative balance impossible for callers that never reach this function.
 	frappe.db.set_value(
-		"Credit Wallet", wallet_name(team, currency), "balance", new_balance,
+		"Credit Wallet",
+		wallet_name(team, currency),
+		"balance",
+		new_balance,
 		update_modified=False,
 	)
 	entry = frappe.get_doc(
@@ -227,9 +236,7 @@ def _existing_payment_entry(gateway_payment_id: str | None):
 		# Duplicate fired but the row is gone (or no id) — nothing to return to.
 		frappe.throw("Credit booking conflicted but no prior entry found.", frappe.ValidationError)
 	entry = frappe.get_doc("Credit Ledger Entry", name)
-	balance = frappe.db.get_value(
-		"Credit Wallet", wallet_name(entry.team, entry.currency), "balance"
-	)
+	balance = frappe.db.get_value("Credit Wallet", wallet_name(entry.team, entry.currency), "balance")
 	return entry, frappe.utils.flt(balance)
 
 
@@ -248,10 +255,16 @@ def _namespaced_payment_id(gateway: str | None, payment_id: str | None) -> str |
 	return f"{gateway}:{payment_id}" if gateway else payment_id
 
 
-def purchase(team: str, amount: float, currency: str | None = None,
-			 payment_method: str | None = None,
-			 reference_name: str | None = None, note: str | None = None,
-			 gateway_payment_id: str | None = None, gateway: str | None = None) -> dict:
+def purchase(
+	team: str,
+	amount: float,
+	currency: str | None = None,
+	payment_method: str | None = None,
+	reference_name: str | None = None,
+	note: str | None = None,
+	gateway_payment_id: str | None = None,
+	gateway: str | None = None,
+) -> dict:
 	"""Top-up: book a credit entry for purchased credits.
 
 	(The card charge that funds the top-up is the payment flow's concern; this
@@ -276,9 +289,7 @@ def purchase(team: str, amount: float, currency: str | None = None,
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def apply_credit(
-	team, amount, currency=None, reference_type=None, reference_name=None, note=None
-) -> dict:
+def apply_credit(team, amount, currency=None, reference_type=None, reference_name=None, note=None) -> dict:
 	"""Debit the (team, currency) wallet (e.g. credits applied to an open invoice).
 
 	Raises InsufficientCredits rather than going negative — per currency, since the
@@ -286,13 +297,13 @@ def apply_credit(
 	decides *how much* to apply against a card backstop lives in #11; this is the
 	locked primitive it builds on.
 	"""
-	entry, new_balance = _book_entry(
-		team, "Debit", amount, currency, reference_type, reference_name, note
-	)
+	entry, new_balance = _book_entry(team, "Debit", amount, currency, reference_type, reference_name, note)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def refund_to_wallet(team, amount, currency=None, reference_type=None, reference_name=None, note=None) -> dict:
+def refund_to_wallet(
+	team, amount, currency=None, reference_type=None, reference_name=None, note=None
+) -> dict:
 	"""Book a credit entry for a partial-overcharge / gateway refund to wallet."""
 	entry, new_balance = _book_entry(
 		team, "Credit", amount, currency, reference_type, reference_name, note or "Refund to wallet"
@@ -306,14 +317,19 @@ def grant_promotional_credits(team, amount, currency, note=None) -> dict:
 	Tagged `reference_type="Promotion"` so the one-time signup grant is
 	distinguishable from top-ups/refunds and can be checked for idempotently."""
 	entry, new_balance = _book_entry(
-		team, "Credit", amount, currency, reference_type="Promotion",
+		team,
+		"Credit",
+		amount,
+		currency,
+		reference_type="Promotion",
 		note=note or "Welcome credits",
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def adjust_credits(team: str, amount: float, entry_type: str, currency: str | None = None,
-				   note: str | None = None) -> dict:
+def adjust_credits(
+	team: str, amount: float, entry_type: str, currency: str | None = None, note: str | None = None
+) -> dict:
 	"""Admin manual correction — a credit or debit entry with an audit note."""
 	if entry_type not in ("Credit", "Debit"):
 		frappe.throw("entry_type must be 'Credit' or 'Debit'.", frappe.ValidationError)
@@ -361,9 +377,6 @@ def ledger_balance(team: str, currency: str) -> float:
 	cle = frappe.qb.DocType("Credit Ledger Entry")
 	signed = Case().when(cle.entry_type == "Credit", cle.amount).else_(-cle.amount)
 	balance = (
-		frappe.qb.from_(cle)
-		.select(Sum(signed))
-		.where((cle.team == team) & (cle.currency == currency))
-		.run()
+		frappe.qb.from_(cle).select(Sum(signed)).where((cle.team == team) & (cle.currency == currency)).run()
 	)[0][0]
 	return frappe.utils.flt(balance)

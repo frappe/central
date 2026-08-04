@@ -1,33 +1,33 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Badge, Button, FormControl, Tabs, useCall } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { API, method } from '@/api/methods'
 import Alert from '@/components/common/Alert.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
-import { API, method } from '@/api/methods'
+import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useCapabilities } from '@/composables/useCapabilities'
+import { usePlans } from '@/composables/usePlans'
 import { useRegions } from '@/composables/useRegions'
 import { useServers } from '@/composables/useServers'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useBillingSetup } from '@/composables/useBillingSetup'
-import { usePlans } from '@/composables/usePlans'
-import { money } from '@/lib/format'
-import { planPrice, planResources } from '@/lib/plans'
 import {
 	configIncludes,
 	estimateConfig,
 	ramFor,
 	rateCardComplete,
 } from '@/lib/composed'
+import { money } from '@/lib/format'
+import { planPrice, planResources } from '@/lib/plans'
 import {
 	flagEmoji,
 	hasMapCoords,
-	regionLabel,
 	type MapSpot,
+	regionLabel,
 } from '@/lib/serverMap'
-import type { Region } from '@/types/Region'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
+import type { Region } from '@/types/Region'
 
 // New server, the FC V2 way: a stepped form (name → provider → region → plan →
 // version) beside the same world map the servers list uses — static here, framing

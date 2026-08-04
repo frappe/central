@@ -7,16 +7,15 @@ from unittest.mock import MagicMock, patch
 import frappe
 import razorpay
 import stripe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing.payments.webhooks import process_webhook
 from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.payments.webhooks import process_webhook
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 EVENT_ID = "evt_webhook_500"
 PAYLOAD = (
-	b'{"id":"' + EVENT_ID.encode() + b'","type":"payment_intent.succeeded",'
-	b'"data":{"object":{"id":"pi_x"}}}'
+	b'{"id":"' + EVENT_ID.encode() + b'","type":"payment_intent.succeeded","data":{"object":{"id":"pi_x"}}}'
 )
 HEADERS = {"Stripe-Signature": "t=1,v1=deadbeef"}
 
@@ -60,9 +59,7 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 		# Regression for the v1 enumeration bug: nothing keyed on payload content
 		# runs until the signature is verified.
 		with signature(valid=False):
-			with patch(
-				"central.billing.gateways.stripe_adapter.StripeAdapter.parse_webhook_event"
-			) as parse:
+			with patch("central.billing.gateways.stripe_adapter.StripeAdapter.parse_webhook_event") as parse:
 				process_webhook("Stripe", PAYLOAD, HEADERS)
 		parse.assert_not_called()
 
@@ -77,9 +74,7 @@ class TestStripeWebhookReceiver(IntegrationTestCase):
 
 
 R_EVENT_ID = "evt_razorpay_webhook_1"
-R_PAYLOAD = (
-	b'{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_x"}}}}'
-)
+R_PAYLOAD = b'{"event":"payment.captured","payload":{"payment":{"entity":{"id":"pay_x"}}}}'
 R_HEADERS = {"X-Razorpay-Signature": "sig", "X-Razorpay-Event-Id": R_EVENT_ID}
 
 
@@ -133,15 +128,21 @@ TOPUP_TEAM = "team-topup-wh"
 
 
 def _topup_payload(payment_id, team, amount_paisa=100000, currency="INR"):
-	return json.dumps({
-		"event": "payment.captured",
-		"payload": {"payment": {"entity": {
-			"id": payment_id,
-			"amount": amount_paisa,
-			"currency": currency,
-			"notes": {"team": team, "purpose": "wallet_topup"},
-		}}},
-	})
+	return json.dumps(
+		{
+			"event": "payment.captured",
+			"payload": {
+				"payment": {
+					"entity": {
+						"id": payment_id,
+						"amount": amount_paisa,
+						"currency": currency,
+						"notes": {"team": team, "purpose": "wallet_topup"},
+					}
+				}
+			},
+		}
+	)
 
 
 class TestWalletTopupWebhookBackstop(IntegrationTestCase):
@@ -163,14 +164,16 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		frappe.db.delete("Webhook Event", {"gateway": self.gateway})
 
 	def _store_event(self, payment_id, event_type="payment.captured", **kw):
-		return frappe.get_doc({
-			"doctype": "Webhook Event",
-			"gateway": self.gateway,
-			"gateway_event_id": f"evt_{payment_id}_{frappe.generate_hash(length=6)}",
-			"event_type": event_type,
-			"raw_payload": _topup_payload(payment_id, TOPUP_TEAM, **kw),
-			"status": "Received",
-		}).insert(ignore_permissions=True)
+		return frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": self.gateway,
+				"gateway_event_id": f"evt_{payment_id}_{frappe.generate_hash(length=6)}",
+				"event_type": event_type,
+				"raw_payload": _topup_payload(payment_id, TOPUP_TEAM, **kw),
+				"status": "Received",
+			}
+		).insert(ignore_permissions=True)
 
 	def _credits_for(self, payment_id):
 		# Stored keys are namespaced by provider; these fixtures are all Razorpay.
@@ -198,13 +201,14 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		pid = "pay_backstop_2"
 		# Browser confirm landed first (what confirm_topup does) — same provider, so
 		# the webhook backstop dedupes to the same namespaced key.
-		credits.purchase(TOPUP_TEAM, 1000, "INR", reference_name=pid,
-						 gateway_payment_id=pid, gateway="Razorpay")
+		credits.purchase(
+			TOPUP_TEAM, 1000, "INR", reference_name=pid, gateway_payment_id=pid, gateway="Razorpay"
+		)
 		# Backstop webhook arrives for the same payment.
 		out = charges.apply_webhook(self._store_event(pid).name)
 
 		self.assertEqual(out["result"], "topup_credited")  # handled, but…
-		self.assertEqual(len(self._credits_for(pid)), 1)    # …no second entry
+		self.assertEqual(len(self._credits_for(pid)), 1)  # …no second entry
 		self.assertEqual(credits.get_balance(TOPUP_TEAM)["balance"], 1000.0)
 
 	def test_replayed_webhook_credits_once(self):
@@ -230,11 +234,16 @@ class TestWalletTopupWebhookBackstop(IntegrationTestCase):
 		# purpose=wallet_topup but no team in notes -> never credit a guess.
 		payload = json.loads(_topup_payload("pay_backstop_5", TOPUP_TEAM))
 		payload["payload"]["payment"]["entity"]["notes"].pop("team")
-		ev = frappe.get_doc({
-			"doctype": "Webhook Event", "gateway": self.gateway,
-			"gateway_event_id": "evt_incomplete_topup", "event_type": "payment.captured",
-			"raw_payload": json.dumps(payload), "status": "Received",
-		}).insert(ignore_permissions=True)
+		ev = frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": self.gateway,
+				"gateway_event_id": "evt_incomplete_topup",
+				"event_type": "payment.captured",
+				"raw_payload": json.dumps(payload),
+				"status": "Received",
+			}
+		).insert(ignore_permissions=True)
 
 		out = charges.apply_webhook(ev.name)
 

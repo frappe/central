@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Button, Select } from 'frappe-ui'
-import { successToast } from '@/lib/toast'
+import { computed, ref } from 'vue'
 import type { ServiceModel } from '@/composables/useServices'
+import { successToast } from '@/lib/toast'
 
 // Presentational: given a resolved gateway URL + key + the plan's models, render the
 // endpoint, a masked/reveal-able key, and a ready-to-run curl. Shared by the site
@@ -18,7 +18,10 @@ const selectedModel = ref(props.models[0]?.name ?? '')
 
 const modelOptions = computed(() =>
 	props.models.length
-		? props.models.map((m) => ({ label: `${m.name} (${m.tier})`, value: m.name }))
+		? props.models.map((m) => ({
+				label: `${m.name} (${m.tier})`,
+				value: m.name,
+			}))
 		: [{ label: 'MODEL_ID', value: '' }],
 )
 const modelId = computed(() => selectedModel.value || 'MODEL_ID')
@@ -53,12 +56,15 @@ function copyCurl(): void {
 <template>
 	<div class="space-y-5">
 		<p class="text-p-sm text-ink-gray-6">
-			Use it from any app, script, or tool. Usage bills to your team just like on-site AI.
+			Use it from any app, script, or tool. Usage bills to your team just like
+			on-site AI.
 		</p>
 
 		<!-- Gateway URL -->
 		<div>
-			<label class="mb-1 block text-p-sm font-medium text-ink-gray-7"> Gateway URL </label>
+			<label class="mb-1 block text-p-sm font-medium text-ink-gray-7">
+				Gateway URL
+			</label>
 			<div class="flex items-center gap-2">
 				<code
 					class="min-w-0 flex-1 truncate rounded-md border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
@@ -75,7 +81,9 @@ function copyCurl(): void {
 
 		<!-- API key -->
 		<div>
-			<label class="mb-1 block text-p-sm font-medium text-ink-gray-7"> API Key </label>
+			<label class="mb-1 block text-p-sm font-medium text-ink-gray-7">
+				API Key
+			</label>
 			<div class="flex items-center gap-2">
 				<code
 					class="min-w-0 flex-1 truncate rounded-md border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
@@ -101,7 +109,9 @@ function copyCurl(): void {
 		<!-- Curl example -->
 		<div>
 			<div class="mb-1 flex items-center justify-between gap-2">
-				<label class="text-p-sm font-medium text-ink-gray-7"> Example request </label>
+				<label class="text-p-sm font-medium text-ink-gray-7">
+					Example request
+				</label>
 				<Select
 					v-if="models.length"
 					v-model="selectedModel"
@@ -113,8 +123,7 @@ function copyCurl(): void {
 			<div class="relative">
 				<pre
 					class="overflow-x-auto rounded-md border border-outline-gray-2 bg-surface-gray-2 p-3 pr-12 font-mono text-xs leading-relaxed text-ink-gray-8"
-					>{{ curlTemplate }}</pre
-				>
+				>{{ curlTemplate }}</pre>
 				<Button
 					class="absolute right-2 top-2"
 					icon="lucide-copy"

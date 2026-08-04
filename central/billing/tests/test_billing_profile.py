@@ -3,8 +3,8 @@
 """Billing Profile validation: GSTIN format + India state ↔ GST state code."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team
 
 TEAM = "team-billing-profile"
@@ -12,9 +12,15 @@ TEAM = "team-billing-profile"
 
 def _profile(**overrides):
 	values = {
-		"doctype": "Billing Profile", "team": TEAM, "currency": "INR",
-		"legal_name": f"{TEAM} Ltd", "address_line1": "1 Test Street", "city": "Pune",
-		"state": "Maharashtra", "country": "India", "pincode": "411001",
+		"doctype": "Billing Profile",
+		"team": TEAM,
+		"currency": "INR",
+		"legal_name": f"{TEAM} Ltd",
+		"address_line1": "1 Test Street",
+		"city": "Pune",
+		"state": "Maharashtra",
+		"country": "India",
+		"pincode": "411001",
 	}
 	values.update(overrides)
 	if frappe.db.exists("Billing Profile", TEAM):
@@ -29,9 +35,18 @@ def _profile(**overrides):
 def _invoice(team=TEAM, currency="INR"):
 	"""Minimal issued invoice so the team counts as "already invoiced"."""
 	return frappe.get_doc(
-		{"doctype": "Invoice", "team": team, "invoice_type": "Billable", "status": "Open",
-		 "period_start": "2099-01-01", "period_end": "2099-01-31", "currency": currency,
-		 "subtotal": 100, "total": 100, "amount_paid": 0}
+		{
+			"doctype": "Invoice",
+			"team": team,
+			"invoice_type": "Billable",
+			"status": "Open",
+			"period_start": "2099-01-01",
+			"period_end": "2099-01-31",
+			"currency": currency,
+			"subtotal": 100,
+			"total": 100,
+			"amount_paid": 0,
+		}
 	).insert(ignore_permissions=True)
 
 

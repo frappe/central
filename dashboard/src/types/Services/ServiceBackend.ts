@@ -1,5 +1,4 @@
-
-export interface ServiceBackend{
+export interface ServiceBackend {
 	name: string
 	creation: string
 	modified: string

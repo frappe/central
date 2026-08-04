@@ -1,10 +1,10 @@
-import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { submitOrThrow } from '@/lib/frappeCall'
-import { successToast, errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 
 // The team's add-on services (LLM hosting via Grove today). One module-level
 // composable so the catalogue and the detail page share one fetch. Central owns team

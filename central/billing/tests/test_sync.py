@@ -9,10 +9,10 @@ locked with no reconciliation gap.
 """
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.catalog.subscriptions import active_segment_for_resource
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
@@ -55,9 +55,7 @@ class TestProvisionOpensSegment(IntegrationTestCase):
 	def test_provision_segment_drives_invoice_generation(self):
 		from central.billing.revenue import invoicing
 
-		res = subscriptions.provision_subscription(
-			TEAM, CLUSTER, PLAN, start_date="2026-06-01"
-		)
+		res = subscriptions.provision_subscription(TEAM, CLUSTER, PLAN, start_date="2026-06-01")
 		name = invoicing.generate_draft_invoice(res["subscription"], "2026-06-01", "2026-06-30")
 		inv = frappe.get_doc("Invoice", name)
 		# A full June on the locked ₹3200 plan → a non-zero draft generated straight

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
+import { computed } from 'vue'
 import type { PaymentMethod } from '@/types/billing'
 
 // The menu for one payment-method row — mirrors SubscriptionRowActions. Which

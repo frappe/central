@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { computed, h, ref, watch } from 'vue'
 import { Badge, Button, Dialog, FormControl } from 'frappe-ui'
-import ConnectionDetails from '@/components/services/ConnectionDetails.vue'
+import { computed, h, ref, watch } from 'vue'
+import {
+	createListViewQuery,
+	ListView,
+	type ListViewColumn,
+} from '@/components/common/list-view'
 import ApiKeyRowActions from '@/components/services/ApiKeyRowActions.vue'
-import { ListView, createListViewQuery, type ListViewColumn } from '@/components/common/list-view'
+import ConnectionDetails from '@/components/services/ConnectionDetails.vue'
+import type {
+	RevealedKey,
+	ServiceApiKey,
+	ServiceModel,
+} from '@/composables/useServices'
 import { useServices } from '@/composables/useServices'
 import { errorToast } from '@/lib/toast'
-import type { RevealedKey, ServiceApiKey, ServiceModel } from '@/composables/useServices'
 
 // The API Keys tab: keys Central issues from the provider for the customer's own
 // apps. Generate → shows the key + curl once; Reveal re-opens it anytime (we store
@@ -17,8 +25,15 @@ const props = defineProps<{
 	canManage: boolean
 }>()
 
-const { apiKeys, apiKeysLoading, busyKey, loadApiKeys, generateApiKey, revealKey, revokeKey } =
-	useServices()
+const {
+	apiKeys,
+	apiKeysLoading,
+	busyKey,
+	loadApiKeys,
+	generateApiKey,
+	revealKey,
+	revokeKey,
+} = useServices()
 
 watch(
 	() => props.managedService,
@@ -61,7 +76,8 @@ const columns = computed<ListViewColumn<ServiceApiKey>[]>(() => [
 		accessorKey: 'last_usage_total',
 		header: 'Usage (tokens)',
 		meta: { align: 'end' },
-		cell: ({ row }) => Math.round(row.original.last_usage_total || 0).toLocaleString(),
+		cell: ({ row }) =>
+			Math.round(row.original.last_usage_total || 0).toLocaleString(),
 	},
 	{
 		id: 'actions',
@@ -139,19 +155,37 @@ async function confirmRevoke(): Promise<void> {
 
 <template>
 	<div class="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-		<ListView class="mx-auto flex h-full max-w-4xl flex-col" v-model:query="query" :rows="apiKeys"
-			:columns="columns" :row-key="(key: ServiceApiKey) => key.name" :loading="apiKeysLoading" searchable
-			search-placeholder="Search keys..." item-label="key" :empty-state="{
+		<ListView
+			class="mx-auto flex h-full max-w-4xl flex-col"
+			v-model:query="query"
+			:rows="apiKeys"
+			:columns="columns"
+			:row-key="(key: ServiceApiKey) => key.name"
+			:loading="apiKeysLoading"
+			searchable
+			search-placeholder="Search keys..."
+			item-label="key"
+			:empty-state="{
 				title: 'No API keys yet',
 				description: 'Generate a key to call our models from your own apps.',
-			}" @row-click="onRowClick">
+			}"
+			@row-click="onRowClick"
+		>
 			<template v-if="canManage" #toolbar>
 				<Button
-variant="solid" label="Generate" icon-left="lucide-plus" @click="openGenerate" />
+					variant="solid"
+					label="Generate"
+					icon-left="lucide-plus"
+					@click="openGenerate"
+				/>
 			</template>
 			<template v-if="canManage" #empty-action>
 				<Button
-variant="solid" label="Generate Key" icon-left="lucide-plus" @click="openGenerate" />
+					variant="solid"
+					label="Generate Key"
+					icon-left="lucide-plus"
+					@click="openGenerate"
+				/>
 			</template>
 		</ListView>
 	</div>
@@ -184,7 +218,7 @@ variant="solid" label="Generate Key" icon-left="lucide-plus" @click="openGenerat
 	<!-- Details: the key + curl, on generate and on reveal -->
 	<Dialog
 		:model-value="!!details"
-:title="details ? `API key - ${details.label}` : ''"
+		:title="details ? `API key - ${details.label}` : ''"
 		size="2xl"
 		@update:model-value="
 	(v: boolean) => {
@@ -205,7 +239,7 @@ variant="solid" label="Generate Key" icon-left="lucide-plus" @click="openGenerat
 	<!-- Revoke confirm -->
 	<Dialog
 		:model-value="!!pendingRevoke"
-title="Revoke API key"
+		title="Revoke API key"
 		:message="`Revoke ${pendingRevoke?.label}? Any app using it will stop working immediately. This can't be undone.`"
 		:actions="[
 			{

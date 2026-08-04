@@ -22,9 +22,7 @@ def execute():
 	for name in frappe.get_all("Trust Tier Level", pluck="name"):
 		if frappe.db.exists("Trust Tier Threshold", {"parent": name}):
 			continue  # already migrated
-		max_spend = (
-			frappe.db.get_value("Trust Tier Level", name, "max_spend") if has_legacy else 0
-		) or 0
+		max_spend = (frappe.db.get_value("Trust Tier Level", name, "max_spend") if has_legacy else 0) or 0
 		min_cumulative_paid = (
 			frappe.db.get_value("Trust Tier Level", name, "min_cumulative_paid")
 			if frappe.db.has_column("Trust Tier Level", "min_cumulative_paid")

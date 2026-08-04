@@ -3,10 +3,10 @@
 """Central metered ingestion + metered line items (issue #12)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import invoicing, metering
 from central.billing.platform.sync import receive_meter_rollups
+from central.billing.revenue import invoicing, metering
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	ensure_team,
 	make_metered_plan,
@@ -86,9 +86,7 @@ class TestIngestRollup(MeteringTestBase):
 		receive_meter_rollups([meter("a", 220)])  # outage catch-up re-push
 
 		self.assertEqual(frappe.db.count("Usage Rollup", {"resource_id": RESOURCE}), 1)
-		self.assertEqual(
-			frappe.db.get_value("Usage Rollup", {"resource_id": RESOURCE}, "quantity"), 220
-		)
+		self.assertEqual(frappe.db.get_value("Usage Rollup", {"resource_id": RESOURCE}, "quantity"), 220)
 
 	def test_rollup_for_unprovisioned_resource_is_skipped(self):
 		# Close the resource's segment so it has no open segment to bill against.
@@ -140,9 +138,7 @@ class TestMultiClusterConsolidation(IntegrationTestCase):
 
 	def setUp(self):
 		ensure_team(self.TEAM)
-		make_plan(
-			self.PLAN, includes=[{"resource_type": "Transfer", "quantity": 100, "unit": "GB"}]
-		)
+		make_plan(self.PLAN, includes=[{"resource_type": "Transfer", "quantity": 100, "unit": "GB"}])
 		self._purge()
 		# One running resource per cluster: each seeds a full-June ₹1000/mo fixed segment
 		# and an Asset in that cluster, plus a grandfathered metered rollup over its 100 GB
@@ -189,9 +185,7 @@ class TestMultiClusterConsolidation(IntegrationTestCase):
 	def _team_clusters(self):
 		"""The same asset-cluster set generate_team_invoice derives."""
 		asset_ids = frappe.get_all("Subscription", {"team": self.TEAM}, pluck="asset_id")
-		return sorted(
-			{c for c in frappe.get_all("Asset", {"name": ["in", asset_ids]}, pluck="cluster") if c}
-		)
+		return sorted({c for c in frappe.get_all("Asset", {"name": ["in", asset_ids]}, pluck="cluster") if c})
 
 	@staticmethod
 	def _bag(lines):
@@ -218,9 +212,7 @@ class TestMultiClusterConsolidation(IntegrationTestCase):
 		per_cluster = []
 		for cluster in clusters:
 			per_cluster += metering.metered_line_items(self.TEAM, cluster, "2026-06-01", "2026-06-30")
-		team_wide = metering.metered_line_items_for_clusters(
-			self.TEAM, clusters, "2026-06-01", "2026-06-30"
-		)
+		team_wide = metering.metered_line_items_for_clusters(self.TEAM, clusters, "2026-06-01", "2026-06-30")
 
 		self.assertTrue(per_cluster)
 		self.assertEqual({li["cluster"] for li in team_wide}, set(clusters))  # no misattribution

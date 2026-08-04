@@ -187,8 +187,7 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		attempt.status = "Captured"  # gateway captured; invoice Paid waits on webhook
 	else:
 		attempt.status = "Failed"
-		_stamp_failure(attempt, result.failure_code, result.decline_code,
-					   result.failure_reason, result.raw)
+		_stamp_failure(attempt, result.failure_code, result.decline_code, result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
 	attempt.save(ignore_permissions=True)
 	_persist()
@@ -265,23 +264,35 @@ def create_invoice_payment_order(invoice: str, gateway: str | None = None) -> di
 			"retry_number": frappe.db.count("Payment Attempt", {"invoice": invoice}),
 		}
 	).insert(ignore_permissions=True)
-	return {"created": True, "attempt": attempt.name, "gateway": gateway_name,
-			"adapter_key": gw_doc.adapter_key, "amount": amount, "currency": inv.currency,
-			"receipt": receipt, **handles}
+	return {
+		"created": True,
+		"attempt": attempt.name,
+		"gateway": gateway_name,
+		"adapter_key": gw_doc.adapter_key,
+		"amount": amount,
+		"currency": inv.currency,
+		"receipt": receipt,
+		**handles,
+	}
 
 
-def confirm_invoice_payment(attempt: str, razorpay_order_id: str | None = None,
-							razorpay_payment_id: str | None = None,
-							razorpay_signature: str | None = None) -> dict:
+def confirm_invoice_payment(
+	attempt: str,
+	razorpay_order_id: str | None = None,
+	razorpay_payment_id: str | None = None,
+	razorpay_signature: str | None = None,
+) -> dict:
 	"""Verify the on-session checkout callback and stamp the attempt with the gateway
 	payment id. The invoice flips to Paid on the capture webhook (webhook-truth),
 	not here — so a faked callback can never mark an invoice paid on its own."""
 	att = frappe.get_doc("Payment Attempt", attempt)
-	ok = _adapter_for(att.gateway).verify_payment_signature({
-		"razorpay_order_id": razorpay_order_id,
-		"razorpay_payment_id": razorpay_payment_id,
-		"razorpay_signature": razorpay_signature,
-	})
+	ok = _adapter_for(att.gateway).verify_payment_signature(
+		{
+			"razorpay_order_id": razorpay_order_id,
+			"razorpay_payment_id": razorpay_payment_id,
+			"razorpay_signature": razorpay_signature,
+		}
+	)
 	if not ok:
 		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
 	att.gateway_transaction_id = razorpay_payment_id
@@ -390,16 +401,23 @@ def apply_webhook(event_name: str) -> dict:
 			# charge response — pull it off the event so the attempt records why.
 			detail = _extract_failure(adapter_key, payload)
 			if detail:
-				_stamp_failure(attempt, detail.get("failure_code"), detail.get("decline_code"),
-							   detail.get("failure_reason"), detail.get("raw"))
+				_stamp_failure(
+					attempt,
+					detail.get("failure_code"),
+					detail.get("decline_code"),
+					detail.get("failure_reason"),
+					detail.get("raw"),
+				)
 			attempt.completed_at = frappe.utils.now_datetime()
 			attempt.save(ignore_permissions=True)
 			from central.billing.platform import notifications
 
 			notifications.notify(
-				attempt.team, "Payment Failure",
+				attempt.team,
+				"Payment Failure",
 				context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
-				reference_doctype="Invoice", reference_name=attempt.invoice,
+				reference_doctype="Invoice",
+				reference_name=attempt.invoice,
 			)
 			# Async decline: rotate to the next untried method (#28). No-op once
 			# every method has been exhausted.
@@ -441,9 +459,11 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 	from central.billing.platform import notifications
 
 	notifications.notify(
-		inv.team, "Payment Success",
+		inv.team,
+		"Payment Success",
 		message=f"Invoice {inv.name} paid ({inv.amount_paid} {inv.currency or ''}).",
-		reference_doctype="Invoice", reference_name=inv.name,
+		reference_doctype="Invoice",
+		reference_name=inv.name,
 	)
 
 	# Async, one-way, non-blocking push to the statutory SOR (#17).
@@ -493,7 +513,9 @@ def _prune_payment_attempts(cutoff) -> int:
 			continue
 		if frappe.db.get_value("Invoice", a.invoice, "status") in _UNSETTLED_INVOICE:
 			continue
-		frappe.delete_doc("Payment Attempt", a.name, ignore_permissions=True, force=True, delete_permanently=True)
+		frappe.delete_doc(
+			"Payment Attempt", a.name, ignore_permissions=True, force=True, delete_permanently=True
+		)
 		deleted += 1
 	return deleted
 
@@ -546,8 +568,10 @@ def _extract_failure(adapter_key: str, payload: dict) -> dict | None:
 			"failure_code": entity.get("error_code"),
 			"decline_code": entity.get("error_reason"),
 			"failure_reason": entity.get("error_description"),
-			"raw": {k: entity.get(k) for k in (
-				"error_code", "error_description", "error_reason", "error_source", "error_step")},
+			"raw": {
+				k: entity.get(k)
+				for k in ("error_code", "error_description", "error_reason", "error_source", "error_step")
+			},
 		}
 	return None
 
@@ -651,15 +675,22 @@ def _credit_topup(event, topup: dict) -> dict:
 	from central.billing.revenue import credits
 
 	result = credits.purchase(
-		topup["team"], topup["amount"], topup["currency"] or "INR",
+		topup["team"],
+		topup["amount"],
+		topup["currency"] or "INR",
 		reference_name=topup["payment_id"],
 		note=f"Wallet top-up ({topup['payment_id']})",
 		gateway_payment_id=topup["payment_id"],
 		gateway=topup.get("gateway"),
 	)
 	_mark_event(event, "Processed")
-	return {"handled": True, "result": "topup_credited", "team": topup["team"],
-			"payment_id": topup["payment_id"], "ledger_entry": result["ledger_entry"]}
+	return {
+		"handled": True,
+		"result": "topup_credited",
+		"team": topup["team"],
+		"payment_id": topup["payment_id"],
+		"ledger_entry": result["ledger_entry"],
+	}
 
 
 def _mark_event(event, status: str):

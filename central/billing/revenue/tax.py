@@ -48,9 +48,7 @@ def resolve_tax(team: str, subtotal) -> dict:
 	if p.zero_rated:
 		# Zero-rated WITH a reason — the tax is 0 but auditable.
 		if not p.zero_rating_reason:
-			frappe.throw(
-				"Zero-rated team has no zero_rating_reason.", frappe.ValidationError
-			)
+			frappe.throw("Zero-rated team has no zero_rating_reason.", frappe.ValidationError)
 		block["zero_rating_reason"] = p.zero_rating_reason
 		block["output_tax_amount"] = 0
 	else:

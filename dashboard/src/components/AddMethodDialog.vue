@@ -1,14 +1,14 @@
 <script setup lang="ts">
+import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
-import { useCall, Dialog, Button, FormControl, LoadingText } from 'frappe-ui'
 import { API, method } from '@/api/methods'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
 import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
 import { useAddStripeCard } from '@/composables/useAddStripeCard'
+import { useSession } from '@/composables/useSession'
+import { whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
 import { errorToast } from '@/lib/toast'
-import type { PaymentMethodOptions, BillingProfile } from '@/types/billing'
+import type { BillingProfile, PaymentMethodOptions } from '@/types/billing'
 
 // Pick a method to add, resolved from the team's billing currency. UPI Autopay is
 // offered only when eligible (recurring-limit/trust gate from the backend). Stripe

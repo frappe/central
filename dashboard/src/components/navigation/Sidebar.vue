@@ -1,12 +1,18 @@
 <script setup lang="ts">
+import {
+	Avatar,
+	Dropdown,
+	Sidebar,
+	SidebarHeader,
+	SidebarItem,
+	SidebarLabel,
+} from 'frappe-ui'
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useSession } from '@/composables/useSession'
-import { useAppMenu } from '@/composables/useAppMenu'
-import { sidebarSections } from './list'
-
-import { Avatar, Dropdown, Sidebar, SidebarHeader, SidebarLabel, SidebarItem } from 'frappe-ui'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
+import { useAppMenu } from '@/composables/useAppMenu'
+import { useSession } from '@/composables/useSession'
+import { sidebarSections } from './list'
 
 const props = defineProps<{ isMobile?: boolean }>()
 
@@ -18,7 +24,9 @@ const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
 // the default — toggling by hand sticks while you stay within a section.
 const route = useRoute()
 const inServersSection = (path: string) => path.startsWith('/servers')
-const sidebarCollapsed = ref(props.isMobile ? false : inServersSection(route.path))
+const sidebarCollapsed = ref(
+	props.isMobile ? false : inServersSection(route.path),
+)
 watch(
 	() => route.path,
 	(path, previous) => {
@@ -68,8 +76,14 @@ const onEdgeMove = (event: MouseEvent): void => {
 			:menu-items="headerMenuItems"
 		/>
 
-		<nav class="flex-1 overflow-y-auto pt-2" :class="sidebarCollapsed ? 'px-2.5' : 'px-2'">
-			<template v-for="section in sidebarSections" :key="section.label || 'main'">
+		<nav
+			class="flex-1 overflow-y-auto pt-2"
+			:class="sidebarCollapsed ? 'px-2.5' : 'px-2'"
+		>
+			<template
+				v-for="section in sidebarSections"
+				:key="section.label || 'main'"
+			>
 				<SidebarLabel
 					v-if="section.label"
 					class="mt-2"
@@ -84,14 +98,16 @@ const onEdgeMove = (event: MouseEvent): void => {
 					/>
 				</SidebarLabel>
 
-				<template v-if="!section.collapsible || !collapsedSections[section.label]">
+				<template
+					v-if="!section.collapsible || !collapsedSections[section.label]"
+				>
 					<SidebarItem
 						v-for="item in section.items.filter((i) => i.condition !== false)"
 						:key="item.label"
 						:icon="item.icon"
 						:to="item.to"
 						class="mb-0.5"
-            :class="item.class"
+						:class="item.class"
 						:active="!!item.to && item.to === route.path"
 					>
 						<span class="truncate text-sm">{{ item.label }}</span>
@@ -100,9 +116,14 @@ const onEdgeMove = (event: MouseEvent): void => {
 			</template>
 		</nav>
 
-    <!-- user profile dropdown -->
-		<div class="mt-auto px-2 pb-2" v-if='!isMobile'>
-			<Dropdown :options="footerMenuItems" side="top" align="start" match-trigger-width>
+		<!-- user profile dropdown -->
+		<div class="mt-auto px-2 pb-2" v-if="!isMobile">
+			<Dropdown
+				:options="footerMenuItems"
+				side="top"
+				align="start"
+				match-trigger-width
+			>
 				<template #default="{ open }">
 					<button
 						class="flex h-10 w-full items-center rounded px-1.5 duration-300 ease-in-out"
@@ -149,7 +170,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 		>
 			<lucide-chevron-left
 				class="size-3.5"
-        :class='sidebarCollapsed? "rotate-180" : ""'
+				:class='sidebarCollapsed? "rotate-180" : ""'
 			/>
 		</span>
 	</button>

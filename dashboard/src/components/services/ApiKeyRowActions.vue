@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
+import { computed } from 'vue'
 import type { ServiceApiKey } from '@/composables/useServices'
 
 // Compact row actions for an API key - a ⋯ menu (matching the servers/members lists)

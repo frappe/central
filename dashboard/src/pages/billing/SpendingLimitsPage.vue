@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import { Badge, LoadingText, useCall } from 'frappe-ui'
 import { computed } from 'vue'
-import { useCall, Badge, LoadingText } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
-import type { TrustTier, TierLevel } from '@/types/billing'
+import type { TierLevel, TrustTier } from '@/types/billing'
 
 // Billing › Limit Tiers, shown to customers as "Spending Limits". A team's tier
 // sets how much it can spend and how many resources it can run; paying invoices on
@@ -88,7 +88,6 @@ const levels = computed(() => {
 
 <template>
 	<div class="flex h-full flex-col">
-
 		<div class="min-h-0 flex-1 overflow-y-auto">
 			<div class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
 				<div v-if="tier.loading && !tier.data" class="space-y-3">

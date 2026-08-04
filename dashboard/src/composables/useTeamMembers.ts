@@ -1,10 +1,10 @@
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed } from 'vue'
 import { API, method } from '@/api/methods'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { useBusyRunner } from '@/composables/useBusyRunner'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { getErrorMessage, isAbortError } from '@/lib/toast'
 import type { MemberStatus, TeamMemberRow } from '@/types/api'
 
 // The active team's roster plus the member mutations Central enforces:

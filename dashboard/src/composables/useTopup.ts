@@ -13,21 +13,21 @@
 // India-export billing address rides on the PaymentIntent from the Billing
 // Profile (server-side), so the customer is never re-asked for it.
 
-import { computed, ref } from 'vue'
 import {
 	loadStripe,
 	type Stripe,
 	type StripeCardElement,
 } from '@stripe/stripe-js'
 import { useCall } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import {
-	openRazorpayCheckout,
-	mountPayPalButtons,
 	type GatewayOrder,
+	mountPayPalButtons,
+	openRazorpayCheckout,
 } from '@/lib/gateway'
-import { successToast, errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 
 interface BeginResult {
 	card?: boolean

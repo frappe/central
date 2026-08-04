@@ -6,13 +6,13 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import invoicing, credits
-from central.billing.payments import refunds
 from central.billing.catalog import subscriptions
 from central.billing.gateways.base import RefundResult
+from central.billing.payments import refunds
+from central.billing.revenue import credits, invoicing
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
@@ -58,20 +58,41 @@ class RefundTestBase(IntegrationTestCase):
 		frappe.db.commit()
 
 	def _paid_invoice_with_attempt(self, total=1000):
-		inv = frappe.get_doc(
-			{
-				"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Paid",
-				"period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
-				"subtotal": total, "total": total, "expected_collection": total, "amount_paid": total,
-			}
-		).insert(ignore_permissions=True).name
-		attempt = frappe.get_doc(
-			{
-				"doctype": "Payment Attempt", "invoice": inv, "team": TEAM, "gateway": GATEWAY,
-				"amount": total, "currency": "INR", "status": "Captured",
-				"gateway_transaction_id": "pi_paid",
-			}
-		).insert(ignore_permissions=True).name
+		inv = (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": "Billable",
+					"status": "Paid",
+					"period_start": "2026-05-01",
+					"period_end": "2026-05-31",
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"expected_collection": total,
+					"amount_paid": total,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+		attempt = (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": inv,
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"amount": total,
+					"currency": "INR",
+					"status": "Captured",
+					"gateway_transaction_id": "pi_paid",
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 		return inv, attempt
 
 

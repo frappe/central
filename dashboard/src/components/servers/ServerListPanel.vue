@@ -70,14 +70,35 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			<span class="lucide-maximize-2 size-3.5 shrink-0 text-ink-gray-6" />
 		</button>
 
-		<div class="sp-float-panel flex h-full min-h-0 flex-col" :inert="!open" :aria-hidden="!open">
-			<div class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3">
-				<h2 class="truncate text-base font-semibold text-ink-gray-9">{{ pillLabel }}</h2>
-				<Button variant="ghost" icon="lucide-minimize-2" aria-label="Collapse list" @click="open = false" />
+		<div
+			class="sp-float-panel flex h-full min-h-0 flex-col"
+			:inert="!open"
+			:aria-hidden="!open"
+		>
+			<div
+				class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-3"
+			>
+				<h2 class="truncate text-base font-semibold text-ink-gray-9">
+					{{ pillLabel }}
+				</h2>
+				<Button
+					variant="ghost"
+					icon="lucide-minimize-2"
+					aria-label="Collapse list"
+					@click="open = false"
+				/>
 			</div>
 			<div class="shrink-0 px-4 pb-3">
-				<FormControl v-model="query" type="text" placeholder="Search" autocomplete="off" class="[&_input]:w-full">
-					<template #prefix><span class="lucide-search size-4 text-ink-gray-5" /></template>
+				<FormControl
+					v-model="query"
+					type="text"
+					placeholder="Search"
+					autocomplete="off"
+					class="[&_input]:w-full"
+				>
+					<template #prefix
+						><span class="lucide-search size-4 text-ink-gray-5" /></template
+					>
 				</FormControl>
 			</div>
 
@@ -87,7 +108,9 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			>
 				<span class="min-w-0 truncate text-sm text-ink-gray-5">
 					Filtering for
-					<span class="font-medium text-ink-gray-8">{{ locationFilter.label }}</span>
+					<span class="font-medium text-ink-gray-8"
+						>{{ locationFilter.label }}</span
+					>
 				</span>
 				<button
 					class="flex shrink-0 items-center gap-1.5 text-sm text-ink-gray-6 transition-colors hover:text-ink-gray-8"
@@ -109,58 +132,61 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 						@mouseenter="hoverId = row.id"
 						@mouseleave="hoverId = null"
 					>
-					<span class="relative shrink-0">
-						<ProviderAvatar :provider="row.provider" :size="32" />
-						<span
-							class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
-							:style="{ background: row.visual.dot }"
-						/>
-					</span>
-					<span class="min-w-0 flex-1">
-						<span class="flex items-center gap-1.5">
-							<span class="truncate text-sm font-medium text-ink-gray-9">{{ row.name }}</span>
-							<Badge
-								v-if="row.visual.key !== 'active'"
-								:label="row.visual.label"
-								:theme="row.visual.badgeTheme"
-								variant="subtle"
-								size="sm"
+						<span class="relative shrink-0">
+							<ProviderAvatar :provider="row.provider" :size="32" />
+							<span
+								class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
+								:style="{ background: row.visual.dot }"
 							/>
 						</span>
-						<span class="block truncate text-sm text-ink-gray-5">{{ row.specs || row.regionLabel }}</span>
-					</span>
-					<span
-						class="sp-row-actions"
-						:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
-						@click.stop
-					>
-						<ServerRowActions
-							v-if="row.kind === 'server' && row.asset"
-							:server="row.asset"
-							:can-open="canOpen"
-							:can-power="canPower"
-							:can-terminate="canTerminate"
-							:busy="busy === row.id"
-							:opening="opening === row.id"
-							@overview="$emit('overview', $event)"
-							@open="$emit('open', $event)"
-							@start="$emit('start', $event)"
-							@stop="$emit('stop', $event)"
-							@resize="$emit('resize', $event)"
-							@terminate="$emit('terminate', $event)"
-						/>
-						<SiteRowActions
-							v-else-if="row.site"
-							:site="row.site"
-							:can-open="canOpen"
-							:can-terminate="canTerminate"
-							:busy="busy === row.id"
-							@open="$emit('openSite', $event)"
-							@terminate="$emit('terminateSite', $event)"
-						/>
-					</span>
-				</div>
-
+						<span class="min-w-0 flex-1">
+							<span class="flex items-center gap-1.5">
+								<span class="truncate text-sm font-medium text-ink-gray-9"
+									>{{ row.name }}</span
+								>
+								<Badge
+									v-if="row.visual.key !== 'active'"
+									:label="row.visual.label"
+									:theme="row.visual.badgeTheme"
+									variant="subtle"
+									size="sm"
+								/>
+							</span>
+							<span class="block truncate text-sm text-ink-gray-5"
+								>{{ row.specs || row.regionLabel }}</span
+							>
+						</span>
+						<span
+							class="sp-row-actions"
+							:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
+							@click.stop
+						>
+							<ServerRowActions
+								v-if="row.kind === 'server' && row.asset"
+								:server="row.asset"
+								:can-open="canOpen"
+								:can-power="canPower"
+								:can-terminate="canTerminate"
+								:busy="busy === row.id"
+								:opening="opening === row.id"
+								@overview="$emit('overview', $event)"
+								@open="$emit('open', $event)"
+								@start="$emit('start', $event)"
+								@stop="$emit('stop', $event)"
+								@resize="$emit('resize', $event)"
+								@terminate="$emit('terminate', $event)"
+							/>
+							<SiteRowActions
+								v-else-if="row.site"
+								:site="row.site"
+								:can-open="canOpen"
+								:can-terminate="canTerminate"
+								:busy="busy === row.id"
+								@open="$emit('openSite', $event)"
+								@terminate="$emit('terminateSite', $event)"
+							/>
+						</span>
+					</div>
 				</template>
 
 				<EmptyState
@@ -198,7 +224,11 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 	width: 24rem;
 	height: calc(100% - 2rem);
 	border-radius: 0.75rem;
-	box-shadow: var(--shadow-xl, 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1));
+	box-shadow: var(
+		--shadow-xl,
+		0 20px 25px -5px rgb(0 0 0 / 0.1),
+		0 8px 10px -6px rgb(0 0 0 / 0.1)
+	);
 	transition-duration: 220ms;
 }
 .sp-float-pill {

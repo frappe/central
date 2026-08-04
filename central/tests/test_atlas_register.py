@@ -28,7 +28,9 @@ def _set_hub(active: bool = True) -> None:
 	frappe.db.set_single_value("Central Tunnel Settings", "tunnel_cidr", "10.88.0.0/16")
 	frappe.db.set_single_value("Central Tunnel Settings", "hub_public_key", "HUBPUBKEY=")
 	frappe.db.set_single_value("Central Tunnel Settings", "hub_endpoint", "203.0.113.1:51820")
-	frappe.db.set_single_value("Central Tunnel Settings", "hub_status", "Active" if active else "Uninitialized")
+	frappe.db.set_single_value(
+		"Central Tunnel Settings", "hub_status", "Active" if active else "Uninitialized"
+	)
 
 
 def _make_plain_user() -> str:
@@ -101,7 +103,12 @@ class TestAtlasRegister(IntegrationTestCase):
 	def test_register_happy_path(self) -> None:
 		instance = self.make_instance("blr-happy")
 		ping, provision, confirm, host_task = self._patched()
-		with ping as admin_ping, provision as provision_tunnel, confirm as confirm_tunnel, host_task as run_host_task:
+		with (
+			ping as admin_ping,
+			provision as provision_tunnel,
+			confirm as confirm_tunnel,
+			host_task as run_host_task,
+		):
 			out = register_atlas(instance)
 
 		self.assertEqual(out["tunnel_status"], "Active")
@@ -282,8 +289,9 @@ class TestAtlasRegister(IntegrationTestCase):
 		instance = self._register("blr-retunnel")
 		service_user, tunnel_ip = instance.service_user, instance.tunnel_ip
 		# strip the tunnel (Inactive, still registered)
-		with patch.object(AtlasClient, "deprovision_tunnel", return_value={}), patch(
-			"central.integrations.atlas.run_host_task", return_value=MagicMock()
+		with (
+			patch.object(AtlasClient, "deprovision_tunnel", return_value={}),
+			patch("central.integrations.atlas.run_host_task", return_value=MagicMock()),
 		):
 			remove_tunnel(instance)
 		instance.reload()

@@ -77,9 +77,7 @@ def _handle_failure(invoice: str, attempt: int, error: str) -> dict:
 
 	backoff = BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
 	values["erpnext_sync_status"] = "Pending"
-	values["erpnext_next_retry_at"] = frappe.utils.add_to_date(
-		frappe.utils.now_datetime(), seconds=backoff
-	)
+	values["erpnext_next_retry_at"] = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=backoff)
 	frappe.db.set_value("Invoice", invoice, values)
 	return {"retry_scheduled": True, "attempt": attempt, "backoff_seconds": backoff}
 

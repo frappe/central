@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { Tabs } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Tabs } from 'frappe-ui'
-import SentInvitationsPanel from '@/components/team/SentInvitationsPanel.vue'
 import ReceivedInvitationsPanel from '@/components/team/ReceivedInvitationsPanel.vue'
+import SentInvitationsPanel from '@/components/team/SentInvitationsPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 

@@ -105,7 +105,9 @@ def iam_permission_probe_query_conditions(user: str | None = None) -> str:
 	return f"`tabIAM Permission Probe`.`user` = {frappe.db.escape(user)}"
 
 
-def iam_permission_probe_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+def iam_permission_probe_has_permission(
+	doc, user: str | None = None, ptype: str | None = None, **kwargs
+) -> bool:
 	user = user or frappe.session.user
 	if user_has_operator_bypass(user):
 		return True

@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Badge, Button, useCall } from 'frappe-ui'
-import BillingCard from '@/components/billing/BillingCard.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
-import SubscribeServiceDialog from '@/components/billing/SubscribeServiceDialog.vue'
-import type { ServicePlanOption } from '@/components/billing/SubscribeServiceDialog.vue'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
+import BillingCard from '@/components/billing/BillingCard.vue'
+import type { ServicePlanOption } from '@/components/billing/SubscribeServiceDialog.vue'
+import SubscribeServiceDialog from '@/components/billing/SubscribeServiceDialog.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { useCapabilities } from '@/composables/useCapabilities'
 
 // Metered services (ADR 0015) — the team-level services it has subscribed to (AI
 // tokens, email, PDF, storage), each with its allowance draw-down / usage this

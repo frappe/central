@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { Badge, Button, Spinner } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Badge, Button, Spinner } from 'frappe-ui'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import { useServices } from '@/composables/useServices'
 
@@ -11,7 +11,9 @@ import { useServices } from '@/composables/useServices'
 const router = useRouter()
 const { instance, instanceLoading } = useServices()
 
-const planTitle = computed(() => instance.value?.plan_title || instance.value?.plan || '—')
+const planTitle = computed(
+	() => instance.value?.plan_title || instance.value?.plan || '—',
+)
 const models = computed(() => instance.value?.models ?? [])
 const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 </script>
@@ -19,7 +21,10 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 <template>
 	<div class="min-h-0 flex-1 overflow-y-auto">
 		<div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
-			<div v-if="instanceLoading && !instance" class="flex justify-center py-16">
+			<div
+				v-if="instanceLoading && !instance"
+				class="flex justify-center py-16"
+			>
 				<Spinner class="size-5 text-ink-gray-5" />
 			</div>
 
@@ -40,7 +45,8 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 					</p>
 					<p class="mt-1.5 text-p-sm text-ink-gray-5">
 						{{ enabledSites.length }}
-						{{ enabledSites.length === 1 ? 'site' : 'sites' }} with AI enabled
+						{{ enabledSites.length === 1 ? 'site' : 'sites' }}
+						with AI enabled
 					</p>
 					<button
 						class="mt-4 inline-flex items-center gap-1 text-p-sm font-medium text-ink-gray-7 hover:text-ink-gray-9"
@@ -91,8 +97,8 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 						</li>
 					</ul>
 					<p v-else class="text-p-sm text-ink-gray-5">
-						No models yet. They appear once your plan grants a tier and the provider
-						publishes them.
+						No models yet. They appear once your plan grants a tier and the
+						provider publishes them.
 					</p>
 				</BillingCard>
 			</template>

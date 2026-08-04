@@ -4,12 +4,12 @@
 single billed line (#80)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.admin.catalog import update_component_rate
 from central.billing.catalog import subscriptions
 from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.revenue.invoicing import generate_team_invoice
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
@@ -53,7 +53,9 @@ class TestComposedSubscription(IntegrationTestCase):
 		if change_type:
 			filters["change_type"] = change_type
 		return frappe.get_all(
-			"Subscription Change", filters=filters, fields=["locked_rate", "currency", "new_value", "change_type"]
+			"Subscription Change",
+			filters=filters,
+			fields=["locked_rate", "currency", "new_value", "change_type"],
 		)
 
 	def test_provision_composed_locks_summed_config_rate(self):
@@ -111,9 +113,7 @@ class TestComposedSubscription(IntegrationTestCase):
 	def test_preset_subscription_still_one_flat_line(self):
 		# Regression: a preset bills its single flat Plan rate, unchanged.
 		plan = make_plan("preset-regression", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
-		subscriptions.create_subscription(
-			TEAM, CLUSTER, plan=plan, start_date="2026-05-01"
-		)
+		subscriptions.create_subscription(TEAM, CLUSTER, plan=plan, start_date="2026-05-01")
 		invoice = generate_team_invoice(TEAM, "2026-05-01", "2026-05-31")
 		doc = frappe.get_doc("Invoice", invoice)
 		self.assertEqual(len(doc.items), 1)

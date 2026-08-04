@@ -9,12 +9,12 @@
 // Stripe card capture (SetupIntent + Stripe Elements) is a separate flow
 // (useAddStripeCard); this covers the Razorpay/INR recurring path.
 
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import { openRazorpayCheckout, type GatewayOrder } from '@/lib/gateway'
-import { successToast, errorToast } from '@/lib/toast'
+import { type GatewayOrder, openRazorpayCheckout } from '@/lib/gateway'
+import { errorToast, successToast } from '@/lib/toast'
 
 interface MethodResult {
 	payment_method: string

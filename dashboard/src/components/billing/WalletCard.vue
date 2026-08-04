@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { Button, LoadingText, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { Button, Tooltip, LoadingText } from 'frappe-ui'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { money } from '@/lib/format'
 
 // Wallet — the FC v2 prototype's funding card: balance, a one-line coverage

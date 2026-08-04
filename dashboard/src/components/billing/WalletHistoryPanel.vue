@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { Button, LoadingText, Switch } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { Button, Switch, LoadingText } from 'frappe-ui'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { money, signedMoney } from '@/lib/format'
 import { infoToast } from '@/lib/toast'
 import type { CreditLedgerEntry } from '@/types/billing'
