@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { searchIndex } from './index'
+import Scrollbar from '@/components/common/Scrollbar.vue'
+import { useSearchIndex } from './index'
+import type { SearchItem } from './index'
 import { filterIndex, highlightMatch } from './utils'
 
 const open = defineModel<boolean>('open', { default: false })
@@ -10,6 +12,7 @@ const router = useRouter()
 const query = ref('')
 const activeIndex = ref(-1)
 const inputRef = useTemplateRef<HTMLInputElement>('inputRef')
+const searchIndex = useSearchIndex()
 
 const filtered = computed(() => filterIndex(searchIndex.value, query.value))
 const flatItems = computed(() =>
@@ -27,26 +30,31 @@ watch(open, (isOpen) => {
 	nextTick(() => inputRef.value?.focus())
 })
 
-const close = (): void => {
+const close = () => {
 	open.value = false
 }
 
-const go = (index: number): void => {
-	const item = flatItems.value[index] ?? flatItems.value[0]
-	if (item) router.push(item.route)
+const select = (item: SearchItem) => {
+	if (item.route) router.push(item.route)
+	else item.onSelect?.()
 	close()
+}
+
+const go = (index: number) => {
+	const item = flatItems.value[index] ?? flatItems.value[0]
+	if (item) select(item)
+	else close()
 }
 </script>
 
 <template>
-  <!-- backdrop -->
+	<!-- backdrop -->
 	<div
 		v-if="open"
 		class="search-backdrop fixed inset-0 z-100 flex items-start justify-center bg-black/70"
 		@click.self="close"
 	>
-
-  <!-- popup -->
+		<!-- popup -->
 		<div
 			class="search-panel mt-[15vh] w-full max-w-lg overflow-hidden rounded bg-surface-gray-1 shadow-lg"
 			@keydown.esc.prevent="close"
@@ -54,7 +62,7 @@ const go = (index: number): void => {
 			@keydown.up.prevent="activeIndex = Math.max(activeIndex - 1, 0)"
 			@keydown.down.prevent="activeIndex = Math.min(activeIndex + 1, flatItems.length - 1)"
 		>
-  <!-- input -->
+			<!-- input -->
 			<div class="flex items-center gap-2 border-b border-outline-gray-2 p-3">
 				<span class="lucide-search size-4 text-ink-gray-5" />
 				<input
@@ -72,30 +80,48 @@ const go = (index: number): void => {
 				</button>
 			</div>
 
-       <!-- search items -->
-			<div
-				v-if="flatItems.length"
-				class="max-h-[42vh] overflow-y-auto p-2 text-sm"
-				role="listbox"
-			>
-				<template v-for="(group, name) in filtered" :key="name">
-					<span class="block px-2 py-1 text-xs uppercase text-ink-gray-4"
-						>{{ name }}</span
-					>
-					<router-link
-						v-for="item in group.items"
-						:key="item.route"
-						:to="item.route"
-						role="option"
-						class="mb-0.5 flex items-center gap-2 rounded p-2 hover:bg-surface-gray-2"
-						:class="{ 'bg-surface-gray-2': flatItems.indexOf(item) === activeIndex }"
-						@click="close"
-					>
-						<span :class="item.icon" class="size-4 text-ink-gray-6" />
-						<span v-html="highlightMatch(item.name, query)" />
-					</router-link>
-				</template>
-			</div>
+			<!-- search items -->
+			<Scrollbar v-if="flatItems.length">
+				<div
+					class="flex max-h-[42vh] min-h-[42vh] flex-col p-2 text-sm"
+					role="listbox"
+				>
+					<template v-for="(group, name) in filtered" :key="name">
+						<span class="block px-2 py-1 text-xs uppercase text-ink-gray-4">
+							{{ name }}
+						</span>
+
+						<div
+							v-for="(item, i) in group.items"
+							:key="`${name}-${item.name}`"
+							role="option"
+							class="flex cursor-pointer items-center gap-2 rounded p-2 hover:bg-surface-gray-2"
+							:class="[
+								flatItems.indexOf(item) === activeIndex ? 'bg-surface-gray-2' : '',
+								i === group.items.length - 1 ? 'mb-3' : 'mb-0.5',
+							]"
+							@click="select(item)"
+						>
+							<span
+								:class="item.icon"
+								class="size-4 shrink-0 text-ink-gray-6"
+							/>
+
+							<span
+								class="min-w-0 flex-1 truncate"
+								v-html="highlightMatch(item.name, query)"
+							/>
+
+							<span
+								v-if="item.description"
+								class="shrink-0 truncate pl-2 text-xs text-ink-gray-5"
+							>
+								{{ item.description }}
+							</span>
+						</div>
+					</template>
+				</div>
+			</Scrollbar>
 
 			<div
 				v-else
@@ -105,7 +131,7 @@ const go = (index: number): void => {
 				No results found
 			</div>
 
-      <!-- keyboard shortcuts -->
+			<!-- keyboard shortcuts -->
 			<div
 				class="flex items-center gap-1.5 border-t border-outline-gray-2 px-3 py-2 text-xs text-ink-gray-5"
 			>

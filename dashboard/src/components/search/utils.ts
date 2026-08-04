@@ -1,7 +1,4 @@
-import type { SearchItem } from './index'
-
-type SearchGroup = { items: SearchItem[] }
-type SearchGroups = Record<string, SearchGroup>
+import type { SearchGroups } from './index'
 
 export const highlightMatch = (text: string, query: string): string => {
 	if (!query) return text
@@ -14,9 +11,13 @@ export const filterIndex = (index: SearchGroups, query: string): SearchGroups =>
 	if (!q) return index
 
 	const result: SearchGroups = {}
+
 	for (const [group, value] of Object.entries(index)) {
-		const items = value.items.filter((item) => item.name.toLowerCase().includes(q))
+		const items = group.toLowerCase().includes(q)
+			? value.items
+			: value.items.filter((item) => item.name.toLowerCase().includes(q))
 		if (items.length) result[group] = { items }
 	}
+
 	return result
 }
