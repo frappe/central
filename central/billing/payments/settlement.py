@@ -16,10 +16,10 @@ residual shortfall at settlement flows into dunning.
 
 import frappe
 
+from central.billing import settings
 from central.billing.revenue import credits
 
 AUTOPAY_METHODS = ("Card", "UPI Autopay")
-FORECAST_NOTIFY_RATIO = 0.8
 
 
 def settlement_sources(team: str) -> dict:
@@ -89,7 +89,7 @@ def credit_forecast(team: str, projected_spend, notify: bool = True) -> dict:
 	balance = frappe.utils.flt(credits.get_balance(team)["balance"])
 	projected = frappe.utils.flt(projected_spend)
 	utilisation = (projected / balance) if balance > 0 else (1.0 if projected > 0 else 0.0)
-	should_notify = utilisation >= FORECAST_NOTIFY_RATIO
+	should_notify = utilisation >= settings.forecast_notify_ratio()
 
 	if notify and should_notify:
 		_notify_top_up(team, balance, projected, utilisation)
