@@ -29,11 +29,12 @@
    "reqd": 1
   },
   {
-   "description": "The sending Atlas's own delivery id (its Central Event Log row name). Stable across a redelivery of the same event.",
+   "description": "The sending Atlas's own delivery id (its Central Event Log row name). Stable across a redelivery of the same event. Empty for an Atlas build predating event_id — dedup is skipped for those, not enforced.",
    "fieldname": "event_id",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Event ID"
+   "label": "Event ID",
+   "unique": 1
   },
   {
    "fieldname": "event_type",
