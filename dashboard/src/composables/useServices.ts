@@ -24,13 +24,18 @@ export interface ServiceModel {
 	tier: string
 }
 
+export interface ServiceEnabledSite {
+	site: string
+	cluster: string | null
+}
+
 export interface ServiceInstance {
 	managed_service: string
 	service: string
 	status: string
 	plan: string | null
 	plan_title: string | null
-	enabled_sites: string[]
+	enabled_sites: ServiceEnabledSite[]
 	models: ServiceModel[]
 }
 
@@ -42,6 +47,7 @@ export interface ServiceApiKey {
 	gateway_url: string | null
 	last_usage_total: number
 	creation: string
+	masked_key: string
 }
 
 // The secret + endpoint, returned on generate and on reveal.

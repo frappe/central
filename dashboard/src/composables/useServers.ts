@@ -5,7 +5,7 @@ import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { useFrappeList } from '@/composables/common/useFrappeList'
-import { successToast, errorToast, getErrorMessage } from '@/lib/toast'
+import { successToast, errorToast, getErrorMessage, isAbortError } from '@/lib/toast'
 import type { RefreshResponse } from '@/types/api'
 import type { Asset } from '@/types/Central/Asset'
 
@@ -252,11 +252,11 @@ export function useServers() {
 		countLoading: registry.countLoading,
 		query,
 		loading: registry.loading,
-		error: computed(() =>
-			registry.error.value
-				? getErrorMessage(registry.error.value, "Couldn't load servers.")
-				: null,
-		),
+		error: computed(() => {
+			const e = registry.error.value
+			if (!e || isAbortError(e)) return null
+			return getErrorMessage(e, "Couldn't load servers.")
+		}),
 		refreshing: computed(() => refresh.loading),
 		creating: computed(() => createCall.loading),
 		creatingComposed: computed(() => createComposedCall.loading),

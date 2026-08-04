@@ -29,7 +29,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Entitlement Token", "Commitment", "Usage Rollup", "Payment Method",
 		"Tax Profile", "Billing Profile", "Team Invitation", "Team Role",
 		"Catalog Rate", "Plan", "Asset", "Team", "Atlas Instance", "Region", "User",
-		"Webhook Event", "Notification Log",
+		"Webhook Event", "Notification Log", "Billing Event", "Billing Run",
 	)
 
 	def run(self, result=None):
@@ -64,6 +64,8 @@ _ENQUEUE_CONTROL_KWARGS = (
 def run_enqueued_inline(method, **kwargs):
 	for control in _ENQUEUE_CONTROL_KWARGS:
 		kwargs.pop(control, None)
+	if isinstance(method, str):  # enqueue takes a dotted path or a callable
+		method = frappe.get_attr(method)
 	return method(**kwargs)
 
 DEFAULT_RATES = [

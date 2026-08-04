@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import frappe
 from frappe import _
+from frappe.utils.password import get_decrypted_password
 
 from central.services import provisioning
 from central.services.drivers.base import get_driver
@@ -95,13 +96,21 @@ def generate_api_key(managed_service: str, label: str) -> dict:
 @frappe.whitelist(methods=["GET"])
 @require_service_capability("service:view")
 def list_api_keys(managed_service: str) -> list[dict]:
-	"""A managed service's issued API keys (no secrets). service:view."""
-	return frappe.get_all(
+	"""A managed service's issued API keys, masked (no raw secrets). service:view."""
+	rows = frappe.get_all(
 		"Service API Key",
 		filters={"managed_service": managed_service},
 		fields=["name", "label", "status", "gateway_url", "last_usage_total", "creation"],
 		order_by="creation desc",
 	)
+	for row in rows:
+		row["masked_key"] = _mask_key(get_decrypted_password("Service API Key", row.name, "api_key"))
+
+	return rows
+
+
+def _mask_key(key: str) -> str:
+	return f"{key[:6]}••••{key[-4:]}" if key and len(key) > 10 else "••••"
 
 
 @frappe.whitelist(methods=["POST"])
@@ -165,6 +174,10 @@ def get_instance(managed_service: str) -> dict:
 		fields=["site", "gateway_url"],
 		order_by="site",
 	)
+	clusters = frappe.get_all(
+		"Site", filters={"name": ["in", [row.site for row in sites]]}, fields=["name", "cluster"]
+	)
+	cluster_by_site = {row.name: row.cluster for row in clusters}
 	plan = frappe.db.get_value("Subscription", instance.subscription, "plan")
 
 	return {
@@ -173,7 +186,7 @@ def get_instance(managed_service: str) -> dict:
 		"status": instance.status,
 		"plan": plan,
 		"plan_title": frappe.db.get_value("Plan", plan, "title") if plan else None,
-		"enabled_sites": [row.site for row in sites],
+		"enabled_sites": [{"site": row.site, "cluster": cluster_by_site.get(row.site)} for row in sites],
 		"models": _included_models(instance.add_on_service, plan),
 	}
 

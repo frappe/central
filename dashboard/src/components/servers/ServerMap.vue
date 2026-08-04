@@ -44,6 +44,8 @@ const props = withDefaults(
 		allowCreate?: boolean
 		/** Show direct bench-open affordances inside cluster cards. */
 		allowOpen?: boolean
+		/** Site name currently being opened — spins its cluster-card open button. */
+		openingSite?: string | null
 	}>(),
 	{
 		pins: () => [],
@@ -55,16 +57,17 @@ const props = withDefaults(
 		interactive: true,
 		allowCreate: false,
 		allowOpen: false,
+		openingSite: null,
 	},
 )
 
 const emit = defineEmits<{
-	/** A pin (or a cluster-card row) was chosen. */
+	/** A pin (or a cluster-card row) was chosen — page opens the site/server. */
 	open: [id: string]
 	/** A server cluster-card row's open-bench action was chosen. */
 	'open-server': [server: NonNullable<MapPin['server']>]
 	/** A site pin/cluster-card row's open-live-site action was chosen. */
-	'open-site': [url: string]
+	'open-site': [name: string]
 	/** A + spot was chosen — the Atlas Instance region to create in. */
 	'new-server': [region: string]
 	/** A cluster was clicked; the page may narrow its list to these servers. */
@@ -474,11 +477,15 @@ function clickNode(n: MapNode): void {
 	if (n.type === 'marker') {
 		emit('select', n.marker.id)
 	} else if (n.type === 'server') {
-		// No per-server page exists (yet) — the card is the detail surface, so a
-		// click pins it open with its actions menu reachable.
-		window.clearTimeout(showT)
-		hoverKey.value = n.key
-		cardLocked.value = true
+		// A pin click opens the resource. A site that can't be opened yet has no
+		// overview to fall back on, so keep its card open instead of a dead click.
+		if (n.pin.kind === 'site' && (!props.allowOpen || !n.pin.site?.url)) {
+			window.clearTimeout(showT)
+			hoverKey.value = n.key
+			cardLocked.value = true
+			return
+		}
+		hideCard()
 		emit('open', n.pin.id)
 	} else if (n.type === 'plus') {
 		emit('new-server', n.targets[0].id)
@@ -745,12 +752,15 @@ function clickNode(n: MapNode): void {
 						<button
 							v-else-if="m.site"
 							class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
-							:disabled="!allowOpen || !m.site.url"
+							:class="{ '!opacity-100': openingSite === m.site.name }"
+							:disabled="!allowOpen || !m.site.url || openingSite === m.site.name"
 							title="Open site"
 							aria-label="Open site"
-							@click.stop="m.site.url && emit('open-site', m.site.url)"
+							@click.stop="m.site.url && emit('open-site', m.site.name)"
 						>
-							<span class="lucide-arrow-up-right size-3.5" />
+							<span
+								:class="openingSite === m.site.name ? 'lucide-loader-circle size-3.5 animate-spin' : 'lucide-arrow-up-right size-3.5'"
+							/>
 						</button>
 					</div>
 				</template>
@@ -764,9 +774,7 @@ function clickNode(n: MapNode): void {
 						{{ card.node.title }}
 					</div>
 					<div class="mt-3 flex items-center gap-2">
-						<span class="text-sm text-ink-gray-6"
-							>{{ card.node.targets.length > 1 ? 'Regions here' : 'Region' }}</span
-						>
+						<span class="text-sm text-ink-gray-6">Providers available</span>
 						<button
 							v-for="t in card.node.targets"
 							:key="t.id"

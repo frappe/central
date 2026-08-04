@@ -14,9 +14,11 @@ export const sidebarSections = computed(() => {
 					icon: 'lucide-bell',
 					to: '/notifications',
 					condition: isMember.value,
+					class: 'mb-3',
 				},
 			],
 		},
+
 		{
 			items: [
 				{
@@ -31,20 +33,16 @@ export const sidebarSections = computed(() => {
 					to: '/team/members',
 					condition: isMember.value,
 				},
+
+        {
+          label: 'Addons',
+          icon: 'lucide-blocks',
+          to: '/addons',
+          condition: canViewServices.value,
+        }
 			],
 		},
-		{
-			label: 'Services',
-			collapsible: true,
-			items: [
-				{
-					label: 'LLM',
-					icon: 'lucide-sparkles',
-					to: '/services/llm',
-					condition: canViewServices.value,
-				},
-			],
-		},
+
 		{
 			label: 'Billing',
 			items: [

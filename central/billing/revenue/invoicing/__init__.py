@@ -18,13 +18,12 @@ Subscription Change already encodes both the time windows (effective_at per
 row) and the rate snapshot, so billing reads only Central — no live Agent call
 in the common (push-primary) case.
 
-Split into modules (lines / generate / lifecycle); this package re-exports the
-public API so callers and the `billing.revenue.invoicing.*` enqueue paths hold.
+Split into modules (lines / generate / lifecycle / run); this package re-exports
+the public API so callers and the `billing.revenue.invoicing.*` enqueue paths hold.
 """
 
 from central.billing.revenue.invoicing.generate import (
 	generate_draft_invoice,
-	generate_draft_invoices,
 	generate_team_invoice,
 	reconcile_subscription,
 )
@@ -32,16 +31,28 @@ from central.billing.revenue.invoicing.lifecycle import (
 	DEFAULT_DUE_DAYS,
 	cancel_invoice,
 	open_and_collect,
-	open_drafts,
 	reissue_invoice,
-	run_monthly_billing,
 )
-from central.billing.revenue.invoicing.lines import compute_line_items
+from central.billing.revenue.invoicing.lines import compute_line_items, team_line_items
+from central.billing.revenue.invoicing.run import (
+	billing_run_status,
+	collect_due_invoices,
+	draft_monthly_invoices,
+	draft_team_invoice,
+	draft_team_page,
+	generate_draft_invoices,
+	open_drafts,
+	run_monthly_billing,
+	settle_draft,
+	settle_draft_page,
+)
 
 __all__ = [
-	"compute_line_items",
+	"compute_line_items", "team_line_items",
 	"reconcile_subscription", "generate_draft_invoice", "generate_team_invoice",
-	"generate_draft_invoices",
+	"generate_draft_invoices", "draft_team_invoice", "draft_team_page",
 	"open_and_collect", "open_drafts", "cancel_invoice", "reissue_invoice", "DEFAULT_DUE_DAYS",
-	"run_monthly_billing",
+	"settle_draft", "settle_draft_page",
+	"draft_monthly_invoices", "collect_due_invoices", "run_monthly_billing",
+	"billing_run_status",
 ]

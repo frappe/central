@@ -3,7 +3,7 @@ import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { useBusyRunner } from '@/composables/useBusyRunner'
-import { getErrorMessage } from '@/lib/toast'
+import { getErrorMessage, isAbortError } from '@/lib/toast'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { MemberStatus, TeamMemberRoleAssignment, TeamMemberRow } from '@/types/api'
 
@@ -75,11 +75,10 @@ export function useTeamMembers() {
 	return {
 		members: computed<TeamMemberRow[]>(() => membersCall.data ?? []),
 		loading: computed(() => membersCall.loading || !membersCall.isFinished),
-		error: computed(() =>
-			membersCall.error
-				? getErrorMessage(membersCall.error, "Couldn't load members.")
-				: null,
-		),
+		error: computed(() => {
+			if (!membersCall.error || isAbortError(membersCall.error)) return null
+			return getErrorMessage(membersCall.error, "Couldn't load members.")
+		}),
 		busy,
 		reload: () => membersCall.reload(),
 		setRoles,

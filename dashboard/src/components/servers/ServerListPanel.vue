@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Badge, Button, FormControl } from 'frappe-ui'
+import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import SiteRowActions from '@/components/servers/SiteRowActions.vue'
@@ -36,6 +37,7 @@ const props = defineProps<{
 	canTerminate: boolean
 	busy: string | null
 	opening: string | null
+	openingSite: string | null
 }>()
 
 defineEmits<{
@@ -47,7 +49,7 @@ defineEmits<{
 	stop: [server: AssetRow]
 	resize: [server: AssetRow]
 	terminate: [server: AssetRow]
-	openSite: [url: string]
+	openSite: [name: string]
 	terminateSite: [name: string]
 }>()
 
@@ -130,7 +132,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 					</span>
 					<span
 						class="sp-row-actions"
-						:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
+						:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id || openingSite === row.id }"
 						@click.stop
 					>
 						<ServerRowActions
@@ -153,7 +155,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							:site="row.site"
 							:can-open="canOpen"
 							:can-terminate="canTerminate"
-							:busy="busy === row.id"
+							:busy="busy === row.id || openingSite === row.id"
 							@open="$emit('openSite', $event)"
 							@terminate="$emit('terminateSite', $event)"
 						/>
@@ -162,15 +164,17 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 
 				</template>
 
-				<div v-if="!rows.length" class="m-4 flex flex-col items-center gap-1 py-8 text-center">
-					<span :class="hasRows ? 'lucide-search' : 'lucide-server'" class="mb-2 size-6 text-ink-gray-4" />
-					<p class="text-base font-medium text-ink-gray-8">
-						{{ hasRows ? 'No servers match' : 'No servers yet' }}
-					</p>
-					<p class="text-sm text-ink-gray-5">
-						{{ hasRows ? 'Try a different search or clear the filters.' : 'Create your first server to host your sites.' }}
-					</p>
-				</div>
+				<EmptyState
+					v-if="!rows.length"
+					class="m-2"
+					:icon="hasRows ? 'lucide-search-x' : 'lucide-server'"
+					:title="hasRows ? 'No servers match' : 'No servers yet'"
+					:description="
+						hasRows
+							? 'Try a different search or clear the filters.'
+							: 'Create your first server to host your sites.'
+					"
+				/>
 			</div>
 		</div>
 	</section>

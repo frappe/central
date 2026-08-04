@@ -94,13 +94,15 @@ const matchingPreset = computed<Plan | null>(() => {
 				]
 			"
 		>
-			<!-- @tailwindcss/forms drives the checked fill from `currentColor`, so the
-           espresso ink token goes on `text-`, not `accent-` (which it ignores). -->
 			<input
 				v-model="selectedPlan"
 				type="radio"
 				:value="plan.plan"
-				class="size-4 shrink-0 text-ink-gray-9 focus:ring-outline-gray-3"
+				class="peer sr-only"
+			/>
+			<span
+				aria-hidden="true"
+				class="size-3.5 shrink-0 rounded-full border border-outline-gray-4 peer-checked:border-4 peer-checked:border-outline-gray-5"
 			/>
 			<!-- Title carries the size too (e.g. "Starter · 1 vCPU / 2 GB"); the specs
            already spell it out, so show just the tier name to avoid the echo. -->
@@ -133,7 +135,11 @@ const matchingPreset = computed<Plan | null>(() => {
 					v-model="selectedPlan"
 					type="radio"
 					:value="customKey"
-					class="size-4 shrink-0 text-ink-gray-9 focus:ring-outline-gray-3"
+					class="peer sr-only"
+				/>
+				<span
+					aria-hidden="true"
+					class="size-3.5 shrink-0 rounded-full border border-outline-gray-4 peer-checked:border-4 peer-checked:border-outline-gray-5"
 				/>
 				<span
 					class="flex shrink-0 items-center gap-1.5 font-medium text-ink-gray-9"

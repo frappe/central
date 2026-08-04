@@ -22,10 +22,49 @@ import frappe
 
 from central.billing.catalog import subscriptions
 from central.billing.catalog.entitlements import issue_token
+from central.billing.states import transition
 
 RETRY_DAYS = [1, 3, 7]
 SUSPEND_AFTER_DAYS = 14
 TERMINATE_AFTER_DAYS = 44
+
+
+def defer_dunning(invoice: str, reason: str) -> bool:
+	"""Push an invoice's dunning clock forward — we failed to ask, so they aren't late.
+
+	Every stage below is counted from a date the customer is entitled to assume we
+	honoured: that we tried to collect when we said we would. When the attempt fails
+	on *our* side — the gateway rate-limited us, the run backed up, a worker died
+	mid-charge — the customer did nothing wrong, and starting their retry ladder,
+	their Overdue notice and their suspension countdown on that date would be
+	charging them for our outage.
+
+	So the clock restarts at today plus the same window a freshly opened invoice
+	gets. Monotonic (it only ever moves forward) and self-limiting (a successful
+	ask stops pushing it), so a permanently broken gateway cannot defer collection
+	forever — it defers *escalation*, while reconciliation and the next run keep
+	trying. `due_date` is untouched: what the customer owes and when they owed it is
+	an accounting fact, and AR aging must keep telling the truth.
+	"""
+	from central.billing.revenue.invoicing import DEFAULT_DUE_DAYS
+
+	fair_start = frappe.utils.add_days(frappe.utils.nowdate(), DEFAULT_DUE_DAYS)
+	current = frappe.db.get_value("Invoice", invoice, "dunning_starts_on")
+	if current and frappe.utils.getdate(current) >= frappe.utils.getdate(fair_start):
+		return False
+	frappe.db.set_value("Invoice", invoice, "dunning_starts_on", fair_start)
+	frappe.logger("billing").info(f"dunning for {invoice} deferred to {fair_start}: {reason}")
+	return True
+
+
+def dunning_clock_start(invoice_doc):
+	"""The date this invoice's retry ladder counts from.
+
+	`dunning_starts_on` is absent on invoices raised before it existed, and on any
+	invoice whose collection went to plan — in both cases the due date is the
+	honest answer.
+	"""
+	return invoice_doc.get("dunning_starts_on") or invoice_doc.due_date
 
 
 def _notify(invoice, message: str):
@@ -104,7 +143,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if not inv.due_date:
 		return {"invoice": invoice_name, "skipped": "no_due_date"}
 
-	days = (frappe.utils.getdate(now) - frappe.utils.getdate(inv.due_date)).days
+	days = (frappe.utils.getdate(now) - frappe.utils.getdate(dunning_clock_start(inv))).days
 	if days < RETRY_DAYS[0]:
 		return {"invoice": invoice_name, "days_overdue": days, "action": "none"}
 
@@ -134,7 +173,8 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# --- Day 7: Overdue + past_due, still running --------------------------
 	if days >= RETRY_DAYS[-1]:
 		if inv.status == "Open":
-			inv.db_set("status", "Overdue")
+			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
+			inv.save(ignore_permissions=True)
 			actions.append("overdue")
 			from central.billing.platform import notifications
 
