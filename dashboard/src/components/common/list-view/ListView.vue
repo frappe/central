@@ -214,7 +214,9 @@ const countText = computed(() => {
 // Footer visibility deliberately ignores `loading`: a refetch (e.g. changing
 // the page size) keeps the row count stable, so unmounting the footer mid-load
 // only causes a flicker and layout shift. It stays put while new rows arrive.
-const showPagination = computed(() => props.paginated && resultCount.value > 0)
+const showPagination = computed(
+	() => props.paginated && resultCount.value > 0 && table.getPageCount() > 1,
+)
 const showFooter = computed(
 	() => (props.showCount && resultCount.value > 0) || showPagination.value,
 )
@@ -608,7 +610,14 @@ defineExpose({ table })
               ]"
 							@click="cell.column.id === '__selection' ? $event.stopPropagation() : undefined"
 						>
+							<slot
+								v-if="$slots[cell.column.id]"
+								:name="cell.column.id"
+								:row="row.original"
+								:value="cell.getValue()"
+							/>
 							<FlexRender
+								v-else
 								:render="cell.column.columnDef.cell"
 								:props="cell.getContext()"
 							/>

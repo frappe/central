@@ -439,6 +439,7 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 	if inv.status == "Paid":
 		return False  # a duplicate webhook — already settled
 	inv.amount_paid = frappe.utils.flt(amount)
+	inv.paid_at = frappe.utils.now_datetime()
 	transition(inv, "Paid", reason="gateway capture settled", actor="webhook",
 			   correlation=inv.name, amount=inv.amount_paid)
 	inv.save(ignore_permissions=True)
