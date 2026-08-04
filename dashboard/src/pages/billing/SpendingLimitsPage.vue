@@ -177,7 +177,7 @@ const levels = computed(() => {
 								</span>
 								<Badge
 									v-if="l.state === 'current'"
-									class="ml-2"
+									class="mt-2"
 									theme="blue"
 									label="Current"
 								/>
