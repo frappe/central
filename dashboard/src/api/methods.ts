@@ -22,7 +22,7 @@ export const API = {
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
 	inviteTeamMember: 'central.api.teams.invite_team_member',
-	setTeamMemberRole: 'central.api.teams.set_team_member_role',
+	setTeamMemberRoles: 'central.api.teams.set_team_member_roles',
 	setTeamMemberStatus: 'central.api.teams.set_team_member_status',
 	removeTeamMember: 'central.api.teams.remove_team_member',
 	createCustomRole: 'central.api.teams.create_custom_role',
