@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import re
 import time
+from typing import Any
 from urllib.parse import urlparse
 
 import frappe
 import requests
-from frappe.frappeclient import FrappeClient
+from frappe import _
+from frappe.frappeclient import FrappeClient, FrappeException
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
@@ -34,6 +36,36 @@ CAPACITY_TIMEOUT = 3
 
 class AtlasError(frappe.ValidationError):
 	pass
+
+
+# The last line of a Python traceback is always "<dotted.ExcType>: <message>". That is
+# the only part of a remote failure worth showing a caller, so it is what we lift out of
+# the traceback FrappeClient hands us (see `_post`).
+_REMOTE_EXC_LINE = re.compile(r"^(?P<type>[\w.]+):\s*(?P<message>.+)$")
+
+
+def _remote_error_message(exception: Exception) -> str | None:
+	"""Pull Atlas's own error sentence out of a FrappeClient failure, or None.
+
+	`FrappeClient.post_process` raises FrappeException whose single argument is
+	"FrappeClient Request Failed\\n\\n" followed by Atlas's ENTIRE remote traceback as
+	one string. The actionable sentence Atlas raised — "Capacity is being freed by
+	migrating small VMs — retry shortly.", "Image X is not present on any active
+	server yet", "No capacity available — contact your operator." — is the last line.
+	Everything above it is Atlas's internal frames, which are useless to the caller and
+	should not be rendered into a tenant's browser.
+
+	Returns None when the payload isn't a remote traceback (a connection error, say),
+	so the caller can fall back to a generic message rather than print something wrong.
+	"""
+	text = str(exception or "").strip()
+	if not text:
+		return None
+	for line in reversed(text.splitlines()):
+		match = _REMOTE_EXC_LINE.match(line.strip())
+		if match:
+			return match.group("message").strip() or None
+	return None
 
 
 def get_atlas_instance(region: str):
@@ -68,6 +100,35 @@ class AtlasClient:
 			return self.instance.tunnel_url
 		return self.instance.base_url
 
+	def _post(self, method: str, params: dict, *, action: str) -> Any:
+		"""POST to Atlas, translating a remote failure into Atlas's own error.
+
+		Every tenant-triggered write goes through here. Without it, an Atlas-side
+		`frappe.throw` (region full, image not on any host, size rejected) surfaces to
+		the tenant as a bare `FrappeException` wrapping Atlas's whole traceback: the one
+		sentence that tells them what to do is buried under Atlas internals they should
+		never see. We re-raise it as `AtlasError` carrying just that sentence, and keep
+		the full traceback in the Error Log for operators.
+
+		`action` names the operation for the fallback message, used when the failure
+		isn't a remote traceback at all (Atlas unreachable, TLS error, timeout).
+		"""
+		try:
+			return self.client().post_api(method, params=params)
+		except FrappeException as exception:
+			frappe.log_error(
+				title=f"Atlas '{self.instance.region}': {action} failed",
+				message=str(exception),
+			)
+			message = _remote_error_message(exception)
+			frappe.throw(
+				message
+				or _("Could not {0} — Atlas '{1}' is unreachable. Try again shortly.").format(
+					action, self.instance.region
+				),
+				AtlasError,
+			)
+
 	def ping(self) -> dict:
 		"""Reachability + auth check against the frappe ping endpoint."""
 		return self.client().get_api("ping")
@@ -75,8 +136,10 @@ class AtlasClient:
 	def vm_action(self, name: str, method: str) -> str:
 		"""Invoke a Virtual Machine lifecycle method (start/stop/terminate) as the
 		operator; return the resulting Task name."""
-		return self.client().post_api(
-			"run_doc_method", params={"dt": "Virtual Machine", "dn": name, "method": method}
+		return self._post(
+			"run_doc_method",
+			{"dt": "Virtual Machine", "dn": name, "method": method},
+			action=f"{method} this server",
 		)
 
 	def resize_vm(
@@ -91,9 +154,9 @@ class AtlasClient:
 		the arg-less lifecycle verbs, so it goes through run_doc_method's `args`).
 		Atlas refuses a resize on a running VM — the caller gates on Stopped first.
 		Returns the on-host resize Task name."""
-		return self.client().post_api(
+		return self._post(
 			"run_doc_method",
-			params={
+			{
 				"dt": "Virtual Machine",
 				"dn": name,
 				"method": "resize",
@@ -105,6 +168,7 @@ class AtlasClient:
 					}
 				),
 			},
+			action="resize this server",
 		)
 
 	def create_vm(
@@ -136,7 +200,17 @@ class AtlasClient:
 			params["cpu_max_cores"] = cpu_max_cores
 		if frappe_version:
 			params["frappe_version"] = frappe_version
-		return self.client().post_api("atlas.atlas.api.provision.create_vm", params=params)
+		# Same enrollment carriage as create_site: mint the single-use bootstrap token and
+		# credential id so the bench can run `bench admin enroll` on first boot. Without it
+		# a server provisions fine but never enrols, and Open Console refuses it with
+		# "This VM's pilot hasn't enrolled yet" (central/api/sso.py). Sites had this;
+		# servers did not, which is why only servers were unopenable.
+		params.update(self._pilot_credential(team))
+		# Commit before the Atlas call for the same durability reason create_site has:
+		# minting lazily generates Central's signing key, and a rollback of the enclosing
+		# request must not discard a key the booting bench already holds a token signed by.
+		frappe.db.commit()
+		return self._post("atlas.atlas.api.provision.create_vm", params, action="create this server")
 
 	def capacity(self) -> dict:
 		"""Ask this region what it can seat right now: `{available, unmeasured, largest_vm}`.
@@ -282,7 +356,10 @@ class AtlasClient:
 		# long-lived credential is created only later at enrollment, so nothing else here
 		# needs committing; an unused token after a failed Atlas call is harmless.
 		frappe.db.commit()
-		return self.client().post_api("atlas.atlas.api.site.create_site", params=params)
+		site = self._post("atlas.atlas.api.site.create_site", params, action="create this site")
+		# Central minted this credential, so carry it onto the mirror as the site→pilot key.
+		site["pilot_credential_id"] = params["pilot_credential_id"]
+		return site
 
 	def _pilot_credential(self, team: str) -> dict:
 		"""
@@ -321,17 +398,19 @@ class AtlasClient:
 		clicks their login link after the stored URL's 24h session has expired — the URL
 		is short-lived by design, so it is re-signed on demand. The Atlas Site controller
 		re-mints in the guest, re-stamps, and returns the mirror."""
-		return self.client().post_api(
+		return self._post(
 			"run_doc_method",
-			params={"dt": "Site", "dn": name, "method": "regenerate_login_url"},
+			{"dt": "Site", "dn": name, "method": "regenerate_login_url"},
+			action="refresh this site's login link",
 		)
 
 	def terminate_site(self, name: str) -> dict:
 		"""Tear down a self-serve site and its 1:1 backing VM. The Atlas Site controller
 		terminates the guest + VM; the site.* events flip the mirror to Terminated."""
-		return self.client().post_api(
+		return self._post(
 			"run_doc_method",
-			params={"dt": "Site", "dn": name, "method": "terminate"},
+			{"dt": "Site", "dn": name, "method": "terminate"},
+			action="terminate this site",
 		)
 
 

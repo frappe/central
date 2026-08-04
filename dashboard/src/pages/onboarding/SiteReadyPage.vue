@@ -64,7 +64,7 @@ onUnmounted(() => clearTimeout(timer))
 				<span class="lucide-check size-5" aria-hidden="true" />
 			</div>
 			<h1 class="text-2xl font-semibold text-ink-gray-9">Your site is ready</h1>
-			<p class="mt-2 text-base text-ink-gray-5">
+			<p class="mt-2 text-p-base text-ink-gray-5">
 				Signing you in to
 				<span class="font-medium text-ink-gray-8">{{ site.url }}</span> as
 				<span class="font-medium text-ink-gray-8">Administrator</span>…
@@ -83,7 +83,7 @@ onUnmounted(() => clearTimeout(timer))
 			<h1 class="text-2xl font-semibold text-ink-gray-9">
 				Setup didn't finish
 			</h1>
-			<p class="mt-2 text-base text-ink-gray-5">
+			<p class="mt-2 text-p-base text-ink-gray-5">
 				We couldn't finish setting up your site. Pick a different name and try
 				again.
 			</p>
@@ -96,7 +96,7 @@ onUnmounted(() => clearTimeout(timer))
 			<h1 class="text-2xl font-semibold text-ink-gray-9">
 				Setting up ERPNext…
 			</h1>
-			<p class="mt-2 text-base text-ink-gray-5">
+			<p class="mt-2 text-p-base text-ink-gray-5">
 				We're provisioning
 				<span class="font-medium text-ink-gray-8">{{ name }}</span>. This takes
 				a moment — hang tight.

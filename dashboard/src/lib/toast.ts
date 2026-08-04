@@ -37,13 +37,16 @@ export function errorToastWithAction(
 }
 
 // A fetch aborted because it was superseded (e.g. an in-flight list request when
-// the active team switches) rejects with a DOMException named 'AbortError'. It's
-// not a real failure — callers should ignore it rather than surface it.
+// the active team switches) rejects with a DOMException named 'AbortError', or
+// vueuse's own `Error("aborted")`. It's not a real failure — callers should
+// ignore it rather than surface it.
 export function isAbortError(e: unknown): boolean {
 	if (!e || typeof e !== 'object') return false
 
 	const err = e as { name?: string; message?: string }
-	return err.name === 'AbortError'
+	if (err.name === 'AbortError') return true
+	const message = String(err.message ?? '').toLowerCase()
+	return message === 'aborted' || message.includes('signal is aborted')
 }
 
 export function getErrorMessage(

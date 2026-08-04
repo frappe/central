@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button, Dialog, Spinner, useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
+import { errorToast } from '@/lib/toast'
 import EmptyState from '@/components/common/EmptyState.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
@@ -63,6 +64,11 @@ const {
 
 const terminateSiteCall = useCall<unknown, { name: string }>({
 	url: method(API.terminateSite),
+})
+
+const getSiteCall = useCall<{ url: string | null; login_url: string | null }, { name: string }>({
+	url: method(API.getSite),
+	immediate: false,
 })
 
 // A user in no team can't own servers/billing/regions — offer team creation
@@ -295,12 +301,30 @@ const spots = computed<MapSpot[]>(() => {
 		}))
 })
 
-// — Wiring. Pin clicks lock the card (the map owns that); if the panel is
-//   showing, they also narrow it to the clicked server so both stay in step.
+// — Wiring. Pin / cluster-row clicks go straight to the live site or server.
+//   If the side panel is open, keep its location filter in step.
+function canOpenBench(server: AssetRow): boolean {
+	return (
+		canOpenServer.value && server.status === 'Running' && !!server.gateway_url
+	)
+}
 function onOpen(id: string): void {
-	if (!panelOpen.value) return
 	const row = rows.value.find((r) => r.id === id)
-	locationFilter.value = { ids: [id], label: row?.name ?? id }
+	if (!row) return
+	if (panelOpen.value) {
+		locationFilter.value = { ids: [id], label: row.name }
+	}
+	if (row.kind === 'site') {
+		if (canOpenServer.value && row.site?.url) openSite(row.site.name)
+		return
+	}
+	if (!row.asset) return
+	if (canOpenBench(row.asset)) {
+		open(row.asset)
+		return
+	}
+	// Not openable yet (still provisioning, stopped, …) — show the overview.
+	overviewServer.value = row.asset
 }
 function onClusterOpen(payload: { ids: string[]; label: string }): void {
 	if (panelOpen.value) locationFilter.value = payload
@@ -343,9 +367,21 @@ const overviewOpen = computed({
 	},
 })
 
-// — Sites. Open goes to the live site; terminate tears down the backing VM.
-function openSite(url: string): void {
-	window.open(url, '_blank', 'noopener')
+// — Sites. Open logs in: fetch a fresh login_url (Central mints a session on read),
+// opening the tab synchronously so it isn't popup-blocked. Terminate tears down the VM.
+async function openSite(name: string): Promise<void> {
+	const tab = window.open('', '_blank')
+	try {
+		await getSiteCall.submit({ name })
+		if (getSiteCall.error) throw getSiteCall.error
+		const url = getSiteCall.data?.login_url || getSiteCall.data?.url
+		if (url && tab) tab.location.href = url
+		else if (url) window.location.href = url
+		else tab?.close()
+	} catch (e) {
+		tab?.close()
+		errorToast(e)
+	}
 }
 const pendingSiteTerminate = ref<{ name: string } | null>(null)
 const siteTerminateOpen = computed({

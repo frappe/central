@@ -2,7 +2,7 @@ import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { successToast, errorToast, getErrorMessage } from '@/lib/toast'
+import { successToast, errorToast, getErrorMessage, isAbortError } from '@/lib/toast'
 import { submitOrThrow } from '@/lib/frappeCall'
 import type { CapabilityInfo, TeamRoleRow } from '@/types/api'
 
@@ -111,11 +111,10 @@ export function useTeamRoles() {
 		capsByRole,
 		roleLabel,
 		loading: computed(() => rolesCall.loading || !rolesCall.isFinished),
-		error: computed(() =>
-			rolesCall.error
-				? getErrorMessage(rolesCall.error, "Couldn't load roles.")
-				: null,
-		),
+		error: computed(() => {
+			if (!rolesCall.error || isAbortError(rolesCall.error)) return null
+			return getErrorMessage(rolesCall.error, "Couldn't load roles.")
+		}),
 		creating: computed(() => createRoleCall.loading),
 		reload: () => rolesCall.reload(),
 		createRole,

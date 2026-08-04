@@ -91,6 +91,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 						:icon="item.icon"
 						:to="item.to"
 						class="mb-0.5"
+            :class="item.class"
 						:active="!!item.to && item.to === route.path"
 					>
 						<span class="truncate text-sm">{{ item.label }}</span>

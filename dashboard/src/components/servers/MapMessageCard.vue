@@ -21,7 +21,7 @@ defineProps<{
 				class="mb-2 size-6"
 			/>
 			<p class="text-base font-medium text-ink-gray-8">{{ title }}</p>
-			<p class="text-sm text-ink-gray-5">{{ description }}</p>
+			<p class="text-p-sm text-ink-gray-5">{{ description }}</p>
 			<slot name="action" />
 		</div>
 	</div>

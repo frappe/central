@@ -79,7 +79,7 @@ function queryString(value: unknown): string {
 <template>
 	<AuthShell show-progress :step="2" :steps="signupSteps">
 		<h1 class="text-2xl font-semibold text-ink-gray-9">Verify your email</h1>
-		<p class="mt-2 text-base text-ink-gray-5">
+		<p class="mt-2 text-p-base text-ink-gray-5">
 			Enter the 6-digit code we sent to
 			<span class="font-medium text-ink-gray-8"
 				>{{ email || 'your email address' }}</span

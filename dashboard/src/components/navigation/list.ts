@@ -14,9 +14,11 @@ export const sidebarSections = computed(() => {
 					icon: 'lucide-bell',
 					to: '/notifications',
 					condition: isMember.value,
+					class: 'mb-3',
 				},
 			],
 		},
+
 		{
 			items: [
 				{
@@ -33,6 +35,7 @@ export const sidebarSections = computed(() => {
 				},
 			],
 		},
+
 		{
 			label: 'Services',
 			collapsible: true,
@@ -45,6 +48,7 @@ export const sidebarSections = computed(() => {
 				},
 			],
 		},
+
 		{
 			label: 'Billing',
 			items: [

@@ -99,6 +99,15 @@ def get_eligible_plans(
 	allowed_plans = _allowlist(caps.allowed_plans)
 	allowed_clusters = _allowlist(caps.allowed_clusters)
 
+	# Staging trials: narrow the menu to the configured entry plans (`trial_plans` in
+	# site config; unset = no extra narrowing) and offer no design-your-own — a trial
+	# can't provision a composed server without a full billing profile.
+	is_staging_trial = bool(frappe.db.get_value("Team", team, "is_staging_trial"))
+	if is_staging_trial:
+		trial_plans = _allowlist(frappe.conf.get("trial_plans"))
+		if trial_plans is not None:
+			allowed_plans = trial_plans if allowed_plans is None else (allowed_plans & trial_plans)
+
 	# What can this region physically seat right now? A resize is capped by its own host's
 	# free room + own footprint (resize_capacity); a new machine by the best host's free
 	# headroom (capacity). None = don't gate — the flag is off, no Atlas is registered, or
@@ -139,8 +148,8 @@ def get_eligible_plans(
 	if not server_categories:
 		return empty
 
-	rate_card = _rate_card(currency, cluster)
-	profiles = _profiles(server_categories)
+	rate_card = {} if is_staging_trial else _rate_card(currency, cluster)
+	profiles = [] if is_staging_trial else _profiles(server_categories)
 
 	# The whole active catalog (in server families) is wanted on purpose —
 	# currency/cluster/headroom filtering happens in Python below — so opt out of
@@ -167,7 +176,8 @@ def get_eligible_plans(
 		rate = resolve_rate(rates_by_plan.get(p.name, []), currency, cluster)
 		if rate is None:
 			continue  # not priced for this currency/cluster → not available here
-		if frappe.utils.flt(rate) > available:
+		# Trials aren't tier-gated — spend is bounded by credits + the server cap, not headroom.
+		if not is_staging_trial and frappe.utils.flt(rate) > available:
 			continue  # would push the team past its remaining trust-tier headroom
 		row = _plan_row(p, currency, cluster, rate, includes_by_plan.get(p.name, []))
 		if capacity and capacity.get("largest_vm") and not _plan_fits(row, capacity["largest_vm"]):
