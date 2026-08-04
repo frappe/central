@@ -172,7 +172,7 @@ class TestCommitmentClawback(CommitmentTestBase):
 		self.assertEqual(frappe.db.get_value("Commitment", commitment, "status"), "Active")
 
 	def test_clawback_is_idempotent(self):
-		commitment = make_commitment(TEAM, floor=800, discount_pct=20, started_at="2026-06-01")
+		make_commitment(TEAM, floor=800, discount_pct=20, started_at="2026-06-01")
 		push_event("e1", "R1", 1000, "2026-06-01 00:00:00", "subscribed")
 		invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		push_event("e2", "R1", 1000, "2026-07-16 00:00:00", "Cancelled")

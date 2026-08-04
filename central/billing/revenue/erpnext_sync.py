@@ -47,7 +47,7 @@ def sync_invoice(invoice: str) -> dict:
 	attempt = (inv.erpnext_sync_attempts or 0) + 1
 	try:
 		erpnext_name = _post_sales_invoice(_build_sales_invoice(inv))
-	except Exception as e:  # noqa: BLE001 — failure must be isolated, never re-raised
+	except Exception as e:
 		return _handle_failure(invoice, attempt, str(e))
 
 	frappe.db.set_value(

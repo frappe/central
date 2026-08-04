@@ -78,7 +78,7 @@ class TestMandateSetup(MandateTestBase):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
 
 		# The mandate order was authorised at the team's current cap (t0 = 100).
-		args, kwargs = adapter.setup_payment_method.call_args
+		args, _kwargs = adapter.setup_payment_method.call_args
 		self.assertEqual(args[1]["max_amount"], 100)
 
 		method = frappe.get_doc("Payment Method", result["payment_method"])

@@ -112,14 +112,14 @@ class TestFullDispute(RefundTestBase):
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Refunded")
 
 	def test_failed_gateway_refund_is_recorded(self):
-		inv, attempt = self._paid_invoice_with_attempt(1000)
+		_inv, attempt = self._paid_invoice_with_attempt(1000)
 		with stub_refund(success=False):
 			refund = refunds.full_dispute(attempt)
 		self.assertEqual(refund.status, "Failed")
 		self.assertEqual(frappe.db.get_value("Payment Attempt", attempt, "status"), "Captured")
 
 	def test_refund_only_on_captured_charge(self):
-		inv, attempt = self._paid_invoice_with_attempt(1000)
+		_inv, attempt = self._paid_invoice_with_attempt(1000)
 		frappe.db.set_value("Payment Attempt", attempt, "status", "Failed")
 		with self.assertRaises(frappe.ValidationError):
 			refunds.full_dispute(attempt)
@@ -147,7 +147,7 @@ class TestPartialOvercharge(RefundTestBase):
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")
 
 	def test_churning_customer_partial_to_source(self):
-		inv, attempt = self._paid_invoice_with_attempt(1000)
+		_inv, attempt = self._paid_invoice_with_attempt(1000)
 		with stub_refund(success=True, refund_id="rfnd_part") as adapter:
 			refund = refunds.partial_overcharge(attempt, amount=150, to_source=True)
 			adapter.refund.assert_called_once()
@@ -158,7 +158,7 @@ class TestPartialOvercharge(RefundTestBase):
 class TestSymmetry(RefundTestBase):
 	def test_refund_is_gateway_agnostic(self):
 		# The module calls adapter.refund regardless of gateway — symmetric.
-		inv, attempt = self._paid_invoice_with_attempt(500)
+		_inv, attempt = self._paid_invoice_with_attempt(500)
 		frappe.db.set_value("Payment Attempt", attempt, "gateway", GATEWAY)
 		with stub_refund(success=True, refund_id="rfnd_x") as adapter:
 			refunds.full_dispute(attempt)

@@ -58,7 +58,7 @@ def _money(amount, currency: str) -> str:
 
 def _asset_specs(asset_row) -> dict:
 	"""The three meter labels from the provisioned VM's live specs."""
-	ram_gb = int(round(frappe.utils.flt(asset_row.memory_megabytes) / 1024))
+	ram_gb = round(frappe.utils.flt(asset_row.memory_megabytes) / 1024)
 	return {
 		"cpu": f"{int(frappe.utils.flt(asset_row.vcpus))} vCPU",
 		"memory": f"{ram_gb} GB RAM",

@@ -8,6 +8,8 @@ ported from the working press implementation; the structure is the new adapter
 model. The UPI Autopay mandate *lifecycle* (cap = trust tier) is issue #08.
 """
 
+from typing import ClassVar
+
 import frappe
 import razorpay
 import requests
@@ -40,7 +42,7 @@ RAZORPAY_WEBHOOK_EVENTS = [
 
 class RazorpayAdapter(GatewayAdapter):
 	# common_site_config.json overrides for live keys (see GatewayAdapter.get_credential).
-	conf_keys = {
+	conf_keys: ClassVar[dict[str, str]] = {
 		"api_key": "razorpay_key_id",
 		"api_secret": "razorpay_key_secret",
 		"webhook_secret": "razorpay_webhook_secret",
@@ -133,7 +135,7 @@ class RazorpayAdapter(GatewayAdapter):
 		reuses the same receipt.
 		"""
 		client = self._client()
-		amount_paise = int(round((invoice.amount or 0) * 100))
+		amount_paise = round((invoice.amount or 0) * 100)
 		currency = (invoice.currency or "").upper()
 		try:
 			order = client.order.create(
@@ -183,7 +185,7 @@ class RazorpayAdapter(GatewayAdapter):
 		try:
 			refund = client.payment.refund(
 				payment_attempt.gateway_transaction_id,
-				{"amount": int(round((amount or 0) * 100))},
+				{"amount": round((amount or 0) * 100)},
 			)
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
@@ -230,7 +232,7 @@ class RazorpayAdapter(GatewayAdapter):
 		"""A one-time Razorpay order for a wallet top-up; the UI opens Checkout against it."""
 		order = self._client().order.create(
 			{
-				"amount": int(round((amount or 0) * 100)),
+				"amount": round((amount or 0) * 100),
 				"currency": (currency or "INR").upper(),
 				"receipt": receipt,
 				"payment_capture": 1,  # auto-capture so the top-up settles + the webhook fires
@@ -266,7 +268,7 @@ class RazorpayAdapter(GatewayAdapter):
 		`cancel_url` is unused — a Payment Link carries a single callback."""
 		link = self._client().payment_link.create(
 			{
-				"amount": int(round((amount or 0) * 100)),
+				"amount": round((amount or 0) * 100),
 				"currency": (currency or "INR").upper(),
 				"accept_partial": False,
 				"description": (notes or {}).get("purpose") or "Payment",

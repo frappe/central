@@ -149,7 +149,7 @@ def finish_razorpay_topup(team: str, gateway: str, order_id: str, amount: float)
 
 	from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 
-	captured = {"status": "captured", "amount": int(round(frappe.utils.flt(amount) * 100)), "currency": "INR"}
+	captured = {"status": "captured", "amount": round(frappe.utils.flt(amount) * 100), "currency": "INR"}
 	with patch.object(RazorpayAdapter, "get_payment", return_value=captured):
 		return confirm_topup(
 			team=team,

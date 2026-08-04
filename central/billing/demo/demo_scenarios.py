@@ -488,7 +488,7 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		sub = subscriptions.create_subscription(
 			team=team,
 			cluster=cluster,
-			plan=pname,
+			plan=plan,
 			billing_cycle="Monthly",
 			default_payment_method=pm,
 			gateway=gateway,

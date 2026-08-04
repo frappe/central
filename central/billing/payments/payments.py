@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Card Payment Method lifecycle (issue #05).
+r"""Card Payment Method lifecycle (issue #05).
 
 Adding a card is a two-step, gateway-mediated flow: the customer initiates
 setup (Stripe SetupIntent -> client secret), confirms with the card on the

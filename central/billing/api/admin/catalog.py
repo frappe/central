@@ -211,7 +211,7 @@ def get_trial_detail() -> dict:
 		order_by="period_start desc",
 	)
 	by_team = {}
-	still_on_trial, converted_subsidy, trial_subsidy = 0.0, 0.0, 0.0
+	converted_subsidy, trial_subsidy = 0.0, 0.0
 	for inv in invoices:
 		tier = frappe.db.get_value("Billing Profile", inv.team, "trust_tier")
 		on_trial = tier == entry

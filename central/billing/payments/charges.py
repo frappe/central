@@ -108,7 +108,7 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	# rule) is never attempted: it would just fail. Instead raise Action Required so
 	# the customer picks manual checkout / prepaid (ADR 0005, #50). Stripe (no silent
 	# ceiling) and sub-₹15k charges pass straight through.
-	amount_minor = int(round(frappe.utils.flt(inv.expected_collection) * 100))
+	amount_minor = round(frappe.utils.flt(inv.expected_collection) * 100)
 	if not adapter.can_charge_silently(amount_minor):
 		from central.billing.payments import collection_mode
 

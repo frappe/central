@@ -10,7 +10,7 @@ def _rows(*triples):
 	return [frappe._dict(cluster=c, currency=cur, rate=r) for c, cur, r in triples]
 
 
-import frappe  # noqa: E402
+import frappe
 
 
 class TestResolveRate(IntegrationTestCase):

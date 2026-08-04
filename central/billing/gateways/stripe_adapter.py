@@ -7,6 +7,8 @@ Intents, refunds, webhook signature verification) is ported from the working
 press implementation; the structure is the new adapter model.
 """
 
+from typing import ClassVar
+
 import frappe
 import stripe
 
@@ -83,7 +85,7 @@ def _to_dict(obj) -> dict:
 
 class StripeAdapter(GatewayAdapter):
 	# common_site_config.json overrides for live keys (see GatewayAdapter.get_credential).
-	conf_keys = {
+	conf_keys: ClassVar[dict[str, str]] = {
 		"api_secret": "stripe_secret_key",
 		"api_key": "stripe_publishable_key",
 		"webhook_secret": "stripe_webhook_secret",
@@ -173,7 +175,7 @@ class StripeAdapter(GatewayAdapter):
 		SAME idempotency key (Stripe dedupes), never double-charging.
 		"""
 		self._configure()
-		amount_minor = int(round((invoice.amount or 0) * 100))
+		amount_minor = round((invoice.amount or 0) * 100)
 		# Required for India-account export charges (see validate_payment_method).
 		params = dict(
 			amount=amount_minor,
@@ -220,7 +222,7 @@ class StripeAdapter(GatewayAdapter):
 			refund = _to_dict(
 				stripe.Refund.create(
 					payment_intent=payment_attempt.gateway_transaction_id,
-					amount=int(round((amount or 0) * 100)),
+					amount=round((amount or 0) * 100),
 				)
 			)
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
@@ -264,7 +266,7 @@ class StripeAdapter(GatewayAdapter):
 		off-session charges (the same customer id every later charge reuses)."""
 		self._configure()
 		params = dict(
-			amount=int(round((amount or 0) * 100)),
+			amount=round((amount or 0) * 100),
 			currency=(currency or "usd").lower(),
 			metadata={"receipt": receipt, **(notes or {})},
 			# Required for India-account export charges (see validate_payment_method).
@@ -318,7 +320,7 @@ class StripeAdapter(GatewayAdapter):
 					"quantity": 1,
 					"price_data": {
 						"currency": (currency or "usd").lower(),
-						"unit_amount": int(round((amount or 0) * 100)),
+						"unit_amount": round((amount or 0) * 100),
 						"product_data": {"name": "Wallet top-up"},
 					},
 				}

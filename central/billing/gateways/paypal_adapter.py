@@ -320,7 +320,7 @@ def _link(doc: dict, rel: str):
 def _safe_json(resp) -> dict:
 	try:
 		return resp.json()
-	except Exception:  # noqa: BLE001
+	except Exception:
 		return {}
 
 

@@ -8,6 +8,7 @@ interface; adding a gateway is one subclass passing the shared contract suite.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 import frappe
 
@@ -75,7 +76,7 @@ class GatewayAdapter(ABC):
 	# Subclasses map their credential field → the common_site_config.json key
 	# that overrides it. Lets ops keep live secrets in site config instead of
 	# the Payment Gateway doc (DB). Empty = always read from the doc.
-	conf_keys: dict[str, str] = {}
+	conf_keys: ClassVar[dict[str, str]] = {}
 
 	# Off-session (silent, customer-absent) charge capability — drives which rail
 	# the collection layer may auto-charge on (ADR 0005). `max_silent_charge` is in

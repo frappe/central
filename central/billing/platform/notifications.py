@@ -129,7 +129,7 @@ def notify(
 	if reference_doctype and reference_name:
 		try:
 			frappe.get_doc(reference_doctype, reference_name).add_comment("Info", body)
-		except Exception:  # noqa: BLE001 — audit comment is best-effort
+		except Exception:
 			pass
 	_send_email(team, subject, body)
 	return {"sent": True, "log": log.name}

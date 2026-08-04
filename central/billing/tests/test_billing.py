@@ -33,7 +33,7 @@ def run_workers(n, fn):
 		try:
 			results[i] = fn(i)
 			frappe.db.commit()
-		except Exception as e:  # noqa: BLE001
+		except Exception as e:
 			frappe.db.rollback()
 			results[i] = type(e).__name__
 		finally:
@@ -405,7 +405,7 @@ class TestFanOutRun(IntegrationTestCase):
 
 	CLUSTER = "ap-south-1"
 	PLAN = "bundle-fanout-test"
-	TEAMS = ["team-fanout-a", "team-fanout-b", "team-fanout-c"]
+	TEAMS = ("team-fanout-a", "team-fanout-b", "team-fanout-c")
 
 	def setUp(self):
 		make_plan(self.PLAN)

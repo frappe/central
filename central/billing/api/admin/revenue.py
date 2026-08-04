@@ -22,7 +22,7 @@ def get_summary(from_date: str | None = None, to_date: str | None = None) -> dic
 	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
-		filters=[["invoice_type", "=", "Billable"]] + _period_filter("period_start", from_date, to_date),
+		filters=[["invoice_type", "=", "Billable"], *_period_filter("period_start", from_date, to_date)],
 		fields=["status", "total", "amount_paid", "currency"],
 	)
 	billed = sum(_to_inr(i.total, i.currency) for i in invoices)
@@ -86,7 +86,7 @@ def get_cluster_breakdown(from_date: str | None = None, to_date: str | None = No
 	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
-		filters=[["invoice_type", "=", "Billable"]] + _period_filter("period_start", from_date, to_date),
+		filters=[["invoice_type", "=", "Billable"], *_period_filter("period_start", from_date, to_date)],
 		pluck="name",
 	)
 	if not invoices:
@@ -106,7 +106,7 @@ def get_team_breakdown(from_date: str | None = None, to_date: str | None = None)
 	totals = {}
 	for i in frappe.get_all(
 		"Invoice",
-		filters=[["invoice_type", "=", "Billable"]] + _period_filter("period_start", from_date, to_date),
+		filters=[["invoice_type", "=", "Billable"], *_period_filter("period_start", from_date, to_date)],
 		fields=["team", "total"],
 	):
 		totals[i.team] = totals.get(i.team, 0) + frappe.utils.flt(i.total)
@@ -170,7 +170,7 @@ def get_free_trial_costs(from_date: str | None = None, to_date: str | None = Non
 	require_operator()
 	invoices = frappe.get_all(
 		"Invoice",
-		filters=[["invoice_type", "=", "Cost Report"]] + _period_filter("period_start", from_date, to_date),
+		filters=[["invoice_type", "=", "Cost Report"], *_period_filter("period_start", from_date, to_date)],
 		fields=["name", "subtotal"],
 	)
 	total = sum(frappe.utils.flt(i.subtotal) for i in invoices)
@@ -194,7 +194,7 @@ def get_free_trial_costs(from_date: str | None = None, to_date: str | None = Non
 
 
 @frappe.whitelist()
-def list_all_invoices(status: str = None, team: str = None, limit: int = 500) -> list[dict]:
+def list_all_invoices(status: str | None = None, team: str | None = None, limit: int = 500) -> list[dict]:
 	"""Global invoice list (admin) with optional status/team filters — the
 	drill-down target for the Collected / Outstanding cards.
 

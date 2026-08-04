@@ -137,44 +137,9 @@ def _atlas_instances():
 		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
 
 
-# Plan is autonamed by hash (naming_rule Random), so its `name` is not the demo
-# slug. This maps the readable slug → the created Plan's real name so callers can
-# resolve a plan without knowing the hash. Populated by _catalog().
-PLAN_BY_SLUG: dict[str, str] = {}
-
-
-def plan_name(slug: str) -> str:
-	"""The real (hash) name of a demo Plan, from its slug."""
-	return PLAN_BY_SLUG.get(slug, slug)
-
-
-def _catalog():
-	_atlas_instances()
-	PLAN_BY_SLUG.clear()
-	for slug, title, vcpu, ram, disk, transfer, base_inr in PLAN_SIZES:
-		rates = []
-		for cslug, _label, _cur in CLUSTERS:
-			for currency in CURRENCIES:
-				rate = round(base_inr * CLUSTER_MULT[cslug] / FX[currency], 2)
-				rates.append({"cluster": cslug, "currency": currency, "rate": rate})
-		plan = _upsert(
-			"Plan",
-			slug,
-			{
-				"title": title,
-				"billing_cycle": "Monthly",
-				"is_active": 1,
-				"includes": [
-					{"resource_type": "Compute", "quantity": vcpu, "unit": "vCPU"},
-					{"resource_type": "Memory", "quantity": ram, "unit": "GB"},
-					{"resource_type": "Disk", "quantity": disk, "unit": "GB"},
-					{"resource_type": "Transfer", "quantity": transfer, "unit": "GB"},
-				],
-			},
-			newname=True,
-		)
-		PLAN_BY_SLUG[slug] = plan
-		set_catalog_rates("Plan", plan, rates)
+# Plans are autonamed by hash, so map the readable demo key to the generated
+# name once the Plan Configurator has minted each plan.
+_PLAN_BY_KEY: dict[str, str] = {}
 
 
 def plan_name(key: str) -> str:
@@ -239,7 +204,7 @@ def _vm_plans():
 		doc.generate_and_price(cluster=cslug, currencies=list(CURRENCIES))
 
 	doc.reload()
-	for rung, size in zip(doc.rungs, PLAN_SIZES):
+	for rung, size in zip(doc.rungs, PLAN_SIZES, strict=True):
 		_PLAN_BY_KEY[size[0]] = rung.plan
 
 
@@ -727,7 +692,7 @@ def _ensure_signing_key():
 	try:
 		frappe.installer.update_site_config("entitlement_private_key", priv)
 		frappe.installer.update_site_config("entitlement_public_key", pub)
-	except Exception:  # noqa: BLE001 — in-memory conf is enough for the seed run
+	except Exception:
 		pass
 
 
@@ -812,7 +777,7 @@ def _wipe_all():
 	for dt in children + transactional + config + catalog:
 		try:
 			frappe.db.delete(dt)
-		except Exception:  # noqa: BLE001 — some doctypes may not exist on older sites
+		except Exception:
 			pass
 	frappe.db.commit()
 

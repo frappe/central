@@ -222,5 +222,5 @@ def _alert_ops(attempt, gateway_status: str):
 				"Info",
 				f"Reconciliation could not resolve attempt {attempt.name} (gateway: {gateway_status}).",
 			)
-		except Exception:  # noqa: BLE001
+		except Exception:
 			pass

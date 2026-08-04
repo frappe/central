@@ -134,7 +134,7 @@ class TestMultiClusterConsolidation(IntegrationTestCase):
 
 	TEAM = "team-multi-cluster"
 	PLAN = "bundle-multi-cluster"
-	CLUSTERS = ["ap-south-1", "us-east-1"]
+	CLUSTERS = ("ap-south-1", "us-east-1")
 
 	def setUp(self):
 		ensure_team(self.TEAM)

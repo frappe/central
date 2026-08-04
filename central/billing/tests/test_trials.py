@@ -130,7 +130,7 @@ class TestSubsidyAndExpiry(TrialTestBase):
 		self.assertEqual(subsidy, 3000.0)  # 1000 + 2000
 
 	def test_expired_trial_emits_suspend_directive(self):
-		priv, pub = generate_keypair()
+		priv, _pub = generate_keypair()
 		frappe.conf.entitlement_private_key = priv
 
 		token = trials.expire_trial(TEAM)

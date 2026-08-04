@@ -34,7 +34,7 @@ def run_workers(n, fn):
 		try:
 			results[i] = fn(i)
 			frappe.db.commit()
-		except Exception as e:  # noqa: BLE001
+		except Exception as e:
 			frappe.db.rollback()
 			results[i] = type(e).__name__
 		finally:
@@ -406,7 +406,7 @@ class TestConcurrentPay(ChargeTestBase):
 		frappe.db.commit()
 
 		with stub_adapter(success=True, txn_id="pi_once"):
-			results = run_workers(10, lambda i: charges.pay_invoice(inv).get("reason", "charged"))
+			run_workers(10, lambda i: charges.pay_invoice(inv).get("reason", "charged"))
 
 		frappe.db.rollback()
 		attempts = frappe.get_all("Payment Attempt", {"invoice": inv}, ["name", "status"])
@@ -641,7 +641,7 @@ class TestFailedPaymentsReport(ChargeTestBase):
 			}
 		).insert(ignore_permissions=True)
 
-		columns, rows, _msg, chart, summary = failed_payments.execute({"team": TEAM})
+		_columns, rows, _msg, chart, summary = failed_payments.execute({"team": TEAM})
 		# 3 distinct invoices (the retry on inv1 collapses into its row, showing 2 attempts).
 		self.assertEqual(len(rows), 3)
 		self.assertTrue(all(r["decline_code"] for r in rows))

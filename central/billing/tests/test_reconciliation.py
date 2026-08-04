@@ -276,7 +276,7 @@ class TestCapturedUnsettled(ReconTestBase):
 
 	def test_scan_settles_aged_captured_unsettled(self):
 		inv = self._open_invoice()
-		captured = self._captured_attempt(inv, minutes_old=60)
+		self._captured_attempt(inv, minutes_old=60)
 		with gateway_status("succeeded"):
 			reconciliation.run_reconciliation()
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")

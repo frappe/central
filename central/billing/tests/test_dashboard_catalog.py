@@ -205,7 +205,7 @@ class TestEligiblePlans(IntegrationTestCase):
 		set_team_tier(TEAM, max_spend=6000)
 		frappe.db.set_value("Trust Tier Level", "t1", "allowed_clusters", frappe.as_json([OTHER_CLUSTER]))
 		self.addCleanup(frappe.db.set_value, "Trust Tier Level", "t1", "allowed_clusters", None)
-		plans, out = self._titles(cluster=CLUSTER)
+		plans, _out = self._titles(cluster=CLUSTER)
 		self.assertEqual(plans, set())
 
 	def test_untiered_team_has_no_headroom(self):

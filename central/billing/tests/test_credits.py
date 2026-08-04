@@ -30,7 +30,7 @@ def run_workers(n: int, fn):
 			fn(i)
 			frappe.db.commit()
 			results[i] = "ok"
-		except Exception as e:  # noqa: BLE001 — record the failure class for assertions
+		except Exception as e:
 			frappe.db.rollback()
 			results[i] = type(e).__name__
 		finally:

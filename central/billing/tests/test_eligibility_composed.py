@@ -131,7 +131,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 		# Resize headroom excludes this config's own spend, so it has the full cap back.
 		self.assertEqual(
 			got["available"],
-			got_max := frappe.utils.flt(get_eligible_plans(cluster=CLUSTER, team=TEAM)["max_spend"]),
+			frappe.utils.flt(get_eligible_plans(cluster=CLUSTER, team=TEAM)["max_spend"]),
 		)
 
 	def test_get_composed_config_preset_returns_vm_shape_for_resize(self):

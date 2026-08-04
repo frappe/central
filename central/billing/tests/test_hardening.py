@@ -37,7 +37,7 @@ def run_threads(n, fn):
 			fn(i)
 			frappe.db.commit()
 			results[i] = "ok"
-		except Exception as e:  # noqa: BLE001
+		except Exception as e:
 			frappe.db.rollback()
 			results[i] = type(e).__name__
 		finally:
@@ -129,7 +129,7 @@ class TestNoSqlInjection(IntegrationTestCase):
 					for n, line in enumerate(fh, 1):
 						if pattern.search(line):
 							offenders.append(f"{path}:{n}: {line.strip()}")
-		self.assertEqual(offenders, [], f"raw SQL interpolation found:\n" + "\n".join(offenders))
+		self.assertEqual(offenders, [], "raw SQL interpolation found:\n" + "\n".join(offenders))
 
 
 # --- webhook replay + concurrent flood ---------------------------------------
