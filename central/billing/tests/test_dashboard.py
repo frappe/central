@@ -195,6 +195,71 @@ class TestCustomerReads(CustomerDataBase):
 		ledger = dashboard.credit_ledger(TEAM)
 		self.assertEqual(ledger[0]["entry_type"], "Credit")
 
+	def test_balance_reports_promotional_credit_on_a_clock(self):
+		"""Purchased credit is not listed as expiring; a grant with a date is."""
+		credits.purchase(TEAM, 500, "INR")
+		credits.grant_promotional_credits(
+			TEAM, 100, "INR", expires_on=frappe.utils.add_days(frappe.utils.nowdate(), 20)
+		)
+
+		balance = dashboard.get_credit_balance(TEAM)
+
+		self.assertEqual(balance["balance"], 600)
+		self.assertEqual(len(balance["expiring"]), 1)
+		self.assertEqual(balance["expiring"][0]["amount"], 100)
+
+	def test_get_trust_tier_reports_first_paid_and_last_invoice_amount(self):
+		first = self._invoice()  # amount_paid 1180
+		first_paid_at = frappe.utils.add_days(frappe.utils.now_datetime(), -10)
+		frappe.db.set_value("Invoice", first, "paid_at", first_paid_at)
+
+		second = (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": "Billable",
+					"status": "Paid",
+					"period_start": "2026-06-01",
+					"period_end": "2026-06-30",
+					"currency": "INR",
+					"subtotal": 2000,
+					"total": 2000,
+					"amount_paid": 2000,
+					"items": [
+						{"resource_type": "bundle", "plan": PLAN, "rate": 2000, "days": 30, "amount": 2000}
+					],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+		frappe.db.set_value("Invoice", second, "paid_at", frappe.utils.now_datetime())
+
+		progress = dashboard.get_trust_tier(TEAM)["progress"]
+		self.assertEqual(
+			frappe.utils.get_datetime(progress["first_paid_at"]),
+			frappe.utils.get_datetime(first_paid_at),
+		)
+		self.assertEqual(progress["last_paid_invoice_amount"], 2000)
+		self.assertEqual(progress["cumulative_paid"], 3180)
+
+	def test_get_trust_tier_progress_is_blank_with_no_paid_invoices(self):
+		progress = dashboard.get_trust_tier(TEAM)["progress"]
+		self.assertIsNone(progress["first_paid_at"])
+		self.assertEqual(progress["last_paid_invoice_amount"], 0)
+
+	def test_get_trust_tier_ignores_legacy_invoices_without_paid_at(self):
+		# An invoice paid before paid_at existed has no reliable settlement time — it
+		# must not be guessed at (via creation) for tenure, though its amount still
+		# counts toward cumulative paid.
+		self._invoice()  # amount_paid 1180, no paid_at set
+
+		progress = dashboard.get_trust_tier(TEAM)["progress"]
+		self.assertIsNone(progress["first_paid_at"])
+		self.assertEqual(progress["last_paid_invoice_amount"], 0)
+		self.assertEqual(progress["cumulative_paid"], 1180)
+
 
 class TestTeamScoping(CustomerDataBase):
 	def setUp(self):

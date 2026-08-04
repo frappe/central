@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Signing you in…</title>
+		<style>
+			/* Espresso (frappe-ui) design tokens — the subset this page uses, resolved to
+			   their RGB triplets so the page is self-contained in the opened tab. */
+			:root {
+				--surface-base: 255 255 255;
+				--text-ink-gray-9: 23 23 23;
+				--text-ink-gray-6: 82 82 82;
+				--outline-gray-2: 226 226 226;
+			}
+			@media (prefers-color-scheme: dark) {
+				:root {
+					--surface-base: 23 23 23;
+					--text-ink-gray-9: 248 248 248;
+					--text-ink-gray-6: 153 153 153;
+					--outline-gray-2: 52 52 52;
+				}
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				height: 100%;
+				margin: 0;
+			}
+			body {
+				display: grid;
+				place-items: center;
+				background: rgb(var(--surface-base));
+				color: rgb(var(--text-ink-gray-9));
+				font-family: InterVar, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+				-webkit-font-smoothing: antialiased;
+			}
+			.stack {
+				display: grid;
+				justify-items: center;
+				gap: 16px;
+			}
+			.spinner {
+				width: 28px;
+				height: 28px;
+				border: 2.5px solid rgb(var(--outline-gray-2));
+				border-top-color: rgb(var(--text-ink-gray-6));
+				border-radius: 9999px;
+				animation: spin 0.7s linear infinite;
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.spinner {
+					animation-duration: 1.6s;
+				}
+			}
+			.text {
+				display: grid;
+				gap: 4px;
+				text-align: center;
+			}
+			.title {
+				font-size: 14px;
+				font-weight: 500;
+				line-height: 1.4;
+			}
+			.subtitle {
+				font-size: 12px;
+				color: rgb(var(--text-ink-gray-6));
+			}
+			@keyframes spin {
+				to {
+					transform: rotate(360deg);
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<div class="stack">
+			<div class="spinner" role="status" aria-label="Signing you in"></div>
+			<div class="text">
+				<div class="title">Signing you in</div>
+				<!-- reminder to be tasteful (xD) -->
+				<div class="subtitle">
+					Brewing your site to get you started…
+				</div>
+			</div>
+		</div>
+	</body>
+</html>

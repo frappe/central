@@ -17,6 +17,10 @@ negative in one of them while the anchor stayed positive. The composite key make
 0)` constraint on the column makes it true against every caller, not only the
 polite ones.
 
+Promotional credit expires; purchased credit does not. The wallet still holds one
+balance, so "which credit is this?" is answered by replaying the ledger rather than
+by a second column — see the expiry section at the foot of this module.
+
 The balance is read and written ON the locked anchor row, not via a `FOR UPDATE`
 on the ledger. An earlier version read the latest balance with
 `... ORDER BY creation DESC LIMIT 1 FOR UPDATE`, which took a next-key lock on
@@ -45,6 +49,12 @@ _DEADLOCK_BACKOFF = 0.05  # seconds; scaled by attempt + jitter
 
 class InsufficientCredits(frappe.ValidationError):
 	"""A debit would drive the wallet negative."""
+
+
+def _backoff(attempt: int) -> None:
+	"""Wait before retrying a deadlocked booking, jittered so retriers don't
+	re-collide in lockstep."""
+	time.sleep(_DEADLOCK_BACKOFF * (attempt + 1) + random.uniform(0, _DEADLOCK_BACKOFF))
 
 
 def wallet_name(team: str, currency: str) -> str:
@@ -113,6 +123,7 @@ def _book_entry(
 	reference_name: str | None = None,
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
+	expires_on=None,
 ):
 	"""Append one ledger entry under the per-wallet lock, retrying on deadlock.
 
@@ -148,14 +159,15 @@ def _book_entry(
 				reference_name,
 				note,
 				gateway_payment_id,
+				expires_on,
 			)
 		except frappe.QueryDeadlockError:
 			# The transaction is already rolled back by InnoDB; sync Frappe's state
-			# and back off (jittered) so retriers don't re-collide in lockstep.
+			# and back off before trying again.
 			frappe.db.rollback()
 			if attempt == _DEADLOCK_RETRIES - 1:
 				raise
-			time.sleep(_DEADLOCK_BACKOFF * (attempt + 1) + random.uniform(0, _DEADLOCK_BACKOFF))
+			_backoff(attempt)
 		except frappe.DuplicateEntryError:
 			# Lost the race on the gateway_payment_id unique key — the other path
 			# (confirm callback or a replayed webhook) already credited this exact
@@ -174,6 +186,7 @@ def _book_entry_once(
 	reference_name: str | None,
 	note: str | None,
 	gateway_payment_id: str | None = None,
+	expires_on=None,
 ):
 	"""One booking attempt under the per-wallet lock; returns (doc, new_balance)."""
 	_ensure_wallet(team, currency)
@@ -190,6 +203,38 @@ def _book_entry_once(
 		if existing:
 			return frappe.get_doc("Credit Ledger Entry", existing), balance
 
+	return _post_entry(
+		team,
+		entry_type,
+		amount,
+		currency,
+		balance,
+		reference_type=reference_type,
+		reference_name=reference_name,
+		note=note,
+		gateway_payment_id=gateway_payment_id,
+		expires_on=expires_on,
+	)
+
+
+def _post_entry(
+	team: str,
+	entry_type: str,
+	amount: float,
+	currency: str,
+	balance: float,
+	reference_type: str | None = None,
+	reference_name: str | None = None,
+	note: str | None = None,
+	gateway_payment_id: str | None = None,
+	expires_on=None,
+):
+	"""Append one entry against an already-locked wallet; returns (doc, new_balance).
+
+	The caller must hold the wallet lock and pass the balance it read under it — this
+	is the half of a booking that moves money, split out so the expiry sweep can book
+	several entries under one lock instead of re-taking it per entry.
+	"""
 	new_balance = balance + (amount if entry_type == "Credit" else -amount)
 	if new_balance < 0:
 		raise InsufficientCredits(
@@ -219,6 +264,7 @@ def _book_entry_once(
 			"reference_type": reference_type,
 			"reference_name": reference_name,
 			"gateway_payment_id": gateway_payment_id,
+			"expires_on": expires_on,
 			"note": note,
 			"created_at": frappe.utils.now_datetime(),
 		}
@@ -311,11 +357,29 @@ def refund_to_wallet(
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def grant_promotional_credits(team, amount, currency, note=None) -> dict:
+def promotional_expiry_date(on_date=None):
+	"""When a promotional credit granted today stops being usable.
+
+	`None` when the configured validity is 0 — the grant never expires, same as
+	purchased credit."""
+	from central.billing import settings
+
+	days = settings.promotional_credit_validity_days()
+	if not days:
+		return None
+	return frappe.utils.add_days(on_date or frappe.utils.nowdate(), days)
+
+
+def grant_promotional_credits(team, amount, currency, note=None, expires_on=None) -> dict:
 	"""Book a promotional/welcome credit — free credits granted at signup.
 
 	Tagged `reference_type="Promotion"` so the one-time signup grant is
-	distinguishable from top-ups/refunds and can be checked for idempotently."""
+	distinguishable from top-ups/refunds and can be checked for idempotently.
+
+	Promotional credit is the only kind that expires, and the date is stamped on the
+	entry at grant time rather than derived from the setting when it is read. A team
+	granted credit under a 90-day policy keeps its 90 days when the policy changes to
+	60 — what a customer was given is a fact about that grant, not a live lookup."""
 	entry, new_balance = _book_entry(
 		team,
 		"Credit",
@@ -323,6 +387,7 @@ def grant_promotional_credits(team, amount, currency, note=None) -> dict:
 		currency,
 		reference_type="Promotion",
 		note=note or "Welcome credits",
+		expires_on=expires_on if expires_on is not None else promotional_expiry_date(),
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -380,3 +445,156 @@ def ledger_balance(team: str, currency: str) -> float:
 		frappe.qb.from_(cle).select(Sum(signed)).where((cle.team == team) & (cle.currency == currency)).run()
 	)[0][0]
 	return frappe.utils.flt(balance)
+
+
+# --- expiry -------------------------------------------------------------------
+#
+# Purchased credit never expires; promotional credit does, and carries the date it
+# was granted under (`expires_on`). Expiring it means answering "how much of THIS
+# grant is left?", which the ledger does not store — it stores movements, and the
+# wallet stores one number. So the answer is derived: debits are applied to credits
+# soonest-expiry-first, and whatever is still sitting in a grant when its date
+# passes is swept out with an offsetting Debit.
+#
+# Soonest-expiry-first is what makes the customer whole. Spending the credit that is
+# about to die before the credit that never will is the order that wastes the least,
+# and it is what every provider that grants expiring credit does. It also keeps the
+# sweep simple: the grant that expires next is always the one at the front of the
+# queue, so expiring it is exactly "consume what remains of the front lot".
+
+
+def credit_lots(team: str, currency: str) -> list[dict]:
+	"""Every credit booking on this wallet, with how much of each is left.
+
+	Derived by replaying the ledger: debits are drawn against credits in
+	(expiry, then age) order, so a grant expiring on Friday is spent before one
+	expiring next month, and both before credit that never expires.
+
+	The remainders sum to the wallet balance — this is the same money, sliced by
+	where it came from rather than totalled.
+	"""
+	import datetime
+
+	cle = frappe.qb.DocType("Credit Ledger Entry")
+	rows = (
+		frappe.qb.from_(cle)
+		.select(cle.name, cle.entry_type, cle.amount, cle.expires_on, cle.creation)
+		.where((cle.team == team) & (cle.currency == currency))
+		.orderby(cle.creation)
+		.run(as_dict=True)
+	)
+
+	lots = [row for row in rows if row.entry_type == "Credit"]
+	unspent = sum(frappe.utils.flt(row.amount) for row in rows if row.entry_type == "Debit")
+	lots.sort(
+		key=lambda lot: (
+			frappe.utils.getdate(lot.expires_on) if lot.expires_on else datetime.date.max,
+			lot.creation,
+		)
+	)
+	for lot in lots:
+		spent = min(frappe.utils.flt(lot.amount), unspent)
+		unspent -= spent
+		lot.remaining = frappe.utils.flt(lot.amount) - spent
+	return lots
+
+
+def expiring_credits(team: str, currency: str | None = None, on_date=None) -> list[dict]:
+	"""Unspent promotional credit that still has an expiry date ahead of it.
+
+	What the customer is shown as "expiring soon" — one row per grant, soonest first.
+	Grants already past their date are not included: the sweep books them out, and
+	until it runs they are not the customer's to spend anyway.
+	"""
+	currency = _resolve_currency(team, currency)
+	on_date = frappe.utils.getdate(on_date)
+	return [
+		{"amount": lot.remaining, "expires_on": lot.expires_on, "ledger_entry": lot.name}
+		for lot in credit_lots(team, currency)
+		if lot.expires_on and lot.remaining > 0 and frappe.utils.getdate(lot.expires_on) > on_date
+	]
+
+
+def expire_credits(team: str, currency: str, on_date=None) -> list[dict]:
+	"""Sweep every expired grant off one wallet; returns what was written off.
+
+	Runs under the wallet lock, and the remainders are computed *inside* it: reading
+	them first and booking after would let a concurrent invoice settlement spend the
+	same credit we are writing off, and the wallet would be debited twice for money
+	that existed once.
+
+	Idempotent by construction rather than by a flag. The sweep's own Debit consumes
+	the grant it settles, so a second run finds nothing left in it and writes nothing.
+	"""
+	on_date = frappe.utils.getdate(on_date)
+	for attempt in range(_DEADLOCK_RETRIES):
+		try:
+			return _expire_credits_once(team, currency, on_date)
+		except frappe.QueryDeadlockError:
+			frappe.db.rollback()
+			if attempt == _DEADLOCK_RETRIES - 1:
+				raise
+			_backoff(attempt)
+	return []
+
+
+def _expire_credits_once(team: str, currency: str, on_date) -> list[dict]:
+	"""One sweep attempt: lock the wallet, then write off what has run out of time."""
+	_ensure_wallet(team, currency)
+	balance = _lock_and_read_balance(team, currency)
+
+	expired = []
+	for lot in credit_lots(team, currency):
+		if not lot.expires_on or lot.remaining <= 0:
+			continue
+		if frappe.utils.getdate(lot.expires_on) > on_date:
+			break  # lots are in expiry order, so nothing after this has expired either
+		entry, balance = _post_entry(
+			team,
+			"Debit",
+			lot.remaining,
+			currency,
+			balance,
+			reference_type="Expiry",
+			reference_name=lot.name,
+			note=f"Promotional credit expired on {lot.expires_on}",
+		)
+		expired.append({"ledger_entry": entry.name, "amount": lot.remaining, "expired_grant": lot.name})
+	return expired
+
+
+def run_credit_expiry(on_date=None) -> dict:
+	"""Daily: write off promotional credit that has run out of time.
+
+	Scans only wallets that hold a grant already past its date — a team whose credit
+	never expires is never looked at.
+	"""
+	on_date = frappe.utils.getdate(on_date)
+	cle = frappe.qb.DocType("Credit Ledger Entry")
+	wallets = (
+		frappe.qb.from_(cle)
+		.select(cle.team, cle.currency)
+		.distinct()
+		.where((cle.entry_type == "Credit") & cle.expires_on.isnotnull() & (cle.expires_on <= on_date))
+		.run(as_dict=True)
+	)
+
+	swept, total = 0, 0.0
+	for wallet in wallets:
+		# A wallet with nothing in it has nothing to expire; skip before taking a lock.
+		if (
+			frappe.utils.flt(
+				frappe.db.get_value("Credit Wallet", wallet_name(wallet.team, wallet.currency), "balance")
+			)
+			<= 0
+		):
+			continue
+		for expiry in expire_credits(wallet.team, wallet.currency, on_date):
+			swept += 1
+			total += expiry["amount"]
+			frappe.logger("billing").info(
+				f"expired {expiry['amount']} {wallet.currency} of promotional credit "
+				f"for {wallet.team} (grant {expiry['expired_grant']})"
+			)
+
+	return {"wallets": len(wallets), "entries": swept, "amount": total}

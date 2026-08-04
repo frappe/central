@@ -14,6 +14,8 @@ Breach detection + clawback is issue #31.
 
 import frappe
 
+from central.billing.states import transition
+
 BUNDLE = "bundle"
 
 
@@ -89,4 +91,6 @@ def mark_breached(commitment: dict) -> None:
 	idempotent per (team, period), so this never double-applies.
 	"""
 	if commitment.get("breach"):
-		frappe.db.set_value("Commitment", commitment["breach"], "status", "Breached")
+		doc = frappe.get_doc("Commitment", commitment["breach"])
+		transition(doc, "Breached", actor="scheduler", reason="commitment period breached")
+		doc.save(ignore_permissions=True)

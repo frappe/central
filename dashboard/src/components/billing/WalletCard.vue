@@ -5,7 +5,7 @@ import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { money } from '@/lib/format'
+import { formatDate, money } from '@/lib/format'
 
 // Wallet — the FC v2 prototype's funding card: balance, a one-line coverage
 // verdict, and (once there's a method to charge) the funding actions. The chevron
@@ -33,6 +33,11 @@ const short = computed(
 	() => projected.value > 0 && balance.value < projected.value,
 )
 const atRisk = computed(() => short.value && !hasWorkingMethod.value)
+
+// Promotional credit on a clock. Only the soonest grant is named on the card —
+// the rest are in the wallet history — since the date the customer needs to act on
+// is the first one.
+const nextExpiry = computed(() => credit.data?.expiring?.[0])
 
 const showTopup = ref(false)
 function onAddCredit(): void {
@@ -102,6 +107,20 @@ function onAddCredit(): void {
 				Card covers the rest
 			</p>
 			<p v-else class="mt-1.5 text-p-sm text-ink-gray-5">Covers this invoice</p>
+
+			<!-- Free credit runs out; purchased credit doesn't. Say so before it does. -->
+			<p
+				v-if="nextExpiry"
+				class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-gray-5"
+			>
+				<span
+					class="lucide-clock size-3.5 shrink-0 text-ink-gray-4"
+					aria-hidden="true"
+				/>
+				{{ money(nextExpiry.amount, currency) }}
+				expires
+				{{ formatDate(nextExpiry.expires_on) }}
+			</p>
 
 			<!-- Funding actions, once there's a method to charge. -->
 			<div

@@ -13,6 +13,8 @@ import time
 import frappe
 from frappe.query_builder.functions import Count
 
+from central.billing.doctype.billing_run.billing_run import snapshot
+from central.billing.platform import metrics
 from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import open_and_collect
 
@@ -104,7 +106,13 @@ def _contain(unit: str, doctype: str, name: str, error: Exception, undo: bool) -
 	)
 
 
-def draft_team_invoice(team: str, period_start, period_end) -> str | None:
+def _tally(counters: dict | None, key: str) -> None:
+	"""Bump one run counter, if the caller is keeping any."""
+	if counters is not None:
+		counters[key] = counters.get(key, 0) + 1
+
+
+def draft_team_invoice(team: str, period_start, period_end, counters: dict | None = None) -> str | None:
 	"""Draft one team's invoice — the unit of work phase 1 fans out.
 
 	One team = one transaction = one commit, on every path. Failure is contained to
@@ -131,15 +139,17 @@ def draft_team_invoice(team: str, period_start, period_end) -> str | None:
 			if attempt == CONTENTION_RETRIES - 1:
 				# Out of patience: record it and let the next tick pick the team up.
 				_contain(unit, "Team", team, error, undo=False)
+				_tally(counters, "failed")
 				return None
 			# Jittered, so a whole page of retriers doesn't re-collide in lockstep.
 			time.sleep(CONTENTION_BACKOFF * (attempt + 1) + random.uniform(0, CONTENTION_BACKOFF))
 		except Exception as error:
 			_contain(unit, "Team", team, error, undo=True)
+			_tally(counters, "failed")
 			return None
 
 
-def settle_draft(invoice: str) -> dict | None:
+def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
 	"""Open + collect one invoice — the unit of work phase 2 fans out.
 
 	Nothing is undone here, unlike drafting: by ADR 0017 the charge leg commits its
@@ -152,6 +162,7 @@ def settle_draft(invoice: str) -> dict | None:
 		return open_and_collect(invoice)
 	except Exception as error:
 		_contain(f"Settling {invoice}", "Invoice", invoice, error, undo=False)
+		_tally(counters, "failed")
 		# The run broke down over this invoice; the customer is not late because we
 		# are. Their retry ladder restarts from a date we actually asked on.
 		from central.billing.revenue.dunning import defer_dunning
@@ -216,12 +227,17 @@ def draft_team_page(after: str, until: str, period_start, period_end) -> dict:
 	re-running the page skips them (drafting is idempotent per (team, period)).
 	The page is the unit of *scheduling*; the team is still the unit of *work*.
 	"""
-	drafted = 0
-	for team in teams_in_range(after, until):
-		if draft_team_invoice(team, period_start, period_end):
-			drafted += 1
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one team, one transaction
-	return {"after": after, "until": until, "drafted": drafted}
+	with metrics.timed("billing.draft_page", period_end=str(period_end)) as counters:
+		counters.update(drafted=0, skipped=0, failed=0)
+		for team in teams_in_range(after, until):
+			before = counters["failed"]
+			if draft_team_invoice(team, period_start, period_end, counters):
+				counters["drafted"] += 1
+			elif counters["failed"] == before:
+				# Nothing to bill this team for — not a failure, just an empty month.
+				counters["skipped"] += 1
+			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one team, one transaction
+		return {"after": after, "until": until, **counters}
 
 
 def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> list[str]:
@@ -332,12 +348,13 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 	between a million-invoice month and a wall of 429s. Widening the page would not
 	make it faster — it would make it rate-limited.
 	"""
-	settled = 0
-	for invoice in drafts_in_range(cutoff, after, until):
-		if settle_draft(invoice):
-			settled += 1
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
-	return {"after": after, "until": until, "settled": settled}
+	with metrics.timed("billing.settle_page", cutoff=str(cutoff)) as counters:
+		counters.update(settled=0, failed=0)
+		for invoice in drafts_in_range(cutoff, after, until):
+			if settle_draft(invoice, counters):
+				counters["settled"] += 1
+			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
+		return {"after": after, "until": until, **counters}
 
 
 def open_drafts(cutoff, enqueue: bool = False) -> list[str]:
@@ -398,8 +415,9 @@ def draft_monthly_invoices(today=None) -> dict:
 	so a run that overruns the day is finished by the next sweep, not abandoned.
 	"""
 	period_start, period_end = billing_period(today)
+	snapshot(billing_run_status(today), "Drafting")
 	fanned = generate_draft_invoices(period_start, period_end, enqueue=True)
-	frappe.logger("billing").info(f"billing run {period_end}: drafting handed out as {len(fanned)} pages")
+	metrics.emit("billing.draft_tick", period_end=str(period_end), pages=len(fanned))
 	return {"period_start": str(period_start), "period_end": str(period_end), "pages": len(fanned)}
 
 
@@ -422,11 +440,18 @@ def collect_due_invoices(today=None) -> dict:
 	`settle_draft` defers dunning on failure, so a slow sweep never makes a customer late.
 	"""
 	_, period_end = billing_period(today)
-	# Logged before fanning out, so the record of what the run has achieved (and what it
+	# Recorded before fanning out, so the record of what the run has achieved (and what it
 	# still owes) exists even if collection then falls over.
-	frappe.logger("billing").info(f"billing run {period_end}: {billing_run_status(today)}")
+	status = billing_run_status(today)
+	metrics.emit("billing.run_status", **status)
+	# Only claim to be collecting when something is owed, so a period that finished
+	# does not flip Complete -> Collecting -> Complete on every later sweep.
+	snapshot(status, "Collecting" if status["pending_collection"] else None)
 	fanned = open_drafts(period_end, enqueue=True)
-	frappe.logger("billing").info(f"billing collection <= {period_end}: handed out as {len(fanned)} pages")
+	metrics.emit("billing.collect_tick", period_end=str(period_end), pages=len(fanned))
+	# Re-derived after the sweep has been handed out: nothing owed means the period is done.
+	done = billing_run_status(today)
+	snapshot(done, "Complete" if not done["pending_collection"] else None)
 	return {"period_end": str(period_end), "pages": len(fanned)}
 
 

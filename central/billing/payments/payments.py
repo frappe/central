@@ -19,6 +19,8 @@ adapter through the registry, keeping the gateway seam intact.
 import frappe
 from frappe.model.document import Document
 
+from central.billing.states import transition
+
 CARD_METHOD = "Card"
 
 
@@ -163,11 +165,11 @@ def confirm_payment_method(
 	method.save(ignore_permissions=True)
 
 	if not _adapter(method.gateway).validate_payment_method(method):
-		method.status = "Failed"
+		transition(method, "Failed", actor=frappe.session.user, reason="validation failed")
 		method.save(ignore_permissions=True)
 		return method
 
-	method.status = "Active"
+	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.save(ignore_permissions=True)
 	densify_priorities(method.team)
@@ -269,7 +271,9 @@ def expire_payment_methods(now=None) -> dict:
 			continue
 		month_start = frappe.utils.getdate(f"{int(m.expiry_year):04d}-{int(m.expiry_month):02d}-01")
 		if frappe.utils.get_last_day(month_start) < today:
-			frappe.db.set_value("Payment Method", m.name, "status", "Expired")
+			md = frappe.get_doc("Payment Method", m.name)
+			transition(md, "Expired", actor="scheduler", reason="card expiry date passed")
+			md.save(ignore_permissions=True)
 			expired.append(m.name)
 			notifications.notify(
 				m.team,

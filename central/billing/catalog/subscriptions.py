@@ -18,19 +18,10 @@ writes an append-only Subscription Change.
 
 import frappe
 
-
-class InvalidTransition(frappe.ValidationError):
-	"""An account-standing transition that the state machine does not permit."""
-
-
-# Account-standing transitions Central allows. Suspension is staged through
-# past_due (grace) — never a direct current -> suspended jump; reactivation
-# returns to current from either past_due or suspended.
-_STANDING_TRANSITIONS = {
-	"Current": {"Past Due"},
-	"Past Due": {"Current", "Suspended"},
-	"Suspended": {"Current"},
-}
+# The account-standing state machine (which moves are legal) now lives in the one
+# transition authority; re-exported so callers that catch `subscriptions.InvalidTransition`
+# keep working. Suspension is still staged through Past Due (grace), never a direct jump.
+from central.billing.states import InvalidTransition, transition
 
 # The Subscription Change type that records a move *into* a standing.
 _STANDING_CHANGE_TYPE = {
@@ -910,17 +901,18 @@ def _control_subscription_server(sub, action: str) -> None:
 def set_standing(subscription: str, new_standing: str, changed_by: str | None = None, reason=None):
 	"""Move a subscription's account standing through the allowed transitions.
 
-	Raises InvalidTransition for any move the state machine forbids (same-state,
-	skipping the grace step, unknown standing). Records the move as an
-	append-only Subscription Change. Never touches operational state.
+	Routes the move through the transition authority: it raises InvalidTransition for a
+	forbidden move (skipping the grace step, an unknown standing) and appends a Billing
+	Event. A move to the current standing is an idempotent no-op — dunning re-applies the
+	same standing on each retry day and must not error or record a spurious change. The
+	move is also recorded as an append-only Subscription Change (the load-bearing ledger).
 	"""
 	doc = frappe.get_doc("Subscription", subscription)
 	current = doc.account_standing
+	if current == new_standing:
+		return
 
-	if new_standing not in _STANDING_TRANSITIONS.get(current, set()):
-		raise InvalidTransition(f"Cannot move account standing from '{current}' to '{new_standing}'.")
-
-	doc.account_standing = new_standing
+	transition(doc, new_standing, reason=reason, actor=changed_by)
 	doc.save(ignore_permissions=True)
 	_record_change(
 		subscription,

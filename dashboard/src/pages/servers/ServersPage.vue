@@ -37,6 +37,7 @@ import {
 } from '@/lib/serverMap'
 import { errorToast } from '@/lib/toast'
 import type { Region } from '@/types/Central/Region'
+import signingInHtml from './signing-in.html?raw'
 
 // The servers page: the world map is the list (FC V2). Servers (the Asset mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
@@ -373,19 +374,38 @@ const overviewOpen = computed({
 })
 
 // — Sites. Open logs in: fetch a fresh login_url (Central mints a session on read),
-// opening the tab synchronously so it isn't popup-blocked. Terminate tears down the VM.
+// opening the tab synchronously so it isn't popup-blocked (with a signing-in page so
+// it isn't a blank white screen during the round-trip). Terminate tears down the VM.
+const openingSite = ref<string | null>(null)
 async function openSite(name: string): Promise<void> {
-	const tab = window.open('', '_blank')
+	if (openingSite.value) return // one open at a time — no duplicate tabs/session mints
+	openingSite.value = name
+	// Open the signing-in page from a blob URL (no deprecated document.write, and a
+	// synchronous window.open isn't popup-blocked), then point the tab at the real
+	// session URL once it resolves.
+	const loadingUrl = URL.createObjectURL(
+		new Blob([signingInHtml], { type: 'text/html' }),
+	)
+	const tab = window.open(loadingUrl, '_blank')
 	try {
 		await getSiteCall.submit({ name })
 		if (getSiteCall.error) throw getSiteCall.error
 		const url = getSiteCall.data?.login_url || getSiteCall.data?.url
 		if (url && tab) tab.location.href = url
 		else if (url) window.location.href = url
-		else tab?.close()
+		else {
+			tab?.close()
+			errorToast(
+				undefined,
+				"Couldn't open the site — it may not be ready yet. Try again in a moment.",
+			)
+		}
 	} catch (e) {
 		tab?.close()
 		errorToast(e)
+	} finally {
+		URL.revokeObjectURL(loadingUrl)
+		openingSite.value = null
 	}
 }
 const pendingSiteTerminate = ref<{ name: string } | null>(null)
@@ -454,6 +474,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				:highlight-id="hoverId"
 				:allow-create="canCreateServer"
 				:allow-open="canOpenServer"
+				:opening-site="openingSite"
 				@open="onOpen"
 				@open-server="open"
 				@open-site="openSite"
@@ -481,6 +502,7 @@ async function confirmSiteTerminate(): Promise<void> {
 						:site="pin.site"
 						:can-open="canOpenServer"
 						:can-terminate="canTerminateServer"
+						:busy="openingSite === pin.site.name"
 						@open="openSite"
 						@terminate="pendingSiteTerminate = { name: $event }"
 					/>
@@ -514,6 +536,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				:can-terminate="canTerminateServer"
 				:busy="busy"
 				:opening="opening"
+				:opening-site="openingSite"
 				@focus-row="focusRow"
 				@clear-location="locationFilter = null"
 				@overview="overviewServer = $event"

@@ -28,10 +28,19 @@ export type InvitationStatus =
 	| 'Revoked'
 	| 'Declined'
 
+export type ResourceType = '*' | 'Server' | 'Site'
+
+export interface TeamMemberRoleAssignment {
+	role: string
+	resource_type: ResourceType
+	resource_name: string | null
+}
+
 /** central.api.teams.list_team_members item. */
 export interface TeamMemberRow {
 	user: string
-	role: string
+	full_name: string
+	roles: TeamMemberRoleAssignment[]
 	status: MemberStatus
 	is_owner: boolean
 }
@@ -51,6 +60,18 @@ export interface CapabilityInfo {
 	plane: CapabilityPlane
 	resource: string
 	description: string
+}
+
+/** central.api.servers.registry response. */
+export interface TeamRegistry {
+	team: string
+	assets: {
+		name: string
+		resource_id: string
+		title: string
+		cluster: string
+	}[]
+	sites: { name: string; subdomain: string; region: string }[]
 }
 
 /** central.api.teams.list_team_invitations item (the manager's view). */

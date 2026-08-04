@@ -412,10 +412,17 @@ def list_payment_attempts(team: str | None = None, limit: int = 100) -> list[dic
 
 @frappe.whitelist()
 def get_credit_balance(team: str | None = None) -> dict:
+	"""The wallet balance, and how much of it is promotional credit on a clock.
+
+	`expiring` is one row per grant that still has an expiry ahead of it, soonest
+	first, so the customer can see what they stand to lose and when. Purchased
+	credit never appears there — it doesn't expire."""
 	team = _resolve_team(team)
+	currency = _team_currency(team)
 	return {
 		"balance": frappe.utils.flt(credits.get_balance(team)["balance"]),
-		"currency": _team_currency(team),
+		"currency": currency,
+		"expiring": credits.expiring_credits(team, currency),
 	}
 
 

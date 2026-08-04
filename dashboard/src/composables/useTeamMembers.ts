@@ -5,7 +5,11 @@ import { useBusyRunner } from '@/composables/useBusyRunner'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { submitOrThrow } from '@/lib/frappeCall'
 import { getErrorMessage, isAbortError } from '@/lib/toast'
-import type { MemberStatus, TeamMemberRow } from '@/types/api'
+import type {
+	MemberStatus,
+	TeamMemberRoleAssignment,
+	TeamMemberRow,
+} from '@/types/api'
 
 // The active team's roster plus the member mutations Central enforces:
 // set role / suspend-activate / remove, each gated on team:manage_members server
@@ -21,12 +25,16 @@ const membersCall = useCall<TeamMemberRow[], { team: string }>({
 
 whenTeamReady(() => membersCall.reload())
 
-type RoleParams = { team: string; user: string; role: string }
+type RolesParams = {
+	team: string
+	user: string
+	roles: TeamMemberRoleAssignment[]
+}
 type StatusParams = { team: string; user: string; status: MemberStatus }
 type RemoveParams = { team: string; user: string }
 
-const setRoleCall = useCall<unknown, RoleParams>({
-	url: method(API.setTeamMemberRole),
+const setRolesCall = useCall<unknown, RolesParams>({
+	url: method(API.setTeamMemberRoles),
 	method: 'POST',
 	immediate: false,
 })
@@ -44,14 +52,14 @@ const removeCall = useCall<unknown, RemoveParams>({
 const { busy, run } = useBusyRunner()
 
 export function useTeamMembers() {
-	function setRole(user: string, role: string) {
-		return run(
-			() => submitOrThrow(setRoleCall, { team: teamParams().team, user, role }),
-			`Updated ${user}'s role.`,
+	const setRoles = (user: string, roles: TeamMemberRoleAssignment[]) =>
+		run(
+			() =>
+				submitOrThrow(setRolesCall, { team: teamParams().team, user, roles }),
+			`Updated ${user}'s roles.`,
 			user,
 			() => membersCall.reload(),
 		)
-	}
 
 	function setStatus(user: string, status: MemberStatus) {
 		const verb = status === 'Suspended' ? 'Suspended' : 'Reactivated'
@@ -82,7 +90,7 @@ export function useTeamMembers() {
 		}),
 		busy,
 		reload: () => membersCall.reload(),
-		setRole,
+		setRoles,
 		setStatus,
 		remove,
 	}

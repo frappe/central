@@ -1,21 +1,17 @@
 <script setup lang="ts">
-import { Button, Spinner, Tabs } from 'frappe-ui'
+import { Button, Spinner, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
+import AIApiKeys from '@/components/addons/AIApiKeys.vue'
+import AIOverview from '@/components/addons/AIOverview.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import ApiKeysPanel from '@/components/services/ApiKeysPanel.vue'
-import OverviewPanel from '@/components/services/OverviewPanel.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
 import { errorToast, errorToastWithAction } from '@/lib/toast'
 
-// One service's management surface, reached from the sidebar's Services group.
-// Activation (once per team, gated by a billing subscription) is the first step;
-// after that the work lives behind tabs — Overview, Sites, API keys.
-const route = useRoute()
 const router = useRouter()
-const serviceKey = computed(() => String(route.params.service))
+const serviceKey = 'ai'
 
 const { canManageServices, canManageBilling } = useCapabilities()
 const { offers, offersLoading, instance, loadInstance, activate } =
@@ -23,10 +19,12 @@ const { offers, offersLoading, instance, loadInstance, activate } =
 const { setBreadcrumbs } = useBreadcrumbs()
 
 const offer = computed(
-	() => offers.value.find((o) => o.name === serviceKey.value) ?? null,
+	() => offers.value.find((o) => o.name === serviceKey) ?? null,
 )
 const managedService = computed(() => offer.value?.managed_service ?? null)
 const title = computed(() => offer.value?.title ?? 'Service')
+const description =
+	'Open models on Frappe hardware, through an OpenAI-compatible API.'
 watch(title, (value) => setBreadcrumbs([{ label: value }]), { immediate: true })
 const models = computed(() => instance.value?.models ?? [])
 
@@ -38,17 +36,17 @@ watch(
 	{ immediate: true },
 )
 
-const tabIndex = ref(0)
+const tab = ref('overview')
 const tabs = [
-	{ label: 'Overview', icon: 'lucide-layout-dashboard' },
-	{ label: 'API Keys', icon: 'lucide-key-round' },
+	{ label: 'Overview', value: 'overview' },
+	{ label: 'API keys', value: 'keys' },
 ]
 
 const activating = ref(false)
-async function activateService(): Promise<void> {
+const activateService = async (): Promise<void> => {
 	activating.value = true
 	try {
-		await activate(serviceKey.value)
+		await activate(serviceKey)
 	} catch (e) {
 		if (canManageBilling.value) {
 			errorToastWithAction(e, {
@@ -66,35 +64,53 @@ async function activateService(): Promise<void> {
 
 <template>
 	<div class="flex h-full flex-col">
-		<Tabs v-if="managedService" v-model="tabIndex" :tabs="tabs">
-			<template #tab-panel="{ tab }">
-				<OverviewPanel v-if="tab.label === 'Overview'" />
-				<ApiKeysPanel
+		<div
+			v-if="offersLoading && !offer"
+			class="flex flex-1 justify-center py-16"
+		>
+			<Spinner class="size-5 text-ink-gray-5" />
+		</div>
+
+		<div v-else-if="!offer" class="flex flex-1 items-center justify-center p-8">
+			<EmptyState
+				icon="lucide-box"
+				title="Service not found"
+				description="This service isn't available for your team."
+			/>
+		</div>
+
+		<template v-else>
+			<div class="mx-auto w-full max-w-3xl shrink-0 px-6 pt-8">
+				<div class="flex items-start gap-3">
+					<span
+						class="grid size-10 shrink-0 place-items-center rounded-lg bg-surface-gray-2 text-ink-gray-7"
+					>
+						<lucide-sparkles class="size-5" />
+					</span>
+					<div class="min-w-0">
+						<h1 class="text-xl font-semibold text-ink-gray-9">{{ title }}</h1>
+						<p class="mt-0.5 text-p-base text-ink-gray-5">{{ description }}</p>
+					</div>
+				</div>
+
+				<TabButtons
+					v-if="managedService"
+					v-model="tab"
+					:options="tabs"
+					class="mt-6"
+				/>
+			</div>
+
+			<template v-if="managedService">
+				<AIOverview v-if="tab === 'overview'" />
+				<AIApiKeys
 					v-else
 					:managed-service="managedService"
 					:models="models"
 					:can-manage="canManageServices"
 				/>
 			</template>
-		</Tabs>
 
-		<template v-else>
-			<div
-				v-if="offersLoading && !offer"
-				class="flex flex-1 justify-center py-16"
-			>
-				<Spinner class="size-5 text-ink-gray-5" />
-			</div>
-			<div
-				v-else-if="!offer"
-				class="flex flex-1 items-center justify-center p-8"
-			>
-				<EmptyState
-					icon="lucide-box"
-					title="Service not found"
-					description="This service isn't available for your team."
-				/>
-			</div>
 			<div v-else class="flex flex-1 items-center justify-center p-8">
 				<EmptyState
 					icon="lucide-sparkles"
@@ -115,12 +131,3 @@ async function activateService(): Promise<void> {
 		</template>
 	</div>
 </template>
-
-<style scoped>
-/* frappe-ui's TabsContent doesn't grow; stretch the active panel so the list
-   fills the page and its pagination footer pins to the bottom. */
-:deep([role="tabpanel"][data-state="active"]) {
-	flex: 1;
-	min-height: 0;
-}
-</style>

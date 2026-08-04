@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, FormControl } from 'frappe-ui'
+import { Button, FormControl } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
@@ -37,6 +37,7 @@ const props = defineProps<{
 	canTerminate: boolean
 	busy: string | null
 	opening: string | null
+	openingSite: string | null
 }>()
 
 defineEmits<{
@@ -139,26 +140,12 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 								:style="{ background: row.visual.dot }"
 							/>
 						</span>
-						<span class="min-w-0 flex-1">
-							<span class="flex items-center gap-1.5">
-								<span class="truncate text-sm font-medium text-ink-gray-9"
-									>{{ row.name }}</span
-								>
-								<Badge
-									v-if="row.visual.key !== 'active'"
-									:label="row.visual.label"
-									:theme="row.visual.badgeTheme"
-									variant="subtle"
-									size="sm"
-								/>
-							</span>
-							<span class="block truncate text-sm text-ink-gray-5"
-								>{{ row.specs || row.regionLabel }}</span
-							>
-						</span>
+						<span class="block truncate text-sm text-ink-gray-5"
+							>{{ row.specs || row.regionLabel }}</span
+						>
 						<span
 							class="sp-row-actions"
-							:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id }"
+							:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id || openingSite === row.id }"
 							@click.stop
 						>
 							<ServerRowActions
@@ -181,7 +168,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 								:site="row.site"
 								:can-open="canOpen"
 								:can-terminate="canTerminate"
-								:busy="busy === row.id"
+								:busy="busy === row.id || openingSite === row.id"
 								@open="$emit('openSite', $event)"
 								@terminate="$emit('terminateSite', $event)"
 							/>

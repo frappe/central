@@ -16,12 +16,32 @@ from central.utils.guards import require_capability, require_team_member
 @frappe.whitelist(methods=["GET"])
 @require_team_member
 def list_team_members(team: str) -> list[dict[str, Any]]:
-	"""Roster of the team the caller belongs to (user, role, status, owner flag)."""
+	"""Roster of the team the caller belongs to (user, full name, role grants, status,
+	owner flag) — one entry per user, folding their Team Member rows into a `roles` list."""
 	doc = frappe.get_doc("Team", team)
-	return [
-		{"user": m.user, "role": m.role, "status": m.status, "is_owner": m.user == doc.owner_user}
-		for m in doc.members
-	]
+	full_names = {
+		u.name: u.full_name
+		for u in frappe.get_all(
+			"User", filters={"name": ["in", [m.user for m in doc.members]]}, fields=["name", "full_name"]
+		)
+	}
+
+	roster: dict[str, dict[str, Any]] = {}
+	for m in doc.members:
+		entry = roster.get(m.user)
+		if entry is None:
+			entry = {
+				"user": m.user,
+				"full_name": full_names.get(m.user) or m.user,
+				"roles": [],
+				"status": m.status,
+				"is_owner": m.user == doc.owner_user,
+			}
+			roster[m.user] = entry
+		entry["roles"].append(
+			{"role": m.role, "resource_type": m.resource_type, "resource_name": m.resource_name}
+		)
+	return list(roster.values())
 
 
 @frappe.whitelist(methods=["GET"])
@@ -174,9 +194,11 @@ def decline_invitation(invitation: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def set_team_member_role(team: str, user: str, role: str) -> dict:
-	frappe.get_doc("Team", team).set_member_role(user, role)
-	return {"team": team, "user": user, "role": role}
+def set_team_member_roles(team: str, user: str, roles: list[dict] | str) -> dict:
+	if isinstance(roles, str):
+		roles = frappe.parse_json(roles)  # the console posts a JSON-encoded array
+	frappe.get_doc("Team", team).set_member_roles(user, roles)
+	return {"team": team, "user": user, "roles": roles}
 
 
 @frappe.whitelist(methods=["POST"])

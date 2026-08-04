@@ -2,10 +2,46 @@
 # For license information, please see license.txt
 """Shared helpers for billing tests."""
 
+from contextlib import contextmanager
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+
+
+@contextmanager
+def billing_settings(**values):
+	"""Temporarily change Billing Settings, restoring them on the way out.
+
+	Frappe's own `change_settings` assigns with `setattr`, which leaves a child table
+	as raw dicts; `doc.set` converts them, so this handles `welcome_credit_amounts`
+	too. Restoring matters because a Single is site-wide state that the per-test
+	rollback (and BillingTestCase's row sweep, which commits) won't undo.
+
+	Child rows are snapshotted as plain dicts, without their `name`. Replacing a table
+	deletes its rows, so putting the original Documents back would have Frappe UPDATE
+	rows that no longer exist — the write lands nowhere and the table is left empty for
+	every test that follows."""
+	settings = frappe.get_doc("Billing Settings")
+	before = {key: _snapshot(settings.get(key)) for key in values}
+	for key, value in values.items():
+		settings.set(key, value)
+	settings.save(ignore_permissions=True)
+	try:
+		yield settings
+	finally:
+		settings = frappe.get_doc("Billing Settings")
+		for key, value in before.items():
+			settings.set(key, value)
+		settings.save(ignore_permissions=True)
+
+
+def _snapshot(value):
+	"""A settings value that can be written back later — child rows as fresh dicts."""
+	if isinstance(value, list):
+		return [row.as_dict(no_default_fields=True) for row in value]
+	return value
 
 
 class BillingTestCase(IntegrationTestCase):
@@ -49,6 +85,8 @@ class BillingTestCase(IntegrationTestCase):
 		"User",
 		"Webhook Event",
 		"Notification Log",
+		"Billing Event",
+		"Billing Run",
 	)
 
 	def run(self, result=None):

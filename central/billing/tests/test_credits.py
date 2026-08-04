@@ -10,9 +10,13 @@ from central.billing.platform.constraints import existing_constraints
 from central.billing.revenue import credits
 from central.billing.revenue.credits import InsufficientCredits
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_team
+from central.billing.tests.utils import billing_settings, ensure_team
 
 TEAM = "team-wallet"
+
+
+def yesterday():
+	return frappe.utils.add_days(frappe.utils.nowdate(), -1)
 
 
 def run_workers(n: int, fn):
@@ -298,3 +302,120 @@ class TestConcurrency(CreditTestBase):
 				frappe.db.delete("Credit Ledger Entry", {"team": t})
 				frappe.db.delete("Credit Wallet", {"team": t})
 			frappe.db.commit()
+
+
+class TestCreditExpiry(CreditTestBase):
+	"""Promotional credit runs out of time; purchased credit does not."""
+
+	def _grant(self, amount, expires_on, currency="INR"):
+		return credits.grant_promotional_credits(TEAM, amount, currency, expires_on=expires_on)[
+			"ledger_entry"
+		]
+
+	def test_purchased_credit_has_no_expiry(self):
+		entry = credits.purchase(TEAM, 500, "INR")["ledger_entry"]
+		self.assertIsNone(frappe.db.get_value("Credit Ledger Entry", entry, "expires_on"))
+
+	def test_grant_stamps_the_configured_validity(self):
+		with billing_settings(promotional_credit_validity_days=30):
+			entry = credits.grant_promotional_credits(TEAM, 100, "INR")["ledger_entry"]
+
+		self.assertEqual(
+			frappe.db.get_value("Credit Ledger Entry", entry, "expires_on"),
+			frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), 30)),
+		)
+
+	def test_zero_validity_grants_credit_that_never_expires(self):
+		with billing_settings(promotional_credit_validity_days=0):
+			entry = credits.grant_promotional_credits(TEAM, 100, "INR")["ledger_entry"]
+
+		self.assertIsNone(frappe.db.get_value("Credit Ledger Entry", entry, "expires_on"))
+
+	def test_expiry_writes_off_only_what_is_left(self):
+		self._grant(100, yesterday())
+		credits.apply_credit(TEAM, 40, "INR", reference_name="INV-1")
+
+		written_off = credits.expire_credits(TEAM, "INR")
+
+		self.assertEqual([e["amount"] for e in written_off], [60])
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+
+	def test_expiry_leaves_purchased_credit_alone(self):
+		self._grant(100, yesterday())
+		credits.purchase(TEAM, 500, "INR")
+
+		credits.expire_credits(TEAM, "INR")
+
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 500)
+
+	def test_debits_spend_the_soonest_expiring_credit_first(self):
+		"""Credit about to die is spent before credit that never will."""
+		self._grant(100, frappe.utils.add_days(frappe.utils.nowdate(), 1))
+		credits.purchase(TEAM, 100, "INR")
+		credits.apply_credit(TEAM, 100, "INR", reference_name="INV-1")
+
+		# The debit came out of the grant, so nothing is left to expire tomorrow.
+		lots = {lot.name: lot.remaining for lot in credits.credit_lots(TEAM, "INR")}
+		self.assertEqual(sorted(lots.values()), [0.0, 100.0])
+		self.assertEqual(
+			credits.expire_credits(TEAM, "INR", frappe.utils.add_days(frappe.utils.nowdate(), 2)),
+			[],
+		)
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 100)
+
+	def test_grants_expire_in_date_order(self):
+		self._grant(100, yesterday())
+		self._grant(50, frappe.utils.add_days(frappe.utils.nowdate(), 10))
+		credits.apply_credit(TEAM, 30, "INR", reference_name="INV-1")
+
+		written_off = credits.expire_credits(TEAM, "INR")
+
+		# The debit came out of the grant expiring first, leaving 70 of it to sweep;
+		# the later grant is untouched.
+		self.assertEqual([e["amount"] for e in written_off], [70])
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 50)
+
+	def test_sweeping_twice_writes_off_once(self):
+		self._grant(100, yesterday())
+
+		credits.expire_credits(TEAM, "INR")
+		self.assertEqual(credits.expire_credits(TEAM, "INR"), [])
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+		self.assertEqual(
+			frappe.db.count("Credit Ledger Entry", {"team": TEAM, "reference_type": "Expiry"}), 1
+		)
+
+	def test_expiry_never_drives_the_wallet_negative(self):
+		self._grant(100, yesterday())
+		credits.apply_credit(TEAM, 100, "INR", reference_name="INV-1")
+
+		self.assertEqual(credits.expire_credits(TEAM, "INR"), [])
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+
+	def test_wallet_still_equals_its_ledger_after_a_sweep(self):
+		self._grant(100, yesterday())
+		credits.purchase(TEAM, 25, "INR")
+		credits.expire_credits(TEAM, "INR")
+
+		self.assertEqual(credits.get_balance(TEAM)["balance"], credits.ledger_balance(TEAM, "INR"))
+
+	def test_expiring_credits_lists_what_has_not_expired_yet(self):
+		self._grant(100, frappe.utils.add_days(frappe.utils.nowdate(), 5))
+		credits.purchase(TEAM, 500, "INR")
+
+		upcoming = credits.expiring_credits(TEAM, "INR")
+
+		self.assertEqual(len(upcoming), 1)
+		self.assertEqual(upcoming[0]["amount"], 100)
+		self.assertEqual(
+			upcoming[0]["expires_on"],
+			frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), 5)),
+		)
+
+	def test_the_daily_sweep_finds_the_wallet(self):
+		self._grant(100, yesterday())
+
+		result = credits.run_credit_expiry()
+
+		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
+		self.assertGreaterEqual(result["entries"], 1)

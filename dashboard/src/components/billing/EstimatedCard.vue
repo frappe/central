@@ -6,7 +6,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { shortDate } from '@/lib/date'
+import { ordinalDate } from '@/lib/date'
 import { currencySymbol, money } from '@/lib/format'
 import { errorToast, successToast } from '@/lib/toast'
 import type { BillingSettings } from '@/types/billing'
@@ -24,7 +24,7 @@ const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
 const projected = computed(() => Number(fc.value?.projected_total ?? 0))
 const billsOn = computed(() =>
-	fc.value?.period_end ? shortDate(fc.value.period_end) : '',
+	fc.value?.period_end ? ordinalDate(fc.value.period_end) : '',
 )
 const daysRemaining = computed(() => fc.value?.days_remaining ?? null)
 

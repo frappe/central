@@ -1,67 +1,161 @@
 <script setup lang="ts">
-import { Button, Skeleton } from 'frappe-ui'
-import { ref } from 'vue'
-import RoleBuilderDialog from '@/components/team/RoleBuilderDialog.vue'
-import RoleMatrix from '@/components/team/RoleMatrix.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useTeamRoles } from '@/composables/useTeamRoles'
-import type { TeamRoleRow } from '@/types/api'
+import { Avatar, Button } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
-const { roles, capabilities, loading, error, reload, deleteRole } =
-	useTeamRoles()
+import {
+	createListViewQuery,
+	ListView,
+	type ListViewColumn,
+} from '@/components/common/list-view'
+import RoleBuilderDialog from '@/components/team/RoleBuilderDialog.vue'
+import RoleRowActions from '@/components/team/RoleRowActions.vue'
+
+import { useCapabilities } from '@/composables/useCapabilities'
+import { useTeamMembers } from '@/composables/useTeamMembers'
+import { useTeamRoles } from '@/composables/useTeamRoles'
+import { roleDisplay, roleIconBoxClasses } from '@/lib/roles'
+import type { TeamMemberRow, TeamRoleRow } from '@/types/api'
+
+const newRoleDialog = ref(false)
+const { roles, loading, error, reload, deleteRole } = useTeamRoles()
+const { members } = useTeamMembers()
 const { canManageMembers } = useCapabilities()
 
-const builderOpen = ref(false)
-const deleting = ref('')
+const query = ref(createListViewQuery())
+const deletingName = ref('')
 
-async function onDeleteRole(role: TeamRoleRow): Promise<void> {
-	deleting.value = role.name
+// Role doc name -> members holding it, for the avatar stack in the Members column.
+const membersByRole = computed<Record<string, TeamMemberRow[]>>(() => {
+	const map: Record<string, TeamMemberRow[]> = {}
+	for (const member of members.value) {
+		const uniqueRoles = new Set(member.roles.map((grant) => grant.role))
+		for (const role of uniqueRoles) {
+			;(map[role] ??= []).push(member)
+		}
+	}
+	return map
+})
+
+const roleMembers = (role: TeamRoleRow): TeamMemberRow[] =>
+	membersByRole.value[role.name] ?? []
+
+const onDeleteRole = async (role: TeamRoleRow): Promise<void> => {
+	deletingName.value = role.name
+
 	try {
 		await deleteRole(role.name, role.role_name)
 	} finally {
-		deleting.value = ''
+		deletingName.value = ''
 	}
 }
+
+// Columns declare id/header/sorting only — the Role/Members/Actions markup is
+// filled in by the matching #role/#members/#actions slots in the template below.
+const columns = computed<ListViewColumn<TeamRoleRow>[]>(() => [
+	{
+		id: 'role',
+		header: 'Role',
+		accessorKey: 'role_name',
+		meta: { cellClass: 'truncate' },
+	},
+	{
+		id: 'members',
+		header: 'Members',
+		enableSorting: false,
+	},
+	{
+		id: 'actions',
+		header: '',
+		enableSorting: false,
+		size: 1,
+		meta: { align: 'end' },
+	},
+])
+
+const getRoleKey = (role: TeamRoleRow): string => role.name
 </script>
 
 <template>
-	<div class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-		<div class="mx-auto max-w-4xl">
-			<div class="mb-4 flex items-center justify-between gap-3">
-				<p class="text-p-sm text-ink-gray-5">
-					Every role and exactly what it can do. Roles are named sets of
-					capabilities.
-				</p>
-				<Button
-					v-if="canManageMembers"
-					variant="solid"
-					label="New role"
-					icon-left="lucide-plus"
-					@click="builderOpen = true"
+	<ListView
+		v-model:query="query"
+		:rows="roles"
+		:columns="columns"
+		:row-key="getRoleKey"
+		:loading="loading"
+		:error="error"
+		searchable
+		search-placeholder="Search roles..."
+		item-label="role"
+		:empty-state="{ title: 'No roles yet', description: 'Create a role to grant capabilities to members.' }"
+		@retry="reload"
+	>
+		<template #toolbar>
+			<Button
+				v-if="canManageMembers"
+				variant="solid"
+				label="New role"
+				icon-left="lucide-plus"
+				@click="newRoleDialog = true"
+			/>
+		</template>
+
+		<template #role="{ row }">
+			<div class="flex min-w-0 items-center gap-3">
+				<div
+					class="flex size-8 shrink-0 items-center justify-center rounded-md"
+					:class="roleIconBoxClasses(roleDisplay(row).theme)"
+				>
+					<span :class="`${roleDisplay(row).icon} size-4`" aria-hidden="true" />
+				</div>
+
+				<div class="min-w-0">
+					<p class="truncate font-medium text-ink-gray-9">
+						{{ row.role_name }}
+					</p>
+					<p class="truncate text-p-sm text-ink-gray-5">
+						{{ roleDisplay(row).description }}
+					</p>
+				</div>
+			</div>
+		</template>
+
+		<template #members="{ row }">
+			<div class="flex items-center">
+				<Avatar
+					v-for="member in roleMembers(row).slice(0, 5)"
+					:key="member.user"
+					:label="member.full_name"
+					class="-ml-2 border-2 border-outline-base first:ml-0"
 				/>
+				<div
+					v-if="roleMembers(row).length > 5"
+					class="-ml-2 flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-outline-base bg-surface-gray-2 text-p-sm text-ink-gray-6"
+				>
+					+{{ roleMembers(row).length - 5 }}
+				</div>
 			</div>
+		</template>
 
-			<Skeleton v-if="loading" class="h-64 rounded-lg" />
-
-			<div
-				v-else-if="error"
-				class="flex items-center justify-between gap-3 rounded-lg border border-outline-gray-2 px-4 py-3"
-				role="alert"
-			>
-				<p class="text-p-sm text-ink-red-7">{{ error }}</p>
-				<Button label="Retry" variant="ghost" @click="reload" />
-			</div>
-
-			<RoleMatrix
-				v-else
-				:roles="roles"
-				:capabilities="capabilities"
+		<template #actions="{ row }">
+			<RoleRowActions
+				:role="row"
 				:can-manage="canManageMembers"
-				:deleting-name="deleting"
+				:busy="deletingName === row.name"
 				@delete="onDeleteRole"
 			/>
-		</div>
-	</div>
+		</template>
+	</ListView>
 
-	<RoleBuilderDialog v-model:open="builderOpen" @created="reload" />
+	<RoleBuilderDialog v-model:open="newRoleDialog" @created="reload" />
 </template>
+
+<style scoped>
+/* Body rows need room for the role icon + name + description stack, and the
+   member avatar row. Scoped to this panel's rowgroup only — the header row
+   sits outside it. */
+:deep([role="rowgroup"] > [role="row"]) {
+	height: auto;
+	min-height: 4rem;
+	padding-block: 0.5rem;
+}
+</style>

@@ -6,14 +6,21 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
+from frappe.tests import IntegrationTestCase
 
+from central.billing import settings
 from central.billing.catalog import subscriptions
 from central.billing.catalog.signing import generate_keypair
 from central.billing.gateways.base import PaymentResult
 from central.billing.revenue import dunning
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan, set_team_tier
+from central.billing.tests.utils import (
+	billing_settings,
+	ensure_atlas_instance,
+	ensure_team,
+	make_plan,
+	set_team_tier,
+)
 
 TEAM = "team-dunning"
 CLUSTER = "ap-south-1"
@@ -206,6 +213,19 @@ class TestStagedEscalation(DunningTestBase):
 
 		self.assertTrue(self._has_directive("terminate"))
 
+	def test_the_ladder_follows_billing_settings(self):
+		"""A shortened ladder escalates on its own days, not the shipped ones."""
+		sub = self._subscription()
+		inv = self._open_invoice(sub)
+		with billing_settings(dunning_retry_days="1, 2", suspend_after_days=4, terminate_after_days=6):
+			with declining_gateway():
+				for d in (1, 2, 4, 6):
+					dunning.process_invoice_dunning(inv, now=day(d))
+
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+		self.assertTrue(self._has_directive("suspend"))
+		self.assertTrue(self._has_directive("terminate"))
+
 	def test_cost_report_invoice_is_not_dunned(self):
 		sub = self._subscription()
 		inv = self._open_invoice(sub)
@@ -249,8 +269,6 @@ class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
 		self.assertNotEqual(self._standing(sub), "Past Due")
 
 	def test_the_deferred_ladder_still_runs_from_the_fair_date(self):
-		from central.billing.revenue.invoicing import DEFAULT_DUE_DAYS
-
 		sub = self._subscription()
 		inv = self._open_invoice(sub)
 		dunning.defer_dunning(inv, "the run backed up")
@@ -259,7 +277,8 @@ class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
 		# have asked on, the ladder escalates exactly as it always would.
 		fair = frappe.db.get_value("Invoice", inv, "dunning_starts_on")
 		self.assertEqual(
-			fair, frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), DEFAULT_DUE_DAYS))
+			fair,
+			frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), settings.invoice_due_days())),
 		)
 		with declining_gateway():
 			dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(fair, 7))

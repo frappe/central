@@ -3,7 +3,7 @@ import type { Asset } from '@/types/Central/Asset'
 
 export type AssetStatus = NonNullable<Asset['status']> | (string & {})
 
-type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue' | 'violet'
+export type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue' | 'violet'
 
 // Asset status → Badge theme. Mirrors the Atlas lifecycle: Running is healthy,
 // transient states are amber, terminal/failure states are red, the rest neutral.
