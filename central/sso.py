@@ -15,7 +15,7 @@ from central.central.doctype.central_sso_settings.central_sso_settings import AL
 
 BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
-METRICS_TTL = 24 * 60 * 60  # a pilot re-fetches this daily; there is no revocation list
+METRICS_TTL = 365 * 24 * 60 * 60  # long-lived: there is no revocation list, only key rotation
 ENROLL_SCOPE = "enroll"
 METRICS_SCOPE = "datum"
 

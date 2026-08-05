@@ -67,9 +67,9 @@ def config() -> dict:
 def metrics_token() -> dict:
 	"""The JWT this pilot presents to Datum when pushing metrics.
 
-	Separate from `config` because it expires: the pilot re-fetches on a TTL or on a
-	401. Refused until Atlas binds the Asset, since the samples would carry no
-	resource id."""
+	Separate from `config` because it expires: the pilot re-fetches on a 401 or when
+	the expiry nears. Refused until Atlas binds the Asset, since the samples would
+	carry no resource id."""
 	from central.sso import METRICS_TTL, mint_metrics_token
 
 	credential = frappe.local.pilot_credential
