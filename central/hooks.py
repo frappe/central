@@ -12,6 +12,7 @@ fixtures = [
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
+	"Notification Event Type",
 ]
 
 # The TypeScript UI owns the product route.
@@ -186,24 +187,9 @@ scheduler_events = {
 		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
 		# backstop that corrects drift the event push (central.api.atlas.event) missed.
 		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
-		# Billing: the monthly run. Drafting fires once, on the 1st, and fans the
-		# just-closed month out as one page job per team. Collection is NOT a second
-		# tick a fixed few hours later — at scale drafting may still be running then,
-		# and a one-shot scan would collect only what existed at that instant and
-		# orphan the rest. It is a daily sweep instead (see the `daily` list below):
-		# `collect_due_invoices` drains every Draft whose month has closed, re-running
-		# until nothing is owed. Rating is heavy and local, collection slow and
-		# external, so they stay separate ticks.
-		"0 1 1 * *": ["central.billing.revenue.invoicing.draft_monthly_invoices"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
-		# Billing: collect the monthly run. A daily sweep of every Draft whose month
-		# has closed (period_end <= the just-closed month), fanned out as page jobs.
-		# Re-runs harmlessly: a settled draft drops out of the scan, so once the run
-		# has drained this is a cheap indexed no-op. Runs before dunning so a fresh
-		# charge is attempted before any retry ladder is considered.
-		"central.billing.revenue.invoicing.collect_due_invoices",
 		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
 		# and pruning Payment Attempt / Webhook Event logs.
 		"central.billing.revenue.dunning.run_dunning",
@@ -240,6 +226,10 @@ scheduler_events = {
 		"central.billing.platform.alerts.run_operator_alerts",
 	],
 	"monthly": [
+		# Billing: on the 1st, bill the just-closed month end-to-end for every team —
+		# draft one consolidated invoice per team, then open + collect (credits→card).
+		# The production trigger for the two-phase invoicing (#09/#10).
+		"central.billing.revenue.invoicing.run_monthly_billing",
 		# Billing: cards expire at the end of their printed month; flip lapsed ones.
 		"central.billing.payments.payments.expire_payment_methods",
 	],
