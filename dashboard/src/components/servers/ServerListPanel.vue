@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, FormControl } from 'frappe-ui'
+import { Badge, Button, FormControl } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
@@ -140,9 +140,23 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 								:style="{ background: row.visual.dot }"
 							/>
 						</span>
-						<span class="block truncate text-sm text-ink-gray-5"
-							>{{ row.specs || row.regionLabel }}</span
-						>
+						<span class="min-w-0 flex-1">
+							<span class="flex items-center gap-1.5">
+								<span class="truncate text-sm font-medium text-ink-gray-9"
+									>{{ row.name }}</span
+								>
+								<Badge
+									v-if="row.visual.key !== 'active'"
+									:label="row.visual.label"
+									:theme="row.visual.badgeTheme"
+									variant="subtle"
+									size="sm"
+								/>
+							</span>
+							<span class="block truncate text-sm text-ink-gray-5"
+								>{{ row.specs || row.regionLabel }}</span
+							>
+						</span>
 						<span
 							class="sp-row-actions"
 							:class="{ 'sp-row-actions-active': busy === row.id || opening === row.id || openingSite === row.id }"
