@@ -2,11 +2,13 @@
 # See license.txt
 
 import frappe
+import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime, set_request
 
-from central.api.pilot import heartbeat
+from central.api.pilot import heartbeat, metrics_token
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.sso import METRICS_SCOPE
 from central.tests.test_iam import ensure_user
 
 
@@ -58,3 +60,23 @@ class TestPilotAPI(IntegrationTestCase):
 		bench.db_set("expires_at", add_to_date(now_datetime(), hours=-1))
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call_heartbeat(self.token)
+
+	def call_metrics_token(self, token: str | None) -> dict:
+		headers = {"X-Pilot-Token": token} if token is not None else {}
+		set_request(method="GET", path="/api/method/central.api.pilot.metrics_token", headers=headers)
+		return metrics_token()
+
+	def test_metrics_token_carries_the_scope_and_resource(self):
+		"""Datum's gateway matches on scope and stamps the labels onto every sample."""
+		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", "vm-1")
+
+		claims = jwt.decode(self.call_metrics_token(self.token)["token"], options={"verify_signature": False})
+
+		self.assertEqual(claims["scope"], METRICS_SCOPE)
+		self.assertEqual(claims["vm_access"]["metrics_extra_labels"], ["resource_id=vm-1"])
+
+	def test_metrics_token_waits_for_the_resource(self):
+		"""Atlas binds the Asset after provisioning; before that the samples would
+		carry no resource id."""
+		with self.assertRaises(frappe.ValidationError):
+			self.call_metrics_token(self.token)
