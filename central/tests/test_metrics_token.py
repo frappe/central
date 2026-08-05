@@ -20,12 +20,8 @@ PILOT_ID = "metrics-pilot-1"
 
 
 class TestMetricsToken(IntegrationTestCase):
-	"""The token a pilot presents to Datum's metrics gateway.
-
-	Datum's vmauth verifies the signature, matches `scope`, and turns
-	`vm_access.metrics_extra_labels` into the labels VictoriaMetrics stamps onto
-	every sample. All three have to be right or metrics land unattributed.
-	"""
+	"""Signature, scope and labels all have to be right, or metrics land
+	unattributed."""
 
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -95,15 +91,14 @@ class TestMetricsToken(IntegrationTestCase):
 		self.assertEqual(claims["vm_access"]["metrics_extra_labels"], [f"resource_id={RESOURCE_ID}"])
 
 	def test_the_scope_marks_it_as_a_metrics_token(self):
-		"""Bench logins and enrollments are signed by the same key, so the gateway
-		tells them apart by scope alone."""
+		"""Signed with the same key as bench logins; scope is what separates them."""
 		claims = self.verify_like_vmauth(mint_metrics_token(PILOT_ID, RESOURCE_ID), PILOT_ID)
 
 		self.assertEqual(claims["scope"], METRICS_SCOPE)
 
 	def test_minting_without_a_resource_is_refused(self):
-		"""Atlas binds the resource after provisioning. A token minted before then
-		would carry no label, and its samples could not be attributed."""
+		"""Atlas binds the resource after provisioning; a token minted before then
+		would carry no label."""
 		with self.assertRaises(frappe.ValidationError):
 			mint_metrics_token(PILOT_ID, "")
 

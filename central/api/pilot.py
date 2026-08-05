@@ -67,12 +67,9 @@ def config() -> dict:
 def metrics_token() -> dict:
 	"""The JWT this pilot presents to Datum when pushing metrics.
 
-	Separate from `config` because it expires: the pilot re-fetches on a TTL, or when
-	the gateway answers 401. Scoped to `datum` and carrying only this deployment's
-	resource id, so a leaked token can write nothing but its own series.
-
-	The resource is bound after Atlas provisions, so a pilot that asks before then is
-	told to wait rather than handed a token whose data could not be attributed."""
+	Separate from `config` because it expires: the pilot re-fetches on a TTL or on a
+	401. Refused until Atlas binds the Asset, since the samples would carry no
+	resource id."""
 	from central.sso import METRICS_TTL, mint_metrics_token
 
 	credential = frappe.local.pilot_credential

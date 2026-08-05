@@ -81,15 +81,12 @@ def verify_bootstrap_token(token: str) -> dict:
 
 
 def mint_metrics_token(audience: str, resource_id: str) -> str:
-	"""A token the pilot presents to Datum's metrics gateway (vmauth).
+	"""A token the pilot presents to Datum's metrics gateway.
 
-	`scope` gates it: Central signs bench logins and enrollment tokens with the same
-	key, so without one every downward token could write metrics.
-
-	`vm_access.metrics_extra_labels` is read by vmauth, which passes it to
-	VictoriaMetrics as an `extra_label` query arg. VictoriaMetrics applies those
-	labels over whatever the producer sent, so a pilot cannot write as another
-	resource even if it claims one in the request body."""
+	`scope` keeps bench and enrollment tokens — signed with this same key — from
+	writing metrics. vmauth turns `metrics_extra_labels` into labels the store
+	applies over whatever the producer sent, so a pilot cannot write as another
+	resource."""
 	if not resource_id:
 		frappe.throw(
 			_("This pilot has no resource yet; a metrics token would be unattributable."),
