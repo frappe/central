@@ -3,12 +3,11 @@
 """Re-point billing's `team` from a free-text `Data` slug to the real Central
 `Team` (issue #43, ADR 0004 §4).
 
-Runs **pre_model_sync** — while `team` is still a `Data` column on all 16 billing
+Runs **pre_model_sync** — while `team` is still a `Data` column on all 13 billing
 tables — so we can ensure a `Team` per legacy slug, rewrite every value to the
-`Team.name`, and rename the five `field:team`-named docs (Credit Wallet, Trust
-Tier, Tax Profile, Billing Profile, Notification Preference) so their `name`
-still equals `team`. The field-type flip to `Link → Team` then lands on values
-that are already valid links.
+`Team.name`, and rename the `field:team`-named docs (Credit Wallet, Tax Profile,
+Billing Profile) so their `name` still equals `team`. The field-type flip to
+`Link → Team` then lands on values that are already valid links.
 
 Access continuity is part of the migration, not a follow-up: every user who
 could reach a team's billing under the old model (`User.billing_team`) becomes
@@ -26,7 +25,8 @@ from frappe.model.rename_doc import rename_doc
 
 # The billing DocTypes carrying `team` (Notification Log was renamed to Billing
 # Notification Log in #41; Price Lock was retired into the Subscription Change
-# ledger by ADR 0010 / #86).
+# ledger by ADR 0010 / #86; the old per-team Notification Preference was replaced
+# by the Notification Event Type registry in the notification module).
 TEAM_DOCTYPES = [
 	"Subscription",
 	"Invoice",
@@ -41,7 +41,6 @@ TEAM_DOCTYPES = [
 	"Billing Profile",
 	"Entitlement Token",
 	"Billing Notification Log",
-	"Notification Preference",
 ]
 
 # Of those, the ones autonamed `field:team` — their document `name` *is* the
@@ -51,7 +50,6 @@ FIELD_TEAM_DOCTYPES = [
 	"Credit Wallet",
 	"Tax Profile",
 	"Billing Profile",
-	"Notification Preference",
 ]
 
 MEMBER_ROLE = "Billing"  # carries billing:view + billing:manage

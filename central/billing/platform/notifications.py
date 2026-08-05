@@ -165,8 +165,9 @@ def notify(
 	msg = message or src.pop("reason", None) or src.pop("utilisation", None)
 
 	# The registry uses snake_case event_type names; billing callers use
-	# Pascal Case (e.g. "Payment Success" → "payment_success").
-	slug = event_type.lower().replace(" ", "_")
+	# Pascal Case (e.g. "Payment Success" → "payment_success"). Hyphens in
+	# display names ("Pre-debit Notice") map to underscores too.
+	slug = event_type.lower().replace(" ", "_").replace("-", "_")
 	_ensure_event_type(slug)
 
 	result = engine.dispatch(
