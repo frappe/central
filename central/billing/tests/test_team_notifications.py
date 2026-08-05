@@ -4,7 +4,7 @@
 
 import frappe
 
-from central import notifications as feed
+from central import notification as feed
 from central.billing.api.dashboard import account
 from central.billing.platform import notifications as billing_notify
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -47,7 +47,7 @@ class TestFeedWriter(TeamNotificationBase):
 		)
 		rows = frappe.get_all(
 			"Team Notification",
-			{"team": TEAM, "event_type": "Payment Failure"},
+			{"team": TEAM, "event_type": "payment_failure"},
 			["severity", "action_label", "action_route", "category", "message"],
 		)
 		self.assertEqual(len(rows), 1)
@@ -55,15 +55,10 @@ class TestFeedWriter(TeamNotificationBase):
 		self.assertEqual(rows[0].category, "Billing")
 		self.assertEqual(rows[0].action_route, "/billing/invoices")
 
-	def test_suppressed_email_still_feeds_in_app(self):
-		# Opting out of the *email* must not hide the event from the dashboard feed.
-		frappe.get_doc(
-			{"doctype": "Notification Preference", "team": TEAM, "notify_payment_failure": 0}
-		).insert(ignore_permissions=True)
+	def test_notify_writes_feed_in_app(self):
 		out = billing_notify.notify(TEAM, "Payment Failure", context={"invoice": "INV-2", "reason": "x"})
-		self.assertFalse(out["sent"])  # email suppressed
-		self.assertEqual(feed.unread_count(TEAM), 1)  # but the feed still recorded it
-		frappe.db.delete("Notification Preference", {"team": TEAM})
+		self.assertTrue(out["sent"])
+		self.assertEqual(feed.unread_count(TEAM), 1)
 
 
 class TestFeedAPI(TeamNotificationBase):
@@ -88,7 +83,9 @@ class TestFeedAPI(TeamNotificationBase):
 		feed.create_notification(TEAM, "B")
 		out = account.mark_notification_read(name=a, team=TEAM)
 		self.assertEqual(out["unread"], 1)
-		self.assertTrue(frappe.db.get_value("Team Notification", a, "is_read"))
+		self.assertTrue(
+			frappe.db.exists("Notification Read", {"user": frappe.session.user, "notification": a})
+		)
 		out = account.mark_all_notifications_read(team=TEAM)
 		self.assertEqual(out["unread"], 0)
 		self.assertEqual(feed.unread_count(TEAM), 0)
@@ -98,6 +95,29 @@ class TestFeedAPI(TeamNotificationBase):
 		foreign = feed.create_notification(OTHER, "not yours").name
 		with self.assertRaises(frappe.PermissionError):
 			account.mark_notification_read(name=foreign, team=TEAM)
+
+	def test_read_state_independent_per_user(self):
+		user_a = frappe.session.user
+		user_b = "test-reader@example.com"
+		if not frappe.db.exists("User", user_b):
+			frappe.get_doc(
+				{"doctype": "User", "email": user_b, "first_name": "Test Reader", "send_welcome_email": 0}
+			).insert(ignore_permissions=True)
+
+		a = feed.create_notification(TEAM, "Alpha").name
+		feed.create_notification(TEAM, "Beta").name
+
+		account.mark_notification_read(name=a, team=TEAM)
+
+		frappe.set_user(user_b)
+		self.assertEqual(feed.unread_count(TEAM), 2, "user_b should see both as unread")
+		self.assertFalse(
+			frappe.db.exists("Notification Read", {"user": user_b, "notification": a}),
+			"user_b must not inherit user_a's read state",
+		)
+		frappe.set_user(user_a)
+
+		self.assertEqual(feed.unread_count(TEAM), 1, "user_a should see one remaining unread")
 
 
 class TestServerFailureFeed(TeamNotificationBase):
@@ -122,7 +142,7 @@ class TestServerFailureFeed(TeamNotificationBase):
 		asset.status = "Failed"
 		asset.save(ignore_permissions=True)
 		rows = frappe.get_all(
-			"Team Notification", {"team": TEAM, "event_type": "Server Failed"}, ["severity", "category"]
+			"Team Notification", {"team": TEAM, "event_type": "server_failed"}, ["severity", "category"]
 		)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].severity, "Error")

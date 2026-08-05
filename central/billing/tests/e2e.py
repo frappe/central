@@ -102,7 +102,6 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 			"Gateway Customer",
 			"Usage Rollup",
 			"Billing Notification Log",
-			"Notification Preference",
 			"Billing Profile",
 			"Tax Profile",
 		):
