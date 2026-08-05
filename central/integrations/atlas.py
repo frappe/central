@@ -439,15 +439,14 @@ def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | No
 
 	event_id is the sending Atlas's own delivery id (its Central Event Log row
 	name) — stable across a redelivery of the same event, distinct per genuine new
-	event. Empty for an Atlas build predating event_id, so dedup is skipped rather
-	than enforced for those (the unique constraint tolerates multiple NULLs).
+	event.
 	"""
 
 	cluster = _atlas_cluster()
 	if event_type not in _EVENT_HANDLERS:
 		return {"ok": True, "queued": False}
 
-	if event_id and frappe.db.exists("Atlas Event", {"event_id": event_id}):
+	if frappe.db.exists("Atlas Event", {"event_id": event_id}):
 		return {"ok": True, "queued": False}
 
 	try:
