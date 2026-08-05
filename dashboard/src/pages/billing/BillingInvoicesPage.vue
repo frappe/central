@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { Badge, Button, LoadingText, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { API, method } from '@/api/methods'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
 import SplitView from '@/components/common/SplitView.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useInvoices } from '@/composables/useInvoices'
 import { usePayInvoice } from '@/composables/usePayInvoice'
 import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
 import { invoiceTheme } from '@/lib/status'
@@ -21,26 +22,21 @@ import type {
 // Billing › Invoices (#70) — split list (left) + ~480px detail panel (right), not
 // a modal. Invoices come from the team-scoped list_invoices/get_invoice endpoints
 // (curated fields, not raw reportview), so we filter client-side over that list.
-const { activeTeam } = useSession()
+const route = useRoute()
 const { canManageBilling } = useCapabilities()
+const {
+	invoices,
+	loading: invoicesLoading,
+	reload: reloadInvoices,
+} = useInvoices()
 
-const params = () => ({ team: activeTeam.value! })
-const invoices = useCall<InvoiceSummary[], { team: string }>({
-	url: method(API.invoices),
-	params,
-	immediate: false,
-	refetch: true,
-})
 const collection = useCall<CollectionStatus, { team: string }>({
 	url: method(API.collectionStatus),
-	params,
+	params: teamParams,
 	immediate: false,
 	refetch: true,
 })
-whenTeamReady(() => {
-	invoices.reload()
-	collection.reload()
-})
+whenTeamReady(() => collection.reload())
 
 // ── Detail panel ──
 const selected = ref<InvoiceSummary | null>(null)
@@ -61,15 +57,18 @@ async function selectRow(inv: InvoiceSummary): Promise<void> {
 }
 
 // Open the latest invoice expanded on first load — list_invoices is ordered newest
-// first, so that's row 0. Only auto-select once: after the user closes the panel
-// (or a refetch arrives), we leave their choice alone.
+// first, so that's row 0. A `?invoice=` deep link (from global search) selects
+// that row instead. Only auto-select once: after the user closes the panel (or a
+// refetch arrives), we leave their choice alone.
 let autoSelected = false
 watch(
-	() => invoices.data,
+	() => invoices.value,
 	(rows) => {
-		if (autoSelected || selected.value || !rows?.length) return
+		if (autoSelected || selected.value || !rows.length) return
 		autoSelected = true
-		selectRow(rows[0])
+		const wanted = route.query.invoice
+		const row = (wanted && rows.find((r) => r.name === wanted)) || rows[0]
+		selectRow(row)
 	},
 	{ immediate: true },
 )
@@ -96,7 +95,7 @@ const canPay = computed(
 )
 
 function refresh(): void {
-	invoices.reload()
+	reloadInvoices()
 	if (selected.value) detail.submit({ name: selected.value.name })
 }
 const { run: payInvoice, loading: paying } = usePayInvoice({ onDone: refresh })
@@ -171,8 +170,8 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 			<template #list>
 				<div class="px-4 py-5 sm:px-6">
 					<InvoiceListView
-						:invoices="invoices.data ?? []"
-						:loading="invoices.loading && !invoices.data"
+						:invoices="invoices"
+						:loading="invoicesLoading && !invoices.length"
 						:active-name="selected?.name"
 						@row-click="selectRow"
 					/>

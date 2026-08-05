@@ -1,5 +1,6 @@
 import { computed } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { openSearch } from '@/composables/useSearch'
 
 type SidebarItem = {
 	label: string
@@ -7,6 +8,7 @@ type SidebarItem = {
 	to?: string
 	condition?: boolean
 	class?: string
+	onClick?: () => void
 }
 
 type SidebarSection = {
@@ -23,7 +25,7 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 		{
 			label: '',
 			items: [
-				{ label: 'Search', icon: 'lucide-search' },
+				{ label: 'Search', icon: 'lucide-search', onClick: openSearch },
 				{
 					label: 'Notifications',
 					icon: 'lucide-bell',

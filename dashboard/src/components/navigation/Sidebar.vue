@@ -106,6 +106,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 						:key="item.label"
 						:icon="item.icon"
 						:to="item.to"
+						:onclick="item.onClick"
 						class="mb-0.5"
 						:class="item.class"
 						:active="!!item.to && item.to === route.path"
