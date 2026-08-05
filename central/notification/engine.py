@@ -75,7 +75,7 @@ def dispatch(
 			}
 		).insert(ignore_permissions=True)
 
-		frappe.publish_realtime(f"team_notification:{team}", {"team": team}, after_commit=True)
+		publish_team_nudge(team)
 
 	email_result = _fan_out_emails(
 		team,
@@ -182,6 +182,7 @@ def _render_template(template_str: str | None, ctx: dict) -> str | None:
 	"""Render a Jinja template string with *ctx*. Returns None if template is empty."""
 	if not template_str:
 		return None
+	# nosemgrep: frappe-ssti -- templates come from the System Manager-only Notification Event Type doctype (repo fixtures), never from users.
 	return frappe.render_template(template_str, ctx)
 
 
@@ -303,6 +304,25 @@ def _get_active_members(team: str) -> list[str]:
 		filters={"parent": team, "parenttype": "Team", "status": "Active"},
 		pluck="user",
 	)
+
+
+def publish_team_nudge(team: str) -> None:
+	"""Nudge only the team's active members' sockets, not the whole site.
+
+	``frappe.publish_realtime`` without a ``user``/``room`` broadcasts to the
+	site room (every Desk user, all tenants). Target each member's
+	``user:<email>`` room instead — every socket auto-joins its own user room
+	on connect, so the dashboard's ``team_notification:<team>`` listener fires
+	only for team members. The payload stays team-only; feed content is
+	fetched over the permission-filtered API.
+	"""
+	for member in _get_active_members(team):
+		frappe.publish_realtime(
+			f"team_notification:{team}",
+			{"team": team},
+			user=member,
+			after_commit=True,
+		)
 
 
 def _email_enabled(user: str, team: str, category: str) -> bool:

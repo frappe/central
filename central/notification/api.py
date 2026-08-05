@@ -82,6 +82,7 @@ def get_user_preferences(team: str) -> dict:
 	return {"preferences": rows}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def report_pilot_event(

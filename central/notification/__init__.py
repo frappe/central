@@ -63,7 +63,9 @@ def create_notification(
 	).insert(ignore_permissions=True)
 
 	if publish:
-		frappe.publish_realtime(f"team_notification:{team}", {"team": team}, after_commit=True)
+		from central.notification.engine import publish_team_nudge
+
+		publish_team_nudge(team)
 	return doc
 
 

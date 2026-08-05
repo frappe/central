@@ -138,6 +138,7 @@ def _render_log_body(slug: str, ref: str | None, msg: str | None) -> str:
 	if not event:
 		return msg or slug
 	ctx = {"reference_name": ref or "", "message": msg or ""}
+	# nosemgrep: frappe-ssti -- in_app_body comes from the System Manager-only Notification Event Type doctype, never from users.
 	return frappe.render_template(event, ctx)
 
 
