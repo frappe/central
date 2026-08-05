@@ -12,6 +12,7 @@ const router = useRouter()
 const query = ref('')
 const activeIndex = ref(-1)
 const inputRef = useTemplateRef<HTMLInputElement>('inputRef')
+const resultsRef = useTemplateRef<HTMLElement>('resultsRef')
 const searchIndex = useSearchIndex()
 
 const filtered = computed(() => filterIndex(searchIndex.value, query.value))
@@ -45,6 +46,16 @@ const go = (index: number) => {
 	if (item) select(item)
 	else close()
 }
+
+const navigate = (delta: number) => {
+	activeIndex.value = Math.min(
+		Math.max(activeIndex.value + delta, 0),
+		flatItems.value.length - 1,
+	)
+	resultsRef.value
+		?.querySelectorAll('[role="option"]')
+		[activeIndex.value]?.scrollIntoView({ block: 'nearest' })
+}
 </script>
 
 <template>
@@ -59,8 +70,8 @@ const go = (index: number) => {
 			class="search-panel mt-[15vh] w-full max-w-lg overflow-hidden rounded bg-surface-gray-1 shadow-lg"
 			@keydown.esc.prevent="close"
 			@keydown.enter.prevent="go(activeIndex)"
-			@keydown.up.prevent="activeIndex = Math.max(activeIndex - 1, 0)"
-			@keydown.down.prevent="activeIndex = Math.min(activeIndex + 1, flatItems.length - 1)"
+			@keydown.up.prevent="navigate(-1)"
+			@keydown.down.prevent="navigate(1)"
 		>
 			<!-- input -->
 			<div class="flex items-center gap-2 border-b border-outline-gray-2 p-3">
@@ -83,11 +94,12 @@ const go = (index: number) => {
 			<!-- search items -->
 			<Scrollbar v-if="flatItems.length">
 				<div
-					class="flex max-h-[42vh] min-h-[42vh] flex-col p-2 text-sm"
+					ref="resultsRef"
+					class="flex max-h-[36vh] min-h-[36vh] flex-col p-2 text-sm"
 					role="listbox"
 				>
 					<template v-for="(group, name) in filtered" :key="name">
-						<span class="block px-2 py-1 text-xs uppercase text-ink-gray-4">
+						<span class="mb-1 block px-2 py-1 text-xs uppercase text-ink-gray-4">
 							{{ name }}
 						</span>
 

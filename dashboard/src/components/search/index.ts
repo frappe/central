@@ -5,6 +5,7 @@ import { useServers } from '@/composables/useServers'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useInvoices } from '@/composables/useInvoices'
+import { useAppMenu } from '@/composables/useAppMenu'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
 
@@ -18,7 +19,7 @@ export interface SearchItem {
 
 export type SearchGroups = Record<string, { items: SearchItem[] }>
 
-const ACTIONS: SearchItem[] = [
+const ROUTE_ACTIONS: SearchItem[] = [
 	{
 		name: 'New server',
 		description: 'Provision a server',
@@ -33,7 +34,6 @@ const ACTIONS: SearchItem[] = [
 	},
 ]
 
-
 export function useSearchIndex() {
 	const {
 		canViewServers,
@@ -47,6 +47,7 @@ export function useSearchIndex() {
 	const { assets } = useServerMapData()
 	const { members } = useTeamMembers()
 	const { invoices } = useInvoices()
+	const { themeOptions, setTheme, changeTeamOpen } = useAppMenu()
 
 	return computed((): SearchGroups => {
 		const groups: SearchGroups = {}
@@ -62,11 +63,26 @@ export function useSearchIndex() {
 
 		if (pages.length) groups.Pages = { items: pages }
 
-		const actions = ACTIONS.filter(
-			(action) => action.route !== '/team/invitations' || canManageMembers.value,
-		)
-      
+		const actions: SearchItem[] = [
+			...ROUTE_ACTIONS.filter(
+				(action) => action.route !== '/team/invitations' || canManageMembers.value,
+			),
+			{
+				name: 'Change team',
+				icon: 'lucide-repeat',
+				onSelect: () => (changeTeamOpen.value = true),
+			},
+		]
+
 		if (actions.length) groups.Actions = { items: actions }
+
+		groups.Theme = {
+			items: themeOptions.map((theme) => ({
+				name: theme.label,
+				icon: theme.icon,
+				onSelect: () => setTheme(theme.value as 'light' | 'dark' | 'system'),
+			})),
+		}
 
 		if (canViewServers.value && assets.value.length) {
 			groups.Servers = {
