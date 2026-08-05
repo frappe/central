@@ -344,20 +344,8 @@ def list_switchable_teams() -> list[dict]:
 
 
 # ── Notifications (#20) ──────────────────────────────────────────────────────
-# The team's billing notification feed and per-event-type delivery preferences.
-# The feed is the Billing Notification Log (what we actually sent or suppressed);
-# preferences toggle which event types reach the team.
-
-_NOTIFY_PREFS = (
-	"notify_payment_success",
-	"notify_payment_failure",
-	"notify_payment_retry",
-	"notify_invoice_overdue",
-	"notify_credit_low",
-	"notify_card_expiry",
-	"notify_mandate_reauth",
-	"notify_trial_expiring",
-)
+# The team's in-app notification feed (Team Notification) and the email audit
+# trail (Billing Notification Log).
 
 
 @frappe.whitelist()
@@ -369,100 +357,84 @@ def list_notifications(
 ) -> dict:
 	"""The team's in-app notification feed — billing and server events — newest first.
 
-	Returns the items plus the current unread count so the bell badge and the list
-	stay consistent from one read. Optionally filtered to a `category` (Billing /
-	Server) or to unread items only.
+	Delegates to :func:`central.notification.list_notifications` for
+	capability-filtered results.  Operators see everything; regular
+	members only see notifications whose ``required_cap`` they hold.
 	"""
-	team = _resolve_team(team)
-	filters = {"team": team}
-	if category:
-		filters["category"] = category
-	if frappe.utils.cint(unread_only):
-		filters["is_read"] = 0
-	items = frappe.get_all(
-		"Team Notification",
-		filters=filters,
-		fields=[
-			"name",
-			"category",
-			"event_type",
-			"severity",
-			"title",
-			"message",
-			"reference_doctype",
-			"reference_name",
-			"action_label",
-			"action_route",
-			"is_read",
-			"read_at",
-			"creation",
-		],
-		order_by="creation desc",
-		limit=frappe.utils.cint(limit),
-	)
-	from central.notifications import unread_count
+	from central.notification import list_notifications as _list
 
-	return {"items": items, "unread": unread_count(team)}
+	team = _resolve_team(team)
+	return _list(
+		team,
+		limit=limit,
+		category=category,
+		unread_only=unread_only,
+	)
 
 
 @frappe.whitelist()
 def notification_badge(team: str | None = None) -> dict:
 	"""Lightweight unread count for the console bell badge (no item payload)."""
-	from central.notifications import unread_count
+	from central.notification import unread_count
 
-	return {"unread": unread_count(_resolve_team(team))}
+	return {"unread": unread_count(_resolve_team(team), user=frappe.session.user)}
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_notification_read(name: str, team: str | None = None, read: bool = True) -> dict:
-	"""Mark one of the team's notifications read (or unread). Team-scoped: the row
-	must belong to the caller's team, so a member can't touch another team's feed."""
+	"""Mark one of the team's notifications read (or unread).  Read state is
+	per-user: each member creates/removes a ``Notification Read`` record rather
+	than mutating the shared ``is_read`` flag."""
 	team = _resolve_team(team)
 	if frappe.db.get_value("Team Notification", name, "team") != team:
 		frappe.throw(_("Notification not found for this team."), frappe.PermissionError)
-	read = bool(frappe.utils.cint(read))
-	frappe.db.set_value(
-		"Team Notification",
-		name,
-		{"is_read": 1 if read else 0, "read_at": frappe.utils.now_datetime() if read else None},
-	)
-	from central.notifications import unread_count
 
-	return {"ok": True, "unread": unread_count(team)}
+	user = frappe.session.user
+	read = bool(frappe.utils.cint(read))
+
+	if read:
+		if not frappe.db.exists("Notification Read", {"user": user, "notification": name}):
+			frappe.get_doc(
+				{
+					"doctype": "Notification Read",
+					"user": user,
+					"notification": name,
+					"read_at": frappe.utils.now_datetime(),
+				}
+			).insert(ignore_permissions=True)
+	else:
+		frappe.db.delete("Notification Read", {"user": user, "notification": name})
+
+	from central.notification import unread_count
+
+	return {"ok": True, "unread": unread_count(team, user=user)}
 
 
 @frappe.whitelist(methods=["POST"])
 def mark_all_notifications_read(team: str | None = None) -> dict:
-	"""Mark every unread notification for the team read — the bell's 'clear' action."""
+	"""Mark every visible notification for the user read — the bell's 'clear' action.
+
+	Uses per-user ``Notification Read`` records instead of the shared ``is_read``
+	flag, so one member clearing their feed does not affect others.
+	"""
 	team = _resolve_team(team)
-	names = frappe.get_all("Team Notification", filters={"team": team, "is_read": 0}, pluck="name")
+	from central.notification import list_notifications
+
+	feed = list_notifications(team, user=frappe.session.user, limit=10000)
 	now = frappe.utils.now_datetime()
-	for name in names:
-		frappe.db.set_value("Team Notification", name, {"is_read": 1, "read_at": now})
-	return {"ok": True, "updated": len(names), "unread": 0}
-
-
-@frappe.whitelist()
-def get_notification_preferences(team: str | None = None) -> dict:
-	"""Per-event-type delivery toggles. Absent = everything on by default."""
-	team = _resolve_team(team)
-	prefs = {p: 1 for p in _NOTIFY_PREFS}
-	if frappe.db.exists("Notification Preference", team):
-		doc = frappe.get_doc("Notification Preference", team)
-		prefs = {p: int(doc.get(p) or 0) for p in _NOTIFY_PREFS}
-	prefs["team"] = team
-	return prefs
-
-
-@frappe.whitelist(methods=["POST"])
-def save_notification_preferences(team: str | None = None, **prefs) -> dict:
-	"""Update which event types notify the team (billing:manage)."""
-	team = _resolve_team(team, authz.MANAGE)
-	values = {p: int(frappe.utils.cint(prefs.get(p))) for p in _NOTIFY_PREFS if p in prefs}
-	if frappe.db.exists("Notification Preference", team):
-		doc = frappe.get_doc("Notification Preference", team)
-		doc.update(values)
-	else:
-		doc = frappe.get_doc({"doctype": "Notification Preference", "team": team, **values})
-	doc.save(ignore_permissions=True)
-	return {"saved": True, "team": team}
+	updated = 0
+	for item in feed["items"]:
+		if not item["is_read"]:
+			if not frappe.db.exists(
+				"Notification Read", {"user": frappe.session.user, "notification": item["name"]}
+			):
+				frappe.get_doc(
+					{
+						"doctype": "Notification Read",
+						"user": frappe.session.user,
+						"notification": item["name"],
+						"read_at": now,
+					}
+				).insert(ignore_permissions=True)
+				updated += 1
+	return {"ok": True, "updated": updated, "unread": 0}
