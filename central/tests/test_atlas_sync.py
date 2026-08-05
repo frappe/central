@@ -61,6 +61,7 @@ class TestAtlasMirror(IntegrationTestCase):
 			{
 				"doctype": "Atlas Event",
 				"cluster": self.region,
+				"event_id": frappe.generate_hash(length=12),
 				"event_type": event_type,
 				"occurred_at": occurred_at,
 				"raw_payload": frappe.as_json(vm),
@@ -611,7 +612,7 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.service_user)
 		try:
 			with patch("frappe.enqueue") as enqueue:
-				result = ingest_event("vm.created", vm, "2026-06-18 10:00:00")
+				result = ingest_event("vm.created", vm, "2026-06-18 10:00:00", "evt-q-1")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertTrue(result["queued"])
@@ -642,19 +643,6 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertFalse(second["queued"])
 		enqueue.assert_called_once()
 		self.assertEqual(frappe.db.count("Atlas Event", {"event_id": "evt-dup-1"}), 1)
-
-	def test_events_without_event_id_are_never_deduped_against_each_other(self):
-		vm = {"name": "vm-noid", "team": self.team.name, "status": "Running"}
-		frappe.set_user(self.service_user)
-		try:
-			with patch("frappe.enqueue") as enqueue:
-				first = ingest_event("vm.created", vm, "2026-06-18 10:00:00")
-				second = ingest_event("vm.created", vm, "2026-06-18 10:00:01")
-		finally:
-			frappe.set_user("Administrator")
-		self.assertTrue(first["queued"])
-		self.assertTrue(second["queued"])
-		self.assertEqual(enqueue.call_count, 2)
 
 	def test_ingest_event_recovers_when_exists_check_loses_insert_race(self):
 		# Simulate the same REPEATABLE READ race as mirror writes: a concurrent
