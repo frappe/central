@@ -8,6 +8,7 @@ interface; adding a gateway is one subclass passing the shared contract suite.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 import frappe
 
@@ -75,7 +76,7 @@ class GatewayAdapter(ABC):
 	# Subclasses map their credential field → the common_site_config.json key
 	# that overrides it. Lets ops keep live secrets in site config instead of
 	# the Payment Gateway doc (DB). Empty = always read from the doc.
-	conf_keys: dict[str, str] = {}
+	conf_keys: ClassVar[dict[str, str]] = {}
 
 	# Off-session (silent, customer-absent) charge capability — drives which rail
 	# the collection layer may auto-charge on (ADR 0005). `max_silent_charge` is in
@@ -178,17 +179,25 @@ class GatewayAdapter(ABC):
 		unsupported and the admin enters the secret manually."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support register_webhook")
 
-	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None,
-					 customer: str | None = None) -> dict:
+	def create_order(
+		self, amount, currency: str, receipt: str, notes: dict | None = None, customer: str | None = None
+	) -> dict:
 		"""Create a one-time checkout order/intent the client UI completes (top-up).
 		`customer` is the gateway customer id the payment attaches to, so the method
 		is reusable for later off-session charges. Returns the client-side handles
 		(order_id + key / client_secret)."""
 		raise GatewayUnsupported(f"{type(self).__name__} does not support create_order")
 
-	def create_checkout_session(self, amount, currency: str, receipt: str,
-								success_url: str, cancel_url: str, notes: dict | None = None,
-								customer: str | None = None) -> dict:
+	def create_checkout_session(
+		self,
+		amount,
+		currency: str,
+		receipt: str,
+		success_url: str,
+		cancel_url: str,
+		notes: dict | None = None,
+		customer: str | None = None,
+	) -> dict:
 		"""Create a gateway-hosted checkout the client redirects to (Stripe Checkout).
 		Returns `{checkout_url, session_id}`. The wallet is credited only on return,
 		after the session is confirmed paid (see get_checkout_session)."""

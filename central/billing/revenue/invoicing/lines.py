@@ -51,9 +51,7 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	run bills a whole team at once and uses `team_line_items` instead, which reads the
 	team's subscriptions once rather than once per cluster.
 	"""
-	subscriptions = frappe.get_all(
-		"Subscription", filters={"team": team}, fields=["name", "asset_id"]
-	)
+	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
 	# Resolve every asset's cluster in one query (not a get_value per subscription),
 	# then keep only the subs whose asset runs in this cluster.
 	clusters = _asset_clusters([s.asset_id for s in subscriptions])
@@ -81,9 +79,7 @@ def team_line_items(team: str, period_start, period_end) -> list[dict]:
 	re-reads the whole team once per cluster; this reads it once and tags each line with
 	its own subscription's cluster. The union of lines is identical either way.
 	"""
-	subscriptions = frappe.get_all(
-		"Subscription", filters={"team": team}, fields=["name", "asset_id"]
-	)
+	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
 	clusters = _asset_clusters([s.asset_id for s in subscriptions])
 	changes_by_sub = _changes_by_subscription([s.name for s in subscriptions])
 
@@ -137,11 +133,17 @@ def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
 		end = min(seg_end_dt, b.period_end_excl_dt)
 		if start >= b.period_end_excl_dt or end <= b.period_start_dt:
 			continue  # no overlap with this month
-		segs.append({
-			"start": start, "end": end, "rate": frappe.utils.flt(change.locked_rate),
-			"plan": change.new_value, "asset": sub.asset_id, "cluster": cluster,
-			"churn": held_hours < CHURN_WINDOW_HOURS,
-		})
+		segs.append(
+			{
+				"start": start,
+				"end": end,
+				"rate": frappe.utils.flt(change.locked_rate),
+				"plan": change.new_value,
+				"asset": sub.asset_id,
+				"cluster": cluster,
+				"churn": held_hours < CHURN_WINDOW_HOURS,
+			}
+		)
 
 	# A churn segment (< 24h) turns every date it touches into an hourly date; the
 	# 24h window spans midnight, so a cross-day churn marks both dates.
@@ -204,17 +206,30 @@ def _changes_by_subscription(subscription_names: list[str]) -> dict:
 
 def _daily_line(seg: dict, days: int, day_units: int) -> dict:
 	return {
-		"subscription_resource": seg["asset"], "plan": seg["plan"], "cluster": seg["cluster"],
-		"resource_type": "bundle", "unit": "day", "quantity": 1, "rate": seg["rate"],
-		"days": days, "hours": None,
+		"subscription_resource": seg["asset"],
+		"plan": seg["plan"],
+		"cluster": seg["cluster"],
+		"resource_type": "bundle",
+		"unit": "day",
+		"quantity": 1,
+		"rate": seg["rate"],
+		"days": days,
+		"hours": None,
 		"amount": frappe.utils.flt(days * seg["rate"] / day_units, 2),
 	}
 
 
 def _hourly_line(seg: dict, hours: float, hour_units: int, charge_date) -> dict:
 	return {
-		"subscription_resource": seg["asset"], "plan": seg["plan"], "cluster": seg["cluster"],
-		"resource_type": "bundle", "unit": "hour", "quantity": 1, "rate": seg["rate"],
-		"days": None, "hours": frappe.utils.flt(hours, 2), "charge_date": charge_date,
+		"subscription_resource": seg["asset"],
+		"plan": seg["plan"],
+		"cluster": seg["cluster"],
+		"resource_type": "bundle",
+		"unit": "hour",
+		"quantity": 1,
+		"rate": seg["rate"],
+		"days": None,
+		"hours": frappe.utils.flt(hours, 2),
+		"charge_date": charge_date,
 		"amount": frappe.utils.flt(hours * seg["rate"] / hour_units, 2),
 	}

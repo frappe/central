@@ -72,9 +72,7 @@ def _rated_today(invoice) -> float:
 	from central.billing.revenue.invoicing.lines import team_line_items
 	from central.billing.revenue.metering import metered_line_items_for_clusters
 
-	clusters = frappe.get_all(
-		"Subscription", filters={"team": invoice.team}, pluck="cluster", distinct=True
-	)
+	clusters = frappe.get_all("Subscription", filters={"team": invoice.team}, pluck="cluster", distinct=True)
 	lines = team_line_items(invoice.team, invoice.period_start, invoice.period_end)
 	lines += metered_line_items_for_clusters(
 		invoice.team, [c for c in clusters if c], invoice.period_start, invoice.period_end
@@ -110,9 +108,7 @@ def apply(resource_type: str, period_start, period_end, reason: str) -> str:
 			reissued.append({"from": row["invoice"], "to": new, "delta": row["delta"]})
 		except Exception as error:
 			failed.append({"invoice": row["invoice"], "error": str(error)})
-			frappe.log_error(
-				title=f"Re-rating failed for {row['invoice']}", message=frappe.get_traceback()
-			)
+			frappe.log_error(title=f"Re-rating failed for {row['invoice']}", message=frappe.get_traceback())
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
 
 	run.reload()

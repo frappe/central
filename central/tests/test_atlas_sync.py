@@ -165,16 +165,28 @@ class TestAtlasMirror(IntegrationTestCase):
 	def test_vm_resized_event_updates_mirror_shape(self):
 		self._push(
 			"vm.created",
-			{"name": "vm-r", "team": self.team.name, "status": "Stopped",
-			 "vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 40},
+			{
+				"name": "vm-r",
+				"team": self.team.name,
+				"status": "Stopped",
+				"vcpus": 2,
+				"memory_megabytes": 4096,
+				"disk_gigabytes": 40,
+			},
 			"2026-06-18 10:00:00",
 		)
 		# A resize leaves the VM Stopped, so no status_changed ever fires — the
 		# vm.resized event is how the mirror learns the new shape.
 		self._push(
 			"vm.resized",
-			{"name": "vm-r", "team": self.team.name, "status": "Stopped",
-			 "vcpus": 4, "memory_megabytes": 16384, "disk_gigabytes": 80},
+			{
+				"name": "vm-r",
+				"team": self.team.name,
+				"status": "Stopped",
+				"vcpus": 4,
+				"memory_megabytes": 16384,
+				"disk_gigabytes": 80,
+			},
 			"2026-06-18 10:05:00",
 		)
 		asset = frappe.get_doc("Asset", "vm-r")
@@ -185,8 +197,12 @@ class TestAtlasMirror(IntegrationTestCase):
 		# arrive once Running (Atlas gates them on status).
 		self._push(
 			"vm.created",
-			{"name": "vm-b", "team": self.team.name, "status": "Pending",
-			 "gateway_url": "https://acme.blr1.frappe.dev"},
+			{
+				"name": "vm-b",
+				"team": self.team.name,
+				"status": "Pending",
+				"gateway_url": "https://acme.blr1.frappe.dev",
+			},
 			"2026-06-18 10:00:00",
 		)
 		asset = frappe.get_doc("Asset", "vm-b")
@@ -196,10 +212,14 @@ class TestAtlasMirror(IntegrationTestCase):
 		# The Running event carries the minted handoff — it lands on the mirror.
 		self._push(
 			"vm.status_changed",
-			{"name": "vm-b", "team": self.team.name, "status": "Running",
-			 "gateway_url": "https://acme.blr1.frappe.dev",
-			 "login_url": "https://acme.blr1.frappe.dev/app?sid=abc",
-			 "login_url_expires_at": "2026-06-18 10:05:00"},
+			{
+				"name": "vm-b",
+				"team": self.team.name,
+				"status": "Running",
+				"gateway_url": "https://acme.blr1.frappe.dev",
+				"login_url": "https://acme.blr1.frappe.dev/app?sid=abc",
+				"login_url_expires_at": "2026-06-18 10:05:00",
+			},
 			"2026-06-18 10:01:00",
 		)
 		asset.reload()
@@ -210,8 +230,12 @@ class TestAtlasMirror(IntegrationTestCase):
 		# reconcile shape before another Running) must not blank the stored handoff.
 		self._push(
 			"vm.status_changed",
-			{"name": "vm-b", "team": self.team.name, "status": "Stopped",
-			 "gateway_url": "https://acme.blr1.frappe.dev"},
+			{
+				"name": "vm-b",
+				"team": self.team.name,
+				"status": "Stopped",
+				"gateway_url": "https://acme.blr1.frappe.dev",
+			},
 			"2026-06-18 10:10:00",
 		)
 		asset.reload()
@@ -232,10 +256,15 @@ class TestAtlasMirror(IntegrationTestCase):
 		# The Running event carries the minted handoff — it lands on the mirror.
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "handoff",
-			 "status": "Running", "url": f"https://{fqdn}",
-			 "login_url": f"https://{fqdn}/app?sid=xyz",
-			 "login_url_expires_at": "2026-06-19 10:00:00"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "handoff",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"login_url": f"https://{fqdn}/app?sid=xyz",
+				"login_url_expires_at": "2026-06-19 10:00:00",
+			},
 			"2026-06-18 10:05:00",
 		)
 		site.reload()
@@ -260,17 +289,20 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "fresh.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "fresh",
-			 "status": "Running", "url": f"https://{fqdn}",
-			 "login_url": f"https://{fqdn}/app?sid=fresh",
-			 "login_url_expires_at": "2099-01-01 00:00:00"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "fresh",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"login_url": f"https://{fqdn}/app?sid=fresh",
+				"login_url_expires_at": "2099-01-01 00:00:00",
+			},
 			"2026-06-18 10:05:00",
 		)
 		frappe.set_user(self.owner)
 		try:
-			with patch(
-				"central.integrations.atlas.AtlasClient.regenerate_site_login"
-			) as regen:
+			with patch("central.integrations.atlas.AtlasClient.regenerate_site_login") as regen:
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
@@ -285,15 +317,23 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "stale.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "stale",
-			 "status": "Running", "url": f"https://{fqdn}",
-			 "login_url": f"https://{fqdn}/app?sid=stale",
-			 "login_url_expires_at": "2000-01-01 00:00:00"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "stale",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"login_url": f"https://{fqdn}/app?sid=stale",
+				"login_url_expires_at": "2000-01-01 00:00:00",
+			},
 			"2026-06-18 10:05:00",
 		)
 		fresh = {
-			"name": fqdn, "team": self.team.name, "subdomain": "stale",
-			"status": "Running", "url": f"https://{fqdn}",
+			"name": fqdn,
+			"team": self.team.name,
+			"subdomain": "stale",
+			"status": "Running",
+			"url": f"https://{fqdn}",
 			"login_url": f"https://{fqdn}/app?sid=fresh",
 			"login_url_expires_at": "2099-01-01 00:00:00",
 		}
@@ -315,8 +355,14 @@ class TestAtlasMirror(IntegrationTestCase):
 		if frappe.db.exists("Asset", rid):
 			frappe.delete_doc("Asset", rid, force=True, ignore_permissions=True)
 		frappe.get_doc(
-			{"doctype": "Asset", "resource_id": rid, "team": self.team.name,
-			 "cluster": self.region, "status": status, "gateway_url": gateway or None}
+			{
+				"doctype": "Asset",
+				"resource_id": rid,
+				"team": self.team.name,
+				"cluster": self.region,
+				"status": status,
+				"gateway_url": gateway or None,
+			}
 		).insert(ignore_permissions=True)
 		if frappe.db.exists("Pilot Credential", pcid):
 			frappe.delete_doc("Pilot Credential", pcid, force=True)
@@ -339,8 +385,14 @@ class TestAtlasMirror(IntegrationTestCase):
 		desk_url = f"https://{fqdn}/desk?sid=real-session"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "direct", "status": "Running",
-			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-direct"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "direct",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"pilot_credential_id": "pcred-direct",
+			},
 			"2026-06-18 10:05:00",
 		)
 		self._backing_pilot("pcred-direct", "vm-direct")
@@ -349,9 +401,10 @@ class TestAtlasMirror(IntegrationTestCase):
 		response.json.return_value = {"url": desk_url}
 		frappe.set_user(self.owner)
 		try:
-			with patch("central.integrations.pilot.requests.post", return_value=response) as post, patch(
-				"central.integrations.atlas.AtlasClient.regenerate_site_login"
-			) as regen:
+			with (
+				patch("central.integrations.pilot.requests.post", return_value=response) as post,
+				patch("central.integrations.atlas.AtlasClient.regenerate_site_login") as regen,
+			):
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
@@ -361,8 +414,11 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertEqual(post.call_args.args[0], f"https://vm.blr1.frappe.dev/api/v1/sites/{fqdn}/login")
 		token = post.call_args.kwargs["headers"]["Authorization"].split(" ", 1)[1]
 		claims = jwt.decode(
-			token, RSAAlgorithm.from_jwk(jwks_document()["keys"][0]),
-			algorithms=[ALGORITHM], audience="pcred-direct", issuer=central_url(),
+			token,
+			RSAAlgorithm.from_jwk(jwks_document()["keys"][0]),
+			algorithms=[ALGORITHM],
+			audience="pcred-direct",
+			issuer=central_url(),
 		)
 		self.assertEqual((claims["scope"], claims["site"]), ("site", fqdn))
 
@@ -376,21 +432,37 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "relayfail.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "relayfail", "status": "Running",
-			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-relayfail"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "relayfail",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"pilot_credential_id": "pcred-relayfail",
+			},
 			"2026-06-18 10:05:00",
 		)
 		self._backing_pilot("pcred-relayfail", "vm-relayfail")
-		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "relayfail", "status": "Running",
-			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
-			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		fresh = {
+			"name": fqdn,
+			"team": self.team.name,
+			"subdomain": "relayfail",
+			"status": "Running",
+			"url": f"https://{fqdn}",
+			"login_url": f"https://{fqdn}/app?sid=atlas",
+			"login_url_expires_at": "2099-01-01 00:00:00",
+		}
 		frappe.set_user(self.owner)
 		try:
-			with patch(
-				"central.integrations.pilot.requests.post", side_effect=requests.RequestException("boom")
-			), patch("central.integrations.pilot.frappe.log_error") as log, patch(
-				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
-			) as regen:
+			with (
+				patch(
+					"central.integrations.pilot.requests.post", side_effect=requests.RequestException("boom")
+				),
+				patch("central.integrations.pilot.frappe.log_error") as log,
+				patch(
+					"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+				) as regen,
+			):
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
@@ -405,21 +477,35 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "mintfail.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "mintfail", "status": "Running",
-			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-mintfail"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "mintfail",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"pilot_credential_id": "pcred-mintfail",
+			},
 			"2026-06-18 10:05:00",
 		)
 		self._backing_pilot("pcred-mintfail", "vm-mintfail")
-		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "mintfail", "status": "Running",
-			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
-			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		fresh = {
+			"name": fqdn,
+			"team": self.team.name,
+			"subdomain": "mintfail",
+			"status": "Running",
+			"url": f"https://{fqdn}",
+			"login_url": f"https://{fqdn}/app?sid=atlas",
+			"login_url_expires_at": "2099-01-01 00:00:00",
+		}
 		frappe.set_user(self.owner)
 		try:
-			with patch(
-				"central.integrations.pilot.mint_site_login", side_effect=RuntimeError("signing key")
-			), patch("central.integrations.pilot.frappe.log_error") as log, patch(
-				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
-			) as regen:
+			with (
+				patch("central.integrations.pilot.mint_site_login", side_effect=RuntimeError("signing key")),
+				patch("central.integrations.pilot.frappe.log_error") as log,
+				patch(
+					"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+				) as regen,
+			):
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
@@ -431,8 +517,13 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "woc.blr1.frappe.dev"
 		self._push(
 			"site.created",
-			{"name": fqdn, "team": self.team.name, "subdomain": "woc",
-			 "status": "Provisioning", "pilot_credential_id": "pcred-woc"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "woc",
+				"status": "Provisioning",
+				"pilot_credential_id": "pcred-woc",
+			},
 			"2026-06-18 10:00:00",
 		)
 		self.assertEqual(frappe.db.get_value("Site", fqdn, "pilot_credential_id"), "pcred-woc")
@@ -451,16 +542,28 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "notready.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "notready", "status": "Running",
-			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-notready",
-			 "login_url": f"https://{fqdn}/app?sid=stale",
-			 "login_url_expires_at": "2000-01-01 00:00:00"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "notready",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"pilot_credential_id": "pcred-notready",
+				"login_url": f"https://{fqdn}/app?sid=stale",
+				"login_url_expires_at": "2000-01-01 00:00:00",
+			},
 			"2026-06-18 10:05:00",
 		)
 		self._backing_pilot("pcred-notready", "vm-notready", status="Stopped")
-		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "notready", "status": "Running",
-			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
-			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		fresh = {
+			"name": fqdn,
+			"team": self.team.name,
+			"subdomain": "notready",
+			"status": "Running",
+			"url": f"https://{fqdn}",
+			"login_url": f"https://{fqdn}/app?sid=atlas",
+			"login_url_expires_at": "2099-01-01 00:00:00",
+		}
 		frappe.set_user(self.owner)
 		try:
 			with patch(
@@ -483,7 +586,9 @@ class TestAtlasMirror(IntegrationTestCase):
 			task = client.resize_vm("vm-x", vcpus=4, memory_megabytes=16384, disk_gigabytes=80)
 		self.assertEqual(task, "task-9")
 		params = make_client.return_value.post_api.call_args.kwargs["params"]
-		self.assertEqual((params["dt"], params["dn"], params["method"]), ("Virtual Machine", "vm-x", "resize"))
+		self.assertEqual(
+			(params["dt"], params["dn"], params["method"]), ("Virtual Machine", "vm-x", "resize")
+		)
 		self.assertEqual(
 			json.loads(params["args"]),
 			{"vcpus": 4, "memory_megabytes": 16384, "disk_gigabytes": 80},
@@ -517,7 +622,11 @@ class TestAtlasMirror(IntegrationTestCase):
 	def test_mirror_recovers_when_exists_check_loses_insert_race(self):
 		from central.central.doctype.asset.asset import Asset
 
-		self._push("vm.created", {"name": "vm-race", "team": self.team.name, "status": "Pending"}, "2026-06-18 10:00:00")
+		self._push(
+			"vm.created",
+			{"name": "vm-race", "team": self.team.name, "status": "Pending"},
+			"2026-06-18 10:00:00",
+		)
 
 		# Simulate the REPEATABLE READ race: a concurrent writer's exists-check misses
 		# the row, so it takes the insert path and hits the duplicate key. mirror_vm
@@ -590,7 +699,9 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertIn("vm-4", ids)
 
 	def test_reconcile_is_failsoft_when_atlas_unreachable(self):
-		with patch("central.integrations.atlas.AtlasClient.central_vms", side_effect=Exception("unreachable")):
+		with patch(
+			"central.integrations.atlas.AtlasClient.central_vms", side_effect=Exception("unreachable")
+		):
 			result = reconcile(team=self.team.name)
 		self.assertIn(self.region, result["stale"])
 
@@ -604,7 +715,11 @@ class TestAtlasMirror(IntegrationTestCase):
 	# --- power gate while resizing --------------------------------------------
 
 	def _stopped_asset(self, resource_id, **extra):
-		self._push("vm.created", {"name": resource_id, "team": self.team.name, "status": "Stopped"}, "2026-07-02 10:00:00")
+		self._push(
+			"vm.created",
+			{"name": resource_id, "team": self.team.name, "status": "Stopped"},
+			"2026-07-02 10:00:00",
+		)
 		if extra:
 			frappe.db.set_value("Asset", resource_id, extra)
 		return resource_id

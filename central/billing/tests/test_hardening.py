@@ -10,13 +10,13 @@ from unittest.mock import patch
 
 import frappe
 import stripe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central import billing
 from central.billing import authz
-from central.billing.tests.utils import make_billing_team, make_custom_role_team, make_user
-from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 from central.billing.payments.webhooks import process_webhook
+from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import make_billing_team, make_custom_role_team, make_user
 
 FLOOD_EVENT = "evt_flood_1"
 FLOOD_PAYLOAD = (
@@ -37,7 +37,7 @@ def run_threads(n, fn):
 			fn(i)
 			frappe.db.commit()
 			results[i] = "ok"
-		except Exception as e:  # noqa: BLE001
+		except Exception as e:
 			frappe.db.rollback()
 			results[i] = type(e).__name__
 		finally:
@@ -129,7 +129,7 @@ class TestNoSqlInjection(IntegrationTestCase):
 					for n, line in enumerate(fh, 1):
 						if pattern.search(line):
 							offenders.append(f"{path}:{n}: {line.strip()}")
-		self.assertEqual(offenders, [], f"raw SQL interpolation found:\n" + "\n".join(offenders))
+		self.assertEqual(offenders, [], "raw SQL interpolation found:\n" + "\n".join(offenders))
 
 
 # --- webhook replay + concurrent flood ---------------------------------------

@@ -6,13 +6,13 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import complete_billing_profile, ensure_team
 from central.patches.v0_0 import (
 	provision_gateway_customers as provision,
 )
-from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
-from central.billing.tests.utils import complete_billing_profile, ensure_team
 
 TEAM = "team-gwcust"
 
@@ -22,9 +22,10 @@ def stub(gateway, customer_id="cus_prov"):
 	"""Pin gateway resolution + a mock adapter so the patch makes no live call."""
 	adapter = MagicMock()
 	adapter.create_customer.return_value = customer_id
-	with patch(
-		"central.billing.gateways.registry.resolve_gateway_for_currency", return_value=gateway
-	), patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+	with (
+		patch("central.billing.gateways.registry.resolve_gateway_for_currency", return_value=gateway),
+		patch("central.billing.gateways.registry.get_adapter", return_value=adapter),
+	):
 		yield adapter
 
 

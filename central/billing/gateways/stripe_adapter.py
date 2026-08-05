@@ -7,6 +7,8 @@ Intents, refunds, webhook signature verification) is ported from the working
 press implementation; the structure is the new adapter model.
 """
 
+from typing import ClassVar
+
 import frappe
 import stripe
 
@@ -49,7 +51,8 @@ def _export_shipping(team: str | None) -> dict | None:
 	if not team:
 		return None
 	bp = frappe.db.get_value(
-		"Billing Profile", team,
+		"Billing Profile",
+		team,
 		["legal_name", "address_line1", "address_line2", "city", "state", "country", "pincode"],
 		as_dict=True,
 	)
@@ -82,7 +85,7 @@ def _to_dict(obj) -> dict:
 
 class StripeAdapter(GatewayAdapter):
 	# common_site_config.json overrides for live keys (see GatewayAdapter.get_credential).
-	conf_keys = {
+	conf_keys: ClassVar[dict[str, str]] = {
 		"api_secret": "stripe_secret_key",
 		"api_key": "stripe_publishable_key",
 		"webhook_secret": "stripe_webhook_secret",
@@ -116,20 +119,24 @@ class StripeAdapter(GatewayAdapter):
 	def register_webhook(self, callback_url: str, events: list[str] | None = None) -> dict:
 		"""Create a Stripe webhook endpoint; Stripe returns the `whsec_…` secret."""
 		self._configure()
-		endpoint = _to_dict(stripe.WebhookEndpoint.create(
-			url=callback_url,
-			enabled_events=events or STRIPE_WEBHOOK_EVENTS,
-		))
+		endpoint = _to_dict(
+			stripe.WebhookEndpoint.create(
+				url=callback_url,
+				enabled_events=events or STRIPE_WEBHOOK_EVENTS,
+			)
+		)
 		return {"endpoint_id": endpoint.get("id"), "secret": endpoint.get("secret")}
 
 	def setup_payment_method(self, team, setup_data: dict) -> dict:
 		"""Create an off-session SetupIntent; UI confirms it with the card."""
 		self._configure()
-		intent = _to_dict(stripe.SetupIntent.create(
-			customer=setup_data.get("customer_id"),
-			payment_method_types=["card"],
-			usage="off_session",
-		))
+		intent = _to_dict(
+			stripe.SetupIntent.create(
+				customer=setup_data.get("customer_id"),
+				payment_method_types=["card"],
+				usage="off_session",
+			)
+		)
 		return {"client_secret": intent.get("client_secret"), "setup_intent_id": intent.get("id")}
 
 	def validate_payment_method(self, payment_method) -> bool:
@@ -168,7 +175,7 @@ class StripeAdapter(GatewayAdapter):
 		SAME idempotency key (Stripe dedupes), never double-charging.
 		"""
 		self._configure()
-		amount_minor = int(round((invoice.amount or 0) * 100))
+		amount_minor = round((invoice.amount or 0) * 100)
 		# Required for India-account export charges (see validate_payment_method).
 		params = dict(
 			amount=amount_minor,
@@ -212,10 +219,12 @@ class StripeAdapter(GatewayAdapter):
 		"""Refund a captured charge to source. Symmetric across gateways."""
 		self._configure()
 		try:
-			refund = _to_dict(stripe.Refund.create(
-				payment_intent=payment_attempt.gateway_transaction_id,
-				amount=int(round((amount or 0) * 100)),
-			))
+			refund = _to_dict(
+				stripe.Refund.create(
+					payment_intent=payment_attempt.gateway_transaction_id,
+					amount=round((amount or 0) * 100),
+				)
+			)
 		except (stripe.error.APIConnectionError, stripe.error.RateLimitError) as e:
 			raise GatewayTimeout(str(e)) from e
 
@@ -249,16 +258,20 @@ class StripeAdapter(GatewayAdapter):
 		self._configure()
 		return _to_dict(stripe.PaymentIntent.retrieve(gateway_txn_id)).get("status")
 
-	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None,
-					 customer: str | None = None) -> dict:
+	def create_order(
+		self, amount, currency: str, receipt: str, notes: dict | None = None, customer: str | None = None
+	) -> dict:
 		"""A PaymentIntent the UI confirms with Stripe.js for a wallet top-up.
 		Attaching `customer` lets Stripe save the method on the customer for later
 		off-session charges (the same customer id every later charge reuses)."""
 		self._configure()
-		params = dict(amount=int(round((amount or 0) * 100)),
-			currency=(currency or "usd").lower(), metadata={"receipt": receipt, **(notes or {})},
+		params = dict(
+			amount=round((amount or 0) * 100),
+			currency=(currency or "usd").lower(),
+			metadata={"receipt": receipt, **(notes or {})},
 			# Required for India-account export charges (see validate_payment_method).
-			description="Wallet top-up")
+			description="Wallet top-up",
+		)
 		if customer:
 			params["customer"] = customer
 		# Carry the billing name + address from the team's Billing Profile so an
@@ -269,9 +282,13 @@ class StripeAdapter(GatewayAdapter):
 		if shipping:
 			params["shipping"] = shipping
 		intent = _to_dict(stripe.PaymentIntent.create(**params))
-		return {"client_secret": intent.get("client_secret"), "payment_intent_id": intent.get("id"),
-				"amount": intent.get("amount"), "publishable_key": self.get_credential("api_key"),
-				"currency": (currency or "usd").upper()}
+		return {
+			"client_secret": intent.get("client_secret"),
+			"payment_intent_id": intent.get("id"),
+			"amount": intent.get("amount"),
+			"publishable_key": self.get_credential("api_key"),
+			"currency": (currency or "usd").upper(),
+		}
 
 	def get_payment_intent(self, payment_intent_id: str) -> dict:
 		"""Retrieve a PaymentIntent so a top-up can be confirmed from what Stripe
@@ -279,9 +296,16 @@ class StripeAdapter(GatewayAdapter):
 		self._configure()
 		return _to_dict(stripe.PaymentIntent.retrieve(payment_intent_id))
 
-	def create_checkout_session(self, amount, currency: str, receipt: str,
-								success_url: str, cancel_url: str, notes: dict | None = None,
-								customer: str | None = None) -> dict:
+	def create_checkout_session(
+		self,
+		amount,
+		currency: str,
+		receipt: str,
+		success_url: str,
+		cancel_url: str,
+		notes: dict | None = None,
+		customer: str | None = None,
+	) -> dict:
 		"""A hosted Stripe Checkout session for a wallet top-up; the UI redirects to
 		`checkout_url`. Stripe substitutes {CHECKOUT_SESSION_ID} into success_url.
 		Binding `customer` keeps the session under the team's reused customer id."""
@@ -291,14 +315,16 @@ class StripeAdapter(GatewayAdapter):
 			mode="payment",
 			success_url=success_url,
 			cancel_url=cancel_url,
-			line_items=[{
-				"quantity": 1,
-				"price_data": {
-					"currency": (currency or "usd").lower(),
-					"unit_amount": int(round((amount or 0) * 100)),
-					"product_data": {"name": "Wallet top-up"},
-				},
-			}],
+			line_items=[
+				{
+					"quantity": 1,
+					"price_data": {
+						"currency": (currency or "usd").lower(),
+						"unit_amount": round((amount or 0) * 100),
+						"product_data": {"name": "Wallet top-up"},
+					},
+				}
+			],
 			metadata=meta,
 			# description required for India-account export charges (see validate_payment_method).
 			payment_intent_data={"metadata": meta, "description": "Wallet top-up"},
@@ -306,8 +332,11 @@ class StripeAdapter(GatewayAdapter):
 		if customer:
 			params["customer"] = customer
 		session = _to_dict(stripe.checkout.Session.create(**params))
-		return {"checkout_url": session.get("url"), "session_id": session.get("id"),
-				"publishable_key": self.get_credential("api_key")}
+		return {
+			"checkout_url": session.get("url"),
+			"session_id": session.get("id"),
+			"publishable_key": self.get_credential("api_key"),
+		}
 
 	def get_checkout_session(self, session_id: str) -> dict:
 		self._configure()
@@ -319,10 +348,15 @@ class StripeAdapter(GatewayAdapter):
 		team's reused customer; no money moves. The UI redirects to `checkout_url`."""
 		self._configure()
 
-		session = _to_dict(stripe.checkout.Session.create(
-			mode="setup", customer=customer, payment_method_types=["card"],
-			success_url=success_url, cancel_url=cancel_url,
-		))
+		session = _to_dict(
+			stripe.checkout.Session.create(
+				mode="setup",
+				customer=customer,
+				payment_method_types=["card"],
+				success_url=success_url,
+				cancel_url=cancel_url,
+			)
+		)
 
 		return {"checkout_url": session.get("url"), "session_id": session.get("id")}
 
@@ -346,16 +380,23 @@ class StripeAdapter(GatewayAdapter):
 
 		card = (_to_dict(stripe.PaymentMethod.retrieve(method_id)).get("card")) or {}
 
-		return {"payment_method": method_id, "brand": (card.get("brand") or "card").title(),
-				"last4": card.get("last4"), "exp_month": card.get("exp_month"), "exp_year": card.get("exp_year")}
+		return {
+			"payment_method": method_id,
+			"brand": (card.get("brand") or "card").title(),
+			"last4": card.get("last4"),
+			"exp_month": card.get("exp_month"),
+			"exp_year": card.get("exp_year"),
+		}
 
 	def create_customer(self, team) -> str:
 		self._configure()
 		# Team.owner_user is a Link to User, whose name IS the email address.
-		customer = _to_dict(stripe.Customer.create(
-			name=getattr(team, "name", None),
-			email=team.get("owner_user") if hasattr(team, "get") else None,
-		))
+		customer = _to_dict(
+			stripe.Customer.create(
+				name=getattr(team, "name", None),
+				email=team.get("owner_user") if hasattr(team, "get") else None,
+			)
+		)
 		return customer.get("id")
 
 	def get_mandate_status(self, mandate_reference: str) -> str:

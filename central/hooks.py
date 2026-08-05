@@ -114,6 +114,7 @@ website_user_home_page = "dashboard"
 after_install = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
+	"central.billing.settings.ensure_welcome_credit_amounts",
 ]
 
 # Uninstallation
@@ -211,6 +212,11 @@ scheduler_events = {
 		"central.billing.payments.emandate.run_emandate_cycle",
 		# Backfill Subscriptions for any Running Asset missing an active one.
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
+		# Write off promotional credit that has run out of time. Ordered after
+		# collection on purpose: credit that was still good this morning settles
+		# today's invoice before it is swept, so the customer gets the full benefit
+		# of the last day they were given.
+		"central.billing.revenue.credits.run_credit_expiry",
 		# Services (LLM): refresh the model catalog from the Grove backend.
 		"central.services.llm.sync_models",
 		# Assert the money invariants that no DB constraint can hold (they span
@@ -258,6 +264,7 @@ after_migrate = [
 before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
+	"central.billing.settings.ensure_welcome_credit_amounts",
 ]
 
 # Extend DocType Class

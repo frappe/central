@@ -86,7 +86,10 @@ def _backfill_missing_currency():
 	)
 	for o in orphans:
 		frappe.db.set_value(
-			"Credit Ledger Entry", o.name, "currency", profile.get(o.team) or "INR",
+			"Credit Ledger Entry",
+			o.name,
+			"currency",
+			profile.get(o.team) or "INR",
 			update_modified=False,
 		)
 
@@ -99,9 +102,7 @@ def _rebuild_anchors():
 	# zero-balance anchor in the team's billing currency so nothing 404s on read.
 	for w in frappe.get_all("Credit Wallet", fields=["name", "team", "currency"]):
 		if w.team not in pairs:
-			currency = w.currency or frappe.db.get_value(
-				"Billing Profile", w.team, "currency"
-			) or "INR"
+			currency = w.currency or frappe.db.get_value("Billing Profile", w.team, "currency") or "INR"
 			pairs[w.team] = [frappe._dict({"team": w.team, "currency": currency, "balance": 0})]
 
 	frappe.db.delete("Credit Wallet")  # names change; rebuild rather than rename
@@ -133,8 +134,9 @@ def _rewrite_running_balance():
 		delta = frappe.utils.flt(e.amount) * (1 if e.entry_type == "Credit" else -1)
 		running[key] = running.get(key, 0.0) + delta
 		frappe.db.set_value(
-			"Credit Ledger Entry", e.name, "running_balance", running[key],
+			"Credit Ledger Entry",
+			e.name,
+			"running_balance",
+			running[key],
 			update_modified=False,
 		)
-
-

@@ -1,5 +1,4 @@
-
-export interface ServiceAPIKey{
+export interface ServiceAPIKey {
 	name: string
 	creation: string
 	modified: string
@@ -15,7 +14,7 @@ export interface ServiceAPIKey{
 	/**	Label : Data	*/
 	label: string
 	/**	Status : Select	*/
-	status?: "Active" | "Revoked" | "Failed"
+	status?: 'Active' | 'Revoked' | 'Failed'
 	/**	Gateway URL : Data	*/
 	gateway_url?: string
 	/**	Provider Reference : Data	*/

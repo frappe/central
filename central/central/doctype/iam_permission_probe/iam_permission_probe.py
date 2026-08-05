@@ -9,7 +9,6 @@ from central.iam import can, get_effective_permissions
 
 
 class IAMPermissionProbe(Document):
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 

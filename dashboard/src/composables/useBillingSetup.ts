@@ -12,12 +12,12 @@
 // opens that edit dialog (shared via setupDialogOpen) instead of redirecting.
 
 import { computed, ref, watch } from 'vue'
+import { useSession } from '@/composables/useSession'
 import {
 	billingSetupState,
 	fetchBillingSetup,
 	invalidateBillingSetup,
 } from '@/data/billingSetup'
-import { useSession } from '@/composables/useSession'
 import { infoToast } from '@/lib/toast'
 
 // Module-level so a money-moving action anywhere can ask the Overview to open its

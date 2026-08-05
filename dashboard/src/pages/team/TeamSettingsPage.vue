@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import { Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, FormControl } from 'frappe-ui'
-import { useSession } from '@/composables/useSession'
-import { useTeamSettings } from '@/composables/useTeamSettings'
-import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useSession } from '@/composables/useSession'
+import { useTeamMembers } from '@/composables/useTeamMembers'
+import { useTeamSettings } from '@/composables/useTeamSettings'
 
 // Team settings: rename (team:edit), transfer ownership (owner only), and the
 // danger-zone delete (team:delete). Each control is shown only when the signed-in
@@ -82,7 +82,6 @@ async function onDelete() {
 
 <template>
 	<div class="flex h-full flex-col">
-
 		<div class="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
 			<div class="mx-auto max-w-2xl space-y-6">
 				<!-- General -->

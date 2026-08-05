@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { Badge, Button, Spinner, useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Badge, Button, Spinner, useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
 import { useServices } from '@/composables/useServices'
 import { useSession } from '@/composables/useSession'

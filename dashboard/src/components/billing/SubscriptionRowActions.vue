@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
+import { computed } from 'vue'
 import type { SubscriptionRow } from '@/types/billing'
 
 // The lifecycle menu for one subscription row — mirrors ServerRowActions. Which

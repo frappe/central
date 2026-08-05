@@ -36,8 +36,9 @@ def silent_threshold(team: str) -> float:
 	return float(min(INR_SILENT_THRESHOLD, cap)) if cap else float(INR_SILENT_THRESHOLD)
 
 
-def evaluate(team: str, projected_amount: float | None = None,
-			 reason: str = "forecast_over_threshold") -> dict:
+def evaluate(
+	team: str, projected_amount: float | None = None, reason: str = "forecast_over_threshold"
+) -> dict:
 	"""Re-check an `emandate` team against the silent-debit threshold and trip
 	`action_required` if `projected_amount` (₹, major units) crosses it. A no-op for
 	any other mode (so it's safe to call from the charge loop / dashboard). Returns
@@ -62,9 +63,11 @@ def trip(team: str, reason: str) -> None:
 	from central.billing.platform import notifications
 
 	notifications.notify(
-		team, "Action Required",
+		team,
+		"Action Required",
 		context={"reason": reason, "threshold": silent_threshold(team)},
-		reference_doctype="Billing Profile", reference_name=team,
+		reference_doctype="Billing Profile",
+		reference_name=team,
 	)
 
 
@@ -72,9 +75,7 @@ def choose(team: str, mode: str) -> dict:
 	"""Customer resolves action_required (or switches) to manual_checkout / prepaid.
 	Reversible and idempotent; clears the action reason."""
 	if mode not in CUSTOMER_CHOOSABLE:
-		frappe.throw(
-			f"Pick one of {', '.join(CUSTOMER_CHOOSABLE)}.", frappe.ValidationError
-		)
+		frappe.throw(f"Pick one of {', '.join(CUSTOMER_CHOOSABLE)}.", frappe.ValidationError)
 	profile = frappe.get_doc("Billing Profile", team)
 	profile.collection_mode = mode
 	profile.collection_action_reason = None
@@ -84,9 +85,12 @@ def choose(team: str, mode: str) -> dict:
 
 def status(team: str) -> dict:
 	"""The collection state for the Action Required banner / settings surface."""
-	p = frappe.db.get_value(
-		"Billing Profile", team, ["collection_mode", "collection_action_reason"], as_dict=True
-	) or frappe._dict()
+	p = (
+		frappe.db.get_value(
+			"Billing Profile", team, ["collection_mode", "collection_action_reason"], as_dict=True
+		)
+		or frappe._dict()
+	)
 	mode = p.collection_mode or "Prepaid"
 	return {
 		"collection_mode": mode,

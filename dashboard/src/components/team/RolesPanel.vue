@@ -1,15 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Avatar, Button } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
 import {
-	ListView,
 	createListViewQuery,
+	ListView,
 	type ListViewColumn,
 } from '@/components/common/list-view'
-
-import RoleRowActions from '@/components/team/RoleRowActions.vue'
 import RoleBuilderDialog from '@/components/team/RoleBuilderDialog.vue'
+import RoleRowActions from '@/components/team/RoleRowActions.vue'
 
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useTeamMembers } from '@/composables/useTeamMembers'
@@ -100,7 +99,7 @@ const getRoleKey = (role: TeamRoleRow): string => role.name
 			/>
 		</template>
 
-		<template #role="{ row }: { row: TeamRoleRow }">
+		<template #role="{ row }">
 			<div class="flex min-w-0 items-center gap-3">
 				<div
 					class="flex size-8 shrink-0 items-center justify-center rounded-md"
@@ -120,7 +119,7 @@ const getRoleKey = (role: TeamRoleRow): string => role.name
 			</div>
 		</template>
 
-		<template #members="{ row }: { row: TeamRoleRow }">
+		<template #members="{ row }">
 			<div class="flex items-center">
 				<Avatar
 					v-for="member in roleMembers(row).slice(0, 5)"
@@ -137,7 +136,7 @@ const getRoleKey = (role: TeamRoleRow): string => role.name
 			</div>
 		</template>
 
-		<template #actions="{ row }: { row: TeamRoleRow }">
+		<template #actions="{ row }">
 			<RoleRowActions
 				:role="row"
 				:can-manage="canManageMembers"

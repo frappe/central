@@ -69,9 +69,10 @@ class TestRerating(BillingTestCase):
 
 	def test_apply_cancels_each_affected_invoice_and_records_the_run(self):
 		invoice = self._invoice()
-		with patch.object(rerating, "_rated_today", return_value=60.0), patch.object(
-			rerating, "reissue_invoice", return_value="INV-NEW"
-		) as reissue:
+		with (
+			patch.object(rerating, "_rated_today", return_value=60.0),
+			patch.object(rerating, "reissue_invoice", return_value="INV-NEW") as reissue,
+		):
 			run_name = rerating.apply(RESOURCE_TYPE, *PERIOD, reason="rate was wrong")
 
 		reissue.assert_called_once()
@@ -94,8 +95,9 @@ class TestRerating(BillingTestCase):
 				raise RuntimeError("nope")
 			return "INV-NEW"
 
-		with patch.object(rerating, "_rated_today", return_value=60.0), patch.object(
-			rerating, "reissue_invoice", side_effect=flaky
+		with (
+			patch.object(rerating, "_rated_today", return_value=60.0),
+			patch.object(rerating, "reissue_invoice", side_effect=flaky),
 		):
 			run_name = rerating.apply(RESOURCE_TYPE, *PERIOD, reason="partial")
 
@@ -106,8 +108,9 @@ class TestRerating(BillingTestCase):
 
 	def test_a_run_where_everything_failed_is_marked_failed(self):
 		self._invoice()
-		with patch.object(rerating, "_rated_today", return_value=60.0), patch.object(
-			rerating, "reissue_invoice", side_effect=RuntimeError("nope")
+		with (
+			patch.object(rerating, "_rated_today", return_value=60.0),
+			patch.object(rerating, "reissue_invoice", side_effect=RuntimeError("nope")),
 		):
 			run_name = rerating.apply(RESOURCE_TYPE, *PERIOD, reason="all broken")
 
@@ -115,8 +118,9 @@ class TestRerating(BillingTestCase):
 
 	def test_a_closed_run_cannot_be_reopened(self):
 		self._invoice()
-		with patch.object(rerating, "_rated_today", return_value=60.0), patch.object(
-			rerating, "reissue_invoice", return_value="INV-NEW"
+		with (
+			patch.object(rerating, "_rated_today", return_value=60.0),
+			patch.object(rerating, "reissue_invoice", return_value="INV-NEW"),
 		):
 			run_name = rerating.apply(RESOURCE_TYPE, *PERIOD, reason="done")
 
@@ -126,8 +130,9 @@ class TestRerating(BillingTestCase):
 
 	def test_the_run_is_recorded_on_the_event_stream(self):
 		self._invoice()
-		with patch.object(rerating, "_rated_today", return_value=60.0), patch.object(
-			rerating, "reissue_invoice", return_value="INV-NEW"
+		with (
+			patch.object(rerating, "_rated_today", return_value=60.0),
+			patch.object(rerating, "reissue_invoice", return_value="INV-NEW"),
 		):
 			run_name = rerating.apply(RESOURCE_TYPE, *PERIOD, reason="audited")
 

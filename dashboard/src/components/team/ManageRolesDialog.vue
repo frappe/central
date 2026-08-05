@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Avatar, Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { teamParams } from '@/composables/useTeamScope'
 import { useRegions } from '@/composables/useRegions'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
+import { teamParams } from '@/composables/useTeamScope'
 import type {
 	ResourceType,
 	TeamMemberRoleAssignment,
@@ -20,7 +20,9 @@ const { roles } = useTeamRoles()
 const { setRoles } = useTeamMembers()
 const { regions } = useRegions()
 
-const regionLabel = (regionName: string | null | undefined): string | undefined => {
+const regionLabel = (
+	regionName: string | null | undefined,
+): string | undefined => {
 	const region = regions.value.find((r) => r.region === regionName)
 	if (!region?.display_name) return undefined
 	return region.provider
@@ -96,9 +98,13 @@ const removeRow = (index: number): void => {
 	rows.value = rows.value.filter((_, i) => i !== index)
 }
 
-const dominatingIndex = computed(() => rows.value.findIndex((r) => r.role === 'Admin'))
+const dominatingIndex = computed(() =>
+	rows.value.findIndex((r) => r.role === 'Admin'),
+)
 
-const canSubmit = computed(() => rows.value.length > 0 && rows.value.every((r) => r.role))
+const canSubmit = computed(
+	() => rows.value.length > 0 && rows.value.every((r) => r.role),
+)
 
 const submitting = ref(false)
 
@@ -145,7 +151,9 @@ const dialogOptions = computed(() => ({
 				<div class="flex items-center gap-3">
 					<Avatar :label="member.full_name" size="md" />
 					<div class="min-w-0">
-						<p class="truncate font-medium text-ink-gray-9">{{ member.full_name }}</p>
+						<p class="truncate font-medium text-ink-gray-9">
+							{{ member.full_name }}
+						</p>
 						<p class="truncate text-p-sm text-ink-gray-5">{{ member.user }}</p>
 					</div>
 				</div>
@@ -155,7 +163,10 @@ const dialogOptions = computed(() => ({
 					class="flex items-start gap-2 rounded-md border border-outline-gray-2 bg-surface-gray-1 p-3 text-p-sm text-ink-gray-6"
 				>
 					<span class="lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true" />
-					<span>Admin already covers everything, so the roles below stay inactive until you remove it.</span>
+					<span
+						>Admin already covers everything, so the roles below stay inactive
+						until you remove it.</span
+					>
 				</div>
 
 				<div class="space-y-2">

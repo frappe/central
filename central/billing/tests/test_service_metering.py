@@ -5,9 +5,9 @@ mode, synthesized team-level subjects, dual-mode usage ingestion, and the
 pilot-authenticated service API."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import complete_billing_profile, ensure_team, make_metered_plan
 
 
@@ -21,8 +21,14 @@ def _ensure_resource_type(name: str) -> str:
 
 
 def _make_metered_family(
-	category, resource_type, plan, reporting_mode="Authoritative",
-	settlement_mode="Postpaid Overage", allowance=0, rate=0.5, pricing_mode="Grandfathered",
+	category,
+	resource_type,
+	plan,
+	reporting_mode="Authoritative",
+	settlement_mode="Postpaid Overage",
+	allowance=0,
+	rate=0.5,
+	pricing_mode="Grandfathered",
 ):
 	"""A metered single-resource Plan under a dedicated Plan Category carrying explicit
 	reporting + settlement modes and an included allowance — so a test can exercise
@@ -38,15 +44,21 @@ def _make_metered_family(
 		frappe.delete_doc("Plan Category", category, force=True)
 	frappe.get_doc(
 		{
-			"doctype": "Plan Category", "category_name": category, "billing_type": "Metered",
-			"pricing_mode": pricing_mode, "reporting_mode": reporting_mode,
+			"doctype": "Plan Category",
+			"category_name": category,
+			"billing_type": "Metered",
+			"pricing_mode": pricing_mode,
+			"reporting_mode": reporting_mode,
 			"settlement_mode": settlement_mode,
 		}
 	).insert(ignore_permissions=True)
 
 	doc = frappe.get_doc(
 		{
-			"doctype": "Plan", "title": plan, "category": category, "billing_cycle": "Monthly",
+			"doctype": "Plan",
+			"title": plan,
+			"category": category,
+			"billing_cycle": "Monthly",
 			"is_active": 1,
 			"includes": [{"resource_type": resource_type, "quantity": allowance, "unit": "Nos"}],
 		}
@@ -140,9 +152,7 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 		self.assertEqual(first["service_subject"], second["service_subject"])
 		self.assertEqual(first["subscription"], second["subscription"])
 		self.assertTrue(second["reused"])
-		self.assertEqual(
-			frappe.db.count("Subscription", {"service_subject": first["service_subject"]}), 1
-		)
+		self.assertEqual(frappe.db.count("Subscription", {"service_subject": first["service_subject"]}), 1)
 
 	def test_different_cluster_is_a_distinct_subject(self):
 		mumbai = subscriptions.provision_service_subscription(self.TEAM, self.plan, cluster="mumbai")
@@ -164,8 +174,11 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 		frappe.db.set_value("Plan", small, "is_active", 0)
 		big = frappe.get_doc(
 			{
-				"doctype": "Plan", "title": "SM Tokens Big", "category": cat,
-				"billing_cycle": "Monthly", "is_active": 1,
+				"doctype": "Plan",
+				"title": "SM Tokens Big",
+				"category": cat,
+				"billing_cycle": "Monthly",
+				"is_active": 1,
 				"includes": [{"resource_type": "Tokens Up", "quantity": 5000, "unit": "Nos"}],
 			}
 		)
@@ -190,8 +203,10 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 
 		server_plan = make_plan("Svc Server Plan", rates=[{"cluster": "", "currency": "INR", "rate": 500}])
 		frappe.db.set_value(
-			"Plan Category", frappe.db.get_value("Plan", server_plan, "category"),
-			"provision_target", "Server",
+			"Plan Category",
+			frappe.db.get_value("Plan", server_plan, "category"),
+			"provision_target",
+			"Server",
 		)
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.provision_service_subscription(self.TEAM, server_plan, cluster="mumbai")
@@ -219,9 +234,15 @@ class TestDualModeIngestion(IntegrationTestCase):
 
 	def _meter(self, subject, resource_type, key, qty, sequence=0):
 		return {
-			"resource_id": subject, "resource_type": resource_type, "meter_type": "Counter",
-			"period_start": "2026-07-01 00:00:00", "period_end": "2026-07-31 23:59:59",
-			"quantity": qty, "unit": "Nos", "idempotency_key": key, "sequence": sequence,
+			"resource_id": subject,
+			"resource_type": resource_type,
+			"meter_type": "Counter",
+			"period_start": "2026-07-01 00:00:00",
+			"period_end": "2026-07-31 23:59:59",
+			"quantity": qty,
+			"unit": "Nos",
+			"idempotency_key": key,
+			"sequence": sequence,
 		}
 
 	def _qty(self, subject):
@@ -272,8 +293,12 @@ class TestDualModeIngestion(IntegrationTestCase):
 		state = {"missed": False, "raised": False}
 
 		def gv(doctype, filters=None, *a, **k):
-			if (not state["missed"] and doctype == "Usage Rollup"
-					and isinstance(filters, dict) and filters.get("idempotency_key") == key):
+			if (
+				not state["missed"]
+				and doctype == "Usage Rollup"
+				and isinstance(filters, dict)
+				and filters.get("idempotency_key") == key
+			):
 				state["missed"] = True
 				return None  # our first-report lock-miss
 			return orig_gv(doctype, filters, *a, **k)
@@ -284,8 +309,10 @@ class TestDualModeIngestion(IntegrationTestCase):
 				raise frappe.DuplicateEntryError  # we lose the unique-key race
 			return orig_ins(*a, **k)
 
-		with patch.object(frappe.db, "get_value", side_effect=gv), \
-				patch.object(self.metering, "_insert_rollup", side_effect=ins):
+		with (
+			patch.object(frappe.db, "get_value", side_effect=gv),
+			patch.object(self.metering, "_insert_rollup", side_effect=ins),
+		):
 			self.metering.ingest_rollup(self._meter(subject, "PDF Race", key, 50, sequence=2))
 
 		self.assertEqual(self._qty(subject), 150)  # 100 + 50 — the racing delta survived
@@ -304,15 +331,21 @@ class TestDualModeIngestion(IntegrationTestCase):
 		orig_gv = frappe.db.get_value
 
 		def gv(doctype, filters=None, *a, **k):
-			if doctype == "Usage Rollup" and isinstance(filters, dict) and filters.get("idempotency_key") == key:
+			if (
+				doctype == "Usage Rollup"
+				and isinstance(filters, dict)
+				and filters.get("idempotency_key") == key
+			):
 				return None  # every read misses
 			return orig_gv(doctype, filters, *a, **k)
 
 		def ins(*a, **k):
 			raise frappe.DuplicateEntryError  # every insert loses
 
-		with patch.object(frappe.db, "get_value", side_effect=gv), \
-				patch.object(self.metering, "_insert_rollup", side_effect=ins):
+		with (
+			patch.object(frappe.db, "get_value", side_effect=gv),
+			patch.object(self.metering, "_insert_rollup", side_effect=ins),
+		):
 			result = self.metering.ingest_rollup(self._meter(subject, "PDF Exh", key, 50, sequence=1))
 
 		self.assertIsNone(result)  # not acknowledged
@@ -412,18 +445,17 @@ class TestServiceAPI(IntegrationTestCase):
 		row = frappe.db.get_value(
 			"Usage Rollup", {"resource_id": subject}, ["team", "cluster", "currency"], as_dict=True
 		)
-		self.assertEqual(row.team, self.TEAM)     # was null before the context fix
-		self.assertEqual(row.currency, "INR")     # Live reads currency off the payload
+		self.assertEqual(row.team, self.TEAM)  # was null before the context fix
+		self.assertEqual(row.currency, "INR")  # Live reads currency off the payload
 
 		# It bills: Live reads the current catalog rate at invoice time (300 x 2.0).
 		lines = metered_line_items(
-			self.TEAM, row.cluster,
+			self.TEAM,
+			row.cluster,
 			frappe.utils.get_first_day(frappe.utils.nowdate()),
 			frappe.utils.get_last_day(frappe.utils.nowdate()),
 		)
-		self.assertTrue(
-			any(l["subscription_resource"] == subject and l["amount"] == 600.0 for l in lines)
-		)
+		self.assertTrue(any(l["subscription_resource"] == subject and l["amount"] == 600.0 for l in lines))
 
 	def test_report_usage_for_unsubscribed_service_is_rejected(self):
 		# A caller can only report for a service ITS OWN team is subscribed to — there is
@@ -448,18 +480,31 @@ class TestPrepaidSettlement(IntegrationTestCase):
 		frappe.db.delete("Subscription", {"team": self.TEAM})
 		frappe.db.delete("Usage Rollup", {"team": self.TEAM})
 		self.plan = _make_metered_family(
-			"SM Prepaid Family", "Tokens Pre", "SM Tokens Pack",
-			settlement_mode="Prepaid Pack", allowance=1000, rate=0.01,
+			"SM Prepaid Family",
+			"Tokens Pre",
+			"SM Tokens Pack",
+			settlement_mode="Prepaid Pack",
+			allowance=1000,
+			rate=0.01,
 		)
 		res = subscriptions.provision_service_subscription(self.TEAM, self.plan, cluster="mumbai")
 		self.subject = res["service_subject"]
 
 	def _report(self, qty):
-		self.metering.ingest_rollup({
-			"resource_id": self.subject, "resource_type": "Tokens Pre", "meter_type": "Counter",
-			"period_start": "2026-07-01 00:00:00", "period_end": "2026-07-31 23:59:59",
-			"quantity": qty, "unit": "Nos", "idempotency_key": f"{self.subject}|Counter|2026-07",
-		})
+		period_start = frappe.utils.get_first_day(frappe.utils.nowdate())
+		period_end = frappe.utils.get_last_day(frappe.utils.nowdate())
+		self.metering.ingest_rollup(
+			{
+				"resource_id": self.subject,
+				"resource_type": "Tokens Pre",
+				"meter_type": "Counter",
+				"period_start": period_start,
+				"period_end": period_end,
+				"quantity": qty,
+				"unit": "Nos",
+				"idempotency_key": f"{self.subject}|Counter|{period_start}",
+			}
+		)
 
 	def test_within_allowance_not_blocked(self):
 		from central.billing.catalog.services import service_allowance
@@ -481,9 +526,7 @@ class TestPrepaidSettlement(IntegrationTestCase):
 		# 1500 used against a 1000 pack — a postpaid family would bill 500 of overage; a
 		# prepaid one bills nothing (excess is blocked, not charged).
 		self._report(1500)
-		lines = self.metering.metered_line_items(
-			self.TEAM, "mumbai", "2026-07-01", "2026-07-31"
-		)
+		lines = self.metering.metered_line_items(self.TEAM, "mumbai", "2026-07-01", "2026-07-31")
 		self.assertEqual(lines, [])
 
 
@@ -513,6 +556,4 @@ class TestAdminServices(IntegrationTestCase):
 	def test_subscribe_team_service_provisions_subject(self):
 		res = self.admin.subscribe_team_service(self.TEAM, self.plan, cluster="mumbai")
 		self.assertTrue(res["service_subject"].startswith("svc-"))
-		self.assertEqual(
-			frappe.db.get_value("Subscription", res["subscription"], "team"), self.TEAM
-		)
+		self.assertEqual(frappe.db.get_value("Subscription", res["subscription"], "team"), self.TEAM)

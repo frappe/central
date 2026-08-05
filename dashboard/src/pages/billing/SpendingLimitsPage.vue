@@ -1,12 +1,12 @@
 <script setup lang="ts">
+import { Badge, LoadingText, useCall } from 'frappe-ui'
 import { computed } from 'vue'
-import { useCall, Badge, LoadingText } from 'frappe-ui'
 import { API, method } from '@/api/methods'
+import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { useBillingOverview } from '@/composables/useBillingOverview'
 import { money } from '@/lib/format'
-import type { TrustTier, TierLevel } from '@/types/billing'
+import type { TierLevel, TrustTier } from '@/types/billing'
 
 // Layout mirrors the frappe-cloud-v2 prototype: a standing band, a tiers table
 // whose Requirements column shows each rung's promotion gates against the team's

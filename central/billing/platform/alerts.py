@@ -28,7 +28,12 @@ def stale_attempts() -> list[dict]:
 	"""Attempts still in flight long after reconciliation should have answered them."""
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-ATTEMPT_STALE_HOURS)
 	return [
-		{"alert": "stale_attempt", "subject": a.name, "team": a.team, "detail": f"{a.status} since {a.initiated_at}"}
+		{
+			"alert": "stale_attempt",
+			"subject": a.name,
+			"team": a.team,
+			"detail": f"{a.status} since {a.initiated_at}",
+		}
 		for a in frappe.get_all(
 			"Payment Attempt",
 			filters={"status": ["in", invariants.IN_FLIGHT], "initiated_at": ["<", cutoff]},
@@ -42,7 +47,12 @@ def failed_webhooks() -> list[dict]:
 	"""Webhooks that failed to process and have not been retried since."""
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-WEBHOOK_FAILED_HOURS)
 	return [
-		{"alert": "failed_webhook", "subject": e.name, "team": None, "detail": f"{e.gateway} {e.event_type}: {e.error}"}
+		{
+			"alert": "failed_webhook",
+			"subject": e.name,
+			"team": None,
+			"detail": f"{e.gateway} {e.event_type}: {e.error}",
+		}
 		for e in frappe.get_all(
 			"Webhook Event",
 			filters={"status": "Failed", "creation": ["<", cutoff]},
@@ -70,7 +80,9 @@ def collect() -> list[dict]:
 		try:
 			found.extend(source())
 		except Exception:
-			frappe.log_error(title=f"Billing alert source {source.__name__} failed", message=frappe.get_traceback())
+			frappe.log_error(
+				title=f"Billing alert source {source.__name__} failed", message=frappe.get_traceback()
+			)
 	return found
 
 
@@ -118,5 +130,7 @@ def run_operator_alerts() -> dict:
 			delayed=True,
 		)
 	frappe.cache().set_value(_CACHE_KEY, signature, expires_in_sec=REPEAT_AFTER_HOURS * 3600)
-	frappe.log_error(title=f"Billing operator alert: {signature}", message=frappe.as_json(alerts[:50], indent=1))
+	frappe.log_error(
+		title=f"Billing operator alert: {signature}", message=frappe.as_json(alerts[:50], indent=1)
+	)
 	return {"alerts": len(alerts), "notified": bool(recipients), "digest": signature}

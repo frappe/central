@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
-import { planSpecs, planPrice } from '@/lib/plans'
-import { money } from '@/lib/format'
 import { configSpecs, estimateConfig } from '@/lib/composed'
+import { money } from '@/lib/format'
+import { planPrice, planSpecs } from '@/lib/plans'
 import type {
 	Capacity,
 	ComposedConfig,

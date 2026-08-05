@@ -30,7 +30,8 @@ defineEmits<{ create: []; dismiss: [] }>()
 			</p>
 			<p class="mt-1 text-p-sm text-ink-gray-5">
 				Spin one up to host your sites — or pick a
-				<span class="font-medium text-ink-gray-7">+</span> spot on the map.
+				<span class="font-medium text-ink-gray-7">+</span>
+				spot on the map.
 			</p>
 			<Button
 				class="mt-3"

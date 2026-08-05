@@ -3,11 +3,11 @@
 """The single transition authority + the derived Billing Event stream (ADR 0016)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing import states
 from central.billing.revenue import invoicing
 from central.billing.states import InvalidTransition, transition
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
 
 TEAM = "team-states"

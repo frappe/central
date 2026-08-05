@@ -17,17 +17,28 @@ import frappe
 # {DocType: {fieldname: {old_value: new_value}}}
 RENAMES = {
 	"Add-on": {
-		"resource_type": {"compute": "Compute", "memory": "Memory", "disk": "Disk", "transfer": "Transfer", "ip": "IP", "snapshot": "Snapshot"},
+		"resource_type": {
+			"compute": "Compute",
+			"memory": "Memory",
+			"disk": "Disk",
+			"transfer": "Transfer",
+			"ip": "IP",
+			"snapshot": "Snapshot",
+		},
 		"billing_type": {"fixed": "Fixed", "metered": "Metered"},
 		"pricing_mode": {"grandfathered": "Grandfathered", "live": "Live"},
 		"billing_interval": {"hourly": "Hourly", "daily": "Daily", "monthly": "Monthly"},
 	},
 	"Billing Notification Log": {
 		"event_type": {
-			"payment_success": "Payment Success", "payment_failure": "Payment Failure",
-			"payment_retry": "Payment Retry", "invoice_overdue": "Invoice Overdue",
-			"credit_low": "Credit Low", "card_expiry": "Card Expiry",
-			"mandate_reauth": "Mandate Reauth", "trial_expiring": "Trial Expiring",
+			"payment_success": "Payment Success",
+			"payment_failure": "Payment Failure",
+			"payment_retry": "Payment Retry",
+			"invoice_overdue": "Invoice Overdue",
+			"credit_low": "Credit Low",
+			"card_expiry": "Card Expiry",
+			"mandate_reauth": "Mandate Reauth",
+			"trial_expiring": "Trial Expiring",
 		},
 		"status": {"sent": "Sent", "suppressed": "Suppressed"},
 	},
@@ -44,7 +55,13 @@ RENAMES = {
 		"erpnext_sync_status": {"pending": "Pending", "synced": "Synced", "failed": "Failed"},
 	},
 	"Payment Attempt": {
-		"status": {"initiated": "Initiated", "authorised": "Authorised", "captured": "Captured", "failed": "Failed", "refunded": "Refunded"},
+		"status": {
+			"initiated": "Initiated",
+			"authorised": "Authorised",
+			"captured": "Captured",
+			"failed": "Failed",
+			"refunded": "Refunded",
+		},
 		"resolved_by": {"webhook": "Webhook", "reconciliation": "Reconciliation"},
 	},
 	"Payment Gateway": {
@@ -52,13 +69,27 @@ RENAMES = {
 	},
 	"Payment Method": {
 		"method_type": {"card": "Card", "upi_autopay": "UPI Autopay", "prepaid_credits": "Prepaid Credits"},
-		"status": {"pending_validation": "Pending Validation", "active": "Active", "paused": "Paused", "cancelled": "Cancelled", "expired": "Expired", "failed": "Failed"},
+		"status": {
+			"pending_validation": "Pending Validation",
+			"active": "Active",
+			"paused": "Paused",
+			"cancelled": "Cancelled",
+			"expired": "Expired",
+			"failed": "Failed",
+		},
 	},
 	"Plan": {
 		"billing_cycle": {"monthly": "Monthly", "annual": "Annual"},
 	},
 	"Plan Includes": {
-		"resource_type": {"compute": "Compute", "memory": "Memory", "disk": "Disk", "transfer": "Transfer", "ip": "IP", "snapshot": "Snapshot"},
+		"resource_type": {
+			"compute": "Compute",
+			"memory": "Memory",
+			"disk": "Disk",
+			"transfer": "Transfer",
+			"ip": "IP",
+			"snapshot": "Snapshot",
+		},
 	},
 	"Refund": {
 		"destination": {"source": "Source", "wallet": "Wallet"},
@@ -70,9 +101,13 @@ RENAMES = {
 	},
 	"Subscription Change": {
 		"change_type": {
-			"created": "Created", "plan_changed": "Plan Changed",
-			"payment_method_changed": "Payment Method Changed", "past_due": "Past Due",
-			"suspended": "Suspended", "reactivated": "Reactivated", "cancelled": "Cancelled",
+			"created": "Created",
+			"plan_changed": "Plan Changed",
+			"payment_method_changed": "Payment Method Changed",
+			"past_due": "Past Due",
+			"suspended": "Suspended",
+			"reactivated": "Reactivated",
+			"cancelled": "Cancelled",
 		},
 	},
 	"Tax Profile": {
@@ -83,7 +118,12 @@ RENAMES = {
 		"meter_type": {"counter": "Counter", "gauge": "Gauge"},
 	},
 	"Webhook Event": {
-		"status": {"received": "Received", "processed": "Processed", "failed": "Failed", "ignored": "Ignored"},
+		"status": {
+			"received": "Received",
+			"processed": "Processed",
+			"failed": "Failed",
+			"ignored": "Ignored",
+		},
 	},
 }
 

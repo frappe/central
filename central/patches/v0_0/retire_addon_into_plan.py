@@ -57,9 +57,7 @@ def _migrate_addon(addon):
 				"category": category,
 				"billing_cycle": "Monthly",
 				"is_active": 1,
-				"includes": [
-					{"resource_type": addon.resource_type, "quantity": 0, "unit": addon.unit}
-				],
+				"includes": [{"resource_type": addon.resource_type, "quantity": 0, "unit": addon.unit}],
 			}
 		)
 		# Name the Plan after the Add-on so its Catalog Rate rows keep their ids.
@@ -86,9 +84,7 @@ def _migrate_addon(addon):
 def _resource_already_metered(resource_type: str) -> bool:
 	"""True if an active metered single-resource Plan already covers this resource."""
 	metered_cats = frappe.get_all("Plan Category", filters={"billing_type": "Metered"}, pluck="name")
-	plans = frappe.get_all(
-		"Plan", filters={"category": ["in", metered_cats], "is_active": 1}, pluck="name"
-	)
+	plans = frappe.get_all("Plan", filters={"category": ["in", metered_cats], "is_active": 1}, pluck="name")
 	for p in plans:
 		includes = frappe.get_all("Plan Includes", filters={"parent": p}, pluck="resource_type")
 		if len(includes) == 1 and includes[0] == resource_type:

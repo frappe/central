@@ -1,19 +1,23 @@
 <script setup lang="ts">
+import { Badge, Button, LoadingText, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useCall, Badge, Button, LoadingText } from 'frappe-ui'
+import { API, method } from '@/api/methods'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
 import SplitView from '@/components/common/SplitView.vue'
-import { API, method } from '@/api/methods'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useInvoices } from '@/composables/useInvoices'
 import { usePayInvoice } from '@/composables/usePayInvoice'
 import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
-import { money } from '@/lib/format'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { billingPeriod, shortDate } from '@/lib/date'
+import { money } from '@/lib/format'
 import { invoiceTheme } from '@/lib/status'
-import type { InvoiceSummary, InvoiceDetail, CollectionStatus } from '@/types/billing'
+import type {
+	CollectionStatus,
+	InvoiceDetail,
+	InvoiceSummary,
+} from '@/types/billing'
 
 // Billing › Invoices (#70) — split list (left) + ~480px detail panel (right), not
 // a modal. Invoices come from the team-scoped list_invoices/get_invoice endpoints
@@ -122,7 +126,6 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 
 <template>
 	<div class="flex h-full flex-col">
-
 		<SplitView v-model:open="detailOpen" class="flex-1">
 			<!-- The selected invoice's identity lives in the panel header (number +
            period + due), driven by the summary row so it shows instantly while the

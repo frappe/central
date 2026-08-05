@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { useSession } from '@/composables/useSession'
-import { useAppMenu } from '@/composables/useAppMenu'
 import { Button } from 'frappe-ui'
+import { useAppMenu } from '@/composables/useAppMenu'
+import { useSession } from '@/composables/useSession'
 
 const { activeTeamLabel } = useSession()
 const {

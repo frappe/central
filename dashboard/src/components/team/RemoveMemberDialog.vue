@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Dialog } from 'frappe-ui'
-import { useTeamMembers } from '@/composables/useTeamMembers'
+import { computed, ref } from 'vue'
 import { useSession } from '@/composables/useSession'
+import { useTeamMembers } from '@/composables/useTeamMembers'
 import type { TeamMemberRow } from '@/types/api'
 
 const props = defineProps<{ member: TeamMemberRow | null }>()
@@ -50,7 +50,12 @@ const dialogOptions = computed(() => ({
 </script>
 
 <template>
-	<Dialog v-model="open" :title="dialogOptions.title" size="sm" :actions="dialogOptions.actions">
+	<Dialog
+		v-model="open"
+		:title="dialogOptions.title"
+		size="sm"
+		:actions="dialogOptions.actions"
+	>
 		<p class="text-p-base text-ink-gray-7">
 			They'll immediately lose access to
 			<span class="font-semibold text-ink-gray-9">{{ activeTeamLabel }}'s</span>

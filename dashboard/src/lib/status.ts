@@ -1,5 +1,5 @@
-import type { Asset } from '@/types/Central/Asset'
 import type { InvitationStatus } from '@/types/api'
+import type { Asset } from '@/types/Central/Asset'
 
 export type AssetStatus = NonNullable<Asset['status']> | (string & {})
 
@@ -54,7 +54,11 @@ export function isTerminated(status?: AssetStatus): boolean {
 }
 
 /** Atlas is still provisioning the VM — power/open/terminate aren't available yet. */
-const SETTING_UP_STATES: AssetStatus[] = ['Pending', 'Provisioning', 'Deploying']
+const SETTING_UP_STATES: AssetStatus[] = [
+	'Pending',
+	'Provisioning',
+	'Deploying',
+]
 
 export function isSettingUp(status?: AssetStatus): boolean {
 	return status === undefined || SETTING_UP_STATES.includes(status)

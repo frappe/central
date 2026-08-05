@@ -9,10 +9,10 @@ and the preset-vs-component divergence warning."""
 from unittest.mock import patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import component_card
 from central.billing.catalog.pricing import resolve_component_rate, set_catalog_rate
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import make_plan
 
 # A currency with no seeded starter card, so tests author it from scratch.
@@ -131,9 +131,7 @@ class TestConfiguratorAuthorsCard(IntegrationTestCase):
 
 	def test_seed_component_rows_captures_every_shipped_currency(self):
 		doc = _configurator("cc-seed")
-		with patch(
-			"central.billing.gateways.registry.supported_currencies", return_value=["INR", "USD"]
-		):
+		with patch("central.billing.gateways.registry.supported_currencies", return_value=["INR", "USD"]):
 			out = doc.seed_component_rows()
 		# 3 primitives × 2 currencies, none pre-existing.
 		self.assertEqual(out["added"], 6)
@@ -143,9 +141,7 @@ class TestConfiguratorAuthorsCard(IntegrationTestCase):
 
 	def test_seed_is_idempotent(self):
 		doc = _configurator("cc-seed-idem")
-		with patch(
-			"central.billing.gateways.registry.supported_currencies", return_value=["INR"]
-		):
+		with patch("central.billing.gateways.registry.supported_currencies", return_value=["INR"]):
 			doc.seed_component_rows()
 			second = doc.seed_component_rows()
 		self.assertEqual(second["added"], 0)  # already seeded, nothing added

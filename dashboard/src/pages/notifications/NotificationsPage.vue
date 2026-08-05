@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { Button, Dialog, LoadingText, TabButtons } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, LoadingText, TabButtons } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import NotificationItem from '@/components/notifications/NotificationItem.vue'
 import NotificationPreferences from '@/components/notifications/NotificationPreferences.vue'

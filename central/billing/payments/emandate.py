@@ -42,7 +42,8 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	# customer's choice (manual checkout / prepaid) instead of notifying a debit
 	# that would fail.
 	st = collection_mode.evaluate(
-		inv.team, projected_amount=frappe.utils.flt(inv.expected_collection),
+		inv.team,
+		projected_amount=frappe.utils.flt(inv.expected_collection),
 		reason="invoice_over_threshold",
 	)
 	if st["action_required"]:
@@ -51,7 +52,8 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
 	charge_after = frappe.utils.add_to_date(now_dt, hours=PREDEBIT_NOTICE_HOURS)
 	frappe.db.set_value(
-		"Invoice", invoice,
+		"Invoice",
+		invoice,
 		{"predebit_notified_at": now_dt, "predebit_charge_after": charge_after},
 		update_modified=False,
 	)
@@ -59,13 +61,15 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	from central.billing.platform import notifications
 
 	notifications.notify(
-		inv.team, "Pre-debit Notice",
+		inv.team,
+		"Pre-debit Notice",
 		context={
 			"invoice": invoice,
 			"amount": f"{frappe.utils.flt(inv.expected_collection)} {inv.currency or ''}".strip(),
 			"charge_on": frappe.utils.format_datetime(charge_after),
 		},
-		reference_doctype="Invoice", reference_name=invoice,
+		reference_doctype="Invoice",
+		reference_name=invoice,
 	)
 	return {"invoice": invoice, "notified": True, "charge_after": str(charge_after)}
 

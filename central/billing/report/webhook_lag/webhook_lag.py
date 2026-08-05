@@ -72,14 +72,20 @@ def _percentile(ordered: list[float], fraction: float) -> float:
 	"""Nearest-rank percentile of an already-sorted list."""
 	if not ordered:
 		return 0.0
-	index = min(int(round(fraction * len(ordered) + 0.5)) - 1, len(ordered) - 1)
+	index = min(round(fraction * len(ordered) + 0.5) - 1, len(ordered) - 1)
 	return ordered[index]
 
 
 def _columns() -> list[dict]:
 	return [
 		{"label": _("Day"), "fieldname": "day", "fieldtype": "Date", "width": 110},
-		{"label": _("Gateway"), "fieldname": "gateway", "fieldtype": "Link", "options": "Payment Gateway", "width": 160},
+		{
+			"label": _("Gateway"),
+			"fieldname": "gateway",
+			"fieldtype": "Link",
+			"options": "Payment Gateway",
+			"width": 160,
+		},
 		{"label": _("Events"), "fieldname": "events", "fieldtype": "Int", "width": 90},
 		{"label": _("Median (s)"), "fieldname": "median_seconds", "fieldtype": "Float", "width": 110},
 		{"label": _("p95 (s)"), "fieldname": "p95_seconds", "fieldtype": "Float", "width": 110},

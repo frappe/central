@@ -1,26 +1,23 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-
 import {
 	Badge,
 	Button,
 	Dialog,
 	Dropdown,
+	type DropdownOptions,
 	FormControl,
 	Select,
-	type DropdownOptions,
 } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 
 import EmptyState from '@/components/common/EmptyState.vue'
-
-import { useServices } from '@/composables/useServices'
-import { errorToast, successToast } from '@/lib/toast'
-
 import type {
 	RevealedKey,
 	ServiceApiKey,
 	ServiceModel,
 } from '@/composables/useServices'
+import { useServices } from '@/composables/useServices'
+import { errorToast, successToast } from '@/lib/toast'
 
 const props = defineProps<{
 	managedService: string

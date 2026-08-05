@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
+import { ref } from 'vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { emailError, frappeErrorMessage, postFrappe } from '@/lib/auth'

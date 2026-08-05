@@ -51,11 +51,7 @@ def set_component_rate(resource_type: str, currency: str, rate, cluster: str | N
 def component_card_gaps(currency: str, cluster: str | None = None) -> list[str]:
 	"""The composable primitives with no rate for `(currency, cluster)` — an incomplete
 	card. Empty means a composed config can be fully priced (and so offered) there."""
-	return [
-		rt
-		for rt in COMPONENT_RESOURCE_TYPES
-		if resolve_component_rate(rt, currency, cluster) is None
-	]
+	return [rt for rt in COMPONENT_RESOURCE_TYPES if resolve_component_rate(rt, currency, cluster) is None]
 
 
 def is_component_card_complete(currency: str, cluster: str | None = None) -> bool:
@@ -73,9 +69,7 @@ def preset_component_warning(plan: str, currency: str, cluster: str | None = Non
 	flat = resolve_rate(get_catalog_rates("Plan", plan), currency, cluster)
 	if flat is None:
 		return None
-	includes = frappe.get_all(
-		"Plan Includes", filters={"parent": plan}, fields=["resource_type", "quantity"]
-	)
+	includes = frappe.get_all("Plan Includes", filters={"parent": plan}, fields=["resource_type", "quantity"])
 	component_sum = resolve_config_rate(includes, currency, cluster)
 	if component_sum is None:
 		return None  # card incomplete for this composition — a gap, surfaced separately

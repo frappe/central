@@ -1,12 +1,12 @@
 import {
 	getCurrentInstance,
+	type MaybeRefOrGetter,
 	onScopeDispose,
+	type Ref,
 	readonly,
 	ref,
 	toValue,
 	watch,
-	type MaybeRefOrGetter,
-	type Ref,
 } from 'vue'
 
 type SocketListener = (...args: unknown[]) => void

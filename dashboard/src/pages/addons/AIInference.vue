@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { Button, Spinner, TabButtons } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Spinner, TabButtons } from 'frappe-ui'
-import EmptyState from '@/components/common/EmptyState.vue'
-import AIOverview from '@/components/addons/AIOverview.vue'
 import AIApiKeys from '@/components/addons/AIApiKeys.vue'
+import AIOverview from '@/components/addons/AIOverview.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
@@ -14,10 +14,13 @@ const router = useRouter()
 const serviceKey = 'ai'
 
 const { canManageServices, canManageBilling } = useCapabilities()
-const { offers, offersLoading, instance, loadInstance, activate } = useServices()
+const { offers, offersLoading, instance, loadInstance, activate } =
+	useServices()
 const { setBreadcrumbs } = useBreadcrumbs()
 
-const offer = computed(() => offers.value.find((o) => o.name === serviceKey) ?? null)
+const offer = computed(
+	() => offers.value.find((o) => o.name === serviceKey) ?? null,
+)
 const managedService = computed(() => offer.value?.managed_service ?? null)
 const title = computed(() => offer.value?.title ?? 'Service')
 const description =
@@ -61,7 +64,10 @@ const activateService = async (): Promise<void> => {
 
 <template>
 	<div class="flex h-full flex-col">
-		<div v-if="offersLoading && !offer" class="flex flex-1 justify-center py-16">
+		<div
+			v-if="offersLoading && !offer"
+			class="flex flex-1 justify-center py-16"
+		>
 			<Spinner class="size-5 text-ink-gray-5" />
 		</div>
 
@@ -87,7 +93,12 @@ const activateService = async (): Promise<void> => {
 					</div>
 				</div>
 
-				<TabButtons v-if="managedService" v-model="tab" :options="tabs" class="mt-6" />
+				<TabButtons
+					v-if="managedService"
+					v-model="tab"
+					:options="tabs"
+					class="mt-6"
+				/>
 			</div>
 
 			<template v-if="managedService">

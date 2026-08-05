@@ -2,7 +2,7 @@ import { computed } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { openSearch } from '@/composables/useSearch'
 
-export interface SidebarItem {
+type SidebarItem = {
 	label: string
 	icon: string
 	to?: string
@@ -11,17 +11,19 @@ export interface SidebarItem {
 	onClick?: () => void
 }
 
-export interface SidebarSection {
-	label?: string
+type SidebarSection = {
+	label: string
+	collapsible?: boolean
 	items: SidebarItem[]
 }
 
-export const sidebarSections = computed((): SidebarSection[] => {
+export const sidebarSections = computed<SidebarSection[]>(() => {
 	const { canViewServers, canViewBilling, canViewServices, isMember } =
 		useCapabilities()
 
 	return [
 		{
+			label: '',
 			items: [
 				{ label: 'Search', icon: 'lucide-search', onClick: openSearch },
 				{
@@ -35,6 +37,7 @@ export const sidebarSections = computed((): SidebarSection[] => {
 		},
 
 		{
+			label: '',
 			items: [
 				{
 					label: 'Servers',
@@ -49,12 +52,12 @@ export const sidebarSections = computed((): SidebarSection[] => {
 					condition: isMember.value,
 				},
 
-        {
-          label: 'Addons',
-          icon: 'lucide-blocks',
-          to: '/addons',
-          condition: canViewServices.value,
-        }
+				{
+					label: 'Addons',
+					icon: 'lucide-blocks',
+					to: '/addons',
+					condition: canViewServices.value,
+				},
 			],
 		},
 

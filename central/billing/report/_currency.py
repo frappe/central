@@ -29,13 +29,15 @@ def split_currency_columns(columns, rows, money_fields, currency_field="currency
 			continue  # currency now lives in each split column's header
 		if fieldname in money:
 			for currency in currencies:
-				new_columns.append({
-					"label": f"{col['label']} ({currency})",
-					"fieldname": f"{fieldname}_{currency.lower()}",
-					"fieldtype": "Currency",
-					"options": currency,
-					"width": col.get("width", 120),
-				})
+				new_columns.append(
+					{
+						"label": f"{col['label']} ({currency})",
+						"fieldname": f"{fieldname}_{currency.lower()}",
+						"fieldtype": "Currency",
+						"options": currency,
+						"width": col.get("width", 120),
+					}
+				)
 		else:
 			new_columns.append(col)
 

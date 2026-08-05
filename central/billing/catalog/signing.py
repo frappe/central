@@ -27,9 +27,7 @@ def generate_keypair() -> tuple[str, str]:
 	private = key.private_bytes(
 		serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()
 	)
-	public = key.public_key().public_bytes(
-		serialization.Encoding.Raw, serialization.PublicFormat.Raw
-	)
+	public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
 	return base64.b64encode(private).decode(), base64.b64encode(public).decode()
 
 

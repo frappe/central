@@ -81,6 +81,15 @@ export interface TrustTier {
 export interface CreditBalance {
 	balance: number
 	currency: Currency
+	/** Promotional credit still on a clock, soonest expiry first. */
+	expiring: ExpiringCredit[]
+}
+
+/** One promotional grant with time left on it. Purchased credit never expires. */
+export interface ExpiringCredit {
+	amount: number
+	expires_on: string
+	ledger_entry: string
 }
 
 /** credit_ledger row — append-only wallet movement (ADR 0006). */

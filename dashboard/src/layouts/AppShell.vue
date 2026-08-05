@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import {
 	BottomSheet,
 	Breadcrumbs,
@@ -10,13 +8,15 @@ import {
 	MobileShell,
 	ToastProvider,
 } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
-import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
 import SearchDialog from '@/components/search/SearchDialog.vue'
-import { useNotificationsRealtime } from '@/composables/useNotifications'
-import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
+import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
 import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useAppMenu } from '@/composables/useAppMenu'
+import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
+import { useNotificationsRealtime } from '@/composables/useNotifications'
 import { openSearch, searchOpen, useSearchShortcut } from '@/composables/useSearch'
 
 useNotificationsRealtime()
@@ -28,10 +28,13 @@ const isMobile = useIsMobile()
 const { changeTeamOpen } = useAppMenu()
 
 const mobileNavDrawer = ref(false)
-watch(() => route.name, () => {
-	resetBreadcrumbs()
-	mobileNavDrawer.value = false
-})
+watch(
+	() => route.name,
+	() => {
+		resetBreadcrumbs()
+		mobileNavDrawer.value = false
+	},
+)
 
 const breadcrumbs = computed(
 	() => items.value ?? [{ label: (route.meta.title as string) ?? '' }],
@@ -63,7 +66,12 @@ const breadcrumbs = computed(
 					:active="route.name === 'Home'"
 				/>
 				<MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
-				<MobileNavItem label="Notifications" icon="lucide-bell" to="/notifications"  :active="route.name =='Notifications' "/>
+				<MobileNavItem
+					label="Notifications"
+					icon="lucide-bell"
+					to="/notifications"
+					:active="route.name =='Notifications' "
+				/>
 				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
 			</MobileNav>
 		</template>

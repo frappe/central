@@ -9,7 +9,6 @@ from central.iam import can, user_has_operator_bypass
 
 
 class Team(Document):
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -153,9 +152,7 @@ class Team(Document):
 
 	def _validate_unique_members(self) -> None:
 		grants = [
-			(row.user, row.role, row.resource_type, row.resource_name)
-			for row in self.members
-			if row.user
+			(row.user, row.role, row.resource_type, row.resource_name) for row in self.members if row.user
 		]
 		if len(grants) != len(set(grants)):
 			frappe.throw(_("A member cannot hold the same role on the same resource twice."))

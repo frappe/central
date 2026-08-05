@@ -70,9 +70,7 @@ class TestServerOverview(IntegrationTestCase):
 		)
 		self.addCleanup(
 			lambda: frappe.db.exists("Pilot Credential", self.audience_id)
-			and frappe.delete_doc(
-				"Pilot Credential", self.audience_id, ignore_permissions=True, force=True
-			)
+			and frappe.delete_doc("Pilot Credential", self.audience_id, ignore_permissions=True, force=True)
 		)
 		frappe.cache.delete_value(f"pilot:monitoring:{self.resource_id}")
 		self.addCleanup(frappe.cache.delete_value, f"pilot:monitoring:{self.resource_id}")

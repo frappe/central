@@ -2,11 +2,11 @@
 # For license information, please see license.txt
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.entitlements import issue_token, recompute_trust_tier
 from central.billing.catalog.signing import generate_keypair, verify_payload
 from central.billing.tests.test_entitlements import make_ladder
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import clear_team_tier, ensure_team
 
 

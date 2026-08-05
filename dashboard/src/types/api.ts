@@ -65,7 +65,12 @@ export interface CapabilityInfo {
 /** central.api.servers.registry response. */
 export interface TeamRegistry {
 	team: string
-	assets: { name: string; resource_id: string; title: string; cluster: string }[]
+	assets: {
+		name: string
+		resource_id: string
+		title: string
+		cluster: string
+	}[]
 	sites: { name: string; subdomain: string; region: string }[]
 }
 

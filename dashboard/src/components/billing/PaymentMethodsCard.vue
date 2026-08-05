@@ -1,17 +1,17 @@
 <script setup lang="ts">
+import { Badge, Button, useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { useCall, Badge, Button } from 'frappe-ui'
+import { API, method } from '@/api/methods'
+import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PaymentMethodRowActions from '@/components/billing/PaymentMethodRowActions.vue'
 import RemovePaymentMethodDialog from '@/components/billing/RemovePaymentMethodDialog.vue'
-import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { API, method } from '@/api/methods'
-import { useSession } from '@/composables/useSession'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { useBillingSetup } from '@/composables/useBillingSetup'
-import { successToast, errorToast } from '@/lib/toast'
+import { useCapabilities } from '@/composables/useCapabilities'
+import { useSession } from '@/composables/useSession'
+import { errorToast, successToast } from '@/lib/toast'
 import type { PaymentMethod } from '@/types/billing'
 
 // Payment methods — primary + backups in fallback order, rendered as the FC v2

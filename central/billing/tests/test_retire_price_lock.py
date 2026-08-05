@@ -7,18 +7,18 @@ subscription has no open billing segment gets a mirrored `Created` segment; a
 subscription that already has an open segment is left untouched (idempotent)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.subscriptions import active_segment_for_resource
-from central.patches.v0_0.retire_price_lock import (
-	backfill_open_locks_into_ledger,
-)
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
 	ensure_team,
 	make_billing_subscription,
 	make_plan,
+)
+from central.patches.v0_0.retire_price_lock import (
+	backfill_open_locks_into_ledger,
 )
 
 TEAM = "team-retire-lock"
@@ -39,8 +39,12 @@ class TestPriceLockBackfill(IntegrationTestCase):
 
 	def _lock(self, resource_id, rate=3200):
 		return {
-			"resource_id": resource_id, "team": TEAM, "plan": PLAN,
-			"currency": "INR", "locked_rate": rate, "started_at": "2026-06-01 00:00:00",
+			"resource_id": resource_id,
+			"team": TEAM,
+			"plan": PLAN,
+			"currency": "INR",
+			"locked_rate": rate,
+			"started_at": "2026-06-01 00:00:00",
 		}
 
 	def test_backfill_writes_segment_for_lock_without_open_segment(self):
@@ -67,13 +71,17 @@ class TestPriceLockBackfill(IntegrationTestCase):
 		subscriptions.create_subscription(
 			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly", resource_id="srv-live"
 		)
-		before = frappe.db.count("Subscription Change", {"subscription": ["in",
-			frappe.get_all("Subscription", {"team": TEAM}, pluck="name")]})
+		before = frappe.db.count(
+			"Subscription Change",
+			{"subscription": ["in", frappe.get_all("Subscription", {"team": TEAM}, pluck="name")]},
+		)
 
 		self.assertEqual(backfill_open_locks_into_ledger(locks=[self._lock("srv-live", 999)]), 0)
 
-		after = frappe.db.count("Subscription Change", {"subscription": ["in",
-			frappe.get_all("Subscription", {"team": TEAM}, pluck="name")]})
+		after = frappe.db.count(
+			"Subscription Change",
+			{"subscription": ["in", frappe.get_all("Subscription", {"team": TEAM}, pluck="name")]},
+		)
 		self.assertEqual(before, after)
 
 	def test_backfill_skips_lock_with_no_subscription(self):

@@ -97,24 +97,22 @@ def is_active_team_member(user: str, team: str) -> bool:
 	team_doc = frappe.qb.DocType("Team")
 
 	query = (
-			frappe.qb.from_(member)
-			.join(team_doc)
-			.on(team_doc.name == member.parent)
-			.select(member.name)
-			.where(
-				(member.parenttype == "Team")
-				& (member.parentfield == "members")
-				& (member.user == user)
-				& (member.status == "Active")
-				& (team_doc.name == team)
-				& (team_doc.status == "Active")
-			)
-			.limit(1)
+		frappe.qb.from_(member)
+		.join(team_doc)
+		.on(team_doc.name == member.parent)
+		.select(member.name)
+		.where(
+			(member.parenttype == "Team")
+			& (member.parentfield == "members")
+			& (member.user == user)
+			& (member.status == "Active")
+			& (team_doc.name == team)
+			& (team_doc.status == "Active")
 		)
-
-	return bool(
-		query.run()
+		.limit(1)
 	)
+
+	return bool(query.run())
 
 
 def resolve_team(user: str, team: str | None = None) -> str:

@@ -29,8 +29,17 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 	return frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
-		fields=["name", "method_type", "status", "display_label", "is_default", "priority",
-				"reauth_required", "expiry_month", "expiry_year"],
+		fields=[
+			"name",
+			"method_type",
+			"status",
+			"display_label",
+			"is_default",
+			"priority",
+			"reauth_required",
+			"expiry_month",
+			"expiry_year",
+		],
 		order_by="priority asc, creation asc",
 	)
 
@@ -63,11 +72,16 @@ def get_payment_method_options(team: str | None = None) -> dict:
 
 		elig = mandates.upi_eligibility(team)
 		methods.append("UPI Autopay")
-		upi = {"allow_upi": elig["eligible"], "upi_block_reason": elig["reason"],
-			   "upi_limit": elig["limit"]}
+		upi = {"allow_upi": elig["eligible"], "upi_block_reason": elig["reason"], "upi_limit": elig["limit"]}
 
-	return {"gateway": card_gw, "adapter_key": "Stripe" if card_gw else None,
-			"currency": currency, "methods": methods, "publishable_key": publishable_key, **upi}
+	return {
+		"gateway": card_gw,
+		"adapter_key": "Stripe" if card_gw else None,
+		"currency": currency,
+		"methods": methods,
+		"publishable_key": publishable_key,
+		**upi,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -85,42 +99,71 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 
 
 @frappe.whitelist(methods=["POST"])
-def confirm_card(payment_method: str | None = None, gateway_method_id: str | None = None,
-				 display_label: str | None = None, expiry_month: int | None = None,
-				 expiry_year: int | None = None) -> dict:
+def confirm_card(
+	payment_method: str | None = None,
+	gateway_method_id: str | None = None,
+	display_label: str | None = None,
+	expiry_month: int | None = None,
+	expiry_year: int | None = None,
+) -> dict:
 	"""Confirm a card the gateway SDK tokenised — runs the micro-charge validation."""
 	from central.billing.payments import payments
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
 	method = payments.confirm_payment_method(
-		payment_method, gateway_method_id=gateway_method_id, display_label=display_label,
-		expiry_month=expiry_month, expiry_year=expiry_year)
+		payment_method,
+		gateway_method_id=gateway_method_id,
+		display_label=display_label,
+		expiry_month=expiry_month,
+		expiry_year=expiry_year,
+	)
 	return {"payment_method": method.name, "status": method.status}
 
 
 @frappe.whitelist(methods=["POST"])
-def add_demo_card(team: str | None = None, gateway: str | None = None,
-				  display_label: str = "Visa ····4242", expiry_month: int = 12,
-				  expiry_year: int = 2030) -> dict:
+def add_demo_card(
+	team: str | None = None,
+	gateway: str | None = None,
+	display_label: str = "Visa ····4242",
+	expiry_month: int = 12,
+	expiry_year: int = 2030,
+) -> dict:
 	"""Demo convenience: register an active card without a live gateway round-trip.
 	(Production uses initiate_card_setup + confirm_card with the gateway SDK.)"""
 	team = _resolve_team(team, authz.MANAGE)
 	from central.billing.payments import payments
 
-	name = frappe.get_doc({
-		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
-		"status": "Active", "display_label": display_label, "gateway_method_id": f"pm_{frappe.generate_hash(6)}",
-		"gateway_customer_id": f"cus_{team}", "expiry_month": expiry_month, "expiry_year": expiry_year,
-		"validated_at": frappe.utils.now_datetime(),
-	}).insert(ignore_permissions=True).name
+	name = (
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": team,
+				"gateway": gateway,
+				"method_type": "Card",
+				"status": "Active",
+				"display_label": display_label,
+				"gateway_method_id": f"pm_{frappe.generate_hash(6)}",
+				"gateway_customer_id": f"cus_{team}",
+				"expiry_month": expiry_month,
+				"expiry_year": expiry_year,
+				"validated_at": frappe.utils.now_datetime(),
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 	payments.densify_priorities(team)  # append at the end of the fallback order
 	return {"payment_method": name, "status": "Active"}
 
 
 @frappe.whitelist(methods=["POST"])
-def setup_payment_method_order(team: str | None = None, gateway: str | None = None,
-							   method_type: str = "UPI Autopay", contact: str | None = None) -> dict:
+def setup_payment_method_order(
+	team: str | None = None,
+	gateway: str | None = None,
+	method_type: str = "UPI Autopay",
+	contact: str | None = None,
+) -> dict:
 	"""Begin adding a Razorpay recurring method — UPI Autopay mandate (ceiling =
 	trust-tier cap) or a card token. `contact` is the phone the UI collects inline
 	for a card mandate when the billing profile has none (Razorpay requires a
@@ -137,19 +180,28 @@ def setup_payment_method_order(team: str | None = None, gateway: str | None = No
 
 
 @frappe.whitelist(methods=["POST"])
-def confirm_payment_method_order(payment_method: str | None = None, razorpay_payment_id: str | None = None,
-								 razorpay_order_id: str | None = None, razorpay_signature: str | None = None,
-								 razorpay_token_id: str | None = None) -> dict:
+def confirm_payment_method_order(
+	payment_method: str | None = None,
+	razorpay_payment_id: str | None = None,
+	razorpay_order_id: str | None = None,
+	razorpay_signature: str | None = None,
+	razorpay_token_id: str | None = None,
+) -> dict:
 	"""Confirm the Razorpay Checkout callback — verifies the signature, activates
 	the mandate. Real gateway verification, not a stub."""
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
 	from central.billing.payments import mandates
 
-	method = mandates.confirm_mandate(payment_method, {
-		"razorpay_payment_id": razorpay_payment_id, "razorpay_order_id": razorpay_order_id,
-		"razorpay_signature": razorpay_signature, "razorpay_token_id": razorpay_token_id,
-	})
+	method = mandates.confirm_mandate(
+		payment_method,
+		{
+			"razorpay_payment_id": razorpay_payment_id,
+			"razorpay_order_id": razorpay_order_id,
+			"razorpay_signature": razorpay_signature,
+			"razorpay_token_id": razorpay_token_id,
+		},
+	)
 	return {"payment_method": method.name, "status": method.status}
 
 

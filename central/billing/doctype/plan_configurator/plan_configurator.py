@@ -18,10 +18,13 @@ class PlanConfigurator(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
+		from frappe.types import DF
+
 		from central.billing.doctype.plan_configurator_plan.plan_configurator_plan import PlanConfiguratorPlan
 		from central.billing.doctype.plan_configurator_rate.plan_configurator_rate import PlanConfiguratorRate
-		from central.billing.doctype.plan_configurator_simple_plan.plan_configurator_simple_plan import PlanConfiguratorSimplePlan
-		from frappe.types import DF
+		from central.billing.doctype.plan_configurator_simple_plan.plan_configurator_simple_plan import (
+			PlanConfiguratorSimplePlan,
+		)
 
 		base_disk_gb: DF.Float
 		base_rates: DF.Table[PlanConfiguratorRate]
@@ -29,14 +32,18 @@ class PlanConfigurator(Document):
 		billing_cycle: DF.Literal["Monthly", "Annual"]
 		builder: DF.ReadOnly | None
 		category: DF.Link
-		ceiling_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
+		ceiling_vcpu: DF.Literal[
+			"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"
+		]
 		is_active: DF.Check
 		memory_ratio: DF.Literal["1:2", "1:4", "1:6", "1:8"]
 		plan_name_prefix: DF.Data
 		provision_target: DF.ReadOnly | None
 		rungs: DF.Table[PlanConfiguratorPlan]
 		simple_plans: DF.Table[PlanConfiguratorSimplePlan]
-		start_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
+		start_vcpu: DF.Literal[
+			"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"
+		]
 		sub_category: DF.Link | None
 		template_name: DF.Data
 		transfer_step_gb: DF.Float

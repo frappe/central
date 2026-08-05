@@ -64,9 +64,7 @@ def get_site(name: str) -> dict:
 	expired by the time the tenant lands here we regenerate a fresh one on read, so
 	the link they click always works."""
 	user = frappe.session.user
-	mirror = frappe.db.get_value(
-		"Site", name, ["team", "cluster", "status"], as_dict=True
-	)
+	mirror = frappe.db.get_value("Site", name, ["team", "cluster", "status"], as_dict=True)
 	if not mirror:
 		frappe.throw(_("No site '{0}'.").format(name), frappe.DoesNotExistError)
 	if mirror.team not in get_user_team_names(user):

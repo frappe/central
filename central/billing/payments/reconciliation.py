@@ -99,7 +99,9 @@ def reconcile_captured_attempt(attempt_name: str, now=None) -> dict:
 	# truth. Without a confirmed success we don't guess — settle nothing.
 	status = ""
 	if attempt.gateway_transaction_id:
-		status = (_adapter(attempt.gateway).get_transaction_status(attempt.gateway_transaction_id) or "").lower()
+		status = (
+			_adapter(attempt.gateway).get_transaction_status(attempt.gateway_transaction_id) or ""
+		).lower()
 	if status not in _GATEWAY_SUCCESS:
 		now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
 		started = frappe.utils.get_datetime(attempt.initiated_at or attempt.creation)
@@ -146,9 +148,7 @@ def _captured_unsettled_attempts(cutoff) -> list:
 		.on(PA.invoice == INV.name)
 		.select(PA.name)
 		.where(
-			(PA.status == "Captured")
-			& (PA.initiated_at <= cutoff)
-			& (INV.status.isin(_UNSETTLED_INVOICE))
+			(PA.status == "Captured") & (PA.initiated_at <= cutoff) & (INV.status.isin(_UNSETTLED_INVOICE))
 		)
 	).run(pluck=True)
 
@@ -202,8 +202,7 @@ def _resolve_paid(attempt):
 
 
 def _resolve_failed(attempt, reason: str):
-	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice,
-			   reason=reason[:140])
+	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice, reason=reason[:140])
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
 	attempt.failure_reason = reason[:140]
@@ -222,7 +221,8 @@ def _alert_ops(attempt, gateway_status: str):
 	if attempt.invoice:
 		try:
 			frappe.get_doc("Invoice", attempt.invoice).add_comment(
-				"Info", f"Reconciliation could not resolve attempt {attempt.name} (gateway: {gateway_status})."
+				"Info",
+				f"Reconciliation could not resolve attempt {attempt.name} (gateway: {gateway_status}).",
 			)
-		except Exception:  # noqa: BLE001
+		except Exception:
 			pass

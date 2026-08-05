@@ -1,5 +1,5 @@
-import { ref } from 'vue'
 import type { BreadcrumbsProps } from 'frappe-ui'
+import { ref } from 'vue'
 
 type BreadcrumbItem = BreadcrumbsProps['items'][number]
 

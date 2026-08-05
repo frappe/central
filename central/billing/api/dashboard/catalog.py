@@ -113,12 +113,19 @@ def get_eligible_plans(
 	# headroom (capacity). None = don't gate — the flag is off, no Atlas is registered, or
 	# the check couldn't be reached (fail-soft).
 	is_resize = bool(exclude_subscription)
-	capacity = _resize_capacity(cluster, exclude_subscription, team) if is_resize else _region_capacity(cluster)
+	capacity = (
+		_resize_capacity(cluster, exclude_subscription, team) if is_resize else _region_capacity(cluster)
+	)
 	capacity_block = _capacity_block(capacity)
 
 	header = {
-		"team": team, "cluster": cluster, "currency": currency, "tier": caps.tier,
-		"max_spend": spend_cap, "current_spend": current_spend, "available": available,
+		"team": team,
+		"cluster": cluster,
+		"currency": currency,
+		"tier": caps.tier,
+		"max_spend": spend_cap,
+		"current_spend": current_spend,
+		"available": available,
 		"capacity": capacity_block,
 	}
 	# A "design your own" config needs the same three things the slider does: the
@@ -279,9 +286,10 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 		vcpus, memory_gb, disk_gb = qty.get(COMPUTE, 0), qty.get(MEMORY, 0), qty.get(DISK, 0)
 	else:
 		# A preset carries no composition — its shape lives on the mirrored VM.
-		shape = frappe.db.get_value(
-			"Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
-		) or frappe._dict()
+		shape = (
+			frappe.db.get_value("Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True)
+			or frappe._dict()
+		)
 		vcpus = shape.vcpus or 0
 		memory_gb = (shape.memory_megabytes or 0) / 1024
 		disk_gb = shape.disk_gigabytes or 0
@@ -301,9 +309,7 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def resize_composed_config(
-	subscription: str, includes: list | str, sub_category: str | None = None
-) -> dict:
+def resize_composed_config(subscription: str, includes: list | str, sub_category: str | None = None) -> dict:
 	"""Resize a running config from the slider (#84) — the changed-event re-lock (#82).
 	Re-validates the new shape + headroom server-side before re-locking at the current
 	rate card. Returns whether a new segment was opened (a no-op resize returns False)."""
@@ -315,9 +321,13 @@ def resize_composed_config(
 		includes = frappe.parse_json(includes)
 	from central.billing.catalog.subscriptions import resize_composed_subscription
 
-	before = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	before = frappe.db.count(
+		"Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"}
+	)
 	resize_composed_subscription(subscription, includes, sub_category)
-	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	after = frappe.db.count(
+		"Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"}
+	)
 	return {"subscription": subscription, "resized": after > before}
 
 
@@ -444,9 +454,7 @@ def _valid_capacity(raw) -> dict | None:
 	`disk_gigabytes` — so `_plan_fits`/`_capacity_block` can index it without a KeyError.
 	Anything that doesn't fit that shape returns None (→ don't gate); a successful call
 	must never crash the menu just because Atlas returned an unexpected body."""
-	if not isinstance(raw, dict) or not all(
-		key in raw for key in ("available", "unmeasured", "largest_vm")
-	):
+	if not isinstance(raw, dict) or not all(key in raw for key in ("available", "unmeasured", "largest_vm")):
 		return None
 	largest = raw.get("largest_vm")
 	if largest is not None:
@@ -542,7 +550,6 @@ def _plan_row(plan, currency: str, cluster: str | None, rate, includes) -> dict:
 		"cluster": cluster,
 		"rate": frappe.utils.flt(rate),
 		"includes": [
-			{"resource_type": i.resource_type, "quantity": i.quantity, "unit": i.unit}
-			for i in includes
+			{"resource_type": i.resource_type, "quantity": i.quantity, "unit": i.unit} for i in includes
 		],
 	}

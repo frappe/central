@@ -115,13 +115,16 @@ class TestCreateServerRecordsSubscription(IntegrationTestCase):
 		seg = subscriptions.current_segment_rate(sub.name)
 		self.assertEqual(seg, 1500)
 
-	def test_raw_size_without_plan_provisions_without_subscription(self):
-		# Back-compat: a call with no plan still creates a VM and records nothing.
+	def test_raw_size_without_plan_provisions_an_unpriced_subscription(self):
+		# A Running Asset bootstraps its lifecycle Subscription even without a plan.
+		# The endpoint returns no explicit contract because no catalog bundle was chosen.
 		out, _ = self._create_from_bundle(None)
 
 		self.assertEqual(out["resource_id"], VM_ID)
 		self.assertIsNone(out["subscription"])
-		self.assertFalse(frappe.db.exists("Subscription", {"asset_id": VM_ID}))
+		subscription = frappe.get_doc("Subscription", {"asset_id": VM_ID})
+		self.assertIsNone(subscription.plan)
+		self.assertEqual(subscriptions.current_segment_rate(subscription.name), 0)
 
 	def test_create_uses_slug_for_atlas_and_keeps_friendly_title(self):
 		out, client = self._create_from_bundle(self.plan, title="Acme Production 01")

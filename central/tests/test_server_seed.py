@@ -53,6 +53,4 @@ class TestServerSeed(IntegrationTestCase):
 		self.assertEqual(leftovers["atlas_instances"], 0)
 		self.assertEqual(leftovers["assets"], 0)
 		self.assertEqual(leftovers["subscriptions"], 0)
-		self.assertFalse(
-			frappe.get_all("Subscription", filters={"asset_id": ["in", _seed_resource_ids()]})
-		)
+		self.assertFalse(frappe.get_all("Subscription", filters={"asset_id": ["in", _seed_resource_ids()]}))
