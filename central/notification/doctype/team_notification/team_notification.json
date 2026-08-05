@@ -12,6 +12,7 @@
   "category",
   "event_type",
   "severity",
+  "required_cap",
   "column_break_main",
   "is_read",
   "read_at",
@@ -25,16 +26,11 @@
   "action_route"
  ],
  "fields": [
-  {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "label": "Team", "reqd": 1, "search_index": 1},
-  {
-   "default": "Billing", "fieldname": "category", "fieldtype": "Select", "in_list_view": 1,
-   "label": "Category", "options": "Billing\nServer\nTeam"
-  },
+  {"fieldname": "team", "fieldtype": "Link", "options": "Team", "in_list_view": 1, "in_standard_filter": 1, "label": "Team", "reqd": 1, "search_index": 1},
+  {"default": "Billing", "fieldname": "category", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Category", "options": "Billing\nServer\nTeam"},
   {"fieldname": "event_type", "fieldtype": "Data", "in_list_view": 1, "label": "Event Type"},
-  {
-   "default": "Info", "fieldname": "severity", "fieldtype": "Select", "in_list_view": 1,
-   "label": "Severity", "options": "Info\nSuccess\nWarning\nError"
-  },
+  {"default": "Info", "fieldname": "severity", "fieldtype": "Select", "in_list_view": 1, "label": "Severity", "options": "Info\nSuccess\nWarning\nError"},
+  {"fieldname": "required_cap", "fieldtype": "Data", "label": "Required Capability", "search_index": 1},
   {"fieldname": "column_break_main", "fieldtype": "Column Break"},
   {"default": "0", "fieldname": "is_read", "fieldtype": "Check", "label": "Read", "search_index": 1},
   {"fieldname": "read_at", "fieldtype": "Datetime", "label": "Read At"},
@@ -51,7 +47,7 @@
  "links": [],
  "modified": "2026-07-05 00:00:00.000000",
  "modified_by": "Administrator",
- "module": "Central",
+ "module": "Notification",
  "name": "Team Notification",
  "naming_rule": "Random",
  "owner": "Administrator",
