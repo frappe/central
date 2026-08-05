@@ -4,6 +4,7 @@ import time
 
 import frappe
 import jwt
+from frappe import _
 
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 
@@ -14,7 +15,9 @@ from central.central.doctype.central_sso_settings.central_sso_settings import AL
 
 BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
+METRICS_TTL = 24 * 60 * 60  # a pilot re-fetches this daily; there is no revocation list
 ENROLL_SCOPE = "enroll"
+METRICS_SCOPE = "datum"
 
 
 def central_url() -> str:
@@ -75,6 +78,31 @@ def verify_bootstrap_token(token: str) -> dict:
 	if claims.get("scope") != ENROLL_SCOPE:
 		frappe.throw("Not an enrollment token.", frappe.AuthenticationError)
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
+
+
+def mint_metrics_token(audience: str, resource_id: str) -> str:
+	"""A token the pilot presents to Datum's metrics gateway (vmauth).
+
+	`scope` gates it: Central signs bench logins and enrollment tokens with the same
+	key, so without one every downward token could write metrics.
+
+	`vm_access.metrics_extra_labels` is read by vmauth, which passes it to
+	VictoriaMetrics as an `extra_label` query arg. VictoriaMetrics applies those
+	labels over whatever the producer sent, so a pilot cannot write as another
+	resource even if it claims one in the request body."""
+	if not resource_id:
+		frappe.throw(
+			_("This pilot has no resource yet; a metrics token would be unattributable."),
+			frappe.ValidationError,
+		)
+	return _mint(
+		audience,
+		{
+			"scope": METRICS_SCOPE,
+			"vm_access": {"metrics_extra_labels": [f"resource_id={resource_id}"]},
+		},
+		METRICS_TTL,
+	)
 
 
 def _mint(audience: str, claims: dict, ttl: int) -> str:
