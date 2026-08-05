@@ -22,8 +22,7 @@ class NotificationTestBase(IntegrationTestCase):
 
 	def _purge(self):
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
-		if frappe.db.exists("Notification Preference", TEAM):
-			frappe.db.delete("Notification Preference", {"team": TEAM})
+		frappe.db.delete("Team Notification", {"team": TEAM})
 		frappe.db.delete("Credit Ledger Entry", {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		frappe.db.commit()
@@ -53,22 +52,11 @@ class TestNotify(NotificationTestBase):
 		notifications.notify(TEAM, "Payment Success", message="Custom paid message")
 		self.assertEqual(self._logs("Payment Success")[0]["message"], "Custom paid message")
 
-	def test_preference_suppresses_but_still_logs(self):
-		frappe.get_doc(
-			{"doctype": "Notification Preference", "team": TEAM, "notify_payment_retry": 0}
-		).insert(ignore_permissions=True)
-
+	def test_always_sends_and_logs(self):
 		out = notifications.notify(TEAM, "Payment Retry", context={"invoice": "INV-3", "reason": "x"})
-		self.assertFalse(out["sent"])
-		log = self._logs("Payment Retry")[0]
-		self.assertEqual(log["status"], "Suppressed")  # the suppression itself is auditable
-
-	def test_other_events_unaffected_by_one_opt_out(self):
-		frappe.get_doc(
-			{"doctype": "Notification Preference", "team": TEAM, "notify_payment_retry": 0}
-		).insert(ignore_permissions=True)
-		out = notifications.notify(TEAM, "Payment Success", context={"invoice": "INV-4"})
 		self.assertTrue(out["sent"])
+		log = self._logs("Payment Retry")[0]
+		self.assertEqual(log["status"], "Sent")
 
 
 class TestWiredEvents(NotificationTestBase):

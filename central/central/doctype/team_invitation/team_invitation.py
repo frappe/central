@@ -1,16 +1,11 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
-from contextlib import suppress
-
 import frappe
 from frappe import _
-from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 from frappe.model.document import Document
 from frappe.utils import (
 	add_days,
-	format_date,
-	get_fullname,
 	get_url,
 	getdate,
 	now,
@@ -63,42 +58,27 @@ class TeamInvitation(Document):
 		self._validate_update()
 
 	def after_insert(self) -> None:
-		self._send_invitation_email()
+		self._send_invitation_notification()
 
-	def _send_invitation_email(self) -> None:
-		"""Notify the invitee — Desk notification + best-effort email. Shared by the
-		initial send (after_insert) and resend so both stay identical."""
+	def _send_invitation_notification(self) -> None:
+		from central.notification.engine import dispatch
+
 		team_name = frappe.db.get_value("Team", self.team, "team_name")
 		invitation_url = get_url(f"/dashboard/invitations/{self.name}")
-		subject = _("Invitation to join {0}").format(team_name)
-		message = frappe.render_template(
-			"central/templates/emails/team_invitation.html",
-			{
+
+		dispatch(
+			team=self.team,
+			event_type="member_invited",
+			context={
 				"team_name": team_name,
-				"role": self.role,
-				"invited_by": get_fullname(self.invited_by),
-				"expires_on": format_date(self.expires_on),
 				"invitation_url": invitation_url,
+				"role": self.role,
+				"expires_on": str(self.expires_on),
 			},
+			reference_doctype=self.doctype,
+			reference_name=self.name,
+			affected_user=self.email,
 		)
-
-		enqueue_create_notification(
-			self.email,
-			{
-				"subject": subject,
-				"type": "Alert",
-				"document_type": self.doctype,
-				"document_name": self.name,
-				"from_user": self.invited_by,
-			},
-		)
-
-		with suppress(frappe.OutgoingEmailError):
-			frappe.sendmail(
-				recipients=[self.email],
-				subject=subject,
-				message=message,
-			)
 
 	@frappe.whitelist(methods=["POST"])
 	def accept(self) -> dict:
@@ -138,19 +118,17 @@ class TeamInvitation(Document):
 
 	@frappe.whitelist(methods=["POST"])
 	def resend(self) -> dict:
-		"""Re-send a pending invitation, extending its expiry from today. Manager-only."""
 		self._require_manager()
 		if self.status != "Pending":
 			frappe.throw(_("Only a pending invitation can be resent."))
 		self.expires_on = add_days(today(), int(self.expires_in_days or 7))
 		self.flags.from_invitation_action = True
 		self.save()
-		self._send_invitation_email()
+		self._send_invitation_notification()
 		return {"name": self.name, "expires_on": self.expires_on}
 
 	@frappe.whitelist(methods=["POST"])
 	def decline(self) -> bool:
-		"""Invitee declines their own pending invitation."""
 		if self.email != frappe.session.user and not user_has_operator_bypass():
 			frappe.throw(_("This invitation belongs to another user."), frappe.PermissionError)
 		if self.status != "Pending":

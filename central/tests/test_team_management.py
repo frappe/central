@@ -39,6 +39,23 @@ def create_user(email: str) -> str:
 	return email
 
 
+def _ensure_event_type(event_type, **overrides):
+	frappe.db.delete("Notification Event Type", {"event_type": event_type})
+	defaults = {
+		"doctype": "Notification Event Type",
+		"event_type": event_type,
+		"category": "Team",
+		"severity": "Info",
+		"required_cap": "team:manage_members",
+		"in_app_title": "Notification",
+		"in_app_body": "{{ message }}",
+		"direct_recipients": "None",
+		"create_in_app": 0,
+	}
+	defaults.update(overrides)
+	return frappe.get_doc(defaults).insert(ignore_permissions=True)
+
+
 class TestTeamManagement(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -58,6 +75,14 @@ class TestTeamManagement(IntegrationTestCase):
 				],
 			}
 		).insert()
+
+		_ensure_event_type(
+			"member_invited",
+			direct_recipients="Affected User",
+			in_app_body="You have been invited to join {{ context.team_name }}.\n\nView invitation: {{ context.invitation_url }}",
+		)
+		_ensure_event_type("role_change", direct_recipients="Affected User")
+		_ensure_event_type("member_joined")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -80,14 +105,13 @@ class TestTeamManagement(IntegrationTestCase):
 	def test_invitation_uses_email_template(self):
 		frappe.set_user(self.owner)
 
-		with patch("central.central.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
+		with patch("central.notification.engine.frappe.sendmail") as sendmail:
 			invitation_name = frappe.get_doc("Team", self.team.name).invite_member(self.invitee, "Developer")
 
 		message = sendmail.call_args.kwargs["message"]
-		self.assertIn("Join Managed Team", message)
-		self.assertIn("Developer", message)
+		self.assertIn("You have been invited to join Managed Team", message)
 		self.assertIn(f"/dashboard/invitations/{invitation_name}", message)
-		self.assertIn("View invitation", message)
+		self.assertIn("View invitation:", message)
 
 	def test_admin_can_invite_but_viewer_cannot(self):
 		frappe.set_user(self.admin)

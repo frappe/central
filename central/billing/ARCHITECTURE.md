@@ -151,7 +151,7 @@ Entitlement Token ──team       (Ed25519-signed cap)
 
 **Plumbing / logs**
 ```
-Webhook Event ──gateway        | Billing Notification Log ──team | Notification Preference ──team
+Webhook Event ──gateway        | Billing Notification Log ──team
 ```
 
 ---

@@ -486,20 +486,25 @@ def _notify_resize_failed(subscription: str, asset_id: str) -> None:
 	team = frappe.db.get_value("Subscription", subscription, "team")
 	if not team:
 		return
-	from central.notifications import create_notification
+	from central.notification import engine
 
-	create_notification(
-		team,
-		"Server resize failed",
+	engine.ensure_event_type(
+		"resize_failed",
 		category="Server",
-		event_type="Resize Failed",
 		severity="Error",
+		required_cap="server:view",
+		in_app_title="Resize failed: {{ reference_name }}",
+		in_app_body="Server resize failed for {{ reference_name }}: {{ message }}",
+		action_label="View server",
+		action_route="/servers",
+	)
+	engine.dispatch(
+		team,
+		"resize_failed",
 		message=f"The resize of server {asset_id} could not be applied and was rolled back. "
 		"Billing stayed on the previous plan. You can retry the resize.",
 		reference_doctype="Asset",
 		reference_name=asset_id,
-		action_label="View server",
-		action_route="/servers",
 	)
 
 

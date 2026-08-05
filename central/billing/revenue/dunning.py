@@ -196,20 +196,25 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 		if standing == "Suspended" and not _active_directive(sub.team, "suspend"):
 			issue_token(sub.team, {}, suspend=True)
 			_notify(inv, f"Suspended for non-payment (day {days}); resource stopped, data preserved.")
-			from central.notifications import create_notification
+			from central.notification import engine
 
-			create_notification(
-				inv.team,
-				"Server suspended for non-payment",
+			engine.ensure_event_type(
+				"server_suspended",
 				category="Server",
-				event_type="Server Suspended",
 				severity="Error",
+				required_cap="server:view",
+				in_app_title="Server suspended: {{ reference_name }}",
+				in_app_body="Server {{ reference_name }} suspended for non-payment: {{ message }}",
+				action_label="Pay now",
+				action_route="/billing/invoices",
+			)
+			engine.dispatch(
+				inv.team,
+				"server_suspended",
 				message=f"A server was suspended after {days} days overdue on invoice {invoice_name}. "
 				"Data is preserved — settle the invoice to restore it.",
 				reference_doctype="Invoice",
 				reference_name=invoice_name,
-				action_label="Pay now",
-				action_route="/billing/invoices",
 			)
 			actions.append("suspend")
 
