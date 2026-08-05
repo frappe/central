@@ -14,14 +14,18 @@ class TestPilotAPI(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.owner = ensure_user("bench.api.owner@example.test")
-		self.team = frappe.get_doc(
-			{
-				"doctype": "Team",
-				"team_name": "Bench API Team",
-				"owner_user": self.owner,
-				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
-			}
-		).insert().name
+		self.team = (
+			frappe.get_doc(
+				{
+					"doctype": "Team",
+					"team_name": "Bench API Team",
+					"owner_user": self.owner,
+					"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
+				}
+			)
+			.insert()
+			.name
+		)
 		self.token = PilotCredential.mint(team=self.team, pilot_credential_id="api-pilot-1")
 
 	def call_heartbeat(self, token: str | None) -> dict:

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Button, Dropdown } from 'frappe-ui'
+import { computed } from 'vue'
+import type { AssetRow } from '@/composables/useServers'
 import {
 	canStart,
 	canStop,
@@ -8,7 +9,6 @@ import {
 	isSettingUp,
 	isTerminated,
 } from '@/lib/status'
-import type { AssetRow } from '@/composables/useServers'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
 // server's status and the user's capabilities — the same rules the API enforces
@@ -85,11 +85,7 @@ const options = computed(() => {
 			disabled: resizing,
 			onClick: () => emit('resize', props.server),
 		})
-	if (
-		props.canTerminate &&
-		!isTerminated(props.server.status) &&
-		!settingUp
-	)
+	if (props.canTerminate && !isTerminated(props.server.status) && !settingUp)
 		items.push({
 			label: 'Terminate',
 			icon: 'lucide-trash-2',

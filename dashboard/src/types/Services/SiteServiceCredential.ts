@@ -1,5 +1,4 @@
-
-export interface SiteServiceCredential{
+export interface SiteServiceCredential {
 	name: string
 	creation: string
 	modified: string
@@ -15,7 +14,7 @@ export interface SiteServiceCredential{
 	/**	Site : Link - Site	*/
 	site?: string
 	/**	Status : Select	*/
-	status?: "Active" | "Revoked" | "Failed"
+	status?: 'Active' | 'Revoked' | 'Failed'
 	/**	Gateway URL : Data	*/
 	gateway_url?: string
 	/**	Provider Reference : Data	*/

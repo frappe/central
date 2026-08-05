@@ -8,9 +8,9 @@ from central.api.identity import my_invitations
 from central.api.teams import (
 	create_custom_role,
 	create_team,
+	decline_invitation,
 	delete_custom_role,
 	delete_team,
-	decline_invitation,
 	invite_team_member,
 	list_team_invitations,
 	rename_team,

@@ -16,6 +16,7 @@ separately as in-flight.
 import frappe
 from frappe import _
 from frappe.utils import flt
+
 from central.billing.report._currency import split_currency_columns
 
 
@@ -49,11 +50,18 @@ def _attempts(filters: dict) -> list[dict]:
 
 # ── Auth rate over time ──────────────────────────────────────────────────────
 
+
 def execute_by_month(filters: dict):
 	"""The same success rate, per gateway per month — a dip is only legible against a trend."""
 	columns = [
 		{"label": _("Month"), "fieldname": "month", "fieldtype": "Data", "width": 110},
-		{"label": _("Gateway"), "fieldname": "gateway", "fieldtype": "Link", "options": "Payment Gateway", "width": 180},
+		{
+			"label": _("Gateway"),
+			"fieldname": "gateway",
+			"fieldtype": "Link",
+			"options": "Payment Gateway",
+			"width": 180,
+		},
 		{"label": _("Attempts"), "fieldname": "attempts", "fieldtype": "Int", "width": 100},
 		{"label": _("Captured"), "fieldname": "captured", "fieldtype": "Int", "width": 100},
 		{"label": _("Failed"), "fieldname": "failed", "fieldtype": "Int", "width": 90},
@@ -103,9 +111,16 @@ def execute_by_month(filters: dict):
 
 # ── Per-gateway ratio ────────────────────────────────────────────────────────
 
+
 def execute_by_gateway(filters: dict):
 	columns = [
-		{"label": _("Gateway"), "fieldname": "gateway", "fieldtype": "Link", "options": "Payment Gateway", "width": 180},
+		{
+			"label": _("Gateway"),
+			"fieldname": "gateway",
+			"fieldtype": "Link",
+			"options": "Payment Gateway",
+			"width": 180,
+		},
 		{"label": _("Attempts"), "fieldname": "attempts", "fieldtype": "Int", "width": 100},
 		{"label": _("Captured"), "fieldname": "captured", "fieldtype": "Int", "width": 100},
 		{"label": _("Authorised"), "fieldname": "authorised", "fieldtype": "Int", "width": 100},
@@ -118,8 +133,18 @@ def execute_by_gateway(filters: dict):
 	agg: dict[str, dict] = {}
 	for a in _attempts(filters):
 		gw = a.gateway or _("(none)")
-		g = agg.setdefault(gw, {"attempts": 0, "captured": 0, "authorised": 0,
-								"failed": 0, "refunded": 0, "captured_amount": 0.0, "currency": a.currency})
+		g = agg.setdefault(
+			gw,
+			{
+				"attempts": 0,
+				"captured": 0,
+				"authorised": 0,
+				"failed": 0,
+				"refunded": 0,
+				"captured_amount": 0.0,
+				"currency": a.currency,
+			},
+		)
 		g["currency"] = g["currency"] or a.currency  # a gateway is single-currency
 		g["attempts"] += 1
 		if a.status == "Captured":
@@ -136,8 +161,14 @@ def execute_by_gateway(filters: dict):
 	tot_attempts = tot_captured = 0
 	for gw, g in sorted(agg.items()):
 		rate = (g["captured"] / g["attempts"] * 100) if g["attempts"] else 0.0
-		rows.append({"gateway": gw, **g, "success_rate": flt(rate, 2),
-					 "captured_amount": flt(g["captured_amount"], 2)})
+		rows.append(
+			{
+				"gateway": gw,
+				**g,
+				"success_rate": flt(rate, 2),
+				"captured_amount": flt(g["captured_amount"], 2),
+			}
+		)
 		tot_attempts += g["attempts"]
 		tot_captured += g["captured"]
 	rows.sort(key=lambda r: r["attempts"], reverse=True)
@@ -146,14 +177,20 @@ def execute_by_gateway(filters: dict):
 	summary = [
 		{"label": _("Total Attempts"), "value": tot_attempts, "datatype": "Int"},
 		{"label": _("Captured"), "value": tot_captured, "datatype": "Int", "indicator": "green"},
-		{"label": _("Overall Success Rate"), "value": flt(overall, 2), "datatype": "Percent",
-		 "indicator": "green" if overall >= 80 else "orange" if overall >= 50 else "red"},
+		{
+			"label": _("Overall Success Rate"),
+			"value": flt(overall, 2),
+			"datatype": "Percent",
+			"indicator": "green" if overall >= 80 else "orange" if overall >= 50 else "red",
+		},
 	]
 	chart = None
 	if rows:
 		chart = {
-			"data": {"labels": [r["gateway"] for r in rows],
-					 "datasets": [{"name": _("Success Rate"), "values": [r["success_rate"] for r in rows]}]},
+			"data": {
+				"labels": [r["gateway"] for r in rows],
+				"datasets": [{"name": _("Success Rate"), "values": [r["success_rate"] for r in rows]}],
+			},
 			"type": "bar",
 		}
 	columns = split_currency_columns(columns, rows, ["captured_amount"])
@@ -162,9 +199,16 @@ def execute_by_gateway(filters: dict):
 
 # ── Failure-code breakdown ───────────────────────────────────────────────────
 
+
 def execute_failure_breakdown(filters: dict):
 	columns = [
-		{"label": _("Gateway"), "fieldname": "gateway", "fieldtype": "Link", "options": "Payment Gateway", "width": 180},
+		{
+			"label": _("Gateway"),
+			"fieldname": "gateway",
+			"fieldtype": "Link",
+			"options": "Payment Gateway",
+			"width": 180,
+		},
 		{"label": _("Failure Code"), "fieldname": "failure_code", "fieldtype": "Data", "width": 180},
 		{"label": _("Failure Reason"), "fieldname": "failure_reason", "fieldtype": "Data", "width": 320},
 		{"label": _("Count"), "fieldname": "count", "fieldtype": "Int", "width": 90},
@@ -181,6 +225,12 @@ def execute_failure_breakdown(filters: dict):
 		for (gw, code), g in agg.items()
 	]
 	rows.sort(key=lambda r: r["count"], reverse=True)
-	summary = [{"label": _("Failed Attempts"), "value": sum(r["count"] for r in rows),
-				"datatype": "Int", "indicator": "red"}]
+	summary = [
+		{
+			"label": _("Failed Attempts"),
+			"value": sum(r["count"] for r in rows),
+			"datatype": "Int",
+			"indicator": "red",
+		}
+	]
 	return columns, rows, None, None, summary

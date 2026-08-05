@@ -1,10 +1,10 @@
 <script setup lang="ts">
+import { Button, LoadingText, Tooltip } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { Button, Tooltip, LoadingText } from 'frappe-ui'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { formatDate, money } from '@/lib/format'
 
 // Wallet — the FC v2 prototype's funding card: balance, a one-line coverage
@@ -117,7 +117,8 @@ function onAddCredit(): void {
 					class="lucide-clock size-3.5 shrink-0 text-ink-gray-4"
 					aria-hidden="true"
 				/>
-				{{ money(nextExpiry.amount, currency) }} expires
+				{{ money(nextExpiry.amount, currency) }}
+				expires
 				{{ formatDate(nextExpiry.expires_on) }}
 			</p>
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Slider } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import LadderSelect from '@/components/servers/LadderSelect.vue'
 import {
 	capacityLimits,

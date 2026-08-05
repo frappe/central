@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
+import { computed } from 'vue'
 import type { InvitationRow } from '@/types/api'
 
 const props = defineProps<{

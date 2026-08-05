@@ -16,6 +16,8 @@ time-of-use gap, and `generate_draft_invoices` enqueues one job *per team* — s
 scheduler double-fire or a manual run overlapping the cron double-billed the team.
 """
 
+import time
+
 import frappe
 
 from central.billing.catalog import commitments
@@ -119,8 +121,8 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	if existing:
 		return existing
 
-	from central.billing.revenue.metering import metered_line_items
 	from central.billing.catalog.trials import invoice_type_for
+	from central.billing.revenue.metering import metered_line_items
 
 	cluster = frappe.db.get_value("Asset", sub.asset_id, "cluster") if sub.asset_id else None
 	lines = compute_line_items(sub.team, cluster, period_start, period_end)
@@ -176,7 +178,7 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	return name
 
 
-def generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
+def _generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
 	"""One consolidated invoice per team per period, across every cluster it runs in.
 
 	A team that runs instances in several regions should see a SINGLE monthly
@@ -194,17 +196,17 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	if existing:
 		return existing
 
+	from central.billing.catalog.trials import invoice_type_for
 	from central.billing.revenue.metering import metered_line_items_for_clusters
 	from central.billing.revenue.tax import resolve_tax
-	from central.billing.catalog.trials import invoice_type_for
 
 	# Read the team once, not once per cluster: team_line_items pulls every
 	# subscription's fixed lines in one pass, and the metered rollups for all the
 	# team's clusters come back in a single query.
 	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
-	clusters = sorted({
-		c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c
-	})
+	clusters = sorted(
+		{c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c}
+	)
 	lines = team_line_items(team, period_start, period_end)
 	lines += metered_line_items_for_clusters(team, clusters, period_start, period_end)
 	if not lines:
@@ -253,3 +255,26 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	)
 	commitments.mark_breached(commitment)
 	return name
+
+
+_INVOICE_DEADLOCK_RETRIES = 5
+
+
+def generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
+	"""Generate one team's invoice, yielding cleanly when concurrent workers contend.
+
+	The unique period key still decides the winner. A database deadlock is merely the
+	lock manager picking a loser before that key can report the winner, so retry it and
+	return the already-created invoice just like a duplicate-key race.
+	"""
+	for attempt in range(_INVOICE_DEADLOCK_RETRIES):
+		try:
+			return _generate_team_invoice(team, period_start, period_end, subscription)
+		except frappe.QueryDeadlockError:
+			frappe.db.rollback()
+			if attempt == _INVOICE_DEADLOCK_RETRIES - 1:
+				existing = _live_invoice(team, period_start, period_end, for_update=True)
+				if existing:
+					return existing
+				raise
+			time.sleep(0.05 * (attempt + 1))

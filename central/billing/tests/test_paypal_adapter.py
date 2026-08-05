@@ -6,11 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 import requests
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.paypal_adapter import PayPalAdapter
 from central.billing.gateways.registry import get_adapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
 def make_paypal_gateway(name="GW-Test-PayPal"):
@@ -18,9 +18,15 @@ def make_paypal_gateway(name="GW-Test-PayPal"):
 		frappe.delete_doc("Payment Gateway", name, force=True)
 	return frappe.get_doc(
 		{
-			"doctype": "Payment Gateway", "__newname": name, "title": "PayPal (Test)",
-			"adapter_key": "Paypal", "currency": "USD", "api_key": "pp_client",
-			"api_secret": "pp_secret", "webhook_secret": "WH-ID-1", "is_enabled": 1,
+			"doctype": "Payment Gateway",
+			"__newname": name,
+			"title": "PayPal (Test)",
+			"adapter_key": "Paypal",
+			"currency": "USD",
+			"api_key": "pp_client",
+			"api_secret": "pp_secret",
+			"webhook_secret": "WH-ID-1",
+			"is_enabled": 1,
 		}
 	).insert(ignore_permissions=True)
 
@@ -30,8 +36,13 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 		return PayPalAdapter(make_paypal_gateway())
 
 	def webhook_headers(self):
-		return {"PAYPAL-TRANSMISSION-ID": "t", "PAYPAL-TRANSMISSION-SIG": "s",
-				"PAYPAL-TRANSMISSION-TIME": "now", "PAYPAL-AUTH-ALGO": "SHA256", "PAYPAL-CERT-URL": "url"}
+		return {
+			"PAYPAL-TRANSMISSION-ID": "t",
+			"PAYPAL-TRANSMISSION-SIG": "s",
+			"PAYPAL-TRANSMISSION-TIME": "now",
+			"PAYPAL-AUTH-ALGO": "SHA256",
+			"PAYPAL-CERT-URL": "url",
+		}
 
 	@contextmanager
 	def signature_valid(self):
@@ -59,8 +70,14 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 	@contextmanager
 	def charge_declines(self, code="card_declined"):
 		with patch.object(
-			PayPalAdapter, "_capture_payment",
-			return_value={"id": None, "status": "DECLINED", "failure_code": code, "failure_reason": "declined"},
+			PayPalAdapter,
+			"_capture_payment",
+			return_value={
+				"id": None,
+				"status": "DECLINED",
+				"failure_code": code,
+				"failure_reason": "declined",
+			},
 		) as m:
 			self._cap = m
 			yield
@@ -88,8 +105,7 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 			yield
 
 	def parse_event_inputs(self):
-		payload = {"id": "WH-evt-1", "event_type": "PAYMENT.CAPTURE.COMPLETED",
-				   "resource": {"id": "cap_x"}}
+		payload = {"id": "WH-evt-1", "event_type": "PAYMENT.CAPTURE.COMPLETED", "resource": {"id": "cap_x"}}
 		return payload, self.webhook_headers(), "WH-evt-1", "PAYMENT.CAPTURE.COMPLETED"
 
 	def setup_inputs(self):
@@ -98,7 +114,8 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 	@contextmanager
 	def stub_setup(self):
 		with patch.object(
-			PayPalAdapter, "_create_setup_token",
+			PayPalAdapter,
+			"_create_setup_token",
 			return_value={"id": "setup_1", "links": [{"rel": "approve", "href": "https://approve"}]},
 		):
 			yield
@@ -132,7 +149,9 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 	def test_register_webhook_returns_webhook_id_as_secret(self):
 		adapter = self.make_adapter()
 		with patch.object(PayPalAdapter, "_create_webhook", return_value={"id": "WH-NEW-1"}):
-			result = adapter.register_webhook("https://site/api/method/central.billing.payments.webhooks.paypal")
+			result = adapter.register_webhook(
+				"https://site/api/method/central.billing.payments.webhooks.paypal"
+			)
 		# PayPal verifies by webhook id, so it doubles as the stored "secret".
 		self.assertEqual(result["endpoint_id"], "WH-NEW-1")
 		self.assertEqual(result["secret"], "WH-NEW-1")
@@ -145,8 +164,9 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 		adapter = self.make_adapter()
 		resp = MagicMock(status_code=402)
 		resp.json.return_value = {"name": "INSTRUMENT_DECLINED", "message": "declined"}
-		with patch.object(PayPalAdapter, "_token", return_value="tok"), patch(
-			"central.billing.gateways.paypal_adapter.requests.post", return_value=resp
+		with (
+			patch.object(PayPalAdapter, "_token", return_value="tok"),
+			patch("central.billing.gateways.paypal_adapter.requests.post", return_value=resp),
 		):
 			out = adapter._capture_payment("vault_x", 40.0, "USD", "req-1")
 		self.assertEqual(out["status"], "DECLINED")
@@ -157,13 +177,23 @@ class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):
 		resp = MagicMock(status_code=201)
 		resp.json.return_value = {
 			"id": "order_1",
-			"purchase_units": [{"payments": {"captures": [{
-				"id": "cap_9", "status": "COMPLETED",
-				"amount": {"value": "40.00", "currency_code": "USD"}}]}}],
+			"purchase_units": [
+				{
+					"payments": {
+						"captures": [
+							{
+								"id": "cap_9",
+								"status": "COMPLETED",
+								"amount": {"value": "40.00", "currency_code": "USD"},
+							}
+						]
+					}
+				}
+			],
 		}
-		with patch.object(PayPalAdapter, "_token", return_value="tok"), patch(
-			"central.billing.gateways.paypal_adapter.requests.post", return_value=resp
+		with (
+			patch.object(PayPalAdapter, "_token", return_value="tok"),
+			patch("central.billing.gateways.paypal_adapter.requests.post", return_value=resp),
 		):
 			out = adapter._capture_payment("vault_x", 40.0, "USD", "req-2")
-		self.assertEqual(out, {
-			"id": "cap_9", "status": "COMPLETED", "amount": "40.00", "currency": "USD"})
+		self.assertEqual(out, {"id": "cap_9", "status": "COMPLETED", "amount": "40.00", "currency": "USD"})

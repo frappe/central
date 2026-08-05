@@ -12,6 +12,7 @@ from central.services import provisioning
 # not Central's site mirror — so these serve sites Central never mirrored.
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def enable(site: str, service: str) -> dict:
@@ -30,18 +31,22 @@ def enable(site: str, service: str) -> dict:
 	}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def disable(site: str, service: str) -> dict:
 	"""Disable a managed service on one of the bench's sites — revokes the key."""
 	team = frappe.local.pilot_credential.team
-	managed_service = frappe.db.get_value("Managed Service", {"team": team, "add_on_service": service}, "name")
+	managed_service = frappe.db.get_value(
+		"Managed Service", {"team": team, "add_on_service": service}, "name"
+	)
 	if not managed_service:
 		return {"site": site, "status": "not_enabled"}
 
 	return provisioning.disable_site(managed_service, site)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def get_config(site: str, service: str) -> dict:
@@ -74,5 +79,7 @@ def _resolve_credential(team: str, service: str, site: str) -> str | None:
 		return None
 
 	return frappe.db.get_value(
-		"Site Service Credential", {"managed_service": managed_service, "site": site, "status": "Active"}, "name"
+		"Site Service Credential",
+		{"managed_service": managed_service, "site": site, "status": "Active"},
+		"name",
 	)

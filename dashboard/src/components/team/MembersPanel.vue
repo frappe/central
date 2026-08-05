@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Avatar, Badge, Button } from 'frappe-ui'
-import RightSidebar from '@/components/common/RightSidebar.vue'
-
+import { computed, ref } from 'vue'
 import {
-	ListView,
 	createListViewQuery,
+	ListView,
 	type ListViewColumn,
 } from '@/components/common/list-view'
+import RightSidebar from '@/components/common/RightSidebar.vue'
 
 import CapabilityList from '@/components/team/CapabilityList.vue'
-import TeamMemberRowActions from '@/components/team/TeamMemberRowActions.vue'
 import InviteMemberDialog from '@/components/team/InviteMemberDialog.vue'
 import ManageRolesDialog from '@/components/team/ManageRolesDialog.vue'
 import RemoveMemberDialog from '@/components/team/RemoveMemberDialog.vue'
+import TeamMemberRowActions from '@/components/team/TeamMemberRowActions.vue'
 
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useTeamMembers } from '@/composables/useTeamMembers'
@@ -63,7 +62,8 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 	{
 		id: 'roles',
 		header: 'Roles',
-		accessorFn: (member) => member.roles.map((r) => roleLabel(r.role)).join(', '),
+		accessorFn: (member) =>
+			member.roles.map((r) => roleLabel(r.role)).join(', '),
 		meta: { cellClass: 'truncate' },
 	},
 	{
@@ -74,7 +74,6 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 		meta: { align: 'end' },
 	},
 ])
-
 </script>
 
 <template>
@@ -102,7 +101,7 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 			/>
 		</template>
 
-		<template #member="{ row }: { row: TeamMemberRow }">
+		<template #member="{ row }">
 			<div class="flex min-w-0 items-center gap-3">
 				<Avatar :label="row.full_name" size="md" />
 				<div class="min-w-0">
@@ -121,7 +120,7 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 			</div>
 		</template>
 
-		<template #roles="{ row }: { row: TeamMemberRow }">
+		<template #roles="{ row }">
 			<div class="flex flex-wrap items-center gap-1">
 				<Badge
 					v-for="grant in row.roles.slice(0, 2)"
@@ -144,7 +143,7 @@ const columns = computed<ListViewColumn<TeamMemberRow>[]>(() => [
 			</div>
 		</template>
 
-		<template #actions="{ row }: { row: TeamMemberRow }">
+		<template #actions="{ row }">
 			<TeamMemberRowActions
 				:member="row"
 				:can-manage="canManageMembers"

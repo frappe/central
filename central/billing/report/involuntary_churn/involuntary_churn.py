@@ -63,7 +63,12 @@ def _columns() -> list[dict]:
 		{"label": _("Fell Behind"), "fieldname": "fell_behind", "fieldtype": "Int", "width": 120},
 		{"label": _("Recovered"), "fieldname": "recovered", "fieldtype": "Int", "width": 110},
 		{"label": _("Suspended"), "fieldname": "suspended", "fieldtype": "Int", "width": 110},
-		{"label": _("Lost After Falling Behind"), "fieldname": "churn_rate", "fieldtype": "Percent", "width": 200},
+		{
+			"label": _("Lost After Falling Behind"),
+			"fieldname": "churn_rate",
+			"fieldtype": "Percent",
+			"width": 200,
+		},
 	]
 
 
@@ -95,7 +100,12 @@ def _summary(rows: list[dict]) -> list[dict]:
 	rate = flt(suspended / behind * 100, 2) if behind else 0.0
 	return [
 		{"label": _("Fell Behind"), "value": behind, "datatype": "Int"},
-		{"label": _("Recovered"), "value": sum(r["recovered"] for r in rows), "datatype": "Int", "indicator": "green"},
+		{
+			"label": _("Recovered"),
+			"value": sum(r["recovered"] for r in rows),
+			"datatype": "Int",
+			"indicator": "green",
+		},
 		{
 			"label": _("Suspended"),
 			"value": suspended,

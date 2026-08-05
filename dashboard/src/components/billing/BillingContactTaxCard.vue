@@ -1,6 +1,6 @@
 <script setup lang="ts">
+import { Badge, Button, LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
-import { Button, Badge, LoadingText } from 'frappe-ui'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, useAttrs } from 'vue'
 import { FormControl } from 'frappe-ui'
+import { computed, ref, useAttrs } from 'vue'
 
 defineOptions({ inheritAttrs: false })
 

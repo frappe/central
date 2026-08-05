@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import Alert from '@/components/common/Alert.vue'
+import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
+import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
+import MeteredServicesCard from '@/components/billing/MeteredServicesCard.vue'
+import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
+import StopBillingCard from '@/components/billing/StopBillingCard.vue'
+import SubscriptionsCard from '@/components/billing/SubscriptionsCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
-import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
-import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
-import SubscriptionsCard from '@/components/billing/SubscriptionsCard.vue'
-import MeteredServicesCard from '@/components/billing/MeteredServicesCard.vue'
-import StopBillingCard from '@/components/billing/StopBillingCard.vue'
-import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
+import Alert from '@/components/common/Alert.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 
 // Billing › Overview (#69) — one scrollable surface that absorbs the legacy
@@ -27,7 +27,6 @@ const showWalletHistory = ref(false)
 
 <template>
 	<div class="flex h-full flex-col">
-
 		<!-- Content + docked wallet-history panel (like the invoice tray): the panel
          shares the row, the content stays bright beside it — no modal overlay. -->
 		<div class="flex min-h-0 flex-1">

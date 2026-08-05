@@ -24,7 +24,9 @@ export function peakLoad(points: LoadPoint[]): number {
 }
 
 /** Rows for AxisChart — series `name` is the y-value key. */
-export function toLoadChartRows(points: LoadPoint[]): Record<string, unknown>[] {
+export function toLoadChartRows(
+	points: LoadPoint[],
+): Record<string, unknown>[] {
 	return points.map((point) => {
 		const time =
 			point.time > 1e12 ? new Date(point.time) : new Date(point.time * 1000)

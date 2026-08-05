@@ -6,12 +6,11 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_team
 
 from central.billing.payments import payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_team
 
 TEAM = "team-cards"
 GATEWAY = "GW-Test-Stripe"
@@ -94,9 +93,7 @@ class TestDefaultAndDelete(CardTestBase):
 		payments.set_default_payment_method(second)
 		self.assertFalse(frappe.db.get_value("Payment Method", first, "is_default"))
 		self.assertTrue(frappe.db.get_value("Payment Method", second, "is_default"))
-		defaults = frappe.get_all(
-			"Payment Method", filters={"team": TEAM, "is_default": 1}, pluck="name"
-		)
+		defaults = frappe.get_all("Payment Method", filters={"team": TEAM, "is_default": 1}, pluck="name")
 		self.assertEqual(len(defaults), 1)
 
 	def test_non_active_method_cannot_be_default(self):
@@ -147,9 +144,10 @@ class TestStripeTestModeIntegration(CardTestBase):
 	def test_add_validate_active_via_stripe_adapter(self):
 		import stripe
 
-		with patch.object(stripe.SetupIntent, "create") as setup_create, patch.object(
-			stripe.Customer, "create"
-		) as customer_create:
+		with (
+			patch.object(stripe.SetupIntent, "create") as setup_create,
+			patch.object(stripe.Customer, "create") as customer_create,
+		):
 			setup_create.return_value = {"client_secret": "seti_secret", "id": "seti_1"}
 			customer_create.return_value = {"id": "cus_1"}  # off-session SetupIntent needs a customer
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
@@ -161,9 +159,10 @@ class TestStripeTestModeIntegration(CardTestBase):
 		)
 
 		# Confirm: the micro-charge succeeds and is auto-refunded -> active.
-		with patch.object(stripe.PaymentIntent, "create") as pi_create, patch.object(
-			stripe.Refund, "create"
-		) as refund_create:
+		with (
+			patch.object(stripe.PaymentIntent, "create") as pi_create,
+			patch.object(stripe.Refund, "create") as refund_create,
+		):
 			pi_create.return_value = {"id": "pi_micro", "status": "succeeded"}
 			method = payments.confirm_payment_method(
 				setup["payment_method"],

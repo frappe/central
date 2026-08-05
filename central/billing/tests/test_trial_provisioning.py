@@ -83,12 +83,13 @@ class TestTrialProvisioning(IntegrationTestCase):
 	def _create(self, plan, **overrides):
 		fake_client = MagicMock()
 		fake_client.create_vm.return_value = {
-			"name": VM_ID, "team": TEAM, "title": "web-1", "status": "Running",
+			"name": VM_ID,
+			"team": TEAM,
+			"title": "web-1",
+			"status": "Running",
 		}
 		with patch.object(servers.AtlasClient, "for_region", return_value=fake_client):
-			result = servers.create_server(
-				team=TEAM, region=REGION, title="web-1", plan=plan, **overrides
-			)
+			result = servers.create_server(team=TEAM, region=REGION, title="web-1", plan=plan, **overrides)
 		return result, fake_client
 
 	def test_trial_creates_server_at_plan_size_ignoring_oversized_request(self):

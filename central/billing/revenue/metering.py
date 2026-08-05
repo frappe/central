@@ -111,9 +111,7 @@ def _locked_terms(resource_id: str, resource_type: str):
 	rate = 0
 	plan = _metered_plan_for(resource_type)
 	if plan:
-		rate = frappe.utils.flt(
-			resolve_rate(get_catalog_rates("Plan", plan.name), seg.currency, seg.cluster)
-		)
+		rate = frappe.utils.flt(resolve_rate(get_catalog_rates("Plan", plan.name), seg.currency, seg.cluster))
 
 	return {
 		"team": seg.team,
@@ -221,8 +219,11 @@ def ingest_rollup(meter: dict) -> str | None:
 
 	for _ in range(_INGEST_RACE_RETRIES):
 		existing = frappe.db.get_value(
-			"Usage Rollup", {"idempotency_key": key}, ["name", "quantity", "sequence", "superseded_by"],
-			as_dict=True, for_update=True,
+			"Usage Rollup",
+			{"idempotency_key": key},
+			["name", "quantity", "sequence", "superseded_by"],
+			as_dict=True,
+			for_update=True,
 		)
 		if existing:
 			# A later report for a re-priced period belongs on the row that is billed,
@@ -272,7 +273,8 @@ def _apply_report(existing, mode: str, qty: float, seq: int) -> None:
 		if seq <= frappe.utils.cint(existing.sequence):
 			return  # duplicate / out-of-order batch — already counted
 		frappe.db.set_value(
-			"Usage Rollup", existing.name,
+			"Usage Rollup",
+			existing.name,
 			{"quantity": frappe.utils.flt(existing.quantity) + qty, "sequence": seq},
 		)
 	else:
@@ -341,8 +343,14 @@ def _metered_lines(team: str, clusters: list, period_start, period_end) -> list[
 	rollups = (
 		frappe.qb.from_(Rollup)
 		.select(
-			Rollup.resource_id, Rollup.resource_type, Rollup.meter_type, Rollup.quantity,
-			Rollup.unit, Rollup.currency, Rollup.locked_allowance, Rollup.locked_rate,
+			Rollup.resource_id,
+			Rollup.resource_type,
+			Rollup.meter_type,
+			Rollup.quantity,
+			Rollup.unit,
+			Rollup.currency,
+			Rollup.locked_allowance,
+			Rollup.locked_rate,
 			Rollup.cluster,
 		)
 		.where(Rollup.team == team)

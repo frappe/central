@@ -15,14 +15,18 @@ class TestEnrollment(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.owner = ensure_user("enroll.owner@example.test")
-		self.team = frappe.get_doc(
-			{
-				"doctype": "Team",
-				"team_name": "Enroll Team",
-				"owner_user": self.owner,
-				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
-			}
-		).insert().name
+		self.team = (
+			frappe.get_doc(
+				{
+					"doctype": "Team",
+					"team_name": "Enroll Team",
+					"owner_user": self.owner,
+					"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
+				}
+			)
+			.insert()
+			.name
+		)
 		self.pcid = "pcred-enroll-1"
 		if frappe.db.exists("Pilot Credential", self.pcid):
 			frappe.delete_doc("Pilot Credential", self.pcid, force=True)
@@ -60,8 +64,9 @@ class TestEnrollment(IntegrationTestCase):
 
 	def test_config_reports_this_pilots_audience(self):
 		token = enroll(self._token())["auth_token"]
-		set_request(method="GET", path="/api/method/central.api.pilot.config",
-			    headers={"X-Pilot-Token": token})
+		set_request(
+			method="GET", path="/api/method/central.api.pilot.config", headers={"X-Pilot-Token": token}
+		)
 		result = config()
 		self.assertEqual(result["audience_id"], self.pcid)
 		self.assertEqual(result["jwks_url"], jwks_url())

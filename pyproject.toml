@@ -57,6 +57,9 @@ ignore = [
     "F403", # can't detect undefined names from * import
     "F405", # can't detect undefined names from * import
     "F722", # syntax error in forward type annotation
+    "RUF001", # allow Unicode punctuation in user-facing strings
+    "RUF002", # allow Unicode punctuation in docstrings
+    "RUF003", # allow Unicode punctuation in comments
     "W191", # indentation contains tabs
     "UP030", # Use implicit references for positional format fields (translations)
     "UP031", # Use format specifiers instead of percent format

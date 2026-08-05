@@ -58,7 +58,7 @@ def _money(amount, currency: str) -> str:
 
 def _asset_specs(asset_row) -> dict:
 	"""The three meter labels from the provisioned VM's live specs."""
-	ram_gb = int(round(frappe.utils.flt(asset_row.memory_megabytes) / 1024))
+	ram_gb = round(frappe.utils.flt(asset_row.memory_megabytes) / 1024)
 	return {
 		"cpu": f"{int(frappe.utils.flt(asset_row.vcpus))} vCPU",
 		"memory": f"{ram_gb} GB RAM",
@@ -68,9 +68,16 @@ def _asset_specs(asset_row) -> dict:
 
 # Plan-include resource types → the three meters (the catalog names its resources
 # Compute/Memory/Disk; accept the shorter aliases too).
-_METER_GROUP = {"compute": "cpu", "vcpu": "cpu", "cpu": "cpu",
-				"memory": "memory", "ram": "memory",
-				"disk": "storage", "storage": "storage", "ssd": "storage"}
+_METER_GROUP = {
+	"compute": "cpu",
+	"vcpu": "cpu",
+	"cpu": "cpu",
+	"memory": "memory",
+	"ram": "memory",
+	"disk": "storage",
+	"storage": "storage",
+	"ssd": "storage",
+}
 _METER_SUFFIX = {"cpu": "vCPU", "memory": "GB RAM", "storage": "GB SSD"}
 
 
@@ -89,14 +96,24 @@ def _resolve_specs(asset_row, plan: str | None) -> dict:
 	"""The VM's live specs when known, else the plan's intended specs."""
 	if any(frappe.utils.flt(asset_row.get(f)) for f in ("vcpus", "memory_megabytes", "disk_gigabytes")):
 		return _asset_specs(asset_row)
-	includes = frappe.get_all("Plan Includes", {"parent": plan}, ["resource_type", "quantity", "unit"]) if plan else []
+	includes = (
+		frappe.get_all("Plan Includes", {"parent": plan}, ["resource_type", "quantity", "unit"])
+		if plan
+		else []
+	)
 	return _specs_from_includes([dict(row) for row in includes])
 
 
 def _includes_spec_line(includes: list[dict]) -> str:
 	"""'2 vCPU · 4 GB RAM · 40 GB SSD' from a plan's includes (Change-plan rows)."""
-	labels = {"vcpu": "vCPU", "cpu": "vCPU", "memory": "GB RAM", "ram": "GB RAM",
-			  "disk": "GB SSD", "storage": "GB SSD"}
+	labels = {
+		"vcpu": "vCPU",
+		"cpu": "vCPU",
+		"memory": "GB RAM",
+		"ram": "GB RAM",
+		"disk": "GB SSD",
+		"storage": "GB SSD",
+	}
 	parts = []
 	for item in includes or []:
 		qty = frappe.utils.flt(item.get("quantity"))
@@ -124,21 +141,33 @@ _GATEWAY_HINT = {"Stripe": "Secure redirect", "Razorpay": "Opens here", "Paypal"
 def _gateway_options(currency: str) -> list[dict]:
 	"""Enabled gateways that serve `currency`, one per adapter (Stripe/Razorpay/…),
 	the default first — the 'Pay through' choices the Add-payment card renders."""
-	rows = frappe.get_all("Payment Gateway Currency", {"currency": currency}, ["parent", "is_default"],
-						  order_by="is_default desc")
+	rows = frappe.get_all(
+		"Payment Gateway Currency",
+		{"currency": currency},
+		["parent", "is_default"],
+		order_by="is_default desc",
+	)
 	seen, out = set(), []
 	for row in rows:
 		gw = frappe.db.get_value(
-			"Payment Gateway", row.parent,
-			["name", "adapter_key", "is_enabled", "credentials_validated_at"], as_dict=True,
+			"Payment Gateway",
+			row.parent,
+			["name", "adapter_key", "is_enabled", "credentials_validated_at"],
+			as_dict=True,
 		)
 		# Only offer a gateway that can actually process a payment — enabled AND its
 		# credentials validated. (In production `enabled` implies validated; this also
 		# filters out seed fixtures that skipped validation with fake keys.)
 		if gw and gw.is_enabled and gw.credentials_validated_at and gw.adapter_key not in seen:
 			seen.add(gw.adapter_key)
-			out.append({"name": gw.name, "adapter_key": gw.adapter_key,
-						"label": gw.adapter_key, "subtitle": _GATEWAY_HINT.get(gw.adapter_key, "")})
+			out.append(
+				{
+					"name": gw.name,
+					"adapter_key": gw.adapter_key,
+					"label": gw.adapter_key,
+					"subtitle": _GATEWAY_HINT.get(gw.adapter_key, ""),
+				}
+			)
 	return out
 
 
@@ -147,14 +176,19 @@ def _resolve_add_gateway(currency: str, chosen: str | None):
 	the currency), else the currency default."""
 	if chosen:
 		gw = frappe.db.get_value(
-			"Payment Gateway", chosen,
-			["name", "adapter_key", "is_enabled", "credentials_validated_at"], as_dict=True,
+			"Payment Gateway",
+			chosen,
+			["name", "adapter_key", "is_enabled", "credentials_validated_at"],
+			as_dict=True,
 		)
 		serves = frappe.db.exists("Payment Gateway Currency", {"parent": chosen, "currency": currency})
 		# Require validated credentials so an unconfigured/fake gateway fails cleanly
 		# here (a clear message) instead of 500-ing deep in the gateway SDK.
 		if not (gw and gw.is_enabled and gw.credentials_validated_at and serves):
-			frappe.throw(frappe._("{0} is not a configured gateway for {1}.").format(chosen, currency), frappe.ValidationError)
+			frappe.throw(
+				frappe._("{0} is not a configured gateway for {1}.").format(chosen, currency),
+				frappe.ValidationError,
+			)
 		return gw
 	return _add_method_gateway(currency)
 
@@ -162,13 +196,19 @@ def _resolve_add_gateway(currency: str, chosen: str | None):
 def _payment_method_rows(team: str) -> list[dict]:
 	"""The team's saved payment methods, display-ready (default first)."""
 	rows = frappe.get_all(
-		"Payment Method", {"team": team},
+		"Payment Method",
+		{"team": team},
 		["name", "method_type", "display_label", "is_default", "status"],
 		order_by="is_default desc, priority asc, creation asc",
 	)
 	return [
-		{"name": r.name, "label": r.display_label or r.method_type or r.name,
-		 "method_type": r.method_type, "is_default": bool(r.is_default), "status": r.status}
+		{
+			"name": r.name,
+			"label": r.display_label or r.method_type or r.name,
+			"method_type": r.method_type,
+			"is_default": bool(r.is_default),
+			"status": r.status,
+		}
 		for r in rows
 	]
 
@@ -186,10 +226,12 @@ def get_payment_gateways() -> list[dict]:
 		return _gateway_options(_team_currency(team))
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
-def add_payment_method(method_type: str = "Card", contact: str | None = None,
-					   gateway: str | None = None) -> dict:
+def add_payment_method(
+	method_type: str = "Card", contact: str | None = None, gateway: str | None = None
+) -> dict:
 	"""Begin adding a payment method for the team. `gateway` is the caller's chosen
 	'Pay through' option (from `get_payment_gateways`); when omitted, the gateway that
 	serves the billing currency is used. Real card/UPI details are collected client-side
@@ -209,7 +251,9 @@ def add_payment_method(method_type: str = "Card", contact: str | None = None,
 	gw = _resolve_add_gateway(currency, gateway)
 	gateway = gw.get("name")
 	if not gateway:
-		frappe.throw(frappe._("No payment gateway is configured for {0}.").format(currency), frappe.ValidationError)
+		frappe.throw(
+			frappe._("No payment gateway is configured for {0}.").format(currency), frappe.ValidationError
+		)
 
 	adapter_key = gw.get("adapter_key")
 	if adapter_key == "Razorpay":
@@ -223,6 +267,7 @@ def add_payment_method(method_type: str = "Card", contact: str | None = None,
 	return {**handles, "gateway": gateway, "adapter_key": adapter_key, "method_type": method_type}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def confirm_payment_method(
@@ -246,16 +291,22 @@ def confirm_payment_method(
 	adapter_key = frappe.db.get_value("Payment Gateway", method_row.gateway, "adapter_key")
 
 	if adapter_key == "Razorpay":
-		method = mandates.confirm_mandate(payment_method, {
-			"razorpay_payment_id": razorpay_payment_id,
-			"razorpay_order_id": razorpay_order_id,
-			"razorpay_signature": razorpay_signature,
-			"razorpay_token_id": razorpay_token_id,
-		})
+		method = mandates.confirm_mandate(
+			payment_method,
+			{
+				"razorpay_payment_id": razorpay_payment_id,
+				"razorpay_order_id": razorpay_order_id,
+				"razorpay_signature": razorpay_signature,
+				"razorpay_token_id": razorpay_token_id,
+			},
+		)
 	else:
 		method = payments.confirm_payment_method(
-			payment_method, gateway_method_id=gateway_method_id, display_label=display_label,
-			expiry_month=expiry_month, expiry_year=expiry_year,
+			payment_method,
+			gateway_method_id=gateway_method_id,
+			display_label=display_label,
+			expiry_month=expiry_month,
+			expiry_year=expiry_year,
 		)
 
 	return {"payment_method": method.name, "status": method.status}
@@ -268,14 +319,15 @@ def confirm_payment_method(
 # (micro-charge) → Active. No card data ever touches the site.
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def create_payment_method_checkout(redirect_url: str, gateway: str | None = None) -> dict:
 	"""Start adding a card via hosted setup checkout. Returns `{checkout_url,
 	reference, gateway}`; redirect the payer to `checkout_url`, then poll
 	`confirm_payment_method_checkout`. Stripe only for now (hosted `setup` mode)."""
-	from central.billing.payments import payments
 	from central.billing.gateways.registry import get_adapter
+	from central.billing.payments import payments
 
 	team = _team()
 	_require_billing_setup(team)
@@ -288,32 +340,51 @@ def create_payment_method_checkout(redirect_url: str, gateway: str | None = None
 	adapter = get_adapter(gw_doc)
 	payments._discard_abandoned_setups(team, gw_doc.name)  # reap prior never-finished attempts
 	customer = payments.ensure_gateway_customer(team, gw_doc.name, adapter)
-	session = adapter.create_setup_checkout_session(customer, success_url=redirect_url, cancel_url=redirect_url)
+	session = adapter.create_setup_checkout_session(
+		customer, success_url=redirect_url, cancel_url=redirect_url
+	)
 	# Persist the checkout session on the pending row so the setup can be reconciled
 	# on return (or by a webhook) even if the poll below never runs.
-	method = frappe.get_doc({
-		"doctype": "Payment Method", "team": team, "gateway": gw_doc.name,
-		"method_type": "Card", "status": "Pending Validation", "gateway_customer_id": customer,
-		"setup_reference": session["session_id"],
-	}).insert(ignore_permissions=True)
+	method = frappe.get_doc(
+		{
+			"doctype": "Payment Method",
+			"team": team,
+			"gateway": gw_doc.name,
+			"method_type": "Card",
+			"status": "Pending Validation",
+			"gateway_customer_id": customer,
+			"setup_reference": session["session_id"],
+		}
+	).insert(ignore_permissions=True)
 	reference = f"{gw_doc.name}|{session['session_id']}|{method.name}"
-	return {"checkout_url": session["checkout_url"], "reference": reference,
-			"gateway": gw_doc.name, "adapter_key": gw_doc.adapter_key}
+	return {
+		"checkout_url": session["checkout_url"],
+		"reference": reference,
+		"gateway": gw_doc.name,
+		"adapter_key": gw_doc.adapter_key,
+	}
 
 
 def _activate_setup(method_name: str, gateway: str, session_id: str) -> dict:
 	"""Read a completed hosted setup back and validate the card (micro-charge) → Active.
 	Returns `{status, active, label}`; `pending` while the gateway hasn't saved it yet."""
-	from central.billing.payments import payments
 	from central.billing.gateways.registry import get_adapter
+	from central.billing.payments import payments
 
 	result = get_adapter(frappe.get_doc("Payment Gateway", gateway)).get_setup_result(session_id)
 	if not result.get("payment_method"):
 		return {"status": "pending", "active": False}
-	label = f"{result.get('brand') or 'Card'} ···· {result['last4']}" if result.get("last4") else result.get("brand")
+	label = (
+		f"{result.get('brand') or 'Card'} ···· {result['last4']}"
+		if result.get("last4")
+		else result.get("brand")
+	)
 	method = payments.confirm_payment_method(
-		method_name, gateway_method_id=result["payment_method"], display_label=label,
-		expiry_month=result.get("exp_month"), expiry_year=result.get("exp_year"),
+		method_name,
+		gateway_method_id=result["payment_method"],
+		display_label=label,
+		expiry_month=result.get("exp_month"),
+		expiry_year=result.get("exp_year"),
 	)
 	return {"status": method.status, "active": method.status == "Active", "label": method.display_label}
 
@@ -355,6 +426,7 @@ def remove_payment_method(payment_method: str) -> dict:
 		return payments.delete_payment_method(payment_method)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def reconcile_payment_setup() -> dict:
@@ -365,8 +437,12 @@ def reconcile_payment_setup() -> dict:
 	with _as_operator():
 		pending = frappe.get_all(
 			"Payment Method",
-			filters={"team": team, "method_type": "Card", "status": "Pending Validation",
-					 "gateway_method_id": ["in", [None, ""]]},
+			filters={
+				"team": team,
+				"method_type": "Card",
+				"status": "Pending Validation",
+				"gateway_method_id": ["in", [None, ""]],
+			},
 			fields=["name", "gateway", "setup_reference"],
 		)
 		activated = 0
@@ -405,6 +481,7 @@ def get_available_plans() -> dict:
 		return get_eligible_plans(cluster=cluster, team=team)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def change_plan(plan: str | None = None) -> dict:
@@ -419,7 +496,9 @@ def change_plan(plan: str | None = None) -> dict:
 		frappe.throw(frappe._("A plan is required."), frappe.ValidationError)
 	subscription = frappe.db.get_value("Subscription", {"team": _team(), "asset_id": asset}, "name")
 	if not subscription:
-		frappe.throw(frappe._("No subscription for asset {0} on this team.").format(asset), frappe.ValidationError)
+		frappe.throw(
+			frappe._("No subscription for asset {0} on this team.").format(asset), frappe.ValidationError
+		)
 	# resize_server gates on the session user's capability; act as operator (team is
 	# fixed by the subscription lookup above, which is already scoped to the credential).
 	with _as_operator():
@@ -570,8 +649,17 @@ def get_credit_balance() -> dict:
 # The profile fields a caller may set (currency + legal identity + billing address);
 # GSTIN is validated by the Billing Profile controller on save.
 _PROFILE_FIELDS = (
-	"currency", "legal_name", "email", "phone", "gstin",
-	"address_line1", "address_line2", "city", "state", "country", "pincode",
+	"currency",
+	"legal_name",
+	"email",
+	"phone",
+	"gstin",
+	"address_line1",
+	"address_line2",
+	"city",
+	"state",
+	"country",
+	"pincode",
 )
 
 
@@ -658,6 +746,7 @@ def _estimate_note(forecast: dict) -> str | None:
 	return frappe._("Due {0} · {1}d left").format(frappe.utils.formatdate(end), max(0, days_left))
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def get_plan_options() -> dict:
@@ -672,8 +761,14 @@ def get_plan_options() -> dict:
 	# No provisioned asset/cluster → offer nothing. A cluster-less menu would skip
 	# get_eligible_plans' allowed-clusters guard and leak plans from other regions.
 	if not row.cluster:
-		return {"currency": _team_currency(team), "provider": None, "region": None,
-				"current": row.plan, "plans": [], "sufficient": False}
+		return {
+			"currency": _team_currency(team),
+			"provider": None,
+			"region": None,
+			"current": row.plan,
+			"plans": [],
+			"sufficient": False,
+		}
 
 	with _as_operator():
 		menu = get_eligible_plans(cluster=row.cluster, team=team, exclude_subscription=subscription or None)
@@ -681,23 +776,45 @@ def get_plan_options() -> dict:
 	provider, region = _provider_region(row.cluster)
 
 	plans = [
-		{"name": p["plan"], "title": p["title"], "subtitle": _includes_spec_line(p.get("includes")),
-		 "price": frappe._("{0}/mo").format(_money(p.get("rate"), currency)),
-		 "is_current": p["plan"] == row.plan}
+		{
+			"name": p["plan"],
+			"title": p["title"],
+			"subtitle": _includes_spec_line(p.get("includes")),
+			"price": frappe._("{0}/mo").format(_money(p.get("rate"), currency)),
+			"is_current": p["plan"] == row.plan,
+		}
 		for rows in (menu.get("plans") or {}).values()
 		for p in rows
 	]
 	# The running plan may be outside the eligible set (no headroom to re-pick) — always
 	# show it, marked Current, so the list reflects what's actually running.
 	if row.plan and not any(p["is_current"] for p in plans):
-		plans.insert(0, {"name": row.plan, "title": frappe.db.get_value("Plan", row.plan, "title") or row.plan,
-						 "subtitle": " · ".join(_asset_specs(
-							 frappe.db.get_value("Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"],
-												 as_dict=True) or frappe._dict()).values()),
-						 "price": "", "is_current": True})
+		plans.insert(
+			0,
+			{
+				"name": row.plan,
+				"title": frappe.db.get_value("Plan", row.plan, "title") or row.plan,
+				"subtitle": " · ".join(
+					_asset_specs(
+						frappe.db.get_value(
+							"Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
+						)
+						or frappe._dict()
+					).values()
+				),
+				"price": "",
+				"is_current": True,
+			},
+		)
 
-	return {"currency": currency, "provider": provider, "region": region,
-			"current": row.plan, "plans": plans, "sufficient": frappe.utils.flt(menu.get("available")) > 0}
+	return {
+		"currency": currency,
+		"provider": provider,
+		"region": region,
+		"current": row.plan,
+		"plans": plans,
+		"sufficient": frappe.utils.flt(menu.get("available")) > 0,
+	}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -719,6 +836,7 @@ def list_payment_methods() -> list[dict]:
 # and the webhook backstop dedupe to a single credit.
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def create_topup_checkout(amount: float, redirect_url: str) -> dict:
@@ -733,11 +851,17 @@ def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	_require_billing_setup(team)
 	currency = _team_currency(team)
 	return _create_hosted_checkout(
-		team, currency, amount, purpose="topup", target=team, redirect_url=redirect_url,
+		team,
+		currency,
+		amount,
+		purpose="topup",
+		target=team,
+		redirect_url=redirect_url,
 		notes={"team": team, "purpose": "wallet_topup"},
 	)
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
@@ -752,7 +876,12 @@ def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
 	if amount <= 0:
 		frappe.throw("Nothing is due on this invoice.", frappe.ValidationError)
 	return _create_hosted_checkout(
-		inv.team, inv.currency, amount, purpose="invoice", target=invoice, redirect_url=redirect_url,
+		inv.team,
+		inv.currency,
+		amount,
+		purpose="invoice",
+		target=invoice,
+		redirect_url=redirect_url,
 		notes={"team": inv.team, "invoice": invoice, "purpose": "invoice_payment"},
 	)
 
@@ -771,14 +900,26 @@ def _create_hosted_checkout(team, currency, amount, purpose, target, redirect_ur
 	customer = ensure_gateway_customer(team, gateway, adapter) if gw_doc.adapter_key == "Stripe" else None
 	receipt = f"{purpose}-{target}-{frappe.generate_hash(length=8)}"
 	session = adapter.create_checkout_session(
-		amount, currency, receipt, success_url=redirect_url, cancel_url=redirect_url,
-		notes=notes, customer=customer,
+		amount,
+		currency,
+		receipt,
+		success_url=redirect_url,
+		cancel_url=redirect_url,
+		notes=notes,
+		customer=customer,
 	)
 	reference = f"{gateway}|{session['session_id']}|{purpose}|{target}"
-	return {"checkout_url": session["checkout_url"], "reference": reference,
-			"gateway": gateway, "adapter_key": gw_doc.adapter_key, "amount": amount, "currency": currency}
+	return {
+		"checkout_url": session["checkout_url"],
+		"reference": reference,
+		"gateway": gateway,
+		"adapter_key": gw_doc.adapter_key,
+		"amount": amount,
+		"currency": currency,
+	}
 
 
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @pilot_credential_auth
 def get_checkout_status(reference: str) -> dict:
@@ -809,14 +950,29 @@ def get_checkout_status(reference: str) -> dict:
 		# capture webhook credits on — so poll and webhook dedupe to a single credit.
 		# (Falls back to the session id only if the gateway hasn't surfaced one yet.)
 		key = payment_id or session_id
-		credits.purchase(target, amount, currency, gateway_payment_id=key,
-						 reference_name=key, note=f"Wallet top-up ({key})",
-						 gateway=gw_doc.adapter_key)
-		return {"status": "paid", "success": True, "message": "Wallet topped up.",
-				"balance": credits.get_balance(target)["balance"]}
+		credits.purchase(
+			target,
+			amount,
+			currency,
+			gateway_payment_id=key,
+			reference_name=key,
+			note=f"Wallet top-up ({key})",
+			gateway=gw_doc.adapter_key,
+		)
+		return {
+			"status": "paid",
+			"success": True,
+			"message": "Wallet topped up.",
+			"balance": credits.get_balance(target)["balance"],
+		}
 
-	return {"status": "paid", "success": True, "message": "Payment received; invoice settling.",
-			"invoice": target, "invoice_status": frappe.db.get_value("Invoice", target, "status")}
+	return {
+		"status": "paid",
+		"success": True,
+		"message": "Payment received; invoice settling.",
+		"invoice": target,
+		"invoice_status": frappe.db.get_value("Invoice", target, "status"),
+	}
 
 
 def _read_session(adapter_key: str, session: dict) -> tuple:

@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import { Avatar, Button, Skeleton } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Avatar, Button, Skeleton } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ListViewState from '@/components/common/list-view/ListViewState.vue'
 import { useMyInvitations } from '@/composables/useMyInvitations'

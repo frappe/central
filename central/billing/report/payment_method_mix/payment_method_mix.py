@@ -31,8 +31,12 @@ from frappe import _
 from central.billing.report._currency import split_currency_columns
 
 STATUS_FIELDS = [
-	("active", "Active"), ("paused", "Paused"), ("pending", "Pending Validation"),
-	("expired", "Expired"), ("cancelled", "Cancelled"), ("failed", "Failed"),
+	("active", "Active"),
+	("paused", "Paused"),
+	("pending", "Pending Validation"),
+	("expired", "Expired"),
+	("cancelled", "Cancelled"),
+	("failed", "Failed"),
 ]
 MANDATE_TYPES = {"UPI Autopay", "Card"}  # method types that can carry a recurring mandate
 
@@ -60,9 +64,18 @@ def get_columns() -> list[dict]:
 	for fieldname, label in STATUS_FIELDS:
 		cols.append({"label": _(label), "fieldname": fieldname, "fieldtype": "Int", "width": 110})
 	cols.append({"label": _("Default"), "fieldname": "is_default", "fieldtype": "Int", "width": 90})
-	cols.append({"label": _("Re-auth Needed"), "fieldname": "reauth_required", "fieldtype": "Int", "width": 120})
-	cols.append({"label": _("Credits Applied"), "fieldname": "credits_applied", "fieldtype": "Currency",
-				 "options": "currency", "width": 150})
+	cols.append(
+		{"label": _("Re-auth Needed"), "fieldname": "reauth_required", "fieldtype": "Int", "width": 120}
+	)
+	cols.append(
+		{
+			"label": _("Credits Applied"),
+			"fieldname": "credits_applied",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 150,
+		}
+	)
 	cols.append({"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 80})
 	return cols
 
@@ -76,8 +89,10 @@ def get_data(filters: dict):
 	chart = None
 	if rows:
 		chart = {
-			"data": {"labels": [r["method_type"] for r in rows],
-					 "datasets": [{"name": _("Total"), "values": [r["total"] for r in rows]}]},
+			"data": {
+				"labels": [r["method_type"] for r in rows],
+				"datasets": [{"name": _("Total"), "values": [r["total"] for r in rows]}],
+			},
 			"type": "pie",
 		}
 	return rows, summary, chart
@@ -118,19 +133,34 @@ def _method_mix(filters: dict):
 
 	rows = []
 	for mt, g in sorted(agg.items()):
-		rows.append({"method_type": mt, "total": g.get("total", 0),
-					 "is_default": g.get("is_default", 0), "reauth_required": g.get("reauth_required", 0),
-					 "currency": "",
-					 **{fieldname: g[fieldname] for fieldname, _l in STATUS_FIELDS}})
+		rows.append(
+			{
+				"method_type": mt,
+				"total": g.get("total", 0),
+				"is_default": g.get("is_default", 0),
+				"reauth_required": g.get("reauth_required", 0),
+				"currency": "",
+				**{fieldname: g[fieldname] for fieldname, _l in STATUS_FIELDS},
+			}
+		)
 	rows.sort(key=lambda r: r["total"], reverse=True)
 
 	coverage = (len(teams_with_mandate) / len(teams_with_method) * 100) if teams_with_method else 0.0
 	summary = [
 		{"label": _("Payment Methods"), "value": len(methods), "datatype": "Int"},
 		{"label": _("Teams w/ Method"), "value": len(teams_with_method), "datatype": "Int"},
-		{"label": _("Teams w/ Active Mandate"), "value": len(teams_with_mandate), "datatype": "Int", "indicator": "green"},
-		{"label": _("Mandate Coverage"), "value": round(coverage, 2), "datatype": "Percent",
-		 "indicator": "green" if coverage >= 70 else "orange" if coverage >= 40 else "red"},
+		{
+			"label": _("Teams w/ Active Mandate"),
+			"value": len(teams_with_mandate),
+			"datatype": "Int",
+			"indicator": "green",
+		},
+		{
+			"label": _("Mandate Coverage"),
+			"value": round(coverage, 2),
+			"datatype": "Percent",
+			"indicator": "green" if coverage >= 70 else "orange" if coverage >= 40 else "red",
+		},
 	]
 	return rows, summary
 
@@ -172,8 +202,15 @@ def _credit_settlement(filters: dict):
 	# Attribute each team's applied credit to origin, then roll up per currency.
 	per_currency: dict[str, dict] = {}
 	for (team, currency), f in funding.items():
-		c = per_currency.setdefault(currency, {"welcome_applied": 0.0, "purchased_applied": 0.0,
-											   "welcome_teams": set(), "purchased_teams": set()})
+		c = per_currency.setdefault(
+			currency,
+			{
+				"welcome_applied": 0.0,
+				"purchased_applied": 0.0,
+				"welcome_teams": set(),
+				"purchased_teams": set(),
+			},
+		)
 		if f["welcome"] > 0:
 			c["welcome_teams"].add(team)
 		if f["purchased"] > 0:
@@ -192,10 +229,16 @@ def _credit_settlement(filters: dict):
 		c = per_currency[currency]
 		total_welcome_teams |= c["welcome_teams"]
 		total_purchased_teams |= c["purchased_teams"]
-		rows.append(_credit_row(_("Welcome Credits"), len(c["welcome_teams"]),
-								round(c["welcome_applied"], 2), currency))
-		rows.append(_credit_row(_("Purchased Credits"), len(c["purchased_teams"]),
-								round(c["purchased_applied"], 2), currency))
+		rows.append(
+			_credit_row(
+				_("Welcome Credits"), len(c["welcome_teams"]), round(c["welcome_applied"], 2), currency
+			)
+		)
+		rows.append(
+			_credit_row(
+				_("Purchased Credits"), len(c["purchased_teams"]), round(c["purchased_applied"], 2), currency
+			)
+		)
 
 	summary = [
 		{"label": _("Welcome-Funded Teams"), "value": len(total_welcome_teams), "datatype": "Int"},
@@ -207,8 +250,14 @@ def _credit_settlement(filters: dict):
 def _credit_row(source: str, teams: int, applied: float, currency: str) -> dict:
 	"""A credit-origin row. Status columns are N/A for credits, so left blank."""
 	row = {fieldname: None for fieldname, _l in STATUS_FIELDS}
-	row.update({
-		"method_type": source, "total": teams, "is_default": None, "reauth_required": None,
-		"credits_applied": applied, "currency": currency,
-	})
+	row.update(
+		{
+			"method_type": source,
+			"total": teams,
+			"is_default": None,
+			"reauth_required": None,
+			"credits_applied": applied,
+			"currency": currency,
+		}
+	)
 	return row

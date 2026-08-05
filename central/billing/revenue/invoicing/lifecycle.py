@@ -64,7 +64,11 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		applied = min(frappe.utils.flt(balance), collectable)
 		if applied > 0:
 			credits.apply_credit(
-				doc.team, applied, doc.currency, reference_type="Invoice", reference_name=invoice,
+				doc.team,
+				applied,
+				doc.currency,
+				reference_type="Invoice",
+				reference_name=invoice,
 				note=f"Credit applied to {invoice}",
 			)
 
@@ -84,11 +88,15 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:
 		doc.paid_at = frappe.utils.now_datetime()
-		transition(doc, "Paid", reason="credits covered in full", actor="scheduler",
-				   amount=applied)
+		transition(doc, "Paid", reason="credits covered in full", actor="scheduler", amount=applied)
 		doc.save(ignore_permissions=True)
-		return {"invoice": invoice, "claimed": True, "credit_applied": applied,
-				"expected_collection": 0, "status": "Paid"}
+		return {
+			"invoice": invoice,
+			"claimed": True,
+			"credit_applied": applied,
+			"expected_collection": 0,
+			"status": "Paid",
+		}
 
 	transition(doc, "Open", reason="drafted invoice opened for collection", actor="scheduler")
 	doc.save(ignore_permissions=True)
@@ -101,8 +109,14 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 		charge = collection.collect_invoice(invoice)
 
-	return {"invoice": invoice, "claimed": True, "credit_applied": applied,
-			"expected_collection": doc.expected_collection, "status": "Open", "charge": charge}
+	return {
+		"invoice": invoice,
+		"claimed": True,
+		"credit_applied": applied,
+		"expected_collection": doc.expected_collection,
+		"status": "Open",
+		"charge": charge,
+	}
 
 
 def cancel_invoice(invoice: str, reason: str | None = None) -> str:

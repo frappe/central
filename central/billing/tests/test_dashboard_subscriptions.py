@@ -7,11 +7,11 @@ no price ("—") and only its region — the resource shape and locked price wer
 It now surfaces the open segment's locked rate and a 'Profile — specs' title."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard.invoices import list_subscriptions
 from central.billing.catalog import subscriptions
 from central.billing.catalog.pricing import set_catalog_rate
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
@@ -50,8 +50,13 @@ class TestDashboardSubscriptions(IntegrationTestCase):
 	def test_composed_row_shows_locked_rate_and_spec_title(self):
 		# create_subscription (not provision) skips headroom — no trust tier needed here.
 		sub = subscriptions.create_subscription(
-			TEAM, CLUSTER, plan=None, pricing_mode="Composed",
-			includes=GENERAL, sub_category="General", resource_id="res-dash-composed",
+			TEAM,
+			CLUSTER,
+			plan=None,
+			pricing_mode="Composed",
+			includes=GENERAL,
+			sub_category="General",
+			resource_id="res-dash-composed",
 		)
 		row = self._row(list_subscriptions(TEAM), sub.name)
 

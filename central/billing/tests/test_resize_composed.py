@@ -5,13 +5,13 @@
 from unittest.mock import call, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from frappe.utils import get_first_day, get_last_day, nowdate
 
 from central.billing.api.admin.catalog import update_component_rate
 from central.billing.catalog import subscriptions
 from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.revenue.invoicing import generate_team_invoice
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
@@ -41,8 +41,13 @@ def _ensure_tier_level(name):
 	if not frappe.db.exists("Trust Tier Level", name):
 		frappe.get_doc(
 			{
-				"doctype": "Trust Tier Level", "__newname": name, "tier": name,
-				"sequence": 1, "is_default": 0, "max_resource_count": 50, "min_paid_invoices": 0,
+				"doctype": "Trust Tier Level",
+				"__newname": name,
+				"tier": name,
+				"sequence": 1,
+				"is_default": 0,
+				"max_resource_count": 50,
+				"min_paid_invoices": 0,
 				"thresholds": [{"currency": "INR", "max_spend": 100000, "min_cumulative_paid": 0}],
 			}
 		).insert(ignore_permissions=True)

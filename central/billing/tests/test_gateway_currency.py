@@ -9,9 +9,9 @@ Covers:
 """
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
 def _make_gateway(name, adapter_key, currencies, is_enabled=1, **extra):

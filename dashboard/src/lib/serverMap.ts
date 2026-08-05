@@ -1,5 +1,5 @@
-import { displayStatus, isResizing } from '@/lib/status'
 import type { AssetRow } from '@/composables/useServers'
+import { displayStatus, isResizing } from '@/lib/status'
 import type { Region } from '@/types/Region'
 
 // Display mapping for the servers map: one place that turns an Asset's mirror
@@ -419,8 +419,26 @@ export function computeNodes({
 // assets list (and its status filter) can treat a site like the VM it is.
 export function siteVisual(status: string): ServerVisual {
 	if (status === 'Running')
-		return { key: 'active', label: 'Running', badgeTheme: 'green', dot: 'var(--ink-green-7)', pulse: false }
+		return {
+			key: 'active',
+			label: 'Running',
+			badgeTheme: 'green',
+			dot: 'var(--ink-green-7)',
+			pulse: false,
+		}
 	if (status === 'Failed')
-		return { key: 'broken', label: 'Failed', badgeTheme: 'red', dot: 'var(--ink-red-7)', pulse: true }
-	return { key: 'settingUp', label: status, badgeTheme: 'orange', dot: 'var(--ink-amber-7)', pulse: false }
+		return {
+			key: 'broken',
+			label: 'Failed',
+			badgeTheme: 'red',
+			dot: 'var(--ink-red-7)',
+			pulse: true,
+		}
+	return {
+		key: 'settingUp',
+		label: status,
+		badgeTheme: 'orange',
+		dot: 'var(--ink-amber-7)',
+		pulse: false,
+	}
 }

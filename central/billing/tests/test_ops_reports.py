@@ -119,19 +119,23 @@ class TestGatewayAuthRateOverTime(BillingTestCase):
 	def setUp(self):
 		self.gateway = make_stripe_gateway("GW-Trend-Stripe").name
 		self.team = ensure_team("team-authrate")
-		self.invoice = frappe.get_doc(
-			{
-				"doctype": "Invoice",
-				"team": self.team,
-				"status": "Open",
-				"period_start": "2026-05-01",
-				"period_end": "2026-05-31",
-				"currency": "USD",
-				"subtotal": 100,
-				"total": 100,
-				"expected_collection": 100,
-			}
-		).insert(ignore_permissions=True).name
+		self.invoice = (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": self.team,
+					"status": "Open",
+					"period_start": "2026-05-01",
+					"period_end": "2026-05-31",
+					"currency": "USD",
+					"subtotal": 100,
+					"total": 100,
+					"expected_collection": 100,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _attempt(self, status, when):
 		# Each attempt needs its own retry number: the idempotency key is derived from

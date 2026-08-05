@@ -98,9 +98,11 @@ def retry_payment(invoice_name: str) -> dict:
 			n = frappe.db.count("Payment Attempt", {"invoice": invoice_name})
 			reason = attempt.failure_reason or attempt.failure_code or "declined"
 			notifications.notify(
-				attempt.team, "Payment Retry",
+				attempt.team,
+				"Payment Retry",
 				message=f"Payment retry {n} for invoice {invoice_name} failed: {reason}",
-				reference_doctype="Invoice", reference_name=invoice_name,
+				reference_doctype="Invoice",
+				reference_name=invoice_name,
 			)
 	return result
 
@@ -120,9 +122,7 @@ def _advance_standing(subscription: str, target: str):
 
 def _active_directive(team: str, field: str) -> bool:
 	"""True if the team's latest token already carries this directive."""
-	name = frappe.db.get_value(
-		"Entitlement Token", {"team": team}, "name", order_by="creation desc"
-	)
+	name = frappe.db.get_value("Entitlement Token", {"team": team}, "name", order_by="creation desc")
 	return bool(name and frappe.db.get_value("Entitlement Token", name, field))
 
 
@@ -180,9 +180,12 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			from central.billing.platform import notifications
 
 			notifications.notify(
-				inv.team, "Invoice Overdue", message=_overdue_message(invoice_name, mode),
+				inv.team,
+				"Invoice Overdue",
+				message=_overdue_message(invoice_name, mode),
 				context={"invoice": invoice_name},
-				reference_doctype="Invoice", reference_name=invoice_name,
+				reference_doctype="Invoice",
+				reference_name=invoice_name,
 			)
 		if sub:
 			standing = _advance_standing(inv.subscription, "Past Due")
@@ -196,12 +199,17 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			from central.notifications import create_notification
 
 			create_notification(
-				inv.team, "Server suspended for non-payment",
-				category="Server", event_type="Server Suspended", severity="Error",
+				inv.team,
+				"Server suspended for non-payment",
+				category="Server",
+				event_type="Server Suspended",
+				severity="Error",
 				message=f"A server was suspended after {days} days overdue on invoice {invoice_name}. "
 				"Data is preserved — settle the invoice to restore it.",
-				reference_doctype="Invoice", reference_name=invoice_name,
-				action_label="Pay now", action_route="/billing/invoices",
+				reference_doctype="Invoice",
+				reference_name=invoice_name,
+				action_label="Pay now",
+				action_route="/billing/invoices",
 			)
 			actions.append("suspend")
 

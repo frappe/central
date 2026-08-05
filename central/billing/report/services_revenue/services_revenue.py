@@ -37,7 +37,13 @@ def get_columns() -> list[dict]:
 		{"label": _("Service / Family"), "fieldname": "family", "fieldtype": "Data", "width": 200},
 		{"label": _("Kind"), "fieldname": "kind", "fieldtype": "Data", "width": 110},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 90},
-		{"label": _("Revenue"), "fieldname": "revenue", "fieldtype": "Currency", "options": "currency", "width": 160},
+		{
+			"label": _("Revenue"),
+			"fieldname": "revenue",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 160,
+		},
 		{"label": _("Share %"), "fieldname": "share", "fieldtype": "Percent", "width": 100},
 	]
 
@@ -49,9 +55,7 @@ def _plan_family_map(plans: set[str]) -> dict[str, str]:
 		return {}
 	return {
 		p.name: p.category
-		for p in frappe.get_all(
-			"Plan", filters={"name": ["in", list(plans)]}, fields=["name", "category"]
-		)
+		for p in frappe.get_all("Plan", filters={"name": ["in", list(plans)]}, fields=["name", "category"])
 		if p.category
 	}
 
@@ -61,14 +65,10 @@ def _metered_resource_family_map() -> dict[str, str]:
 	resource type (metered overage mints no plan on the line) still groups under its
 	product family — Tokens → AI Tokens, PDF → PDF Generation, Emails → Emails."""
 	metered = {
-		c.name for c in frappe.get_all(
-			"Plan Category", filters={"billing_type": "Metered"}, fields=["name"]
-		)
+		c.name for c in frappe.get_all("Plan Category", filters={"billing_type": "Metered"}, fields=["name"])
 	}
 	out: dict[str, str] = {}
-	for r in frappe.get_all(
-		"Plan Category Resource Type", fields=["parent", "resource_type"]
-	):
+	for r in frappe.get_all("Plan Category Resource Type", fields=["parent", "resource_type"]):
 		if r.parent in metered:
 			out.setdefault(r.resource_type, r.parent)
 	return out
@@ -87,9 +87,13 @@ def get_data(filters: dict) -> list[dict]:
 		family = (
 			family_of_plan.get(line["plan"])
 			or family_of_rt.get(line["resource_type"])
-			or (VM_COMPUTE_FAMILY if line["recurring"]
-				else line["resource_type"].title() if line["resource_type"]
-				else _("Other"))
+			or (
+				VM_COMPUTE_FAMILY
+				if line["recurring"]
+				else line["resource_type"].title()
+				if line["resource_type"]
+				else _("Other")
+			)
 		)
 		g = agg.setdefault((family, line["currency"]), {"revenue": 0.0, "recurring": False})
 		g["revenue"] += line["amount"]
@@ -102,11 +106,15 @@ def get_data(filters: dict) -> list[dict]:
 	rows = []
 	for (family, currency), g in agg.items():
 		total = currency_total.get(currency) or 0.0
-		rows.append({
-			"family": family, "kind": _("Recurring") if g["recurring"] else _("Usage"),
-			"currency": currency, "revenue": flt(g["revenue"], 2),
-			"share": flt(g["revenue"] / total * 100, 2) if total else 0.0,
-		})
+		rows.append(
+			{
+				"family": family,
+				"kind": _("Recurring") if g["recurring"] else _("Usage"),
+				"currency": currency,
+				"revenue": flt(g["revenue"], 2),
+				"share": flt(g["revenue"] / total * 100, 2) if total else 0.0,
+			}
+		)
 	rows.sort(key=lambda r: (r["currency"], -r["revenue"]))
 	return rows
 
@@ -121,14 +129,18 @@ def get_chart(rows: list[dict]) -> dict | None:
 	if len(currencies) == 1:
 		crows = [r for r in rows if r["currency"] == currencies[0]]
 		return {
-			"data": {"labels": [r["family"] for r in crows],
-					 "datasets": [{"name": _("Revenue"), "values": [r["revenue"] for r in crows]}]},
+			"data": {
+				"labels": [r["family"] for r in crows],
+				"datasets": [{"name": _("Revenue"), "values": [r["revenue"] for r in crows]}],
+			},
 			"type": "pie",
 		}
 	by_key = {(r["family"], r["currency"]): r["revenue"] for r in rows}
 	datasets = [
-		{"name": _("Revenue ({0})").format(currency),
-		 "values": [flt(by_key.get((f, currency), 0.0), 2) for f in families]}
+		{
+			"name": _("Revenue ({0})").format(currency),
+			"values": [flt(by_key.get((f, currency), 0.0), 2) for f in families],
+		}
 		for currency in currencies
 	]
 	return {"data": {"labels": families, "datasets": datasets}, "type": "bar"}
@@ -140,8 +152,19 @@ def get_summary(rows: list[dict]) -> list[dict]:
 		crows = [r for r in rows if r["currency"] == currency]
 		total = sum(flt(r["revenue"]) for r in crows)
 		top = max(crows, key=lambda r: r["revenue"])
-		summary.append({"label": _("Revenue ({0})").format(currency), "value": flt(total, 2),
-						"datatype": "Float", "indicator": "green"})
-		summary.append({"label": _("Top Service ({0})").format(currency),
-						"value": f"{top['family']} · {top['share']}%", "datatype": "Data"})
+		summary.append(
+			{
+				"label": _("Revenue ({0})").format(currency),
+				"value": flt(total, 2),
+				"datatype": "Float",
+				"indicator": "green",
+			}
+		)
+		summary.append(
+			{
+				"label": _("Top Service ({0})").format(currency),
+				"value": f"{top['family']} · {top['share']}%",
+				"datatype": "Data",
+			}
+		)
 	return summary

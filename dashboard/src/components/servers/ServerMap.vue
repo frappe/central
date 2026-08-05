@@ -1,25 +1,25 @@
 <script setup lang="ts">
+import { Badge, Button } from 'frappe-ui'
 import {
+	type CSSProperties,
 	computed,
 	onBeforeUnmount,
 	onMounted,
 	ref,
 	watch,
-	type CSSProperties,
 } from 'vue'
-import { Badge, Button } from 'frappe-ui'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import WorldDots from '@/components/servers/WorldDots.vue'
 import {
 	computeNodes,
-	project,
-	MAP_WIDTH,
 	MAP_HEIGHT,
+	MAP_WIDTH,
 	MAX_ZOOM,
-	ZOOM_STEP,
 	type MapNode,
 	type MapPin,
 	type MapSpot,
+	project,
+	ZOOM_STEP,
 } from '@/lib/serverMap'
 
 // The interactive servers map, ported from the FC V2 prototype. Purely
@@ -701,7 +701,8 @@ function clickNode(n: MapNode): void {
 					>
 						<span class="min-w-0 truncate text-xs font-medium text-ink-gray-5">
 							{{ card.node.members[0].flag }} {{ card.node.title }} ·
-							{{ card.node.members.length }} servers
+							{{ card.node.members.length }}
+							servers
 						</span>
 						<button
 							v-if="allowCreate"

@@ -1,13 +1,13 @@
 <script setup lang="ts">
+import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
-import { useCall, Dialog, Button, FormControl, LoadingText } from 'frappe-ui'
 import { API, method } from '@/api/methods'
+import { useBillingOverview } from '@/composables/useBillingOverview'
+import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { useBillingSetup } from '@/composables/useBillingSetup'
-import { useBillingOverview } from '@/composables/useBillingOverview'
-import { successToast, infoToast, errorToast } from '@/lib/toast'
-import type { BillingProfile, BillingGeo } from '@/types/billing'
+import { errorToast, infoToast, successToast } from '@/lib/toast'
+import type { BillingGeo, BillingProfile } from '@/types/billing'
 
 // Edit the billing profile — currency (locked after activity), contact, address,
 // and India GSTIN — shared by the Billing contact and Tax & compliance cards.

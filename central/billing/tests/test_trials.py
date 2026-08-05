@@ -8,13 +8,13 @@ Report helpers (is_trial_team, convert_to_paid, expire_trial, subsidy_total) are
 dormant, exercised here by hand until their separate cleanup."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.revenue import invoicing, credits
 from central.billing.catalog import trials
 from central.billing.catalog.entitlements import recompute_trust_tier
 from central.billing.catalog.signing import generate_keypair
+from central.billing.revenue import credits, invoicing
 from central.billing.tests.test_entitlements import make_ladder
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
 	ensure_team,
@@ -96,9 +96,7 @@ class TestConversion(TrialTestBase):
 		from central.billing.catalog.subscriptions import current_segment_rate
 
 		self.assertEqual(current_segment_rate(self.sub), 1000.0)
-		self.assertEqual(
-			frappe.db.get_value("Subscription", self.sub, "account_standing"), "Current"
-		)
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "account_standing"), "Current")
 
 
 class TestSubsidyAndExpiry(TrialTestBase):
@@ -114,17 +112,25 @@ class TestSubsidyAndExpiry(TrialTestBase):
 		for i, subtotal in enumerate((1000.0, 2000.0)):
 			team = f"{TEAM}-subsidy-{i}"
 			ensure_team(team)
-			frappe.get_doc({
-				"doctype": "Invoice", "team": team, "invoice_type": "Cost Report",
-				"status": "Open", "period_start": "2099-01-01", "period_end": "2099-01-31",
-				"currency": "INR", "subtotal": subtotal, "total": subtotal,
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": team,
+					"invoice_type": "Cost Report",
+					"status": "Open",
+					"period_start": "2099-01-01",
+					"period_end": "2099-01-31",
+					"currency": "INR",
+					"subtotal": subtotal,
+					"total": subtotal,
+				}
+			).insert(ignore_permissions=True)
 
 		subsidy = trials.subsidy_total("2099-01-01", "2099-01-31")
 		self.assertEqual(subsidy, 3000.0)  # 1000 + 2000
 
 	def test_expired_trial_emits_suspend_directive(self):
-		priv, pub = generate_keypair()
+		priv, _pub = generate_keypair()
 		frappe.conf.entitlement_private_key = priv
 
 		token = trials.expire_trial(TEAM)

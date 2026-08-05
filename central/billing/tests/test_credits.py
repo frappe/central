@@ -5,13 +5,12 @@
 import threading
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import billing_settings, ensure_team
 
 from central.billing.platform.constraints import existing_constraints
 from central.billing.revenue import credits
 from central.billing.revenue.credits import InsufficientCredits
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import billing_settings, ensure_team
 
 TEAM = "team-wallet"
 
@@ -35,7 +34,7 @@ def run_workers(n: int, fn):
 			fn(i)
 			frappe.db.commit()
 			results[i] = "ok"
-		except Exception as e:  # noqa: BLE001 — record the failure class for assertions
+		except Exception as e:
 			frappe.db.rollback()
 			results[i] = type(e).__name__
 		finally:
@@ -78,9 +77,7 @@ class TestLedgerBasics(CreditTestBase):
 		credits.apply_credit(TEAM, 120, reference_type="Invoice", reference_name="INV-1")
 		credits.purchase(TEAM, 30)
 
-		entries = frappe.get_all(
-			"Credit Ledger Entry", {"team": TEAM}, ["entry_type", "amount"]
-		)
+		entries = frappe.get_all("Credit Ledger Entry", {"team": TEAM}, ["entry_type", "amount"])
 		signed = sum((e.amount if e.entry_type == "Credit" else -e.amount) for e in entries)
 		self.assertEqual(signed, 410)
 		# Balance read equals the ledger sum — it is never a stored scalar.
@@ -311,9 +308,9 @@ class TestCreditExpiry(CreditTestBase):
 	"""Promotional credit runs out of time; purchased credit does not."""
 
 	def _grant(self, amount, expires_on, currency="INR"):
-		return credits.grant_promotional_credits(
-			TEAM, amount, currency, expires_on=expires_on
-		)["ledger_entry"]
+		return credits.grant_promotional_credits(TEAM, amount, currency, expires_on=expires_on)[
+			"ledger_entry"
+		]
 
 	def test_purchased_credit_has_no_expiry(self):
 		entry = credits.purchase(TEAM, 500, "INR")["ledger_entry"]
@@ -400,9 +397,7 @@ class TestCreditExpiry(CreditTestBase):
 		credits.purchase(TEAM, 25, "INR")
 		credits.expire_credits(TEAM, "INR")
 
-		self.assertEqual(
-			credits.get_balance(TEAM)["balance"], credits.ledger_balance(TEAM, "INR")
-		)
+		self.assertEqual(credits.get_balance(TEAM)["balance"], credits.ledger_balance(TEAM, "INR"))
 
 	def test_expiring_credits_lists_what_has_not_expired_yet(self):
 		self._grant(100, frappe.utils.add_days(frappe.utils.nowdate(), 5))

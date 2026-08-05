@@ -1,21 +1,21 @@
 <script setup lang="ts">
+import { Badge, Button, LoadingText, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { useCall, Badge, Button, LoadingText } from 'frappe-ui'
+import { API, method } from '@/api/methods'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
 import SplitView from '@/components/common/SplitView.vue'
-import { API, method } from '@/api/methods'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayInvoice } from '@/composables/usePayInvoice'
 import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
-import { money } from '@/lib/format'
+import { useSession } from '@/composables/useSession'
+import { whenTeamReady } from '@/composables/useTeamScope'
 import { billingPeriod, shortDate } from '@/lib/date'
+import { money } from '@/lib/format'
 import { invoiceTheme } from '@/lib/status'
 import type {
-	InvoiceSummary,
-	InvoiceDetail,
 	CollectionStatus,
+	InvoiceDetail,
+	InvoiceSummary,
 } from '@/types/billing'
 
 // Billing › Invoices (#70) — split list (left) + ~480px detail panel (right), not
@@ -127,7 +127,6 @@ const dotClass = (theme: string): string => DOTS[theme] || DOTS.gray
 
 <template>
 	<div class="flex h-full flex-col">
-
 		<SplitView v-model:open="detailOpen" class="flex-1">
 			<!-- The selected invoice's identity lives in the panel header (number +
            period + due), driven by the summary row so it shows instantly while the

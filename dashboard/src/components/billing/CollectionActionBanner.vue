@@ -1,17 +1,17 @@
 <script setup lang="ts">
+import { Button, Dialog, useCall } from 'frappe-ui'
 // "Action Required" banner — shown when an INR e-mandate team's bill crosses the
 // ₹15,000 silent-debit limit and the customer must choose how to keep paying
 // (ADR 0005 / payments-inr.md). Calm, not alarming: services keep running; this
 // is an invitation to decide. Backend feed: get_collection_status.
 import { computed, ref } from 'vue'
-import { useCall, Dialog, Button } from 'frappe-ui'
-import Alert from '@/components/common/Alert.vue'
 import { API, method } from '@/api/methods'
+import Alert from '@/components/common/Alert.vue'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { money } from '@/lib/format'
-import { successToast, errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 import type { CollectionStatus } from '@/types/billing'
 
 const { activeTeam } = useSession()

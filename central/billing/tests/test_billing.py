@@ -6,11 +6,11 @@ import threading
 from unittest.mock import patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
-from central.billing.revenue import invoicing, credits
+from central.billing.revenue import credits, invoicing
 from central.billing.revenue.invoicing import run
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
 	make_billing_subscription,
@@ -33,7 +33,7 @@ def run_workers(n, fn):
 		try:
 			results[i] = fn(i)
 			frappe.db.commit()
-		except Exception as e:  # noqa: BLE001
+		except Exception as e:
 			frappe.db.rollback()
 			results[i] = type(e).__name__
 		finally:
@@ -230,9 +230,7 @@ class TestOneInvoicePerPeriod(BillingTestBase):
 		third = invoicing.reissue_invoice(second, reason="two")
 
 		self.assertEqual(len({first, second, third}), 3)
-		cancelled = frappe.get_all(
-			"Invoice", filters={"team": TEAM, "status": "Cancelled"}, pluck="name"
-		)
+		cancelled = frappe.get_all("Invoice", filters={"team": TEAM, "status": "Cancelled"}, pluck="name")
 		self.assertCountEqual(cancelled, [first, second])
 
 
@@ -259,8 +257,14 @@ class TestOpenAndCollect(BillingTestBase):
 		# Regression: a USD team was credited in USD but debited in INR because
 		# open_and_collect didn't pass the invoice currency (apply_credit defaults INR).
 		usd_team = "team-invoice-usd"
-		for dt in ("Credit Ledger Entry", "Credit Wallet", "Subscription",
-				   "Asset", "Billing Profile", "Invoice"):
+		for dt in (
+			"Credit Ledger Entry",
+			"Credit Wallet",
+			"Subscription",
+			"Asset",
+			"Billing Profile",
+			"Invoice",
+		):
 			frappe.db.delete(dt, {"team": usd_team})
 		sub = make_billing_subscription(usd_team, CLUSTER, PLAN, billing_cycle="Monthly", currency="USD")
 		add_segment(sub, "Created", 100, "2026-06-01 00:00:00", currency="USD")
@@ -273,9 +277,7 @@ class TestOpenAndCollect(BillingTestBase):
 		inv = frappe.get_doc("Invoice", name)
 		self.assertEqual(inv.currency, "USD")
 		self.assertEqual(inv.credit_applied, 50.0)
-		debit = frappe.get_all(
-			"Credit Ledger Entry", {"team": usd_team, "entry_type": "Debit"}, ["currency"]
-		)
+		debit = frappe.get_all("Credit Ledger Entry", {"team": usd_team, "entry_type": "Debit"}, ["currency"])
 		self.assertEqual(debit[0].currency, "USD")  # debited in the invoice currency, not INR
 		# The USD wallet is drawn to zero; there is no spurious INR balance.
 		self.assertEqual(credits.get_balance(usd_team, "USD")["balance"], 0)
@@ -330,9 +332,7 @@ class TestTerminationCancelsBilling(BillingTestBase):
 		asset.save(ignore_permissions=True)
 
 		# A Cancelled change closed the segment; the sub is disabled and stops counting.
-		changes = frappe.get_all(
-			"Subscription Change", {"subscription": self.sub}, pluck="change_type"
-		)
+		changes = frappe.get_all("Subscription Change", {"subscription": self.sub}, pluck="change_type")
 		self.assertIn("Cancelled", changes)
 		self.assertFalse(frappe.db.get_value("Subscription", self.sub, "enabled"))
 		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
@@ -397,9 +397,7 @@ class TestMonthlyBillingRun(BillingTestBase):
 		# A second tick must not double-bill the period.
 		invoicing.run_monthly_billing(today="2026-07-01")
 
-		self.assertEqual(
-			frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1
-		)
+		self.assertEqual(frappe.db.count("Invoice", {"team": TEAM, "period_end": "2026-06-30"}), 1)
 
 
 class TestFanOutRun(IntegrationTestCase):
@@ -407,7 +405,7 @@ class TestFanOutRun(IntegrationTestCase):
 
 	CLUSTER = "ap-south-1"
 	PLAN = "bundle-fanout-test"
-	TEAMS = ["team-fanout-a", "team-fanout-b", "team-fanout-c"]
+	TEAMS = ("team-fanout-a", "team-fanout-b", "team-fanout-c")
 
 	def setUp(self):
 		make_plan(self.PLAN)
@@ -544,23 +542,17 @@ class TestFanOutRun(IntegrationTestCase):
 		frappe.db.commit()
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.collect_due_invoices(today="2026-07-01")
-		self.assertNotEqual(
-			frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "status"), "Draft"
-		)
+		self.assertNotEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-a"}, "status"), "Draft")
 
 		# Drafting catches up after the first sweep — team-b is now a Draft.
 		run.draft_team_invoice("team-fanout-b", "2026-06-01", "2026-06-30")
 		frappe.db.commit()
-		self.assertEqual(
-			frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft"
-		)
+		self.assertEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft")
 
 		# The next daily sweep collects it — nothing is stranded.
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.collect_due_invoices(today="2026-07-01")
-		self.assertNotEqual(
-			frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft"
-		)
+		self.assertNotEqual(frappe.db.get_value("Invoice", {"team": "team-fanout-b"}, "status"), "Draft")
 
 	def test_the_sweep_takes_every_closed_period_draft_not_one_exact_month(self):
 		# period_end <= cutoff, not ==: a draft an earlier run left behind in an older
@@ -668,10 +660,14 @@ class TestFanOutRun(IntegrationTestCase):
 	def test_relentless_contention_gives_up_and_records_it(self):
 		# Retrying forever would hold a worker hostage; after the budget the team is
 		# recorded as a casualty and the run moves on.
-		with patch.object(
-			run, "generate_team_invoice",
-			side_effect=frappe.QueryDeadlockError("Deadlock found"),
-		) as blocked, patch.object(run, "CONTENTION_BACKOFF", 0):
+		with (
+			patch.object(
+				run,
+				"generate_team_invoice",
+				side_effect=frappe.QueryDeadlockError("Deadlock found"),
+			) as blocked,
+			patch.object(run, "CONTENTION_BACKOFF", 0),
+		):
 			self.assertIsNone(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"))
 
 		self.assertEqual(blocked.call_count, run.CONTENTION_RETRIES)

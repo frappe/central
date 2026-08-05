@@ -44,9 +44,7 @@ def active_commitment(team: str, on_date=None) -> dict | None:
 
 def fixed_bundle_spend(lines: list[dict]) -> float:
 	"""Sum of the fixed-bundle line amounts (the floor/discount base)."""
-	return frappe.utils.flt(
-		sum(line["amount"] for line in lines if line.get("resource_type") == BUNDLE), 2
-	)
+	return frappe.utils.flt(sum(line["amount"] for line in lines if line.get("resource_type") == BUNDLE), 2)
 
 
 def discount_enjoyed(team: str, since) -> float:
@@ -77,9 +75,7 @@ def resolve_commitment(team: str, lines: list[dict], on_date=None) -> dict:
 
 	spend = fixed_bundle_spend(lines)
 	if spend >= frappe.utils.flt(commitment.floor):
-		result["discount"] = frappe.utils.flt(
-			spend * frappe.utils.flt(commitment.discount_pct) / 100.0, 2
-		)
+		result["discount"] = frappe.utils.flt(spend * frappe.utils.flt(commitment.discount_pct) / 100.0, 2)
 		return result
 
 	# Breach: dropped below the floor before term-end.

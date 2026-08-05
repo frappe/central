@@ -3,13 +3,12 @@
 """Team Notification feed — the console's unified in-app inbox (billing + server)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_atlas_instance, ensure_team
 
 from central import notifications as feed
 from central.billing.api.dashboard import account
 from central.billing.platform import notifications as billing_notify
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_atlas_instance, ensure_team
 
 TEAM = "team-feed"
 OTHER = "team-feed-other"
@@ -39,10 +38,18 @@ class TestFeedWriter(TeamNotificationBase):
 
 	def test_billing_notify_writes_feed_entry_with_action(self):
 		# A billing event lands in the in-app feed with a mapped severity + action route.
-		billing_notify.notify(TEAM, "Payment Failure", context={"invoice": "INV-9", "reason": "declined"},
-							   reference_doctype="Invoice", reference_name="INV-9")
-		rows = frappe.get_all("Team Notification", {"team": TEAM, "event_type": "Payment Failure"},
-							  ["severity", "action_label", "action_route", "category", "message"])
+		billing_notify.notify(
+			TEAM,
+			"Payment Failure",
+			context={"invoice": "INV-9", "reason": "declined"},
+			reference_doctype="Invoice",
+			reference_name="INV-9",
+		)
+		rows = frappe.get_all(
+			"Team Notification",
+			{"team": TEAM, "event_type": "Payment Failure"},
+			["severity", "action_label", "action_route", "category", "message"],
+		)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].severity, "Error")
 		self.assertEqual(rows[0].category, "Billing")
@@ -50,8 +57,9 @@ class TestFeedWriter(TeamNotificationBase):
 
 	def test_suppressed_email_still_feeds_in_app(self):
 		# Opting out of the *email* must not hide the event from the dashboard feed.
-		frappe.get_doc({"doctype": "Notification Preference", "team": TEAM,
-						"notify_payment_failure": 0}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{"doctype": "Notification Preference", "team": TEAM, "notify_payment_failure": 0}
+		).insert(ignore_permissions=True)
 		out = billing_notify.notify(TEAM, "Payment Failure", context={"invoice": "INV-2", "reason": "x"})
 		self.assertFalse(out["sent"])  # email suppressed
 		self.assertEqual(feed.unread_count(TEAM), 1)  # but the feed still recorded it
@@ -102,14 +110,20 @@ class TestServerFailureFeed(TeamNotificationBase):
 
 	def test_asset_failed_emits_server_notification(self):
 		# A mirror flipping to Failed drops a Server-category error into the feed.
-		asset = frappe.get_doc({
-			"doctype": "Asset", "resource_id": "vm-feed-1", "team": TEAM,
-			"cluster": self.CLUSTER, "status": "Pending",
-		}).insert(ignore_permissions=True)
+		asset = frappe.get_doc(
+			{
+				"doctype": "Asset",
+				"resource_id": "vm-feed-1",
+				"team": TEAM,
+				"cluster": self.CLUSTER,
+				"status": "Pending",
+			}
+		).insert(ignore_permissions=True)
 		asset.status = "Failed"
 		asset.save(ignore_permissions=True)
-		rows = frappe.get_all("Team Notification",
-							  {"team": TEAM, "event_type": "Server Failed"}, ["severity", "category"])
+		rows = frappe.get_all(
+			"Team Notification", {"team": TEAM, "event_type": "Server Failed"}, ["severity", "category"]
+		)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].severity, "Error")
 		self.assertEqual(rows[0].category, "Server")

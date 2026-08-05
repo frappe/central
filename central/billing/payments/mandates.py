@@ -63,8 +63,13 @@ def upi_eligibility(team: str) -> dict:
 			f"Your last invoice (₹{last:,.0f}) is at or above the ₹{UPI_RECURRING_MAX:,.0f} "
 			"UPI Autopay recurring limit — set up a card instead."
 		)
-	return {"eligible": reason is None, "reason": reason, "cap": cap,
-			"last_invoice": last, "limit": UPI_RECURRING_MAX}
+	return {
+		"eligible": reason is None,
+		"reason": reason,
+		"cap": cap,
+		"last_invoice": last,
+		"limit": UPI_RECURRING_MAX,
+	}
 
 
 def _adapter(gateway: str):

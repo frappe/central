@@ -290,7 +290,7 @@ def _overview_plan(asset: dict, team: str) -> dict:
 	if segment_rows:
 		segment = segment_rows[0]
 		plan_name = segment.plan or plan_name
-		if segment.change_type and segment.change_type != "Cancelled":
+		if plan_name and segment.change_type and segment.change_type != "Cancelled":
 			if segment.locked_rate is not None:
 				rate = frappe.utils.flt(segment.locked_rate)
 			currency = segment.currency or currency
@@ -399,7 +399,9 @@ def _require_trial_provisioning(team: str, plan: str | None) -> None:
 	if allowed is not None and plan not in allowed:
 		frappe.throw(_("That plan isn't available on a trial."), frappe.ValidationError)
 	if not frappe.db.get_value("Billing Profile", team, "currency"):
-		frappe.throw(_("Set up your team's billing currency before creating servers."), frappe.ValidationError)
+		frappe.throw(
+			_("Set up your team's billing currency before creating servers."), frappe.ValidationError
+		)
 	if get_balance(team).get("balance", 0) <= 0:
 		frappe.throw(
 			_("Your trial credits are used up. Add a payment method to keep creating servers."),
@@ -407,7 +409,9 @@ def _require_trial_provisioning(team: str, plan: str | None) -> None:
 		)
 	running = frappe.db.count("Asset", {"team": team, "status": ["!=", "Terminated"]})
 	if running >= TRIAL_SERVER_LIMIT:
-		frappe.throw(_("Trial teams can run up to {0} servers.").format(TRIAL_SERVER_LIMIT), frappe.ValidationError)
+		frappe.throw(
+			_("Trial teams can run up to {0} servers.").format(TRIAL_SERVER_LIMIT), frappe.ValidationError
+		)
 
 
 def _plan_resources(plan: str) -> dict:

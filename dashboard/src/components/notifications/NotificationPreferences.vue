@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { reactive, watch, computed } from 'vue'
-import { Switch, Button } from 'frappe-ui'
-import { useCall } from 'frappe-ui'
+import { Button, Switch, useCall } from 'frappe-ui'
+import { computed, reactive, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { teamParams } from '@/composables/useTeamScope'
 import { useCapabilities } from '@/composables/useCapabilities'
-import { successToast, errorToast } from '@/lib/toast'
+import { teamParams } from '@/composables/useTeamScope'
+import { errorToast, successToast } from '@/lib/toast'
 import type { NotificationPreferences } from '@/types/billing'
 
 // Email-delivery preferences per billing event — the console home for what was an

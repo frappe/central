@@ -5,8 +5,8 @@ from typing import Any
 import frappe
 from frappe.query_builder import Order
 
-from central.utils.guards import require_capability, require_team_member
 from central.iam import can, expand_capabilities, get_all_capabilities, user_has_operator_bypass
+from central.utils.guards import require_capability, require_team_member
 
 # Team-roster reads + role management for the console's Team screens. Visibility
 # is "being a member" (any capability on the team); mutations delegate to the Team
@@ -21,7 +21,9 @@ def list_team_members(team: str) -> list[dict[str, Any]]:
 	doc = frappe.get_doc("Team", team)
 	full_names = {
 		u.name: u.full_name
-		for u in frappe.get_all("User", filters={"name": ["in", [m.user for m in doc.members]]}, fields=["name", "full_name"])
+		for u in frappe.get_all(
+			"User", filters={"name": ["in", [m.user for m in doc.members]]}, fields=["name", "full_name"]
+		)
 	}
 
 	roster: dict[str, dict[str, Any]] = {}
@@ -70,7 +72,13 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 	for row in rows:
 		entry = roles.get(row.name)
 		if entry is None:
-			entry = {"name": row.name, "role_name": row.role_name, "is_system": row.is_system, "team": row.team, "capabilities": []}
+			entry = {
+				"name": row.name,
+				"role_name": row.role_name,
+				"is_system": row.is_system,
+				"team": row.team,
+				"capabilities": [],
+			}
 			roles[row.name] = entry
 		if row.capability:
 			entry["capabilities"].append(row.capability)
@@ -99,8 +107,15 @@ def list_team_invitations(team: str, status: str | None = None) -> list[dict[str
 		"Team Invitation",
 		filters=filters,
 		fields=[
-			"name", "email", "role", "status", "invited_by",
-			"expires_on", "accepted_by", "accepted_at", "creation",
+			"name",
+			"email",
+			"role",
+			"status",
+			"invited_by",
+			"expires_on",
+			"accepted_by",
+			"accepted_at",
+			"creation",
 		],
 		order_by="creation desc",
 		limit=100,

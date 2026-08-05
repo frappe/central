@@ -4,7 +4,6 @@
 re-validates composition, bounds, and headroom server-side (#83)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.api.dashboard.catalog import (
 	get_composed_config,
@@ -14,6 +13,7 @@ from central.billing.api.dashboard.catalog import (
 	resize_server,
 )
 from central.billing.catalog.pricing import set_catalog_rate
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
@@ -96,7 +96,8 @@ class TestEligibilityComposed(IntegrationTestCase):
 	def test_run_rate_counts_a_composed_config(self):
 		from central.billing.catalog import subscriptions
 
-		subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		provisioned = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
+		frappe.db.set_value("Subscription", provisioned["subscription"], "enabled", 1)
 		out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		self.assertEqual(out["current_spend"], 3400)
 		self.assertEqual(out["available"], out["max_spend"] - 3400)
@@ -129,11 +130,14 @@ class TestEligibilityComposed(IntegrationTestCase):
 		self.assertEqual(got["subscription"], out["subscription"])
 		self.assertEqual((got["vcpus"], got["memory_gb"], got["disk_gb"]), (2, 8, 40))
 		# Resize headroom excludes this config's own spend, so it has the full cap back.
-		self.assertEqual(got["available"], got_max := frappe.utils.flt(get_eligible_plans(cluster=CLUSTER, team=TEAM)["max_spend"]))
+		self.assertEqual(
+			got["available"],
+			frappe.utils.flt(get_eligible_plans(cluster=CLUSTER, team=TEAM)["max_spend"]),
+		)
 
 	def test_get_composed_config_preset_returns_vm_shape_for_resize(self):
-		from central.billing.tests.utils import make_plan
 		from central.billing.catalog import subscriptions
+		from central.billing.tests.utils import make_plan
 
 		plan = make_plan("preset-for-config", rates=[{"cluster": "", "currency": "INR", "rate": 1000}])
 		sub = subscriptions.create_subscription(TEAM, CLUSTER, plan=plan)
@@ -168,15 +172,17 @@ class TestEligibilityComposed(IntegrationTestCase):
 			result = resize_composed_config(out["subscription"], bigger, "General")
 		self.assertTrue(result["resized"])
 		self.assertEqual(
-			frappe.db.count("Subscription Change", {"subscription": out["subscription"], "change_type": "Plan Changed"}),
+			frappe.db.count(
+				"Subscription Change", {"subscription": out["subscription"], "change_type": "Plan Changed"}
+			),
 			1,
 		)
 
 	def test_resize_server_onto_preset_bundle(self):
 		from unittest.mock import patch
 
-		from central.billing.tests.utils import make_plan
 		from central.billing.catalog import subscriptions
+		from central.billing.tests.utils import make_plan
 
 		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
 		frappe.db.set_value("Asset", out["resource_id"], "status", "Stopped")

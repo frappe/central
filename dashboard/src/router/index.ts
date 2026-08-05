@@ -134,12 +134,12 @@ const routes = [
 				meta: { title: 'Invitations' },
 			},
 
-      {
-        path: 'addons',
-        name: 'Addons',
-        component: () => import('@/pages/addons/Page.vue'),
-        meta: { title: 'Add-on services' },
-      }
+			{
+				path: 'addons',
+				name: 'Addons',
+				component: () => import('@/pages/addons/Page.vue'),
+				meta: { title: 'Add-on services' },
+			},
 		],
 	},
 ]

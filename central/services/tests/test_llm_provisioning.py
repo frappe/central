@@ -47,7 +47,9 @@ class TestLLMProvisioning(IntegrationTestCase):
 		# Frappe rolls the suite back only at class teardown, so wipe our own rows
 		# between methods to avoid the composite-unique guard tripping on reuse.
 		frappe.db.delete("Site Service Credential", {"site": self.site})
-		for ms in frappe.get_all("Managed Service", {"team": self.team, "add_on_service": "llm"}, pluck="name"):
+		for ms in frappe.get_all(
+			"Managed Service", {"team": self.team, "add_on_service": "llm"}, pluck="name"
+		):
 			frappe.db.delete("Service API Key", {"managed_service": ms})
 		frappe.db.delete("Managed Service", {"team": self.team, "add_on_service": "llm"})
 		frappe.db.delete("Service Backend", {"service": "llm"})
@@ -76,7 +78,9 @@ class TestLLMProvisioning(IntegrationTestCase):
 	def test_provision_site_builds_grove_call(self):
 		with patch("central.services.drivers.grove.requests.post") as post:
 			post.return_value.status_code = 200
-			post.return_value.json.return_value = {"message": {"gateway_url": _FAKE["gateway_url"], "api_key": _FAKE["api_key"]}}
+			post.return_value.json.return_value = {
+				"message": {"gateway_url": _FAKE["gateway_url"], "api_key": _FAKE["api_key"]}
+			}
 			result = GroveDriver().provision_site(self.backend, "acme.example.com", {})
 
 		called_url = post.call_args.args[0] if post.call_args.args else post.call_args.kwargs.get("url")
@@ -102,7 +106,10 @@ class TestLLMProvisioning(IntegrationTestCase):
 		self.assertEqual(first["credential"], second["credential"])
 
 	def test_enable_after_revoke_reuses_row(self):
-		with patch.object(GroveDriver, "provision_site", return_value=_FAKE), patch.object(GroveDriver, "revoke_site"):
+		with (
+			patch.object(GroveDriver, "provision_site", return_value=_FAKE),
+			patch.object(GroveDriver, "revoke_site"),
+		):
 			first = provisioning.enable_site(self.managed.name, self.site)
 			provisioning.disable_site(self.managed.name, self.site)
 			again = provisioning.enable_site(self.managed.name, self.site)
@@ -166,7 +173,9 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 		with patch.object(GroveDriver, "provision_site", return_value=_FAKE):
 			provisioning.enable_site(self.managed.name, self.site)
-		with patch.object(GroveDriver, "provision_key", return_value={**_FAKE, "provider_ref": "key-abc@svc.frappe.cloud"}):
+		with patch.object(
+			GroveDriver, "provision_key", return_value={**_FAKE, "provider_ref": "key-abc@svc.frappe.cloud"}
+		):
 			dashboard.generate_api_key(self.managed.name, "app")
 
 		emails = llm._team_credentials("llm").get(self.team, [])
@@ -230,7 +239,10 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 			{"doctype": "LLM Model", "model_key": "m-stale", "tier": "Fast", "is_published": 1}
 		).insert()
 
-		catalog = [{"name": "m-fast", "display_name": "Fast"}, {"name": "m-premium", "display_name": "Premium"}]
+		catalog = [
+			{"name": "m-fast", "display_name": "Fast"},
+			{"name": "m-premium", "display_name": "Premium"},
+		]
 		with patch("central.services.drivers.grove.GroveDriver.list_models", return_value=catalog):
 			count = self.llm.sync_models()
 
@@ -239,8 +251,12 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 		self.assertFalse(frappe.db.get_value("LLM Model", "m-stale", "is_published"))
 
 	def test_resolve_options_gates_by_tier(self):
-		frappe.get_doc({"doctype": "LLM Model", "model_key": "m-fast", "tier": "Fast", "is_published": 1}).insert()
-		frappe.get_doc({"doctype": "LLM Model", "model_key": "m-premium", "tier": "Premium", "is_published": 1}).insert()
+		frappe.get_doc(
+			{"doctype": "LLM Model", "model_key": "m-fast", "tier": "Fast", "is_published": 1}
+		).insert()
+		frappe.get_doc(
+			{"doctype": "LLM Model", "model_key": "m-premium", "tier": "Premium", "is_published": 1}
+		).insert()
 
 		plans = frappe.get_all("Plan", pluck="name", limit=1)
 		if not plans:
@@ -264,14 +280,21 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 		plan = plans[0]
 		frappe.db.delete("LLM Plan Tier", {"parent": plan})
 		frappe.db.delete("LLM Plan Policy", {"plan": plan})
-		frappe.get_doc({"doctype": "LLM Plan Policy", "plan": plan, "allowed_tiers": [{"tier": "Premium"}]}).insert()
+		frappe.get_doc(
+			{"doctype": "LLM Plan Policy", "plan": plan, "allowed_tiers": [{"tier": "Premium"}]}
+		).insert()
 
 		# A configured-but-empty policy must refuse, never fall through to unrestricted.
 		with self.assertRaises(frappe.ValidationError):
 			self.llm.resolve_provision_options(plan)
 
 	def test_pull_usage_sums_and_reports(self):
-		usage = {"users": ["x"], "month": "2026-07", "x@svc": {"billable_tokens": 100}, "y@svc": {"billable_tokens": 50}}
+		usage = {
+			"users": ["x"],
+			"month": "2026-07",
+			"x@svc": {"billable_tokens": 100},
+			"y@svc": {"billable_tokens": 50},
+		}
 		captured = {}
 
 		def _fake_ingest(payload):
@@ -297,7 +320,10 @@ class TestLLMPolicyAndUsage(IntegrationTestCase):
 			return {"b@svc": {"billable_tokens": 42}}
 
 		with (
-			patch("central.services.llm._team_credentials", return_value={"TEAM-A": ["a@svc"], "TEAM-B": ["b@svc"]}),
+			patch(
+				"central.services.llm._team_credentials",
+				return_value={"TEAM-A": ["a@svc"], "TEAM-B": ["b@svc"]},
+			),
 			patch("central.services.drivers.grove.GroveDriver.fetch_usage", side_effect=_usage),
 			patch("central.services.llm._report_tokens", return_value=True) as report,
 			patch("frappe.log_error"),

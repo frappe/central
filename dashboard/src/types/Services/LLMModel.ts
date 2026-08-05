@@ -1,5 +1,4 @@
-
-export interface LLMModel{
+export interface LLMModel {
 	name: string
 	creation: string
 	modified: string
@@ -15,7 +14,7 @@ export interface LLMModel{
 	/**	Display Name : Data	*/
 	display_name?: string
 	/**	Tier : Select	*/
-	tier?: "Fast" | "Balanced" | "Premium"
+	tier?: 'Fast' | 'Balanced' | 'Premium'
 	/**	Is Published : Check	*/
 	is_published?: 0 | 1
 }

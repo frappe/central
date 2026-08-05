@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted } from 'vue'
 import { PinInputInput, PinInputRoot } from 'reka-ui'
+import { computed, nextTick, onMounted } from 'vue'
 
 const props = withDefaults(
 	defineProps<{

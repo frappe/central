@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Dialog, FormControl, useCall } from 'frappe-ui'
-import CapabilityList from '@/components/team/CapabilityList.vue'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { useTeamRoles } from '@/composables/useTeamRoles'
+import CapabilityList from '@/components/team/CapabilityList.vue'
 import { useSession } from '@/composables/useSession'
-import { successToast, errorToast } from '@/lib/toast'
+import { useTeamRoles } from '@/composables/useTeamRoles'
+import { errorToast, successToast } from '@/lib/toast'
 import type { CapabilityInfo } from '@/types/api'
 
 // Invite a person to the active team with a role. The role picker excludes Owner

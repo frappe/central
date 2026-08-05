@@ -14,7 +14,10 @@ export function formatBytes(value?: number | null): string {
 }
 
 /** Used÷total as a 0–100 percentage for progress bars. */
-export function usagePercent(used?: number | null, total?: number | null): number {
+export function usagePercent(
+	used?: number | null,
+	total?: number | null,
+): number {
 	if (!used || !total) return 0
 	return Math.min(100, Math.max(0, (used / total) * 100))
 }

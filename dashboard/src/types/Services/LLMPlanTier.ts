@@ -1,5 +1,4 @@
-
-export interface LLMPlanTier{
+export interface LLMPlanTier {
 	name: string
 	creation: string
 	modified: string
@@ -11,5 +10,5 @@ export interface LLMPlanTier{
 	parenttype?: string
 	idx?: number
 	/**	Tier : Select	*/
-	tier: "Fast" | "Balanced" | "Premium"
+	tier: 'Fast' | 'Balanced' | 'Premium'
 }

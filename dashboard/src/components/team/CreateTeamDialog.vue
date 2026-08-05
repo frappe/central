@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Dialog, FormControl } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 
 // Create a new team. The caller becomes its Owner; on success the app switches to

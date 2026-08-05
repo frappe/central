@@ -1,10 +1,10 @@
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed } from 'vue'
 import { API, method } from '@/api/methods'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { useFrappeListInvalidation } from '@/composables/common/useFrappeRealtime'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
 import type { AssetRow } from '@/composables/useServers'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage, isAbortError } from '@/lib/toast'
 
 // The team's whole fleet in one read — servers (the Asset mirror) and self-serve
 // sites (the Site mirror, each a 1:1-backed VM), so the map/panel unify them from a

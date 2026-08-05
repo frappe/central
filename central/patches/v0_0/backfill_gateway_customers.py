@@ -27,10 +27,12 @@ def execute():
 		seen.add(key)
 		if frappe.db.exists("Gateway Customer", {"team": r.team, "gateway": r.gateway}):
 			continue
-		frappe.get_doc({
-			"doctype": "Gateway Customer",
-			"team": r.team,
-			"gateway": r.gateway,
-			"adapter_key": frappe.db.get_value("Payment Gateway", r.gateway, "adapter_key"),
-			"gateway_customer_id": r.gateway_customer_id,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Gateway Customer",
+				"team": r.team,
+				"gateway": r.gateway,
+				"adapter_key": frappe.db.get_value("Payment Gateway", r.gateway, "adapter_key"),
+				"gateway_customer_id": r.gateway_customer_id,
+			}
+		).insert(ignore_permissions=True)

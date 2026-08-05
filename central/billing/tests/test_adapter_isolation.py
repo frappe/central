@@ -4,9 +4,9 @@
 import pathlib
 import re
 
+from central import billing
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central import billing
 SDK_IMPORT = re.compile(r"^\s*(?:import|from)\s+(stripe|razorpay|paypalrestsdk)\b", re.M)
 
 

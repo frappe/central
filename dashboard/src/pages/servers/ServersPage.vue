@@ -1,43 +1,43 @@
 <script setup lang="ts">
+import { Button, Dialog, Spinner, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button, Dialog, Spinner, useCall } from 'frappe-ui'
 import { API, method } from '@/api/methods'
-import { errorToast } from '@/lib/toast'
-import signingInHtml from './signing-in.html?raw'
 import EmptyState from '@/components/common/EmptyState.vue'
-import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
+import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
+import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
+import ServerFilters from '@/components/servers/ServerFilters.vue'
+import type { ResourceRow } from '@/components/servers/ServerListPanel.vue'
+import ServerListPanel from '@/components/servers/ServerListPanel.vue'
+import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
-import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
-import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import SiteRowActions from '@/components/servers/SiteRowActions.vue'
 import TerminateDialog from '@/components/servers/TerminateDialog.vue'
-import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
-import ServerFilters from '@/components/servers/ServerFilters.vue'
-import ServerListPanel from '@/components/servers/ServerListPanel.vue'
+import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
+import type { AssetRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import {
-	STATUS_FILTERS,
 	flagEmoji,
 	hasMapCoords,
+	type MapPin,
+	type MapSpot,
 	regionLabel,
+	type ServerVisual,
+	STATUS_FILTERS,
 	siteVisual,
 	specLine,
 	statusVisual,
-	type MapPin,
-	type MapSpot,
-	type ServerVisual,
 } from '@/lib/serverMap'
-import type { AssetRow } from '@/composables/useServers'
+import { errorToast } from '@/lib/toast'
 import type { Region } from '@/types/Central/Region'
-import type { ResourceRow } from '@/components/servers/ServerListPanel.vue'
+import signingInHtml from './signing-in.html?raw'
 
 // The servers page: the world map is the list (FC V2). Servers (the Asset mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
@@ -67,7 +67,10 @@ const terminateSiteCall = useCall<unknown, { name: string }>({
 	url: method(API.terminateSite),
 })
 
-const getSiteCall = useCall<{ url: string | null; login_url: string | null }, { name: string }>({
+const getSiteCall = useCall<
+	{ url: string | null; login_url: string | null },
+	{ name: string }
+>({
 	url: method(API.getSite),
 	immediate: false,
 })
@@ -131,7 +134,9 @@ const serverRows = computed<ResourceRow[]>(() =>
 
 const siteRows = computed<ResourceRow[]>(() =>
 	sites.value.map((site) => {
-		const region = site.region ? regionsByName.value.get(site.region) : undefined
+		const region = site.region
+			? regionsByName.value.get(site.region)
+			: undefined
 		return {
 			kind: 'site' as const,
 			id: site.name,
@@ -378,7 +383,9 @@ async function openSite(name: string): Promise<void> {
 	// Open the signing-in page from a blob URL (no deprecated document.write, and a
 	// synchronous window.open isn't popup-blocked), then point the tab at the real
 	// session URL once it resolves.
-	const loadingUrl = URL.createObjectURL(new Blob([signingInHtml], { type: 'text/html' }))
+	const loadingUrl = URL.createObjectURL(
+		new Blob([signingInHtml], { type: 'text/html' }),
+	)
 	const tab = window.open(loadingUrl, '_blank')
 	try {
 		await getSiteCall.submit({ name })
@@ -388,7 +395,10 @@ async function openSite(name: string): Promise<void> {
 		else if (url) window.location.href = url
 		else {
 			tab?.close()
-			errorToast(undefined, "Couldn't open the site — it may not be ready yet. Try again in a moment.")
+			errorToast(
+				undefined,
+				"Couldn't open the site — it may not be ready yet. Try again in a moment.",
+			)
 		}
 	} catch (e) {
 		tab?.close()
@@ -573,7 +583,9 @@ async function confirmSiteTerminate(): Promise<void> {
 
 		<Dialog
 			v-model="siteTerminateOpen"
-title="Terminate site" size="sm" :actions="[
+			title="Terminate site"
+			size="sm"
+			:actions="[
 			{
 		label: 'Yes, terminate',
 		variant: 'solid',
@@ -581,10 +593,14 @@ title="Terminate site" size="sm" :actions="[
 		loading: terminateSiteCall.loading,
 		onClick: confirmSiteTerminate,
 	},
-]">
+]"
+		>
 			<p class="text-p-base text-ink-gray-7">
-				Terminate <span class="font-semibold text-ink-gray-9">{{ pendingSiteTerminate?.name }}</span>?
-				This permanently deletes the site and its backing VM. This can't be undone.
+				Terminate
+				<span class="font-semibold text-ink-gray-9"
+					>{{ pendingSiteTerminate?.name }}</span
+				>? This permanently deletes the site and its backing VM. This can't be
+				undone.
 			</p>
 		</Dialog>
 

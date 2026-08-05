@@ -1,9 +1,8 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
 
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
 from central.billing.catalog.pricing import resolve_rate
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
 def _rows(*triples):
@@ -11,7 +10,7 @@ def _rows(*triples):
 	return [frappe._dict(cluster=c, currency=cur, rate=r) for c, cur, r in triples]
 
 
-import frappe  # noqa: E402
+import frappe
 
 
 class TestResolveRate(IntegrationTestCase):

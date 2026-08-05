@@ -3,10 +3,10 @@
 """Subscription intent + two-axis state model (issue #04)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.catalog.subscriptions import InvalidTransition
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan
 
 PLAN = "bundle-sub-test"
@@ -136,7 +136,10 @@ class TestReconciliation(SubscriptionTestBase):
 		# Provisioning the resource opens its billing segment (ADR 0010 — the ledger is
 		# the lock); reconcile resolves the resource's open segment for its plan.
 		sub = subscriptions.create_subscription(
-			team=TEAM, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly",
+			team=TEAM,
+			cluster="ap-south-1",
+			plan=PLAN,
+			billing_cycle="Monthly",
 			resource_id="srv-sub-1",
 		)
 		result = subscriptions.reconcile_with_agent_event(sub.name, "srv-sub-1")

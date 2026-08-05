@@ -4,7 +4,7 @@
 tax profile, and welcome credits (idempotent)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from frappe.tests import IntegrationTestCase
 
 from central.billing import settings
 from central.billing.api.dashboard import account
@@ -32,8 +32,14 @@ class TestBillingProfileProvisioning(IntegrationTestCase):
 
 	def _complete_profile(self, legal_name="Prov Ltd"):
 		account.save_billing_profile(
-			TEAM, currency="INR", legal_name=legal_name, address_line1="1 St",
-			city="Pune", state="Maharashtra", country="India", pincode="411001",
+			TEAM,
+			currency="INR",
+			legal_name=legal_name,
+			address_line1="1 St",
+			city="Pune",
+			state="Maharashtra",
+			country="India",
+			pincode="411001",
 		)
 
 	def test_complete_profile_assigns_tier_tax_and_credits(self):
@@ -47,9 +53,7 @@ class TestBillingProfileProvisioning(IntegrationTestCase):
 		self.assertEqual(profile.trust_tier, "t0")
 
 		# India → a GST tax profile.
-		tax = frappe.db.get_value(
-			"Tax Profile", TEAM, ["output_tax_type", "output_tax_rate"], as_dict=True
-		)
+		tax = frappe.db.get_value("Tax Profile", TEAM, ["output_tax_type", "output_tax_rate"], as_dict=True)
 		self.assertEqual(tax.output_tax_type, "GST")
 		self.assertEqual(tax.output_tax_rate, 18)
 

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { AxisChart } from 'frappe-ui'
+import { computed } from 'vue'
 import {
 	LOAD_SERIES,
+	type LoadPoint,
 	peakLoad,
 	toLoadChartRows,
-	type LoadPoint,
 } from '@/utils/loadChart'
 
 const props = defineProps<{
@@ -65,10 +65,7 @@ const chartConfig = computed(() => ({
 		<div v-if="hasSeries" class="load-chart h-44">
 			<AxisChart :config="chartConfig" />
 		</div>
-		<p
-			v-else
-			class="grid h-44 place-items-center text-sm text-ink-gray-5"
-		>
+		<p v-else class="grid h-44 place-items-center text-sm text-ink-gray-5">
 			Monitoring has not collected enough history yet.
 		</p>
 	</section>
@@ -76,7 +73,7 @@ const chartConfig = computed(() => ({
 
 <style scoped>
 /* AxisChart's ECharts shell defaults to min-h-[300px]; keep the card compact. */
-.load-chart :deep([dir='ltr']) {
+.load-chart :deep([dir="ltr"]) {
 	height: 100%;
 	min-height: 0;
 	min-width: 0;

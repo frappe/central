@@ -6,13 +6,12 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_team
 
 from central.billing.gateways.base import PaymentResult
 from central.billing.payments import reconciliation
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_team
 
 TEAM = "team-recon"
 GATEWAY = "GW-Test-Stripe"
@@ -56,31 +55,61 @@ class ReconTestBase(IntegrationTestCase):
 		frappe.db.commit()
 
 	def _open_invoice(self, total=1000):
-		return frappe.get_doc(
-			{
-				"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Open",
-				"period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
-				"subtotal": total, "total": total, "expected_collection": total,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": "Billable",
+					"status": "Open",
+					"period_start": "2026-05-01",
+					"period_end": "2026-05-31",
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"expected_collection": total,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _card(self):
-		return frappe.get_doc(
-			{
-				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY, "method_type": "Card",
-				"status": "Active", "gateway_method_id": "pm_card", "gateway_customer_id": "cus_1",
-				"is_default": 1,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"method_type": "Card",
+					"status": "Active",
+					"gateway_method_id": "pm_card",
+					"gateway_customer_id": "cus_1",
+					"is_default": 1,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _ambiguous_attempt(self, invoice, txn="pi_x", minutes_old=60, payment_method=None):
-		name = frappe.get_doc(
-			{
-				"doctype": "Payment Attempt", "invoice": invoice, "team": TEAM, "gateway": GATEWAY,
-				"amount": 1000, "currency": "INR", "status": "Initiated",
-				"gateway_transaction_id": txn, "payment_method": payment_method,
-			}
-		).insert(ignore_permissions=True).name
+		name = (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": invoice,
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"amount": 1000,
+					"currency": "INR",
+					"status": "Initiated",
+					"gateway_transaction_id": txn,
+					"payment_method": payment_method,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 		old = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-minutes_old)
 		frappe.db.set_value("Payment Attempt", name, "initiated_at", old)
 		return name
@@ -88,13 +117,22 @@ class ReconTestBase(IntegrationTestCase):
 	def _captured_attempt(self, invoice, txn="pi_x", minutes_old=60):
 		"""A sync charge that reached Captured but whose invoice never settled —
 		the lost-capture-webhook case (completed_at / resolved_by unset)."""
-		name = frappe.get_doc(
-			{
-				"doctype": "Payment Attempt", "invoice": invoice, "team": TEAM, "gateway": GATEWAY,
-				"amount": 1000, "currency": "INR", "status": "Captured",
-				"gateway_transaction_id": txn,
-			}
-		).insert(ignore_permissions=True).name
+		name = (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"invoice": invoice,
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"amount": 1000,
+					"currency": "INR",
+					"status": "Captured",
+					"gateway_transaction_id": txn,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 		old = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-minutes_old)
 		frappe.db.set_value("Payment Attempt", name, "initiated_at", old)
 		return name
@@ -238,7 +276,7 @@ class TestCapturedUnsettled(ReconTestBase):
 
 	def test_scan_settles_aged_captured_unsettled(self):
 		inv = self._open_invoice()
-		captured = self._captured_attempt(inv, minutes_old=60)
+		self._captured_attempt(inv, minutes_old=60)
 		with gateway_status("succeeded"):
 			reconciliation.run_reconciliation()
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Paid")

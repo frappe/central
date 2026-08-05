@@ -1,8 +1,8 @@
-import { createApp } from 'vue'
 import { FrappeUI } from 'frappe-ui'
-import { router } from '@/router'
+import { createApp } from 'vue'
 import App from '@/App.vue'
 import { useTheme } from '@/composables/useTheme'
+import { router } from '@/router'
 import './style.css'
 
 // Apply the stored (or default light) theme before the app mounts.

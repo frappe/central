@@ -87,7 +87,13 @@ def _columns(currencies: list[str]) -> list[dict]:
 	columns = [
 		{"label": _("Add-on"), "fieldname": "plan", "fieldtype": "Link", "options": "Plan", "width": 200},
 		{"label": _("Resource"), "fieldname": "resource_type", "fieldtype": "Data", "width": 120},
-		{"label": _("Allowance"), "fieldname": "allowance", "fieldtype": "Float", "width": 110, "precision": 2},
+		{
+			"label": _("Allowance"),
+			"fieldname": "allowance",
+			"fieldtype": "Float",
+			"width": 110,
+			"precision": 2,
+		},
 		{"label": _("Unit"), "fieldname": "unit", "fieldtype": "Data", "width": 90},
 	]
 	for currency in currencies:

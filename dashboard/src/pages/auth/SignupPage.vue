@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
-import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
+import { computed, ref } from 'vue'
+import { type LocationQueryRaw, useRoute, useRouter } from 'vue-router'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import SocialLoginButtons from '@/components/auth/SocialLoginButtons.vue'
-import { useAuth } from '@/composables/useAuth'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
+import { useAuth } from '@/composables/useAuth'
 import {
 	emailError,
 	frappeErrorMessage,

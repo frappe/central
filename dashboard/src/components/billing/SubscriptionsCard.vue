@@ -1,15 +1,15 @@
 <script setup lang="ts">
+import { Badge, useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import { useCall, Badge } from 'frappe-ui'
-import BillingCard from '@/components/billing/BillingCard.vue'
-import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
-import PauseBillingDialog from '@/components/billing/PauseBillingDialog.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
 import { API, method } from '@/api/methods'
+import BillingCard from '@/components/billing/BillingCard.vue'
+import PauseBillingDialog from '@/components/billing/PauseBillingDialog.vue'
+import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { money } from '@/lib/format'
-import { successToast, errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 import type { SubscriptionRow } from '@/types/billing'
 
 // Subscriptions — the active per-server plan rows the invoice line items accrue
