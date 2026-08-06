@@ -24,6 +24,12 @@ class ServiceBackend(Document):
 
 	_DOCTYPE_NAME = "Service Backend"
 
+	def validate(self) -> None:
+		# region is the second half of the (service, region) identity; store "" not
+		# NULL so re-register lookups match and the unique index (on_doctype_update)
+		# can arbitrate. NULL <> "" in MariaDB, which is what duplicated rows.
+		self.region = self.region or ""
+
 	@frappe.whitelist()
 	def enroll(self) -> None:
 		"""Desk entry point. The one-time bootstrap secret is read from the raw request
@@ -43,6 +49,12 @@ class ServiceBackend(Document):
 		self.is_active = 1
 
 		self.save()
+
+
+def on_doctype_update():
+	# One backend per (service, region); region normalised to "" in validate so the
+	# unique index arbitrates re-registration instead of duplicating rows.
+	frappe.db.add_unique("Service Backend", ["service", "region"], constraint_name="unique_service_region")
 
 
 def pop_bootstrap_secret() -> str:

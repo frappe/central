@@ -18,7 +18,11 @@ def register_backend(service: str, base_url: str, bootstrap_secret: str, region:
 
 
 def _get_or_create_backend(service: str, base_url: str, region: str | None):
-	name = frappe.db.get_value("Service Backend", {"service": service, "region": region or ""}, "name")
+	# region is half of the (service, region) identity; normalise None to "" so the
+	# lookup matches the stored value (the controller stores "" too) — otherwise
+	# NULL <> "" in MariaDB makes every re-register insert a fresh duplicate row.
+	region = region or ""
+	name = frappe.db.get_value("Service Backend", {"service": service, "region": region}, "name")
 	if name:
 		backend = frappe.get_doc("Service Backend", name)
 		backend.base_url = base_url
