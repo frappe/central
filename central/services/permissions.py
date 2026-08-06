@@ -44,7 +44,10 @@ def _resolve_team(func: Callable, args: tuple, kwargs: dict) -> str:
 
 
 def assert_site_owner(site: str, team: str) -> None:
-	"""A site must belong to the team consuming the service."""
+	"""A site must belong to the team consuming the service.
+
+	Currently unreferenced — kept as the ready-made ownership guard for per-site
+	service actions (e.g. site-scoped credential ops) when such an endpoint lands."""
 	owner = frappe.db.get_value("Site", site, "team")
 	if not owner:
 		frappe.throw(_("Unknown site {0}.").format(site))

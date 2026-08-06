@@ -24,6 +24,13 @@ def event(**kwargs) -> dict:
 	return ingest_event(data.type, payload, data.occurred_at)
 
 
+# --- Inbound Atlas HTTP endpoints -------------------------------------------
+# register/sizes/images/ping have no internal caller by design — they are the
+# contract an Atlas deployment calls into Central. `grep` showing zero callers in
+# this repo is expected; deleting one turns a live Atlas call into a 404. (Cannot
+# verify against the Atlas repo from here — kept per plan decision.)
+
+
 @frappe.whitelist(methods=["POST"])
 def register(**kwargs) -> dict:
 	"""Retired. Registration is Central-initiated now (central/spec/TUNNEL.md): the
