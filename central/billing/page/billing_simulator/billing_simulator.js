@@ -42,6 +42,14 @@ class BillingSimulator {
 			default: frappe.datetime.month_start(),
 			change: () => this.refresh(),
 		});
+		this.mode = this.page.add_field({
+			fieldname: "mode",
+			label: __("Outcomes"),
+			fieldtype: "Select",
+			options: ["Derived", "Optimistic", "Assumed"],
+			default: "Derived",
+			change: () => this.refresh(),
+		});
 		this.page.set_primary_action(__("Project"), () => this.refresh());
 	}
 
@@ -54,7 +62,7 @@ class BillingSimulator {
 		frappe
 			.call({
 				method: "central.billing.api.admin.projection.project_team",
-				args: { team, period_start: start },
+				args: { team, period_start: start, mode: this.mode.get_value() || "Derived" },
 			})
 			.then((r) => r.message && this.render(r.message))
 			.catch(() => this.show_empty(__("Could not project this team.")));
@@ -67,7 +75,8 @@ class BillingSimulator {
 	render(data) {
 		this.$body.empty();
 		this.$body.append(this.invoice_card(data));
-		this.$body.append(this.calendar_card(data.calendar));
+		if (data.outcome) this.$body.append(this.findings_card(data.outcome));
+		this.$body.append(this.calendar_card(data.calendar, data.outcome));
 		if (data.in_flight && data.in_flight.length) {
 			this.$body.append(this.in_flight_card(data.in_flight, data.as_of));
 		}
@@ -141,9 +150,47 @@ class BillingSimulator {
 			</div>`);
 	}
 
+	// ---- what the state already decides ------------------------------------
+
+	findings_card(outcome) {
+		// Derived mode with nothing to report is a real answer, not an empty state: the
+		// data does not settle whether the charge works, and saying so is the honest
+		// alternative to implying success.
+		if (outcome.mode !== "Derived") {
+			return $(`<div class="bs-card"><div class="bs-note">${__(
+				"Outcome is {0}, not derived from this team's state.",
+				[outcome.mode.toLowerCase()]
+			)}</div></div>`);
+		}
+
+		if (!outcome.findings.length) {
+			return $(`<div class="bs-card"><div class="bs-note bs-note-ok">${__(
+				"Nothing in this team's setup stops the charge. Whether it succeeds is not knowable from here."
+			)}</div></div>`);
+		}
+
+		const items = outcome.findings
+			.map(
+				(f) => `<li class="bs-finding">
+					<span class="bs-finding-summary">${frappe.utils.escape_html(f.summary)}</span>
+					<span class="bs-muted">${frappe.utils.escape_html(f.detail)}</span>
+				</li>`
+			)
+			.join("");
+
+		return $(`
+			<div class="bs-card">
+				<div class="bs-card-head">
+					<span class="bs-card-title">${__("Why this will not settle")}</span>
+					<span class="bs-muted">${__("Entailed by the team's state, not predicted")}</span>
+				</div>
+				<ul class="bs-findings">${items}</ul>
+			</div>`);
+	}
+
 	// ---- the fork ----------------------------------------------------------
 
-	calendar_card(calendar) {
+	calendar_card(calendar, outcome) {
 		const $card = $(`
 			<div class="bs-card">
 				<div class="bs-card-head">
@@ -154,7 +201,7 @@ class BillingSimulator {
 				</div>
 				<div class="bs-figure"></div>
 			</div>`);
-		$card.find(".bs-figure").append(timeline_svg(calendar));
+		$card.find(".bs-figure").append(timeline_svg(calendar, outcome));
 		return $card;
 	}
 
@@ -232,6 +279,16 @@ class BillingSimulator {
 			.bs-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
 			.bs-dot-measured { background: var(--text-light); }
 			.bs-dot-estimated { background: var(--card-bg); border: 1.5px solid var(--gray-400, #c7c7c7); }
+			.bs-note { padding: 14px 13px; color: var(--text-light);
+				font-size: var(--text-base, 13px); }
+			.bs-note-ok { border-left: 2px solid var(--green-500, #59ba8b); }
+			.bs-findings { list-style: none; margin: 0; padding: 0; }
+			.bs-finding { padding: 10px 13px; border-bottom: 1px solid var(--border-color);
+				border-left: 2px solid var(--red-500, #e03636); display: flex;
+				flex-direction: column; gap: 2px; }
+			.bs-findings li:last-child { border-bottom: 0; }
+			.bs-finding-summary { font-weight: 500; color: var(--heading-color); }
+			.bs-dim { opacity: 0.35; }
 			.bs-figure { padding: 14px 13px; overflow-x: auto; }
 			.bs-figure svg { display: block; min-width: 620px; width: 100%; height: auto; }
 		</style>`).appendTo(document.head);
@@ -258,7 +315,13 @@ function basis_tag(line) {
 
 // Both branches on one axis. The fork is the point: an operator asking what happens to
 // this team wants settlement and escalation side by side, not one behind a toggle.
-function timeline_svg(calendar) {
+function timeline_svg(calendar, outcome) {
+	// Dim the arm the data rules out, so the entailed branch reads at a glance without
+	// the other one disappearing — an operator still needs to see what settling looks
+	// like even when it is not going to happen.
+	const entailed = outcome && outcome.entailed_branch;
+	const paid_dim = entailed === "if_never_paid" ? ' class="bs-dim"' : "";
+	const unpaid_dim = entailed === "if_paid_on_time" ? ' class="bs-dim"' : "";
 	const unpaid = calendar.if_never_paid || [];
 	const dates = [calendar.opens_on, calendar.due_on, ...unpaid.map((s) => s.date)];
 	const first = new Date(dates[0]);
@@ -310,9 +373,9 @@ function timeline_svg(calendar) {
 	return $(`
 		<svg viewBox="0 0 ${W} 176" role="img"
 			aria-label="${__("Both branches of what happens after the invoice falls due")}">
-			<text x="4" y="30" font-size="11" font-weight="600"
+			<text x="4" y="30" font-size="11" font-weight="600"${paid_dim}
 				fill="var(--green-600, #30a66d)">${__("If paid on time")}</text>
-			<text x="4" y="124" font-size="11" font-weight="600"
+			<text x="4" y="124" font-size="11" font-weight="600"${unpaid_dim}
 				fill="var(--red-600, #cc2929)">${__("If never paid")}</text>
 
 			<line x1="${LEFT}" y1="72" x2="${W - RIGHT}" y2="72"
@@ -331,6 +394,7 @@ function timeline_svg(calendar) {
 					calendar.due_on
 				)}</text>
 
+			<g${paid_dim}>
 			<path d="M ${fork} 72 C ${fork + 26} 72, ${fork + 26} 26, ${fork + 52} 26"
 				fill="none" stroke="var(--green-500, #59ba8b)" stroke-width="2"></path>
 			<circle cx="${fork + 52}" cy="26" r="4" fill="var(--green-500, #59ba8b)"></circle>
@@ -338,11 +402,14 @@ function timeline_svg(calendar) {
 				fill="var(--green-600, #30a66d)">${__("Settled")} ${frappe.datetime.str_to_user(
 					paid.date
 				)}</text>
+			</g>
 
+			<g${unpaid_dim}>
 			<path d="M ${fork} 72 C ${fork + 26} 72, ${fork + 26} 120, ${fork + 52} 120"
 				fill="none" stroke="var(--red-500, #e03636)" stroke-width="2"></path>
 			<line x1="${fork + 52}" y1="120" x2="${W - RIGHT}" y2="120"
 				stroke="var(--red-500, #e03636)" stroke-width="2"></line>
 			${marks}
+			</g>
 		</svg>`);
 }

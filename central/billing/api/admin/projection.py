@@ -22,6 +22,8 @@ def project_team(
 	period_start: str | None = None,
 	period_end: str | None = None,
 	today: str | None = None,
+	mode: str = "Derived",
+	assume: str | None = None,
 ) -> dict:
 	"""Project one team over one period.
 
@@ -38,4 +40,4 @@ def project_team(
 		f"projection: {frappe.session.user} projected {team} "
 		f"for {period_start}..{period_end} as of {today}"
 	)
-	return engine.project(team, period_start, period_end, today=today)
+	return engine.project(team, period_start, period_end, today=today, mode=mode, assume=assume)

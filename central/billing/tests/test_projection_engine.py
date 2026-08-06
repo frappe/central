@@ -200,3 +200,51 @@ class TestInvoicesAlreadyInFlight(ProjectionTestBase):
 		frappe.db.commit()
 		out = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")
 		self.assertEqual(out["in_flight"], [])
+
+
+class TestOutcomeReachesTheProjection(ProjectionTestBase):
+	def test_a_team_with_no_way_to_pay_entails_the_unpaid_branch(self):
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+		out = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")
+
+		self.assertEqual(out["outcome"]["mode"], "Derived")
+		self.assertEqual(out["outcome"]["entailed_branch"], "if_never_paid")
+		self.assertIn(
+			"no_settlement_source", {f["finding"] for f in out["outcome"]["findings"]}
+		)
+
+	def test_both_branches_are_still_returned_when_one_is_entailed(self):
+		# Marking an arm must not hide the other: the fork is what the operator came for.
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+		cal = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")["calendar"]
+		self.assertTrue(cal["if_paid_on_time"])
+		self.assertTrue(cal["if_never_paid"])
+
+	def test_optimistic_mode_asserts_settlement_and_derives_nothing(self):
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+		out = engine.project(
+			TEAM, "2026-09-01", "2026-09-30", today="2026-08-06", mode="Optimistic"
+		)
+		self.assertEqual(out["outcome"]["entailed_branch"], "if_paid_on_time")
+		self.assertEqual(out["outcome"]["findings"], [])
+
+	def test_an_assumed_outcome_is_carried_through(self):
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+		out = engine.project(
+			TEAM, "2026-09-01", "2026-09-30", today="2026-08-06",
+			mode="Assumed", assume="never_pays",
+		)
+		self.assertEqual(out["outcome"]["assumed"], "never_pays")
+		self.assertEqual(out["outcome"]["entailed_branch"], "if_never_paid")
+
+	def test_findings_are_derived_from_what_we_would_actually_collect(self):
+		# Credits and withholding change the amount the gateway is asked for, so the
+		# threshold questions must be asked of that, not of the headline total.
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+		out = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")
+		self.assertEqual(out["invoice"]["expected_collection"], 12000.0)
