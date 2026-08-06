@@ -56,15 +56,6 @@ def get_all_capabilities() -> list[str]:
 	return frappe.get_all("Capability", pluck="name", order_by="name")
 
 
-def get_role_capabilities(role: str) -> list[str]:
-	return frappe.get_all(
-		"Role Capability",
-		filters={"parent": role, "parenttype": "Team Role", "parentfield": "capabilities"},
-		pluck="capability",
-		order_by="idx asc",
-	)
-
-
 def get_user_team_names(user: str) -> list[str]:
 	team = frappe.qb.DocType("Team")
 	member = frappe.qb.DocType("Team Member")
