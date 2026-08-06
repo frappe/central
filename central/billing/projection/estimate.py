@@ -42,10 +42,12 @@ def metered_lines(team: str, clusters, period_start, period_end, today=None) -> 
 	end = frappe.utils.getdate(period_end)
 
 	if end < today:
-		return mark(metered_line_items_for_clusters(team, clusters, start, end), MEASURED)
+		return mark(
+			metered_line_items_for_clusters(team, clusters, start, end, explain=True), MEASURED
+		)
 
 	if start <= today:
-		landed = metered_line_items_for_clusters(team, clusters, start, end)
+		landed = metered_line_items_for_clusters(team, clusters, start, end, explain=True)
 		elapsed = (today - start).days + 1
 		total = (end - start).days + 1
 		return _scaled(landed, elapsed, total)
@@ -70,6 +72,15 @@ def _scaled(lines: list[dict], elapsed: int, total: int) -> list[dict]:
 		projected["amount"] = frappe.utils.flt(line.get("amount") * factor, 2)
 		projected["basis"] = ESTIMATED
 		projected["estimated_from"] = f"run rate over {elapsed} of {total} days"
+		projected["derivation"] = {
+			"mode": "Estimated",
+			"why": "the month is part elapsed, so what has landed is projected across it",
+			"observed_amount": frappe.utils.flt(line.get("amount"), 2),
+			"elapsed_days": elapsed,
+			"period_days": total,
+			"arithmetic": f"{frappe.utils.flt(line.get('amount'), 2)} × {total} ÷ {elapsed}",
+			"measured_basis": line.get("derivation"),
+		}
 		out.append(projected)
 	return out
 
@@ -90,24 +101,35 @@ def _from_trailing(team: str, clusters, period_start, months: int = TRAILING_MON
 	customer was actually billed for.
 	"""
 	start, end = _window(period_start, months)
-	history = metered_line_items_for_clusters(team, clusters, start, end)
+	history = metered_line_items_for_clusters(team, clusters, start, end, explain=True)
 	if not history:
 		# No history is not zero usage — it is silence. Projecting a zero line would
 		# assert something we do not know, so nothing is projected for this resource.
 		return []
 
 	merged: dict = {}
+	observed: dict = {}
 	for line in history:
 		key = tuple(line.get(f) for f in _KEY)
 		agg = merged.setdefault(key, {**line, "quantity": 0.0, "amount": 0.0})
 		agg["quantity"] += frappe.utils.flt(line.get("quantity"))
 		agg["amount"] += frappe.utils.flt(line.get("amount"))
+		observed[key] = observed.get(key, 0.0) + frappe.utils.flt(line.get("amount"))
 
 	out = []
-	for line in merged.values():
+	for key, line in merged.items():
 		line["quantity"] = frappe.utils.flt(line["quantity"] / months, 4)
 		line["amount"] = frappe.utils.flt(line["amount"] / months, 2)
 		line["basis"] = ESTIMATED
 		line["estimated_from"] = f"{months}-month average to {end}"
+		line["derivation"] = {
+			"mode": "Estimated",
+			"why": "the period has not started, so usage is inferred from what did happen",
+			"window_from": str(start),
+			"window_to": str(end),
+			"months": months,
+			"observed_total": frappe.utils.flt(observed[key], 2),
+			"arithmetic": f"{frappe.utils.flt(observed[key], 2)} ÷ {months}",
+		}
 		out.append(line)
 	return out
