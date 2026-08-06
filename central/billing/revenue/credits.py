@@ -404,8 +404,14 @@ def adjust_credits(
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def get_balance(team: str, currency: str | None = None) -> dict:
+def get_balance(team: str, currency: str | None = None, source=None) -> dict:
 	"""The team's credit balance in one currency — read off that currency's anchor.
+
+	`source` is the projection seam. A projection that has already spent this wallet
+	down over three simulated months must not be answered with today's balance, or the
+	wallet silently refills every month and nobody is ever short. Pass an object with
+	`balance(team, currency)` and the reader defers to it; leave it out — as every
+	production caller does — and nothing changes.
 
 	`currency` defaults to the team's billing currency, so the common caller
 	("what are this team's credits?") gets the balance in the currency the team is
@@ -419,6 +425,8 @@ def get_balance(team: str, currency: str | None = None) -> dict:
 	reconciled by the C2 invariant check, not by disagreeing at read time.
 	"""
 	currency = _resolve_currency(team, currency)
+	if source is not None:
+		return {"balance": frappe.utils.flt(source.balance(team, currency)), "currency": currency}
 	balance = frappe.db.get_value("Credit Wallet", wallet_name(team, currency), "balance")
 	return {"balance": frappe.utils.flt(balance), "currency": currency}
 
