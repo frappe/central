@@ -118,7 +118,16 @@ onMounted(() => {
 	})
 	if (el.value) ro.observe(el.value)
 })
-onBeforeUnmount(() => ro?.disconnect())
+onBeforeUnmount(() => {
+	ro?.disconnect()
+	// Tear down every timer/RAF this component owns — the flyTo RAF loop
+	// (focusRaf) keeps writing zoom/tx/ty after unmount otherwise, and the
+	// hover/wheel debounces fire into a dead component.
+	cancelAnimationFrame(focusRaf)
+	window.clearTimeout(wheelT)
+	window.clearTimeout(showT)
+	window.clearTimeout(hideT)
+})
 
 function clampPan(): void {
 	const w = W * k.value
