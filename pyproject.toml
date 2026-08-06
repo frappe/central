@@ -53,7 +53,8 @@ ignore = [
     "E402", # module level import not at top of file
     "E501", # line too long
     "E741", # ambiguous variable name
-    "F401", # "unused" imports
+    # F401 (unused imports) is intentionally NOT ignored — enforcing it keeps dead
+    # imports out and backs the dead-code sweep (PRs 2/3).
     "F403", # can't detect undefined names from * import
     "F405", # can't detect undefined names from * import
     "F722", # syntax error in forward type annotation
@@ -68,6 +69,12 @@ ignore = [
     "UP040", # Use type aliases instead of type annotations
 ]
 typing-modules = ["frappe.types.DF"]
+
+[tool.ruff.lint.per-file-ignores]
+# central/billing/** is out of scope for this refactor and re-exports several
+# symbols (e.g. subscriptions.InvalidTransition) that F401 would otherwise strip.
+# Keep F401 enforced everywhere else, but not here.
+"central/billing/**" = ["F401"]
 
 [tool.ruff.format]
 quote-style = "double"
