@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import {
 	ScrollAreaRoot,
-	ScrollAreaViewport,
-	ScrollAreaThumb,
 	ScrollAreaScrollbar,
+	ScrollAreaThumb,
+	ScrollAreaViewport,
 } from 'reka-ui'
 
 interface Props {

@@ -17,7 +17,11 @@ import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
-import { openSearch, searchOpen, useSearchShortcut } from '@/composables/useSearch'
+import {
+	openSearch,
+	searchOpen,
+	useSearchShortcut,
+} from '@/composables/useSearch'
 
 useNotificationsRealtime()
 useSearchShortcut()
@@ -65,7 +69,11 @@ const breadcrumbs = computed(
 					to="/home"
 					:active="route.name === 'Home'"
 				/>
-				<MobileNavItem label="Search" icon="lucide-search" @click="openSearch" />
+				<MobileNavItem
+					label="Search"
+					icon="lucide-search"
+					@click="openSearch"
+				/>
 				<MobileNavItem
 					label="Notifications"
 					icon="lucide-bell"

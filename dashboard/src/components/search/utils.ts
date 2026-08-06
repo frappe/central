@@ -6,7 +6,10 @@ export const highlightMatch = (text: string, query: string): string => {
 	return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>')
 }
 
-export const filterIndex = (index: SearchGroups, query: string): SearchGroups => {
+export const filterIndex = (
+	index: SearchGroups,
+	query: string,
+): SearchGroups => {
 	const q = query.trim().toLowerCase()
 	if (!q) return index
 

@@ -1,11 +1,11 @@
 import { computed } from 'vue'
 import { sidebarSections } from '@/components/navigation/list'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { useServers } from '@/composables/useServers'
-import { useServerMapData } from '@/composables/useServerMapData'
-import { useTeamMembers } from '@/composables/useTeamMembers'
-import { useInvoices } from '@/composables/useInvoices'
 import { useAppMenu } from '@/composables/useAppMenu'
+import { useCapabilities } from '@/composables/useCapabilities'
+import { useInvoices } from '@/composables/useInvoices'
+import { useServerMapData } from '@/composables/useServerMapData'
+import { useServers } from '@/composables/useServers'
+import { useTeamMembers } from '@/composables/useTeamMembers'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
 
@@ -65,12 +65,15 @@ export function useSearchIndex() {
 
 		const actions: SearchItem[] = [
 			...ROUTE_ACTIONS.filter(
-				(action) => action.route !== '/team/invitations' || canManageMembers.value,
+				(action) =>
+					action.route !== '/team/invitations' || canManageMembers.value,
 			),
 			{
 				name: 'Change team',
 				icon: 'lucide-repeat',
-				onSelect: () => (changeTeamOpen.value = true),
+				onSelect: () => {
+					changeTeamOpen.value = true
+				},
 			},
 		]
 

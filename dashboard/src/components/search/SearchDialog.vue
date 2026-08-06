@@ -2,8 +2,8 @@
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import Scrollbar from '@/components/common/Scrollbar.vue'
-import { useSearchIndex } from './index'
 import type { SearchItem } from './index'
+import { useSearchIndex } from './index'
 import { filterIndex, highlightMatch } from './utils'
 
 const open = defineModel<boolean>('open', { default: false })
@@ -99,7 +99,9 @@ const navigate = (delta: number) => {
 					role="listbox"
 				>
 					<template v-for="(group, name) in filtered" :key="name">
-						<span class="mb-1 block px-2 py-1 text-xs uppercase text-ink-gray-4">
+						<span
+							class="mb-1 block px-2 py-1 text-xs uppercase text-ink-gray-4"
+						>
 							{{ name }}
 						</span>
 
