@@ -41,3 +41,30 @@ def project_team(
 		f"for {period_start}..{period_end} as of {today}"
 	)
 	return engine.project(team, period_start, period_end, today=today, mode=mode, assume=assume)
+
+
+@frappe.whitelist()
+def project_team_months(
+	team: str,
+	start: str | None = None,
+	months: int = 6,
+	today: str | None = None,
+	mode: str = "Derived",
+	assume: str | None = None,
+) -> dict:
+	"""Roll a team forward over several months, carrying what each one changes.
+
+	The question a single period cannot answer: not what September costs, but when the
+	credits run out and what happens after.
+	"""
+	authz.require_operator()
+
+	today = frappe.utils.getdate(today or frappe.utils.nowdate())
+	start = frappe.utils.getdate(start or frappe.utils.get_first_day(today))
+	months = max(1, min(frappe.utils.cint(months), 24))
+
+	frappe.logger("billing").info(
+		f"projection: {frappe.session.user} rolled {team} forward {months} months "
+		f"from {start} as of {today}"
+	)
+	return engine.project_months(team, start, months=months, today=today, mode=mode, assume=assume)

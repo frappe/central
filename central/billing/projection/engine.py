@@ -16,7 +16,7 @@ guarantee rather than a convention — see `guard`.
 import frappe
 
 from central.billing import settings
-from central.billing.projection import estimate, outcomes
+from central.billing.projection import estimate, outcomes, state
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
 from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
@@ -189,3 +189,131 @@ def _in_flight(team: str, today) -> list[dict]:
 			}
 		)
 	return out
+
+
+def project_months(
+	team: str,
+	start,
+	months: int = 1,
+	today=None,
+	mode: str = outcomes.DERIVED,
+	assume: str | None = None,
+) -> dict:
+	"""Roll a team forward month by month, carrying what each month changes.
+
+	This is the question a single-period projection cannot answer: not "what is the
+	September bill" but "when does this team run out". Each month is priced, settled
+	against the wallet the previous months left behind, escalated if it goes unpaid,
+	and the consequences carried into the next — which is how a projection arrives at
+	"credits run dry in month three, suspended in month four" rather than reporting a
+	comfortable balance every month because it re-read today's.
+	"""
+	with read_only():
+		return _project_months(team, start, months, today, mode, assume)
+
+
+def _project_months(team, start, months, today=None, mode=outcomes.DERIVED, assume=None) -> dict:
+	today = frappe.utils.getdate(today or frappe.utils.nowdate())
+	carried = state.seed(team, today)
+	period_start = frappe.utils.get_first_day(start)
+
+	periods = []
+	for _ in range(max(1, frappe.utils.cint(months))):
+		period_end = frappe.utils.get_last_day(period_start)
+		periods.append(_roll_one(team, carried, period_start, period_end, today, mode, assume))
+		period_start = frappe.utils.add_days(period_end, 1)
+
+	return {
+		"team": team,
+		"as_of": str(today),
+		"currency": carried.currency,
+		"months": periods,
+		"ends": {
+			"balance": carried.wallet().balance,
+			"standing": carried.standing,
+			"suspended_on": str(carried.suspended_on) if carried.suspended_on else None,
+			"tier_cap": carried.tier_cap(team),
+		},
+		"events": carried.events,
+	}
+
+
+def _roll_one(team, carried, period_start, period_end, today, mode, assume) -> dict:
+	"""One month, against the state the months before it left behind."""
+	# Promotional credit dies on its date whether or not anyone spent it. Sweep at the
+	# start of the month, not the end: a grant expiring on the 30th is the customer's to
+	# spend right up to the 30th, and destroying it before the month it covers would
+	# under-credit them by a whole period.
+	carried.expire_credits(frappe.utils.add_days(period_start, -1))
+
+	# A suspended resource is stopped, and a stopped resource is not billed on. The
+	# accrual ends at the suspension, not at the end of the projection.
+	if carried.suspended:
+		return {
+			"period_start": str(period_start),
+			"period_end": str(period_end),
+			"suspended": True,
+			"invoice": None,
+			"settlement": None,
+			"calendar": None,
+			"outcome": None,
+		}
+
+	metered = estimate.metered_lines(team, team_clusters(team), period_start, period_end, today=today)
+	rated = rate_team_period(team, period_start, period_end, metered=metered)
+	invoice = _invoice(rated)
+	calendar = _calendar(period_end, today)
+
+	settlement_result = _settle(carried, invoice, calendar, mode, assume)
+	findings = (
+		outcomes.derive(team, settlement_result["shortfall"], carried.currency, calendar["due_on"], today)
+		if mode == outcomes.DERIVED and invoice
+		else []
+	)
+	verdict = outcomes.verdict(mode, findings, assume)
+
+	# Nothing recovered means the ladder runs, and the ladder ends in suspension.
+	if invoice and settlement_result["shortfall"] > 0 and verdict.entailed_branch == "if_never_paid":
+		suspend = next((s for s in calendar["if_never_paid"] if s["stage"] == "Suspend"), None)
+		if suspend:
+			carried.suspend(suspend["date"])
+
+	return {
+		"period_start": str(period_start),
+		"period_end": str(period_end),
+		"suspended": False,
+		"invoice": invoice,
+		"settlement": settlement_result,
+		"calendar": calendar,
+		"outcome": verdict,
+		"balance_after": carried.wallet().balance,
+		"standing": carried.standing,
+	}
+
+
+def _settle(carried, invoice, calendar, mode, assume) -> dict | None:
+	"""Draw the projected wallet down, then say what is left owing.
+
+	Credits first, then whatever a card would have to cover — the same waterfall the
+	real settlement follows. Only what credits actually cover is certain here; the card
+	leg is exactly the part a projection must not claim to know.
+	"""
+	if not invoice:
+		return None
+
+	owed = frappe.utils.flt(invoice["expected_collection"])
+	drawn = carried.settle(owed)
+	shortfall = frappe.utils.flt(owed - drawn, 2)
+
+	# An invoice the operator says is paid, or one credits covered outright, is money
+	# in — and settled invoices are what move a team up the trust ladder.
+	settled = shortfall <= 0 or (mode == outcomes.ASSUMED and assume == "pays_on_time")
+	if settled:
+		carried.record_paid(invoice["total"])
+
+	return {
+		"owed": owed,
+		"from_credits": drawn,
+		"shortfall": max(0.0, shortfall),
+		"settled_by_credits": shortfall <= 0,
+	}

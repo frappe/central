@@ -42,6 +42,14 @@ class BillingSimulator {
 			default: frappe.datetime.month_start(),
 			change: () => this.refresh(),
 		});
+		this.months = this.page.add_field({
+			fieldname: "months",
+			label: __("Months"),
+			fieldtype: "Select",
+			options: ["1", "3", "6", "12"],
+			default: "1",
+			change: () => this.refresh(),
+		});
 		this.mode = this.page.add_field({
 			fieldname: "mode",
 			label: __("Outcomes"),
@@ -58,13 +66,26 @@ class BillingSimulator {
 		if (!team) return;
 
 		const start = this.period.get_value() || frappe.datetime.month_start();
+		const months = cint(this.months.get_value()) || 1;
+		const mode = this.mode.get_value() || "Derived";
 		this.show_empty(__("Projecting…"));
+
+		// One month is the detailed view; several is the roll-forward, where what each
+		// month leaves behind is the whole point.
+		const single = months === 1;
 		frappe
 			.call({
-				method: "central.billing.api.admin.projection.project_team",
-				args: { team, period_start: start, mode: this.mode.get_value() || "Derived" },
+				method: single
+					? "central.billing.api.admin.projection.project_team"
+					: "central.billing.api.admin.projection.project_team_months",
+				args: single
+					? { team, period_start: start, mode }
+					: { team, start, months, mode },
 			})
-			.then((r) => r.message && this.render(r.message))
+			.then((r) => {
+				if (!r.message) return;
+				return single ? this.render(r.message) : this.render_months(r.message);
+			})
 			.catch(() => this.show_empty(__("Could not project this team.")));
 	}
 
@@ -80,6 +101,97 @@ class BillingSimulator {
 		if (data.in_flight && data.in_flight.length) {
 			this.$body.append(this.in_flight_card(data.in_flight, data.as_of));
 		}
+	}
+
+	render_months(data) {
+		this.$body.empty();
+		this.$body.append(this.trajectory_card(data));
+		if (data.events && data.events.length) {
+			this.$body.append(this.events_card(data.events));
+		}
+	}
+
+	// ---- the roll-forward --------------------------------------------------
+
+	trajectory_card(data) {
+		const money = (v) => format_currency(v, data.currency);
+		const rows = data.months
+			.map((m) => {
+				if (m.suspended) {
+					return `<tr class="bs-stopped">
+						<td>${m.period_start}</td>
+						<td colspan="4">${__("Suspended — nothing accrues")}</td>
+					</tr>`;
+				}
+				const s = m.settlement || {};
+				const short = s.shortfall > 0;
+				return `<tr>
+					<td>${m.period_start}</td>
+					<td class="bs-right">${m.invoice ? money(m.invoice.total) : "—"}</td>
+					<td class="bs-right">${s.from_credits != null ? money(s.from_credits) : "—"}</td>
+					<td class="bs-right ${short ? "bs-short" : ""}">${
+						short ? money(s.shortfall) : "—"
+					}</td>
+					<td class="bs-right">${m.balance_after != null ? money(m.balance_after) : "—"}</td>
+				</tr>`;
+			})
+			.join("");
+
+		const ends = data.ends || {};
+		return $(`
+			<div class="bs-card">
+				<div class="bs-card-head">
+					<span class="bs-card-title">${__("Month by month")}</span>
+					<span class="bs-muted">${__(
+						"Each month settles against what the ones before it left"
+					)}</span>
+				</div>
+				<table class="bs-table">
+					<thead>
+						<tr>
+							<th>${__("Month")}</th>
+							<th class="bs-right">${__("Billed")}</th>
+							<th class="bs-right">${__("From credits")}</th>
+							<th class="bs-right">${__("Shortfall")}</th>
+							<th class="bs-right">${__("Balance after")}</th>
+						</tr>
+					</thead>
+					<tbody>${rows}</tbody>
+				</table>
+				<div class="bs-totals">
+					<div class="bs-total"><span>${__("Ends with")}</span><span>${money(
+						ends.balance || 0
+					)}</span></div>
+					<div class="bs-total"><span>${__("Standing")}</span><span>${frappe.utils.escape_html(
+						ends.standing || "Current"
+					)}</span></div>
+					${
+						ends.suspended_on
+							? `<div class="bs-total"><span>${__(
+									"Suspends on"
+							  )}</span><span>${ends.suspended_on}</span></div>`
+							: ""
+					}
+				</div>
+			</div>`);
+	}
+
+	events_card(events) {
+		const rows = events
+			.map(
+				(e) => `<li class="bs-finding">
+					<span class="bs-finding-summary">${frappe.utils.escape_html(e.event)} · ${e.date}</span>
+					${e.amount ? `<span class="bs-muted">${e.amount}</span>` : ""}
+				</li>`
+			)
+			.join("");
+		return $(`
+			<div class="bs-card">
+				<div class="bs-card-head">
+					<span class="bs-card-title">${__("Along the way")}</span>
+				</div>
+				<ul class="bs-findings">${rows}</ul>
+			</div>`);
 	}
 
 	// ---- projected invoice -------------------------------------------------
@@ -289,6 +401,8 @@ class BillingSimulator {
 			.bs-findings li:last-child { border-bottom: 0; }
 			.bs-finding-summary { font-weight: 500; color: var(--heading-color); }
 			.bs-dim { opacity: 0.35; }
+			.bs-short { color: var(--red-600, #cc2929); font-weight: 500; }
+			.bs-stopped td { color: var(--text-muted); font-style: italic; }
 			.bs-figure { padding: 14px 13px; overflow-x: auto; }
 			.bs-figure svg { display: block; min-width: 620px; width: 100%; height: auto; }
 		</style>`).appendTo(document.head);
