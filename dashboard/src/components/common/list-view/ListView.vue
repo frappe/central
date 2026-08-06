@@ -384,8 +384,6 @@ const showListControls = computed(
 		(props.searchable || props.filters.length > 0) &&
 		(hasRows.value || hasActiveQuery.value || props.loading),
 )
-
-defineExpose({ table })
 </script>
 
 <template>
@@ -438,7 +436,7 @@ defineExpose({ table })
 				v-if="$slots.toolbar"
 				class="ml-auto flex shrink-0 items-center gap-3"
 			>
-				<slot name="toolbar" :table="table" />
+				<slot name="toolbar" />
 			</div>
 		</div>
 
