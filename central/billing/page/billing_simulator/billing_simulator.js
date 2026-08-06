@@ -53,7 +53,7 @@ class BillingSimulator {
 		this.show_empty(__("Projecting…"));
 		frappe
 			.call({
-				method: "central.billing.projection.api.project_team",
+				method: "central.billing.api.admin.projection.project_team",
 				args: { team, period_start: start },
 			})
 			.then((r) => r.message && this.render(r.message))

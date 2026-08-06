@@ -3,7 +3,7 @@
 """The operator entry point onto projections."""
 
 import frappe
-from central.billing.projection import api
+from central.billing.api.admin import projection as api
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,

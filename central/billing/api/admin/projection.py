@@ -2,6 +2,9 @@
 # For license information, please see license.txt
 """The operator-facing entry point onto projections.
 
+Lives in the API layer because that is where whitelisted endpoints belong — the
+projection package stays domain-only and exposes no HTTP surface.
+
 Cross-team by nature — an operator asks about somebody else's money — so this is
 gated on the operator capability rather than on team scoping, and every call is
 logged with who asked and about whom.
