@@ -128,8 +128,10 @@ jobs:
       - name: Install Playwright
         working-directory: /home/runner/frappe-bench/apps/central
         # --ignore-scripts skips the dashboard postinstall (already built above).
+        # yarn is the project-wide package manager (root + dashboard); the root
+        # package-lock.json was removed so npm ci no longer has a lockfile.
         run: |
-          npm ci --ignore-scripts
+          yarn install --frozen-lockfile --ignore-scripts
           npx playwright install --with-deps chromium
 
       - name: Run E2E
