@@ -676,3 +676,78 @@ class TestFanOutRun(IntegrationTestCase):
 				"Error Log", {"method": run.BILLING_RUN_FAILURE, "reference_name": "team-fanout-a"}
 			)
 		)
+
+
+class TestRatingIsSeparableFromWriting(BillingTestBase):
+	"""The rating half decides; the generate half acts. Nothing may leak across."""
+
+	MONEY = (
+		"subtotal",
+		"commitment_discount",
+		"commitment_clawback",
+		"output_tax_type",
+		"output_tax_rate",
+		"output_tax_amount",
+		"tds_applicable",
+		"tds_rate",
+		"tds_amount",
+		"total",
+		"expected_collection",
+		"currency",
+		"invoice_type",
+	)
+
+	def _segments(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		add_segment(self.sub, "Plan Changed", 2000, "2026-06-10 00:00:00")
+
+	def test_rated_payload_matches_the_invoice_that_gets_written(self):
+		self._segments()
+		rated = invoicing.rate_team_period(TEAM, "2026-06-01", "2026-06-30")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_team_invoice(TEAM, "2026-06-01", "2026-06-30")
+		)
+
+		for field in self.MONEY:
+			self.assertEqual(rated.payload[field], inv.get(field), field)
+		self.assertEqual(
+			sorted(li["amount"] for li in rated.payload["items"]),
+			sorted(li.amount for li in inv.items),
+		)
+
+	def test_rating_a_period_writes_nothing(self):
+		self._segments()
+		before = frappe.db.count("Invoice", {"team": TEAM})
+		self.assertIsNotNone(invoicing.rate_team_period(TEAM, "2026-06-01", "2026-06-30"))
+		self.assertEqual(frappe.db.count("Invoice", {"team": TEAM}), before)
+
+	def test_rating_never_marks_a_commitment_breached(self):
+		# mark_breached is the effect half. Reaching it from the rating half would let a
+		# projection change real commitments.
+		self._segments()
+		from central.billing.catalog import commitments
+
+		with patch.object(commitments, "mark_breached") as marked:
+			invoicing.rate_team_period(TEAM, "2026-06-01", "2026-06-30")
+			self.assertFalse(marked.called)
+			invoicing.generate_team_invoice(TEAM, "2026-06-01", "2026-06-30")
+			self.assertTrue(marked.called)
+
+	def test_a_period_with_no_runtime_rates_to_nothing(self):
+		self.assertIsNone(invoicing.rate_team_period(TEAM, "2026-06-01", "2026-06-30"))
+
+	def test_a_future_period_rates_at_the_locked_rate(self):
+		# Nothing has happened in the period yet; the open segment carries forward, which
+		# is what lets a projection price a month that has not started.
+		add_segment(self.sub, "Created", 3000, "2026-06-01 00:00:00")
+		rated = invoicing.rate_team_period(TEAM, "2026-09-01", "2026-09-30")
+		self.assertEqual(rated.payload["subtotal"], 3000.0)
+
+	def test_subscription_rating_matches_its_draft(self):
+		self._segments()
+		rated = invoicing.rate_subscription_period(self.sub, "2026-06-01", "2026-06-30")
+		inv = frappe.get_doc(
+			"Invoice", invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
+		)
+		for field in self.MONEY:
+			self.assertEqual(rated.payload[field], inv.get(field), field)

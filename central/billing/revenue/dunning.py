@@ -64,6 +64,58 @@ def dunning_clock_start(invoice_doc):
 	return invoice_doc.get("dunning_starts_on") or invoice_doc.due_date
 
 
+def dunning_policy() -> frappe._dict:
+	"""The ladder's knobs, read once.
+
+	`overdue_after` is not its own setting — the invoice falls overdue once the last
+	retry has been spent, so with no retries configured there is nothing to wait for
+	and it goes overdue on day zero.
+	"""
+	retry_days = settings.dunning_retry_days()
+	return frappe._dict(
+		retry_days=retry_days,
+		overdue_after=retry_days[-1] if retry_days else 0,
+		suspend_after=settings.suspend_after_days(),
+		terminate_after=settings.terminate_after_days(),
+	)
+
+
+# Stages that land on the same day still have an order: a retry is attempted before
+# the invoice is declared overdue, and suspension precedes termination.
+_STAGE_ORDER = {"Retry": 0, "Overdue": 1, "Suspend": 2, "Terminate": 3}
+
+
+def dunning_schedule(clock_start, policy=None) -> list[frappe._dict]:
+	"""The dated ladder for an invoice whose dunning clock starts on `clock_start`.
+
+	Pure date arithmetic over the policy — no document reads, no writes, and no
+	knowledge of any particular invoice. `process_invoice_dunning` executes this
+	schedule; anything that wants to *show* the ladder without running it (which
+	dates, which stage, when the resource stops) reads the same list.
+
+	Pass an explicit `policy` to ask what a different ladder would do.
+	"""
+	policy = policy or dunning_policy()
+	start = frappe.utils.getdate(clock_start)
+	stages = [
+		frappe._dict(stage="Retry", attempt=n, day=day)
+		for n, day in enumerate(policy.retry_days, start=1)
+	]
+	stages.append(frappe._dict(stage="Overdue", day=policy.overdue_after))
+	stages.append(frappe._dict(stage="Suspend", day=policy.suspend_after))
+	stages.append(frappe._dict(stage="Terminate", day=policy.terminate_after))
+
+	for s in stages:
+		s.date = frappe.utils.add_days(start, s.day)
+	return sorted(stages, key=lambda s: (s.day, _STAGE_ORDER[s.stage]))
+
+
+def stages_reached(schedule: list, on) -> set:
+	"""The stage names whose date has arrived by `on`."""
+	today = frappe.utils.getdate(on)
+	return {s.stage for s in schedule if frappe.utils.getdate(s.date) <= today}
+
+
 def _notify(invoice, message: str):
 	invoice.add_comment("Info", message)
 
@@ -140,12 +192,11 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if not inv.due_date:
 		return {"invoice": invoice_name, "skipped": "no_due_date"}
 
-	days = (frappe.utils.getdate(now) - frappe.utils.getdate(dunning_clock_start(inv))).days
-	retry_days = settings.dunning_retry_days()
-	# With no retries configured there is nothing to wait for, so the invoice goes
-	# Overdue on day zero and the ladder below carries on from there.
-	overdue_after = retry_days[-1] if retry_days else 0
-	if retry_days and days < retry_days[0]:
+	clock_start = dunning_clock_start(inv)
+	days = (frappe.utils.getdate(now) - frappe.utils.getdate(clock_start)).days
+	policy = dunning_policy()
+	reached = stages_reached(dunning_schedule(clock_start, policy), now)
+	if policy.retry_days and "Retry" not in reached:
 		return {"invoice": invoice_name, "days_overdue": days, "action": "none"}
 
 	sub = frappe.get_doc("Subscription", inv.subscription) if inv.subscription else None
@@ -172,7 +223,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	standing = sub.account_standing if sub else None
 
 	# --- Day 7: Overdue + past_due, still running --------------------------
-	if days >= overdue_after:
+	if "Overdue" in reached:
 		if inv.status == "Open":
 			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
 			inv.save(ignore_permissions=True)
@@ -191,7 +242,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			standing = _advance_standing(inv.subscription, "Past Due")
 
 	# --- Day 14: suspend directive -> Agent stops --------------------------
-	if days >= settings.suspend_after_days() and sub:
+	if "Suspend" in reached and sub:
 		standing = _advance_standing(inv.subscription, "Suspended")
 		if standing == "Suspended" and not _active_directive(sub.team, "suspend"):
 			issue_token(sub.team, {}, suspend=True)
@@ -219,7 +270,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 			actions.append("suspend")
 
 	# --- Day 44: terminate directive -> Agent terminates -------------------
-	if days >= settings.terminate_after_days() and sub and not _active_directive(sub.team, "terminate"):
+	if "Terminate" in reached and sub and not _active_directive(sub.team, "terminate"):
 		issue_token(sub.team, {}, suspend=True, terminate=True)
 		_notify(inv, f"Terminated after the suspension window (day {days}).")
 		actions.append("terminate")

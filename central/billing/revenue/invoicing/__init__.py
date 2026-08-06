@@ -25,6 +25,8 @@ the public API so callers and the `billing.revenue.invoicing.*` enqueue paths ho
 from central.billing.revenue.invoicing.generate import (
 	generate_draft_invoice,
 	generate_team_invoice,
+	rate_subscription_period,
+	rate_team_period,
 	reconcile_subscription,
 )
 from central.billing.revenue.invoicing.lifecycle import (
@@ -70,6 +72,8 @@ __all__ = [
 	"open_and_collect",
 	"open_drafts",
 	"open_drafts",
+	"rate_subscription_period",
+	"rate_team_period",
 	"reconcile_subscription",
 	"reconcile_subscription",
 	"reissue_invoice",
