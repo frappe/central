@@ -15,6 +15,12 @@ const BASE_URL = process.env.E2E_BASE_URL || 'http://central.local:8011'
 
 export default defineConfig({
   testDir: './e2e',
+  // e2e/onboarding/smb-signup.spec.js relies on the dev-mode OTP bypass
+  // (types a fixed 123456), but e2e.yml runs with developer_mode 0, so it can
+  // never pass in that CI shape. Exclude it here rather than let recursive
+  // discovery pull it into the billing suite. Give it its own dev-mode project
+  // before re-enabling.
+  testIgnore: ['**/onboarding/**'],
   // The gateway round-trips (real Stripe/Razorpay test calls) are the slow part;
   // give specs and assertions generous ceilings so a live API hop never flakes.
   timeout: 90_000,
