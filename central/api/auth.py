@@ -59,6 +59,7 @@ def verify_signup(email: str, code: str) -> dict:
 	code = (code or "").strip()
 	pending = frappe.cache.get_value(_otp_key(email))
 
+	# NOTE: will be removed once we have setup proper email service
 	# for developer mode, any 6-digit code passes
 	if frappe.conf.developer_mode and pending and len(code) == 6 and code.isdigit():
 		pending["code"] = code
