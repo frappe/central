@@ -16,7 +16,7 @@ guarantee rather than a convention — see `guard`.
 import frappe
 
 from central.billing import settings
-from central.billing.projection import estimate
+from central.billing.projection import estimate, outcomes
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
 from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
@@ -28,6 +28,8 @@ def project(
 	period_start,
 	period_end,
 	today=None,
+	mode: str = outcomes.DERIVED,
+	assume: str | None = None,
 	recorder=None,
 	source=None,
 ) -> dict:
@@ -40,10 +42,12 @@ def project(
 	engine.
 	"""
 	with read_only():
-		return _project(team, period_start, period_end, today)
+		return _project(team, period_start, period_end, today, mode, assume)
 
 
-def _project(team: str, period_start, period_end, today=None) -> dict:
+def _project(
+	team: str, period_start, period_end, today=None, mode: str = outcomes.DERIVED, assume=None
+) -> dict:
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	start = frappe.utils.getdate(period_start)
 	end = frappe.utils.getdate(period_end)
@@ -52,14 +56,27 @@ def _project(team: str, period_start, period_end, today=None) -> dict:
 	rated = rate_team_period(team, start, end, metered=metered)
 
 	invoice = _invoice(rated)
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	calendar = _calendar(end, today)
+
+	# Derived findings are read off the amount we would actually try to collect, not the
+	# headline total: credits and withholding both change what the gateway is asked for.
+	collectable = invoice["expected_collection"] if invoice else 0.0
+	findings = (
+		outcomes.derive(team, collectable, currency, calendar["due_on"], today)
+		if mode == outcomes.DERIVED
+		else []
+	)
+
 	return {
 		"team": team,
 		"period_start": str(start),
 		"period_end": str(end),
 		"as_of": str(today),
-		"currency": frappe.db.get_value("Billing Profile", team, "currency"),
+		"currency": currency,
 		"invoice": invoice,
-		"calendar": _calendar(end, today),
+		"calendar": calendar,
+		"outcome": outcomes.verdict(mode, findings, assume),
 		"in_flight": _in_flight(team, today),
 	}
 
@@ -107,8 +124,8 @@ def _calendar(period_end, today) -> dict:
 
 	The fork is the point of the thing: an operator asking "what happens to this team"
 	wants to see settlement *and* escalation side by side, not one of them behind a
-	mode switch. Neither branch is asserted here — deriving which one the team's state
-	entails is a later, separate job.
+	mode switch. Neither branch is asserted here — `outcomes.verdict` marks which arm
+	the team's state entails, if either, and both are rendered regardless.
 	"""
 	opens_on = _opens_on(period_end)
 	due_on = frappe.utils.add_days(opens_on, settings.invoice_due_days())
