@@ -313,3 +313,82 @@ class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
 		inv = self._open_invoice(sub)
 		dunning.defer_dunning(inv, "the run backed up")
 		self.assertEqual(str(frappe.db.get_value("Invoice", inv, "due_date")), DUE)
+
+
+class TestTheLadderIsAList(IntegrationTestCase):
+	"""The schedule is date arithmetic over the policy, so it can be drawn without
+	being run — and the executor walks the same list."""
+
+	START = "2026-06-01"
+
+	def _policy(self, retries=(1, 3, 7), suspend=14, terminate=44):
+		return frappe._dict(
+			retry_days=list(retries),
+			overdue_after=list(retries)[-1] if retries else 0,
+			suspend_after=suspend,
+			terminate_after=terminate,
+		)
+
+	def _on(self, schedule, stage, attempt=None):
+		return [
+			s for s in schedule if s.stage == stage and (attempt is None or s.attempt == attempt)
+		][0]
+
+	def test_every_stage_lands_the_configured_number_of_days_out(self):
+		sched = dunning.dunning_schedule(self.START, self._policy())
+		self.assertEqual(str(self._on(sched, "Retry", 1).date), "2026-06-02")
+		self.assertEqual(str(self._on(sched, "Retry", 3).date), "2026-06-08")
+		self.assertEqual(str(self._on(sched, "Overdue").date), "2026-06-08")
+		self.assertEqual(str(self._on(sched, "Suspend").date), "2026-06-15")
+		self.assertEqual(str(self._on(sched, "Terminate").date), "2026-07-15")
+
+	def test_the_ladder_is_ordered_and_a_retry_precedes_the_overdue_it_shares_a_day_with(self):
+		sched = dunning.dunning_schedule(self.START, self._policy())
+		self.assertEqual([s.day for s in sched], sorted(s.day for s in sched))
+		last_retry = [i for i, s in enumerate(sched) if s.stage == "Retry"][-1]
+		overdue = [i for i, s in enumerate(sched) if s.stage == "Overdue"][0]
+		self.assertLess(last_retry, overdue)
+
+	def test_with_no_retries_the_invoice_is_overdue_immediately(self):
+		sched = dunning.dunning_schedule(self.START, self._policy(retries=()))
+		self.assertEqual(str(self._on(sched, "Overdue").date), self.START)
+		self.assertFalse([s for s in sched if s.stage == "Retry"])
+
+	def test_an_explicit_policy_is_used_instead_of_the_settings(self):
+		sched = dunning.dunning_schedule(
+			self.START, self._policy(retries=(2,), suspend=5, terminate=9)
+		)
+		self.assertEqual(str(self._on(sched, "Suspend").date), "2026-06-06")
+		self.assertEqual(str(self._on(sched, "Terminate").date), "2026-06-10")
+
+	def test_nothing_is_reached_before_the_clock_starts(self):
+		sched = dunning.dunning_schedule(self.START, self._policy())
+		self.assertEqual(dunning.stages_reached(sched, "2026-05-31"), set())
+		self.assertEqual(dunning.stages_reached(sched, self.START), set())
+
+	def test_stages_accumulate_as_the_dates_pass(self):
+		sched = dunning.dunning_schedule(self.START, self._policy())
+		self.assertEqual(dunning.stages_reached(sched, "2026-06-02"), {"Retry"})
+		self.assertEqual(dunning.stages_reached(sched, "2026-06-08"), {"Retry", "Overdue"})
+		self.assertEqual(
+			dunning.stages_reached(sched, "2026-06-15"), {"Retry", "Overdue", "Suspend"}
+		)
+		self.assertEqual(
+			dunning.stages_reached(sched, "2026-07-15"),
+			{"Retry", "Overdue", "Suspend", "Terminate"},
+		)
+
+	def test_the_policy_reads_the_settings(self):
+		with billing_settings(
+			dunning_retry_days="2, 5", suspend_after_days=9, terminate_after_days=20
+		):
+			policy = dunning.dunning_policy()
+		self.assertEqual(policy.retry_days, [2, 5])
+		self.assertEqual(policy.overdue_after, 5)
+		self.assertEqual(policy.suspend_after, 9)
+		self.assertEqual(policy.terminate_after, 20)
+
+	def test_drawing_the_ladder_touches_no_documents(self):
+		with patch.object(frappe.db, "get_value") as read:
+			dunning.dunning_schedule(self.START, self._policy())
+			self.assertFalse(read.called)
