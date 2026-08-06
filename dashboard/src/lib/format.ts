@@ -1,5 +1,3 @@
-import type { AssetRow } from '@/composables/useServers'
-
 // ── Money ──────────────────────────────────────────────────────────────────
 // Display-only. Billing stores integer minor units (ADR 0003), but the dashboard
 // endpoints already serialize MAJOR-unit numbers plus a `currency`, so the UI
@@ -36,17 +34,6 @@ export function signedMoney(
 ): string {
 	const sign = isCredit ? '+' : '−'
 	return `${sign} ${money(Math.abs(Number(amount ?? 0)), currency)}`
-}
-
-/** Compact spec summary for a server row, e.g. "2 vCPU · 4 GB RAM · 40 GB".
- *  Skips parts the mirror hasn't reported yet. */
-export function formatSpecs(server: AssetRow): string {
-	const parts: string[] = []
-	if (server.vcpus) parts.push(`${server.vcpus} vCPU`)
-	if (server.memory_megabytes)
-		parts.push(`${formatMemory(server.memory_megabytes)} RAM`)
-	if (server.disk_gigabytes) parts.push(`${server.disk_gigabytes} GB`)
-	return parts.join(' · ') || '—'
 }
 
 /** MB → human GB/MB. The doctype stores memory in megabytes. */

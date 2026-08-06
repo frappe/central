@@ -5,24 +5,6 @@ export type AssetStatus = NonNullable<Asset['status']> | (string & {})
 
 export type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue' | 'violet'
 
-// Asset status → Badge theme. Mirrors the Atlas lifecycle: Running is healthy,
-// transient states are amber, terminal/failure states are red, the rest neutral.
-const STATUS_THEME: Record<string, BadgeTheme> = {
-	Running: 'green',
-	Pending: 'orange',
-	Provisioning: 'orange',
-	Deploying: 'orange',
-	Resizing: 'orange',
-	Paused: 'orange',
-	Stopped: 'gray',
-	Failed: 'red',
-	Terminated: 'red',
-}
-
-export function statusTheme(status: AssetStatus): BadgeTheme {
-	return STATUS_THEME[status] ?? 'gray'
-}
-
 // A server mid-resize reads as "Resizing" regardless of the raw Atlas status (which
 // flips Running→Stopped→Running under it as the host power-cycles the VM). The flag is
 // Central's own, set for the length of the background reshape job (#84).
@@ -76,28 +58,6 @@ const INVITATION_STATUS_THEME: Record<InvitationStatus, BadgeTheme> = {
 
 export function invitationStatusTheme(status: InvitationStatus): BadgeTheme {
 	return INVITATION_STATUS_THEME[status] ?? 'gray'
-}
-
-// Subscription / invoice account-standing → Badge theme. Current is healthy,
-// past_due/dunning amber, suspended/terminated red.
-const STANDING_THEME: Record<string, BadgeTheme> = {
-	Current: 'green',
-	Active: 'green',
-	Paid: 'green',
-	Trialing: 'blue',
-	past_due: 'orange',
-	Past_Due: 'orange',
-	Overdue: 'orange',
-	Unpaid: 'orange',
-	Dunning: 'orange',
-	suspended: 'red',
-	Suspended: 'red',
-	Terminated: 'red',
-	Void: 'gray',
-}
-
-export function standingTheme(standing: string | null | undefined): BadgeTheme {
-	return (standing ? STANDING_THEME[standing] : undefined) ?? 'gray'
 }
 
 // Invoice status → Badge theme (case-insensitive): Paid green, Open/Unpaid amber,
