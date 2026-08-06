@@ -18,7 +18,8 @@
    "in_list_view": 1,
    "label": "User",
    "options": "User",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "role",
@@ -26,7 +27,8 @@
    "in_list_view": 1,
    "label": "Role",
    "options": "Team Role",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "default": "*",
