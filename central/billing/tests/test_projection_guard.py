@@ -3,7 +3,11 @@
 """A projection cannot write, and the database is what stops it."""
 
 import frappe
-from central.billing.projection.guard import ProjectionWroteError, read_only
+from central.billing.projection.guard import (
+	ProjectionBoundaryError,
+	ProjectionWroteError,
+	read_only,
+)
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team
 
@@ -77,3 +81,28 @@ class TestReadOnlyGuard(IntegrationTestCase):
 		with self.assertRaises(ZeroDivisionError):
 			with read_only():
 				1 / 0
+
+
+class TestTransactionBoundary(IntegrationTestCase):
+	def setUp(self):
+		ensure_team(TEAM)
+		frappe.db.commit()
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def test_projecting_mid_transaction_is_refused_rather_than_committing_it(self):
+		# Starting a read-only transaction implicitly commits the open one. Asking a
+		# question must never decide the fate of somebody else's unfinished work.
+		frappe.db.set_value("Team", TEAM, "team_name", "Half done")
+		with self.assertRaises(ProjectionBoundaryError):
+			with read_only():
+				pass
+
+	def test_the_pending_work_is_left_exactly_as_it_was(self):
+		frappe.db.set_value("Team", TEAM, "team_name", "Half done")
+		with self.assertRaises(ProjectionBoundaryError):
+			with read_only():
+				pass
+		# Neither committed nor discarded — still pending, still the caller's to resolve.
+		self.assertEqual(frappe.db.get_value("Team", TEAM, "team_name"), "Half done")

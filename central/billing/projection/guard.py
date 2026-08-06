@@ -30,14 +30,31 @@ class ProjectionWroteError(frappe.ValidationError):
 	"""
 
 
+class ProjectionBoundaryError(frappe.ValidationError):
+	"""A projection was asked for in the middle of unfinished work."""
+
+
 @contextmanager
 def read_only():
 	"""Run a block inside a read-only transaction, and name what happens if it writes.
 
-	Assumes the caller has nothing uncommitted: `START TRANSACTION` implicitly commits
-	an open transaction, so this belongs at the top of a read endpoint rather than in
-	the middle of unfinished work.
+	A projection is a transaction boundary. `START TRANSACTION` implicitly commits an
+	open one, so entering with pending writes would silently commit somebody else's
+	half-finished work — a side effect caused by asking a question, which is the exact
+	class of accident this guard exists to prevent. Frappe refuses the implicit commit
+	outright (`ImplicitCommitError`); we refuse earlier and say why. Deciding whether
+	that pending work should be kept or discarded belongs to the caller, never here.
+
+	In a request this never fires: a projection endpoint reads and writes nothing
+	before it starts.
 	"""
+	if frappe.db.transaction_writes:
+		raise ProjectionBoundaryError(
+			"A projection cannot start with unsaved changes pending — commit or roll "
+			"back first. Projections read a consistent snapshot and must not decide "
+			"the fate of someone else's transaction."
+		)
+
 	previous = frappe.flags.read_only
 	frappe.flags.read_only = True
 	frappe.db.begin(read_only=True)

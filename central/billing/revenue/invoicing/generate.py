@@ -206,24 +206,44 @@ def rate_subscription_period(subscription: str, period_start, period_end):
 	return _rate(sub.team, lines, period_start, period_end, subscription)
 
 
-def rate_team_period(team: str, period_start, period_end, subscription: str | None = None):
+def team_clusters(team: str) -> list[str]:
+	"""Every cluster the team runs an asset in, resolved in one pass."""
+	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
+	return sorted(
+		{c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c}
+	)
+
+
+def rate_team_period(
+	team: str,
+	period_start,
+	period_end,
+	subscription: str | None = None,
+	metered: list[dict] | None = None,
+):
 	"""What the team's whole book would bill for the period, across every cluster.
 	Reads only.
 
 	The rating half of `generate_team_invoice` — same lines, same commitment, same
 	tax, no insert. Returns None when the team has nothing billable.
+
+	`metered` replaces the metered lines rather than adding to them. The run leaves it
+	unset and bills the rollups that landed; a projection supplies estimated usage,
+	because a period that has not happened has no rollups and would otherwise be rated
+	as though the team used nothing.
 	"""
 	from central.billing.revenue.metering import metered_line_items_for_clusters
 
 	# Read the team once, not once per cluster: team_line_items pulls every
 	# subscription's fixed lines in one pass, and the metered rollups for all the
 	# team's clusters come back in a single query.
-	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
-	clusters = sorted(
-		{c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c}
-	)
 	lines = team_line_items(team, period_start, period_end)
-	lines += metered_line_items_for_clusters(team, clusters, period_start, period_end)
+	if metered is None:
+		lines += metered_line_items_for_clusters(
+			team, team_clusters(team), period_start, period_end
+		)
+	else:
+		lines += list(metered)
 	if not lines:
 		return None
 
