@@ -116,7 +116,7 @@ class TeamInvitation(Document):
 		self.save()
 		return True
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.resend_invitation.
 	def resend(self) -> dict:
 		self._require_manager()
 		if self.status != "Pending":
@@ -127,7 +127,7 @@ class TeamInvitation(Document):
 		self._send_invitation_notification()
 		return {"name": self.name, "expires_on": self.expires_on}
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.decline_invitation.
 	def decline(self) -> bool:
 		if self.email != frappe.session.user and not user_has_operator_bypass():
 			frappe.throw(_("This invitation belongs to another user."), frappe.PermissionError)
