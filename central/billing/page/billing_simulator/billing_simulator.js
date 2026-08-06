@@ -273,57 +273,75 @@ function timeline_svg(calendar) {
 	const paid = calendar.if_paid_on_time[0];
 	const fork = x(calendar.due_on);
 
-	const marks = unpaid
-		.map((s) => {
-			const px = x(s.date);
-			const label = s.attempt ? `${s.stage} ${s.attempt}` : s.stage;
-			const terminal = s.stage === "Suspend" || s.stage === "Terminate";
-			const glyph = terminal
-				? `<rect x="${px - 4}" y="181" width="8" height="26" fill="var(--red-500, #e03636)"></rect>`
-				: `<circle cx="${px}" cy="194" r="4" fill="var(--red-500, #e03636)"></circle>`;
+	// Stages routinely share a date — the last retry and the overdue flip are the same
+	// day by construction, since an invoice falls overdue once its retries are spent.
+	// Drawing them as separate marks stacks two labels on one pixel.
+	const by_date = new Map();
+	for (const s of unpaid) {
+		const label = s.attempt ? `${s.stage} ${s.attempt}` : s.stage;
+		const group = by_date.get(s.date) || { date: s.date, labels: [], terminal: false };
+		group.labels.push(label);
+		group.terminal = group.terminal || s.stage === "Suspend" || s.stage === "Terminate";
+		by_date.set(s.date, group);
+	}
+
+	// Neighbouring dates can still be a few pixels apart (day 1 and day 3 of a 44-day
+	// ladder), so alternate the labels between two rows rather than let them collide.
+	let previous_x = -Infinity;
+	let row = 0;
+	const marks = [...by_date.values()]
+		.map((g) => {
+			const px = x(g.date);
+			row = px - previous_x < 70 ? 1 - row : 0;
+			previous_x = px;
+			const date_y = 102 - row * 14;
+			const label_y = 148 + row * 14;
+			const glyph = g.terminal
+				? `<rect x="${px - 4}" y="107" width="8" height="26" fill="var(--red-500, #e03636)"></rect>`
+				: `<circle cx="${px}" cy="120" r="4" fill="var(--red-500, #e03636)"></circle>`;
 			return `${glyph}
-				<text x="${px}" y="176" font-size="10" text-anchor="middle"
-					fill="var(--text-color)">${frappe.datetime.str_to_user(s.date)}</text>
-				<text x="${px}" y="222" font-size="10" text-anchor="middle"
-					fill="var(--text-muted)">${label}</text>`;
+				<text x="${px}" y="${date_y}" font-size="10" text-anchor="middle"
+					fill="var(--text-color)">${frappe.datetime.str_to_user(g.date)}</text>
+				<text x="${px}" y="${label_y}" font-size="10" text-anchor="middle"
+					fill="var(--text-muted)">${g.labels.join(" · ")}</text>`;
 		})
 		.join("");
 
 	return $(`
-		<svg viewBox="0 0 ${W} 250" role="img"
+		<svg viewBox="0 0 ${W} 176" role="img"
 			aria-label="${__("Both branches of what happens after the invoice falls due")}">
-			<text x="4" y="100" font-size="11" font-weight="600"
+			<text x="4" y="30" font-size="11" font-weight="600"
 				fill="var(--green-600, #30a66d)">${__("If paid on time")}</text>
-			<text x="4" y="198" font-size="11" font-weight="600"
+			<text x="4" y="124" font-size="11" font-weight="600"
 				fill="var(--red-600, #cc2929)">${__("If never paid")}</text>
 
-			<line x1="${LEFT}" y1="146" x2="${W - RIGHT}" y2="146"
+			<line x1="${LEFT}" y1="72" x2="${W - RIGHT}" y2="72"
 				stroke="var(--border-color)"></line>
-			<line x1="${LEFT}" y1="146" x2="${fork}" y2="146"
+			<line x1="${LEFT}" y1="72" x2="${fork}" y2="72"
 				stroke="var(--text-light)" stroke-width="2"></line>
-			<circle cx="${LEFT}" cy="146" r="4" fill="var(--text-light)"></circle>
-			<text x="${LEFT}" y="132" font-size="10" text-anchor="middle"
+			<circle cx="${LEFT}" cy="72" r="4" fill="var(--text-light)"></circle>
+			<text x="${LEFT}" y="58" font-size="10" text-anchor="middle"
 				fill="var(--text-color)">${__("Opens")} ${frappe.datetime.str_to_user(
 					calendar.opens_on
 				)}</text>
 
-			<circle cx="${fork}" cy="146" r="4.5" fill="var(--text-color)"></circle>
-			<text x="${fork}" y="118" font-size="10.5" text-anchor="middle" font-weight="600"
+			<circle cx="${fork}" cy="72" r="4.5" fill="var(--text-color)"></circle>
+			<text x="${fork}" y="44" font-size="10.5" text-anchor="middle" font-weight="600"
 				fill="var(--text-color)">${__("Due")} ${frappe.datetime.str_to_user(
 					calendar.due_on
 				)}</text>
 
-			<path d="M ${fork} 146 C ${fork + 26} 146, ${fork + 26} 96, ${fork + 52} 96"
+			<path d="M ${fork} 72 C ${fork + 26} 72, ${fork + 26} 26, ${fork + 52} 26"
 				fill="none" stroke="var(--green-500, #59ba8b)" stroke-width="2"></path>
-			<circle cx="${fork + 52}" cy="96" r="4" fill="var(--green-500, #59ba8b)"></circle>
-			<text x="${fork + 64}" y="92" font-size="10.5"
+			<circle cx="${fork + 52}" cy="26" r="4" fill="var(--green-500, #59ba8b)"></circle>
+			<text x="${fork + 64}" y="30" font-size="10.5"
 				fill="var(--green-600, #30a66d)">${__("Settled")} ${frappe.datetime.str_to_user(
 					paid.date
 				)}</text>
 
-			<path d="M ${fork} 146 C ${fork + 26} 146, ${fork + 26} 194, ${fork + 52} 194"
+			<path d="M ${fork} 72 C ${fork + 26} 72, ${fork + 26} 120, ${fork + 52} 120"
 				fill="none" stroke="var(--red-500, #e03636)" stroke-width="2"></path>
-			<line x1="${fork + 52}" y1="194" x2="${W - RIGHT}" y2="194"
+			<line x1="${fork + 52}" y1="120" x2="${W - RIGHT}" y2="120"
 				stroke="var(--red-500, #e03636)" stroke-width="2"></line>
 			${marks}
 		</svg>`);
