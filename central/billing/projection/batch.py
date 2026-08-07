@@ -185,23 +185,31 @@ def _project_page(batch_doc, teams: list) -> int:
 	database guarantee, not a convention — so the rows it produces are handed back as
 	plain data and written afterwards in an ordinary transaction.
 	"""
-	rows = []
+	rows, failures = [], []
 	for team in teams:
 		try:
 			rows.append(_summarise(team, batch_doc))
 		except Exception:  # noqa: BLE001
-			# One bad team must not take the cohort down; it is recorded and skipped,
-			# the same containment the billing run gives a failing team.
-			frappe.log_error(
-				title="Billing Projection Failure",
-				message=frappe.get_traceback(),
-				reference_doctype="Billing Projection Batch",
-				reference_name=batch_doc.name,
-			)
+			# One bad team must not take the cohort down — the same containment the
+			# billing run gives a failing team. The failure is *held*, not logged here:
+			# writing an Error Log mid-page leaves the transaction dirty, and the next
+			# team's projection then refuses to start. Containment that cascades is not
+			# containment; it turns one bad team into a lost page.
+			failures.append((team, frappe.get_traceback()))
 
 	for row in rows:
 		frappe.get_doc(row).insert(ignore_permissions=True)
 	frappe.db.commit()
+
+	for team, traceback in failures:
+		frappe.log_error(
+			title="Billing Projection Failure",
+			message=f"team: {team}\n\n{traceback}",
+			reference_doctype="Billing Projection Batch",
+			reference_name=batch_doc.name,
+		)
+	if failures:
+		frappe.db.commit()
 	return len(rows)
 
 

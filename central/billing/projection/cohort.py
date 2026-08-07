@@ -46,10 +46,14 @@ def budget_seconds() -> int:
 	production safety limit rather than a preference: raising it is how the bound stops
 	being a bound.
 	"""
-	configured = frappe.db.get_single_value("Billing Settings", "projection_budget_seconds")
-	# Distinguish unset from zero. `or` would collapse them, and zero is a real
-	# instruction — an operator switching cohort projections off entirely.
-	return DEFAULT_BUDGET_SECONDS if configured is None else frappe.utils.cint(configured)
+	# Zero is treated as unset, deliberately. The field is an Int on a Single: it reads
+	# as None until somebody saves Billing Settings, and as 0 forever after — so any
+	# unrelated edit to that form would otherwise disable cohort projections site-wide,
+	# silently. A budget of zero seconds is not a policy anyone wants either; it refuses
+	# a one-team cohort.
+	return frappe.utils.cint(
+		frappe.db.get_single_value("Billing Settings", "projection_budget_seconds")
+	) or DEFAULT_BUDGET_SECONDS
 
 
 def _filtered_teams_query(filters: dict):

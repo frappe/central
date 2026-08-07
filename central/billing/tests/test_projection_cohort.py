@@ -81,13 +81,13 @@ class TestTheBound(CohortTestBase):
 		self.assertTrue(sizing.within_budget)
 
 	def test_an_over_budget_cohort_is_refused(self):
-		with billing_settings(projection_budget_seconds=0):
+		with billing_settings(projection_budget_seconds=1):
 			with self.assertRaises(cohort.CohortTooLargeError):
 				cohort.require_within_budget({}, months=12)
 
 	def test_the_refusal_carries_what_was_asked_and_what_it_would_cost(self):
 		# A refusal that does not say how big or how long is a dead end.
-		with billing_settings(projection_budget_seconds=0):
+		with billing_settings(projection_budget_seconds=1):
 			try:
 				cohort.require_within_budget({}, months=12)
 				self.fail("expected a refusal")
@@ -99,7 +99,7 @@ class TestTheBound(CohortTestBase):
 
 	def test_there_is_no_way_to_project_an_unbounded_cohort(self):
 		# An empty filter set must not be a bypass — it is the widest possible ask.
-		with billing_settings(projection_budget_seconds=0):
+		with billing_settings(projection_budget_seconds=1):
 			with self.assertRaises(cohort.CohortTooLargeError):
 				cohort.require_within_budget(None, months=1)
 			with self.assertRaises(cohort.CohortTooLargeError):
@@ -108,6 +108,13 @@ class TestTheBound(CohortTestBase):
 	def test_the_budget_is_read_from_settings(self):
 		with billing_settings(projection_budget_seconds=1234):
 			self.assertEqual(cohort.budget_seconds(), 1234)
+
+	def test_an_unsaved_or_zeroed_setting_falls_back_rather_than_disabling_everything(self):
+		# The field is an Int on a Single: unset reads None, and 0 forever after anybody
+		# saves the form. Honouring that 0 would turn an unrelated edit into a silent
+		# site-wide switch-off.
+		with billing_settings(projection_budget_seconds=0):
+			self.assertEqual(cohort.budget_seconds(), cohort.DEFAULT_BUDGET_SECONDS)
 
 	def test_a_refused_cohort_is_told_what_would_narrow_it(self):
 		hints = cohort.narrowing_hints({"currency": "INR"})
@@ -326,7 +333,7 @@ class TestTheReport(CohortTestBase):
 	def test_an_over_budget_cohort_is_refused_in_the_message_slot(self):
 		# A designed panel above an empty table, not a thrown error — the filters stay
 		# live so the operator can narrow in place.
-		with billing_settings(projection_budget_seconds=0):
+		with billing_settings(projection_budget_seconds=1):
 			_c, rows, message, _chart, _s = self._execute(months=12)
 		self.assertEqual(rows, [])
 		self.assertIn("too large to project", message)
@@ -420,3 +427,66 @@ class TestRetentionIsScheduled(IntegrationTestCase):
 
 		daily = hooks.scheduler_events.get("daily", [])
 		self.assertIn("central.billing.projection.batch.prune", daily)
+
+
+class TestContainmentDoesNotCascade(CohortTestBase):
+	"""One bad team costs one team, not the rest of its page."""
+
+	def setUp(self):
+		super().setUp()
+		from central.billing.tests.utils import add_segment
+
+		for team in self.teams:
+			sub = frappe.get_all("Subscription", {"team": team}, pluck="name")[0]
+			add_segment(sub, "Created", 1000, "2026-01-01 00:00:00")
+		frappe.db.commit()
+
+	def tearDown(self):
+		for b in frappe.get_all("Billing Projection Batch", pluck="name"):
+			frappe.db.delete("Billing Projection Summary", {"batch": b})
+			frappe.delete_doc("Billing Projection Batch", b, force=True, ignore_permissions=True)
+		frappe.db.commit()
+		super().tearDown()
+
+	def test_a_failing_team_does_not_take_the_rest_of_the_page_with_it(self):
+		# Logging the failure inline would leave the transaction dirty, and the next
+		# team's projection would then refuse to start — one casualty becoming a page.
+		from unittest.mock import patch
+
+		from central.billing.projection import batch
+
+		doc = frappe.get_doc(
+			{
+				"doctype": "Billing Projection Batch",
+				"as_of": "2026-08-06",
+				"period_start": "2026-09-01",
+				"months": 1,
+				"status": "Queued",
+				"filters": frappe.as_json({}),
+				"teams_expected": len(self.teams),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		real = batch._summarise
+		calls = {"n": 0}
+
+		def flaky(team, batch_doc):
+			calls["n"] += 1
+			if calls["n"] == 1:
+				raise ValueError("this team is broken")
+			return real(team, batch_doc)
+
+		with patch.object(batch, "_summarise", side_effect=flaky):
+			result = batch.run_batch(doc.name, teams=self.teams)
+
+		# One lost, the rest projected — not one lost and the rest abandoned.
+		self.assertEqual(result["teams_projected"], len(self.teams) - 1)
+		self.assertEqual(result["status"], "Complete")
+
+	def test_a_finding_formats_money_without_asking_the_database(self):
+		# fmt_money resolves the site number format, and that read can write — fatal
+		# inside the read-only transaction a projection runs in.
+		from central.billing.projection import outcomes
+
+		self.assertEqual(outcomes._money(12373.5, "INR"), "INR 12,373.50")
