@@ -42,15 +42,18 @@ def classify(line: dict, effective_from=None) -> str:
 	taken before the change existed.
 	"""
 	derivation = line.get("derivation") or {}
+	# An estimated line wraps the measured one it was inferred from. Estimating a
+	# quantity says nothing about where the rate came from, so look through.
+	measured = derivation.get("measured_basis") or {}
 
-	if derivation.get("rate_source") == _LIVE_RATE_SOURCE:
+	if _LIVE_RATE_SOURCE in (derivation.get("rate_source"), measured.get("rate_source")):
 		return REPRICED
 
 	# `rate_locked_at`, never `segment_from`. The latter is clamped to the billing window,
 	# so a resource provisioned in March reads as opening on the 1st of whatever month is
 	# being projected — which would classify every long-running subscription as newly
 	# priced and report the exact opposite of the truth.
-	locked_at = derivation.get("rate_locked_at")
+	locked_at = derivation.get("rate_locked_at") or measured.get("rate_locked_at")
 	if effective_from and locked_at:
 		if frappe.utils.getdate(locked_at) >= frappe.utils.getdate(effective_from):
 			return REPRICED
@@ -71,11 +74,26 @@ def split(lines: list, currency: str, effective_from=None) -> dict:
 
 	return {
 		"currency": currency,
+		# Structural: how this bill is priced, regardless of which change is being asked
+		# about. What a *particular* change did is the delta between the two projections —
+		# a different question, and conflating them would over-claim whenever an override
+		# touches one family and the bill contains another that merely happens to be
+		# live-priced.
 		"grandfathered": frappe.utils.flt(buckets[GRANDFATHERED], 2),
 		"repriced": frappe.utils.flt(buckets[REPRICED], 2),
 		"grandfathered_resources": len(resources[GRANDFATHERED]),
 		"repriced_resources": len(resources[REPRICED]),
 		"effective_from": str(effective_from) if effective_from else None,
+	}
+
+
+def with_delta(split_result: dict, live_total: float, altered_total: float) -> dict:
+	"""Attach what the change actually did to how the bill is priced."""
+	return {
+		**split_result,
+		"delta": frappe.utils.flt(altered_total - live_total, 2),
+		"live_total": frappe.utils.flt(live_total, 2),
+		"altered_total": frappe.utils.flt(altered_total, 2),
 	}
 
 

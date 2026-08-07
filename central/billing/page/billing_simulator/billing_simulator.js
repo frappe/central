@@ -81,17 +81,23 @@ class BillingSimulator {
 		// projection we are waiting for — with the default period, silently.
 		this.applying = true;
 		this.show_empty(__("Projecting…"));
+		// Compare rather than project: a scenario's whole point is the difference it
+		// makes, and the difference needs the unaltered projection to sit beside.
 		frappe
 			.call({
-				method: "central.billing.api.admin.projection.project_scenario",
+				method: "central.billing.api.admin.projection.compare_scenario",
 				args: { scenario: name },
 			})
 			.then((r) => {
 				if (!r.message) return;
-				const out = r.message;
+				const comparison = r.message;
+				const out = comparison.altered;
+				out.repricing = comparison.repricing || out.repricing;
+				out.explanation = comparison.explanation;
 				this.team.set_value(out.team);
 				if (out.scenario && out.scenario.months > 1) this.render_months(out);
 				else this.render(out);
+				if (out.repricing) this.$body.prepend(this.repricing_card(out));
 				if (out.scenario) this.$body.prepend(this.pretending_card(out.scenario));
 			})
 			.catch(() => this.show_empty(__("Could not project this scenario.")))
@@ -124,6 +130,58 @@ class BillingSimulator {
 					<span class="bs-muted">${__("Billing Settings are unchanged")}</span>
 				</div>
 				<ul class="bs-findings">${items}</ul>
+			</div>`);
+	}
+
+	// The answer everyone expects to be a multiplication. Showing the two sides is the
+	// only way a zero reads as a finding rather than a bug.
+	repricing_card(out) {
+		const r = out.repricing;
+		const money = (v) => format_currency(v, r.currency);
+		const delta = r.delta === undefined ? null : r.delta;
+
+		return $(`
+			<div class="bs-card">
+				<div class="bs-card-head">
+					<span class="bs-card-title">${__("How this bill is priced")}</span>
+					<span class="bs-muted">${__("Effective {0}", [r.effective_from || "—"])}</span>
+				</div>
+				<table class="bs-table">
+					<thead>
+						<tr>
+							<th>${__("Priced")}</th>
+							<th class="bs-right">${__("Amount")}</th>
+							<th class="bs-right">${__("Resources")}</th>
+							<th>${__("Moves when")}</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td>${__("Grandfathered")}</td>
+							<td class="bs-right">${money(r.grandfathered)}</td>
+							<td class="bs-right">${r.grandfathered_resources}</td>
+							<td class="bs-muted">${__("the resource is resized or replaced")}</td>
+						</tr>
+						<tr>
+							<td>${__("Repriced")}</td>
+							<td class="bs-right ${r.repriced ? "bs-short" : ""}">${money(r.repriced)}</td>
+							<td class="bs-right">${r.repriced_resources}</td>
+							<td class="bs-muted">${__("immediately — priced from today's catalog")}</td>
+						</tr>
+					</tbody>
+				</table>
+				<div class="bs-totals">
+					<div class="bs-total bs-grand"><span>${__("What this change does")}</span><span>${
+						delta === null ? "—" : money(delta)
+					}</span></div>
+					${
+						out.explanation
+							? `<p class="bs-muted" style="margin:8px 0 0; line-height:1.55; max-width:74ch">${frappe.utils.escape_html(
+									out.explanation
+							  )}</p>`
+							: ""
+					}
+				</div>
 			</div>`);
 	}
 

@@ -109,8 +109,10 @@ def _from_trailing(team: str, clusters, period_start, months: int = TRAILING_MON
 
 	merged: dict = {}
 	observed: dict = {}
+	measured_basis: dict = {}
 	for line in history:
 		key = tuple(line.get(f) for f in _KEY)
+		measured_basis.setdefault(key, line.get("derivation"))
 		agg = merged.setdefault(key, {**line, "quantity": 0.0, "amount": 0.0})
 		agg["quantity"] += frappe.utils.flt(line.get("quantity"))
 		agg["amount"] += frappe.utils.flt(line.get("amount"))
@@ -130,6 +132,12 @@ def _from_trailing(team: str, clusters, period_start, months: int = TRAILING_MON
 			"months": months,
 			"observed_total": frappe.utils.flt(observed[key], 2),
 			"arithmetic": f"{frappe.utils.flt(observed[key], 2)} ÷ {months}",
+			# Keep how the underlying usage was priced. Estimating the *quantity* does not
+			# change where the *rate* comes from, and dropping it would make a live-priced
+			# family look grandfathered — reporting that a price change misses usage it
+			# actually reaches.
+			"measured_basis": measured_basis.get(key),
+			"rate_source": (measured_basis.get(key) or {}).get("rate_source"),
 		}
 		out.append(line)
 	return out

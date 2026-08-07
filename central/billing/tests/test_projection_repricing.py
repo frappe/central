@@ -272,3 +272,42 @@ class TestLivePricedFamilies(RepricingTestBase):
 			out["altered"]["invoice"]["total"], out["live"]["invoice"]["total"]
 		)
 		self.assertIn("priced live", out["explanation"])
+
+
+class TestEstimatedLinesKeepTheirPricingBasis(IntegrationTestCase):
+	def test_an_estimated_live_priced_line_is_still_repriced(self):
+		# Estimating the quantity says nothing about where the rate comes from. Losing
+		# that would report a price change as missing usage it actually reaches.
+		line = {
+			"amount": 933.33,
+			"derivation": {
+				"mode": "Estimated",
+				"measured_basis": {"rate_source": "current catalog rate"},
+				"rate_source": "current catalog rate",
+			},
+		}
+		self.assertEqual(repricing.classify(line), repricing.REPRICED)
+
+	def test_an_estimated_grandfathered_line_stays_grandfathered(self):
+		line = {
+			"amount": 100,
+			"derivation": {
+				"mode": "Estimated",
+				"measured_basis": {"rate_source": "locked at ingest"},
+				"rate_source": "locked at ingest",
+			},
+		}
+		self.assertEqual(repricing.classify(line), repricing.GRANDFATHERED)
+
+
+class TestTheSplitDoesNotOverclaim(RepricingTestBase):
+	def test_the_structural_split_and_the_change_are_reported_separately(self):
+		# Live-priced revenue is repriceable whether or not *this* override touches it.
+		# What the change did is the delta, and the two must not be read as one number.
+		out = scenario.compare(self._scenario(percent=20), today=TODAY)
+		r = out["repricing"]
+
+		self.assertIn("grandfathered", r)
+		self.assertIn("delta", r)
+		self.assertEqual(r["delta"], r["altered_total"] - r["live_total"])
+		self.assertEqual(r["delta"], 0.0)

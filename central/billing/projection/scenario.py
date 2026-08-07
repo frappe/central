@@ -125,7 +125,9 @@ def compare(scenario, today=None) -> dict:
 	if rates:
 		# Say what the number means, because the number alone is the thing that gets
 		# misread: a catalog change does not reach a locked rate.
-		result["repricing"] = altered.get("repricing")
+		result["repricing"] = repricing.with_delta(
+			altered["repricing"], _total(live), _total(altered)
+		)
 		result["explanation"] = repricing.explain(
 			_total(live), _total(altered), altered["repricing"]
 		)
