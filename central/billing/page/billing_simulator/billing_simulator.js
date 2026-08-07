@@ -367,13 +367,22 @@ class BillingSimulator {
 
 		// A total is never shown on its own when part of it was inferred — a bill that
 		// is half guesswork must not read like a bill.
+		// Every basis present gets a row. A split that does not add up to the total is
+		// worse than no split — it invites the reader to trust the total and ignore it.
 		const split = invoice.has_estimates
-			? `<div class="bs-total"><span>${__("Measured")}</span><span>${money(
-					invoice.measured
-			  )}</span></div>
-			   <div class="bs-total"><span>${__("Estimated")}</span><span>${money(
-					invoice.estimated
-			  )}</span></div>`
+			? [
+					["Measured", invoice.measured],
+					["Estimated", invoice.estimated],
+					["Assumed", invoice.assumed],
+			  ]
+					.filter(([, amount]) => amount)
+					.map(
+						([label, amount]) =>
+							`<div class="bs-total"><span>${__(label)}</span><span>${money(
+								amount
+							)}</span></div>`
+					)
+					.join("")
 			: "";
 
 		const tax = invoice.output_tax_amount
