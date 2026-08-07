@@ -53,3 +53,21 @@ the real site session id lives in the Frappe site's own session store.
   per-user session must ride a NEW scope (e.g. `site_user`) so older benches reject it here — the
   identity is threaded through `SiteLogin.create_session(login_as=...)`, which defaults to
   Administrator. Adding it is additive: a new claim + a new scope handler, no contract change.
+
+## Token scopes (one signing key, three purposes)
+
+Central mints three token types with the same RS256 key, separated **only** by the
+`scope` claim, which `_mint` now sets as a required first-class claim on every token:
+
+| scope | minter | `aud` | TTL | consumed by |
+| --- | --- | --- | --- | --- |
+| `bench` / `site` | `mint_bench_login` / `mint_site_login` | bench's `pilot_credential_id` | 5 min | the bench (login SID) |
+| `enroll` | `mint_bootstrap_token` | `pilot_credential_id` | 30 min | Central (`verify_bootstrap_token`, asserts `scope == enroll`) |
+| `datum` | `mint_metrics_token` | `pilot_credential_id` | **7 days** | Datum's vmauth metrics gateway |
+
+The `datum` token carries a vmauth-specific claim: `vm_access.metrics_extra_labels =
+["resource_id=<id>"]`. vmauth turns those into labels the metrics store applies over
+whatever the producer sent, so a pilot can only write metrics attributed to its own
+resource — it cannot spoof another. There is **no revocation list**; the short TTL plus
+the pilot's re-fetch on 401 / near expiry (`api/pilot.py`) is the bound. `verify_bootstrap_token`
+requires `scope`, so a `bench`/`datum` token can never be accepted as an enrollment token.
