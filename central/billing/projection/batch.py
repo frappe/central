@@ -25,7 +25,7 @@ import time
 
 import frappe
 
-from central.billing.projection import cohort, engine, outcomes
+from central.billing.projection import behaviour, cohort, engine, outcomes
 
 PROJECTION_QUEUE = "projection"
 PAGE_SIZE = 500
@@ -262,6 +262,7 @@ def _summarise(team: str, batch_doc) -> dict:
 		"outcome_reason": findings[0]["summary"] if findings else None,
 		"due_on": (calendar or {}).get("due_on"),
 		"suspends_on": suspends_on,
+		"paid_on_time": _paid_on_time(team, batch_doc.as_of),
 	}
 
 
@@ -285,6 +286,12 @@ def _outcome_label(outcome, findings) -> str:
 	if outcome.get("mode") != outcomes.DERIVED:
 		return outcome.get("mode")
 	return findings[0]["summary"] if findings else "No obstacle found"
+
+
+def _paid_on_time(team: str, on) -> str:
+	""""6 / 6" beside a failure points at us; "3 / 6" points at them."""
+	record = behaviour.summary(team, on=on)
+	return f"{record['on_time']} / {record['invoices']}" if record["invoices"] else "—"
 
 
 def _settles_via(team: str) -> str:

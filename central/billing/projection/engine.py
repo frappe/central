@@ -16,7 +16,7 @@ guarantee rather than a convention — see `guard`.
 import frappe
 
 from central.billing import settings
-from central.billing.projection import estimate, events as injected, outcomes, state
+from central.billing.projection import behaviour, estimate, events as injected, outcomes, state
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
 from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
@@ -90,6 +90,9 @@ def _project(
 		"in_flight": _in_flight(team, today),
 		"injected_events": injected.timeline(events),
 		"refused": injected.refusals(team, events),
+		# "Suspended on the 12th" means one thing for a team that has never missed a
+		# payment and the opposite for one that is late every month.
+		"behaviour": behaviour.with_verdict(team, on=today),
 	}
 
 
