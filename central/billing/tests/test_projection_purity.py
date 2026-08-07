@@ -24,10 +24,20 @@ BANNED = (
 	"frappe.db.commit",
 )
 
-# Modules whose decision half a projection calls. A ban on the projection package
-# alone would prove nothing about what runs three frames down.
+# The modules a projection *decides* in, listed one by one rather than by package.
+# `projection/batch.py` is deliberately absent: it is the effect half — it enqueues the
+# work and persists the result, which is exactly what it is for. Banning those calls
+# there would not make anything safer, it would only make the ban meaningless by
+# forcing an exception. The engine and everything it reasons with stay covered, along
+# with the decision functions it borrows from the run.
 GUARDED = (
-	"billing/projection",
+	"billing/projection/basis.py",
+	"billing/projection/cohort.py",
+	"billing/projection/engine.py",
+	"billing/projection/estimate.py",
+	"billing/projection/guard.py",
+	"billing/projection/outcomes.py",
+	"billing/projection/state.py",
 	"billing/revenue/dunning.py",
 	"billing/revenue/invoicing/generate.py",
 )

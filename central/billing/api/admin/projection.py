@@ -68,3 +68,85 @@ def project_team_months(
 		f"from {start} as of {today}"
 	)
 	return engine.project_months(team, start, months=months, today=today, mode=mode, assume=assume)
+
+
+@frappe.whitelist(methods=["POST"])
+def start_cohort_projection(
+	filters: str | None = None,
+	months: int = 1,
+	period_start: str | None = None,
+) -> dict:
+	"""Size a cohort and, if we are willing to project it, enqueue the batch.
+
+	Refuses rather than queues when the cohort is over budget — and the refusal carries
+	the count, the cost and what would narrow it, because a bound with no way forward is
+	one people route around.
+	"""
+	authz.require_operator()
+
+	from central.billing.projection import batch, cohort
+
+	parsed = frappe.parse_json(filters) if filters else {}
+	parsed = {k: v for k, v in (parsed or {}).items() if v}
+	months = max(1, min(frappe.utils.cint(months), 24))
+
+	try:
+		sizing = cohort.require_within_budget(parsed, months)
+	except cohort.CohortTooLargeError as e:
+		frappe.throw(
+			str(e)
+			+ " "
+			+ frappe._("Narrow it by {0}, shorten the range, or take a sample.").format(
+				", ".join(cohort.narrowing_hints(parsed)) or frappe._("adding a filter")
+			),
+			title=frappe._("Too large to project"),
+		)
+
+	name = batch.start(parsed, period_start=period_start, months=months)
+	frappe.logger("billing").info(
+		f"projection: {frappe.session.user} started cohort batch {name} "
+		f"({sizing.teams} teams, {months} months)"
+	)
+	return {"batch": name, "teams": sizing.teams, "months": months}
+
+
+@frappe.whitelist(methods=["POST"])
+def sample_cohort(
+	filters: str | None = None,
+	months: int = 1,
+	size: int = 500,
+	period_start: str | None = None,
+) -> dict:
+	"""Project a stratified sample of a cohort too large to project whole."""
+	authz.require_operator()
+
+	from central.billing.projection import batch, cohort
+
+	parsed = {k: v for k, v in (frappe.parse_json(filters) if filters else {}).items() if v}
+	months = max(1, min(frappe.utils.cint(months), 24))
+	size = max(1, min(frappe.utils.cint(size) or 500, 5000))
+
+	drawn = cohort.sample(parsed, size)
+	name = batch.start_sampled(parsed, period_start=period_start, months=months, size=size)
+	frappe.logger("billing").info(
+		f"projection: {frappe.session.user} sampled {drawn.size} of {drawn.population} teams "
+		f"into batch {name}"
+	)
+	return {
+		"batch": name,
+		"sample_size": drawn.size,
+		"population": drawn.population,
+		"strata": drawn.strata,
+	}
+
+
+@frappe.whitelist()
+def size_cohort(filters: str | None = None, months: int = 1) -> dict:
+	"""What projecting this cohort would cost, without projecting anything."""
+	authz.require_operator()
+
+	from central.billing.projection import cohort
+
+	parsed = frappe.parse_json(filters) if filters else {}
+	sizing = cohort.estimate({k: v for k, v in (parsed or {}).items() if v}, months)
+	return dict(sizing)

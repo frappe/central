@@ -189,4 +189,11 @@ def _finding(code: str, summary: str, detail: str) -> frappe._dict:
 
 
 def _money(value, currency: str) -> str:
-	return frappe.utils.fmt_money(frappe.utils.flt(value), currency=currency)
+	"""Format for a human, without asking the database how.
+
+	`fmt_money` resolves the site's number format, and that read can write — which is
+	fatal inside the read-only transaction a projection runs in. Presentation does not
+	belong in the engine anyway: findings carry plain numbers, and the surface that
+	renders them is free to format properly.
+	"""
+	return f"{currency} {frappe.utils.flt(value):,.2f}"
