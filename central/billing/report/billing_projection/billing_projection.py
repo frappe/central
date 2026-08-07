@@ -37,7 +37,7 @@ def execute(filters: dict | None = None):
 def _latest_batch(filters) -> str | None:
 	names = frappe.get_all(
 		"Billing Projection Batch",
-		filters={"status": ["in", ["Complete", "Partial"]]},
+		filters={"batch_state": ["in", ["Complete", "Partial"]]},
 		order_by="creation desc",
 		limit=1,
 		pluck="name",
@@ -116,14 +116,14 @@ def _batch_note(batch: str) -> str | None:
 	"""Say which batch is on screen, when it ran, and whether it finished."""
 	doc = frappe.db.get_value(
 		"Billing Projection Batch", batch,
-		["as_of", "status", "teams_projected", "teams_expected", "sampled", "sample_size", "note"],
+		["as_of", "batch_state", "teams_projected", "teams_expected", "sampled", "sample_size", "note"],
 		as_dict=True,
 	)
 	if not doc:
 		return None
 
 	parts = [_("Projected {0}").format(frappe.utils.format_date(doc.as_of))]
-	if doc.status == "Partial":
+	if doc.batch_state == "Partial":
 		parts.append(
 			_("<b>Incomplete</b> — {0} of {1} teams. The rows are real; the cohort is not.").format(
 				doc.teams_projected, doc.teams_expected

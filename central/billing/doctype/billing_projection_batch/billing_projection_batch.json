@@ -51,9 +51,9 @@
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "status",
+   "fieldname": "batch_state",
    "fieldtype": "Select",
-   "label": "Status",
+   "label": "State",
    "options": "Queued\nRunning\nComplete\nPartial\nAborted",
    "default": "Queued",
    "in_list_view": 1
@@ -131,7 +131,7 @@
   "period_start",
   "months",
   "column_break_state",
-  "status",
+  "batch_state",
   "started_at",
   "completed_at",
   "section_break_scope",

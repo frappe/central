@@ -99,11 +99,13 @@ class TestTheBound(CohortTestBase):
 
 	def test_there_is_no_way_to_project_an_unbounded_cohort(self):
 		# An empty filter set must not be a bypass — it is the widest possible ask.
+		# Twenty-four months so the refusal does not depend on how many teams the site
+		# happens to be carrying when the test runs.
 		with billing_settings(projection_budget_seconds=1):
 			with self.assertRaises(cohort.CohortTooLargeError):
-				cohort.require_within_budget(None, months=1)
+				cohort.require_within_budget(None, months=24)
 			with self.assertRaises(cohort.CohortTooLargeError):
-				cohort.require_within_budget({}, months=1)
+				cohort.require_within_budget({}, months=24)
 
 	def test_the_budget_is_read_from_settings(self):
 		with billing_settings(projection_budget_seconds=1234):
@@ -174,7 +176,7 @@ class TestTheBatch(CohortTestBase):
 				"as_of": "2026-08-06",
 				"period_start": "2026-09-01",
 				"months": months,
-				"status": "Queued",
+				"batch_state": "Queued",
 				"filters": frappe.as_json(filters or {"currency": "INR"}),
 				"teams_expected": cohort.count(filters or {"currency": "INR"}),
 			}
@@ -295,7 +297,7 @@ class TestTheReport(CohortTestBase):
 				"as_of": "2026-08-06",
 				"period_start": "2026-09-01",
 				"months": 1,
-				"status": "Queued",
+				"batch_state": "Queued",
 				"filters": frappe.as_json(filters or {"currency": "INR"}),
 				"teams_expected": cohort.count(filters or {"currency": "INR"}),
 			}
@@ -347,7 +349,7 @@ class TestTheReport(CohortTestBase):
 
 	def test_a_partial_batch_says_so(self):
 		name = self._run_batch()
-		frappe.db.set_value("Billing Projection Batch", name, "status", "Partial")
+		frappe.db.set_value("Billing Projection Batch", name, "batch_state", "Partial")
 		frappe.db.commit()
 		_c, _rows, message, _chart, _s = self._execute(batch=name)
 		self.assertIn("Incomplete", message)
@@ -461,7 +463,7 @@ class TestContainmentDoesNotCascade(CohortTestBase):
 				"as_of": "2026-08-06",
 				"period_start": "2026-09-01",
 				"months": 1,
-				"status": "Queued",
+				"batch_state": "Queued",
 				"filters": frappe.as_json({}),
 				"teams_expected": len(self.teams),
 			}

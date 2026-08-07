@@ -80,7 +80,7 @@ def start_sampled(
 			"as_of": today,
 			"period_start": frappe.utils.get_first_day(period_start or today),
 			"months": max(1, frappe.utils.cint(months)),
-			"status": "Queued",
+			"batch_state": "Queued",
 			"filters": json.dumps(filters or {}, indent=1, sort_keys=True),
 			"teams_expected": drawn.size,
 			"sampled": 1,
@@ -121,7 +121,7 @@ def start(filters: dict | None = None, period_start=None, months: int = 1, today
 			"as_of": today,
 			"period_start": frappe.utils.get_first_day(period_start or today),
 			"months": sizing.months,
-			"status": "Queued",
+			"batch_state": "Queued",
 			"filters": json.dumps(filters or {}, indent=1, sort_keys=True),
 			"teams_expected": sizing.teams,
 			"estimated_seconds": sizing.estimated_seconds,
@@ -148,7 +148,7 @@ def run_batch(batch: str, teams: list | None = None) -> dict:
 	filters = json.loads(doc.filters or "{}")
 	started = time.monotonic()
 
-	doc.db_set("status", "Running", commit=True)
+	doc.db_set("batch_state", "Running", commit=True)
 	doc.db_set("started_at", frappe.utils.now(), commit=True)
 
 	projected = 0
@@ -165,7 +165,7 @@ def run_batch(batch: str, teams: list | None = None) -> dict:
 		projected += _project_page(doc, page)
 		doc.db_set("teams_projected", projected, commit=True)
 
-	doc.db_set("status", "Partial" if partial else "Complete", commit=True)
+	doc.db_set("batch_state", "Partial" if partial else "Complete", commit=True)
 	doc.db_set("completed_at", frappe.utils.now(), commit=True)
 	if partial:
 		doc.db_set(
@@ -175,7 +175,7 @@ def run_batch(batch: str, teams: list | None = None) -> dict:
 			"is incomplete.",
 			commit=True,
 		)
-	return {"batch": batch, "teams_projected": projected, "status": doc.status}
+	return {"batch": batch, "teams_projected": projected, "status": doc.batch_state}
 
 
 def _project_page(batch_doc, teams: list) -> int:
