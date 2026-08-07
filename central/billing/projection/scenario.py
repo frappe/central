@@ -16,7 +16,8 @@ invoice", so it carries its own test.
 import frappe
 
 from central.billing import settings
-from central.billing.projection import engine
+from central.billing.catalog import pricing
+from central.billing.projection import engine, repricing
 
 # The only DocType this module may write. Asserted, because the whole safety argument
 # for running projections against production rests on it staying true.
@@ -44,7 +45,8 @@ def project(scenario, today=None) -> dict:
 	period_start = frappe.utils.get_first_day(doc.period_start or today)
 	months = max(1, frappe.utils.cint(doc.months) or 1)
 
-	with settings.overridden(**overrides):
+	rates = doc.rate_overrides_applied()
+	with settings.overridden(**overrides), pricing.overridden_rates(rates):
 		if months > 1:
 			out = engine.project_months(
 				doc.team, period_start, months=months, today=today,
@@ -56,16 +58,34 @@ def project(scenario, today=None) -> dict:
 				mode=doc.outcome_mode, assume=doc.assume,
 			)
 
+	# What a price change actually reaches — the part everyone gets wrong.
+	if rates:
+		out["repricing"] = repricing.split(
+			_all_lines(out), out.get("currency"), doc.effective_from()
+		)
+
 	# Say what was pretended. A projection under an altered ladder that does not
 	# announce it is a number waiting to be quoted as fact.
 	out["scenario"] = {
 		"name": doc.name,
 		"scenario_name": doc.scenario_name,
 		"overrides": overrides,
+		"rate_overrides": rates,
 		"outcome_mode": doc.outcome_mode,
 		"months": months,
 	}
 	return out
+
+
+def _all_lines(out) -> list:
+	"""Every projected line, whether the projection was one month or several."""
+	if out.get("months"):
+		return [
+			line
+			for month in out["months"]
+			for line in ((month.get("invoice") or {}).get("lines") or [])
+		]
+	return (out.get("invoice") or {}).get("lines") or []
 
 
 def project_and_save(scenario, today=None) -> dict:
@@ -91,14 +111,35 @@ def compare(scenario, today=None) -> dict:
 	doc = _resolve(scenario)
 	overrides = doc.overrides()
 
+	rates = doc.rate_overrides_applied()
 	live = project(_bare(doc), today)
-	altered = project(doc, today) if overrides else live
-	return {
+	altered = project(doc, today) if (overrides or rates) else live
+
+	result = {
 		"overrides": overrides,
+		"rate_overrides": rates,
 		"live": live,
 		"altered": altered,
-		"changed": bool(overrides),
+		"changed": bool(overrides or rates),
 	}
+	if rates:
+		# Say what the number means, because the number alone is the thing that gets
+		# misread: a catalog change does not reach a locked rate.
+		result["repricing"] = repricing.with_delta(
+			altered["repricing"], _total(live), _total(altered)
+		)
+		result["explanation"] = repricing.explain(
+			_total(live), _total(altered), altered["repricing"]
+		)
+	return result
+
+
+def _total(out) -> float:
+	if out.get("months"):
+		return frappe.utils.flt(
+			sum(frappe.utils.flt((m.get("invoice") or {}).get("total")) for m in out["months"]), 2
+		)
+	return frappe.utils.flt((out.get("invoice") or {}).get("total"), 2)
 
 
 def _bare(doc):
@@ -108,6 +149,7 @@ def _bare(doc):
 
 	for field in OVERRIDE_FIELDS:
 		clone.set(field, None)
+	clone.set("rate_overrides", [])
 	return clone
 
 

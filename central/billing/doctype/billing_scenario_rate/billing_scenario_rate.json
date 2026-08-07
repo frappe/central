@@ -1,0 +1,90 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-07 00:00:00.000000",
+ "description": "One pretended catalog price, for a projection to read instead of the published one.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "istable": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing Scenario Rate",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "priced_doctype",
+   "fieldtype": "Select",
+   "label": "Prices",
+   "options": "Plan\nResource Type",
+   "default": "Plan",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "priced_for",
+   "fieldtype": "Dynamic Link",
+   "label": "Which",
+   "options": "priced_doctype",
+   "in_list_view": 1,
+   "columns": 2,
+   "description": "Blank means every plan of this kind."
+  },
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Link",
+   "label": "Cluster",
+   "options": "Atlas Instance",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "percent",
+   "fieldtype": "Percent",
+   "label": "Change By",
+   "in_list_view": 1,
+   "columns": 1,
+   "description": "e.g. 20 for a 20% rise."
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "label": "Or Set To",
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "effective_from",
+   "fieldtype": "Date",
+   "label": "Effective From",
+   "in_list_view": 1,
+   "columns": 2,
+   "description": "Only segments opened on or after this date are priced from it."
+  }
+ ],
+ "field_order": [
+  "priced_doctype",
+  "priced_for",
+  "cluster",
+  "currency",
+  "percent",
+  "rate",
+  "effective_from"
+ ]
+}

@@ -26,6 +26,26 @@ class BillingScenario(Document):
 		if self.outcome_mode != "Assumed":
 			self.assume = None
 
+	def rate_overrides_applied(self) -> list[dict]:
+		"""The pretended prices, as the pricing seam wants them."""
+		return [
+			{
+				"priced_doctype": row.priced_doctype,
+				"priced_for": row.priced_for,
+				"cluster": row.cluster,
+				"currency": row.currency,
+				"percent": row.percent,
+				"rate": row.rate or None,
+				"effective_from": row.effective_from,
+			}
+			for row in (self.rate_overrides or [])
+		]
+
+	def effective_from(self):
+		"""The earliest date any pretended price takes effect."""
+		dates = [r.effective_from for r in (self.rate_overrides or []) if r.effective_from]
+		return min(dates) if dates else None
+
 	def overrides(self) -> dict:
 		"""Only the fields actually filled in — a blank one means "use what is live"."""
 		return {

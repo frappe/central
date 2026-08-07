@@ -112,6 +112,18 @@
    "label": "Promotional Credit Validity Days"
   },
   {
+   "fieldname": "section_break_rates",
+   "fieldtype": "Section Break",
+   "label": "Instead of the published prices",
+   "description": "A catalog change reaches new provisions and resizes. Existing resources keep the rate locked when they were provisioned."
+  },
+  {
+   "fieldname": "rate_overrides",
+   "fieldtype": "Table",
+   "label": "Rate Overrides",
+   "options": "Billing Scenario Rate"
+  },
+  {
    "fieldname": "section_break_result",
    "fieldtype": "Section Break",
    "label": "Last Result"
@@ -145,6 +157,8 @@
   "suspend_after_days",
   "terminate_after_days",
   "promotional_credit_validity_days",
+  "section_break_rates",
+  "rate_overrides",
   "section_break_result",
   "projected_at",
   "result"
