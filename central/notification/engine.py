@@ -363,6 +363,9 @@ def _send_member_email(
 			subject = rendered["subject"]
 			body = rendered["message"]
 		except Exception:
+			# A broken Email Template shouldn't silently downgrade to the in-app copy
+			# with no trace — log why, then fall back.
+			frappe.log_error(title=f"Notification email template render failed: {event.event_type}")
 			subject = _render_template(event.in_app_title, ctx) or event.event_type
 			body = message or _render_template(event.in_app_body, ctx) or ctx.get("message", "")
 	else:
@@ -377,4 +380,7 @@ def _send_member_email(
 		)
 		return True
 	except Exception:
+		# Best-effort delivery, but never fail silently — a missing outgoing account
+		# or a send error must leave a trace to diagnose (retry/backoff is a later phase).
+		frappe.log_error(title=f"Notification email send failed: {event.event_type} -> {user}")
 		return False
