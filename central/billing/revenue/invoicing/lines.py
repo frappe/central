@@ -141,6 +141,11 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 			{
 				"start": start,
 				"end": end,
+				# When the rate was actually locked, before any clamping to this billing
+				# window. `start` answers "what does this month bill"; this answers "when
+				# was this price set", which is what grandfathering turns on — and the two
+				# are the same only in the month a resource was provisioned.
+				"opened_at": seg_start_dt,
 				"rate": frappe.utils.flt(change.locked_rate),
 				"plan": change.new_value,
 				"asset": sub.asset_id,
@@ -242,6 +247,7 @@ def _daily_line(
 			"why": "the config was held for a day or more, so whole days are billed",
 			"segment_from": str(seg["start"]),
 			"segment_to": str(seg["end"]),
+			"rate_locked_at": str(seg["opened_at"]),
 			"locked_rate": seg["rate"],
 			"days": days,
 			"day_units": day_units,
@@ -277,6 +283,7 @@ def _hourly_line(
 			"charge_date": str(charge_date),
 			"segment_from": str(seg["start"]),
 			"segment_to": str(seg["end"]),
+			"rate_locked_at": str(seg["opened_at"]),
 			"locked_rate": seg["rate"],
 			"hours": frappe.utils.flt(hours, 2),
 			"hour_units": hour_units,
