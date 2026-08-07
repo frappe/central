@@ -1,0 +1,152 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:scenario_name",
+ "creation": "2026-08-07 00:00:00.000000",
+ "description": "A saved question: which configuration to project under, over what period, treating unknown payment outcomes how.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing Scenario",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "role": "System Manager",
+   "export": 1,
+   "share": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "scenario_name",
+   "fieldtype": "Data",
+   "label": "Scenario",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "What question this scenario asks."
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "label": "Team",
+   "options": "Team",
+   "in_list_view": 1,
+   "description": "Leave blank for a cohort scenario."
+  },
+  {
+   "fieldname": "column_break_period",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Date",
+   "label": "Period Starting"
+  },
+  {
+   "fieldname": "months",
+   "fieldtype": "Int",
+   "label": "Months",
+   "default": "1"
+  },
+  {
+   "fieldname": "outcome_mode",
+   "fieldtype": "Select",
+   "label": "Outcomes",
+   "options": "Derived\nOptimistic\nAssumed",
+   "default": "Derived"
+  },
+  {
+   "fieldname": "assume",
+   "fieldtype": "Select",
+   "label": "Assume",
+   "options": "\npays_on_time\nnever_pays",
+   "depends_on": "eval:doc.outcome_mode=='Assumed'"
+  },
+  {
+   "fieldname": "section_break_overrides",
+   "fieldtype": "Section Break",
+   "label": "Instead of the live configuration",
+   "description": "Blank means use what is configured. Nothing here changes Billing Settings."
+  },
+  {
+   "fieldname": "dunning_retry_days",
+   "fieldtype": "Data",
+   "label": "Retry Days",
+   "description": "e.g. 2, 5, 10"
+  },
+  {
+   "fieldname": "invoice_due_days",
+   "fieldtype": "Int",
+   "label": "Invoice Due Days"
+  },
+  {
+   "fieldname": "column_break_ladder",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "suspend_after_days",
+   "fieldtype": "Int",
+   "label": "Suspend After Days"
+  },
+  {
+   "fieldname": "terminate_after_days",
+   "fieldtype": "Int",
+   "label": "Terminate After Days"
+  },
+  {
+   "fieldname": "promotional_credit_validity_days",
+   "fieldtype": "Int",
+   "label": "Promotional Credit Validity Days"
+  },
+  {
+   "fieldname": "section_break_result",
+   "fieldtype": "Section Break",
+   "label": "Last Result"
+  },
+  {
+   "fieldname": "projected_at",
+   "fieldtype": "Datetime",
+   "label": "Projected At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "result",
+   "fieldtype": "Code",
+   "label": "Result",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "field_order": [
+  "scenario_name",
+  "team",
+  "column_break_period",
+  "period_start",
+  "months",
+  "outcome_mode",
+  "assume",
+  "section_break_overrides",
+  "dunning_retry_days",
+  "invoice_due_days",
+  "column_break_ladder",
+  "suspend_after_days",
+  "terminate_after_days",
+  "promotional_credit_validity_days",
+  "section_break_result",
+  "projected_at",
+  "result"
+ ]
+}

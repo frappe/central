@@ -27,6 +27,16 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Billing Scenario",
+   "link_count": 0,
+   "link_to": "Billing Scenario",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Revenue & AR Reports",
    "link_count": 3,
    "link_type": "DocType",
