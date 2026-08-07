@@ -163,3 +163,29 @@ def _finalize(
 
 def _elapsed_ms(start: float) -> int:
 	return int((time.monotonic() - start) * 1000)
+
+
+HOST_TASK_RETENTION_DEFAULT_DAYS = 30
+
+
+def prune_host_tasks(now=None) -> dict:
+	"""Daily: drop finished Host Tasks past the retention window.
+
+	A Host Task is the record of one run of a privileged host/hub script (the
+	WireGuard hub + tunnel scripts driven by `run_host_task`): it captures the
+	script name, exit code, status, and the full stdout/stderr as longtext. It is
+	an operational audit log, not a system of record — nothing downstream reads an
+	old task — so the rows accumulate one-per-run and the longtext columns grow the
+	table without bound. Prune terminal tasks (Success/Failure) older than
+	`host_task_retention_days` (default 30 days); live tasks (Pending/Running) are
+	kept regardless of age. Modelled on billing's cleanup_payment_logs."""
+	days = int(frappe.conf.get("host_task_retention_days") or HOST_TASK_RETENTION_DEFAULT_DAYS)
+	cutoff = frappe.utils.add_to_date(now or frappe.utils.now_datetime(), days=-days)
+	names = frappe.get_all(
+		"Host Task",
+		filters={"status": ("in", ("Success", "Failure")), "creation": ("<", cutoff)},
+		pluck="name",
+	)
+	for name in names:
+		frappe.delete_doc("Host Task", name, ignore_permissions=True, force=True)
+	return {"cutoff": str(cutoff), "deleted": len(names)}
