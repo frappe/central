@@ -221,6 +221,7 @@ def rate_team_period(
 	subscription: str | None = None,
 	metered: list[dict] | None = None,
 	explain: bool = False,
+	changes=None,
 ):
 	"""What the team's whole book would bill for the period, across every cluster.
 	Reads only.
@@ -238,7 +239,7 @@ def rate_team_period(
 	# Read the team once, not once per cluster: team_line_items pulls every
 	# subscription's fixed lines in one pass, and the metered rollups for all the
 	# team's clusters come back in a single query.
-	lines = team_line_items(team, period_start, period_end, explain=explain)
+	lines = team_line_items(team, period_start, period_end, explain=explain, changes=changes)
 	if metered is None:
 		lines += metered_line_items_for_clusters(
 			team, team_clusters(team), period_start, period_end, explain=explain

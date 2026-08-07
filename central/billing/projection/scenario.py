@@ -46,16 +46,17 @@ def project(scenario, today=None) -> dict:
 	months = max(1, frappe.utils.cint(doc.months) or 1)
 
 	rates = doc.rate_overrides_applied()
+	events = doc.injected_events()
 	with settings.overridden(**overrides), pricing.overridden_rates(rates):
 		if months > 1:
 			out = engine.project_months(
 				doc.team, period_start, months=months, today=today,
-				mode=doc.outcome_mode, assume=doc.assume,
+				mode=doc.outcome_mode, assume=doc.assume, events=events,
 			)
 		else:
 			out = engine.project(
 				doc.team, period_start, frappe.utils.get_last_day(period_start), today=today,
-				mode=doc.outcome_mode, assume=doc.assume,
+				mode=doc.outcome_mode, assume=doc.assume, events=events,
 			)
 
 	# What a price change actually reaches — the part everyone gets wrong.
@@ -71,6 +72,7 @@ def project(scenario, today=None) -> dict:
 		"scenario_name": doc.scenario_name,
 		"overrides": overrides,
 		"rate_overrides": rates,
+		"events": events,
 		"outcome_mode": doc.outcome_mode,
 		"months": months,
 	}
@@ -112,15 +114,21 @@ def compare(scenario, today=None) -> dict:
 	overrides = doc.overrides()
 
 	rates = doc.rate_overrides_applied()
+	events = doc.injected_events()
+	# Events count as a difference too. Leaving them out compared a scenario against
+	# itself and reported "no change" for the one thing that had changed.
+	varies = bool(overrides or rates or events)
+
 	live = project(_bare(doc), today)
-	altered = project(doc, today) if (overrides or rates) else live
+	altered = project(doc, today) if varies else live
 
 	result = {
 		"overrides": overrides,
 		"rate_overrides": rates,
+		"events": events,
 		"live": live,
 		"altered": altered,
-		"changed": bool(overrides or rates),
+		"changed": varies,
 	}
 	if rates:
 		# Say what the number means, because the number alone is the thing that gets
@@ -150,6 +158,7 @@ def _bare(doc):
 	for field in OVERRIDE_FIELDS:
 		clone.set(field, None)
 	clone.set("rate_overrides", [])
+	clone.set("events", [])
 	return clone
 
 

@@ -39,7 +39,7 @@ def _dates_touched(start_dt: datetime, end_dt: datetime) -> list:
 
 
 def compute_line_items(
-	team: str, cluster: str, period_start, period_end, explain: bool = False
+	team: str, cluster: str, period_start, period_end, explain: bool = False, changes=None
 ) -> list[dict]:
 	"""Time-weighted fixed line items for one (team, cluster) over the billing month.
 
@@ -63,7 +63,7 @@ def compute_line_items(
 
 	# All these subscriptions' changes in one query, grouped by subscription — not a
 	# query per subscription.
-	changes_by_sub = _changes_by_subscription([s.name for s in subscriptions])
+	changes_by_sub = _resolve_changes([s.name for s in subscriptions], changes)
 
 	bounds = _period_bounds(period_start, period_end)
 	lines = []
@@ -73,7 +73,7 @@ def compute_line_items(
 
 
 def team_line_items(
-	team: str, period_start, period_end, explain: bool = False
+	team: str, period_start, period_end, explain: bool = False, changes=None
 ) -> list[dict]:
 	"""Every fixed line item for a team across all the clusters it runs in, from ONE
 	read of its subscriptions, their asset clusters and their changes.
@@ -85,7 +85,7 @@ def team_line_items(
 	"""
 	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
 	clusters = _asset_clusters([s.asset_id for s in subscriptions])
-	changes_by_sub = _changes_by_subscription([s.name for s in subscriptions])
+	changes_by_sub = _resolve_changes([s.name for s in subscriptions], changes)
 
 	bounds = _period_bounds(period_start, period_end)
 	lines = []
@@ -200,6 +200,22 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 				]
 				lines.append(_hourly_line(s, hours, b.hour_units, cd, explain, touching))
 	return lines
+
+
+def _resolve_changes(subscription_names: list[str], changes=None) -> dict:
+	"""Where the rate-snapshot segments come from.
+
+	The run reads them from Subscription Change, which is the only source there is. A
+	projection may supply its own — the real rows plus a hypothetical resize, say — so
+	that an invented change is rated by exactly the code that rates a real one, churn
+	window and all. `changes` is either a ready-made mapping or a callable taking the
+	subscription names; absent, nothing changes.
+	"""
+	if changes is None:
+		return _changes_by_subscription(subscription_names)
+	if callable(changes):
+		return changes(subscription_names)
+	return changes
 
 
 def _changes_by_subscription(subscription_names: list[str]) -> dict:

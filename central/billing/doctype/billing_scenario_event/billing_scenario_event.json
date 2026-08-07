@@ -1,0 +1,98 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-08-07 00:00:00.000000",
+ "description": "Something that has not happened, placed on a projection's calendar.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "istable": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing Scenario Event",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Select",
+   "label": "What",
+   "options": "Resize\nProvision\nCancel\nTop up\nDecline",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 1
+  },
+  {
+   "fieldname": "on_date",
+   "fieldtype": "Datetime",
+   "label": "When",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 2
+  },
+  {
+   "fieldname": "subscription",
+   "fieldtype": "Link",
+   "label": "Subscription",
+   "options": "Subscription",
+   "in_list_view": 1,
+   "columns": 2,
+   "depends_on": "eval:['Resize','Provision','Cancel'].includes(doc.event_type)"
+  },
+  {
+   "fieldname": "plan",
+   "fieldtype": "Link",
+   "label": "Plan",
+   "options": "Plan",
+   "in_list_view": 1,
+   "columns": 2,
+   "depends_on": "eval:['Resize','Provision'].includes(doc.event_type)"
+  },
+  {
+   "fieldname": "rate",
+   "fieldtype": "Currency",
+   "label": "Rate",
+   "in_list_view": 1,
+   "columns": 1,
+   "depends_on": "eval:['Resize','Provision'].includes(doc.event_type)"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "label": "Amount",
+   "in_list_view": 1,
+   "columns": 1,
+   "depends_on": "eval:doc.event_type=='Top up'"
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "depends_on": "eval:doc.event_type=='Top up'"
+  },
+  {
+   "fieldname": "attempt",
+   "fieldtype": "Int",
+   "label": "Attempt",
+   "depends_on": "eval:doc.event_type=='Decline'",
+   "description": "Which charge attempt fails."
+  }
+ ],
+ "field_order": [
+  "event_type",
+  "on_date",
+  "subscription",
+  "plan",
+  "rate",
+  "amount",
+  "currency",
+  "attempt"
+ ]
+}

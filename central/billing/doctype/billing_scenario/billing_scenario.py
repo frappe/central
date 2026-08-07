@@ -41,6 +41,22 @@ class BillingScenario(Document):
 			for row in (self.rate_overrides or [])
 		]
 
+	def injected_events(self) -> list[dict]:
+		"""The invented events, as plain rows the projection can reason about."""
+		return [
+			{
+				"event_type": row.event_type,
+				"on_date": row.on_date,
+				"subscription": row.subscription,
+				"plan": row.plan,
+				"rate": row.rate,
+				"amount": row.amount,
+				"currency": row.currency,
+				"attempt": row.attempt,
+			}
+			for row in (self.events or [])
+		]
+
 	def effective_from(self):
 		"""The earliest date any pretended price takes effect."""
 		dates = [r.effective_from for r in (self.rate_overrides or []) if r.effective_from]
