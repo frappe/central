@@ -200,3 +200,89 @@ def run_in_progress(today=None) -> bool:
 
 	status = billing_run_status(today)
 	return bool(status["pending_draft"] or status["pending_collection"])
+
+
+# Strata are the axes a bill actually varies along: what you are charged in, and how
+# much the ladder trusts you to owe. Sampling without them would over-represent
+# whichever group is largest and quietly misreport the rest.
+STRATA = ("currency", "trust_tier_level")
+
+
+def strata_counts(filters: dict | None = None) -> list[frappe._dict]:
+	"""How the cohort divides along the sampling axes, counted in the database."""
+	sub = frappe.qb.DocType(_SUBSCRIPTION)
+	profile = frappe.qb.DocType("Billing Profile")
+	query = (
+		frappe.qb.from_(sub)
+		.join(profile)
+		.on(profile.team == sub.team)
+		.select(profile.currency, profile.trust_tier_level, Count(sub.team).distinct().as_("teams"))
+		.groupby(profile.currency, profile.trust_tier_level)
+	)
+	for key in ("currency", "country", "collection_mode", "trust_tier_level"):
+		if (filters or {}).get(key):
+			query = query.where(profile[key] == filters[key])
+	return query.run(as_dict=True)
+
+
+def sample(filters: dict | None = None, size: int = 500) -> frappe._dict:
+	"""Pick a stratified sample, and say what it stands for.
+
+	The honest answer to a book-wide question is not to grind for two days. It is to
+	project a few hundred teams chosen across the axes the bill varies along, extrapolate,
+	and put the sample size next to the number so nobody mistakes it for a measurement.
+
+	Each stratum is sampled in proportion to its share, with at least one team taken from
+	any stratum that exists at all — a rung with three teams on it still deserves to be
+	represented, or the extrapolation silently speaks only for the crowd.
+	"""
+	strata = strata_counts(filters)
+	population = sum(row.teams for row in strata)
+	if not population:
+		return frappe._dict(teams=[], population=0, strata=[], size=0)
+
+	size = min(max(1, frappe.utils.cint(size)), population)
+	picked, detail = [], []
+	for row in strata:
+		share = row.teams / population
+		take = max(1, round(size * share)) if row.teams else 0
+		# Never claim more of a stratum than it holds.
+		take = min(take, row.teams)
+		teams = _teams_in_stratum(filters, row.currency, row.trust_tier_level, take)
+		picked += teams
+		detail.append(
+			{
+				"currency": row.currency,
+				"trust_tier_level": row.trust_tier_level,
+				"population": row.teams,
+				"sampled": len(teams),
+				# What one sampled team stands for when the figures are scaled back up.
+				"weight": round(row.teams / len(teams), 3) if teams else 0,
+			}
+		)
+
+	return frappe._dict(teams=picked, population=population, strata=detail, size=len(picked))
+
+
+def _teams_in_stratum(filters, currency, tier, limit: int) -> list:
+	sub = frappe.qb.DocType(_SUBSCRIPTION)
+	profile = frappe.qb.DocType("Billing Profile")
+	query = (
+		frappe.qb.from_(sub)
+		.join(profile)
+		.on(profile.team == sub.team)
+		.select(sub.team)
+		.distinct()
+		.orderby(sub.team)
+		.limit(limit)
+	)
+	query = query.where(profile.currency == currency) if currency else query.where(
+		profile.currency.isnull()
+	)
+	query = query.where(profile.trust_tier_level == tier) if tier else query.where(
+		profile.trust_tier_level.isnull()
+	)
+	for key in ("country", "collection_mode"):
+		if (filters or {}).get(key):
+			query = query.where(profile[key] == filters[key])
+	return query.run(pluck=True)

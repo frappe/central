@@ -110,6 +110,36 @@ def start_cohort_projection(
 	return {"batch": name, "teams": sizing.teams, "months": months}
 
 
+@frappe.whitelist(methods=["POST"])
+def sample_cohort(
+	filters: str | None = None,
+	months: int = 1,
+	size: int = 500,
+	period_start: str | None = None,
+) -> dict:
+	"""Project a stratified sample of a cohort too large to project whole."""
+	authz.require_operator()
+
+	from central.billing.projection import batch, cohort
+
+	parsed = {k: v for k, v in (frappe.parse_json(filters) if filters else {}).items() if v}
+	months = max(1, min(frappe.utils.cint(months), 24))
+	size = max(1, min(frappe.utils.cint(size) or 500, 5000))
+
+	drawn = cohort.sample(parsed, size)
+	name = batch.start_sampled(parsed, period_start=period_start, months=months, size=size)
+	frappe.logger("billing").info(
+		f"projection: {frappe.session.user} sampled {drawn.size} of {drawn.population} teams "
+		f"into batch {name}"
+	)
+	return {
+		"batch": name,
+		"sample_size": drawn.size,
+		"population": drawn.population,
+		"strata": drawn.strata,
+	}
+
+
 @frappe.whitelist()
 def size_cohort(filters: str | None = None, months: int = 1) -> dict:
 	"""What projecting this cohort would cost, without projecting anything."""

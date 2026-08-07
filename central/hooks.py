@@ -194,6 +194,7 @@ scheduler_events = {
 		# and pruning Payment Attempt / Webhook Event logs.
 		"central.billing.revenue.dunning.run_dunning",
 		"central.billing.payments.charges.cleanup_payment_logs",
+		"central.billing.projection.batch.prune",
 		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
 		"central.billing.payments.emandate.run_emandate_cycle",
 		# Backfill Subscriptions for any Running Asset missing an active one.

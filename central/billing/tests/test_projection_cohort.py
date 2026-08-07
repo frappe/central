@@ -367,3 +367,56 @@ class TestTheReport(CohortTestBase):
 		currencies = {t.get("currency") for t in summary if t.get("datatype") == "Currency"}
 		self.assertIn("INR", currencies)
 		self.assertIn("USD", currencies)
+
+
+class TestSampling(CohortTestBase):
+	"""The way out of a refusal, and it never pretends to be a measurement."""
+
+	def setUp(self):
+		super().setUp()
+		from central.billing.tests.utils import set_team_tier
+
+		# Two tiers across two currencies, so the strata are real.
+		for i, team in enumerate(self.teams):
+			set_team_tier(team, level="t1" if i % 2 else "t2", max_spend=50000)
+		frappe.db.commit()
+
+	def test_the_cohort_divides_along_currency_and_tier(self):
+		strata = cohort.strata_counts({})
+		self.assertTrue(strata)
+		self.assertTrue(all("currency" in s and "trust_tier_level" in s for s in strata))
+
+	def test_a_sample_stays_within_the_population(self):
+		drawn = cohort.sample({}, size=2)
+		self.assertLessEqual(drawn.size, drawn.population)
+		self.assertEqual(len(drawn.teams), len(set(drawn.teams)))
+
+	def test_asking_for_more_than_exists_returns_the_whole_population(self):
+		drawn = cohort.sample({"currency": "INR"}, size=10_000)
+		self.assertEqual(drawn.size, drawn.population)
+
+	def test_every_stratum_is_represented_however_small(self):
+		# A rung with three teams still deserves a voice, or the extrapolation speaks
+		# only for the crowd.
+		drawn = cohort.sample({}, size=1)
+		self.assertGreaterEqual(len(drawn.strata), 1)
+		self.assertTrue(all(s["sampled"] >= 1 for s in drawn.strata if s["population"]))
+
+	def test_each_stratum_reports_what_one_sampled_team_stands_for(self):
+		drawn = cohort.sample({}, size=2)
+		for stratum in drawn.strata:
+			if stratum["sampled"]:
+				self.assertGreaterEqual(stratum["weight"], 1.0)
+
+	def test_an_empty_cohort_samples_to_nothing(self):
+		self.assertEqual(cohort.sample({"currency": "XXX"}, size=10).size, 0)
+
+
+class TestRetentionIsScheduled(IntegrationTestCase):
+	def test_pruning_is_wired_into_the_daily_scheduler(self):
+		# A nightly cohort that never prunes is the one part of this that grows without
+		# bound, so the sweep has to be scheduled rather than remembered.
+		from central import hooks
+
+		daily = hooks.scheduler_events.get("daily", [])
+		self.assertIn("central.billing.projection.batch.prune", daily)

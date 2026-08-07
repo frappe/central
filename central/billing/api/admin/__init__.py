@@ -25,6 +25,7 @@ from central.billing.api.admin.catalog import (
 from central.billing.api.admin.projection import (
 	project_team,
 	project_team_months,
+	sample_cohort,
 	size_cohort,
 	start_cohort_projection,
 )
@@ -51,6 +52,7 @@ from central.billing.api.admin.teams import (
 __all__ = [
 	"project_team",
 	"project_team_months",
+	"sample_cohort",
 	"size_cohort",
 	"start_cohort_projection",
 	"adjust_team_credits",

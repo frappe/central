@@ -60,6 +60,46 @@ def projection_queue() -> str:
 	return "long"
 
 
+def start_sampled(
+	filters: dict | None = None, period_start=None, months: int = 1, size: int = 500, today=None
+) -> str:
+	"""Project a stratified sample instead of the whole cohort.
+
+	The way out of a refusal. The batch records that it was sampled and how big the
+	sample was, so every total it produces is labelled as extrapolated wherever it is
+	read — an estimate presented as a measurement is worse than no answer.
+	"""
+	today = frappe.utils.getdate(today or frappe.utils.nowdate())
+	drawn = cohort.sample(filters, size)
+	if not drawn.teams:
+		frappe.throw("No teams match this cohort.", frappe.ValidationError)
+
+	batch = frappe.get_doc(
+		{
+			"doctype": "Billing Projection Batch",
+			"as_of": today,
+			"period_start": frappe.utils.get_first_day(period_start or today),
+			"months": max(1, frappe.utils.cint(months)),
+			"status": "Queued",
+			"filters": json.dumps(filters or {}, indent=1, sort_keys=True),
+			"teams_expected": drawn.size,
+			"sampled": 1,
+			"sample_size": drawn.size,
+			"note": json.dumps({"population": drawn.population, "strata": drawn.strata}, indent=1),
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()
+
+	frappe.enqueue(
+		"central.billing.projection.batch.run_batch",
+		queue=projection_queue(),
+		timeout=WALL_CLOCK_LIMIT_SECONDS + 300,
+		batch=batch.name,
+		teams=drawn.teams,
+	)
+	return batch.name
+
+
 def start(filters: dict | None = None, period_start=None, months: int = 1, today=None) -> str:
 	"""Size the cohort, refuse it if it is too big, and enqueue the batch.
 
@@ -98,8 +138,12 @@ def start(filters: dict | None = None, period_start=None, months: int = 1, today
 	return batch.name
 
 
-def run_batch(batch: str) -> dict:
-	"""Work a batch page by page until it is done, aborted, or out of time."""
+def run_batch(batch: str, teams: list | None = None) -> dict:
+	"""Work a batch until it is done, aborted, or out of time.
+
+	`teams` is an explicit roster — a sample. Without it the cohort is paged from its
+	filters, which is the unbounded-in-memory hazard the paging exists to avoid.
+	"""
 	doc = frappe.get_doc("Billing Projection Batch", batch)
 	filters = json.loads(doc.filters or "{}")
 	started = time.monotonic()
@@ -109,7 +153,12 @@ def run_batch(batch: str) -> dict:
 
 	projected = 0
 	partial = False
-	for _after, _until, page in cohort.pages(filters, PAGE_SIZE):
+	pages = (
+		[(None, None, teams[i : i + PAGE_SIZE]) for i in range(0, len(teams), PAGE_SIZE)]
+		if teams
+		else cohort.pages(filters, PAGE_SIZE)
+	)
+	for _after, _until, page in pages:
 		if time.monotonic() - started > WALL_CLOCK_LIMIT_SECONDS:
 			partial = True
 			break
