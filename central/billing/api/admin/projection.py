@@ -183,3 +183,29 @@ def compare_scenario(scenario: str, today: str | None = None) -> dict:
 	from central.billing.projection import scenario as scenarios
 
 	return scenarios.compare(scenario, today=today)
+
+
+@frappe.whitelist()
+def scenario_library() -> list[dict]:
+	"""The shelf of canned questions."""
+	authz.require_operator()
+
+	from central.billing.projection import library
+
+	return library.catalogue()
+
+
+@frappe.whitelist()
+def project_from_library(key: str, team: str, period_start: str | None = None, today: str | None = None) -> dict:
+	"""Apply a catalogue scenario to a real team and project it, without saving."""
+	authz.require_operator()
+
+	from central.billing.projection import library, scenario as scenarios
+
+	doc = library.build(key, team, period_start=period_start, today=today)
+	frappe.logger("billing").info(
+		f"projection: {frappe.session.user} ran library scenario {key} on {team}"
+	)
+	out = scenarios.project(doc, today=today)
+	out["library"] = {"key": key, **{k: v for k, v in library.SCENARIOS[key].items() if k in ("title", "question", "look_for")}}
+	return out
