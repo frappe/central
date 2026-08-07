@@ -18,6 +18,8 @@
   "column_break_dunning",
   "suspend_after_days",
   "terminate_after_days",
+  "section_break_projection",
+  "projection_budget_seconds",
   "section_break_tax",
   "default_gst_rate"
  ],
@@ -106,6 +108,18 @@
    "fieldtype": "Int",
    "label": "Terminate After (Days)",
    "non_negative": 1
+  },
+  {
+   "fieldname": "section_break_projection",
+   "fieldtype": "Section Break",
+   "label": "Projections"
+  },
+  {
+   "default": "300",
+   "description": "How long a cohort projection may be expected to take before it is refused. This is a production safety limit: raising it is how the bound stops bounding.",
+   "fieldname": "projection_budget_seconds",
+   "fieldtype": "Int",
+   "label": "Projection Budget (Seconds)"
   },
   {
    "fieldname": "section_break_tax",
