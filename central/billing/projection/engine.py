@@ -53,7 +53,7 @@ def _project(
 	end = frappe.utils.getdate(period_end)
 
 	metered = estimate.metered_lines(team, team_clusters(team), start, end, today=today)
-	rated = rate_team_period(team, start, end, metered=metered)
+	rated = rate_team_period(team, start, end, metered=metered, explain=True)
 
 	invoice = _invoice(rated)
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
@@ -260,7 +260,7 @@ def _roll_one(team, carried, period_start, period_end, today, mode, assume) -> d
 		}
 
 	metered = estimate.metered_lines(team, team_clusters(team), period_start, period_end, today=today)
-	rated = rate_team_period(team, period_start, period_end, metered=metered)
+	rated = rate_team_period(team, period_start, period_end, metered=metered, explain=True)
 	invoice = _invoice(rated)
 	calendar = _calendar(period_end, today)
 

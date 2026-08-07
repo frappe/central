@@ -207,12 +207,17 @@ class BillingSimulator {
 		const money = (v) => format_currency(v, data.currency);
 		const rows = invoice.lines
 			.map(
-				(line) => `
-			<tr>
-				<td>${frappe.utils.escape_html(line.plan || line.resource_type || "—")}</td>
+				(line, i) => `
+			<tr class="bs-line" data-line="${i}">
+				<td>${line.derivation ? '<span class="bs-caret">▸</span>' : ""}${frappe.utils.escape_html(
+					line.plan || line.resource_type || "—"
+				)}</td>
 				<td class="bs-muted">${frappe.utils.escape_html(describe_line(line))}</td>
 				<td class="bs-right">${money(line.amount)}</td>
 				<td>${basis_tag(line)}</td>
+			</tr>
+			<tr class="bs-why" data-why="${i}" hidden>
+				<td colspan="4">${derivation_html(line, money)}</td>
 			</tr>`
 			)
 			.join("");
@@ -236,7 +241,7 @@ class BillingSimulator {
 			  )}</span></div>`
 			: "";
 
-		return $(`
+		const $card = $(`
 			<div class="bs-card">
 				<div class="bs-card-head">
 					<span class="bs-card-title">${__("Projected invoice")}</span>
@@ -260,6 +265,16 @@ class BillingSimulator {
 					)}</span></div>
 				</div>
 			</div>`);
+
+		$card.on("click", ".bs-line", function () {
+			const i = $(this).data("line");
+			const $why = $card.find(`[data-why="${i}"]`);
+			if (!$why.length) return;
+			const open = !$why.prop("hidden");
+			$why.prop("hidden", open);
+			$(this).find(".bs-caret").text(open ? "▸" : "▾");
+		});
+		return $card;
 	}
 
 	// ---- what the state already decides ------------------------------------
@@ -402,6 +417,20 @@ class BillingSimulator {
 			.bs-finding-summary { font-weight: 500; color: var(--heading-color); }
 			.bs-dim { opacity: 0.35; }
 			.bs-short { color: var(--red-600, #cc2929); font-weight: 500; }
+			.bs-line { cursor: pointer; }
+			.bs-line:hover { background: var(--subtle-accent); }
+			.bs-caret { display: inline-block; width: 14px; color: var(--text-muted);
+				font-size: 10px; }
+			.bs-why td { background: var(--subtle-accent); padding: 12px 13px 12px 27px; }
+			.bs-why-why { color: var(--text-light); margin-bottom: 8px;
+				font-size: var(--text-sm, 12px); }
+			.bs-why-sum { font-family: var(--font-stack-mono, ui-monospace, monospace);
+				font-size: var(--text-sm, 12px); color: var(--heading-color);
+				margin-bottom: 10px; }
+			.bs-why-tbl { width: 100%; border-collapse: collapse; font-size: var(--text-sm, 12px); }
+			.bs-why-tbl th { text-align: left; font-weight: 500; color: var(--text-muted);
+				padding: 4px 10px 4px 0; }
+			.bs-why-tbl td { padding: 3px 10px 3px 0; color: var(--text-color); }
 			.bs-stopped td { color: var(--text-muted); font-style: italic; }
 			.bs-figure { padding: 14px 13px; overflow-x: auto; }
 			.bs-figure svg { display: block; min-width: 620px; width: 100%; height: auto; }
@@ -417,6 +446,64 @@ function describe_line(line) {
 	if (line.hours) return __("{0} hours", [line.hours]);
 	if (line.quantity) return `${line.quantity} ${line.unit || ""}`.trim();
 	return "";
+}
+
+// The drill: the same numbers the engine used, laid out so the arithmetic is
+// checkable by eye. Nothing here recomputes anything — it renders what the line
+// builder recorded while it was working the amount out.
+function derivation_html(line, money) {
+	const d = line.derivation;
+	if (!d) return "";
+
+	const rows = [];
+	const add = (label, value) =>
+		value !== undefined && value !== null && value !== "" &&
+		rows.push(`<tr><th>${label}</th><td>${value}</td></tr>`);
+
+	if (d.mode === "Daily" || d.mode === "Hourly") {
+		add(__("Config ran"), `${d.segment_from} → ${d.segment_to}`);
+		add(__("Locked rate"), money(d.locked_rate));
+		if (d.mode === "Daily") {
+			add(__("Days billed"), `${d.days} ${__("of")} ${d.day_units}`);
+		} else {
+			add(__("Hours on this date"), `${d.hours} ${__("of")} ${d.hour_units}`);
+			add(__("Date"), d.charge_date);
+		}
+	} else if (d.mode === "Metered") {
+		add(__("Measured"), `${d.measured_quantity} ${d.unit || ""}`.trim());
+		add(__("Allowance"), `${d.allowance} ${d.unit || ""}`.trim());
+		add(__("Billable"), `${d.billable_quantity} ${d.unit || ""}`.trim());
+		add(__("Rate"), `${money(d.rate)} · ${d.rate_source}`);
+	} else if (d.mode === "Estimated") {
+		add(__("Window"), d.window_from ? `${d.window_from} → ${d.window_to}` : null);
+		add(__("Months averaged"), d.months);
+		add(__("Observed over the window"), d.observed_total ? money(d.observed_total) : null);
+		add(__("Elapsed"), d.elapsed_days ? `${d.elapsed_days} ${__("of")} ${d.period_days}` : null);
+	}
+
+	// A date billed hourly is the confusing one, so name every config that shared it.
+	let shared = "";
+	if (d.configs_on_this_date && d.configs_on_this_date.length) {
+		const items = d.configs_on_this_date
+			.map(
+				(c) =>
+					`<tr><td>${c.from} → ${c.to}</td><td>${money(c.rate)}</td><td>${
+						c.held_under_24h ? __("held under 24h") : ""
+					}</td></tr>`
+			)
+			.join("");
+		shared = `<table class="bs-why-tbl">
+			<thead><tr><th>${__("Configs sharing this date")}</th><th>${__("Rate")}</th><th></th></tr></thead>
+			<tbody>${items}</tbody></table>`;
+	}
+
+	return `
+		<div class="bs-why-why">${frappe.utils.escape_html(d.why || "")}</div>
+		<div class="bs-why-sum">${frappe.utils.escape_html(d.arithmetic || "")} = ${money(
+			line.amount
+		)}</div>
+		<table class="bs-why-tbl">${rows.join("")}</table>
+		${shared}`;
 }
 
 function basis_tag(line) {

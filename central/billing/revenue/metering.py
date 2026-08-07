@@ -305,7 +305,9 @@ def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> 
 	).insert(ignore_permissions=True)
 
 
-def metered_line_items(team: str, cluster: str, period_start, period_end) -> list[dict]:
+def metered_line_items(
+	team: str, cluster: str, period_start, period_end, explain: bool = False
+) -> list[dict]:
 	"""Metered line items for one (team, cluster) over the billing month.
 
 	One line per rollup whose period falls in the billing month:
@@ -313,10 +315,12 @@ def metered_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	within the allowance contributes no line. Single-cluster entry point — the monthly
 	run bills a whole team at once via `metered_line_items_for_clusters`.
 	"""
-	return _metered_lines(team, [cluster], period_start, period_end)
+	return _metered_lines(team, [cluster], period_start, period_end, explain)
 
 
-def metered_line_items_for_clusters(team: str, clusters, period_start, period_end) -> list[dict]:
+def metered_line_items_for_clusters(
+	team: str, clusters, period_start, period_end, explain: bool = False
+) -> list[dict]:
 	"""Metered line items for a team across several clusters, from ONE rollup query.
 
 	The monthly run consolidates a team's clusters into a single invoice; scanning
@@ -324,10 +328,12 @@ def metered_line_items_for_clusters(team: str, clusters, period_start, period_en
 	N+1. This fetches every cluster's rollups in one query and resolves each metered
 	family once. The billed set is exactly the per-cluster union.
 	"""
-	return _metered_lines(team, list(clusters), period_start, period_end)
+	return _metered_lines(team, list(clusters), period_start, period_end, explain)
 
 
-def _metered_lines(team: str, clusters: list, period_start, period_end) -> list[dict]:
+def _metered_lines(
+	team: str, clusters: list, period_start, period_end, explain: bool = False
+) -> list[dict]:
 	"""One line per overage rollup for `team` in any of `clusters` (see the two public
 	wrappers). The rollup carries its own cluster, so a multi-cluster run tags each line
 	correctly and prices Live plans against the rollup's cluster."""
@@ -424,19 +430,41 @@ def _metered_lines(team: str, clusters: list, period_start, period_end) -> list[
 			continue
 
 		amount = frappe.utils.flt(billable_qty * rate, 2)
-		lines.append(
-			{
-				"subscription_resource": r.resource_id,
-				"plan": None,
-				"cluster": r.cluster,
-				"resource_type": r.resource_type,
+		line = {
+			"subscription_resource": r.resource_id,
+			"plan": None,
+			"cluster": r.cluster,
+			"resource_type": r.resource_type,
+			"unit": r.unit,
+			"quantity": billable_qty,
+			"rate": rate,
+			"days": 0,
+			"amount": amount,
+		}
+		if explain:
+			live = bool(plan and plan.pricing_mode == "Live")
+			line["derivation"] = {
+				"mode": "Metered",
+				"why": (
+					"only usage past the allowance is billed"
+					if allowance
+					else "this family carries no allowance, so every unit is billed"
+				),
+				"measured_quantity": frappe.utils.flt(r.quantity),
+				"allowance": frappe.utils.flt(allowance),
+				"billable_quantity": billable_qty,
 				"unit": r.unit,
-				"quantity": billable_qty,
 				"rate": rate,
-				"days": 0,
-				"amount": amount,
+				# Where the rate came from matters: a live-priced family follows today's
+				# catalog, a grandfathered one is held at the terms locked when the usage
+				# was ingested.
+				"rate_source": "current catalog rate" if live else "locked at ingest",
+				"arithmetic": (
+					f"max(0, {frappe.utils.flt(r.quantity)} − {frappe.utils.flt(allowance)})"
+					f" × {rate}"
+				),
 			}
-		)
+		lines.append(line)
 
 	if unpriced:
 		frappe.throw(

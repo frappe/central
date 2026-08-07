@@ -38,7 +38,9 @@ def _dates_touched(start_dt: datetime, end_dt: datetime) -> list:
 	return out
 
 
-def compute_line_items(team: str, cluster: str, period_start, period_end) -> list[dict]:
+def compute_line_items(
+	team: str, cluster: str, period_start, period_end, explain: bool = False
+) -> list[dict]:
 	"""Time-weighted fixed line items for one (team, cluster) over the billing month.
 
 	Each `Created`/`Plan Changed` Subscription-Change row opens a segment at its
@@ -66,11 +68,13 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	bounds = _period_bounds(period_start, period_end)
 	lines = []
 	for sub in subscriptions:
-		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds)
+		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
 	return lines
 
 
-def team_line_items(team: str, period_start, period_end) -> list[dict]:
+def team_line_items(
+	team: str, period_start, period_end, explain: bool = False
+) -> list[dict]:
 	"""Every fixed line item for a team across all the clusters it runs in, from ONE
 	read of its subscriptions, their asset clusters and their changes.
 
@@ -89,7 +93,7 @@ def team_line_items(team: str, period_start, period_end) -> list[dict]:
 		cluster = clusters.get(sub.asset_id)
 		if not cluster:
 			continue  # no live asset cluster — nothing to bill this subscription against
-		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds)
+		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
 	return lines
 
 
@@ -109,7 +113,7 @@ def _period_bounds(period_start, period_end):
 	)
 
 
-def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
+def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = False) -> list[dict]:
 	"""The daily/hourly fixed lines for one subscription in one cluster.
 
 	Splits the subscription's rate-snapshot changes into billable segments, marks the
@@ -159,14 +163,14 @@ def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
 		# mid-day resize still sends the whole transition day to one plan.
 		d0 = max(s["start"].date(), b.ps)
 		d1 = min(s["end"].date(), b.pe + timedelta(days=1))  # exclusive
-		days = 0
+		billed_dates = []
 		d = d0
 		while d < d1:
 			if d not in churn_dates:
-				days += 1
+				billed_dates.append(d)
 			d += timedelta(days=1)
-		if days:
-			lines.append(_daily_line(s, days, b.day_units))
+		if billed_dates:
+			lines.append(_daily_line(s, len(billed_dates), b.day_units, explain, billed_dates))
 
 		# Hourly pass — this segment's real hours on each churn date it touches.
 		for cd in _dates_touched(s["start"], s["end"]):
@@ -176,7 +180,20 @@ def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
 			day_end = min(s["end"], datetime.combine(cd + timedelta(days=1), time.min))
 			hours = (day_end - day_start).total_seconds() / 3600.0
 			if hours > 0:
-				lines.append(_hourly_line(s, hours, b.hour_units, cd))
+				# Which configs shared this date is the whole explanation for why it went
+				# hourly, so carry them rather than leaving the reader to infer it.
+				touching = [
+					{
+						"from": str(other["start"]),
+						"to": str(other["end"]),
+						"rate": other["rate"],
+						"plan": other["plan"],
+						"held_under_24h": other["churn"],
+					}
+					for other in segs
+					if cd in _dates_touched(other["start"], other["end"])
+				]
+				lines.append(_hourly_line(s, hours, b.hour_units, cd, explain, touching))
 	return lines
 
 
@@ -204,8 +221,10 @@ def _changes_by_subscription(subscription_names: list[str]) -> dict:
 	return grouped
 
 
-def _daily_line(seg: dict, days: int, day_units: int) -> dict:
-	return {
+def _daily_line(
+	seg: dict, days: int, day_units: int, explain: bool = False, billed_dates=None
+) -> dict:
+	line = {
 		"subscription_resource": seg["asset"],
 		"plan": seg["plan"],
 		"cluster": seg["cluster"],
@@ -217,10 +236,25 @@ def _daily_line(seg: dict, days: int, day_units: int) -> dict:
 		"hours": None,
 		"amount": frappe.utils.flt(days * seg["rate"] / day_units, 2),
 	}
+	if explain:
+		line["derivation"] = {
+			"mode": "Daily",
+			"why": "the config was held for a day or more, so whole days are billed",
+			"segment_from": str(seg["start"]),
+			"segment_to": str(seg["end"]),
+			"locked_rate": seg["rate"],
+			"days": days,
+			"day_units": day_units,
+			"dates": [str(d) for d in (billed_dates or [])],
+			"arithmetic": f"{days} ÷ {day_units} × {seg['rate']}",
+		}
+	return line
 
 
-def _hourly_line(seg: dict, hours: float, hour_units: int, charge_date) -> dict:
-	return {
+def _hourly_line(
+	seg: dict, hours: float, hour_units: int, charge_date, explain: bool = False, touching=None
+) -> dict:
+	line = {
 		"subscription_resource": seg["asset"],
 		"plan": seg["plan"],
 		"cluster": seg["cluster"],
@@ -233,3 +267,21 @@ def _hourly_line(seg: dict, hours: float, hour_units: int, charge_date) -> dict:
 		"charge_date": charge_date,
 		"amount": frappe.utils.flt(hours * seg["rate"] / hour_units, 2),
 	}
+	if explain:
+		line["derivation"] = {
+			"mode": "Hourly",
+			"why": (
+				"a config on this date was held for less than 24 hours, so the whole "
+				"date bills by the hour"
+			),
+			"charge_date": str(charge_date),
+			"segment_from": str(seg["start"]),
+			"segment_to": str(seg["end"]),
+			"locked_rate": seg["rate"],
+			"hours": frappe.utils.flt(hours, 2),
+			"hour_units": hour_units,
+			"dates": [str(charge_date)],
+			"configs_on_this_date": touching or [],
+			"arithmetic": f"{frappe.utils.flt(hours, 2)} ÷ {hour_units} × {seg['rate']}",
+		}
+	return line

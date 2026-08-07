@@ -190,7 +190,7 @@ def _rate(team: str, lines: list[dict], period_start, period_end, subscription: 
 	)
 
 
-def rate_subscription_period(subscription: str, period_start, period_end):
+def rate_subscription_period(subscription: str, period_start, period_end, explain: bool = False):
 	"""What one subscription's cluster would bill the team for the period. Reads only.
 
 	Returns None when there was no billable runtime.
@@ -199,8 +199,8 @@ def rate_subscription_period(subscription: str, period_start, period_end):
 
 	sub = frappe.get_doc("Subscription", subscription)
 	cluster = frappe.db.get_value("Asset", sub.asset_id, "cluster") if sub.asset_id else None
-	lines = compute_line_items(sub.team, cluster, period_start, period_end)
-	lines += metered_line_items(sub.team, cluster, period_start, period_end)
+	lines = compute_line_items(sub.team, cluster, period_start, period_end, explain=explain)
+	lines += metered_line_items(sub.team, cluster, period_start, period_end, explain=explain)
 	if not lines:
 		return None
 	return _rate(sub.team, lines, period_start, period_end, subscription)
@@ -220,6 +220,7 @@ def rate_team_period(
 	period_end,
 	subscription: str | None = None,
 	metered: list[dict] | None = None,
+	explain: bool = False,
 ):
 	"""What the team's whole book would bill for the period, across every cluster.
 	Reads only.
@@ -237,10 +238,10 @@ def rate_team_period(
 	# Read the team once, not once per cluster: team_line_items pulls every
 	# subscription's fixed lines in one pass, and the metered rollups for all the
 	# team's clusters come back in a single query.
-	lines = team_line_items(team, period_start, period_end)
+	lines = team_line_items(team, period_start, period_end, explain=explain)
 	if metered is None:
 		lines += metered_line_items_for_clusters(
-			team, team_clusters(team), period_start, period_end
+			team, team_clusters(team), period_start, period_end, explain=explain
 		)
 	else:
 		lines += list(metered)
