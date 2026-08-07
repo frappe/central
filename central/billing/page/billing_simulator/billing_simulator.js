@@ -235,6 +235,10 @@ class BillingSimulator {
 	render(data) {
 		this.$body.empty();
 		this.$body.append(this.invoice_card(data));
+		if (data.refused && data.refused.length) this.$body.append(this.refused_card(data.refused));
+		if (data.injected_events && data.injected_events.length) {
+			this.$body.append(this.injected_card(data.injected_events));
+		}
 		if (data.outcome) this.$body.append(this.findings_card(data.outcome));
 		this.$body.append(this.calendar_card(data.calendar, data.outcome));
 		if (data.in_flight && data.in_flight.length) {
@@ -363,13 +367,22 @@ class BillingSimulator {
 
 		// A total is never shown on its own when part of it was inferred — a bill that
 		// is half guesswork must not read like a bill.
+		// Every basis present gets a row. A split that does not add up to the total is
+		// worse than no split — it invites the reader to trust the total and ignore it.
 		const split = invoice.has_estimates
-			? `<div class="bs-total"><span>${__("Measured")}</span><span>${money(
-					invoice.measured
-			  )}</span></div>
-			   <div class="bs-total"><span>${__("Estimated")}</span><span>${money(
-					invoice.estimated
-			  )}</span></div>`
+			? [
+					["Measured", invoice.measured],
+					["Estimated", invoice.estimated],
+					["Assumed", invoice.assumed],
+			  ]
+					.filter(([, amount]) => amount)
+					.map(
+						([label, amount]) =>
+							`<div class="bs-total"><span>${__(label)}</span><span>${money(
+								amount
+							)}</span></div>`
+					)
+					.join("")
 			: "";
 
 		const tax = invoice.output_tax_amount
@@ -414,6 +427,53 @@ class BillingSimulator {
 			$(this).find(".bs-caret").text(open ? "▸" : "▾");
 		});
 		return $card;
+	}
+
+	// ---- things somebody invented ------------------------------------------
+
+	injected_card(events) {
+		const rows = events
+			.map(
+				(e) => `<tr>
+					<td>${e.date}</td>
+					<td>${frappe.utils.escape_html(e.event)}</td>
+					<td class="bs-muted">${frappe.utils.escape_html(e.detail || "")}</td>
+				</tr>`
+			)
+			.join("");
+		return $(`
+			<div class="bs-card">
+				<div class="bs-card-head">
+					<span class="bs-card-title">${__("Assumed to happen")}</span>
+					<span class="bs-muted">${__("None of this is history")}</span>
+				</div>
+				<table class="bs-table">
+					<thead><tr><th>${__("When")}</th><th>${__("What")}</th><th>${__("Detail")}</th></tr></thead>
+					<tbody>${rows}</tbody>
+				</table>
+			</div>`);
+	}
+
+	refused_card(refused) {
+		// A scenario that could not happen is a finding, not a projection.
+		const items = refused
+			.map(
+				(r) => `<li class="bs-finding">
+					<span class="bs-finding-summary">${frappe.utils.escape_html(r.event)} ${
+						r.on_date
+					} — ${frappe.utils.escape_html(r.reason)}</span>
+					<span class="bs-muted">${frappe.utils.escape_html(r.detail || "")}</span>
+				</li>`
+			)
+			.join("");
+		return $(`
+			<div class="bs-card">
+				<div class="bs-card-head">
+					<span class="bs-card-title">${__("This could not happen")}</span>
+					<span class="bs-muted">${__("The platform would refuse it")}</span>
+				</div>
+				<ul class="bs-findings">${items}</ul>
+			</div>`);
 	}
 
 	// ---- what the state already decides ------------------------------------

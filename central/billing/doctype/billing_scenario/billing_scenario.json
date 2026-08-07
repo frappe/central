@@ -112,6 +112,18 @@
    "label": "Promotional Credit Validity Days"
   },
   {
+   "fieldname": "section_break_events",
+   "fieldtype": "Section Break",
+   "label": "Things that have not happened",
+   "description": "Placed on the calendar and rated by the same engine that rates real ones."
+  },
+  {
+   "fieldname": "events",
+   "fieldtype": "Table",
+   "label": "Events",
+   "options": "Billing Scenario Event"
+  },
+  {
    "fieldname": "section_break_rates",
    "fieldtype": "Section Break",
    "label": "Instead of the published prices",
@@ -157,6 +169,8 @@
   "suspend_after_days",
   "terminate_after_days",
   "promotional_credit_validity_days",
+  "section_break_events",
+  "events",
   "section_break_rates",
   "rate_overrides",
   "section_break_result",

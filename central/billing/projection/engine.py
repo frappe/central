@@ -16,7 +16,7 @@ guarantee rather than a convention — see `guard`.
 import frappe
 
 from central.billing import settings
-from central.billing.projection import estimate, outcomes, state
+from central.billing.projection import estimate, events as injected, outcomes, state
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
 from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
@@ -30,6 +30,7 @@ def project(
 	today=None,
 	mode: str = outcomes.DERIVED,
 	assume: str | None = None,
+	events: list | None = None,
 	recorder=None,
 	source=None,
 ) -> dict:
@@ -42,20 +43,29 @@ def project(
 	engine.
 	"""
 	with read_only():
-		return _project(team, period_start, period_end, today, mode, assume)
+		return _project(team, period_start, period_end, today, mode, assume, events)
 
 
 def _project(
-	team: str, period_start, period_end, today=None, mode: str = outcomes.DERIVED, assume=None
+	team: str, period_start, period_end, today=None, mode: str = outcomes.DERIVED,
+	assume=None, events: list | None = None,
 ) -> dict:
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	start = frappe.utils.getdate(period_start)
 	end = frappe.utils.getdate(period_end)
 
 	metered = estimate.metered_lines(team, team_clusters(team), start, end, today=today)
-	rated = rate_team_period(team, start, end, metered=metered, explain=True)
+	rated = rate_team_period(
+		team, start, end, metered=metered, explain=True,
+		changes=injected.merged_changes(events, start, end),
+	)
 
 	invoice = _invoice(rated)
+	if invoice and events:
+		# A line that only exists because somebody invented an event is not a
+		# measurement, and the totals must not let it read as one.
+		injected.mark_assumed(invoice["lines"], events, start)
+		invoice.update(split_totals(invoice["lines"]))
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	calendar = _calendar(end, today)
 
@@ -78,6 +88,8 @@ def _project(
 		"calendar": calendar,
 		"outcome": outcomes.verdict(mode, findings, assume),
 		"in_flight": _in_flight(team, today),
+		"injected_events": injected.timeline(events),
+		"refused": injected.refusals(team, events),
 	}
 
 
@@ -198,6 +210,7 @@ def project_months(
 	today=None,
 	mode: str = outcomes.DERIVED,
 	assume: str | None = None,
+	events: list | None = None,
 ) -> dict:
 	"""Roll a team forward month by month, carrying what each month changes.
 
@@ -209,10 +222,12 @@ def project_months(
 	comfortable balance every month because it re-read today's.
 	"""
 	with read_only():
-		return _project_months(team, start, months, today, mode, assume)
+		return _project_months(team, start, months, today, mode, assume, events)
 
 
-def _project_months(team, start, months, today=None, mode=outcomes.DERIVED, assume=None) -> dict:
+def _project_months(
+	team, start, months, today=None, mode=outcomes.DERIVED, assume=None, events=None
+) -> dict:
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	carried = state.seed(team, today)
 	period_start = frappe.utils.get_first_day(start)
@@ -220,7 +235,9 @@ def _project_months(team, start, months, today=None, mode=outcomes.DERIVED, assu
 	periods = []
 	for _ in range(max(1, frappe.utils.cint(months))):
 		period_end = frappe.utils.get_last_day(period_start)
-		periods.append(_roll_one(team, carried, period_start, period_end, today, mode, assume))
+		periods.append(
+			_roll_one(team, carried, period_start, period_end, today, mode, assume, events)
+		)
 		period_start = frappe.utils.add_days(period_end, 1)
 
 	return {
@@ -228,6 +245,8 @@ def _project_months(team, start, months, today=None, mode=outcomes.DERIVED, assu
 		"as_of": str(today),
 		"currency": carried.currency,
 		"months": periods,
+		"injected_events": injected.timeline(events),
+		"refused": injected.refusals(team, events, state=carried),
 		"ends": {
 			"balance": carried.wallet().balance,
 			"standing": carried.standing,
@@ -238,8 +257,17 @@ def _project_months(team, start, months, today=None, mode=outcomes.DERIVED, assu
 	}
 
 
-def _roll_one(team, carried, period_start, period_end, today, mode, assume) -> dict:
+def _roll_one(team, carried, period_start, period_end, today, mode, assume, events=None) -> dict:
 	"""One month, against the state the months before it left behind."""
+	# Money an operator says arrives lands before the month is settled, so the wallet it
+	# is meant to rescue actually has it when the bill is drawn.
+	for top_up in injected.top_ups(events):
+		if period_start <= top_up["on_date"] <= period_end:
+			carried.wallet(top_up["currency"]).credit(top_up["amount"])
+			carried.events.append(
+				{"date": str(top_up["on_date"]), "event": "Topped up", "amount": top_up["amount"]}
+			)
+
 	# Promotional credit dies on its date whether or not anyone spent it. Sweep at the
 	# start of the month, not the end: a grant expiring on the 30th is the customer's to
 	# spend right up to the 30th, and destroying it before the month it covers would
@@ -260,8 +288,14 @@ def _roll_one(team, carried, period_start, period_end, today, mode, assume) -> d
 		}
 
 	metered = estimate.metered_lines(team, team_clusters(team), period_start, period_end, today=today)
-	rated = rate_team_period(team, period_start, period_end, metered=metered, explain=True)
+	rated = rate_team_period(
+		team, period_start, period_end, metered=metered, explain=True,
+		changes=injected.merged_changes(events, period_start, period_end),
+	)
 	invoice = _invoice(rated)
+	if invoice and events:
+		injected.mark_assumed(invoice["lines"], events, period_start)
+		invoice.update(split_totals(invoice["lines"]))
 	calendar = _calendar(period_end, today)
 
 	settlement_result = _settle(carried, invoice, calendar, mode, assume)
