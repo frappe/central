@@ -1,0 +1,155 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-08-07 00:00:00.000000",
+ "description": "One team's projected position in a cohort batch — scalar, so the report reads it rather than computing it.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing Projection Summary",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "export": 1,
+   "share": 1,
+   "delete": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "batch",
+   "fieldtype": "Link",
+   "label": "Batch",
+   "options": "Billing Projection Batch",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency"
+  },
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Date",
+   "label": "As Of"
+  },
+  {
+   "fieldname": "column_break_money",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "projected_total",
+   "fieldtype": "Currency",
+   "label": "Projected Total",
+   "options": "currency",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "measured",
+   "fieldtype": "Currency",
+   "label": "Measured",
+   "options": "currency"
+  },
+  {
+   "fieldname": "estimated",
+   "fieldtype": "Currency",
+   "label": "Estimated",
+   "options": "currency"
+  },
+  {
+   "fieldname": "credit_balance",
+   "fieldtype": "Currency",
+   "label": "Credits",
+   "options": "currency"
+  },
+  {
+   "fieldname": "shortfall",
+   "fieldtype": "Currency",
+   "label": "Shortfall",
+   "options": "currency"
+  },
+  {
+   "fieldname": "section_break_outcome",
+   "fieldtype": "Section Break",
+   "label": "Outcome"
+  },
+  {
+   "fieldname": "settles_via",
+   "fieldtype": "Data",
+   "label": "Settles Via"
+  },
+  {
+   "fieldname": "outcome",
+   "fieldtype": "Data",
+   "label": "Outcome",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "outcome_reason",
+   "fieldtype": "Small Text",
+   "label": "Why"
+  },
+  {
+   "fieldname": "column_break_dates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "due_on",
+   "fieldtype": "Date",
+   "label": "Due On"
+  },
+  {
+   "fieldname": "suspends_on",
+   "fieldtype": "Date",
+   "label": "Suspends On"
+  },
+  {
+   "fieldname": "paid_on_time",
+   "fieldtype": "Data",
+   "label": "Paid On Time"
+  }
+ ],
+ "field_order": [
+  "batch",
+  "team",
+  "currency",
+  "as_of",
+  "column_break_money",
+  "projected_total",
+  "measured",
+  "estimated",
+  "credit_balance",
+  "shortfall",
+  "section_break_outcome",
+  "settles_via",
+  "outcome",
+  "outcome_reason",
+  "column_break_dates",
+  "due_on",
+  "suspends_on",
+  "paid_on_time"
+ ]
+}

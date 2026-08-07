@@ -137,3 +137,233 @@ class TestDeferringToTheRun(CohortTestBase):
 	def test_projections_stand_aside_while_the_run_still_owes_work(self):
 		# One of them is answering a question; the other is billing customers.
 		self.assertIn(cohort.run_in_progress("2026-09-15"), (True, False))
+
+
+class TestTheBatch(CohortTestBase):
+	"""The batch does the work; the report only reads what it left behind."""
+
+	def setUp(self):
+		super().setUp()
+		from central.billing.tests.utils import add_segment
+
+		for team in self.teams:
+			sub = frappe.get_all("Subscription", {"team": team}, pluck="name")[0]
+			add_segment(sub, "Created", 1000, "2026-01-01 00:00:00")
+		frappe.db.commit()
+
+	def tearDown(self):
+		for b in frappe.get_all("Billing Projection Batch", pluck="name"):
+			frappe.db.delete("Billing Projection Summary", {"batch": b})
+			frappe.delete_doc("Billing Projection Batch", b, force=True, ignore_permissions=True)
+		frappe.db.commit()
+		super().tearDown()
+
+	def _batch(self, filters=None, months=1):
+		from central.billing.projection import batch
+
+		doc = frappe.get_doc(
+			{
+				"doctype": "Billing Projection Batch",
+				"as_of": "2026-08-06",
+				"period_start": "2026-09-01",
+				"months": months,
+				"status": "Queued",
+				"filters": frappe.as_json(filters or {"currency": "INR"}),
+				"teams_expected": cohort.count(filters or {"currency": "INR"}),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+		return batch.run_batch(doc.name)
+
+	def test_a_batch_writes_one_scalar_row_per_team(self):
+		result = self._batch()
+		rows = frappe.get_all(
+			"Billing Projection Summary",
+			filters={"batch": result["batch"]},
+			fields=["team", "projected_total", "currency", "outcome"],
+		)
+		self.assertEqual(len(rows), cohort.count({"currency": "INR"}))
+		self.assertTrue(all(r.currency == "INR" for r in rows))
+		self.assertTrue(all(r.projected_total for r in rows))
+
+	def test_the_batch_reports_completion(self):
+		result = self._batch()
+		self.assertEqual(result["status"], "Complete")
+		self.assertEqual(
+			frappe.db.get_value("Billing Projection Batch", result["batch"], "teams_projected"),
+			cohort.count({"currency": "INR"}),
+		)
+
+	def test_rows_carry_the_as_of_stamp(self):
+		result = self._batch()
+		stamps = frappe.get_all(
+			"Billing Projection Summary", filters={"batch": result["batch"]}, pluck="as_of"
+		)
+		self.assertTrue(all(str(s) == "2026-08-06" for s in stamps))
+
+	def test_a_currency_filter_keeps_the_other_currency_out(self):
+		result = self._batch({"currency": "USD"})
+		rows = frappe.get_all(
+			"Billing Projection Summary", filters={"batch": result["batch"]}, pluck="currency"
+		)
+		self.assertTrue(rows)
+		self.assertTrue(all(c == "USD" for c in rows))
+
+	def test_projecting_a_cohort_creates_no_invoices(self):
+		before = frappe.db.count("Invoice")
+		self._batch()
+		self.assertEqual(frappe.db.count("Invoice"), before)
+
+	def test_a_suspension_date_is_only_printed_when_non_payment_is_entailed(self):
+		# These teams have no payment method at all, so it is entailed.
+		result = self._batch()
+		rows = frappe.get_all(
+			"Billing Projection Summary",
+			filters={"batch": result["batch"]},
+			fields=["suspends_on", "outcome"],
+		)
+		self.assertTrue(all(r.suspends_on for r in rows))
+		self.assertTrue(all(r.outcome for r in rows))
+
+	def test_pruning_drops_old_batches_and_their_rows(self):
+		result = self._batch()
+		frappe.db.set_value(
+			"Billing Projection Batch", result["batch"], "creation", "2020-01-01 00:00:00",
+			update_modified=False,
+		)
+		frappe.db.commit()
+
+		from central.billing.projection import batch
+
+		self.assertGreaterEqual(batch.prune(days=30), 1)
+		self.assertFalse(frappe.db.exists("Billing Projection Batch", result["batch"]))
+		self.assertEqual(
+			frappe.db.count("Billing Projection Summary", {"batch": result["batch"]}), 0
+		)
+
+
+class TestTheQueue(IntegrationTestCase):
+	def test_projections_never_fall_back_to_the_billing_queue(self):
+		# Contending with the monthly run for workers is the one fallback that would be
+		# worse than being slow.
+		from central.billing.projection import batch
+
+		self.assertNotEqual(batch.projection_queue(), "billing")
+
+	def test_only_projection_doctypes_are_written(self):
+		# The engine cannot write at all; this is the boundary for what happens after.
+		from central.billing.projection import batch
+
+		self.assertEqual(
+			set(batch.WRITABLE),
+			{"Billing Projection Batch", "Billing Projection Summary"},
+		)
+
+
+class TestTheReport(CohortTestBase):
+	"""The report reads; it never projects."""
+
+	def setUp(self):
+		super().setUp()
+		from central.billing.tests.utils import add_segment
+
+		for team in self.teams:
+			sub = frappe.get_all("Subscription", {"team": team}, pluck="name")[0]
+			add_segment(sub, "Created", 1000, "2026-01-01 00:00:00")
+		frappe.db.commit()
+
+	def tearDown(self):
+		for b in frappe.get_all("Billing Projection Batch", pluck="name"):
+			frappe.db.delete("Billing Projection Summary", {"batch": b})
+			frappe.delete_doc("Billing Projection Batch", b, force=True, ignore_permissions=True)
+		frappe.db.commit()
+		super().tearDown()
+
+	def _run_batch(self, filters=None):
+		from central.billing.projection import batch
+
+		doc = frappe.get_doc(
+			{
+				"doctype": "Billing Projection Batch",
+				"as_of": "2026-08-06",
+				"period_start": "2026-09-01",
+				"months": 1,
+				"status": "Queued",
+				"filters": frappe.as_json(filters or {"currency": "INR"}),
+				"teams_expected": cohort.count(filters or {"currency": "INR"}),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.commit()
+		return batch.run_batch(doc.name)["batch"]
+
+	def _execute(self, **filters):
+		from central.billing.report.billing_projection.billing_projection import execute
+
+		return execute(filters)
+
+	def test_it_renders_the_rows_a_batch_left_behind(self):
+		name = self._run_batch()
+		columns, rows, message, _chart, summary = self._execute(batch=name)
+		self.assertTrue(columns)
+		self.assertEqual(len(rows), cohort.count({"currency": "INR"}))
+		self.assertIn("Projected", message)
+		self.assertTrue(summary)
+
+	def test_running_the_report_projects_nobody(self):
+		# If the report computed, it would time out at cohort scale. It must only read.
+		name = self._run_batch()
+		before = frappe.db.count("Billing Projection Summary", {"batch": name})
+		self._execute(batch=name)
+		self._execute(batch=name)
+		self.assertEqual(frappe.db.count("Billing Projection Summary", {"batch": name}), before)
+
+	def test_with_no_batch_it_offers_to_make_one(self):
+		with billing_settings(projection_budget_seconds=300):
+			_c, rows, message, _chart, _s = self._execute(currency="INR", months=1)
+		self.assertEqual(rows, [])
+		self.assertIn("No projection yet", message)
+
+	def test_an_over_budget_cohort_is_refused_in_the_message_slot(self):
+		# A designed panel above an empty table, not a thrown error — the filters stay
+		# live so the operator can narrow in place.
+		with billing_settings(projection_budget_seconds=0):
+			_c, rows, message, _chart, _s = self._execute(months=12)
+		self.assertEqual(rows, [])
+		self.assertIn("too large to project", message)
+		self.assertIn("Narrow it by", message)
+
+	def test_the_teams_that_would_suspend_sort_to_the_top(self):
+		name = self._run_batch()
+		_c, rows, _m, _chart, _s = self._execute(batch=name, needs_attention=1)
+		self.assertTrue(rows)
+		self.assertTrue(all(r["suspends_on"] for r in rows))
+
+	def test_a_partial_batch_says_so(self):
+		name = self._run_batch()
+		frappe.db.set_value("Billing Projection Batch", name, "status", "Partial")
+		frappe.db.commit()
+		_c, _rows, message, _chart, _s = self._execute(batch=name)
+		self.assertIn("Incomplete", message)
+
+	def test_a_sampled_batch_never_reads_as_measured(self):
+		name = self._run_batch()
+		frappe.db.set_value(
+			"Billing Projection Batch", name, {"sampled": 1, "sample_size": 500}
+		)
+		frappe.db.commit()
+		_c, _rows, message, _chart, _s = self._execute(batch=name)
+		self.assertIn("Extrapolated", message)
+		self.assertIn("estimates", message)
+
+	def test_money_is_never_summed_across_currencies(self):
+		inr = self._run_batch({"currency": "INR"})
+		frappe.db.set_value(
+			"Billing Projection Summary",
+			frappe.get_all("Billing Projection Summary", {"batch": inr}, pluck="name")[0],
+			"currency", "USD",
+		)
+		frappe.db.commit()
+		_c, rows, _m, _chart, summary = self._execute(batch=inr)
+		currencies = {t.get("currency") for t in summary if t.get("datatype") == "Currency"}
+		self.assertIn("INR", currencies)
+		self.assertIn("USD", currencies)

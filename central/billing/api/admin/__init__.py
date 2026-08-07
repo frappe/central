@@ -22,7 +22,12 @@ from central.billing.api.admin.catalog import (
 	get_trial_detail,
 	update_plan_rate,
 )
-from central.billing.api.admin.projection import project_team, project_team_months
+from central.billing.api.admin.projection import (
+	project_team,
+	project_team_months,
+	size_cohort,
+	start_cohort_projection,
+)
 from central.billing.api.admin.revenue import (
 	get_cluster_breakdown,
 	get_free_trial_costs,
@@ -46,6 +51,8 @@ from central.billing.api.admin.teams import (
 __all__ = [
 	"project_team",
 	"project_team_months",
+	"size_cohort",
+	"start_cohort_projection",
 	"adjust_team_credits",
 	"create_configured_plan",
 	"get_catalog",

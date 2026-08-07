@@ -36,6 +36,17 @@
   {
    "hidden": 0,
    "is_query_report": 1,
+   "label": "Billing Projection",
+   "link_count": 0,
+   "link_to": "Billing Projection",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "dependencies": "Billing Projection Summary"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
    "label": "Invoice Register",
    "link_count": 0,
    "link_to": "Invoice Register",
