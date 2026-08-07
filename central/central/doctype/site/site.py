@@ -38,34 +38,15 @@ class Site(Document):
 		"""Upsert one site into the mirror. `occurred_at` (event push) drives LWW;
 		`synced_at` (get_site poll) just stamps freshness. A site with no `team`
 		belongs to no mirror and is skipped."""
-		site_name, team = site.get("name"), site.get("team")
-		if not site_name or not team or not frappe.db.exists("Team", team):
-			return
-		if frappe.db.exists("Site", site_name):
-			cls._update_mirror(site_name, cluster, site, occurred_at, synced_at)
-			return
-		try:
-			doc = frappe.new_doc("Site")
-			cls._stamp(doc, cluster, site, occurred_at, synced_at)
-			# Users can't write the mirror; this sync is its sole writer, authorized
-			# by the verified Atlas event/poll rather than desk RBAC.
-			doc.save(ignore_permissions=True)
-		except frappe.DuplicateEntryError:
-			# Lost the insert race (concurrent create_site + event): recover as update.
-			cls._update_mirror(site_name, cluster, site, occurred_at, synced_at)
+		from central.mirror import upsert_mirror
 
-	@classmethod
-	def _update_mirror(cls, site_name: str, cluster: str, site: dict, occurred_at, synced_at) -> None:
-		# Lock + load in one current read — same RR trap as Asset._update_mirror.
-		doc = frappe.get_doc("Site", site_name, for_update=True)
-		if (
-			occurred_at
-			and doc.last_event_at
-			and frappe.utils.get_datetime(doc.last_event_at) > frappe.utils.get_datetime(occurred_at)
-		):
-			return
-		cls._stamp(doc, cluster, site, occurred_at, synced_at)
-		doc.save(ignore_permissions=True)
+		upsert_mirror(
+			"Site",
+			site.get("name"),
+			site.get("team"),
+			occurred_at,
+			lambda doc: cls._stamp(doc, cluster, site, occurred_at, synced_at),
+		)
 
 	@staticmethod
 	def _stamp(doc, cluster: str, site: dict, occurred_at, synced_at) -> None:

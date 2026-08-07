@@ -130,47 +130,15 @@ class Asset(Document):
 		`synced_at` (reconcile pull) just stamps freshness. A VM with no `team`
 		belongs to no mirror and is skipped. A Central-originated provision supplies
 		`friendly_title`; later Atlas syncs preserve that local display label."""
-		resource_id, team = vm.get("name"), vm.get("team")
-		if not resource_id or not team or not frappe.db.exists("Team", team):
-			return
-		if frappe.db.exists("Asset", resource_id):
-			cls._update_mirror(resource_id, cluster, vm, occurred_at, synced_at, friendly_title)
-			return
-		try:
-			doc = frappe.new_doc("Asset")
-			cls._stamp(doc, cluster, vm, occurred_at, synced_at, friendly_title)
-			# Users can't write the mirror; this sync is its sole writer, authorized
-			# by the verified Atlas event/pull rather than desk RBAC.
-			doc.save(ignore_permissions=True)
-		except frappe.DuplicateEntryError:
-			# Lost the insert race: under REPEATABLE READ our exists-check ran on a
-			# snapshot that predated a concurrent writer's commit, so we took the
-			# insert path and hit the unique key. Recover as an update.
-			cls._update_mirror(resource_id, cluster, vm, occurred_at, synced_at, friendly_title)
+		from central.mirror import upsert_mirror
 
-	@classmethod
-	def _update_mirror(
-		cls,
-		resource_id: str,
-		cluster: str,
-		vm: dict,
-		occurred_at,
-		synced_at,
-		friendly_title: str | None = None,
-	) -> None:
-		# Lock + load in one current read. A plain get_doc after get_value(for_update)
-		# still uses the REPEATABLE READ snapshot and can miss a row another writer
-		# just committed (DuplicateEntry recovery → DoesNotExistError), or load a
-		# stale `modified` (TimestampMismatchError against a concurrent save).
-		doc = frappe.get_doc("Asset", resource_id, for_update=True)
-		if (
-			occurred_at
-			and doc.last_event_at
-			and frappe.utils.get_datetime(doc.last_event_at) > frappe.utils.get_datetime(occurred_at)
-		):
-			return
-		cls._stamp(doc, cluster, vm, occurred_at, synced_at, friendly_title)
-		doc.save(ignore_permissions=True)
+		upsert_mirror(
+			"Asset",
+			vm.get("name"),
+			vm.get("team"),
+			occurred_at,
+			lambda doc: cls._stamp(doc, cluster, vm, occurred_at, synced_at, friendly_title),
+		)
 
 	@staticmethod
 	def _stamp(
