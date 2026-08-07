@@ -17,7 +17,7 @@ import frappe
 
 from central.billing import settings
 from central.billing.catalog import pricing
-from central.billing.projection import engine, repricing
+from central.billing.projection import cassette, engine, repricing
 
 # The only DocType this module may write. Asserted, because the whole safety argument
 # for running projections against production rests on it staying true.
@@ -164,3 +164,52 @@ def _bare(doc):
 
 def _resolve(scenario):
 	return scenario if hasattr(scenario, "overrides") else frappe.get_doc("Billing Scenario", scenario)
+
+
+def check_drift(scenario, today=None) -> dict:
+	"""Has this scenario's answer changed since it was last saved?
+
+	The regression harness, in the smallest form that is actually useful. A saved
+	scenario already holds its inputs and its last answer, so re-projecting it and
+	diffing gives exactly what a deploy check needs: same question, same team, different
+	code.
+
+	It is not immune to data drift — the team may genuinely have changed — so the
+	report says what moved and where, and leaves the judgement to a human. Freezing the
+	inputs too is the cassette's job, and this is where a recording would be replayed
+	from once there is one.
+	"""
+	doc = _resolve(scenario)
+	if not doc.result:
+		frappe.throw(
+			"This scenario has no saved answer to compare against. Project and save it "
+			"first.",
+			frappe.ValidationError,
+		)
+
+	before = frappe.parse_json(doc.result)
+	after = project(doc, today)
+	report = cassette.report(before, after)
+	return {
+		"scenario": doc.name,
+		"projected_at": str(doc.projected_at) if doc.projected_at else None,
+		**report,
+	}
+
+
+def check_all(today=None) -> list[dict]:
+	"""Every saved scenario, re-projected and diffed. What runs after a deploy."""
+	out = []
+	for name in frappe.get_all(
+		"Billing Scenario", filters={"result": ["is", "set"]}, pluck="name"
+	):
+		try:
+			out.append(check_drift(name, today))
+		except Exception:  # noqa: BLE001
+			frappe.log_error(
+				title="Billing Scenario Drift Check Failed",
+				message=frappe.get_traceback(),
+				reference_doctype="Billing Scenario",
+				reference_name=name,
+			)
+	return out

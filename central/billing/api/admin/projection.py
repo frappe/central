@@ -209,3 +209,23 @@ def project_from_library(key: str, team: str, period_start: str | None = None, t
 	out = scenarios.project(doc, today=today)
 	out["library"] = {"key": key, **{k: v for k, v in library.SCENARIOS[key].items() if k in ("title", "question", "look_for")}}
 	return out
+
+
+@frappe.whitelist()
+def check_scenario_drift(scenario: str, today: str | None = None) -> dict:
+	"""Whether a saved scenario now answers differently than when it was saved."""
+	authz.require_operator()
+
+	from central.billing.projection import scenario as scenarios
+
+	return scenarios.check_drift(scenario, today=today)
+
+
+@frappe.whitelist()
+def compare_cohort_batches(live: str, altered: str) -> dict:
+	"""How far a change reaches, across two batches of the same teams."""
+	authz.require_operator()
+
+	from central.billing.projection import batch
+
+	return batch.compare_batches(live, altered)

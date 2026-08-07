@@ -19,7 +19,8 @@ from frappe import _
 from central.billing.projection import cohort
 from central.billing.report._currency import split_currency_columns
 
-MONEY_FIELDS = ("projected_total", "measured", "estimated", "credit_balance", "shortfall")
+# Only the money that has its own column gets split per currency.
+MONEY_FIELDS = ("projected_total", "shortfall")
 
 
 def execute(filters: dict | None = None):
@@ -68,22 +69,23 @@ def _rows(batch: str, filters) -> list[dict]:
 
 
 def get_columns() -> list[dict]:
+	"""Seven columns, not eleven.
+
+	Five money fields across two currencies is ten columns before Team, and the headings
+	truncate. So each column has to earn its place: `Credits` is `Projected total` minus
+	`Shortfall`, and the measured/estimated split belongs in the drill-down rather than
+	in a list somebody scans. What is left is what an operator acts on — who, how much,
+	whether it will settle, and when they get cut off.
+	"""
 	return [
-		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 160},
-		{"label": _("Projected total"), "fieldname": "projected_total", "fieldtype": "Currency",
+		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 170},
+		{"label": _("Projected"), "fieldname": "projected_total", "fieldtype": "Currency",
 		 "options": "currency", "width": 140},
-		{"label": _("Measured"), "fieldname": "measured", "fieldtype": "Currency",
-		 "options": "currency", "width": 120},
-		{"label": _("Estimated"), "fieldname": "estimated", "fieldtype": "Currency",
-		 "options": "currency", "width": 120},
-		{"label": _("Credits"), "fieldname": "credit_balance", "fieldtype": "Currency",
-		 "options": "currency", "width": 110},
 		{"label": _("Shortfall"), "fieldname": "shortfall", "fieldtype": "Currency",
-		 "options": "currency", "width": 120},
-		{"label": _("Settles via"), "fieldname": "settles_via", "fieldtype": "Data", "width": 120},
-		{"label": _("Outcome"), "fieldname": "outcome", "fieldtype": "Data", "width": 200},
-		{"label": _("Due on"), "fieldname": "due_on", "fieldtype": "Date", "width": 100},
-		{"label": _("Suspends on"), "fieldname": "suspends_on", "fieldtype": "Date", "width": 110},
+		 "options": "currency", "width": 130},
+		{"label": _("Outcome"), "fieldname": "outcome", "fieldtype": "Data", "width": 210},
+		{"label": _("Suspends on"), "fieldname": "suspends_on", "fieldtype": "Date", "width": 115},
+		{"label": _("Paid on time"), "fieldname": "paid_on_time", "fieldtype": "Data", "width": 105},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Link",
 		 "options": "Currency", "width": 90},
 	]

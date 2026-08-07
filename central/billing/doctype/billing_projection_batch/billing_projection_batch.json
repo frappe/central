@@ -74,6 +74,13 @@
    "label": "Scope"
   },
   {
+   "fieldname": "scenario",
+   "fieldtype": "Link",
+   "label": "Scenario",
+   "options": "Billing Scenario",
+   "description": "Projected under this scenario's overrides instead of the live configuration."
+  },
+  {
    "fieldname": "filters",
    "fieldtype": "Code",
    "label": "Filters",
@@ -135,6 +142,7 @@
   "started_at",
   "completed_at",
   "section_break_scope",
+  "scenario",
   "filters",
   "column_break_counts",
   "teams_expected",

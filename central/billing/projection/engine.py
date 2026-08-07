@@ -68,7 +68,7 @@ def _project(
 		injected.mark_assumed(invoice["lines"], events, start)
 		invoice.update(split_totals(invoice["lines"]))
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	calendar = _calendar(end, today)
+	calendar = injected.apply_declines(_calendar(end, today), team, events)
 
 	# Derived findings are read off the amount we would actually try to collect, not the
 	# headline total: credits and withholding both change what the gateway is asked for.

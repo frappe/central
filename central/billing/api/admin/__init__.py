@@ -23,6 +23,8 @@ from central.billing.api.admin.catalog import (
 	update_plan_rate,
 )
 from central.billing.api.admin.projection import (
+	check_scenario_drift,
+	compare_cohort_batches,
 	compare_scenario,
 	project_scenario,
 	project_from_library,
@@ -55,6 +57,8 @@ from central.billing.api.admin.teams import (
 )
 
 __all__ = [
+	"check_scenario_drift",
+	"compare_cohort_batches",
 	"compare_scenario",
 	"project_scenario",
 	"project_from_library",
