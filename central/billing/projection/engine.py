@@ -31,6 +31,7 @@ def project(
 	mode: str = outcomes.DERIVED,
 	assume: str | None = None,
 	events: list | None = None,
+	guarded: bool = True,
 	recorder=None,
 	source=None,
 ) -> dict:
@@ -42,7 +43,7 @@ def project(
 	unused here so that adding the regression harness does not have to reshape the
 	engine.
 	"""
-	with read_only():
+	with read_only(strict=guarded):
 		return _project(team, period_start, period_end, today, mode, assume, events)
 
 

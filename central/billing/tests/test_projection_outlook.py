@@ -175,3 +175,37 @@ class TestBehaviour(OutlookTestBase):
 			behaviour.verdict({"invoices": 6, "on_time": 3, "worst_delay_days": 45}),
 			"Chronically late",
 		)
+
+
+class TestTheForecastIsAProjection(IntegrationTestCase):
+	"""The customer's number and the operator's are one computation."""
+
+	def test_the_forecast_runs_through_the_engine(self):
+		import inspect
+
+		from central.billing.api.dashboard import invoices
+
+		source = inspect.getsource(invoices.get_forecast)
+		self.assertIn("engine.project", source)
+		self.assertNotIn("compute_line_items", source)
+
+	def test_a_customer_read_does_not_fail_on_a_dirty_transaction(self):
+		# Refusing here would break a customer page to enforce an internal invariant,
+		# and committing on their behalf is the side effect the guard exists to prevent.
+		from central.billing.projection.guard import read_only
+
+		ensure_team(TEAM)
+		frappe.db.set_value("Team", TEAM, "team_name", "Mid-transaction")
+		with read_only(strict=False):
+			self.assertTrue(frappe.db.exists("Team", TEAM))
+		frappe.db.rollback()
+
+	def test_an_operator_projection_still_refuses(self):
+		from central.billing.projection.guard import ProjectionBoundaryError, read_only
+
+		ensure_team(TEAM)
+		frappe.db.set_value("Team", TEAM, "team_name", "Mid-transaction")
+		with self.assertRaises(ProjectionBoundaryError):
+			with read_only():
+				pass
+		frappe.db.rollback()
