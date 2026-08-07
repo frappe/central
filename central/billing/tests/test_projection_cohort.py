@@ -492,3 +492,59 @@ class TestContainmentDoesNotCascade(CohortTestBase):
 		from central.billing.projection import outcomes
 
 		self.assertEqual(outcomes._money(12373.5, "INR"), "INR 12,373.50")
+
+
+class TestSplitCurrencyColumns(IntegrationTestCase):
+	"""Money split by currency has to render in that currency."""
+
+	def _split(self):
+		from central.billing.report._currency import split_currency_columns
+
+		columns = [
+			{"label": "Team", "fieldname": "team", "fieldtype": "Data"},
+			{"label": "Total", "fieldname": "total", "fieldtype": "Currency",
+			 "options": "currency"},
+			{"label": "Currency", "fieldname": "currency", "fieldtype": "Data"},
+		]
+		rows = [
+			{"team": "a", "total": 100.0, "currency": "INR"},
+			{"team": "b", "total": 50.0, "currency": "USD"},
+		]
+		return split_currency_columns(columns, rows, ["total"]), rows
+
+	def test_a_split_column_points_at_a_field_on_the_row(self):
+		# Frappe resolves a Currency column's currency by looking up row[options]. A
+		# literal code finds nothing and falls back to the site default, which is how
+		# every split column came to render in the wrong symbol.
+		columns, rows = self._split()
+		money = [c for c in columns if c["fieldname"].startswith("total_")]
+		self.assertEqual(len(money), 2)
+		for column in money:
+			self.assertIn(column["options"], rows[0], "options must name a row field")
+
+	def test_each_carrier_holds_its_own_currency(self):
+		columns, rows = self._split()
+		for column in columns:
+			if column["fieldname"].startswith("total_"):
+				expected = column["fieldname"].rsplit("_", 1)[1].upper()
+				self.assertEqual(rows[0][column["options"]], expected)
+
+	def test_every_row_carries_every_currency(self):
+		# A blank carrier would send an empty cell back to the site default.
+		_columns, rows = self._split()
+		for row in rows:
+			self.assertEqual(row["currency_inr"], "INR")
+			self.assertEqual(row["currency_usd"], "USD")
+
+	def test_values_still_land_in_their_own_currency_column(self):
+		_columns, rows = self._split()
+		self.assertEqual(rows[0]["total_inr"], 100.0)
+		self.assertNotIn("total_usd", rows[0])
+		self.assertEqual(rows[1]["total_usd"], 50.0)
+
+	def test_a_single_currency_run_is_left_alone(self):
+		from central.billing.report._currency import split_currency_columns
+
+		columns = [{"label": "Total", "fieldname": "total", "fieldtype": "Currency"}]
+		rows = [{"total": 10.0, "currency": "INR"}]
+		self.assertEqual(split_currency_columns(columns, rows, ["total"]), columns)
