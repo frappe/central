@@ -582,6 +582,30 @@ class TestReportPilotEvent(EngineTestBase):
 		self.assertEqual(rows[0].reference_name, "my-site")
 		self.assertEqual(rows[0].required_cap, "server:view")
 
+	def test_pilot_event_refuses_non_server_category(self):
+		"""A pilot may only raise Server-domain events; a Billing event type is refused
+		so a bench can't fan out billing emails to the team."""
+		self._ensure_event_type(
+			"payment_failure",
+			category="Billing",
+			severity="Error",
+			required_cap="billing:view",
+			in_app_title="Payment failed",
+			in_app_body="{{ message }}",
+		)
+
+		class FakeCredential:
+			team = TEAM
+
+		with (
+			patch("central.api.pilot.PilotCredential.verify", return_value=FakeCredential()),
+			patch("frappe.get_request_header", return_value="fake-token"),
+		):
+			from central.notification.api import report_pilot_event
+
+			with self.assertRaises(frappe.PermissionError):
+				report_pilot_event(event_type="payment_failure", message="x")
+
 
 class TestTemplateContext(EngineTestBase):
 	def test_reference_doctype_in_template_context(self):
