@@ -13,9 +13,54 @@ as constants here. The one exception is the per-currency welcome grant: child ro
 can't have defaults, so `ensure_welcome_credit_amounts` seeds them on install.
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 import frappe
 
 SETTINGS = "Billing Settings"
+
+# What a projection is asking "what if" about. A context variable rather than a
+# parameter because the question is asked several layers down — dunning, invoicing and
+# credits all read policy — and threading a settings bundle through every one of them
+# would put the simulator's concerns into code that has no business knowing it exists.
+#
+# Nothing here writes. An override changes what a projection *reads*, never what the
+# document holds, so the answer to "what would a 2/5/10 ladder do" costs nobody their
+# real configuration.
+_overrides: ContextVar[dict] = ContextVar("billing_settings_overrides", default={})
+
+
+@contextmanager
+def overridden(**values):
+	"""Read Billing Settings as if these values were saved, for this block only.
+
+	Nests: an inner override wins for the fields it names and leaves the rest alone.
+	"""
+	merged = {**_overrides.get(), **{k: v for k, v in values.items() if v is not None}}
+	token = _overrides.set(merged)
+	try:
+		yield merged
+	finally:
+		_overrides.reset(token)
+
+
+def active_overrides() -> dict:
+	"""What is currently being pretended, if anything — for showing on the output."""
+	return dict(_overrides.get())
+
+
+def _override(field):
+	"""The overridden value for `field`, or `_MISSING` when it is not being pretended."""
+	return _overrides.get().get(field, _MISSING)
+
+
+class _Missing:
+	def __bool__(self):
+		return False
+
+
+_MISSING = _Missing()
 
 # The launch grant, seeded once onto a Billing Settings nobody has saved yet. It is
 # a starting point for the accounts team to edit, not a value the code depends on.
@@ -42,26 +87,41 @@ def welcome_credit_amount(currency: str) -> float:
 
 def promotional_credit_validity_days() -> int:
 	"""Days a welcome credit stays usable; 0 means it never expires."""
+	override = _override("promotional_credit_validity_days")
+	if override is not _MISSING:
+		return frappe.utils.cint(override)
 	return frappe.utils.cint(_settings().promotional_credit_validity_days)
 
 
 def invoice_due_days() -> int:
 	"""Days between an invoice opening and falling due."""
+	override = _override("invoice_due_days")
+	if override is not _MISSING:
+		return frappe.utils.cint(override)
 	return frappe.utils.cint(_settings().invoice_due_days)
 
 
 def dunning_retry_days() -> list[int]:
 	"""Days past due on which payment is retried, in order. Empty means no retries."""
+	override = _override("dunning_retry_days")
+	if override is not _MISSING:
+		return _parse_retry_days(override)
 	return _settings().retry_days()
 
 
 def suspend_after_days() -> int:
 	"""Days past due before a subscription is suspended."""
+	override = _override("suspend_after_days")
+	if override is not _MISSING:
+		return frappe.utils.cint(override)
 	return frappe.utils.cint(_settings().suspend_after_days)
 
 
 def terminate_after_days() -> int:
 	"""Days past due before a subscription is terminated."""
+	override = _override("terminate_after_days")
+	if override is not _MISSING:
+		return frappe.utils.cint(override)
 	return frappe.utils.cint(_settings().terminate_after_days)
 
 
@@ -72,6 +132,9 @@ def default_gst_rate() -> float:
 
 def forecast_notify_ratio() -> float:
 	"""Share of a team's cap at which its forecast spend warning fires (0.8 = 80%)."""
+	override = _override("forecast_notify_percent")
+	if override is not _MISSING:
+		return frappe.utils.flt(override) / 100.0
 	return frappe.utils.flt(_settings().forecast_notify_percent) / 100.0
 
 
@@ -95,3 +158,20 @@ def ensure_welcome_credit_amounts() -> None:
 	for currency, amount in LAUNCH_WELCOME_CREDITS.items():
 		settings.append("welcome_credit_amounts", {"currency": currency, "amount": amount})
 	settings.save(ignore_permissions=True)
+
+
+def _parse_retry_days(value) -> list[int]:
+	"""Accept a ladder as a list or as the comma string the document stores."""
+	if isinstance(value, str):
+		parts = [p.strip() for p in value.split(",") if p.strip()]
+	else:
+		parts = list(value or [])
+	days = []
+	for part in parts:
+		try:
+			day = int(part)
+		except (TypeError, ValueError):
+			continue
+		if day not in days:
+			days.append(day)
+	return sorted(days)

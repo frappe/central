@@ -58,10 +58,91 @@ class BillingSimulator {
 			default: "Derived",
 			change: () => this.refresh(),
 		});
+		this.scenario = this.page.add_field({
+			fieldname: "scenario",
+			label: __("Scenario"),
+			fieldtype: "Link",
+			options: "Billing Scenario",
+			change: () => this.apply_scenario(),
+		});
 		this.page.set_primary_action(__("Project"), () => this.refresh());
+		this.page.add_menu_item(__("Save as scenario"), () => this.save_scenario());
+	}
+
+	// A saved scenario drives the projection itself: its overrides are read *instead of*
+	// Billing Settings for the length of the call, which is why it cannot just be
+	// unpacked into these filters.
+	apply_scenario() {
+		const name = this.scenario.get_value();
+		if (!name) return this.refresh();
+
+		// Reflecting the scenario's team back into the picker fires that field's own
+		// change handler, which would kick off a plain refresh and overwrite the very
+		// projection we are waiting for — with the default period, silently.
+		this.applying = true;
+		this.show_empty(__("Projecting…"));
+		frappe
+			.call({
+				method: "central.billing.api.admin.projection.project_scenario",
+				args: { scenario: name },
+			})
+			.then((r) => {
+				if (!r.message) return;
+				const out = r.message;
+				this.team.set_value(out.team);
+				if (out.scenario && out.scenario.months > 1) this.render_months(out);
+				else this.render(out);
+				if (out.scenario) this.$body.prepend(this.pretending_card(out.scenario));
+			})
+			.catch(() => this.show_empty(__("Could not project this scenario.")))
+			.finally(() => {
+				this.applying = false;
+			});
+	}
+
+	// A projection under an altered configuration that does not say so is a number
+	// waiting to be quoted as fact.
+	pretending_card(scenario) {
+		const overrides = Object.entries(scenario.overrides || {});
+		if (!overrides.length) return $();
+		const items = overrides
+			.map(
+				([field, value]) =>
+					`<li class="bs-finding"><span class="bs-finding-summary">${frappe.utils.escape_html(
+						frappe.unscrub(field)
+					)}</span><span class="bs-muted">${frappe.utils.escape_html(
+						String(value)
+					)} ${__("instead of what is configured")}</span></li>`
+			)
+			.join("");
+		return $(`
+			<div class="bs-card">
+				<div class="bs-card-head">
+					<span class="bs-card-title">${__("Projected under {0}", [
+						frappe.utils.escape_html(scenario.scenario_name || scenario.name),
+					])}</span>
+					<span class="bs-muted">${__("Billing Settings are unchanged")}</span>
+				</div>
+				<ul class="bs-findings">${items}</ul>
+			</div>`);
+	}
+
+	save_scenario() {
+		const team = this.team.get_value();
+		if (!team) {
+			frappe.show_alert({ message: __("Pick a team first."), indicator: "orange" });
+			return;
+		}
+		const doc = frappe.model.get_new_doc("Billing Scenario");
+		doc.team = team;
+		doc.period_start = this.period.get_value();
+		doc.months = cint(this.months.get_value()) || 1;
+		doc.outcome_mode = this.mode.get_value() || "Derived";
+		frappe.set_route("Form", "Billing Scenario", doc.name);
 	}
 
 	refresh() {
+		if (this.applying) return;
 		const team = this.team.get_value();
 		if (!team) return;
 

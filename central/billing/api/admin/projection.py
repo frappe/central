@@ -150,3 +150,36 @@ def size_cohort(filters: str | None = None, months: int = 1) -> dict:
 	parsed = frappe.parse_json(filters) if filters else {}
 	sizing = cohort.estimate({k: v for k, v in (parsed or {}).items() if v}, months)
 	return dict(sizing)
+
+
+@frappe.whitelist()
+def project_scenario(scenario: str, today: str | None = None) -> dict:
+	"""Project a saved scenario — its team, its period, its overrides."""
+	authz.require_operator()
+
+	from central.billing.projection import scenario as scenarios
+
+	frappe.logger("billing").info(
+		f"projection: {frappe.session.user} projected scenario {scenario}"
+	)
+	return scenarios.project(scenario, today=today)
+
+
+@frappe.whitelist(methods=["POST"])
+def save_scenario_result(scenario: str, today: str | None = None) -> dict:
+	"""Project a scenario and record the answer on it."""
+	authz.require_operator()
+
+	from central.billing.projection import scenario as scenarios
+
+	return scenarios.project_and_save(scenario, today=today)
+
+
+@frappe.whitelist()
+def compare_scenario(scenario: str, today: str | None = None) -> dict:
+	"""The same team as configured and as the scenario pretends, side by side."""
+	authz.require_operator()
+
+	from central.billing.projection import scenario as scenarios
+
+	return scenarios.compare(scenario, today=today)
