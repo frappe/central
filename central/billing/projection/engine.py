@@ -16,7 +16,7 @@ guarantee rather than a convention — see `guard`.
 import frappe
 
 from central.billing import settings
-from central.billing.projection import estimate, events as injected, outcomes, state
+from central.billing.projection import behaviour, estimate, events as injected, outcomes, state
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
 from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
@@ -31,6 +31,7 @@ def project(
 	mode: str = outcomes.DERIVED,
 	assume: str | None = None,
 	events: list | None = None,
+	guarded: bool = True,
 	recorder=None,
 	source=None,
 ) -> dict:
@@ -42,7 +43,7 @@ def project(
 	unused here so that adding the regression harness does not have to reshape the
 	engine.
 	"""
-	with read_only():
+	with read_only(strict=guarded):
 		return _project(team, period_start, period_end, today, mode, assume, events)
 
 
@@ -67,7 +68,7 @@ def _project(
 		injected.mark_assumed(invoice["lines"], events, start)
 		invoice.update(split_totals(invoice["lines"]))
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	calendar = _calendar(end, today)
+	calendar = injected.apply_declines(_calendar(end, today), team, events)
 
 	# Derived findings are read off the amount we would actually try to collect, not the
 	# headline total: credits and withholding both change what the gateway is asked for.
@@ -90,6 +91,9 @@ def _project(
 		"in_flight": _in_flight(team, today),
 		"injected_events": injected.timeline(events),
 		"refused": injected.refusals(team, events),
+		# "Suspended on the 12th" means one thing for a team that has never missed a
+		# payment and the opposite for one that is late every month.
+		"behaviour": behaviour.with_verdict(team, on=today),
 	}
 
 

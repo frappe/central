@@ -23,11 +23,15 @@ from central.billing.api.admin.catalog import (
 	update_plan_rate,
 )
 from central.billing.api.admin.projection import (
+	check_scenario_drift,
+	compare_cohort_batches,
 	compare_scenario,
 	project_scenario,
+	project_from_library,
 	project_team,
 	project_team_months,
 	save_scenario_result,
+	scenario_library,
 	sample_cohort,
 	size_cohort,
 	start_cohort_projection,
@@ -53,9 +57,13 @@ from central.billing.api.admin.teams import (
 )
 
 __all__ = [
+	"check_scenario_drift",
+	"compare_cohort_batches",
 	"compare_scenario",
 	"project_scenario",
+	"project_from_library",
 	"project_team",
+	"scenario_library",
 	"save_scenario_result",
 	"project_team_months",
 	"sample_cohort",

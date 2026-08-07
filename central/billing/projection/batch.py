@@ -25,7 +25,7 @@ import time
 
 import frappe
 
-from central.billing.projection import cohort, engine, outcomes
+from central.billing.projection import behaviour, cohort, engine, outcomes
 
 PROJECTION_QUEUE = "projection"
 PAGE_SIZE = 500
@@ -100,7 +100,10 @@ def start_sampled(
 	return batch.name
 
 
-def start(filters: dict | None = None, period_start=None, months: int = 1, today=None) -> str:
+def start(
+	filters: dict | None = None, period_start=None, months: int = 1, today=None,
+	scenario: str | None = None,
+) -> str:
 	"""Size the cohort, refuse it if it is too big, and enqueue the batch.
 
 	Raises `CohortTooLargeError` before any team is rated, and `ValidationError` while
@@ -125,6 +128,7 @@ def start(filters: dict | None = None, period_start=None, months: int = 1, today
 			"filters": json.dumps(filters or {}, indent=1, sort_keys=True),
 			"teams_expected": sizing.teams,
 			"estimated_seconds": sizing.estimated_seconds,
+			"scenario": scenario,
 		}
 	).insert(ignore_permissions=True)
 	frappe.db.commit()
@@ -215,6 +219,29 @@ def _project_page(batch_doc, teams: list) -> int:
 
 def _summarise(team: str, batch_doc) -> dict:
 	"""One team's projected position, flattened to scalars the report can read."""
+	if batch_doc.scenario:
+		return _summarise_under_scenario(team, batch_doc)
+	return _summarise_live(team, batch_doc)
+
+
+def _summarise_under_scenario(team: str, batch_doc) -> dict:
+	"""Project this team as the scenario pretends, so a batch can be a what-if.
+
+	Two batches over the same teams — one live, one under a scenario — are what the
+	blast radius compares. Without this a scenario could only ever be asked about one
+	team at a time, which is not the question anyone has before shipping a change.
+	"""
+	from central.billing import settings
+	from central.billing.catalog import pricing
+
+	doc = frappe.get_doc("Billing Scenario", batch_doc.scenario)
+	with settings.overridden(**doc.overrides()), pricing.overridden_rates(
+		doc.rate_overrides_applied()
+	):
+		return _summarise_live(team, batch_doc)
+
+
+def _summarise_live(team: str, batch_doc) -> dict:
 	months = frappe.utils.cint(batch_doc.months) or 1
 	if months > 1:
 		projection = engine.project_months(
@@ -262,6 +289,7 @@ def _summarise(team: str, batch_doc) -> dict:
 		"outcome_reason": findings[0]["summary"] if findings else None,
 		"due_on": (calendar or {}).get("due_on"),
 		"suspends_on": suspends_on,
+		"paid_on_time": _paid_on_time(team, batch_doc.as_of),
 	}
 
 
@@ -285,6 +313,12 @@ def _outcome_label(outcome, findings) -> str:
 	if outcome.get("mode") != outcomes.DERIVED:
 		return outcome.get("mode")
 	return findings[0]["summary"] if findings else "No obstacle found"
+
+
+def _paid_on_time(team: str, on) -> str:
+	""""6 / 6" beside a failure points at us; "3 / 6" points at them."""
+	record = behaviour.summary(team, on=on)
+	return f"{record['on_time']} / {record['invoices']}" if record["invoices"] else "—"
 
 
 def _settles_via(team: str) -> str:
@@ -311,3 +345,42 @@ def prune(days: int = RETENTION_DAYS) -> int:
 		frappe.delete_doc("Billing Projection Batch", name, force=True, ignore_permissions=True)
 	frappe.db.commit()
 	return len(stale)
+
+
+def compare_batches(live: str, altered: str) -> dict:
+	"""How far a change reaches, measured across two batches of the same teams.
+
+	This is what `blast` is for. Both sides have to be real projections over the same
+	cohort, or the difference between them is not attributable to the change.
+	"""
+	from central.billing.projection import blast
+
+	live_doc = frappe.get_doc("Billing Projection Batch", live)
+	altered_doc = frappe.get_doc("Billing Projection Batch", altered)
+
+	comparison = blast.compare_rows(_rows_of(live), _rows_of(altered))
+	summary = blast.summarise(
+		comparison,
+		sampled=bool(altered_doc.sampled or live_doc.sampled),
+		sample_size=frappe.utils.cint(altered_doc.sample_size),
+		population=frappe.utils.cint(altered_doc.teams_expected),
+	)
+	return {
+		"live_batch": live,
+		"altered_batch": altered,
+		"scenario": altered_doc.scenario,
+		"summary": summary,
+		"headline": blast.describe(summary),
+		"newly_suspending": comparison["newly_suspending"],
+		"newly_short": comparison["newly_short"],
+		"suspension_moved_earlier": comparison["suspension_moved_earlier"],
+	}
+
+
+def _rows_of(batch: str) -> list[dict]:
+	return frappe.get_all(
+		"Billing Projection Summary",
+		filters={"batch": batch},
+		fields=["team", "currency", "projected_total", "shortfall", "suspends_on"],
+		limit_page_length=0,
+	)

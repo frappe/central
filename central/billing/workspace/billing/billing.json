@@ -46,6 +46,17 @@
   {
    "hidden": 0,
    "is_query_report": 1,
+   "label": "Collection Outlook",
+   "link_count": 0,
+   "link_to": "Collection Outlook",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "dependencies": "Invoice"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
    "label": "Billing Projection",
    "link_count": 0,
    "link_to": "Billing Projection",

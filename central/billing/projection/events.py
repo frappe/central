@@ -125,6 +125,47 @@ def declines(events: list) -> list[dict]:
 	]
 
 
+def apply_declines(calendar: dict, team: str, events: list) -> dict:
+	"""Walk the retry ladder spending the team's payment methods as declines burn them.
+
+	A decline does **not** move any date, and it is worth being exact about that: the
+	ladder is counted from the invoice's clock, and only *our* failure to collect ever
+	pushes it (`defer_dunning`). A customer's card being refused is not our failure. What
+	it changes is which method the next attempt reaches for — the charge loop escalates
+	rather than repeating, so each decline burns one method — and what happens once there
+	are none left.
+
+	So the dates stay put and each retry gains two facts: the method it would try, and
+	whether anything remains to try at all.
+	"""
+	assumed = {d["attempt"] for d in declines(events)}
+	if not assumed:
+		return calendar
+
+	from central.billing.payments import collection
+
+	methods = [m.name for m in collection.ordered_methods(team)]
+	burnt: list[str] = []
+
+	for stage in calendar.get("if_never_paid", []):
+		if stage.get("stage") != "Retry":
+			continue
+		attempt = stage.get("attempt")
+		available = [m for m in methods if m not in burnt]
+		stage["method"] = available[0] if available else None
+		if not available:
+			stage["note"] = "Nothing left to try — every method has been refused."
+		elif attempt in assumed:
+			stage["assumed_declined"] = True
+			stage["note"] = "Assumed refused; the next attempt escalates to another method."
+			burnt.append(available[0])
+		else:
+			stage["note"] = "Charges the next untried method."
+
+	calendar["methods_exhausted"] = len(burnt) >= len(methods) and bool(methods)
+	return calendar
+
+
 def refusals(team: str, events: list, state=None) -> list[dict]:
 	"""Injected provisions the real gates would not have allowed.
 

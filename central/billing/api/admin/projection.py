@@ -183,3 +183,49 @@ def compare_scenario(scenario: str, today: str | None = None) -> dict:
 	from central.billing.projection import scenario as scenarios
 
 	return scenarios.compare(scenario, today=today)
+
+
+@frappe.whitelist()
+def scenario_library() -> list[dict]:
+	"""The shelf of canned questions."""
+	authz.require_operator()
+
+	from central.billing.projection import library
+
+	return library.catalogue()
+
+
+@frappe.whitelist()
+def project_from_library(key: str, team: str, period_start: str | None = None, today: str | None = None) -> dict:
+	"""Apply a catalogue scenario to a real team and project it, without saving."""
+	authz.require_operator()
+
+	from central.billing.projection import library, scenario as scenarios
+
+	doc = library.build(key, team, period_start=period_start, today=today)
+	frappe.logger("billing").info(
+		f"projection: {frappe.session.user} ran library scenario {key} on {team}"
+	)
+	out = scenarios.project(doc, today=today)
+	out["library"] = {"key": key, **{k: v for k, v in library.SCENARIOS[key].items() if k in ("title", "question", "look_for")}}
+	return out
+
+
+@frappe.whitelist()
+def check_scenario_drift(scenario: str, today: str | None = None) -> dict:
+	"""Whether a saved scenario now answers differently than when it was saved."""
+	authz.require_operator()
+
+	from central.billing.projection import scenario as scenarios
+
+	return scenarios.check_drift(scenario, today=today)
+
+
+@frappe.whitelist()
+def compare_cohort_batches(live: str, altered: str) -> dict:
+	"""How far a change reaches, across two batches of the same teams."""
+	authz.require_operator()
+
+	from central.billing.projection import batch
+
+	return batch.compare_batches(live, altered)

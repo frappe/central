@@ -67,6 +67,7 @@ class BillingSimulator {
 		});
 		this.page.set_primary_action(__("Project"), () => this.refresh());
 		this.page.add_menu_item(__("Save as scenario"), () => this.save_scenario());
+		this.page.add_inner_button(__("Try a question"), () => this.pick_from_library());
 	}
 
 	// A saved scenario drives the projection itself: its overrides are read *instead of*
@@ -182,6 +183,93 @@ class BillingSimulator {
 							: ""
 					}
 				</div>
+			</div>`);
+	}
+
+	// The shelf of canned questions. Each one says what it asks and what to look for,
+	// because a button with no explanation is one nobody presses twice.
+	pick_from_library() {
+		const team = this.team.get_value();
+		if (!team) {
+			frappe.show_alert({ message: __("Pick a team first."), indicator: "orange" });
+			return;
+		}
+
+		frappe
+			.call({ method: "central.billing.api.admin.projection.scenario_library" })
+			.then((r) => {
+				const entries = r.message || [];
+				const dialog = new frappe.ui.Dialog({
+					title: __("Try a question"),
+					fields: [
+						{
+							fieldname: "key",
+							label: __("Question"),
+							fieldtype: "Select",
+							reqd: 1,
+							options: entries.map((e) => ({ label: e.title, value: e.key })),
+							change() {
+								const chosen = entries.find((e) => e.key === this.get_value());
+								dialog.set_df_property(
+									"about",
+									"options",
+									chosen
+										? `<div class="text-muted"><p>${frappe.utils.escape_html(
+												chosen.question
+										  )}</p><p><b>${__("Look for")}:</b> ${frappe.utils.escape_html(
+												chosen.look_for
+										  )}</p></div>`
+										: ""
+								);
+							},
+						},
+						{ fieldname: "about", fieldtype: "HTML" },
+					],
+					primary_action_label: __("Project it"),
+					primary_action: ({ key }) => {
+						dialog.hide();
+						this.run_library_scenario(key, team);
+					},
+				});
+				dialog.show();
+			});
+	}
+
+	run_library_scenario(key, team) {
+		this.applying = true;
+		this.show_empty(__("Projecting…"));
+		frappe
+			.call({
+				method: "central.billing.api.admin.projection.project_from_library",
+				args: { key, team, period_start: this.period.get_value() },
+			})
+			.then((r) => {
+				if (!r.message) return;
+				const out = r.message;
+				if (out.scenario && out.scenario.months > 1) this.render_months(out);
+				else this.render(out);
+				if (out.library) this.$body.prepend(this.library_card(out.library));
+			})
+			.catch((e) => {
+				// A scenario that cannot apply to this team says why rather than
+				// projecting something misleading.
+				this.show_empty(
+					(e && e.message) || __("This question does not apply to that team.")
+				);
+			})
+			.finally(() => {
+				this.applying = false;
+			});
+	}
+
+	library_card(entry) {
+		return $(`
+			<div class="bs-card">
+				<div class="bs-card-head">
+					<span class="bs-card-title">${frappe.utils.escape_html(entry.title)}</span>
+					<span class="bs-muted">${frappe.utils.escape_html(entry.question)}</span>
+				</div>
+				<div class="bs-note">${__("Look for")}: ${frappe.utils.escape_html(entry.look_for)}</div>
 			</div>`);
 	}
 

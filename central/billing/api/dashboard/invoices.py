@@ -18,11 +18,9 @@ from central.billing.api.dashboard._shared import (
 	_require_manage,
 	_require_view,
 	_resolve_team,
-	_team_clusters,
 	_team_currency,
 )
-from central.billing.revenue import credits, invoicing, metering
-from central.billing.revenue.tax import resolve_tax
+from central.billing.revenue import credits
 
 
 @frappe.whitelist()
@@ -38,17 +36,29 @@ def get_forecast(team: str | None = None) -> dict:
 	month_start = frappe.utils.get_first_day(today)
 	month_end = frappe.utils.get_last_day(today)
 
-	line_items = []
-	for cluster in _team_clusters(team):
-		line_items += invoicing.compute_line_items(team, cluster, month_start, month_end)
-		line_items += metering.metered_line_items(team, cluster, month_start, month_end)
+	# The customer's forecast is a projection under one fixed scenario: this team, this
+	# month, live configuration, everything settles. Running it through the same engine
+	# an operator simulates with is what stops the two numbers drifting apart — there is
+	# no second rating path to keep in step.
+	from central.billing.projection import engine
 
-	subtotal = frappe.utils.flt(sum(li["amount"] for li in line_items), 2)
-	tax = resolve_tax(team, subtotal)
-	projected_total = frappe.utils.flt(subtotal + tax["output_tax_amount"], 2)
+	# Not strictly guarded: this is a customer page, and it must not fail because the
+	# request that reached it happened to write something first.
+	projection = engine.project(
+		team, month_start, month_end, today=today, mode="Optimistic", guarded=False
+	)
+	invoice = projection["invoice"] or {}
+	line_items = invoice.get("lines") or []
+
+	subtotal = frappe.utils.flt(invoice.get("subtotal"))
+	projected_total = frappe.utils.flt(invoice.get("total"))
 	credit_balance = frappe.utils.flt(credits.get_balance(team)["balance"])
 	shortfall = max(0.0, frappe.utils.flt(projected_total - credit_balance, 2))
-	currency = _team_currency(team)
+	currency = projection["currency"] or _team_currency(team)
+	tax = {
+		"output_tax_amount": frappe.utils.flt(invoice.get("output_tax_amount")),
+		"output_tax_type": invoice.get("output_tax_type"),
+	}
 
 	return {
 		"period_start": str(month_start),

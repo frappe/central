@@ -548,3 +548,36 @@ class TestSplitCurrencyColumns(IntegrationTestCase):
 		columns = [{"label": "Total", "fieldname": "total", "fieldtype": "Currency"}]
 		rows = [{"total": 10.0, "currency": "INR"}]
 		self.assertEqual(split_currency_columns(columns, rows, ["total"]), columns)
+
+
+class TestTheReportFitsOnAScreen(CohortTestBase):
+	def test_the_column_set_is_narrow_enough_to_read(self):
+		# Five money fields across two currencies was eleven columns and truncated
+		# headings. Each column has to earn its place.
+		from central.billing.report.billing_projection.billing_projection import get_columns
+
+		self.assertLessEqual(len(get_columns()), 8)
+
+	def test_a_two_currency_run_still_fits(self):
+		from central.billing.report._currency import split_currency_columns
+		from central.billing.report.billing_projection.billing_projection import (
+			MONEY_FIELDS,
+			get_columns,
+		)
+
+		rows = [
+			{"currency": "INR", "projected_total": 1.0, "shortfall": 0.0},
+			{"currency": "USD", "projected_total": 1.0, "shortfall": 0.0},
+		]
+		columns = split_currency_columns(get_columns(), rows, MONEY_FIELDS)
+		self.assertLessEqual(len(columns), 9)
+
+	def test_what_was_dropped_is_still_derivable_or_drilled(self):
+		# Credits is projected total minus shortfall; the measured/estimated split lives
+		# on the team's own page, where it can be read properly.
+		from central.billing.report.billing_projection.billing_projection import get_columns
+
+		shown = {c["fieldname"] for c in get_columns()}
+		self.assertNotIn("credit_balance", shown)
+		self.assertNotIn("measured", shown)
+		self.assertIn("shortfall", shown)

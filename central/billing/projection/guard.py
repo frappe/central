@@ -35,7 +35,7 @@ class ProjectionBoundaryError(frappe.ValidationError):
 
 
 @contextmanager
-def read_only():
+def read_only(strict: bool = True):
 	"""Run a block inside a read-only transaction, and name what happens if it writes.
 
 	A projection is a transaction boundary. `START TRANSACTION` implicitly commits an
@@ -49,11 +49,23 @@ def read_only():
 	before it starts.
 	"""
 	if frappe.db.transaction_writes:
-		raise ProjectionBoundaryError(
-			"A projection cannot start with unsaved changes pending — commit or roll "
-			"back first. Projections read a consistent snapshot and must not decide "
-			"the fate of someone else's transaction."
+		if strict:
+			raise ProjectionBoundaryError(
+				"A projection cannot start with unsaved changes pending — commit or roll "
+				"back first. Projections read a consistent snapshot and must not decide "
+				"the fate of someone else's transaction."
+			)
+		# Non-strict callers are customer-facing reads that happen to share a request
+		# with a write — the customer forecast, say. Refusing them would break a page to
+		# enforce an internal invariant, and committing on their behalf is the side
+		# effect this guard exists to prevent. So the read proceeds without the
+		# transaction: the engine still cannot write, because the decision/effect split
+		# and the grep hold that; what is given up is the database enforcing it too.
+		frappe.logger("billing").debug(
+			"projection ran unguarded: the caller had uncommitted changes"
 		)
+		yield
+		return
 
 	previous = frappe.flags.read_only
 	frappe.flags.read_only = True
