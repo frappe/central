@@ -17,6 +17,8 @@ on ``Team Notification``.
 """
 
 import frappe
+from frappe.query_builder import Criterion, Order
+from frappe.query_builder.functions import Count
 
 CATEGORIES = ("Billing", "Server", "Team")
 SEVERITIES = ("Info", "Success", "Warning", "Error")
@@ -68,60 +70,68 @@ def create_notification(
 	return doc
 
 
-def _read_notification_names(team: str, user: str) -> set[str]:
-	"""Return the set of notification names the user has read for *team*."""
-	return set(
-		frappe.get_all(
-			"Notification Read",
-			filters={"user": user},
-			fields=["notification"],
-			pluck="notification",
-		)
+_FEED_FIELDS = (
+	"name",
+	"category",
+	"event_type",
+	"severity",
+	"required_cap",
+	"title",
+	"message",
+	"reference_doctype",
+	"reference_name",
+	"action_label",
+	"action_route",
+	"creation",
+)
+
+
+def _visible_conditions(tn, team: str, user: str, category: str | None) -> list:
+	"""WHERE criteria for the notifications a user may see in a team's feed — shared
+	by the list and the unread count so they never disagree: the team, an optional
+	category, the per-row capability gate (skipped for operators), and the user's
+	in-app category preferences. ``resolve_user_grants`` is request-cached, so the
+	cap set costs one join per request, not one per row."""
+	from central.iam import resolve_user_grants, user_has_operator_bypass
+
+	conds = [tn.team == team]
+	if category:
+		conds.append(tn.category == category)
+	if user_has_operator_bypass(user):
+		return conds
+
+	caps = sorted({cap for grant in resolve_user_grants(user).get(team, []) for cap in grant.get("caps", [])})
+	cap_gate = tn.required_cap.isnull() | (tn.required_cap == "")
+	if caps:
+		cap_gate = cap_gate | tn.required_cap.isin(caps)
+	conds.append(cap_gate)
+
+	disabled = frappe.get_all(
+		"User Notification Preference",
+		filters={"user": user, "team": team, "in_app_enabled": 0},
+		pluck="category",
 	)
-
-
-def _unread_notifications(team: str, user: str) -> list[str]:
-	"""Return notification names the user has NOT read (capability-filtered)."""
-	from central.iam import can, user_has_operator_bypass
-
-	read_names = _read_notification_names(team, user)
-	filters = {"team": team}
-
-	rows = frappe.get_all(
-		"Team Notification",
-		filters=filters,
-		fields=["name", "category", "required_cap"],
-	)
-
-	if not user_has_operator_bypass(user):
-		rows = [row for row in rows if not row.required_cap or can(user, team, row.required_cap)]
-
-	if rows:
-		categories = {row.category for row in rows}
-		disabled_categories = set(
-			frappe.db.get_all(
-				"User Notification Preference",
-				filters={
-					"user": user,
-					"team": team,
-					"in_app_enabled": 0,
-					"category": ["in", list(categories)],
-				},
-				pluck="category",
-			)
-		)
-		rows = [row for row in rows if row.category not in disabled_categories]
-
-	return [row.name for row in rows if row.name not in read_names]
+	if disabled:
+		conds.append(tn.category.notin(disabled))
+	return conds
 
 
 def unread_count(team: str, *, user: str | None = None) -> int:
 	"""Unread in-app notifications for a team, per-user — the bell badge count.
 
-	Read state is per-user via ``Notification Read``.
-	"""
+	One indexed COUNT: the visible-notification filter, LEFT JOINed to the per-user
+	``Notification Read`` and kept to rows the user hasn't read."""
 	user = user or frappe.session.user
-	return len(_unread_notifications(team, user))
+	tn = frappe.qb.DocType("Team Notification")
+	nr = frappe.qb.DocType("Notification Read")
+	return (
+		frappe.qb.from_(tn)
+		.left_join(nr)
+		.on((nr.notification == tn.name) & (nr.user == user))
+		.select(Count("*"))
+		.where(Criterion.all(_visible_conditions(tn, team, user, None)))
+		.where(nr.name.isnull())
+	).run()[0][0]
 
 
 def list_notifications(
@@ -132,70 +142,32 @@ def list_notifications(
 	category: str | None = None,
 	unread_only: bool = False,
 ) -> dict:
-	"""The team's notification feed, filtered per-user.
+	"""The team's notification feed, filtered per-user, newest first.
 
-	Only notifications whose ``required_cap`` the user possesses (or which
-	have no ``required_cap``) are returned.  Operators see everything.
-
-	Read state is per-user (``Notification Read``), not the team-global
-	``is_read`` flag.
-	"""
-	from central.iam import can, user_has_operator_bypass
-
+	One indexed query: the visible-notification filter (team, per-row capability,
+	in-app category preference) is pushed into SQL — so ``limit`` is exact, never an
+	over-fetch that could silently under-return — LEFT JOINed to the per-user
+	``Notification Read`` for read state. Read state is per-user, not the shared
+	``is_read`` flag. Operators see everything."""
 	user = user or frappe.session.user
-	filters = {"team": team}
-	if category:
-		filters["category"] = category
+	limit = frappe.utils.cint(limit)
+	tn = frappe.qb.DocType("Team Notification")
+	nr = frappe.qb.DocType("Notification Read")
 
-	items = frappe.get_all(
-		"Team Notification",
-		filters=filters,
-		fields=[
-			"name",
-			"category",
-			"event_type",
-			"severity",
-			"required_cap",
-			"title",
-			"message",
-			"reference_doctype",
-			"reference_name",
-			"action_label",
-			"action_route",
-			"creation",
-		],
-		order_by="creation desc",
-		limit=frappe.utils.cint(limit) * 3,
+	query = (
+		frappe.qb.from_(tn)
+		.left_join(nr)
+		.on((nr.notification == tn.name) & (nr.user == user))
+		.select(*(getattr(tn, f) for f in _FEED_FIELDS), nr.name.as_("_read_marker"))
+		.where(Criterion.all(_visible_conditions(tn, team, user, category)))
+		.orderby(tn.creation, order=Order.desc)
+		.limit(limit)
 	)
-
-	is_operator = user_has_operator_bypass(user)
-	if not is_operator:
-		items = [row for row in items if not row.required_cap or can(user, team, row.required_cap)]
-
-		categories = {row.category for row in items}
-		if categories:
-			disabled_categories = set(
-				frappe.db.get_all(
-					"User Notification Preference",
-					filters={
-						"user": user,
-						"team": team,
-						"in_app_enabled": 0,
-						"category": ["in", list(categories)],
-					},
-					pluck="category",
-				)
-			)
-			items = [row for row in items if row.category not in disabled_categories]
-
-	read_names = _read_notification_names(team, user)
-	for row in items:
-		row["is_read"] = 1 if row.name in read_names else 0
-
 	if frappe.utils.cint(unread_only):
-		items = [row for row in items if row.name not in read_names]
+		query = query.where(nr.name.isnull())
 
-	return {
-		"items": items[: frappe.utils.cint(limit)],
-		"unread": unread_count(team, user=user),
-	}
+	items = query.run(as_dict=True)
+	for row in items:
+		row["is_read"] = 1 if row.pop("_read_marker", None) else 0
+
+	return {"items": items, "unread": unread_count(team, user=user)}
