@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import frappe
 from frappe.sessions import get_csrf_token
+from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
+from frappe.utils.password import get_decrypted_password
 
-from central.api.auth import build_auth_context
+from central.iam import get_user_team_names
 
 no_cache = 1
 
@@ -32,3 +34,57 @@ def get_context(context):
 	boot["site_name"] = frappe.local.site
 	context.boot = boot
 	return context
+
+
+# Page-boot auth context — these are dashboard page-load concerns (not an HTTP API),
+# so they live here beside get_context rather than in central.api.auth.
+
+
+def build_auth_context() -> dict:
+	return {
+		"user": frappe.session.user or "Guest",
+		"provider_logins": _provider_logins(),
+		"onboarding_complete": _onboarding_complete(),
+	}
+
+
+def _onboarding_complete() -> bool:
+	"""True once the user's team owns a live site — the signal the SPA uses to keep a
+	brand-new user inside the onboarding funnel (and let a returning one skip it).
+	A first-run user (no team or no site yet) is still onboarding."""
+	user = frappe.session.user
+	if not user or user == "Guest":
+		return False
+	teams = get_user_team_names(user)
+	if not teams:
+		return False
+	return bool(frappe.db.exists("Site", {"team": ["in", teams], "status": ["!=", "Terminated"]}))
+
+
+def _provider_logins() -> list[dict[str, str]]:
+	providers = frappe.get_all(
+		"Social Login Key",
+		filters={"enable_social_login": 1},
+		fields=["name", "client_id", "base_url", "provider_name", "icon"],
+		order_by="name",
+	)
+	return [
+		{
+			"name": provider.name,
+			"label": provider.provider_name,
+			"icon": provider.icon or "",
+			"auth_url": get_oauth2_authorize_url(provider.name, "/dashboard/servers"),
+		}
+		for provider in providers
+		if _provider_is_configured(provider)
+	]
+
+
+def _provider_is_configured(provider) -> bool:
+	client_secret = get_decrypted_password(
+		"Social Login Key",
+		provider.name,
+		"client_secret",
+		raise_exception=False,
+	)
+	return bool(provider.client_id and client_secret and provider.base_url and get_oauth_keys(provider.name))
