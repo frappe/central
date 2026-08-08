@@ -10,6 +10,7 @@ import ast
 from pathlib import Path
 
 import frappe
+
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 ROOT = Path(frappe.get_app_path("central")) / "billing"
@@ -21,11 +22,7 @@ ENTRY_POINTS = {"api.py"}
 
 
 def _module_names() -> list[str]:
-	return sorted(
-		p.stem
-		for p in PACKAGE.glob("*.py")
-		if p.name not in ("__init__.py", *ENTRY_POINTS)
-	)
+	return sorted(p.stem for p in PACKAGE.glob("*.py") if p.name not in ("__init__.py", *ENTRY_POINTS))
 
 
 def _imports_in(path: Path) -> set[str]:
@@ -61,6 +58,5 @@ class TestEverythingIsReachable(IntegrationTestCase):
 		self.assertEqual(
 			unreachable,
 			[],
-			"these have tests but nothing calls them, which reads as finished and is not: "
-			f"{unreachable}",
+			f"these have tests but nothing calls them, which reads as finished and is not: {unreachable}",
 		)

@@ -55,8 +55,7 @@ def projection_queue() -> str:
 	if PROJECTION_QUEUE in get_queues_timeout():
 		return PROJECTION_QUEUE
 	frappe.logger("billing").warning(
-		f"no '{PROJECTION_QUEUE}' queue configured (common_site_config workers) — "
-		"falling back to 'long'"
+		f"no '{PROJECTION_QUEUE}' queue configured (common_site_config workers) — falling back to 'long'"
 	)
 	return "long"
 
@@ -102,7 +101,10 @@ def start_sampled(
 
 
 def start(
-	filters: dict | None = None, period_start=None, months: int = 1, today=None,
+	filters: dict | None = None,
+	period_start=None,
+	months: int = 1,
+	today=None,
 	scenario: str | None = None,
 ) -> str:
 	"""Size the cohort, refuse it if it is too big, and enqueue the batch.
@@ -113,8 +115,10 @@ def start(
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	if cohort.run_in_progress(today):
 		frappe.throw(
-			_("The monthly billing run is still working. Projections wait for it — "
-			"one of them is answering a question, the other is billing customers."),
+			_(
+				"The monthly billing run is still working. Projections wait for it — "
+				"one of them is answering a question, the other is billing customers."
+			),
 			frappe.ValidationError,
 		)
 
@@ -236,18 +240,14 @@ def _summarise_under_scenario(team: str, batch_doc) -> dict:
 	from central.billing.catalog import pricing
 
 	doc = frappe.get_doc("Billing Scenario", batch_doc.scenario)
-	with settings.overridden(**doc.overrides()), pricing.overridden_rates(
-		doc.rate_overrides_applied()
-	):
+	with settings.overridden(**doc.overrides()), pricing.overridden_rates(doc.rate_overrides_applied()):
 		return _summarise_live(team, batch_doc)
 
 
 def _summarise_live(team: str, batch_doc) -> dict:
 	months = frappe.utils.cint(batch_doc.months) or 1
 	if months > 1:
-		projection = engine.project_months(
-			team, batch_doc.period_start, months=months, today=batch_doc.as_of
-		)
+		projection = engine.project_months(team, batch_doc.period_start, months=months, today=batch_doc.as_of)
 		first = next((m for m in projection["months"] if m["invoice"]), None)
 		invoice = first["invoice"] if first else None
 		calendar = first["calendar"] if first else None
@@ -257,14 +257,11 @@ def _summarise_live(team: str, batch_doc) -> dict:
 		currency = projection["currency"]
 		credit_balance = ends.get("balance")
 		shortfall = sum(
-			frappe.utils.flt((m.get("settlement") or {}).get("shortfall"))
-			for m in projection["months"]
+			frappe.utils.flt((m.get("settlement") or {}).get("shortfall")) for m in projection["months"]
 		)
 	else:
 		period_end = frappe.utils.get_last_day(batch_doc.period_start)
-		projection = engine.project(
-			team, batch_doc.period_start, period_end, today=batch_doc.as_of
-		)
+		projection = engine.project(team, batch_doc.period_start, period_end, today=batch_doc.as_of)
 		invoice = projection["invoice"]
 		calendar = projection["calendar"]
 		outcome = projection["outcome"]
@@ -302,9 +299,7 @@ def _suspends_on(calendar, outcome):
 	"""
 	if not calendar or not outcome or outcome.get("entailed_branch") != "if_never_paid":
 		return None
-	stage = next(
-		(s for s in calendar.get("if_never_paid", []) if s["stage"] == "Suspend"), None
-	)
+	stage = next((s for s in calendar.get("if_never_paid", []) if s["stage"] == "Suspend"), None)
 	return stage["date"] if stage else None
 
 
@@ -317,7 +312,7 @@ def _outcome_label(outcome, findings) -> str:
 
 
 def _paid_on_time(team: str, on) -> str:
-	""""6 / 6" beside a failure points at us; "3 / 6" points at them."""
+	""" "6 / 6" beside a failure points at us; "3 / 6" points at them."""
 	record = behaviour.summary(team, on=on)
 	return f"{record['on_time']} / {record['invoices']}" if record["invoices"] else "—"
 
@@ -338,9 +333,7 @@ def prune(days: int = RETENTION_DAYS) -> int:
 	bound, so the sweep is scheduled rather than remembered.
 	"""
 	cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -days)
-	stale = frappe.get_all(
-		"Billing Projection Batch", filters={"creation": ["<", cutoff]}, pluck="name"
-	)
+	stale = frappe.get_all("Billing Projection Batch", filters={"creation": ["<", cutoff]}, pluck="name")
 	for name in stale:
 		frappe.db.delete("Billing Projection Summary", {"batch": name})
 		frappe.delete_doc("Billing Projection Batch", name, force=True, ignore_permissions=True)

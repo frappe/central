@@ -72,9 +72,7 @@ def compute_line_items(
 	return lines
 
 
-def team_line_items(
-	team: str, period_start, period_end, explain: bool = False, changes=None
-) -> list[dict]:
+def team_line_items(team: str, period_start, period_end, explain: bool = False, changes=None) -> list[dict]:
 	"""Every fixed line item for a team across all the clusters it runs in, from ONE
 	read of its subscriptions, their asset clusters and their changes.
 
@@ -242,9 +240,7 @@ def _changes_by_subscription(subscription_names: list[str]) -> dict:
 	return grouped
 
 
-def _daily_line(
-	seg: dict, days: int, day_units: int, explain: bool = False, billed_dates=None
-) -> dict:
+def _daily_line(seg: dict, days: int, day_units: int, explain: bool = False, billed_dates=None) -> dict:
 	line = {
 		"subscription_resource": seg["asset"],
 		"plan": seg["plan"],
@@ -293,8 +289,7 @@ def _hourly_line(
 		line["derivation"] = {
 			"mode": "Hourly",
 			"why": (
-				"a config on this date was held for less than 24 hours, so the whole "
-				"date bills by the hour"
+				"a config on this date was held for less than 24 hours, so the whole date bills by the hour"
 			),
 			"charge_date": str(charge_date),
 			"segment_from": str(seg["start"]),

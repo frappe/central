@@ -42,9 +42,7 @@ def metered_lines(team: str, clusters, period_start, period_end, today=None) -> 
 	end = frappe.utils.getdate(period_end)
 
 	if end < today:
-		return mark(
-			metered_line_items_for_clusters(team, clusters, start, end, explain=True), MEASURED
-		)
+		return mark(metered_line_items_for_clusters(team, clusters, start, end, explain=True), MEASURED)
 
 	if start <= today:
 		landed = metered_line_items_for_clusters(team, clusters, start, end, explain=True)

@@ -27,7 +27,9 @@ def configure_includes(
 	"""
 	vcpu = frappe.utils.flt(vcpu)
 	if ratio not in RATIO_FACTORS:
-		frappe.throw(_("Unknown memory ratio {0!r}; expected one of {1}.").format(ratio, sorted(RATIO_FACTORS)))
+		frappe.throw(
+			_("Unknown memory ratio {0!r}; expected one of {1}.").format(ratio, sorted(RATIO_FACTORS))
+		)
 	memory = (
 		frappe.utils.flt(memory_gb)
 		if memory_gb is not None

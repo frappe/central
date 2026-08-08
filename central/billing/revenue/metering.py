@@ -332,9 +332,7 @@ def metered_line_items_for_clusters(
 	return _metered_lines(team, list(clusters), period_start, period_end, explain)
 
 
-def _metered_lines(
-	team: str, clusters: list, period_start, period_end, explain: bool = False
-) -> list[dict]:
+def _metered_lines(team: str, clusters: list, period_start, period_end, explain: bool = False) -> list[dict]:
 	"""One line per overage rollup for `team` in any of `clusters` (see the two public
 	wrappers). The rollup carries its own cluster, so a multi-cluster run tags each line
 	correctly and prices Live plans against the rollup's cluster."""
@@ -461,8 +459,7 @@ def _metered_lines(
 				# was ingested.
 				"rate_source": "current catalog rate" if live else "locked at ingest",
 				"arithmetic": (
-					f"max(0, {frappe.utils.flt(r.quantity)} − {frappe.utils.flt(allowance)})"
-					f" × {rate}"
+					f"max(0, {frappe.utils.flt(r.quantity)} − {frappe.utils.flt(allowance)}) × {rate}"
 				),
 			}
 		lines.append(line)

@@ -51,9 +51,10 @@ def budget_seconds() -> int:
 	# unrelated edit to that form would otherwise disable cohort projections site-wide,
 	# silently. A budget of zero seconds is not a policy anyone wants either; it refuses
 	# a one-team cohort.
-	return frappe.utils.cint(
-		frappe.db.get_single_value("Billing Settings", "projection_budget_seconds")
-	) or DEFAULT_BUDGET_SECONDS
+	return (
+		frappe.utils.cint(frappe.db.get_single_value("Billing Settings", "projection_budget_seconds"))
+		or DEFAULT_BUDGET_SECONDS
+	)
 
 
 def _filtered_teams_query(filters: dict):
@@ -280,11 +281,11 @@ def _teams_in_stratum(filters, currency, tier, limit: int) -> list:
 		.orderby(sub.team)
 		.limit(limit)
 	)
-	query = query.where(profile.currency == currency) if currency else query.where(
-		profile.currency.isnull()
-	)
-	query = query.where(profile.trust_tier_level == tier) if tier else query.where(
-		profile.trust_tier_level.isnull()
+	query = query.where(profile.currency == currency) if currency else query.where(profile.currency.isnull())
+	query = (
+		query.where(profile.trust_tier_level == tier)
+		if tier
+		else query.where(profile.trust_tier_level.isnull())
 	)
 	for key in ("country", "collection_mode"):
 		if (filters or {}).get(key):

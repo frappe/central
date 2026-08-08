@@ -64,8 +64,4 @@ class BillingScenario(Document):
 
 	def overrides(self) -> dict:
 		"""Only the fields actually filled in — a blank one means "use what is live"."""
-		return {
-			field: self.get(field)
-			for field in OVERRIDE_FIELDS
-			if self.get(field) not in (None, "", 0)
-		}
+		return {field: self.get(field) for field in OVERRIDE_FIELDS if self.get(field) not in (None, "", 0)}

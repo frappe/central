@@ -100,7 +100,7 @@ def build_ladder(
 	ceiling = parse_vcpu(ceiling_vcpu)
 	factor = RATIO_FACTORS.get(memory_ratio)
 	if not factor:
-		frappe.throw(_("Memory ratio must be one of {0}.").format(', '.join(RATIO_FACTORS)))
+		frappe.throw(_("Memory ratio must be one of {0}.").format(", ".join(RATIO_FACTORS)))
 	if start <= 0:
 		frappe.throw(_("Start vCPU must be greater than zero."))
 	if ceiling < start:

@@ -52,8 +52,10 @@ def ensure_settlement_source(team: str):
 	"""Onboarding gate: refuse a team with no way to pay (card/mandate or credits)."""
 	if not settlement_sources(team)["has_any"]:
 		frappe.throw(
-			_("A team needs at least one settlement source (autopay or prepaid credits) "
-			"before it can provision."),
+			_(
+				"A team needs at least one settlement source (autopay or prepaid credits) "
+				"before it can provision."
+			),
 			frappe.ValidationError,
 		)
 

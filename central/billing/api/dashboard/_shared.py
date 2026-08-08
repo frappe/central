@@ -128,7 +128,9 @@ def require_billing_profile(team: str, action: str):
 	missing = _missing_profile_labels(team)
 	if missing:
 		frappe.throw(
-			_("Complete your billing profile before you can {0}. Missing: {1}.").format(action, ', '.join(missing)),
+			_("Complete your billing profile before you can {0}. Missing: {1}.").format(
+				action, ", ".join(missing)
+			),
 			frappe.ValidationError,
 		)
 
@@ -159,7 +161,9 @@ def _gateway_for_currency(currency: str) -> str:
 	try:
 		return resolve_gateway_for_currency(currency)
 	except GatewayNotFound:
-		frappe.throw(_("No payment gateway configured for {0} top-ups.").format(currency), frappe.ValidationError)
+		frappe.throw(
+			_("No payment gateway configured for {0} top-ups.").format(currency), frappe.ValidationError
+		)
 
 
 def _enabled_gateway_for_currency(currency: str, adapter_key: str) -> str | None:

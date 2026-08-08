@@ -76,7 +76,7 @@ def choose(team: str, mode: str) -> dict:
 	"""Customer resolves action_required (or switches) to manual_checkout / prepaid.
 	Reversible and idempotent; clears the action reason."""
 	if mode not in CUSTOMER_CHOOSABLE:
-		frappe.throw(_("Pick one of {0}.").format(', '.join(CUSTOMER_CHOOSABLE)), frappe.ValidationError)
+		frappe.throw(_("Pick one of {0}.").format(", ".join(CUSTOMER_CHOOSABLE)), frappe.ValidationError)
 	profile = frappe.get_doc("Billing Profile", team)
 	profile.collection_mode = mode
 	profile.collection_action_reason = None

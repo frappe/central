@@ -3,6 +3,7 @@
 """Who gets cut off and when, and whether that is their doing or ours."""
 
 import frappe
+
 from central.billing.projection import behaviour, outlook
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import billing_settings, ensure_team
@@ -57,9 +58,7 @@ class OutlookTestBase(IntegrationTestCase):
 
 class TestTheSweep(OutlookTestBase):
 	def test_an_unpaid_invoice_gets_a_dated_ladder(self):
-		with billing_settings(
-			dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44
-		):
+		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44):
 			self._invoice("2026-09-01")
 			rows = outlook.rows(on=TODAY, filters={"team": TEAM})
 
@@ -88,9 +87,7 @@ class TestTheSweep(OutlookTestBase):
 		self.assertLessEqual(rows[0]["suspends_on"], rows[1]["suspends_on"])
 
 	def test_a_horizon_keeps_only_what_is_about_to_happen(self):
-		with billing_settings(
-			dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44
-		):
+		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44):
 			self._invoice("2026-09-09")  # next action is days away
 			near = outlook.rows(on=TODAY, horizon_days=3, filters={"team": TEAM})
 			far = outlook.rows(on=TODAY, horizon_days=60, filters={"team": TEAM})

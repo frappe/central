@@ -225,7 +225,9 @@ def _assert_round_trip(before: dict[str, Counter], mapping: dict[str, str]) -> N
 		)
 		if expected != actual:
 			frappe.throw(
-				_("Team migration round-trip mismatch on {0}: expected {1}, got {2}").format(doctype, dict(expected), dict(actual))
+				_("Team migration round-trip mismatch on {0}: expected {1}, got {2}").format(
+					doctype, dict(expected), dict(actual)
+				)
 			)
 
 

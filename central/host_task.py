@@ -102,7 +102,9 @@ def _execute(
 	status = "Success" if exit_code == 0 else "Failure"
 	_finalize(task, stdout, stderr, exit_code, status, _elapsed_ms(start))
 	if status == "Failure":
-		frappe.throw(_("Host Task {0} ({1}) exited {2}: {3}").format(task.name, script, exit_code, stderr[-500:]))
+		frappe.throw(
+			_("Host Task {0} ({1}) exited {2}: {3}").format(task.name, script, exit_code, stderr[-500:])
+		)
 
 
 def _run_script(

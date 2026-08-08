@@ -57,7 +57,9 @@ class BillingProfile(Document):
 		self.gstin = self.gstin.strip().upper()
 		if not validate_gstin(self.gstin):
 			frappe.throw(
-				_("'{0}' is not a valid GSTIN (expected 15 characters, e.g. 27AAPFU0939F1ZV).").format(self.gstin),
+				_("'{0}' is not a valid GSTIN (expected 15 characters, e.g. 27AAPFU0939F1ZV).").format(
+					self.gstin
+				),
 				frappe.ValidationError,
 			)
 
@@ -76,10 +78,14 @@ class BillingProfile(Document):
 
 		if self.gstin:
 			if not state:
-				frappe.throw(_("Select the GST registration state for an Indian GSTIN."), frappe.ValidationError)
+				frappe.throw(
+					_("Select the GST registration state for an Indian GSTIN."), frappe.ValidationError
+				)
 			expected = GST_STATE_CODES[state]
 			if self.gstin[:2] != expected:
 				frappe.throw(
-					_("GSTIN state code '{0}' does not match {1} (code {2}). The first two digits of a GSTIN are the registration state's code.").format(self.gstin[:2], state, expected),
+					_(
+						"GSTIN state code '{0}' does not match {1} (code {2}). The first two digits of a GSTIN are the registration state's code."
+					).format(self.gstin[:2], state, expected),
 					frappe.ValidationError,
 				)

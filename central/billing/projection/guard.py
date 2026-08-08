@@ -61,9 +61,7 @@ def read_only(strict: bool = True):
 		# effect this guard exists to prevent. So the read proceeds without the
 		# transaction: the engine still cannot write, because the decision/effect split
 		# and the grep hold that; what is given up is the database enforcing it too.
-		frappe.logger("billing").debug(
-			"projection ran unguarded: the caller had uncommitted changes"
-		)
+		frappe.logger("billing").debug("projection ran unguarded: the caller had uncommitted changes")
 		yield
 		return
 

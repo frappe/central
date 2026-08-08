@@ -85,9 +85,7 @@ class ProjectedWallet:
 class ProjectedState:
 	"""Everything about a team that a projection changes as it rolls forward."""
 
-	def __init__(
-		self, team, currency, wallets, autopay, paid_count, paid_total, standing, base_cap=0.0
-	):
+	def __init__(self, team, currency, wallets, autopay, paid_count, paid_total, standing, base_cap=0.0):
 		self.team = team
 		self.currency = currency
 		self.wallets = wallets
@@ -155,9 +153,7 @@ class ProjectedState:
 	def expire_credits(self, on_date):
 		lost = self.wallet().expire(on_date)
 		if lost:
-			self.events.append(
-				{"date": str(on_date), "event": "Credits expired", "amount": lost}
-			)
+			self.events.append({"date": str(on_date), "event": "Credits expired", "amount": lost})
 		return lost
 
 	def suspend(self, on_date):
@@ -180,9 +176,10 @@ def seed(team: str, today=None) -> ProjectedState:
 	scored on, so a projection starts the team exactly where the real ladder has them.
 	"""
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
-	profile = frappe.db.get_value(
-		"Billing Profile", team, ["currency", "collection_mode"], as_dict=True
-	) or frappe._dict()
+	profile = (
+		frappe.db.get_value("Billing Profile", team, ["currency", "collection_mode"], as_dict=True)
+		or frappe._dict()
+	)
 	currency = profile.currency or "INR"
 
 	wallets = {}

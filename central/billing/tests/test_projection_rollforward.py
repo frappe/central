@@ -3,6 +3,7 @@
 """Rolling a team forward: what each month leaves behind for the next."""
 
 import frappe
+
 from central.billing.projection import engine, state
 from central.billing.projection.state import ProjectedWallet
 from central.billing.revenue import credits
@@ -77,9 +78,7 @@ class TestTheWalletCarries(RollForwardTestBase):
 
 class TestExpiringCredit(RollForwardTestBase):
 	def test_promotional_credit_dies_on_its_date_even_if_unspent(self):
-		credits.grant_promotional_credits(
-			TEAM, 5000, "INR", note="promo", expires_on="2026-09-30"
-		)
+		credits.grant_promotional_credits(TEAM, 5000, "INR", note="promo", expires_on="2026-09-30")
 		out = self._project(months=3)
 
 		# September may spend it right up to the 30th; October opens without it.
@@ -147,12 +146,8 @@ class TestASingleMonthIsUnchanged(RollForwardTestBase):
 		rolled = engine.project_months(TEAM, "2026-09-01", months=1, today=TODAY)
 		single = engine.project(TEAM, "2026-09-01", "2026-09-30", today=TODAY)
 
-		self.assertEqual(
-			rolled["months"][0]["invoice"]["total"], single["invoice"]["total"]
-		)
-		self.assertEqual(
-			rolled["months"][0]["calendar"]["due_on"], single["calendar"]["due_on"]
-		)
+		self.assertEqual(rolled["months"][0]["invoice"]["total"], single["invoice"]["total"])
+		self.assertEqual(rolled["months"][0]["calendar"]["due_on"], single["calendar"]["due_on"])
 
 	def test_a_team_with_nothing_running_rolls_quietly(self):
 		self._purge()

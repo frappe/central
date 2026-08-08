@@ -45,9 +45,7 @@ def get_forecast(team: str | None = None) -> dict:
 
 	# Not strictly guarded: this is a customer page, and it must not fail because the
 	# request that reached it happened to write something first.
-	projection = engine.project(
-		team, month_start, month_end, today=today, mode="Optimistic", guarded=False
-	)
+	projection = engine.project(team, month_start, month_end, today=today, mode="Optimistic", guarded=False)
 	invoice = projection["invoice"] or {}
 	line_items = invoice.get("lines") or []
 
@@ -532,7 +530,9 @@ def create_topup_order(
 			gw = _enabled_gateway_for_currency(currency, "Razorpay")
 			if not gw:
 				frappe.throw(
-					_("PayPal via Razorpay needs an enabled Razorpay gateway that handles {0}.").format(currency),
+					_("PayPal via Razorpay needs an enabled Razorpay gateway that handles {0}.").format(
+						currency
+					),
 					frappe.ValidationError,
 				)
 			display_paypal = True

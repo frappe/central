@@ -8,6 +8,7 @@ provisioned, and billing reads that snapshot until the customer resizes.
 """
 
 import frappe
+
 from central.billing.catalog import pricing
 from central.billing.projection import repricing, scenario
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -35,44 +36,34 @@ class TestTheRateSeam(IntegrationTestCase):
 		self.assertEqual(resolve(rows), 1000.0)
 
 	def test_a_percentage_override_is_read_instead(self):
-		with pricing.overridden_rates([
-			{"priced_doctype": "Plan", "priced_for": PLAN, "percent": 20}
-		]):
+		with pricing.overridden_rates([{"priced_doctype": "Plan", "priced_for": PLAN, "percent": 20}]):
 			self.assertEqual(resolve(pricing.get_catalog_rates("Plan", PLAN)), 1200.0)
 
 	def test_a_flat_override_replaces_the_rate(self):
-		with pricing.overridden_rates([
-			{"priced_doctype": "Plan", "priced_for": PLAN, "rate": 250}
-		]):
+		with pricing.overridden_rates([{"priced_doctype": "Plan", "priced_for": PLAN, "rate": 250}]):
 			self.assertEqual(resolve(pricing.get_catalog_rates("Plan", PLAN)), 250.0)
 
 	def test_an_override_for_another_plan_is_ignored(self):
-		with pricing.overridden_rates([
-			{"priced_doctype": "Plan", "priced_for": "some-other-plan", "percent": 50}
-		]):
+		with pricing.overridden_rates(
+			[{"priced_doctype": "Plan", "priced_for": "some-other-plan", "percent": 50}]
+		):
 			self.assertEqual(resolve(pricing.get_catalog_rates("Plan", PLAN)), 1000.0)
 
 	def test_a_currency_narrowed_override_leaves_other_currencies_alone(self):
-		with pricing.overridden_rates([
-			{"priced_doctype": "Plan", "priced_for": PLAN, "currency": "USD", "percent": 99}
-		]):
+		with pricing.overridden_rates(
+			[{"priced_doctype": "Plan", "priced_for": PLAN, "currency": "USD", "percent": 99}]
+		):
 			self.assertEqual(resolve(pricing.get_catalog_rates("Plan", PLAN)), 1000.0)
 
 	def test_the_published_rate_is_never_written(self):
 		# Asking what a price rise would do must not publish one.
-		with pricing.overridden_rates([
-			{"priced_doctype": "Plan", "priced_for": PLAN, "percent": 20}
-		]):
+		with pricing.overridden_rates([{"priced_doctype": "Plan", "priced_for": PLAN, "percent": 20}]):
 			pricing.get_catalog_rates("Plan", PLAN)
-		stored = frappe.db.get_value(
-			"Catalog Rate", {"priced_doctype": "Plan", "priced_for": PLAN}, "rate"
-		)
+		stored = frappe.db.get_value("Catalog Rate", {"priced_doctype": "Plan", "priced_for": PLAN}, "rate")
 		self.assertEqual(frappe.utils.flt(stored), 1000.0)
 
 	def test_the_override_lifts_when_the_block_ends(self):
-		with pricing.overridden_rates([
-			{"priced_doctype": "Plan", "priced_for": PLAN, "percent": 20}
-		]):
+		with pricing.overridden_rates([{"priced_doctype": "Plan", "priced_for": PLAN, "percent": 20}]):
 			pass
 		self.assertEqual(resolve(pricing.get_catalog_rates("Plan", PLAN)), 1000.0)
 
@@ -116,12 +107,21 @@ class TestClassification(IntegrationTestCase):
 
 	def test_the_split_counts_money_and_resources_on_each_side(self):
 		lines = [
-			{"amount": 1000, "subscription_resource": "a",
-			 "derivation": {"locked_rate": 1000, "rate_locked_at": "2026-01-01 00:00:00"}},
-			{"amount": 500, "subscription_resource": "b",
-			 "derivation": {"locked_rate": 500, "rate_locked_at": "2026-01-01 00:00:00"}},
-			{"amount": 40, "subscription_resource": "c",
-			 "derivation": {"rate_source": "current catalog rate"}},
+			{
+				"amount": 1000,
+				"subscription_resource": "a",
+				"derivation": {"locked_rate": 1000, "rate_locked_at": "2026-01-01 00:00:00"},
+			},
+			{
+				"amount": 500,
+				"subscription_resource": "b",
+				"derivation": {"locked_rate": 500, "rate_locked_at": "2026-01-01 00:00:00"},
+			},
+			{
+				"amount": 40,
+				"subscription_resource": "c",
+				"derivation": {"rate_source": "current catalog rate"},
+			},
 		]
 		out = repricing.split(lines, "INR", "2026-09-01")
 		self.assertEqual(out["grandfathered"], 1500.0)
@@ -184,9 +184,7 @@ class TestTheHeadlineAnswer(RepricingTestBase):
 		# because the rate was locked in March and billing reads that snapshot.
 		out = scenario.compare(self._scenario(percent=20), today=TODAY)
 
-		self.assertEqual(
-			out["live"]["invoice"]["total"], out["altered"]["invoice"]["total"]
-		)
+		self.assertEqual(out["live"]["invoice"]["total"], out["altered"]["invoice"]["total"])
 
 	def test_the_output_says_why_rather_than_leaving_a_zero_to_be_doubted(self):
 		out = scenario.compare(self._scenario(percent=20), today=TODAY)
@@ -268,9 +266,7 @@ class TestLivePricedFamilies(RepricingTestBase):
 		frappe.db.commit()
 
 		out = scenario.compare(doc, today=TODAY)
-		self.assertGreater(
-			out["altered"]["invoice"]["total"], out["live"]["invoice"]["total"]
-		)
+		self.assertGreater(out["altered"]["invoice"]["total"], out["live"]["invoice"]["total"])
 		self.assertIn("priced live", out["explanation"])
 
 

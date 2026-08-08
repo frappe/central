@@ -56,7 +56,9 @@ class Subscription(Document):
 		)
 		if duplicate:
 			frappe.throw(
-				_("Team {0} already has an active subscription ({1}) for asset {2}.").format(self.team, duplicate, self.asset_id),
+				_("Team {0} already has an active subscription ({1}) for asset {2}.").format(
+					self.team, duplicate, self.asset_id
+				),
 				frappe.DuplicateEntryError,
 			)
 
@@ -79,7 +81,9 @@ class Subscription(Document):
 		)
 		if duplicate:
 			frappe.throw(
-				_("Service subject {0} already has an active subscription ({1}).").format(self.service_subject, duplicate),
+				_("Service subject {0} already has an active subscription ({1}).").format(
+					self.service_subject, duplicate
+				),
 				frappe.DuplicateEntryError,
 			)
 

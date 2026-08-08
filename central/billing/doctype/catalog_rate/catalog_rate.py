@@ -29,7 +29,9 @@ class CatalogRate(Document):
 	def validate(self):
 		if self.priced_doctype not in ALLOWED_PARENTS:
 			frappe.throw(
-				_("Priced Doctype must be one of {0}, not {1!r}.").format(', '.join(ALLOWED_PARENTS), self.priced_doctype)
+				_("Priced Doctype must be one of {0}, not {1!r}.").format(
+					", ".join(ALLOWED_PARENTS), self.priced_doctype
+				)
 			)
 		# Normalise a blank cluster to None so "global" rows compare cleanly.
 		if not (self.cluster or "").strip():

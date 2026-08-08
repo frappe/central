@@ -704,9 +704,7 @@ class TestRatingIsSeparableFromWriting(BillingTestBase):
 	def test_rated_payload_matches_the_invoice_that_gets_written(self):
 		self._segments()
 		rated = invoicing.rate_team_period(TEAM, "2026-06-01", "2026-06-30")
-		inv = frappe.get_doc(
-			"Invoice", invoicing.generate_team_invoice(TEAM, "2026-06-01", "2026-06-30")
-		)
+		inv = frappe.get_doc("Invoice", invoicing.generate_team_invoice(TEAM, "2026-06-01", "2026-06-30"))
 
 		for field in self.MONEY:
 			self.assertEqual(rated.payload[field], inv.get(field), field)

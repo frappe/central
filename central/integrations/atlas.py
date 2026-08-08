@@ -470,7 +470,9 @@ def _atlas_cluster() -> str:
 		"Atlas Instance", {"service_user": frappe.session.user, "status": ["!=", "Disabled"]}
 	)
 	if not cluster:
-		frappe.throw(_("'{0}' is not a known or enabled Atlas.").format(frappe.session.user), frappe.PermissionError)
+		frappe.throw(
+			_("'{0}' is not a known or enabled Atlas.").format(frappe.session.user), frappe.PermissionError
+		)
 	return cluster
 
 
@@ -773,7 +775,9 @@ def _peer_endpoint(base_url: str, listen_port: int) -> str:
 	listen port (https://blr.atlas.example.com → blr.atlas.example.com:51820)."""
 	host = urlparse(base_url).hostname
 	if not host:
-		frappe.throw(_("Cannot derive a wg endpoint from base_url '{0}'.").format(base_url), TunnelRegistrationError)
+		frappe.throw(
+			_("Cannot derive a wg endpoint from base_url '{0}'.").format(base_url), TunnelRegistrationError
+		)
 	return f"{host}:{listen_port}"
 
 

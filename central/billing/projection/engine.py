@@ -16,7 +16,8 @@ guarantee rather than a convention — see `guard`.
 import frappe
 
 from central.billing import settings
-from central.billing.projection import behaviour, estimate, events as injected, outcomes, state
+from central.billing.projection import behaviour, estimate, outcomes, state
+from central.billing.projection import events as injected
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
 from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
@@ -48,8 +49,13 @@ def project(
 
 
 def _project(
-	team: str, period_start, period_end, today=None, mode: str = outcomes.DERIVED,
-	assume=None, events: list | None = None,
+	team: str,
+	period_start,
+	period_end,
+	today=None,
+	mode: str = outcomes.DERIVED,
+	assume=None,
+	events: list | None = None,
 ) -> dict:
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	start = frappe.utils.getdate(period_start)
@@ -57,7 +63,11 @@ def _project(
 
 	metered = estimate.metered_lines(team, team_clusters(team), start, end, today=today)
 	rated = rate_team_period(
-		team, start, end, metered=metered, explain=True,
+		team,
+		start,
+		end,
+		metered=metered,
+		explain=True,
 		changes=injected.merged_changes(events, start, end),
 	)
 
@@ -229,9 +239,7 @@ def project_months(
 		return _project_months(team, start, months, today, mode, assume, events)
 
 
-def _project_months(
-	team, start, months, today=None, mode=outcomes.DERIVED, assume=None, events=None
-) -> dict:
+def _project_months(team, start, months, today=None, mode=outcomes.DERIVED, assume=None, events=None) -> dict:
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	carried = state.seed(team, today)
 	period_start = frappe.utils.get_first_day(start)
@@ -239,9 +247,7 @@ def _project_months(
 	periods = []
 	for _ in range(max(1, frappe.utils.cint(months))):
 		period_end = frappe.utils.get_last_day(period_start)
-		periods.append(
-			_roll_one(team, carried, period_start, period_end, today, mode, assume, events)
-		)
+		periods.append(_roll_one(team, carried, period_start, period_end, today, mode, assume, events))
 		period_start = frappe.utils.add_days(period_end, 1)
 
 	return {
@@ -293,7 +299,11 @@ def _roll_one(team, carried, period_start, period_end, today, mode, assume, even
 
 	metered = estimate.metered_lines(team, team_clusters(team), period_start, period_end, today=today)
 	rated = rate_team_period(
-		team, period_start, period_end, metered=metered, explain=True,
+		team,
+		period_start,
+		period_end,
+		metered=metered,
+		explain=True,
 		changes=injected.merged_changes(events, period_start, period_end),
 	)
 	invoice = _invoice(rated)

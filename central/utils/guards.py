@@ -71,7 +71,9 @@ def require_self_or_operator(func: Callable) -> Callable:
 		# `user` defaults to the caller — same resolution the handlers use.
 		target = _call_arg(func, args, kwargs, "user") or frappe.session.user
 		if frappe.session.user != target and "System Manager" not in frappe.get_roles():
-			frappe.throw(_("Only System Manager can inspect another user's permissions"), frappe.PermissionError)
+			frappe.throw(
+				_("Only System Manager can inspect another user's permissions"), frappe.PermissionError
+			)
 		return func(*args, **kwargs)
 
 	return wrapper

@@ -27,7 +27,9 @@ class PaymentMethod(Document):
 		)
 		if dup:
 			frappe.throw(
-				_("This card is already on file for the team — the same card can't be "
-				"used as both the primary and a backup method."),
+				_(
+					"This card is already on file for the team — the same card can't be "
+					"used as both the primary and a backup method."
+				),
 				frappe.ValidationError,
 			)

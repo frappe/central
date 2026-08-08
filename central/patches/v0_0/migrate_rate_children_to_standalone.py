@@ -47,7 +47,9 @@ def execute():
 		# Legacy data is waiting but the new DocType hasn't shipped. Raise (don't
 		# return) so this patch stays un-executed and re-runs once it lands.
 		frappe.throw(
-			_("Cannot migrate rate rows: `{0}` does not exist yet. Deploy the Catalog Rate DocType and re-run migrate.").format(TARGET_DOCTYPE),
+			_(
+				"Cannot migrate rate rows: `{0}` does not exist yet. Deploy the Catalog Rate DocType and re-run migrate."
+			).format(TARGET_DOCTYPE),
 			title="rates_to_standalone: Catalog Rate not deployed",
 		)
 

@@ -8,6 +8,7 @@ life expectancy. So the line builders emit it, and only when asked.
 """
 
 import frappe
+
 from central.billing.projection import engine
 from central.billing.revenue.invoicing.lines import compute_line_items
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -122,9 +123,7 @@ class TestChurnDates(DerivationTestBase):
 		# missed. This is the property that keeps the total exact.
 		lines = self._lines()
 		daily_dates = [d for li in lines if li["unit"] == "day" for d in li["derivation"]["dates"]]
-		hourly_dates = {
-			d for li in lines if li["unit"] == "hour" for d in li["derivation"]["dates"]
-		}
+		hourly_dates = {d for li in lines if li["unit"] == "hour" for d in li["derivation"]["dates"]}
 
 		self.assertEqual(len(daily_dates), len(set(daily_dates)), "a date was billed twice daily")
 		self.assertFalse(set(daily_dates) & hourly_dates, "a date was billed daily and hourly")

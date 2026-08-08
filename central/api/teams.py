@@ -157,7 +157,9 @@ def delete_team(team: str) -> dict[str, Any]:
 	references don't block the delete."""
 	for doctype in ("Asset", "Site"):
 		if frappe.db.exists(doctype, {"team": team}):
-			frappe.throw(_("Remove this team's servers and sites before deleting it."), frappe.ValidationError)
+			frappe.throw(
+				_("Remove this team's servers and sites before deleting it."), frappe.ValidationError
+			)
 	# force=True: clear the child links that would otherwise raise LinkExistsError on the Team delete.
 	for name in frappe.get_all("Team Invitation", {"team": team}, pluck="name"):
 		frappe.delete_doc("Team Invitation", name, ignore_permissions=True, force=True)

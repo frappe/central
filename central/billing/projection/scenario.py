@@ -36,8 +36,10 @@ def project(scenario, today=None) -> dict:
 	doc = _resolve(scenario)
 	if not doc.team:
 		frappe.throw(
-			_("This scenario has no team. Cohort scenarios are projected from the "
-			"Billing Projection report."),
+			_(
+				"This scenario has no team. Cohort scenarios are projected from the "
+				"Billing Projection report."
+			),
 			frappe.ValidationError,
 		)
 
@@ -51,20 +53,28 @@ def project(scenario, today=None) -> dict:
 	with settings.overridden(**overrides), pricing.overridden_rates(rates):
 		if months > 1:
 			out = engine.project_months(
-				doc.team, period_start, months=months, today=today,
-				mode=doc.outcome_mode, assume=doc.assume, events=events,
+				doc.team,
+				period_start,
+				months=months,
+				today=today,
+				mode=doc.outcome_mode,
+				assume=doc.assume,
+				events=events,
 			)
 		else:
 			out = engine.project(
-				doc.team, period_start, frappe.utils.get_last_day(period_start), today=today,
-				mode=doc.outcome_mode, assume=doc.assume, events=events,
+				doc.team,
+				period_start,
+				frappe.utils.get_last_day(period_start),
+				today=today,
+				mode=doc.outcome_mode,
+				assume=doc.assume,
+				events=events,
 			)
 
 	# What a price change actually reaches — the part everyone gets wrong.
 	if rates:
-		out["repricing"] = repricing.split(
-			_all_lines(out), out.get("currency"), doc.effective_from()
-		)
+		out["repricing"] = repricing.split(_all_lines(out), out.get("currency"), doc.effective_from())
 
 	# Say what was pretended. A projection under an altered ladder that does not
 	# announce it is a number waiting to be quoted as fact.
@@ -83,11 +93,7 @@ def project(scenario, today=None) -> dict:
 def _all_lines(out) -> list:
 	"""Every projected line, whether the projection was one month or several."""
 	if out.get("months"):
-		return [
-			line
-			for month in out["months"]
-			for line in ((month.get("invoice") or {}).get("lines") or [])
-		]
+		return [line for month in out["months"] for line in ((month.get("invoice") or {}).get("lines") or [])]
 	return (out.get("invoice") or {}).get("lines") or []
 
 
@@ -134,12 +140,8 @@ def compare(scenario, today=None) -> dict:
 	if rates:
 		# Say what the number means, because the number alone is the thing that gets
 		# misread: a catalog change does not reach a locked rate.
-		result["repricing"] = repricing.with_delta(
-			altered["repricing"], _total(live), _total(altered)
-		)
-		result["explanation"] = repricing.explain(
-			_total(live), _total(altered), altered["repricing"]
-		)
+		result["repricing"] = repricing.with_delta(altered["repricing"], _total(live), _total(altered))
+		result["explanation"] = repricing.explain(_total(live), _total(altered), altered["repricing"])
 	return result
 
 
@@ -183,8 +185,7 @@ def check_drift(scenario, today=None) -> dict:
 	doc = _resolve(scenario)
 	if not doc.result:
 		frappe.throw(
-			_("This scenario has no saved answer to compare against. Project and save it "
-			"first."),
+			_("This scenario has no saved answer to compare against. Project and save it first."),
 			frappe.ValidationError,
 		)
 
@@ -201,9 +202,7 @@ def check_drift(scenario, today=None) -> dict:
 def check_all(today=None) -> list[dict]:
 	"""Every saved scenario, re-projected and diffed. What runs after a deploy."""
 	out = []
-	for name in frappe.get_all(
-		"Billing Scenario", filters={"result": ["is", "set"]}, pluck="name"
-	):
+	for name in frappe.get_all("Billing Scenario", filters={"result": ["is", "set"]}, pluck="name"):
 		try:
 			out.append(check_drift(name, today))
 		except Exception:

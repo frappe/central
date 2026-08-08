@@ -3,6 +3,7 @@
 """A projection cannot write, and the database is what stops it."""
 
 import frappe
+
 from central.billing.projection.guard import (
 	ProjectionBoundaryError,
 	ProjectionWroteError,

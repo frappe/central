@@ -230,6 +230,4 @@ def _current_rate(subscription: str | None) -> float:
 
 
 def _plans_for(team: str) -> list[str]:
-	return list(
-		{p for p in frappe.get_all("Subscription", filters={"team": team}, pluck="plan") if p}
-	)
+	return list({p for p in frappe.get_all("Subscription", filters={"team": team}, pluck="plan") if p})

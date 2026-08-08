@@ -91,13 +91,17 @@ def _validate_currency(team: str, currency: str | None):
 	supported = supported_currencies()
 	if currency not in supported:
 		frappe.throw(
-			_("{0} is not a supported billing currency. Choose one of: {1}.").format(currency, ', '.join(supported) or 'none configured'),
+			_("{0} is not a supported billing currency. Choose one of: {1}.").format(
+				currency, ", ".join(supported) or "none configured"
+			),
 			frappe.ValidationError,
 		)
 	current = frappe.db.get_value("Billing Profile", team, "currency")
 	if current and current != currency and _has_money_activity(team):
 		frappe.throw(
-			_("Billing currency is locked to {0}: this team already has a wallet, payment method, or invoice, so it can't be changed.").format(current),
+			_(
+				"Billing currency is locked to {0}: this team already has a wallet, payment method, or invoice, so it can't be changed."
+			).format(current),
 			frappe.ValidationError,
 		)
 

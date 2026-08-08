@@ -14,6 +14,7 @@ and fully writable connection, long after the read-only transaction has closed.
 from pathlib import Path
 
 import frappe
+
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 BANNED = (
