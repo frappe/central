@@ -14,7 +14,7 @@ from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team
 
 TEAM = "team-recon"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 
 
 @contextmanager
@@ -43,7 +43,7 @@ def charge_result(success=True, txn_id="pi_x"):
 class ReconTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._purge()
 
 	def tearDown(self):

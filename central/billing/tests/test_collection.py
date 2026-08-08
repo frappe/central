@@ -16,7 +16,7 @@ from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-fallback"
 PLAN = "bundle-fallback-test"
-GATEWAY = "GW-Fallback-Stripe"
+GATEWAY = "Stripe"
 
 
 def _result(success, txn_id):
@@ -43,7 +43,7 @@ class FallbackTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		make_plan(PLAN)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._purge()
 		self.primary = self._card("Visa ····0001", "pm_primary", priority=0)
 		self.backup = self._card("Visa ····0002", "pm_backup", priority=1)

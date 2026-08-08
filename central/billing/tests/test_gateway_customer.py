@@ -32,7 +32,7 @@ def stub(gateway, customer_id="cus_prov"):
 class TestProvisionGatewayCustomersPatch(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
-		self.gateway = make_razorpay_gateway("GW-Prov-INR").name
+		self.gateway = make_razorpay_gateway().name
 		frappe.db.delete("Gateway Customer", {"team": TEAM})
 		complete_billing_profile(TEAM, "INR")
 

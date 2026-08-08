@@ -25,7 +25,7 @@ from central.billing.tests.utils import (
 TEAM = "team-dunning"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-dunning-test"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 DUE = "2026-06-01"
 
 
@@ -48,7 +48,7 @@ class DunningTestBase(IntegrationTestCase):
 		ensure_team(TEAM)
 		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._priv, self._pub = generate_keypair()
 		frappe.conf.entitlement_private_key = self._priv
 		self._purge()

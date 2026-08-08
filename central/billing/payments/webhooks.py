@@ -47,10 +47,16 @@ def process_webhook(adapter_key: str, payload: bytes, headers: dict) -> dict:
 
 
 def _resolve_gateway(adapter_key: str):
-	name = frappe.db.get_value("Payment Gateway", {"adapter_key": adapter_key, "is_enabled": 1}, "name")
-	if not name:
+	"""The gateway row this callback URL belongs to.
+
+	There is one callback URL per adapter, so the adapter is the only thing an
+	inbound request identifies itself by — which is exactly why a gateway row is
+	named after its adapter. The lookup is a primary-key read: no ambiguity about
+	which webhook_secret verifies the signature.
+	"""
+	if not frappe.db.get_value("Payment Gateway", adapter_key, "is_enabled"):
 		frappe.throw(f"No enabled Payment Gateway for adapter '{adapter_key}'")
-	return frappe.get_doc("Payment Gateway", name)
+	return frappe.get_doc("Payment Gateway", adapter_key)
 
 
 def _store_and_enqueue(gateway, event, payload: bytes):

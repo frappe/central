@@ -29,7 +29,7 @@ class TestEmandatePredebit(IntegrationTestCase):
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
 		frappe.db.delete("Payment Method", {"team": TEAM})
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
-		self.gw = make_razorpay_gateway("GW-Emandate-RZP").name
+		self.gw = make_razorpay_gateway().name
 		frappe.get_doc(
 			{
 				"doctype": "Payment Method",

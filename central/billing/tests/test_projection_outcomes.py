@@ -12,7 +12,7 @@ from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make
 TEAM = "team-projection-outcomes"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-projection-outcomes"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 DUE = "2026-10-08"
 TODAY = "2026-08-06"
 
@@ -22,7 +22,7 @@ class OutcomeTestBase(IntegrationTestCase):
 		ensure_team(TEAM)
 		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._purge()
 		set_team_tier(TEAM, level="t0", max_spend=50000)
 		frappe.db.commit()

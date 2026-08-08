@@ -13,25 +13,17 @@ from central.billing.tests.gateway_contract import GatewayAdapterContract
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
-def make_stripe_gateway(name="GW-Test-Stripe"):
-	import frappe
+def make_stripe_gateway(currencies=(("USD", 1),)):
+	"""The Stripe gateway, configured for test. There is only one (named "Stripe")."""
+	from central.billing.tests.utils import configure_gateway
 
-	if frappe.db.exists("Payment Gateway", name):
-		frappe.delete_doc("Payment Gateway", name, force=True)
-	doc = frappe.get_doc(
-		{
-			"doctype": "Payment Gateway",
-			"__newname": name,
-			"title": "Stripe (Test)",
-			"adapter_key": "Stripe",
-			"currencies": [{"currency": "USD", "is_default": 1}],
-			"api_secret": "sk_test_123",
-			"webhook_secret": "whsec_test_123",
-			"is_enabled": 1,
-		}
+	return configure_gateway(
+		"Stripe",
+		currencies,
+		api_secret="sk_test_123",
+		webhook_secret="whsec_test_123",
+		is_enabled=1,
 	)
-	doc.insert(ignore_permissions=True)
-	return doc
 
 
 class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):

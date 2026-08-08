@@ -16,6 +16,10 @@ central.patches.v0_0.migrate_team_to_central_team
 # Widen the decimal columns to varchar before sync (the sync can't cast a '1/8'
 # default against a decimal column) and relabel stored values — issue #33.
 central.patches.v0_0.configurator_vcpu_dropdown
+# Collapse Payment Gateway to one row per adapter and rename each survivor to its
+# adapter_key. Runs before the sync flips naming to `field:adapter_key`, so the
+# rows are already unique by the time that rule takes effect.
+central.patches.v0_0.one_gateway_per_adapter
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated

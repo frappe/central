@@ -92,12 +92,51 @@ class BillingTestCase(IntegrationTestCase):
 		"Billing Run",
 	)
 
+	# Payment Gateway is a fixed roster (one row per adapter), not something a test
+	# creates — so it can't be swept, it has to be put back. These are the fields a
+	# test reconfigures; the Password fields live in __Auth and are left alone.
+	_GATEWAY_FIELDS = (
+		"is_enabled",
+		"supports_mandates",
+		"paypal_settlement_mode",
+		"credentials_validated_at",
+		"webhook_endpoint_id",
+	)
+
 	def run(self, result=None):
 		before = {doctype: set(frappe.get_all(doctype, pluck="name")) for doctype in self._TRACKED}
+		gateways = self._snapshot_gateways()
 		try:
 			return super().run(result)
 		finally:
 			self._sweep(before)
+			self._restore_gateways(gateways)
+
+	def _snapshot_gateways(self) -> dict:
+		return {
+			gw.name: (gw, frappe.get_all("Payment Gateway Currency", {"parent": gw.name}, ["*"]))
+			for gw in frappe.get_all("Payment Gateway", fields=["name", *self._GATEWAY_FIELDS])
+		}
+
+	def _restore_gateways(self, snapshot: dict) -> None:
+		"""Put every gateway back the way the test found it — config and currency rows.
+
+		A test that commits (the top-up flows do, via ensure_gateway_customer) outlives
+		the per-test rollback, so a currency row it added would silently re-route the
+		next test's payments."""
+		for name, (values, currency_rows) in snapshot.items():
+			if not frappe.db.exists("Payment Gateway", name):
+				continue
+			frappe.db.set_value(
+				"Payment Gateway",
+				name,
+				{field: values.get(field) for field in self._GATEWAY_FIELDS},
+				update_modified=False,
+			)
+			frappe.db.delete("Payment Gateway Currency", {"parent": name})
+			for row in currency_rows:
+				frappe.get_doc({"doctype": "Payment Gateway Currency", **row}).db_insert()
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- outlive a test's own commit
 
 	def _sweep(self, before: dict) -> None:
 		for attempt in range(_SWEEP_DEADLOCK_RETRIES):
@@ -179,6 +218,36 @@ def ensure_atlas_instance(region):
 	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
 
 	return _ensure_atlas_instance(region)
+
+
+def configure_gateway(adapter_key, currencies, **values):
+	"""Put the one gateway row for `adapter_key` into a known state, and return it.
+
+	Gateway rows are seeded per adapter (`gateways.setup.ensure_gateway_records`) and
+	named after it, so a test configures the existing row rather than creating one —
+	there is no second Stripe to create. `currencies` is a list of (currency,
+	is_default) pairs and REPLACES whatever the row carried.
+	"""
+	from central.billing.gateways.setup import ensure_gateway_records
+
+	# The roster is seeded by a before_tests hook, but a site set up before this
+	# landed won't have run it — seeding here keeps the fixture self-sufficient.
+	ensure_gateway_records()
+
+	doc = frappe.get_doc("Payment Gateway", adapter_key)
+	doc.update(values)
+	doc.currencies = []
+	for currency, is_default in currencies:
+		doc.append("currencies", {"currency": currency, "is_default": is_default})
+	doc.flags.skip_credential_validation = True
+	doc.save(ignore_permissions=True)
+	return doc
+
+
+def disable_gateway(adapter_key):
+	"""Take a gateway out of play without deleting it (deleting the roster row would
+	strand every Link that points at it)."""
+	frappe.db.set_value("Payment Gateway", adapter_key, "is_enabled", 0)
 
 
 def make_plan(name, rates=None, includes=None, **kwargs):

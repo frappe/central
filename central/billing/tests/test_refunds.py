@@ -23,7 +23,7 @@ from central.billing.tests.utils import (
 TEAM = "team-refund"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-refund-test"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 
 
 @contextmanager
@@ -42,7 +42,7 @@ class RefundTestBase(IntegrationTestCase):
 		ensure_atlas_instance(CLUSTER)
 		complete_billing_profile(TEAM, currency="INR")  # so a provisioned segment is rated
 		make_plan(PLAN)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._purge()
 
 	def tearDown(self):

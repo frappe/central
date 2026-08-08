@@ -25,7 +25,7 @@ from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make
 TEAM = "team-waterfall"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-waterfall-test"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 
 
 @contextmanager
@@ -50,7 +50,7 @@ class SettlementTestBase(IntegrationTestCase):
 		ensure_team(TEAM)
 		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._purge()
 
 	def tearDown(self):

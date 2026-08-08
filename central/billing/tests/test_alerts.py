@@ -16,7 +16,7 @@ class TestOperatorAlerts(BillingTestCase):
 		frappe.cache().delete_value(alerts._CACHE_KEY)
 		self.mail = patch.object(alerts.frappe, "sendmail").start()
 		self.addCleanup(patch.stopall)
-		self.gateway = make_stripe_gateway("GW-Alerts-Stripe").name
+		self.gateway = make_stripe_gateway().name
 
 	def _quiet_sources(self, *live):
 		"""Run the alert job with only the named sources live."""

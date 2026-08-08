@@ -169,7 +169,7 @@ class TestCustomerReads(CustomerDataBase):
 	def test_payment_methods_never_expose_secrets(self):
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
-		gw = make_stripe_gateway("GW-Cust-Stripe").name
+		gw = make_stripe_gateway().name
 		frappe.get_doc(
 			{
 				"doctype": "Payment Method",
@@ -389,7 +389,7 @@ class TestCustomerActions(CustomerDataBase):
 		# Once the profile is complete, the same call reaches the gateway.
 		complete_billing_profile(TEAM)
 		self.assertTrue(dashboard.get_billing_profile(TEAM)["complete"])
-		gw = make_razorpay_gateway("GW-Gate-RZP").name
+		gw = make_razorpay_gateway().name
 		adapter = MagicMock()
 		adapter.create_customer.return_value = "cus_gate"
 		adapter.create_order.return_value = {
@@ -423,7 +423,7 @@ class TestBillingCurrency(CustomerDataBase):
 	def test_currency_must_be_gateway_supported(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		make_razorpay_gateway("GW-Cur-INR")  # makes INR a supported currency
+		make_razorpay_gateway()  # makes INR a supported currency
 		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
 		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "currency"), "INR")
 		with self.assertRaises(frappe.ValidationError):
@@ -433,8 +433,8 @@ class TestBillingCurrency(CustomerDataBase):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
-		make_razorpay_gateway("GW-Cur-INR")  # INR supported
-		make_stripe_gateway("GW-Cur-USD")  # USD supported
+		make_razorpay_gateway()  # INR supported
+		make_stripe_gateway()  # USD supported
 
 		# India → INR, regardless of any currency the client tries to send.
 		dashboard.save_billing_profile(TEAM, legal_name="Acme", country="India", currency="USD")
@@ -448,7 +448,7 @@ class TestBillingCurrency(CustomerDataBase):
 		from central.billing.revenue import credits
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		make_razorpay_gateway("GW-Cur-Lock")
+		make_razorpay_gateway()
 		dashboard.save_billing_profile(TEAM, currency="INR", legal_name="Acme")
 		self.assertFalse(dashboard.get_billing_profile(TEAM)["currency_locked"])
 
@@ -468,7 +468,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		gw = make_razorpay_gateway("GW-Cust-RZP").name
+		gw = make_razorpay_gateway().name
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.create_customer.return_value = "cus_topup"
@@ -517,7 +517,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		gw = make_razorpay_gateway("GW-Cust-RZP-Amt").name
+		gw = make_razorpay_gateway().name
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.verify_payment_signature.return_value = True
@@ -545,7 +545,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		gw = make_razorpay_gateway("GW-Cust-RZP-NoAmt").name
+		gw = make_razorpay_gateway().name
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.verify_payment_signature.return_value = True
@@ -569,7 +569,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		gw = make_razorpay_gateway("GW-Cust-RZP-Uncap").name
+		gw = make_razorpay_gateway().name
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.verify_payment_signature.return_value = True
@@ -593,7 +593,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		gw = make_razorpay_gateway("GW-Cust-RZP-Reuse").name
+		gw = make_razorpay_gateway().name
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.create_customer.return_value = "cus_once"
@@ -614,7 +614,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		gw = make_razorpay_gateway("GW-Cust-RZP2").name
+		gw = make_razorpay_gateway().name
 		adapter = MagicMock()
 		adapter.verify_payment_signature.return_value = False
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
@@ -637,7 +637,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
-		gw = make_stripe_gateway("GW-Cust-Stripe-T").name
+		gw = make_stripe_gateway().name
 		complete_billing_profile(TEAM)
 		adapter = MagicMock()
 		adapter.create_customer.return_value = "cus_stripe"
@@ -670,7 +670,7 @@ class TestGatewayTopUp(CustomerDataBase):
 
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
-		gw = make_stripe_gateway("GW-Cust-Stripe-T2").name
+		gw = make_stripe_gateway().name
 		adapter = MagicMock()
 		adapter.get_payment_intent.return_value = {"status": "requires_payment_method", "id": "pi_y"}
 		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
@@ -685,26 +685,11 @@ class TestGatewayTopUp(CustomerDataBase):
 		entry on the capture id Finance reconciles against."""
 		from unittest.mock import MagicMock, patch
 
+		from central.billing.tests.test_paypal_adapter import make_paypal_gateway
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
-		stripe_def = make_stripe_gateway("GW-USD-Stripe-Def").name  # USD card default
-		if frappe.db.exists("Payment Gateway", "GW-USD-PayPal"):
-			frappe.delete_doc("Payment Gateway", "GW-USD-PayPal", force=True)
-		pp = frappe.get_doc(
-			{
-				"doctype": "Payment Gateway",
-				"__newname": "GW-USD-PayPal",
-				"title": "PayPal",
-				"adapter_key": "Paypal",
-				"api_key": "pp_client",
-				"api_secret": "pp_secret",
-				"webhook_secret": "pp_whid",
-				"is_enabled": 1,
-				"currencies": [{"currency": "USD", "is_default": 0}],
-			}
-		)
-		pp.flags.skip_credential_validation = True
-		pp.insert(ignore_permissions=True)
+		stripe_def = make_stripe_gateway().name  # USD card default
+		pp = make_paypal_gateway([("USD", 0)])  # handles USD, but is not its default
 		complete_billing_profile(TEAM, currency="USD")
 		adapter = MagicMock()
 		adapter.create_customer.return_value = "cus_pp"
@@ -746,56 +731,13 @@ class TestGatewayTopUp(CustomerDataBase):
 		stored reference is the razorpay_payment_id (ADR 0005 path, opt-in)."""
 		from unittest.mock import MagicMock, patch
 
-		# create_topup_order commits (ensure_gateway_customer), so this test's gateway
-		# rows and is_enabled toggles outlive the framework rollback — undo them by
-		# hand, then commit the restoration last (addCleanup runs LIFO).
-		self.addCleanup(frappe.db.commit)
+		from central.billing.tests.test_paypal_adapter import make_paypal_gateway
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
-		def drop(name):
-			if frappe.db.exists("Payment Gateway", name):
-				frappe.delete_doc("Payment Gateway", name, force=True)
-
-		for name in ("GW-USD-RZP", "GW-USD-PayPal-RZP"):
-			drop(name)
-			self.addCleanup(drop, name)
-		rzp = frappe.get_doc(
-			{
-				"doctype": "Payment Gateway",
-				"__newname": "GW-USD-RZP",
-				"title": "Razorpay USD",
-				"adapter_key": "Razorpay",
-				"api_key": "rzp_k",
-				"api_secret": "rzp_s",
-				"webhook_secret": "rzp_wh",
-				"is_enabled": 1,
-				"currencies": [{"currency": "USD", "is_default": 0}],
-			}
-		)
-		rzp.flags.skip_credential_validation = True
-		rzp.insert(ignore_permissions=True)
-		# No api_key/api_secret — a Via-Razorpay PayPal row needs none.
-		pp = frappe.get_doc(
-			{
-				"doctype": "Payment Gateway",
-				"__newname": "GW-USD-PayPal-RZP",
-				"title": "PayPal via Razorpay",
-				"adapter_key": "Paypal",
-				"paypal_settlement_mode": "Via Razorpay",
-				"is_enabled": 1,
-				"currencies": [{"currency": "USD", "is_default": 0}],
-			}
-		)
-		pp.insert(ignore_permissions=True)
-		# Make our Via-Razorpay row the only enabled PayPal gateway for USD, so
-		# resolution can't land on a seeded Direct PayPal gateway; re-enable the
-		# others in cleanup (set_value skips the enable-guard a re-save would hit).
-		for other in frappe.get_all(
-			"Payment Gateway",
-			{"adapter_key": "Paypal", "is_enabled": 1, "name": ["!=", pp.name]},
-			pluck="name",
-		):
-			frappe.db.set_value("Payment Gateway", other, "is_enabled", 0)
-			self.addCleanup(frappe.db.set_value, "Payment Gateway", other, "is_enabled", 1)
+		make_razorpay_gateway([("USD", 0)])
+		# There is one PayPal row, so putting it in Via-Razorpay mode IS the config —
+		# no need to hunt down other enabled PayPal gateways that might win instead.
+		pp = make_paypal_gateway([("USD", 0)], paypal_settlement_mode="Via Razorpay")
 		self.assertTrue(pp.is_paypal_via_razorpay())
 		self.assertFalse(pp._should_validate_credentials())  # keys optional in this mode
 		complete_billing_profile(TEAM, currency="USD")
@@ -879,58 +821,24 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 	every currency; INR also offers a Razorpay UPI Autopay e-mandate."""
 
 	TEAM = "team-method-opts"
-	STRIPE = "GW-Opts-Stripe"
-	RAZORPAY = "GW-Opts-Razorpay"
 
 	def setUp(self):
 		from central.billing.catalog.entitlements import recompute_trust_tier
 		from central.billing.tests.test_entitlements import make_ladder
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 		from central.billing.tests.utils import clear_team_tier
 
 		ensure_team(self.TEAM)
 		make_ladder()
-		self._stripe_gateway(["INR", "USD"])
-		self._razorpay_gateway("INR")
+		# One Stripe account carries both currencies: INR non-default (Razorpay owns
+		# that currency's default), USD default.
+		make_stripe_gateway([("INR", 0), ("USD", 1)])
+		make_razorpay_gateway([("INR", 1)])
 		complete_billing_profile(self.TEAM)
 		frappe.db.set_value("Billing Profile", self.TEAM, "currency", "INR")
 		clear_team_tier(self.TEAM)
 		recompute_trust_tier(self.TEAM, paid_invoice_count=0, cumulative_paid=0)
-
-	def _stripe_gateway(self, currencies):
-		if frappe.db.exists("Payment Gateway", self.STRIPE):
-			frappe.delete_doc("Payment Gateway", self.STRIPE, force=True)
-		frappe.get_doc(
-			{
-				"doctype": "Payment Gateway",
-				"__newname": self.STRIPE,
-				"title": "Stripe (Opts)",
-				"adapter_key": "Stripe",
-				"api_key": "pk_test_opts",
-				"api_secret": "sk_test_opts",
-				"webhook_secret": "whsec_opts",
-				"is_enabled": 1,
-				# INR non-default (Razorpay owns the currency default), USD default.
-				"currencies": [{"currency": c, "is_default": 1 if c == "USD" else 0} for c in currencies],
-			}
-		).insert(ignore_permissions=True)
-
-	def _razorpay_gateway(self, currency):
-		if frappe.db.exists("Payment Gateway", self.RAZORPAY):
-			frappe.delete_doc("Payment Gateway", self.RAZORPAY, force=True)
-		frappe.get_doc(
-			{
-				"doctype": "Payment Gateway",
-				"__newname": self.RAZORPAY,
-				"title": "Razorpay (Opts)",
-				"adapter_key": "Razorpay",
-				"api_key": "rzp_test",
-				"api_secret": "rzp_secret",
-				"webhook_secret": "rzp_whsec",
-				"is_enabled": 1,
-				"supports_mandates": 1,
-				"currencies": [{"currency": currency, "is_default": 1}],
-			}
-		).insert(ignore_permissions=True)
 
 	def test_india_offers_stripe_card_and_razorpay_upi(self):
 		from central.billing.api.dashboard import methods

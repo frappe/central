@@ -250,7 +250,7 @@ class TestDeclines(EventTestBase):
 		# card's link if it ran per card.
 		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 		if not getattr(self, "_gw", None):
-			self._gw = make_stripe_gateway("GW-Test-Stripe").name
+			self._gw = make_stripe_gateway().name
 		return self._gw
 	def _card(self, label):
 		gateway = self._gateway()
