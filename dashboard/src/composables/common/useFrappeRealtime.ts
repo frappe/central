@@ -2,9 +2,6 @@ import {
 	getCurrentInstance,
 	type MaybeRefOrGetter,
 	onScopeDispose,
-	type Ref,
-	readonly,
-	ref,
 	toValue,
 	watch,
 } from 'vue'
@@ -18,26 +15,10 @@ interface FrappeSocket {
 	emit(event: string, ...args: unknown[]): void
 }
 
-export interface DocumentUpdateEvent {
-	doctype: string
-	name: string
-	modified: string
-}
-
-export interface DocumentViewersEvent {
-	doctype: string
-	docname: string
-	users: string[]
-}
-
 export interface DocTypeListUpdateEvent {
 	doctype: string
 	name: string
 	user: string
-}
-
-interface DocumentEventListenerOptions {
-	emitOpenCloseEvents?: boolean
 }
 
 export function useFrappeEventListener<T>(
@@ -56,69 +37,6 @@ export function useFrappeEventListener<T>(
 		},
 		{ immediate: true },
 	)
-}
-
-export function useFrappeDocumentEventListener(
-	doctype: MaybeRefOrGetter<string>,
-	docname: MaybeRefOrGetter<string>,
-	onUpdate: (event: DocumentUpdateEvent) => void,
-	options: DocumentEventListenerOptions = {},
-): {
-	viewers: Readonly<Ref<readonly string[]>>
-	emitDocOpen: () => void
-	emitDocClose: () => void
-} {
-	const socket = useFrappeSocket()
-	const viewers = ref<string[]>([])
-	const emitOpenCloseEvents = options.emitOpenCloseEvents ?? true
-
-	watch(
-		() => [toValue(doctype), toValue(docname)] as const,
-		([nextDoctype, nextDocname], _, onCleanup) => {
-			viewers.value = []
-			if (!nextDoctype || !nextDocname) return
-
-			const subscribe = () =>
-				socket.emit('doc_subscribe', nextDoctype, nextDocname)
-
-			socket.on('connect', subscribe)
-			if (socket.connected) subscribe()
-			if (emitOpenCloseEvents) {
-				socket.emit('doc_open', nextDoctype, nextDocname)
-			}
-
-			onCleanup(() => {
-				socket.emit('doc_unsubscribe', nextDoctype, nextDocname)
-				socket.off('connect', subscribe)
-				if (emitOpenCloseEvents) {
-					socket.emit('doc_close', nextDoctype, nextDocname)
-				}
-			})
-		},
-		{ immediate: true },
-	)
-
-	useFrappeEventListener<DocumentUpdateEvent>('doc_update', (event) => {
-		if (event.doctype === toValue(doctype) && event.name === toValue(docname)) {
-			onUpdate(event)
-		}
-	})
-
-	useFrappeEventListener<DocumentViewersEvent>('doc_viewers', (event) => {
-		if (
-			event.doctype === toValue(doctype) &&
-			event.docname === toValue(docname)
-		) {
-			viewers.value = event.users
-		}
-	})
-
-	return {
-		viewers: readonly(viewers),
-		emitDocOpen: () => emitDocumentEvent(socket, 'doc_open', doctype, docname),
-		emitDocClose: () =>
-			emitDocumentEvent(socket, 'doc_close', doctype, docname),
-	}
 }
 
 export function useFrappeDocTypeEventListener(
@@ -187,17 +105,4 @@ function useFrappeSocket(): FrappeSocket {
 	}
 
 	return socket
-}
-
-function emitDocumentEvent(
-	socket: ReturnType<typeof useFrappeSocket>,
-	event: 'doc_open' | 'doc_close',
-	doctype: MaybeRefOrGetter<string>,
-	docname: MaybeRefOrGetter<string>,
-): void {
-	const currentDoctype = toValue(doctype)
-	const currentDocname = toValue(docname)
-	if (currentDoctype && currentDocname) {
-		socket.emit(event, currentDoctype, currentDocname)
-	}
 }
