@@ -7,6 +7,7 @@ for billing (machine pace). This module serves the first role only.
 """
 
 import frappe
+from frappe import _
 
 # Memory-ratio pre-fills for the Plan Configurator (issue #33). Authoring-only:
 # the ratio derives a default memory; the resulting GB is what's stored, never
@@ -26,7 +27,9 @@ def configure_includes(
 	"""
 	vcpu = frappe.utils.flt(vcpu)
 	if ratio not in RATIO_FACTORS:
-		frappe.throw(f"Unknown memory ratio {ratio!r}; expected one of {sorted(RATIO_FACTORS)}.")
+		frappe.throw(
+			_("Unknown memory ratio {0!r}; expected one of {1}.").format(ratio, sorted(RATIO_FACTORS))
+		)
 	memory = (
 		frappe.utils.flt(memory_gb)
 		if memory_gb is not None

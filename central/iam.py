@@ -47,10 +47,16 @@ def expand_capabilities(caps: list[str]) -> list[str]:
 	return list(caps) + extra
 
 
-@request_cache
 def user_has_operator_bypass(user: str | None = None) -> bool:
 	"""The only non-team-membership bypass in Central IAM."""
-	user = user or frappe.session.user
+	# Resolve before the cached call: the request cache must key on the concrete
+	# user, never on a bare no-arg () that would pin the first caller's session
+	# user (e.g. Administrator) onto every later caller in the same request.
+	return _user_has_operator_bypass(user or frappe.session.user)
+
+
+@request_cache
+def _user_has_operator_bypass(user: str) -> bool:
 	return OPERATOR_BYPASS_ROLE in frappe.get_roles(user)
 
 
@@ -211,6 +217,16 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 		grant["caps"] = expand_capabilities(grant["caps"])
 
 	return dict(grants_by_team)
+
+
+def clear_grants_cache() -> None:
+	"""Drop the request-cached IAM grants after a Team write, so later capability checks
+	in the same request see the new membership. This also isolates test methods, which
+	share one request while each rebuilds its team under a fresh name. Clearing the whole
+	request cache is safe — it is transparent, and Team writes are rare."""
+	cache = getattr(frappe.local, "request_cache", None)
+	if cache is not None:
+		cache.clear()
 
 
 def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]]]:

@@ -10,6 +10,7 @@ stored and a background job is enqueued.
 """
 
 import frappe
+from frappe import _
 
 
 @frappe.whitelist(allow_guest=True)
@@ -55,7 +56,7 @@ def _resolve_gateway(adapter_key: str):
 	which webhook_secret verifies the signature.
 	"""
 	if not frappe.db.get_value("Payment Gateway", adapter_key, "is_enabled"):
-		frappe.throw(f"No enabled Payment Gateway for adapter '{adapter_key}'")
+		frappe.throw(_("No enabled Payment Gateway for adapter '{0}'").format(adapter_key))
 	return frappe.get_doc("Payment Gateway", adapter_key)
 
 

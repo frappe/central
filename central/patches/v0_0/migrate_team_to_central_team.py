@@ -21,6 +21,7 @@ Idempotent and re-runnable: a value that is already a `Team.name` is left alone.
 from collections import Counter, defaultdict
 
 import frappe
+from frappe import _
 from frappe.model.rename_doc import rename_doc
 
 # The billing DocTypes carrying `team` (Notification Log was renamed to Billing
@@ -224,8 +225,9 @@ def _assert_round_trip(before: dict[str, Counter], mapping: dict[str, str]) -> N
 		)
 		if expected != actual:
 			frappe.throw(
-				f"Team migration round-trip mismatch on {doctype}: "
-				f"expected {dict(expected)}, got {dict(actual)}"
+				_("Team migration round-trip mismatch on {0}: expected {1}, got {2}").format(
+					doctype, dict(expected), dict(actual)
+				)
 			)
 
 

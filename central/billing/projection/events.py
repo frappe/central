@@ -174,9 +174,7 @@ def refusals(team: str, events: list, state=None) -> list[dict]:
 	"""
 	from central.billing.payments import settlement
 
-	planned = [
-		e for e in (events or []) if e.get("event_type") in (PROVISION, RESIZE) and e.get("rate")
-	]
+	planned = [e for e in (events or []) if e.get("event_type") in (PROVISION, RESIZE) and e.get("rate")]
 	if not planned:
 		return []
 

@@ -37,8 +37,7 @@ def project_team(
 	period_end = frappe.utils.getdate(period_end or frappe.utils.get_last_day(period_start))
 
 	frappe.logger("billing").info(
-		f"projection: {frappe.session.user} projected {team} "
-		f"for {period_start}..{period_end} as of {today}"
+		f"projection: {frappe.session.user} projected {team} for {period_start}..{period_end} as of {today}"
 	)
 	return engine.project(team, period_start, period_end, today=today, mode=mode, assume=assume)
 
@@ -64,8 +63,7 @@ def project_team_months(
 	months = max(1, min(frappe.utils.cint(months), 24))
 
 	frappe.logger("billing").info(
-		f"projection: {frappe.session.user} rolled {team} forward {months} months "
-		f"from {start} as of {today}"
+		f"projection: {frappe.session.user} rolled {team} forward {months} months from {start} as of {today}"
 	)
 	return engine.project_months(team, start, months=months, today=today, mode=mode, assume=assume)
 
@@ -159,9 +157,7 @@ def project_scenario(scenario: str, today: str | None = None) -> dict:
 
 	from central.billing.projection import scenario as scenarios
 
-	frappe.logger("billing").info(
-		f"projection: {frappe.session.user} projected scenario {scenario}"
-	)
+	frappe.logger("billing").info(f"projection: {frappe.session.user} projected scenario {scenario}")
 	return scenarios.project(scenario, today=today)
 
 
@@ -196,18 +192,22 @@ def scenario_library() -> list[dict]:
 
 
 @frappe.whitelist()
-def project_from_library(key: str, team: str, period_start: str | None = None, today: str | None = None) -> dict:
+def project_from_library(
+	key: str, team: str, period_start: str | None = None, today: str | None = None
+) -> dict:
 	"""Apply a catalogue scenario to a real team and project it, without saving."""
 	authz.require_operator()
 
-	from central.billing.projection import library, scenario as scenarios
+	from central.billing.projection import library
+	from central.billing.projection import scenario as scenarios
 
 	doc = library.build(key, team, period_start=period_start, today=today)
-	frappe.logger("billing").info(
-		f"projection: {frappe.session.user} ran library scenario {key} on {team}"
-	)
+	frappe.logger("billing").info(f"projection: {frappe.session.user} ran library scenario {key} on {team}")
 	out = scenarios.project(doc, today=today)
-	out["library"] = {"key": key, **{k: v for k, v in library.SCENARIOS[key].items() if k in ("title", "question", "look_for")}}
+	out["library"] = {
+		"key": key,
+		**{k: v for k, v in library.SCENARIOS[key].items() if k in ("title", "question", "look_for")},
+	}
 	return out
 
 

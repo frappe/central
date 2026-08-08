@@ -3,6 +3,7 @@
 """Scenarios: asking what a different configuration would do, without adopting it."""
 
 import frappe
+
 from central.billing import settings
 from central.billing.projection import scenario
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -40,9 +41,7 @@ class TestTheOverrideContext(IntegrationTestCase):
 			with settings.overridden(suspend_after_days=21):
 				pass
 			self.assertEqual(settings.suspend_after_days(), 14)
-			self.assertEqual(
-				frappe.db.get_single_value("Billing Settings", "suspend_after_days"), 14
-			)
+			self.assertEqual(frappe.db.get_single_value("Billing Settings", "suspend_after_days"), 14)
 
 	def test_the_override_lifts_when_the_block_ends(self):
 		with billing_settings(suspend_after_days=14):
@@ -109,9 +108,7 @@ class ScenarioTestBase(IntegrationTestCase):
 
 class TestProjectingUnderAScenario(ScenarioTestBase):
 	def test_an_altered_ladder_moves_the_projected_dates(self):
-		with billing_settings(
-			dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44
-		):
+		with billing_settings(dunning_retry_days="1, 3, 7", suspend_after_days=14, terminate_after_days=44):
 			live = scenario.project(self._scenario("Live"), today=TODAY)
 			altered = scenario.project(
 				self._scenario("Harsher", scenario_name="Harsher", suspend_after_days=5),
@@ -119,9 +116,7 @@ class TestProjectingUnderAScenario(ScenarioTestBase):
 			)
 
 		def suspend_on(out):
-			return next(
-				s["date"] for s in out["calendar"]["if_never_paid"] if s["stage"] == "Suspend"
-			)
+			return next(s["date"] for s in out["calendar"]["if_never_paid"] if s["stage"] == "Suspend")
 
 		self.assertNotEqual(suspend_on(live), suspend_on(altered))
 		self.assertLess(suspend_on(altered), suspend_on(live))
@@ -157,9 +152,7 @@ class TestSavingAScenario(ScenarioTestBase):
 
 		reloaded = frappe.get_doc("Billing Scenario", doc.name)
 		self.assertTrue(reloaded.projected_at)
-		self.assertEqual(
-			frappe.parse_json(reloaded.result)["invoice"]["total"], out["invoice"]["total"]
-		)
+		self.assertEqual(frappe.parse_json(reloaded.result)["invoice"]["total"], out["invoice"]["total"])
 
 	def test_reprojecting_the_same_scenario_gives_the_same_answer(self):
 		doc = self._scenario()
@@ -198,9 +191,7 @@ class TestComparing(ScenarioTestBase):
 		self.assertEqual(out["live"]["invoice"]["total"], out["altered"]["invoice"]["total"])
 
 		def suspend_on(side):
-			return next(
-				s["date"] for s in out[side]["calendar"]["if_never_paid"] if s["stage"] == "Suspend"
-			)
+			return next(s["date"] for s in out[side]["calendar"]["if_never_paid"] if s["stage"] == "Suspend")
 
 		# Same bill, different consequence — which is exactly what the override changed.
 		self.assertNotEqual(suspend_on("live"), suspend_on("altered"))

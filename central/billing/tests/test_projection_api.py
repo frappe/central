@@ -3,6 +3,7 @@
 """The operator entry point onto projections."""
 
 import frappe
+
 from central.billing.api.admin import projection as api
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
@@ -45,9 +46,9 @@ class TestGating(ProjectionApiTestBase):
 		# A projection exposes somebody else's money, so it is operator-only rather than
 		# team-scoped.
 		user = f"proj-{frappe.generate_hash(6)}@example.com"
-		frappe.get_doc(
-			{"doctype": "User", "email": user, "first_name": "X", "send_welcome_email": 0}
-		).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "User", "email": user, "first_name": "X", "send_welcome_email": 0}).insert(
+			ignore_permissions=True
+		)
 		frappe.db.commit()
 
 		frappe.set_user(user)

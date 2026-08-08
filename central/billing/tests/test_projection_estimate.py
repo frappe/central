@@ -3,6 +3,7 @@
 """Metered usage for periods that have not happened, and saying so."""
 
 import frappe
+
 from central.billing.projection import estimate
 from central.billing.projection.basis import ESTIMATED, MEASURED, split_totals
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -73,9 +74,7 @@ class TestFuturePeriods(EstimateTestBase):
 		for month, qty in (("2026-03", 200), ("2026-04", 300), ("2026-05", 400)):
 			self._rollup(month, qty)
 
-		lines = estimate.metered_lines(
-			TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-05-20"
-		)
+		lines = estimate.metered_lines(TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-05-20")
 		self.assertEqual(len(lines), 1)
 		self.assertEqual(lines[0]["basis"], ESTIMATED)
 		self.assertEqual(lines[0]["amount"], 100.0)  # (50 + 100 + 150) / 3
@@ -84,17 +83,13 @@ class TestFuturePeriods(EstimateTestBase):
 	def test_no_history_projects_no_line_rather_than_a_zero_one(self):
 		# Silence is not evidence of zero usage; asserting zero would be a claim we
 		# cannot support, and it is the claim that reassures.
-		lines = estimate.metered_lines(
-			TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-05-20"
-		)
+		lines = estimate.metered_lines(TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-05-20")
 		self.assertEqual(lines, [])
 
 	def test_usage_inside_the_allowance_leaves_nothing_to_project(self):
 		for month in ("2026-03", "2026-04", "2026-05"):
 			self._rollup(month, 80)  # under the 100 GB allowance
-		lines = estimate.metered_lines(
-			TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-05-20"
-		)
+		lines = estimate.metered_lines(TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-05-20")
 		self.assertEqual(lines, [])
 
 
@@ -103,9 +98,7 @@ class TestPeriodsInFlight(EstimateTestBase):
 		# 150 GB landed by the 10th of a 30-day month → 50 GB over allowance → ₹25,
 		# projected across 30/10 = 3x.
 		self._rollup("2026-06", 150)
-		lines = estimate.metered_lines(
-			TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-06-10"
-		)
+		lines = estimate.metered_lines(TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-06-10")
 		self.assertEqual(len(lines), 1)
 		self.assertEqual(lines[0]["basis"], ESTIMATED)
 		self.assertEqual(lines[0]["amount"], 75.0)
@@ -115,9 +108,7 @@ class TestPeriodsInFlight(EstimateTestBase):
 class TestClosedPeriods(EstimateTestBase):
 	def test_a_finished_month_is_measured_not_estimated(self):
 		self._rollup("2026-06", 300)
-		lines = estimate.metered_lines(
-			TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-07-05"
-		)
+		lines = estimate.metered_lines(TEAM, [CLUSTER], "2026-06-01", "2026-06-30", today="2026-07-05")
 		self.assertEqual(len(lines), 1)
 		self.assertEqual(lines[0]["basis"], MEASURED)
 		self.assertEqual(lines[0]["amount"], 100.0)  # (300 - 100) * 0.5

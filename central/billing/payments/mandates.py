@@ -13,6 +13,7 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 """
 
 import frappe
+from frappe import _
 
 from central.billing.states import transition
 
@@ -130,7 +131,7 @@ def _require_card_contact(
 	phone = contact or str(p.phone or "").strip()
 	if not phone:
 		frappe.throw(
-			"A phone number is required to set up a recurring card payment with Razorpay.",
+			_("A phone number is required to set up a recurring card payment with Razorpay."),
 			frappe.ValidationError,
 		)
 	# An inline-provided phone is saved to the profile so it's collected only once.
@@ -253,7 +254,7 @@ def confirm_mandate(payment_method: str, callback: dict):
 	if not adapter.verify_payment_signature(callback):
 		transition(method, "Failed", actor=frappe.session.user, reason="mandate signature invalid")
 		method.save(ignore_permissions=True)
-		frappe.throw("Mandate authorisation signature invalid", frappe.ValidationError)
+		frappe.throw(_("Mandate authorisation signature invalid"), frappe.ValidationError)
 
 	method.gateway_method_id = callback.get("razorpay_token_id") or callback.get("token_id")
 	transition(method, "Active", actor=frappe.session.user)

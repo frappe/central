@@ -3,6 +3,7 @@
 """Cohorts are bounded before they are projected, not after."""
 
 import frappe
+
 from central.billing.projection import cohort
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
@@ -36,9 +37,7 @@ class CohortTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for team in frappe.get_all(
-			"Team", filters={"name": ["like", f"{PREFIX}%"]}, pluck="name"
-		):
+		for team in frappe.get_all("Team", filters={"name": ["like", f"{PREFIX}%"]}, pluck="name"):
 			for sub in frappe.get_all("Subscription", {"team": team}, pluck="name"):
 				frappe.db.delete("Subscription Change", {"subscription": sub})
 				frappe.db.delete("Subscription", {"name": sub})
@@ -237,7 +236,10 @@ class TestTheBatch(CohortTestBase):
 	def test_pruning_drops_old_batches_and_their_rows(self):
 		result = self._batch()
 		frappe.db.set_value(
-			"Billing Projection Batch", result["batch"], "creation", "2020-01-01 00:00:00",
+			"Billing Projection Batch",
+			result["batch"],
+			"creation",
+			"2020-01-01 00:00:00",
 			update_modified=False,
 		)
 		frappe.db.commit()
@@ -246,9 +248,7 @@ class TestTheBatch(CohortTestBase):
 
 		self.assertGreaterEqual(batch.prune(days=30), 1)
 		self.assertFalse(frappe.db.exists("Billing Projection Batch", result["batch"]))
-		self.assertEqual(
-			frappe.db.count("Billing Projection Summary", {"batch": result["batch"]}), 0
-		)
+		self.assertEqual(frappe.db.count("Billing Projection Summary", {"batch": result["batch"]}), 0)
 
 
 class TestTheQueue(IntegrationTestCase):
@@ -356,9 +356,7 @@ class TestTheReport(CohortTestBase):
 
 	def test_a_sampled_batch_never_reads_as_measured(self):
 		name = self._run_batch()
-		frappe.db.set_value(
-			"Billing Projection Batch", name, {"sampled": 1, "sample_size": 500}
-		)
+		frappe.db.set_value("Billing Projection Batch", name, {"sampled": 1, "sample_size": 500})
 		frappe.db.commit()
 		_c, _rows, message, _chart, _s = self._execute(batch=name)
 		self.assertIn("Extrapolated", message)
@@ -369,7 +367,8 @@ class TestTheReport(CohortTestBase):
 		frappe.db.set_value(
 			"Billing Projection Summary",
 			frappe.get_all("Billing Projection Summary", {"batch": inr}, pluck="name")[0],
-			"currency", "USD",
+			"currency",
+			"USD",
 		)
 		frappe.db.commit()
 		_c, rows, _m, _chart, summary = self._execute(batch=inr)
@@ -502,8 +501,7 @@ class TestSplitCurrencyColumns(IntegrationTestCase):
 
 		columns = [
 			{"label": "Team", "fieldname": "team", "fieldtype": "Data"},
-			{"label": "Total", "fieldname": "total", "fieldtype": "Currency",
-			 "options": "currency"},
+			{"label": "Total", "fieldname": "total", "fieldtype": "Currency", "options": "currency"},
 			{"label": "Currency", "fieldname": "currency", "fieldtype": "Data"},
 		]
 		rows = [

@@ -15,6 +15,7 @@ the load-bearing constraint that stops the stream becoming a second source of tr
 """
 
 import frappe
+from frappe import _
 
 
 class InvalidTransition(frappe.ValidationError):
@@ -173,7 +174,7 @@ _MACHINES = {
 def machine_for(doctype: str) -> StateMachine:
 	machine = _MACHINES.get(doctype)
 	if not machine:
-		frappe.throw(f"No billing state machine owns {doctype}.", InvalidTransition)
+		frappe.throw(_("No billing state machine owns {0}.").format(doctype), InvalidTransition)
 	return machine
 
 
@@ -207,7 +208,7 @@ def transition(
 		return
 	if not machine.allows(from_state, to_state):
 		frappe.throw(
-			f"{doc.doctype} {doc.name}: illegal transition {from_state} → {to_state}.",
+			_("{0} {1}: illegal transition {2} → {3}.").format(doc.doctype, doc.name, from_state, to_state),
 			InvalidTransition,
 		)
 	doc.set(machine.field, to_state)

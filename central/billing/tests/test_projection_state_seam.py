@@ -9,6 +9,7 @@ database, unchanged.
 """
 
 import frappe
+
 from central.billing.payments import settlement
 from central.billing.revenue import credits
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase

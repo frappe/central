@@ -17,6 +17,7 @@ issued line item is never mutated (see billing.reissue_invoice).
 """
 
 import frappe
+from frappe import _
 
 from central.billing.revenue import credits
 from central.billing.states import transition
@@ -37,13 +38,13 @@ def issue_refund(payment_attempt: str, amount=None, destination: str = "Source",
 	attempt = frappe.get_doc("Payment Attempt", payment_attempt)
 	if attempt.status not in ("Captured", "Refunded"):
 		frappe.throw(
-			f"Only a captured charge can be refunded (attempt is {attempt.status}).",
+			_("Only a captured charge can be refunded (attempt is {0}).").format(attempt.status),
 			frappe.ValidationError,
 		)
 
 	amount = frappe.utils.flt(amount) if amount else frappe.utils.flt(attempt.amount)
 	if amount <= 0 or amount > frappe.utils.flt(attempt.amount):
-		frappe.throw("Refund amount must be > 0 and <= the captured amount.", frappe.ValidationError)
+		frappe.throw(_("Refund amount must be > 0 and <= the captured amount."), frappe.ValidationError)
 
 	refund = frappe.get_doc(
 		{

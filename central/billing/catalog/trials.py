@@ -13,6 +13,7 @@ expiry reuses the suspend directive on the entitlement-token channel.
 """
 
 import frappe
+from frappe import _
 
 
 def entry_tier() -> str | None:
@@ -60,7 +61,7 @@ def convert_to_paid(team: str, level: str | None = None):
 			limit=1,
 		)
 		if not paid:
-			frappe.throw("No paid tier level configured to convert into.", frappe.ValidationError)
+			frappe.throw(_("No paid tier level configured to convert into."), frappe.ValidationError)
 		level = paid[0].name
 
 	from central.billing.catalog import entitlements

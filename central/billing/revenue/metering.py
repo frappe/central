@@ -19,6 +19,7 @@ selects one of two modes:
 """
 
 import frappe
+from frappe import _
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 
@@ -169,7 +170,7 @@ def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = 
 	name = live_rollup(rollup)
 	old = frappe.get_doc("Usage Rollup", name)
 	if rate is None and allowance is None:
-		frappe.throw("Nothing to correct: give a rate, an allowance, or both.", frappe.ValidationError)
+		frappe.throw(_("Nothing to correct: give a rate, an allowance, or both."), frappe.ValidationError)
 
 	new = frappe.copy_doc(old)
 	new.locked_rate = old.locked_rate if rate is None else rate
@@ -217,7 +218,7 @@ def ingest_rollup(meter: dict) -> str | None:
 	qty = frappe.utils.flt(meter.get("quantity"))
 	seq = frappe.utils.cint(meter.get("sequence"))
 
-	for _ in range(_INGEST_RACE_RETRIES):
+	for _attempt in range(_INGEST_RACE_RETRIES):
 		existing = frappe.db.get_value(
 			"Usage Rollup",
 			{"idempotency_key": key},
@@ -331,9 +332,7 @@ def metered_line_items_for_clusters(
 	return _metered_lines(team, list(clusters), period_start, period_end, explain)
 
 
-def _metered_lines(
-	team: str, clusters: list, period_start, period_end, explain: bool = False
-) -> list[dict]:
+def _metered_lines(team: str, clusters: list, period_start, period_end, explain: bool = False) -> list[dict]:
 	"""One line per overage rollup for `team` in any of `clusters` (see the two public
 	wrappers). The rollup carries its own cluster, so a multi-cluster run tags each line
 	correctly and prices Live plans against the rollup's cluster."""
@@ -460,8 +459,7 @@ def _metered_lines(
 				# was ingested.
 				"rate_source": "current catalog rate" if live else "locked at ingest",
 				"arithmetic": (
-					f"max(0, {frappe.utils.flt(r.quantity)} − {frappe.utils.flt(allowance)})"
-					f" × {rate}"
+					f"max(0, {frappe.utils.flt(r.quantity)} − {frappe.utils.flt(allowance)}) × {rate}"
 				),
 			}
 		lines.append(line)

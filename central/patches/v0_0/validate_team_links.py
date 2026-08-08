@@ -9,6 +9,7 @@ fully linked.
 """
 
 import frappe
+from frappe import _
 
 from central.patches.v0_0.migrate_team_to_central_team import (
 	TEAM_DOCTYPES,
@@ -19,7 +20,7 @@ def execute() -> None:
 	for doctype in TEAM_DOCTYPES:
 		field = frappe.get_meta(doctype).get_field("team")
 		if field.fieldtype != "Link" or field.options != "Team":
-			frappe.throw(f"{doctype}.team is not a Link → Team (got {field.fieldtype}).")
+			frappe.throw(_("{0}.team is not a Link → Team (got {1}).").format(doctype, field.fieldtype))
 
 		child = frappe.qb.DocType(doctype)
 		team = frappe.qb.DocType("Team")
@@ -33,4 +34,6 @@ def execute() -> None:
 			.run(pluck=True)
 		)
 		if orphans:
-			frappe.throw(f"{doctype} has {len(orphans)} team value(s) linking to no Team: {orphans}")
+			frappe.throw(
+				_("{0} has {1} team value(s) linking to no Team: {2}").format(doctype, len(orphans), orphans)
+			)

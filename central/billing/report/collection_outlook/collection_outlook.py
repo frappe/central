@@ -31,18 +31,33 @@ def execute(filters: dict | None = None):
 def get_columns() -> list[dict]:
 	return [
 		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 150},
-		{"label": _("Invoice"), "fieldname": "invoice", "fieldtype": "Link",
-		 "options": "Invoice", "width": 150},
-		{"label": _("Outstanding"), "fieldname": "outstanding", "fieldtype": "Currency",
-		 "options": "currency", "width": 130},
+		{
+			"label": _("Invoice"),
+			"fieldname": "invoice",
+			"fieldtype": "Link",
+			"options": "Invoice",
+			"width": 150,
+		},
+		{
+			"label": _("Outstanding"),
+			"fieldname": "outstanding",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 130,
+		},
 		{"label": _("Stage"), "fieldname": "stage", "fieldtype": "Data", "width": 110},
 		{"label": _("Next action"), "fieldname": "next_action", "fieldtype": "Data", "width": 110},
 		{"label": _("On"), "fieldname": "next_action_on", "fieldtype": "Date", "width": 100},
 		{"label": _("Suspends on"), "fieldname": "suspends_on", "fieldtype": "Date", "width": 110},
 		{"label": _("Due"), "fieldname": "due_date", "fieldtype": "Date", "width": 100},
 		{"label": _("Clock starts"), "fieldname": "clock_starts_on", "fieldtype": "Date", "width": 110},
-		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Link",
-		 "options": "Currency", "width": 90},
+		{
+			"label": _("Currency"),
+			"fieldname": "currency",
+			"fieldtype": "Link",
+			"options": "Currency",
+			"width": 90,
+		},
 	]
 
 
@@ -54,16 +69,26 @@ def _summary(rows) -> list[dict]:
 	tiles = [
 		{"label": _("Unpaid invoices"), "value": len(rows), "datatype": "Int"},
 		{"label": _("Awaiting the customer"), "value": len(awaiting), "datatype": "Int"},
-		{"label": _("Clock deferred by us"), "value": len(deferred), "datatype": "Int",
-		 "indicator": "Orange" if deferred else "Green"},
+		{
+			"label": _("Clock deferred by us"),
+			"value": len(deferred),
+			"datatype": "Int",
+			"indicator": "Orange" if deferred else "Green",
+		},
 	]
 	by_currency: dict = {}
 	for row in rows:
 		by_currency.setdefault(row["currency"], 0.0)
 		by_currency[row["currency"]] += frappe.utils.flt(row["outstanding"])
 	for currency, total in sorted(by_currency.items()):
-		tiles.append({"label": _("Outstanding {0}").format(currency), "value": total,
-					  "datatype": "Currency", "currency": currency})
+		tiles.append(
+			{
+				"label": _("Outstanding {0}").format(currency),
+				"value": total,
+				"datatype": "Currency",
+				"currency": currency,
+			}
+		)
 	return tiles
 
 

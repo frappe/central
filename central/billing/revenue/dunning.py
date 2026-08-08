@@ -98,8 +98,7 @@ def dunning_schedule(clock_start, policy=None) -> list[frappe._dict]:
 	policy = policy or dunning_policy()
 	start = frappe.utils.getdate(clock_start)
 	stages = [
-		frappe._dict(stage="Retry", attempt=n, day=day)
-		for n, day in enumerate(policy.retry_days, start=1)
+		frappe._dict(stage="Retry", attempt=n, day=day) for n, day in enumerate(policy.retry_days, start=1)
 	]
 	stages.append(frappe._dict(stage="Overdue", day=policy.overdue_after))
 	stages.append(frappe._dict(stage="Suspend", day=policy.suspend_after))

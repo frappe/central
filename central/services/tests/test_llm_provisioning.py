@@ -46,11 +46,10 @@ class TestLLMProvisioning(IntegrationTestCase):
 		_ensure_llm_service()
 		# Frappe rolls the suite back only at class teardown, so wipe our own rows
 		# between methods to avoid the composite-unique guard tripping on reuse.
-		frappe.db.delete("Site Service Credential", {"site": self.site})
 		for ms in frappe.get_all(
 			"Managed Service", {"team": self.team, "add_on_service": "llm"}, pluck="name"
 		):
-			frappe.db.delete("Service API Key", {"managed_service": ms})
+			frappe.db.delete("Service Credential", {"managed_service": ms})
 		frappe.db.delete("Managed Service", {"team": self.team, "add_on_service": "llm"})
 		frappe.db.delete("Service Backend", {"service": "llm"})
 
@@ -94,7 +93,8 @@ class TestLLMProvisioning(IntegrationTestCase):
 			out = provisioning.enable_site(self.managed.name, self.site)
 
 		self.assertEqual(out["status"], "Active")
-		credential = frappe.get_doc("Site Service Credential", out["credential"])
+		credential = frappe.get_doc("Service Credential", out["credential"])
+		self.assertEqual(credential.subject_type, "Site")
 		self.assertEqual(credential.gateway_url, _FAKE["gateway_url"])
 		self.assertEqual(credential.get_password("api_key"), _FAKE["api_key"])
 
@@ -145,7 +145,8 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 		self.assertEqual(out["status"], "Active")
 		self.assertEqual(out["api_key"], _FAKE["api_key"])
-		key = frappe.get_doc("Service API Key", out["name"])
+		key = frappe.get_doc("Service Credential", out["name"])
+		self.assertEqual(key.subject_type, "Team")
 		self.assertEqual(key.label, "n8n prod")
 		self.assertEqual(key.get_password("api_key"), _FAKE["api_key"])
 		# list never leaks the secret
@@ -163,7 +164,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 		with patch.object(GroveDriver, "revoke_site") as revoke:
 			dashboard.revoke_api_key(out["name"])
 		revoke.assert_called_once()
-		self.assertEqual(frappe.db.get_value("Service API Key", out["name"], "status"), "Revoked")
+		self.assertEqual(frappe.db.get_value("Service Credential", out["name"], "status"), "Revoked")
 		# a revoked key can't be revealed
 		with self.assertRaises(frappe.ValidationError):
 			dashboard.reveal_api_key(out["name"])
@@ -203,7 +204,7 @@ class TestLLMProvisioning(IntegrationTestCase):
 
 		instance = dashboard.get_instance(self.managed.name)
 		self.assertEqual(instance["status"], "Active")
-		self.assertIn(self.site, instance["enabled_sites"])
+		self.assertIn(self.site, [row["site"] for row in instance["enabled_sites"]])
 		self.assertIsInstance(instance["models"], list)
 
 	def test_reads_require_capability(self):

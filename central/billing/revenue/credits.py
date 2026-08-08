@@ -36,6 +36,7 @@ import random
 import time
 
 import frappe
+from frappe import _
 from frappe.query_builder import Case
 from frappe.query_builder.functions import Sum
 
@@ -145,7 +146,7 @@ def _book_entry(
 	"""
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
-		frappe.throw("Credit amount must be positive.", frappe.ValidationError)
+		frappe.throw(_("Credit amount must be positive."), frappe.ValidationError)
 	currency = _resolve_currency(team, currency)
 
 	for attempt in range(_DEADLOCK_RETRIES):
@@ -280,7 +281,7 @@ def _existing_payment_entry(gateway_payment_id: str | None):
 	)
 	if not name:
 		# Duplicate fired but the row is gone (or no id) — nothing to return to.
-		frappe.throw("Credit booking conflicted but no prior entry found.", frappe.ValidationError)
+		frappe.throw(_("Credit booking conflicted but no prior entry found."), frappe.ValidationError)
 	entry = frappe.get_doc("Credit Ledger Entry", name)
 	balance = frappe.db.get_value("Credit Wallet", wallet_name(entry.team, entry.currency), "balance")
 	return entry, frappe.utils.flt(balance)
@@ -397,7 +398,7 @@ def adjust_credits(
 ) -> dict:
 	"""Admin manual correction — a credit or debit entry with an audit note."""
 	if entry_type not in ("Credit", "Debit"):
-		frappe.throw("entry_type must be 'Credit' or 'Debit'.", frappe.ValidationError)
+		frappe.throw(_("entry_type must be 'Credit' or 'Debit'."), frappe.ValidationError)
 	entry, new_balance = _book_entry(
 		team, entry_type, amount, currency, reference_type="Admin", note=note or "Admin adjustment"
 	)

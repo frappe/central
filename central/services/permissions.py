@@ -13,8 +13,8 @@ from central.utils.guards import bound_args
 def require_service_capability(capability: str) -> Callable:
 	"""Gate a service endpoint on a team capability. Team access to services is
 	capability-scoped (central.iam), not Frappe roles — so team users hold no DocType
-	permission and every endpoint passes through this instead. Resolves the team from
-	the call: a `team` arg, else the `managed_service`, else a Service API Key `name`."""
+	permission and every endpoint passes through this instead. 	Resolves the team from
+	the call: a `team` arg, else the `managed_service`, else a Service Credential `name`."""
 
 	def decorator(func: Callable) -> Callable:
 		@functools.wraps(func)
@@ -34,7 +34,7 @@ def _resolve_team(func: Callable, args: tuple, kwargs: dict) -> str:
 
 	managed_service = bound.get("managed_service")
 	if not managed_service and bound.get("name"):
-		managed_service = frappe.db.get_value("Service API Key", bound["name"], "managed_service")
+		managed_service = frappe.db.get_value("Service Credential", bound["name"], "managed_service")
 
 	team = frappe.db.get_value("Managed Service", managed_service, "team") if managed_service else None
 	if not team:

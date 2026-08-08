@@ -3,6 +3,7 @@
 """Projecting one team over one period."""
 
 import frappe
+
 from central.billing.projection import engine
 from central.billing.projection.basis import ESTIMATED, MEASURED
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -156,22 +157,26 @@ class TestTheCalendar(ProjectionTestBase):
 
 class TestInvoicesAlreadyInFlight(ProjectionTestBase):
 	def _open_invoice(self, due, dunning_starts_on=None):
-		return frappe.get_doc(
-			{
-				"doctype": "Invoice",
-				"team": TEAM,
-				"subscription": self.sub,
-				"status": "Open",
-				"period_start": "2026-07-01",
-				"period_end": "2026-07-31",
-				"currency": "INR",
-				"subtotal": 5000,
-				"total": 5000,
-				"expected_collection": 5000,
-				"due_date": due,
-				"dunning_starts_on": dunning_starts_on,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"subscription": self.sub,
+					"status": "Open",
+					"period_start": "2026-07-01",
+					"period_end": "2026-07-31",
+					"currency": "INR",
+					"subtotal": 5000,
+					"total": 5000,
+					"expected_collection": 5000,
+					"due_date": due,
+					"dunning_starts_on": dunning_starts_on,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def test_an_unpaid_invoice_carries_its_own_ladder(self):
 		name = self._open_invoice("2026-08-01")
@@ -210,9 +215,7 @@ class TestOutcomeReachesTheProjection(ProjectionTestBase):
 
 		self.assertEqual(out["outcome"]["mode"], "Derived")
 		self.assertEqual(out["outcome"]["entailed_branch"], "if_never_paid")
-		self.assertIn(
-			"no_settlement_source", {f["finding"] for f in out["outcome"]["findings"]}
-		)
+		self.assertIn("no_settlement_source", {f["finding"] for f in out["outcome"]["findings"]})
 
 	def test_both_branches_are_still_returned_when_one_is_entailed(self):
 		# Marking an arm must not hide the other: the fork is what the operator came for.
@@ -225,9 +228,7 @@ class TestOutcomeReachesTheProjection(ProjectionTestBase):
 	def test_optimistic_mode_asserts_settlement_and_derives_nothing(self):
 		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
 		frappe.db.commit()
-		out = engine.project(
-			TEAM, "2026-09-01", "2026-09-30", today="2026-08-06", mode="Optimistic"
-		)
+		out = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06", mode="Optimistic")
 		self.assertEqual(out["outcome"]["entailed_branch"], "if_paid_on_time")
 		self.assertEqual(out["outcome"]["findings"], [])
 
@@ -235,8 +236,12 @@ class TestOutcomeReachesTheProjection(ProjectionTestBase):
 		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
 		frappe.db.commit()
 		out = engine.project(
-			TEAM, "2026-09-01", "2026-09-30", today="2026-08-06",
-			mode="Assumed", assume="never_pays",
+			TEAM,
+			"2026-09-01",
+			"2026-09-30",
+			today="2026-08-06",
+			mode="Assumed",
+			assume="never_pays",
 		)
 		self.assertEqual(out["outcome"]["assumed"], "never_pays")
 		self.assertEqual(out["outcome"]["entailed_branch"], "if_never_paid")

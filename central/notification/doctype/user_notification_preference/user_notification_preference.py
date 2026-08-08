@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -32,4 +33,4 @@ class UserNotificationPreference(Document):
 			},
 		)
 		if existing:
-			frappe.throw(f"Preference for {self.category} already exists on this team")
+			frappe.throw(_("Preference for {0} already exists on this team").format(self.category))

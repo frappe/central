@@ -112,9 +112,7 @@ def _days_late(invoice, on) -> int | None:
 
 
 def _times_dunned(team: str, since) -> int:
-	return frappe.db.count(
-		"Payment Attempt", {"team": team, "status": "Failed", "creation": [">=", since]}
-	)
+	return frappe.db.count("Payment Attempt", {"team": team, "status": "Failed", "creation": [">=", since]})
 
 
 def _ever_suspended(team: str) -> bool:

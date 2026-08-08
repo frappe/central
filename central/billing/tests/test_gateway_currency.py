@@ -102,9 +102,7 @@ class TestGatewayRoster(GatewayCurrencyTestCase):
 	def test_a_row_exists_for_every_adapter_and_is_named_after_it(self):
 		for adapter_key in adapter_keys():
 			self.assertTrue(frappe.db.exists("Payment Gateway", adapter_key))
-			self.assertEqual(
-				frappe.db.get_value("Payment Gateway", adapter_key, "adapter_key"), adapter_key
-			)
+			self.assertEqual(frappe.db.get_value("Payment Gateway", adapter_key, "adapter_key"), adapter_key)
 
 	def test_a_second_row_for_the_same_adapter_is_rejected(self):
 		with self.assertRaises(frappe.DuplicateEntryError):

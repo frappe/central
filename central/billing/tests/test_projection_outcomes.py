@@ -3,6 +3,7 @@
 """Derived outcomes: assert failure only where the state entails it."""
 
 import frappe
+
 from central.billing.projection import outcomes
 from central.billing.revenue import credits
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
@@ -161,9 +162,7 @@ class TestTheIndianThreshold(OutcomeTestBase):
 		self._mandate(ceiling=100000)
 		frappe.db.commit()
 		self._derive(amount=40000.0)
-		self.assertEqual(
-			frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "E-Mandate"
-		)
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "E-Mandate")
 
 
 class TestOnSessionModes(OutcomeTestBase):

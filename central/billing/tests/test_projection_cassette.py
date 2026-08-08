@@ -3,6 +3,7 @@
 """Diffing across code with the inputs held fixed, rather than across time."""
 
 import frappe
+
 from central.billing.projection import cassette, engine
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
@@ -68,9 +69,7 @@ class TestDiffing(IntegrationTestCase):
 		self.assertEqual(cassette.diff(before, dict(before)), [])
 
 	def test_a_moved_number_is_found_with_its_path(self):
-		out = cassette.diff(
-			{"invoice": {"total": 100.0}}, {"invoice": {"total": 120.0}}
-		)
+		out = cassette.diff({"invoice": {"total": 100.0}}, {"invoice": {"total": 120.0}})
 		self.assertEqual(len(out), 1)
 		self.assertEqual(out[0]["path"], "invoice.total")
 		self.assertEqual(out[0]["after"], 120.0)
@@ -94,9 +93,7 @@ class TestDiffing(IntegrationTestCase):
 		self.assertEqual(cassette.diff({"as_of": "2026-01-01"}, {"as_of": "2026-06-01"}), [])
 
 	def test_the_report_ranks_the_worst_money_move_first(self):
-		out = cassette.report(
-			{"a": 100.0, "b": 100.0}, {"a": 101.0, "b": 500.0}
-		)
+		out = cassette.report({"a": 100.0, "b": 100.0}, {"a": 101.0, "b": 500.0})
 		self.assertTrue(out["changed"])
 		self.assertEqual(out["worst"]["path"], "b")
 

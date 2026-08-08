@@ -3,6 +3,7 @@
 """The shelf of canned questions."""
 
 import frappe
+
 from central.billing.projection import library, scenario
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
@@ -122,9 +123,7 @@ class TestWhatTheyDemonstrate(LibraryTestBase):
 		harsh = scenario.project(library.build("harsher-dunning", TEAM, today=TODAY), today=TODAY)
 
 		def suspend_on(out):
-			return next(
-				s["date"] for s in out["calendar"]["if_never_paid"] if s["stage"] == "Suspend"
-			)
+			return next(s["date"] for s in out["calendar"]["if_never_paid"] if s["stage"] == "Suspend")
 
 		self.assertLess(suspend_on(harsh), suspend_on(plain))
 

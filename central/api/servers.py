@@ -530,13 +530,13 @@ def create_composed_server(
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
-		frappe.throw("You can't create servers for this team.", frappe.PermissionError)
+		frappe.throw(_("You can't create servers for this team."), frappe.PermissionError)
 	# A server bills the team, so it needs a billing profile first.
 	from central.billing.api.dashboard._shared import require_billing_profile
 
 	require_billing_profile(team, "create servers")
 	if not region:
-		frappe.throw("region is required.", frappe.ValidationError)
+		frappe.throw(_("Region is required."), frappe.ValidationError)
 	if isinstance(includes, str):
 		includes = frappe.parse_json(includes)
 	_validate_frappe_version(frappe_version, region)

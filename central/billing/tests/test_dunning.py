@@ -330,9 +330,7 @@ class TestTheLadderIsAList(IntegrationTestCase):
 		)
 
 	def _on(self, schedule, stage, attempt=None):
-		return [
-			s for s in schedule if s.stage == stage and (attempt is None or s.attempt == attempt)
-		][0]
+		return [s for s in schedule if s.stage == stage and (attempt is None or s.attempt == attempt)][0]
 
 	def test_every_stage_lands_the_configured_number_of_days_out(self):
 		sched = dunning.dunning_schedule(self.START, self._policy())
@@ -355,9 +353,7 @@ class TestTheLadderIsAList(IntegrationTestCase):
 		self.assertFalse([s for s in sched if s.stage == "Retry"])
 
 	def test_an_explicit_policy_is_used_instead_of_the_settings(self):
-		sched = dunning.dunning_schedule(
-			self.START, self._policy(retries=(2,), suspend=5, terminate=9)
-		)
+		sched = dunning.dunning_schedule(self.START, self._policy(retries=(2,), suspend=5, terminate=9))
 		self.assertEqual(str(self._on(sched, "Suspend").date), "2026-06-06")
 		self.assertEqual(str(self._on(sched, "Terminate").date), "2026-06-10")
 
@@ -370,18 +366,14 @@ class TestTheLadderIsAList(IntegrationTestCase):
 		sched = dunning.dunning_schedule(self.START, self._policy())
 		self.assertEqual(dunning.stages_reached(sched, "2026-06-02"), {"Retry"})
 		self.assertEqual(dunning.stages_reached(sched, "2026-06-08"), {"Retry", "Overdue"})
-		self.assertEqual(
-			dunning.stages_reached(sched, "2026-06-15"), {"Retry", "Overdue", "Suspend"}
-		)
+		self.assertEqual(dunning.stages_reached(sched, "2026-06-15"), {"Retry", "Overdue", "Suspend"})
 		self.assertEqual(
 			dunning.stages_reached(sched, "2026-07-15"),
 			{"Retry", "Overdue", "Suspend", "Terminate"},
 		)
 
 	def test_the_policy_reads_the_settings(self):
-		with billing_settings(
-			dunning_retry_days="2, 5", suspend_after_days=9, terminate_after_days=20
-		):
+		with billing_settings(dunning_retry_days="2, 5", suspend_after_days=9, terminate_after_days=20):
 			policy = dunning.dunning_policy()
 		self.assertEqual(policy.retry_days, [2, 5])
 		self.assertEqual(policy.overdue_after, 5)

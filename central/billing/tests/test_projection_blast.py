@@ -36,15 +36,11 @@ class TestTheComparison(IntegrationTestCase):
 		self.assertEqual(list(out["revenue_delta"]), ["INR"])
 
 	def test_a_team_that_becomes_short_is_counted_once(self):
-		out = blast.compare_rows(
-			[row("a", shortfall=0)], [row("a", shortfall=500)]
-		)
+		out = blast.compare_rows([row("a", shortfall=0)], [row("a", shortfall=500)])
 		self.assertEqual(out["newly_short"], ["a"])
 
 	def test_a_team_already_short_is_not_counted_as_newly_short(self):
-		out = blast.compare_rows(
-			[row("a", shortfall=200)], [row("a", shortfall=500)]
-		)
+		out = blast.compare_rows([row("a", shortfall=200)], [row("a", shortfall=500)])
 		self.assertEqual(out["newly_short"], [])
 
 	def test_a_suspension_appearing_is_distinguished_from_one_moving(self):
@@ -58,9 +54,7 @@ class TestTheComparison(IntegrationTestCase):
 		self.assertEqual(out["suspension_moved_earlier"], ["b"])
 
 	def test_a_suspension_moving_later_is_counted_separately_again(self):
-		out = blast.compare_rows(
-			[row("a", suspends_on="2026-10-10")], [row("a", suspends_on="2026-10-25")]
-		)
+		out = blast.compare_rows([row("a", suspends_on="2026-10-10")], [row("a", suspends_on="2026-10-25")])
 		self.assertEqual(out["suspension_moved_later"], ["a"])
 		self.assertEqual(out["suspension_moved_earlier"], [])
 
@@ -111,9 +105,7 @@ class TestDescribing(IntegrationTestCase):
 
 	def test_a_change_that_bites_leads_with_the_damage(self):
 		summary = blast.summarise(
-			blast.compare_rows(
-				[row("a", 1000)], [row("a", 1000, shortfall=500, suspends_on="2026-10-20")]
-			)
+			blast.compare_rows([row("a", 1000)], [row("a", 1000, shortfall=500, suspends_on="2026-10-20")])
 		)
 		line = blast.describe(summary)
 		self.assertIn("newly suspending", line)

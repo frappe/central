@@ -221,9 +221,10 @@ class TestForecast(SettlementTestBase):
 	def test_forecasting_without_notify_reaches_neither_the_customer_nor_the_socket(self):
 		# The verdict still says a prompt is due; asking for the verdict must not send it.
 		credits.purchase(TEAM, 100, "INR")
-		with patch("central.billing.platform.notifications.notify") as notified, patch.object(
-			frappe, "publish_realtime"
-		) as published:
+		with (
+			patch("central.billing.platform.notifications.notify") as notified,
+			patch.object(frappe, "publish_realtime") as published,
+		):
 			self.assertTrue(credit_forecast(TEAM, 130, notify=False)["notify"])
 			self.assertFalse(notified.called)
 			self.assertFalse(published.called)

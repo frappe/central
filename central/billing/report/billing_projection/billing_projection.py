@@ -59,9 +59,19 @@ def _rows(batch: str, filters) -> list[dict]:
 		"Billing Projection Summary",
 		filters=conditions,
 		fields=[
-			"team", "currency", "projected_total", "measured", "estimated",
-			"credit_balance", "shortfall", "settles_via", "outcome", "outcome_reason",
-			"due_on", "suspends_on", "as_of",
+			"team",
+			"currency",
+			"projected_total",
+			"measured",
+			"estimated",
+			"credit_balance",
+			"shortfall",
+			"settles_via",
+			"outcome",
+			"outcome_reason",
+			"due_on",
+			"suspends_on",
+			"as_of",
 		],
 		order_by="suspends_on asc, projected_total desc",
 		limit_page_length=0,
@@ -79,15 +89,30 @@ def get_columns() -> list[dict]:
 	"""
 	return [
 		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 170},
-		{"label": _("Projected"), "fieldname": "projected_total", "fieldtype": "Currency",
-		 "options": "currency", "width": 140},
-		{"label": _("Shortfall"), "fieldname": "shortfall", "fieldtype": "Currency",
-		 "options": "currency", "width": 130},
+		{
+			"label": _("Projected"),
+			"fieldname": "projected_total",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 140,
+		},
+		{
+			"label": _("Shortfall"),
+			"fieldname": "shortfall",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 130,
+		},
 		{"label": _("Outcome"), "fieldname": "outcome", "fieldtype": "Data", "width": 210},
 		{"label": _("Suspends on"), "fieldname": "suspends_on", "fieldtype": "Date", "width": 115},
 		{"label": _("Paid on time"), "fieldname": "paid_on_time", "fieldtype": "Data", "width": 105},
-		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Link",
-		 "options": "Currency", "width": 90},
+		{
+			"label": _("Currency"),
+			"fieldname": "currency",
+			"fieldtype": "Link",
+			"options": "Currency",
+			"width": 90,
+		},
 	]
 
 
@@ -98,8 +123,12 @@ def _summary(rows) -> list[dict]:
 	at_risk = [r for r in rows if r.get("suspends_on")]
 	tiles = [
 		{"label": _("Teams projected"), "value": len(rows), "datatype": "Int"},
-		{"label": _("Suspending"), "value": len(at_risk), "datatype": "Int",
-		 "indicator": "Red" if at_risk else "Green"},
+		{
+			"label": _("Suspending"),
+			"value": len(at_risk),
+			"datatype": "Int",
+			"indicator": "Red" if at_risk else "Green",
+		},
 	]
 	by_currency: dict = {}
 	for row in rows:
@@ -108,8 +137,12 @@ def _summary(rows) -> list[dict]:
 			by_currency[row["currency"]] += frappe.utils.flt(row.get("projected_total"))
 	for currency, total in sorted(by_currency.items()):
 		tiles.append(
-			{"label": _("Projected {0}").format(currency), "value": total,
-			 "datatype": "Currency", "currency": currency}
+			{
+				"label": _("Projected {0}").format(currency),
+				"value": total,
+				"datatype": "Currency",
+				"currency": currency,
+			}
 		)
 	return tiles
 
@@ -117,7 +150,8 @@ def _summary(rows) -> list[dict]:
 def _batch_note(batch: str) -> str | None:
 	"""Say which batch is on screen, when it ran, and whether it finished."""
 	doc = frappe.db.get_value(
-		"Billing Projection Batch", batch,
+		"Billing Projection Batch",
+		batch,
 		["as_of", "batch_state", "teams_projected", "teams_expected", "sampled", "sample_size", "note"],
 		as_dict=True,
 	)
@@ -134,9 +168,7 @@ def _batch_note(batch: str) -> str | None:
 	if doc.sampled:
 		# An extrapolated figure must never be read as a measured one.
 		parts.append(
-			_("<b>Extrapolated from a sample of {0}</b> — totals are estimates.").format(
-				doc.sample_size
-			)
+			_("<b>Extrapolated from a sample of {0}</b> — totals are estimates.").format(doc.sample_size)
 		)
 	return f'<div class="text-muted">{" · ".join(parts)}</div>'
 
@@ -159,8 +191,10 @@ def _nothing_projected(filters) -> str:
 		"{0} teams over {1} month(s) would take about {2}s, against a budget of {3}s.<br>"
 		"Narrow it by {4}, shorten the range, or take a sample.</div>"
 	).format(
-		sizing.teams, sizing.months,
-		round(sizing.estimated_seconds), sizing.budget_seconds,
+		sizing.teams,
+		sizing.months,
+		round(sizing.estimated_seconds),
+		sizing.budget_seconds,
 		", ".join(hints) or _("adding a filter"),
 	)
 

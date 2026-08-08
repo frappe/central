@@ -31,13 +31,13 @@ def enable_site(managed_service: str, site: str) -> dict:
 	add_on = get_active_service(service.add_on_service)
 
 	existing = frappe.db.get_value(
-		"Site Service Credential",
-		{"managed_service": managed_service, "site": site},
+		"Service Credential",
+		{"subject_type": "Site", "managed_service": managed_service, "site": site},
 		["name", "status"],
 		as_dict=True,
 	)
 	if existing and existing.status == "Active":
-		stored = frappe.get_doc("Site Service Credential", existing.name)
+		stored = frappe.get_doc("Service Credential", existing.name)
 		return _config(existing.name, site, stored.gateway_url, stored.get_password("api_key"))
 
 	backend = get_backend(add_on.name)
@@ -45,12 +45,13 @@ def enable_site(managed_service: str, site: str) -> dict:
 	result = get_driver(add_on.handler_key).provision_site(backend, site, options)
 
 	credential = (
-		frappe.get_doc("Site Service Credential", existing.name)
+		frappe.get_doc("Service Credential", existing.name)
 		if existing
-		else frappe.new_doc("Site Service Credential")
+		else frappe.new_doc("Service Credential")
 	)
 	credential.update(
 		{
+			"subject_type": "Site",
 			"managed_service": managed_service,
 			"site": site,
 			"status": "Active",
@@ -67,14 +68,14 @@ def enable_site(managed_service: str, site: str) -> dict:
 def disable_site(managed_service: str, site: str) -> dict:
 	"""Revoke a site's credential at the provider and mark it revoked."""
 	credential_name = frappe.db.get_value(
-		"Site Service Credential",
-		{"managed_service": managed_service, "site": site, "status": "Active"},
+		"Service Credential",
+		{"subject_type": "Site", "managed_service": managed_service, "site": site, "status": "Active"},
 		"name",
 	)
 	if not credential_name:
 		return {"site": site, "status": "not_enabled"}
 
-	credential = frappe.get_doc("Site Service Credential", credential_name)
+	credential = frappe.get_doc("Service Credential", credential_name)
 	add_on = get_active_service(get_managed_service(managed_service).add_on_service)
 	get_driver(add_on.handler_key).revoke_site(get_backend(add_on.name), credential.get_password("api_key"))
 	credential.db_set("status", "Revoked")

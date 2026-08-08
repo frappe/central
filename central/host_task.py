@@ -26,6 +26,7 @@ import time
 from typing import TYPE_CHECKING
 
 import frappe
+from frappe import _
 
 from central.scripts_catalog import resolve
 
@@ -93,7 +94,7 @@ def _execute(
 		stdout, stderr, exit_code = _run_script(script, variables, env, timeout_seconds)
 	except subprocess.TimeoutExpired as timeout:
 		_finalize(task, "", f"Timed out after {timeout.timeout}s", None, "Failure", _elapsed_ms(start))
-		frappe.throw(f"Host Task {task.name} timed out after {timeout.timeout}s")
+		frappe.throw(_("Host Task {0} timed out after {1}s").format(task.name, timeout.timeout))
 	except Exception as exception:
 		_finalize(task, "", str(exception), None, "Failure", _elapsed_ms(start))
 		raise frappe.ValidationError(str(exception)) from exception
@@ -101,7 +102,9 @@ def _execute(
 	status = "Success" if exit_code == 0 else "Failure"
 	_finalize(task, stdout, stderr, exit_code, status, _elapsed_ms(start))
 	if status == "Failure":
-		frappe.throw(f"Host Task {task.name} ({script}) exited {exit_code}: {stderr[-500:]}")
+		frappe.throw(
+			_("Host Task {0} ({1}) exited {2}: {3}").format(task.name, script, exit_code, stderr[-500:])
+		)
 
 
 def _run_script(

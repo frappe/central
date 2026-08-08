@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -73,7 +74,7 @@ class AtlasInstance(Document):
 	def test_connection(self) -> dict:
 		"""Operator action: ping the Atlas API and record reachability."""
 		if "System Manager" not in frappe.get_roles():
-			frappe.throw("Not permitted.", frappe.PermissionError)
+			frappe.throw(_("Not permitted."), frappe.PermissionError)
 		from central.integrations.atlas import AtlasClient
 
 		try:

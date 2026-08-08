@@ -22,6 +22,7 @@ The flow is deliberately split so curated, real-world catalogues (à la the clou
 """
 
 import frappe
+from frappe import _
 from frappe.utils import flt
 
 from central.billing.catalog.plans import RATIO_FACTORS
@@ -99,11 +100,11 @@ def build_ladder(
 	ceiling = parse_vcpu(ceiling_vcpu)
 	factor = RATIO_FACTORS.get(memory_ratio)
 	if not factor:
-		frappe.throw(f"Memory ratio must be one of {', '.join(RATIO_FACTORS)}.")
+		frappe.throw(_("Memory ratio must be one of {0}.").format(", ".join(RATIO_FACTORS)))
 	if start <= 0:
-		frappe.throw("Start vCPU must be greater than zero.")
+		frappe.throw(_("Start vCPU must be greater than zero."))
 	if ceiling < start:
-		frappe.throw("Ceiling vCPU must be at least the start vCPU.")
+		frappe.throw(_("Ceiling vCPU must be at least the start vCPU."))
 
 	rungs = []
 	vcpu = start
@@ -245,9 +246,9 @@ def apply_pricing(
 	other clusters' rows. Returns names created vs updated.
 	"""
 	if not currency:
-		frappe.throw("Currency is required.")
+		frappe.throw(_("Currency is required."))
 	if flt(base_rate) <= 0:
-		frappe.throw("Base rate must be greater than zero.")
+		frappe.throw(_("Base rate must be greater than zero."))
 
 	created, updated = [], []
 	for row in plan_multipliers:
@@ -256,7 +257,7 @@ def apply_pricing(
 		# 6 dp, matching Catalog Rate.rate — a per-unit consumer rate (e.g. per token)
 		# is a small fraction of a cent, so rounding to 2 would zero it out.
 		rate = flt(flt(base_rate) * flt(multiplier), 6)
-		_, was_created = set_catalog_rate("Plan", plan, currency, rate, cluster=cluster)
+		_name, was_created = set_catalog_rate("Plan", plan, currency, rate, cluster=cluster)
 		(created if was_created else updated).append(plan)
 	return {"created": created, "updated": updated, "cluster": cluster or None, "currency": currency}
 

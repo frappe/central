@@ -154,8 +154,7 @@ def _expiring_cards(team: str, due_on) -> list[frappe._dict]:
 				_finding(
 					"card_expires",
 					"A card expires before it would be charged",
-					f"{card.display_label or card.name} expires {expires}, before the "
-					f"{due} charge.",
+					f"{card.display_label or card.name} expires {expires}, before the {due} charge.",
 				)
 			)
 	return out
