@@ -66,11 +66,13 @@ TIERS = [
 # Output tax follows the customer's billing currency (place of supply).
 TAX_BY_CURRENCY = {"INR": ("GST", 18), "USD": ("VAT", 5)}
 
-STRIPE = {"INR": "GW-Stripe-INR", "USD": "GW-Stripe-USD"}
-RAZORPAY = "GW-Razorpay"
+# A gateway row is named after its adapter — one row per provider, carrying every
+# currency it settles.
+STRIPE = "Stripe"
+RAZORPAY = "Razorpay"
 # PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD but
 # is NOT its default — Stripe stays the card default; PayPal is the opt-in rail.
-PAYPAL = "GW-PayPal"
+PAYPAL = "Paypal"
 ANCHOR = "2026-06-01"  # the current (open) billing month
 DEMO_OWNER_PASSWORD = "abc@123"  # every demo owner logs into the console with this
 
@@ -267,26 +269,27 @@ def _gateways():
 	# Demo keys are placeholders — skip live credential validation / webhook
 	# auto-registration so the seed runs offline.
 	seed = {"skip_credential_validation": True}
-	for currency, name in STRIPE.items():
-		_upsert(
-			"Payment Gateway",
-			name,
-			{
-				"title": f"Stripe ({currency})",
-				"adapter_key": "Stripe",
-				"api_secret": "sk_test_demo",
-				"webhook_secret": "whsec_demo",
-				"is_enabled": 1,
-				"currencies": [{"currency": currency, "is_default": 1}],
-			},
-			newname=True,
-			flags=seed,
-		)
+	# One Stripe account settles both currencies. It claims the INR default too, but
+	# Razorpay is seeded after and takes it — Stripe keeps INR as a card-only rail.
+	_upsert(
+		"Payment Gateway",
+		STRIPE,
+		{
+			"adapter_key": "Stripe",
+			"api_secret": "sk_test_demo",
+			"webhook_secret": "whsec_demo",
+			"is_enabled": 1,
+			"currencies": [
+				{"currency": "INR", "is_default": 1},
+				{"currency": "USD", "is_default": 1},
+			],
+		},
+		flags=seed,
+	)
 	_upsert(
 		"Payment Gateway",
 		RAZORPAY,
 		{
-			"title": "Razorpay (India)",
 			"adapter_key": "Razorpay",
 			"api_key": "rzp_test",
 			"api_secret": "rzp_secret",
@@ -295,7 +298,6 @@ def _gateways():
 			"supports_mandates": 1,
 			"currencies": [{"currency": "INR", "is_default": 1}],
 		},
-		newname=True,
 		flags=seed,
 	)
 	# PayPal — directly-settled standalone gateway (ADR 0007). Non-default for USD
@@ -305,7 +307,6 @@ def _gateways():
 		"Payment Gateway",
 		PAYPAL,
 		{
-			"title": "PayPal (International)",
 			"adapter_key": "Paypal",
 			"api_key": "paypal_client_id",
 			"api_secret": "paypal_secret",
@@ -313,7 +314,6 @@ def _gateways():
 			"is_enabled": 1,
 			"currencies": [{"currency": "USD", "is_default": 0}],
 		},
-		newname=True,
 		flags=seed,
 	)
 
@@ -475,7 +475,7 @@ def _payment_setup(team, slug, currency, state):
 		)
 		_gateway_customer(team, RAZORPAY, f"cust_{slug}")
 		return RAZORPAY, pm
-	gateway = STRIPE[currency]
+	gateway = STRIPE
 	pm = (
 		frappe.get_doc(
 			{

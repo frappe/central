@@ -467,7 +467,7 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	gateway, pm = _payment_setup(team, slug, currency, state)
 	# A top-up-only team has no card, but its wallet top-up still mints a customer.
 	if pm is None and state in _TOPUP_STATES:
-		_gateway_customer(team, STRIPE[currency], f"cus_{slug}")
+		_gateway_customer(team, STRIPE, f"cus_{slug}")
 	# A fallback team keeps a second, lower-priority card so settlement can rotate to it
 	# when the primary declines (#28).
 	if state == "fallback":

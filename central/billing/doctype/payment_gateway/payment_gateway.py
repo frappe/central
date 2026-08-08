@@ -25,6 +25,17 @@ def _is_local_url(url: str) -> bool:
 
 
 class PaymentGateway(Document):
+	"""One row per adapter, named after it (autoname: field:adapter_key).
+
+	A second row for the same provider would be unaddressable: there is one webhook
+	callback URL per adapter, so an inbound request can't say which merchant account
+	it belongs to, and nothing on the row carries a routing key (team, region, legal
+	entity) that a resolver could split on. Making the adapter the primary key lets
+	the database enforce that rather than a validate() hook. Which currencies a
+	gateway settles — and which one it is the default for — lives in the `currencies`
+	child table; that is the routing dimension.
+	"""
+
 	def get_adapter(self):
 		"""Resolve the GatewayAdapter for this gateway (by adapter_key).
 

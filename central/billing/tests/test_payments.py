@@ -13,7 +13,7 @@ from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team
 
 TEAM = "team-cards"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 
 
 @contextmanager
@@ -33,7 +33,7 @@ def stub_adapter(validate=True):
 class CardTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		for name in frappe.get_all("Payment Method", filters={"team": TEAM}, pluck="name"):
 			frappe.delete_doc("Payment Method", name, force=True)
 		frappe.db.delete("Gateway Customer", {"team": TEAM})

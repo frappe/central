@@ -162,18 +162,16 @@ def _gateway_for_currency(currency: str) -> str:
 
 
 def _enabled_gateway_for_currency(currency: str, adapter_key: str) -> str | None:
-	"""Name of an enabled gateway with this adapter_key that handles this currency,
-	or None. Unlike the default-resolver, this picks by adapter regardless of the
-	is_default flag — used when a flow needs a specific rail (PayPal, or the Razorpay
-	a Via-Razorpay PayPal row delegates to)."""
-	rows = frappe.get_all("Payment Gateway Currency", filters={"currency": currency}, fields=["parent"])
-	for r in rows:
-		gw = frappe.db.get_value(
-			"Payment Gateway", r.parent, ["name", "adapter_key", "is_enabled"], as_dict=True
-		)
-		if gw and gw.is_enabled and gw.adapter_key == adapter_key:
-			return gw.name
-	return None
+	"""Name of the enabled gateway for this adapter, if it handles this currency.
+
+	Unlike the default-resolver this picks by adapter regardless of the is_default
+	flag — used when a flow needs a specific rail (PayPal, or the Razorpay a
+	Via-Razorpay PayPal row delegates to). A gateway row is named after its adapter,
+	so "the Stripe gateway" is a primary-key read, not a search with a tiebreak."""
+	if not frappe.db.get_value("Payment Gateway", adapter_key, "is_enabled"):
+		return None
+	handles = frappe.db.exists("Payment Gateway Currency", {"parent": adapter_key, "currency": currency})
+	return adapter_key if handles else None
 
 
 def _paypal_gateway_for_currency(currency: str) -> str:
@@ -209,21 +207,10 @@ def _add_method_gateway(currency: str):
 	if gw and gw.adapter_key == "Razorpay":
 		return gw
 
-	# The default gateway is not Razorpay — but if an enabled Razorpay gateway
-	# also handles this currency (non-default), prefer it for UPI.
-	rzp = frappe.db.get_value(
-		"Payment Gateway",
-		{"adapter_key": "Razorpay", "is_enabled": 1},
-		["name", "adapter_key"],
-		as_dict=True,
-		order_by="creation asc",
-	)
-	if rzp:
-		rzp_currencies = frappe.get_all(
-			"Payment Gateway Currency", {"parent": rzp.name, "currency": currency}, pluck="name"
-		)
-		if rzp_currencies:
-			return rzp
+	# The default gateway is not Razorpay — but if Razorpay is enabled and also
+	# handles this currency (non-default), prefer it for UPI.
+	if _enabled_gateway_for_currency(currency, "Razorpay"):
+		return frappe._dict(name="Razorpay", adapter_key="Razorpay")
 
 	return gw or frappe._dict()
 

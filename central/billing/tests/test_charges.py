@@ -20,7 +20,7 @@ from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make
 TEAM = "team-charge"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-charge-test"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 
 
 def run_workers(n, fn):
@@ -67,7 +67,7 @@ class ChargeTestBase(IntegrationTestCase):
 		ensure_team(TEAM)
 		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._purge()
 		self.method = self._active_card()
 		self.sub = subscriptions.create_subscription(

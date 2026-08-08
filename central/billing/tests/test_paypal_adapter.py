@@ -13,22 +13,19 @@ from central.billing.tests.gateway_contract import GatewayAdapterContract
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
-def make_paypal_gateway(name="GW-Test-PayPal"):
-	if frappe.db.exists("Payment Gateway", name):
-		frappe.delete_doc("Payment Gateway", name, force=True)
-	return frappe.get_doc(
-		{
-			"doctype": "Payment Gateway",
-			"__newname": name,
-			"title": "PayPal (Test)",
-			"adapter_key": "Paypal",
-			"currency": "USD",
-			"api_key": "pp_client",
-			"api_secret": "pp_secret",
-			"webhook_secret": "WH-ID-1",
-			"is_enabled": 1,
-		}
-	).insert(ignore_permissions=True)
+def make_paypal_gateway(currencies=(("USD", 0),), **values):
+	"""The PayPal gateway, configured for test. There is only one (named "Paypal")."""
+	from central.billing.tests.utils import configure_gateway
+
+	return configure_gateway(
+		"Paypal",
+		currencies,
+		api_key="pp_client",
+		api_secret="pp_secret",
+		webhook_secret="WH-ID-1",
+		is_enabled=1,
+		**values,
+	)
 
 
 class TestPayPalAdapter(GatewayAdapterContract, IntegrationTestCase):

@@ -116,6 +116,7 @@ after_install = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
+	"central.billing.gateways.setup.ensure_gateway_records",
 ]
 
 # Uninstallation
@@ -245,6 +246,7 @@ scheduler_events = {
 after_migrate = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
+	"central.billing.gateways.setup.ensure_gateway_records",
 ]
 
 # Testing
@@ -256,6 +258,7 @@ before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
+	"central.billing.gateways.setup.ensure_gateway_records",
 ]
 
 # Extend DocType Class

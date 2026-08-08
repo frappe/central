@@ -34,7 +34,7 @@ def _row(rows, month=MONTH):
 
 class TestWebhookLag(BillingTestCase):
 	def setUp(self):
-		self.gateway = make_stripe_gateway("GW-Lag-Stripe").name
+		self.gateway = make_stripe_gateway().name
 
 	def _webhook(self, received, processed):
 		event = frappe.get_doc(
@@ -117,7 +117,7 @@ class TestDunningRecovery(BillingTestCase):
 
 class TestGatewayAuthRateOverTime(BillingTestCase):
 	def setUp(self):
-		self.gateway = make_stripe_gateway("GW-Trend-Stripe").name
+		self.gateway = make_stripe_gateway().name
 		self.team = ensure_team("team-authrate")
 		self.invoice = (
 			frappe.get_doc(

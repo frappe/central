@@ -23,14 +23,13 @@ def get_gateways() -> list[dict]:
 		"Payment Gateway",
 		fields=[
 			"name",
-			"title",
 			"adapter_key",
 			"is_enabled",
 			"supports_mandates",
 			"credentials_validated_at",
 			"webhook_endpoint_id",
 		],
-		order_by="creation asc",
+		order_by="adapter_key asc",
 	)
 	for gw in gateways:
 		gw["currencies"] = frappe.get_all(

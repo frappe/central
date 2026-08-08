@@ -100,7 +100,7 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
 		frappe.db.delete("Invoice", {"team": TEAM})
-		self.gw = make_razorpay_gateway("GW-Collect-RZP").name
+		self.gw = make_razorpay_gateway().name
 		self.pm = (
 			frappe.get_doc(
 				{
@@ -169,7 +169,7 @@ class TestManualCheckout(IntegrationTestCase):
 		_set_mode(TEAM, "Manual Checkout")
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
 		frappe.db.delete("Invoice", {"team": TEAM})
-		self.gw = make_razorpay_gateway("GW-Manual-RZP").name
+		self.gw = make_razorpay_gateway().name
 
 	def _invoice(self, amount):
 		return (
@@ -257,7 +257,7 @@ class TestModeAwareDunning(IntegrationTestCase):
 		frappe.db.delete("Invoice", {"team": TEAM})
 		frappe.db.delete("Payment Method", {"team": TEAM})
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
-		self.gw = make_razorpay_gateway("GW-Dun-RZP").name
+		self.gw = make_razorpay_gateway().name
 		# An active method exists — so a retry WOULD happen if the mode allowed it.
 		frappe.get_doc(
 			{

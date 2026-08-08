@@ -20,7 +20,7 @@ class TestBillingProfileProvisioning(IntegrationTestCase):
 	def setUp(self):
 		make_ladder()  # t0 is the default entry tier, and prices INR
 		ensure_team(TEAM)
-		make_razorpay_gateway("GW-Prov-INR")  # makes INR a supported currency
+		make_razorpay_gateway()  # makes INR a supported currency
 		self._purge()
 
 	def tearDown(self):

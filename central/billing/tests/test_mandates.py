@@ -20,26 +20,13 @@ from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
 TEAM = "team-mandate"
-GATEWAY = "GW-Mandate-Razorpay"
+GATEWAY = "Razorpay"
 
 
 def make_gateway():
-	if frappe.db.exists("Payment Gateway", GATEWAY):
-		frappe.delete_doc("Payment Gateway", GATEWAY, force=True)
-	frappe.get_doc(
-		{
-			"doctype": "Payment Gateway",
-			"__newname": GATEWAY,
-			"title": "Razorpay (Mandate Test)",
-			"adapter_key": "Razorpay",
-			"currency": "INR",
-			"api_key": "rzp_test_key",
-			"api_secret": "rzp_test_secret",
-			"webhook_secret": "rzp_whsec",
-			"is_enabled": 1,
-			"supports_mandates": 1,
-		}
-	).insert(ignore_permissions=True)
+	from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+	make_razorpay_gateway([("INR", 1)])
 
 
 @contextmanager
@@ -353,33 +340,42 @@ class TestAddMethodGatewayResolution(IntegrationTestCase):
 	for INR (so UPI is offered) even when a Stripe-INR gateway is the currency
 	default; Stripe for currencies with no Razorpay."""
 
-	def _gw(self, name, adapter, currency, default=0):
-		if frappe.db.exists("Payment Gateway", name):
-			frappe.delete_doc("Payment Gateway", name, force=True)
-		frappe.get_doc(
-			{
-				"doctype": "Payment Gateway",
-				"__newname": name,
-				"title": name,
-				"adapter_key": adapter,
-				"api_key": "k",
-				"api_secret": "s",
-				"webhook_secret": "w",
-				"is_enabled": 1,
-				"supports_mandates": 1 if adapter == "Razorpay" else 0,
-				"currencies": [{"currency": currency, "is_default": default}],
-			}
-		).insert(ignore_permissions=True)
+	def setUp(self):
+		from central.billing.tests.utils import configure_gateway
+
+		# Start from a clean routing table so each test's own config decides.
+		for adapter_key in ("Stripe", "Razorpay", "Paypal"):
+			configure_gateway(adapter_key, [], is_enabled=0)
+
+	def tearDown(self):
+		# One shared row per adapter: the wipe above outlives this class unless the
+		# baseline routing is restored for whatever runs next.
+		from central.billing.tests.utils import reset_gateway_roster
+
+		reset_gateway_roster()
+
+	def _gw(self, adapter, currency, default=0):
+		from central.billing.tests.utils import configure_gateway
+
+		return configure_gateway(
+			adapter,
+			[(currency, default)],
+			api_key="k",
+			api_secret="s",
+			webhook_secret="w",
+			is_enabled=1,
+			supports_mandates=1 if adapter == "Razorpay" else 0,
+		)
 
 	def test_razorpay_wins_over_default_stripe_for_inr(self):
 		from central.billing.api import dashboard
 
-		self._gw("GW-Res-Stripe-INR", "Stripe", "INR", default=1)
-		self._gw("GW-Res-RZP-INR", "Razorpay", "INR", default=0)
+		self._gw("Stripe", "INR", default=1)
+		self._gw("Razorpay", "INR", default=0)
 		self.assertEqual(dashboard._shared._add_method_gateway("INR").adapter_key, "Razorpay")
 
 	def test_stripe_when_no_razorpay_for_currency(self):
 		from central.billing.api import dashboard
 
-		self._gw("GW-Res-Stripe-EUR", "Stripe", "EUR", default=1)
+		self._gw("Stripe", "EUR", default=1)
 		self.assertEqual(dashboard._shared._add_method_gateway("EUR").adapter_key, "Stripe")
