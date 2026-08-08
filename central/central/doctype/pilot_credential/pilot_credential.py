@@ -36,6 +36,9 @@ class PilotCredential(Document):
 		so plain SHA-256 suffices — no salted/slow password hash needed."""
 		return hashlib.sha256(token.encode()).hexdigest()
 
+	# `mint` (and `rotate`/`rotate_by_id` below) currently have no production caller —
+	# provisioning uses reserve()/issue_for(); rotation is not wired from Atlas yet.
+	# Kept as the credential-lifecycle API (exercised by tests) for when it is.
 	@classmethod
 	def mint(
 		cls,

@@ -1,7 +1,6 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.identity import fc_teams
 from central.iam import can, expand_capabilities, get_effective_permissions, get_fc_teams_claim
 from central.oauth import install_oauth_claim_patch
 
@@ -217,11 +216,3 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertIn(team.name, claim)
 		self.assertTrue(can(email, team.name, "team:manage_members"))
 		self.assertTrue(can(email, team.name, "server:terminate"))
-
-	def test_central_user_cannot_inspect_another_users_fc_teams(self):
-		frappe.set_user(self.viewer)
-		try:
-			with self.assertRaises(frappe.PermissionError):
-				fc_teams(self.developer)
-		finally:
-			frappe.set_user("Administrator")

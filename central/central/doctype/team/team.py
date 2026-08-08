@@ -60,7 +60,7 @@ class Team(Document):
 		invitation.insert()
 		return invitation.name
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.set_team_member_roles.
 	def set_member_roles(self, user: str, roles: list[dict]) -> None:
 		"""Replace every non-Owner role grant `user` holds with `roles`, each a
 		{role, resource_type, resource_name} dict. Full-replace, not incremental,
@@ -102,7 +102,7 @@ class Team(Document):
 			affected_user=user,
 		)
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.set_team_member_status.
 	def set_member_status(self, user: str, status: str) -> None:
 		self._require_capability("team:manage_members")
 		if status not in {"Active", "Suspended"}:
@@ -115,7 +115,7 @@ class Team(Document):
 			row.status = status
 		self.save()
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.remove_team_member.
 	def remove_member(self, user: str) -> None:
 		self._require_capability("team:manage_members")
 		self._validate_member_change_target(user)
@@ -126,7 +126,7 @@ class Team(Document):
 			self.remove(row)
 		self.save()
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.transfer_team_ownership.
 	def transfer_ownership(self, user: str) -> None:
 		"""Owner is exclusive: promoting `user` drops every role grant they held
 		before, since Owner already covers everything those grants did."""
