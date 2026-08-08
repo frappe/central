@@ -1,4 +1,4 @@
-export interface ServiceAPIKey {
+export interface ServiceCredential {
 	name: string
 	creation: string
 	modified: string
@@ -9,10 +9,14 @@ export interface ServiceAPIKey {
 	parentfield?: string
 	parenttype?: string
 	idx?: number
+	/**	Subject Type : Select	*/
+	subject_type: 'Site' | 'Team'
 	/**	Managed Service : Link - Managed Service	*/
 	managed_service: string
+	/**	Site : Link - Site	*/
+	site?: string
 	/**	Label : Data	*/
-	label: string
+	label?: string
 	/**	Status : Select	*/
 	status?: 'Active' | 'Revoked' | 'Failed'
 	/**	Gateway URL : Data	*/

@@ -116,3 +116,4 @@ central.patches.v0_0.seed_welcome_credit_amounts
 # Rename the one stale `TEAM-ROLE-.#####` row left by the malformed format: autoname
 # (the second custom role used to raise DuplicateEntryError) — PR 1.
 central.patches.v0_0.fix_team_role_autoname
+central.patches.v0_0.merge_service_credentials

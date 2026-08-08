@@ -73,9 +73,10 @@ def generate_api_key(managed_service: str, label: str) -> dict:
 	email = f"key-{frappe.generate_hash(length=12)}@svc.frappe.cloud"
 	result = get_driver(add_on.handler_key).provision_key(backend, label, email, options)
 
-	doc = frappe.new_doc("Service API Key")
+	doc = frappe.new_doc("Service Credential")
 	doc.update(
 		{
+			"subject_type": "Team",
 			"managed_service": managed_service,
 			"label": label,
 			"status": "Active",
@@ -100,13 +101,13 @@ def generate_api_key(managed_service: str, label: str) -> dict:
 def list_api_keys(managed_service: str) -> list[dict]:
 	"""A managed service's issued API keys, masked (no raw secrets). service:view."""
 	rows = frappe.get_all(
-		"Service API Key",
-		filters={"managed_service": managed_service},
+		"Service Credential",
+		filters={"managed_service": managed_service, "subject_type": "Team"},
 		fields=["name", "label", "status", "gateway_url", "last_usage_total", "creation"],
 		order_by="creation desc",
 	)
 	for row in rows:
-		row["masked_key"] = _mask_key(get_decrypted_password("Service API Key", row.name, "api_key"))
+		row["masked_key"] = _mask_key(get_decrypted_password("Service Credential", row.name, "api_key"))
 
 	return rows
 
@@ -119,7 +120,7 @@ def _mask_key(key: str) -> str:
 @require_service_capability("service:manage")
 def reveal_api_key(name: str) -> dict:
 	"""Reveal one issued key's secret + endpoint for copy/curl. service:manage."""
-	doc = frappe.get_doc("Service API Key", name)
+	doc = frappe.get_doc("Service Credential", name)
 	if doc.status != "Active":
 		frappe.throw(_("This key has been revoked."))
 
@@ -135,7 +136,7 @@ def reveal_api_key(name: str) -> dict:
 @require_service_capability("service:manage")
 def revoke_api_key(name: str) -> dict:
 	"""Revoke an issued key at the provider and mark it revoked. service:manage."""
-	doc = frappe.get_doc("Service API Key", name)
+	doc = frappe.get_doc("Service Credential", name)
 	if doc.status == "Revoked":
 		return {"name": name, "status": "Revoked"}
 
@@ -180,8 +181,8 @@ def get_instance(managed_service: str) -> dict:
 	VM scan (the bench owns the authoritative site list)."""
 	instance = provisioning.get_managed_service(managed_service)
 	sites = frappe.get_all(
-		"Site Service Credential",
-		filters={"managed_service": managed_service, "status": "Active"},
+		"Service Credential",
+		filters={"subject_type": "Site", "managed_service": managed_service, "status": "Active"},
 		fields=["site", "gateway_url"],
 		order_by="site",
 	)

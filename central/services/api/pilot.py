@@ -63,7 +63,7 @@ def config_for_site(team: str, site: str, service: str) -> dict:
 	if not credential_name:
 		frappe.throw(_("Service {0} is not enabled for site {1}.").format(service, site))
 
-	stored = frappe.get_doc("Site Service Credential", credential_name)
+	stored = frappe.get_doc("Service Credential", credential_name)
 	return {
 		"service": service,
 		"gateway_url": stored.gateway_url,
@@ -79,7 +79,7 @@ def _resolve_credential(team: str, service: str, site: str) -> str | None:
 		return None
 
 	return frappe.db.get_value(
-		"Site Service Credential",
-		{"managed_service": managed_service, "site": site, "status": "Active"},
+		"Service Credential",
+		{"subject_type": "Site", "managed_service": managed_service, "site": site, "status": "Active"},
 		"name",
 	)
