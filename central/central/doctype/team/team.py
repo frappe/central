@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.iam import can, user_has_operator_bypass
+from central.iam import can, clear_grants_cache, user_has_operator_bypass
 
 
 class Team(Document):
@@ -42,8 +42,14 @@ class Team(Document):
 		self._validate_role_scope()
 		self._validate_changes()
 
+	def on_update(self) -> None:
+		# Team and member-row edits change resolved capabilities; drop the request-cached
+		# grants so later checks in this request see the new state.
+		clear_grants_cache()
+
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")
+		clear_grants_cache()
 
 	@frappe.whitelist(methods=["POST"])
 	def invite_member(self, email: str, role: str, expires_in_days: int = 7) -> str:

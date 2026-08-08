@@ -219,6 +219,16 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 	return dict(grants_by_team)
 
 
+def clear_grants_cache() -> None:
+	"""Drop the request-cached IAM grants after a Team write, so later capability checks
+	in the same request see the new membership. This also isolates test methods, which
+	share one request while each rebuilds its team under a fresh name. Clearing the whole
+	request cache is safe — it is transparent, and Team writes are rare."""
+	cache = getattr(frappe.local, "request_cache", None)
+	if cache is not None:
+		cache.clear()
+
+
 def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]]]:
 	user = user or frappe.session.user
 	if not user or user == "Guest":

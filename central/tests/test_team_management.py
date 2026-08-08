@@ -84,12 +84,6 @@ class TestTeamManagement(IntegrationTestCase):
 		_ensure_event_type("role_change", direct_recipients="Affected User")
 		_ensure_event_type("member_joined")
 
-		# IAM grants are request-cached by user, but the request cache is not reset
-		# between test methods while each setUp recreates the team under a fresh name —
-		# so a stale grant from an earlier test would deny writes here. Clear it so every
-		# test resolves capabilities against its own freshly built team.
-		frappe.local.request_cache.clear()
-
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
