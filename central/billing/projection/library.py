@@ -17,6 +17,7 @@ Being able to show that is worth more than asserting it.
 """
 
 import frappe
+from frappe import _
 
 SCENARIOS = {
 	"over-the-inr-threshold": {
@@ -154,7 +155,7 @@ def build(key: str, team: str, period_start=None, today=None):
 	"""
 	entry = SCENARIOS.get(key)
 	if not entry:
-		frappe.throw(f"No scenario called {key}.", frappe.ValidationError)
+		frappe.throw(_("No scenario called {0}.").format(key), frappe.ValidationError)
 
 	ok, reason = applicable(key, team)
 	if not ok:

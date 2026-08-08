@@ -14,6 +14,7 @@ the seed/teardown surface can never be reached off a test bench.
 """
 
 import frappe
+from frappe import _
 from frappe.utils.password import update_password
 
 from central.billing.tests.utils import complete_billing_profile, make_user
@@ -31,7 +32,7 @@ def _enter_test_mode() -> None:
 	`allow_tests` gate — it is never set on a production site, so this whole surface
 	is unreachable there. Checked first, before any elevation."""
 	if not frappe.conf.get("allow_tests"):
-		frappe.throw("e2e seed endpoints require `allow_tests` on the site.", frappe.PermissionError)
+		frappe.throw(_("e2e seed endpoints require `allow_tests` on the site."), frappe.PermissionError)
 	frappe.set_user("Administrator")
 
 

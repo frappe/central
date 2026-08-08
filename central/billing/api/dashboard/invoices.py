@@ -7,6 +7,7 @@ Top-ups credit the wallet only after the gateway confirms the money moved
 """
 
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -522,7 +523,7 @@ def create_topup_order(
 	_require_billing_setup(team)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
-		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
+		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
 	currency = _team_currency(team)
 	display_paypal = False
 	if method == "paypal":
@@ -531,7 +532,7 @@ def create_topup_order(
 			gw = _enabled_gateway_for_currency(currency, "Razorpay")
 			if not gw:
 				frappe.throw(
-					f"PayPal via Razorpay needs an enabled Razorpay gateway that handles {currency}.",
+					_("PayPal via Razorpay needs an enabled Razorpay gateway that handles {0}.").format(currency),
 					frappe.ValidationError,
 				)
 			display_paypal = True
@@ -617,7 +618,7 @@ def confirm_topup(
 			if minor is None:
 				# A captured payment always carries an amount; a response without
 				# one must not fall through to the client-supplied figure.
-				frappe.throw("Razorpay reported no amount for this payment.", frappe.ValidationError)
+				frappe.throw(_("Razorpay reported no amount for this payment."), frappe.ValidationError)
 			amount = frappe.utils.flt(minor) / 100
 			if payment.get("currency"):
 				currency = payment["currency"].upper()
@@ -628,7 +629,7 @@ def confirm_topup(
 		ok = capture.get("status") == "COMPLETED"
 		reference = capture.get("id")
 		if capture.get("amount") is None:
-			frappe.throw("PayPal reported no amount for this capture.", frappe.ValidationError)
+			frappe.throw(_("PayPal reported no amount for this capture."), frappe.ValidationError)
 		amount = frappe.utils.flt(capture["amount"])
 		if capture.get("currency"):
 			currency = capture["currency"].upper()
@@ -641,12 +642,12 @@ def confirm_topup(
 		reference = intent.get("id")
 		minor = intent.get("amount_received") or intent.get("amount")
 		if minor is None:
-			frappe.throw("Stripe reported no amount for this payment intent.", frappe.ValidationError)
+			frappe.throw(_("Stripe reported no amount for this payment intent."), frappe.ValidationError)
 		amount = frappe.utils.flt(minor) / 100
 		if intent.get("currency"):
 			currency = intent["currency"].upper()
 	if not ok:
-		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
+		frappe.throw(_("Payment confirmation failed."), frappe.ValidationError)
 	return credits.purchase(
 		team,
 		amount,

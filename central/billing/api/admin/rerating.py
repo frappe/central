@@ -3,6 +3,7 @@
 """Operator endpoints for re-issuing a period after a price was found to be wrong."""
 
 import frappe
+from frappe import _
 
 from central.billing.authz import require_operator
 from central.billing.revenue import metering, rerating
@@ -20,7 +21,7 @@ def apply_rerating(resource_type: str, period_start: str, period_end: str, reaso
 	"""Re-issue the affected invoices and return the audit record's name."""
 	require_operator()
 	if not reason:
-		frappe.throw("A re-rating needs a reason — it is the audit record.", frappe.ValidationError)
+		frappe.throw(_("A re-rating needs a reason — it is the audit record."), frappe.ValidationError)
 	return rerating.apply(resource_type, period_start, period_end, reason)
 
 

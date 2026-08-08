@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -26,7 +27,7 @@ class PaymentMethod(Document):
 		)
 		if dup:
 			frappe.throw(
-				"This card is already on file for the team — the same card can't be "
-				"used as both the primary and a backup method.",
+				_("This card is already on file for the team — the same card can't be "
+				"used as both the primary and a backup method."),
 				frappe.ValidationError,
 			)

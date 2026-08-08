@@ -10,6 +10,7 @@ worker, is `run.py`'s business.
 """
 
 import frappe
+from frappe import _
 
 from central.billing import settings
 from central.billing.revenue import credits
@@ -127,7 +128,7 @@ def cancel_invoice(invoice: str, reason: str | None = None) -> str:
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	if doc.status == "Paid":
-		frappe.throw("A paid invoice cannot be cancelled — issue a refund instead.", frappe.ValidationError)
+		frappe.throw(_("A paid invoice cannot be cancelled — issue a refund instead."), frappe.ValidationError)
 	if doc.status == "Cancelled":
 		return invoice
 	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)

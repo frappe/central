@@ -17,6 +17,7 @@ adapter through the registry, keeping the gateway seam intact.
 """
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 from central.billing.states import transition
@@ -220,7 +221,7 @@ def set_default_payment_method(payment_method: str) -> Document:
 	"""Make this the team's primary (priority 0). Only an active method can be."""
 	method = frappe.get_doc("Payment Method", payment_method)
 	if method.status != "Active":
-		frappe.throw("Only an active payment method can be the primary.", frappe.ValidationError)
+		frappe.throw(_("Only an active payment method can be the primary."), frappe.ValidationError)
 	# Sort it ahead of everyone, then re-densify resolves the rest.
 	frappe.db.set_value("Payment Method", method.name, "priority", -1, update_modified=False)
 	densify_priorities(method.team)
@@ -233,7 +234,7 @@ def reorder_payment_methods(team: str, ordered: list | str) -> dict:
 		ordered = frappe.parse_json(ordered)
 	for i, name in enumerate(ordered):
 		if frappe.db.get_value("Payment Method", name, "team") != team:
-			frappe.throw("Method does not belong to this team.", frappe.ValidationError)
+			frappe.throw(_("Method does not belong to this team."), frappe.ValidationError)
 		frappe.db.set_value("Payment Method", name, "priority", i, update_modified=False)
 	densify_priorities(team)
 	return {"team": team, "ordered": ordered}

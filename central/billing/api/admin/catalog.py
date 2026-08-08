@@ -5,6 +5,7 @@ cluster/plan run-rate consumption, and trial→paid conversion analysis.
 """
 
 import frappe
+from frappe import _
 
 from central.billing.api.admin._shared import _active_segments, _plan_monthly_inr, _to_inr
 from central.billing.authz import require_operator
@@ -86,7 +87,7 @@ def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> 
 	new rate. Zero new plans."""
 	require_operator()
 	if not frappe.db.exists("Plan", plan):
-		frappe.throw(f"Plan {plan!r} does not exist.")
+		frappe.throw(_("Plan {0!r} does not exist.").format(plan))
 	cluster = cluster or None
 
 	existing = frappe.get_all(

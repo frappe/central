@@ -15,6 +15,7 @@ about. It can never leave a charge with no record of it at all.
 """
 
 import frappe
+from frappe import _
 
 from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
@@ -298,7 +299,7 @@ def confirm_invoice_payment(
 		}
 	)
 	if not ok:
-		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
+		frappe.throw(_("Payment confirmation failed."), frappe.ValidationError)
 	att.gateway_transaction_id = razorpay_payment_id
 	# gateway captured; invoice Paid waits on the webhook
 	transition(att, "Captured", actor="gateway", correlation=att.invoice)
@@ -331,7 +332,7 @@ def _resolve_method(inv, payment_method, gateway):
 			pass
 
 	if not method_name or not gateway_name:
-		frappe.throw(f"No payment method/gateway resolved for {inv.name}", frappe.ValidationError)
+		frappe.throw(_("No payment method/gateway resolved for {0}").format(inv.name), frappe.ValidationError)
 	return method_name, gateway_name
 
 

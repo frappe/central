@@ -3,6 +3,7 @@
 """Resolve a Payment Gateway config row to its GatewayAdapter implementation."""
 
 import frappe
+from frappe import _
 
 from central.billing.gateways.base import GatewayAdapter
 
@@ -60,6 +61,6 @@ def get_adapter(gateway) -> GatewayAdapter:
 
 	adapter_class = adapters.get(gateway.adapter_key)
 	if not adapter_class:
-		frappe.throw(f"No GatewayAdapter registered for adapter_key '{gateway.adapter_key}'")
+		frappe.throw(_("No GatewayAdapter registered for adapter_key '{0}'").format(gateway.adapter_key))
 
 	return adapter_class(gateway)

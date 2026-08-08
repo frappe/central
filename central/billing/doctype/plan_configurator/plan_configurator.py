@@ -97,7 +97,7 @@ class PlanConfigurator(Document):
 			if currencies is None or r.currency in currencies
 		]
 		if not rows:
-			frappe.throw("Add at least one base rate (currency + price).")
+			frappe.throw(_("Add at least one base rate (currency + price)."))
 		return rows
 
 	@frappe.whitelist()
@@ -145,9 +145,9 @@ class PlanConfigurator(Document):
 		subset of plans. This picks where/what to ship; the specs are edited above."""
 		if self._builder() == "Simple":
 			if not self.simple_plans:
-				frappe.throw("Add at least one plan row, then generate.")
+				frappe.throw(_("Add at least one plan row, then generate."))
 		elif not self.rungs:
-			frappe.throw("Populate the rungs first, then edit and generate.")
+			frappe.throw(_("Populate the rungs first, then edit and generate."))
 		frappe.enqueue(
 			run_generation,
 			queue="long",
@@ -181,7 +181,7 @@ class PlanConfigurator(Document):
 	def _generate_vm_rungs(self, selected, cluster, currencies) -> dict:
 		rungs = [r for r in self.rungs if selected is None or r.plan_name in selected]
 		if not rungs:
-			frappe.throw("No rungs selected to generate.")
+			frappe.throw(_("No rungs selected to generate."))
 		result = configurator.generate_plans(
 			rungs=rungs,
 			billing_cycle=self.billing_cycle,
@@ -197,7 +197,7 @@ class PlanConfigurator(Document):
 	def _generate_simple(self, selected, cluster, currencies) -> dict:
 		rows = [r for r in self.simple_plans if selected is None or r.title in selected]
 		if not rows:
-			frappe.throw("No plans selected to generate.")
+			frappe.throw(_("No plans selected to generate."))
 		sub_category = self._resolved_sub_category()
 		created, skipped = [], []
 		for row in rows:

@@ -13,6 +13,7 @@ logic lives here; each method delegates to the existing billing service layer.
 from contextlib import contextmanager
 
 import frappe
+from frappe import _
 
 from central.api.pilot import pilot_credential_auth
 from central.billing.api.dashboard._shared import (
@@ -30,7 +31,7 @@ def _team() -> str:
 def _assert_owns(team_of_record: str | None) -> None:
 	"""Guard a record-scoped call: the record must belong to the credential's team."""
 	if team_of_record != _team():
-		frappe.throw("Not permitted for this team.", frappe.PermissionError)
+		frappe.throw(_("Not permitted for this team."), frappe.PermissionError)
 
 
 @contextmanager
@@ -844,7 +845,7 @@ def create_topup_checkout(amount: float, redirect_url: str) -> dict:
 	gateway}`; redirect the payer to `checkout_url`, then poll `get_checkout_status`."""
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
-		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
+		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
 	team = _team()
 	# Same backstop as top-ups in the dashboard: require a complete profile (currency)
 	# before money moves, so the wallet can't be locked to the INR fallback currency.
@@ -871,10 +872,10 @@ def create_invoice_checkout(invoice: str, redirect_url: str) -> dict:
 	inv = frappe.get_doc("Invoice", invoice)
 	_assert_owns(inv.team)
 	if inv.status not in ("Open", "Overdue"):
-		frappe.throw("Invoice is not open for payment.", frappe.ValidationError)
+		frappe.throw(_("Invoice is not open for payment."), frappe.ValidationError)
 	amount = frappe.utils.flt(inv.expected_collection)
 	if amount <= 0:
-		frappe.throw("Nothing is due on this invoice.", frappe.ValidationError)
+		frappe.throw(_("Nothing is due on this invoice."), frappe.ValidationError)
 	return _create_hosted_checkout(
 		inv.team,
 		inv.currency,

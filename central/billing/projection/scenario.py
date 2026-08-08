@@ -14,6 +14,7 @@ invoice", so it carries its own test.
 """
 
 import frappe
+from frappe import _
 
 from central.billing import settings
 from central.billing.catalog import pricing
@@ -35,8 +36,8 @@ def project(scenario, today=None) -> dict:
 	doc = _resolve(scenario)
 	if not doc.team:
 		frappe.throw(
-			"This scenario has no team. Cohort scenarios are projected from the "
-			"Billing Projection report.",
+			_("This scenario has no team. Cohort scenarios are projected from the "
+			"Billing Projection report."),
 			frappe.ValidationError,
 		)
 
@@ -182,8 +183,8 @@ def check_drift(scenario, today=None) -> dict:
 	doc = _resolve(scenario)
 	if not doc.result:
 		frappe.throw(
-			"This scenario has no saved answer to compare against. Project and save it "
-			"first.",
+			_("This scenario has no saved answer to compare against. Project and save it "
+			"first."),
 			frappe.ValidationError,
 		)
 
@@ -205,7 +206,7 @@ def check_all(today=None) -> list[dict]:
 	):
 		try:
 			out.append(check_drift(name, today))
-		except Exception:  # noqa: BLE001
+		except Exception:
 			frappe.log_error(
 				title="Billing Scenario Drift Check Failed",
 				message=frappe.get_traceback(),

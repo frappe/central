@@ -5,6 +5,7 @@ import inspect
 from collections.abc import Callable
 
 import frappe
+from frappe import _
 
 from central.iam import can, is_active_team_member, user_has_operator_bypass
 
@@ -39,7 +40,7 @@ def require_team_member(func: Callable) -> Callable:
 	def wrapper(*args, **kwargs):
 		team = _call_arg(func, args, kwargs, "team")
 		if not user_has_operator_bypass() and not is_active_team_member(frappe.session.user, team):
-			frappe.throw("You are not a member of this team.", frappe.PermissionError)
+			frappe.throw(_("You are not a member of this team."), frappe.PermissionError)
 		return func(*args, **kwargs)
 
 	return wrapper
@@ -70,7 +71,7 @@ def require_self_or_operator(func: Callable) -> Callable:
 		# `user` defaults to the caller — same resolution the handlers use.
 		target = _call_arg(func, args, kwargs, "user") or frappe.session.user
 		if frappe.session.user != target and "System Manager" not in frappe.get_roles():
-			frappe.throw("Only System Manager can inspect another user's permissions", frappe.PermissionError)
+			frappe.throw(_("Only System Manager can inspect another user's permissions"), frappe.PermissionError)
 		return func(*args, **kwargs)
 
 	return wrapper

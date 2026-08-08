@@ -72,7 +72,7 @@ def get_atlas_instance(region: str):
 	"""Resolve a region (= cluster) to its `Atlas Instance`, or raise."""
 	name = frappe.db.get_value("Atlas Instance", {"region": region})
 	if not name:
-		frappe.throw(f"No Atlas registered for region '{region}'.", AtlasError)
+		frappe.throw(_("No Atlas registered for region '{0}'.").format(region), AtlasError)
 	return frappe.get_doc("Atlas Instance", name)
 
 
@@ -92,7 +92,7 @@ class AtlasClient:
 		(spec/21-tunnel.md § Credentials); the target is the tunnel_url over wg0 once the
 		tunnel is Active, and the public base_url only during bootstrap."""
 		if self.instance.status == "Disabled":
-			frappe.throw(f"Atlas '{self.instance.region}' is disabled.", AtlasError)
+			frappe.throw(_("Atlas '{0}' is disabled.").format(self.instance.region), AtlasError)
 		return self._admin_client(self._data_url())
 
 	def _data_url(self) -> str:
@@ -240,9 +240,9 @@ class AtlasClient:
 		caller's fail-soft path treats it as 'don't gate' (show the full menu). Returns the
 		endpoint's `message` payload."""
 		if self.instance.status == "Disabled":
-			frappe.throw(f"Atlas '{self.instance.region}' is disabled.", AtlasError)
+			frappe.throw(_("Atlas '{0}' is disabled.").format(self.instance.region), AtlasError)
 		if not self.instance.api_key:
-			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+			frappe.throw(_("Atlas '{0}' has no admin API key.").format(self.instance.region), AtlasError)
 		url = self._data_url().rstrip("/") + "/api/method/" + method
 		secret = self.instance.get_password("api_secret")
 		response = requests.get(
@@ -276,7 +276,7 @@ class AtlasClient:
 
 	def _admin_client(self, base_url: str) -> FrappeClient:
 		if not self.instance.api_key:
-			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+			frappe.throw(_("Atlas '{0}' has no admin API key.").format(self.instance.region), AtlasError)
 		return FrappeClient(
 			base_url,
 			api_key=self.instance.api_key,
@@ -320,7 +320,7 @@ class AtlasClient:
 		request with a bounded timeout; the host work commits server-side regardless and
 		the caller (remove_tunnel) tolerates the timeout and re-verifies over base_url."""
 		if not self.instance.api_key:
-			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+			frappe.throw(_("Atlas '{0}' has no admin API key.").format(self.instance.region), AtlasError)
 		url = base_url.rstrip("/") + "/api/method/atlas.atlas.api.central_link.deprovision_tunnel"
 		secret = self.instance.get_password("api_secret")
 		response = requests.post(
@@ -470,7 +470,7 @@ def _atlas_cluster() -> str:
 		"Atlas Instance", {"service_user": frappe.session.user, "status": ["!=", "Disabled"]}
 	)
 	if not cluster:
-		frappe.throw(f"'{frappe.session.user}' is not a known or enabled Atlas.", frappe.PermissionError)
+		frappe.throw(_("'{0}' is not a known or enabled Atlas.").format(frappe.session.user), frappe.PermissionError)
 	return cluster
 
 
@@ -597,16 +597,16 @@ def register_atlas(instance) -> dict:
 	rolls back the Central-side half and raises TunnelRegistrationError; the instance
 	stays whatever it was (Atlas's auto-revert reopens its own firewall)."""
 	if "System Manager" not in frappe.get_roles():
-		frappe.throw("Not permitted.", frappe.PermissionError)
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	if not (instance.api_key and instance.get_password("api_secret", raise_exception=False)):
-		frappe.throw("Set the Atlas admin API key and secret before registering.", TunnelRegistrationError)
+		frappe.throw(_("Set the Atlas admin API key and secret before registering."), TunnelRegistrationError)
 
 	if instance.skip_tunnel:
 		return _register_local(instance)
 
 	settings = frappe.get_single("Central Tunnel Settings")
 	if settings.hub_status != "Active":
-		frappe.throw("Initialize the hub before registering an Atlas.", TunnelRegistrationError)
+		frappe.throw(_("Initialize the hub before registering an Atlas."), TunnelRegistrationError)
 
 	# Re-registering an already-registered (Inactive) instance just re-tunnels it: reuse
 	# its identity, and on failure fall back to Inactive rather than tearing the identity
@@ -773,7 +773,7 @@ def _peer_endpoint(base_url: str, listen_port: int) -> str:
 	listen port (https://blr.atlas.example.com → blr.atlas.example.com:51820)."""
 	host = urlparse(base_url).hostname
 	if not host:
-		frappe.throw(f"Cannot derive a wg endpoint from base_url '{base_url}'.", TunnelRegistrationError)
+		frappe.throw(_("Cannot derive a wg endpoint from base_url '{0}'.").format(base_url), TunnelRegistrationError)
 	return f"{host}:{listen_port}"
 
 
@@ -838,7 +838,7 @@ def remove_tunnel(instance) -> dict:
 	public) before dropping wg0, so the response races the teardown — a dropped
 	connection is expected and tolerated, re-verified over the now-public base_url."""
 	if "System Manager" not in frappe.get_roles():
-		frappe.throw("Not permitted.", frappe.PermissionError)
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
 
 	if instance.tunnel_status in ("Active", "Provisioning"):
 		client = AtlasClient(instance)

@@ -7,6 +7,7 @@ humaniser. Endpoint modules (account/invoices/methods) build on these.
 """
 
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.catalog.subscriptions import team_active_segments
@@ -32,7 +33,7 @@ def _resolve_team(team: str | None, require: str = authz.VIEW) -> str:
 	mutation endpoint that takes a `team` argument."""
 	team = team or _default_team()
 	if not team:
-		frappe.throw("No billing team in context.", frappe.ValidationError)
+		frappe.throw(_("No billing team in context."), frappe.ValidationError)
 	authz.require_capability(team, require)
 	return team
 
@@ -127,7 +128,7 @@ def require_billing_profile(team: str, action: str):
 	missing = _missing_profile_labels(team)
 	if missing:
 		frappe.throw(
-			f"Complete your billing profile before you can {action}. Missing: {', '.join(missing)}.",
+			_("Complete your billing profile before you can {0}. Missing: {1}.").format(action, ', '.join(missing)),
 			frappe.ValidationError,
 		)
 
@@ -158,7 +159,7 @@ def _gateway_for_currency(currency: str) -> str:
 	try:
 		return resolve_gateway_for_currency(currency)
 	except GatewayNotFound:
-		frappe.throw(f"No payment gateway configured for {currency} top-ups.", frappe.ValidationError)
+		frappe.throw(_("No payment gateway configured for {0} top-ups.").format(currency), frappe.ValidationError)
 
 
 def _enabled_gateway_for_currency(currency: str, adapter_key: str) -> str | None:
@@ -185,7 +186,7 @@ def _paypal_gateway_for_currency(currency: str) -> str:
 	if gw:
 		return gw
 	frappe.throw(
-		f"PayPal top-ups need an enabled PayPal gateway that handles {currency}.",
+		_("PayPal top-ups need an enabled PayPal gateway that handles {0}.").format(currency),
 		frappe.ValidationError,
 	)
 

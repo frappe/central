@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+from frappe import _
 from frappe.query_builder import Order
 
 from central.iam import can, expand_capabilities, get_all_capabilities, user_has_operator_bypass
@@ -156,7 +157,7 @@ def delete_team(team: str) -> dict[str, Any]:
 	references don't block the delete."""
 	for doctype in ("Asset", "Site"):
 		if frappe.db.exists(doctype, {"team": team}):
-			frappe.throw("Remove this team's servers and sites before deleting it.", frappe.ValidationError)
+			frappe.throw(_("Remove this team's servers and sites before deleting it."), frappe.ValidationError)
 	# force=True: clear the child links that would otherwise raise LinkExistsError on the Team delete.
 	for name in frappe.get_all("Team Invitation", {"team": team}, pluck="name"):
 		frappe.delete_doc("Team Invitation", name, ignore_permissions=True, force=True)
@@ -222,7 +223,7 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 	valid = set(get_all_capabilities())
 	picked = [c for c in capabilities if c in valid]
 	if not picked:
-		frappe.throw("Pick at least one capability.", frappe.ValidationError)
+		frappe.throw(_("Pick at least one capability."), frappe.ValidationError)
 	# Persist the implied dependencies too (e.g. server:create pulls in server:view +
 	# cluster:view), so the saved role is usable and matches what enforcement grants.
 	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
@@ -245,13 +246,13 @@ def delete_custom_role(role: str) -> dict:
 	refuses system roles and roles still referenced by a member or pending invite."""
 	doc = frappe.get_doc("Team Role", role)
 	if doc.is_system:
-		frappe.throw("System roles cannot be deleted.", frappe.ValidationError)
+		frappe.throw(_("System roles cannot be deleted."), frappe.ValidationError)
 	if not can(frappe.session.user, doc.team, "team:manage_members") and not user_has_operator_bypass():
-		frappe.throw("You can't manage roles for this team.", frappe.PermissionError)
+		frappe.throw(_("You can't manage roles for this team."), frappe.PermissionError)
 	if frappe.db.exists("Team Member", {"role": role}):
-		frappe.throw("Reassign members off this role before deleting it.", frappe.ValidationError)
+		frappe.throw(_("Reassign members off this role before deleting it."), frappe.ValidationError)
 	if frappe.db.exists("Team Invitation", {"role": role, "status": "Pending"}):
-		frappe.throw("A pending invitation still uses this role.", frappe.ValidationError)
+		frappe.throw(_("A pending invitation still uses this role."), frappe.ValidationError)
 	# Authorized above; the Team Role doctype grants delete only to System Manager.
 	frappe.delete_doc("Team Role", role, ignore_permissions=True)
 	return {"role": role, "deleted": True}

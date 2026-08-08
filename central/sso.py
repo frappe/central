@@ -65,7 +65,7 @@ def verify_bootstrap_token(token: str) -> dict:
 
 	settings = CentralSSOSettings.instance()
 	if not settings.public_key:
-		frappe.throw("Central signing key is not initialised.", frappe.ValidationError)
+		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
 	try:
 		claims = jwt.decode(
 			token,
@@ -74,9 +74,9 @@ def verify_bootstrap_token(token: str) -> dict:
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
 	except jwt.InvalidTokenError as exc:
-		frappe.throw(f"Invalid enrollment token: {exc}", frappe.AuthenticationError)
+		frappe.throw(_("Invalid enrollment token: {0}").format(exc), frappe.AuthenticationError)
 	if claims.get("scope") != ENROLL_SCOPE:
-		frappe.throw("Not an enrollment token.", frappe.AuthenticationError)
+		frappe.throw(_("Not an enrollment token."), frappe.AuthenticationError)
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 

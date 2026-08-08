@@ -8,6 +8,7 @@ rewritten.
 """
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -42,6 +43,6 @@ class SubscriptionChange(Document):
 	def validate(self):
 		if not self.is_new():
 			frappe.throw(
-				"Subscription Change is append-only; history cannot be edited.",
+				_("Subscription Change is append-only; history cannot be edited."),
 				frappe.ValidationError,
 			)

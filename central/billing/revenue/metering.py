@@ -19,6 +19,7 @@ selects one of two modes:
 """
 
 import frappe
+from frappe import _
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 
@@ -169,7 +170,7 @@ def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = 
 	name = live_rollup(rollup)
 	old = frappe.get_doc("Usage Rollup", name)
 	if rate is None and allowance is None:
-		frappe.throw("Nothing to correct: give a rate, an allowance, or both.", frappe.ValidationError)
+		frappe.throw(_("Nothing to correct: give a rate, an allowance, or both."), frappe.ValidationError)
 
 	new = frappe.copy_doc(old)
 	new.locked_rate = old.locked_rate if rate is None else rate
@@ -217,7 +218,7 @@ def ingest_rollup(meter: dict) -> str | None:
 	qty = frappe.utils.flt(meter.get("quantity"))
 	seq = frappe.utils.cint(meter.get("sequence"))
 
-	for _ in range(_INGEST_RACE_RETRIES):
+	for _attempt in range(_INGEST_RACE_RETRIES):
 		existing = frappe.db.get_value(
 			"Usage Rollup",
 			{"idempotency_key": key},

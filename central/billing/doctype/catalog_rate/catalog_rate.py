@@ -11,6 +11,7 @@ from (ADR 0009).
 """
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 # `priced_doctype` is a Dynamic Link to DocType and otherwise unconstrained, so
@@ -28,7 +29,7 @@ class CatalogRate(Document):
 	def validate(self):
 		if self.priced_doctype not in ALLOWED_PARENTS:
 			frappe.throw(
-				f"Priced Doctype must be one of {', '.join(ALLOWED_PARENTS)}, not {self.priced_doctype!r}."
+				_("Priced Doctype must be one of {0}, not {1!r}.").format(', '.join(ALLOWED_PARENTS), self.priced_doctype)
 			)
 		# Normalise a blank cluster to None so "global" rows compare cleanly.
 		if not (self.cluster or "").strip():

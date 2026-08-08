@@ -24,6 +24,7 @@ import json
 import time
 
 import frappe
+from frappe import _
 
 from central.billing.projection import behaviour, cohort, engine, outcomes
 
@@ -72,7 +73,7 @@ def start_sampled(
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	drawn = cohort.sample(filters, size)
 	if not drawn.teams:
-		frappe.throw("No teams match this cohort.", frappe.ValidationError)
+		frappe.throw(_("No teams match this cohort."), frappe.ValidationError)
 
 	batch = frappe.get_doc(
 		{
@@ -112,8 +113,8 @@ def start(
 	today = frappe.utils.getdate(today or frappe.utils.nowdate())
 	if cohort.run_in_progress(today):
 		frappe.throw(
-			"The monthly billing run is still working. Projections wait for it — "
-			"one of them is answering a question, the other is billing customers.",
+			_("The monthly billing run is still working. Projections wait for it — "
+			"one of them is answering a question, the other is billing customers."),
 			frappe.ValidationError,
 		)
 
@@ -193,7 +194,7 @@ def _project_page(batch_doc, teams: list) -> int:
 	for team in teams:
 		try:
 			rows.append(_summarise(team, batch_doc))
-		except Exception:  # noqa: BLE001
+		except Exception:
 			# One bad team must not take the cohort down — the same containment the
 			# billing run gives a failing team. The failure is *held*, not logged here:
 			# writing an Error Log mid-page leaves the transaction dirty, and the next
