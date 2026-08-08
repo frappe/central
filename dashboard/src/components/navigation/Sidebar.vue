@@ -7,7 +7,7 @@ import {
 	SidebarItem,
 	SidebarLabel,
 } from 'frappe-ui'
-import { ref, watch } from 'vue'
+import { onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
@@ -59,6 +59,7 @@ const onEdgeMove = (event: MouseEvent): void => {
 		edgeRaf = 0
 	})
 }
+onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 </script>
 
 <template>

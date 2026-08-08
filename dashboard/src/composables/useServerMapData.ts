@@ -1,5 +1,5 @@
 import { useCall } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, onScopeDispose } from 'vue'
 import { API, method } from '@/api/methods'
 import { useFrappeListInvalidation } from '@/composables/common/useFrappeRealtime'
 import type { AssetRow } from '@/composables/useServers'
@@ -48,6 +48,9 @@ export function useServerMapData() {
 	// (resize flag, termination) land live. One shared debounce coalesces a burst
 	// that touches both doctypes into a single reload.
 	useFrappeListInvalidation(['Asset', 'Site'], reloadOnce, { debounceMs: 0 })
+	// The invalidation listener self-disposes per scope; clear the shared debounce
+	// too so a pending reload never fires into a torn-down singleton.
+	onScopeDispose(() => window.clearTimeout(reloadTimer))
 
 	return {
 		// Terminated servers are gone, not a state to render — excluded here so no

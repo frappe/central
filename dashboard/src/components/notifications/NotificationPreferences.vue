@@ -2,61 +2,65 @@
 import { Button, Switch, useCall } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { teamParams } from '@/composables/useTeamScope'
 import { errorToast, successToast } from '@/lib/toast'
-import type { NotificationPreferences } from '@/types/billing'
 
-// Email-delivery preferences per billing event — the console home for what was an
-// ugly raw Desk form. These gate EMAIL only; the in-app feed always records every
-// event, so a failure is never hidden from the dashboard.
-const PREFS: { key: string; label: string; hint: string }[] = [
+// Per-user notification preferences, one row per category. Email delivery and the
+// in-app feed toggle independently. Opt-out model: a category with no saved row is
+// enabled for both (see engine._email_enabled and the feed's in_app filter), so
+// every switch defaults to on and we only persist the user's explicit choices.
+type Category = 'Billing' | 'Server' | 'Team'
+type Channels = { email: boolean; in_app: boolean }
+
+interface Preference {
+	category: Category
+	email_enabled: boolean | number
+	in_app_enabled: boolean | number
+}
+
+const CATEGORIES: { key: Category; label: string; hint: string }[] = [
 	{
-		key: 'notify_payment_failure',
-		label: 'Payment failed',
-		hint: 'A charge was declined.',
+		key: 'Billing',
+		label: 'Billing',
+		hint: 'Payments, invoices, credit balance and mandates.',
 	},
 	{
-		key: 'notify_payment_retry',
-		label: 'Payment retry failed',
-		hint: 'A retry of a failed charge was declined.',
+		key: 'Server',
+		label: 'Servers',
+		hint: 'Server lifecycle, resizes and health.',
 	},
 	{
-		key: 'notify_invoice_overdue',
-		label: 'Invoice overdue',
-		hint: 'An invoice passed its due date.',
-	},
-	{
-		key: 'notify_credit_low',
-		label: 'Credit balance low',
-		hint: 'Projected usage is nearing your wallet balance.',
-	},
-	{
-		key: 'notify_card_expiry',
-		label: 'Card expired',
-		hint: 'A saved card is no longer valid.',
-	},
-	{
-		key: 'notify_mandate_reauth',
-		label: 'Mandate re-authorisation',
-		hint: 'A UPI Autopay mandate needs re-approval.',
-	},
-	{
-		key: 'notify_trial_expiring',
-		label: 'Trial ending',
-		hint: 'A trial is about to end.',
-	},
-	{
-		key: 'notify_payment_success',
-		label: 'Payment received',
-		hint: 'A charge succeeded (receipts).',
+		key: 'Team',
+		label: 'Team',
+		hint: 'Invitations, role changes and membership.',
 	},
 ]
 
-const { canManageBilling } = useCapabilities()
-const state = reactive<Record<string, boolean>>({})
+function defaults(): Record<Category, Channels> {
+	return {
+		Billing: { email: true, in_app: true },
+		Server: { email: true, in_app: true },
+		Team: { email: true, in_app: true },
+	}
+}
 
-const load = useCall<NotificationPreferences, { team: string }>({
+// Saved rows overlaid on opt-out defaults.
+function toMap(prefs: Preference[] | undefined): Record<Category, Channels> {
+	const map = defaults()
+	for (const p of prefs ?? []) {
+		if (map[p.category]) {
+			map[p.category] = {
+				email: Boolean(Number(p.email_enabled)),
+				in_app: Boolean(Number(p.in_app_enabled)),
+			}
+		}
+	}
+	return map
+}
+
+const state = reactive<Record<Category, Channels>>(defaults())
+
+const load = useCall<{ preferences: Preference[] }, { team: string }>({
 	url: method(API.notificationPreferences),
 	params: teamParams,
 	immediate: true,
@@ -66,30 +70,41 @@ const load = useCall<NotificationPreferences, { team: string }>({
 watch(
 	() => load.data,
 	(data) => {
-		if (!data) return
-		for (const { key } of PREFS) state[key] = Boolean(Number(data[key] ?? 1))
+		const map = toMap(data?.preferences)
+		for (const { key } of CATEGORIES) {
+			state[key].email = map[key].email
+			state[key].in_app = map[key].in_app
+		}
 	},
 	{ immediate: true },
 )
 
-const save = useCall<{ saved: boolean }, Record<string, number | string>>({
+const save = useCall<
+	{ saved: boolean },
+	{ team: string; preferences: Preference[] }
+>({
 	url: method(API.saveNotificationPreferences),
 	method: 'POST',
 	immediate: false,
 })
 
 const dirty = computed(() => {
-	if (!load.data) return false
-	return PREFS.some(
-		({ key }) => Boolean(Number(load.data![key] ?? 1)) !== state[key],
+	const loaded = toMap(load.data?.preferences)
+	return CATEGORIES.some(
+		({ key }) =>
+			loaded[key].email !== state[key].email ||
+			loaded[key].in_app !== state[key].in_app,
 	)
 })
 
 async function onSave(): Promise<void> {
 	try {
-		const payload: Record<string, number> = {}
-		for (const { key } of PREFS) payload[key] = state[key] ? 1 : 0
-		await save.submit(payload)
+		const preferences: Preference[] = CATEGORIES.map(({ key }) => ({
+			category: key,
+			email_enabled: state[key].email ? 1 : 0,
+			in_app_enabled: state[key].in_app ? 1 : 0,
+		}))
+		await save.submit({ ...teamParams(), preferences })
 		await load.reload()
 		successToast('Notification preferences saved.')
 	} catch (e) {
@@ -101,27 +116,36 @@ async function onSave(): Promise<void> {
 <template>
 	<div class="mx-auto max-w-2xl">
 		<p class="mb-4 text-p-sm text-ink-gray-5">
-			Choose which billing events email you. Your in-app notifications always
-			show every event regardless of these settings.
+			Choose how each kind of notification reaches you. These apply to your
+			account on this team only.
 		</p>
 
 		<div
 			class="divide-y divide-outline-gray-1 rounded-lg ring-1 ring-outline-gray-1"
 		>
 			<div
-				v-for="pref in PREFS"
-				:key="pref.key"
+				v-for="cat in CATEGORIES"
+				:key="cat.key"
 				class="flex items-start justify-between gap-4 px-4 py-3"
 			>
 				<div class="min-w-0">
-					<p class="text-sm text-ink-gray-8">{{ pref.label }}</p>
-					<p class="text-p-sm text-ink-gray-5">{{ pref.hint }}</p>
+					<p class="text-sm text-ink-gray-8">{{ cat.label }}</p>
+					<p class="text-p-sm text-ink-gray-5">{{ cat.hint }}</p>
 				</div>
-				<Switch v-model="state[pref.key]" :disabled="!canManageBilling" />
+				<div class="flex shrink-0 items-center gap-6">
+					<label class="flex items-center gap-2">
+						<span class="text-p-sm text-ink-gray-6">Email</span>
+						<Switch v-model="state[cat.key].email" />
+					</label>
+					<label class="flex items-center gap-2">
+						<span class="text-p-sm text-ink-gray-6">In-app</span>
+						<Switch v-model="state[cat.key].in_app" />
+					</label>
+				</div>
 			</div>
 		</div>
 
-		<div v-if="canManageBilling" class="mt-4 flex justify-end">
+		<div class="mt-4 flex justify-end">
 			<Button
 				variant="solid"
 				:loading="save.loading"

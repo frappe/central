@@ -338,6 +338,22 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertTrue(delete_custom_role(role)["deleted"])
 		self.assertFalse(frappe.db.exists("Team Role", role))
 
+	def test_two_custom_roles_get_distinct_names(self):
+		# Regression: Team Role.autoname was `format:TEAM-ROLE-.#####`, which the
+		# format: handler left as the literal string, so the FIRST custom role on a
+		# site inserted and the SECOND raised DuplicateEntryError. Create two in one
+		# test (each other test creates at most one and rolls back, hiding the bug).
+		frappe.set_user(self.owner)
+		first = create_custom_role(self.team.name, "Role One", ["server:view"])["role"]
+		second = create_custom_role(self.team.name, "Role Two", ["server:snapshot"])["role"]
+
+		self.assertNotEqual(first, second)
+		self.assertTrue(first.startswith("TEAM-ROLE-"))
+		self.assertTrue(second.startswith("TEAM-ROLE-"))
+		# The malformed literal must never be a stored name.
+		self.assertNotEqual(first, "TEAM-ROLE-.#####")
+		self.assertNotEqual(second, "TEAM-ROLE-.#####")
+
 	def test_rename_team_needs_team_edit(self):
 		frappe.set_user(self.admin)
 		result = rename_team(self.team.name, "Renamed via API")

@@ -35,7 +35,7 @@ import {
 	specLine,
 	statusVisual,
 } from '@/lib/serverMap'
-import { errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 import type { Region } from '@/types/Central/Region'
 import signingInHtml from './signing-in.html?raw'
 
@@ -65,6 +65,8 @@ const {
 
 const terminateSiteCall = useCall<unknown, { name: string }>({
 	url: method(API.terminateSite),
+	immediate: false,
+	method: 'POST',
 })
 
 const getSiteCall = useCall<
@@ -419,8 +421,13 @@ async function confirmSiteTerminate(): Promise<void> {
 	const name = pendingSiteTerminate.value?.name
 	pendingSiteTerminate.value = null
 	if (!name) return
-	await terminateSiteCall.submit({ name })
-	reload()
+	try {
+		await terminateSiteCall.submit({ name })
+		successToast('Site scheduled for termination.')
+		reload()
+	} catch (e) {
+		errorToast(e)
+	}
 }
 </script>
 
