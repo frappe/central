@@ -261,43 +261,32 @@ def _overview_asset_row(resource_id: str, team: str):
 
 
 def _overview_plan(asset: dict, team: str) -> dict:
-	"""Tier name + billed rate — scoped to this asset, not the team's full run-rate."""
+	"""Tier name + billed rate — scoped to this asset, not the team's full run-rate.
+
+	Reads the asset's open priced segment through the billing seam
+	(`active_segment_for_resource`) rather than querying Subscription / Subscription
+	Change and re-deriving the ledger's open-segment rule here — servers does not own
+	how a segment resolves from the billing ledger."""
+	from central.billing.catalog.subscriptions import active_segment_for_resource
+
 	currency = frappe.db.get_value("Billing Profile", team, "currency") or "INR"
 	billing_cycle = "Monthly"
 	title = None
 	rate = None
 	plan_name = asset.plan
 
-	subscription = frappe.qb.DocType("Subscription")
-	change = frappe.qb.DocType("Subscription Change")
-	segment_rows = (
-		frappe.qb.from_(subscription)
-		.left_join(change)
-		.on(
-			(change.subscription == subscription.name)
-			& (change.change_type.isin(("Created", "Plan Changed", "Cancelled")))
-		)
-		.select(
-			subscription.plan,
-			change.change_type,
-			change.locked_rate,
-			change.currency,
-			change.effective_at,
-			change.creation,
-		)
-		.where(subscription.asset_id == asset.resource_id)
-		.orderby(change.effective_at, order=frappe.qb.desc)
-		.orderby(change.creation, order=frappe.qb.desc)
-		.limit(1)
-		.run(as_dict=True)
-	)
-	if segment_rows:
-		segment = segment_rows[0]
+	segment = active_segment_for_resource(asset.resource_id)
+	if segment:
 		plan_name = segment.plan or plan_name
-		if plan_name and segment.change_type and segment.change_type != "Cancelled":
-			if segment.locked_rate is not None:
-				rate = frappe.utils.flt(segment.locked_rate)
+		# Only adopt the segment's currency/rate once a plan is attached: an Asset can
+		# open a Subscription during bootstrap before a plan exists, and that segment
+		# has no meaningful price to show (keep the profile-default currency then).
+		if plan_name:
 			currency = segment.currency or currency
+			# A priced open segment carries a locked_rate; an unpriced one (0/None)
+			# falls through to the catalog rate below.
+			if segment.locked_rate:
+				rate = frappe.utils.flt(segment.locked_rate)
 
 	if plan_name:
 		plan = frappe.db.get_value("Plan", plan_name, ["title", "billing_cycle"], as_dict=True)

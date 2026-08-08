@@ -3,7 +3,8 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.auth import _otp_key, build_auth_context, sign_up, verify_signup
+from central.api.auth import _otp_key, sign_up, verify_signup
+from central.www.dashboard import build_auth_context
 
 
 class TestAuth(IntegrationTestCase):

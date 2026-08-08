@@ -107,8 +107,15 @@ def report_pilot_event(
 
 	Delegates to the notification engine. The team is resolved from the
 	authenticated pilot credential — never from the request body.
+
+	A pilot may only raise Server-domain events (the infra events a bench observes).
+	Billing/Team event types are Central-originated, so refusing them here stops a
+	compromised or buggy bench from fanning out, e.g., a payment_failure email to the
+	whole team. An unknown event type has no category and is refused too.
 	"""
 	team = frappe.local.pilot_credential.team
+	if frappe.db.get_value("Notification Event Type", event_type, "category") != "Server":
+		frappe.throw(_("This event type cannot be reported by a pilot."), frappe.PermissionError)
 	from central.notification.engine import dispatch
 
 	return dispatch(

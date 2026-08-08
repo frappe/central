@@ -57,25 +57,25 @@ def dispatch(
 
 	doc = None
 	if event.create_in_app:
-		doc = frappe.get_doc(
-			{
-				"doctype": "Team Notification",
-				"team": team,
-				"category": event.category,
-				"event_type": event_type,
-				"severity": event.severity,
-				"required_cap": event.required_cap,
-				"title": title,
-				"message": body,
-				"reference_doctype": reference_doctype,
-				"reference_name": reference_name,
-				"action_label": event.action_label,
-				"action_route": _render_template(event.action_route, ctx) if event.action_route else None,
-				"is_read": 0,
-			}
-		).insert(ignore_permissions=True)
+		# One writer: dispatch resolves the event type from the registry, then hands
+		# the row to create_notification (the single Team Notification insert) rather
+		# than building its own — so there is one insert path, not two.
+		from central.notification import create_notification
 
-		publish_team_nudge(team)
+		doc = create_notification(
+			team,
+			title,
+			category=event.category,
+			event_type=event_type,
+			severity=event.severity,
+			required_cap=event.required_cap,
+			message=body,
+			reference_doctype=reference_doctype,
+			reference_name=reference_name,
+			action_label=event.action_label,
+			action_route=_render_template(event.action_route, ctx) if event.action_route else None,
+			publish=True,
+		)
 
 	email_result = _fan_out_emails(
 		team,
@@ -363,6 +363,9 @@ def _send_member_email(
 			subject = rendered["subject"]
 			body = rendered["message"]
 		except Exception:
+			# A broken Email Template shouldn't silently downgrade to the in-app copy
+			# with no trace — log why, then fall back.
+			frappe.log_error(title=f"Notification email template render failed: {event.event_type}")
 			subject = _render_template(event.in_app_title, ctx) or event.event_type
 			body = message or _render_template(event.in_app_body, ctx) or ctx.get("message", "")
 	else:
@@ -377,4 +380,7 @@ def _send_member_email(
 		)
 		return True
 	except Exception:
+		# Best-effort delivery, but never fail silently — a missing outgoing account
+		# or a send error must leave a trace to diagnose (retry/backoff is a later phase).
+		frappe.log_error(title=f"Notification email send failed: {event.event_type} -> {user}")
 		return False

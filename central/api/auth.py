@@ -5,8 +5,6 @@ import secrets
 import frappe
 from frappe import _
 from frappe.utils import cint, escape_html, random_string
-from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
-from frappe.utils.password import get_decrypted_password
 
 from central.iam import get_user_team_names
 from central.users import CENTRAL_USER_ROLE
@@ -160,56 +158,6 @@ def _signup_roles() -> list[str]:
 	if default_role and default_role not in roles:
 		roles.append(default_role)
 	return roles
-
-
-def build_auth_context() -> dict:
-	return {
-		"user": frappe.session.user or "Guest",
-		"provider_logins": _provider_logins(),
-		"onboarding_complete": _onboarding_complete(),
-	}
-
-
-def _onboarding_complete() -> bool:
-	"""True once the user's team owns a live site — the signal the SPA uses to keep a
-	brand-new user inside the onboarding funnel (and let a returning one skip it).
-	A first-run user (no team or no site yet) is still onboarding."""
-	user = frappe.session.user
-	if not user or user == "Guest":
-		return False
-	teams = get_user_team_names(user)
-	if not teams:
-		return False
-	return bool(frappe.db.exists("Site", {"team": ["in", teams], "status": ["!=", "Terminated"]}))
-
-
-def _provider_logins() -> list[dict[str, str]]:
-	providers = frappe.get_all(
-		"Social Login Key",
-		filters={"enable_social_login": 1},
-		fields=["name", "client_id", "base_url", "provider_name", "icon"],
-		order_by="name",
-	)
-	return [
-		{
-			"name": provider.name,
-			"label": provider.provider_name,
-			"icon": provider.icon or "",
-			"auth_url": get_oauth2_authorize_url(provider.name, "/dashboard/servers"),
-		}
-		for provider in providers
-		if _provider_is_configured(provider)
-	]
-
-
-def _provider_is_configured(provider) -> bool:
-	client_secret = get_decrypted_password(
-		"Social Login Key",
-		provider.name,
-		"client_secret",
-		raise_exception=False,
-	)
-	return bool(provider.client_id and client_secret and provider.base_url and get_oauth_keys(provider.name))
 
 
 def _enforce_signup_limit() -> None:
