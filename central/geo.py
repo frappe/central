@@ -28,7 +28,15 @@ def get_country_from_ip(ip: str | None = None) -> str | None:
 	if not ip:
 		return None
 
-	info = frappe.cache().hget("ip_country_map", ip, generator=lambda: _lookup_ip(ip))
+	# Per-IP key with a TTL rather than one ever-growing `ip_country_map` hash: a
+	# hash field never expires, so it accreted a row per distinct signup IP forever.
+	# A country rarely changes for an IP, and a stale miss just re-looks-up, so a
+	# long TTL is safe and lets Redis evict cold entries.
+	info = frappe.cache().get_value(
+		f"ip_country:{ip}",
+		generator=lambda: _lookup_ip(ip),
+		expires_in_sec=30 * 24 * 60 * 60,  # 30 days
+	)
 	return (info or {}).get("country")
 
 

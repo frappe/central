@@ -13,9 +13,23 @@ from central.iam import can, is_active_team_member, user_has_operator_bypass
 # functools.wraps keeps the original signature so Frappe still maps request args.
 
 
+@functools.cache
+def _signature(func: Callable) -> inspect.Signature:
+	# A function's signature never changes, so resolve it once and cache it —
+	# `inspect.signature` is the expensive part and this runs on every gated request.
+	return inspect.signature(func)
+
+
+def bound_args(func: Callable, args: tuple, kwargs: dict) -> dict:
+	"""All call arguments as a name→value dict, whether passed positionally or by
+	keyword. The one signature resolver shared by the decorators here and the
+	service permission helpers (central.services.permissions)."""
+	return _signature(func).bind_partial(*args, **kwargs).arguments
+
+
 def _call_arg(func: Callable, args: tuple, kwargs: dict, name: str):
-	"""Read a named argument from the call, whether passed positionally or by keyword."""
-	return inspect.signature(func).bind_partial(*args, **kwargs).arguments.get(name)
+	"""Read one named argument from the call."""
+	return bound_args(func, args, kwargs).get(name)
 
 
 def require_team_member(func: Callable) -> Callable:

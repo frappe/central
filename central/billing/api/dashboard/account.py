@@ -5,7 +5,6 @@ team header, and trust-tier progress.
 """
 
 import frappe
-from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -343,98 +342,5 @@ def list_switchable_teams() -> list[dict]:
 	return out
 
 
-# ── Notifications (#20) ──────────────────────────────────────────────────────
-# The team's in-app notification feed (Team Notification) and the email audit
-# trail (Billing Notification Log).
-
-
-@frappe.whitelist()
-def list_notifications(
-	team: str | None = None,
-	limit: int = 50,
-	category: str | None = None,
-	unread_only: bool = False,
-) -> dict:
-	"""The team's in-app notification feed — billing and server events — newest first.
-
-	Delegates to :func:`central.notification.list_notifications` for
-	capability-filtered results.  Operators see everything; regular
-	members only see notifications whose ``required_cap`` they hold.
-	"""
-	from central.notification import list_notifications as _list
-
-	team = _resolve_team(team)
-	return _list(
-		team,
-		limit=limit,
-		category=category,
-		unread_only=unread_only,
-	)
-
-
-@frappe.whitelist()
-def notification_badge(team: str | None = None) -> dict:
-	"""Lightweight unread count for the console bell badge (no item payload)."""
-	from central.notification import unread_count
-
-	return {"unread": unread_count(_resolve_team(team), user=frappe.session.user)}
-
-
-@frappe.whitelist(methods=["POST"])
-def mark_notification_read(name: str, team: str | None = None, read: bool = True) -> dict:
-	"""Mark one of the team's notifications read (or unread).  Read state is
-	per-user: each member creates/removes a ``Notification Read`` record rather
-	than mutating the shared ``is_read`` flag."""
-	team = _resolve_team(team)
-	if frappe.db.get_value("Team Notification", name, "team") != team:
-		frappe.throw(_("Notification not found for this team."), frappe.PermissionError)
-
-	user = frappe.session.user
-	read = bool(frappe.utils.cint(read))
-
-	if read:
-		if not frappe.db.exists("Notification Read", {"user": user, "notification": name}):
-			frappe.get_doc(
-				{
-					"doctype": "Notification Read",
-					"user": user,
-					"notification": name,
-					"read_at": frappe.utils.now_datetime(),
-				}
-			).insert(ignore_permissions=True)
-	else:
-		frappe.db.delete("Notification Read", {"user": user, "notification": name})
-
-	from central.notification import unread_count
-
-	return {"ok": True, "unread": unread_count(team, user=user)}
-
-
-@frappe.whitelist(methods=["POST"])
-def mark_all_notifications_read(team: str | None = None) -> dict:
-	"""Mark every visible notification for the user read — the bell's 'clear' action.
-
-	Uses per-user ``Notification Read`` records instead of the shared ``is_read``
-	flag, so one member clearing their feed does not affect others.
-	"""
-	team = _resolve_team(team)
-	from central.notification import list_notifications
-
-	feed = list_notifications(team, user=frappe.session.user, limit=10000)
-	now = frappe.utils.now_datetime()
-	updated = 0
-	for item in feed["items"]:
-		if not item["is_read"]:
-			if not frappe.db.exists(
-				"Notification Read", {"user": frappe.session.user, "notification": item["name"]}
-			):
-				frappe.get_doc(
-					{
-						"doctype": "Notification Read",
-						"user": frappe.session.user,
-						"notification": item["name"],
-						"read_at": now,
-					}
-				).insert(ignore_permissions=True)
-				updated += 1
-	return {"ok": True, "updated": updated, "unread": 0}
+# The in-app notification feed endpoints (list/badge/mark) moved to
+# central.notification.api — billing hosts only the email writer now.

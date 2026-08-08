@@ -664,13 +664,13 @@ class TestAtlasMirror(IntegrationTestCase):
 				seen["for_update"] = kwargs.get("for_update")
 			return real_get_doc(*args, **kwargs)
 
+		# mirror_vm on an existing row takes the update path → central.mirror._apply,
+		# which must lock+load in one current read (get_doc(for_update=True)).
 		with patch("frappe.get_doc", side_effect=tracking_get_doc):
-			Asset._update_mirror(
-				"vm-lock",
+			Asset.mirror_vm(
 				self.region,
 				{"name": "vm-lock", "team": self.team.name, "status": "Deploying"},
-				"2026-06-18 10:05:00",
-				None,
+				occurred_at="2026-06-18 10:05:00",
 			)
 		self.assertTrue(seen.get("for_update"))
 		self.assertEqual(frappe.db.get_value("Asset", "vm-lock", "status"), "Deploying")

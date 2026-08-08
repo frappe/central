@@ -223,6 +223,10 @@ def _overview_asset_row(resource_id: str, team: str):
 	pilot = frappe.qb.DocType("Pilot Credential")
 	rows = (
 		frappe.qb.from_(asset)
+		# Asset.cluster links to Atlas Instance, and an Atlas Instance is autonamed
+		# after its region (autoname: field:region), so its name IS the Region name —
+		# hence Region.name == Asset.cluster. This invariant (one Atlas per region,
+		# named for it) is what lets us skip the Asset→Atlas Instance→Region hop.
 		.left_join(region)
 		.on(region.name == asset.cluster)
 		.left_join(team_table)

@@ -97,8 +97,8 @@ export const API = {
 	billingGeo: 'central.billing.api.dashboard.get_billing_geo',
 	billingSettings: 'central.billing.api.dashboard.get_billing_settings',
 	collectionStatus: 'central.billing.api.dashboard.get_collection_status',
-	notifications: 'central.billing.api.dashboard.list_notifications',
-	notificationBadge: 'central.billing.api.dashboard.notification_badge',
+	notifications: 'central.notification.api.list_notifications',
+	notificationBadge: 'central.notification.api.notification_badge',
 	notificationPreferences: 'central.notification.api.get_user_preferences',
 
 	// ── Billing: mutations (POST, billing:manage) ──
@@ -123,9 +123,9 @@ export const API = {
 	saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',
 	setCollectionMode: 'central.billing.api.dashboard.set_collection_mode',
 	saveNotificationPreferences: 'central.notification.api.save_user_preferences',
-	markNotificationRead: 'central.billing.api.dashboard.mark_notification_read',
+	markNotificationRead: 'central.notification.api.mark_notification_read',
 	markAllNotificationsRead:
-		'central.billing.api.dashboard.mark_all_notifications_read',
+		'central.notification.api.mark_all_notifications_read',
 	pauseSubscription: 'central.billing.api.dashboard.pause_subscription',
 	resumeSubscription: 'central.billing.api.dashboard.resume_subscription',
 	subscribeMeteredService:

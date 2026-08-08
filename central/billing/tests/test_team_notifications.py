@@ -5,10 +5,10 @@
 import frappe
 
 from central import notification as feed
-from central.billing.api.dashboard import account
 from central.billing.platform import notifications as billing_notify
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance, ensure_team
+from central.notification import api as notif_api
 
 TEAM = "team-feed"
 OTHER = "team-feed-other"
@@ -69,24 +69,24 @@ class TestFeedAPI(TeamNotificationBase):
 	def test_list_returns_items_and_unread(self):
 		feed.create_notification(TEAM, "A")
 		feed.create_notification(TEAM, "B")
-		out = account.list_notifications(team=TEAM)
+		out = notif_api.list_notifications(team=TEAM)
 		self.assertEqual(len(out["items"]), 2)
 		self.assertEqual(out["unread"], 2)
 
 	def test_category_and_unread_filters(self):
 		feed.create_notification(TEAM, "srv", category="Server")
 		feed.create_notification(TEAM, "bill", category="Billing")
-		self.assertEqual(len(account.list_notifications(team=TEAM, category="Server")["items"]), 1)
+		self.assertEqual(len(notif_api.list_notifications(team=TEAM, category="Server")["items"]), 1)
 
 	def test_mark_read_and_mark_all(self):
 		a = feed.create_notification(TEAM, "A").name
 		feed.create_notification(TEAM, "B")
-		out = account.mark_notification_read(name=a, team=TEAM)
+		out = notif_api.mark_notification_read(name=a, team=TEAM)
 		self.assertEqual(out["unread"], 1)
 		self.assertTrue(
 			frappe.db.exists("Notification Read", {"user": frappe.session.user, "notification": a})
 		)
-		out = account.mark_all_notifications_read(team=TEAM)
+		out = notif_api.mark_all_notifications_read(team=TEAM)
 		self.assertEqual(out["unread"], 0)
 		self.assertEqual(feed.unread_count(TEAM), 0)
 
@@ -94,7 +94,7 @@ class TestFeedAPI(TeamNotificationBase):
 		# A row belonging to another team can't be marked read via this team's scope.
 		foreign = feed.create_notification(OTHER, "not yours").name
 		with self.assertRaises(frappe.PermissionError):
-			account.mark_notification_read(name=foreign, team=TEAM)
+			notif_api.mark_notification_read(name=foreign, team=TEAM)
 
 	def test_read_state_independent_per_user(self):
 		user_a = frappe.session.user
@@ -107,7 +107,7 @@ class TestFeedAPI(TeamNotificationBase):
 		a = feed.create_notification(TEAM, "Alpha").name
 		feed.create_notification(TEAM, "Beta").name
 
-		account.mark_notification_read(name=a, team=TEAM)
+		notif_api.mark_notification_read(name=a, team=TEAM)
 
 		frappe.set_user(user_b)
 		self.assertEqual(feed.unread_count(TEAM), 2, "user_b should see both as unread")

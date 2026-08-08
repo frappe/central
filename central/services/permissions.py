@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import functools
-import inspect
 from collections.abc import Callable
 
 import frappe
 from frappe import _
 
-from central.iam import can
+from central.iam import can, user_has_operator_bypass
+from central.utils.guards import bound_args
 
 
 def require_service_capability(capability: str) -> Callable:
@@ -28,7 +28,7 @@ def require_service_capability(capability: str) -> Callable:
 
 
 def _resolve_team(func: Callable, args: tuple, kwargs: dict) -> str:
-	bound = inspect.signature(func).bind_partial(*args, **kwargs).arguments
+	bound = bound_args(func, args, kwargs)
 	if bound.get("team"):
 		return bound["team"]
 
@@ -64,6 +64,7 @@ def assert_capability(team: str, capability: str) -> None:
 
 
 def assert_operator() -> None:
-	"""Platform-operator gate for backend registration (System Manager only)."""
-	if "System Manager" not in frappe.get_roles():
+	"""Platform-operator gate for backend registration. Uses the one operator
+	definition (central.iam.user_has_operator_bypass) rather than an inline role check."""
+	if not user_has_operator_bypass():
 		frappe.throw(_("Not permitted."), frappe.PermissionError)
