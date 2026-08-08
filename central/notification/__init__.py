@@ -17,7 +17,6 @@ on ``Team Notification``.
 """
 
 import frappe
-from frappe import _
 
 CATEGORIES = ("Billing", "Server", "Team")
 SEVERITIES = ("Info", "Success", "Warning", "Error")
