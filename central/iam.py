@@ -5,6 +5,7 @@ from typing import Any
 
 import frappe
 from frappe import _
+from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
 
@@ -46,6 +47,7 @@ def expand_capabilities(caps: list[str]) -> list[str]:
 	return list(caps) + extra
 
 
+@request_cache
 def user_has_operator_bypass(user: str | None = None) -> bool:
 	"""The only non-team-membership bypass in Central IAM."""
 	user = user or frappe.session.user
@@ -162,8 +164,13 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 	).run(as_dict=True)
 
 
+@request_cache
 def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
-	"""Resolve Team Member -> Team Role -> Capability into token-ready grants."""
+	"""Resolve Team Member -> Team Role -> Capability into token-ready grants.
+
+	Request-cached: `can()` (via permission_query_conditions on every Asset/Site/
+	Team Invitation list query) and the notification feed call this per row/member,
+	so within one request the 4-table join runs once per user, not per call."""
 	grants_by_team: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
 	if user_has_operator_bypass(user):
@@ -214,10 +221,11 @@ def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]
 
 
 def can(user: str, team: str, capability: str) -> bool:
-	if not frappe.db.exists("Capability", capability):
-		return False
-	if not frappe.db.exists("Team", {"name": team, "status": "Active"}):
-		return False
+	# No pre-flight db.exists probes: resolve_user_grants only returns Active teams
+	# (the join filters team.status), so an inactive/unknown team yields no grants,
+	# and an unknown capability simply won't match any grant's caps — both fall
+	# through to False without a separate round-trip. resolve_user_grants is
+	# request-cached, so the per-row/per-member callers pay one join, not N.
 	if user_has_operator_bypass(user):
 		return True
 
