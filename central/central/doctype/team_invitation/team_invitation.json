@@ -34,6 +34,7 @@
    "in_standard_filter": 1,
    "label": "Email",
    "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   },
   {
@@ -43,6 +44,7 @@
    "label": "Team Role",
    "options": "Team Role",
    "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   },
   {

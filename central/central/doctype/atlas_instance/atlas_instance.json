@@ -67,7 +67,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Atlas admin API key; Central authenticates with it for every Central→Atlas call.",
+   "description": "Atlas admin API key; Central authenticates with it for every Central\u2192Atlas call.",
    "fieldname": "api_key",
    "fieldtype": "Data",
    "label": "Admin API Key",
@@ -95,7 +95,7 @@
   },
   {
    "default": "Unregistered",
-   "description": "Unregistered → Provisioning → Active; Inactive = registered but tunnel stripped down.",
+   "description": "Unregistered \u2192 Provisioning \u2192 Active; Inactive = registered but tunnel stripped down.",
    "fieldname": "tunnel_status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -124,7 +124,8 @@
    "fieldtype": "Link",
    "label": "Service User",
    "options": "User",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "column_break_tunnel",
