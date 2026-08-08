@@ -17,6 +17,11 @@ class TestCentralSSO(IntegrationTestCase):
 		self.developer = ensure_user("sso.developer@example.test")
 		self.viewer = ensure_user("sso.viewer@example.test")
 
+		# IAM grants are request-cached by user, and the request cache is not reset
+		# between test methods while each test rebuilds its teams under fresh names —
+		# clear it so a prior test's grants never leak into this one's capability checks.
+		frappe.local.request_cache.clear()
+
 	def tearDown(self):
 		frappe.set_user("Administrator")
 

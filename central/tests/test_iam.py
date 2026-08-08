@@ -30,6 +30,11 @@ class TestCentralIAM(IntegrationTestCase):
 		self.viewer = ensure_user("iam.viewer@example.test")
 		self.developer = ensure_user("iam.developer@example.test")
 
+		# IAM grants are request-cached by user, and the request cache is not reset
+		# between test methods while each test rebuilds its teams under fresh names —
+		# clear it so a prior test's grants never leak into this one's claim assertions.
+		frappe.local.request_cache.clear()
+
 	def make_team(self, team_name: str, user: str, role: str):
 		team = frappe.get_doc(
 			{

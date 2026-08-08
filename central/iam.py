@@ -47,10 +47,16 @@ def expand_capabilities(caps: list[str]) -> list[str]:
 	return list(caps) + extra
 
 
-@request_cache
 def user_has_operator_bypass(user: str | None = None) -> bool:
 	"""The only non-team-membership bypass in Central IAM."""
-	user = user or frappe.session.user
+	# Resolve before the cached call: the request cache must key on the concrete
+	# user, never on a bare no-arg () that would pin the first caller's session
+	# user (e.g. Administrator) onto every later caller in the same request.
+	return _user_has_operator_bypass(user or frappe.session.user)
+
+
+@request_cache
+def _user_has_operator_bypass(user: str) -> bool:
 	return OPERATOR_BYPASS_ROLE in frappe.get_roles(user)
 
 
