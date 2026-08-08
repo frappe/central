@@ -13,7 +13,7 @@ import frappe
 from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
 from central.billing.gateways.setup import adapter_keys, ensure_gateway_records
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-from central.billing.tests.utils import configure_gateway, disable_gateway
+from central.billing.tests.utils import configure_gateway, disable_gateway, reset_gateway_roster
 
 ADAPTERS = ("Stripe", "Razorpay", "Paypal")
 
@@ -26,6 +26,11 @@ class GatewayCurrencyTestCase(IntegrationTestCase):
 		ensure_gateway_records()
 		for adapter_key in ADAPTERS:
 			configure_gateway(adapter_key, [], is_enabled=0)
+
+	def tearDown(self):
+		# The roster is one shared row per adapter, so wiping it above wipes it for
+		# every module that runs after this one — put the baseline routing back.
+		reset_gateway_roster()
 
 
 class TestResolveGatewayForCurrency(GatewayCurrencyTestCase):

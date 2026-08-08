@@ -250,6 +250,22 @@ def disable_gateway(adapter_key):
 	frappe.db.set_value("Payment Gateway", adapter_key, "is_enabled", 0)
 
 
+def reset_gateway_roster():
+	"""Restore the routing the rest of the suite assumes: Stripe settles USD,
+	Razorpay settles INR, PayPal is off.
+
+	There is one shared row per adapter (ADR 0021), so a test that rewires the
+	roster rewires it for everything that runs after — where the old throwaway rows
+	could be abandoned harmlessly. A test that wipes the roster owes it a restore.
+	"""
+	from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+	from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+	configure_gateway("Paypal", [], is_enabled=0)
+	make_stripe_gateway()
+	make_razorpay_gateway()
+
+
 def make_plan(name, rates=None, includes=None, **kwargs):
 	"""Create (or replace) a bundle Plan and its Catalog Rate rows; return its name."""
 	if frappe.db.exists("Plan", name):

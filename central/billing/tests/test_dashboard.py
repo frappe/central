@@ -17,6 +17,7 @@ from central.billing.tests.utils import (
 	make_custom_role_team,
 	make_plan,
 	make_user,
+	reset_gateway_roster,
 )
 
 TEAM = "team-cust"
@@ -40,6 +41,10 @@ class CustomerDataBase(IntegrationTestCase):
 		ensure_team(TEAM)
 		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
+		# Saving a billing profile derives the currency from the country and rejects
+		# one no enabled gateway settles, so these tests need INR and USD routable —
+		# set that up rather than inheriting whatever an earlier module left behind.
+		reset_gateway_roster()
 		self._purge()
 		self.today = frappe.utils.getdate()
 		self.month_start = frappe.utils.get_first_day(self.today)

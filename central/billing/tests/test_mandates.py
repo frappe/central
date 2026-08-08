@@ -347,6 +347,13 @@ class TestAddMethodGatewayResolution(IntegrationTestCase):
 		for adapter_key in ("Stripe", "Razorpay", "Paypal"):
 			configure_gateway(adapter_key, [], is_enabled=0)
 
+	def tearDown(self):
+		# One shared row per adapter: the wipe above outlives this class unless the
+		# baseline routing is restored for whatever runs next.
+		from central.billing.tests.utils import reset_gateway_roster
+
+		reset_gateway_roster()
+
 	def _gw(self, adapter, currency, default=0):
 		from central.billing.tests.utils import configure_gateway
 

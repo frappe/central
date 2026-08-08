@@ -20,6 +20,10 @@ def make_stripe_gateway(currencies=(("USD", 1),)):
 	return configure_gateway(
 		"Stripe",
 		currencies,
+		# api_key is Stripe's *publishable* key — the one the browser SDK needs, and
+		# what get_payment_method_options hands the client. Set it here so the fixture
+		# doesn't silently lean on a stripe_publishable_key in common_site_config.
+		api_key="pk_test_123",
 		api_secret="sk_test_123",
 		webhook_secret="whsec_test_123",
 		is_enabled=1,
