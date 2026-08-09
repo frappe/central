@@ -13,9 +13,9 @@ import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import SearchDialog from '@/components/search/SearchDialog.vue'
 import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
-import { useIsMobile } from '@/composables/common/useIsMobile'
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
 import {
 	openSearch,

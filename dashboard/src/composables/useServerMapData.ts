@@ -1,7 +1,7 @@
 import { useCall } from 'frappe-ui'
 import { computed, onScopeDispose } from 'vue'
 import { API, method } from '@/api/methods'
-import { useFrappeListInvalidation } from '@/composables/common/useFrappeRealtime'
+import { useFrappeListInvalidation } from '@/composables/useFrappeRealtime'
 import type { AssetRow } from '@/composables/useServers'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, isAbortError } from '@/lib/toast'

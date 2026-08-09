@@ -2,7 +2,7 @@ import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { createListViewQuery } from '@/components/common/list-view'
-import { useFrappeList } from '@/composables/common/useFrappeList'
+import { useFrappeList } from '@/composables/useFrappeList'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import {

@@ -1,7 +1,7 @@
 import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
-import { useFrappeEventListener } from '@/composables/common/useFrappeRealtime'
+import { useFrappeEventListener } from '@/composables/useFrappeRealtime'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import type { NotificationFeed, TeamNotification } from '@/types/billing'
