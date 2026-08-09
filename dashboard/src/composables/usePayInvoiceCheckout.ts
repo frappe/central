@@ -9,7 +9,7 @@
 import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
-import { type GatewayOrder, openRazorpayCheckout } from '@/lib/gateway'
+import { openRazorpayCheckout, type RazorpayOrder } from '@/lib/gateway'
 import { errorToast, infoToast, successToast } from '@/lib/toast'
 
 export function usePayInvoiceCheckout({
@@ -17,7 +17,7 @@ export function usePayInvoiceCheckout({
 }: {
 	onDone?: (res: unknown) => void
 } = {}) {
-	const create = useCall<GatewayOrder, { invoice: string }>({
+	const create = useCall<RazorpayOrder, { invoice: string }>({
 		url: method(API.payInvoiceCheckout),
 		method: 'POST',
 		immediate: false,
