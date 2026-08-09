@@ -43,11 +43,11 @@ the discarded `useServers` reportview list.
 Done: `CAPABILITIES.md` / `spec/IAM.md` / `spec/EXECUTION_PLAN.md` corrected (15 caps incl.
 `service:*`, role totals, retired `vm:*` → `server:*`); `test_atlas_register._wipe` scoped to
 the regions each test creates (no longer deletes every Atlas Instance); `_verify_over_tunnel`
-retry delay lifted to a patchable `VERIFY_RETRY_DELAY` (0 in the test setUp); wired
-`scripts/lib/central/test_wireguard.py` into CI as a standalone job.
+retry delay lifted to a patchable `VERIFY_RETRY_DELAY` (0 in the test setUp) — **verified: the
+15 atlas-register tests pass on `ci-test.localhost` in ~2.3s**; wired
+`scripts/lib/central/test_wireguard.py` into CI as a standalone job (passes).
 
-Remaining (each wants a throwaway-site test run to verify — the shared bench tracks
-`develop`, and bench tests must not run against `central.localhost`):
+Remaining (follow-up-sized; run against `ci-test.localhost`, never `central.localhost`):
 - **Freeze the `add_days`/`nowdate` clocks** across the ~10 billing test files (needs a
   freezegun-style time fixture added first; applying it blind risks breaking those suites).
   The literal `2099` sentinel wasn't found — confirm it's gone or locate it.
@@ -56,8 +56,16 @@ Remaining (each wants a throwaway-site test run to verify — the shared bench t
 
 ## PR 8b — CI hardening
 
-Flip the deferred gates on once the cleanup above lands green: `vue-tsc --noEmit` (scope to
-`src/`, exclude frappe-ui internals) and biome `preset: recommended`.
+- **Done — `vue-tsc` gate scoped to `src/`.** `scripts/type-check-src.mjs` (npm
+  `type-check:src`) runs `vue-tsc --noEmit` and fails only on `src/` diagnostics — frappe-ui
+  ships `.vue` source that gets type-checked through the import graph and carries errors we
+  can't fix, so a raw `--noEmit` is never green. Wired as the `console-types` CI job. Cleared
+  the two pre-existing `src/` errors (typed `Alert`'s slots; `statusInfo` theme → `BadgeTheme`).
+- **Not done — biome `recommended`.** Under the correct config it surfaces ~94 errors + ~68
+  warnings (unused vars/imports, `noNonNullAssertion`, a11y `useButtonType`, Vue duplicate
+  keys). That's a dedicated cleanup PR, not a gate-flip — enabling it blind (or via a
+  CWD-sensitive `biome.json` with `root: false`) risks churn/regressions. Do it deliberately:
+  land the correctness group first (mostly auto-fixable), then the style/a11y groups.
 
 ## Deferred / needs a decision
 
