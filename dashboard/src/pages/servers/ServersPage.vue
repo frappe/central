@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Button, Dialog, Spinner, useCall } from 'frappe-ui'
+import { Button, Spinner, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
@@ -14,7 +15,6 @@ import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import SiteRowActions from '@/components/servers/SiteRowActions.vue'
-import TerminateDialog from '@/components/servers/TerminateDialog.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useFleetRows } from '@/composables/useFleetRows'
@@ -357,12 +357,6 @@ async function openSite(name: string): Promise<void> {
 	}
 }
 const pendingSiteTerminate = ref<{ name: string } | null>(null)
-const siteTerminateOpen = computed({
-	get: () => !!pendingSiteTerminate.value,
-	set: (isOpen: boolean) => {
-		if (!isOpen) pendingSiteTerminate.value = null
-	},
-})
 async function confirmSiteTerminate(): Promise<void> {
 	const name = pendingSiteTerminate.value?.name
 	pendingSiteTerminate.value = null
@@ -528,25 +522,29 @@ async function confirmSiteTerminate(): Promise<void> {
 			/>
 		</div>
 
-		<TerminateDialog
-			v-model:server="pendingTerminate"
+		<ConfirmDialog
+			v-model:target="pendingTerminate"
+			title="Terminate server"
+			confirm-label="Yes, terminate"
+			theme="red"
 			:loading="busy === pendingTerminate?.resource_id"
 			@confirm="confirmTerminate"
-		/>
+		>
+			<p class="text-p-base text-ink-gray-7">
+				Permanently destroy
+				<span class="font-semibold text-ink-gray-9"
+					>{{ pendingTerminate?.title || pendingTerminate?.resource_id }}</span
+				>? This can't be undone.
+			</p>
+		</ConfirmDialog>
 
-		<Dialog
-			v-model="siteTerminateOpen"
+		<ConfirmDialog
+			v-model:target="pendingSiteTerminate"
 			title="Terminate site"
-			size="sm"
-			:actions="[
-			{
-		label: 'Yes, terminate',
-		variant: 'solid',
-		theme: 'red',
-		loading: terminateSiteCall.loading,
-		onClick: confirmSiteTerminate,
-	},
-]"
+			confirm-label="Yes, terminate"
+			theme="red"
+			:loading="terminateSiteCall.loading"
+			@confirm="confirmSiteTerminate"
 		>
 			<p class="text-p-base text-ink-gray-7">
 				Terminate
@@ -555,7 +553,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				>? This permanently deletes the site and its backing VM. This can't be
 				undone.
 			</p>
-		</Dialog>
+		</ConfirmDialog>
 
 		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
 		<ServerOverviewDialog
