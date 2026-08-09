@@ -205,6 +205,47 @@ class TestCentralIAM(IntegrationTestCase):
 		# The all-resources Owner grant covers any server.
 		self.assertTrue(can(self.owner, team.name, "server:power", "Server", "srv-y"))
 
+	def test_different_roles_on_different_servers(self):
+		# The headline case: one member, two servers, a different role on each.
+		team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": "IAM Mixed Scope Team",
+				"owner_user": self.owner,
+				"members": [
+					{"user": self.owner, "role": "Owner", "status": "Active"},
+					{
+						"user": self.developer,
+						"role": "Developer",
+						"resource_type": "Server",
+						"resource_name": "srv-x",
+						"status": "Active",
+					},
+					{
+						"user": self.developer,
+						"role": "Viewer",
+						"resource_type": "Server",
+						"resource_name": "srv-y",
+						"status": "Active",
+					},
+				],
+			}
+		).insert()
+
+		# Developer on srv-x → full lifecycle there; Viewer on srv-y → read-only there.
+		self.assertTrue(can(self.developer, team.name, "server:power", "Server", "srv-x"))
+		self.assertTrue(can(self.developer, team.name, "server:terminate", "Server", "srv-x"))
+		self.assertFalse(can(self.developer, team.name, "server:power", "Server", "srv-y"))
+		self.assertFalse(can(self.developer, team.name, "server:terminate", "Server", "srv-y"))
+		# But both are visible — the list shows exactly these two, nothing else.
+		self.assertTrue(can(self.developer, team.name, "server:view", "Server", "srv-x"))
+		self.assertTrue(can(self.developer, team.name, "server:view", "Server", "srv-y"))
+		self.assertFalse(can(self.developer, team.name, "server:view", "Server", "srv-z"))
+		self.assertEqual(
+			resolve_resource_scope(self.developer, "server:view", "Server").get(team.name),
+			{"srv-x", "srv-y"},
+		)
+
 	def test_resolve_resource_scope_maps_teams_to_allowed_names(self):
 		team = frappe.get_doc(
 			{
