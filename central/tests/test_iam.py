@@ -1,7 +1,13 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.iam import can, expand_capabilities, get_effective_permissions, get_fc_teams_claim
+from central.iam import (
+	can,
+	expand_capabilities,
+	get_effective_permissions,
+	get_fc_teams_claim,
+	resolve_resource_scope,
+)
 from central.oauth import install_oauth_claim_patch
 
 
@@ -168,6 +174,118 @@ class TestCentralIAM(IntegrationTestCase):
 
 		self.assertFalse(probe.allowed)
 		self.assertIn(team.name, probe.resolved_grants)
+
+	def test_scoped_grant_narrows_can_to_its_resource(self):
+		# A Developer scoped to one server acts on that server only.
+		team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": "IAM Scoped Team",
+				"owner_user": self.owner,
+				"members": [
+					{"user": self.owner, "role": "Owner", "status": "Active"},
+					{
+						"user": self.developer,
+						"role": "Developer",
+						"resource_type": "Server",
+						"resource_name": "srv-x",
+						"status": "Active",
+					},
+				],
+			}
+		).insert()
+
+		# The named resource matches → allowed; a different server → denied.
+		self.assertTrue(can(self.developer, team.name, "server:power", "Server", "srv-x"))
+		self.assertFalse(can(self.developer, team.name, "server:power", "Server", "srv-y"))
+		# A Server-scoped grant does not cover a Site of the same name.
+		self.assertFalse(can(self.developer, team.name, "server:view", "Site", "srv-x"))
+		# No resource named is the team-level/list question — the cap is held somewhere.
+		self.assertTrue(can(self.developer, team.name, "server:power"))
+		# The all-resources Owner grant covers any server.
+		self.assertTrue(can(self.owner, team.name, "server:power", "Server", "srv-y"))
+
+	def test_resolve_resource_scope_maps_teams_to_allowed_names(self):
+		team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": "IAM Scope Map Team",
+				"owner_user": self.owner,
+				"members": [
+					{"user": self.owner, "role": "Owner", "status": "Active"},
+					{
+						"user": self.developer,
+						"role": "Developer",
+						"resource_type": "Server",
+						"resource_name": "srv-x",
+						"status": "Active",
+					},
+				],
+			}
+		).insert()
+
+		self.assertEqual(
+			resolve_resource_scope(self.developer, "server:view", "Server").get(team.name),
+			{"srv-x"},
+		)
+		# No Site-scoped grant → the team is absent from the Site scope entirely.
+		self.assertNotIn(team.name, resolve_resource_scope(self.developer, "server:view", "Site"))
+		# The Owner's all-resources grant resolves to the wildcard.
+		self.assertEqual(resolve_resource_scope(self.owner, "server:view", "Server").get(team.name), "*")
+
+	def test_scoped_grant_leaves_fc_teams_claim_backward_compatible(self):
+		# The bench contract isn't scope-aware yet, so the claim stays one entry per
+		# role with scope "*" (spec/ATLAS_COORDINATION.md).
+		team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": "IAM Claim Compat Team",
+				"owner_user": self.owner,
+				"members": [
+					{"user": self.owner, "role": "Owner", "status": "Active"},
+					{
+						"user": self.developer,
+						"role": "Developer",
+						"resource_type": "Server",
+						"resource_name": "srv-x",
+						"status": "Active",
+					},
+				],
+			}
+		).insert()
+
+		entries = get_fc_teams_claim(self.developer)[team.name]
+		self.assertTrue(all(entry["scope"] == "*" for entry in entries))
+		developer_entry = next(entry for entry in entries if entry["role"] == "Developer")
+		self.assertIn("server:power", developer_entry["caps"])
+
+	def test_asset_has_permission_respects_scope(self):
+		from central.permissions import asset_has_permission
+
+		team = frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": "IAM Asset Perm Team",
+				"owner_user": self.owner,
+				"members": [
+					{"user": self.owner, "role": "Owner", "status": "Active"},
+					{
+						"user": self.developer,
+						"role": "Developer",
+						"resource_type": "Server",
+						"resource_name": "srv-x",
+						"status": "Active",
+					},
+				],
+			}
+		).insert()
+
+		in_scope = frappe._dict(name="srv-x", team=team.name)
+		out_of_scope = frappe._dict(name="srv-y", team=team.name)
+		self.assertTrue(asset_has_permission(in_scope, self.developer, "read"))
+		self.assertFalse(asset_has_permission(out_of_scope, self.developer, "read"))
+		# The Owner's all-resources grant sees both.
+		self.assertTrue(asset_has_permission(out_of_scope, self.owner, "read"))
 
 	def test_oauth_userinfo_patch_adds_fc_teams(self):
 		team = self.make_team("IAM OAuth Team", self.viewer, "Viewer")

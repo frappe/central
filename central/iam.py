@@ -126,6 +126,8 @@ def resolve_team(user: str, team: str | None = None) -> str:
 
 
 def get_user_team_names_with_capability(user: str, capability: str) -> list[str]:
+	"""Teams where the user holds `capability` on any resource — a team-level question
+	(does the cap appear at all), the same shape as `can()` with no resource named."""
 	grants = resolve_user_grants(user)
 	return sorted(
 		team
@@ -155,6 +157,8 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 		.select(
 			team.name.as_("team"),
 			member.role,
+			member.resource_type,
+			member.resource_name,
 			team_role.is_system,
 			team_role.team.as_("role_team"),
 			role_capability.capability,
@@ -186,6 +190,8 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 				{
 					"role": OPERATOR_BYPASS_ROLE,
 					"source": "operator",
+					"resource_type": "*",
+					"resource_name": None,
 					"scope": "*",
 					"caps": caps,
 				}
@@ -197,12 +203,18 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 		if not row.is_system and row.role_team != row.team:
 			continue
 
-		key = (row.team, row.role)
+		# A member can hold the same role scoped to several resources, so the grant
+		# key includes the resource scope — each (role, resource) pair is its own grant.
+		resource_type = row.resource_type or "*"
+		resource_name = row.resource_name if resource_type != "*" else None
+		key = (row.team, row.role, resource_type, resource_name)
 		if key not in grants_by_key:
 			grants_by_key[key] = {
 				"role": row.role,
 				"source": "member",
-				"scope": "*",
+				"resource_type": resource_type,
+				"resource_name": resource_name,
+				"scope": "*" if resource_type == "*" else f"{resource_type}:{resource_name}",
 				"caps": [],
 			}
 			grants_by_team[row.team].append(grants_by_key[key])
@@ -230,26 +242,85 @@ def clear_grants_cache() -> None:
 
 
 def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]]]:
+	"""The `fc_teams` OIDC claim benches mirror. The bench contract is not yet
+	scope-aware (spec/ATLAS_COORDINATION.md), so collapse each team's grants to one
+	entry per role with scope `"*"` and the union of caps — identical to what an
+	un-updated bench already expects. Emitting the real per-grant scope (and bumping
+	CAPABILITY_VERSION) is a coordinated follow-up with the bench reader."""
 	user = user or frappe.session.user
 	if not user or user == "Guest":
 		return {}
-	return resolve_user_grants(user)
+
+	claim: dict[str, list[dict[str, Any]]] = {}
+	for team, team_grants in resolve_user_grants(user).items():
+		by_role: dict[str, dict[str, Any]] = {}
+		for grant in team_grants:
+			entry = by_role.setdefault(
+				grant["role"],
+				{"role": grant["role"], "source": grant["source"], "scope": "*", "caps": []},
+			)
+			for cap in grant["caps"]:
+				if cap not in entry["caps"]:
+					entry["caps"].append(cap)
+		claim[team] = list(by_role.values())
+	return claim
 
 
-def can(user: str, team: str, capability: str) -> bool:
+def can(
+	user: str,
+	team: str,
+	capability: str,
+	resource_type: str | None = None,
+	resource_name: str | None = None,
+) -> bool:
 	# No pre-flight db.exists probes: resolve_user_grants only returns Active teams
 	# (the join filters team.status), so an inactive/unknown team yields no grants,
 	# and an unknown capability simply won't match any grant's caps — both fall
 	# through to False without a separate round-trip. resolve_user_grants is
 	# request-cached, so the per-row/per-member callers pay one join, not N.
+	#
+	# `resource_name` is None → "does the user hold this cap on any resource" (the
+	# team-level / list-gate question, unchanged from before scoped grants). Naming a
+	# resource narrows it: only an all-resources (`*`) grant or a grant scoped to
+	# exactly that (resource_type, resource_name) qualifies.
 	if user_has_operator_bypass(user):
 		return True
 
 	for grant in resolve_user_grants(user).get(team, []):
-		if capability in grant.get("caps", []):
+		if capability not in grant.get("caps", []):
+			continue
+		if resource_name is None:
+			return True
+		gtype = grant.get("resource_type", "*")
+		if gtype == "*" or (gtype == resource_type and grant.get("resource_name") == resource_name):
 			return True
 
 	return False
+
+
+def resolve_resource_scope(user: str, capability: str, resource_type: str) -> dict[str, Any]:
+	"""For a resource-level `capability` on a `resource_type` (`"Server"`/`"Site"`),
+	map each team the user may act in to either `"*"` (all resources of that type in
+	the team) or the set of resource names an explicit scoped grant allows. Teams with
+	no covering grant are omitted. Drives the Asset/Site list `permission_query_conditions`."""
+	scope: dict[str, Any] = {}
+	for team, team_grants in resolve_user_grants(user).items():
+		allowed: set[str] = set()
+		wildcard = False
+		for grant in team_grants:
+			if capability not in grant.get("caps", []):
+				continue
+			gtype = grant.get("resource_type", "*")
+			if gtype == "*":
+				wildcard = True
+				break
+			if gtype == resource_type and grant.get("resource_name"):
+				allowed.add(grant["resource_name"])
+		if wildcard:
+			scope[team] = "*"
+		elif allowed:
+			scope[team] = allowed
+	return scope
 
 
 def get_effective_permissions(user: str, team: str | None = None) -> dict[str, Any]:

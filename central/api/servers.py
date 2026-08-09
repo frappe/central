@@ -6,7 +6,7 @@ import unicodedata
 import frappe
 from frappe import _
 
-from central.iam import can, resolve_team
+from central.iam import can, resolve_resource_scope, resolve_team, user_has_operator_bypass
 from central.integrations.atlas import AtlasClient, reconcile
 
 # Server endpoints for the console. Reads come from the Asset mirror; commands go
@@ -136,9 +136,20 @@ def registry(team: str | None = None) -> dict:
 	if not can(user, team, "server:view"):
 		frappe.throw(_("You can't view this team's servers."), frappe.PermissionError)
 
+	# Honor scoped grants: a member scoped to specific servers/sites sees only those.
+	# An all-resources (or operator) grant returns the scope "*" — the whole team.
+	asset_filters: dict = {"team": team}
+	server_scope = _viewable_names(user, team, "Server")
+	if server_scope != "*":
+		asset_filters["name"] = ["in", sorted(server_scope)]
+	site_filters: dict = {"team": team, "status": ["!=", "Terminated"]}
+	site_scope = _viewable_names(user, team, "Site")
+	if site_scope != "*":
+		site_filters["name"] = ["in", sorted(site_scope)]
+
 	assets = frappe.get_all(
 		"Asset",
-		filters={"team": team},
+		filters=asset_filters,
 		fields=[
 			"name",
 			"resource_id",
@@ -162,11 +173,24 @@ def registry(team: str | None = None) -> dict:
 	# (the stable id + terminate key); `subdomain` is the user-entered display name.
 	sites = frappe.get_all(
 		"Site",
-		filters={"team": team, "status": ["!=", "Terminated"]},
+		filters=site_filters,
 		fields=["name", "subdomain", "status", "url", "region"],
 		order_by="subdomain asc",
 	)
 	return {"team": team, "assets": assets, "sites": sites}
+
+
+def _viewable_names(user: str, team: str, resource_type: str) -> object:
+	"""`"*"` when the user may view every `resource_type` in `team` (an all-resources
+	or operator grant), else the set of resource names their scoped grants allow —
+	empty when none. `registry` uses this to filter the mirror to the member's scope."""
+	if user_has_operator_bypass(user):
+		return "*"
+	scope = resolve_resource_scope(user, "server:view", resource_type)
+	allowed = scope.get(team)
+	if allowed == "*":
+		return "*"
+	return allowed or set()
 
 
 @frappe.whitelist(methods=["GET"])
@@ -174,10 +198,12 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 	"""Return one server's Central mirror plus Pilot's cached operational metrics."""
 	user = frappe.session.user
 	team = resolve_team(user, team)
-	if not can(user, team, "server:view"):
-		frappe.throw(_("You can't view this team's servers."), frappe.PermissionError)
 	if not resource_id:
 		frappe.throw(_("resource_id is required."), frappe.ValidationError)
+	# resource_id is the Asset name (autoname field:resource_id), so a server-scoped
+	# grant is honored directly.
+	if not can(user, team, "server:view", "Server", resource_id):
+		frappe.throw(_("You can't view this server."), frappe.PermissionError)
 
 	row = _overview_asset_row(resource_id, team)
 	if not row:
@@ -588,10 +614,12 @@ def _run_command(
 	the asset belongs to the team, call Atlas, return the Task handle."""
 	user = frappe.session.user
 	team = resolve_team(user, team)
-	if not can(user, team, capability):
-		frappe.throw(_("You can't {0} servers for this team.").format(action), frappe.PermissionError)
 	if not resource_id:
 		frappe.throw(_("resource_id is required."), frappe.ValidationError)
+	# resource_id is the Asset name, so a grant scoped to this server authorizes it and
+	# one scoped to another server does not.
+	if not can(user, team, capability, "Server", resource_id):
+		frappe.throw(_("You can't {0} this server.").format(action), frappe.PermissionError)
 
 	# The asset must be in this team's mirror — also how we route to its Atlas.
 	asset = frappe.db.get_value(
