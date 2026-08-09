@@ -5,6 +5,7 @@ from frappe.sessions import get_csrf_token
 from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
 from frappe.utils.password import get_decrypted_password
 
+from central.central.doctype.central_settings.central_settings import CentralSettings
 from central.iam import get_user_team_names
 
 no_cache = 1
@@ -27,6 +28,7 @@ def get_context(context):
 	boot = context.boot or frappe._dict()
 	boot["csrf_token"] = get_csrf_token()
 	boot["user_type"] = getattr(frappe.session.data, "user_type", None)
+	boot["features"] = CentralSettings.feature_flags()
 	boot.update(build_auth_context())
 	# Development benches expose Socket.IO directly; production proxies it.
 	if frappe.conf.developer_mode:

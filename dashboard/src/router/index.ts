@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
+import { features } from '@/lib/features'
 
 const routes = [
 	{
@@ -66,7 +67,7 @@ const routes = [
 				path: 'addons/ai',
 				name: 'AIInference',
 				component: () => import('@/pages/addons/AIInference.vue'),
-				meta: { title: 'Add-on services' },
+				meta: { title: 'Add-on services', feature: 'addons' },
 			},
 			{
 				path: 'billing',
@@ -138,7 +139,7 @@ const routes = [
 				path: 'addons',
 				name: 'Addons',
 				component: () => import('@/pages/addons/Page.vue'),
-				meta: { title: 'Add-on services' },
+				meta: { title: 'Add-on services', feature: 'addons' },
 			},
 		],
 	},
@@ -171,6 +172,10 @@ router.beforeEach((to) => {
 			query: { 'redirect-to': `/dashboard${to.fullPath}` },
 		}
 	}
+
+	// A route behind a disabled feature flag doesn't exist for this session.
+	if (to.meta.feature && !features[to.meta.feature as keyof typeof features])
+		return '/servers'
 
 	// A finished user has no reason to re-enter onboarding.
 	if (to.path.startsWith('/onboarding') && onboardingComplete) return '/servers'

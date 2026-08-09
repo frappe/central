@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { openSearch } from '@/composables/useSearch'
+import { features } from '@/lib/features'
 
 type SidebarItem = {
 	label: string
@@ -55,7 +56,7 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					label: 'Addons',
 					icon: 'lucide-blocks',
 					to: '/addons',
-					condition: canViewServices.value,
+					condition: features.addons && canViewServices.value,
 				},
 			],
 		},
