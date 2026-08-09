@@ -19,22 +19,64 @@ and side-effect free apart from the profile write + one notification.
 import frappe
 from frappe import _
 
+from central.billing.gateways import capabilities
 from central.billing.payments import mandates
-
-# RBI off-session silent-debit ceiling for our merchant category, in MAJOR units
-# (₹). Compared against forecast / invoice totals, which the dashboard reports in
-# major units. The adapter-level ceiling (paise) lives on RazorpayAdapter.
-INR_SILENT_THRESHOLD = 15000
 
 # The modes a customer may pick to resolve action_required (or switch into).
 CUSTOMER_CHOOSABLE = ("Manual Checkout", "Prepaid")
 
 
-def silent_threshold(team: str) -> float:
-	"""The largest bill we may auto-charge silently: min(₹15,000, trust-tier cap).
-	The tier cap is the real spend ceiling, so crossing it also trips action."""
+def gateway_ceiling(team: str) -> float | None:
+	"""The regulatory ceiling on the rail this team's bill would be pulled through,
+	in major units; None where the currency carries no ceiling (ADR 0022).
+
+	Which rail that is follows the team's own primary method, because gateway is a
+	property of the method rather than of the charge. A team with no method yet is
+	measured against the default gateway for its currency, which is the rail it
+	would land on if it added one now.
+
+	A team with no rail at all is held to whatever the law imposes on its currency.
+	The ₹15,000 line an Indian team lives under does not disappear because it has
+	not added a payment method yet.
+	"""
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	if not currency:
+		return None
+
+	gateway = frappe.db.get_value(
+		"Payment Method",
+		{"team": team, "status": "Active", "reauth_required": 0},
+		"gateway",
+		order_by="priority asc, creation asc",
+	) or _default_gateway(currency)
+	if not gateway:
+		return capabilities.regulatory_ceiling(currency)
+	return capabilities.silent_charge_ceiling(gateway, currency)
+
+
+def _default_gateway(currency: str) -> str | None:
+	from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency
+
+	try:
+		return resolve_gateway_for_currency(currency)
+	except GatewayNotFound:
+		return None
+
+
+def silent_threshold(team: str) -> float | None:
+	"""The largest bill we may auto-charge silently: the gateway's ceiling for the
+	team's currency and the trust-tier cap, whichever binds first. None means no
+	ceiling binds at all, which is not the same as a ceiling of zero.
+
+	In INR the gateway ceiling is ₹15,000 whichever gateway it is, because it is an
+	RBI rule rather than a provider limitation. In an unregulated currency the tier
+	cap is the whole answer.
+	"""
 	cap = frappe.utils.flt(mandates.team_cap(team))
-	return float(min(INR_SILENT_THRESHOLD, cap)) if cap else float(INR_SILENT_THRESHOLD)
+	ceiling = gateway_ceiling(team)
+	if ceiling is None:
+		return float(cap) if cap else None
+	return float(min(ceiling, cap)) if cap else float(ceiling)
 
 
 def evaluate(
@@ -46,7 +88,8 @@ def evaluate(
 	the current status()."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	if mode == "E-Mandate" and projected_amount is not None:
-		if frappe.utils.flt(projected_amount) >= silent_threshold(team):
+		threshold = silent_threshold(team)
+		if threshold is not None and frappe.utils.flt(projected_amount) >= threshold:
 			trip(team, reason)
 	return status(team)
 

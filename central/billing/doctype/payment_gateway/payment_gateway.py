@@ -53,11 +53,30 @@ class PaymentGateway(Document):
 		return self.adapter_key == "Paypal" and self.paypal_settlement_mode == "Via Razorpay"
 
 	def validate(self):
+		self._enforce_regulatory_ceiling()
 		if self._should_validate_credentials():
 			self._validate_credentials()
 		self._guard_enable()
 		if self.is_enabled:
 			self._enforce_default_uniqueness()
+
+	def _enforce_regulatory_ceiling(self):
+		"""Hold every regulated currency at the ceiling the law gives it (ADR 0022).
+
+		The ₹15,000 silent-debit limit is an RBI rule, so it is not an admin's number
+		to raise or to leave blank: an empty ceiling reads as "no ceiling", which
+		would let us pull an INR debit that the bank will decline and the regulator
+		will not forgive. A stricter number is a business decision and is left alone.
+		"""
+		from central.billing.gateways import capabilities
+
+		for row in self.currencies or []:
+			ceiling = capabilities.regulatory_ceiling(row.currency)
+			if ceiling is None:
+				continue
+			configured = frappe.utils.flt(row.max_silent_charge)
+			row.max_silent_charge = min(configured, ceiling) if configured else ceiling
+			row.requires_predebit_notice = 1
 
 	def _enforce_default_uniqueness(self):
 		"""At most one enabled gateway may have is_default = True per currency.

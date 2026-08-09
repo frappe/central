@@ -48,12 +48,11 @@ class RazorpayAdapter(GatewayAdapter):
 		"webhook_secret": "razorpay_webhook_secret",
 	}
 
-	# RBI caps a silent (off-session) recurring debit at ₹15,000; above it the
-	# customer must re-authenticate every cycle, so we don't auto-charge there
-	# (ADR 0005). Each debit is preceded by a pre-debit notification.
+	# Razorpay pulls UPI Autopay and card mandates off-session. How much it may
+	# pull silently, and whether a pre-debit notice precedes it, are set per
+	# currency on the gateway row (ADR 0022) — INR is capped at ₹15,000 by the RBI,
+	# and that binds every gateway settling INR, not this one in particular.
 	supports_off_session_charge = True
-	max_silent_charge = 15_00_000  # ₹15,000 in paise
-	requires_predebit_notice = True
 
 	def _client(self):
 		return razorpay.Client(auth=(self.get_credential("api_key"), self.get_credential("api_secret")))

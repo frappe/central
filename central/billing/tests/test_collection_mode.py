@@ -324,20 +324,59 @@ class TestModeAwareDunning(IntegrationTestCase):
 		self.assertIn("top up", msg.lower())
 
 
-class TestAdapterSilentCharge(IntegrationTestCase):
-	"""The capability flags that drive which rail may auto-charge (ADR 0005)."""
+class TestSilentChargeCapability(IntegrationTestCase):
+	"""Which rail may auto-charge how much, per currency (ADR 0022)."""
 
-	def test_stripe_charges_any_amount_silently(self):
-		from central.billing.gateways.stripe_adapter import StripeAdapter
+	def setUp(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
 
-		a = StripeAdapter(frappe._dict())
+		self.stripe = make_stripe_gateway(currencies=(("USD", 1), ("INR", 0)))
+		self.razorpay = make_razorpay_gateway()
+
+	def _adapter(self, gateway):
+		from central.billing.gateways.registry import get_adapter
+
+		return get_adapter(gateway)
+
+	def test_stripe_usd_has_no_ceiling(self):
+		a = self._adapter(self.stripe)
 		self.assertTrue(a.supports_off_session_charge)
-		self.assertTrue(a.can_charge_silently(10_00_00_000))  # ₹10,00,000 — fine
+		self.assertTrue(a.can_charge_silently(10_00_000, "USD"))
 
-	def test_razorpay_silent_only_up_to_15k(self):
-		from central.billing.gateways.razorpay_adapter import RazorpayAdapter
+	def test_stripe_inr_is_capped_like_everyone_else(self):
+		"""The ₹15,000 rule is the RBI's, so moving the rail to Stripe does not move it."""
+		a = self._adapter(self.stripe)
+		self.assertTrue(a.can_charge_silently(15000, "INR"))
+		self.assertFalse(a.can_charge_silently(15000.01, "INR"))
 
-		a = RazorpayAdapter(frappe._dict())
-		self.assertTrue(a.can_charge_silently(15_00_000))  # exactly ₹15,000
-		self.assertFalse(a.can_charge_silently(15_00_001))  # one paisa over
-		self.assertTrue(a.requires_predebit_notice)
+	def test_razorpay_inr_is_capped_and_notifies(self):
+		from central.billing.gateways import capabilities
+
+		a = self._adapter(self.razorpay)
+		self.assertTrue(a.can_charge_silently(15000, "INR"))
+		self.assertFalse(a.can_charge_silently(15001, "INR"))
+		self.assertTrue(capabilities.requires_predebit_notice(self.razorpay.name, "INR"))
+
+	def test_inr_is_capped_even_where_the_row_says_nothing(self):
+		"""An unfilled ceiling must not read as "no ceiling" for a regulated currency."""
+		from central.billing.tests.utils import configure_gateway
+
+		gw = configure_gateway("Stripe", (("USD", 1),), is_enabled=1)
+		self.assertFalse(self._adapter(gw).can_charge_silently(20000, "INR"))
+
+	def test_inr_ceiling_cannot_be_configured_above_the_rbi_limit(self):
+		from central.billing.tests.utils import configure_gateway
+
+		gw = configure_gateway("Razorpay", (("INR", 1),), is_enabled=1)
+		gw.currencies[0].max_silent_charge = 50000
+		gw.save(ignore_permissions=True)
+		self.assertEqual(gw.currencies[0].max_silent_charge, 15000)
+
+	def test_a_stricter_inr_ceiling_is_left_alone(self):
+		from central.billing.tests.utils import configure_gateway
+
+		gw = configure_gateway("Razorpay", (("INR", 1),), is_enabled=1)
+		gw.currencies[0].max_silent_charge = 5000
+		gw.save(ignore_permissions=True)
+		self.assertEqual(gw.currencies[0].max_silent_charge, 5000)

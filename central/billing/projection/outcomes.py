@@ -64,7 +64,7 @@ def derive(team: str, amount: float, currency: str, due_on, today) -> list[frapp
 	# real charge path trips the team into Action Required at exactly this point.
 	if profile_mode == "E-Mandate" and amount:
 		threshold = collection_mode.silent_threshold(team)
-		if amount >= threshold:
+		if threshold is not None and amount >= threshold:
 			findings.append(
 				_finding(
 					"over_silent_threshold",

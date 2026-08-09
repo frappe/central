@@ -6,7 +6,9 @@
  "engine": "InnoDB",
  "field_order": [
   "is_default",
-  "currency"
+  "currency",
+  "max_silent_charge",
+  "requires_predebit_notice"
  ],
  "fields": [
   {
@@ -24,6 +26,21 @@
    "label": "Currency",
    "options": "Currency",
    "reqd": 1
+  },
+  {
+   "fieldname": "max_silent_charge",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Max Silent Charge",
+   "options": "currency",
+   "description": "Largest amount this gateway may pull off-session in this currency. Empty means no ceiling. INR is held at ₹15,000 by the RBI rule, whichever gateway it is."
+  },
+  {
+   "default": "0",
+   "fieldname": "requires_predebit_notice",
+   "fieldtype": "Check",
+   "label": "Requires Pre-Debit Notice",
+   "description": "Notify the customer before every off-session debit on this rail."
   }
  ],
  "index_web_pages_for_search": 0,

@@ -91,10 +91,11 @@ class StripeAdapter(GatewayAdapter):
 		"webhook_secret": "stripe_webhook_secret",
 	}
 
-	# Off-session PaymentIntents charge any amount without re-auth (ADR 0005) —
-	# the saved-method / postpaid rail. No silent ceiling.
+	# Off-session PaymentIntents are the saved-method rail in every currency
+	# (ADR 0022). They charge without re-auth up to the ceiling on the gateway's
+	# currency row: none in USD, ₹15,000 in INR, where Stripe India is bound by the
+	# same RBI rule as anyone else.
 	supports_off_session_charge = True
-	max_silent_charge = None
 
 	def _configure(self):
 		stripe.api_key = self.get_credential("api_secret")

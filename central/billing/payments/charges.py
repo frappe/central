@@ -106,12 +106,12 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	method_name, gateway_name = _resolve_method(inv, payment_method, gateway)
 	adapter = _adapter_for(gateway_name)
 
-	# A debit the gateway can't pull silently (Razorpay > ₹15,000 — an RBI off-session
-	# rule) is never attempted: it would just fail. Instead raise Action Required so
-	# the customer picks manual checkout / prepaid (ADR 0005, #50). Stripe (no silent
-	# ceiling) and sub-₹15k charges pass straight through.
-	amount_minor = round(frappe.utils.flt(inv.expected_collection) * 100)
-	if not adapter.can_charge_silently(amount_minor):
+	# A debit the gateway can't pull silently in this currency (INR above ₹15,000 —
+	# an RBI off-session rule that binds Stripe India and Razorpay alike) is never
+	# attempted: it would just fail. Instead raise Action Required so the customer
+	# picks manual checkout / prepaid (ADR 0022, #106). An uncapped currency and
+	# anything under the ceiling pass straight through.
+	if not adapter.can_charge_silently(frappe.utils.flt(inv.expected_collection), inv.currency):
 		from central.billing.payments import collection_mode
 
 		collection_mode.trip(inv.team, "invoice_over_threshold")
