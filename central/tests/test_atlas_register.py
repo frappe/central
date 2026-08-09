@@ -56,26 +56,33 @@ class TestAtlasRegister(IntegrationTestCase):
 	def setUp(self) -> None:
 		frappe.set_user("Administrator")
 		# register_atlas commits mid-flow (host tasks, User creation), so its rows
-		# survive IntegrationTestCase's rollback. Wipe them before each test for a
-		# deterministic allocation baseline, and again after (committed) so the suite
-		# leaves no residue on the dev site.
-		self._wipe()
-		self.addCleanup(self._wipe, commit=True)
+		# survive IntegrationTestCase's rollback. Track only what this test creates and
+		# wipe (committed) exactly those on teardown — never every Atlas Instance, so
+		# the suite can't destroy real instances on a shared dev site.
+		self._created_regions: set[str] = set()
+		self.addCleanup(self._wipe)
 		self.addCleanup(frappe.set_user, "Administrator")
+		# Don't sleep through the verify-ping retries on the rollback paths.
+		delay_patch = patch("central.integrations.atlas.VERIFY_RETRY_DELAY", 0)
+		delay_patch.start()
+		self.addCleanup(delay_patch.stop)
 		_set_hub(active=True)
 
-	def _wipe(self, commit: bool = False) -> None:
-		"""Delete every Atlas Instance + per-Atlas service user — instances first to
-		drop the service_user link, then the users."""
-		for name in frappe.get_all("Atlas Instance", pluck="name"):
-			frappe.delete_doc("Atlas Instance", name, force=True, ignore_permissions=True)
-		for name in frappe.get_all("User", filters={"name": ["like", "atlas-%@%"]}, pluck="name"):
-			frappe.delete_doc("User", name, force=True, ignore_permissions=True)
-		if commit:
-			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- durably remove rows register_atlas committed mid-flow
+	def _wipe(self) -> None:
+		"""Delete the Atlas Instances this test created + their per-Atlas service users —
+		instances first to drop the service_user link, then the users."""
+		for region in self._created_regions:
+			if frappe.db.exists("Atlas Instance", region):
+				frappe.delete_doc("Atlas Instance", region, force=True, ignore_permissions=True)
+		for region in self._created_regions:
+			email = _service_user_email(region)
+			if frappe.db.exists("User", email):
+				frappe.delete_doc("User", email, force=True, ignore_permissions=True)
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- durably remove rows register_atlas committed mid-flow
 
 	def make_instance(self, region: str, **overrides):
 		ensure_region(region)
+		self._created_regions.add(region)
 		if frappe.db.exists("Atlas Instance", region):
 			frappe.delete_doc("Atlas Instance", region, force=True, ignore_permissions=True)
 		values = {
