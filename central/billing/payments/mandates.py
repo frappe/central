@@ -375,3 +375,48 @@ def _retire_superseded_mandates(new_method):
 	)
 	for name in siblings:
 		cancel_mandate(name)
+
+
+# --- mandate lifecycle from the gateway -------------------------------------
+
+# Stripe reports a mandate that can no longer be debited as `inactive`; Razorpay
+# calls the same thing a cancelled/revoked token. Either way the customer's
+# standing permission is gone and the method cannot be charged off-session.
+_DEAD_MANDATE_STATUSES = ("inactive", "cancelled", "canceled", "revoked", "expired")
+
+
+def apply_mandate_event(event_name: str) -> dict:
+	"""Mark the Payment Method a gateway mandate event refers to.
+
+	A revoked mandate is not a failed charge — nothing was attempted — but it does
+	mean the next one cannot run. So the method drops out of the charge order and
+	the team is put in front of the same choice a failed registration gives them,
+	rather than discovering it when an invoice quietly goes unpaid.
+	"""
+	from central.billing.payments import charges, collection_mode
+
+	event = frappe.get_doc("Webhook Event", event_name)
+	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
+	mandate = ((payload.get("data") or {}).get("object")) or {}
+	mandate_id = mandate.get("id")
+	status = (mandate.get("status") or "").lower()
+
+	method = (
+		frappe.db.get_value("Payment Method", {"gateway_mandate_id": mandate_id}, ["name", "team"], as_dict=True)
+		if mandate_id
+		else None
+	)
+	if not method:
+		charges._mark_event(event, "Ignored")
+		return {"handled": False, "reason": "no_method_for_mandate"}
+	if status not in _DEAD_MANDATE_STATUSES:
+		charges._mark_event(event, "Processed")
+		return {"handled": True, "result": "mandate_still_live", "payment_method": method.name}
+
+	doc = frappe.get_doc("Payment Method", method.name)
+	transition(doc, "Cancelled", actor="webhook", reason="mandate revoked at the gateway")
+	doc.reauth_required = 1
+	doc.save(ignore_permissions=True)
+	collection_mode.trip(method.team, "mandate_failed")
+	charges._mark_event(event, "Processed")
+	return {"handled": True, "result": "mandate_revoked", "payment_method": method.name}

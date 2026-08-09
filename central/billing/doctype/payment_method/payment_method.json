@@ -19,6 +19,7 @@
   "section_break_gateway",
   "gateway_method_id",
   "gateway_customer_id",
+  "gateway_mandate_id",
   "setup_reference",
   "display_label",
   "section_break_card",
@@ -104,6 +105,13 @@
    "fieldtype": "Data",
    "label": "Gateway Customer ID",
    "description": "Gateway-side customer reference (Stripe cus_xxx / Razorpay cust_xxx) — used by both cards and mandates"
+  },
+  {
+   "fieldname": "gateway_mandate_id",
+   "fieldtype": "Data",
+   "label": "Gateway Mandate ID",
+   "read_only": 1,
+   "description": "Mandate the off-session debit quotes (Stripe India mandate_xxx). Empty where the rail needs no mandate to charge."
   },
   {
    "fieldname": "setup_reference",

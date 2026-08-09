@@ -232,3 +232,61 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		self.assertEqual(out["status"], "succeeded")
 		self.assertEqual(out["amount_received"], 5000)
 		self.assertEqual(out["currency"], "eur")
+
+
+class TestIndiaCardMandate(IntegrationTestCase):
+	"""Stripe India registers the mandate an Indian recurring card debit needs, and
+	every later debit quotes it (ADR 0022)."""
+
+	def setUp(self):
+		self.gateway = make_stripe_gateway(currencies=(("USD", 1), ("INR", 0)))
+		self.adapter = StripeAdapter(self.gateway)
+
+	def _setup_intent(self, **setup_data):
+		intent = stripe.SetupIntent.construct_from({"id": "seti_x", "client_secret": "seti_x_sec"}, "sk")
+		with patch.object(stripe.SetupIntent, "create", return_value=intent) as create:
+			self.adapter.setup_payment_method(frappe._dict(name="t"), {"customer_id": "cus_x", **setup_data})
+		return create.call_args.kwargs
+
+	def test_an_inr_card_registers_a_mandate(self):
+		params = self._setup_intent(currency="INR", max_amount=15000)
+		options = params["payment_method_options"]["card"]["mandate_options"]
+		self.assertEqual(options["amount"], 1500000)  # paise
+		self.assertEqual(options["amount_type"], "maximum")
+		self.assertEqual(options["currency"], "inr")
+		self.assertEqual(options["supported_types"], ["india"])
+		# Usage-based billing has no fixed amount and no fixed date.
+		self.assertEqual(options["interval"], "sporadic")
+
+	def test_the_registered_maximum_is_the_ceiling_we_enforce(self):
+		"""The customer consents to one number and the bank enforces it, so it must be
+		the number the charge path checks — not a second one that could drift."""
+		params = self._setup_intent(currency="INR", max_amount=8000)
+		self.assertEqual(params["payment_method_options"]["card"]["mandate_options"]["amount"], 800000)
+
+	def test_a_usd_card_asks_for_no_mandate(self):
+		params = self._setup_intent(currency="USD", max_amount=None)
+		self.assertNotIn("payment_method_options", params)
+
+	def test_an_off_session_debit_quotes_the_mandate(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(gateway_method_id="pm_x", gateway_mandate_id="mandate_x", team="t")
+		with patch.object(stripe.PaymentIntent, "create", return_value=intent) as create:
+			self.adapter.charge(
+				frappe._dict(name="INV-1", amount=1000, currency="INR", customer_id="cus_x", team="t"),
+				method,
+				"key-1",
+			)
+		self.assertEqual(create.call_args.kwargs["mandate"], "mandate_x")
+		self.assertTrue(create.call_args.kwargs["off_session"])
+
+	def test_a_card_with_no_mandate_sends_none(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(gateway_method_id="pm_x", team="t")
+		with patch.object(stripe.PaymentIntent, "create", return_value=intent) as create:
+			self.adapter.charge(
+				frappe._dict(name="INV-1", amount=50, currency="USD", customer_id="cus_x", team="t"),
+				method,
+				"key-2",
+			)
+		self.assertNotIn("mandate", create.call_args.kwargs)

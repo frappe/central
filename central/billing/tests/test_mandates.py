@@ -379,3 +379,78 @@ class TestAddMethodGatewayResolution(IntegrationTestCase):
 
 		self._gw("Stripe", "EUR", default=1)
 		self.assertEqual(dashboard._shared._add_method_gateway("EUR").adapter_key, "Stripe")
+
+
+class TestMandateRevokedAtTheGateway(IntegrationTestCase):
+	"""A mandate the customer or their bank revokes (ADR 0022). Nothing failed —
+	nothing was attempted — but the next debit cannot run, so the team is put in
+	front of the choice now rather than discovering it through an unpaid invoice."""
+
+	TEAM = "team-mandate-revoked"
+
+	def setUp(self):
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		ensure_team(self.TEAM)
+		complete_billing_profile(self.TEAM)
+		frappe.db.delete("Payment Method", {"team": self.TEAM})
+		frappe.db.delete("Webhook Event", {})
+		frappe.db.set_value("Billing Profile", self.TEAM, "collection_mode", "Auto Charge")
+		self.gateway = make_stripe_gateway(currencies=(("USD", 1), ("INR", 0))).name
+		self.method = (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": self.TEAM,
+					"gateway": self.gateway,
+					"method_type": "Card",
+					"status": "Active",
+					"gateway_method_id": "pm_india",
+					"gateway_mandate_id": "mandate_india",
+					"gateway_customer_id": "cus_india",
+					"mandate_max_amount": 15000,
+					"mandate_currency": "INR",
+					"display_label": "Visa ····4242",
+					"validated_at": frappe.utils.now_datetime(),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def _deliver(self, status):
+		from central.billing.payments import webhooks
+
+		event = frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": self.gateway,
+				"gateway_event_id": f"evt_{frappe.generate_hash(8)}",
+				"event_type": "mandate.updated",
+				"status": "Received",
+				"raw_payload": frappe.as_json(
+					{"data": {"object": {"id": "mandate_india", "status": status}}}
+				),
+			}
+		).insert(ignore_permissions=True)
+		return webhooks.handle_webhook_event(event.name)
+
+	def test_a_revoked_mandate_retires_the_method_and_asks_the_customer(self):
+		out = self._deliver("inactive")
+		self.assertEqual(out["result"], "mandate_revoked")
+		method = frappe.get_doc("Payment Method", self.method)
+		self.assertEqual(method.status, "Cancelled")
+		self.assertTrue(method.reauth_required)
+		profile = frappe.db.get_value(
+			"Billing Profile", self.TEAM, ["collection_mode", "collection_action_reason"], as_dict=True
+		)
+		self.assertEqual(profile.collection_mode, "Action Required")
+		self.assertEqual(profile.collection_action_reason, "mandate_failed")
+
+	def test_a_live_mandate_changes_nothing(self):
+		out = self._deliver("active")
+		self.assertEqual(out["result"], "mandate_still_live")
+		self.assertEqual(frappe.db.get_value("Payment Method", self.method, "status"), "Active")
+		self.assertEqual(
+			frappe.db.get_value("Billing Profile", self.TEAM, "collection_mode"), "Auto Charge"
+		)

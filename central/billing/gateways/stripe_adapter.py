@@ -12,6 +12,7 @@ from typing import ClassVar
 import frappe
 import stripe
 
+from central.billing.gateways import capabilities
 from central.billing.gateways.base import (
 	GatewayAdapter,
 	GatewayAuthError,
@@ -28,6 +29,9 @@ STRIPE_WEBHOOK_EVENTS = [
 	"payment_intent.payment_failed",
 	"payment_intent.amount_capturable_updated",
 	"charge.refunded",
+	# An Indian mandate the customer or their bank revokes — the card stays valid,
+	# the permission to debit it does not.
+	"mandate.updated",
 ]
 
 
@@ -129,16 +133,51 @@ class StripeAdapter(GatewayAdapter):
 		return {"endpoint_id": endpoint.get("id"), "secret": endpoint.get("secret")}
 
 	def setup_payment_method(self, team, setup_data: dict) -> dict:
-		"""Create an off-session SetupIntent; UI confirms it with the card."""
+		"""Create an off-session SetupIntent; UI confirms it with the card.
+
+		In a currency where recurring debits are regulated — INR, on our Stripe India
+		account — the SetupIntent must also register a **mandate**: the customer
+		authenticates once against a stated maximum, and every later debit quotes the
+		mandate the bank issued. Without it an off-session charge is refused at
+		authorisation, however valid the card. Elsewhere a saved card needs no mandate
+		and none is asked for.
+		"""
 		self._configure()
-		intent = _to_dict(
-			stripe.SetupIntent.create(
-				customer=setup_data.get("customer_id"),
-				payment_method_types=["card"],
-				usage="off_session",
-			)
+		params = dict(
+			customer=setup_data.get("customer_id"),
+			payment_method_types=["card"],
+			usage="off_session",
 		)
+		currency = (setup_data.get("currency") or "").upper()
+		if capabilities.is_regulated_currency(currency):
+			params["payment_method_options"] = {
+				"card": self._india_mandate_options(currency, setup_data.get("max_amount"))
+			}
+		intent = _to_dict(stripe.SetupIntent.create(**params))
 		return {"client_secret": intent.get("client_secret"), "setup_intent_id": intent.get("id")}
+
+	def _india_mandate_options(self, currency: str, max_amount) -> dict:
+		"""India recurring-mandate terms for a SetupIntent.
+
+		`sporadic` is the honest interval: billing is usage-based, so there is no
+		fixed amount and no fixed date — we debit when an invoice closes. The stated
+		maximum is what the customer consents to, and it is also the number the bank
+		enforces, so it is the same ceiling the charge path checks rather than a
+		second one that could drift from it.
+		"""
+		amount = frappe.utils.flt(max_amount) or capabilities.INR_SILENT_CEILING
+		return {
+			"mandate_options": {
+				"reference": frappe.generate_hash(length=12),
+				"amount": round(amount * 100),
+				"amount_type": "maximum",
+				"currency": currency.lower(),
+				"interval": "sporadic",
+				"supported_types": ["india"],
+				"start_date": int(frappe.utils.now_datetime().timestamp()),
+				"description": "Frappe Cloud usage billing",
+			}
+		}
 
 	def validate_payment_method(self, payment_method) -> bool:
 		"""Micro-charge (50 minor units) + auto-refund to prove the card is live."""
@@ -191,6 +230,11 @@ class StripeAdapter(GatewayAdapter):
 		shipping = _export_shipping(invoice.get("team") or payment_method.get("team"))
 		if shipping:
 			params["shipping"] = shipping
+		# An Indian mandate debit has to quote the mandate the bank issued at setup;
+		# the card alone is not authority to charge off-session there.
+		mandate = payment_method.get("gateway_mandate_id")
+		if mandate:
+			params["mandate"] = mandate
 		try:
 			intent = _to_dict(stripe.PaymentIntent.create(**params))
 		except stripe.error.CardError as e:
