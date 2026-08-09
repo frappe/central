@@ -5,27 +5,13 @@ import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import SiteRowActions from '@/components/servers/SiteRowActions.vue'
 import type { AssetRow } from '@/composables/useServers'
-import type { ServerVisual } from '@/lib/serverMap'
-import type { Region } from '@/types/Central/Region'
+import type { ResourceRow } from '@/lib/serverMap'
 
 // The "Your servers" floating card: the pill IS the panel, collapsed. Opening
 // morphs it in place (see <style>). Renders both kinds indistinguishably — a site
 // is a 1:1-backed VM, so it wears the same provider avatar and lists in the same
 // sorted stream as a server; only its ⋯ actions differ. Presentational.
-export interface ResourceRow {
-	kind: 'server' | 'site'
-	id: string
-	name: string
-	visual: ServerVisual
-	specs: string
-	cluster: string
-	region: Region | undefined
-	regionLabel: string
-	flag: string
-	provider: string | null
-	asset?: AssetRow
-	site?: { name: string; url: string | null }
-}
+export type { ResourceRow }
 
 const props = defineProps<{
 	pillLabel: string

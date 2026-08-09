@@ -176,6 +176,24 @@ export interface MapPin {
 	site?: { name: string; url: string | null }
 }
 
+/** A server or site decorated into one list/map shape. A site is a 1:1-backed VM,
+ *  so it wears the same provider avatar and lists in the same sorted stream as a
+ *  server; only its `asset`/`site` payload and ⋯ actions differ. */
+export interface ResourceRow {
+	kind: 'server' | 'site'
+	id: string
+	name: string
+	visual: ServerVisual
+	specs: string
+	cluster: string
+	region: Region | undefined
+	regionLabel: string
+	flag: string
+	provider: string | null
+	asset?: AssetRow
+	site?: { name: string; url: string | null }
+}
+
 /** An empty Active region — a "+" affordance on the map. */
 export interface MapSpot {
 	/** The Atlas Instance region code (what new-server routes on). */

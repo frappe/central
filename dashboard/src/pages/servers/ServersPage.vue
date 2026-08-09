@@ -8,7 +8,6 @@ import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
-import type { ResourceRow } from '@/components/servers/ServerListPanel.vue'
 import ServerListPanel from '@/components/servers/ServerListPanel.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
@@ -18,6 +17,7 @@ import SiteRowActions from '@/components/servers/SiteRowActions.vue'
 import TerminateDialog from '@/components/servers/TerminateDialog.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useFleetRows } from '@/composables/useFleetRows'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
 import type { AssetRow } from '@/composables/useServers'
@@ -28,12 +28,10 @@ import {
 	hasMapCoords,
 	type MapPin,
 	type MapSpot,
+	type ResourceRow,
 	regionLabel,
 	type ServerVisual,
 	STATUS_FILTERS,
-	siteVisual,
-	specLine,
-	statusVisual,
 } from '@/lib/serverMap'
 import { errorToast, successToast } from '@/lib/toast'
 import type { Region } from '@/types/Central/Region'
@@ -109,60 +107,8 @@ const hoverId = ref<string | null>(null)
 const panelOpen = ref(false)
 const mapRef = ref<InstanceType<typeof ServerMap> | null>(null)
 
-const regionsByName = computed(
-	() => new Map(regions.value.map((r) => [r.region, r])),
-)
-
-// — Rows: servers and sites decorated into one shape (ResourceRow). A server or
-//   site whose region is unlisted/unplaced still rows here — it just can't pin.
-const serverRows = computed<ResourceRow[]>(() =>
-	assets.value.map((asset) => {
-		const region = regionsByName.value.get(asset.cluster)
-		return {
-			kind: 'server' as const,
-			id: asset.resource_id,
-			name: asset.title || asset.resource_id,
-			asset,
-			visual: statusVisual(asset),
-			specs: specLine(asset),
-			cluster: asset.cluster,
-			region,
-			regionLabel: region ? regionLabel(region) : asset.cluster,
-			flag: flagEmoji(region?.country_code),
-			provider: region?.provider || null,
-		}
-	}),
-)
-
-const siteRows = computed<ResourceRow[]>(() =>
-	sites.value.map((site) => {
-		const region = site.region
-			? regionsByName.value.get(site.region)
-			: undefined
-		return {
-			kind: 'site' as const,
-			id: site.name,
-			// The user-entered name ("demo.in"); the full FQDN drops to the secondary
-			// line (specs) so a site reads like the VM it is, not a routing string.
-			name: site.subdomain || site.name,
-			visual: siteVisual(site.status),
-			specs: site.name,
-			cluster: site.region ?? '',
-			region,
-			regionLabel: region ? regionLabel(region) : (site.region ?? ''),
-			flag: flagEmoji(region?.country_code),
-			provider: region?.provider ?? null,
-			site: { name: site.name, url: site.url },
-		}
-	}),
-)
-
-// One list, sorted by name — no servers-then-sites tell; a site is just another VM.
-const rows = computed<ResourceRow[]>(() =>
-	[...serverRows.value, ...siteRows.value].sort((a, b) =>
-		a.name.localeCompare(b.name),
-	),
-)
+// Servers and sites decorated into one sorted ResourceRow list (useFleetRows).
+const { rows } = useFleetRows(assets, sites, regions)
 
 // — Filters. Status and region scope the map and the panel; search only
 //   narrows the panel rows.
