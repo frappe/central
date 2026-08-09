@@ -8,10 +8,9 @@ import {
 	MobileShell,
 	ToastProvider,
 } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
-import SearchDialog from '@/components/search/SearchDialog.vue'
 import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
@@ -23,8 +22,21 @@ import {
 	useSearchShortcut,
 } from '@/composables/useSearch'
 
+// The search palette builds an index off several team-scoped feeds (servers,
+// members, invoices…). Mount it lazily on first open so those fetches never fire
+// for a user who never searches; once mounted it stays, so its close animation runs.
+const SearchDialog = defineAsyncComponent(
+	() => import('@/components/search/SearchDialog.vue'),
+)
+const searchMounted = ref(false)
+
 useNotificationsRealtime()
 useSearchShortcut()
+
+// Keep it mounted once opened so re-opening is instant and the exit transition plays.
+watch(searchOpen, (isOpen) => {
+	if (isOpen) searchMounted.value = true
+})
 
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
@@ -108,5 +120,5 @@ const breadcrumbs = computed(
 
 	<ToastProvider />
 	<ChangeTeamDialog v-model:open="changeTeamOpen" />
-	<SearchDialog v-model:open="searchOpen" />
+	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
 </template>
