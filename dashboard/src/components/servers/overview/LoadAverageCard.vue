@@ -6,7 +6,7 @@ import {
 	type LoadPoint,
 	peakLoad,
 	toLoadChartRows,
-} from '@/utils/loadChart'
+} from '@/lib/loadChart'
 
 const props = defineProps<{
 	points: LoadPoint[]
