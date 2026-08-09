@@ -114,6 +114,7 @@ def confirm_card(
 	expiry_month: int | None = None,
 	expiry_year: int | None = None,
 	gateway_mandate_id: str | None = None,
+	card_network: str | None = None,
 ) -> dict:
 	"""Confirm a card the gateway SDK tokenised — runs the micro-charge validation.
 
@@ -130,6 +131,7 @@ def confirm_card(
 		expiry_month=expiry_month,
 		expiry_year=expiry_year,
 		gateway_mandate_id=gateway_mandate_id,
+		card_network=card_network,
 	)
 	return {"payment_method": method.name, "status": method.status}
 

@@ -197,6 +197,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 			"gateway": gateway,
 			"method_type": MANDATE_METHOD,
 			"status": "Pending Validation",
+			"card_network": "UPI",
 			"mandate_max_amount": cap,
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
@@ -239,6 +240,7 @@ def setup_card(
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
 			"fallback_reason": fallback_reason,
+			"card_network": "RuPay" if fallback_reason == "Rupay" else None,
 		}
 	).insert(ignore_permissions=True)
 

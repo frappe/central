@@ -24,6 +24,7 @@
   "setup_reference",
   "display_label",
   "section_break_card",
+  "card_network",
   "expiry_month",
   "expiry_year",
   "column_break_mandate",
@@ -137,6 +138,13 @@
   {
    "fieldname": "section_break_card",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "card_network",
+   "fieldtype": "Data",
+   "label": "Card Network",
+   "read_only": 1,
+   "description": "Visa / Mastercard / RuPay / UPI. Taken from what the customer picked or what the gateway reported — never inferred from the card number, which we never see."
   },
   {
    "fieldname": "expiry_month",

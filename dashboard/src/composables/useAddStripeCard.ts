@@ -115,6 +115,7 @@ export function useAddStripeCard({
 				// Present where the currency required a mandate at setup (India); every
 				// later off-session debit quotes it.
 				gateway_mandate_id: mandateId(setupIntent),
+				card_network: c?.brand,
 			})
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {

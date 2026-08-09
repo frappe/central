@@ -197,7 +197,12 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 	attempt.save(ignore_permissions=True)
 	_persist()
 
-	return {"charged": result.success, "attempt": attempt.name, "status": attempt.status}
+	return {
+		"charged": result.success,
+		"attempt": attempt.name,
+		"status": attempt.status,
+		"failure_code": result.failure_code,
+	}
 
 
 def resume_attempt(attempt: str) -> dict:

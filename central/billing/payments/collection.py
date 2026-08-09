@@ -22,7 +22,7 @@ event-driven, not a synchronous try/except cascade:
 
 import frappe
 
-from central.billing.payments import charges
+from central.billing.payments import charges, decline
 
 
 def ordered_methods(team: str) -> list:
@@ -82,8 +82,13 @@ def collect_invoice(invoice: str) -> dict:
 
 		result = charges.pay_invoice(invoice, method.name, method.gateway)
 
-		# A synchronous decline: rotate to the next method now (immediate fallback).
+		# A synchronous decline: rotate to the next method now (immediate fallback) —
+		# but only when the decline is final. An ambiguous failure may still settle at
+		# the gateway, and charging a second method on top of it pays one invoice
+		# twice; reconciliation resolves those instead (ADR 0022).
 		if result.get("status") == "Failed":
+			if not decline.is_terminal(result.get("failure_code")):
+				return {"collected": False, "reason": "ambiguous_failure", "attempt": result.get("attempt")}
 			continue
 		# Captured (awaiting webhook), in-flight, or a transient timeout: stop here.
 		return result

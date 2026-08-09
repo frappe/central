@@ -20,6 +20,8 @@
   "terminate_after_days",
   "section_break_projection",
   "projection_budget_seconds",
+  "section_break_routing",
+  "enable_gateway_fallback",
   "section_break_tax",
   "default_gst_rate"
  ],
@@ -120,6 +122,18 @@
    "fieldname": "projection_budget_seconds",
    "fieldtype": "Int",
    "label": "Projection Budget (Seconds)"
+  },
+  {
+   "fieldname": "section_break_routing",
+   "fieldtype": "Section Break",
+   "label": "Gateway Routing"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_gateway_fallback",
+   "fieldtype": "Check",
+   "label": "Offer Another Rail After a Terminal Decline",
+   "description": "When a card is finally refused, offer the customer the other gateway once, amount prefilled. Ambiguous failures (timeouts, abandoned 3DS) never fall back whatever this says. Which gateway is primary per currency is the Default flag on Payment Gateway Currency, so it stays in one place."
   },
   {
    "fieldname": "section_break_tax",

@@ -174,6 +174,7 @@ def confirm_payment_method(
 	expiry_year: int | None = None,
 	gateway_customer_id: str | None = None,
 	gateway_mandate_id: str | None = None,
+	card_network: str | None = None,
 ) -> dict:
 	"""Confirm a card the customer authorised on the frontend.
 
@@ -188,6 +189,9 @@ def confirm_payment_method(
 		method.gateway_customer_id = gateway_customer_id
 	if gateway_mandate_id:
 		method.gateway_mandate_id = gateway_mandate_id
+	if card_network:
+		# What the gateway reported the card to be. We never read the number ourselves.
+		method.card_network = card_network.title()
 	if display_label:
 		method.display_label = display_label
 	if expiry_month:

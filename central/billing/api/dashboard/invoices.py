@@ -466,6 +466,40 @@ def pay_invoice(invoice: str | None = None) -> dict:
 	return charges.pay_invoice(invoice)
 
 
+@frappe.whitelist()
+def get_fallback_offer(invoice: str | None = None) -> dict:
+	"""The other rail to offer after a card was finally refused (ADR 0022).
+
+	Returns the instrument to put one tap away, with the amount already filled in,
+	so the customer never meets an empty second card form. Empty where the last
+	attempt is not a terminal decline: a timeout may still settle at the gateway,
+	and charging a second rail on top of it pays one invoice twice.
+	"""
+	team = frappe.db.get_value("Invoice", invoice, "team")
+	_require_manage(team)
+	from central.billing.payments import decline
+
+	inv = frappe.db.get_value("Invoice", invoice, ["currency", "expected_collection"], as_dict=True)
+	last = frappe.get_all(
+		"Payment Attempt",
+		filters={"invoice": invoice},
+		fields=["gateway", "status", "failure_code"],
+		order_by="creation desc",
+		limit=1,
+	)
+	if not last or last[0].status != "Failed" or not decline.is_terminal(last[0].failure_code):
+		return {"offer": None}
+
+	tile = decline.alternate_rail(team, inv.currency, last[0].gateway)
+	if not tile:
+		return {"offer": None}
+	return {
+		"offer": tile,
+		"amount": frappe.utils.flt(inv.expected_collection),
+		"currency": inv.currency,
+	}
+
+
 @frappe.whitelist(methods=["POST"])
 def pay_invoice_checkout(invoice: str | None = None) -> dict:
 	"""Open an on-session gateway checkout to pay an invoice yourself
