@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Button, Dropdown } from 'frappe-ui'
 import { computed } from 'vue'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 
 // The actions menu for one site row in the unified assets list. A site is a
 // 1:1-backed VM, so it reuses the server capabilities (site-level caps are
@@ -37,12 +37,5 @@ const options = computed(() => {
 </script>
 
 <template>
-	<Dropdown v-if="options.length" :options="options" placement="right">
-		<Button
-			variant="ghost"
-			icon="lucide-ellipsis-vertical"
-			:loading="busy"
-			aria-label="Site actions"
-		/>
-	</Dropdown>
+	<RowActionsMenu :options="options" label="Site actions" :busy="busy" />
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Button, Dropdown } from 'frappe-ui'
 import { computed } from 'vue'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { PaymentMethod } from '@/types/billing'
 
 // The menu for one payment-method row — mirrors SubscriptionRowActions. Which
@@ -28,6 +28,7 @@ interface ActionItem {
 }
 
 const options = computed(() => {
+	if (!props.canManage) return []
 	const items: ActionItem[] = []
 	if (!props.method.is_default)
 		items.push({
@@ -57,14 +58,10 @@ const options = computed(() => {
 </script>
 
 <template>
-	<Dropdown v-if="canManage" :options="options" placement="bottom-end">
-		<template #trigger>
-			<Button
-				variant="ghost"
-				icon="lucide-ellipsis"
-				:loading="busy"
-				aria-label="Payment method actions"
-			/>
-		</template>
-	</Dropdown>
+	<RowActionsMenu
+		:options="options"
+		label="Payment method actions"
+		icon="lucide-ellipsis"
+		:busy="busy"
+	/>
 </template>
