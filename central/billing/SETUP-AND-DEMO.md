@@ -143,8 +143,8 @@ bench --site central.local execute central.billing.payments.profile.create_or_up
 - **Wallet top-up:** `api/dashboard/invoices.create_topup_order` → `confirm_topup`, or
   programmatically `revenue.credits.purchase(team, amount, currency, …)` → appends a
   **Credit Ledger Entry** and updates the **Credit Wallet**.
-- INR rails: `payments/collection_mode` enforces the ₹15k silent-debit ceiling (ADR 0005);
-  set the team's mode (Stripe Auto / E-Mandate / Manual Checkout / Prepaid).
+- INR rails: `payments/collection_mode` enforces the ₹15k silent-debit ceiling, read off the
+  gateway's currency row (ADR 0022); set the team's mode (Auto Charge / Manual Checkout / Prepaid).
 
 ### Step 6 · Provision a subscription (a "server")
 ```bash

@@ -23,7 +23,7 @@ class TestEmandatePredebit(IntegrationTestCase):
 
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
-		_set_mode(TEAM, "E-Mandate")
+		_set_mode(TEAM, "Auto Charge")
 		clear_team_tier(TEAM)
 		frappe.db.delete("Invoice", {"team": TEAM})
 		frappe.db.delete("Payment Attempt", {"team": TEAM})

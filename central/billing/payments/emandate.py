@@ -1,10 +1,12 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""E-mandate off-session collection with the RBI pre-debit notice (#50 item 3, ADR 0005).
+"""Off-session collection with the RBI pre-debit notice (ADR 0005, ADR 0022).
 
-An Indian e-mandate (Razorpay UPI Autopay / card mandate) may auto-debit silently
-only up to ₹15,000, and only AFTER a pre-debit notification sent ≥24h before the
-debit. So collecting an `emandate` team's invoice is two-phase:
+An Indian mandate may auto-debit silently only up to ₹15,000, and only AFTER a
+pre-debit notification sent ≥24h before the debit. That is true of a Stripe India
+card mandate and a Razorpay UPI Autopay mandate alike, because it is a rule about
+the debit rather than about the provider. So collecting an `Auto Charge` team's
+invoice is two-phase:
 
   1. schedule_predebit — notify the customer and stamp the earliest debit time
      (now + 24h) on the invoice. If the bill is over the silent ceiling it is NOT
@@ -14,7 +16,7 @@ debit. So collecting an `emandate` team's invoice is two-phase:
 
 Both are idempotent and safe to re-run from the daily scheduler. The customer-side
 heads-up is sent here; the bank's own RBI pre-debit notification is dispatched by
-the gateway at debit time (a Razorpay adapter concern, kept out of this orchestration).
+the gateway at debit time (an adapter concern, kept out of this orchestration).
 """
 
 import frappe
@@ -29,8 +31,8 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	Over the silent ceiling → fork to Action Required rather than promise a debit we
 	can't make off-session. Idempotent (skips an already-notified invoice)."""
 	inv = frappe.get_doc("Invoice", invoice)
-	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "E-Mandate":
-		return {"invoice": invoice, "skipped": "not_emandate"}
+	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
+		return {"invoice": invoice, "skipped": "not_auto_charge"}
 	if inv.invoice_type != "Billable" or inv.status not in ("Open", "Overdue"):
 		return {"invoice": invoice, "skipped": "not_collectable"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
@@ -91,7 +93,7 @@ def charge_due(now=None) -> list[dict]:
 	)
 	out = []
 	for inv in due:
-		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "E-Mandate":
+		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
 			continue
 		out.append({"invoice": inv.name, **collection.collect_invoice(inv.name)})
 	return out

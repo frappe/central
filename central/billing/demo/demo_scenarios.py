@@ -102,19 +102,19 @@ _TEAM_SERVICES = {
 # Teams that also compose a custom VM in the à-la-carte selector (design-your-own, ADR 0009).
 _COMPOSED_TEAMS = ("initech", "umbrella")
 
-# Collection mode per team (ADR 0005, #50), chosen to cover the spectrum on screen.
+# Collection mode per team (ADR 0022), chosen to cover the spectrum on screen.
 _COLLECTION_MODES = {
 	# INR
-	"acme-corp": "E-Mandate",
+	"acme-corp": "Auto Charge",
 	"umbrella": "Manual Checkout",
 	"stark-ind": "Manual Checkout",
 	"hooli": "Manual Checkout",
 	"piedpiper": "Prepaid",
 	# USD
-	"northwind": "Stripe Auto",
-	"initech": "Stripe Auto",
-	"soylent": "Stripe Auto",
-	"globex": "Stripe Auto",
+	"northwind": "Auto Charge",
+	"initech": "Auto Charge",
+	"soylent": "Auto Charge",
+	"globex": "Auto Charge",
 	"harbor": "Prepaid",
 }
 
@@ -586,9 +586,9 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 
 	note = _finish_current_month(team, primary_sub, currency, state, pm, gateway)
 
-	mode = _COLLECTION_MODES.get(slug, "Stripe Auto" if currency != "INR" else "Prepaid")
+	mode = _COLLECTION_MODES.get(slug, "Auto Charge" if currency != "INR" else "Prepaid")
 	set_collection_mode(team, mode)
-	if mode == "E-Mandate":
+	if mode == "Auto Charge" and currency == "INR":
 		arm_emandate(team)
 	final_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
 	return f"{len(resources)} instance(s) across {len(by_cluster)} region(s) — {note} [{final_mode}]"

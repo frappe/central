@@ -22,7 +22,7 @@ from frappe import _
 SCENARIOS = {
 	"over-the-inr-threshold": {
 		"title": "An INR bill over the silent-debit ceiling",
-		"question": "What happens when an e-mandate team's bill crosses ₹15,000?",
+		"question": "What happens when an auto-charged INR bill crosses ₹15,000?",
 		"look_for": (
 			"The outcome is Action Required, not a failed charge. Nothing is auto-debited "
 			"above the ceiling by design, and dunning escalates without retrying — the "
@@ -30,7 +30,7 @@ SCENARIOS = {
 		),
 		"overrides": {},
 		"events": [],
-		"requires": {"collection_mode": "E-Mandate"},
+		"requires": {"collection_mode": "Auto Charge"},
 	},
 	"no-way-to-pay": {
 		"title": "No payment method and no credits",

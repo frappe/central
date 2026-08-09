@@ -1,14 +1,20 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Collection mode + the ₹15,000 "Action Required" threshold (issue #50, ADR 0005).
+"""Collection mode + the ₹15,000 "Action Required" threshold (ADR 0005, ADR 0022).
 
 Billing is usage-based and variable. In India an *off-session* recurring debit
-above ₹15,000 needs the customer to re-authenticate every cycle (an RBI rule), so
-we auto-charge silently only while the bill stays under that line. The moment an
-e-mandate team's bill (or its month-to-date forecast) crosses ₹15,000 we stop
-trying to charge silently and flip the team to `action_required` — the account
-keeps running until the customer picks `manual_checkout` (pay each invoice
-on-session, any amount) or `prepaid` (fund the wallet).
+above ₹15,000 needs the customer to re-authenticate every cycle (an RBI rule that
+binds Stripe India and Razorpay alike), so we auto-charge silently only while the
+bill stays under that line. The moment an `Auto Charge` team's bill (or its
+month-to-date forecast) crosses the ceiling we stop trying to charge silently and
+flip the team to `Action Required` — the account keeps running until the customer
+picks `Manual Checkout` (pay each invoice on-session, any amount) or `Prepaid`
+(fund the wallet).
+
+A mode names what the customer experiences, not which provider we called: an
+Indian card mandate on Stripe and a UPI Autopay mandate on Razorpay are both
+`Auto Charge`. Whether a ceiling applies is derived from the currency and the
+rail's own capability, never from the mode.
 
 This module is the pure state machine over `Billing Profile.collection_mode`; the
 forecast number is supplied by the caller (the dashboard computes it in the authed
@@ -82,12 +88,12 @@ def silent_threshold(team: str) -> float | None:
 def evaluate(
 	team: str, projected_amount: float | None = None, reason: str = "forecast_over_threshold"
 ) -> dict:
-	"""Re-check an `emandate` team against the silent-debit threshold and trip
-	`action_required` if `projected_amount` (₹, major units) crosses it. A no-op for
-	any other mode (so it's safe to call from the charge loop / dashboard). Returns
-	the current status()."""
+	"""Re-check an `Auto Charge` team against the silent-debit threshold and trip
+	`Action Required` if `projected_amount` (major units) crosses it. A no-op for any
+	other mode (so it's safe to call from the charge loop / dashboard). Returns the
+	current status()."""
 	mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
-	if mode == "E-Mandate" and projected_amount is not None:
+	if mode == "Auto Charge" and projected_amount is not None:
 		threshold = silent_threshold(team)
 		if threshold is not None and frappe.utils.flt(projected_amount) >= threshold:
 			trip(team, reason)
@@ -116,7 +122,7 @@ def trip(team: str, reason: str) -> None:
 
 
 def choose(team: str, mode: str) -> dict:
-	"""Customer resolves action_required (or switches) to manual_checkout / prepaid.
+	"""Customer resolves Action Required (or switches) to Manual Checkout / Prepaid.
 	Reversible and idempotent; clears the action reason."""
 	if mode not in CUSTOMER_CHOOSABLE:
 		frappe.throw(_("Pick one of {0}.").format(", ".join(CUSTOMER_CHOOSABLE)), frappe.ValidationError)

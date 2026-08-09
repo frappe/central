@@ -60,9 +60,9 @@ def derive(team: str, amount: float, currency: str, due_on, today) -> list[frapp
 			)
 		)
 
-	# An e-mandate bill at or over the silent-debit ceiling is never quietly taken; the
+	# An auto-charged bill at or over the silent-debit ceiling is never quietly taken; the
 	# real charge path trips the team into Action Required at exactly this point.
-	if profile_mode == "E-Mandate" and amount:
+	if profile_mode == "Auto Charge" and amount:
 		threshold = collection_mode.silent_threshold(team)
 		if threshold is not None and amount >= threshold:
 			findings.append(

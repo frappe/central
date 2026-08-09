@@ -28,7 +28,7 @@ class LibraryTestBase(IntegrationTestCase):
 		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
 		add_segment(self.sub, "Created", 6000, "2026-01-01 00:00:00")
 		set_team_tier(TEAM, level="t1", max_spend=100000)
-		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Stripe Auto")
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Prepaid")
 		frappe.db.commit()
 
 	def tearDown(self):
@@ -61,14 +61,14 @@ class TestTheCatalogue(LibraryTestBase):
 
 class TestApplicability(LibraryTestBase):
 	def test_a_scenario_that_cannot_apply_says_why(self):
-		# Applying a threshold scenario to a card team would demonstrate nothing and
-		# imply plenty.
+		# Applying a threshold scenario to a team nothing is auto-charged for would
+		# demonstrate nothing and imply plenty.
 		ok, reason = library.applicable("over-the-inr-threshold", TEAM)
 		self.assertFalse(ok)
-		self.assertIn("E-Mandate", reason)
+		self.assertIn("Auto Charge", reason)
 
 	def test_it_applies_once_the_team_is_on_that_mode(self):
-		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "E-Mandate")
+		frappe.db.set_value("Billing Profile", TEAM, "collection_mode", "Auto Charge")
 		frappe.db.commit()
 		ok, _reason = library.applicable("over-the-inr-threshold", TEAM)
 		self.assertTrue(ok)

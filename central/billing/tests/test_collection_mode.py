@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Collection mode + the ₹15,000 Action Required threshold (issue #50, ADR 0005)."""
+"""Collection mode + the ₹15,000 Action Required threshold (ADR 0005, ADR 0022)."""
 
 import frappe
 
@@ -32,14 +32,14 @@ class TestCollectionMode(IntegrationTestCase):
 		set_team_tier(TEAM, level="t0", max_spend=8000)
 		self.assertEqual(collection_mode.silent_threshold(TEAM), 8000.0)
 
-	def test_emandate_under_threshold_stays_silent(self):
-		_set_mode(TEAM, "E-Mandate")
+	def test_auto_charge_under_threshold_stays_silent(self):
+		_set_mode(TEAM, "Auto Charge")
 		st = collection_mode.evaluate(TEAM, projected_amount=9000)
-		self.assertEqual(st["collection_mode"], "E-Mandate")
+		self.assertEqual(st["collection_mode"], "Auto Charge")
 		self.assertFalse(st["action_required"])
 
-	def test_emandate_over_threshold_trips_action_required(self):
-		_set_mode(TEAM, "E-Mandate")
+	def test_auto_charge_over_threshold_trips_action_required(self):
+		_set_mode(TEAM, "Auto Charge")
 		st = collection_mode.evaluate(TEAM, projected_amount=18400)
 		self.assertEqual(st["collection_mode"], "Action Required")
 		self.assertTrue(st["action_required"])
@@ -50,16 +50,16 @@ class TestCollectionMode(IntegrationTestCase):
 		)
 
 	def test_trip_is_idempotent_one_notification(self):
-		_set_mode(TEAM, "E-Mandate")
+		_set_mode(TEAM, "Auto Charge")
 		collection_mode.evaluate(TEAM, projected_amount=20000)
 		collection_mode.evaluate(TEAM, projected_amount=25000)
 		self.assertEqual(
 			frappe.db.count("Billing Notification Log", {"team": TEAM, "event_type": "Action Required"}), 1
 		)
 
-	def test_non_emandate_modes_are_never_tripped(self):
+	def test_modes_that_never_charge_silently_are_never_tripped(self):
 		# A prepaid team running a huge bill is not "action required" — it just draws
-		# the wallet; only the silent e-mandate rail has the ₹15k ceiling.
+		# the wallet; only the silent off-session rail has the ₹15k ceiling.
 		_set_mode(TEAM, "Prepaid")
 		st = collection_mode.evaluate(TEAM, projected_amount=99999)
 		self.assertEqual(st["collection_mode"], "Prepaid")
@@ -82,21 +82,19 @@ class TestCollectionMode(IntegrationTestCase):
 		_set_mode(TEAM, "Action Required")
 		# A customer cannot silently put themselves (back) on a silent auto rail.
 		with self.assertRaises(frappe.ValidationError):
-			collection_mode.choose(TEAM, "E-Mandate")
-		with self.assertRaises(frappe.ValidationError):
-			collection_mode.choose(TEAM, "Stripe Auto")
+			collection_mode.choose(TEAM, "Auto Charge")
 
 
 class TestInvoiceTimeTrip(IntegrationTestCase):
-	"""pay_invoice refuses a Razorpay debit over ₹15k and trips Action Required
-	instead of attempting a doomed off-session charge (#50 item 1)."""
+	"""pay_invoice refuses an INR debit over ₹15k and trips Action Required instead
+	of attempting a doomed off-session charge."""
 
 	def setUp(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
 
 		ensure_team(TEAM)
 		complete_billing_profile(TEAM)
-		_set_mode(TEAM, "E-Mandate")
+		_set_mode(TEAM, "Auto Charge")
 		frappe.db.delete("Billing Notification Log", {"team": TEAM})
 		frappe.db.delete("Payment Attempt", {"team": TEAM})
 		frappe.db.delete("Invoice", {"team": TEAM})
@@ -158,8 +156,8 @@ class TestInvoiceTimeTrip(IntegrationTestCase):
 
 
 class TestManualCheckout(IntegrationTestCase):
-	"""On-session pay-an-invoice for manual_checkout teams: any amount, settled by
-	the webhook (never on confirm) (#50 item 2)."""
+	"""On-session pay-an-invoice for Manual Checkout teams: any amount, settled by
+	the webhook (never on confirm)."""
 
 	def setUp(self):
 		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway

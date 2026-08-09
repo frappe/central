@@ -120,3 +120,6 @@ central.patches.v0_0.merge_service_credentials
 # The silent-debit ceiling moved off the adapter onto the (gateway, currency) row —
 # fill it in for INR, where an empty ceiling would read as no ceiling (ADR 0022).
 central.patches.v0_0.set_inr_silent_ceiling
+# Stripe Auto and E-Mandate named providers, not behaviours, and an Indian Stripe
+# mandate is both at once — they become Auto Charge (ADR 0022).
+central.patches.v0_0.collapse_collection_modes
