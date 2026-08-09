@@ -9,11 +9,13 @@ import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
 import { errorToast } from '@/lib/toast'
-import type { PaymentMethodOptions } from '@/types/billing'
+import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 
-// Pick a method to add, resolved from the team's billing currency. UPI Autopay is
-// offered only when eligible (recurring-limit/trust gate from the backend). Stripe
-// card capture happens in an embedded Element; Razorpay runs its hosted sheet.
+// Pick an instrument to add. The tiles come from the backend, which resolves them
+// from the team's billing currency, and the instrument decides the rail (ADR 0022):
+// cards go to Stripe, RuPay and UPI to Razorpay. We never inspect the card number,
+// so RuPay is its own tile rather than something we detect. Stripe card capture
+// happens in an embedded Element; Razorpay runs its hosted sheet.
 const open = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ done: [res?: unknown] }>()
 const { activeTeam } = useSession()
@@ -47,14 +49,56 @@ const { run, loading } = useAddPaymentMethod({ onDone: done })
 async function launchGateway(
 	methodType: string,
 	contact?: string,
+	instrument?: string,
 ): Promise<void> {
 	open.value = false
 	await nextTick()
-	const res = await run(methodType, contact)
+	const res = await run(methodType, contact, instrument)
 	if (!res) open.value = true
 }
 
 const upiBlocked = computed(() => options.data && !options.data.allow_upi)
+
+const tiles = computed(() => options.data?.instruments ?? [])
+
+const icons: Record<string, string> = {
+	Card: 'lucide-credit-card',
+	'RuPay Card': 'lucide-credit-card',
+	'UPI Autopay': 'lucide-smartphone',
+	Netbanking: 'lucide-landmark',
+}
+
+// A tile the customer can't act on right now, with the reason to show in its place.
+function blockedReason(tile: PaymentInstrument): string | null {
+	if (!tile.recurring)
+		return 'One-time only — use it when you pay an invoice or top up.'
+	if (tile.instrument === 'UPI Autopay' && upiBlocked.value)
+		return options.data?.upi_block_reason || 'Not available for your account yet.'
+	return null
+}
+
+function subtitle(tile: PaymentInstrument): string {
+	if (tile.instrument === 'UPI Autopay' && options.data?.upi_limit)
+		return `Mandate up to ${money(options.data.upi_limit, options.data.currency)}`
+	return tile.description
+}
+
+function choose(tile: PaymentInstrument): void {
+	if (blockedReason(tile)) return
+	if (tile.adapter_key === 'Stripe') {
+		onCard()
+		return
+	}
+	if (tile.instrument === 'RuPay Card' && cardNeedsPhone.value && !phone.value.trim()) {
+		askPhone.value = true
+		return
+	}
+	launchGateway(
+		tile.instrument === 'UPI Autopay' ? 'UPI Autopay' : 'Card',
+		phone.value.trim() || undefined,
+		tile.instrument,
+	)
+}
 
 // A Razorpay card mandate needs a customer contact; phone is optional on the
 // profile, so collect it inline here when it's missing.
@@ -183,41 +227,28 @@ watch(open, (isOpen) => {
 					</p>
 					<div class="grid gap-3 sm:grid-cols-2">
 						<button
-							v-if="options.data.methods.includes('Card')"
-							class="flex flex-col gap-1.5 rounded-lg border border-outline-gray-2 p-4 text-left transition-colors hover:border-outline-gray-3 disabled:opacity-50"
-							:disabled="loading"
-							@click="onCard"
-						>
-							<span
-								class="lucide-credit-card size-5 text-ink-gray-7"
-								aria-hidden="true"
-							/>
-							<span class="text-sm font-medium text-ink-gray-9">Card</span>
-							<span class="text-p-sm text-ink-gray-5"
-								>Visa, Mastercard, RuPay, Amex</span
-							>
-						</button>
-
-						<button
-							v-if="options.data.methods.includes('UPI Autopay')"
+							v-for="tile in tiles"
+							:key="tile.instrument"
 							class="flex flex-col gap-1.5 rounded-lg border border-outline-gray-2 p-4 text-left transition-colors hover:border-outline-gray-3 disabled:cursor-not-allowed disabled:opacity-50"
-							:disabled="loading || !!upiBlocked"
-							@click="launchGateway('UPI Autopay')"
+							:disabled="loading || !!blockedReason(tile)"
+							@click="choose(tile)"
 						>
 							<span
-								class="lucide-smartphone size-5 text-ink-gray-7"
+								:class="icons[tile.instrument] || 'lucide-credit-card'"
+								class="size-5 text-ink-gray-7"
 								aria-hidden="true"
 							/>
-							<span class="text-sm font-medium text-ink-gray-9"
-								>UPI Autopay</span
+							<span class="text-sm font-medium text-ink-gray-9">{{
+								tile.label
+							}}</span>
+							<span
+								v-if="blockedReason(tile)"
+								class="text-p-sm text-ink-amber-7"
+								>{{ blockedReason(tile) }}</span
 							>
-							<span v-if="upiBlocked" class="text-p-sm text-ink-amber-7">
-								{{ options.data.upi_block_reason || 'Not available for your account yet.' }}
-							</span>
-							<span v-else class="text-p-sm text-ink-gray-5">
-								Mandate up to
-								{{ money(options.data.upi_limit, options.data.currency) }}
-							</span>
+							<span v-else class="text-p-sm text-ink-gray-5">{{
+								subtitle(tile)
+							}}</span>
 						</button>
 					</div>
 				</div>
@@ -232,19 +263,19 @@ watch(open, (isOpen) => {
 						type="text"
 						label="Phone number"
 						placeholder="Mobile number"
-						description="Razorpay requires a contact for recurring card payments. Saved to your billing profile."
+						description="A recurring RuPay card needs a contact number. Saved to your billing profile."
 					/>
 					<Button
 						variant="solid"
 						label="Continue"
 						:loading="loading"
 						:disabled="!phone.trim()"
-						@click="launchGateway('Card', phone.trim())"
+						@click="launchGateway('Card', phone.trim(), 'RuPay Card')"
 					/>
 				</div>
 
-				<!-- Resolved gateway — central picks it from your billing currency; not a
-             chooser. -->
+				<!-- The customer chose an instrument, not a provider, and two tiles here
+             may sit on different providers — so this line names neither. -->
 				<div
 					class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
 				>
@@ -253,10 +284,8 @@ watch(open, (isOpen) => {
 						aria-hidden="true"
 					/>
 					<p class="text-p-sm text-ink-gray-6">
-						You'll authorise on
-						<span class="font-medium text-ink-gray-8"
-							>{{ options.data.adapter_key }}</span
-						>'s secure sheet — we never see your card or UPI credentials.
+						You'll authorise this on your bank's or card network's secure page —
+						we never see your card number or UPI credentials.
 					</p>
 				</div>
 			</div>

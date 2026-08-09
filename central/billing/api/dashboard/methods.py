@@ -5,6 +5,7 @@ setup, and fallback-order management. Gateway secrets are never returned.
 """
 
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -46,14 +47,20 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 
 @frappe.whitelist()
 def get_payment_method_options(team: str | None = None) -> dict:
-	"""What the team can set up, resolved from their billing currency (ADR 0005).
+	"""What the team can set up, resolved from their billing currency (ADR 0022).
 
-	Saved cards are a Stripe-only rail in every currency, so Card is the primary
-	option wherever an enabled Stripe gateway handles the currency. INR additionally
-	offers a Razorpay UPI Autopay e-mandate (gated by the recurring limit); it rides
-	Razorpay independently of the card gateway. Foreign currencies are card-only."""
+	The customer picks an instrument and the instrument picks the gateway: cards go
+	to Stripe in every currency, and RuPay, UPI Autopay and netbanking to Razorpay,
+	which carries what Stripe India cannot. An INR team therefore sees four tiles;
+	elsewhere there is only the card.
+
+	`instruments` is the tile list. `methods` is the older flat list of what can be
+	saved, kept for callers that have not moved to tiles yet."""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
+	from central.billing.payments import instruments as instrument_catalogue
+
+	tiles = instrument_catalogue.available(currency)
 
 	methods: list[str] = []
 	publishable_key = None
@@ -78,6 +85,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 		"gateway": card_gw,
 		"adapter_key": "Stripe" if card_gw else None,
 		"currency": currency,
+		"instruments": tiles,
 		"methods": methods,
 		"publishable_key": publishable_key,
 		**upi,
@@ -168,18 +176,38 @@ def setup_payment_method_order(
 	gateway: str | None = None,
 	method_type: str = "UPI Autopay",
 	contact: str | None = None,
+	instrument: str | None = None,
 ) -> dict:
-	"""Begin adding a Razorpay recurring method — UPI Autopay mandate (ceiling =
-	trust-tier cap) or a card token. `contact` is the phone the UI collects inline
-	for a card mandate when the billing profile has none (Razorpay requires a
-	customer contact for recurring cards). Returns the order handles the UI runs
-	Razorpay Checkout against (#08)."""
+	"""Begin adding a Razorpay recurring method — a UPI Autopay mandate (ceiling =
+	trust-tier cap) or a RuPay card token.
+
+	`instrument` is what the customer tapped, and it decides the rail (ADR 0022);
+	the gateway is resolved from it rather than from the currency default. Callers
+	that predate the tiles still pass `method_type`. `contact` is the phone the UI
+	collects inline for a card mandate when the billing profile has none (Razorpay
+	requires a customer contact for recurring cards)."""
 	team = _resolve_team(team, authz.MANAGE)
 	_require_billing_setup(team)
-	gw = gateway or _add_method_gateway(_team_currency(team)).get("name")
+	currency = _team_currency(team)
+	from central.billing.payments import instruments as instrument_catalogue
 	from central.billing.payments import mandates
 
-	if method_type == "Card":
+	entry = instrument_catalogue.get(instrument) if instrument else None
+	if entry and not entry["recurring"]:
+		frappe.throw(
+			_("{0} is a one-time payment — there is nothing to save.").format(entry["label"]),
+			frappe.ValidationError,
+		)
+	gw = (
+		gateway
+		or (instrument and instrument_catalogue.gateway_for(instrument, currency))
+		or _add_method_gateway(currency).get("name")
+	)
+	if entry and entry["method_type"] == "Card":
+		return mandates.setup_card(
+			team, gw, contact=contact, fallback_reason=entry["fallback_reason"]
+		)
+	if method_type == "Card" and not entry:
 		return mandates.setup_card(team, gw, contact=contact)
 	return mandates.setup_mandate(team, gw)
 

@@ -207,7 +207,13 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 	return {**handles, "payment_method": method.name, "prefill": _prefill(team)}
 
 
-def setup_card(team: str, gateway: str, customer_id: str | None = None, contact: str | None = None) -> dict:
+def setup_card(
+	team: str,
+	gateway: str,
+	customer_id: str | None = None,
+	contact: str | None = None,
+	fallback_reason: str | None = None,
+) -> dict:
 	"""Begin a Razorpay recurring-card authorisation (no UPI MCC limit).
 
 	Same Checkout → token → recurring-charge machinery as a UPI mandate, but on
@@ -232,6 +238,7 @@ def setup_card(team: str, gateway: str, customer_id: str | None = None, contact:
 			"status": "Pending Validation",
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
+			"fallback_reason": fallback_reason,
 		}
 	).insert(ignore_permissions=True)
 

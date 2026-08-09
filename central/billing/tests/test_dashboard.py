@@ -820,8 +820,9 @@ class TestWriteEndpointsRejectGet(IntegrationTestCase):
 
 
 class TestPaymentMethodOptions(IntegrationTestCase):
-	"""Saved cards are a Stripe-only rail (ADR 0005): the Card option is Stripe in
-	every currency; INR also offers a Razorpay UPI Autopay e-mandate."""
+	"""The customer picks an instrument and the instrument picks the gateway (ADR
+	0022): cards ride Stripe in every currency, and RuPay, UPI and netbanking ride
+	Razorpay, which carries what Stripe India cannot."""
 
 	TEAM = "team-method-opts"
 
@@ -869,6 +870,47 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 			methods.initiate_card_setup(self.TEAM)
 		self.assertEqual(frappe.db.get_value("Payment Gateway", captured["gateway"], "adapter_key"), "Stripe")
 
+	def test_india_sees_four_tiles_on_the_right_rails(self):
+		from central.billing.api.dashboard import methods
+
+		out = methods.get_payment_method_options(self.TEAM)
+		rails = {t["instrument"]: t["adapter_key"] for t in out["instruments"]}
+		self.assertEqual(
+			rails,
+			{
+				"Card": "Stripe",
+				"RuPay Card": "Razorpay",
+				"UPI Autopay": "Razorpay",
+				"Netbanking": "Razorpay",
+			},
+		)
+
+	def test_the_rupay_tile_says_rupay(self):
+		"""Never "Other cards" — a customer holding an unusual Visa would read that as
+		theirs and land on a rail that cannot take it."""
+		from central.billing.api.dashboard import methods
+
+		out = methods.get_payment_method_options(self.TEAM)
+		rupay = next(t for t in out["instruments"] if t["instrument"] == "RuPay Card")
+		self.assertEqual(rupay["label"], "RuPay card")
+
+	def test_netbanking_is_one_time_only(self):
+		from central.billing.api.dashboard import methods
+
+		out = methods.get_payment_method_options(self.TEAM)
+		netbanking = next(t for t in out["instruments"] if t["instrument"] == "Netbanking")
+		self.assertFalse(netbanking["recurring"])
+		with self.assertRaises(frappe.ValidationError):
+			methods.setup_payment_method_order(self.TEAM, instrument="Netbanking")
+
+	def test_a_rupay_card_is_registered_on_razorpay_and_says_why(self):
+		from central.billing.api.dashboard import methods
+
+		out = methods.setup_payment_method_order(self.TEAM, instrument="RuPay Card")
+		method = frappe.get_doc("Payment Method", out["payment_method"])
+		self.assertEqual(method.gateway, "Razorpay")
+		self.assertEqual(method.fallback_reason, "Rupay")
+
 	def test_foreign_currency_is_stripe_card_only(self):
 		from central.billing.api.dashboard import methods
 
@@ -877,3 +919,4 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 		self.assertEqual(out["adapter_key"], "Stripe")
 		self.assertEqual(out["methods"], ["Card"])  # no UPI outside INR
 		self.assertFalse(out["allow_upi"])
+		self.assertEqual([t["instrument"] for t in out["instruments"]], ["Card"])

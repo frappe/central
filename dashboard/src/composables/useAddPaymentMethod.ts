@@ -1,4 +1,5 @@
-// Add a recurring payment method (Razorpay path: UPI Autopay mandate or card token).
+// Add a recurring payment method on the Razorpay rail: a UPI Autopay mandate or a
+// RuPay card token (ADR 0022).
 // Ported from the legacy dashboard.
 //
 // setup_payment_method_order creates the Razorpay order; the customer authorises
@@ -41,11 +42,15 @@ export function useAddPaymentMethod({
 	async function run(
 		methodType: string,
 		contact?: string,
+		instrument?: string,
 	): Promise<MethodResult | undefined> {
 		try {
 			const params: Record<string, unknown> = {
 				team: activeTeam.value,
 				method_type: methodType,
+				// What the customer tapped. The backend resolves the rail from it, so a
+				// RuPay card goes to Razorpay without anyone reading the card number.
+				instrument: instrument || methodType,
 			}
 			// A Razorpay card mandate needs a customer contact; the dialog collects it
 			// inline when the billing profile has no phone.

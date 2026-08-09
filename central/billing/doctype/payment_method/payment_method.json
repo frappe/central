@@ -16,6 +16,7 @@
   "is_default",
   "priority",
   "reauth_required",
+  "fallback_reason",
   "section_break_gateway",
   "gateway_method_id",
   "gateway_customer_id",
@@ -88,6 +89,14 @@
    "fieldtype": "Check",
    "label": "Re-authorisation Required",
    "description": "Trust-tier cap rose above this mandate's ceiling; team held at the old ceiling until the customer re-consents."
+  },
+  {
+   "fieldname": "fallback_reason",
+   "fieldtype": "Select",
+   "label": "Fallback Reason",
+   "options": "\nRupay\nStripe Decline\nCustomer Choice",
+   "read_only": 1,
+   "description": "Why this method is not on the default rail for its currency (ADR 0022). Empty for one that is."
   },
   {
    "fieldname": "section_break_gateway",

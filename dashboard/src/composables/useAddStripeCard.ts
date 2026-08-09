@@ -114,7 +114,7 @@ export function useAddStripeCard({
 				expiry_year: c?.exp_year,
 				// Present where the currency required a mandate at setup (India); every
 				// later off-session debit quotes it.
-				gateway_mandate_id: mandateId(setupIntent?.mandate),
+				gateway_mandate_id: mandateId(setupIntent),
 			})
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {
@@ -145,8 +145,10 @@ function capitalise(s: string | undefined): string {
 	return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
 }
 
-// Stripe returns the mandate either expanded or as its id, depending on the call.
-function mandateId(mandate: unknown): string | undefined {
+// India mandates come back on the SetupIntent, either expanded or as a bare id.
+// stripe-js does not type the field, so read it off defensively.
+function mandateId(setupIntent: unknown): string | undefined {
+	const mandate = (setupIntent as { mandate?: unknown } | undefined)?.mandate
 	if (typeof mandate === 'string') return mandate
 	if (mandate && typeof mandate === 'object')
 		return (mandate as { id?: string }).id

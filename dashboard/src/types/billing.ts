@@ -203,10 +203,23 @@ export interface PaymentMethod {
 }
 
 /** get_payment_method_options — what the team may add, resolved from its currency. */
+/** One tile in the add-method picker. The customer picks an instrument and the
+ *  instrument picks the gateway (ADR 0022) — we never detect the card network. */
+export interface PaymentInstrument {
+	instrument: 'Card' | 'RuPay Card' | 'UPI Autopay' | 'Netbanking' | (string & {})
+	label: string
+	description: string
+	gateway: string
+	adapter_key: 'Stripe' | 'Razorpay' | (string & {})
+	/** False for an instrument that pays once and saves nothing (netbanking). */
+	recurring: boolean
+}
+
 export interface PaymentMethodOptions {
 	gateway: string | null
 	adapter_key: 'Stripe' | 'Razorpay' | (string & {})
 	currency: Currency
+	instruments: PaymentInstrument[]
 	methods: PaymentMethodType[]
 	allow_upi: boolean
 	upi_block_reason: string | null
