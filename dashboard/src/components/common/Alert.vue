@@ -72,10 +72,18 @@
 	</div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, useSlots } from 'vue'
 
 // Drop-in for frappe-ui's Alert: same theme names, props and slots.
+// Slots are declared so consumers type-check `#description`/`#action`/etc.
+defineSlots<{
+	icon?: () => unknown
+	description?: () => unknown
+	action?: () => unknown
+	footer?: () => unknown
+}>()
+
 const props = defineProps({
 	theme: { type: String, default: '' }, // 'blue' | 'green' | 'yellow' | 'red'
 	title: { type: String, default: '' },
@@ -85,7 +93,7 @@ const props = defineProps({
 	// One action object, or an array of them — each { label, onClick, icon? }.
 	action: { type: [Object, Array], default: null },
 })
-const visible = defineModel({ default: true })
+const visible = defineModel<boolean>({ default: true })
 const emit = defineEmits(['dismiss'])
 const slots = useSlots()
 

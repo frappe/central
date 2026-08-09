@@ -9,6 +9,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { money } from '@/lib/format'
+import type { BadgeTheme } from '@/lib/status'
 import { errorToast, successToast } from '@/lib/toast'
 import type { SubscriptionRow } from '@/types/billing'
 
@@ -55,7 +56,7 @@ function subtitle(sub: SubscriptionRow): string {
 // Paused), a dunning one Suspended, a billing-paused one Paused, else its op state.
 function statusInfo(
 	sub: SubscriptionRow,
-): { label: string; theme: string } | null {
+): { label: string; theme: BadgeTheme } | null {
 	if (sub.status === 'Terminated') return { label: 'Terminated', theme: 'red' }
 	if (sub.account_standing === 'Suspended')
 		return { label: 'Suspended', theme: 'orange' }
