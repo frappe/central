@@ -1,4 +1,5 @@
 import type { AssetRow } from '@/composables/useServers'
+import { formatMemory } from '@/lib/format'
 import { displayStatus, isResizing } from '@/lib/status'
 import type { Region } from '@/types/Region'
 
@@ -90,12 +91,6 @@ export const STATUS_FILTERS: ServerVisual[] = [
 	VISUALS.stopped,
 	VISUALS.broken,
 ]
-
-function formatMemory(megabytes: number): string {
-	if (megabytes < 1024) return `${megabytes} MB`
-	const gigabytes = megabytes / 1024
-	return `${Number.isInteger(gigabytes) ? gigabytes : gigabytes.toFixed(1)} GB`
-}
 
 /** "4 vCPU, 8 GB RAM, 75 GB Disk" from the mirror's raw size fields. */
 export function specLine(server: AssetRow): string {
