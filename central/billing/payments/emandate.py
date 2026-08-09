@@ -26,6 +26,18 @@ from central.billing.payments import collection, collection_mode
 PREDEBIT_NOTICE_HOURS = 24
 
 
+def _rail_requires_notice(team: str) -> bool:
+	"""Whether this team's rail owes a pre-debit notice before each off-session debit.
+
+	It is a property of (gateway, currency), so an Indian mandate on Stripe owes one
+	exactly as a Razorpay one does, and a USD card owes none.
+	"""
+	from central.billing.gateways import capabilities
+
+	gateway, currency = collection_mode.team_rail(team)
+	return bool(gateway and currency and capabilities.requires_predebit_notice(gateway, currency))
+
+
 def schedule_predebit(invoice: str, now=None) -> dict:
 	"""Send the pre-debit notice for an e-mandate invoice and arm its debit window.
 	Over the silent ceiling → fork to Action Required rather than promise a debit we
@@ -33,6 +45,10 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	inv = frappe.get_doc("Invoice", invoice)
 	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
 		return {"invoice": invoice, "skipped": "not_auto_charge"}
+	if not _rail_requires_notice(inv.team):
+		# A rail that debits without a notice is collected by the ordinary sweep. Arming
+		# a 24h window here would delay every international charge for nothing.
+		return {"invoice": invoice, "skipped": "no_notice_required"}
 	if inv.invoice_type != "Billable" or inv.status not in ("Open", "Overdue"):
 		return {"invoice": invoice, "skipped": "not_collectable"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:

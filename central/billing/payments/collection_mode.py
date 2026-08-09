@@ -32,29 +32,37 @@ from central.billing.payments import mandates
 CUSTOMER_CHOOSABLE = ("Manual Checkout", "Prepaid")
 
 
-def gateway_ceiling(team: str) -> float | None:
-	"""The regulatory ceiling on the rail this team's bill would be pulled through,
-	in major units; None where the currency carries no ceiling (ADR 0022).
+def team_rail(team: str) -> tuple[str | None, str | None]:
+	"""The (gateway, currency) a team's bill would be pulled through.
 
-	Which rail that is follows the team's own primary method, because gateway is a
-	property of the method rather than of the charge. A team with no method yet is
-	measured against the default gateway for its currency, which is the rail it
-	would land on if it added one now.
-
-	A team with no rail at all is held to whatever the law imposes on its currency.
-	The ₹15,000 line an Indian team lives under does not disappear because it has
-	not added a payment method yet.
+	Gateway follows the team's own primary method, because it is a property of the
+	method rather than of the charge (ADR 0022). A team with no method yet is read
+	against the default gateway for its currency, which is the rail it would land on
+	if it added one now.
 	"""
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	if not currency:
-		return None
-
+		return None, None
 	gateway = frappe.db.get_value(
 		"Payment Method",
 		{"team": team, "status": "Active", "reauth_required": 0},
 		"gateway",
 		order_by="priority asc, creation asc",
 	) or _default_gateway(currency)
+	return gateway, currency
+
+
+def gateway_ceiling(team: str) -> float | None:
+	"""The ceiling on the rail this team's bill would be pulled through, in major
+	units; None where nothing caps it.
+
+	A team with no rail at all is still held to whatever the law imposes on its
+	currency. The ₹15,000 line an Indian team lives under does not disappear because
+	it has not added a payment method yet.
+	"""
+	gateway, currency = team_rail(team)
+	if not currency:
+		return None
 	if not gateway:
 		return capabilities.regulatory_ceiling(currency)
 	return capabilities.silent_charge_ceiling(gateway, currency)

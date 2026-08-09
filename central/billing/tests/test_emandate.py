@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""E-mandate ≤₹15k off-session collection: pre-debit notice → debit (#50 item 3, ADR 0005)."""
+"""Off-session collection ≤₹15k: pre-debit notice → debit (ADR 0005, ADR 0022)."""
 
 import frappe
 
@@ -126,3 +126,44 @@ class TestEmandatePredebit(IntegrationTestCase):
 			self.assertEqual(len(late), 1)
 			adapter.charge.assert_called_once()
 			self.assertEqual(frappe.db.count("Payment Attempt", {"invoice": inv}), 1)
+
+
+class TestWhoOwesAPredebitNotice(IntegrationTestCase):
+	"""The notice follows the rail, not the mode. Every auto-charged team is now
+	`Auto Charge`, so a USD card must not be delayed 24h for a notice nobody in that
+	currency is owed (ADR 0022)."""
+
+	TEAM = "team-predebit-rail"
+
+	def setUp(self):
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		ensure_team(self.TEAM)
+		complete_billing_profile(self.TEAM, currency="USD")
+		_set_mode(self.TEAM, "Auto Charge")
+		frappe.db.delete("Invoice", {"team": self.TEAM})
+		make_stripe_gateway()
+
+	def test_a_usd_card_team_is_left_to_the_ordinary_sweep(self):
+		inv = (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": self.TEAM,
+					"invoice_type": "Billable",
+					"status": "Open",
+					"period_start": "2026-06-01",
+					"period_end": "2026-06-30",
+					"currency": "USD",
+					"subtotal": 500,
+					"total": 500,
+					"expected_collection": 500,
+					"items": [{"resource_type": "bundle", "plan": "p", "rate": 500, "days": 30, "amount": 500}],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+		out = emandate.schedule_predebit(inv, now="2026-06-10 09:00:00")
+		self.assertEqual(out["skipped"], "no_notice_required")
+		self.assertIsNone(frappe.db.get_value("Invoice", inv, "predebit_notified_at"))
