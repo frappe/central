@@ -7,7 +7,7 @@ import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { errorToast, infoToast, successToast } from '@/lib/toast'
-import type { BillingGeo, BillingProfile } from '@/types/billing'
+import type { BillingGeo } from '@/types/billing'
 
 // Edit the billing profile — currency (locked after activity), contact, address,
 // and India GSTIN — shared by the Billing contact and Tax & compliance cards.
@@ -18,20 +18,15 @@ const {
 	supportedCurrencies,
 	reload: reloadSetup,
 } = useBillingSetup()
-const { profile: sharedProfile, reloadProfile } = useBillingOverview()
+// The billing profile is the shared singleton (it reloads on team change and
+// after a save via reloadProfile) — no second fetch of the same payload here.
+const { profile, reloadProfile } = useBillingOverview()
 
-const profile = useCall<BillingProfile, { team: string }>({
-	url: method(API.billingProfile),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
 const geo = useCall<BillingGeo>({
 	url: method(API.billingGeo),
 	immediate: false,
 })
 whenTeamReady(() => {
-	profile.reload()
 	geo.reload()
 })
 
@@ -50,7 +45,7 @@ const FIELDS = [
 ] as const
 const form = reactive<Record<string, string>>({})
 watch(
-	() => profile.data ?? sharedProfile.data,
+	() => profile.data,
 	(d) => {
 		if (!d) return
 		const row = d as unknown as Record<string, unknown>
