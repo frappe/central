@@ -880,7 +880,7 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 		rails = {t["instrument"]: t["adapter_key"] for t in out["instruments"]}
 		self.assertEqual(
 			rails,
-			{"Card": "Stripe", "Other Network Card": "Razorpay", "UPI Autopay": "Razorpay"},
+			{"Card": "Stripe", "RuPay Card": "Razorpay", "UPI Autopay": "Razorpay"},
 		)
 
 	def test_netbanking_is_not_on_the_mandate_surface_at_all(self):
@@ -913,8 +913,18 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 		from central.billing.api.dashboard import methods
 
 		labels = [t["label"] for t in methods.get_payment_method_options(self.TEAM)["instruments"]]
-		self.assertIn("RuPay, Amex or Diners card", labels)
+		self.assertIn("RuPay card", labels)
 		self.assertNotIn("Other cards", labels)
+
+	def test_the_surface_says_which_cards_it_cannot_save(self):
+		"""Neither rail registers a mandate on Amex or Diners, so the absence of a tile
+		is not enough — a customer holding one would tap the nearest card and fail at
+		registration."""
+		from central.billing.api.dashboard import methods
+
+		note = methods.get_payment_method_options(self.TEAM)["note"]
+		self.assertIn("Amex", note)
+		self.assertIn("Diners", note)
 
 	def test_a_card_top_up_goes_to_stripe_even_though_razorpay_owns_the_inr_default(self):
 		from central.billing.payments import instruments
@@ -929,7 +939,7 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 		# The registration itself is a gateway round-trip, and a test must never make
 		# one: the fixture's keys are dummies, so a real call authenticates as nobody.
 		with stub_adapter():
-			out = methods.setup_payment_method_order(self.TEAM, instrument="Other Network Card")
+			out = methods.setup_payment_method_order(self.TEAM, instrument="RuPay Card")
 		method = frappe.get_doc("Payment Method", out["payment_method"])
 		self.assertEqual(method.gateway, "Razorpay")
 		self.assertEqual(method.fallback_reason, "Network Unsupported")

@@ -66,6 +66,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 	from central.billing.payments import instruments as instrument_catalogue
 
 	tiles = instrument_catalogue.available(currency, instrument_catalogue.MANDATE)
+	gap_note = instrument_catalogue.mandate_gap_note(currency)
 
 	methods: list[str] = []
 	publishable_key = None
@@ -91,6 +92,8 @@ def get_payment_method_options(team: str | None = None) -> dict:
 		"adapter_key": "Stripe" if card_gw else None,
 		"currency": currency,
 		"instruments": tiles,
+		# What no tile here can do, said plainly rather than left as an absence.
+		"note": gap_note,
 		"methods": methods,
 		"publishable_key": publishable_key,
 		**upi,

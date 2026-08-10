@@ -72,7 +72,7 @@ const tiles = computed(() => options.data?.instruments ?? [])
 
 const icons: Record<string, string> = {
 	Card: 'lucide-credit-card',
-	'Other Network Card': 'lucide-credit-card',
+	'RuPay Card': 'lucide-credit-card',
 	'UPI Autopay': 'lucide-smartphone',
 }
 
@@ -96,7 +96,7 @@ function choose(tile: PaymentInstrument): void {
 		return
 	}
 	if (
-		tile.instrument === 'Other Network Card' &&
+		tile.instrument === 'RuPay Card' &&
 		cardNeedsPhone.value &&
 		!phone.value.trim()
 	) {
@@ -260,6 +260,12 @@ watch(open, (isOpen) => {
 							}}</span>
 						</button>
 					</div>
+					<p
+						v-if="options.data.note"
+						class="mt-2 text-p-sm text-ink-gray-5"
+					>
+						{{ options.data.note }}
+					</p>
 				</div>
 
 				<!-- Razorpay card mandates need a contact; collect it inline when missing. -->
@@ -279,7 +285,7 @@ watch(open, (isOpen) => {
 						label="Continue"
 						:loading="loading"
 						:disabled="!phone.trim()"
-						@click="launchGateway('Card', phone.trim(), 'Other Network Card')"
+						@click="launchGateway('Card', phone.trim(), 'RuPay Card')"
 					/>
 				</div>
 

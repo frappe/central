@@ -385,7 +385,7 @@ class TestWhereAMethodSaysItCameFrom(IntegrationTestCase):
 		from central.billing.api.dashboard import methods
 
 		out = methods.setup_payment_method_order(
-			TEAM, instrument="Other Network Card", after_decline=after_decline
+			TEAM, instrument="RuPay Card", after_decline=after_decline
 		)
 		return frappe.get_doc("Payment Method", out["payment_method"])
 

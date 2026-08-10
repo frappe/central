@@ -214,7 +214,6 @@ export interface PaymentInstrument {
 	instrument:
 		| 'Card'
 		| 'RuPay Card'
-		| 'Other Network Card'
 		| 'UPI'
 		| 'UPI Autopay'
 		| 'Netbanking'
@@ -232,6 +231,8 @@ export interface PaymentMethodOptions {
 	adapter_key: 'Stripe' | 'Razorpay' | (string & {})
 	currency: Currency
 	instruments: PaymentInstrument[]
+	/** What no tile on this surface can do — e.g. cards no rail will hold a mandate on. */
+	note?: string | null
 	methods: PaymentMethodType[]
 	allow_upi: boolean
 	upi_block_reason: string | null
