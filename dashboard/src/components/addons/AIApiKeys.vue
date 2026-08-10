@@ -130,7 +130,7 @@ const curlTemplate = computed(
 
 const copy = async (value: string, label: string): Promise<void> => {
 	await navigator.clipboard.writeText(value)
-	successToast(`${label} copied.`)
+	successToast(`${label} copied`)
 }
 
 const copyCurl = (): void => {
@@ -227,7 +227,7 @@ const confirmRevoke = async (): Promise<void> => {
 								variant="ghost"
 								icon="lucide-ellipsis-vertical"
 								:loading="busyKey === key.name || revealingName === key.name"
-								aria-label="API key actions"
+								label="API key actions"
 								@click.stop
 							/>
 						</template>
@@ -309,7 +309,7 @@ const confirmRevoke = async (): Promise<void> => {
 						</code>
 						<Button
 							icon="lucide-copy"
-							aria-label="Copy gateway URL"
+							label="Copy gateway URL"
 							@click="copy(details.gateway_url, 'Gateway URL')"
 						/>
 					</div>
@@ -327,12 +327,12 @@ const confirmRevoke = async (): Promise<void> => {
 						</code>
 						<Button
 							:icon="secretRevealed ? 'lucide-eye-off' : 'lucide-eye'"
-							:aria-label="secretRevealed ? 'Hide key' : 'Reveal key'"
+							:label="secretRevealed ? 'Hide key' : 'Reveal key'"
 							@click="secretRevealed = !secretRevealed"
 						/>
 						<Button
 							icon="lucide-copy"
-							aria-label="Copy API key"
+							label="Copy API key"
 							@click="copy(details.api_key, 'API key')"
 						/>
 					</div>
@@ -366,7 +366,7 @@ const confirmRevoke = async (): Promise<void> => {
 						icon="lucide-copy"
 						size="sm"
 						class="sticky top-0 right-0 ml-auto"
-						aria-label="Copy command"
+						label="Copy command"
 						@click="copyCurl"
 					/>
 				</div>
