@@ -111,6 +111,8 @@ def list_team_invitations(team: str, status: str | None = None) -> list[dict[str
 			"name",
 			"email",
 			"role",
+			"resource_type",
+			"resource_name",
 			"status",
 			"invited_by",
 			"expires_on",
@@ -170,8 +172,21 @@ def delete_team(team: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def invite_team_member(team: str, email: str, role: str, expires_in_days: int = 7) -> str:
-	return frappe.get_doc("Team", team).invite_member(email, role, expires_in_days)
+def invite_team_member(
+	team: str,
+	email: str,
+	role: str,
+	expires_in_days: int = 7,
+	resource_type: str = "*",
+	resource_name: str | None = None,
+) -> str:
+	return frappe.get_doc("Team", team).invite_member(
+		email,
+		role,
+		expires_in_days,
+		resource_type=resource_type or "*",
+		resource_name=resource_name,
+	)
 
 
 @frappe.whitelist(methods=["POST"])

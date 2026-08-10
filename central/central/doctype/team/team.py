@@ -52,7 +52,14 @@ class Team(Document):
 		clear_grants_cache()
 
 	@frappe.whitelist(methods=["POST"])
-	def invite_member(self, email: str, role: str, expires_in_days: int = 7) -> str:
+	def invite_member(
+		self,
+		email: str,
+		role: str,
+		expires_in_days: int = 7,
+		resource_type: str = "*",
+		resource_name: str | None = None,
+	) -> str:
 		self._require_capability("team:manage_members")
 		invitation = frappe.get_doc(
 			{
@@ -61,6 +68,8 @@ class Team(Document):
 				"email": email,
 				"role": role,
 				"expires_in_days": expires_in_days,
+				"resource_type": resource_type or "*",
+				"resource_name": resource_name,
 			}
 		)
 		invitation.insert()
@@ -154,12 +163,24 @@ class Team(Document):
 		self.flags.transferring_ownership = True
 		self.save()
 
-	def add_member_from_invitation(self, user: str, role: str) -> None:
+	def add_member_from_invitation(
+		self,
+		user: str,
+		role: str,
+		resource_type: str = "*",
+		resource_name: str | None = None,
+	) -> None:
 		if any(member.user == user for member in self.members):
 			return
 		self.append(
 			"members",
-			{"user": user, "role": role, "resource_type": "*", "status": "Active"},
+			{
+				"user": user,
+				"role": role,
+				"resource_type": resource_type or "*",
+				"resource_name": None if (resource_type or "*") == "*" else resource_name,
+				"status": "Active",
+			},
 		)
 		self.flags.from_team_invitation = True
 		# The accepted invitation authorizes this write before the invitee is a member.

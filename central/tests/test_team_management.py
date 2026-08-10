@@ -274,6 +274,29 @@ class TestTeamManagement(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			list_team_invitations(self.team.name)
 
+	def test_invite_can_scope_role_to_a_resource(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(
+			self.team.name,
+			self.invitee,
+			"Developer",
+			resource_type="Server",
+			resource_name="srv-acme",
+		)
+
+		invitation = frappe.get_doc("Team Invitation", name)
+		self.assertEqual(invitation.resource_type, "Server")
+		self.assertEqual(invitation.resource_name, "srv-acme")
+
+		frappe.set_user(self.invitee)
+		invitation.accept()
+
+		team = frappe.get_doc("Team", self.team.name)
+		grant = team._get_member(self.invitee)
+		self.assertEqual(grant.role, "Developer")
+		self.assertEqual(grant.resource_type, "Server")
+		self.assertEqual(grant.resource_name, "srv-acme")
+
 	def test_resend_invitation_extends_expiry_and_re_emails(self):
 		frappe.set_user(self.owner)
 		name = invite_team_member(self.team.name, self.invitee, "Developer")

@@ -30,6 +30,8 @@ class TeamInvitation(Document):
 		email: DF.Data
 		expires_on: DF.Date | None
 		invited_by: DF.Link | None
+		resource_name: DF.Data | None
+		resource_type: DF.Literal["*", "Server", "Site"]
 		role: DF.Link
 		status: DF.Literal["Pending", "Accepted", "Expired", "Revoked", "Declined"]
 		team: DF.Link
@@ -41,6 +43,9 @@ class TeamInvitation(Document):
 		self.email = self.email.strip().lower()
 		self.status = "Pending"
 		self.invited_by = frappe.session.user
+		self.resource_type = self.resource_type or "*"
+		if self.resource_type == "*":
+			self.resource_name = None
 		expires_in_days = int(self.expires_in_days or 7)
 		if not 1 <= expires_in_days <= 30:
 			frappe.throw(_("Invitation expiry must be between 1 and 30 days."))
@@ -53,6 +58,7 @@ class TeamInvitation(Document):
 		if self.is_new():
 			self._require_manager()
 		self._validate_role()
+		self._validate_resource()
 		self._validate_user()
 		self._validate_duplicate()
 		self._validate_update()
@@ -95,7 +101,12 @@ class TeamInvitation(Document):
 			frappe.throw(_("This invitation has expired."))
 
 		team = frappe.get_doc("Team", self.team)
-		team.add_member_from_invitation(user, self.role)
+		team.add_member_from_invitation(
+			user,
+			self.role,
+			resource_type=self.resource_type or "*",
+			resource_name=self.resource_name,
+		)
 
 		self.status = "Accepted"
 		self.accepted_by = user
@@ -145,6 +156,16 @@ class TeamInvitation(Document):
 		if not is_system and role_team != self.team:
 			frappe.throw(_("Team Role {0} does not belong to this team.").format(self.role))
 
+	def _validate_resource(self) -> None:
+		resource_type = self.resource_type or "*"
+		if resource_type not in {"*", "Server", "Site"}:
+			frappe.throw(_("Invalid resource type."))
+		if resource_type == "*":
+			self.resource_name = None
+			return
+		if not self.resource_name:
+			frappe.throw(_("Resource name is required when scoping an invitation."))
+
 	def _validate_user(self) -> None:
 		if not self.is_new():
 			return
@@ -172,7 +193,18 @@ class TeamInvitation(Document):
 		if not previous:
 			return
 
-		fields = ("team", "email", "role", "status", "invited_by", "expires_on", "accepted_by", "accepted_at")
+		fields = (
+			"team",
+			"email",
+			"role",
+			"resource_type",
+			"resource_name",
+			"status",
+			"invited_by",
+			"expires_on",
+			"accepted_by",
+			"accepted_at",
+		)
 		if any(self.get(field) != previous.get(field) for field in fields):
 			frappe.throw(_("Use the invitation actions to change its status."), frappe.PermissionError)
 
