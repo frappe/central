@@ -85,6 +85,12 @@ def welcome_credit_amount(currency: str) -> float:
 	return 0.0
 
 
+def provision_teams_as_trial() -> bool:
+	"""Whether a new team is created as a staging trial — provisioning servers on
+	welcome credits without a full billing profile. Off outside staging."""
+	return bool(_settings().provision_teams_as_trial)
+
+
 def promotional_credit_validity_days() -> int:
 	"""Days a welcome credit stays usable; 0 means it never expires."""
 	override = _override("promotional_credit_validity_days")
@@ -123,6 +129,12 @@ def terminate_after_days() -> int:
 	if override is not _MISSING:
 		return frappe.utils.cint(override)
 	return frappe.utils.cint(_settings().terminate_after_days)
+
+
+def payment_log_retention_days() -> int:
+	"""Rolling window (days) the gateway logs — Payment Attempt and Webhook Event —
+	are kept before daily pruning."""
+	return frappe.utils.cint(_settings().payment_log_retention_days)
 
 
 def default_gst_rate() -> float:

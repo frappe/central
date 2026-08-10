@@ -17,6 +17,7 @@ about. It can never leave a charge with no record of it at all.
 import frappe
 from frappe import _
 
+from central.billing import settings
 from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
 from central.billing.states import transition
@@ -40,9 +41,6 @@ _AUTHORISED_EVENTS = {
 _SUCCESS_EVENTS = {"payment_intent.succeeded", "charge.succeeded", "payment.captured"}
 _FAILURE_EVENTS = {"payment_intent.payment_failed", "charge.failed", "payment.failed"}
 
-# Logs (Payment Attempt + Webhook Event) are kept on a rolling window and pruned
-# daily; site-config `payment_log_retention_days` overrides the default.
-LOG_RETENTION_DEFAULT_DAYS = 90  # ~3 months
 _TERMINAL_ATTEMPT = ("Captured", "Failed", "Refunded")
 _UNSETTLED_INVOICE = ("Open", "Overdue")
 
@@ -515,7 +513,7 @@ def cleanup_payment_logs(now=None) -> dict:
 	"""Daily: prune Payment Attempt + Webhook Event logs past the retention window.
 
 	These are high-volume append-only logs (one row per charge / per inbound
-	callback). They are kept on a rolling window — site-config
+	callback). They are kept on a rolling window — Billing Settings'
 	`payment_log_retention_days`, default 90 (~3 months) — and older rows are
 	dropped. Statutory amounts live on the Invoice / ERPNext Sales Invoice (the
 	SOR), so pruning the gateway log loses no money trail.
@@ -524,7 +522,7 @@ def cleanup_payment_logs(now=None) -> dict:
 	authorised), an attempt on an unsettled invoice (Open/Overdue), or one
 	referenced by a Refund is kept regardless of age.
 	"""
-	days = int(frappe.conf.get("payment_log_retention_days") or LOG_RETENTION_DEFAULT_DAYS)
+	days = settings.payment_log_retention_days()
 	cutoff = frappe.utils.add_to_date(now or frappe.utils.now_datetime(), days=-days)
 
 	attempts = _prune_payment_attempts(cutoff)

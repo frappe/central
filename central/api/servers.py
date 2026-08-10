@@ -375,20 +375,20 @@ def _require_trial_provisioning(team: str, plan: str | None) -> None:
 	they need a billing currency, an allow-listed plan (so usage meters at that plan's
 	rate), unspent credits, and room under the server cap. The VM size is taken from the
 	plan, never the caller (see `_plan_resources`), so a request can't over-allocate at a
-	cheap plan's rate; the `trial_plans` allow-list is re-checked here, not only when the
-	menu is listed, so a crafted request can't pick a plan outside it.
+	cheap plan's rate; the trial allow-list (Plan.available_on_trial) is re-checked here,
+	not only when the menu is listed, so a crafted request can't pick a plan outside it.
 
 	Locks the team row up front so two concurrent creates can't both pass the cap check
 	before either's Pending Asset is committed (the lock is held to end-of-request, by
 	which point the first create's Asset is visible to the second's count)."""
-	from central.billing.api.dashboard.catalog import _allowlist
+	from central.billing.catalog.trials import trial_plan_names
 	from central.billing.revenue.credits import get_balance
 
 	frappe.db.get_value("Team", team, "name", for_update=True)  # serialize this team's creates
 
 	if not plan:
 		frappe.throw(_("Pick a plan to create a trial server."), frappe.ValidationError)
-	allowed = _allowlist(frappe.conf.get("trial_plans"))
+	allowed = trial_plan_names()
 	if allowed is not None and plan not in allowed:
 		frappe.throw(_("That plan isn't available on a trial."), frappe.ValidationError)
 	if not frappe.db.get_value("Billing Profile", team, "currency"):

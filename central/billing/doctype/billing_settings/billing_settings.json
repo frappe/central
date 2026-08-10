@@ -9,6 +9,8 @@
   "grant_welcome_credits",
   "promotional_credit_validity_days",
   "welcome_credit_amounts",
+  "section_break_trials",
+  "provision_teams_as_trial",
   "section_break_invoicing",
   "invoice_due_days",
   "column_break_invoicing",
@@ -20,6 +22,8 @@
   "terminate_after_days",
   "section_break_projection",
   "projection_budget_seconds",
+  "section_break_retention",
+  "payment_log_retention_days",
   "section_break_routing",
   "enable_gateway_fallback",
   "section_break_tax",
@@ -54,6 +58,18 @@
    "fieldtype": "Table",
    "label": "Amounts",
    "options": "Welcome Credit Amount"
+  },
+  {
+   "fieldname": "section_break_trials",
+   "fieldtype": "Section Break",
+   "label": "Trials"
+  },
+  {
+   "default": "0",
+   "description": "Create every new team as a staging trial — it provisions servers on welcome credits without a full billing profile. For staging deployments.",
+   "fieldname": "provision_teams_as_trial",
+   "fieldtype": "Check",
+   "label": "Provision Teams as Trial"
   },
   {
    "fieldname": "section_break_invoicing",
@@ -122,6 +138,19 @@
    "fieldname": "projection_budget_seconds",
    "fieldtype": "Int",
    "label": "Projection Budget (Seconds)"
+  },
+  {
+   "fieldname": "section_break_retention",
+   "fieldtype": "Section Break",
+   "label": "Log Retention"
+  },
+  {
+   "default": "90",
+   "description": "Rolling window (days) the gateway logs — Payment Attempt and Webhook Event — are kept before daily pruning. Live/unsettled rows are kept regardless.",
+   "fieldname": "payment_log_retention_days",
+   "fieldtype": "Int",
+   "label": "Payment Log Retention (Days)",
+   "non_negative": 1
   },
   {
    "fieldname": "section_break_routing",

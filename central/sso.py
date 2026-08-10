@@ -21,7 +21,9 @@ METRICS_SCOPE = "datum"
 
 
 def central_url() -> str:
-	return frappe.conf.get("central_url") or frappe.utils.get_url()
+	"""Central's canonical base URL — the token issuer and JWKS host. Configured on
+	Central SSO Settings; falls back to the site URL when unset."""
+	return frappe.get_cached_doc("Central SSO Settings").issuer_url or frappe.utils.get_url()
 
 
 def jwks_url() -> str:

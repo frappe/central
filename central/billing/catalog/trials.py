@@ -16,6 +16,18 @@ import frappe
 from frappe import _
 
 
+def trial_plan_names() -> set[str] | None:
+	"""Active plans an admin has flagged available on trial, or None when none are.
+
+	None means "no trial-specific narrowing" — every otherwise-eligible plan
+	qualifies — the same contract the old `trial_plans` site-config list carried
+	when it was unset. Flag specific plans to restrict; flag none to leave open."""
+	names = set(
+		frappe.get_all("Plan", filters={"available_on_trial": 1, "is_active": 1}, pluck="name")
+	)
+	return names or None
+
+
 def entry_tier() -> str | None:
 	"""The entry/trial rung of the ladder: the default level, else lowest sequence."""
 	default = frappe.get_all("Trust Tier Level", filters={"is_default": 1}, pluck="tier")

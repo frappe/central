@@ -168,9 +168,6 @@ def _elapsed_ms(start: float) -> int:
 	return int((time.monotonic() - start) * 1000)
 
 
-HOST_TASK_RETENTION_DEFAULT_DAYS = 30
-
-
 def prune_host_tasks(now=None) -> dict:
 	"""Daily: drop finished Host Tasks past the retention window.
 
@@ -182,7 +179,7 @@ def prune_host_tasks(now=None) -> dict:
 	table without bound. Prune terminal tasks (Success/Failure) older than
 	`host_task_retention_days` (default 30 days); live tasks (Pending/Running) are
 	kept regardless of age. Modelled on billing's cleanup_payment_logs."""
-	days = int(frappe.conf.get("host_task_retention_days") or HOST_TASK_RETENTION_DEFAULT_DAYS)
+	days = frappe.utils.cint(frappe.get_cached_doc("Central Settings").host_task_retention_days)
 	cutoff = frappe.utils.add_to_date(now or frappe.utils.now_datetime(), days=-days)
 	names = frappe.get_all(
 		"Host Task",

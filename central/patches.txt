@@ -126,3 +126,12 @@ central.patches.v0_0.collapse_collection_modes
 # Stripe issues its own pre-debit notice and holds the charge 26 hours, so we must
 # not arm a window on top of it (ADR 0023).
 central.patches.v0_0.stripe_owns_its_predebit_notice
+# The trial-plan allow-list moved from the `trial_plans` site-config list onto a
+# per-Plan `available_on_trial` check; flag the plans a migrated site already offered.
+central.patches.v0_0.seed_available_on_trial
+# Whether new teams are staging trials moved from the `central_trial_provisioning`
+# conf flag onto Billing Settings; carry a staging bench's conf value over.
+central.patches.v0_0.seed_provision_teams_as_trial
+# The SSO issuer / JWKS base URL moved from the `central_url` conf key onto Central
+# SSO Settings; carry a deployment's configured value over.
+central.patches.v0_0.seed_central_sso_issuer_url

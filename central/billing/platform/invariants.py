@@ -34,7 +34,7 @@ TOLERANCE = 0.01
 # Payment Attempts are pruned on a rolling window (charges.cleanup_payment_logs), so an
 # invoice older than the window has no attempts to reconcile against and would report a
 # false violation. Audits that read attempts stay inside the window.
-from central.billing.payments.charges import LOG_RETENTION_DEFAULT_DAYS
+from central.billing import settings
 
 STUCK_ATTEMPT_MINUTES = 30
 
@@ -71,7 +71,7 @@ def _differs(a, b) -> bool:
 
 
 def _attempt_cutoff():
-	days = int(frappe.conf.get("payment_log_retention_days") or LOG_RETENTION_DEFAULT_DAYS)
+	days = settings.payment_log_retention_days()
 	return frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-days)
 
 

@@ -6,12 +6,25 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "issuer_section",
+  "issuer_url",
   "signing_section",
   "kid",
   "public_key",
   "private_key"
  ],
  "fields": [
+  {
+   "fieldname": "issuer_section",
+   "fieldtype": "Section Break",
+   "label": "Issuer"
+  },
+  {
+   "description": "Central's canonical base URL — the token issuer (`iss` claim) and the host benches fetch the JWKS from. Leave blank to use the site URL.",
+   "fieldname": "issuer_url",
+   "fieldtype": "Data",
+   "label": "Issuer URL"
+  },
   {
    "fieldname": "signing_section",
    "fieldtype": "Section Break",

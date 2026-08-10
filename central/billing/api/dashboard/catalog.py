@@ -27,6 +27,7 @@ from central.billing.catalog.composition import (
 from central.billing.catalog.entitlements import get_team_caps
 from central.billing.catalog.pricing import resolve_component_rate, resolve_rate
 from central.billing.catalog.rate_card import COMPONENT_UNITS
+from central.billing.catalog.trials import trial_plan_names
 
 
 def _allowlist(value) -> set[str] | None:
@@ -99,12 +100,12 @@ def get_eligible_plans(
 	allowed_plans = _allowlist(caps.allowed_plans)
 	allowed_clusters = _allowlist(caps.allowed_clusters)
 
-	# Staging trials: narrow the menu to the configured entry plans (`trial_plans` in
-	# site config; unset = no extra narrowing) and offer no design-your-own — a trial
-	# can't provision a composed server without a full billing profile.
+	# Staging trials: narrow the menu to the plans flagged Available on Trial (none
+	# flagged = no extra narrowing) and offer no design-your-own — a trial can't
+	# provision a composed server without a full billing profile.
 	is_staging_trial = bool(frappe.db.get_value("Team", team, "is_staging_trial"))
 	if is_staging_trial:
-		trial_plans = _allowlist(frappe.conf.get("trial_plans"))
+		trial_plans = trial_plan_names()
 		if trial_plans is not None:
 			allowed_plans = trial_plans if allowed_plans is None else (allowed_plans & trial_plans)
 
