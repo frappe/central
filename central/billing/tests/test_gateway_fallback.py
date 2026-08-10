@@ -383,10 +383,14 @@ class TestWhereAMethodSaysItCameFrom(IntegrationTestCase):
 
 	def _add(self, after_decline):
 		from central.billing.api.dashboard import methods
+		from central.billing.tests.test_mandates import stub_adapter
 
-		out = methods.setup_payment_method_order(
-			TEAM, instrument="RuPay Card", after_decline=after_decline
-		)
+		# Registering mints a gateway customer, which is a live API call. Tests never
+		# make one — the fixture keys are dummies and CI has no real ones.
+		with stub_adapter():
+			out = methods.setup_payment_method_order(
+				TEAM, instrument="RuPay Card", after_decline=after_decline
+			)
 		return frappe.get_doc("Payment Method", out["payment_method"])
 
 	def test_a_real_decline_is_recorded_as_one(self):
