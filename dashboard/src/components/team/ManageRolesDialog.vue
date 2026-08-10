@@ -103,6 +103,22 @@ const dominatingIndex = computed(() =>
 	rows.value.findIndex((r) => r.role === 'Admin'),
 )
 
+// A role on all resources subsumes the same role on a specific one — flag the
+// narrow rows while editing, and drop them on save (the backend does too).
+const shadowedIndexes = computed(() => {
+	const wildcardRoles = new Set(
+		rows.value.filter((r) => r.role && r.resource_type === '*').map((r) => r.role),
+	)
+	return new Set(
+		rows.value
+			.map((row, index) => ({ row, index }))
+			.filter(
+				({ row }) => row.resource_type !== '*' && wildcardRoles.has(row.role),
+			)
+			.map(({ index }) => index),
+	)
+})
+
 const canSubmit = computed(
 	() => rows.value.length > 0 && rows.value.every((r) => r.role),
 )
@@ -112,7 +128,8 @@ const submitting = ref(false)
 const submit = async (): Promise<void> => {
 	if (!canSubmit.value || !props.member) return
 	submitting.value = true
-	const ok = await setRoles(props.member.user, rows.value)
+	const grants = rows.value.filter((_, index) => !shadowedIndexes.value.has(index))
+	const ok = await setRoles(props.member.user, grants)
 	submitting.value = false
 	if (ok) open.value = false
 }
@@ -167,6 +184,12 @@ const dialogOptions = computed(() => ({
 					v-if="dominatingIndex !== -1"
 					theme="blue"
 					title="Admin already covers everything"
+				/>
+
+				<Alert
+					v-if="shadowedIndexes.size"
+					theme="blue"
+					title="A role on all resources already covers the rest"
 				/>
 
 				<div class="space-y-2">

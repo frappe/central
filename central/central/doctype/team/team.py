@@ -37,6 +37,7 @@ class Team(Document):
 			)
 
 	def validate(self) -> None:
+		self._absorb_wildcard_grants()
 		self._validate_unique_members()
 		self._validate_owner_membership()
 		self._validate_role_scope()
@@ -193,6 +194,18 @@ class Team(Document):
 			event_type="member_joined",
 			message=user,
 		)
+
+	def _absorb_wildcard_grants(self) -> None:
+		"""A role granted on all resources ("*") subsumes the same role on any
+		specific resource, so holding both is contradictory — the narrow row
+		grants nothing and reads as less access than the member actually has.
+		Saves normalize silently: the wildcard stays, its shadowed rows go."""
+		wildcards = {(row.user, row.role) for row in self.members if row.resource_type == "*"}
+		shadowed = [
+			row for row in self.members if row.resource_type != "*" and (row.user, row.role) in wildcards
+		]
+		for row in shadowed:
+			self.remove(row)
 
 	def _validate_unique_members(self) -> None:
 		grants = [

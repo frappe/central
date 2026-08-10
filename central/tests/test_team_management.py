@@ -87,6 +87,29 @@ class TestTeamManagement(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
+	def test_wildcard_grant_absorbs_same_role_resource_grants(self):
+		# "Developer on everything" plus "Developer on one server" is
+		# contradictory — the save keeps the wildcard and drops its shadow.
+		frappe.set_user(self.owner)
+		frappe.get_doc("Team", self.team.name).set_member_roles(
+			self.viewer,
+			[
+				{"role": "Developer", "resource_type": "*", "resource_name": None},
+				{"role": "Developer", "resource_type": "Server", "resource_name": "srv-x"},
+				{"role": "Billing", "resource_type": "Server", "resource_name": "srv-x"},
+			],
+		)
+
+		grants = [
+			(row.role, row.resource_type, row.resource_name or None)
+			for row in frappe.get_doc("Team", self.team.name).members
+			if row.user == self.viewer
+		]
+		self.assertIn(("Developer", "*", None), grants)
+		self.assertNotIn(("Developer", "Server", "srv-x"), grants)
+		# A different role scoped to the same resource is a real grant — kept.
+		self.assertIn(("Billing", "Server", "srv-x"), grants)
+
 	def test_owner_invites_existing_user_and_user_accepts(self):
 		frappe.set_user(self.owner)
 		invitation_name = frappe.get_doc("Team", self.team.name).invite_member(self.invitee, "Developer")
