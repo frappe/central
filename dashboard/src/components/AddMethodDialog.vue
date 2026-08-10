@@ -11,11 +11,15 @@ import { money } from '@/lib/format'
 import { errorToast } from '@/lib/toast'
 import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 
-// Pick an instrument to add. The tiles come from the backend, which resolves them
-// from the team's billing currency, and the instrument decides the rail (ADR 0022):
-// cards go to Stripe, RuPay and UPI to Razorpay. We never inspect the card number,
-// so RuPay is its own tile rather than something we detect. Stripe card capture
-// happens in an embedded Element; Razorpay runs its hosted sheet.
+// Pick an instrument to save for auto-pay. This is the **mandate** surface (ADR
+// 0023) and it is a shorter list than wallet recharge: netbanking pays once and
+// cannot be saved, so it is not here at all.
+//
+// The tiles come from the backend and the instrument decides the rail. Our card
+// rail registers mandates on Visa and Mastercard only, so every other network is a
+// separate tile on the other rail — named, not detected, because Stripe Elements
+// iframes the card number. Stripe capture happens in an embedded Element; Razorpay
+// runs its hosted sheet.
 const open = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ done: [res?: unknown] }>()
 const { activeTeam } = useSession()
@@ -63,15 +67,12 @@ const tiles = computed(() => options.data?.instruments ?? [])
 
 const icons: Record<string, string> = {
 	Card: 'lucide-credit-card',
-	'RuPay Card': 'lucide-credit-card',
+	'Other Network Card': 'lucide-credit-card',
 	'UPI Autopay': 'lucide-smartphone',
-	Netbanking: 'lucide-landmark',
 }
 
 // A tile the customer can't act on right now, with the reason to show in its place.
 function blockedReason(tile: PaymentInstrument): string | null {
-	if (!tile.recurring)
-		return 'One-time only — use it when you pay an invoice or top up.'
 	if (tile.instrument === 'UPI Autopay' && upiBlocked.value)
 		return options.data?.upi_block_reason || 'Not available for your account yet.'
 	return null
@@ -89,7 +90,11 @@ function choose(tile: PaymentInstrument): void {
 		onCard()
 		return
 	}
-	if (tile.instrument === 'RuPay Card' && cardNeedsPhone.value && !phone.value.trim()) {
+	if (
+		tile.instrument === 'Other Network Card' &&
+		cardNeedsPhone.value &&
+		!phone.value.trim()
+	) {
 		askPhone.value = true
 		return
 	}
@@ -263,14 +268,14 @@ watch(open, (isOpen) => {
 						type="text"
 						label="Phone number"
 						placeholder="Mobile number"
-						description="A recurring RuPay card needs a contact number. Saved to your billing profile."
+						description="A recurring card on this rail needs a contact number. Saved to your billing profile."
 					/>
 					<Button
 						variant="solid"
 						label="Continue"
 						:loading="loading"
 						:disabled="!phone.trim()"
-						@click="launchGateway('Card', phone.trim(), 'RuPay Card')"
+						@click="launchGateway('Card', phone.trim(), 'Other Network Card')"
 					/>
 				</div>
 

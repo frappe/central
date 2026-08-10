@@ -47,12 +47,17 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 
 @frappe.whitelist()
 def get_payment_method_options(team: str | None = None) -> dict:
-	"""What the team can set up, resolved from their billing currency (ADR 0022).
+	"""What the team can set up, resolved from their billing currency (ADR 0023).
 
-	The customer picks an instrument and the instrument picks the gateway: cards go
-	to Stripe in every currency, and RuPay, UPI Autopay and netbanking to Razorpay,
-	which carries what Stripe India cannot. An INR team therefore sees four tiles;
-	elsewhere there is only the card.
+	The customer picks an instrument and the instrument picks the gateway. Stripe
+	takes everything a Stripe India account can carry — here, a Visa or Mastercard
+	mandate — and Razorpay takes what it cannot: UPI Autopay, and card mandates on
+	RuPay, Amex and Diners. An INR team therefore sees three tiles; elsewhere there
+	is only the card.
+
+	This is the **mandate** surface: what can be saved and debited later. Wallet
+	recharge is a different surface with its own instruments (netbanking tops up a
+	wallet but cannot be saved), served by `create_topup_order`.
 
 	`instruments` is the tile list. `methods` is the older flat list of what can be
 	saved, kept for callers that have not moved to tiles yet."""
@@ -60,7 +65,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 	currency = _team_currency(team)
 	from central.billing.payments import instruments as instrument_catalogue
 
-	tiles = instrument_catalogue.available(currency)
+	tiles = instrument_catalogue.available(currency, instrument_catalogue.MANDATE)
 
 	methods: list[str] = []
 	publishable_key = None
@@ -180,10 +185,10 @@ def setup_payment_method_order(
 	contact: str | None = None,
 	instrument: str | None = None,
 ) -> dict:
-	"""Begin adding a Razorpay recurring method — a UPI Autopay mandate (ceiling =
-	trust-tier cap) or a RuPay card token.
+	"""Begin saving a Razorpay-rail method — a UPI Autopay mandate, or a card token
+	for a network Stripe will not register a mandate on.
 
-	`instrument` is what the customer tapped, and it decides the rail (ADR 0022);
+	`instrument` is what the customer tapped, and it decides the rail (ADR 0023);
 	the gateway is resolved from it rather than from the currency default. Callers
 	that predate the tiles still pass `method_type`. `contact` is the phone the UI
 	collects inline for a card mandate when the billing profile has none (Razorpay
@@ -194,21 +199,19 @@ def setup_payment_method_order(
 	from central.billing.payments import instruments as instrument_catalogue
 	from central.billing.payments import mandates
 
-	entry = instrument_catalogue.get(instrument) if instrument else None
-	if entry and not entry["recurring"]:
-		frappe.throw(
-			_("{0} is a one-time payment — there is nothing to save.").format(entry["label"]),
-			frappe.ValidationError,
-		)
+	entry = (
+		instrument_catalogue.get(instrument, instrument_catalogue.MANDATE) if instrument else None
+	)
 	gw = (
 		gateway
-		or (instrument and instrument_catalogue.gateway_for(instrument, currency))
+		or (
+			instrument
+			and instrument_catalogue.gateway_for(instrument, currency, instrument_catalogue.MANDATE)
+		)
 		or _add_method_gateway(currency).get("name")
 	)
 	if entry and entry["method_type"] == "Card":
-		return mandates.setup_card(
-			team, gw, contact=contact, fallback_reason=entry["fallback_reason"]
-		)
+		return mandates.setup_card(team, gw, contact=contact, fallback_reason=entry["fallback_reason"])
 	if method_type == "Card" and not entry:
 		return mandates.setup_card(team, gw, contact=contact)
 	return mandates.setup_mandate(team, gw)

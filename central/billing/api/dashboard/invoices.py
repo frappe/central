@@ -531,12 +531,36 @@ def confirm_invoice_checkout(
 	)
 
 
+@frappe.whitelist()
+def get_topup_options(team: str | None = None) -> dict:
+	"""The instruments a wallet recharge can be paid with (ADR 0023).
+
+	A different list from the mandate surface: this one pays once with the customer
+	present, so netbanking belongs here and a card of any network Stripe accepts is
+	fine. `publishable_key` is returned for the Stripe rail, which collects the card
+	in-app rather than redirecting.
+	"""
+	team = _resolve_team(team)
+	currency = _team_currency(team)
+	from central.billing.payments import instruments as instrument_catalogue
+
+	tiles = instrument_catalogue.available(currency, instrument_catalogue.RECHARGE)
+	publishable_key = None
+	card_gw = _enabled_gateway_for_currency(currency, "Stripe")
+	if card_gw:
+		from central.billing.gateways.registry import get_adapter
+
+		publishable_key = get_adapter(frappe.get_doc("Payment Gateway", card_gw)).get_credential("api_key")
+	return {"currency": currency, "instruments": tiles, "publishable_key": publishable_key}
+
+
 @frappe.whitelist(methods=["POST"])
 def create_topup_order(
 	team: str | None = None,
 	amount: float | None = None,
 	gateway: str | None = None,
 	method: str | None = None,
+	instrument: str | None = None,
 ) -> dict:
 	"""Start a wallet top-up by creating a real gateway order. The UI opens the
 	gateway's checkout against it; the wallet is credited only after the gateway
@@ -572,6 +596,18 @@ def create_topup_order(
 			display_paypal = True
 		else:
 			gw = pp.name
+	elif instrument:
+		# The recharge surface: the customer picked an instrument and that decides the
+		# rail (ADR 0023). Resolving by currency default instead would put every INR
+		# top-up on one provider, including the card ones Stripe should take.
+		from central.billing.payments import instruments as instrument_catalogue
+
+		gw = instrument_catalogue.gateway_for(instrument, currency, instrument_catalogue.RECHARGE)
+		if not gw:
+			frappe.throw(
+				_("{0} isn't available for {1} top-ups.").format(instrument, currency),
+				frappe.ValidationError,
+			)
 	else:
 		gw = gateway or _gateway_for_currency(currency)
 	from central.billing.gateways.registry import get_adapter

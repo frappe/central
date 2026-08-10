@@ -203,16 +203,24 @@ export interface PaymentMethod {
 }
 
 /** get_payment_method_options — what the team may add, resolved from its currency. */
-/** One tile in the add-method picker. The customer picks an instrument and the
- *  instrument picks the gateway (ADR 0022) — we never detect the card network. */
+/** One tile on a payment surface. The customer picks an instrument and the
+ *  instrument picks the gateway (ADR 0023) — we never detect the card network.
+ *  Recharge and auto-pay setup return different lists. */
 export interface PaymentInstrument {
-	instrument: 'Card' | 'RuPay Card' | 'UPI Autopay' | 'Netbanking' | (string & {})
+	instrument:
+		| 'Card'
+		| 'RuPay Card'
+		| 'Other Network Card'
+		| 'UPI'
+		| 'UPI Autopay'
+		| 'Netbanking'
+		| (string & {})
 	label: string
 	description: string
 	gateway: string
 	adapter_key: 'Stripe' | 'Razorpay' | (string & {})
-	/** False for an instrument that pays once and saves nothing (netbanking). */
-	recurring: boolean
+	/** Which surface offered it: 'recharge' pays once, 'mandate' is saved. */
+	surface: 'recharge' | 'mandate' | (string & {})
 }
 
 export interface PaymentMethodOptions {

@@ -57,7 +57,7 @@ def alternate_rail(team: str, currency: str, failed_gateway: str) -> dict | None
 
 	if not fallback_enabled():
 		return None
-	for tile in instruments.available(currency):
+	for tile in instruments.available(currency, instruments.MANDATE):
 		if tile["gateway"] != failed_gateway:
 			return tile
 	return None

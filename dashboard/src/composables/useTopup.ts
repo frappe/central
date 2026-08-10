@@ -58,17 +58,22 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	//  - Stripe → { card: true }: dialog mounts the card Element.
 	//  - Paypal → { paypal: true }: dialog mounts PayPal Buttons (ADR 0007).
 	//  - Razorpay → collected in its hosted sheet, the whole top-up resolves here.
-	// `payMethod` is 'paypal' for an international PayPal top-up.
+	// `payMethod` is 'paypal' for an international PayPal top-up; `instrument` is the
+	// recharge tile the customer chose (Card / RuPay card / UPI / Netbanking).
 	async function begin(
 		amount: number,
 		payMethod?: string,
 		onSheet?: () => void,
+		instrument?: string,
 	): Promise<BeginResult> {
 		try {
 			await createOrder.submit({
 				team: activeTeam.value,
 				amount,
 				method: payMethod,
+				// What the customer tapped. The backend resolves the rail from it, so a
+				// card top-up reaches Stripe even though Razorpay owns the INR default.
+				instrument,
 			})
 			if (createOrder.error) throw createOrder.error
 			// Capture locally: the shared `order` is nulled by destroy() when the dialog

@@ -95,9 +95,9 @@
    "fieldname": "fallback_reason",
    "fieldtype": "Select",
    "label": "Fallback Reason",
-   "options": "\nRupay\nStripe Decline\nCustomer Choice",
+   "options": "\nRupay\nNetwork Unsupported\nStripe Decline\nCustomer Choice",
    "read_only": 1,
-   "description": "Why this method is not on the default rail for its currency (ADR 0022). Empty for one that is."
+   "description": "Why this method is not on the default rail for its currency (ADR 0023). Network Unsupported means Stripe would not register a mandate on that card network. Empty for a method on the default rail."
   },
   {
    "fieldname": "section_break_gateway",
