@@ -95,3 +95,16 @@ class TestCentralSSO(IntegrationTestCase):
 				get_bench_link(team=view_team.name, gateway_url="http://localhost:3030")
 		finally:
 			frappe.set_user("Administrator")
+
+
+class TestCentralUrl(IntegrationTestCase):
+	def tearDown(self):
+		frappe.db.set_single_value("Central SSO Settings", "issuer_url", "")
+
+	def test_prefers_the_configured_issuer_url(self):
+		frappe.db.set_single_value("Central SSO Settings", "issuer_url", "https://central.example.test")
+		self.assertEqual(central_url(), "https://central.example.test")
+
+	def test_falls_back_to_the_site_url_when_unset(self):
+		frappe.db.set_single_value("Central SSO Settings", "issuer_url", "")
+		self.assertEqual(central_url(), frappe.utils.get_url())

@@ -507,8 +507,9 @@ class TestLogRetention(ChargeTestBase):
 	def test_respects_config_window(self):
 		captured = self._attempt(self._paid_invoice(), "Captured")
 		# Wide window (1 year) with 'now' = real now: a fresh row is NOT old enough.
-		with patch.dict(frappe.conf, {"payment_log_retention_days": 365}):
-			charges.cleanup_payment_logs()
+		frappe.db.set_single_value("Billing Settings", "payment_log_retention_days", 365)
+		self.addCleanup(frappe.db.set_single_value, "Billing Settings", "payment_log_retention_days", 90)
+		charges.cleanup_payment_logs()
 		self.assertTrue(frappe.db.exists("Payment Attempt", captured))
 
 

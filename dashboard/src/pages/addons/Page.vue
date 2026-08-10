@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { features } from '@/lib/features'
 
 interface MeteredRow {
 	resource_type: string | null
@@ -28,47 +29,48 @@ const aiUsage = computed(() => {
 	return `${new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(row.period_usage)} ${row.unit || 'tokens'}`
 })
 
+// A service's "On"/"Coming soon" state is its rollout flag (Central Settings),
+// not the billing catalogue. Live cards show real usage only — no placeholder
+// pricing. A card with no usage source yet shows an em dash, never a made-up figure.
 const services = computed(() => [
 	{
 		icon: 'sparkles',
 		title: 'AI inference',
 		description:
 			'Open models on Frappe hardware, through an OpenAI-compatible API.',
-		costValue: aiUsage.value ?? '—',
-		costSuffix: 'this cycle',
+		usage: aiUsage.value ?? '—',
 		to: '/addons/ai',
-		disabled: false,
+		enabled: features.llm,
 	},
 	{
 		icon: 'archive',
 		title: 'Object storage',
 		description:
 			'S3-compatible buckets for file uploads, backups and static assets.',
-		costValue: '$2',
-		costSuffix: 'per GB-month · downloads are free',
+		usage: '—',
 		to: '/addons/object-storage',
-		disabled: true,
+		enabled: features.storage,
 	},
 	{
 		icon: 'mail',
 		title: 'Email sending',
 		description:
 			'Send mail from your own domain. DKIM and SPF handled for you.',
-		costValue: '$752',
-		costSuffix: 'this cycle',
+		usage: '—',
 		to: '/addons/email-sending',
-		disabled: true,
+		enabled: features.email,
 	},
 	{
 		icon: 'file-text',
 		title: 'PDF rendering',
 		description: 'PDFs from your print formats, rendered off your server.',
-		costValue: '1,000 free',
-		costSuffix: 'then $0.20 per document',
+		usage: '—',
 		to: '/addons/pdf-rendering',
-		disabled: true,
+		enabled: features.pdf,
 	},
 ])
+
+const enabledCount = computed(() => services.value.filter((s) => s.enabled).length)
 </script>
 
 <template>
@@ -79,8 +81,9 @@ const services = computed(() => [
 		</p>
 
 		<div class="flex gap-3 items-center rounded bg-surface-gray-1 p-2 px-3">
-			<span>$1,789 </span>
-			<span class="text-ink-gray-5 mr-auto"> this cycle . 2 of 4 on </span>
+			<span class="text-ink-gray-5 mr-auto">
+				{{ enabledCount }} of {{ services.length }} available
+			</span>
 
 			<router-link class="text-ink-gray-6" to="/billing/invoices"
 				>See on billing</router-link
@@ -88,12 +91,15 @@ const services = computed(() => [
 		</div>
 
 		<section class="grid md:grid-cols-2 gap-3 mt-5">
-			<router-link
+			<component
+				:is="service.enabled ? 'router-link' : 'div'"
 				v-for="service in services"
 				:key="service.title"
-				:to="service.disabled ? '' : service.to"
-				class="p-4 rounded-lg flex flex-col gap-3 border border-outline-gray-2 transition-all duration-300 hover:border-outline-gray-6"
-				:class="service.disabled ? 'opacity-50' : ''"
+				:to="service.enabled ? service.to : undefined"
+				class="p-4 rounded-lg flex flex-col gap-3 border border-outline-gray-2 transition-all duration-300"
+				:class="
+					service.enabled ? 'hover:border-outline-gray-6' : 'opacity-50'
+				"
 			>
 				<div class="flex items-center gap-3">
 					<div class="bg-surface-gray-1 rounded-lg p-2">
@@ -116,7 +122,7 @@ const services = computed(() => [
 					</div>
 
 					<Badge class="ml-auto mb-auto">
-						{{ service.disabled ? 'Off' : 'On' }}
+						{{ service.enabled ? 'On' : 'Coming soon' }}
 					</Badge>
 				</div>
 
@@ -126,13 +132,13 @@ const services = computed(() => [
 					{{ service.description }}
 				</p>
 
-				<div class="flex items-center">
-					<span>{{ service.costValue }} </span>
-					<span class="text-ink-gray-5 ml-1"> {{ service.costSuffix }}</span>
+				<div v-if="service.enabled" class="flex items-center">
+					<span>{{ service.usage }} </span>
+					<span class="text-ink-gray-5 ml-1"> this cycle</span>
 
 					<lucide-arrow-right class="size-4 ml-auto" />
 				</div>
-			</router-link>
+			</component>
 		</section>
 	</div>
 </template>

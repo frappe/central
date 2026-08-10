@@ -23,6 +23,7 @@ class CentralSSOSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		issuer_url: DF.Data | None
 		kid: DF.Data | None
 		private_key: DF.Password | None
 		public_key: DF.Code | None

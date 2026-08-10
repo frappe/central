@@ -110,11 +110,12 @@ class TestTrialProvisioning(IntegrationTestCase):
 	def test_rejects_plan_outside_the_trial_allowlist(self):
 		self._fund()
 		other = self._fresh_plan("trial-enterprise", None, rate=9000)
+		frappe.db.set_value("Plan", self.plan, "available_on_trial", 1)
+		self.addCleanup(frappe.db.set_value, "Plan", self.plan, "available_on_trial", 0)
 		fake_client = MagicMock()
-		with patch.dict(frappe.conf, {"trial_plans": [self.plan]}):
-			with patch.object(servers.AtlasClient, "for_region", return_value=fake_client):
-				with self.assertRaises(frappe.ValidationError):
-					servers.create_server(team=TEAM, region=REGION, title="web-1", plan=other)
+		with patch.object(servers.AtlasClient, "for_region", return_value=fake_client):
+			with self.assertRaises(frappe.ValidationError):
+				servers.create_server(team=TEAM, region=REGION, title="web-1", plan=other)
 		fake_client.create_vm.assert_not_called()
 
 	def test_requires_a_plan_so_it_is_metered(self):

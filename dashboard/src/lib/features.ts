@@ -5,10 +5,20 @@
 // run get_context), matching the DocType's default.
 
 export interface Features {
-	/** The Add-ons area (LLM / storage services). */
+	/** The Add-ons area as a whole (nav entry + routes). */
 	addons: boolean
+	/** Per-service rollout switches. Off renders the card as "coming soon". */
+	llm: boolean
+	pdf: boolean
+	email: boolean
+	storage: boolean
 }
 
+// Defaults match the DocType: the area is on, individual services off until rolled out.
 export const features: Features = {
 	addons: window.features?.addons ?? true,
+	llm: window.features?.llm ?? false,
+	pdf: window.features?.pdf ?? false,
+	email: window.features?.email ?? false,
+	storage: window.features?.storage ?? false,
 }

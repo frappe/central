@@ -20,6 +20,7 @@ class Plan(Document):
 		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 
 		annual_discount_pct: DF.Float
+		available_on_trial: DF.Check
 		billing_cycle: DF.Literal["Monthly", "Annual"]
 		category: DF.Link
 		includes: DF.Table[PlanIncludes]
