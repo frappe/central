@@ -99,6 +99,15 @@ const routes = [
 				component: () => import('@/pages/settings/SettingsPage.vue'),
 				meta: { title: 'Settings' },
 			},
+			// Mobile opens each settings tab as its own page — no dialog on a
+			// phone. Desktop reaches the same tabs through the settings dialog,
+			// but these routes stay valid there (deep links, browser Back).
+			{
+				path: 'settings/:tab',
+				name: 'SettingsTab',
+				component: () => import('@/pages/settings/SettingsDetailPage.vue'),
+				meta: { title: 'Settings' },
+			},
 			{ path: 'team', redirect: '/team/members' },
 			// Members + roles share one tabbed page. Settings fold into this surface
 			// (rename beside the title, transfer on member rows, delete in team menu).
