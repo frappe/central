@@ -108,7 +108,7 @@ const routes = [
 				path: 'team/members',
 				name: 'Members',
 				component: () => import('@/pages/team/AccessPage.vue'),
-				meta: { title: 'Teams' },
+				meta: { title: 'Team' },
 			},
 			{ path: 'team/roles', redirect: '/team/members' },
 			{ path: 'team/settings', redirect: '/team/members' },
