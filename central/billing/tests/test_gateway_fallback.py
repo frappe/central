@@ -180,3 +180,150 @@ class TestTheGatewaysOwnHold(IntegrationTestCase):
 		}
 		self.assertIsNotNone(_predebit_hold(intent))
 		self.assertIsNone(_predebit_hold({"status": "succeeded"}))
+
+
+class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
+	"""A team holding a card on one rail and a mandate on the other.
+
+	Rotating between them is the point of the ordered method list, but it must only
+	happen when the first attempt is genuinely over. An ambiguous failure may still
+	settle at the gateway, so charging the second rail on top of it takes the money
+	twice for one invoice — the failure mode this whole rule exists to prevent.
+	"""
+
+	def setUp(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		make_stripe_gateway(currencies=(("USD", 1), ("INR", 0)))
+		make_razorpay_gateway([("INR", 1)])
+		frappe.db.set_single_value("Billing Settings", "enable_gateway_fallback", 1)
+		frappe.db.delete("Payment Attempt", {"team": TEAM})
+		frappe.db.delete("Invoice", {"team": TEAM})
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		self.stripe_method = self._method("Stripe", "pm_stripe", priority=0)
+		self.razorpay_method = self._method("Razorpay", "tok_rzp", priority=1)
+		self.invoice = self._invoice()
+
+	def _method(self, gateway, handle, priority):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": TEAM,
+					"gateway": gateway,
+					"method_type": "Card",
+					"status": "Active",
+					"gateway_method_id": handle,
+					"gateway_customer_id": f"cus_{gateway.lower()}",
+					"display_label": f"{gateway} card",
+					"priority": priority,
+					"validated_at": frappe.utils.now_datetime(),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def _invoice(self):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": "Billable",
+					"status": "Open",
+					"period_start": "2026-06-01",
+					"period_end": "2026-06-30",
+					"currency": "INR",
+					"subtotal": 5000,
+					"total": 5000,
+					"expected_collection": 5000,
+					"items": [{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def _charged_gateways(self):
+		return frappe.get_all("Payment Attempt", filters={"invoice": self.invoice}, pluck="gateway")
+
+	def test_an_ambiguous_failure_stops_instead_of_trying_the_other_rail(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		adapter = MagicMock()
+		adapter.charge.return_value = PaymentResult(
+			success=False,
+			status="Failed",
+			failure_code="processing_error",
+			failure_reason="try again later",
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			out = collection.collect_invoice(self.invoice)
+
+		self.assertEqual(out["reason"], "ambiguous_failure")
+		self.assertEqual(adapter.charge.call_count, 1)
+		self.assertEqual(self._charged_gateways(), ["Stripe"])
+
+	def test_a_terminal_decline_does_rotate_to_the_other_rail(self):
+		"""The counterpart: when the card really is refused, the second rail is tried
+		exactly once, so the guard above isn't just blocking everything."""
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		adapter = MagicMock()
+		adapter.charge.return_value = PaymentResult(
+			success=False, status="Failed", failure_code="card_declined", failure_reason="declined"
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			collection.collect_invoice(self.invoice)
+
+		self.assertEqual(sorted(self._charged_gateways()), ["Razorpay", "Stripe"])
+		# Each method at most once per invoice — escalate, don't repeat.
+		self.assertEqual(len(self._charged_gateways()), 2)
+
+	def test_running_out_of_rails_asks_for_another_way_to_pay(self):
+		from unittest.mock import MagicMock, patch
+
+		from central.billing.gateways.base import PaymentResult
+		from central.billing.payments import collection
+
+		frappe.db.delete("Billing Notification Log", {"team": TEAM})
+		adapter = MagicMock()
+		adapter.charge.return_value = PaymentResult(
+			success=False, status="Failed", failure_code="card_declined", failure_reason="declined"
+		)
+		with patch("central.billing.gateways.registry.get_adapter", return_value=adapter):
+			collection.collect_invoice(self.invoice)
+
+		self.assertTrue(
+			frappe.db.exists(
+				"Billing Notification Log", {"team": TEAM, "event_type": "Add Payment Method"}
+			)
+		)
+
+	def test_nothing_is_asked_of_a_team_that_never_had_a_method(self):
+		"""Nothing was tried, so there is nothing to report — onboarding and the
+		Action Required banner already carry that conversation."""
+		from central.billing.payments import collection
+
+		frappe.db.delete("Billing Notification Log", {"team": TEAM})
+		frappe.db.set_value("Payment Method", self.stripe_method, "status", "Cancelled")
+		frappe.db.set_value("Payment Method", self.razorpay_method, "status", "Cancelled")
+
+		out = collection.collect_invoice(self.invoice)
+
+		self.assertEqual(out["reason"], "no_method")
+		self.assertFalse(
+			frappe.db.exists(
+				"Billing Notification Log", {"team": TEAM, "event_type": "Add Payment Method"}
+			)
+		)
