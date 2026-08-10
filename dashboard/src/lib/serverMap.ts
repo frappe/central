@@ -209,10 +209,12 @@ export const MAP_WIDTH = 879
 export const MAP_HEIGHT = 443
 const LAT_TOP = 83
 const LAT_BOTTOM = -56
+// User zoom is gone (hover cards carry the detail); this caps how far picker
+// mode may zoom while framing its marker set.
 export const MAX_ZOOM = 5
-export const ZOOM_STEP = 1.7
-// Past this zoom, servers sharing a spot stop counting ("3") and fan out into an
-// overlapping avatar stack. Two zoom-in clicks (1.7² ≈ 2.89) get you there.
+// export const ZOOM_STEP = 1.7 // restored with the map's zoom controls
+// Past this zoom, servers sharing a spot stop counting ("3") and fan out into
+// an overlapping avatar stack — only reachable via the picker's marker fit.
 export const STACK_ZOOM = 2.8
 
 // Greedy proximity-cluster thresholds in SCREEN pixels (divided by scale k), so

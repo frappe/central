@@ -19,7 +19,6 @@ import {
 	type MapPin,
 	type MapSpot,
 	project,
-	ZOOM_STEP,
 } from '@/lib/serverMap'
 
 // The interactive servers map, ported from the FC V2 prototype. Purely
@@ -36,9 +35,9 @@ const props = withDefaults(
 		selectedId?: string | null
 		/** Server id hovered elsewhere (the side panel) — bumps its node. */
 		highlightId?: string | null
-		/** Push the zoom controls left when a panel overlays the right edge (px). */
+		/** Width a panel overlays on the right edge (px) — cards clamp to the rest. */
 		panelOffset?: number
-		/** False = no drag/wheel/dblclick/controls; the map frames itself (markers). */
+		/** False = picker mode; the map frames its markers itself. */
 		interactive?: boolean
 		/** Show create affordances inside cards (page gates on server:create). */
 		allowCreate?: boolean
@@ -76,23 +75,28 @@ const emit = defineEmits<{
 	select: [region: string]
 }>()
 
-// Aliases for the projection frame the lib owns, so the pan/zoom math below reads
+// Aliases for the projection frame the lib owns, so the framing math below reads
 // unchanged. project() and computeNodes() (clustering) live in lib/serverMap.
 const W = MAP_WIDTH
 const H = MAP_HEIGHT
 const MAX_Z = MAX_ZOOM
-const STEP = ZOOM_STEP
+// User zoom and pan are retired: the map contain-fits the world and hover
+// cards carry the detail. The implementation stays commented in place rather
+// than deleted, so bringing it back is uncommenting these blocks, the handlers
+// on the root element, and the controls at the end of the template — plus
+// re-exporting ZOOM_STEP from lib/serverMap.
+// const STEP = ZOOM_STEP
 
-// — Viewport: contain-fit the world, then zoom/pan on top. At zoom 1 the map
-//   is centered and locked; zoomed in, it pans within the map's own bounds.
+// Contain-fit the world. There is no user zoom/pan; the zoom/translate state
+// below exists only so picker mode can frame its marker set.
 const el = ref<HTMLDivElement | null>(null)
 const cw = ref(0)
 const ch = ref(0)
 const zoom = ref(1)
 const tx = ref(0)
 const ty = ref(0)
-const dragging = ref(false)
-const wheeling = ref(false)
+// const dragging = ref(false)
+// const wheeling = ref(false)
 const focusing = ref(false)
 
 const base = computed(() =>
@@ -122,9 +126,9 @@ onBeforeUnmount(() => {
 	ro?.disconnect()
 	// Tear down every timer/RAF this component owns — the flyTo RAF loop
 	// (focusRaf) keeps writing zoom/tx/ty after unmount otherwise, and the
-	// hover/wheel debounces fire into a dead component.
+	// hover debounces fire into a dead component.
 	cancelAnimationFrame(focusRaf)
-	window.clearTimeout(wheelT)
+	// window.clearTimeout(wheelT)
 	window.clearTimeout(showT)
 	window.clearTimeout(hideT)
 })
@@ -149,26 +153,24 @@ const mapStyle = computed(() => ({
 	height: `${H * k.value}px`,
 }))
 
-function zoomAt(ax: number, ay: number, factor: number): void {
-	cancelFocus()
-	const zNew = Math.min(MAX_Z, Math.max(1, zoom.value * factor))
-	if (zNew === zoom.value) return
-	const kOld = k.value
-	const kNew = base.value * zNew
-	tx.value = ax - ((ax - tx.value) / kOld) * kNew
-	ty.value = ay - ((ay - ty.value) / kOld) * kNew
-	zoom.value = zNew
-	hideCard()
-	clampPan()
-}
-function zoomStep(dir: number): void {
-	zoomAt(cw.value / 2, ch.value / 2, dir > 0 ? STEP : 1 / STEP)
-}
+// function zoomAt(ax: number, ay: number, factor: number): void {
+// 	cancelFocus()
+// 	const zNew = Math.min(MAX_Z, Math.max(1, zoom.value * factor))
+// 	if (zNew === zoom.value) return
+// 	const kOld = k.value
+// 	const kNew = base.value * zNew
+// 	tx.value = ax - ((ax - tx.value) / kOld) * kNew
+// 	ty.value = ay - ((ay - ty.value) / kOld) * kNew
+// 	zoom.value = zNew
+// 	hideCard()
+// 	clampPan()
+// }
+// function zoomStep(dir: number): void {
+// 	zoomAt(cw.value / 2, ch.value / 2, dir > 0 ? STEP : 1 / STEP)
+// }
 
-// Focus a node in one continuous move: zoom to (at least) the stack level
-// while the node glides to the viewport centre. Driven frame-by-frame (CSS
-// transitions off) — zoom interpolates in log space and the node's on-screen
-// path is eased explicitly, so the combined motion never swings.
+// Reframe in one continuous move. Driven frame-by-frame rather than by CSS:
+// zoom interpolates in log space so the combined motion never swings.
 let focusRaf = 0
 function cancelFocus(): void {
 	cancelAnimationFrame(focusRaf)
@@ -196,9 +198,12 @@ function flyTo(wx: number, wy: number, z1: number): void {
 	}
 	focusRaf = requestAnimationFrame(frame)
 }
-function focusOn(n: MapNode): void {
-	flyTo(n.x, n.y, Math.min(MAX_Z, Math.max(zoom.value, STEP * STEP)))
-}
+
+// Focus a node in one continuous move: zoom to (at least) the stack level while
+// the node glides to the viewport centre.
+// function focusOn(n: MapNode): void {
+// 	flyTo(n.x, n.y, Math.min(MAX_Z, Math.max(zoom.value, STEP * STEP)))
+// }
 
 // Picker mode frames itself: fit the marker set (new provider = new frame).
 // First layout lands in place; later changes glide.
@@ -236,16 +241,16 @@ watch([() => props.markers, base], fitMarkers)
 
 // — Drag to pan (only when zoomed in). A real click is distinguished from a
 //   drag by a 4px slop; after a drag the trailing click is swallowed.
-interface DragState {
-	x: number
-	y: number
-	tx: number
-	ty: number
-	id: number
-	moved: boolean
-}
-let drag: DragState | null = null
-let suppressClick = false
+// interface DragState {
+// 	x: number
+// 	y: number
+// 	tx: number
+// 	ty: number
+// 	id: number
+// 	moved: boolean
+// }
+// let drag: DragState | null = null
+// let suppressClick = false
 function closestOf(e: Event, selector: string): Element | null {
 	return (e.target as Element | null)?.closest(selector) ?? null
 }
@@ -253,72 +258,72 @@ function onDown(e: PointerEvent): void {
 	if (e.button !== 0 || !props.interactive) return
 	// A locked card (its ⋯ menu was opened) closes on any press outside it.
 	if (cardLocked.value && !closestOf(e, '[data-map-card]')) hideCard()
-	if (zoom.value <= 1) return
-	if (closestOf(e, '[data-map-card],[data-map-controls]')) return
-	drag = {
-		x: e.clientX,
-		y: e.clientY,
-		tx: tx.value,
-		ty: ty.value,
-		id: e.pointerId,
-		moved: false,
-	}
+	// if (zoom.value <= 1) return
+	// if (closestOf(e, '[data-map-card],[data-map-controls]')) return
+	// drag = {
+	// 	x: e.clientX,
+	// 	y: e.clientY,
+	// 	tx: tx.value,
+	// 	ty: ty.value,
+	// 	id: e.pointerId,
+	// 	moved: false,
+	// }
 }
-function onMove(e: PointerEvent): void {
-	if (!drag) return
-	const dx = e.clientX - drag.x
-	const dy = e.clientY - drag.y
-	if (!drag.moved && Math.hypot(dx, dy) < 4) return
-	if (!drag.moved) {
-		drag.moved = true
-		dragging.value = true
-		cancelFocus() // don't fight the user for the viewport
-		hideCard()
-		el.value?.setPointerCapture?.(drag.id)
-	}
-	tx.value = drag.tx + dx
-	ty.value = drag.ty + dy
-	clampPan()
-}
-function onUp(): void {
-	if (drag?.moved) {
-		suppressClick = true
-		setTimeout(() => (suppressClick = false), 0)
-	}
-	drag = null
-	dragging.value = false
-}
-function onDblClick(e: MouseEvent): void {
-	if (!props.interactive) return
-	if (closestOf(e, '[data-map-card],[data-map-controls]')) return
-	if (!el.value) return
-	const r = el.value.getBoundingClientRect()
-	zoomAt(e.clientX - r.left, e.clientY - r.top, STEP)
-}
+// function onMove(e: PointerEvent): void {
+// 	if (!drag) return
+// 	const dx = e.clientX - drag.x
+// 	const dy = e.clientY - drag.y
+// 	if (!drag.moved && Math.hypot(dx, dy) < 4) return
+// 	if (!drag.moved) {
+// 		drag.moved = true
+// 		dragging.value = true
+// 		cancelFocus() // don't fight the user for the viewport
+// 		hideCard()
+// 		el.value?.setPointerCapture?.(drag.id)
+// 	}
+// 	tx.value = drag.tx + dx
+// 	ty.value = drag.ty + dy
+// 	clampPan()
+// }
+// function onUp(): void {
+// 	if (drag?.moved) {
+// 		suppressClick = true
+// 		setTimeout(() => (suppressClick = false), 0)
+// 	}
+// 	drag = null
+// 	dragging.value = false
+// }
+// function onDblClick(e: MouseEvent): void {
+// 	if (!props.interactive) return
+// 	if (closestOf(e, '[data-map-card],[data-map-controls]')) return
+// 	if (!el.value) return
+// 	const r = el.value.getBoundingClientRect()
+// 	zoomAt(e.clientX - r.left, e.clientY - r.top, STEP)
+// }
 
-// Trackpad: pinch (ctrl+wheel) zooms at the cursor; two-finger scroll pans
-// when zoomed in. Both move without the zoom transition.
-let wheelT: number | undefined
-function onWheel(e: WheelEvent): void {
-	if (!props.interactive) return
-	const pinch = e.ctrlKey || e.metaKey
-	if (!pinch && zoom.value <= 1) return
-	e.preventDefault()
-	wheeling.value = true
-	cancelFocus()
-	window.clearTimeout(wheelT)
-	wheelT = window.setTimeout(() => (wheeling.value = false), 140)
-	hideCard()
-	if (pinch) {
-		if (!el.value) return
-		const r = el.value.getBoundingClientRect()
-		zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01))
-	} else {
-		tx.value -= e.deltaX
-		ty.value -= e.deltaY
-		clampPan()
-	}
-}
+// Trackpad: pinch (ctrl+wheel) zooms at the cursor; two-finger scroll pans when
+// zoomed in. Both move without the zoom transition.
+// let wheelT: number | undefined
+// function onWheel(e: WheelEvent): void {
+// 	if (!props.interactive) return
+// 	const pinch = e.ctrlKey || e.metaKey
+// 	if (!pinch && zoom.value <= 1) return
+// 	e.preventDefault()
+// 	wheeling.value = true
+// 	cancelFocus()
+// 	window.clearTimeout(wheelT)
+// 	wheelT = window.setTimeout(() => (wheeling.value = false), 140)
+// 	hideCard()
+// 	if (pinch) {
+// 		if (!el.value) return
+// 		const r = el.value.getBoundingClientRect()
+// 		zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01))
+// 	} else {
+// 		tx.value -= e.deltaX
+// 		ty.value -= e.deltaY
+// 		clampPan()
+// 	}
+// }
 
 // Cluster the fleet into positioned nodes — pure, in lib/serverMap. Reclusters as
 // k/zoom change so groups split apart on zoom-in.
@@ -384,7 +389,7 @@ const cardLocked = ref(false)
 let showT: number | undefined
 let hideT: number | undefined
 function enterNode(n: MapNode): void {
-	if (dragging.value || cardLocked.value) return
+	if (cardLocked.value) return
 	window.clearTimeout(hideT)
 	window.clearTimeout(showT)
 	showT = window.setTimeout(() => (hoverKey.value = n.key), 40)
@@ -419,7 +424,7 @@ const card = computed<CardPlacement | null>(() => {
 	const { sx, sy } = screenOf(node)
 	const width = node.type === 'server' ? 320 : 288
 	// The side panel overlays the map's right edge, so the card clamps to the
-	// uncovered width — same treatment as the zoom controls.
+	// uncovered width.
 	const visibleW = cw.value - props.panelOffset
 	// Stacked avatars overlap sideways, so their card drops below instead of
 	// covering the neighbours to the right.
@@ -469,16 +474,16 @@ const card = computed<CardPlacement | null>(() => {
 	}
 })
 
-// Let the page focus the map from the side panel: glide to the node that
-// holds this server (its own pin, or the cluster it's grouped into).
-function focusPin(id: string): void {
-	const n = nodeForServer(id)
-	if (n) focusOn(n)
-}
-defineExpose({ focusPin })
+// Let the page focus the map from the side panel: glide to the node that holds
+// this server (its own pin, or the cluster it's grouped into).
+// function focusPin(id: string): void {
+// 	const n = nodeForServer(id)
+// 	if (n) focusOn(n)
+// }
+// defineExpose({ focusPin })
 
 function clickNode(n: MapNode): void {
-	if (suppressClick) return
+	// if (suppressClick) return
 	if (n.type === 'marker') {
 		emit('select', n.marker.id)
 	} else if (n.type === 'server') {
@@ -495,26 +500,28 @@ function clickNode(n: MapNode): void {
 	} else if (n.type === 'plus') {
 		emit('new-server', n.targets[0].id)
 	} else {
-		// A cluster focuses the map on itself, zooming to the stack level. The
-		// page narrows the list to this spot if the panel happens to be open.
-		focusOn(n)
+		// A cluster's members are browsed in its hover card; clicking locks the
+		// card open, and the page narrows its list if the panel is open. With
+		// zoom restored this focused the map on the stack instead: focusOn(n).
+		window.clearTimeout(showT)
+		hoverKey.value = n.key
+		cardLocked.value = true
 		emit('cluster-open', { ids: n.members.map((m) => m.id), label: n.title })
 	}
 }
 </script>
 
 <template>
+	<!-- With zoom and pan restored, this element also takes:
+	     :class="[ready && 'sm-anim', (dragging || wheeling || focusing) && 'sm-drag', dragging ? 'cursor-grabbing' : interactive && zoom > 1 ? 'cursor-grab' : '']"
+	     :style="interactive && zoom > 1 ? { touchAction: 'none' } : undefined"
+	     @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp"
+	     @dblclick="onDblClick" @wheel="onWheel" -->
 	<div
 		ref="el"
 		class="relative isolate h-full w-full select-none overflow-hidden bg-surface-base"
-		:class="[ready && 'sm-anim', (dragging || wheeling || focusing) && 'sm-drag', dragging ? 'cursor-grabbing' : interactive && zoom > 1 ? 'cursor-grab' : '']"
-		:style="interactive && zoom > 1 ? { touchAction: 'none' } : undefined"
+		:class="[ready && 'sm-anim', focusing && 'sm-drag']"
 		@pointerdown="onDown"
-		@pointermove="onMove"
-		@pointerup="onUp"
-		@pointercancel="onUp"
-		@dblclick="onDblClick"
-		@wheel="onWheel"
 	>
 		<!-- Dotted world. Resize the SVG itself so it re-rasterizes at each zoom;
 		     nodes ride the same curve below so they track the dots. -->
@@ -654,7 +661,8 @@ function clickNode(n: MapNode): void {
 			</div>
 		</Transition>
 
-		<!-- Zoom controls; slide left when the server panel overlays the right edge -->
+		<!-- Zoom controls, retired with user zoom/pan. They slid left when the
+		     server panel overlaid the right edge.
 		<div
 			v-if="interactive"
 			data-map-controls
@@ -678,13 +686,14 @@ function clickNode(n: MapNode): void {
 				<span class="lucide-zoom-out size-4" />
 			</button>
 		</div>
+		-->
 	</div>
 </template>
 
 <style scoped>
 /* The map layer and every node share one curve, so pins track the dots
-   through the whole zoom. Transitions only arm after the first layout (the
-   map must appear in place, not animate in); dragging and pinching switch
+   through a reframe. Transitions only arm after the first layout (the map
+   must appear in place, not animate in); the frame-driven marker fit switches
    back to direct updates. */
 .sm-pos {
 	will-change: transform;
@@ -737,9 +746,9 @@ function clickNode(n: MapNode): void {
 	opacity: 0;
 }
 
-.sm-controls {
+/* .sm-controls {
 	transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
-}
+} */
 
 .sm-pulse {
 	animation: sm-pulse 1.8s ease-in-out infinite;
@@ -756,8 +765,7 @@ function clickNode(n: MapNode): void {
 
 @media (prefers-reduced-motion: reduce) {
 	.sm-pos,
-	.sm-center,
-	.sm-controls {
+	.sm-center {
 		transition: none;
 	}
 	.sm-pulse {
