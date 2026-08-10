@@ -19,6 +19,7 @@ export const API = {
 	listTeamInvitations: 'central.api.teams.list_team_invitations',
 	createTeam: 'central.api.teams.create_team',
 	renameTeam: 'central.api.teams.rename_team',
+	setTeamLogo: 'central.api.teams.set_team_logo',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
 	inviteTeamMember: 'central.api.teams.invite_team_member',

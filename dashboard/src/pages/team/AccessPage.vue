@@ -14,7 +14,7 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 // row, ahead of search; each tab keeps its primary action (Invite, New role)
 // in that row's toolbar. Team-level settings (rename, delete) open from the
 // pencil — there is no separate settings page.
-const { activeTeamLabel } = useSession()
+const { activeTeamLabel, activeTeamLogo } = useSession()
 const { members } = useTeamMembers()
 const { canEditTeam, canDeleteTeam } = useCapabilities()
 
@@ -36,15 +36,20 @@ const memberCountText = computed(() => {
 	<div class="flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
 			<main class="mx-auto flex flex-col max-w-3xl gap-3 mt-10 px-3 xl:p-0">
-				<div class="mb-5 flex items-center gap-2">
+				<div class="mb-5 flex items-center gap-3">
 					<!-- Square: this is the organisation, not a person. Circles stay
 					     reserved for people across the console. -->
-					<Avatar :label="activeTeamLabel" size="2xl" shape="square" />
-					<div class="leading-relaxed">
-						<p class="text-base font-medium text-ink-gray-9">
+					<Avatar
+						:image="activeTeamLogo ?? undefined"
+						:label="activeTeamLabel"
+						size="2xl"
+						shape="square"
+					/>
+					<div>
+						<p class="text-lg font-semibold text-ink-gray-9">
 							{{ activeTeamLabel }}
 						</p>
-						<p class="text-p-sm text-ink-gray-5">{{ memberCountText }}</p>
+						<p class="mt-0.5 text-p-sm text-ink-gray-5">{{ memberCountText }}</p>
 					</div>
 
 					<!-- Icon-only: renaming/deleting the team is rare — a label would

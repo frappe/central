@@ -50,7 +50,7 @@ def my_teams() -> list[dict[str, Any]]:
 		frappe.qb.from_(member)
 		.join(team)
 		.on(team.name == member.parent)
-		.select(team.name, team.team_name, team.owner_user)
+		.select(team.name, team.team_name, team.team_logo, team.owner_user)
 		.where(
 			(member.parenttype == "Team")
 			& (member.parentfield == "members")
@@ -62,7 +62,13 @@ def my_teams() -> list[dict[str, Any]]:
 	).run(as_dict=True)
 
 	return [
-		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user} for r in rows
+		{
+			"name": r.name,
+			"label": r.team_name or r.owner_user or r.name,
+			"logo": r.team_logo,
+			"owner": r.owner_user,
+		}
+		for r in rows
 	]
 
 

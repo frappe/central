@@ -56,6 +56,11 @@ export function useSession() {
 				(teamsCall.data ?? []).find((t) => t.name === activeTeam.value)
 					?.label ?? 'Central',
 		),
+		activeTeamLogo: computed(
+			() =>
+				(teamsCall.data ?? []).find((t) => t.name === activeTeam.value)
+					?.logo ?? null,
+		),
 		setActiveTeam: selectTeam,
 		reload: () => teamsCall.reload(),
 	}

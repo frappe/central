@@ -131,7 +131,7 @@
  },
  {
   "capability": "team:edit",
-  "description": "Rename the team",
+  "description": "Rename the team and change its logo",
   "docstatus": 0,
   "doctype": "Capability",
   "modified": "2026-08-07 12:00:00.000000",

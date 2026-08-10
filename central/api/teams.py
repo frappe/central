@@ -7,6 +7,7 @@ from frappe import _
 from frappe.query_builder import Order
 
 from central.iam import can, expand_capabilities, get_all_capabilities, user_has_operator_bypass
+from central.images import read_image_upload
 from central.utils.guards import require_capability, require_team_member
 
 # Team-roster reads + role management for the console's Team screens. Visibility
@@ -20,10 +21,12 @@ def list_team_members(team: str) -> list[dict[str, Any]]:
 	"""Roster of the team the caller belongs to (user, full name, role grants, status,
 	owner flag) — one entry per user, folding their Team Member rows into a `roles` list."""
 	doc = frappe.get_doc("Team", team)
-	full_names = {
-		u.name: u.full_name
+	users = {
+		u.name: u
 		for u in frappe.get_all(
-			"User", filters={"name": ["in", [m.user for m in doc.members]]}, fields=["name", "full_name"]
+			"User",
+			filters={"name": ["in", [m.user for m in doc.members]]},
+			fields=["name", "full_name", "user_image"],
 		)
 	}
 
@@ -31,9 +34,11 @@ def list_team_members(team: str) -> list[dict[str, Any]]:
 	for m in doc.members:
 		entry = roster.get(m.user)
 		if entry is None:
+			user = users.get(m.user)
 			entry = {
 				"user": m.user,
-				"full_name": full_names.get(m.user) or m.user,
+				"full_name": (user and user.full_name) or m.user,
+				"user_image": user and user.user_image,
 				"roles": [],
 				"status": m.status,
 				"is_owner": m.user == doc.owner_user,
@@ -141,6 +146,51 @@ def rename_team(team: str, team_name: str) -> dict[str, Any]:
 	doc.team_name = team_name
 	doc.save()
 	return {"name": doc.name, "team_name": doc.team_name}
+
+
+_LOGO_MAX_BYTES = 2 * 1024 * 1024
+
+
+@frappe.whitelist(methods=["POST"])
+@require_capability("team:edit", "You can't edit this team.")
+def set_team_logo(team: str) -> dict[str, Any]:
+	"""Set the team's logo from a multipart upload (field name `file`), or clear
+	it when no file is sent. The previous logo's File doc is removed either way,
+	so replaced logos don't pile up as orphans. Team.validate re-checks team:edit
+	on save."""
+	doc = frappe.get_doc("Team", team)
+	upload = frappe.request.files.get("file") if frappe.request else None
+
+	old_logo = doc.team_logo
+	if upload is None:
+		doc.team_logo = None
+	else:
+		# Sniffed content + server-chosen name (central/images.py) — the
+		# client's Content-Type and filename are never trusted.
+		content, file_name = read_image_upload(upload, _LOGO_MAX_BYTES, "team-logo")
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"attached_to_doctype": "Team",
+				"attached_to_name": doc.name,
+				"attached_to_field": "team_logo",
+				"file_name": file_name,
+				"is_private": 0,
+				"content": content,
+			}
+		).insert(ignore_permissions=True)
+		doc.team_logo = file_doc.file_url
+	doc.save()
+
+	if old_logo and old_logo != doc.team_logo:
+		for name in frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "Team", "attached_to_name": doc.name, "file_url": old_logo},
+			pluck="name",
+		):
+			frappe.delete_doc("File", name, ignore_permissions=True, force=True)
+
+	return {"team_logo": doc.team_logo}
 
 
 @frappe.whitelist(methods=["POST"])

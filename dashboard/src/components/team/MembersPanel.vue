@@ -223,6 +223,7 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 			<div class="flex min-w-0 items-center gap-3">
 				<!-- An invite has no face yet, so its avatar stays a plain tint. -->
 				<Avatar
+					:image="row.member?.user_image ?? undefined"
 					:label="row.name"
 					size="md"
 					:class="row.invite ? 'opacity-60' : ''"

@@ -2,19 +2,20 @@
 import { Avatar, Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { API, method } from '@/api/methods'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { useTeamSettings } from '@/composables/useTeamSettings'
+import { errorToast, successToast } from '@/lib/toast'
 
-// Edit the team from its header — rename (team:edit) and the danger-zone
-// delete (team:delete) — replacing the old full-page Team settings.
-// Ownership transfer is NOT here: it lives on the member's ⋯ menu in the
-// roster, where the new owner is picked in context. The avatar is the
-// team's initial, so it follows the name; image upload waits on a backend
-// avatar field.
+// Edit the team from its header — logo + rename (team:edit) and the
+// danger-zone delete (team:delete) — replacing the old full-page Team
+// settings. Ownership transfer is NOT here: it lives on the member's ⋯ menu
+// in the roster, where the new owner is picked in context.
 const open = defineModel<boolean>({ default: false })
 const router = useRouter()
-const { activeTeam, activeTeamLabel } = useSession()
+const session = useSession()
+const { activeTeam, activeTeamLabel, activeTeamLogo } = session
 const { saving, rename, deleteTeam } = useTeamSettings()
 const { canEditTeam, canDeleteTeam } = useCapabilities()
 
@@ -29,6 +30,44 @@ const changed = computed(
 async function onSave(): Promise<void> {
 	if (!changed.value) return
 	if (await rename(name.value.trim())) open.value = false
+}
+
+// — Logo. Uploads as multipart (useCall is JSON-only), then re-pulls the
+// session so every Avatar reading the team list repaints at once.
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploading = ref(false)
+
+async function submitLogo(file: File | null): Promise<void> {
+	uploading.value = true
+	try {
+		const body = new FormData()
+		body.append('team', activeTeam.value!)
+		if (file) body.append('file', file)
+		const res = await fetch(method(API.setTeamLogo), {
+			method: 'POST',
+			headers: { 'X-Frappe-CSRF-Token': window.csrf_token ?? '' },
+			body,
+		})
+		if (!res.ok) {
+			const payload = await res.json().catch(() => null)
+			throw new Error(
+				payload?.errors?.[0]?.message || "Couldn't update the team logo",
+			)
+		}
+		await session.reload()
+		successToast(file ? 'Team logo updated' : 'Team logo removed')
+	} catch (e) {
+		errorToast(e)
+	} finally {
+		uploading.value = false
+	}
+}
+
+function onPickLogo(event: Event): void {
+	const file = (event.target as HTMLInputElement).files?.[0]
+	if (file) submitLogo(file)
+	// Reset so picking the same file again still fires @change.
+	if (fileInput.value) fileInput.value.value = ''
 }
 
 // — Danger zone.
@@ -59,16 +98,46 @@ async function onDelete(): Promise<void> {
 <template>
 	<Dialog v-model:open="open" title="Edit team">
 		<template #default>
-			<div class="space-y-4">
-				<!-- Identity row: the avatar sits inline with the name it letters,
-				     re-lettering live as the name is typed. -->
-				<div class="flex items-end gap-3">
-					<Avatar
-						:label="name.trim() || activeTeamLabel"
-						size="2xl"
-						shape="square"
-						class="shrink-0"
-					/>
+			<div class="space-y-5">
+				<!-- Logo row with the format hint underneath, no label — the avatar
+				     speaks for itself. -->
+				<div class="space-y-1.5">
+					<div class="flex items-center gap-3">
+						<Avatar
+							:image="activeTeamLogo ?? undefined"
+							:label="name.trim() || activeTeamLabel"
+							size="2xl"
+							shape="square"
+							class="shrink-0"
+						/>
+						<div v-if="canEditTeam" class="flex items-center gap-2">
+							<Button
+								:label="activeTeamLogo ? 'Change logo' : 'Upload logo'"
+								:loading="uploading"
+								@click="fileInput?.click()"
+							/>
+							<Button
+								v-if="activeTeamLogo"
+								variant="ghost"
+								label="Remove"
+								:disabled="uploading"
+								@click="submitLogo(null)"
+							/>
+						</div>
+						<input
+							ref="fileInput"
+							type="file"
+							accept="image/png,image/jpeg,image/webp,image/gif"
+							class="hidden"
+							@change="onPickLogo"
+						/>
+					</div>
+					<p v-if="canEditTeam" class="text-p-sm text-ink-gray-5">
+						PNG, JPG, WebP or GIF, up to 2 MB.
+					</p>
+				</div>
+
+				<div class="flex items-end gap-2">
 					<FormControl
 						v-model="name"
 						label="Team name"
@@ -87,7 +156,7 @@ async function onDelete(): Promise<void> {
 					/>
 				</div>
 				<p v-if="!canEditTeam" class="text-p-sm text-ink-gray-5">
-					Renaming requires the Admin or Owner role.
+					Editing the team requires the Admin or Owner role.
 				</p>
 
 				<!-- Danger zone: title + subtext row, the real friction lives in the

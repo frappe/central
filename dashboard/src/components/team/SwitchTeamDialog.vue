@@ -79,7 +79,12 @@ const createTeam = () => {
 						"
 						@click="selectTeam(team)"
 					>
-						<Avatar :label="team.label" size="xl" shape="square" />
+						<Avatar
+							:image="team.logo ?? undefined"
+							:label="team.label"
+							size="xl"
+							shape="square"
+						/>
 
 						<div class="min-w-0 flex-1">
 							<div class="truncate text-base-medium text-ink-gray-8">
