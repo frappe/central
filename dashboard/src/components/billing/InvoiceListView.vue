@@ -47,6 +47,12 @@ const rows = computed(() => {
 		(inv) => inv.period_end && inv.period_end >= from && inv.period_end <= to,
 	)
 })
+// The range narrows rows before ListView sees them, so tell it when that's
+// happening — an empty result then reads "no matches", not "no invoices".
+const dateActive = computed(() => {
+	const [from, to] = range.value || []
+	return !!from && !!to
+})
 
 const isOverdue = (inv: InvoiceSummary): boolean =>
 	String(inv.status).toLowerCase() === 'overdue'
@@ -160,6 +166,8 @@ const filters: ListViewFilter[] = [
       title: 'No invoices yet',
       description: 'Your first invoice appears here at the end of the cycle.',
     }"
+		:external-filter-active="dateActive"
+		@clear-filters="range = []"
 		@row-click="emit('rowClick', $event)"
 	>
 		<template #filters>
