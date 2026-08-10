@@ -20,6 +20,7 @@ import {
 } from '@/lib/composed'
 import { money } from '@/lib/format'
 import { planPrice, planResources } from '@/lib/plans'
+import { infoToast } from '@/lib/toast'
 import {
 	flagEmoji,
 	hasMapCoords,
@@ -356,9 +357,11 @@ const canSubmit = computed(() => {
 async function submit() {
 	if (!canSubmit.value || !selectedRegion.value) return
 	// A server bills the team, so it needs a billing profile first. If it's
-	// incomplete, prompt (requireSetup toasts + flags the setup dialog) and send
-	// them to Billing, where that dialog opens.
+	// incomplete, send them to Billing, where the flagged dialog opens. The
+	// toast is local because this is a cross-page jump — requireSetup itself
+	// no longer toasts, since in-place callers explain themselves.
 	if (!requireSetup()) {
+		infoToast('Add your billing details to continue')
 		router.push({ name: 'Billing' })
 		return
 	}

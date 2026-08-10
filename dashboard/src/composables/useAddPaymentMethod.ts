@@ -64,12 +64,12 @@ export function useAddPaymentMethod({
 			})
 			await confirm.submit({ payment_method: order.payment_method, ...handles })
 			const res = confirm.data ?? undefined
-			successToast(`${methodType} added.`)
+			successToast(`${methodType} added`)
 			onDone?.(res)
 			return res
 		} catch (e) {
 			if ((e as Error)?.message === 'cancelled') return
-			errorToast(e, `Could not add ${methodType}.`)
+			errorToast(e, `Could not add ${methodType}`)
 		}
 	}
 

@@ -27,7 +27,7 @@ export function usePayInvoice({
 		url: method(API.payInvoice),
 		method: 'POST',
 		immediate: false,
-		onError: (e: unknown) => errorToast(e, 'Could not start the payment.'),
+		onError: (e: unknown) => errorToast(e, 'Could not start the payment'),
 	})
 
 	async function run(invoice: string): Promise<PayResult | undefined> {
@@ -41,7 +41,7 @@ export function usePayInvoice({
 				not_open: 'This invoice is no longer open.',
 			}
 			infoToast(
-				(res.reason && reasons[res.reason]) || 'No payment was started.',
+				(res.reason && reasons[res.reason]) || 'No payment was started',
 			)
 		} else if (res) {
 			successToast(

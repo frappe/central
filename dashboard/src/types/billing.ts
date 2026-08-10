@@ -159,6 +159,8 @@ export interface InvoiceDetail {
 	due_date: string | null
 	/** A charge is in flight (or captured, awaiting the settlement webhook). */
 	payment_in_progress: boolean
+	/** The method that settled a Paid invoice (from the capturing attempt). */
+	paid_with: { label: string; method_type: string } | null
 	items: BillingLine[]
 	activity: InvoiceActivity[]
 }
@@ -168,6 +170,8 @@ export interface SubscriptionRow {
 	name: string
 	/** Friendly server name (Asset.title), e.g. "atlas-web-01". */
 	server: string | null
+	/** Asset-backed = a real server; false = a team-level metered service. */
+	has_server: boolean
 	/** Asset gateway URL for the "Open server" action. */
 	gateway_url: string | null
 	plan: string

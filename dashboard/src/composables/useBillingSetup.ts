@@ -18,7 +18,6 @@ import {
 	fetchBillingSetup,
 	invalidateBillingSetup,
 } from '@/data/billingSetup'
-import { infoToast } from '@/lib/toast'
 
 // Module-level so a money-moving action anywhere can ask the Overview to open its
 // billing-profile edit dialog, and the dialog reflects that one source of truth.
@@ -39,11 +38,12 @@ export function useBillingSetup() {
 	)
 
 	// Call at the start of a money-moving action. If the profile is incomplete it
-	// asks the user to fill their billing details first (opens the edit dialog) and
-	// returns false so the caller bails out; returns true when it's safe to proceed.
+	// opens the billing-details dialog and returns false so the caller bails out;
+	// returns true when it's safe to proceed. No toast: the dialog opens in place
+	// and explains itself — a caller that redirects across pages instead should
+	// show its own explanation (see NewServerPage.submit).
 	function requireSetup(): boolean {
 		if (state.data?.complete) return true
-		infoToast('Add your billing details to continue.')
 		setupDialogOpen.value = true
 		return false
 	}

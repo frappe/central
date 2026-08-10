@@ -106,7 +106,7 @@ async function submit(): Promise<void> {
 			paypalLoading,
 			paypalEl,
 			mountPayPal,
-			'Could not start PayPal.',
+			'Could not start PayPal',
 		)
 	if (card)
 		return enterPhase(
@@ -114,7 +114,7 @@ async function submit(): Promise<void> {
 			cardLoading,
 			cardEl,
 			mountCard,
-			'Could not start secure card entry.',
+			'Could not start secure card entry',
 		)
 	// else: the Razorpay sheet ran with our dialog closed — reopen it unless the
 	// top-up went through (onDone already closed and flagged it).

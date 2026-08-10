@@ -93,7 +93,7 @@ async function submitAlert(): Promise<void> {
 			spend_alert_threshold: Number(draft.value) || 0,
 		})
 		spendAlert.value = Number(draft.value) || 0
-		successToast('Billing alert saved.')
+		successToast('Billing alert saved')
 		dialogOpen.value = false
 		settings.reload()
 	} catch (e) {
@@ -104,7 +104,7 @@ async function submitAlert(): Promise<void> {
 
 <template>
 	<div
-		class="flex flex-col rounded-xl border border-outline-gray-2 bg-surface-elevation-1 p-5"
+		class="flex flex-col rounded-lg border border-outline-gray-2 bg-surface-base p-5"
 	>
 		<div class="flex h-6 items-center">
 			<span class="text-p-sm text-ink-gray-5">Estimated this cycle</span>
@@ -114,7 +114,7 @@ async function submitAlert(): Promise<void> {
 			<LoadingText :lines="1" />
 		</div>
 		<template v-else>
-			<p class="mt-1.5 text-2xl font-semibold tabular-nums text-ink-gray-9">
+			<p class="mt-1.5 text-2xl-semibold tabular-nums text-ink-gray-9">
 				{{ money(projected, currency) }}
 			</p>
 			<p class="mt-1.5 text-p-sm text-ink-gray-5">

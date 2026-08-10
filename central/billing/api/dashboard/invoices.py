@@ -144,6 +144,9 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			{
 				"name": r.name,
 				"server": asset.title or None,
+				# Asset-backed = a real server; a subscription without one is a
+				# team-level metered service (the dashboard lists those separately).
+				"has_server": bool(r.asset_id),
 				"gateway_url": asset.gateway_url or None,
 				# The VM's operational state (Running/Stopped/Terminated/…) — the list shows
 				# it distinctly from the billing-paused flag, and gates resume on it.
@@ -254,6 +257,26 @@ def get_invoice(name: str) -> dict:
 	payment_in_progress = bool(
 		frappe.db.exists("Payment Attempt", {"invoice": name, "status": ["in", _IN_FLIGHT]})
 	)
+
+	# Which method settled it — a quiet receipt line on the paid invoice. Read
+	# from the capturing attempt (not the team's current default), so history
+	# stays true after the method is replaced.
+	paid_with = None
+	if doc.status == "Paid":
+		method = frappe.db.get_value(
+			"Payment Attempt",
+			{"invoice": name, "status": "Captured"},
+			"payment_method",
+			order_by="creation desc",
+		)
+		pm = (
+			frappe.db.get_value("Payment Method", method, ["display_label", "method_type"], as_dict=True)
+			if method
+			else None
+		)
+		if pm:
+			paid_with = {"label": pm.display_label, "method_type": pm.method_type}
+
 	return {
 		"name": doc.name,
 		"team": doc.team,
@@ -273,6 +296,7 @@ def get_invoice(name: str) -> dict:
 		"amount_paid": doc.amount_paid,
 		"due_date": str(doc.due_date) if doc.due_date else None,
 		"payment_in_progress": payment_in_progress,
+		"paid_with": paid_with,
 		"items": [_describe_line(doc.team, li) for li in doc.items],
 		"activity": _invoice_activity(doc),
 	}

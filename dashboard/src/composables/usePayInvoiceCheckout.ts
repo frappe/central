@@ -33,7 +33,7 @@ export function usePayInvoiceCheckout({
 			await create.submit({ invoice })
 			const order = create.data
 			if (!order || order.created === false) {
-				infoToast('No payment was started.')
+				infoToast('No payment was started')
 				return order
 			}
 			const handles = await openRazorpayCheckout(order, {
@@ -54,7 +54,7 @@ export function usePayInvoiceCheckout({
 			return res
 		} catch (e) {
 			if ((e as Error)?.message === 'cancelled') return
-			errorToast(e, 'Could not complete the payment.')
+			errorToast(e, 'Could not complete the payment')
 		}
 	}
 

@@ -20,7 +20,12 @@ import type { SubscriptionRow } from '@/types/billing'
 const { subscriptions } = useBillingOverview()
 const { canManageBilling } = useCapabilities()
 
-const rows = computed(() => subscriptions.data ?? [])
+// Servers only: a subscription without an Asset is a team-level metered
+// service, and those live (usage and money alike) in the Metered services
+// card — listing them here too just duplicated the row with a $0/mo.
+const rows = computed(() =>
+	(subscriptions.data ?? []).filter((sub) => sub.has_server),
+)
 const loading = computed(() => subscriptions.loading && !subscriptions.data)
 
 const pause = useCall<unknown, { subscription: string }>({
@@ -82,7 +87,7 @@ async function confirmPause(sub: SubscriptionRow): Promise<void> {
 	busy.value = sub.name
 	try {
 		await pause.submit({ subscription: sub.name })
-		successToast('Billing paused; server stopping.')
+		successToast('Billing paused, server stopping…')
 		subscriptions.reload()
 	} catch (e) {
 		errorToast(e)
@@ -95,7 +100,7 @@ async function onResume(sub: SubscriptionRow): Promise<void> {
 	busy.value = sub.name
 	try {
 		await resume.submit({ subscription: sub.name })
-		successToast('Billing resumed; server starting.')
+		successToast('Billing resumed, server starting…')
 		subscriptions.reload()
 	} catch (e) {
 		errorToast(e)
@@ -133,35 +138,36 @@ function onOpen(sub: SubscriptionRow): void {
 			>
 				<component
 					:is="sub.gateway_url ? 'button' : 'div'"
-					class="group flex min-w-0 items-start gap-2.5 text-left"
+					class="group min-w-0 text-left"
 					@click="onOpen(sub)"
 				>
-					<span
-						class="lucide-server mt-0.5 size-4 shrink-0 text-ink-gray-5"
-						aria-hidden="true"
-					/>
-					<div class="min-w-0">
-						<div class="flex items-center gap-2">
-							<span
-								class="truncate text-sm font-medium text-ink-gray-9"
-								:class="sub.gateway_url ? 'transition-colors group-hover:text-ink-gray-7' : ''"
-							>
-								{{ title(sub) }}
-							</span>
-							<Badge
-								v-if="statusInfo(sub)"
-								:theme="statusInfo(sub)!.theme"
-								:label="statusInfo(sub)!.label"
-							/>
-						</div>
-						<div class="truncate text-p-sm text-ink-gray-5">
-							{{ subtitle(sub) }}
-						</div>
+					<!-- The icon rides in the title row so flex centres it on the title
+					     itself, whatever a badge does to the row's height. -->
+					<div class="flex items-center gap-2">
+						<span
+							class="lucide-server size-4 shrink-0 text-ink-gray-5"
+							aria-hidden="true"
+						/>
+						<span
+							class="truncate text-base-medium text-ink-gray-9"
+							:class="sub.gateway_url ? 'transition-colors group-hover:text-ink-gray-7' : ''"
+						>
+							{{ title(sub) }}
+						</span>
+						<Badge
+							v-if="statusInfo(sub)"
+							:theme="statusInfo(sub)!.theme"
+							:label="statusInfo(sub)!.label"
+						/>
+					</div>
+					<!-- pl-6 = icon (1rem) + gap-2 (0.5rem), so it sits under the title. -->
+					<div class="truncate pl-6 text-p-sm text-ink-gray-5">
+						{{ subtitle(sub) }}
 					</div>
 				</component>
 				<div class="flex shrink-0 items-center gap-2">
 					<span
-						class="text-sm font-medium tabular-nums"
+						class="text-sm-medium tabular-nums"
 						:class="
               isInactive(sub) && !isTerminated(sub) && sub.monthly_rate != null
                 ? 'text-ink-gray-4 line-through'
@@ -187,8 +193,8 @@ function onOpen(sub: SubscriptionRow): void {
 		<EmptyState
 			v-else
 			icon="lucide-server"
-			title="No active subscriptions"
-			description="Your active server plans will appear here."
+			title="No subscriptions yet"
+			description="Server plans appear here when you create a server."
 		/>
 
 		<ConfirmDialog

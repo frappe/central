@@ -6,6 +6,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { formatDate, money } from '@/lib/format'
+import { infoToast } from '@/lib/toast'
 
 // Wallet — the FC v2 prototype's funding card: balance, a one-line coverage
 // verdict, and (once there's a method to charge) the funding actions. The chevron
@@ -43,12 +44,18 @@ const showTopup = ref(false)
 function onAddCredit(): void {
 	if (requireSetup()) showTopup.value = true
 }
+
+// GROUNDING GAP (#69): no auto-recharge endpoint yet, so the button answers
+// with the same notice as the wallet panel's toggle.
+function onAutoRecharge(): void {
+	infoToast("Auto-recharge isn't available yet")
+}
 </script>
 
 <template>
 	<div
-		class="flex flex-col rounded-xl border bg-surface-elevation-1 p-5 transition-colors"
-		:class="active ? 'border-outline-gray-4 ring-1 ring-outline-gray-4' : 'border-outline-gray-2'"
+		class="flex flex-col rounded-lg border bg-surface-base p-5 transition-colors"
+		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
 	>
 		<div class="flex h-6 items-center justify-between gap-2">
 			<span class="flex items-center gap-1">
@@ -59,9 +66,7 @@ function onAddCredit(): void {
 				>
 					Wallet
 				</button>
-				<Tooltip
-					text="Applied to your invoice first, before any card is charged."
-				>
+				<Tooltip text="Pays invoices before your card is charged">
 					<span
 						class="lucide-info size-3.5 text-ink-gray-4"
 						aria-hidden="true"
@@ -82,7 +87,7 @@ function onAddCredit(): void {
 			<LoadingText :lines="1" />
 		</div>
 		<template v-else>
-			<p class="mt-1.5 text-2xl font-semibold tabular-nums text-ink-gray-9">
+			<p class="mt-1.5 text-2xl-semibold tabular-nums text-ink-gray-9">
 				{{ money(balance, currency) }}
 			</p>
 			<!-- Coverage verdict — always the third line -->
@@ -132,7 +137,7 @@ function onAddCredit(): void {
 					size="sm"
 					label="Auto-recharge off"
 					class="-ml-2"
-					@click="$emit('open')"
+					@click="onAutoRecharge"
 				>
 					<template #prefix
 						><span class="lucide-zap size-4" aria-hidden="true" /></template

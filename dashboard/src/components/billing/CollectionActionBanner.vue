@@ -36,7 +36,7 @@ const setMode = useCall<unknown, { team: string; mode: string }>({
 	url: method(API.setCollectionMode),
 	method: 'POST',
 	immediate: false,
-	onError: (e: unknown) => errorToast(e, 'Could not update how you pay.'),
+	onError: (e: unknown) => errorToast(e, 'Could not update how you pay'),
 })
 
 async function choose(): Promise<void> {
@@ -44,8 +44,8 @@ async function choose(): Promise<void> {
 	await setMode.submit({ team: activeTeam.value!, mode: chosen.value })
 	successToast(
 		chosen.value === 'Prepaid'
-			? 'Switched to prepaid wallet. Add credits to cover your usage.'
-			: "You'll now pay each invoice yourself.",
+			? 'Prepaid wallet on — add credits to cover usage'
+			: "You'll pay each invoice yourself",
 	)
 	choosing.value = false
 	chosen.value = null
@@ -78,9 +78,9 @@ const options = [
 		:action="canManageBilling ? { label: 'Choose how to pay', onClick: () => (choosing = true) } : null"
 	>
 		<template #description>
-			Your usage is trending to
+			This month is heading to
 			<span class="font-medium">{{ money(s.projected_total, currency) }}</span>
-			this month, above the
+			— past the
 			<span class="font-medium">{{ money(s.threshold, currency) }}</span>
 			limit for automatic payments. Your services keep running.
 		</template>
@@ -88,7 +88,7 @@ const options = [
 
 	<Dialog
 		v-model:open="choosing"
-		title="How would you like to pay going forward?"
+		title="How do you want to pay?"
 	>
 		<template #default>
 			<div class="grid gap-3 sm:grid-cols-2">
@@ -109,7 +109,7 @@ const options = [
 						class="size-5 text-ink-gray-7"
 						aria-hidden="true"
 					/>
-					<span class="text-base font-medium text-ink-gray-9"
+					<span class="text-base-medium text-ink-gray-9"
 						>{{ o.title }}</span
 					>
 					<span class="text-p-sm text-ink-gray-6">{{ o.blurb }}</span>
