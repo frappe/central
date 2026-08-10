@@ -2,6 +2,7 @@
 import { Button, LoadingText, Switch } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import TopupDialog from '@/components/TopupDialog.vue'
+import SidePanel from '@/components/common/SidePanel.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -13,7 +14,7 @@ import type { CreditLedgerEntry } from '@/types/billing'
 // from the compact Wallet card. Balance header, auto-recharge toggle, the credit
 // ledger, and Add credit (TopupDialog → #67). The page owns whether it's mounted;
 // the close button clears that.
-const open = defineModel<boolean>({ default: false })
+const open = defineModel<boolean>('open', { default: false })
 const { credit, ledger, currency, reloadMoney } = useBillingOverview()
 const { canManageBilling } = useCapabilities()
 const { requireSetup } = useBillingSetup()
@@ -25,7 +26,7 @@ const balance = computed(() => Number(credit.data?.balance ?? 0))
 const autoRecharge = ref(false)
 function onAutoRecharge(): void {
 	autoRecharge.value = false
-	infoToast('Auto-recharge isn’t available yet.')
+	infoToast("Auto-recharge isn't available yet")
 }
 
 const showTopup = ref(false)
@@ -39,56 +40,31 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 </script>
 
 <template>
-	<!-- The tray animates its width (see the page's .wallet-tray-* classes); the
-       inner column keeps its own fixed width so content is revealed by the
-       clipping shell instead of reflowing while the width changes. -->
-	<aside
-		class="w-full shrink-0 overflow-hidden border-outline-gray-1 bg-surface-elevation-1 sm:w-[30rem] sm:border-l"
+	<!-- The shared docked SidePanel (billing invoice anatomy). -->
+	<SidePanel
+		v-model:open="open"
+		title="Wallet history"
+		:subtitle="`Balance ${money(balance, currency)}`"
 	>
-		<div class="flex h-full w-full flex-col sm:w-[30rem]">
-			<header
-				class="flex items-start justify-between gap-3 border-b border-outline-gray-1 px-5 py-4"
-			>
-				<div>
-					<h2 class="text-base font-medium text-ink-gray-9">Wallet history</h2>
-					<p class="mt-0.5 text-p-sm text-ink-gray-5">
-						Balance {{ money(balance, currency) }}
-					</p>
-				</div>
-				<button
-					class="grid size-6 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
-					aria-label="Close wallet history"
-					@click="open = false"
-				>
-					<span class="lucide-x size-4" aria-hidden="true" />
-				</button>
-			</header>
-
-			<!-- Auto-recharge -->
-			<div
-				class="flex items-start justify-between gap-3 border-b border-outline-gray-1 px-5 py-4"
-			>
-				<div class="min-w-0">
-					<p class="text-sm text-ink-gray-8">Auto-recharge</p>
-					<p class="text-p-sm text-ink-gray-5">
-						Top up automatically when your wallet runs low.
-					</p>
-				</div>
-				<Switch
-					:model-value="autoRecharge"
-					:disabled="!canManageBilling"
-					@update:model-value="onAutoRecharge"
-				/>
-			</div>
+		<!-- Auto-recharge — the Switch's own label prop, so clicking the text
+           toggles it too (the label is wired to the control, not beside it). -->
+		<div class="border-b border-outline-gray-1 px-4 pb-3 pt-1.5">
+			<Switch
+				label="Auto-recharge"
+				:model-value="autoRecharge"
+				:disabled="!canManageBilling"
+				@update:model-value="onAutoRecharge"
+			/>
+		</div>
 
 			<!-- Ledger -->
 			<div class="min-h-0 flex-1 overflow-y-auto">
-				<div v-if="ledger.loading && !ledger.data" class="space-y-3 p-5">
+				<div v-if="ledger.loading && !ledger.data" class="space-y-3 p-4">
 					<LoadingText :lines="5" />
 				</div>
 				<div
 					v-else-if="!ledger.data?.length"
-					class="px-5 py-12 text-center text-p-sm text-ink-gray-5"
+					class="px-4 py-12 text-center text-p-sm text-ink-gray-5"
 				>
 					No credit activity yet.
 				</div>
@@ -96,7 +72,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 					<li
 						v-for="(e, idx) in ledger.data"
 						:key="idx"
-						class="flex items-center gap-3 px-5 py-3"
+						class="flex items-center gap-3 px-4 py-3"
 					>
 						<span
 							class="grid size-8 shrink-0 place-items-center rounded-full"
@@ -128,29 +104,24 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 				</ul>
 			</div>
 
-			<!-- Add credit -->
-			<footer
-				v-if="canManageBilling"
-				class="border-t border-outline-gray-1 px-5 py-4"
-			>
-				<Button
-					variant="solid"
-					theme="gray"
-					label="Add credit"
-					class="w-full"
-					@click="onAddCredit"
-				>
-					<template #prefix
-						><span class="lucide-plus size-4" aria-hidden="true" /></template
-					>
-				</Button>
-			</footer>
+		<TopupDialog
+			v-model="showTopup"
+			:currency="currency"
+			@done="reloadMoney"
+		/>
 
-			<TopupDialog
-				v-model="showTopup"
-				:currency="currency"
-				@done="reloadMoney"
-			/>
-		</div>
-	</aside>
+		<template v-if="canManageBilling" #footer>
+			<Button
+				variant="solid"
+				theme="gray"
+				label="Add credit"
+				class="w-full"
+				@click="onAddCredit"
+			>
+				<template #prefix
+					><span class="lucide-plus size-4" aria-hidden="true" /></template
+				>
+			</Button>
+		</template>
+	</SidePanel>
 </template>

@@ -68,7 +68,7 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 	busy.value = pm.name
 	try {
 		await setDefault.submit({ payment_method: pm.name })
-		successToast('Default updated.')
+		successToast('Default updated')
 		reloadMethods()
 	} catch (e) {
 		errorToast(e)
@@ -81,7 +81,7 @@ async function confirmRemove(pm: PaymentMethod): Promise<void> {
 	busy.value = pm.name
 	try {
 		await remove.submit({ payment_method: pm.name })
-		successToast('Payment method removed.')
+		successToast('Payment method removed')
 		pendingRemove.value = null
 		reloadMethods()
 	} catch (e) {
@@ -126,7 +126,7 @@ function onAdd(): void {
 				variant="ghost"
 				size="xs"
 				icon="lucide-plus"
-				:aria-label="ordered.length ? 'Add backup method' : 'Add payment method'"
+				:label="ordered.length ? 'Add backup method' : 'Add payment method'"
 				@click="onAdd"
 			/>
 		</template>
@@ -134,7 +134,7 @@ function onAdd(): void {
 		<div v-if="loading" class="space-y-3 py-1">
 			<div v-for="i in 2" :key="i" class="flex items-center gap-3">
 				<span
-					class="size-8 shrink-0 animate-pulse rounded-lg bg-surface-gray-2"
+					class="size-8 shrink-0 animate-pulse rounded-md bg-surface-gray-2"
 				/>
 				<div class="flex-1 space-y-1.5">
 					<span
@@ -154,12 +154,12 @@ function onAdd(): void {
 				class="flex items-center gap-3 py-2.5"
 			>
 				<span
-					class="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-gray-2 text-ink-gray-6"
+					class="grid size-8 shrink-0 place-items-center rounded-md bg-surface-gray-2 text-ink-gray-6"
 				>
 					<span :class="methodIcon(pm)" class="size-4" aria-hidden="true" />
 				</span>
 				<div class="min-w-0 flex-1">
-					<p class="truncate text-sm font-medium text-ink-gray-9">
+					<p class="truncate text-sm-medium text-ink-gray-9">
 						{{ pm.display_label || pm.method_type }}
 					</p>
 					<p class="truncate text-p-sm text-ink-gray-5">
@@ -169,7 +169,7 @@ function onAdd(): void {
 				<Badge
 					v-if="pm.reauth_required"
 					theme="orange"
-					label="Re-auth needed"
+					label="Needs verification"
 				/>
 				<Badge
 					v-else-if="pm.status !== 'Active'"
@@ -196,7 +196,7 @@ function onAdd(): void {
 			v-else
 			icon="lucide-credit-card"
 			title="No payment methods yet"
-			description="Add a card or UPI Autopay so invoices can be charged automatically."
+			description="Add a card or UPI Autopay to pay invoices automatically."
 		>
 			<template v-if="canManageBilling" #action>
 				<Button

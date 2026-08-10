@@ -226,10 +226,9 @@ watch(open, (isOpen) => {
 			</div>
 
 			<div v-else-if="options.data" class="space-y-4">
+				<!-- No "how do you want to pay" heading — the dialog title and the
+				     two option cards already say it. -->
 				<div>
-					<p class="mb-2 text-p-sm font-medium text-ink-gray-7">
-						How do you want to pay?
-					</p>
 					<div class="grid gap-3 sm:grid-cols-2">
 						<button
 							v-for="tile in tiles"
@@ -280,17 +279,16 @@ watch(open, (isOpen) => {
 				</div>
 
 				<!-- The customer chose an instrument, not a provider, and two tiles here
-             may sit on different providers — so this line names neither. -->
-				<div
-					class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
-				>
+             may sit on different providers, so this line names neither. Flat
+             footer, not a box. -->
+				<div class="flex items-center gap-2 pt-1">
 					<span
-						class="lucide-lock size-4 shrink-0 text-ink-gray-5"
+						class="lucide-lock size-3.5 shrink-0 text-ink-gray-5"
 						aria-hidden="true"
 					/>
-					<p class="text-p-sm text-ink-gray-6">
-						You'll authorise this on your bank's or card network's secure page —
-						we never see your card number or UPI credentials.
+					<p class="text-p-sm text-ink-gray-5">
+						You'll authorise this on your bank's or card network's secure page.
+						We never see your card or UPI details.
 					</p>
 				</div>
 			</div>
