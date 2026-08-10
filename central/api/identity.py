@@ -4,12 +4,14 @@ from typing import Any
 
 import frappe
 from frappe.query_builder import Order
+from frappe.utils import escape_html
 
 from central.iam import (
 	get_all_capabilities,
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
+from central.images import read_image_upload
 
 # Identity and capability reads for the console. Always scoped to the signed-in
 # user — safe for any logged-in member.
@@ -109,3 +111,85 @@ def my_invitations() -> list[dict[str, Any]]:
 		row["team_name"] = row.team_name or row.team
 
 	return rows
+
+
+# --- profile: the signed-in user's own account -------------------------------
+
+
+def _require_signed_in() -> str:
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(frappe._("Sign in to manage your profile."), frappe.PermissionError)
+	return user
+
+
+@frappe.whitelist(methods=["GET"])
+def my_profile() -> dict[str, Any]:
+	"""The signed-in user's own profile — email, display name, photo."""
+	user = _require_signed_in()
+	row = frappe.db.get_value("User", user, ["full_name", "user_image"], as_dict=True)
+	return {"user": user, "full_name": row.full_name, "user_image": row.user_image}
+
+
+@frappe.whitelist(methods=["POST"])
+def update_profile(full_name: str) -> dict[str, Any]:
+	"""Update the signed-in user's display name. Only ever operates on the
+	session user — there is no user parameter to abuse. The whole string goes
+	into first_name (frappe recomputes full_name from the parts)."""
+	user = _require_signed_in()
+	full_name = (full_name or "").strip()
+	if not full_name:
+		frappe.throw(frappe._("Enter a name."), frappe.ValidationError)
+	doc = frappe.get_doc("User", user)
+	# Escaped at write time, matching the signup path (_create_verified_user):
+	# full_name reaches HTML contexts outside this SPA (frappe emails, desk).
+	doc.first_name = escape_html(full_name)
+	doc.middle_name = None
+	doc.last_name = None
+	doc.save(ignore_permissions=True)
+	return {"full_name": doc.full_name}
+
+
+_PHOTO_MAX_BYTES = 2 * 1024 * 1024
+
+
+@frappe.whitelist(methods=["POST"])
+def set_profile_photo() -> dict[str, Any]:
+	"""Set the signed-in user's profile photo from a multipart upload (field
+	name `file`), or clear it when no file is sent. The replaced photo's File
+	doc is removed either way. Public file, so teammates' consoles can render
+	the roster."""
+	user = _require_signed_in()
+	doc = frappe.get_doc("User", user)
+	upload = frappe.request.files.get("file") if frappe.request else None
+
+	old_image = doc.user_image
+	if upload is None:
+		doc.user_image = None
+	else:
+		# Sniffed content + server-chosen name (central/images.py) — the
+		# client's Content-Type and filename are never trusted.
+		content, file_name = read_image_upload(upload, _PHOTO_MAX_BYTES, "profile-photo")
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"attached_to_doctype": "User",
+				"attached_to_name": user,
+				"attached_to_field": "user_image",
+				"file_name": file_name,
+				"is_private": 0,
+				"content": content,
+			}
+		).insert(ignore_permissions=True)
+		doc.user_image = file_doc.file_url
+	doc.save(ignore_permissions=True)
+
+	if old_image and old_image != doc.user_image:
+		for name in frappe.get_all(
+			"File",
+			filters={"attached_to_doctype": "User", "attached_to_name": user, "file_url": old_image},
+			pluck="name",
+		):
+			frappe.delete_doc("File", name, ignore_permissions=True, force=True)
+
+	return {"user_image": doc.user_image}

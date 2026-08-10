@@ -22,6 +22,8 @@ const { canEditTeam, canDeleteTeam } = useCapabilities()
 const name = ref(activeTeamLabel.value)
 watch([open, activeTeam], () => {
 	if (open.value) name.value = activeTeamLabel.value
+	// Reopening should always start folded — Advanced is opt-in every time.
+	else advancedOpen.value = false
 })
 const changed = computed(
 	() => !!name.value.trim() && name.value.trim() !== activeTeamLabel.value,
@@ -70,7 +72,8 @@ function onPickLogo(event: Event): void {
 	if (fileInput.value) fileInput.value.value = ''
 }
 
-// — Danger zone.
+// — Danger zone, behind an Advanced fold.
+const advancedOpen = ref(false)
 const confirmDelete = ref(false)
 const deleteOptions = computed(() => ({
 	title: 'Delete team',
@@ -159,11 +162,26 @@ async function onDelete(): Promise<void> {
 					Editing the team requires the Admin or Owner role.
 				</p>
 
-				<!-- Danger zone: title + subtext row, the real friction lives in the
-				     confirm step. -->
-				<div v-if="canDeleteTeam" class="border-t border-outline-gray-2 pt-4">
-					<div class="flex items-center justify-between gap-3">
-						<div class="min-w-0">
+				<!-- Advanced, folded: deleting a team is rare and destructive, so it
+				     stays out of the way until asked for. The real friction lives in
+				     the confirm step. -->
+				<section v-if="canDeleteTeam">
+					<button
+						class="-mx-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+						:aria-expanded="advancedOpen"
+						@click="advancedOpen = !advancedOpen"
+					>
+						<span
+							class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-5 transition-transform duration-150 ease-out"
+							:class="advancedOpen ? 'rotate-90' : ''"
+						/>
+						<span class="text-base text-ink-gray-6">Advanced</span>
+					</button>
+
+					<!-- Button on the title line, not vertically centered — otherwise
+					     the wrapping subtext runs underneath it. -->
+					<div v-if="advancedOpen" class="mt-3 flex items-start gap-4">
+						<div class="min-w-0 flex-1">
 							<p class="text-base font-medium text-ink-gray-9">Delete team</p>
 							<p class="mt-0.5 text-p-sm text-ink-gray-5">
 								Permanently removes the team and everyone's access. Servers and
@@ -178,7 +196,7 @@ async function onDelete(): Promise<void> {
 							@click="confirmDelete = true"
 						/>
 					</div>
-				</div>
+				</section>
 			</div>
 		</template>
 	</Dialog>
