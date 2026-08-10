@@ -67,14 +67,29 @@ Remaining (follow-up-sized; run against `ci-test.localhost`, never `central.loca
   CWD-sensitive `biome.json` with `root: false`) risks churn/regressions. Do it deliberately:
   land the correctness group first (mostly auto-fixable), then the style/a11y groups.
 
+## PR 9 — scoped grants (Central-side) ✅ delivered
+
+`Team Member.resource_type`/`resource_name` are now enforced on Central's server/site
+mirror: `resolve_user_grants` carries the resource scope, `can()` gained
+`resource_type`/`resource_name` args, and `resolve_resource_scope` drives Asset/Site
+`permission_query_conditions` + `has_permission` and the console endpoints (registry list,
+server_overview, start/stop/terminate, open-in-bench, terminate_site). A member scoped to
+one server now sees and acts on only that server. **Verified on `ci-test.localhost`:**
+test_iam 12/12 (4 new), test_team_management 25/25.
+
+Still needs bench coordination (`spec/ATLAS_COORDINATION.md`): the `fc_teams` claim stays
+one entry per role with `scope: "*"` (bench contract unchanged), so a bench SSO still
+over-permits a scoped member. Emitting the real per-grant `scope` + the `CAPABILITY_VERSION`
+bump land together with the bench reader.
+
+`resize_server` is gated by the billing `authz` (billing:manage, keyed on subscription),
+so it isn't resource-scoped here — scope it when the subscription→resource mapping is wired.
+
 ## Deferred / needs a decision
 
 - **Rest of the schema pass:** composite indexes (`Asset(team, status)`, `Asset(cluster,
   status)`, `Team Invitation(email, status)`) via `on_doctype_update`; `Site.pilot_credential_id`
   Data→Link; regenerate drifted DocType type blocks; collapse the two `Region` TS types.
-- **Scoped grants + `CAPABILITY_VERSION` bump** — needs bench-side coordination
-  (`spec/ATLAS_COORDINATION.md`): land the bench reader together and keep `scope` defaulting to
-  `"*"` so an un-updated bench keeps working.
 - **Security PR (separate):** `create_server` size clamp, `create_site` billing gate,
   orphan-VM-on-throw, dev-mode OTP bypass, `resend_signup_code` rate limit, the GET-reachable
   mutations, `get_site` gating, `setup_local` role check, pilot-enroll replay — and the

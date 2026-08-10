@@ -114,8 +114,10 @@ def terminate_site(name: str) -> dict:
 	site = frappe.db.get_value("Site", name, ["team", "cluster", "status"], as_dict=True)
 	if not site:
 		frappe.throw(_("Unknown site {0}.").format(name))
-	if not can(user, site.team, "server:terminate"):
-		frappe.throw(_("You can't terminate this team's sites."), frappe.PermissionError)
+	# `name` is the Site name, so a grant scoped to this site authorizes it and one
+	# scoped to another resource does not.
+	if not can(user, site.team, "server:terminate", "Site", name):
+		frappe.throw(_("You can't terminate this site."), frappe.PermissionError)
 
 	# Already gone — no-op, and never issue a second teardown to Atlas.
 	if site.status == "Terminated":

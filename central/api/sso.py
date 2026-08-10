@@ -46,8 +46,10 @@ def _asset_login_link(asset: str, team: str | None, user: str) -> dict:
 	doc = frappe.get_doc("Asset", asset)
 	if team and team != doc.team:
 		frappe.throw(_("That server isn't in this team."), frappe.PermissionError)
-	if not can(user, doc.team, "server:open"):
-		frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
+	# Scope-aware: doc.name is the Asset name (= resource_id), so a grant scoped to
+	# another server can't open this one even if get_doc's read perm let it be seen.
+	if not can(user, doc.team, "server:open", "Server", doc.name):
+		frappe.throw(_("You can't open this server."), frappe.PermissionError)
 	if doc.status != "Running":
 		frappe.throw(_("Server is {0}, not running.").format(doc.status.lower()), frappe.ValidationError)
 	if frappe.db.get_value("Atlas Instance", doc.cluster, "status") != "Active":
