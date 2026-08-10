@@ -131,7 +131,7 @@ def _require_card_contact(
 	phone = contact or str(p.phone or "").strip()
 	if not phone:
 		frappe.throw(
-			_("A phone number is required to set up a recurring card payment with Razorpay."),
+			_("A phone number is required to set up automatic payments on this card."),
 			frappe.ValidationError,
 		)
 	# An inline-provided phone is saved to the profile so it's collected only once.

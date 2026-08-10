@@ -36,8 +36,8 @@ const options = useCall<PaymentMethodOptions, { team: string }>({
 	immediate: false,
 	refetch: true,
 })
-// The billing profile is the shared singleton — cardNeedsPhone only reads its
-// phone; no need for a second fetch of the same payload.
+// The billing profile is the shared singleton — we only read its phone, so there
+// is no need for a second fetch of the same payload.
 const { profile } = useBillingOverview()
 whenTeamReady(() => {
 	options.reload()
@@ -111,11 +111,7 @@ function choose(tile: PaymentInstrument): void {
 		onCard()
 		return
 	}
-	if (
-		tile.instrument === 'RuPay Card' &&
-		cardNeedsPhone.value &&
-		!phone.value.trim()
-	) {
+	if (needsPhone(tile) && !phone.value.trim()) {
 		askPhone.value = true
 		return
 	}
@@ -126,13 +122,17 @@ function choose(tile: PaymentInstrument): void {
 	)
 }
 
-// A Razorpay card mandate needs a customer contact; phone is optional on the
-// profile, so collect it inline here when it's missing.
-const cardNeedsPhone = computed(
-	() =>
-		options.data?.adapter_key === 'Razorpay' &&
-		!String(profile.data?.phone || '').trim(),
-)
+// A card mandate on the RuPay rail needs a customer contact. Phone is optional on
+// the billing profile, so collect it inline when it's missing.
+//
+// This asks the *tile* which rail it sits on. Reading the payload's top-level
+// adapter_key instead asks about the card rail, which is Stripe for every team —
+// so the prompt never fired and the customer met a server error instead.
+const hasPhone = computed(() => !!String(profile.data?.phone || '').trim())
+
+function needsPhone(tile: PaymentInstrument): boolean {
+	return tile.adapter_key === 'Razorpay' && tile.instrument !== 'UPI Autopay' && !hasPhone.value
+}
 const askPhone = ref(false)
 const phone = ref('')
 
@@ -172,7 +172,7 @@ async function onCard(): Promise<void> {
 		await startStripe()
 		return
 	}
-	if (cardNeedsPhone.value && !phone.value.trim()) {
+	if (!hasPhone.value && !phone.value.trim() && options.data?.adapter_key === 'Razorpay') {
 		askPhone.value = true
 		return
 	}

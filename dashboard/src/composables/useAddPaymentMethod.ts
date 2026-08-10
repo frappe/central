@@ -61,6 +61,10 @@ export function useAddPaymentMethod({
 			// inline when the billing profile has no phone.
 			if (contact) params.contact = contact
 			await setup.submit(params)
+			// useCall stores the failure rather than throwing it, so rethrow it here.
+			// Otherwise a generic message replaces the server's, and the customer is
+			// told "something went wrong" when the server said exactly what was wrong.
+			if (setup.error) throw setup.error
 			const order = setup.data
 			if (!order) throw new Error('Could not start the payment method setup.')
 			const handles = await openRazorpayCheckout(order, {
