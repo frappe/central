@@ -274,6 +274,29 @@ class TestTeamManagement(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			list_team_invitations(self.team.name)
 
+	def test_invite_can_scope_role_to_a_resource(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(
+			self.team.name,
+			self.invitee,
+			"Developer",
+			resource_type="Server",
+			resource_name="srv-acme",
+		)
+
+		invitation = frappe.get_doc("Team Invitation", name)
+		self.assertEqual(invitation.resource_type, "Server")
+		self.assertEqual(invitation.resource_name, "srv-acme")
+
+		frappe.set_user(self.invitee)
+		invitation.accept()
+
+		team = frappe.get_doc("Team", self.team.name)
+		grant = team._get_member(self.invitee)
+		self.assertEqual(grant.role, "Developer")
+		self.assertEqual(grant.resource_type, "Server")
+		self.assertEqual(grant.resource_name, "srv-acme")
+
 	def test_resend_invitation_extends_expiry_and_re_emails(self):
 		frappe.set_user(self.owner)
 		name = invite_team_member(self.team.name, self.invitee, "Developer")
@@ -398,3 +421,17 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertTrue(delete_team(team)["deleted"])
 		self.assertFalse(frappe.db.exists("Team", team))
 		self.assertFalse(frappe.db.exists("Team Invitation", invite))
+
+
+class TestTeamsSurfaceStaysSingleDoor(IntegrationTestCase):
+	"""central.api.teams is the sole HTTP door for team/invitation mutations; the
+	doc methods it delegates to stay internal. Re-whitelisting one would recreate a
+	double surface (the bug this guards)."""
+
+	def test_delegated_doc_methods_are_not_whitelisted(self):
+		from central.central.doctype.team.team import Team
+		from central.central.doctype.team_invitation.team_invitation import TeamInvitation
+
+		for method in (Team.invite_member, TeamInvitation.accept, TeamInvitation.revoke):
+			with self.subTest(method=method.__qualname__), self.assertRaises(frappe.PermissionError):
+				frappe.is_whitelisted(method)

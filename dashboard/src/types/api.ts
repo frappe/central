@@ -79,6 +79,8 @@ export interface InvitationRow {
 	name: string
 	email: string
 	role: string
+	resource_type: ResourceType
+	resource_name: string | null
 	status: InvitationStatus
 	invited_by: string | null
 	expires_on: string | null

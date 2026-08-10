@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button } from 'frappe-ui'
+import { Avatar, Button, TabButtons } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import {
@@ -15,6 +15,12 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { roleDisplay, roleIconBoxClasses } from '@/lib/roles'
 import type { TeamMemberRow, TeamRoleRow } from '@/types/api'
+
+const tab = defineModel<string>('tab', { default: 'roles' })
+const tabs = [
+	{ label: 'Team', value: 'team' },
+	{ label: 'Roles', value: 'roles' },
+]
 
 const newRoleDialog = ref(false)
 const { roles, loading, error, reload, deleteRole } = useTeamRoles()
@@ -90,9 +96,10 @@ const getRoleKey = (role: TeamRoleRow): string => role.name
 		@retry="reload"
 	>
 		<template #toolbar>
+			<TabButtons :options="tabs" v-model="tab" />
 			<Button
 				v-if="canManageMembers"
-				variant="solid"
+				variant="subtle"
 				label="New role"
 				icon-left="lucide-plus"
 				@click="newRoleDialog = true"
@@ -150,12 +157,9 @@ const getRoleKey = (role: TeamRoleRow): string => role.name
 </template>
 
 <style scoped>
-/* Body rows need room for the role icon + name + description stack, and the
-   member avatar row. Scoped to this panel's rowgroup only — the header row
-   sits outside it. */
-:deep([role="rowgroup"] > [role="row"]) {
+:deep([role='rowgroup'] > [role='row']) {
 	height: auto;
-	min-height: 4rem;
-	padding-block: 0.5rem;
+	min-height: 3.25rem;
+	padding-block: 0.375rem;
 }
 </style>

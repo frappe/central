@@ -27,7 +27,7 @@ const SYSTEM_ROLE_DISPLAY: Record<string, RoleDisplay> = {
 	},
 	Billing: {
 		icon: 'lucide-credit-card',
-		theme: 'gray',
+		theme: 'violet',
 		description: 'View and manage billing',
 	},
 	Viewer: {
@@ -77,4 +77,19 @@ const ICON_BOX_CLASSES: Record<BadgeTheme, string> = {
 
 export function roleIconBoxClasses(theme: BadgeTheme): string {
 	return ICON_BOX_CLASSES[theme]
+}
+
+/** Avatar themes use amber where badges use orange. */
+const AVATAR_THEME: Record<BadgeTheme, 'gray' | 'blue' | 'green' | 'amber' | 'red' | 'violet'> =
+	{
+		gray: 'gray',
+		blue: 'blue',
+		green: 'green',
+		orange: 'amber',
+		red: 'red',
+		violet: 'violet',
+	}
+
+export function roleAvatarTheme(theme: BadgeTheme) {
+	return AVATAR_THEME[theme]
 }
