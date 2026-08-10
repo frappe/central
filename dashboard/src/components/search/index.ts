@@ -28,9 +28,9 @@ const ROUTE_ACTIONS: SearchItem[] = [
 	},
 	{
 		name: 'Invite team member',
-		description: 'Send an invite',
+		description: 'Send a team invite',
 		icon: 'lucide-user-plus',
-		route: '/team/invitations',
+		route: '/team/members',
 	},
 ]
 
@@ -66,7 +66,7 @@ export function useSearchIndex() {
 		const actions: SearchItem[] = [
 			...ROUTE_ACTIONS.filter(
 				(action) =>
-					action.route !== '/team/invitations' || canManageMembers.value,
+					action.route !== '/team/members' || canManageMembers.value,
 			),
 			{
 				name: 'Change team',

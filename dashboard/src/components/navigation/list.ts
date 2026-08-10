@@ -19,14 +19,8 @@ type SidebarSection = {
 }
 
 export const sidebarSections = computed<SidebarSection[]>(() => {
-	const {
-		canViewServers,
-		canViewBilling,
-		canViewServices,
-		canManageMembers,
-		canEditTeam,
-		isMember,
-	} = useCapabilities()
+	const { canViewServers, canViewBilling, canViewServices, isMember } =
+		useCapabilities()
 
 	return [
 		{
@@ -58,29 +52,11 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					to: '/addons',
 					condition: features.addons && canViewServices.value,
 				},
-			],
-		},
-
-		{
-			label: 'Team',
-			items: [
 				{
-					label: 'Members',
+					label: 'Teams',
 					icon: 'lucide-users',
 					to: '/team/members',
 					condition: isMember.value,
-				},
-				{
-					label: 'Invitations',
-					icon: 'lucide-mail',
-					to: '/team/invitations',
-					condition: canManageMembers.value,
-				},
-				{
-					label: 'Settings',
-					icon: 'lucide-settings',
-					to: '/team/settings',
-					condition: canEditTeam.value,
 				},
 			],
 		},

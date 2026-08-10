@@ -117,7 +117,7 @@ const submit = async (): Promise<void> => {
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Manage roles',
+	title: 'Manage access',
 	size: 'lg' as const,
 	actions: [
 		{
@@ -157,6 +157,10 @@ const dialogOptions = computed(() => ({
 						<p class="truncate text-p-sm text-ink-gray-5">{{ member.user }}</p>
 					</div>
 				</div>
+
+				<p class="text-p-sm text-ink-gray-5">
+					Assign roles to specific servers or sites, or to all resources.
+				</p>
 
 				<div
 					v-if="dominatingIndex !== -1"

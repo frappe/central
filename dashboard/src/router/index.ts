@@ -100,25 +100,23 @@ const routes = [
 				meta: { title: 'Settings' },
 			},
 			{ path: 'team', redirect: '/team/members' },
-			// Members + roles share one tabbed page; /team/roles is kept as an alias.
+			// Members + roles share one tabbed page. Settings fold into this surface
+			// (rename beside the title, transfer on member rows, delete in team menu).
+			// /team/roles and /team/settings stay as aliases; invitations stay routable
+			// but are hidden from the sidebar for now.
 			{
 				path: 'team/members',
 				name: 'Members',
 				component: () => import('@/pages/team/AccessPage.vue'),
-				meta: { title: 'Team' },
+				meta: { title: 'Teams' },
 			},
 			{ path: 'team/roles', redirect: '/team/members' },
+			{ path: 'team/settings', redirect: '/team/members' },
 			{
 				path: 'team/invitations',
 				name: 'TeamInvitations',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
-			},
-			{
-				path: 'team/settings',
-				name: 'TeamSettings',
-				component: () => import('@/pages/team/TeamSettingsPage.vue'),
-				meta: { title: 'Team settings' },
 			},
 			// Personal invitation inbox + the email deep-link both open the Invitations
 			// page on its Received tab.
