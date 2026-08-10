@@ -281,6 +281,8 @@ export interface BillingSettings {
 export interface CollectionStatus {
 	mode?: string
 	collection_mode?: string
+	/** Networks no rail will auto-charge — shown before the customer picks how to pay. */
+	mandate_gap_note?: string | null
 	action_required: boolean
 	reason: string | null
 	threshold: number | null

@@ -953,3 +953,42 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 		self.assertEqual(out["methods"], ["Card"])  # no UPI outside INR
 		self.assertFalse(out["allow_upi"])
 		self.assertEqual([t["instrument"] for t in out["instruments"]], ["Card"])
+
+
+class TestTheAmexAndDinersGapIsStatedUpfront(IntegrationTestCase):
+	"""No rail we use registers a mandate on Amex or Diners, so a customer holding
+	one has to run a prepaid wallet. They should read that before choosing how to
+	pay, not discover it when a mandate fails at authorisation (ADR 0023)."""
+
+	TEAM = "team-mandate-gap"
+
+	def setUp(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		ensure_team(self.TEAM)
+		make_stripe_gateway([("INR", 0), ("USD", 1)])
+		make_razorpay_gateway([("INR", 1)])
+		complete_billing_profile(self.TEAM)
+
+	def test_the_note_names_the_networks_and_the_wallet(self):
+		from central.billing.api.dashboard import methods
+
+		note = methods.get_payment_method_options(self.TEAM)["note"]
+		self.assertIn("Amex", note)
+		self.assertIn("Diners", note)
+		self.assertIn("wallet", note.lower())
+
+	def test_it_is_on_the_screen_where_they_choose_how_to_pay(self):
+		from central.billing.api.dashboard import account
+
+		note = account.get_collection_status(self.TEAM)["mandate_gap_note"]
+		self.assertTrue(note)
+		self.assertIn("wallet", note.lower())
+
+	def test_a_currency_without_the_gap_says_nothing(self):
+		"""The limit is an Indian card-network one; a USD team is not owed the caveat."""
+		from central.billing.api.dashboard import account
+
+		frappe.db.set_value("Billing Profile", self.TEAM, "currency", "USD")
+		self.assertIsNone(account.get_collection_status(self.TEAM)["mandate_gap_note"])

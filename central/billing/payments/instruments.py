@@ -120,8 +120,10 @@ BY_KEY = {(entry["surface"], entry["instrument"]): entry for entry in CATALOGUE}
 NO_MANDATE_NETWORKS = ("Amex", "Diners")
 
 MANDATE_GAP_NOTE = (
-	"Amex and Diners cards can top up your wallet or pay an invoice, "
-	"but can't be saved for automatic payments."
+	"Holding an Amex or Diners card? Automatic payments aren't possible on those "
+	"networks — no bank rail in India registers a mandate for them. Keep a prepaid "
+	"wallet topped up instead, and your usage draws from the balance. (You can also "
+	"pay each invoice yourself.)"
 )
 
 

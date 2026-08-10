@@ -8,7 +8,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
-import { errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 
 // Pick an instrument to save for auto-pay. This is the **mandate** surface (ADR
@@ -69,6 +69,22 @@ async function launchGateway(
 const upiBlocked = computed(() => options.data && !options.data.allow_upi)
 
 const tiles = computed(() => options.data?.instruments ?? [])
+
+// A customer whose card cannot hold a mandate needs the wallet, so give them the
+// switch here rather than a sentence telling them to go and find it.
+const switching = useCall<unknown, { team: string; mode: string }>({
+	url: method(API.setCollectionMode),
+	method: 'POST',
+	immediate: false,
+	onError: (e: unknown) => errorToast(e, 'Could not switch to a prepaid wallet.'),
+})
+
+async function switchToPrepaid(): Promise<void> {
+	await switching.submit({ team: activeTeam.value!, mode: 'Prepaid' })
+	if (switching.error) return
+	successToast('Switched to a prepaid wallet. Add credits to cover your usage.')
+	done()
+}
 
 const icons: Record<string, string> = {
 	Card: 'lucide-credit-card',
@@ -260,12 +276,18 @@ watch(open, (isOpen) => {
 							}}</span>
 						</button>
 					</div>
-					<p
+					<div
 						v-if="options.data.note"
-						class="mt-2 text-p-sm text-ink-gray-5"
+						class="mt-3 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
 					>
-						{{ options.data.note }}
-					</p>
+						<p class="text-p-sm text-ink-gray-6">{{ options.data.note }}</p>
+						<Button
+							class="mt-2"
+							label="Use a prepaid wallet"
+							:loading="switching.loading"
+							@click="switchToPrepaid"
+						/>
+					</div>
 				</div>
 
 				<!-- Razorpay card mandates need a contact; collect it inline when missing. -->

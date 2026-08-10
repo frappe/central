@@ -193,10 +193,15 @@ def get_collection_status(team: str | None = None) -> dict:
 	Re-checks an e-mandate team against the ₹15,000 silent-debit threshold using the
 	month-to-date forecast (so we warn before the bill lands), then returns the state
 	the banner renders from: the mode, whether action is required and why, the
-	threshold, and the numbers (projected total, wallet balance, shortfall)."""
+	threshold, and the numbers (projected total, wallet balance, shortfall).
+
+	It also carries `mandate_gap_note`: the networks no rail will auto-charge. This
+	is the screen where a customer decides how they want to pay, so it is the honest
+	place to say that an Amex or Diners card leaves the wallet as their option —
+	before they pick auto-pay and discover it at authorisation (ADR 0023)."""
 	team = _resolve_team(team)
 	from central.billing.api.dashboard.invoices import get_forecast
-	from central.billing.payments import collection_mode
+	from central.billing.payments import collection_mode, instruments
 	from central.billing.revenue import credits
 
 	projected = frappe.utils.flt(get_forecast(team).get("projected_total"))
@@ -208,6 +213,7 @@ def get_collection_status(team: str | None = None) -> dict:
 		"wallet_balance": wallet,
 		"shortfall": max(0.0, frappe.utils.flt(projected - wallet, 2)),
 		"currency": _team_currency(team),
+		"mandate_gap_note": instruments.mandate_gap_note(_team_currency(team)),
 	}
 
 
