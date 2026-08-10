@@ -2,21 +2,23 @@
 import { Dialog, FormControl, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import CapabilityList from '@/components/team/CapabilityList.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useSession } from '@/composables/useSession'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
 import { errorToast, successToast } from '@/lib/toast'
-import type { CapabilityInfo, ResourceType, TeamRegistry } from '@/types/api'
+import { teamParams } from '@/composables/useTeamScope'
+import { errorToast, successToast } from '@/lib/toast'
+import type { ResourceType, TeamRegistry } from '@/types/api'
 
-// Invite a person with a role scoped to all resources or a specific server/site.
-// Owner is excluded — Transfer Ownership assigns that.
+// Invite a person with a role scoped to all resources or a specific server or
+// site. Owner is excluded — Transfer Ownership assigns that. What a role grants
+// is browsable on the Roles tab, not repeated here.
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [v: boolean]; invited: [] }>()
 
 const { activeTeam } = useSession()
-const { roles, capabilities, capsByRole } = useTeamRoles()
+const { roles } = useTeamRoles()
 const { regions } = useRegions()
 
 const open = computed({
@@ -69,11 +71,7 @@ const resourceOptions = computed(() => {
 	]
 })
 
-const previewCaps = computed<string[]>(() =>
-	role.value ? (capsByRole.value[role.value] ?? []) : [],
-)
-const palette = computed<CapabilityInfo[]>(() => capabilities.value)
-
+// Reset the form each time the dialog opens.
 watch(open, (isOpen) => {
 	if (isOpen) {
 		email.value = ''
@@ -138,7 +136,7 @@ async function submit() {
 			resource_name: scope.resource_name,
 		})
 		if (inviteCall.error) throw inviteCall.error
-		successToast(`Invitation sent to ${email.value.trim().toLowerCase()}.`)
+		successToast(`Invitation sent to ${email.value.trim().toLowerCase()}`)
 		emit('invited')
 		open.value = false
 	} catch (e) {
@@ -179,16 +177,6 @@ class="min-w-0 flex-1"
 					:min="1"
 					:max="30"
 				/>
-
-				<div
-					v-if="role"
-					class="max-h-[40vh] overflow-y-auto rounded-md border border-outline-gray-2 bg-surface-gray-1 p-3"
-				>
-					<p class="mb-3 text-p-sm font-medium text-ink-gray-7">
-						This role can:
-					</p>
-					<CapabilityList :caps="previewCaps" :palette="palette" />
-				</div>
 			</div>
 		</template>
 	</Dialog>

@@ -1,7 +1,8 @@
 import { useCall } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBusyRunner } from '@/composables/useBusyRunner'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { submitOrThrow } from '@/lib/frappeCall'
 import { getErrorMessage, isAbortError } from '@/lib/toast'
@@ -18,7 +19,16 @@ const invitationsCall = useCall<InvitationRow[], { team: string }>({
 	immediate: false,
 })
 
-whenTeamReady(() => invitationsCall.reload())
+// The roster shows pending invites inline, so this module now loads on the Teams
+// page for everyone. list_team_invitations is gated on team:manage_members, so
+// wait for the capability rather than firing a request a viewer can only 403 on.
+const { canManageMembers } = useCapabilities()
+whenTeamReady(() => {
+	if (canManageMembers.value) invitationsCall.reload()
+})
+watch(canManageMembers, (can, was) => {
+	if (can && !was) invitationsCall.reload()
+})
 
 const resendCall = useCall<{ expires_on: string }, { invitation: string }>({
 	url: method(API.resendInvitation),

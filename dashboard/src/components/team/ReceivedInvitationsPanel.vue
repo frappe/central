@@ -55,7 +55,7 @@ const focusedMissing = computed(
 				class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5"
 			>
 				<div class="flex items-start gap-3">
-					<Avatar :label="invite.team_name" size="xl" />
+					<Avatar :label="invite.team_name" size="xl" shape="square" />
 					<div class="min-w-0 flex-1">
 						<h2 class="truncate text-base font-semibold text-ink-gray-9">
 							{{ invite.team_name }}

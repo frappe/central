@@ -53,7 +53,9 @@ async function onDelete(): Promise<void> {
 <template>
 	<main class="relative mx-auto mt-10 flex max-w-3xl flex-col gap-2 px-3 xl:p-0">
 		<div class="mb-2 flex items-center gap-3">
-			<Avatar :label="activeTeamLabel" size="2xl" />
+			<!-- Square: this is the organisation, not a person. Circles stay
+			     reserved for people across the console. -->
+			<Avatar :label="activeTeamLabel" size="2xl" shape="square" />
 			<div class="min-w-0 flex-1 leading-relaxed">
 				<div class="flex items-center gap-0.5">
 					<p class="truncate text-base font-medium text-ink-gray-9">

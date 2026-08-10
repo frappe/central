@@ -75,7 +75,7 @@ export function useTeamSettings() {
 			renameCall,
 			{ team: activeTeam.value!, team_name: teamName },
 			() => session.reload(),
-			'Team renamed.',
+			'Team renamed',
 		)
 	}
 
@@ -87,7 +87,7 @@ export function useTeamSettings() {
 				await session.reload()
 				caps.reload()
 			},
-			`${user} is now the owner.`,
+			`${user} is now the owner`,
 		)
 	}
 
@@ -100,7 +100,7 @@ export function useTeamSettings() {
 				session.setActiveTeam(session.teams.value[0]?.name ?? null)
 				caps.reload()
 			},
-			'Team deleted.',
+			'Team deleted',
 		)
 	}
 
@@ -113,7 +113,7 @@ export function useTeamSettings() {
 				if (createCall.data?.name) session.setActiveTeam(createCall.data.name)
 				caps.reload()
 			},
-			`Created “${teamName}”.`,
+			`Created “${teamName}”`,
 		)
 	}
 
