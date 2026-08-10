@@ -9,6 +9,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useInvoices } from '@/composables/useInvoices'
 import { usePayInvoice } from '@/composables/usePayInvoice'
 import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
+import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
@@ -80,6 +81,17 @@ watch(
 	},
 	{ immediate: true },
 )
+
+// A team switch invalidates the open receipt — the list refetches on its own
+// (reactive teamParams), but the panel would keep showing the old team's
+// invoice. Close it and let the new team's latest auto-select.
+const { activeTeam } = useSession()
+watch(activeTeam, (team, previous) => {
+	if (!previous || team === previous) return
+	selected.value = null
+	shown.value = null
+	autoSelected = false
+})
 
 // Open OR Overdue is still collectable — an overdue invoice is the one the customer
 // most needs to settle (dunning failed on the card), so it must offer Pay too.
