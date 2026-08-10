@@ -19,6 +19,19 @@ jobs:
       - name: Every patch module is in patches.txt
         run: python3 scripts/check_patches.py
 
+  wireguard:
+    runs-on: ubuntu-latest
+    name: WireGuard config unit tests
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+      - name: WireGuard hub rule/config generation
+        # Pure stdlib, no Frappe/site/host — runs straight from scripts/lib.
+        working-directory: scripts/lib
+        run: python3 -m unittest central.test_wireguard -v
+
   tests:
     runs-on: ubuntu-latest
     strategy:

@@ -146,18 +146,18 @@ Observe-only endpoints:
 
 ```mermaid
 flowchart LR
-    S[Atlas session grants] --> V{team + vm:create?}
+    S[Atlas session grants] --> V{team + server:create?}
     T[Requested Team] --> V
-    V -->|Yes| VM[Create Virtual Machine]
-    VM --> SN[Snapshot inherits VM Team]
+    V -->|Yes| VM[Create Asset]
+    VM --> SN[Snapshot inherits Asset Team]
     V -->|No| X[Deny]
 ```
 
 Attribution rules:
 
-- New VMs require an explicit Team and `vm:create` for that Team.
-- Snapshots inherit their VM's Team.
-- Clone and rebuild operations cannot cross Team boundaries.
+- New servers require an explicit Team and `server:create` for that Team.
+- Snapshots inherit their server's Team.
+- Resize operations cannot cross Team boundaries.
 - Legacy unattributed resources are operator-only.
 - Resource ownership must never be inferred from the Frappe document owner.
 
@@ -169,23 +169,20 @@ Canonical routes use the Team identifier:
 Read rules:
 
 - `System Manager` can read all resources.
-- Other users require `vm:view` for the resource Team.
+- Other users require `server:view` for the resource Team.
 - List filters use `permission_query_conditions`; document reads use
   `has_permission`.
-- Linked operational records, including Tasks, inherit visibility from their VM.
+- Linked operational records, including Tasks, inherit visibility from their server.
 - An empty or malformed grant set denies access.
 
 | Action | Required capability |
 | --- | --- |
-| Create, provision, retry provision | `vm:create` |
-| Start, resume | `vm:start` |
-| Stop, pause | `vm:stop` |
-| Restart | `vm:stop` and `vm:start` |
-| Resize | `vm:resize` |
-| Snapshot | `vm:snapshot` |
-| Rebuild | `vm:rebuild` |
-| Clone | `vm:view` and `vm:clone` |
-| Terminate | `vm:terminate` |
+| Create, provision, retry provision | `server:create` |
+| Start, stop, restart | `server:power` |
+| Resize | `server:resize` |
+| Snapshot | `server:snapshot` |
+| Terminate | `server:terminate` |
+| Open console (bench SSO) | `server:open` |
 
 Loaded-document actions should use the authorization decorator. Creation and
 cross-resource actions should perform explicit checks because no single loaded

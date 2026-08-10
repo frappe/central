@@ -38,9 +38,9 @@ The distinction matters:
   a new capability string, so a bench always understands the result. Teams can
   create as many custom roles as they like without affecting this contract.
 
-## The 13 capabilities
+## The 15 capabilities
 
-### `central` plane (5)
+### `central` plane (7)
 
 | Capability | Meaning |
 | --- | --- |
@@ -49,6 +49,8 @@ The distinction matters:
 | `team:edit` | Edit team metadata. |
 | `team:manage_members` | Invite, suspend, and change team members. |
 | `team:delete` | Delete a team. |
+| `service:view` | View the team's add-on services (LLM, storage). |
+| `service:manage` | Provision and manage add-on services and their credentials. |
 
 ### `atlas` plane (8)
 
@@ -80,6 +82,7 @@ under these implications before it is asserted or evaluated
 | `server:open` | `server:view` |
 | `server:create` | `server:view`, `cluster:view` |
 | `server:power` / `resize` / `snapshot` / `terminate` | `server:view` |
+| `service:manage` | `service:view` |
 
 The role builder can let a user tick `server:create` without remembering
 `server:view`/`cluster:view`, and a grant hand-crafted through the API cannot
@@ -105,8 +108,10 @@ all teams. Teams may also define custom roles scoped to themselves.
 | `server:snapshot` | ✓ | ✓ | ✓ | | |
 | `server:terminate` | ✓ | ✓ | ✓ | | |
 | `server:open` | ✓ | ✓ | ✓ | | |
+| `service:view` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `service:manage` | ✓ | ✓ | ✓ | | ✓ |
 
-Totals: Owner 13, Admin 12, Developer 8, Viewer 2, Billing 4.
+Totals: Owner 15, Admin 14, Developer 10, Viewer 3, Billing 6.
 
 The ladder reads top to bottom: **Viewer** (look) → **Billing** (look + pay) →
 **Developer** (operate servers) → **Admin** (Developer + run the team) → **Owner**

@@ -2,7 +2,9 @@
 
 ## 1. Complete The Capability Catalog
 
-- Add `vm:snapshot`, `vm:rebuild`, and `vm:clone` capabilities.
+- Seed the server capability set (`server:view/create/open/power/resize/snapshot/terminate`,
+  `cluster:view`); rebuild and clone are folded into `server:resize` rather than
+  separate capabilities.
 - Assign them to the standard Team roles.
 - Keep Viewer read-only and Billing limited to billing plus read access.
 - Export fixtures and verify Central's resolved grants.
@@ -31,11 +33,11 @@ Verification:
 
 Verification:
 
-- A Viewer sees resources only for Teams with `vm:view`.
+- A Viewer sees resources only for Teams with `server:view`.
 - Direct document access follows the same boundary as list access.
 - `System Manager` retains full visibility.
 
-## 4. Enforce VM Actions
+## 4. Enforce Server Actions
 
 - Apply the authorization decorator to loaded-VM actions.
 - Use explicit checks for create, clone, and other cross-resource operations.

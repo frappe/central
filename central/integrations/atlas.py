@@ -753,11 +753,18 @@ def _rotate_service_credentials(user_name: str) -> tuple[str, str]:
 	return api_key, api_secret
 
 
-def _verify_over_tunnel(client, tunnel_url: str, attempts: int = 8, delay: float = 2.0) -> None:
+# Seconds between verify-ping retries. A module constant (not a default arg, which
+# binds at import) so tests can patch it to 0 and not sleep through the retries.
+VERIFY_RETRY_DELAY = 2.0
+
+
+def _verify_over_tunnel(client, tunnel_url: str, attempts: int = 8, delay: float | None = None) -> None:
 	"""Ping the Atlas over wg0 until it answers. The hub adds the peer immediately
 	before this, so the first packet triggers the WireGuard handshake and can race it
 	(connection reset / incomplete read). Retry a handful of times so a freshly-dialled
 	tunnel gets a moment to settle before we treat it as unreachable and roll back."""
+	if delay is None:
+		delay = VERIFY_RETRY_DELAY
 	last: Exception | None = None
 	for attempt in range(attempts):
 		try:

@@ -20,24 +20,39 @@ left so it can be picked up cleanly. See also `spec/ATLAS_COORDINATION.md`.
 - **Naming pass:** one noun for Asset/Server/VM, cluster vs region, `Order.desc` vs
   `frappe.qb.desc`; wrap the remaining bare `frappe.throw` strings in `_()`.
 
-## PR 7 — frontend consolidation
+## PR 7 — frontend consolidation ✅ delivered
 
-One `RowActions` / `ConfirmDialog` / mutation-runner / empty-state / spec+memory formatter;
-dedupe `get_billing_profile` (four concurrent fetchers) and reshape `useBillingOverview`'s
-return; split `ServerMap.vue` (912 LOC) and extract `useFleetRows`; fix stale enums
-(`Asset.status` missing `Resizing`, `InvoiceStatus`); make `gateway.ts` a discriminated union
-on `adapter_key`; structure cleanup (`utils/`→`lib/`, flatten `composables/common/`, renames).
-Plus the behavioural items: lazy-load the search index, feature-flag the addons page, wire
-`/team/settings` + `/team/invitations` into the nav, drop the discarded `useServers`
-reportview list.
+Shared `RowActionsMenu` (the seven row menus) + `ConfirmDialog` (the pending-target
+confirms); deduped the four `get_billing_profile` fetchers onto the `useBillingOverview`
+singleton; split `ServerMap.vue` into `MapHoverCard` and extracted `useFleetRows`; fixed the
+stale enums (`InvoiceStatus` realigned to the DocType, `AssetStatus` `Resizing` made a
+first-class member — `Asset.status` itself already matched the DocType); `gateway.ts` is a
+discriminated union on `adapter_key`; `utils/`→`lib/`, flattened `composables/common/`; deduped
+`formatMemory`; lazy-mounted the search index; feature-flagged the addons area (Central
+Settings `enable_addons`); wired `/team/settings` + `/team/invitations` into the nav; dropped
+the discarded `useServers` reportview list.
+
+- **Not done — reshape `useBillingOverview`'s return** (it exposes raw `useCall` handles).
+  Deferred: cosmetic, and reshaping churns all eight consumers for no behavioural gain. The
+  dedupe (the substantive fix) landed; revisit only if a consumer needs the cleaner shape.
+- The **naming pass** (Asset/Server/VM, `Region` TS collapse) stays in the backend-refactors
+  section / deferred — untouched here.
 
 ## PR 8 — docs + tests
 
-`CAPABILITIES.md` / `spec/IAM.md` / `spec/EXECUTION_PLAN.md` are materially wrong (capability
-counts, retired `vm:*` vocabulary). Behavioural test gaps on the touched endpoints; fix
-`test_atlas_register._wipe` (deletes every Atlas Instance and commits); freeze the `2099` /
-`add_days` clocks; inject the `_verify_over_tunnel` retry delay; wire
-`scripts/lib/central/test_wireguard.py` into CI; settle the doctype-dir-vs-`tests/` convention.
+Done: `CAPABILITIES.md` / `spec/IAM.md` / `spec/EXECUTION_PLAN.md` corrected (15 caps incl.
+`service:*`, role totals, retired `vm:*` → `server:*`); `test_atlas_register._wipe` scoped to
+the regions each test creates (no longer deletes every Atlas Instance); `_verify_over_tunnel`
+retry delay lifted to a patchable `VERIFY_RETRY_DELAY` (0 in the test setUp); wired
+`scripts/lib/central/test_wireguard.py` into CI as a standalone job.
+
+Remaining (each wants a throwaway-site test run to verify — the shared bench tracks
+`develop`, and bench tests must not run against `central.localhost`):
+- **Freeze the `add_days`/`nowdate` clocks** across the ~10 billing test files (needs a
+  freezegun-style time fixture added first; applying it blind risks breaking those suites).
+  The literal `2099` sentinel wasn't found — confirm it's gone or locate it.
+- **Behavioural test gaps** on the touched endpoints (servers/teams/billing) — new tests.
+- **Settle the doctype-dir-vs-`tests/` convention** (organizational; low value).
 
 ## PR 8b — CI hardening
 
