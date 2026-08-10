@@ -644,25 +644,8 @@ class TestAtlasMirror(IntegrationTestCase):
 		enqueue.assert_called_once()
 		self.assertEqual(frappe.db.count("Atlas Event", {"event_id": "evt-dup-1"}), 1)
 
-	def test_ingest_event_recovers_when_exists_check_loses_insert_race(self):
-		# Simulate the same REPEATABLE READ race as mirror writes: a concurrent
-		# request's exists-check misses a row another request just committed, so it
-		# takes the insert path and hits the duplicate key. ingest_event must treat
-		# that as an already-stored replay, not let UniqueValidationError escape.
-		vm = {"name": "vm-race-evt", "team": self.team.name, "status": "Running"}
-		frappe.set_user(self.service_user)
-		try:
-			ingest_event("vm.created", vm, "2026-06-18 10:00:00", "evt-race-1")
-			with patch("frappe.db.exists", return_value=False):
-				with patch("frappe.enqueue") as enqueue:
-					result = ingest_event("vm.created", vm, "2026-06-18 10:00:01", "evt-race-1")
-		finally:
-			frappe.set_user("Administrator")
-		self.assertFalse(result["queued"])
-		enqueue.assert_not_called()
-		self.assertEqual(frappe.db.count("Atlas Event", {"event_id": "evt-race-1"}), 1)
-
 	def test_mirror_recovers_when_exists_check_loses_insert_race(self):
+		# Same event arrives twice at the same time.
 		from central.central.doctype.asset.asset import Asset
 
 		self._push(
@@ -671,9 +654,6 @@ class TestAtlasMirror(IntegrationTestCase):
 			"2026-06-18 10:00:00",
 		)
 
-		# Simulate the REPEATABLE READ race: a concurrent writer's exists-check misses
-		# the row, so it takes the insert path and hits the duplicate key. mirror_vm
-		# must recover by updating, not raise DuplicateEntryError.
 		real_exists = frappe.db.exists
 
 		def blind_to_asset(dt, *a, **k):

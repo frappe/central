@@ -431,24 +431,20 @@ class AtlasClient:
 def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | None = None) -> dict:
 	"""
 	Resolve the sender from its authenticated session, persist the event, then queue
-	the mirror write so Atlas gets a fast ack. Persisting first means a lost or failed
-	background job leaves a row to inspect/retry instead of vanishing silently. The
-	write itself is idempotent and last-writer-wins, and the periodic reconcile is the
-	backstop if a job is ever lost. ping and unknown event types have nothing to
-	mirror, so they're acknowledged without storing or queuing.
-
-	event_id is the sending Atlas's own delivery id (its Central Event Log row
-	name) — stable across a redelivery of the same event, distinct per genuine new
-	event.
+	the mirror write so Atlas gets a fast ack.
 	"""
 
 	cluster = _atlas_cluster()
 	if event_type not in _EVENT_HANDLERS:
 		return {"ok": True, "queued": False}
 
+	# fast check by checking if the event_id already exists in the DB. If it does, we don't need to queue it again.
 	if frappe.db.exists("Atlas Event", {"event_id": event_id}):
 		return {"ok": True, "queued": False}
 
+	# the exists() check above already covers the common case, but two requests
+	# for the same event_id can still race between the check and the insert;
+	# that's rare, so we just try the insert and catch the unique violation
 	try:
 		event = frappe.get_doc(
 			{
@@ -462,7 +458,6 @@ def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | No
 			}
 		).insert(ignore_permissions=True)
 	except frappe.UniqueValidationError:
-		# lost the race — another request stored this event_id first
 		return {"ok": True, "queued": False}
 
 	frappe.enqueue(
