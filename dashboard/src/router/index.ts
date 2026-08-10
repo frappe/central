@@ -67,7 +67,7 @@ const routes = [
 				path: 'addons/ai',
 				name: 'AIInference',
 				component: () => import('@/pages/addons/AIInference.vue'),
-				meta: { title: 'Add-on services', feature: 'addons' },
+				meta: { title: 'Add-on services', feature: ['addons', 'llm'] },
 			},
 			{
 				path: 'billing',
@@ -172,8 +172,15 @@ router.beforeEach((to) => {
 	}
 
 	// A route behind a disabled feature flag doesn't exist for this session.
-	if (to.meta.feature && !features[to.meta.feature as keyof typeof features])
-		return '/servers'
+	// `feature` may name one flag or several (e.g. the AI page needs both the
+	// Add-ons area and the LLM service); any one off redirects away.
+	if (to.meta.feature) {
+		const required = Array.isArray(to.meta.feature)
+			? to.meta.feature
+			: [to.meta.feature]
+		if (required.some((flag) => !features[flag as keyof typeof features]))
+			return '/servers'
+	}
 
 	// A finished user has no reason to re-enter onboarding.
 	if (to.path.startsWith('/onboarding') && onboardingComplete) return '/servers'
