@@ -11,7 +11,7 @@ frappe.query_reports["Billing Projection"] = {
 		{ fieldname: "country", label: __("Country"), fieldtype: "Link", options: "Country" },
 		{ fieldname: "cluster", label: __("Cluster"), fieldtype: "Link", options: "Atlas Instance" },
 		{ fieldname: "collection_mode", label: __("Collection mode"), fieldtype: "Select",
-		  options: ["", "Stripe Auto", "E-Mandate", "Manual Checkout", "Prepaid", "Action Required"] },
+		  options: ["", "Auto Charge", "Manual Checkout", "Prepaid", "Action Required"] },
 		{ fieldname: "outcome", label: __("Outcome contains"), fieldtype: "Data" },
 		{ fieldname: "needs_attention", label: __("Only teams that would suspend"),
 		  fieldtype: "Check" },

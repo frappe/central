@@ -39,7 +39,7 @@ class OutcomeTestBase(IntegrationTestCase):
 		frappe.db.delete("Billing Profile", {"team": TEAM})
 		frappe.db.commit()
 
-	def _profile(self, mode="Stripe Auto", currency="INR"):
+	def _profile(self, mode="Auto Charge", currency="INR"):
 		# set_team_tier already provisions a profile, so this adjusts rather than inserts.
 		if frappe.db.exists("Billing Profile", TEAM):
 			frappe.db.set_value(
@@ -138,31 +138,40 @@ class TestNoWayToPay(OutcomeTestBase):
 
 class TestTheIndianThreshold(OutcomeTestBase):
 	def test_an_emandate_bill_over_the_threshold_lands_in_action_required(self):
-		self._profile(mode="E-Mandate")
+		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=100000)
 		frappe.db.commit()
 		self.assertIn("over_silent_threshold", self._codes(amount=15000.0))
 
 	def test_under_the_threshold_is_charged_silently(self):
-		self._profile(mode="E-Mandate")
+		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=100000)
 		frappe.db.commit()
 		self.assertNotIn("over_silent_threshold", self._codes(amount=14999.0))
 
-	def test_the_threshold_does_not_apply_to_a_card_team(self):
-		self._profile(mode="Stripe Auto")
+	def test_an_inr_card_team_is_capped_too(self):
+		"""The ceiling belongs to the currency, not the instrument: a card mandate on
+		Stripe India lives under the same ₹15,000 line as a UPI one (ADR 0022)."""
+		self._profile(mode="Auto Charge")
 		self._card()
 		frappe.db.commit()
-		self.assertNotIn("over_silent_threshold", self._codes(amount=99000.0))
+		self.assertIn("over_silent_threshold", self._codes(amount=20000.0))
+
+	def test_the_threshold_does_not_follow_a_team_out_of_india(self):
+		self._profile(mode="Auto Charge", currency="USD")
+		self._card()
+		frappe.db.commit()
+		# Over ₹15,000 but under the tier cap, which is the only ceiling here.
+		self.assertNotIn("over_silent_threshold", self._codes(amount=30000.0))
 
 	def test_deriving_never_trips_the_profile_into_action_required(self):
 		# The real charge path trips the mode here as a side effect. Asking the question
 		# must not move the team into a new mode.
-		self._profile(mode="E-Mandate")
+		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=100000)
 		frappe.db.commit()
 		self._derive(amount=40000.0)
-		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "E-Mandate")
+		self.assertEqual(frappe.db.get_value("Billing Profile", TEAM, "collection_mode"), "Auto Charge")
 
 
 class TestOnSessionModes(OutcomeTestBase):
@@ -181,13 +190,13 @@ class TestOnSessionModes(OutcomeTestBase):
 
 class TestMandateCeiling(OutcomeTestBase):
 	def test_a_bill_above_the_mandate_cap_would_be_refused(self):
-		self._profile(mode="E-Mandate")
+		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=5000)
 		frappe.db.commit()
 		self.assertIn("over_mandate_cap", self._codes(amount=8000.0))
 
 	def test_a_bill_within_the_cap_is_not_flagged(self):
-		self._profile(mode="E-Mandate")
+		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=20000)
 		frappe.db.commit()
 		self.assertNotIn("over_mandate_cap", self._codes(amount=8000.0))
@@ -202,7 +211,7 @@ class TestMandateCeiling(OutcomeTestBase):
 		self.assertNotIn("over_mandate_cap", self._codes(amount=99999.0))
 
 	def test_a_mandate_awaiting_reauthorisation_is_reported(self):
-		self._profile(mode="E-Mandate")
+		self._profile(mode="Auto Charge")
 		self._mandate(ceiling=100000, reauth=1)
 		frappe.db.commit()
 		self.assertIn("mandate_reauth_pending", self._codes(amount=1000.0))

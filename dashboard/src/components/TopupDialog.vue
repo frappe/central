@@ -1,14 +1,21 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl } from 'frappe-ui'
+import { Button, Dialog, FormControl, useCall } from 'frappe-ui'
 import { computed, nextTick, type Ref, ref, watch } from 'vue'
+import { API, method } from '@/api/methods'
+import { useSession } from '@/composables/useSession'
 import { useTopup } from '@/composables/useTopup'
 import { currencySymbol, money } from '@/lib/format'
 import { errorToast } from '@/lib/toast'
+import type { PaymentInstrument } from '@/types/billing'
 
 // Amount entry → in-app payment. Shared by the wallet card and credits surface.
-// Razorpay (INR) collects in its hosted sheet; Stripe collects the card in an
-// embedded Element right here; PayPal renders its Buttons in a second phase. The
-// wallet is credited only after the gateway confirms (see useTopup).
+//
+// This is the **recharge** surface (ADR 0023), which is not the same list as saving
+// a method for auto-pay: netbanking can top up a wallet but cannot be saved. The
+// customer picks the instrument and that decides the rail, so a card reaches Stripe
+// even though Razorpay owns the INR default. Stripe collects the card in an embedded
+// Element right here; Razorpay collects in its hosted sheet; PayPal renders its
+// Buttons in a second phase. The wallet is credited only after the gateway confirms.
 const props = withDefaults(defineProps<{ currency?: string }>(), {
 	currency: 'INR',
 })
@@ -17,6 +24,22 @@ const emit = defineEmits<{ done: [res?: unknown] }>()
 
 const amount = ref<number | null>(null)
 const presets = [1000, 5000, 10000, 25000]
+
+const { activeTeam } = useSession()
+const options = useCall<{ instruments: PaymentInstrument[] }, { team: string }>({
+	url: method(API.topupOptions),
+	params: () => ({ team: activeTeam.value! }),
+	immediate: false,
+	refetch: true,
+})
+const instruments = computed(() => options.data?.instruments ?? [])
+const instrument = ref<string | null>(null)
+const icons: Record<string, string> = {
+	Card: 'lucide-credit-card',
+	'RuPay Card': 'lucide-credit-card',
+	UPI: 'lucide-smartphone',
+	Netbanking: 'lucide-landmark',
+}
 
 // Payment rail. INR always uses the Razorpay sheet; international currencies use a
 // card (Stripe Element). PayPal (directly settled, ADR 0007) is temporarily hidden
@@ -69,9 +92,14 @@ async function submit(): Promise<void> {
 	completed = false
 	// On the Razorpay rail begin() invokes onSheet before opening the hosted sheet —
 	// drop our modal so the sheet is reachable, and reopen it if the customer cancels.
-	const { card, paypal } = await begin(value, chosen, () => {
-		open.value = false
-	})
+	const { card, paypal } = await begin(
+		value,
+		chosen,
+		() => {
+			open.value = false
+		},
+		instrument.value ?? undefined,
+	)
 	if (paypal)
 		return enterPhase(
 			paypalPhase,
@@ -117,9 +145,14 @@ async function enterPhase(
 // Reset to the amount step whenever the dialog closes, tearing down any widget so
 // a reopen never shows a stale card field / buttons.
 watch(open, (isOpen) => {
+	if (isOpen) {
+		options.reload()
+		return
+	}
 	if (!isOpen) {
 		destroy()
 		amount.value = null
+		instrument.value = null
 		payMethod.value = 'card'
 		cardPhase.value = false
 		cardLoading.value = false
@@ -166,6 +199,31 @@ watch(open, (isOpen) => {
 			</div>
 
 			<div v-else class="space-y-5">
+				<!-- The recharge instruments. Each sits on its own rail, so this is not
+             decoration: it decides where the money goes. -->
+				<div v-if="instruments.length > 1">
+					<p class="mb-1.5 text-p-sm text-ink-gray-5">Pay with</p>
+					<div class="grid gap-2 sm:grid-cols-2">
+						<button
+							v-for="tile in instruments"
+							:key="tile.instrument"
+							class="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors"
+							:class="
+								instrument === tile.instrument
+									? 'border-outline-gray-4 bg-surface-gray-1'
+									: 'border-outline-gray-2 hover:border-outline-gray-3'
+							"
+							@click="instrument = tile.instrument"
+						>
+							<span
+								:class="icons[tile.instrument] || 'lucide-credit-card'"
+								class="size-4 shrink-0 text-ink-gray-7"
+								aria-hidden="true"
+							/>
+							<span class="text-sm text-ink-gray-9">{{ tile.label }}</span>
+						</button>
+					</div>
+				</div>
 				<div v-if="showMethodChoice">
 					<p class="mb-1.5 text-p-sm text-ink-gray-5">Pay with</p>
 					<div class="flex gap-2">

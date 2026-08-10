@@ -106,12 +106,12 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	method_name, gateway_name = _resolve_method(inv, payment_method, gateway)
 	adapter = _adapter_for(gateway_name)
 
-	# A debit the gateway can't pull silently (Razorpay > ₹15,000 — an RBI off-session
-	# rule) is never attempted: it would just fail. Instead raise Action Required so
-	# the customer picks manual checkout / prepaid (ADR 0005, #50). Stripe (no silent
-	# ceiling) and sub-₹15k charges pass straight through.
-	amount_minor = round(frappe.utils.flt(inv.expected_collection) * 100)
-	if not adapter.can_charge_silently(amount_minor):
+	# A debit the gateway can't pull silently in this currency (INR above ₹15,000 —
+	# an RBI off-session rule that binds Stripe India and Razorpay alike) is never
+	# attempted: it would just fail. Instead raise Action Required so the customer
+	# picks manual checkout / prepaid (ADR 0022, #106). An uncapped currency and
+	# anything under the ceiling pass straight through.
+	if not adapter.can_charge_silently(frappe.utils.flt(inv.expected_collection), inv.currency):
 		from central.billing.payments import collection_mode
 
 		collection_mode.trip(inv.team, "invoice_over_threshold")
@@ -185,6 +185,21 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		return {"charged": False, "reason": "timeout", "attempt": attempt.name}
 
 	attempt.gateway_transaction_id = result.gateway_transaction_id
+	# The gateway is holding the charge on purpose — Stripe's India pre-debit window,
+	# where the bank notifies the customer first and the money moves a day later. It
+	# has neither succeeded nor failed, so the attempt stays in flight and nothing
+	# retries or falls back against it (ADR 0023).
+	if result.hold_until:
+		attempt.gateway_hold_until = result.hold_until
+		attempt.save(ignore_permissions=True)
+		_persist()
+		return {
+			"charged": False,
+			"attempt": attempt.name,
+			"status": attempt.status,
+			"reason": "gateway_hold",
+			"hold_until": result.hold_until,
+		}
 	if result.success:
 		# gateway captured; invoice Paid waits on the webhook
 		transition(attempt, "Captured", actor="gateway", correlation=attempt.invoice)
@@ -194,10 +209,16 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		)
 		_stamp_failure(attempt, result.failure_code, result.decline_code, result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
+		_retire_method_if_mandate_failed(attempt, result.failure_code)
 	attempt.save(ignore_permissions=True)
 	_persist()
 
-	return {"charged": result.success, "attempt": attempt.name, "status": attempt.status}
+	return {
+		"charged": result.success,
+		"attempt": attempt.name,
+		"status": attempt.status,
+		"failure_code": result.failure_code,
+	}
 
 
 def resume_attempt(attempt: str) -> dict:
@@ -588,6 +609,30 @@ def _extract_failure(adapter_key: str, payload: dict) -> dict | None:
 			},
 		}
 	return None
+
+
+def _retire_method_if_mandate_failed(attempt, failure_code):
+	"""A mandate failure is not a decline to hold against the card.
+
+	`payment_intent_mandate_invalid` and its siblings mean the standing permission
+	is gone or the customer refused this debit at the bank. Retrying the same method
+	cannot work, and the card may be perfectly good, so the method is retired and the
+	customer is asked to authorise again (ADR 0023).
+	"""
+	from central.billing.payments import decline
+
+	if not decline.is_mandate_failure(failure_code) or not attempt.payment_method:
+		return
+	method = frappe.get_doc("Payment Method", attempt.payment_method)
+	if method.status == "Cancelled":
+		return
+	transition(method, "Cancelled", actor="gateway", reason=f"mandate failure: {failure_code}")
+	method.reauth_required = 1
+	method.save(ignore_permissions=True)
+
+	from central.billing.payments import collection_mode
+
+	collection_mode.trip(attempt.team, "mandate_failed")
 
 
 def _stamp_failure(attempt, failure_code, decline_code, failure_reason, raw):

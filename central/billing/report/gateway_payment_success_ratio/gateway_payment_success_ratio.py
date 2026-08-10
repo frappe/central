@@ -26,6 +26,8 @@ def execute(filters: dict | None = None):
 		return execute_failure_breakdown(filters)
 	if filters.get("group_by") == "Month":
 		return execute_by_month(filters)
+	if filters.get("group_by") == "Rail":
+		return execute_by_rail(filters)
 	return execute_by_gateway(filters)
 
 
@@ -41,11 +43,36 @@ def _attempts(filters: dict) -> list[dict]:
 		conditions["initiated_at"] = [">=", filters["from_date"]]
 	elif filters.get("to_date"):
 		conditions["initiated_at"] = ["<=", filters["to_date"]]
-	return frappe.get_all(
+	attempts = frappe.get_all(
 		"Payment Attempt",
 		filters=conditions,
-		fields=["gateway", "status", "amount", "currency", "failure_code", "failure_reason", "initiated_at"],
+		fields=[
+			"gateway",
+			"status",
+			"amount",
+			"currency",
+			"failure_code",
+			"failure_reason",
+			"initiated_at",
+			"payment_method",
+		],
 	)
+	networks = _networks([a.payment_method for a in attempts if a.payment_method])
+	for a in attempts:
+		a.network = networks.get(a.payment_method) or _("(unknown)")
+	return attempts
+
+
+def _networks(method_names: list[str]) -> dict:
+	"""Card network per method, read in one go rather than per attempt."""
+	if not method_names:
+		return {}
+	rows = frappe.get_all(
+		"Payment Method",
+		filters={"name": ["in", list(set(method_names))]},
+		fields=["name", "card_network"],
+	)
+	return {r.name: r.card_network for r in rows}
 
 
 # ── Auth rate over time ──────────────────────────────────────────────────────
@@ -107,6 +134,62 @@ def execute_by_month(filters: dict):
 			"type": "line",
 		}
 	return columns, rows, None, chart, None
+
+
+# ── Gateway x network x currency ─────────────────────────────────────────────
+
+
+def execute_by_rail(filters: dict):
+	"""Success rate split the way the routing decision needs to be judged (ADR 0022).
+
+	A gateway-level number hides the thing worth knowing: whether a network does
+	worse on one rail than the other. Domestic acquirers often beat cross-border ones
+	on authorisation, and this is the report that says whether ours does.
+	"""
+	columns = [
+		{
+			"label": _("Gateway"),
+			"fieldname": "gateway",
+			"fieldtype": "Link",
+			"options": "Payment Gateway",
+			"width": 160,
+		},
+		{"label": _("Network"), "fieldname": "network", "fieldtype": "Data", "width": 140},
+		{
+			"label": _("Currency"),
+			"fieldname": "currency",
+			"fieldtype": "Link",
+			"options": "Currency",
+			"width": 100,
+		},
+		{"label": _("Attempts"), "fieldname": "attempts", "fieldtype": "Int", "width": 100},
+		{"label": _("Captured"), "fieldname": "captured", "fieldtype": "Int", "width": 100},
+		{"label": _("Failed"), "fieldname": "failed", "fieldtype": "Int", "width": 90},
+		{"label": _("Success Rate"), "fieldname": "success_rate", "fieldtype": "Percent", "width": 120},
+	]
+
+	agg: dict[tuple, dict] = {}
+	for a in _attempts(filters):
+		key = (a.gateway or _("(none)"), a.network, a.currency or _("(none)"))
+		g = agg.setdefault(key, {"attempts": 0, "captured": 0, "failed": 0})
+		g["attempts"] += 1
+		if a.status == "Captured":
+			g["captured"] += 1
+		elif a.status == "Failed":
+			g["failed"] += 1
+
+	rows = [
+		{
+			"gateway": gateway,
+			"network": network,
+			"currency": currency,
+			**g,
+			"success_rate": flt(g["captured"] / g["attempts"] * 100, 2) if g["attempts"] else 0.0,
+		}
+		for (gateway, network, currency), g in agg.items()
+	]
+	rows.sort(key=lambda r: r["attempts"], reverse=True)
+	return columns, rows, None, None, None
 
 
 # ── Per-gateway ratio ────────────────────────────────────────────────────────

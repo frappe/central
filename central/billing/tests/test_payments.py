@@ -174,3 +174,43 @@ class TestStripeTestModeIntegration(CardTestBase):
 		refund_create.assert_called_once()  # micro-charge refunded
 		self.assertEqual(method.status, "Active")
 		self.assertTrue(method.is_default)
+
+
+class TestIndianCardMandateSetup(CardTestBase):
+	"""An INR card is saved as a mandate, and the mandate the bank issues is stored
+	so later debits can quote it (ADR 0022)."""
+
+	def setUp(self):
+		from central.billing.tests.utils import complete_billing_profile, set_team_tier
+
+		super().setUp()
+		make_stripe_gateway(currencies=(("USD", 1), ("INR", 0)))
+		complete_billing_profile(TEAM, currency="INR")
+		set_team_tier(TEAM, level="t1", max_spend=50000)
+
+	def test_setup_asks_for_a_mandate_up_to_the_rbi_ceiling(self):
+		with stub_adapter() as adapter:
+			payments.initiate_payment_method_setup(TEAM, GATEWAY)
+		setup_data = adapter.setup_payment_method.call_args.args[1]
+		self.assertEqual(setup_data["currency"], "INR")
+		self.assertEqual(setup_data["max_amount"], 15000.0)
+
+	def test_a_lower_tier_cap_lowers_what_the_customer_consents_to(self):
+		from central.billing.tests.utils import set_team_tier
+
+		set_team_tier(TEAM, level="t0", max_spend=6000)
+		with stub_adapter() as adapter:
+			payments.initiate_payment_method_setup(TEAM, GATEWAY)
+		self.assertEqual(adapter.setup_payment_method.call_args.args[1]["max_amount"], 6000.0)
+
+	def test_the_mandate_reference_is_stored_on_confirm(self):
+		with stub_adapter(validate=True):
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			method = payments.confirm_payment_method(
+				setup["payment_method"],
+				gateway_method_id="pm_india",
+				gateway_mandate_id="mandate_india",
+			)
+		self.assertEqual(method.gateway_mandate_id, "mandate_india")
+		self.assertEqual(method.mandate_max_amount, 15000.0)
+		self.assertEqual(method.mandate_currency, "INR")

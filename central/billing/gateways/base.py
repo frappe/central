@@ -27,11 +27,16 @@ def header_value(headers: dict, name: str):
 @dataclass
 class PaymentResult:
 	success: bool
-	status: str  # captured / authorised / failed
+	status: str  # captured / authorised / processing / failed
 	gateway_transaction_id: str | None = None
 	failure_code: str | None = None
 	decline_code: str | None = None  # granular decline reason (Stripe decline_code)
 	failure_reason: str | None = None
+	# When the gateway is deliberately holding the charge rather than failing it —
+	# Stripe's India pre-debit window, where the bank notifies the customer and the
+	# intent sits in `processing` for 26 hours. Until then there is nothing to
+	# reconcile and nothing to retry (ADR 0023).
+	hold_until: str | None = None
 	raw: dict = field(default_factory=dict)
 
 
@@ -78,21 +83,22 @@ class GatewayAdapter(ABC):
 	# the Payment Gateway doc (DB). Empty = always read from the doc.
 	conf_keys: ClassVar[dict[str, str]] = {}
 
-	# Off-session (silent, customer-absent) charge capability — drives which rail
-	# the collection layer may auto-charge on (ADR 0005). `max_silent_charge` is in
-	# MINOR units (paise/cent); None = no ceiling. Razorpay caps at the RBI ₹15,000
-	# silent-debit limit; Stripe off-session has no cap. The base default is "can't
-	# charge off-session" so a new adapter opts in explicitly.
+	# Whether this provider can charge a saved method off-session at all. How MUCH
+	# it may pull that way is not a property of the provider — Stripe is ceilingless
+	# in USD and capped at ₹15,000 in INR — so the ceiling lives on the gateway's
+	# currency row (ADR 0022) and is read through `gateways.capabilities`. The base
+	# default is "can't charge off-session", so a new adapter opts in explicitly.
 	supports_off_session_charge: bool = False
-	max_silent_charge: int | None = 0
-	requires_predebit_notice: bool = False
 
-	def can_charge_silently(self, amount_minor: int) -> bool:
-		"""True if this adapter may pull `amount_minor` off-session without sending
-		the customer back for authentication (ADR 0005)."""
+	def can_charge_silently(self, amount: float, currency: str) -> bool:
+		"""True if this gateway may pull `amount` (major units) in `currency`
+		off-session, without sending the customer back to authenticate."""
 		if not self.supports_off_session_charge:
 			return False
-		return self.max_silent_charge is None or amount_minor <= self.max_silent_charge
+		from central.billing.gateways import capabilities
+
+		ceiling = capabilities.silent_charge_ceiling(self.gateway.name, currency)
+		return ceiling is None or frappe.utils.flt(amount) <= ceiling
 
 	def __init__(self, gateway):
 		self.gateway = gateway

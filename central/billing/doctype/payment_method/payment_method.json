@@ -16,12 +16,15 @@
   "is_default",
   "priority",
   "reauth_required",
+  "fallback_reason",
   "section_break_gateway",
   "gateway_method_id",
   "gateway_customer_id",
+  "gateway_mandate_id",
   "setup_reference",
   "display_label",
   "section_break_card",
+  "card_network",
   "expiry_month",
   "expiry_year",
   "column_break_mandate",
@@ -89,6 +92,14 @@
    "description": "Trust-tier cap rose above this mandate's ceiling; team held at the old ceiling until the customer re-consents."
   },
   {
+   "fieldname": "fallback_reason",
+   "fieldtype": "Select",
+   "label": "Fallback Reason",
+   "options": "\nRupay\nNetwork Unsupported\nStripe Decline\nCustomer Choice",
+   "read_only": 1,
+   "description": "Why this method is not on the default rail for its currency (ADR 0023). Network Unsupported means Stripe would not register a mandate on that card network. Empty for a method on the default rail."
+  },
+  {
    "fieldname": "section_break_gateway",
    "fieldtype": "Section Break",
    "label": "Gateway References"
@@ -106,6 +117,13 @@
    "description": "Gateway-side customer reference (Stripe cus_xxx / Razorpay cust_xxx) — used by both cards and mandates"
   },
   {
+   "fieldname": "gateway_mandate_id",
+   "fieldtype": "Data",
+   "label": "Gateway Mandate ID",
+   "read_only": 1,
+   "description": "Mandate the off-session debit quotes (Stripe India mandate_xxx). Empty where the rail needs no mandate to charge."
+  },
+  {
    "fieldname": "setup_reference",
    "fieldtype": "Data",
    "label": "Setup Reference",
@@ -120,6 +138,13 @@
   {
    "fieldname": "section_break_card",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "card_network",
+   "fieldtype": "Data",
+   "label": "Card Network",
+   "read_only": 1,
+   "description": "Visa / Mastercard / RuPay / UPI. Taken from what the customer picked or what the gateway reported — never inferred from the card number, which we never see."
   },
   {
    "fieldname": "expiry_month",

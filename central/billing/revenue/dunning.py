@@ -206,10 +206,10 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# stages below escalate. Credits-only teams (no methods) skip straight there.
 	from central.billing.payments import collection
 
-	# Off-session retries only make sense for an auto-charge mode. manual_checkout
-	# (customer pays on-session) and action_required (paused at the ₹15k threshold)
+	# Off-session retries only make sense for an auto-charge mode. Manual Checkout
+	# (customer pays on-session) and Action Required (paused at the ₹15k threshold)
 	# are never silently retried — dunning just escalates and asks them to act
-	# (ADR 0005, #50). prepaid/stripe_auto/emandate retry iff a method exists.
+	# (ADR 0005). Auto Charge and Prepaid retry iff a method exists.
 	mode = _collection_mode(inv.team)
 	auto_charge = mode not in ("Manual Checkout", "Action Required")
 	if inv.status == "Open" and auto_charge and collection.next_method_for(invoice_name, inv.team):

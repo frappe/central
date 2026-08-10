@@ -33,7 +33,7 @@ frappe.query_reports["Gateway Payment Success Ratio"] = {
 			fieldname: "group_by",
 			label: __("Group By"),
 			fieldtype: "Select",
-			options: ["Gateway", "Month", "Failure Code"].join("\n"),
+			options: ["Gateway", "Rail", "Month", "Failure Code"].join("\n"),
 			default: "Gateway",
 		},
 	],

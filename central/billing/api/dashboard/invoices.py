@@ -466,6 +466,40 @@ def pay_invoice(invoice: str | None = None) -> dict:
 	return charges.pay_invoice(invoice)
 
 
+@frappe.whitelist()
+def get_fallback_offer(invoice: str | None = None) -> dict:
+	"""The other rail to offer after a card was finally refused (ADR 0022).
+
+	Returns the instrument to put one tap away, with the amount already filled in,
+	so the customer never meets an empty second card form. Empty where the last
+	attempt is not a terminal decline: a timeout may still settle at the gateway,
+	and charging a second rail on top of it pays one invoice twice.
+	"""
+	team = frappe.db.get_value("Invoice", invoice, "team")
+	_require_manage(team)
+	from central.billing.payments import decline
+
+	inv = frappe.db.get_value("Invoice", invoice, ["currency", "expected_collection"], as_dict=True)
+	last = frappe.get_all(
+		"Payment Attempt",
+		filters={"invoice": invoice},
+		fields=["gateway", "status", "failure_code"],
+		order_by="creation desc",
+		limit=1,
+	)
+	if not last or last[0].status != "Failed" or not decline.is_terminal(last[0].failure_code):
+		return {"offer": None}
+
+	tile = decline.alternate_rail(team, inv.currency, last[0].gateway)
+	if not tile:
+		return {"offer": None}
+	return {
+		"offer": tile,
+		"amount": frappe.utils.flt(inv.expected_collection),
+		"currency": inv.currency,
+	}
+
+
 @frappe.whitelist(methods=["POST"])
 def pay_invoice_checkout(invoice: str | None = None) -> dict:
 	"""Open an on-session gateway checkout to pay an invoice yourself
@@ -497,12 +531,36 @@ def confirm_invoice_checkout(
 	)
 
 
+@frappe.whitelist()
+def get_topup_options(team: str | None = None) -> dict:
+	"""The instruments a wallet recharge can be paid with (ADR 0023).
+
+	A different list from the mandate surface: this one pays once with the customer
+	present, so netbanking belongs here and a card of any network Stripe accepts is
+	fine. `publishable_key` is returned for the Stripe rail, which collects the card
+	in-app rather than redirecting.
+	"""
+	team = _resolve_team(team)
+	currency = _team_currency(team)
+	from central.billing.payments import instruments as instrument_catalogue
+
+	tiles = instrument_catalogue.available(currency, instrument_catalogue.RECHARGE)
+	publishable_key = None
+	card_gw = _enabled_gateway_for_currency(currency, "Stripe")
+	if card_gw:
+		from central.billing.gateways.registry import get_adapter
+
+		publishable_key = get_adapter(frappe.get_doc("Payment Gateway", card_gw)).get_credential("api_key")
+	return {"currency": currency, "instruments": tiles, "publishable_key": publishable_key}
+
+
 @frappe.whitelist(methods=["POST"])
 def create_topup_order(
 	team: str | None = None,
 	amount: float | None = None,
 	gateway: str | None = None,
 	method: str | None = None,
+	instrument: str | None = None,
 ) -> dict:
 	"""Start a wallet top-up by creating a real gateway order. The UI opens the
 	gateway's checkout against it; the wallet is credited only after the gateway
@@ -538,6 +596,18 @@ def create_topup_order(
 			display_paypal = True
 		else:
 			gw = pp.name
+	elif instrument:
+		# The recharge surface: the customer picked an instrument and that decides the
+		# rail (ADR 0023). Resolving by currency default instead would put every INR
+		# top-up on one provider, including the card ones Stripe should take.
+		from central.billing.payments import instruments as instrument_catalogue
+
+		gw = instrument_catalogue.gateway_for(instrument, currency, instrument_catalogue.RECHARGE)
+		if not gw:
+			frappe.throw(
+				_("{0} isn't available for {1} top-ups.").format(instrument, currency),
+				frappe.ValidationError,
+			)
 	else:
 		gw = gateway or _gateway_for_currency(currency)
 	from central.billing.gateways.registry import get_adapter
