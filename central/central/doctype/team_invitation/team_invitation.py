@@ -86,7 +86,7 @@ class TeamInvitation(Document):
 			affected_user=self.email,
 		)
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.accept_invitation.
 	def accept(self) -> dict:
 		return self.accept_for_user(frappe.session.user)
 
@@ -115,7 +115,7 @@ class TeamInvitation(Document):
 		self.save()
 		return {"team": self.team, "role": self.role, "accepted": True}
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.revoke_invitation.
 	def revoke(self) -> bool:
 		self._require_manager()
 		if self.status == "Revoked":

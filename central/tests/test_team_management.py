@@ -421,3 +421,17 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertTrue(delete_team(team)["deleted"])
 		self.assertFalse(frappe.db.exists("Team", team))
 		self.assertFalse(frappe.db.exists("Team Invitation", invite))
+
+
+class TestTeamsSurfaceStaysSingleDoor(IntegrationTestCase):
+	"""central.api.teams is the sole HTTP door for team/invitation mutations; the
+	doc methods it delegates to stay internal. Re-whitelisting one would recreate a
+	double surface (the bug this guards)."""
+
+	def test_delegated_doc_methods_are_not_whitelisted(self):
+		from central.central.doctype.team.team import Team
+		from central.central.doctype.team_invitation.team_invitation import TeamInvitation
+
+		for method in (Team.invite_member, TeamInvitation.accept, TeamInvitation.revoke):
+			with self.subTest(method=method.__qualname__), self.assertRaises(frappe.PermissionError):
+				frappe.is_whitelisted(method)

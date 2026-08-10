@@ -51,7 +51,7 @@ class Team(Document):
 		self._require_capability("team:delete")
 		clear_grants_cache()
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.invite_team_member.
 	def invite_member(
 		self,
 		email: str,
