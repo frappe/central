@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { Avatar, Button, TabButtons } from 'frappe-ui'
+import { Avatar, TabButtons } from 'frappe-ui'
 import { computed, ref } from 'vue'
-import EditTeamDialog from '@/components/team/EditTeamDialog.vue'
 import MembersPanel from '@/components/team/MembersPanel.vue'
 import RolesPanel from '@/components/team/RolesPanel.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 
@@ -12,13 +10,10 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 // each role grants — so they live on one page behind a tab toggle, sharing one
 // identity header. The Team/Roles switcher rides on the list's own controls
 // row, ahead of search; each tab keeps its primary action (Invite, New role)
-// in that row's toolbar. Team-level settings (rename, delete) open from the
-// pencil — there is no separate settings page.
+// in that row's toolbar. Team-level settings (logo, rename, delete) live in
+// the settings dialog, which lands with its own PR.
 const { activeTeamLabel, activeTeamLogo } = useSession()
 const { members } = useTeamMembers()
-const { canEditTeam, canDeleteTeam } = useCapabilities()
-
-const editTeam = ref(false)
 
 const tab = ref('team')
 const tabs = [
@@ -51,17 +46,6 @@ const memberCountText = computed(() => {
 						</p>
 						<p class="mt-0.5 text-p-base text-ink-gray-5">{{ memberCountText }}</p>
 					</div>
-
-					<!-- Icon-only: renaming/deleting the team is rare — a label would
-					     outweigh the action. -->
-					<Button
-						v-if="canEditTeam || canDeleteTeam"
-						class="ml-auto my-auto"
-						variant="subtle"
-						icon="lucide-pencil"
-						label="Edit team"
-						@click="editTeam = true"
-					/>
 				</div>
 
 				<MembersPanel v-if="tab === 'team'">
@@ -76,6 +60,5 @@ const memberCountText = computed(() => {
 				</RolesPanel>
 			</main>
 		</div>
-		<EditTeamDialog v-model="editTeam" />
 	</div>
 </template>

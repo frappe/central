@@ -10,7 +10,6 @@ import {
 } from 'frappe-ui'
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import ProfileDialog from '@/components/ProfileDialog.vue'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import SwitchTeamDialog from '@/components/team/SwitchTeamDialog.vue'
 import { useAppMenu } from '@/composables/useAppMenu'
@@ -42,7 +41,7 @@ watch(searchOpen, (isOpen) => {
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
-const { switchTeamOpen, profileOpen } = useAppMenu()
+const { switchTeamOpen } = useAppMenu()
 
 const mobileNavDrawer = ref(false)
 watch(
@@ -121,6 +120,5 @@ const breadcrumbs = computed(
 
 	<ToastProvider />
 	<SwitchTeamDialog v-model:open="switchTeamOpen" />
-	<ProfileDialog v-model="profileOpen" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
 </template>

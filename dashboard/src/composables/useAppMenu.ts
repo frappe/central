@@ -3,7 +3,6 @@ import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 
 const switchTeamOpen = ref(false)
-const profileOpen = ref(false)
 
 const themeOptions = [
 	{ label: 'Light', icon: 'lucide-sun', value: 'light' },
@@ -47,19 +46,11 @@ export const useAppMenu = () => {
 	])
 
 	const footerMenuItems = [
-		{
-			label: 'My profile',
-			icon: 'lucide-user',
-			onClick: () => {
-				profileOpen.value = true
-			},
-		},
 		{ label: 'Sign out', icon: 'lucide-log-out', onClick: logoutAndRedirect },
 	]
 
 	return {
 		switchTeamOpen,
-		profileOpen,
 		themeOptions,
 		headerMenuItems,
 		footerMenuItems,
