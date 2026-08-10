@@ -75,7 +75,7 @@ const options = [
 		v-if="show && s"
 		theme="yellow"
 		title="Action required — choose how to keep paying"
-		:action="canManageBilling ? { label: 'Choose how to pay', onClick: () => (choosing = true) } : null"
+		:action="canManageBilling ? { label: 'Choose how to pay', onClick: () => (choosing = true) } : undefined"
 	>
 		<template #description>
 			Your usage is trending to
