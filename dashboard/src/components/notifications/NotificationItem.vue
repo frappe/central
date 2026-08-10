@@ -11,12 +11,14 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ act: []; read: [] }>()
 
+// ink-8 across the board: the -3 steps are near-white background tints, so the
+// icon all but disappeared on a light surface.
 const SEVERITY: Record<NotificationSeverity, { icon: string; color: string }> =
 	{
-		Error: { icon: 'lucide-alert-circle', color: 'text-[var(--ink-red-8)]' },
-		Warning: { icon: 'lucide-alert-triangle', color: 'text-ink-amber-3' },
-		Success: { icon: 'lucide-check-circle-2', color: 'text-ink-green-3' },
-		Info: { icon: 'lucide-info', color: 'text-ink-blue-3' },
+		Error: { icon: 'lucide-alert-circle', color: 'text-ink-red-8' },
+		Warning: { icon: 'lucide-alert-triangle', color: 'text-ink-amber-8' },
+		Success: { icon: 'lucide-check-circle-2', color: 'text-ink-green-8' },
+		Info: { icon: 'lucide-info', color: 'text-ink-blue-8' },
 	}
 
 const look = computed(
@@ -50,7 +52,7 @@ function timeAgo(ts: string): string {
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2">
 				<p
-					class="min-w-0 flex-1 text-sm font-medium text-ink-gray-9"
+					class="min-w-0 flex-1 text-base-medium text-ink-gray-9"
 					:class="compact ? 'truncate' : ''"
 				>
 					{{ notification.title }}

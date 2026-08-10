@@ -67,7 +67,7 @@ const routes = [
 				path: 'addons/ai',
 				name: 'AIInference',
 				component: () => import('@/pages/addons/AIInference.vue'),
-				meta: { title: 'Add-on services', feature: ['addons', 'llm'] },
+				meta: { title: 'Services', feature: ['addons', 'llm'] },
 			},
 			{
 				path: 'billing',
@@ -85,7 +85,7 @@ const routes = [
 				path: 'billing/limits',
 				name: 'SpendingLimits',
 				component: () => import('@/pages/billing/SpendingLimitsPage.vue'),
-				meta: { title: 'Spending Limits' },
+				meta: { title: 'Limit tiers' },
 			},
 			{
 				path: 'notifications',
@@ -137,7 +137,7 @@ const routes = [
 				path: 'addons',
 				name: 'Addons',
 				component: () => import('@/pages/addons/Page.vue'),
-				meta: { title: 'Add-on services', feature: 'addons' },
+				meta: { title: 'Services', feature: 'addons' },
 			},
 		],
 	},

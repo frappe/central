@@ -49,7 +49,7 @@ async function onAct(n: TeamNotification): Promise<void> {
 			<Button
 				variant="ghost"
 				icon="lucide-settings-2"
-				aria-label="Notification preferences"
+				label="Notification preferences"
 				@click="preferencesOpen = true"
 			/>
 		</Teleport>

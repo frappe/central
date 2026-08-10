@@ -106,7 +106,7 @@ async function onSave(): Promise<void> {
 		}))
 		await save.submit({ ...teamParams(), preferences })
 		await load.reload()
-		successToast('Notification preferences saved.')
+		successToast('Notification preferences saved')
 	} catch (e) {
 		errorToast(e)
 	}
