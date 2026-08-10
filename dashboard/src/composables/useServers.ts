@@ -126,7 +126,7 @@ async function runCommand(
 			resource_id: server.resource_id,
 		})
 		if (call.error) throw call.error
-		successToast(`${verb} requested for ${server.title || server.resource_id}.`)
+		successToast(`${verb} requested for ${server.title || server.resource_id}`)
 	} catch (e) {
 		errorToast(e)
 	} finally {
@@ -185,7 +185,7 @@ export function useServers() {
 			errorToast(createCall.error)
 			throw createCall.error
 		}
-		successToast(`Creating ${params.title} in ${params.region}.`)
+		successToast(`Creating ${params.title} in ${params.region}`)
 		return createCall.data?.resource_id ?? ''
 	}
 
@@ -198,7 +198,7 @@ export function useServers() {
 			errorToast(createComposedCall.error)
 			throw createComposedCall.error
 		}
-		successToast(`Creating ${params.title} in ${params.region}.`)
+		successToast(`Creating ${params.title} in ${params.region}`)
 		return createComposedCall.data?.resource_id ?? ''
 	}
 

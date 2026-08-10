@@ -29,7 +29,7 @@ defineEmits<{ create: []; dismiss: [] }>()
 				Create your first server
 			</p>
 			<p class="mt-1 text-p-sm text-ink-gray-5">
-				Spin one up to host your sites — or pick a
+				Your sites will run on it. Start here, or pick a
 				<span class="font-medium text-ink-gray-7">+</span>
 				spot on the map.
 			</p>

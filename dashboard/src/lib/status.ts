@@ -62,9 +62,10 @@ export function invitationStatusTheme(status: InvitationStatus): BadgeTheme {
 }
 
 // Invoice status → Badge theme (case-insensitive), keyed by the Invoice DocType's
-// status options: Paid green, Open amber, Overdue red, Draft/Waived/Cancelled neutral.
+// status options. Paid is the normal state and stays gray — color is reserved
+// for states that need attention.
 const INVOICE_THEME: Record<string, BadgeTheme> = {
-	paid: 'green',
+	paid: 'gray',
 	open: 'orange',
 	overdue: 'red',
 	draft: 'gray',

@@ -27,7 +27,8 @@ const props = defineProps<{
 }>()
 
 defineEmits<{
-	focusRow: [row: ResourceRow]
+	/** Row click — the page opens the resource itself (bench/site/overview). */
+	openRow: [row: ResourceRow]
 	clearLocation: []
 	overview: [server: AssetRow]
 	open: [server: AssetRow]
@@ -71,7 +72,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 				<Button
 					variant="ghost"
 					icon="lucide-minimize-2"
-					aria-label="Collapse list"
+					label="Collapse list"
 					@click="open = false"
 				/>
 			</div>
@@ -115,7 +116,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 					<div
 						class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors"
 						:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
-						@click="$emit('focusRow', row)"
+						@click="$emit('openRow', row)"
 						@mouseenter="hoverId = row.id"
 						@mouseleave="hoverId = null"
 					>
