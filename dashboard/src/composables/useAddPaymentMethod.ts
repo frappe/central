@@ -43,6 +43,7 @@ export function useAddPaymentMethod({
 		methodType: string,
 		contact?: string,
 		instrument?: string,
+		afterDecline = false,
 	): Promise<MethodResult | undefined> {
 		try {
 			const params: Record<string, unknown> = {
@@ -51,6 +52,10 @@ export function useAddPaymentMethod({
 				// What the customer tapped. The backend resolves the rail from it, so a
 				// RuPay card goes to Razorpay without anyone reading the card number.
 				instrument: instrument || methodType,
+				// Provenance: the customer arrived here from a card the other rail
+				// refused. The server checks it against a real decline before recording
+				// it, because the field feeds the gateway comparison.
+				after_decline: afterDecline,
 			}
 			// A Razorpay card mandate needs a customer contact; the dialog collects it
 			// inline when the billing profile has no phone.

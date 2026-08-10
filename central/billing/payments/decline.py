@@ -62,6 +62,31 @@ def fallback_enabled() -> bool:
 	return bool(frappe.db.get_single_value("Billing Settings", "enable_gateway_fallback"))
 
 
+def recent_terminal_decline(team: str, gateway: str | None = None, within_hours: int = 24) -> dict | None:
+	"""The team's most recent attempt that a gateway finally refused, if it is recent.
+
+	This is the server's own answer to "did a card just fail?", and it exists because
+	the client is about to claim exactly that. `fallback_reason` is a field we report
+	on when judging one rail against another, so it cannot be whatever a caller says
+	it is — a customer who simply prefers UPI would otherwise be recorded as a Stripe
+	failure and quietly move the number.
+	"""
+	since = frappe.utils.add_to_date(frappe.utils.now_datetime(), hours=-within_hours)
+	filters = {"team": team, "status": "Failed", "creation": [">", since]}
+	if gateway:
+		filters["gateway"] = gateway
+	for attempt in frappe.get_all(
+		"Payment Attempt",
+		filters=filters,
+		fields=["name", "gateway", "failure_code"],
+		order_by="creation desc",
+		limit=5,
+	):
+		if is_terminal(attempt.failure_code) and not is_mandate_failure(attempt.failure_code):
+			return attempt
+	return None
+
+
 def alternate_rail(team: str, currency: str, failed_gateway: str) -> dict | None:
 	"""An instrument on a different gateway that this team could pay with instead.
 

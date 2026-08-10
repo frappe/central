@@ -327,3 +327,81 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 				"Billing Notification Log", {"team": TEAM, "event_type": "Add Payment Method"}
 			)
 		)
+
+
+class TestWhereAMethodSaysItCameFrom(IntegrationTestCase):
+	"""`fallback_reason` feeds the report that judges one rail against the other, so
+	"my card was declined" is checked rather than believed."""
+
+	def setUp(self):
+		from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		make_stripe_gateway(currencies=(("USD", 1), ("INR", 0)))
+		make_razorpay_gateway([("INR", 1)])
+		frappe.db.delete("Payment Attempt", {"team": TEAM})
+		frappe.db.delete("Payment Method", {"team": TEAM})
+		frappe.db.set_value("Billing Profile", TEAM, "phone", "9800000000")
+
+	def _failed_attempt(self, failure_code):
+		invoice = (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": "Billable",
+					"status": "Open",
+					"period_start": "2026-06-01",
+					"period_end": "2026-06-30",
+					"currency": "INR",
+					"subtotal": 5000,
+					"total": 5000,
+					"expected_collection": 5000,
+					"items": [{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+		attempt = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": TEAM,
+				"gateway": "Stripe",
+				"amount": 5000,
+				"currency": "INR",
+				"status": "Initiated",
+				"initiated_at": frappe.utils.now_datetime(),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"Payment Attempt", attempt.name, {"status": "Failed", "failure_code": failure_code}
+		)
+
+	def _add(self, after_decline):
+		from central.billing.api.dashboard import methods
+
+		out = methods.setup_payment_method_order(
+			TEAM, instrument="Other Network Card", after_decline=after_decline
+		)
+		return frappe.get_doc("Payment Method", out["payment_method"])
+
+	def test_a_real_decline_is_recorded_as_one(self):
+		self._failed_attempt("card_declined")
+		self.assertEqual(self._add(after_decline=True).fallback_reason, "Stripe Decline")
+
+	def test_an_unbacked_claim_is_not(self):
+		"""Nothing was declined, so the method records the reason its own tile gives."""
+		self.assertEqual(self._add(after_decline=True).fallback_reason, "Network Unsupported")
+
+	def test_a_timeout_is_not_a_decline(self):
+		self._failed_attempt("gateway_timeout")
+		self.assertEqual(self._add(after_decline=True).fallback_reason, "Network Unsupported")
+
+	def test_a_revoked_mandate_is_not_a_decline_either(self):
+		"""The card was never refused — the standing permission went away."""
+		self._failed_attempt("india_recurring_payment_mandate_canceled")
+		self.assertEqual(self._add(after_decline=True).fallback_reason, "Network Unsupported")

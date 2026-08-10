@@ -21,6 +21,11 @@ import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 // iframes the card number. Stripe capture happens in an embedded Element; Razorpay
 // runs its hosted sheet.
 const open = defineModel<boolean>({ default: false })
+// Set when the dialog is opened from a "your card was declined" prompt, so the
+// method that comes out of it records why it is on the other rail.
+const props = withDefaults(defineProps<{ afterDecline?: boolean }>(), {
+	afterDecline: false,
+})
 const emit = defineEmits<{ done: [res?: unknown] }>()
 const { activeTeam } = useSession()
 
@@ -57,7 +62,7 @@ async function launchGateway(
 ): Promise<void> {
 	open.value = false
 	await nextTick()
-	const res = await run(methodType, contact, instrument)
+	const res = await run(methodType, contact, instrument, props.afterDecline)
 	if (!res) open.value = true
 }
 
