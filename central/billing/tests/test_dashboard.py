@@ -924,8 +924,12 @@ class TestPaymentMethodOptions(IntegrationTestCase):
 
 	def test_a_card_stripe_will_not_mandate_is_registered_on_razorpay(self):
 		from central.billing.api.dashboard import methods
+		from central.billing.tests.test_mandates import stub_adapter
 
-		out = methods.setup_payment_method_order(self.TEAM, instrument="Other Network Card")
+		# The registration itself is a gateway round-trip, and a test must never make
+		# one: the fixture's keys are dummies, so a real call authenticates as nobody.
+		with stub_adapter():
+			out = methods.setup_payment_method_order(self.TEAM, instrument="Other Network Card")
 		method = frappe.get_doc("Payment Method", out["payment_method"])
 		self.assertEqual(method.gateway, "Razorpay")
 		self.assertEqual(method.fallback_reason, "Network Unsupported")
