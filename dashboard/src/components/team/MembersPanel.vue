@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Badge, Button, TabButtons, useCall } from 'frappe-ui'
+import { Avatar, Badge, Button, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import {
@@ -8,9 +8,6 @@ import {
 	type ListViewColumn,
 	type ListViewFilter,
 } from '@/components/common/list-view'
-import RightSidebar from '@/components/common/RightSidebar.vue'
-
-import CapabilityList from '@/components/team/CapabilityList.vue'
 import InvitationRowActions from '@/components/team/InvitationRowActions.vue'
 import InviteMemberDialog from '@/components/team/InviteMemberDialog.vue'
 import ManageRolesDialog from '@/components/team/ManageRolesDialog.vue'
@@ -22,27 +19,16 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useTeamInvitations } from '@/composables/useTeamInvitations'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
-import { useTeamRowSelection } from '@/composables/useTeamRowSelection'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 import { teamParams } from '@/composables/useTeamScope'
 import { formatDate } from '@/lib/format'
-import {
-	resourceScopeLabel,
-	resourceTypeIcon,
-	roleOnResourceLabel,
-} from '@/lib/resourceScope'
+import { resourceScopeLabel, roleOnResourceLabel } from '@/lib/resourceScope'
 import type {
 	InvitationRow,
 	TeamMemberRoleAssignment,
 	TeamMemberRow,
 	TeamRegistry,
 } from '@/types/api'
-
-const tab = defineModel<string>('tab', { default: 'team' })
-const tabs = [
-	{ label: 'Team', value: 'team' },
-	{ label: 'Roles', value: 'roles' },
-]
 
 const inviteDialog = ref(false)
 const manageAccessFor = ref<TeamMemberRow | null>(null)
@@ -58,7 +44,7 @@ const {
 	revoke,
 } = useTeamInvitations()
 
-const { roles, capabilities, capsByRole, roleLabel } = useTeamRoles()
+const { roles, roleLabel } = useTeamRoles()
 const { canManageMembers } = useCapabilities()
 const { isOwner } = useTeamSettings()
 
@@ -132,18 +118,6 @@ const query = ref(
 )
 
 const getRowKey = (row: RosterRow): string => row.key
-const getMemberKey = (member: TeamMemberRow): string => member.user
-
-const { selected, select, clear } = useTeamRowSelection(members, getMemberKey)
-
-const selectedRoleCaps = computed(() => {
-	if (!selected.value) return []
-	const caps = new Set<string>()
-	for (const grant of selected.value.roles) {
-		for (const cap of capsByRole.value[grant.role] ?? []) caps.add(cap)
-	}
-	return [...caps]
-})
 
 // Owner first, then Admins, then everyone else — and people who haven't joined
 // yet after all of them.
@@ -229,10 +203,13 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 			description: 'Invite someone to share access to this team\'s resources.',
 		}"
 		@retry="reload"
-		@row-click="(row: RosterRow) => row.member && select(row.member)"
 	>
+		<!-- The page's view switcher rides on the controls row, ahead of search. -->
+		<template #controls-start>
+			<slot name="controls-start" />
+		</template>
+
 		<template #toolbar>
-			<TabButtons :options="tabs" v-model="tab" />
 			<Button
 				v-if="canManageMembers"
 				variant="solid"
@@ -310,57 +287,6 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 		</template>
 	</ListView>
 
-	<RightSidebar
-		:open="!!selected"
-		:title="selected?.full_name"
-		:subtitle="selected?.user"
-		@close="clear"
-	>
-		<div v-if="selected" class="flex flex-col gap-6">
-			<section class="flex flex-col gap-3">
-				<div class="flex items-center justify-between gap-2">
-					<h3 class="text-sm font-medium text-ink-gray-9">Access</h3>
-					<Button
-						v-if="canManageMembers && !selected.is_owner"
-						variant="subtle"
-						label="Edit"
-						icon-left="lucide-shield"
-						@click="manageAccessFor = selected"
-					/>
-				</div>
-
-				<ul v-if="selected.roles.length" class="flex flex-col gap-2">
-					<li
-						v-for="grant in selected.roles"
-						:key="`${grant.role}::${grant.resource_type}::${grant.resource_name}`"
-						class="flex items-start gap-3 rounded-md bg-surface-gray-1 px-3 py-2.5"
-					>
-						<span
-							:class="[
-								resourceTypeIcon(grant.resource_type),
-								'mt-0.5 size-4 shrink-0 text-ink-gray-5',
-							]"
-							aria-hidden="true"
-						/>
-						<div class="min-w-0">
-							<p class="truncate text-sm font-medium text-ink-gray-9">
-								{{ roleLabel(grant.role) }}
-							</p>
-							<p class="truncate text-p-sm text-ink-gray-5">
-								{{ resourceScopeLabel(grant, registry) }}
-							</p>
-						</div>
-					</li>
-				</ul>
-				<p v-else class="text-p-sm text-ink-gray-5">No role grants yet.</p>
-			</section>
-
-			<section>
-				<h3 class="mb-3 text-sm font-medium text-ink-gray-9">Capabilities</h3>
-				<CapabilityList :caps="selectedRoleCaps" :palette="capabilities" />
-			</section>
-		</div>
-	</RightSidebar>
 
 	<!-- A fresh invite has to land in the roster right away — that's the point. -->
 	<InviteMemberDialog v-model:open="inviteDialog" @invited="reloadInvites" />

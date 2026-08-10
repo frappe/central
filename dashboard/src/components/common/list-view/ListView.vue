@@ -416,13 +416,16 @@ const showListControls = computed(
 <template>
 	<section class="min-w-0">
 		<div
-			v-if="showListControls || $slots.toolbar"
+			v-if="showListControls || $slots.toolbar || $slots['controls-start']"
 			class="flex flex-wrap items-center justify-between gap-3 pb-3"
 		>
 			<div
-				v-if="showListControls"
+				v-if="showListControls || $slots['controls-start']"
 				class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
 			>
+				<!-- Page-owned controls ahead of search — e.g. a view switcher that
+				     belongs on the same row as the list's own controls. -->
+				<slot name="controls-start" />
 				<TextInput
 					v-if="searchable"
 					:model-value="query.search"

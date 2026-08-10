@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button, TabButtons } from 'frappe-ui'
+import { Avatar, Button } from 'frappe-ui'
 import { computed, ref } from 'vue'
 
 import {
@@ -17,12 +17,6 @@ import { useTeamRoles } from '@/composables/useTeamRoles'
 import { useTeamRowSelection } from '@/composables/useTeamRowSelection'
 import { roleDisplay } from '@/lib/roles'
 import type { TeamMemberRow, TeamRoleRow } from '@/types/api'
-
-const tab = defineModel<string>('tab', { default: 'roles' })
-const tabs = [
-	{ label: 'Team', value: 'team' },
-	{ label: 'Roles', value: 'roles' },
-]
 
 const newRoleDialog = ref(false)
 const { roles, loading, error, reload, deleteRole } = useTeamRoles()
@@ -108,8 +102,12 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 		@retry="reload"
 		@row-click="select"
 	>
+		<!-- The page's view switcher rides on the controls row, ahead of search. -->
+		<template #controls-start>
+			<slot name="controls-start" />
+		</template>
+
 		<template #toolbar>
-			<TabButtons :options="tabs" v-model="tab" />
 			<Button
 				v-if="canManageMembers"
 				variant="subtle"

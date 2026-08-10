@@ -7,8 +7,6 @@ import { useSession } from '@/composables/useSession'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import { teamParams } from '@/composables/useTeamScope'
 import { errorToast, successToast } from '@/lib/toast'
-import { teamParams } from '@/composables/useTeamScope'
-import { errorToast, successToast } from '@/lib/toast'
 import type { ResourceType, TeamRegistry } from '@/types/api'
 
 // Invite a person with a role scoped to all resources or a specific server or
@@ -111,7 +109,7 @@ function parseResource(key: string): {
 
 const dialogOptions = computed(() => ({
 	title: 'Invite member',
-	size: 'xl' as const,
+	size: 'lg' as const,
 	actions: [
 		{
 			label: 'Send invite',
