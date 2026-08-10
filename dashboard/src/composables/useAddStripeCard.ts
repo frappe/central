@@ -119,14 +119,14 @@ export function useAddStripeCard({
 			})
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {
-				errorToast("We couldn't verify that card. Please try a different one.")
+				errorToast("Couldn't verify that card. Try a different one")
 				return
 			}
-			successToast('Card added.')
+			successToast('Card added')
 			onDone?.(res)
 			return res
 		} catch (e) {
-			errorToast(e, 'Could not add card.')
+			errorToast(e, 'Could not add card')
 		} finally {
 			submitting.value = false
 		}
