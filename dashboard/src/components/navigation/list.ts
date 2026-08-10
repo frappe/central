@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { openSearch } from '@/composables/useSearch'
+import { features } from '@/lib/features'
 
 type SidebarItem = {
 	label: string
@@ -18,8 +19,14 @@ type SidebarSection = {
 }
 
 export const sidebarSections = computed<SidebarSection[]>(() => {
-	const { canViewServers, canViewBilling, canViewServices, isMember } =
-		useCapabilities()
+	const {
+		canViewServers,
+		canViewBilling,
+		canViewServices,
+		canManageMembers,
+		canEditTeam,
+		isMember,
+	} = useCapabilities()
 
 	return [
 		{
@@ -46,17 +53,34 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewServers.value,
 				},
 				{
-					label: 'Teams',
+					label: 'Addons',
+					icon: 'lucide-blocks',
+					to: '/addons',
+					condition: features.addons && canViewServices.value,
+				},
+			],
+		},
+
+		{
+			label: 'Team',
+			items: [
+				{
+					label: 'Members',
 					icon: 'lucide-users',
 					to: '/team/members',
 					condition: isMember.value,
 				},
-
 				{
-					label: 'Addons',
-					icon: 'lucide-blocks',
-					to: '/addons',
-					condition: canViewServices.value,
+					label: 'Invitations',
+					icon: 'lucide-mail',
+					to: '/team/invitations',
+					condition: canManageMembers.value,
+				},
+				{
+					label: 'Settings',
+					icon: 'lucide-settings',
+					to: '/team/settings',
+					condition: canEditTeam.value,
 				},
 			],
 		},

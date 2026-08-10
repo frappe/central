@@ -113,7 +113,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	// the order server-side (confirm_topup) and credit what PayPal actually took.
 	async function mountPayPal(el: Element): Promise<void> {
 		const o = order
-		if (!o) return
+		if (o?.adapter_key !== 'Paypal') return
 		await mountPayPalButtons(el, o, {
 			onApprove: async (paypalOrderId: string) => {
 				submitting.value = true
@@ -136,9 +136,10 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 
 	// Mount the Stripe card Element for the order begin() created.
 	async function mountCard(el: string | HTMLElement): Promise<void> {
-		if (!order?.publishable_key)
+		const o = order
+		if (o?.adapter_key !== 'Stripe' || !o.publishable_key)
 			throw new Error('Stripe publishable key missing.')
-		stripe = await loadStripe(order.publishable_key)
+		stripe = await loadStripe(o.publishable_key)
 		if (!stripe) throw new Error('Stripe.js failed to load.')
 		card = stripe.elements().create('card', { hidePostalCode: true })
 		card.on('change', (e) => (cardComplete.value = !!e.complete))
@@ -149,7 +150,8 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	// what Stripe actually charged.
 	async function pay(): Promise<unknown> {
 		const o = order
-		if (!stripe || !card || !o?.client_secret) return
+		if (!stripe || !card || o?.adapter_key !== 'Stripe' || !o.client_secret)
+			return
 		submitting.value = true
 		try {
 			const { paymentIntent, error } = await stripe.confirmCardPayment(

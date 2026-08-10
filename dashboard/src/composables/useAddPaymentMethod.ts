@@ -13,7 +13,7 @@ import { useCall } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import { type GatewayOrder, openRazorpayCheckout } from '@/lib/gateway'
+import { openRazorpayCheckout, type RazorpayOrder } from '@/lib/gateway'
 import { errorToast, successToast } from '@/lib/toast'
 
 interface MethodResult {
@@ -27,7 +27,7 @@ export function useAddPaymentMethod({
 	onDone?: (res?: MethodResult) => void
 } = {}) {
 	const { activeTeam } = useSession()
-	const setup = useCall<GatewayOrder, Record<string, unknown>>({
+	const setup = useCall<RazorpayOrder, Record<string, unknown>>({
 		url: method(API.setupPaymentMethodOrder),
 		method: 'POST',
 		immediate: false,

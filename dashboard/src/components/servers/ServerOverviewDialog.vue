@@ -11,10 +11,10 @@ import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import { useRegions } from '@/composables/useRegions'
 import type { AssetRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
+import type { LoadPoint } from '@/lib/loadChart'
+import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getErrorMessage } from '@/lib/toast'
-import type { LoadPoint } from '@/utils/loadChart'
-import { formatPlanLabel } from '@/utils/planLabel'
 
 type Overview = {
 	server: AssetRow & {

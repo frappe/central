@@ -1,7 +1,8 @@
 import type { InvitationStatus } from '@/types/api'
 import type { Asset } from '@/types/Central/Asset'
 
-export type AssetStatus = NonNullable<Asset['status']> | (string & {})
+// The DocType statuses plus Central's own derived display state (see displayStatus).
+export type AssetStatus = NonNullable<Asset['status']> | 'Resizing'
 
 export type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue' | 'violet'
 
@@ -60,15 +61,15 @@ export function invitationStatusTheme(status: InvitationStatus): BadgeTheme {
 	return INVITATION_STATUS_THEME[status] ?? 'gray'
 }
 
-// Invoice status → Badge theme (case-insensitive): Paid green, Open/Unpaid amber,
-// Overdue red, Void/Draft neutral.
+// Invoice status → Badge theme (case-insensitive), keyed by the Invoice DocType's
+// status options: Paid green, Open amber, Overdue red, Draft/Waived/Cancelled neutral.
 const INVOICE_THEME: Record<string, BadgeTheme> = {
 	paid: 'green',
 	open: 'orange',
-	unpaid: 'orange',
 	overdue: 'red',
-	void: 'gray',
 	draft: 'gray',
+	waived: 'gray',
+	cancelled: 'gray',
 }
 
 export function invoiceTheme(status: string | null | undefined): BadgeTheme {

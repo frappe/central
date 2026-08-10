@@ -5,7 +5,7 @@ import { API, method } from '@/api/methods'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PaymentMethodRowActions from '@/components/billing/PaymentMethodRowActions.vue'
-import RemovePaymentMethodDialog from '@/components/billing/RemovePaymentMethodDialog.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
@@ -212,8 +212,12 @@ function onAdd(): void {
 			</template>
 		</EmptyState>
 
-		<RemovePaymentMethodDialog
-			v-model:method="pendingRemove"
+		<ConfirmDialog
+			v-model:target="pendingRemove"
+			title="Remove payment method"
+			:message="`Remove ${pendingRemove?.display_label || pendingRemove?.name || ''}? Invoices will fall back to your other methods, if any.`"
+			confirm-label="Remove"
+			theme="red"
 			:loading="busy === pendingRemove?.name"
 			@confirm="confirmRemove"
 		/>

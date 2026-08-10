@@ -2,7 +2,7 @@ import { useCall } from 'frappe-ui'
 import { computed, type MaybeRefOrGetter, toValue } from 'vue'
 import { method } from '@/api/methods'
 import type { ListViewQuery } from '@/components/common/list-view'
-import { useFrappeListInvalidation } from '@/composables/common/useFrappeRealtime'
+import { useFrappeListInvalidation } from '@/composables/useFrappeRealtime'
 import { isAbortError } from '@/lib/toast'
 
 type FilterValue = string | number | boolean | null

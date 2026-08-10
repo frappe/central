@@ -104,13 +104,15 @@ export interface CreditLedgerEntry {
 	reference_name: string | null
 }
 
+// Mirrors the Invoice DocType's status Select options — keep in sync with
+// central/billing/doctype/invoice/invoice.json.
 export type InvoiceStatus =
 	| 'Draft'
-	| 'Unpaid'
+	| 'Open'
 	| 'Paid'
 	| 'Overdue'
-	| 'Void'
-	| (string & {})
+	| 'Waived'
+	| 'Cancelled'
 
 /** list_invoices row — summary only. */
 export interface InvoiceSummary {

@@ -1,16 +1,8 @@
 import { useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
-import { createListViewQuery } from '@/components/common/list-view'
-import { useFrappeList } from '@/composables/common/useFrappeList'
 import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
-import {
-	errorToast,
-	getErrorMessage,
-	isAbortError,
-	successToast,
-} from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 import type { RefreshResponse } from '@/types/api'
 import type { Asset } from '@/types/Central/Asset'
 
@@ -37,10 +29,10 @@ export type AssetRow = Pick<
 	| 'last_synced_at'
 >
 
-// The team's servers, read from the Asset DocType through Frappe reportview, plus
-// the lifecycle command path. The mirror is kept fresh by Atlas's event push +
-// the reconcile pull, so a command's effect lands on the next refresh, not
-// synchronously — hence every action `reload()`s after it fires.
+// The server lifecycle command path (create / power / terminate / open-in-bench /
+// mirror refresh). The fleet *list* is read separately through useServerMapData;
+// callers reload that after a command, since a command's effect lands on the next
+// mirror refresh (Atlas event push + reconcile pull), not synchronously.
 
 const { activeTeam } = useSession()
 
@@ -48,42 +40,7 @@ const { activeTeam } = useSession()
 type TeamParams = { team: string }
 type CommandParams = { team: string; resource_id: string }
 
-const query = ref(
-	createListViewQuery({
-		pageSize: 20,
-		sort: { key: 'cluster', direction: 'asc' },
-	}),
-)
-
-const registry = useFrappeList<AssetRow>({
-	doctype: 'Asset',
-	fields: [
-		'name',
-		'resource_id',
-		'title',
-		'cluster',
-		'status',
-		'plan',
-		'frappe_version',
-		'vcpus',
-		'memory_megabytes',
-		'disk_gigabytes',
-		'ipv6_address',
-		'public_ipv4',
-		'gateway_url',
-		'resize_in_progress',
-		'last_synced_at',
-	],
-	query,
-	filters: () => [['team', '=', activeTeam.value]],
-	searchFields: ['title', 'resource_id', 'cluster', 'status'],
-	sortableFields: ['title', 'cluster', 'status', 'resource_id'],
-	defaultOrderBy: 'cluster asc, resource_id asc',
-})
-
-whenTeamReady(() => registry.reload())
-
-// Re-pulls the mirror from every Active Atlas, then re-reads it.
+// Re-pulls the mirror from every Active Atlas.
 const refresh = useCall<RefreshResponse, TeamParams>({
 	url: method(API.refreshAssets),
 	method: 'POST',
@@ -170,7 +127,6 @@ async function runCommand(
 		})
 		if (call.error) throw call.error
 		successToast(`${verb} requested for ${server.title || server.resource_id}.`)
-		registry.reload()
 	} catch (e) {
 		errorToast(e)
 	} finally {
@@ -179,13 +135,10 @@ async function runCommand(
 }
 
 export function useServers() {
-	registry.listenForUpdates()
-
 	async function refreshAssets(): Promise<void> {
 		try {
 			await refresh.submit({ team: activeTeam.value! })
 			if (refresh.error) throw refresh.error
-			registry.reload()
 		} catch (e) {
 			errorToast(e)
 		}
@@ -233,7 +186,6 @@ export function useServers() {
 			throw createCall.error
 		}
 		successToast(`Creating ${params.title} in ${params.region}.`)
-		registry.reload()
 		return createCall.data?.resource_id ?? ''
 	}
 
@@ -247,21 +199,10 @@ export function useServers() {
 			throw createComposedCall.error
 		}
 		successToast(`Creating ${params.title} in ${params.region}.`)
-		registry.reload()
 		return createComposedCall.data?.resource_id ?? ''
 	}
 
 	return {
-		servers: registry.rows,
-		totalRows: registry.totalRows,
-		countLoading: registry.countLoading,
-		query,
-		loading: registry.loading,
-		error: computed(() => {
-			const e = registry.error.value
-			if (!e || isAbortError(e)) return null
-			return getErrorMessage(e, "Couldn't load servers.")
-		}),
 		refreshing: computed(() => refresh.loading),
 		creating: computed(() => createCall.loading),
 		creatingComposed: computed(() => createComposedCall.loading),
@@ -270,7 +211,6 @@ export function useServers() {
 		stale: computed<string[]>(() => refresh.data?.stale ?? []),
 		busy,
 		opening,
-		reload: () => registry.reload(),
 		refreshAssets,
 		create,
 		createComposed,

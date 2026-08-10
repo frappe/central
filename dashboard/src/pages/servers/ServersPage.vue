@@ -1,23 +1,23 @@
 <script setup lang="ts">
-import { Button, Dialog, Spinner, useCall } from 'frappe-ui'
+import { Button, Spinner, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
 import ServerFilters from '@/components/servers/ServerFilters.vue'
-import type { ResourceRow } from '@/components/servers/ServerListPanel.vue'
 import ServerListPanel from '@/components/servers/ServerListPanel.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import SiteRowActions from '@/components/servers/SiteRowActions.vue'
-import TerminateDialog from '@/components/servers/TerminateDialog.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useFleetRows } from '@/composables/useFleetRows'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
 import type { AssetRow } from '@/composables/useServers'
@@ -28,12 +28,10 @@ import {
 	hasMapCoords,
 	type MapPin,
 	type MapSpot,
+	type ResourceRow,
 	regionLabel,
 	type ServerVisual,
 	STATUS_FILTERS,
-	siteVisual,
-	specLine,
-	statusVisual,
 } from '@/lib/serverMap'
 import { errorToast, successToast } from '@/lib/toast'
 import type { Region } from '@/types/Central/Region'
@@ -109,60 +107,8 @@ const hoverId = ref<string | null>(null)
 const panelOpen = ref(false)
 const mapRef = ref<InstanceType<typeof ServerMap> | null>(null)
 
-const regionsByName = computed(
-	() => new Map(regions.value.map((r) => [r.region, r])),
-)
-
-// — Rows: servers and sites decorated into one shape (ResourceRow). A server or
-//   site whose region is unlisted/unplaced still rows here — it just can't pin.
-const serverRows = computed<ResourceRow[]>(() =>
-	assets.value.map((asset) => {
-		const region = regionsByName.value.get(asset.cluster)
-		return {
-			kind: 'server' as const,
-			id: asset.resource_id,
-			name: asset.title || asset.resource_id,
-			asset,
-			visual: statusVisual(asset),
-			specs: specLine(asset),
-			cluster: asset.cluster,
-			region,
-			regionLabel: region ? regionLabel(region) : asset.cluster,
-			flag: flagEmoji(region?.country_code),
-			provider: region?.provider || null,
-		}
-	}),
-)
-
-const siteRows = computed<ResourceRow[]>(() =>
-	sites.value.map((site) => {
-		const region = site.region
-			? regionsByName.value.get(site.region)
-			: undefined
-		return {
-			kind: 'site' as const,
-			id: site.name,
-			// The user-entered name ("demo.in"); the full FQDN drops to the secondary
-			// line (specs) so a site reads like the VM it is, not a routing string.
-			name: site.subdomain || site.name,
-			visual: siteVisual(site.status),
-			specs: site.name,
-			cluster: site.region ?? '',
-			region,
-			regionLabel: region ? regionLabel(region) : (site.region ?? ''),
-			flag: flagEmoji(region?.country_code),
-			provider: region?.provider ?? null,
-			site: { name: site.name, url: site.url },
-		}
-	}),
-)
-
-// One list, sorted by name — no servers-then-sites tell; a site is just another VM.
-const rows = computed<ResourceRow[]>(() =>
-	[...serverRows.value, ...siteRows.value].sort((a, b) =>
-		a.name.localeCompare(b.name),
-	),
-)
+// Servers and sites decorated into one sorted ResourceRow list (useFleetRows).
+const { rows } = useFleetRows(assets, sites, regions)
 
 // — Filters. Status and region scope the map and the panel; search only
 //   narrows the panel rows.
@@ -411,12 +357,6 @@ async function openSite(name: string): Promise<void> {
 	}
 }
 const pendingSiteTerminate = ref<{ name: string } | null>(null)
-const siteTerminateOpen = computed({
-	get: () => !!pendingSiteTerminate.value,
-	set: (isOpen: boolean) => {
-		if (!isOpen) pendingSiteTerminate.value = null
-	},
-})
 async function confirmSiteTerminate(): Promise<void> {
 	const name = pendingSiteTerminate.value?.name
 	pendingSiteTerminate.value = null
@@ -582,25 +522,29 @@ async function confirmSiteTerminate(): Promise<void> {
 			/>
 		</div>
 
-		<TerminateDialog
-			v-model:server="pendingTerminate"
+		<ConfirmDialog
+			v-model:target="pendingTerminate"
+			title="Terminate server"
+			confirm-label="Yes, terminate"
+			theme="red"
 			:loading="busy === pendingTerminate?.resource_id"
 			@confirm="confirmTerminate"
-		/>
+		>
+			<p class="text-p-base text-ink-gray-7">
+				Permanently destroy
+				<span class="font-semibold text-ink-gray-9"
+					>{{ pendingTerminate?.title || pendingTerminate?.resource_id }}</span
+				>? This can't be undone.
+			</p>
+		</ConfirmDialog>
 
-		<Dialog
-			v-model="siteTerminateOpen"
+		<ConfirmDialog
+			v-model:target="pendingSiteTerminate"
 			title="Terminate site"
-			size="sm"
-			:actions="[
-			{
-		label: 'Yes, terminate',
-		variant: 'solid',
-		theme: 'red',
-		loading: terminateSiteCall.loading,
-		onClick: confirmSiteTerminate,
-	},
-]"
+			confirm-label="Yes, terminate"
+			theme="red"
+			:loading="terminateSiteCall.loading"
+			@confirm="confirmSiteTerminate"
 		>
 			<p class="text-p-base text-ink-gray-7">
 				Terminate
@@ -609,7 +553,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				>? This permanently deletes the site and its backing VM. This can't be
 				undone.
 			</p>
-		</Dialog>
+		</ConfirmDialog>
 
 		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
 		<ServerOverviewDialog

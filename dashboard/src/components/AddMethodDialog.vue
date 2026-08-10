@@ -4,11 +4,12 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
 import { useAddStripeCard } from '@/composables/useAddStripeCard'
+import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
 import { errorToast } from '@/lib/toast'
-import type { BillingProfile, PaymentMethodOptions } from '@/types/billing'
+import type { PaymentMethodOptions } from '@/types/billing'
 
 // Pick a method to add, resolved from the team's billing currency. UPI Autopay is
 // offered only when eligible (recurring-limit/trust gate from the backend). Stripe
@@ -24,15 +25,11 @@ const options = useCall<PaymentMethodOptions, { team: string }>({
 	immediate: false,
 	refetch: true,
 })
-const profile = useCall<BillingProfile, { team: string }>({
-	url: method(API.billingProfile),
-	params,
-	immediate: false,
-	refetch: true,
-})
+// The billing profile is the shared singleton — cardNeedsPhone only reads its
+// phone; no need for a second fetch of the same payload.
+const { profile } = useBillingOverview()
 whenTeamReady(() => {
 	options.reload()
-	profile.reload()
 })
 
 function done(res?: unknown): void {

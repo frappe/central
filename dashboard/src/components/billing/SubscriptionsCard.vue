@@ -3,8 +3,8 @@ import { Badge, useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
-import PauseBillingDialog from '@/components/billing/PauseBillingDialog.vue'
 import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -191,8 +191,11 @@ function onOpen(sub: SubscriptionRow): void {
 			description="Your active server plans will appear here."
 		/>
 
-		<PauseBillingDialog
-			v-model:subscription="pendingPause"
+		<ConfirmDialog
+			v-model:target="pendingPause"
+			title="Pause billing"
+			:message="`Pause billing for ${pendingPause?.server || pendingPause?.plan_title || pendingPause?.name || ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
+			confirm-label="Pause billing"
 			:loading="busy === pendingPause?.name"
 			@confirm="confirmPause"
 		/>

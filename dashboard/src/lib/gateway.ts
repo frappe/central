@@ -6,16 +6,25 @@
 // adapter_key plus gateway handles; this opens the matching sheet. Webhook-truth
 // still applies: the caller confirms server-side after this resolves.
 
-/** A gateway order/handle bundle the backend returns from create_topup_order,
- *  setup_payment_method_order, initiate_card_setup, or pay_invoice_checkout.
- *  Fields are rail-specific — only the ones for the chosen adapter are present. */
-export interface GatewayOrder {
-	adapter_key?: 'Stripe' | 'Razorpay' | 'Paypal' | (string & {})
+// A gateway order/handle bundle the backend returns from create_topup_order,
+// setup_payment_method_order, initiate_card_setup, or pay_invoice_checkout. The
+// `adapter_key` discriminates the rail, so a consumer that narrows on it sees only
+// that rail's handles — never a Stripe field on a Razorpay order.
+
+/** Fields every rail's order carries (amount/currency + setup/settlement bookkeeping). */
+interface GatewayOrderBase {
 	gateway?: string
 	amount?: number
 	currency?: string
 	display_paypal?: boolean
-	// Razorpay
+	payment_method?: string
+	attempt?: string
+	created?: boolean
+}
+
+/** Razorpay hosted-sheet order (Checkout). */
+export interface RazorpayOrder extends GatewayOrderBase {
+	adapter_key: 'Razorpay'
 	key_id?: string
 	key?: string
 	razorpay_key?: string
@@ -26,16 +35,23 @@ export interface GatewayOrder {
 	customer_id?: string
 	recurring?: number
 	prefill?: { name?: string; email?: string; contact?: string }
-	// Stripe
+}
+
+/** Stripe in-app card order (PaymentIntent + Elements). */
+export interface StripeOrder extends GatewayOrderBase {
+	adapter_key: 'Stripe'
 	publishable_key?: string | null
 	client_secret?: string
-	// PayPal
-	client_id?: string
-	// Setup / settlement bookkeeping
-	payment_method?: string
-	attempt?: string
-	created?: boolean
 }
+
+/** PayPal directly-settled order (Buttons, ADR 0007). */
+export interface PaypalOrder extends GatewayOrderBase {
+	adapter_key: 'Paypal'
+	client_id?: string
+	order_id?: string
+}
+
+export type GatewayOrder = RazorpayOrder | StripeOrder | PaypalOrder
 
 /** Payment handles a hosted sheet returns, verified server-side on confirm. */
 export interface RazorpayHandles {
@@ -83,7 +99,7 @@ function loadScript(src: string): Promise<void> {
 // `displayPayPal` surfaces PayPal inside the sheet (a Via-Razorpay PayPal top-up,
 // ADR 0005): PayPal is collected as a method here and settles through Razorpay.
 export async function openRazorpayCheckout(
-	order: GatewayOrder,
+	order: RazorpayOrder,
 	{
 		name = 'Central',
 		description = '',
@@ -144,7 +160,7 @@ export async function openRazorpayCheckout(
 // approval the caller captures it server-side (confirm_topup) for webhook-truth.
 export async function mountPayPalButtons(
 	el: Element,
-	order: GatewayOrder,
+	order: PaypalOrder,
 	{ onApprove, onError }: PayPalCallbacks = {},
 ): Promise<unknown> {
 	if (!order?.client_id) throw new Error('PayPal client id missing.')

@@ -1,4 +1,5 @@
 import type { AssetRow } from '@/composables/useServers'
+import { formatMemory } from '@/lib/format'
 import { displayStatus, isResizing } from '@/lib/status'
 import type { Region } from '@/types/Region'
 
@@ -91,12 +92,6 @@ export const STATUS_FILTERS: ServerVisual[] = [
 	VISUALS.broken,
 ]
 
-function formatMemory(megabytes: number): string {
-	if (megabytes < 1024) return `${megabytes} MB`
-	const gigabytes = megabytes / 1024
-	return `${Number.isInteger(gigabytes) ? gigabytes : gigabytes.toFixed(1)} GB`
-}
-
 /** "4 vCPU, 8 GB RAM, 75 GB Disk" from the mirror's raw size fields. */
 export function specLine(server: AssetRow): string {
 	const parts: string[] = []
@@ -173,6 +168,24 @@ export interface MapPin {
 	/** The raw asset row, for the server actions menu the page wires in. */
 	server?: AssetRow
 	// — Site-only (undefined on server pins) —
+	site?: { name: string; url: string | null }
+}
+
+/** A server or site decorated into one list/map shape. A site is a 1:1-backed VM,
+ *  so it wears the same provider avatar and lists in the same sorted stream as a
+ *  server; only its `asset`/`site` payload and ⋯ actions differ. */
+export interface ResourceRow {
+	kind: 'server' | 'site'
+	id: string
+	name: string
+	visual: ServerVisual
+	specs: string
+	cluster: string
+	region: Region | undefined
+	regionLabel: string
+	flag: string
+	provider: string | null
+	asset?: AssetRow
 	site?: { name: string; url: string | null }
 }
 

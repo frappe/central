@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import UsageMeter from '@/components/servers/overview/UsageMeter.vue'
-import { formatBytes, usagePercent } from '@/utils/bytes'
+import { formatBytes, usagePercent } from '@/lib/bytes'
 
 const props = defineProps<{
 	available: boolean

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Button, Dropdown } from 'frappe-ui'
 import { computed } from 'vue'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { AssetRow } from '@/composables/useServers'
 import {
 	canStart,
@@ -97,14 +97,9 @@ const options = computed(() => {
 </script>
 
 <template>
-	<Dropdown v-if="options.length" :options="options" placement="right">
-		<template #trigger>
-			<Button
-				variant="ghost"
-				icon="lucide-ellipsis-vertical"
-				:loading="busy || opening"
-				aria-label="Server actions"
-			/>
-		</template>
-	</Dropdown>
+	<RowActionsMenu
+		:options="options"
+		label="Server actions"
+		:busy="busy || opening"
+	/>
 </template>

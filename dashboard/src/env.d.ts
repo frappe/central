@@ -17,4 +17,5 @@ interface Window {
 	site_name?: string
 	socketio_port?: number
 	onboarding_complete?: boolean
+	features?: { addons?: boolean }
 }
