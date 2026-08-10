@@ -2,6 +2,7 @@
 import { Avatar, Button, Dialog, FormControl, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import Alert from '@/components/common/Alert.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
@@ -162,16 +163,11 @@ const dialogOptions = computed(() => ({
 					Assign roles to specific servers or sites, or to all resources.
 				</p>
 
-				<div
+				<Alert
 					v-if="dominatingIndex !== -1"
-					class="flex items-start gap-2 rounded-md border border-outline-gray-2 bg-surface-gray-1 p-3 text-p-sm text-ink-gray-6"
-				>
-					<span class="lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true" />
-					<span
-						>Admin already covers everything, so the roles below stay inactive
-						until you remove it.</span
-					>
-				</div>
+					theme="blue"
+					title="Admin already covers everything"
+				/>
 
 				<div class="space-y-2">
 					<div
@@ -198,7 +194,7 @@ const dialogOptions = computed(() => ({
 						<Button
 							variant="ghost"
 							icon="lucide-x"
-							aria-label="Remove role"
+							label="Remove role"
 							@click="removeRow(index)"
 						/>
 					</div>

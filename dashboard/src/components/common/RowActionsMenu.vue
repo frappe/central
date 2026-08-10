@@ -26,7 +26,10 @@ withDefaults(
 <template>
 	<Dropdown v-if="options.length" :options="options" :placement="placement">
 		<template #trigger>
+			<!-- Inset focus ring: list cells clip horizontally, so an outside
+			     focus outline gets sliced at the cell edge. -->
 			<Button
+				class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outline-gray-4"
 				variant="ghost"
 				:icon="icon"
 				:loading="busy"
