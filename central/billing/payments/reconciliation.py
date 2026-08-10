@@ -55,6 +55,13 @@ def reconcile_attempt(attempt_name: str, now=None) -> dict:
 	if attempt.status not in _AMBIGUOUS:
 		return {"attempt": attempt_name, "skipped": "already_terminal"}
 
+	# A charge the gateway said it would hold is not a charge nobody answered for.
+	# Stripe's India pre-debit window runs 26 hours by design, which is well past the
+	# point this job would otherwise call it stuck and wake someone up (ADR 0023).
+	now_dt = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
+	if attempt.gateway_hold_until and now_dt < frappe.utils.get_datetime(attempt.gateway_hold_until):
+		return {"attempt": attempt_name, "skipped": "gateway_hold", "until": str(attempt.gateway_hold_until)}
+
 	if not attempt.gateway_transaction_id:
 		return _resolve_unanswered(attempt, now)
 

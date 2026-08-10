@@ -27,11 +27,16 @@ def header_value(headers: dict, name: str):
 @dataclass
 class PaymentResult:
 	success: bool
-	status: str  # captured / authorised / failed
+	status: str  # captured / authorised / processing / failed
 	gateway_transaction_id: str | None = None
 	failure_code: str | None = None
 	decline_code: str | None = None  # granular decline reason (Stripe decline_code)
 	failure_reason: str | None = None
+	# When the gateway is deliberately holding the charge rather than failing it —
+	# Stripe's India pre-debit window, where the bank notifies the customer and the
+	# intent sits in `processing` for 26 hours. Until then there is nothing to
+	# reconcile and nothing to retry (ADR 0023).
+	hold_until: str | None = None
 	raw: dict = field(default_factory=dict)
 
 

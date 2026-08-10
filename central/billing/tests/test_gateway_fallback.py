@@ -104,3 +104,79 @@ class TestTheOffer(IntegrationTestCase):
 		frappe.db.set_single_value("Billing Settings", "enable_gateway_fallback", 0)
 		inv = self._invoice_with_attempt()
 		self.assertIsNone(invoices.get_fallback_offer(inv)["offer"])
+
+
+class TestMandateFailuresAreNotCardDeclines(IntegrationTestCase):
+	"""Stripe's India mandate errors mean the standing permission is gone, not that
+	the card is bad (ADR 0023)."""
+
+	def test_the_mandate_codes_are_recognised(self):
+		self.assertTrue(decline.is_mandate_failure("payment_intent_mandate_invalid"))
+		self.assertTrue(decline.is_mandate_failure("india_recurring_payment_mandate_canceled"))
+		self.assertTrue(decline.is_mandate_failure("transaction_not_approved"))
+		self.assertFalse(decline.is_mandate_failure("card_declined"))
+
+	def test_a_mandate_failure_is_final_for_that_method(self):
+		"""Retrying the same method cannot work, so it must not read as ambiguous."""
+		self.assertTrue(decline.is_terminal("india_recurring_payment_mandate_canceled"))
+
+
+class TestTheGatewaysOwnHold(IntegrationTestCase):
+	"""Stripe holds an India mandate charge in `processing` for 26 hours by design.
+	It has not failed, and it is not stuck."""
+
+	def test_reconciliation_leaves_a_held_attempt_alone(self):
+		from central.billing.payments import reconciliation
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		make_stripe_gateway(currencies=(("USD", 1), ("INR", 0)))
+		ensure_team(TEAM)
+		complete_billing_profile(TEAM)
+		invoice = (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": "Billable",
+					"status": "Open",
+					"period_start": "2026-06-01",
+					"period_end": "2026-06-30",
+					"currency": "INR",
+					"subtotal": 5000,
+					"total": 5000,
+					"expected_collection": 5000,
+					"items": [{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}],
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+		attempt = frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": TEAM,
+				"gateway": "Stripe",
+				"amount": 5000,
+				"currency": "INR",
+				"status": "Initiated",
+				"initiated_at": "2026-06-10 09:00:00",
+				"gateway_transaction_id": "pi_held",
+				"gateway_hold_until": "2026-06-11 11:00:00",
+			}
+		).insert(ignore_permissions=True)
+		out = reconciliation.reconcile_attempt(attempt.name, now="2026-06-11 09:00:00")
+		self.assertEqual(out["skipped"], "gateway_hold")
+
+	def test_the_hold_is_read_off_the_intent_not_a_clock_of_ours(self):
+		from central.billing.gateways.stripe_adapter import _predebit_hold
+
+		intent = {
+			"status": "processing",
+			"processing": {
+				"type": "card",
+				"card": {"customer_notification": {"approval_requested": True, "completes_at": 1780000000}},
+			},
+		}
+		self.assertIsNotNone(_predebit_hold(intent))
+		self.assertIsNone(_predebit_hold({"status": "succeeded"}))

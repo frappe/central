@@ -49,6 +49,16 @@ def requires_predebit_notice(gateway: str, currency: str) -> bool:
 	return bool(row and row.requires_predebit_notice)
 
 
+# Gateways that issue the RBI pre-debit notification themselves and hold the debit
+# for their own window. We must not run ours on top of theirs.
+SELF_NOTIFYING_GATEWAYS = ("Stripe",)
+
+
+def self_notifies(gateway: str) -> bool:
+	"""Whether this gateway sends the pre-debit notice and holds the charge itself."""
+	return gateway in SELF_NOTIFYING_GATEWAYS
+
+
 def is_regulated_currency(currency: str) -> bool:
 	"""Currencies whose silent-debit ceiling is set by regulation, not by us."""
 	return currency == "INR"

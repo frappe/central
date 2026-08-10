@@ -76,7 +76,11 @@ class PaymentGateway(Document):
 				continue
 			configured = frappe.utils.flt(row.max_silent_charge)
 			row.max_silent_charge = min(configured, ceiling) if configured else ceiling
-			row.requires_predebit_notice = 1
+			# The flag means *we* owe the notice and the 24h hold. Where the gateway
+			# does it itself — Stripe's India flow notifies on confirm and holds the
+			# intent 26 hours — arming ours on top delays the charge by two days and
+			# tells the customer twice (ADR 0023).
+			row.requires_predebit_notice = 0 if capabilities.self_notifies(self.name) else 1
 
 	def _enforce_default_uniqueness(self):
 		"""At most one enabled gateway may have is_default = True per currency.

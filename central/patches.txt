@@ -123,3 +123,6 @@ central.patches.v0_0.set_inr_silent_ceiling
 # Stripe Auto and E-Mandate named providers, not behaviours, and an Indian Stripe
 # mandate is both at once — they become Auto Charge (ADR 0022).
 central.patches.v0_0.collapse_collection_modes
+# Stripe issues its own pre-debit notice and holds the charge 26 hours, so we must
+# not arm a window on top of it (ADR 0023).
+central.patches.v0_0.stripe_owns_its_predebit_notice

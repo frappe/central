@@ -34,10 +34,26 @@ AMBIGUOUS_CODES = (
 )
 
 
+# The standing permission is gone or was refused at the bank. The card itself may
+# be perfectly good, so these are not declines to hold against it — the method is
+# retired and the customer is asked to authorise again (ADR 0023 §7).
+MANDATE_CODES = (
+	"payment_intent_mandate_invalid",
+	"india_recurring_payment_mandate_canceled",
+	"transaction_not_approved",
+)
+
+
+def is_mandate_failure(failure_code: str | None) -> bool:
+	"""True where the mandate, not the card, is what failed."""
+	return (failure_code or "").lower() in MANDATE_CODES
+
+
 def is_terminal(failure_code: str | None) -> bool:
 	"""True only for a decline we know is final. An unrecognised code is treated as
 	ambiguous, because the safe reading of "we don't know" is "don't charge again"."""
-	return (failure_code or "").lower() in TERMINAL_CODES
+	code = (failure_code or "").lower()
+	return code in TERMINAL_CODES or code in MANDATE_CODES
 
 
 def fallback_enabled() -> bool:

@@ -75,6 +75,24 @@ def _export_shipping(team: str | None) -> dict | None:
 	}
 
 
+def _predebit_hold(intent: dict) -> str | None:
+	"""When an India mandate charge will actually be attempted.
+
+	Confirming the intent is what triggers the bank's pre-debit notification, and
+	Stripe then holds it in `processing` for 26 hours (its own buffer over the RBI's
+	24) before taking the money. That is a deliberate wait, not a stuck charge, so
+	the deadline comes from the intent rather than from a clock of ours.
+	"""
+	if intent.get("status") != "processing":
+		return None
+	processing = intent.get("processing") or {}
+	notification = (processing.get("card") or {}).get("customer_notification") or {}
+	completes_at = notification.get("completes_at")
+	if not completes_at:
+		return None
+	return str(frappe.utils.get_datetime_str(frappe.utils.datetime.datetime.fromtimestamp(completes_at)))
+
+
 def _to_dict(obj) -> dict:
 	"""Normalise a Stripe response to a plain dict. A StripeObject (stripe v15)
 	is not a dict and exposes neither `.get()` nor direct `dict()` conversion,
@@ -257,6 +275,7 @@ class StripeAdapter(GatewayAdapter):
 			success=succeeded,
 			status="Captured" if succeeded else intent.get("status"),
 			gateway_transaction_id=intent.get("id"),
+			hold_until=_predebit_hold(intent),
 			raw=intent,
 		)
 
