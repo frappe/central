@@ -2,7 +2,7 @@ import { computed, h, ref } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 
-const changeTeamOpen = ref(false)
+const switchTeamOpen = ref(false)
 
 const themeOptions = [
 	{ label: 'Light', icon: 'lucide-sun', value: 'light' },
@@ -21,10 +21,10 @@ export const useAppMenu = () => {
 
 	const headerMenuItems = computed(() => [
 		{
-			label: 'Change team',
+			label: 'Switch team',
 			icon: 'lucide-repeat',
 			onClick: () => {
-				changeTeamOpen.value = true
+				switchTeamOpen.value = true
 			},
 		},
 		{
@@ -51,7 +51,7 @@ export const useAppMenu = () => {
 	]
 
 	return {
-		changeTeamOpen,
+		switchTeamOpen,
 		themeOptions,
 		headerMenuItems,
 		footerMenuItems,

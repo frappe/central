@@ -11,7 +11,7 @@ import {
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
-import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
+import SwitchTeamDialog from '@/components/team/SwitchTeamDialog.vue'
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -41,7 +41,7 @@ watch(searchOpen, (isOpen) => {
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
-const { changeTeamOpen } = useAppMenu()
+const { switchTeamOpen } = useAppMenu()
 
 const mobileNavDrawer = ref(false)
 watch(
@@ -119,6 +119,6 @@ const breadcrumbs = computed(
 	</DesktopShell>
 
 	<ToastProvider />
-	<ChangeTeamDialog v-model:open="changeTeamOpen" />
+	<SwitchTeamDialog v-model:open="switchTeamOpen" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
 </template>
