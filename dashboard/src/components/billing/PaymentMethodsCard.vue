@@ -20,8 +20,13 @@ import type { CollectionStatus, PaymentMethod } from '@/types/billing'
 // separate chooser above the thing it governs.
 //
 // Credits lead by default because a new team is granted some, and while they last
-// they are what pays the bill. When they run out the customer picks what takes
-// over — the balance they top up, or a method we debit.
+// they are what pays the bill. They also pay what they can when they are short —
+// the remainder is charged to a saved method, or left for the customer to settle
+// if nothing is saved.
+//
+// Everything below the first entry exists for one reason: a card that fails should
+// not end in suspension. That is what the fallback order buys, and it is why the
+// list is worth having to a team that only ever uses one card.
 //
 // Prepaid credits are the first entry because the engine spends them before it
 // charges anything (the credits waterfall, credits.md). Choosing credits as the
@@ -294,7 +299,10 @@ function onAdd(): void {
 				v-if="!ordered.length"
 				class="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-p-sm text-ink-gray-5"
 			>
-				<span>Add a card or UPI Autopay to cover what credits don't.</span>
+				<span>
+					Credits pay what they can; the rest is yours to settle. Save a card or
+					UPI Autopay and we'll charge it instead.
+				</span>
 				<button
 					v-if="canManageBilling"
 					type="button"
@@ -304,12 +312,12 @@ function onAdd(): void {
 					Add one
 				</button>
 			</p>
-			<p
-				v-else-if="ordered.length > 1"
-				class="mt-3 text-p-sm text-ink-gray-5"
-			>
-				If the one charged first can't cover the invoice, we try the next, in
-				this order.
+			<p v-else class="mt-3 text-p-sm text-ink-gray-5">
+				{{
+					ordered.length > 1
+						? "If a charge fails we try the next one, so a single dead card doesn't end in suspension."
+						: 'Add a second card so a failed charge has somewhere to go before suspension.'
+				}}
 			</p>
 		</template>
 
