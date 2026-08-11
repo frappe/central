@@ -40,6 +40,8 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 			"reauth_required",
 			"expiry_month",
 			"expiry_year",
+			"mandate_max_amount",
+			"mandate_currency",
 		],
 		order_by="priority asc, creation asc",
 	)

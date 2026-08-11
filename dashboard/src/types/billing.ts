@@ -204,6 +204,9 @@ export interface PaymentMethod {
 	reauth_required: boolean | number
 	expiry_month: number | null
 	expiry_year: number | null
+	/** Mandate ceiling — what the bank will let us debit in one go. */
+	mandate_max_amount?: number | null
+	mandate_currency?: string | null
 }
 
 /** get_payment_method_options — what the team may add, resolved from its currency. */
