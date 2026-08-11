@@ -190,28 +190,24 @@ function onAdd(): void {
 		title="Payment methods"
 		title-info="Credits are spent first while you have them. Choose which method is charged once they run out."
 	>
-		<template #action>
+		<template v-if="canManageBilling" #action>
 			<Button
-				v-if="canManageBilling"
-				variant="ghost"
 				size="xs"
-				icon="lucide-plus"
-				:label="ordered.length ? 'Add backup method' : 'Add payment method'"
+				:label="ordered.length ? 'Add method' : 'Add payment method'"
+				icon-left="lucide-plus"
 				@click="onAdd"
 			/>
 		</template>
 
 		<div v-if="loading" class="space-y-3 py-1">
 			<div v-for="i in 2" :key="i" class="flex items-center gap-3">
-				<span
-					class="size-8 shrink-0 animate-pulse rounded-md bg-surface-gray-2"
-				/>
+				<span class="size-4 shrink-0 animate-pulse rounded bg-surface-gray-2" />
 				<div class="flex-1 space-y-1.5">
 					<span
-						class="block h-3.5 w-32 animate-pulse rounded bg-surface-gray-2"
+						class="block h-3.5 w-40 animate-pulse rounded bg-surface-gray-2"
 					/>
 					<span
-						class="block h-3 w-24 animate-pulse rounded bg-surface-gray-2"
+						class="block h-3 w-28 animate-pulse rounded bg-surface-gray-2"
 					/>
 				</div>
 			</div>
@@ -219,92 +215,88 @@ function onAdd(): void {
 
 		<template v-else>
 			<div class="divide-y divide-outline-gray-1">
-				<div class="flex items-center gap-3 py-2.5">
-					<span
-						class="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-gray-2 text-ink-gray-6"
-					>
-						<span class="lucide-wallet size-4" aria-hidden="true" />
-					</span>
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-sm font-medium text-ink-gray-9">
-							Prepaid credits
-						</p>
-						<p class="truncate text-p-sm text-ink-gray-5">
-							Balance {{ money(balance, currency) }}
-						</p>
+				<div class="flex items-center justify-between gap-3 py-3">
+					<div class="flex min-w-0 items-start gap-2.5">
+						<span
+							class="lucide-wallet mt-0.5 size-4 shrink-0 text-ink-gray-5"
+							aria-hidden="true"
+						/>
+						<div class="min-w-0">
+							<span class="truncate text-sm font-medium text-ink-gray-9">
+								Prepaid credits
+							</span>
+							<div class="truncate text-p-sm text-ink-gray-5">
+								Balance {{ money(balance, currency) }}
+							</div>
+						</div>
 					</div>
-					<Badge
-						:theme="creditsFirst ? 'blue' : 'gray'"
-						:label="creditsFirst ? 'Charged first' : 'Spent first'"
-					/>
-					<Dropdown
-						v-if="canManageBilling && !creditsFirst && ordered.length"
-						:options="[
-							{ label: 'Charge this first', onClick: () => chooseCredits() },
-						]"
-					>
-						<Button variant="ghost" size="sm" icon="lucide-more-horizontal" />
-					</Dropdown>
-					<!-- Holds the column so this row's badge lines up with the ones that
-               do have a menu. -->
-					<span v-else class="size-7 shrink-0" aria-hidden="true" />
+					<div class="flex shrink-0 items-center gap-1">
+						<span class="text-sm font-medium text-ink-gray-9">
+							{{ creditsFirst ? 'Charged first' : 'Spent first' }}
+						</span>
+						<Dropdown
+							v-if="canManageBilling && !creditsFirst && ordered.length"
+							:options="[
+								{ label: 'Charge this first', onClick: () => chooseCredits() },
+							]"
+						>
+							<Button variant="ghost" size="sm" icon="lucide-more-horizontal" />
+						</Dropdown>
+						<!-- Holds the column so this row lines up with ones that have a menu. -->
+						<span v-else class="size-7" aria-hidden="true" />
+					</div>
 				</div>
 				<div
 					v-for="(pm, idx) in ordered"
 					:key="pm.name"
-					class="flex items-center gap-3 py-2.5"
+					class="flex items-center justify-between gap-3 py-3"
 				>
-					<span
-						class="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-gray-2 text-ink-gray-6"
-					>
-						<span :class="methodIcon(pm)" class="size-4" aria-hidden="true" />
-					</span>
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-sm font-medium text-ink-gray-9">
-							{{ pm.display_label || pm.method_type }}
-						</p>
-						<p v-if="detail(pm)" class="truncate text-p-sm text-ink-gray-5">
-							{{ detail(pm) }}
-						</p>
+					<div class="flex min-w-0 items-start gap-2.5">
+						<span
+							:class="methodIcon(pm)"
+							class="mt-0.5 size-4 shrink-0 text-ink-gray-5"
+							aria-hidden="true"
+						/>
+						<div class="min-w-0">
+							<div class="flex items-center gap-2">
+								<span class="truncate text-sm font-medium text-ink-gray-9">
+									{{ pm.display_label || pm.method_type }}
+								</span>
+								<Badge
+									v-if="pm.reauth_required"
+									theme="orange"
+									label="Re-auth needed"
+								/>
+								<Badge
+									v-else-if="pm.status !== 'Active'"
+									theme="gray"
+									:label="pm.status"
+								/>
+							</div>
+							<div v-if="detail(pm)" class="truncate text-p-sm text-ink-gray-5">
+								{{ detail(pm) }}
+							</div>
+						</div>
 					</div>
-					<Badge
-						v-if="pm.reauth_required"
-						theme="orange"
-						label="Re-auth needed"
-					/>
-					<Badge
-						v-else-if="pm.status !== 'Active'"
-						theme="gray"
-						:label="pm.status"
-					/>
-					<Badge
-						:theme="!creditsFirst && idx === 0 ? 'blue' : 'gray'"
-						:label="rankLabel(idx)"
-					/>
-					<PaymentMethodRowActions
-						:method="pm"
-						:can-manage="canManageBilling"
-						:is-first="idx === 0"
-						:is-last="idx === ordered.length - 1"
-						:busy="busy === pm.name"
-						@make-default="makeDefault"
-						@move-up="(m) => move(m, -1)"
-						@move-down="(m) => move(m, 1)"
-						@remove="pendingRemove = $event"
-					/>
+					<div class="flex shrink-0 items-center gap-1">
+						<span class="text-sm font-medium text-ink-gray-9">
+							{{ rankLabel(idx) }}
+						</span>
+						<PaymentMethodRowActions
+							:method="pm"
+							:can-manage="canManageBilling"
+							:is-first="idx === 0"
+							:is-last="idx === ordered.length - 1"
+							:busy="busy === pm.name"
+							@make-default="makeDefault"
+							@move-up="(m) => move(m, -1)"
+							@move-down="(m) => move(m, 1)"
+							@remove="pendingRemove = $event"
+						/>
+					</div>
 				</div>
 			</div>
 
-			<Button
-				v-if="canManageBilling && !ordered.length"
-				class="mt-3"
-				label="Add payment method"
-				@click="onAdd"
-			>
-				<template #prefix>
-					<span class="lucide-plus size-4" aria-hidden="true" />
-				</template>
-			</Button>
 		</template>
 
 
