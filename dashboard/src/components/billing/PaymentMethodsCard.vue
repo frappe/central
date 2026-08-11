@@ -125,10 +125,11 @@ const firstOptions = computed(() => [
 async function chooseCredits(): Promise<void> {
 	try {
 		await setMode.submit({ team: activeTeam.value!, mode: 'Prepaid' })
-		successToast('Nothing will be charged automatically.')
-		collection.reload()
+		if (setMode.error) throw setMode.error
+		successToast('Your balance pays the bill now.')
+		await collection.reload()
 	} catch (e) {
-		errorToast(e)
+		errorToast(e, 'Could not change how you are billed.')
 	}
 }
 
@@ -138,10 +139,12 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 		await setDefault.submit({ payment_method: pm.name })
 		// Charging this first only means something if anything is charged at all, so
 		// a prepaid team comes off prepaid by asking for it.
-		if (creditsFirst.value)
+		if (creditsFirst.value) {
 			await setMode.submit({ team: activeTeam.value!, mode: 'Auto Charge' })
+			if (setMode.error) throw setMode.error
+		}
 		successToast(`${pm.display_label || pm.method_type} is charged first.`)
-		collection.reload()
+		await collection.reload()
 		reloadMethods()
 	} catch (e) {
 		errorToast(e)
@@ -227,7 +230,7 @@ function onAdd(): void {
 					<p class="text-p-sm text-ink-gray-5">
 						{{
 							creditsFirst
-								? 'Invoices are settled from your balance. Nothing is charged automatically.'
+								? 'Your balance pays the bill. Keep it topped up.'
 								: "Whatever your credits don't cover goes here."
 						}}
 					</p>
@@ -314,7 +317,7 @@ function onAdd(): void {
 			<p class="mt-3 text-p-sm text-ink-gray-5">
 				{{
 					creditsFirst
-						? 'Top up before the invoice is raised, or it goes unpaid.'
+						? 'A short balance leaves the invoice unpaid — nothing below is charged.'
 						: ordered.length > 1
 							? "If the one charged first can't cover the invoice, we try the next, in this order."
 							: 'Add another way to pay so a failed charge has somewhere to go.'

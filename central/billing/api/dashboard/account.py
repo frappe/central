@@ -219,7 +219,8 @@ def get_collection_status(team: str | None = None) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def set_collection_mode(team: str | None = None, mode: str | None = None) -> dict:
-	"""Customer resolves Action Required (or switches) — manual_checkout / prepaid."""
+	"""Customer picks how they are collected — Manual Checkout, Prepaid, or back to
+	Auto Charge once there is a method that can be charged."""
 	team = _resolve_team(team, authz.MANAGE)
 	from central.billing.payments import collection_mode
 

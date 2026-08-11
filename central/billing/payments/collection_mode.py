@@ -31,6 +31,12 @@ from central.billing.payments import mandates
 # The modes a customer may pick to resolve action_required (or switch into).
 CUSTOMER_CHOOSABLE = ("Manual Checkout", "Prepaid")
 
+# Going back to automatic is also the customer's to make — ADR 0005's hysteresis
+# says a quiet month never drags them back on its own, and case 13 says they may
+# re-register when eligible. Eligible means there is something to charge: without a
+# working method, Auto Charge is a promise nothing can keep.
+RETURNABLE = ("Auto Charge",)
+
 
 def team_rail(team: str) -> tuple[str | None, str | None]:
 	"""The (gateway, currency) a team's bill would be pulled through.
@@ -130,15 +136,40 @@ def trip(team: str, reason: str) -> None:
 
 
 def choose(team: str, mode: str) -> dict:
-	"""Customer resolves Action Required (or switches) to Manual Checkout / Prepaid.
-	Reversible and idempotent; clears the action reason."""
-	if mode not in CUSTOMER_CHOOSABLE:
-		frappe.throw(_("Pick one of {0}.").format(", ".join(CUSTOMER_CHOOSABLE)), frappe.ValidationError)
+	"""Customer picks how they are collected: Manual Checkout, Prepaid, or back to
+	Auto Charge. Reversible and idempotent; clears the action reason.
+
+	Returning to Auto Charge needs a method that can actually be charged. Allowing it
+	without one would set a mode whose whole meaning is "we debit something", and the
+	first invoice would discover the gap on the customer's behalf.
+	"""
+	if mode in RETURNABLE:
+		if not _has_chargeable_method(team):
+			frappe.throw(
+				_("Add a card or UPI mandate before switching to automatic payments."),
+				frappe.ValidationError,
+			)
+	elif mode not in CUSTOMER_CHOOSABLE:
+		frappe.throw(
+			_("Pick one of {0}.").format(", ".join(CUSTOMER_CHOOSABLE + RETURNABLE)),
+			frappe.ValidationError,
+		)
 	profile = frappe.get_doc("Billing Profile", team)
 	profile.collection_mode = mode
 	profile.collection_action_reason = None
 	profile.save(ignore_permissions=True)
 	return status(team)
+
+
+def _has_chargeable_method(team: str) -> bool:
+	"""An active method that is not waiting on the customer to re-authorise it."""
+	return bool(
+		frappe.get_all(
+			"Payment Method",
+			filters={"team": team, "status": "Active", "reauth_required": 0},
+			limit=1,
+		)
+	)
 
 
 def status(team: str) -> dict:
@@ -156,4 +187,5 @@ def status(team: str) -> dict:
 		"reason": p.collection_action_reason,
 		"threshold": silent_threshold(team),
 		"choices": list(CUSTOMER_CHOOSABLE),
+		"can_return_to_auto": _has_chargeable_method(team),
 	}
