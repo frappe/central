@@ -324,6 +324,7 @@ watch(open, (isOpen) => {
 	<TopupDialog
 		v-model="showTopup"
 		:currency="options.data?.currency || 'INR'"
+		instrument="Card"
 		@done="(res: unknown) => emit('done', res)"
 	/>
 </template>
