@@ -644,6 +644,31 @@ class TestAtlasMirror(IntegrationTestCase):
 		enqueue.assert_called_once()
 		self.assertEqual(frappe.db.count("Atlas Event", {"event_id": "evt-dup-1"}), 1)
 
+	def test_apply_event_stamps_failed_when_handler_raises(self):
+		# A handler error must be recorded durably and re-raised. The stamp is committed
+		# before the re-raise so the job runner's rollback can't strand the row at Received.
+		event = frappe.get_doc(
+			{
+				"doctype": "Atlas Event",
+				"cluster": self.region,
+				"event_id": frappe.generate_hash(length=12),
+				"event_type": "vm.created",
+				"occurred_at": "2026-06-18 10:00:00",
+				"raw_payload": frappe.as_json({"name": "vm-fail"}),
+			}
+		).insert(ignore_permissions=True)
+
+		def boom(*args, **kwargs):
+			raise RuntimeError("handler boom")
+
+		with patch.dict("central.integrations.atlas._EVENT_HANDLERS", {"vm.created": boom}):
+			with self.assertRaises(RuntimeError):
+				apply_event(event.name)
+
+		event.reload()
+		self.assertEqual(event.status, "Failed")
+		self.assertIn("handler boom", event.error)
+
 	def test_mirror_recovers_when_exists_check_loses_insert_race(self):
 		# Same event arrives twice at the same time.
 		from central.central.doctype.asset.asset import Asset

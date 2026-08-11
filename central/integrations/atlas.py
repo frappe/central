@@ -438,27 +438,23 @@ def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | No
 	if event_type not in _EVENT_HANDLERS:
 		return {"ok": True, "queued": False}
 
-	# fast check by checking if the event_id already exists in the DB. If it does, we don't need to queue it again.
+	# A redelivery carries the same event_id, so skip anything we've already stored.
+	# The unique constraint on event_id is the backstop against a concurrent double
+	# delivery slipping past this check.
 	if frappe.db.exists("Atlas Event", {"event_id": event_id}):
 		return {"ok": True, "queued": False}
 
-	# the exists() check above already covers the common case, but two requests
-	# for the same event_id can still race between the check and the insert;
-	# that's rare, so we just try the insert and catch the unique violation
-	try:
-		event = frappe.get_doc(
-			{
-				"doctype": "Atlas Event",
-				"cluster": cluster,
-				"event_id": event_id,
-				"event_type": event_type,
-				"occurred_at": occurred_at,
-				"raw_payload": frappe.as_json(payload or {}),
-				"status": "Received",
-			}
-		).insert(ignore_permissions=True)
-	except frappe.UniqueValidationError:
-		return {"ok": True, "queued": False}
+	event = frappe.get_doc(
+		{
+			"doctype": "Atlas Event",
+			"cluster": cluster,
+			"event_id": event_id,
+			"event_type": event_type,
+			"occurred_at": occurred_at,
+			"raw_payload": frappe.as_json(payload or {}),
+			"status": "Received",
+		}
+	).insert(ignore_permissions=True)
 
 	frappe.enqueue(
 		apply_event,
@@ -477,10 +473,16 @@ def apply_event(event_name: str) -> None:
 
 	try:
 		_EVENT_HANDLERS[event.event_type](event.cluster, payload, event.occurred_at)
-	except Exception as e:
-		event.status = "Failed"
-		event.error = str(e)
-		event.save(ignore_permissions=True)
+	except Exception as exception:
+		# Commit the failure stamp before re-raising: the job runner rolls back on the
+		# way out, which would otherwise discard it and leave the row stuck at Received.
+		frappe.db.set_value(
+			"Atlas Event",
+			event_name,
+			{"status": "Failed", "error": str(exception)},
+			update_modified=False,
+		)
+		frappe.db.commit()
 		raise
 
 	event.status = "Processed"
