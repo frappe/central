@@ -428,36 +428,60 @@ class AtlasClient:
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
 
 
-def ingest_event(event_type: str, payload: dict, occurred_at) -> dict:
+def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | None = None) -> dict:
 	"""
-	Resolve the sender from its authenticated session, then queue the mirror write so
-	Atlas gets a fast ack. The write runs in a background job — it's idempotent and
-	last-writer-wins, and the periodic reconcile is the backstop if a job is ever lost.
-	ping and unknown event types have nothing to mirror, so they're acknowledged
-	without queuing.
+	Resolve the sender from its authenticated session, persist the event, then queue
+	the mirror write so Atlas gets a fast ack.
 	"""
 
 	cluster = _atlas_cluster()
-
 	if event_type not in _EVENT_HANDLERS:
 		return {"ok": True, "queued": False}
 
-	frappe.enqueue(
-		apply_event,
-		queue="short",
-		enqueue_after_commit=True,
-		cluster=cluster,
-		event_type=event_type,
-		payload=payload or {},
-		occurred_at=occurred_at,
-	)
+	# A redelivery carries the same event_id, so skip anything we've already stored.
+	# The unique constraint on event_id is the backstop against a concurrent double
+	# delivery slipping past this check.
+	if frappe.db.exists("Atlas Event", {"event_id": event_id}):
+		return {"ok": True, "queued": False}
+
+	# after_insert enqueues the mirror write once this row commits.
+	frappe.get_doc(
+		{
+			"doctype": "Atlas Event",
+			"cluster": cluster,
+			"event_id": event_id,
+			"event_type": event_type,
+			"occurred_at": occurred_at,
+			"raw_payload": frappe.as_json(payload or {}),
+			"status": "Received",
+		}
+	).insert(ignore_permissions=True)
 
 	return {"ok": True, "queued": True}
 
 
-def apply_event(cluster: str, event_type: str, payload: dict, occurred_at) -> None:
-	"""Background job: apply one verified Atlas event to the Asset mirror."""
-	_EVENT_HANDLERS[event_type](cluster, payload or {}, occurred_at)
+def apply_event(event_name: str) -> None:
+	"""Background job: apply one stored Atlas event to the Asset mirror."""
+	event = frappe.get_doc("Atlas Event", event_name)
+	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
+
+	try:
+		_EVENT_HANDLERS[event.event_type](event.cluster, payload, event.occurred_at)
+	except Exception as exception:
+		# Commit the failure stamp before re-raising: the job runner rolls back on the
+		# way out, which would otherwise discard it and leave the row stuck at Received.
+		frappe.db.set_value(
+			"Atlas Event",
+			event_name,
+			{"status": "Failed", "error": str(exception)},
+			update_modified=False,
+		)
+		frappe.db.commit()
+		raise
+
+	event.status = "Processed"
+	event.processed_at = frappe.utils.now_datetime()
+	event.save(ignore_permissions=True)
 
 
 def _atlas_cluster() -> str:

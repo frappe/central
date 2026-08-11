@@ -53,10 +53,23 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user("Administrator")
 
 	def _push(self, event_type, vm, occurred_at):
-		# ingest_event verifies the sender then queues the work; here we run the
-		# worker (apply_event) directly to assert its mirror effect. The
-		# verify-and-queue path is covered by the dispatch tests below.
-		apply_event(self.region, event_type, vm, occurred_at)
+		# ingest_event verifies the sender, persists the event, then queues the work;
+		# here we store the row and run the worker (apply_event) directly to assert
+		# its mirror effect. after_insert's enqueue is stubbed so the only apply is the
+		# explicit one below. The verify-and-queue path is covered by the dispatch
+		# tests below.
+		with patch("frappe.enqueue"):
+			event = frappe.get_doc(
+				{
+					"doctype": "Atlas Event",
+					"cluster": self.region,
+					"event_id": frappe.generate_hash(length=12),
+					"event_type": event_type,
+					"occurred_at": occurred_at,
+					"raw_payload": frappe.as_json(vm),
+				}
+			).insert(ignore_permissions=True)
+		apply_event(event.name)
 
 	# --- push -----------------------------------------------------------------
 
@@ -601,7 +614,7 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.service_user)
 		try:
 			with patch("frappe.enqueue") as enqueue:
-				result = ingest_event("vm.created", vm, "2026-06-18 10:00:00")
+				result = ingest_event("vm.created", vm, "2026-06-18 10:00:00", "evt-q-1")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertTrue(result["queued"])
@@ -619,7 +632,48 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertEqual(result, {"ok": True, "queued": False})
 		enqueue.assert_not_called()
 
+	def test_duplicate_event_id_is_deduped_not_requeued(self):
+		vm = {"name": "vm-dup", "team": self.team.name, "status": "Running"}
+		frappe.set_user(self.service_user)
+		try:
+			with patch("frappe.enqueue") as enqueue:
+				first = ingest_event("vm.created", vm, "2026-06-18 10:00:00", "evt-dup-1")
+				second = ingest_event("vm.created", vm, "2026-06-18 10:00:01", "evt-dup-1")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(first["queued"])
+		self.assertFalse(second["queued"])
+		enqueue.assert_called_once()
+		self.assertEqual(frappe.db.count("Atlas Event", {"event_id": "evt-dup-1"}), 1)
+
+	def test_apply_event_stamps_failed_when_handler_raises(self):
+		# A handler error must be recorded durably and re-raised. The stamp is committed
+		# before the re-raise so the job runner's rollback can't strand the row at Received.
+		with patch("frappe.enqueue"):
+			event = frappe.get_doc(
+				{
+					"doctype": "Atlas Event",
+					"cluster": self.region,
+					"event_id": frappe.generate_hash(length=12),
+					"event_type": "vm.created",
+					"occurred_at": "2026-06-18 10:00:00",
+					"raw_payload": frappe.as_json({"name": "vm-fail"}),
+				}
+			).insert(ignore_permissions=True)
+
+		def boom(*args, **kwargs):
+			raise RuntimeError("handler boom")
+
+		with patch.dict("central.integrations.atlas._EVENT_HANDLERS", {"vm.created": boom}):
+			with self.assertRaises(RuntimeError):
+				apply_event(event.name)
+
+		event.reload()
+		self.assertEqual(event.status, "Failed")
+		self.assertIn("handler boom", event.error)
+
 	def test_mirror_recovers_when_exists_check_loses_insert_race(self):
+		# Same event arrives twice at the same time.
 		from central.central.doctype.asset.asset import Asset
 
 		self._push(
@@ -628,9 +682,6 @@ class TestAtlasMirror(IntegrationTestCase):
 			"2026-06-18 10:00:00",
 		)
 
-		# Simulate the REPEATABLE READ race: a concurrent writer's exists-check misses
-		# the row, so it takes the insert path and hits the duplicate key. mirror_vm
-		# must recover by updating, not raise DuplicateEntryError.
 		real_exists = frappe.db.exists
 
 		def blind_to_asset(dt, *a, **k):
