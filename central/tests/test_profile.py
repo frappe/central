@@ -1,25 +1,13 @@
-import io
-from types import SimpleNamespace
-from unittest.mock import patch
-
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import today
 from frappe.utils.password import check_password, update_password
 
 from central.api.auth import change_password
-from central.api.identity import my_profile, set_profile_photo, update_profile
+from central.api.identity import my_profile, update_profile
 
 OLD_PASSWORD = "OldPass@12345"
 NEW_PASSWORD = "NewPass@67890"
-
-
-def png_bytes(color: tuple[int, int, int]) -> bytes:
-	from PIL import Image
-
-	buf = io.BytesIO()
-	Image.new("RGB", (4, 4), color).save(buf, format="PNG")
-	return buf.getvalue()
 
 
 class TestProfile(IntegrationTestCase):
@@ -99,28 +87,3 @@ class TestProfile(IntegrationTestCase):
 		with self.assertRaises(frappe.AuthenticationError):
 			check_password(self.user, OLD_PASSWORD)
 		self.assertEqual(str(frappe.db.get_value("User", self.user, "last_password_reset_date")), today())
-
-	# ── set_profile_photo ──
-
-	def _upload(self, content: bytes, filename: str = "evil.html", mimetype: str = "text/html"):
-		upload = SimpleNamespace(stream=io.BytesIO(content), filename=filename, mimetype=mimetype)
-		with patch("frappe.request", SimpleNamespace(files={"file": upload}, method="POST")):
-			return set_profile_photo()
-
-	def test_photo_upload_stores_server_named_file_then_clears(self):
-		# Hostile name + declared type; only the sniffed bytes count.
-		set_photo = self._upload(png_bytes((120, 30, 60)))
-		self.assertRegex(set_photo["user_image"], r"^/files/profile-photo.*\.png$")
-		self.assertTrue(
-			frappe.db.exists("File", {"attached_to_doctype": "User", "file_url": set_photo["user_image"]})
-		)
-
-		# No request in play → no upload → clear, and the File doc goes too.
-		cleared = set_profile_photo()
-		self.assertIsNone(cleared["user_image"])
-		self.assertFalse(frappe.db.exists("File", {"file_url": set_photo["user_image"]}))
-
-	def test_photo_rejects_script_bytes(self):
-		with self.assertRaises(frappe.ValidationError):
-			self._upload(b"<script>alert(1)</script>", "x.html", "image/png")
-		self.assertFalse(frappe.db.get_value("User", self.user, "user_image"))

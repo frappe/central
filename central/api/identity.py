@@ -11,7 +11,6 @@ from central.iam import (
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
-from central.images import read_image_upload
 
 # Identity and capability reads for the console. Always scoped to the signed-in
 # user — safe for any logged-in member.
@@ -148,48 +147,3 @@ def update_profile(full_name: str) -> dict[str, Any]:
 	doc.last_name = None
 	doc.save(ignore_permissions=True)
 	return {"full_name": doc.full_name}
-
-
-_PHOTO_MAX_BYTES = 2 * 1024 * 1024
-
-
-@frappe.whitelist(methods=["POST"])
-def set_profile_photo() -> dict[str, Any]:
-	"""Set the signed-in user's profile photo from a multipart upload (field
-	name `file`), or clear it when no file is sent. The replaced photo's File
-	doc is removed either way. Public file, so teammates' consoles can render
-	the roster."""
-	user = _require_signed_in()
-	doc = frappe.get_doc("User", user)
-	upload = frappe.request.files.get("file") if frappe.request else None
-
-	old_image = doc.user_image
-	if upload is None:
-		doc.user_image = None
-	else:
-		# Sniffed content + server-chosen name (central/images.py) — the
-		# client's Content-Type and filename are never trusted.
-		content, file_name = read_image_upload(upload, _PHOTO_MAX_BYTES, "profile-photo")
-		file_doc = frappe.get_doc(
-			{
-				"doctype": "File",
-				"attached_to_doctype": "User",
-				"attached_to_name": user,
-				"attached_to_field": "user_image",
-				"file_name": file_name,
-				"is_private": 0,
-				"content": content,
-			}
-		).insert(ignore_permissions=True)
-		doc.user_image = file_doc.file_url
-	doc.save(ignore_permissions=True)
-
-	if old_image and old_image != doc.user_image:
-		for name in frappe.get_all(
-			"File",
-			filters={"attached_to_doctype": "User", "attached_to_name": user, "file_url": old_image},
-			pluck="name",
-		):
-			frappe.delete_doc("File", name, ignore_permissions=True, force=True)
-
-	return {"user_image": doc.user_image}
