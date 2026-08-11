@@ -444,7 +444,8 @@ def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | No
 	if frappe.db.exists("Atlas Event", {"event_id": event_id}):
 		return {"ok": True, "queued": False}
 
-	event = frappe.get_doc(
+	# after_insert enqueues the mirror write once this row commits.
+	frappe.get_doc(
 		{
 			"doctype": "Atlas Event",
 			"cluster": cluster,
@@ -455,13 +456,6 @@ def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | No
 			"status": "Received",
 		}
 	).insert(ignore_permissions=True)
-
-	frappe.enqueue(
-		apply_event,
-		queue="short",
-		enqueue_after_commit=True,
-		event_name=event.name,
-	)
 
 	return {"ok": True, "queued": True}
 

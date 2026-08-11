@@ -55,18 +55,20 @@ class TestAtlasMirror(IntegrationTestCase):
 	def _push(self, event_type, vm, occurred_at):
 		# ingest_event verifies the sender, persists the event, then queues the work;
 		# here we store the row and run the worker (apply_event) directly to assert
-		# its mirror effect. The verify-and-queue path is covered by the dispatch
+		# its mirror effect. after_insert's enqueue is stubbed so the only apply is the
+		# explicit one below. The verify-and-queue path is covered by the dispatch
 		# tests below.
-		event = frappe.get_doc(
-			{
-				"doctype": "Atlas Event",
-				"cluster": self.region,
-				"event_id": frappe.generate_hash(length=12),
-				"event_type": event_type,
-				"occurred_at": occurred_at,
-				"raw_payload": frappe.as_json(vm),
-			}
-		).insert(ignore_permissions=True)
+		with patch("frappe.enqueue"):
+			event = frappe.get_doc(
+				{
+					"doctype": "Atlas Event",
+					"cluster": self.region,
+					"event_id": frappe.generate_hash(length=12),
+					"event_type": event_type,
+					"occurred_at": occurred_at,
+					"raw_payload": frappe.as_json(vm),
+				}
+			).insert(ignore_permissions=True)
 		apply_event(event.name)
 
 	# --- push -----------------------------------------------------------------
@@ -647,16 +649,17 @@ class TestAtlasMirror(IntegrationTestCase):
 	def test_apply_event_stamps_failed_when_handler_raises(self):
 		# A handler error must be recorded durably and re-raised. The stamp is committed
 		# before the re-raise so the job runner's rollback can't strand the row at Received.
-		event = frappe.get_doc(
-			{
-				"doctype": "Atlas Event",
-				"cluster": self.region,
-				"event_id": frappe.generate_hash(length=12),
-				"event_type": "vm.created",
-				"occurred_at": "2026-06-18 10:00:00",
-				"raw_payload": frappe.as_json({"name": "vm-fail"}),
-			}
-		).insert(ignore_permissions=True)
+		with patch("frappe.enqueue"):
+			event = frappe.get_doc(
+				{
+					"doctype": "Atlas Event",
+					"cluster": self.region,
+					"event_id": frappe.generate_hash(length=12),
+					"event_type": "vm.created",
+					"occurred_at": "2026-06-18 10:00:00",
+					"raw_payload": frappe.as_json({"name": "vm-fail"}),
+				}
+			).insert(ignore_permissions=True)
 
 		def boom(*args, **kwargs):
 			raise RuntimeError("handler boom")
