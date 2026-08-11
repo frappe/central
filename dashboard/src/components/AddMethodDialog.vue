@@ -3,12 +3,13 @@ import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
+import TopupDialog from '@/components/TopupDialog.vue'
 import { useAddStripeCard } from '@/composables/useAddStripeCard'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { money } from '@/lib/format'
-import { errorToast, successToast } from '@/lib/toast'
+import { errorToast } from '@/lib/toast'
 import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 
 // Pick an instrument to save for auto-pay. This is the **mandate** surface (ADR
@@ -70,20 +71,14 @@ const upiBlocked = computed(() => options.data && !options.data.allow_upi)
 
 const tiles = computed(() => options.data?.instruments ?? [])
 
-// A customer whose card cannot hold a mandate needs the wallet, so give them the
-// switch here rather than a sentence telling them to go and find it.
-const switching = useCall<unknown, { team: string; mode: string }>({
-	url: method(API.setCollectionMode),
-	method: 'POST',
-	immediate: false,
-	onError: (e: unknown) => errorToast(e, 'Could not switch to a prepaid wallet.'),
-})
+// A card no rail will hold a mandate on has one honest destination, so the line
+// saying so *is* the way there: tap it and the top-up opens. Our dialog closes
+// first — two stacked modals is how the second one ends up behind the first.
+const showTopup = ref(false)
 
-async function switchToPrepaid(): Promise<void> {
-	await switching.submit({ team: activeTeam.value!, mode: 'Prepaid' })
-	if (switching.error) return
-	successToast('Switched to a prepaid wallet. Add credits to cover your usage.')
-	done()
+function goToTopup(): void {
+	open.value = false
+	showTopup.value = true
 }
 
 const icons: Record<string, string> = {
@@ -276,18 +271,15 @@ watch(open, (isOpen) => {
 							}}</span>
 						</button>
 					</div>
-					<div
+					<button
 						v-if="options.data.note"
-						class="mt-3 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
+						type="button"
+						class="mt-3 flex w-full items-center justify-center gap-1.5 text-p-sm text-ink-gray-6 underline decoration-outline-gray-3 underline-offset-4 hover:text-ink-gray-8"
+						@click="goToTopup"
 					>
-						<p class="text-p-sm text-ink-gray-6">{{ options.data.note }}</p>
-						<Button
-							class="mt-2"
-							label="Use a prepaid wallet"
-							:loading="switching.loading"
-							@click="switchToPrepaid"
-						/>
-					</div>
+						{{ options.data.note }}
+						<span class="lucide-arrow-right size-3.5" aria-hidden="true" />
+					</button>
 				</div>
 
 				<!-- Razorpay card mandates need a contact; collect it inline when missing. -->
@@ -327,4 +319,11 @@ watch(open, (isOpen) => {
 			</div>
 		</template>
 	</Dialog>
+
+	<!-- Opened from the Amex/Diners line above, after this dialog has closed. -->
+	<TopupDialog
+		v-model="showTopup"
+		:currency="options.data?.currency || 'INR'"
+		@done="(res: unknown) => emit('done', res)"
+	/>
 </template>

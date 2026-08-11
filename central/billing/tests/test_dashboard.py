@@ -979,6 +979,14 @@ class TestTheAmexAndDinersGapIsStatedUpfront(IntegrationTestCase):
 		self.assertIn("Diners", note)
 		self.assertIn("wallet", note.lower())
 
+	def test_the_note_is_short_enough_to_be_a_control(self):
+		"""It is the label of the link that takes them to the wallet, so it has to fit
+		on one line. A paragraph here is a paragraph shown to everyone."""
+		from central.billing.api.dashboard import methods
+
+		note = methods.get_payment_method_options(self.TEAM)["note"]
+		self.assertLessEqual(len(note.split()), 12, note)
+
 	def test_it_is_on_the_screen_where_they_choose_how_to_pay(self):
 		from central.billing.api.dashboard import account
 

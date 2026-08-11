@@ -119,16 +119,18 @@ BY_KEY = {(entry["surface"], entry["instrument"]): entry for entry in CATALOGUE}
 # dunning email.
 NO_MANDATE_NETWORKS = ("Amex", "Diners")
 
-MANDATE_GAP_NOTE = (
-	"Holding an Amex or Diners card? Automatic payments aren't possible on those "
-	"networks — no bank rail in India registers a mandate for them. Keep a prepaid "
-	"wallet topped up instead, and your usage draws from the balance. (You can also "
-	"pay each invoice yourself.)"
-)
+# One line that carries the limit and the way out of it. The reason a customer
+# needs is "my card isn't here and this says why"; the paragraph that explained
+# which bank rails register mandates was answering a question nobody asked.
+MANDATE_GAP_NOTE = "Amex or Diners can't auto-pay — top up a wallet"
 
 
 def mandate_gap_note(currency: str) -> str | None:
-	"""The caveat the auto-pay surface owes a customer whose card cannot be saved."""
+	"""The one line the auto-pay surface owes a customer whose card cannot be saved.
+
+	It doubles as the label of the control that takes them to the wallet, so it has
+	to read as a route rather than a warning.
+	"""
 	return MANDATE_GAP_NOTE if currency == "INR" else None
 
 
