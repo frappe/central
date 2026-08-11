@@ -295,30 +295,16 @@ function onAdd(): void {
 				</div>
 			</div>
 
-			<p
-				v-if="!ordered.length"
-				class="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-p-sm text-ink-gray-5"
+			<Button
+				v-if="canManageBilling && !ordered.length"
+				class="mt-3"
+				label="Add payment method"
+				@click="onAdd"
 			>
-				<span>
-					Credits pay what they can; the rest is yours to settle. Save a card or
-					UPI Autopay and we'll charge it instead.
-				</span>
-				<button
-					v-if="canManageBilling"
-					type="button"
-					class="font-medium text-ink-gray-7 underline underline-offset-2 hover:text-ink-gray-9"
-					@click="onAdd"
-				>
-					Add one
-				</button>
-			</p>
-			<p v-else class="mt-3 text-p-sm text-ink-gray-5">
-				{{
-					ordered.length > 1
-						? "If a charge fails we try the next one, so a single dead card doesn't end in suspension."
-						: 'Add a second card so a failed charge has somewhere to go before suspension.'
-				}}
-			</p>
+				<template #prefix>
+					<span class="lucide-plus size-4" aria-hidden="true" />
+				</template>
+			</Button>
 		</template>
 
 
