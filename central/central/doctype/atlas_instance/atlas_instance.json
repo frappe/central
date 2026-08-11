@@ -18,6 +18,7 @@
   "tunnel_ip",
   "tunnel_url",
   "service_user",
+  "webhook_secret",
   "column_break_tunnel",
   "peer_public_key",
   "peer_endpoint",
@@ -126,6 +127,13 @@
    "options": "User",
    "read_only": 1,
    "search_index": 1
+  },
+  {
+   "description": "HMAC signing secret this Atlas uses to sign outbound webhooks (X-Atlas-Signature).",
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_tunnel",

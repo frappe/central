@@ -100,18 +100,10 @@ class TestAtlasMirror(IntegrationTestCase):
 		)
 		self.assertEqual(frappe.db.get_value("Asset", "vm-1", "status"), "Stopped")
 
-	def test_push_from_unknown_atlas_is_refused(self):
-		# A session that owns no Atlas Instance can't push events.
-		frappe.set_user(self.outsider)
-		try:
-			with self.assertRaises(frappe.PermissionError):
-				ingest_event(
-					"vm.created",
-					{"name": "vm-x", "team": self.team.name, "status": "Running"},
-					"2026-06-18 10:00:00",
-				)
-		finally:
-			frappe.set_user("Administrator")
+	# Identity/auth is now HMAC-signature-based (@verify_atlas_webhook), not a
+	# session-token check — see test_atlas_webhook_signature.py for that coverage.
+	# ingest_event itself no longer resolves or refuses a sender; it trusts whatever
+	# cluster its caller (event()) already verified.
 
 	def test_push_skips_untenanted_vm(self):
 		self._push("vm.created", {"name": "vm-op", "team": None, "status": "Running"}, "2026-06-18 10:00:00")
@@ -614,7 +606,7 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.service_user)
 		try:
 			with patch("frappe.enqueue") as enqueue:
-				result = ingest_event("vm.created", vm, "2026-06-18 10:00:00", "evt-q-1")
+				result = ingest_event(self.region, "vm.created", vm, "2026-06-18 10:00:00", "evt-q-1")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertTrue(result["queued"])
@@ -626,7 +618,7 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.service_user)
 		try:
 			with patch("frappe.enqueue") as enqueue:
-				result = ingest_event("vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00")
+				result = ingest_event(self.region, "vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(result, {"ok": True, "queued": False})
@@ -637,8 +629,8 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.service_user)
 		try:
 			with patch("frappe.enqueue") as enqueue:
-				first = ingest_event("vm.created", vm, "2026-06-18 10:00:00", "evt-dup-1")
-				second = ingest_event("vm.created", vm, "2026-06-18 10:00:01", "evt-dup-1")
+				first = ingest_event(self.region, "vm.created", vm, "2026-06-18 10:00:00", "evt-dup-1")
+				second = ingest_event(self.region, "vm.created", vm, "2026-06-18 10:00:01", "evt-dup-1")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertTrue(first["queued"])

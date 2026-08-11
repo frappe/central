@@ -15,9 +15,12 @@
   "column_break_main",
   "occurred_at",
   "processed_at",
+  "signature_timestamp",
+  "signature",
   "error",
   "section_break_payload",
-  "raw_payload"
+  "raw_payload",
+  "raw_body"
  ],
  "fields": [
   {
@@ -66,6 +69,20 @@
    "label": "Processed At"
   },
   {
+   "description": "The X-Atlas-Timestamp this event's signature was verified against, stored exactly as received — part of the signed string, so verify_signature needs it.",
+   "fieldname": "signature_timestamp",
+   "fieldtype": "Data",
+   "label": "Signature Timestamp",
+   "read_only": 1
+  },
+  {
+   "description": "The X-Atlas-Signature this event was admitted on. Stored with raw_body so the row stays re-verifiable after the request is gone.",
+   "fieldname": "signature",
+   "fieldtype": "Data",
+   "label": "Signature",
+   "read_only": 1
+  },
+  {
    "fieldname": "error",
    "fieldtype": "Small Text",
    "label": "Error"
@@ -75,9 +92,18 @@
    "fieldtype": "Section Break"
   },
   {
+   "description": "Parsed handler input. NOT what the signature covers — re-serialized JSON is not byte-identical, so verify against raw_body only.",
    "fieldname": "raw_payload",
    "fieldtype": "JSON",
    "label": "Raw Payload"
+  },
+  {
+   "description": "The exact request body Atlas signed, byte for byte. The artifact verify_signature recomputes the HMAC over.",
+   "fieldname": "raw_body",
+   "fieldtype": "Code",
+   "label": "Raw Body",
+   "options": "JSON",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,

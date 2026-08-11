@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import functools
+import hashlib
+import hmac
 import json
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
@@ -10,6 +14,7 @@ import frappe
 import requests
 from frappe import _
 from frappe.frappeclient import FrappeClient, FrappeException
+from frappe.utils.password import get_decrypted_password
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
@@ -428,13 +433,20 @@ class AtlasClient:
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
 
 
-def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | None = None) -> dict:
-	"""
-	Resolve the sender from its authenticated session, persist the event, then queue
-	the mirror write so Atlas gets a fast ack.
-	"""
+def ingest_event(
+	cluster: str,
+	event_type: str,
+	payload: dict,
+	occurred_at,
+	event_id: str | None = None,
+	raw_body: bytes | None = None,
+	signature: str | None = None,
+	signature_timestamp: str | None = None,
+) -> dict:
+	"""Persist the event under the caller-verified `cluster`, then queue the mirror write.
+	raw_body/signature/signature_timestamp are kept verbatim so the row stays
+	self-verifying; raw_payload is reserialized and never verifies."""
 
-	cluster = _atlas_cluster()
 	if event_type not in _EVENT_HANDLERS:
 		return {"ok": True, "queued": False}
 
@@ -452,6 +464,9 @@ def ingest_event(event_type: str, payload: dict, occurred_at, event_id: str | No
 			"event_id": event_id,
 			"event_type": event_type,
 			"occurred_at": occurred_at,
+			"signature": signature,
+			"signature_timestamp": signature_timestamp,
+			"raw_body": raw_body.decode() if isinstance(raw_body, bytes) else raw_body,
 			"raw_payload": frappe.as_json(payload or {}),
 			"status": "Received",
 		}
@@ -484,20 +499,52 @@ def apply_event(event_name: str) -> None:
 	event.save(ignore_permissions=True)
 
 
-def _atlas_cluster() -> str:
-	"""The cluster an event came from — resolved from the authenticated sender. Each
-	Atlas calls in as its own scoped service user (set on the Atlas Instance at
-	registration), so the session identity IS the cluster: unforgeable, and no need
-	for the caller to assert who it is in the payload. Doubles as the 'known sender'
-	check — events from a session that owns no enabled Atlas are refused."""
-	cluster = frappe.db.get_value(
-		"Atlas Instance", {"service_user": frappe.session.user, "status": ["!=", "Disabled"]}
-	)
-	if not cluster:
-		frappe.throw(
-			_("'{0}' is not a known or enabled Atlas.").format(frappe.session.user), frappe.PermissionError
-		)
-	return cluster
+def verify_atlas_webhook(func: Callable) -> Callable:
+	"""Authenticates the HMAC over the raw body before the handler runs, stashing the
+	verified context on frappe.local. functools.wraps is required — Frappe maps request
+	args off the wrapped signature."""
+
+	@functools.wraps(func)
+	def wrapper(*args, **kwargs):
+		frappe.local.atlas_webhook = _authenticate_atlas_webhook(frappe.request.get_data())
+		return func(*args, **kwargs)
+
+	return wrapper
+
+
+def _authenticate_atlas_webhook(raw_body: bytes) -> frappe._dict:
+	"""Authenticate an inbound webhook and return its verified context. X-Atlas-Region only
+	selects which secret to check, never trusted on its own; every failure throws the same
+	generic message."""
+	region = frappe.get_request_header("X-Atlas-Region")
+	timestamp = frappe.get_request_header("X-Atlas-Timestamp")
+	signature = frappe.get_request_header("X-Atlas-Signature")
+	if not (region and timestamp and signature):
+		_reject_signature()
+
+	instance = frappe.db.get_value("Atlas Instance", {"region": region, "status": ["!=", "Disabled"]})
+	if not instance:
+		_reject_signature()
+
+	secret = get_decrypted_password("Atlas Instance", instance, "webhook_secret", raise_exception=False)
+	if not secret:
+		_reject_signature()
+
+	if not signature_matches(secret, timestamp, raw_body, signature):
+		_reject_signature()
+
+	return frappe._dict(cluster=instance, raw=raw_body, signature=signature, timestamp=timestamp)
+
+
+def signature_matches(secret: str, timestamp, raw_body: bytes, signature: str) -> bool:
+	"""Constant-time check. Bytes not str — compare_digest raises TypeError on non-ASCII."""
+	expected = hmac.new(secret.encode(), f"{timestamp}.".encode() + raw_body, hashlib.sha256).hexdigest()
+	return hmac.compare_digest(expected.encode(), signature.encode())
+
+
+def _reject_signature():
+	# Uniform 403. Don't set http_status_code — Frappe's exception handler overrides it.
+	frappe.throw(_("Invalid webhook signature."), frappe.PermissionError)
 
 
 def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
@@ -648,6 +695,7 @@ def register_atlas(instance) -> dict:
 	tunnel_ip = instance.tunnel_ip or settings.allocate_tunnel_ip()
 	service_user = _ensure_service_user(instance)
 	api_key, api_secret = _rotate_service_credentials(service_user)
+	webhook_secret = _rotate_webhook_secret(instance)
 
 	peer_added = False
 	try:
@@ -662,6 +710,7 @@ def register_atlas(instance) -> dict:
 				"central_url": frappe.utils.get_url(),
 				"service_api_key": api_key,
 				"service_api_secret": api_secret,
+				"service_webhook_secret": webhook_secret,
 			},
 		)
 		peer_public_key = provision["wg_public_key"]
@@ -713,6 +762,7 @@ def _register_local(instance) -> dict:
 
 	service_user = _ensure_service_user(instance)
 	api_key, api_secret = _rotate_service_credentials(service_user)
+	webhook_secret = _rotate_webhook_secret(instance)
 
 	client.link_local(
 		instance.base_url,
@@ -720,6 +770,7 @@ def _register_local(instance) -> dict:
 			"central_url": frappe.utils.get_url(),
 			"service_api_key": api_key,
 			"service_api_secret": api_secret,
+			"service_webhook_secret": webhook_secret,
 		},
 	)
 
@@ -775,6 +826,14 @@ def _rotate_service_credentials(user_name: str) -> tuple[str, str]:
 	user.api_secret = api_secret
 	user.save(ignore_permissions=True)
 	return api_key, api_secret
+
+
+def _rotate_webhook_secret(instance) -> str:
+	"""Fresh signing secret, in-memory only — the caller's save() persists it. A direct DB
+	write would be wiped: _save_passwords() clears Password fields reading empty."""
+	secret = frappe.generate_hash(length=32)
+	instance.webhook_secret = secret
+	return secret
 
 
 def _verify_over_tunnel(client, tunnel_url: str, attempts: int = 8, delay: float = 2.0) -> None:
