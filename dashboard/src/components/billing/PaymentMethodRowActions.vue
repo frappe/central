@@ -32,7 +32,7 @@ const options = computed(() => {
 	const items: ActionItem[] = []
 	if (!props.method.is_default)
 		items.push({
-			label: 'Make default',
+			label: 'Charge this first',
 			icon: 'lucide-star',
 			onClick: () => emit('makeDefault', props.method),
 		})

@@ -6,7 +6,6 @@ import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PaymentMethodRowActions from '@/components/billing/PaymentMethodRowActions.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import EmptyState from '@/components/common/EmptyState.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -16,9 +15,13 @@ import { money } from '@/lib/format'
 import { errorToast, successToast } from '@/lib/toast'
 import type { CollectionStatus, PaymentMethod } from '@/types/billing'
 
-// Payment methods — one ordered list of the ways an invoice gets settled, with the
-// chooser on top naming what goes first. Choosing changes the order and nothing
-// else: no row appears or disappears because of a setting.
+// Payment methods — one ordered list of the ways an invoice gets settled. Each row
+// carries its own control, so the order is set where it is read rather than in a
+// separate chooser above the thing it governs.
+//
+// Credits lead by default because a new team is granted some, and while they last
+// they are what pays the bill. When they run out the customer picks what takes
+// over — the balance they top up, or a method we debit.
 //
 // Prepaid credits are the first entry because the engine spends them before it
 // charges anything (the credits waterfall, credits.md). Choosing credits as the
@@ -100,27 +103,13 @@ const setMode = useCall<unknown, { team: string; mode: string }>({
 	immediate: false,
 })
 
-// What the top row says, and what each row is badged with.
+// What each row is badged with. While credits lead, a method below is not a rung
+// the engine would try — prepaid means a short balance waits for a top-up — so it
+// says so rather than claiming a place in an order that isn't run.
 function rankLabel(idx: number): string {
 	if (creditsFirst.value) return 'Not charged'
 	return idx === 0 ? 'Charged first' : `Fallback ${idx}`
 }
-
-const firstLabel = computed(() => {
-	if (creditsFirst.value) return 'Prepaid credits'
-	const first = ordered.value[0]
-	return first ? first.display_label || first.method_type : 'Prepaid credits'
-})
-
-// The chooser lists every entry in the card, credits included — picking one is the
-// same act as promoting a row, which is why the row menu offers it too.
-const firstOptions = computed(() => [
-	{ label: 'Prepaid credits', onClick: () => chooseCredits() },
-	...ordered.value.map((pm) => ({
-		label: pm.display_label || pm.method_type,
-		onClick: () => makeDefault(pm),
-	})),
-])
 
 async function chooseCredits(): Promise<void> {
 	try {
@@ -194,7 +183,7 @@ function onAdd(): void {
 <template>
 	<BillingCard
 		title="Payment methods"
-		title-info="Credits are always spent first. What you choose here decides what covers the rest."
+		title-info="Credits are spent first while you have them. Choose which method is charged once they run out."
 	>
 		<template #action>
 			<Button
@@ -224,31 +213,7 @@ function onAdd(): void {
 		</div>
 
 		<template v-else>
-			<div class="flex items-center justify-between gap-3 pb-3">
-				<div class="min-w-0">
-					<p class="text-sm font-medium text-ink-gray-8">Charge this first</p>
-					<p class="text-p-sm text-ink-gray-5">
-						{{
-							creditsFirst
-								? 'Your balance pays the bill. Keep it topped up.'
-								: "Whatever your credits don't cover goes here."
-						}}
-					</p>
-				</div>
-				<Dropdown
-					v-if="canManageBilling && ordered.length"
-					:options="firstOptions"
-				>
-					<Button :label="firstLabel">
-						<template #suffix>
-							<span class="lucide-chevron-down size-3.5" aria-hidden="true" />
-						</template>
-					</Button>
-				</Dropdown>
-				<span v-else class="text-p-sm text-ink-gray-6">{{ firstLabel }}</span>
-			</div>
-
-			<div class="divide-y divide-outline-gray-1 border-t border-outline-gray-1">
+			<div class="divide-y divide-outline-gray-1">
 				<div class="flex items-center gap-3 py-2.5">
 					<span
 						class="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-gray-2 text-ink-gray-6"
@@ -267,6 +232,17 @@ function onAdd(): void {
 						:theme="creditsFirst ? 'blue' : 'gray'"
 						:label="creditsFirst ? 'Charged first' : 'Spent first'"
 					/>
+					<Dropdown
+						v-if="canManageBilling && !creditsFirst && ordered.length"
+						:options="[
+							{ label: 'Charge this first', onClick: () => chooseCredits() },
+						]"
+					>
+						<Button variant="ghost" size="sm" icon="lucide-more-horizontal" />
+					</Dropdown>
+					<!-- Holds the column so this row's badge lines up with the ones that
+               do have a menu. -->
+					<span v-else class="size-7 shrink-0" aria-hidden="true" />
 				</div>
 				<div
 					v-for="(pm, idx) in ordered"
@@ -314,37 +290,29 @@ function onAdd(): void {
 				</div>
 			</div>
 
-			<p class="mt-3 text-p-sm text-ink-gray-5">
-				{{
-					creditsFirst
-						? 'A short balance leaves the invoice unpaid — nothing below is charged.'
-						: ordered.length > 1
-							? "If the one charged first can't cover the invoice, we try the next, in this order."
-							: 'Add another way to pay so a failed charge has somewhere to go.'
-				}}
+			<p
+				v-if="!ordered.length"
+				class="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-p-sm text-ink-gray-5"
+			>
+				<span>Add a card or UPI Autopay to cover what credits don't.</span>
+				<button
+					v-if="canManageBilling"
+					type="button"
+					class="font-medium text-ink-gray-7 underline underline-offset-2 hover:text-ink-gray-9"
+					@click="onAdd"
+				>
+					Add one
+				</button>
+			</p>
+			<p
+				v-else-if="ordered.length > 1"
+				class="mt-3 text-p-sm text-ink-gray-5"
+			>
+				If the one charged first can't cover the invoice, we try the next, in
+				this order.
 			</p>
 		</template>
 
-		<EmptyState
-			v-if="!loading && !ordered.length"
-			class="mt-3 border-t border-outline-gray-1 pt-3"
-			icon="lucide-credit-card"
-			title="Nothing to charge after credits"
-			description="Add a card or UPI Autopay and it covers whatever your balance doesn't."
-		>
-			<template v-if="canManageBilling" #action>
-				<Button
-					variant="solid"
-					theme="gray"
-					label="Add payment method"
-					@click="onAdd"
-				>
-					<template #prefix
-						><span class="lucide-plus size-4" aria-hidden="true" /></template
-					>
-				</Button>
-			</template>
-		</EmptyState>
 
 		<ConfirmDialog
 			v-model:target="pendingRemove"
