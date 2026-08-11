@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, Dropdown, useCall } from 'frappe-ui'
+import { Badge, Button, useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
@@ -108,24 +108,15 @@ const setMode = useCall<unknown, { team: string; mode: string }>({
 	immediate: false,
 })
 
-// What each row is badged with. While credits lead, a method below is not a rung
-// the engine would try — prepaid means a short balance waits for a top-up — so it
-// says so rather than claiming a place in an order that isn't run.
+// Credits are used before any method, so the methods below them are numbered from
+// one: the order they are tried in when the balance can't cover the invoice.
 function rankLabel(idx: number): string {
-	if (creditsFirst.value) return 'Not charged'
-	return idx === 0 ? 'Charged first' : `Fallback ${idx}`
+	return `Fallback ${idx + 1}`
 }
 
-async function chooseCredits(): Promise<void> {
-	try {
-		await setMode.submit({ team: activeTeam.value!, mode: 'Prepaid' })
-		if (setMode.error) throw setMode.error
-		successToast('Your balance pays the bill now.')
-		await collection.reload()
-	} catch (e) {
-		errorToast(e, 'Could not change how you are billed.')
-	}
-}
+// Choosing which method gets charged decides nothing while there is a balance to
+// spend, so the action is offered and disabled rather than hidden.
+const canPromote = computed(() => balance.value <= 0)
 
 async function makeDefault(pm: PaymentMethod): Promise<void> {
 	busy.value = pm.name
@@ -231,19 +222,9 @@ function onAdd(): void {
 						</div>
 					</div>
 					<div class="flex shrink-0 items-center gap-1">
-						<span class="text-sm font-medium text-ink-gray-9">
-							{{ creditsFirst ? 'Charged first' : 'Spent first' }}
-						</span>
-						<Dropdown
-							v-if="canManageBilling && !creditsFirst && ordered.length"
-							:options="[
-								{ label: 'Charge this first', onClick: () => chooseCredits() },
-							]"
-						>
-							<Button variant="ghost" size="sm" icon="lucide-more-horizontal" />
-						</Dropdown>
+						<span class="text-sm font-medium text-ink-gray-9">Used first</span>
 						<!-- Holds the column so this row lines up with ones that have a menu. -->
-						<span v-else class="size-7" aria-hidden="true" />
+						<span class="size-7" aria-hidden="true" />
 					</div>
 				</div>
 				<div
@@ -285,6 +266,7 @@ function onAdd(): void {
 						<PaymentMethodRowActions
 							:method="pm"
 							:can-manage="canManageBilling"
+							:can-promote="canPromote"
 							:is-first="idx === 0"
 							:is-last="idx === ordered.length - 1"
 							:busy="busy === pm.name"
