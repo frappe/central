@@ -63,14 +63,11 @@ const overviewCall = useCall<Overview, { team: string; resource_id: string }>({
 	immediate: false,
 })
 
+// No reset on close: the dialog is still fading out then, and blanking the
+// state mid-leave flashes the skeleton over the content. load() resets
+// everything at the start of the next open instead.
 watch([open, () => props.server?.resource_id], ([isOpen, resourceId]) => {
-	if (!isOpen) {
-		overview.value = null
-		overviewError.value = ''
-		hasLoaded.value = false
-		return
-	}
-	if (!resourceId || !activeTeam.value) return
+	if (!isOpen || !resourceId || !activeTeam.value) return
 	void load(resourceId)
 })
 
