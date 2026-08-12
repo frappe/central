@@ -80,6 +80,25 @@ def metrics_token() -> dict:
 	}
 
 
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def log_token() -> dict:
+	"""The JWT this pilot presents to Datum when shipping logs.
+
+	Sibling of `metrics_token`: same gating (refused until Atlas binds the Asset),
+	separate token so rotation is independent. Datum reads `resource_id` and
+	`access` as top-level claims — no vmauth bridge — so the pilot re-fetches on a
+	401 or when the expiry nears, exactly as it does for metrics."""
+	from central.sso import LOG_TTL, mint_log_token
+
+	credential = frappe.local.pilot_credential
+	return {
+		"token": mint_log_token(credential.audience_id, credential.asset),
+		"expires_in": LOG_TTL,
+		"resource_id": credential.asset,
+	}
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def enroll(bootstrap_token: str) -> dict:
 	"""First-boot handshake: exchange a single-use, create-time bootstrap token for this
