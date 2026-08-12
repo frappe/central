@@ -33,6 +33,7 @@ const loading = computed(() => statement.loading && !statement.data)
 const data = computed(() => statement.data)
 const currency = computed(() => data.value?.currency ?? 'INR')
 
+const owed = computed(() => Number(data.value?.closing_outstanding ?? 0) > 0)
 const rows = computed(() => (data.value?.rows ?? []).slice(-VISIBLE).reverse())
 const hidden = computed(() => Math.max(0, (data.value?.rows?.length ?? 0) - VISIBLE))
 
@@ -83,13 +84,35 @@ const STATUS_THEME: Record<string, string> = {
 				</div>
 			</div>
 
+			<!-- The four figures above are the working; this is the answer, so it gets
+			     a block of its own rather than another row in the same rhythm. Red type
+			     alone was carrying the emphasis and it read as list, not conclusion. -->
 			<div
-				class="mt-4 flex items-baseline justify-between gap-3 border-t border-outline-gray-1 pt-3"
+				class="mt-4 flex items-center justify-between gap-3 rounded-md border px-3.5 py-3"
+				:class="
+          owed
+            ? 'border-outline-red-3 bg-surface-red-1'
+            : 'border-outline-gray-2 bg-surface-gray-1'
+        "
 			>
-				<span class="text-base-medium text-ink-gray-9">Still outstanding</span>
+				<span class="flex items-center gap-2">
+					<span
+						v-if="owed"
+						class="lucide-alert-circle size-4 shrink-0 text-ink-red-7"
+						aria-hidden="true"
+					/>
+					<span
+						v-else
+						class="lucide-check-circle-2 size-4 shrink-0 text-ink-green-8"
+						aria-hidden="true"
+					/>
+					<span class="text-base-medium text-ink-gray-8">
+						{{ owed ? 'Still outstanding' : 'Nothing outstanding' }}
+					</span>
+				</span>
 				<span
-					class="text-base-medium tabular-nums"
-					:class="data.closing_outstanding > 0 ? 'text-ink-red-7' : 'text-ink-gray-9'"
+					class="text-lg-semibold tabular-nums"
+					:class="owed ? 'text-ink-red-7' : 'text-ink-gray-9'"
 				>
 					{{ money(data.closing_outstanding, currency) }}
 				</span>
@@ -97,7 +120,7 @@ const STATUS_THEME: Record<string, string> = {
 
 			<ul
 				v-if="rows.length"
-				class="mt-3 divide-y divide-outline-gray-1 border-t border-outline-gray-1"
+				class="mt-4 divide-y divide-outline-gray-1 border-t border-outline-gray-1"
 			>
 				<li
 					v-for="row in rows"
