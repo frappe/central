@@ -33,6 +33,9 @@ PLAN_SIZES = [
 	("plan-1vcpu", "Starter · 1 vCPU / 2 GB", 1, 2, 25, 100, 1500),
 	("plan-2vcpu", "Basic · 2 vCPU / 4 GB", 2, 4, 50, 200, 3000),
 	("plan-4vcpu", "Standard · 4 vCPU / 8 GB", 4, 8, 100, 400, 6000),
+	# The scenarios put a team on the top rung to demo grandfathering against a
+	# risen catalog price, so the ladder has to actually reach it.
+	("plan-8vcpu", "Business · 8 vCPU / 16 GB", 8, 16, 200, 800, 12000),
 ]
 
 # À-la-carte component rate card, per Resource Type (ADR 0009) — what powers the
@@ -126,6 +129,10 @@ def _atlas_instances():
 	rates to one) and a Region (the map's display metadata). A pre-existing, real
 	Atlas Instance is left untouched — only its Region metadata is (re)seeded."""
 	for cslug, _label, _cur in CLUSTERS:
+		# Region first: an Atlas Instance LINKS to it, so seeding the instance ahead
+		# of the region fails on a site that has no regions yet — which is every
+		# fresh demo site, the one case this seeder exists for.
+		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
 		if not frappe.db.exists("Atlas Instance", cslug):
 			frappe.get_doc(
 				{
@@ -136,7 +143,6 @@ def _atlas_instances():
 					"api_secret": "demo",
 				}
 			).insert(ignore_permissions=True)
-		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
 
 
 # Plans are autonamed by hash, so map the readable demo key to the generated
@@ -622,7 +628,9 @@ def _settle_via_backup(team, invoice, primary_pm, gateway, amount, currency, whe
 		return None, None
 	# 3) the backup captures (stands in for the offline gateway), an hour later.
 	captured_at = frappe.utils.add_to_date(when, hours=1)
-	attempt = _capture_attempt(team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at)
+	attempt = _capture_attempt(
+		team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at, retry=1
+	)
 	frappe.db.set_value("Invoice", invoice, {"status": "Paid", "amount_paid": amount, "paid_at": captured_at})
 	return attempt, backup.name
 
@@ -903,8 +911,13 @@ def draw_wallet_credit(invoice) -> float:
 	return frappe.utils.flt(frappe.db.get_value("Invoice", invoice, "expected_collection"))
 
 
-def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
-	"""A successful (Captured) card charge that settled the invoice."""
+def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None, retry=0):
+	"""A successful (Captured) card charge that settled the invoice.
+
+	`retry` matters: the attempt's idempotency key is hash(invoice, retry_number), so
+	a capture that follows a decline on the SAME invoice is a genuine second attempt
+	and must say so — leaving it at 0 collides with the decline's key.
+	"""
 	when = when or frappe.utils.now_datetime()
 	return (
 		frappe.get_doc(
@@ -917,6 +930,7 @@ def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
 				"amount": amount,
 				"currency": currency,
 				"status": "Captured",
+				"retry_number": retry,
 				"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
 				"resolved_by": "Webhook",
 				"initiated_at": when,

@@ -249,11 +249,32 @@ def seed() -> dict:
 	# never hand-injected rows.
 	_seed_notification_feed(slug_to_team)
 
+	# Prices went up after everyone signed. Nothing about a running subscription
+	# changes — the rate is locked on its open segment (ADR 0010) — which is exactly
+	# what makes grandfathering visible: every existing team is now sitting below
+	# list, and the console can finally say so. Done LAST so it lands on top of the
+	# locks the teams already hold.
+	_raise_catalog_prices()
+
 	# NOTE: the demo does NOT touch the Billing workspace — the app ships the real
 	# "Catalog Administration" workspace as a file fixture (billing/workspace/billing),
 	# which `bench migrate` installs. Overwriting it here made the demo site diverge.
 	frappe.db.commit()
 	return results
+
+
+def _raise_catalog_prices(factor: float = 1.18) -> None:
+	"""Put every VM plan's catalog rate up, leaving locked segments untouched."""
+	for rate in frappe.get_all(
+		"Catalog Rate", filters={"priced_doctype": "Plan"}, fields=["name", "rate"]
+	):
+		frappe.db.set_value(
+			"Catalog Rate",
+			rate.name,
+			"rate",
+			round(frappe.utils.flt(rate.rate) * factor, 2),
+			update_modified=False,
+		)
 
 
 def _seed_notification_feed(slug_to_team: dict):
@@ -681,9 +702,11 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 		_attempt, backup_pm = _settle_via_backup(
 			team, inv, pm, gateway, collectable, currency, when="2026-06-30 09:00:00"
 		)
-		# Duplicate capture on the same invoice, then its full refund to source.
+		# Duplicate capture on the same invoice, then its full refund to source. It is
+		# the THIRD attempt against this invoice (decline, backup capture, then this),
+		# and the attempt key is hash(invoice, retry_number) — so it has to say so.
 		dup = _capture_attempt(
-			team, inv, backup_pm, gateway, collectable, currency, when="2026-06-30 11:00:00"
+			team, inv, backup_pm, gateway, collectable, currency, when="2026-06-30 11:00:00", retry=2
 		)
 		make_refund(team, inv, dup, collectable, currency, "Source", "Duplicate charge — full refund to card")
 		return "primary declined → backup captured (#28); duplicate charge refunded in full → source"
