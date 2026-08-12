@@ -801,3 +801,57 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 			for r in (call.kwargs.get("recipients", call.args[0] if call.args else []))
 		]
 		self.assertIn(self.user_a, all_recipients)
+
+
+class TestFeedPagination(EngineTestBase):
+	"""`start` + `has_next_page` — what the console's 'Load More' pages on."""
+
+	def setUp(self):
+		super().setUp()
+		self.user = make_user("paging@example.com")
+		team = frappe.get_doc("Team", TEAM)
+		team.append("members", {"user": self.user, "role": "Viewer", "status": "Active"})
+		team.save(ignore_permissions=True)
+
+	def _seed(self, count):
+		from central.notification import create_notification
+
+		for index in range(count):
+			create_notification(TEAM, f"Notification {index}", category="Server", publish=False)
+
+	def test_pages_do_not_overlap_and_report_next_page(self):
+		self._seed(5)
+		from central import notification as feed
+
+		first = feed.list_notifications(TEAM, user=self.user, limit=2)
+		self.assertEqual(len(first["items"]), 2)
+		self.assertTrue(first["has_next_page"])
+
+		second = feed.list_notifications(TEAM, user=self.user, start=2, limit=2)
+		self.assertEqual(len(second["items"]), 2)
+		self.assertTrue(second["has_next_page"])
+
+		last = feed.list_notifications(TEAM, user=self.user, start=4, limit=2)
+		self.assertEqual(len(last["items"]), 1)
+		self.assertFalse(last["has_next_page"])
+
+		names = [item.name for page in (first, second, last) for item in page["items"]]
+		self.assertEqual(len(names), len(set(names)), "pages overlapped")
+
+	def test_exact_page_boundary_has_no_next_page(self):
+		"""A last page filled exactly to `limit` must not advertise another page."""
+		self._seed(4)
+		from central import notification as feed
+
+		page = feed.list_notifications(TEAM, user=self.user, start=2, limit=2)
+		self.assertEqual(len(page["items"]), 2)
+		self.assertFalse(page["has_next_page"])
+
+	def test_defaults_are_unchanged(self):
+		"""Callers that never pass `start` keep the pre-pagination behaviour."""
+		self._seed(3)
+		from central import notification as feed
+
+		page = feed.list_notifications(TEAM, user=self.user)
+		self.assertEqual(len(page["items"]), 3)
+		self.assertFalse(page["has_next_page"])

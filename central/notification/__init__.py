@@ -138,19 +138,20 @@ def list_notifications(
 	team: str,
 	*,
 	user: str | None = None,
+	start: int = 0,
 	limit: int = 50,
 	category: str | None = None,
 	unread_only: bool = False,
 ) -> dict:
-	"""The team's notification feed, filtered per-user, newest first.
+	"""One page of the team's notification feed, filtered per-user, newest first.
 
 	One indexed query: the visible-notification filter (team, per-row capability,
-	in-app category preference) is pushed into SQL — so ``limit`` is exact, never an
-	over-fetch that could silently under-return — LEFT JOINed to the per-user
-	``Notification Read`` for read state. Read state is per-user, not the shared
-	``is_read`` flag. Operators see everything."""
+	in-app category preference) is pushed into SQL, LEFT JOINed to the per-user
+	``Notification Read`` for read state. Operators see everything. Reads one row
+	past ``limit`` to report ``has_next_page`` without a second COUNT."""
 	user = user or frappe.session.user
-	limit = frappe.utils.cint(limit)
+	start = max(0, frappe.utils.cint(start))
+	limit = max(1, frappe.utils.cint(limit))
 	tn = frappe.qb.DocType("Team Notification")
 	nr = frappe.qb.DocType("Notification Read")
 
@@ -161,13 +162,20 @@ def list_notifications(
 		.select(*(getattr(tn, f) for f in _FEED_FIELDS), nr.name.as_("_read_marker"))
 		.where(Criterion.all(_visible_conditions(tn, team, user, category)))
 		.orderby(tn.creation, order=Order.desc)
-		.limit(limit)
+		.limit(limit + 1)
+		.offset(start)
 	)
 	if frappe.utils.cint(unread_only):
 		query = query.where(nr.name.isnull())
 
 	items = query.run(as_dict=True)
+	has_next_page = len(items) > limit
+	items = items[:limit]
 	for row in items:
 		row["is_read"] = 1 if row.pop("_read_marker", None) else 0
 
-	return {"items": items, "unread": unread_count(team, user=user)}
+	return {
+		"items": items,
+		"unread": unread_count(team, user=user),
+		"has_next_page": has_next_page,
+	}

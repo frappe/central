@@ -138,11 +138,13 @@ def report_pilot_event(
 @frappe.whitelist()
 def list_notifications(
 	team: str | None = None,
+	start: int = 0,
 	limit: int = 50,
 	category: str | None = None,
 	unread_only: bool = False,
 ) -> dict:
-	"""The team's in-app notification feed — billing and server events — newest first.
+	"""One page of the team's in-app notification feed — billing and server events —
+	newest first. Returns ``has_next_page`` so the console can page with ``start``.
 
 	Capability-filtered: operators see everything; a member only sees notifications
 	whose ``required_cap`` they hold."""
@@ -150,6 +152,7 @@ def list_notifications(
 
 	return _list(
 		_member_team(team),
+		start=start,
 		limit=limit,
 		category=category,
 		unread_only=unread_only,
