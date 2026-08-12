@@ -41,6 +41,8 @@ const daysRemaining = computed(() => fc.value?.days_remaining ?? null)
 const measured = computed(() => Number(fc.value?.measured ?? projected.value))
 const estimated = computed(() => Number(fc.value?.estimated ?? 0))
 const hasEstimates = computed(() => Boolean(fc.value?.has_estimates))
+const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
+const taxLabel = computed(() => fc.value?.tax_type || 'tax')
 const measuredPct = computed(() => {
 	const total = measured.value + estimated.value
 	return total > 0 ? Math.round((measured.value / total) * 100) : 100
@@ -122,7 +124,7 @@ async function submitAlert(): Promise<void> {
 
 <template>
 	<div
-		class="flex flex-col rounded-lg border bg-surface-base p-5 transition-colors"
+		class="rounded-lg border bg-surface-base p-5 transition-colors"
 		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
 	>
 		<div class="flex h-6 items-center justify-between gap-2">
@@ -133,47 +135,70 @@ async function submitAlert(): Promise<void> {
 			>
 				This cycle
 			</button>
-			<button
-				type="button"
-				class="grid size-6 place-items-center rounded text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
-				aria-label="Open cycle breakdown"
+			<Button
+				variant="ghost"
+				size="sm"
+				label="Breakdown"
 				@click="$emit('open')"
 			>
-				<span class="lucide-chevron-right size-4" aria-hidden="true" />
-			</button>
+				<template #suffix>
+					<span class="lucide-chevron-right size-4" aria-hidden="true" />
+				</template>
+			</Button>
 		</div>
 
-		<div v-if="loading" class="mt-2 w-32">
-			<LoadingText :lines="1" />
+		<div v-if="loading" class="mt-2 w-40">
+			<LoadingText :lines="2" />
 		</div>
 		<template v-else>
-			<p class="mt-1.5 text-2xl-semibold tabular-nums text-ink-gray-9">
+			<!-- The headline figure of the page. -->
+			<p class="mt-1.5 text-3xl-semibold tabular-nums text-ink-gray-9">
 				{{ money(projected, currency) }}
 			</p>
-			<!-- Split bar: solid is owed, hatched is inferred. Only drawn when part of
-			     the figure actually is an estimate. -->
-			<div
-				v-if="hasEstimates"
-				class="mt-2.5 flex h-2 overflow-hidden rounded-full bg-surface-gray-2"
-				aria-hidden="true"
-			>
-				<span class="bg-surface-blue-5" :style="{ width: `${measuredPct}%` }" />
-				<span class="estimated-fill flex-1" />
-			</div>
-			<p v-if="hasEstimates" class="mt-2 text-p-sm text-ink-gray-5">
-				{{ money(measured, currency) }} owed ·
-				{{ money(estimated, currency) }} estimated
-			</p>
-
-			<p class="mt-1.5 text-p-sm text-ink-gray-5">
+			<p class="mt-1 text-p-sm text-ink-gray-5">
 				<template v-if="billsOn">Bills {{ billsOn }}</template>
 				<template v-if="daysRemaining != null">
 					· {{ daysRemaining }} days left</template
 				>
 			</p>
 
-			<div v-if="canManageBilling" class="mt-auto pt-4">
+			<!-- Split bar: solid is owed, hatched is inferred. Only drawn when part
+			     of the figure actually is an estimate — a bill that is entirely fact
+			     should not be given a bar that implies doubt. -->
+			<template v-if="hasEstimates">
+				<div
+					class="mt-4 flex h-2 overflow-hidden rounded-full bg-surface-gray-2"
+					aria-hidden="true"
+				>
+					<span
+						class="bg-surface-blue-5"
+						:style="{ width: `${measuredPct}%` }"
+					/>
+					<span class="estimated-fill flex-1" />
+				</div>
+				<div class="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
+					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
+						<span
+							class="size-2 shrink-0 rounded-sm bg-surface-blue-5"
+							aria-hidden="true"
+						/>
+						{{ money(measured, currency) }} already owed
+					</span>
+					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
+						<span
+							class="estimated-fill size-2 shrink-0 rounded-sm"
+							aria-hidden="true"
+						/>
+						{{ money(estimated, currency) }} estimated
+					</span>
+				</div>
+			</template>
+
+			<div
+				class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-outline-gray-1 pt-3"
+			>
 				<Button
+					v-if="canManageBilling"
 					variant="ghost"
 					size="sm"
 					class="-ml-2"
@@ -185,6 +210,10 @@ async function submitAlert(): Promise<void> {
 						><span class="lucide-bell size-4" aria-hidden="true" /></template
 					>
 				</Button>
+				<span v-else />
+				<span v-if="taxAmount" class="text-p-sm text-ink-gray-5">
+					incl. {{ money(taxAmount, currency) }} {{ taxLabel }}
+				</span>
 			</div>
 		</template>
 
@@ -223,8 +252,8 @@ async function submitAlert(): Promise<void> {
 .estimated-fill {
 	background-image: repeating-linear-gradient(
 		45deg,
-		var(--surface-blue-2) 0 3px,
-		var(--surface-gray-2) 3px 6px
+		var(--surface-blue-4) 0 3px,
+		var(--surface-blue-2) 3px 6px
 	);
 }
 </style>

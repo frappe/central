@@ -35,6 +35,14 @@ const short = computed(
 )
 const atRisk = computed(() => short.value && !hasWorkingMethod.value)
 
+// How far the balance goes against this cycle. A bare "card covers the rest" says
+// nothing about how much rest there is; a percentage is the same sentence with the
+// number the customer would otherwise have to work out.
+const coverPct = computed(() => {
+	if (projected.value <= 0) return null
+	return Math.min(100, Math.floor((balance.value / projected.value) * 100))
+})
+
 // Promotional credit on a clock. Only the soonest grant is named on the card —
 // the rest are in the wallet history — since the date the customer needs to act on
 // is the first one.
@@ -99,7 +107,10 @@ function onAutoRecharge(): void {
 					class="lucide-triangle-alert size-3.5 shrink-0"
 					aria-hidden="true"
 				/>
-				Insufficient balance
+				<template v-if="coverPct != null">
+					Covers {{ coverPct }}% of this cycle
+				</template>
+				<template v-else>Insufficient balance</template>
 			</p>
 			<p
 				v-else-if="short"
@@ -109,9 +120,15 @@ function onAutoRecharge(): void {
 					class="lucide-credit-card size-3.5 shrink-0 text-ink-gray-4"
 					aria-hidden="true"
 				/>
-				Card covers the rest
+				<template v-if="coverPct != null">
+					Covers {{ coverPct }}% of this cycle · card covers the rest
+				</template>
+				<template v-else>Card covers the rest</template>
 			</p>
-			<p v-else class="mt-1.5 text-p-sm text-ink-gray-5">Covers this invoice</p>
+			<p v-else class="mt-1.5 text-p-sm text-ink-gray-5">
+				<template v-if="projected > 0">Covers this cycle in full</template>
+				<template v-else>Nothing due this cycle</template>
+			</p>
 
 			<!-- Free credit runs out; purchased credit doesn't. Say so before it does. -->
 			<p

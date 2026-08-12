@@ -5,14 +5,13 @@ import CollectionActionBanner from '@/components/billing/CollectionActionBanner.
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
-import MeteredServicesCard from '@/components/billing/MeteredServicesCard.vue'
 import NextPaymentCard from '@/components/billing/NextPaymentCard.vue'
+import PayingForCard from '@/components/billing/PayingForCard.vue'
 import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
 import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
 import PriceProtectionCard from '@/components/billing/PriceProtectionCard.vue'
 import PriceProtectionPanel from '@/components/billing/PriceProtectionPanel.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
-import SubscriptionsCard from '@/components/billing/SubscriptionsCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
 import Alert from '@/components/common/Alert.vue'
@@ -71,11 +70,13 @@ const advancedOpen = ref(false)
 					/>
 
 					<CollectionActionBanner />
+					<!-- The cycle figure is the page's headline, so it gets the full
+               width; what happens to it next sits in the pair beneath. -->
+					<EstimatedCard
+						:active="showCycleBreakdown"
+						@open="showCycleBreakdown = true"
+					/>
 					<div class="cards-row grid gap-4">
-						<EstimatedCard
-							:active="showCycleBreakdown"
-							@open="showCycleBreakdown = true"
-						/>
 						<NextPaymentCard
 							:active="showSchedule"
 							@open="showSchedule = true"
@@ -85,11 +86,10 @@ const advancedOpen = ref(false)
 							@open="showWalletHistory = true"
 						/>
 					</div>
+					<PayingForCard />
+					<PriceProtectionCard @open="showPrices = true" />
 					<PaymentMethodsCard />
 					<BillingContactTaxCard @edit="setupDialogOpen = true" />
-					<SubscriptionsCard />
-					<MeteredServicesCard />
-					<PriceProtectionCard @open="showPrices = true" />
 
 					<!-- Advanced — collapsed home for the rare, destructive-adjacent
                verbs (Stop billing). -->
@@ -132,17 +132,9 @@ const advancedOpen = ref(false)
 .cards-host {
 	container-type: inline-size;
 }
-/* Three summary cards now (cycle / next payment / wallet). Two abreast as soon as
-   there is room, three only when there is real room — with a tray docked the
-   column is ~24rem narrower, and three across there reads as a squeeze. */
 @container (min-width: 50rem) {
 	.cards-row {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-}
-@container (min-width: 68rem) {
-	.cards-row {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 }
 </style>

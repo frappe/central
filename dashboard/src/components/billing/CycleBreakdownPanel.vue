@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoadingText } from 'frappe-ui'
+import { Badge, LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import SidePanel from '@/components/common/SidePanel.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -68,18 +68,10 @@ const period = computed(() =>
 						<span class="text-sm-medium tabular-nums text-ink-gray-9">
 							{{ money(line.amount, currency) }}
 						</span>
-						<!-- The tag is the whole reason this tray exists: it says which
-						     numbers are facts and which are inference. -->
-						<span
-							class="rounded px-1.5 py-0.5 text-xs"
-							:class="
-                isEstimated(line)
-                  ? 'bg-surface-gray-2 text-ink-gray-6'
-                  : 'bg-surface-blue-2 text-ink-blue-3'
-              "
-						>
-							{{ isEstimated(line) ? 'Est.' : 'Owed' }}
-						</span>
+						<!-- Only the inferred lines are marked. Tagging the facts too made
+						     every row carry a badge, which is noise: the estimate is the
+						     exception, and an exception is what a badge is for. -->
+						<Badge v-if="isEstimated(line)" theme="amber" label="Estimated" />
 					</div>
 				</li>
 			</ul>
