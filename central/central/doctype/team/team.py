@@ -200,12 +200,27 @@ class Team(Document):
 		specific resource, so holding both is contradictory — the narrow row
 		grants nothing and reads as less access than the member actually has.
 		Saves normalize silently: the wildcard stays, its shadowed rows go."""
-		wildcards = {(row.user, row.role) for row in self.members if row.resource_type == "*"}
-		shadowed = [
-			row for row in self.members if row.resource_type != "*" and (row.user, row.role) in wildcards
-		]
+		wildcards = self._wildcard_keys(self)
+		shadowed = [row for row in self.members if self._is_shadowed(row, wildcards)]
 		for row in shadowed:
 			self.remove(row)
+
+	@staticmethod
+	def _wildcard_keys(doc) -> set[tuple[str, str]]:
+		return {(row.user, row.role) for row in doc.members if row.resource_type == "*"}
+
+	@staticmethod
+	def _is_shadowed(row, wildcards: set[tuple[str, str]]) -> bool:
+		return row.resource_type != "*" and (row.user, row.role) in wildcards
+
+	@staticmethod
+	def _effective_grants(doc) -> list:
+		"""Member rows minus the ones a wildcard grant absorbs — the state a save
+		normalizes to. Change detection compares this on both sides, so dropping
+		rows that were already shadowed in storage doesn't read as a member edit
+		and block a metadata-only save for someone without team:manage_members."""
+		wildcards = Team._wildcard_keys(doc)
+		return [row for row in doc.members if not Team._is_shadowed(row, wildcards)]
 
 	def _validate_unique_members(self) -> None:
 		grants = [
@@ -283,7 +298,7 @@ class Team(Document):
 	@staticmethod
 	def _grants_by_user(doc) -> dict[str, frozenset]:
 		grants: dict[str, set] = {}
-		for member in doc.members:
+		for member in Team._effective_grants(doc):
 			grants.setdefault(member.user, set()).add(
 				(member.role, member.resource_type, member.resource_name, member.status)
 			)
@@ -316,7 +331,7 @@ class Team(Document):
 	def _member_state(doc) -> list[tuple[str, str, str, str, str]]:
 		return sorted(
 			(member.user, member.role, member.resource_type, member.resource_name or "", member.status)
-			for member in doc.members
+			for member in Team._effective_grants(doc)
 		)
 
 	@staticmethod
