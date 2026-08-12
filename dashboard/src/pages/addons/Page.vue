@@ -120,15 +120,17 @@ const cards = computed(() =>
 			linkable: !comingSoon && isRouted(entry.to),
 			// Coming soon: what it will cost. On: what it has done this cycle.
 			// Off: what it would cost.
+			// A free service quotes 0, so ask whether a rate exists, not whether
+			// it is non-zero.
 			meta: comingSoon
-				? rate
+				? rate != null
 					? rateLabel(rate, entry.noun)
 					: 'Pricing to be announced'
 				: subscribed
 					? subscribed.period_usage
 						? `${number.format(subscribed.period_usage)} ${entry.noun} this cycle`
 						: 'No usage this cycle'
-					: rate
+					: rate != null
 						? rateLabel(rate, entry.noun)
 						: 'Not available yet',
 		}
