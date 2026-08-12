@@ -6,6 +6,7 @@ import BillingCard from '@/components/billing/BillingCard.vue'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { billingPeriod } from '@/lib/date'
+import { invoiceTheme } from '@/lib/status'
 import { money } from '@/lib/format'
 import type { Statement } from '@/types/billing'
 
@@ -48,13 +49,6 @@ const summary = computed(() => {
 	]
 })
 
-const STATUS_THEME: Record<string, string> = {
-	Paid: 'green',
-	Open: 'blue',
-	Overdue: 'red',
-	Draft: 'gray',
-	Waived: 'gray',
-}
 </script>
 
 <template>
@@ -122,23 +116,25 @@ const STATUS_THEME: Record<string, string> = {
 				v-if="rows.length"
 				class="mt-4 divide-y divide-outline-gray-1 border-t border-outline-gray-1"
 			>
+				<!-- Period | Status | Amount, the same three columns the Invoices list
+				     uses. Trailing the badge straight after the label made its position
+				     jump with the month's name length. -->
 				<li
 					v-for="row in rows"
 					:key="row.invoice"
-					class="flex items-center justify-between gap-3 py-2.5"
+					class="grid grid-cols-[1fr_5rem_7rem] items-center gap-3 py-2.5"
 				>
-					<div class="min-w-0">
-						<div class="flex items-center gap-2">
-							<span class="truncate text-p-sm text-ink-gray-8">
-								{{ billingPeriod(row.period_start, row.period_end) }}
-							</span>
-							<Badge
-								:theme="(STATUS_THEME[row.status] as any) || 'gray'"
-								:label="row.status"
-							/>
-						</div>
-					</div>
-					<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-9">
+					<span class="truncate text-p-sm text-ink-gray-8">
+						{{ billingPeriod(row.period_start, row.period_end) }}
+					</span>
+					<span class="flex justify-end">
+						<Badge
+							:theme="invoiceTheme(row.status)"
+							variant="subtle"
+							:label="row.status"
+						/>
+					</span>
+					<span class="text-right text-p-sm tabular-nums text-ink-gray-9">
 						{{ money(row.total, currency) }}
 					</span>
 				</li>
