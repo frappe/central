@@ -53,6 +53,17 @@ class TestProfile(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			update_profile("   ")
 
+	def test_non_string_input_is_a_validation_error(self):
+		# A JSON body can put a list or a dict where a string is expected; that has
+		# to come back as a controlled error, not an unhandled server error.
+		for value in ([], {"a": 1}, None):
+			with self.assertRaises(frappe.ValidationError):
+				update_profile(value)
+			with self.assertRaises(frappe.ValidationError):
+				change_password(value, NEW_PASSWORD)
+			with self.assertRaises(frappe.ValidationError):
+				change_password(OLD_PASSWORD, value)
+
 	# ── change_password ──
 
 	def test_wrong_current_password_is_a_validation_error(self):

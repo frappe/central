@@ -11,6 +11,7 @@ from central.iam import (
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
+from central.utils.inputs import require_text
 
 # Identity and capability reads for the console. Always scoped to the signed-in
 # user — safe for any logged-in member.
@@ -136,9 +137,9 @@ def update_profile(full_name: str) -> dict[str, Any]:
 	session user — there is no user parameter to abuse. The whole string goes
 	into first_name (frappe recomputes full_name from the parts)."""
 	user = _require_signed_in()
-	full_name = (full_name or "").strip()
-	if not full_name:
-		frappe.throw(frappe._("Enter a name."), frappe.ValidationError)
+	# Typed at the trust boundary: a JSON body can put a list or dict here, and
+	# escape_html below would raise an unhandled error on one.
+	full_name = require_text(full_name, frappe._("Enter a name."))
 	doc = frappe.get_doc("User", user)
 	# Escaped at write time, matching the signup path (_create_verified_user):
 	# full_name reaches HTML contexts outside this SPA (frappe emails, desk).

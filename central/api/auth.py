@@ -9,6 +9,7 @@ from frappe.utils import cint, escape_html, random_string
 
 from central.iam import get_user_team_names
 from central.users import CENTRAL_USER_ROLE
+from central.utils.inputs import require_secret
 
 # Signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
 # signup (no User yet, so an abandoned signup leaves nothing behind — simpler than
@@ -186,8 +187,10 @@ def change_password(old_password: str, new_password: str) -> dict:
 	if not user or user == "Guest":
 		frappe.throw(_("Sign in to change your password."), frappe.PermissionError)
 
-	if not old_password or not new_password:
-		frappe.throw(_("Enter your current and new password."), frappe.ValidationError)
+	# Typed at the trust boundary: a JSON body can put a list or dict here, and
+	# the password helpers below would raise an unhandled error on one.
+	old_password = require_secret(old_password, _("Enter your current password."))
+	new_password = require_secret(new_password, _("Enter a new password."))
 
 	# A wrong password must NOT re-raise AuthenticationError: frappe's request
 	# handler treats that as a failed login and tears down the session, so a
