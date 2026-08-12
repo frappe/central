@@ -7,6 +7,7 @@ import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDia
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
 import NextPaymentCard from '@/components/billing/NextPaymentCard.vue'
 import PayingForCard from '@/components/billing/PayingForCard.vue'
+import PayingForPanel from '@/components/billing/PayingForPanel.vue'
 import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
 import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
 import PriceProtectionCard from '@/components/billing/PriceProtectionCard.vue'
@@ -31,7 +32,7 @@ const { complete, setupDialogOpen } = useBillingSetup()
 // One docked tray at a time: the panel column is a single 24rem slot, and two
 // open at once would stack two SidePanels side by side and squeeze the content
 // out. A single ref names which is showing, and each card's v-model writes it.
-type Tray = 'wallet' | 'cycle' | 'schedule' | 'prices' | null
+type Tray = 'wallet' | 'cycle' | 'schedule' | 'prices' | 'payingFor' | null
 const tray = ref<Tray>(null)
 
 function trayModel(name: Exclude<Tray, null>) {
@@ -46,6 +47,7 @@ const showWalletHistory = trayModel('wallet')
 const showCycleBreakdown = trayModel('cycle')
 const showSchedule = trayModel('schedule')
 const showPrices = trayModel('prices')
+const showPayingFor = trayModel('payingFor')
 
 // Rare, scary verbs live folded under "Advanced" — reference, not news, same
 // pattern as the invoice Activity fold.
@@ -86,7 +88,7 @@ const advancedOpen = ref(false)
 							@open="showWalletHistory = true"
 						/>
 					</div>
-					<PayingForCard />
+					<PayingForCard @open="showPayingFor = true" />
 					<PriceProtectionCard @open="showPrices = true" />
 					<PaymentMethodsCard />
 					<BillingContactTaxCard @edit="setupDialogOpen = true" />
@@ -118,6 +120,7 @@ const advancedOpen = ref(false)
 			<CycleBreakdownPanel v-model:open="showCycleBreakdown" />
 			<PaymentSchedulePanel v-model:open="showSchedule" />
 			<PriceProtectionPanel v-model:open="showPrices" />
+			<PayingForPanel v-model:open="showPayingFor" />
 		</div>
 
 		<EditBillingProfileDialog v-model="setupDialogOpen" />

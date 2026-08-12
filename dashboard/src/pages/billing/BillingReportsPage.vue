@@ -5,10 +5,12 @@ import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PaymentHistoryCard from '@/components/billing/PaymentHistoryCard.vue'
+import PaymentHistoryPanel from '@/components/billing/PaymentHistoryPanel.vue'
 import RefundsCard from '@/components/billing/RefundsCard.vue'
 import SpendHistoryCard from '@/components/billing/SpendHistoryCard.vue'
 import SpendSplitCard from '@/components/billing/SpendSplitCard.vue'
 import StatementCard from '@/components/billing/StatementCard.vue'
+import StatementPanel from '@/components/billing/StatementPanel.vue'
 import TaxSummaryCard from '@/components/billing/TaxSummaryCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useSession } from '@/composables/useSession'
@@ -47,6 +49,22 @@ function setMonths(value: number): void {
 	history.reload()
 }
 
+// One docked tray at a time, same as Overview: the panel column is a single
+// 24rem slot. A card that outgrows its five rows hands the rest to a tray rather
+// than growing a scrollbar of its own.
+type Tray = 'payments' | 'statement' | null
+const tray = ref<Tray>(null)
+function trayModel(name: Exclude<Tray, null>) {
+	return computed({
+		get: () => tray.value === name,
+		set: (open: boolean) => {
+			tray.value = open ? name : null
+		},
+	})
+}
+const showPayments = trayModel('payments')
+const showStatement = trayModel('statement')
+
 const loading = computed(() => history.loading && !history.data)
 // Nothing has ever been billed — not "nothing this month". The distinction is
 // what separates a first-run state from a quiet period.
@@ -63,8 +81,9 @@ function exportUrl(report: string): string {
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto">
-		<div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
+	<div class="flex h-full min-h-0">
+		<div class="min-w-0 flex-1 overflow-y-auto">
+			<div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
 			<header class="flex flex-wrap items-end justify-between gap-3">
 				<div>
 					<h1 class="text-lg-semibold text-ink-gray-9">Reports</h1>
@@ -135,6 +154,10 @@ function exportUrl(report: string): string {
 				<RefundsCard />
 				<TaxSummaryCard />
 			</template>
+			</div>
 		</div>
+
+		<StatementPanel v-model:open="showStatement" />
+		<PaymentHistoryPanel v-model:open="showPayments" />
 	</div>
 </template>

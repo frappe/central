@@ -529,3 +529,22 @@ export interface PaymentAttempt {
 	gateway_transaction_id: string | null
 	creation: string
 }
+
+/** A team-level metered service as the dashboard lists it. */
+export interface ServiceRow {
+	service_subject: string
+	plan: string
+	title: string | null
+	resource_type: string | null
+	cluster: string | null
+	currency: string
+	unit: string | null
+	settlement_mode: string
+	allowance: number
+	period_usage: number
+}
+
+/** One line of "what you're paying for" — a server or a metered service. */
+export type PayingForItem =
+	| { kind: 'server'; id: string; cost: number | null; sub: SubscriptionRow }
+	| { kind: 'service'; id: string; cost: number | null; service: ServiceRow }

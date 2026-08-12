@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Badge, Button, LoadingText, useCall } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import { useSession } from '@/composables/useSession'
@@ -15,7 +15,11 @@ import type { PaymentAttempt } from '@/types/billing'
 // A failed row leads with plain language ("Your card has expired"), not the
 // gateway's own code. The raw wording is kept underneath for anyone quoting it
 // to support.
+// Five is the shape of the recent record; the rest is a tray, not a scrollbar
+// inside a card.
+const VISIBLE = 5
 defineProps<{ exportUrl: string }>()
+defineEmits<{ open: [] }>()
 const { activeTeam } = useSession()
 
 const attempts = useCall<PaymentAttempt[], { team: string }>({
@@ -28,8 +32,8 @@ whenTeamReady(() => attempts.reload())
 
 const loading = computed(() => attempts.loading && !attempts.data)
 const all = computed(() => attempts.data ?? [])
-const expanded = ref(false)
-const rows = computed(() => (expanded.value ? all.value : all.value.slice(0, 6)))
+const rows = computed(() => all.value.slice(0, VISIBLE))
+const hidden = computed(() => Math.max(0, all.value.length - VISIBLE))
 
 const STATUS: Record<string, { label: string; theme: string }> = {
 	Captured: { label: 'Paid', theme: 'green' },
@@ -101,13 +105,17 @@ function badge(row: PaymentAttempt) {
 			</ul>
 
 			<Button
-				v-if="all.length > 6"
+				v-if="hidden"
 				variant="ghost"
 				size="sm"
 				class="-ml-2 mt-2"
-				:label="expanded ? 'Show less' : `Show all ${all.length}`"
-				@click="expanded = !expanded"
-			/>
+				:label="`View all ${all.length}`"
+				@click="$emit('open')"
+			>
+				<template #suffix>
+					<span class="lucide-chevron-right size-4" aria-hidden="true" />
+				</template>
+			</Button>
 		</template>
 	</BillingCard>
 </template>

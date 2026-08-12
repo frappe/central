@@ -16,7 +16,9 @@ import type { Statement } from '@/types/billing'
 // This is NOT a tax invoice: the statutory document is issued by ERPNext (ADR
 // 0019) and the sync is one-way, so we don't have it to give. The card says what
 // it is rather than implying otherwise.
+const VISIBLE = 5
 defineProps<{ exportUrl: string }>()
+defineEmits<{ open: [] }>()
 const { activeTeam } = useSession()
 
 const statement = useCall<Statement, { team: string }>({
@@ -30,6 +32,9 @@ whenTeamReady(() => statement.reload())
 const loading = computed(() => statement.loading && !statement.data)
 const data = computed(() => statement.data)
 const currency = computed(() => data.value?.currency ?? 'INR')
+
+const rows = computed(() => (data.value?.rows ?? []).slice(-VISIBLE).reverse())
+const hidden = computed(() => Math.max(0, (data.value?.rows?.length ?? 0) - VISIBLE))
 
 const summary = computed(() => {
 	const d = data.value
@@ -91,11 +96,11 @@ const STATUS_THEME: Record<string, string> = {
 			</div>
 
 			<ul
-				v-if="data.rows.length"
+				v-if="rows.length"
 				class="mt-3 divide-y divide-outline-gray-1 border-t border-outline-gray-1"
 			>
 				<li
-					v-for="row in data.rows"
+					v-for="row in rows"
 					:key="row.invoice"
 					class="flex items-center justify-between gap-3 py-2.5"
 				>
@@ -115,6 +120,19 @@ const STATUS_THEME: Record<string, string> = {
 					</span>
 				</li>
 			</ul>
+
+			<Button
+				v-if="hidden"
+				variant="ghost"
+				size="sm"
+				class="-ml-2 mt-2"
+				:label="`View all ${data.rows.length}`"
+				@click="$emit('open')"
+			>
+				<template #suffix>
+					<span class="lucide-chevron-right size-4" aria-hidden="true" />
+				</template>
+			</Button>
 
 			<!-- Says what it is. The statutory tax invoice is issued by ERPNext
 			     (ADR 0019) and we cannot hand it over yet, so this must not imply a
