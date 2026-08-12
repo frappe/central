@@ -139,7 +139,7 @@ async function makeDefault(pm: PaymentMethod): Promise<void> {
 			await setMode.submit({ team: activeTeam.value!, mode: 'Auto Charge' })
 			if (setMode.error) throw setMode.error
 		}
-		successToast(`${pm.display_label || pm.method_type} is charged first.`)
+		successToast(`${pm.display_label || pm.method_type} is charged first`)
 		await collection.reload()
 		reloadMethods()
 	} catch (e) {
@@ -224,7 +224,7 @@ function onAdd(): void {
 							aria-hidden="true"
 						/>
 						<div class="min-w-0">
-							<span class="truncate text-sm font-medium text-ink-gray-9">
+							<span class="truncate text-sm-medium text-ink-gray-9">
 								Prepaid credits
 							</span>
 							<div class="truncate text-p-sm text-ink-gray-5">
@@ -233,7 +233,7 @@ function onAdd(): void {
 						</div>
 					</div>
 					<div class="flex shrink-0 items-center gap-1">
-						<span v-if="hasCredits" class="text-sm font-medium text-ink-gray-9">
+						<span v-if="hasCredits" class="text-sm-medium text-ink-gray-9">
 							Primary
 						</span>
 						<!-- Holds the column so this row lines up with ones that have a menu. -->
@@ -253,7 +253,7 @@ function onAdd(): void {
 						/>
 						<div class="min-w-0">
 							<div class="flex items-center gap-2">
-								<span class="truncate text-sm font-medium text-ink-gray-9">
+								<span class="truncate text-sm-medium text-ink-gray-9">
 									{{ pm.display_label || pm.method_type }}
 								</span>
 								<Badge
@@ -273,7 +273,7 @@ function onAdd(): void {
 						</div>
 					</div>
 					<div class="flex shrink-0 items-center gap-1">
-						<span class="text-sm font-medium text-ink-gray-9">
+						<span class="text-sm-medium text-ink-gray-9">
 							{{ methodLabel(idx) }}
 						</span>
 						<PaymentMethodRowActions
