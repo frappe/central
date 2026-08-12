@@ -149,8 +149,14 @@ function exportUrl(report: string): string {
 			<template v-else>
 				<SpendHistoryCard :history="history.data!" />
 				<SpendSplitCard :history="history.data!" />
-				<StatementCard :export-url="exportUrl('statement')" />
-				<PaymentHistoryCard :export-url="exportUrl('payments')" />
+				<StatementCard
+					:export-url="exportUrl('statement')"
+					@open="showStatement = true"
+				/>
+				<PaymentHistoryCard
+					:export-url="exportUrl('payments')"
+					@open="showPayments = true"
+				/>
 				<RefundsCard />
 				<TaxSummaryCard />
 			</template>
