@@ -78,4 +78,3 @@ class CentralSSOSettings(Document):
 		self.kid = frappe.generate_hash(length=16)
 		# Password field → private key is encrypted at rest on save.
 		self.save(ignore_permissions=True)
-		frappe.db.commit()
