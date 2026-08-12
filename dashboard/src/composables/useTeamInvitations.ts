@@ -30,6 +30,12 @@ watch(canManageMembers, (can, was) => {
 	if (can && !was) invitationsCall.reload()
 })
 
+// Losing the capability — a demotion, or a switch to a team you don't manage —
+// has to take the fetched rows with it: they carry invitees' email addresses,
+// roles and resource scopes, and this call's data outlives any one page. Every
+// read below is gated on the live capability rather than on what was fetched
+// while it still held.
+
 const resendCall = useCall<{ expires_on: string }, { invitation: string }>({
 	url: method(API.resendInvitation),
 	method: 'POST',
@@ -63,11 +69,16 @@ export function useTeamInvitations() {
 	}
 
 	return {
-		invitations: computed<InvitationRow[]>(() => invitationsCall.data ?? []),
+		invitations: computed<InvitationRow[]>(() =>
+			canManageMembers.value ? (invitationsCall.data ?? []) : [],
+		),
 		loading: computed(
-			() => invitationsCall.loading || !invitationsCall.isFinished,
+			() =>
+				canManageMembers.value &&
+				(invitationsCall.loading || !invitationsCall.isFinished),
 		),
 		error: computed(() => {
+			if (!canManageMembers.value) return null
 			if (!invitationsCall.error || isAbortError(invitationsCall.error))
 				return null
 			return getErrorMessage(
@@ -76,7 +87,9 @@ export function useTeamInvitations() {
 			)
 		}),
 		busy,
-		reload: () => invitationsCall.reload(),
+		reload: () => {
+			if (canManageMembers.value) invitationsCall.reload()
+		},
 		resend,
 		revoke,
 	}
