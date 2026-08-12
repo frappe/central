@@ -37,7 +37,7 @@ const options = computed(() => {
 	const items: ActionItem[] = []
 	if (!props.isFirst)
 		items.push({
-			label: 'Charge this first',
+			label: 'Primary payment method',
 			icon: 'lucide-star',
 			disabled: props.canPromote === false,
 			onClick: () => emit('makeDefault', props.method),
