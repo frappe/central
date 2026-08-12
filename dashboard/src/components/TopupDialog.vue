@@ -16,9 +16,14 @@ import type { PaymentInstrument } from '@/types/billing'
 // even though Razorpay owns the INR default. Stripe collects the card in an embedded
 // Element right here; Razorpay collects in its hosted sheet; PayPal renders its
 // Buttons in a second phase. The wallet is credited only after the gateway confirms.
-const props = withDefaults(defineProps<{ currency?: string }>(), {
-	currency: 'INR',
-})
+// `instrument` is set when the caller already knows what the customer is paying
+// with — the Amex/Diners route says so by arriving here at all. Asking again is
+// the whole reason that route felt broken, so the picker is skipped and the
+// instrument is stated instead.
+const props = withDefaults(
+	defineProps<{ currency?: string; instrument?: string }>(),
+	{ currency: 'INR', instrument: undefined },
+)
 const open = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ done: [res?: unknown] }>()
 
@@ -34,6 +39,15 @@ const options = useCall<{ instruments: PaymentInstrument[] }, { team: string }>(
 })
 const instruments = computed(() => options.data?.instruments ?? [])
 const instrument = ref<string | null>(null)
+
+// A caller-supplied instrument is fixed unless the customer asks to change it.
+const fixed = ref(false)
+const chosenLabel = computed(
+	() =>
+		instruments.value.find((t) => t.instrument === instrument.value)?.label ??
+		instrument.value ??
+		'',
+)
 const icons: Record<string, string> = {
 	Card: 'lucide-credit-card',
 	'RuPay Card': 'lucide-credit-card',
@@ -147,12 +161,17 @@ async function enterPhase(
 watch(open, (isOpen) => {
 	if (isOpen) {
 		options.reload()
+		if (props.instrument) {
+			instrument.value = props.instrument
+			fixed.value = true
+		}
 		return
 	}
 	if (!isOpen) {
 		destroy()
 		amount.value = null
 		instrument.value = null
+		fixed.value = false
 		payMethod.value = 'card'
 		cardPhase.value = false
 		cardLoading.value = false
@@ -201,7 +220,29 @@ watch(open, (isOpen) => {
 			<div v-else class="space-y-5">
 				<!-- The recharge instruments. Each sits on its own rail, so this is not
              decoration: it decides where the money goes. -->
-				<div v-if="instruments.length > 1">
+				<!-- Already told which instrument: say it, don't ask it again. -->
+				<div
+					v-if="fixed"
+					class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
+				>
+					<span
+						:class="icons[instrument || ''] || 'lucide-credit-card'"
+						class="size-4 shrink-0 text-ink-gray-6"
+						aria-hidden="true"
+					/>
+					<p class="text-p-sm text-ink-gray-6">
+						Paying with your {{ chosenLabel.toLowerCase() }}
+					</p>
+					<Button
+						class="ml-auto"
+						variant="ghost"
+						size="sm"
+						label="Change"
+						@click="fixed = false"
+					/>
+				</div>
+
+				<div v-else-if="instruments.length > 1">
 					<p class="mb-1.5 text-p-sm text-ink-gray-5">Pay with</p>
 					<div class="grid gap-2 sm:grid-cols-2">
 						<button

@@ -116,6 +116,9 @@ const options = [
 					<span class="mt-auto text-p-sm text-ink-gray-5">{{ o.fit }}</span>
 				</button>
 			</div>
+			<p v-if="s?.mandate_gap_note" class="mt-3 text-p-sm text-ink-gray-6">
+				{{ s.mandate_gap_note }}
+			</p>
 			<p class="mt-3 text-p-sm text-ink-gray-5">
 				You can switch anytime in Billing settings.
 			</p>

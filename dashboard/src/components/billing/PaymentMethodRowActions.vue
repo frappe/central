@@ -12,6 +12,11 @@ const props = defineProps<{
 	isFirst: boolean
 	isLast: boolean
 	busy?: boolean
+	/** True only for the row that currently holds the title. */
+	isPrimary?: boolean
+	/** False while credits are paying the bill: the choice is offered, not hidden,
+	 *  but it decides nothing until the balance runs out. */
+	canPromote?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -25,15 +30,19 @@ interface ActionItem {
 	label: string
 	icon: string
 	onClick: () => void
+	disabled?: boolean
 }
 
 const options = computed(() => {
 	if (!props.canManage) return []
 	const items: ActionItem[] = []
-	if (!props.method.is_default)
+	// Any row that is not the primary can become it — which is every method row
+	// while the wallet holds the title.
+	if (!props.isPrimary)
 		items.push({
-			label: 'Make default',
+			label: 'Primary payment method',
 			icon: 'lucide-star',
+			disabled: props.canPromote === false,
 			onClick: () => emit('makeDefault', props.method),
 		})
 	if (!props.isFirst)

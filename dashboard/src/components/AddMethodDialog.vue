@@ -3,6 +3,7 @@ import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
+import TopupDialog from '@/components/TopupDialog.vue'
 import { useAddStripeCard } from '@/composables/useAddStripeCard'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
@@ -21,6 +22,11 @@ import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 // iframes the card number. Stripe capture happens in an embedded Element; Razorpay
 // runs its hosted sheet.
 const open = defineModel<boolean>({ default: false })
+// Set when the dialog is opened from a "your card was declined" prompt, so the
+// method that comes out of it records why it is on the other rail.
+const props = withDefaults(defineProps<{ afterDecline?: boolean }>(), {
+	afterDecline: false,
+})
 const emit = defineEmits<{ done: [res?: unknown] }>()
 const { activeTeam } = useSession()
 
@@ -31,8 +37,8 @@ const options = useCall<PaymentMethodOptions, { team: string }>({
 	immediate: false,
 	refetch: true,
 })
-// The billing profile is the shared singleton — cardNeedsPhone only reads its
-// phone; no need for a second fetch of the same payload.
+// The billing profile is the shared singleton — we only read its phone, so there
+// is no need for a second fetch of the same payload.
 const { profile } = useBillingOverview()
 whenTeamReady(() => {
 	options.reload()
@@ -57,7 +63,7 @@ async function launchGateway(
 ): Promise<void> {
 	open.value = false
 	await nextTick()
-	const res = await run(methodType, contact, instrument)
+	const res = await run(methodType, contact, instrument, props.afterDecline)
 	if (!res) open.value = true
 }
 
@@ -65,9 +71,19 @@ const upiBlocked = computed(() => options.data && !options.data.allow_upi)
 
 const tiles = computed(() => options.data?.instruments ?? [])
 
+// A card no rail will hold a mandate on has one honest destination, so the line
+// saying so *is* the way there: tap it and the top-up opens. Our dialog closes
+// first — two stacked modals is how the second one ends up behind the first.
+const showTopup = ref(false)
+
+function goToTopup(): void {
+	open.value = false
+	showTopup.value = true
+}
+
 const icons: Record<string, string> = {
 	Card: 'lucide-credit-card',
-	'Other Network Card': 'lucide-credit-card',
+	'RuPay Card': 'lucide-credit-card',
 	'UPI Autopay': 'lucide-smartphone',
 }
 
@@ -90,11 +106,7 @@ function choose(tile: PaymentInstrument): void {
 		onCard()
 		return
 	}
-	if (
-		tile.instrument === 'Other Network Card' &&
-		cardNeedsPhone.value &&
-		!phone.value.trim()
-	) {
+	if (needsPhone(tile) && !phone.value.trim()) {
 		askPhone.value = true
 		return
 	}
@@ -105,13 +117,17 @@ function choose(tile: PaymentInstrument): void {
 	)
 }
 
-// A Razorpay card mandate needs a customer contact; phone is optional on the
-// profile, so collect it inline here when it's missing.
-const cardNeedsPhone = computed(
-	() =>
-		options.data?.adapter_key === 'Razorpay' &&
-		!String(profile.data?.phone || '').trim(),
-)
+// A card mandate on the RuPay rail needs a customer contact. Phone is optional on
+// the billing profile, so collect it inline when it's missing.
+//
+// This asks the *tile* which rail it sits on. Reading the payload's top-level
+// adapter_key instead asks about the card rail, which is Stripe for every team —
+// so the prompt never fired and the customer met a server error instead.
+const hasPhone = computed(() => !!String(profile.data?.phone || '').trim())
+
+function needsPhone(tile: PaymentInstrument): boolean {
+	return tile.adapter_key === 'Razorpay' && tile.instrument !== 'UPI Autopay' && !hasPhone.value
+}
 const askPhone = ref(false)
 const phone = ref('')
 
@@ -151,7 +167,7 @@ async function onCard(): Promise<void> {
 		await startStripe()
 		return
 	}
-	if (cardNeedsPhone.value && !phone.value.trim()) {
+	if (!hasPhone.value && !phone.value.trim() && options.data?.adapter_key === 'Razorpay') {
 		askPhone.value = true
 		return
 	}
@@ -255,6 +271,15 @@ watch(open, (isOpen) => {
 							}}</span>
 						</button>
 					</div>
+					<button
+						v-if="options.data.note"
+						type="button"
+						class="mt-3 flex w-full items-center justify-center gap-1.5 text-p-sm text-ink-gray-6 underline decoration-outline-gray-3 underline-offset-4 hover:text-ink-gray-8"
+						@click="goToTopup"
+					>
+						{{ options.data.note }}
+						<span class="lucide-arrow-right size-3.5" aria-hidden="true" />
+					</button>
 				</div>
 
 				<!-- Razorpay card mandates need a contact; collect it inline when missing. -->
@@ -274,7 +299,7 @@ watch(open, (isOpen) => {
 						label="Continue"
 						:loading="loading"
 						:disabled="!phone.trim()"
-						@click="launchGateway('Card', phone.trim(), 'Other Network Card')"
+						@click="launchGateway('Card', phone.trim(), 'RuPay Card')"
 					/>
 				</div>
 
@@ -294,4 +319,12 @@ watch(open, (isOpen) => {
 			</div>
 		</template>
 	</Dialog>
+
+	<!-- Opened from the Amex/Diners line above, after this dialog has closed. -->
+	<TopupDialog
+		v-model="showTopup"
+		:currency="options.data?.currency || 'INR'"
+		instrument="Card"
+		@done="(res: unknown) => emit('done', res)"
+	/>
 </template>

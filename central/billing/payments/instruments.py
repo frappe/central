@@ -29,7 +29,6 @@ MANDATE = "mandate"
 
 CARD = "Card"
 RUPAY_CARD = "RuPay Card"
-OTHER_NETWORK_CARD = "Other Network Card"
 UPI = "UPI"
 UPI_AUTOPAY = "UPI Autopay"
 NETBANKING = "Netbanking"
@@ -51,8 +50,8 @@ CATALOGUE = (
 	{
 		"surface": RECHARGE,
 		"instrument": RUPAY_CARD,
-		"label": "RuPay card",
-		"description": "RuPay runs on a different rail from other cards",
+		"label": "RuPay or Diners card",
+		"description": "These run on a different rail from other cards",
 		"adapter": "Razorpay",
 		"method_type": None,
 		"currencies": ("INR",),
@@ -90,9 +89,9 @@ CATALOGUE = (
 	},
 	{
 		"surface": MANDATE,
-		"instrument": OTHER_NETWORK_CARD,
-		"label": "RuPay, Amex or Diners card",
-		"description": "These networks are saved on a different rail",
+		"instrument": RUPAY_CARD,
+		"label": "RuPay card",
+		"description": "RuPay is saved on a different rail from other cards",
 		"adapter": "Razorpay",
 		"method_type": "Card",
 		"currencies": ("INR",),
@@ -111,6 +110,28 @@ CATALOGUE = (
 )
 
 BY_KEY = {(entry["surface"], entry["instrument"]): entry for entry in CATALOGUE}
+
+# Networks that can pay but cannot be saved: no rail we use registers a mandate on
+# them (Stripe does Visa and Mastercard; Razorpay's standing instructions add
+# RuPay). A customer holding one tops up a wallet or pays each invoice, and the
+# auto-pay surface has to say so — an absence they have to infer is how someone
+# taps the nearest card tile, fails at registration, and hears about it from a
+# dunning email.
+NO_MANDATE_NETWORKS = ("Amex", "Diners")
+
+# One line that carries the limit and the way out of it. The reason a customer
+# needs is "my card isn't here and this says why"; the paragraph that explained
+# which bank rails register mandates was answering a question nobody asked.
+MANDATE_GAP_NOTE = "Amex or Diners can't auto-pay — top up a wallet"
+
+
+def mandate_gap_note(currency: str) -> str | None:
+	"""The one line the auto-pay surface owes a customer whose card cannot be saved.
+
+	It doubles as the label of the control that takes them to the wallet, so it has
+	to read as a route rather than a warning.
+	"""
+	return MANDATE_GAP_NOTE if currency == "INR" else None
 
 
 def get(instrument: str, surface: str = MANDATE) -> dict:

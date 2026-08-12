@@ -98,6 +98,15 @@ _BILLING_EVENT_TYPES = {
 		None,
 		None,
 	),
+	"add_payment_method": (
+		"Add another way to pay",
+		"We couldn't charge your saved payment method for invoice {{ reference_name }}, and there's "
+		"nothing else on file to try. Add another way to pay to keep your services running.",
+		"Error",
+		"billing:view",
+		"Add payment method",
+		"/billing",
+	),
 	"team_suspension": (
 		"Team suspended",
 		"Your team has been suspended due to billing issues.",

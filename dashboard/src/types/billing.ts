@@ -204,6 +204,9 @@ export interface PaymentMethod {
 	reauth_required: boolean | number
 	expiry_month: number | null
 	expiry_year: number | null
+	/** Mandate ceiling — what the bank will let us debit in one go. */
+	mandate_max_amount?: number | null
+	mandate_currency?: string | null
 }
 
 /** get_payment_method_options — what the team may add, resolved from its currency. */
@@ -214,7 +217,6 @@ export interface PaymentInstrument {
 	instrument:
 		| 'Card'
 		| 'RuPay Card'
-		| 'Other Network Card'
 		| 'UPI'
 		| 'UPI Autopay'
 		| 'Netbanking'
@@ -232,6 +234,8 @@ export interface PaymentMethodOptions {
 	adapter_key: 'Stripe' | 'Razorpay' | (string & {})
 	currency: Currency
 	instruments: PaymentInstrument[]
+	/** What no tile on this surface can do — e.g. cards no rail will hold a mandate on. */
+	note?: string | null
 	methods: PaymentMethodType[]
 	allow_upi: boolean
 	upi_block_reason: string | null
@@ -280,6 +284,8 @@ export interface BillingSettings {
 export interface CollectionStatus {
 	mode?: string
 	collection_mode?: string
+	/** Networks no rail will auto-charge — shown before the customer picks how to pay. */
+	mandate_gap_note?: string | null
 	action_required: boolean
 	reason: string | null
 	threshold: number | null
