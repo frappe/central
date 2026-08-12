@@ -59,9 +59,17 @@ from central.billing.api.dashboard.methods import (
 	set_default_payment_method,
 	setup_payment_method_order,
 )
+from central.billing.api.dashboard.outlook import (
+	get_next_payment,
+	get_payment_schedule,
+)
 from central.billing.api.dashboard.services import (
 	get_metered_services,
 	subscribe_metered_service,
+)
+from central.billing.api.dashboard.spend import (
+	get_cycle_costs,
+	get_locked_prices,
 )
 
 __all__ = [
@@ -77,14 +85,18 @@ __all__ = [
 	"get_billing_settings",
 	"get_collection_status",
 	"get_credit_balance",
+	"get_cycle_costs",
 	"get_eligible_plans",
 	"get_fallback_offer",
 	"get_forecast",
 	"get_invoice",
-	"get_topup_options",
+	"get_locked_prices",
 	"get_metered_services",
+	"get_next_payment",
 	"get_payment_method_options",
+	"get_payment_schedule",
 	"get_team_overview",
+	"get_topup_options",
 	"get_trust_tier",
 	"initiate_card_setup",
 	"list_invoices",

@@ -239,6 +239,7 @@ def _describe_line(team: str, li) -> dict:
 	plan TITLE and spell out what drove the charge: a plan's monthly fee
 	(prorated days), or a metered overage above the plan's included allowance.
 	"""
+	from central.billing.projection.basis import MEASURED
 	from central.billing.revenue.metering import _metered_plan_for
 
 	row = {
@@ -252,6 +253,9 @@ def _describe_line(team: str, li) -> dict:
 		"amount": li.amount,
 		"unit": li.unit,
 		"charge_date": li.charge_date,
+		# A projected line knows whether its quantity was observed or inferred; a
+		# stored line item is always a fact by the time it reaches an invoice.
+		"basis": li.get("basis") or MEASURED,
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None

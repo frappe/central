@@ -64,6 +64,12 @@ def get_forecast(team: str | None = None) -> dict:
 		"period_end": str(month_end),
 		"projected_total": projected_total,
 		"subtotal": subtotal,
+		# Never quote the projection as a bare number: the engine already knows which
+		# part of it is owed and which is inferred, and the customer is owed the split
+		# (projection/basis.py).
+		"measured": frappe.utils.flt(invoice.get("measured")),
+		"estimated": frappe.utils.flt(invoice.get("estimated")),
+		"has_estimates": bool(invoice.get("has_estimates")),
 		"tax_amount": tax["output_tax_amount"],
 		"tax_type": tax["output_tax_type"],
 		"credit_balance": credit_balance,
