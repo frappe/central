@@ -30,7 +30,11 @@ function heightPct(total: number): number {
 		title="Month by month"
 		:description="`${money(history.total, history.currency)} across ${history.invoice_count} invoice${history.invoice_count === 1 ? '' : 's'} · ${money(average, history.currency)} average`"
 	>
-		<div class="flex h-40 items-end gap-1.5">
+		<!-- Bars are monochrome on purpose: the dashboard fills meters with
+		     ink-gray-8 on surface-gray-2 (UsageMeter, and frappe-ui's own Progress),
+		     and reserves blue for interactive accents. A month with no spend gets a
+		     baseline rule rather than a stub bar, which read as a rendering fault. -->
+		<div class="flex h-36 items-end gap-2">
 			<div
 				v-for="m in months"
 				:key="m.month"
@@ -38,17 +42,18 @@ function heightPct(total: number): number {
 				:title="`${m.label} — ${money(m.total, history.currency)}`"
 			>
 				<div
-					class="w-full rounded-t transition-colors"
-					:class="m.total > 0 ? 'bg-surface-blue-5 group-hover:bg-surface-blue-6' : 'bg-surface-gray-2'"
-					:style="{ height: m.total > 0 ? `${heightPct(m.total)}%` : '2px' }"
+					v-if="m.total > 0"
+					class="mx-auto w-full max-w-8 rounded-t-sm bg-surface-gray-10 transition-opacity group-hover:opacity-80"
+					:style="{ height: `${heightPct(m.total)}%` }"
 				/>
+				<div v-else class="mx-auto h-px w-full max-w-8 bg-surface-gray-3" />
 			</div>
 		</div>
-		<div class="mt-2 flex gap-1.5">
+		<div class="mt-2 flex gap-2 border-t border-outline-gray-1 pt-2">
 			<span
 				v-for="m in months"
 				:key="m.month"
-				class="flex-1 truncate text-center text-xs text-ink-gray-4"
+				class="flex-1 truncate text-center text-p-sm text-ink-gray-5"
 			>
 				{{ m.label }}
 			</span>

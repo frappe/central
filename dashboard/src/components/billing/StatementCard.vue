@@ -84,7 +84,7 @@ const STATUS_THEME: Record<string, string> = {
 				<span class="text-base-medium text-ink-gray-9">Still outstanding</span>
 				<span
 					class="text-base-medium tabular-nums"
-					:class="data.closing_outstanding > 0 ? 'text-ink-red-3' : 'text-ink-gray-9'"
+					:class="data.closing_outstanding > 0 ? 'text-ink-red-7' : 'text-ink-gray-9'"
 				>
 					{{ money(data.closing_outstanding, currency) }}
 				</span>

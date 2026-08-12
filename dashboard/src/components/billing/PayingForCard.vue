@@ -321,16 +321,18 @@ function goToAddons(): void {
 							</div>
 							<!-- The draw-down bar: how far into the included allowance this
 							     service is. Only where there IS an allowance to draw down. -->
+							<!-- Same meter the servers page uses: ink-gray-8 on surface-gray-2.
+							     Over the allowance the fill goes amber-6, which is the first
+							     amber with enough contrast to read as a warning — the -2/-3
+							     tints are banner backgrounds and vanish at this height. -->
 							<div
 								v-if="row.service.allowance > 0"
-								class="mt-1.5 h-1 w-full max-w-56 overflow-hidden rounded-full bg-surface-gray-3"
+								class="mt-1.5 h-1 w-full max-w-56 overflow-hidden rounded-full bg-surface-gray-2"
 							>
 								<span
 									class="block h-full rounded-full"
 									:class="
-                    overAllowance(row.service)
-                      ? 'bg-surface-amber-3'
-                      : 'bg-surface-blue-5'
+                    overAllowance(row.service) ? 'bg-surface-amber-7' : 'bg-surface-gray-10'
                   "
 									:style="{
                     width: `${overAllowance(row.service) ? 100 : usagePct(row.service)}%`,

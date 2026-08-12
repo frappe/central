@@ -100,7 +100,7 @@ const alertLabel = computed(() => {
 	return `Budget alert at ${money(spendAlert.value, currency.value)}`
 })
 const alertTint = computed(() =>
-	crossed.value ? '!text-ink-red-3' : near.value ? '!text-ink-amber-3' : '',
+	crossed.value ? '!text-ink-red-7' : near.value ? '!text-ink-amber-7' : '',
 )
 
 // Dialog: edit against a draft so Cancel leaves the live value untouched.
@@ -179,11 +179,11 @@ async function submitAlert(): Promise<void> {
 			     should not be given a bar that implies doubt. -->
 			<template v-if="hasEstimates">
 				<div
-					class="mt-4 flex h-2 overflow-hidden rounded-full bg-surface-gray-2"
+					class="mt-4 flex h-1.5 overflow-hidden rounded-full bg-surface-gray-2"
 					aria-hidden="true"
 				>
 					<span
-						class="bg-surface-blue-5"
+						class="bg-surface-gray-10"
 						:style="{ width: `${measuredPct}%` }"
 					/>
 					<span class="estimated-fill flex-1" />
@@ -191,7 +191,7 @@ async function submitAlert(): Promise<void> {
 				<div class="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
 					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
 						<span
-							class="size-2 shrink-0 rounded-sm bg-surface-blue-5"
+							class="size-2 shrink-0 rounded-sm bg-surface-gray-10"
 							aria-hidden="true"
 						/>
 						{{ money(measured, currency) }} already owed
@@ -259,13 +259,16 @@ async function submitAlert(): Promise<void> {
 </template>
 
 <style scoped>
-/* Estimated spend is drawn as a hatch rather than a second colour: it is the same
-   money, differing only in whether it has happened yet. */
+/* Estimated spend is drawn as a hatch of the SAME ink the measured part uses, not
+   a second hue: it is the same money, differing only in whether it has happened
+   yet. Keeping it monochrome also keeps the card inside the dashboard's meter
+   convention (ink-gray-8 on surface-gray-2), where colour means state, not
+   category. */
 .estimated-fill {
 	background-image: repeating-linear-gradient(
 		45deg,
-		var(--surface-blue-4) 0 3px,
-		var(--surface-blue-2) 3px 6px
+		var(--surface-gray-7) 0 3px,
+		var(--surface-gray-3) 3px 6px
 	);
 }
 </style>

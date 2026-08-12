@@ -51,9 +51,9 @@ function sharePct(amount: number): number {
 						<span class="text-ink-gray-4">· {{ sharePct(row.amount) }}%</span>
 					</span>
 				</div>
-				<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-surface-gray-2">
+				<div class="mt-1 h-1 overflow-hidden rounded-full bg-surface-gray-2">
 					<span
-						class="block h-full rounded-full bg-surface-blue-5"
+						class="block h-full rounded-full bg-surface-gray-10"
 						:style="{ width: `${sharePct(row.amount)}%` }"
 					/>
 				</div>

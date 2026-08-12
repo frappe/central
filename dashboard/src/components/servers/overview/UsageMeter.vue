@@ -29,7 +29,7 @@ defineEmits<{ action: [] }>()
 		</div>
 		<div class="h-1 overflow-hidden rounded-full bg-surface-gray-2">
 			<div
-				class="h-full rounded-full bg-ink-gray-8 transition-[width] duration-300"
+				class="h-full rounded-full bg-surface-gray-10 transition-[width] duration-300"
 				:style="{ width: `${percent}%` }"
 			/>
 		</div>

@@ -101,7 +101,7 @@ function onAutoRecharge(): void {
 			<!-- Coverage verdict — always the third line -->
 			<p
 				v-if="atRisk"
-				class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-red-3"
+				class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-red-7"
 			>
 				<span
 					class="lucide-triangle-alert size-3.5 shrink-0"

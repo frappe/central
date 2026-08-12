@@ -72,7 +72,7 @@ const rows = computed(() => data.value?.rows ?? [])
 
 					<p
 						v-if="row.saving > 0"
-						class="mt-1 text-p-sm text-ink-green-3"
+						class="mt-1 text-p-sm text-ink-green-8"
 					>
 						{{ money(row.saving, currency) }} a month below today's price
 					</p>

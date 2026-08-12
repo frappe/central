@@ -46,7 +46,7 @@ const show = computed(() => protectedCount.value > 0 || aboveList.value > 0)
 		<div class="shrink-0 text-right">
 			<p
 				v-if="protectedCount"
-				class="text-lg-semibold tabular-nums text-ink-green-3"
+				class="text-lg-semibold tabular-nums text-ink-green-8"
 			>
 				{{ money(saving, currency) }}<span
 					class="text-p-sm font-normal text-ink-gray-5"
