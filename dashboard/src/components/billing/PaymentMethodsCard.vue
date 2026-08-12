@@ -108,10 +108,12 @@ const setMode = useCall<unknown, { team: string; mode: string }>({
 	immediate: false,
 })
 
-// Credits are used before any method, so the methods below them are numbered from
-// one: the order they are tried in when the balance can't cover the invoice.
+// Credits are *used*; methods are *charged*. So the top method says it is charged
+// first and the ones under it are the fallbacks, numbered by the order they are
+// tried. Numbering the top method as a fallback made it look like something that
+// could be promoted, when it already holds the position.
 function rankLabel(idx: number): string {
-	return `Fallback ${idx + 1}`
+	return idx === 0 ? 'Charged first' : `Fallback ${idx}`
 }
 
 // Choosing which method gets charged decides nothing while there is a balance to
