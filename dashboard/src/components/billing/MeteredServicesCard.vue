@@ -5,9 +5,11 @@ import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { money } from '@/lib/format'
 
 // Metered services (ADR 0015) — the team-level services it has subscribed to (AI
 // tokens, email, PDF, storage), each with its allowance draw-down / usage this
@@ -35,6 +37,20 @@ interface MeteredServices {
 const { canManageBilling } = useCapabilities()
 const { activeTeam } = useSession()
 const router = useRouter()
+const { cycleCosts, currency } = useBillingOverview()
+
+// A metered service showed its draw-down but never what it had cost — the one
+// question the card was silent on. Joined on service_subject, which is the
+// resource_id metering and the cycle-cost read both key on (ADR 0013).
+const costBySubject = computed(() => {
+	const map = new Map<string, number>()
+	for (const item of cycleCosts.data?.items ?? [])
+		map.set(item.resource_id, item.amount)
+	return map
+})
+function cycleCost(row: ServiceRow): number | null {
+	return costBySubject.value.get(row.service_subject) ?? null
+}
 
 const data = useCall<MeteredServices, { team: string }>({
 	url: method(API.meteredServices),
@@ -155,9 +171,24 @@ function exhausted(row: ServiceRow): boolean {
 						{{ subtitle(row) }}
 					</div>
 				</div>
-				<span class="shrink-0 text-sm-medium tabular-nums text-ink-gray-9">
-					{{ usageLabel(row) }}
-				</span>
+				<div class="shrink-0 text-right">
+					<span
+						v-if="cycleCost(row) != null"
+						class="block text-sm-medium tabular-nums text-ink-gray-9"
+					>
+						{{ money(cycleCost(row)!, currency) }}
+					</span>
+					<span
+						class="block tabular-nums"
+						:class="
+              cycleCost(row) != null
+                ? 'text-p-sm text-ink-gray-5'
+                : 'text-sm-medium text-ink-gray-9'
+            "
+					>
+						{{ usageLabel(row) }}
+					</span>
+				</div>
 			</div>
 		</div>
 

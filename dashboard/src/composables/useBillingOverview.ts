@@ -6,7 +6,10 @@ import type {
 	BillingProfile,
 	CreditBalance,
 	CreditLedgerEntry,
+	CycleCosts,
 	Forecast,
+	LockedPrices,
+	NextPayment,
 	PaymentMethod,
 	SubscriptionRow,
 	TeamOverview,
@@ -62,6 +65,25 @@ const subscriptionsCall = useCall<SubscriptionRow[], { team: string }>({
 	refetch: true,
 })
 
+const nextPaymentCall = useCall<NextPayment, { team: string }>({
+	url: method(API.nextPayment),
+	params,
+	immediate: false,
+	refetch: true,
+})
+const cycleCostsCall = useCall<CycleCosts, { team: string }>({
+	url: method(API.cycleCosts),
+	params,
+	immediate: false,
+	refetch: true,
+})
+const lockedPricesCall = useCall<LockedPrices, { team: string }>({
+	url: method(API.lockedPrices),
+	params,
+	immediate: false,
+	refetch: true,
+})
+
 whenTeamReady(() => {
 	overviewCall.reload()
 	forecastCall.reload()
@@ -70,6 +92,9 @@ whenTeamReady(() => {
 	methodsCall.reload()
 	profileCall.reload()
 	subscriptionsCall.reload()
+	nextPaymentCall.reload()
+	cycleCostsCall.reload()
+	lockedPricesCall.reload()
 })
 
 export function useBillingOverview() {
@@ -81,6 +106,9 @@ export function useBillingOverview() {
 		methods: methodsCall,
 		profile: profileCall,
 		subscriptions: subscriptionsCall,
+		nextPayment: nextPaymentCall,
+		cycleCosts: cycleCostsCall,
+		lockedPrices: lockedPricesCall,
 		// The team's billing currency. The Billing Profile is the source of truth
 		// (it's what the setup dialog writes), so read it FIRST: after a profile is
 		// saved, reloadProfile() re-pulls it and every consumer (top-up, add-method)
@@ -94,13 +122,21 @@ export function useBillingOverview() {
 				overviewCall.data?.currency ||
 				'INR',
 		),
-		// A top-up moves wallet + projection; refresh both.
+		// A top-up moves wallet + projection, and can clear a blocker on the next
+		// debit (a shortfall covered, a bill brought under the ceiling) — so the
+		// outlook is refreshed with them.
 		reloadMoney(): void {
 			creditCall.reload()
 			ledgerCall.reload()
 			forecastCall.reload()
+			nextPaymentCall.reload()
 		},
-		reloadMethods: () => methodsCall.reload(),
+		// Adding or reordering a method changes who gets charged first, and whether
+		// anything can be charged at all.
+		reloadMethods(): void {
+			methodsCall.reload()
+			nextPaymentCall.reload()
+		},
 		reloadProfile(): void {
 			profileCall.reload()
 			overviewCall.reload()

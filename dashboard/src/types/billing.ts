@@ -32,6 +32,9 @@ export interface BillingLine {
 	rate?: number
 	unit?: string | null
 	amount: number
+	/** Whether the quantity was observed or inferred (projection/basis.py). A stored
+	 *  invoice line is always Measured by the time it is issued. */
+	basis?: 'Measured' | 'Estimated' | 'Assumed' | (string & {})
 }
 
 /** get_forecast — current-cycle projection vs wallet. */
@@ -48,6 +51,106 @@ export interface Forecast {
 	currency: Currency
 	credit_alert: boolean
 	line_items: BillingLine[]
+	/** Already owed: a locked rate over elapsed days, a landed rollup. */
+	measured: number
+	/** Inferred, because the period has not happened yet. */
+	estimated: number
+	/** True when any part of the projection is inferred — the UI must not render a
+	 *  bare total when it is. */
+	has_estimates: boolean
+}
+
+/** get_next_payment — the next debit and anything the team's state says will stop it. */
+export interface PaymentBlocker {
+	code: string
+	title: string
+	fix: string | null
+}
+
+export interface ChargingMethod {
+	label: string | null
+	method_type: string | null
+	card_network: string | null
+	ceiling: number | null
+}
+
+export interface NextPayment {
+	currency: Currency
+	amount: number
+	charge_on: string | null
+	invoice: string | null
+	period_end: string | null
+	collection_mode: string | null
+	method: ChargingMethod | null
+	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
+	will_auto_charge: boolean
+	blockers: PaymentBlocker[]
+}
+
+export interface PredebitNotice {
+	sent_at: string
+	invoice: string | null
+	subject: string | null
+	status: string | null
+}
+
+export interface DunningStage {
+	date: string
+	stage: string
+	day: number
+}
+
+export interface PaymentSchedule extends NextPayment {
+	notices: PredebitNotice[]
+	if_unpaid: DunningStage[]
+}
+
+/** get_cycle_costs — what the team is paying for this cycle, per subject. */
+export interface CycleUsage {
+	used: number
+	allowance: number
+	unit: string | null
+	over: boolean
+}
+
+export interface CycleCostItem {
+	resource_id: string
+	title: string
+	plan: string | null
+	cluster: string | null
+	is_service: boolean
+	amount: number
+	currency: Currency
+	usage: CycleUsage | null
+}
+
+export interface CycleCosts {
+	currency: Currency
+	items: CycleCostItem[]
+	total: number
+}
+
+/** get_locked_prices — each running rate against today's list price. */
+export interface LockedPriceRow {
+	subscription: string
+	title: string
+	plan: string | null
+	cluster: string | null
+	locked_rate: number
+	list_rate: number | null
+	saving: number
+	above_list: boolean
+	above_list_by: number
+	locked_at: string | null
+}
+
+export interface LockedPrices {
+	currency: Currency
+	rows: LockedPriceRow[]
+	monthly_saving: number
+	annual_saving: number
+	protected_count: number
+	above_list_count: number
 }
 
 /** One rung of the trust-tier ladder (customer-facing: Spending Limits). */
@@ -168,6 +271,9 @@ export interface InvoiceDetail {
 /** list_subscriptions row — per-server plan. */
 export interface SubscriptionRow {
 	name: string
+	/** What metering keys on: the Asset for a server, the synthesized subject for a
+	 *  team-level service. Joins a row to what it has cost this cycle. */
+	resource_id: string | null
 	/** Friendly server name (Asset.title), e.g. "atlas-web-01". */
 	server: string | null
 	/** Asset-backed = a real server; false = a team-level metered service. */

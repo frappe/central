@@ -95,6 +95,10 @@ export const API = {
 	paymentMethodOptions:
 		'central.billing.api.dashboard.get_payment_method_options',
 	subscriptions: 'central.billing.api.dashboard.list_subscriptions',
+	nextPayment: 'central.billing.api.dashboard.get_next_payment',
+	paymentSchedule: 'central.billing.api.dashboard.get_payment_schedule',
+	cycleCosts: 'central.billing.api.dashboard.get_cycle_costs',
+	lockedPrices: 'central.billing.api.dashboard.get_locked_prices',
 	meteredServices: 'central.billing.api.dashboard.get_metered_services',
 	billingProfile: 'central.billing.api.dashboard.get_billing_profile',
 	billingGeo: 'central.billing.api.dashboard.get_billing_geo',

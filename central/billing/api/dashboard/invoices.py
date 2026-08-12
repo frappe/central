@@ -101,6 +101,7 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			"sub_category",
 			"cluster",
 			"asset_id",
+			"service_subject",
 			"billing_cycle",
 			"account_standing",
 			"start_date",
@@ -128,7 +129,11 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 	# composition. Batch both so a team with N composed configs stays O(1) queries.
 	composed = [r.name for r in rows if r.pricing_mode == "Composed"]
 	includes_by_sub = _composed_includes(composed)
-	segment_rate = _open_segment_rates(team) if composed else {}
+	# The open segment's locked rate is what this team is actually billed (ADR 0010),
+	# preset and composed alike. Read for every row, not only composed ones: quoting
+	# a preset at today's catalog rate shows a grandfathered customer a price they
+	# will never be charged.
+	segment_rate = _open_segment_rates(team)
 
 	plan_titles: dict[str, str] = {}
 	rate_cache: dict[tuple, float | None] = {}
@@ -145,10 +150,18 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			if r.plan and key not in rate_cache:
 				rate_cache[key] = frappe.get_doc("Plan", r.plan).get_rate(currency, r.cluster)
 			plan_title = plan_titles.get(r.plan)
-			monthly_rate = rate_cache.get(key)
+			# Catalog rate only as the fallback, for a subscription with no open
+			# segment yet (never provisioned, or cancelled).
+			monthly_rate = segment_rate.get(r.name)
+			if monthly_rate is None:
+				monthly_rate = rate_cache.get(key)
 		out.append(
 			{
 				"name": r.name,
+				# What metering and the cycle-cost read key on: an Asset-backed
+				# subscription by its asset, a team-level service by its synthesized
+				# subject (ADR 0013). Lets the card join a row to what it cost.
+				"resource_id": r.asset_id or r.service_subject,
 				"server": asset.title or None,
 				# Asset-backed = a real server; a subscription without one is a
 				# team-level metered service (the dashboard lists those separately).
