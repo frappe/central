@@ -6,6 +6,7 @@ import BillingCard from '@/components/billing/BillingCard.vue'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { formatDate, money } from '@/lib/format'
+import { paymentAttemptDisplay } from '@/lib/status'
 import type { PaymentAttempt } from '@/types/billing'
 
 // Every charge against this team, across invoices — the per-invoice timeline
@@ -35,16 +36,9 @@ const all = computed(() => attempts.data ?? [])
 const rows = computed(() => all.value.slice(0, VISIBLE))
 const hidden = computed(() => Math.max(0, all.value.length - VISIBLE))
 
-const STATUS: Record<string, { label: string; theme: string }> = {
-	Captured: { label: 'Paid', theme: 'green' },
-	Authorised: { label: 'Authorised', theme: 'blue' },
-	Initiated: { label: 'Processing', theme: 'blue' },
-	Failed: { label: 'Failed', theme: 'red' },
-	Refunded: { label: 'Refunded', theme: 'gray' },
-}
-function badge(row: PaymentAttempt) {
-	return STATUS[row.status] || { label: row.status, theme: 'gray' }
-}
+// Status label + theme come from lib/status, beside the invoice one, so payments
+// read the same on every surface — and so the next person changing "Paid" has one
+// place to change it.
 </script>
 
 <template>
@@ -61,46 +55,38 @@ function badge(row: PaymentAttempt) {
 
 		<template v-else>
 			<ul class="divide-y divide-outline-gray-1">
-				<li
-					v-for="row in rows"
-					:key="row.name"
-					class="flex items-start justify-between gap-3 py-3 first:pt-0"
-				>
-					<div class="min-w-0">
-						<div class="flex items-center gap-2">
+				<!-- Amount | Status | When — the Invoices list's three columns. The badge
+				     used to trail the amount, so its position moved with the figure. -->
+				<li v-for="row in rows" :key="row.name" class="py-3 first:pt-0">
+					<div class="grid grid-cols-[1fr_5rem_6rem] items-center gap-3">
+						<span class="flex min-w-0 items-baseline gap-2">
 							<span class="text-base-medium tabular-nums text-ink-gray-9">
 								{{ money(row.amount, row.currency) }}
 							</span>
-							<Badge :theme="(badge(row).theme as any)" :label="badge(row).label" />
-							<span
-								v-if="row.retry_number"
-								class="text-p-sm text-ink-gray-4"
-							>
+							<span v-if="row.retry_number" class="shrink-0 text-p-sm text-ink-gray-4">
 								retry {{ row.retry_number }}
 							</span>
-						</div>
-						<!-- Plain language first; the gateway's own wording sits under it. -->
-						<p v-if="row.reason" class="mt-0.5 text-p-sm text-ink-gray-7">
-							{{ row.reason }}
-						</p>
-						<p
-							v-if="row.failure_reason && row.failure_reason !== row.reason"
-							class="mt-0.5 text-p-sm text-ink-gray-4"
-						>
-							{{ row.failure_reason }}
-						</p>
-					</div>
-					<div class="shrink-0 text-right">
-						<p class="text-p-sm text-ink-gray-5">
+						</span>
+						<span class="flex justify-end">
+							<Badge
+								:theme="paymentAttemptDisplay(row.status).theme"
+								variant="subtle"
+								:label="paymentAttemptDisplay(row.status).label"
+							/>
+						</span>
+						<!-- Date only. The gateway reference does not fit this column and a
+						     half-shown id is worse than none — you cannot quote it to
+						     anyone. It is in the tray, in full. -->
+						<span class="text-right text-p-sm text-ink-gray-5">
 							{{ formatDate(row.at) }}
-						</p>
-						<p
-							v-if="row.gateway_transaction_id"
-							class="mt-0.5 font-mono text-xs text-ink-gray-4"
-						>
-							{{ row.gateway_transaction_id }}
-						</p>
+						</span>
 					</div>
+					<!-- The card carries the plain-language reason only. The gateway's own
+					     wording says the same thing again in its words — that's detail, and
+					     detail lives in the tray. -->
+					<p v-if="row.reason" class="mt-1 text-p-sm text-ink-gray-7">
+						{{ row.reason }}
+					</p>
 				</li>
 			</ul>
 

@@ -27,6 +27,11 @@ watch(open, (isOpen) => {
 const loading = computed(() => statement.loading && !statement.data)
 const data = computed(() => statement.data)
 const currency = computed(() => data.value?.currency ?? 'INR')
+// Newest first. The API returns the period ascending (it is a statement, and a
+// statement is read forwards), but every history surface in the console — the
+// card this tray opens from, the Invoices list, payments — puts the most recent
+// row at the top, and the tray disagreeing with the card it came from is jarring.
+const rows = computed(() => [...(data.value?.rows ?? [])].reverse())
 
 </script>
 
@@ -41,7 +46,7 @@ const currency = computed(() => data.value?.currency ?? 'INR')
 		</div>
 		<ul v-else-if="data" class="divide-y divide-outline-gray-1">
 			<li
-				v-for="row in data.rows"
+				v-for="row in rows"
 				:key="row.invoice"
 				class="grid grid-cols-[1fr_auto] items-start gap-3 px-4 py-3"
 			>
