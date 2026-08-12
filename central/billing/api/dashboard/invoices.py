@@ -457,17 +457,26 @@ def list_payment_attempts(team: str | None = None, limit: int = 100) -> list[dic
 			"failure_reason",
 			"retry_number",
 			"gateway_transaction_id",
+			"initiated_at",
+			"completed_at",
 			"creation",
 		],
-		order_by="creation desc",
 		limit=limit,
 	)
 	for row in rows:
+		# When the payment actually happened, not when we wrote the row. `creation`
+		# is the insert time, which for any backfilled or migrated attempt is simply
+		# the day it was imported — every attempt then reads as though it happened
+		# today. Same precedence the invoice timeline uses.
+		row["at"] = str(row.completed_at or row.initiated_at or row.creation)
 		# `failure_reason` is the gateway's own wording. Keep it (support quotes it)
 		# but lead with something the cardholder can act on.
 		row["reason"] = (
 			decline.customer_reason(row.failure_code) if row.status == "Failed" else None
 		)
+	# Sorted on that same resolved time — ordering by `creation` put a backfilled
+	# year of attempts in whatever order they happened to be inserted.
+	rows.sort(key=lambda r: r["at"], reverse=True)
 	return rows
 
 

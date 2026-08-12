@@ -61,7 +61,7 @@ const badge = (row: PaymentAttempt) => STATUS[row.status] || { label: row.status
 						</p>
 					</div>
 					<div class="shrink-0 text-right">
-						<p class="text-p-sm text-ink-gray-5">{{ formatDate(row.creation) }}</p>
+						<p class="text-p-sm text-ink-gray-5">{{ formatDate(row.at) }}</p>
 						<p
 							v-if="row.gateway_transaction_id"
 							class="mt-0.5 font-mono text-xs text-ink-gray-4"

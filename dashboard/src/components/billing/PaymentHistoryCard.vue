@@ -92,7 +92,7 @@ function badge(row: PaymentAttempt) {
 					</div>
 					<div class="shrink-0 text-right">
 						<p class="text-p-sm text-ink-gray-5">
-							{{ formatDate(row.creation) }}
+							{{ formatDate(row.at) }}
 						</p>
 						<p
 							v-if="row.gateway_transaction_id"

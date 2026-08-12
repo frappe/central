@@ -593,7 +593,9 @@ def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
 			"currency": currency,
 			"status": "Captured",
 			"retry_number": retries,
-			"gateway_transaction_id": f"pi_{invoice}",
+			# Gateway references are opaque ids, not our invoice names — a demo that
+			# shows "pi_INV-2026-02-00011" reads as fabricated next to the real ones.
+			"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
 			"resolved_by": "Webhook",
 			"initiated_at": captured_at,
 			"completed_at": captured_at,

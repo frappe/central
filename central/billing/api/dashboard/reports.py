@@ -283,7 +283,7 @@ def _payments_csv(team, from_date, to_date) -> list[list]:
 	rows = [["Date", "Invoice", "Amount", "Currency", "Status", "Gateway", "Reference", "Failure"]]
 	rows += [
 		[
-			str(a["creation"]),
+			a["at"],
 			a["invoice"],
 			a["amount"],
 			a["currency"],

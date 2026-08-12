@@ -527,6 +527,10 @@ export interface PaymentAttempt {
 	reason: string | null
 	retry_number: number | null
 	gateway_transaction_id: string | null
+	/** When the payment actually happened — completed, else initiated, else the
+	 *  row's own creation. Never render `creation`: for a backfilled attempt that
+	 *  is the day it was imported. */
+	at: string
 	creation: string
 }
 

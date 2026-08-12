@@ -441,3 +441,47 @@ class TestDeclineWording(OverviewBase):
 		captured = next(r for r in rows if r["status"] == "Captured")
 		self.assertEqual(failed["reason"], "Your card has expired")
 		self.assertIsNone(captured["reason"])
+
+
+class TestPaymentHistoryTime(OverviewBase):
+	def test_history_reports_when_the_payment_happened_not_when_the_row_was_written(self):
+		# `creation` is the insert time: for a backfilled or migrated attempt that is
+		# the day it was imported, so every payment would read as though it happened
+		# today. The list must carry the gateway's own timing.
+		invoice = frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"invoice_type": "Billable",
+				"status": "Paid",
+				"period_start": "2026-03-01",
+				"period_end": "2026-03-31",
+				"currency": "INR",
+				"subtotal": 1000,
+				"total": 1000,
+			}
+		).insert(ignore_permissions=True)
+		gateway = frappe.db.get_value("Payment Gateway", {"adapter_key": "stripe"}, "name")
+		for when, retry in (("2026-03-01 09:00:00", 0), ("2026-03-02 09:00:00", 1)):
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"team": TEAM,
+					"invoice": invoice.name,
+					"gateway": gateway,
+					"amount": 1000,
+					"currency": "INR",
+					"status": "Captured",
+					"retry_number": retry,
+					"initiated_at": when,
+					"completed_at": when,
+					"idempotency_key": frappe.generate_hash(10),
+				}
+			).insert(ignore_permissions=True)
+
+		rows = dashboard.list_payment_attempts(TEAM)
+
+		self.assertTrue(rows[0]["at"].startswith("2026-03-02"))
+		self.assertTrue(rows[1]["at"].startswith("2026-03-01"))
+		# Newest first on the resolved time, not on insert order.
+		self.assertGreater(rows[0]["at"], rows[1]["at"])
