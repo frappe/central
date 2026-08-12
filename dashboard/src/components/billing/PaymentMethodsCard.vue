@@ -108,13 +108,9 @@ const setMode = useCall<unknown, { team: string; mode: string }>({
 	immediate: false,
 })
 
-// Credits are *used*; methods are *charged*. So the top method says it is charged
-// first and the ones under it are the fallbacks, numbered by the order they are
-// tried. Numbering the top method as a fallback made it look like something that
-// could be promoted, when it already holds the position.
-function rankLabel(idx: number): string {
-	return idx === 0 ? 'Charged first' : `Fallback ${idx}`
-}
+// The order is the whole point of this list, and a number says it without a word.
+// Credits are step 1 because the engine spends them before it charges anything;
+// each method follows in the order it is tried.
 
 // Choosing which method gets charged decides nothing while there is a balance to
 // spend, so the action is offered and disabled rather than hidden.
@@ -181,7 +177,7 @@ function onAdd(): void {
 <template>
 	<BillingCard
 		title="Payment methods"
-		title-info="Credits are spent first while you have them. Choose which method is charged once they run out."
+		title-info="Settled in this order: credits first, then each method until one goes through."
 	>
 		<template v-if="canManageBilling" #action>
 			<Button
@@ -211,6 +207,12 @@ function onAdd(): void {
 				<div class="flex items-center justify-between gap-3 py-3">
 					<div class="flex min-w-0 items-start gap-2.5">
 						<span
+							class="mt-0.5 w-3 shrink-0 text-p-sm tabular-nums text-ink-gray-4"
+							aria-hidden="true"
+						>
+							1
+						</span>
+						<span
 							class="lucide-wallet mt-0.5 size-4 shrink-0 text-ink-gray-5"
 							aria-hidden="true"
 						/>
@@ -223,11 +225,8 @@ function onAdd(): void {
 							</div>
 						</div>
 					</div>
-					<div class="flex shrink-0 items-center gap-1">
-						<span class="text-sm font-medium text-ink-gray-9">Used first</span>
-						<!-- Holds the column so this row lines up with ones that have a menu. -->
-						<span class="size-7" aria-hidden="true" />
-					</div>
+					<!-- Holds the column so this row lines up with ones that have a menu. -->
+					<span class="size-7 shrink-0" aria-hidden="true" />
 				</div>
 				<div
 					v-for="(pm, idx) in ordered"
@@ -235,6 +234,12 @@ function onAdd(): void {
 					class="flex items-center justify-between gap-3 py-3"
 				>
 					<div class="flex min-w-0 items-start gap-2.5">
+						<span
+							class="mt-0.5 w-3 shrink-0 text-p-sm tabular-nums text-ink-gray-4"
+							aria-hidden="true"
+						>
+							{{ idx + 2 }}
+						</span>
 						<span
 							:class="methodIcon(pm)"
 							class="mt-0.5 size-4 shrink-0 text-ink-gray-5"
@@ -262,9 +267,6 @@ function onAdd(): void {
 						</div>
 					</div>
 					<div class="flex shrink-0 items-center gap-1">
-						<span class="text-sm font-medium text-ink-gray-9">
-							{{ rankLabel(idx) }}
-						</span>
 						<PaymentMethodRowActions
 							:method="pm"
 							:can-manage="canManageBilling"
