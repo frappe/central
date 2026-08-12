@@ -113,11 +113,20 @@ const setMode = useCall<unknown, { team: string; mode: string }>({
 // through (invoicing/lifecycle.py). So whatever leads is the primary and the rest
 // are numbered fallbacks — while there is a balance that is the wallet, and when it
 // runs dry the first method takes the title without anyone being asked.
+// One row is the Primary and the rest are its fallbacks. While there is a balance
+// the wallet holds the title, so every method is a fallback; when it runs dry the
+// top method takes it.
 const hasCredits = computed(() => balance.value > 0)
 
 function methodLabel(idx: number): string {
 	if (hasCredits.value) return `Fallback ${idx + 1}`
 	return idx === 0 ? 'Primary' : `Fallback ${idx}`
+}
+
+// Every row labelled a fallback can be made the primary. While credits are paying
+// the bill the choice decides nothing yet, so it is disabled rather than hidden.
+function isPrimaryRow(idx: number): boolean {
+	return !hasCredits.value && idx === 0
 }
 
 async function makeDefault(pm: PaymentMethod): Promise<void> {
@@ -224,10 +233,7 @@ function onAdd(): void {
 						</div>
 					</div>
 					<div class="flex shrink-0 items-center gap-1">
-						<span
-							v-if="hasCredits"
-							class="text-sm font-medium text-ink-gray-9"
-						>
+						<span v-if="hasCredits" class="text-sm font-medium text-ink-gray-9">
 							Primary
 						</span>
 						<!-- Holds the column so this row lines up with ones that have a menu. -->
@@ -273,6 +279,8 @@ function onAdd(): void {
 						<PaymentMethodRowActions
 							:method="pm"
 							:can-manage="canManageBilling"
+							:is-primary="isPrimaryRow(idx)"
+							:can-promote="!hasCredits"
 							:is-first="idx === 0"
 							:is-last="idx === ordered.length - 1"
 							:busy="busy === pm.name"
