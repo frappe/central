@@ -440,8 +440,10 @@ def list_payment_attempts(team: str | None = None, limit: int = 100) -> list[dic
 	including the failed dunning retries that lead to suspension. This is the
 	customer's record of WHY a card-on-file team can still be past_due/suspended.
 	"""
+	from central.billing.payments import decline
+
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Payment Attempt",
 		filters={"team": team},
 		fields=[
@@ -460,6 +462,13 @@ def list_payment_attempts(team: str | None = None, limit: int = 100) -> list[dic
 		order_by="creation desc",
 		limit=limit,
 	)
+	for row in rows:
+		# `failure_reason` is the gateway's own wording. Keep it (support quotes it)
+		# but lead with something the cardholder can act on.
+		row["reason"] = (
+			decline.customer_reason(row.failure_code) if row.status == "Failed" else None
+		)
+	return rows
 
 
 @frappe.whitelist()

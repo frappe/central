@@ -44,6 +44,48 @@ MANDATE_CODES = (
 )
 
 
+# What a decline means to the person whose card it was. Gateway codes and their
+# raw messages are written for us, not for them: "authentication_failed" and
+# "do_not_honor" tell a customer nothing about what to do next. Anything not
+# listed falls back to "we couldn't complete this payment", which is vague but
+# never wrong — inventing a specific reason we don't have is worse.
+_CUSTOMER_REASON = {
+	"expired_card": "Your card has expired",
+	"incorrect_number": "The card number was wrong",
+	"incorrect_cvc": "The security code was wrong",
+	"card_declined": "Your bank declined the payment",
+	"insufficient_funds": "There wasn't enough balance",
+	"card_not_supported": "Your bank doesn't allow this kind of payment",
+	"authentication_failed": "The bank's verification step didn't complete",
+	"do_not_honor": "Your bank declined the payment",
+	"payment_intent_mandate_invalid": "Your auto-pay approval is no longer valid",
+	"india_recurring_payment_mandate_canceled": "Your auto-pay approval was cancelled",
+	"transaction_not_approved": "Your bank didn't approve the auto-payment",
+}
+
+# Ambiguous failures may still settle. Saying "failed" of one is a lie we would
+# have to take back, so they are named as unresolved.
+_UNRESOLVED = "We're still confirming this payment with your bank"
+
+
+def customer_reason(failure_code: str | None, fallback: str | None = None) -> str:
+	"""The decline, said to the customer whose payment it was.
+
+	Ambiguity is checked FIRST and deliberately: a timeout may still settle at the
+	bank, so naming a cause for it ("the bank didn't respond") tells the customer
+	the payment failed when we do not know that. Getting this order wrong is how a
+	customer pays an invoice twice.
+	"""
+	code = (failure_code or "").lower()
+	if code in AMBIGUOUS_CODES:
+		return _UNRESOLVED
+	if code in _CUSTOMER_REASON:
+		return _CUSTOMER_REASON[code]
+	# Never surface the gateway's own string: it is written for an operator and
+	# frequently names internals a customer cannot act on.
+	return "We couldn't complete this payment"
+
+
 def is_mandate_failure(failure_code: str | None) -> bool:
 	"""True where the mandate, not the card, is what failed."""
 	return (failure_code or "").lower() in MANDATE_CODES

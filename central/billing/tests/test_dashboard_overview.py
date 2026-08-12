@@ -325,3 +325,119 @@ class TestReports(OverviewBase):
 		out = dashboard.get_spend_history(TEAM, months=999)
 
 		self.assertEqual(len(out["months"]), 36)
+
+
+class TestMandateRevokeOnRemoval(OverviewBase):
+	"""Removing a mandate must withdraw it at the bank, not just from our table."""
+
+	def _mandate(self):
+		return frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": frappe.db.get_value("Payment Gateway", {"adapter_key": "razorpay"}, "name"),
+				"method_type": "UPI Autopay",
+				"status": "Active",
+				"gateway_method_id": "token_e2e_mandate",
+				"gateway_customer_id": "cust_e2e",
+				"display_label": "UPI Autopay ···9999",
+				"mandate_max_amount": 15000,
+				"priority": 0,
+				"is_default": 1,
+			}
+		).insert(ignore_permissions=True)
+
+	def test_removing_a_mandate_revokes_it_at_the_gateway(self):
+		from unittest.mock import patch
+
+		from central.billing.payments import payments
+
+		method = self._mandate()
+		with patch("central.billing.payments.mandates.cancel_mandate") as revoke:
+			out = payments.delete_payment_method(method.name)
+
+		revoke.assert_called_once_with(method.name)
+		self.assertTrue(out["mandate_revoked"])
+		self.assertFalse(frappe.db.exists("Payment Method", method.name))
+
+	def test_a_card_is_removed_without_a_mandate_call(self):
+		from unittest.mock import patch
+
+		from central.billing.payments import payments
+
+		card = frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": frappe.db.get_value("Payment Gateway", {"adapter_key": "stripe"}, "name"),
+				"method_type": "Card",
+				"status": "Active",
+				"gateway_method_id": "pm_e2e_card",
+				"display_label": "Visa ···4242",
+				"priority": 0,
+			}
+		).insert(ignore_permissions=True)
+
+		with patch("central.billing.payments.mandates.cancel_mandate") as revoke:
+			out = payments.delete_payment_method(card.name)
+
+		revoke.assert_not_called()
+		self.assertFalse(out["mandate_revoked"])
+
+
+class TestDeclineWording(OverviewBase):
+	def test_a_known_decline_is_said_in_plain_language(self):
+		from central.billing.payments import decline
+
+		self.assertEqual(decline.customer_reason("expired_card"), "Your card has expired")
+		self.assertEqual(decline.customer_reason("insufficient_funds"), "There wasn't enough balance")
+
+	def test_an_unknown_code_never_leaks_the_gateway_string(self):
+		# Vague but never wrong beats inventing a reason we do not have.
+		from central.billing.payments import decline
+
+		self.assertEqual(
+			decline.customer_reason("some_new_provider_code"), "We couldn't complete this payment"
+		)
+
+	def test_an_ambiguous_failure_is_not_called_a_failure(self):
+		from central.billing.payments import decline
+
+		self.assertIn("still confirming", decline.customer_reason("timeout").lower())
+
+	def test_payment_history_carries_the_plain_reason_only_for_failures(self):
+		gateway = frappe.db.get_value("Payment Gateway", {"adapter_key": "stripe"}, "name")
+		invoice = frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"invoice_type": "Billable",
+				"status": "Open",
+				"period_start": str(self.month_start),
+				"period_end": str(frappe.utils.get_last_day(self.today)),
+				"currency": "INR",
+				"subtotal": 1000,
+				"total": 1000,
+			}
+		).insert(ignore_permissions=True)
+		for status, code in (("Failed", "expired_card"), ("Captured", None)):
+			frappe.get_doc(
+				{
+					"doctype": "Payment Attempt",
+					"team": TEAM,
+					"invoice": invoice.name,
+					"gateway": gateway,
+					"amount": 1000,
+					"currency": "INR",
+					"status": status,
+					"failure_code": code,
+					"idempotency_key": frappe.generate_hash(10),
+				}
+			).insert(ignore_permissions=True)
+
+		rows = dashboard.list_payment_attempts(TEAM)
+
+		failed = next(r for r in rows if r["status"] == "Failed")
+		captured = next(r for r in rows if r["status"] == "Captured")
+		self.assertEqual(failed["reason"], "Your card has expired")
+		self.assertIsNone(captured["reason"])

@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
+import PaymentHistoryCard from '@/components/billing/PaymentHistoryCard.vue'
 import RefundsCard from '@/components/billing/RefundsCard.vue'
 import SpendHistoryCard from '@/components/billing/SpendHistoryCard.vue'
 import SpendSplitCard from '@/components/billing/SpendSplitCard.vue'
@@ -130,8 +131,9 @@ function exportUrl(report: string): string {
 				<SpendHistoryCard :history="history.data!" />
 				<SpendSplitCard :history="history.data!" />
 				<StatementCard :export-url="exportUrl('statement')" />
-				<TaxSummaryCard />
+				<PaymentHistoryCard :export-url="exportUrl('payments')" />
 				<RefundsCard />
+				<TaxSummaryCard />
 			</template>
 		</div>
 	</div>

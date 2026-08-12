@@ -511,3 +511,21 @@ export interface RefundRow {
 	created_at: string
 	completed_at: string | null
 }
+
+/** list_payment_attempts — every charge against the team, across invoices. */
+export interface PaymentAttempt {
+	name: string
+	status: 'Initiated' | 'Authorised' | 'Captured' | 'Failed' | 'Refunded' | (string & {})
+	amount: number
+	currency: Currency
+	gateway: string | null
+	invoice: string | null
+	failure_code: string | null
+	/** The gateway's own wording — kept for quoting to support. */
+	failure_reason: string | null
+	/** The decline said to the cardholder. Null unless the attempt failed. */
+	reason: string | null
+	retry_number: number | null
+	gateway_transaction_id: string | null
+	creation: string
+}
