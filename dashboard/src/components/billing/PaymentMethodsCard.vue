@@ -108,13 +108,17 @@ const setMode = useCall<unknown, { team: string; mode: string }>({
 	immediate: false,
 })
 
-// The order is the whole point of this list, and a number says it without a word.
-// Credits are step 1 because the engine spends them before it charges anything;
-// each method follows in the order it is tried.
+// The order is the whole point of this list, and it is the order the engine really
+// uses: an invoice applies credits first, then walks the methods until one goes
+// through (invoicing/lifecycle.py). So whatever leads is the primary and the rest
+// are numbered fallbacks — while there is a balance that is the wallet, and when it
+// runs dry the first method takes the title without anyone being asked.
+const hasCredits = computed(() => balance.value > 0)
 
-// Choosing which method gets charged decides nothing while there is a balance to
-// spend, so the action is offered and disabled rather than hidden.
-const canPromote = computed(() => balance.value <= 0)
+function methodLabel(idx: number): string {
+	if (hasCredits.value) return `Fallback ${idx + 1}`
+	return idx === 0 ? 'Primary' : `Fallback ${idx}`
+}
 
 async function makeDefault(pm: PaymentMethod): Promise<void> {
 	busy.value = pm.name
@@ -207,12 +211,6 @@ function onAdd(): void {
 				<div class="flex items-center justify-between gap-3 py-3">
 					<div class="flex min-w-0 items-start gap-2.5">
 						<span
-							class="mt-0.5 w-3 shrink-0 text-p-sm tabular-nums text-ink-gray-4"
-							aria-hidden="true"
-						>
-							1
-						</span>
-						<span
 							class="lucide-wallet mt-0.5 size-4 shrink-0 text-ink-gray-5"
 							aria-hidden="true"
 						/>
@@ -225,8 +223,16 @@ function onAdd(): void {
 							</div>
 						</div>
 					</div>
-					<!-- Holds the column so this row lines up with ones that have a menu. -->
-					<span class="size-7 shrink-0" aria-hidden="true" />
+					<div class="flex shrink-0 items-center gap-1">
+						<span
+							v-if="hasCredits"
+							class="text-sm font-medium text-ink-gray-9"
+						>
+							Primary
+						</span>
+						<!-- Holds the column so this row lines up with ones that have a menu. -->
+						<span class="size-7" aria-hidden="true" />
+					</div>
 				</div>
 				<div
 					v-for="(pm, idx) in ordered"
@@ -234,12 +240,6 @@ function onAdd(): void {
 					class="flex items-center justify-between gap-3 py-3"
 				>
 					<div class="flex min-w-0 items-start gap-2.5">
-						<span
-							class="mt-0.5 w-3 shrink-0 text-p-sm tabular-nums text-ink-gray-4"
-							aria-hidden="true"
-						>
-							{{ idx + 2 }}
-						</span>
 						<span
 							:class="methodIcon(pm)"
 							class="mt-0.5 size-4 shrink-0 text-ink-gray-5"
@@ -267,10 +267,12 @@ function onAdd(): void {
 						</div>
 					</div>
 					<div class="flex shrink-0 items-center gap-1">
+						<span class="text-sm font-medium text-ink-gray-9">
+							{{ methodLabel(idx) }}
+						</span>
 						<PaymentMethodRowActions
 							:method="pm"
 							:can-manage="canManageBilling"
-							:can-promote="canPromote"
 							:is-first="idx === 0"
 							:is-last="idx === ordered.length - 1"
 							:busy="busy === pm.name"

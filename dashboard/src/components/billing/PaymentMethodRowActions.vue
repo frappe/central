@@ -12,10 +12,6 @@ const props = defineProps<{
 	isFirst: boolean
 	isLast: boolean
 	busy?: boolean
-	// While a credit balance exists it is what pays the bill, so choosing which
-	// method gets charged decides nothing yet. The item stays visible and disabled
-	// rather than vanishing — an option that disappears reads as a missing feature.
-	canPromote?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -29,7 +25,6 @@ interface ActionItem {
 	label: string
 	icon: string
 	onClick: () => void
-	disabled?: boolean
 }
 
 const options = computed(() => {
@@ -39,7 +34,6 @@ const options = computed(() => {
 		items.push({
 			label: 'Primary payment method',
 			icon: 'lucide-star',
-			disabled: props.canPromote === false,
 			onClick: () => emit('makeDefault', props.method),
 		})
 	if (!props.isFirst)
