@@ -8,6 +8,8 @@ Gateways / per-team config. The orchestration that wires teams together lives in
 demo_scenarios.
 """
 
+import hashlib
+
 import frappe
 from frappe.utils.password import update_password
 
@@ -76,7 +78,20 @@ RAZORPAY = "Razorpay"
 # PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD but
 # is NOT its default — Stripe stays the card default; PayPal is the opt-in rail.
 PAYPAL = "Paypal"
-ANCHOR = "2026-06-01"  # the current (open) billing month
+# The current (open) billing month — the month the seed is RUN in, not a date
+# frozen into the source. A fixed anchor silently rots: a demo seeded against a
+# hardcoded June still says June in August, so the spend chart trails off into
+# empty months and "this cycle" disagrees with what the servers are actually
+# accruing. Everything else in the demo derives from these three.
+ANCHOR = str(frappe.utils.get_first_day(frappe.utils.getdate()))
+ANCHOR_END = str(frappe.utils.get_last_day(frappe.utils.getdate()))
+ANCHOR_DUE = str(frappe.utils.add_days(frappe.utils.get_last_day(frappe.utils.getdate()), 7))
+
+
+def anchor_day(day: int) -> str:
+	"""A date inside the open month — for events that happen mid-cycle (a resize)."""
+	return str(frappe.utils.add_days(frappe.utils.getdate(ANCHOR), day - 1))
+
 DEMO_OWNER_PASSWORD = "abc@123"  # every demo owner logs into the console with this
 
 
@@ -573,12 +588,16 @@ def _failed_attempt(team, invoice, pm, gateway, retry, when=None):
 	).insert(ignore_permissions=True)
 
 
-def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
+def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency, base=None):
 	"""Dunning-then-settle trail on a paid invoice: `retries` failed card attempts
-	(declined), each a day apart from the invoice's period end, followed by a
-	successful capture that settles it. This is what the invoice Activity shows."""
+	(declined), each a day apart, followed by a successful capture that settles it.
+	This is what the invoice Activity shows.
+
+	`base` is when the first attempt ran. It defaults to the day the invoice opens
+	rather than its period end — a bill is not collected before the month it covers
+	has closed."""
 	period_end = frappe.db.get_value("Invoice", invoice, "period_end")
-	base = frappe.utils.get_datetime(f"{period_end} 09:00:00")
+	base = frappe.utils.get_datetime(base or collection_moment(team, period_end))
 	for n in range(retries):
 		_failed_attempt(team, invoice, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
 	captured_at = frappe.utils.add_to_date(base, days=retries)
@@ -833,14 +852,41 @@ def stage_resizes(primary_sub, base_cluster, base_plan, currency, kind):
 	up = plan_name(_plan_after(base_plan, +1))
 	down = plan_name(_plan_after(base_plan, 0))  # back to the original size
 	if kind == "same_day":
-		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-15 09:30:00")
-		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 16:45:00")
+		_add_resize(primary_sub, up, currency, base_cluster, f"{anchor_day(15)} 09:30:00")
+		_add_resize(primary_sub, down, currency, base_cluster, f"{anchor_day(15)} 16:45:00")
 	elif kind == "within_24h":
-		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-14 20:00:00")
-		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 08:00:00")
+		_add_resize(primary_sub, up, currency, base_cluster, f"{anchor_day(14)} 20:00:00")
+		_add_resize(primary_sub, down, currency, base_cluster, f"{anchor_day(15)} 08:00:00")
 
 
 # --- payment attempts + refunds (terminal-state builders) -------------------
+
+
+def opens_on(period_end) -> str:
+	"""When the run would finalise this period's bill.
+
+	A month billed in arrears is not closed until it ends, so the invoice opens on
+	the 1st after the period — not on its last day. Seeding it a day early made the
+	demo show bills raised, and collected, before the month they cover had finished.
+	"""
+	return f"{frappe.utils.add_days(frappe.utils.getdate(period_end), 1)} 02:00:00"
+
+
+def collection_moment(team, period_end, after_days: int = 0) -> str:
+	"""A plausible moment for a collection against this period's bill.
+
+	Nothing can be collected before the invoice opens, so this always lands on or
+	after that. The day-within-the-window and the time of day are scattered from a
+	hash of (team, period) — deterministic, so a re-seed is stable, but varied, so
+	ten months of history does not read as a generated grid of identical 09:00
+	timestamps on identical dates.
+	"""
+	opens = frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
+	seed = int(hashlib.sha256(f"{team}:{period_end}".encode()).hexdigest()[:12], 16)
+	day = frappe.utils.add_days(opens, after_days + seed % 3)
+	hour = 6 + (seed // 3) % 14  # business-ish hours, never midnight-sharp
+	minute = (seed // 97) % 60
+	return f"{day} {hour:02d}:{minute:02d}:00"
 
 
 def backdate_invoice(invoice, when):
