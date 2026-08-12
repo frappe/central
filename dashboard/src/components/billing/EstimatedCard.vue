@@ -42,6 +42,10 @@ const measured = computed(() => Number(fc.value?.measured ?? projected.value))
 const estimated = computed(() => Number(fc.value?.estimated ?? 0))
 const hasEstimates = computed(() => Boolean(fc.value?.has_estimates))
 const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
+// Nothing accrued yet: the tray would open on an empty list, so the affordance
+// that opens it is not offered. An action that leads nowhere is worse than no
+// action — it reads as something being broken.
+const hasCycle = computed(() => projected.value > 0)
 const taxLabel = computed(() => fc.value?.tax_type || 'tax')
 const measuredPct = computed(() => {
 	const total = measured.value + estimated.value
@@ -129,13 +133,16 @@ async function submitAlert(): Promise<void> {
 	>
 		<div class="flex h-6 items-center justify-between gap-2">
 			<button
+				v-if="hasCycle"
 				type="button"
 				class="text-p-sm text-ink-gray-5 transition-colors hover:text-ink-gray-7"
 				@click="$emit('open')"
 			>
 				This cycle
 			</button>
+			<span v-else class="text-p-sm text-ink-gray-5">This cycle</span>
 			<Button
+				v-if="hasCycle"
 				variant="ghost"
 				size="sm"
 				label="Breakdown"
@@ -156,10 +163,15 @@ async function submitAlert(): Promise<void> {
 				{{ money(projected, currency) }}
 			</p>
 			<p class="mt-1 text-p-sm text-ink-gray-5">
-				<template v-if="billsOn">Bills {{ billsOn }}</template>
-				<template v-if="daysRemaining != null">
-					· {{ daysRemaining }} days left</template
-				>
+				<template v-if="!hasCycle">
+					Nothing has been billed yet this cycle
+				</template>
+				<template v-else>
+					<template v-if="billsOn">Bills {{ billsOn }}</template>
+					<template v-if="daysRemaining != null">
+						· {{ daysRemaining }} days left</template
+					>
+				</template>
 			</p>
 
 			<!-- Split bar: solid is owed, hatched is inferred. Only drawn when part

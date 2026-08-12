@@ -126,8 +126,12 @@ function onAutoRecharge(): void {
 				<template v-else>Card covers the rest</template>
 			</p>
 			<p v-else class="mt-1.5 text-p-sm text-ink-gray-5">
+				<!-- An empty wallet with nothing owed is a wallet with no credit in it;
+				     saying "nothing due this cycle" describes the cycle instead, which
+				     is the neighbouring card's job. -->
 				<template v-if="projected > 0">Covers this cycle in full</template>
-				<template v-else>Nothing due this cycle</template>
+				<template v-else-if="balance > 0">Ready for your first invoice</template>
+				<template v-else>No credit added yet</template>
 			</p>
 
 			<!-- Free credit runs out; purchased credit doesn't. Say so before it does. -->

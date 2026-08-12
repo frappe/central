@@ -210,3 +210,118 @@ class TestLockedPrices(OverviewBase):
 
 		self.assertEqual(row["monthly_rate"], 2000.0)
 		self.assertTrue(row["resource_id"])
+
+
+class TestReports(OverviewBase):
+	"""The period-ranged reads behind Billing → Reports."""
+
+	def _invoice(self, period_start, period_end, total=3000, paid=0, status="Paid", tax=0, tax_type="None"):
+		return frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"invoice_type": "Billable",
+				"status": status,
+				"period_start": period_start,
+				"period_end": period_end,
+				"currency": "INR",
+				"subtotal": total - tax,
+				"output_tax_type": tax_type,
+				"output_tax_amount": tax,
+				"total": total,
+				"amount_paid": paid,
+				"expected_collection": total,
+				"items": [
+					{
+						"resource_type": "bundle",
+						"plan": PLAN,
+						"cluster": CLUSTER,
+						"rate": total,
+						"days": 30,
+						"amount": total - tax,
+					}
+				],
+			}
+		).insert(ignore_permissions=True)
+
+	def test_history_reports_every_month_in_the_window(self):
+		# A month with no invoice is a month with no spend, not a missing bar.
+		self._invoice("2026-07-01", "2026-07-31", total=3000, paid=3000)
+
+		out = dashboard.get_spend_history(TEAM, months=12)
+
+		self.assertEqual(len(out["months"]), 12)
+		self.assertEqual({m["month"] for m in out["months"]} & {"2026-07"}, {"2026-07"})
+		july = next(m for m in out["months"] if m["month"] == "2026-07")
+		self.assertEqual(july["total"], 3000.0)
+		self.assertEqual(july["paid"], 3000.0)
+
+	def test_history_breaks_spend_down_by_product_and_region(self):
+		self._invoice("2026-07-01", "2026-07-31", total=3000, paid=3000)
+
+		out = dashboard.get_spend_history(TEAM, months=12)
+
+		self.assertEqual([r["label"] for r in out["by_product"]], ["VM Plans"])
+		self.assertEqual(out["by_product"][0]["amount"], 3000.0)
+		self.assertTrue(out["by_region"])
+
+	def test_statement_separates_credits_from_payment(self):
+		self._invoice("2026-07-01", "2026-07-31", total=3000, paid=3000)
+		frappe.db.set_value(
+			"Invoice",
+			frappe.get_all("Invoice", {"team": TEAM}, pluck="name")[0],
+			"credit_applied",
+			1000,
+		)
+
+		out = dashboard.get_statement(TEAM, from_date="2026-01-01", to_date="2026-12-31")
+
+		self.assertEqual(out["charged"], 3000.0)
+		self.assertEqual(out["settled_by_credits"], 1000.0)
+		self.assertEqual(out["settled_by_payment"], 3000.0)
+		self.assertEqual(out["closing_outstanding"], 0.0)
+		self.assertEqual(len(out["rows"]), 1)
+
+	def test_statement_carries_what_was_owed_before_the_window(self):
+		# An unpaid bill from before the range must not vanish, or the statement reads
+		# as though the team started clean.
+		self._invoice("2026-01-01", "2026-01-31", total=5000, status="Overdue")
+
+		out = dashboard.get_statement(TEAM, from_date="2026-06-01", to_date="2026-12-31")
+
+		self.assertEqual(out["opening_outstanding"], 5000.0)
+
+	def test_tax_summary_never_calls_a_tax_None(self):
+		# output_tax_type's "no tax" option is the literal string "None" — truthy, and
+		# it must never reach a customer as the name of a tax.
+		self._invoice("2026-07-01", "2026-07-31", total=3000, tax_type="None")
+
+		out = dashboard.get_tax_summary(TEAM, from_date="2026-01-01", to_date="2026-12-31")
+
+		self.assertEqual([b["tax_type"] for b in out["by_type"]], ["No tax"])
+		self.assertTrue(out["is_working_paper"])
+
+	def test_tax_summary_groups_by_the_mechanic_applied(self):
+		self._invoice("2026-06-01", "2026-06-30", total=3540, tax=540, tax_type="GST")
+		self._invoice("2026-07-01", "2026-07-31", total=3540, tax=540, tax_type="GST")
+
+		out = dashboard.get_tax_summary(TEAM, from_date="2026-01-01", to_date="2026-12-31")
+
+		gst = next(b for b in out["by_type"] if b["tax_type"] == "GST")
+		self.assertEqual(gst["invoices"], 2)
+		self.assertEqual(gst["tax"], 1080.0)
+		self.assertEqual(out["total_tax"], 1080.0)
+
+	def test_a_new_team_gets_a_full_empty_window_not_an_error(self):
+		out = dashboard.get_spend_history(TEAM, months=12)
+
+		self.assertEqual(len(out["months"]), 12)
+		self.assertEqual(out["total"], 0.0)
+		self.assertEqual(out["invoice_count"], 0)
+		self.assertEqual(out["by_product"], [])
+		self.assertEqual(dashboard.list_refunds(TEAM), [])
+
+	def test_months_window_is_bounded(self):
+		out = dashboard.get_spend_history(TEAM, months=999)
+
+		self.assertEqual(len(out["months"]), 36)

@@ -79,6 +79,12 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					condition: canViewBilling.value,
 				},
 				{
+					label: 'Reports',
+					icon: 'lucide-chart-no-axes-column',
+					to: '/billing/reports',
+					condition: canViewBilling.value,
+				},
+				{
 					label: 'Limit tiers',
 					icon: 'lucide-layers',
 					to: '/billing/limits',

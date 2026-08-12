@@ -432,3 +432,82 @@ export interface NotificationPreferences {
 	team: string
 	[event: string]: number | string
 }
+
+/** get_spend_history — the period-ranged reads behind Billing → Reports. */
+export interface SpendMonth {
+	month: string
+	label: string
+	total: number
+	paid: number
+	currency: Currency
+}
+
+export interface SpendSlice {
+	label: string
+	amount: number
+}
+
+export interface SpendHistory {
+	currency: Currency
+	from_date: string
+	months: SpendMonth[]
+	by_product: SpendSlice[]
+	by_region: SpendSlice[]
+	total: number
+	invoice_count: number
+}
+
+export interface StatementRow {
+	invoice: string
+	period_start: string
+	period_end: string
+	status: InvoiceStatus
+	total: number
+	tax: number
+	credit_applied: number
+	amount_paid: number
+}
+
+export interface Statement {
+	currency: Currency
+	from_date: string
+	to_date: string
+	opening_outstanding: number
+	charged: number
+	settled_by_credits: number
+	settled_by_payment: number
+	closing_outstanding: number
+	rows: StatementRow[]
+}
+
+export interface TaxBucket {
+	tax_type: string
+	taxable: number
+	tax: number
+	invoices: number
+}
+
+export interface TaxSummary {
+	currency: Currency
+	from_date: string
+	to_date: string
+	by_type: TaxBucket[]
+	total_tax: number
+	total_withheld: number
+	/** Central's own rating, not the statutory document (ADR 0019). */
+	is_working_paper: boolean
+}
+
+export interface RefundRow {
+	name: string
+	invoice: string | null
+	amount: number
+	currency: Currency
+	destination: 'Source' | 'Wallet' | (string & {})
+	status: 'Initiated' | 'Completed' | 'Failed' | (string & {})
+	reason: string | null
+	/** The provider's refund id — NOT a bank-traceable ARN. */
+	gateway_reference: string | null
+	created_at: string
+	completed_at: string | null
+}

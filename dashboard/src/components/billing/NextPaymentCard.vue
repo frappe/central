@@ -40,14 +40,19 @@ const instrument = computed(() => {
 		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
 	>
 		<div class="flex h-6 items-center justify-between gap-2">
+			<!-- With nothing due there is no schedule to show, so the card does not
+			     pretend to be a door. -->
 			<button
+				v-if="amount > 0"
 				type="button"
 				class="text-p-sm text-ink-gray-5 transition-colors hover:text-ink-gray-7"
 				@click="$emit('open')"
 			>
 				Next payment
 			</button>
+			<span v-else class="text-p-sm text-ink-gray-5">Next payment</span>
 			<button
+				v-if="amount > 0"
 				type="button"
 				class="grid size-6 place-items-center rounded text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
 				aria-label="Open payment schedule"
@@ -97,7 +102,9 @@ const instrument = computed(() => {
 			<p class="mt-1.5 text-2xl-semibold tabular-nums text-ink-gray-9">
 				{{ money(0, currency) }}
 			</p>
-			<p class="mt-1.5 text-p-sm text-ink-gray-5">Nothing due right now</p>
+			<p class="mt-1.5 text-p-sm text-ink-gray-5">
+				Nothing to pay yet — we'll bill on the 1st for whatever you run.
+			</p>
 		</template>
 	</div>
 </template>

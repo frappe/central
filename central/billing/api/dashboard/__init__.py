@@ -63,6 +63,13 @@ from central.billing.api.dashboard.outlook import (
 	get_next_payment,
 	get_payment_schedule,
 )
+from central.billing.api.dashboard.reports import (
+	export_csv,
+	get_spend_history,
+	get_statement,
+	get_tax_summary,
+	list_refunds,
+)
 from central.billing.api.dashboard.services import (
 	get_metered_services,
 	subscribe_metered_service,
@@ -80,6 +87,7 @@ __all__ = [
 	"confirm_topup",
 	"create_topup_order",
 	"credit_ledger",
+	"export_csv",
 	"get_billing_geo",
 	"get_billing_profile",
 	"get_billing_settings",
@@ -95,6 +103,9 @@ __all__ = [
 	"get_next_payment",
 	"get_payment_method_options",
 	"get_payment_schedule",
+	"get_spend_history",
+	"get_statement",
+	"get_tax_summary",
 	"get_team_overview",
 	"get_topup_options",
 	"get_trust_tier",
@@ -102,6 +113,7 @@ __all__ = [
 	"list_invoices",
 	"list_payment_attempts",
 	"list_payment_methods",
+	"list_refunds",
 	"list_subscriptions",
 	"list_switchable_teams",
 	"pause_subscription",
