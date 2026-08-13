@@ -57,8 +57,11 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 			/>
 		</div>
 
-			<!-- Ledger -->
-			<div class="min-h-0 flex-1 overflow-y-auto">
+			<!-- Ledger. No inner scroll: SidePanel's body already scrolls, and a
+			     second scroller here traps the ledger in a short box — worst on the
+			     mobile sheet, where the panel is the full screen and the ledger got
+			     a sliver of it. Same fix the invoice receipt took. -->
+			<div>
 				<div v-if="ledger.loading && !ledger.data" class="space-y-3 p-4">
 					<LoadingText :lines="5" />
 				</div>

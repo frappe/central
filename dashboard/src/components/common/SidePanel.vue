@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { onBeforeUnmount, watch } from 'vue'
+import { nextTick, onBeforeUnmount, useTemplateRef, watch } from 'vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 // The docked detail panel every page shares — a 24rem column that slides in
 // beside the content (never over it), the billing invoice panel's anatomy made
@@ -10,23 +11,52 @@ import { onBeforeUnmount, watch } from 'vue'
 //
 // Hosting: render as the last child of a `flex h-full` row, after the page's
 // own `min-w-0 flex-1 overflow-y-auto` content column.
+//
+// Below `sm` there is no row to dock into — MobileShell owns the scroll, so
+// pages make that row `sm:`-only and a docked panel would stack a 384px column
+// under content on a 375px viewport. Same anatomy, presented as a sheet
+// instead: full-screen over the page header and the bottom nav, with the close
+// button (or Esc, on a keyboard) the only way out.
 defineProps<{ title?: string; subtitle?: string }>()
 const open = defineModel<boolean>('open', { default: false })
 
+// Docked, the panel sits beside content that stays usable, so it is a
+// complementary region. As a sheet it covers everything, so it has to say so —
+// otherwise a screen reader walks straight into the page behind it.
+const isMobile = useIsMobile()
+const panel = useTemplateRef<HTMLElement>('panel')
+
 // The panel is docked, not modal, so it never holds focus — Esc has to be
 // caught on the document. A stacked dialog owns Esc first: closing both at once
-// would take the panel away for what read as one dismissal.
+// would take the panel away for what read as one dismissal. `:not()` on our own
+// root because the sheet now carries role="dialog" itself and would otherwise
+// match, killing Esc entirely.
 function onEscape(event: KeyboardEvent): void {
 	if (event.key !== 'Escape') return
-	if (document.querySelector('[role="dialog"]')) return
+	if (document.querySelector('[role="dialog"]:not([data-slot="side-panel"])'))
+		return
 	open.value = false
 }
+
+// A sheet is the only thing on screen, so it takes focus and gives it back —
+// without this, Close leaves focus on a row that is no longer rendered and the
+// next Tab restarts from the top of the document.
+let restoreFocusTo: HTMLElement | null = null
 
 watch(
 	open,
 	(isOpen) => {
-		if (isOpen) document.addEventListener('keydown', onEscape)
-		else document.removeEventListener('keydown', onEscape)
+		if (isOpen) {
+			document.addEventListener('keydown', onEscape)
+			if (isMobile.value) {
+				restoreFocusTo = document.activeElement as HTMLElement | null
+				void nextTick(() => panel.value?.focus())
+			}
+			return
+		}
+		document.removeEventListener('keydown', onEscape)
+		restoreFocusTo?.focus?.()
+		restoreFocusTo = null
 	},
 	{ immediate: true },
 )
@@ -34,10 +64,25 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 </script>
 
 <template>
+	<!-- Once the sheet is fixed it stops sharing the page's scroll, so it has to
+	     stop handing gestures back to it: `max-sm:overscroll-contain` for reaching
+	     the end of the body, and touch-action for the rest.
+	     `touch-pan-y`, not MobileShell's `touch-none`: the body is the tall thing
+	     here (a year of payments, a full receipt), and whether an ancestor's
+	     `touch-none` reaches down into a descendant scroller is exactly the kind of
+	     thing that behaves one way in a desktop emulator and another on a phone.
+	     Allowing the one gesture the sheet needs costs nothing — pinch-zoom and
+	     horizontal pan stay blocked either way. -->
 	<Transition name="slide" appear>
 		<aside
 			v-if="open"
-			class="flex w-[24rem] shrink-0 flex-col border-l border-outline-gray-2 bg-surface-base"
+			ref="panel"
+			data-slot="side-panel"
+			:role="isMobile ? 'dialog' : undefined"
+			:aria-modal="isMobile ? 'true' : undefined"
+			:aria-label="isMobile ? title : undefined"
+			:tabindex="isMobile ? -1 : undefined"
+			class="flex w-[24rem] shrink-0 flex-col border-l border-outline-gray-2 bg-surface-base focus:outline-none max-sm:fixed max-sm:inset-0 max-sm:z-20 max-sm:w-full max-sm:touch-pan-y max-sm:border-l-0"
 		>
 			<div
 				class="flex items-start justify-between gap-3 border-b border-outline-gray-2 p-4"
@@ -67,7 +112,9 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 				</div>
 			</div>
 
-			<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+			<div
+				class="flex min-h-0 flex-1 flex-col overflow-y-auto max-sm:overscroll-contain"
+			>
 				<slot />
 			</div>
 
@@ -81,7 +128,11 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 <style scoped>
 /* The margin animates alongside the slide: without it the panel's 24rem of
    layout width appears/disappears in a single frame. Margin animation costs
-   layout per frame — the accepted tradeoff for a docked (not overlaid) panel. */
+   layout per frame — the accepted tradeoff for a docked (not overlaid) panel.
+   Below `sm` there is no layout width to collapse: left/right/width are all set
+   (inset-0 + w-full), which over-constrains the box, so `right` is dropped and
+   the end margin never enters the equation. The translate alone carries the
+   sheet in, which is the whole animation a full-screen sheet wants. */
 
 /* iOS drawer curve — decelerates hard at the end, so the panel settles rather
    than stops. */

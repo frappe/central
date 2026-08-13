@@ -98,5 +98,6 @@ const memberCountText = computed(() => {
 		     deep inside `main`, but it has to dock beside that scroll box rather
 		     than inside it. `contents` keeps the panel itself the flex item, so its
 		     24rem and the slide's negative margin measure against this row. -->
+		<div id="team-page-aside" class="contents" />
 	</div>
 </template>
