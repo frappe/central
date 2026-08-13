@@ -9,7 +9,7 @@ const {
 	themeOptions,
 	currentTheme,
 	setTheme,
-	changeTeamOpen,
+	switchTeamOpen,
 	logoutAndRedirect,
 } = useAppMenu()
 </script>
@@ -20,7 +20,7 @@ const {
 			variant="ghost"
 			class=" w-full !justify-between text-base"
 			size="lg"
-			@click="changeTeamOpen = true"
+			@click="switchTeamOpen = true"
 		>
 			Team
 			<template #suffix>

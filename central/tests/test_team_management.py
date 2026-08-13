@@ -87,6 +87,70 @@ class TestTeamManagement(IntegrationTestCase):
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
+	def test_wildcard_grant_absorbs_same_role_resource_grants(self):
+		# "Developer on everything" plus "Developer on one server" is
+		# contradictory — the save keeps the wildcard and drops its shadow.
+		frappe.set_user(self.owner)
+		frappe.get_doc("Team", self.team.name).set_member_roles(
+			self.viewer,
+			[
+				{"role": "Developer", "resource_type": "*", "resource_name": None},
+				{"role": "Developer", "resource_type": "Server", "resource_name": "srv-x"},
+				{"role": "Billing", "resource_type": "Server", "resource_name": "srv-x"},
+			],
+		)
+
+		grants = [
+			(row.role, row.resource_type, row.resource_name or None)
+			for row in frappe.get_doc("Team", self.team.name).members
+			if row.user == self.viewer
+		]
+		self.assertIn(("Developer", "*", None), grants)
+		self.assertNotIn(("Developer", "Server", "srv-x"), grants)
+		# A different role scoped to the same resource is a real grant — kept.
+		self.assertIn(("Billing", "Server", "srv-x"), grants)
+
+	def test_shadowed_rows_do_not_block_a_metadata_only_save(self):
+		# A stored team can already hold a wildcard and its shadow — rows written
+		# before this rule existed. Normalizing them away on save is not a member
+		# edit, so someone holding only team:edit must still be able to rename.
+		frappe.set_user(self.owner)
+		editor = create_custom_role(self.team.name, "Editor Only", ["team:edit"])["role"]
+		frappe.get_doc("Team", self.team.name).set_member_roles(
+			self.viewer, [{"role": editor, "resource_type": "*"}]
+		)
+
+		# Written straight to the table: a normal save would absorb it on the way in.
+		frappe.set_user("Administrator")
+		frappe.get_doc(
+			{
+				"doctype": "Team Member",
+				"parenttype": "Team",
+				"parentfield": "members",
+				"parent": self.team.name,
+				"user": self.viewer,
+				"status": "Active",
+				"role": editor,
+				"resource_type": "Server",
+				"resource_name": "srv-x",
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(self.viewer)  # holds team:edit, not team:manage_members
+		team = frappe.get_doc("Team", self.team.name)
+		team.team_name = "Renamed Team"
+		team.save()
+
+		saved = frappe.get_doc("Team", self.team.name)
+		grants = [
+			(row.role, row.resource_type, row.resource_name or None)
+			for row in saved.members
+			if row.user == self.viewer
+		]
+		self.assertEqual(saved.team_name, "Renamed Team")
+		self.assertIn((editor, "*", None), grants)
+		self.assertNotIn((editor, "Server", "srv-x"), grants)
+
 	def test_owner_invites_existing_user_and_user_accepts(self):
 		frappe.set_user(self.owner)
 		invitation_name = frappe.get_doc("Team", self.team.name).invite_member(self.invitee, "Developer")

@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { Dialog } from 'frappe-ui'
+import {
+	ListboxContent,
+	ListboxFilter,
+	ListboxGroup,
+	ListboxGroupLabel,
+	ListboxItem,
+	ListboxRoot,
+} from 'reka-ui'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import Scrollbar from '@/components/common/Scrollbar.vue'
 import type { SearchItem } from './index'
 import { useSearchIndex } from './index'
 import { filterIndex, highlightMatch } from './utils'
@@ -10,190 +18,134 @@ const open = defineModel<boolean>('open', { default: false })
 
 const router = useRouter()
 const query = ref('')
-const activeIndex = ref(-1)
-const inputRef = useTemplateRef<HTMLInputElement>('inputRef')
-const resultsRef = useTemplateRef<HTMLElement>('resultsRef')
 const searchIndex = useSearchIndex()
 
 const filtered = computed(() => filterIndex(searchIndex.value, query.value))
-const flatItems = computed(() =>
-	Object.values(filtered.value).flatMap((group) => group.items),
-)
-
-watch(filtered, () => {
-	activeIndex.value = -1
-})
+const hasResults = computed(() => Object.keys(filtered.value).length > 0)
 
 watch(open, (isOpen) => {
-	if (!isOpen) return
-	query.value = ''
-	activeIndex.value = -1
-	nextTick(() => inputRef.value?.focus())
+	if (!isOpen) query.value = ''
 })
 
-const close = () => {
-	open.value = false
-}
-
-const select = (item: SearchItem) => {
+function select(item: SearchItem): void {
 	if (item.route) router.push(item.route)
 	else item.onSelect?.()
-	close()
-}
-
-const go = (index: number) => {
-	const item = flatItems.value[index] ?? flatItems.value[0]
-	if (item) select(item)
-	else close()
-}
-
-const navigate = (delta: number) => {
-	activeIndex.value = Math.min(
-		Math.max(activeIndex.value + delta, 0),
-		flatItems.value.length - 1,
-	)
-	resultsRef.value
-		?.querySelectorAll('[role="option"]')
-		[activeIndex.value]?.scrollIntoView({ block: 'nearest' })
+	open.value = false
 }
 </script>
 
 <template>
-	<!-- backdrop -->
-	<div
-		v-if="open"
-		class="search-backdrop fixed inset-0 z-100 flex items-start justify-center bg-black/70"
-		@click.self="close"
-	>
-		<!-- popup -->
-		<div
-			class="search-panel mt-[15vh] w-full max-w-lg overflow-hidden rounded bg-surface-gray-1 shadow-lg"
-			@keydown.esc.prevent="close"
-			@keydown.enter.prevent="go(activeIndex)"
-			@keydown.up.prevent="navigate(-1)"
-			@keydown.down.prevent="navigate(1)"
-		>
-			<!-- input -->
-			<div class="flex items-center gap-2 border-b border-outline-gray-2 p-3">
-				<span class="lucide-search size-4 text-ink-gray-5" />
-				<input
-					ref="inputRef"
-					v-model="query"
-					placeholder="Search"
-					class="w-full border-0 bg-transparent p-0 text-sm !outline-none !ring-0"
-				/>
-				<button
-					class="text-ink-gray-5 hover:text-ink-gray-8"
-					aria-label="Close"
-					@click="close"
-				>
-					<span class="lucide-x size-4" />
-				</button>
-			</div>
+	<Dialog v-model:open="open" bare size="xl" position="top" padding-top="10vh">
+		<template #default>
+			<ListboxRoot class="flex flex-col" highlight-on-hover :model-value="null">
+				<div class="relative">
+					<div class="absolute inset-y-0 left-0 flex items-center pl-4.5">
+						<span class="lucide-search h-4 w-4 text-ink-gray-6" />
+					</div>
+					<ListboxFilter
+						v-model="query"
+						auto-focus
+						placeholder="Search"
+						class="w-full border-none bg-transparent py-3 pl-11.5 pr-4.5 text-base text-ink-gray-7 placeholder-ink-gray-4 focus:ring-0"
+						autocomplete="off"
+					/>
+				</div>
 
-			<!-- search items -->
-			<Scrollbar v-if="flatItems.length">
-				<div
-					ref="resultsRef"
-					class="flex max-h-[36vh] min-h-[36vh] flex-col p-2 text-sm"
-					role="listbox"
+				<ListboxContent
+					class="max-h-96 overflow-auto border-t border-outline-gray-1"
 				>
-					<template v-for="(group, name) in filtered" :key="name">
-						<span
-							class="mb-1 block px-2 py-1 text-xs uppercase text-ink-gray-4"
+					<ListboxGroup
+						v-for="(group, name) in filtered"
+						:key="name"
+						class="mb-2 mt-4.5 first:mt-3"
+					>
+						<ListboxGroupLabel
+							class="mb-2.5 block px-4.5 text-base text-ink-gray-5"
 						>
 							{{ name }}
-						</span>
+						</ListboxGroupLabel>
 
 						<div
-							v-for="(item, i) in group.items"
+							v-for="item in group.items"
 							:key="`${name}-${item.name}`"
-							role="option"
-							class="flex cursor-pointer items-center gap-2 rounded p-2 hover:bg-surface-gray-2"
-							:class="[
-								flatItems.indexOf(item) === activeIndex ? 'bg-surface-gray-2' : '',
-								i === group.items.length - 1 ? 'mb-3' : 'mb-0.5',
-							]"
-							@click="select(item)"
+							class="px-2.5"
 						>
-							<span
-								:class="item.icon"
-								class="size-4 shrink-0 text-ink-gray-6"
-							/>
-
-							<span
-								class="min-w-0 flex-1 truncate"
-								v-html="highlightMatch(item.name, query)"
-							/>
-
-							<span
-								v-if="item.description"
-								class="shrink-0 truncate pl-2 text-xs text-ink-gray-5"
+							<ListboxItem
+								:value="`${name}-${item.name}`"
+								class="flex w-full min-w-0 items-center gap-2 rounded px-2 py-2 text-base font-medium text-ink-gray-7 outline-none data-[highlighted]:bg-surface-gray-3"
+								@select="select(item)"
 							>
-								{{ item.description }}
-							</span>
+								<span
+									:class="item.icon"
+									class="size-4 shrink-0 text-ink-gray-6"
+								/>
+								<span
+									class="min-w-0 flex-1 truncate"
+									v-html="highlightMatch(item.name, query)"
+								/>
+								<span
+									v-if="item.description"
+									class="shrink-0 truncate pl-2 text-xs font-normal text-ink-gray-5"
+								>
+									{{ item.description }}
+								</span>
+							</ListboxItem>
 						</div>
-					</template>
+					</ListboxGroup>
+
+					<div
+						v-if="query && !hasResults"
+						class="my-8 text-center text-base text-ink-gray-6"
+					>
+						No results for "<b class="text-ink-gray-9">{{ query }}</b
+						>"
+					</div>
+				</ListboxContent>
+
+				<div
+					class="mt-2 flex items-center justify-between border-t border-outline-gray-1 px-2.5 py-2 text-xs text-ink-gray-6"
+				>
+					<div class="flex items-center gap-4">
+						<div class="flex items-center gap-1">
+							<kbd><span class="lucide-arrow-down size-4" /></kbd>
+							<kbd><span class="lucide-arrow-up size-4" /></kbd>
+							<span class="ml-1">to navigate</span>
+						</div>
+						<div class="flex items-center gap-1">
+							<kbd><span class="lucide-corner-down-left size-4" /></kbd>
+							<span class="ml-1">to select</span>
+						</div>
+						<div class="flex items-center gap-1">
+							<kbd class="px-1 text-sm">esc</kbd>
+							<span class="ml-1">to close</span>
+						</div>
+					</div>
+					<div class="flex items-center gap-1">
+						<kbd>
+							<span class="lucide-command h-3 w-3" />
+							<span class="text-sm">K</span>
+						</kbd>
+						<span class="ml-1">to open</span>
+					</div>
 				</div>
-			</Scrollbar>
-
-			<div
-				v-else
-				class="flex items-center justify-center gap-2 p-6 text-sm text-ink-gray-5"
-			>
-				<span class="lucide-frown size-4" />
-				No results found
-			</div>
-
-			<!-- keyboard shortcuts -->
-			<div
-				class="flex items-center gap-1.5 border-t border-outline-gray-2 px-3 py-2 text-xs text-ink-gray-5"
-			>
-				<kbd><span class="lucide-arrow-up size-3" /></kbd>
-				<kbd class="mr-1"><span class="lucide-arrow-down size-3" /></kbd>
-				<span>navigate</span>
-				<kbd class="ml-3"><span class="lucide-corner-down-left size-3" /></kbd>
-				<span>open</span>
-				<kbd class="ml-3">esc</kbd>
-				<span>close</span>
-			</div>
-		</div>
-	</div>
+			</ListboxRoot>
+		</template>
+	</Dialog>
 </template>
 
 <style scoped>
-.search-backdrop {
-	animation: search-backdrop-in 0.12s ease-out;
-}
-
-.search-panel {
-	animation: search-panel-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
-	will-change: transform, opacity;
-}
-
-@keyframes search-backdrop-in {
-	from {
-		opacity: 0;
-	}
-}
-
-@keyframes search-panel-in {
-	from {
-		opacity: 0;
-		transform: translateY(6px) scale(0.98);
-	}
-}
-
 :deep(mark) {
 	background: var(--surface-gray-3);
 	color: var(--ink-gray-9);
 	font-weight: 500;
 }
 
+/* Matches the frappe-ui docs command palette's key caps. */
 kbd {
-	@apply inline-flex h-5 min-w-5 items-center justify-center rounded-sm;
-	@apply border border-outline-gray-2 bg-surface-gray-2 px-1 font-sans text-ink-gray-6;
-	font-size: 0.6875rem;
-	line-height: 1;
+	@apply inline-flex items-center gap-0.5 whitespace-nowrap rounded-sm;
+	@apply bg-surface-gray-2 p-0.5 font-sans font-medium text-ink-gray-5;
+	font-size: 11px;
+	line-height: normal;
+	letter-spacing: 0.02em;
 }
 </style>

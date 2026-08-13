@@ -56,7 +56,7 @@ export function useTeamMembers() {
 		run(
 			() =>
 				submitOrThrow(setRolesCall, { team: teamParams().team, user, roles }),
-			`Updated ${user}'s roles.`,
+			`Updated ${user}'s roles`,
 			user,
 			() => membersCall.reload(),
 		)
@@ -66,7 +66,7 @@ export function useTeamMembers() {
 		return run(
 			() =>
 				submitOrThrow(setStatusCall, { team: teamParams().team, user, status }),
-			`${verb} ${user}.`,
+			`${verb} ${user}`,
 			user,
 			() => membersCall.reload(),
 		)
@@ -75,7 +75,7 @@ export function useTeamMembers() {
 	function remove(user: string) {
 		return run(
 			() => submitOrThrow(removeCall, { team: teamParams().team, user }),
-			`Removed ${user} from the team.`,
+			`Removed ${user} from the team`,
 			user,
 			() => membersCall.reload(),
 		)

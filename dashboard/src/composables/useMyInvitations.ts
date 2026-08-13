@@ -49,7 +49,7 @@ export function useMyInvitations() {
 		try {
 			await acceptCall.submit({ invitation: invitation.name })
 			if (acceptCall.error) throw acceptCall.error
-			successToast(`You joined ${invitation.team_name}.`)
+			successToast(`You joined ${invitation.team_name}`)
 			await session.reload()
 			session.setActiveTeam(invitation.team)
 			caps.reload()
@@ -66,7 +66,7 @@ export function useMyInvitations() {
 		try {
 			await declineCall.submit({ invitation: invitation.name })
 			if (declineCall.error) throw declineCall.error
-			successToast(`Declined the invite to ${invitation.team_name}.`)
+			successToast(`Declined the invite to ${invitation.team_name}`)
 			invitationsCall.reload()
 		} catch (e) {
 			errorToast(e)

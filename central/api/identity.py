@@ -4,12 +4,14 @@ from typing import Any
 
 import frappe
 from frappe.query_builder import Order
+from frappe.utils import escape_html
 
 from central.iam import (
 	get_all_capabilities,
 	resolve_user_grants,
 	user_has_operator_bypass,
 )
+from central.utils.inputs import require_text
 
 # Identity and capability reads for the console. Always scoped to the signed-in
 # user — safe for any logged-in member.
@@ -50,7 +52,7 @@ def my_teams() -> list[dict[str, Any]]:
 		frappe.qb.from_(member)
 		.join(team)
 		.on(team.name == member.parent)
-		.select(team.name, team.team_name, team.owner_user)
+		.select(team.name, team.team_name, team.team_logo, team.owner_user)
 		.where(
 			(member.parenttype == "Team")
 			& (member.parentfield == "members")
@@ -62,7 +64,13 @@ def my_teams() -> list[dict[str, Any]]:
 	).run(as_dict=True)
 
 	return [
-		{"name": r.name, "label": r.team_name or r.owner_user or r.name, "owner": r.owner_user} for r in rows
+		{
+			"name": r.name,
+			"label": r.team_name or r.owner_user or r.name,
+			"logo": r.team_logo,
+			"owner": r.owner_user,
+		}
+		for r in rows
 	]
 
 
@@ -103,3 +111,40 @@ def my_invitations() -> list[dict[str, Any]]:
 		row["team_name"] = row.team_name or row.team
 
 	return rows
+
+
+# --- profile: the signed-in user's own account -------------------------------
+
+
+def _require_signed_in() -> str:
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(frappe._("Sign in to manage your profile."), frappe.PermissionError)
+	return user
+
+
+@frappe.whitelist(methods=["GET"])
+def my_profile() -> dict[str, Any]:
+	"""The signed-in user's own profile — email, display name, photo."""
+	user = _require_signed_in()
+	row = frappe.db.get_value("User", user, ["full_name", "user_image"], as_dict=True)
+	return {"user": user, "full_name": row.full_name, "user_image": row.user_image}
+
+
+@frappe.whitelist(methods=["POST"])
+def update_profile(full_name: str) -> dict[str, Any]:
+	"""Update the signed-in user's display name. Only ever operates on the
+	session user — there is no user parameter to abuse. The whole string goes
+	into first_name (frappe recomputes full_name from the parts)."""
+	user = _require_signed_in()
+	# Typed at the trust boundary: a JSON body can put a list or dict here, and
+	# escape_html below would raise an unhandled error on one.
+	full_name = require_text(full_name, frappe._("Enter a name."))
+	doc = frappe.get_doc("User", user)
+	# Escaped at write time, matching the signup path (_create_verified_user):
+	# full_name reaches HTML contexts outside this SPA (frappe emails, desk).
+	doc.first_name = escape_html(full_name)
+	doc.middle_name = None
+	doc.last_name = None
+	doc.save(ignore_permissions=True)
+	return {"full_name": doc.full_name}

@@ -1,142 +1,195 @@
 <script setup lang="ts">
 import { Badge, useCall } from 'frappe-ui'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { features } from '@/lib/features'
+import { money } from '@/lib/format'
 
-interface MeteredRow {
+interface ServiceRow {
 	resource_type: string | null
 	unit: string | null
 	period_usage: number
+	locked_rate: number
+	currency: string
+}
+interface ServicePlan {
+	resource_type: string | null
+	rate: number
+}
+interface MeteredServices {
+	currency: string
+	services: ServiceRow[]
+	available_plans: ServicePlan[]
 }
 
 const { activeTeam } = useSession()
 
-const metered = useCall<{ services: MeteredRow[] }, { team: string }>({
+const metered = useCall<MeteredServices, { team: string }>({
 	url: method(API.meteredServices),
 	params: () => ({ team: activeTeam.value! }),
 	immediate: false,
 	refetch: true,
 })
-
 whenTeamReady(() => metered.reload())
 
-const aiUsage = computed(() => {
-	const row = metered.data?.services.find((s) => s.resource_type === 'Tokens')
-	if (!row) return null
-	return `${new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(row.period_usage)} ${row.unit || 'tokens'}`
-})
+const currency = computed(() => metered.data?.currency ?? 'USD')
 
-// A service's "On"/"Coming soon" state is its rollout flag (Central Settings),
-// not the billing catalogue. Live cards show real usage only — no placeholder
-// pricing. A card with no usage source yet shows an em dash, never a made-up figure.
-const services = computed(() => [
+// The catalog is product copy; whether a service is rolled out comes from the
+// Central Settings feature flags, and what it costs and has used comes from the
+// API. `resourceType` is the join key. Every service names the page it will
+// own — see `linkable` below.
+const CATALOG = [
 	{
-		icon: 'sparkles',
+		resourceType: 'Tokens',
+		icon: 'lucide-sparkles',
 		title: 'AI inference',
 		description:
 			'Open models on Frappe hardware, through an OpenAI-compatible API.',
-		usage: aiUsage.value ?? '—',
+		noun: 'tokens',
 		to: '/addons/ai',
-		enabled: features.llm,
+		flag: 'llm' as const,
 	},
 	{
-		icon: 'archive',
+		resourceType: null,
+		icon: 'lucide-archive',
 		title: 'Object storage',
 		description:
 			'S3-compatible buckets for file uploads, backups and static assets.',
-		usage: '—',
+		noun: 'GB',
 		to: '/addons/object-storage',
-		enabled: features.storage,
+		flag: 'storage' as const,
 	},
 	{
-		icon: 'mail',
+		resourceType: 'PDF',
+		icon: 'lucide-file-text',
+		title: 'PDF rendering',
+		description: 'PDFs from your print formats, rendered off your server.',
+		noun: 'documents',
+		to: '/addons/pdf-rendering',
+		flag: 'pdf' as const,
+	},
+	{
+		resourceType: 'Emails',
+		icon: 'lucide-mail',
 		title: 'Email sending',
 		description:
 			'Send mail from your own domain. DKIM and SPF handled for you.',
-		usage: '—',
+		noun: 'emails',
 		to: '/addons/email-sending',
-		enabled: features.email,
+		flag: 'email' as const,
 	},
-	{
-		icon: 'file-text',
-		title: 'PDF rendering',
-		description: 'PDFs from your print formats, rendered off your server.',
-		usage: '—',
-		to: '/addons/pdf-rendering',
-		enabled: features.pdf,
-	},
-])
+]
 
-const enabledCount = computed(() => services.value.filter((s) => s.enabled).length)
+// A card turns into a link the moment its route exists — registering the route
+// is the only step. Asking the router beats a hand-kept flag here, which would
+// be a second place to remember and a dead link when someone forgets.
+const router = useRouter()
+const isRouted = (to: string): boolean =>
+	router.resolve(to).matched.length > 0
+
+const number = new Intl.NumberFormat(undefined, {
+	notation: 'compact',
+	maximumFractionDigits: 1,
+})
+
+// Per-unit rates run to five decimals, so quote them per thousand — $0.22 per
+// 1,000 documents reads where $0.00022 each does not.
+function rateLabel(rate: number, noun: string): string {
+	return `${money(rate * 1000, currency.value)} per 1,000 ${noun}`
+}
+
+const cards = computed(() =>
+	CATALOG.map((entry) => {
+		// Off flag = not rolled out yet, whatever the catalog or a seeded
+		// subscription says.
+		const comingSoon = !features[entry.flag]
+		const subscribed = metered.data?.services.find(
+			(s) => s.resource_type === entry.resourceType,
+		)
+		const plan = metered.data?.available_plans.find(
+			(p) => p.resource_type === entry.resourceType,
+		)
+		const rate = subscribed?.locked_rate ?? plan?.rate
+		return {
+			...entry,
+			comingSoon,
+			on: !!subscribed,
+			linkable: !comingSoon && isRouted(entry.to),
+			// Coming soon: what it will cost. On: what it has done this cycle.
+			// Off: what it would cost.
+			// A free service quotes 0, so ask whether a rate exists, not whether
+			// it is non-zero.
+			meta: comingSoon
+				? rate != null
+					? rateLabel(rate, entry.noun)
+					: 'Pricing to be announced'
+				: subscribed
+					? subscribed.period_usage
+						? `${number.format(subscribed.period_usage)} ${entry.noun} this cycle`
+						: 'No usage this cycle'
+					: rate != null
+						? rateLabel(rate, entry.noun)
+						: 'Not available yet',
+		}
+	}),
+)
 </script>
 
 <template>
-	<div class="flex flex-col gap-3 leading-relaxed max-w-3xl mx-auto mt-10 px-5">
-		<h2 class="text-xl">Add-on services</h2>
-		<p class="-mt-2 text-ink-gray-5">
-			Pay for what you use, not a monthly fee.
-		</p>
-
-		<div class="flex gap-3 items-center rounded bg-surface-gray-1 p-2 px-3">
-			<span class="text-ink-gray-5 mr-auto">
-				{{ enabledCount }} of {{ services.length }} available
-			</span>
-
-			<router-link class="text-ink-gray-6" to="/billing/invoices"
-				>See on billing</router-link
-			>
-		</div>
-
-		<section class="grid md:grid-cols-2 gap-3 mt-5">
+	<div class="mx-auto mt-10 max-w-3xl px-5">
+		<section class="grid gap-3 md:grid-cols-2">
+			<!-- A card is a link only once its page exists, so nothing invites a
+			     click that goes nowhere. -->
 			<component
-				:is="service.enabled ? 'router-link' : 'div'"
-				v-for="service in services"
+				:is="service.linkable ? 'router-link' : 'div'"
+				v-for="service in cards"
 				:key="service.title"
-				:to="service.enabled ? service.to : undefined"
-				class="p-4 rounded-lg flex flex-col gap-3 border border-outline-gray-2 transition-all duration-300"
-				:class="
-					service.enabled ? 'hover:border-outline-gray-6' : 'opacity-50'
-				"
+				:to="service.linkable ? service.to : undefined"
+				class="flex flex-col gap-3 rounded-lg border p-4"
+				:class="[
+					service.comingSoon
+						? 'border-dashed border-outline-gray-3'
+						: 'border-outline-gray-2',
+					service.linkable ? 'transition-colors hover:border-outline-gray-4' : '',
+				]"
 			>
-				<div class="flex items-center gap-3">
-					<div class="bg-surface-gray-1 rounded-lg p-2">
-						<lucide-sparkles
-							v-if="service.icon === 'sparkles'"
-							class="size-6 text-ink-gray-5"
-						/>
-						<lucide-archive
-							v-else-if="service.icon === 'archive'"
-							class="size-6 text-ink-gray-5"
-						/>
-						<lucide-mail
-							v-else-if="service.icon === 'mail'"
-							class="size-6 text-ink-gray-5"
-						/>
-						<lucide-file-text
-							v-else-if="service.icon === 'file-text'"
-							class="size-6 text-ink-gray-5"
-						/>
+				<div class="flex items-start justify-between gap-3">
+					<div class="grid size-8 place-items-center rounded-md bg-surface-gray-2">
+						<span :class="service.icon" class="size-4 text-ink-gray-6" />
 					</div>
-
-					<Badge class="ml-auto mb-auto">
-						{{ service.enabled ? 'On' : 'Coming soon' }}
-					</Badge>
+					<Badge
+						v-if="service.comingSoon"
+						theme="gray"
+						variant="subtle"
+						label="Coming soon"
+					/>
+					<Badge
+						v-else
+						:theme="service.on ? 'green' : 'gray'"
+						variant="subtle"
+						:label="service.on ? 'On' : 'Off'"
+					/>
 				</div>
 
-				<span class="font-medium">{{ service.title }}</span>
+				<div>
+					<p class="text-base-medium text-ink-gray-9">{{ service.title }}</p>
+					<p class="mt-1 text-p-base text-ink-gray-5">
+						{{ service.description }}
+					</p>
+				</div>
 
-				<p class="text-ink-gray-5">
-					{{ service.description }}
-				</p>
-
-				<div v-if="service.enabled" class="flex items-center">
-					<span>{{ service.usage }} </span>
-					<span class="text-ink-gray-5 ml-1"> this cycle</span>
-
-					<lucide-arrow-right class="size-4 ml-auto" />
+				<div class="mt-auto flex items-center gap-2 text-p-base">
+					<span :class="service.on ? 'text-ink-gray-7' : 'text-ink-gray-5'">
+						{{ service.meta }}
+					</span>
+					<span
+						v-if="service.linkable"
+						class="lucide-arrow-right ml-auto size-4 text-ink-gray-5"
+						aria-hidden="true"
+					/>
 				</div>
 			</component>
 		</section>
