@@ -311,7 +311,11 @@ const eventDetail = (ev: {
 								<span
 									class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
 								>
-									Servers
+									{{
+                    serverGroups.length === 1
+                      ? 'Servers'
+                      : `Servers · ${serverGroups.length}`
+                  }}
 								</span>
 								<span class="text-p-sm tabular-nums text-ink-gray-5">
 									{{ money(sum(servers), detail.data.currency) }}
@@ -341,12 +345,30 @@ const eventDetail = (ev: {
 										{{ money(group.total, detail.data.currency) }}
 									</span>
 								</div>
-								<ul :class="groupServers ? 'pl-3' : ''">
+								<!-- One machine's charges are its history, not a list of separate
+								     things. The connector says so: a run of six rows under one
+								     heading otherwise reads as six machines at a glance, which is
+								     the opposite of what the invoice is showing. Drawn only where
+								     a machine actually changed during the period. -->
+								<ul
+									:class="
+                    groupServers
+                      ? group.lines.length > 1
+                        ? 'ml-[3px] border-l border-outline-gray-2 pl-4'
+                        : 'pl-[21px]'
+                      : ''
+                  "
+								>
 									<li
 										v-for="(li, idx) in group.lines"
 										:key="idx"
-										class="flex items-center justify-between gap-3 py-1.5"
+										class="relative flex items-center justify-between gap-3 py-1.5"
 									>
+										<span
+											v-if="groupServers && group.lines.length > 1"
+											class="absolute -left-[19.5px] top-[14px] size-[7px] rounded-full bg-surface-gray-5 ring-2 ring-surface-white"
+											aria-hidden="true"
+										/>
 										<div class="min-w-0">
 											<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
 										<!-- The rate belongs on the line. A mid-month resize splits one
