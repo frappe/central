@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { Avatar, Button, TabButtons } from 'frappe-ui'
+import {
+	Avatar,
+	Breadcrumbs,
+	Button,
+	PageHeader,
+	PageHeaderMobile,
+	TabButtons,
+} from 'frappe-ui'
 import { computed, ref } from 'vue'
+import NavDrawerTitle from '@/components/navigation/NavDrawerTitle.vue'
 import MembersPanel from '@/components/team/MembersPanel.vue'
 import RolesPanel from '@/components/team/RolesPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -31,8 +39,19 @@ const memberCountText = computed(() => {
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
-		<div class="min-w-0 flex-1 overflow-y-auto">
+	<PageHeaderMobile class="sm:hidden">
+		<NavDrawerTitle title="Team" />
+	</PageHeaderMobile>
+
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs :items="[{ label: 'Team', route: { name: 'Members' } }]" />
+	</PageHeader>
+
+	<!-- The pane and its overflow are desktop-only: on a phone the shell owns the
+	     scroll, and a second scroll box inside it would swallow the tap-the-tab-
+	     to-scroll-top gesture and hide the last rows behind the nav bar. -->
+	<div class="sm:flex sm:h-full sm:min-h-0">
+		<div class="sm:min-w-0 sm:flex-1 sm:overflow-y-auto">
 			<main class="mx-auto flex flex-col max-w-3xl gap-3 mt-10 px-3 xl:p-0">
 				<div class="mb-5 flex items-center gap-3">
 					<!-- Square: this is the organisation, not a person. Circles stay
@@ -58,7 +77,7 @@ const memberCountText = computed(() => {
 						variant="subtle"
 						icon="lucide-pencil"
 						label="Edit team"
-						@click="openSettings('team')"
+						@click="openSettings('team-settings')"
 					/>
 				</div>
 
@@ -74,5 +93,10 @@ const memberCountText = computed(() => {
 				</RolesPanel>
 			</main>
 		</div>
+
+		<!-- RoleCapabilitiesPanel teleports here: the panel is opened from a row
+		     deep inside `main`, but it has to dock beside that scroll box rather
+		     than inside it. `contents` keeps the panel itself the flex item, so its
+		     24rem and the slide's negative margin measure against this row. -->
 	</div>
 </template>

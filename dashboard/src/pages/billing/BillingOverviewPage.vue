@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert } from 'frappe-ui'
+import { Alert, Breadcrumbs, PageHeader, PageHeaderMobile } from 'frappe-ui'
 import { ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
@@ -14,6 +14,7 @@ import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
+import NavDrawerTitle from '@/components/navigation/NavDrawerTitle.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { computed } from 'vue'
 
@@ -52,11 +53,24 @@ const advancedOpen = ref(false)
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<!-- Content + docked wallet-history panel (like the invoice tray): the panel
-         shares the row, the content stays bright beside it — no modal overlay. -->
-		<div class="flex min-h-0 flex-1">
-			<div class="cards-host min-w-0 flex-1 overflow-y-auto">
+	<PageHeaderMobile class="sm:hidden">
+		<NavDrawerTitle title="Billing" />
+	</PageHeaderMobile>
+
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs :items="[{ label: 'Billing', route: { name: 'Billing' } }]" />
+	</PageHeader>
+
+	<!-- The split is desktop-only scaffolding: DesktopShell doesn't scroll, so the
+	     panes own their overflow there. On mobile MobileShell is the scroller and
+	     the page has to fall through to it, or the bottom nav eats the last rows. -->
+	<div class="sm:flex sm:h-full sm:flex-col">
+		<!-- Content + wallet-history panel (like the invoice tray): on desktop the
+         panel shares this row and the content stays bright beside it — no modal
+         overlay. Below `sm` SidePanel takes itself out of flow and covers the
+         screen, so there is nothing left for this row to place. -->
+		<div class="sm:flex sm:min-h-0 sm:flex-1">
+			<div class="cards-host sm:min-w-0 sm:flex-1 sm:overflow-y-auto">
 				<div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
 					<!-- Until the billing profile is filled, ask the team to complete it
                first — money-moving actions stay gated on it. -->

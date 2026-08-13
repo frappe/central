@@ -1,5 +1,16 @@
 <script setup lang="ts">
-import { Alert, Badge, Button, FormControl, Tabs, useCall } from 'frappe-ui'
+import {
+	Alert,
+	Badge,
+	Breadcrumbs,
+	Button,
+	FormControl,
+	PageHeader,
+	PageHeaderBackButton,
+	PageHeaderMobile,
+	Tabs,
+	useCall,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
@@ -394,14 +405,30 @@ async function submit() {
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<Teleport defer to="#header-actions">
-			<Button label="Cancel" @click="router.push('/servers')" />
-		</Teleport>
+	<!-- Back is the mobile Cancel: same destination, and it doubles as the way out
+	     of a page that has no room for a trail. -->
+	<PageHeaderMobile class="sm:hidden" title="New server">
+		<template #prefix>
+			<PageHeaderBackButton to="/servers" />
+		</template>
+	</PageHeaderMobile>
 
-		<div class="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs
+			:items="[
+				{ label: 'Servers', route: { name: 'Servers' } },
+				{ label: 'New server' },
+			]"
+		/>
+		<Button label="Cancel" @click="router.push('/servers')" />
+	</PageHeader>
+
+	<!-- The pane scaffolding is desktop-only: on mobile the page has no height cap
+	     and no inner scroller, so it falls through to the shell's scroll. -->
+	<div class="sm:flex sm:h-full sm:flex-col">
+		<div class="flex flex-col-reverse sm:min-h-0 sm:flex-1 lg:flex-row">
 			<!-- Stepped form (left) -->
-			<div class="w-full overflow-y-auto p-4 lg:w-[40rem] lg:shrink-0">
+			<div class="w-full p-4 sm:overflow-y-auto lg:w-[40rem] lg:shrink-0">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
 					No active regions are available right now.

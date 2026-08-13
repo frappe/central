@@ -1,10 +1,18 @@
 <script setup lang="ts">
-import { Button, Spinner, useCall } from 'frappe-ui'
+import {
+	Breadcrumbs,
+	Button,
+	PageHeader,
+	PageHeaderMobile,
+	Spinner,
+	useCall,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import NavDrawerTitle from '@/components/navigation/NavDrawerTitle.vue'
 import MapHealthStrips from '@/components/servers/MapHealthStrips.vue'
 import MapMessageCard from '@/components/servers/MapMessageCard.vue'
 import ResizeServerDialog from '@/components/servers/ResizeServerDialog.vue'
@@ -96,6 +104,12 @@ function dismissOnboarding(): void {
 	onboardingDismissed.value = true
 	localStorage.setItem(ONBOARDING_KEY, '1')
 }
+// Hidden while the onboarding card is up — that card carries the single primary
+// action then, so there's never two New-server buttons at once. Both headers ask,
+// so it's a computed rather than the same condition spelled twice.
+const showNewServerAction = computed(
+	() => !!activeTeam.value && canCreateServer.value && !showOnboarding.value,
+)
 
 const q = ref('')
 const statusFilter = ref<ServerVisual['key'] | ''>('')
@@ -123,21 +137,37 @@ const providerGroups = computed(() => {
 		if (!groups.has(provider)) groups.set(provider, [])
 		groups.get(provider)!.push(region)
 	}
-	return [...groups.entries()].map(([provider, list]) => ({
-		provider,
-		regions: list,
-	}))
+	return (
+		[...groups.entries()]
+			.map(([provider, list]) => ({ provider, regions: list }))
+			// 'Other' is the catch-all for regions with no provider set — a footnote
+			// to the named providers, so it sorts after them rather than landing
+			// first just because an unattributed region happened to come back first.
+			// Sort is stable, so the named providers keep their existing order.
+			.sort(
+				(a, b) =>
+					Number(a.provider === 'Other') - Number(b.provider === 'Other'),
+			)
+	)
 })
 
+// Grouped by provider, so a provider's own regions sit under its heading
+// instead of running together in one flat list where the "All X regions" rows
+// were the only thing marking a boundary. "All regions" stays ungrouped at the
+// top — it spans every provider, so it belongs under none of them.
 const regionOptions = computed(() => [
 	{ label: 'All regions', value: '' },
-	...providerGroups.value.flatMap((group) => [
-		{ label: `All ${group.provider} regions`, value: `p:${group.provider}` },
-		...group.regions.map((r) => ({
-			label: `${flagEmoji(r.country_code)} ${regionLabel(r)}`.trim(),
-			value: `r:${group.provider}|${r.region}`,
-		})),
-	]),
+	...providerGroups.value.map((group) => ({
+		key: group.provider,
+		group: group.provider,
+		options: [
+			{ label: `All ${group.provider} regions`, value: `p:${group.provider}` },
+			...group.regions.map((r) => ({
+				label: `${flagEmoji(r.country_code)} ${regionLabel(r)}`.trim(),
+				value: `r:${group.provider}|${r.region}`,
+			})),
+		],
+	})),
 ])
 const regionSelection = computed({
 	get(): string {
@@ -371,8 +401,30 @@ async function confirmSiteTerminate(): Promise<void> {
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<Teleport defer to="#header-actions">
+	<PageHeaderMobile class="sm:hidden">
+		<NavDrawerTitle title="Servers" />
+		<template #suffix>
+			<Button
+				v-if="activeTeam"
+				variant="ghost"
+				icon="lucide-refresh-cw"
+				label="Refresh"
+				:loading="refreshing"
+				@click="doRefresh"
+			/>
+			<Button
+				v-if="showNewServerAction"
+				variant="ghost"
+				icon="lucide-plus"
+				label="New server"
+				@click="$router.push('/servers/new')"
+			/>
+		</template>
+	</PageHeaderMobile>
+
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs :items="[{ label: 'Servers', route: { name: 'Servers' } }]" />
+		<div class="flex items-center gap-2">
 			<Button
 				v-if="activeTeam"
 				label="Refresh"
@@ -380,17 +432,17 @@ async function confirmSiteTerminate(): Promise<void> {
 				:loading="refreshing"
 				@click="doRefresh"
 			/>
-			<!-- Hidden while the onboarding card is up — that card carries the single
-             primary action then, so there's never two New-server buttons at once. -->
 			<Button
-				v-if="activeTeam && canCreateServer && !showOnboarding"
+				v-if="showNewServerAction"
 				variant="solid"
 				label="New server"
 				icon-left="lucide-plus"
 				@click="$router.push('/servers/new')"
 			/>
-		</Teleport>
+		</div>
+	</PageHeader>
 
+	<div class="flex h-full flex-col">
 		<!-- No team at all: create one before anything else can be provisioned. -->
 		<div v-if="hasNoTeam" class="flex flex-1 items-center justify-center p-8">
 			<EmptyState

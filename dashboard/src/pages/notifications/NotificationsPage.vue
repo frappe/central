@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Button, LoadingText, TabButtons } from 'frappe-ui'
+import {
+	Breadcrumbs,
+	Button,
+	LoadingText,
+	PageHeader,
+	PageHeaderMobile,
+	TabButtons,
+} from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -37,8 +44,23 @@ async function onAct(n: TeamNotification): Promise<void> {
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<Teleport defer to="#header-actions">
+	<PageHeaderMobile class="sm:hidden" title="Notifications">
+		<template #suffix>
+			<Button
+				variant="ghost"
+				size="md"
+				icon="lucide-settings-2"
+				label="Notification preferences"
+				@click="openSettings('notifications')"
+			/>
+		</template>
+	</PageHeaderMobile>
+
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs
+			:items="[{ label: 'Notifications', route: { name: 'Notifications' } }]"
+		/>
+		<div class="flex items-center gap-2">
 			<Button
 				v-if="unread > 0"
 				variant="subtle"
@@ -51,11 +73,31 @@ async function onAct(n: TeamNotification): Promise<void> {
 				label="Notification preferences"
 				@click="openSettings('notifications')"
 			/>
-		</Teleport>
+		</div>
+	</PageHeader>
 
-		<div class="min-h-0 flex-1 overflow-y-auto">
+	<!-- Desktop-only scroll scaffolding: DesktopShell doesn't scroll, so the page
+	     owns its overflow there. On mobile MobileShell is the scroller and this
+	     falls through to it. -->
+	<div class="sm:flex sm:h-full sm:flex-col">
+		<div class="sm:min-h-0 sm:flex-1 sm:overflow-y-auto">
 			<div class="mx-auto max-w-2xl px-4 py-5 sm:px-6">
-				<TabButtons v-model="filter" :options="FILTERS" class="mb-4" />
+				<!-- Mark all read can't ride along in the mobile header: the title is
+				     centered and each side slot caps at 35% of the width, which the
+				     preferences icon already takes. It shares the filter row instead —
+				     the tabs don't fill the width, so both fit on one line and the
+				     button costs no vertical space. -->
+				<div class="mb-4 flex items-center justify-between gap-2">
+					<TabButtons v-model="filter" :options="FILTERS" />
+					<Button
+						v-if="unread > 0"
+						class="sm:hidden"
+						variant="subtle"
+						size="md"
+						label="Mark all read"
+						@click="markAllAsRead"
+					/>
+				</div>
 
 				<div v-if="loading && !items.length" class="p-4">
 					<LoadingText :lines="6" />

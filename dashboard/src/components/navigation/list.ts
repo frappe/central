@@ -10,6 +10,8 @@ type SidebarItem = {
 	condition?: boolean
 	class?: string
 	onClick?: () => void
+	/** Already a tab in the mobile bottom bar — repeating it in the drawer is noise. */
+	hideOnMobile?: boolean
 }
 
 type SidebarSection = {
@@ -26,13 +28,19 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 		{
 			label: '',
 			items: [
-				{ label: 'Search', icon: 'lucide-search', onClick: openSearch },
+				{
+					label: 'Search',
+					icon: 'lucide-search',
+					onClick: openSearch,
+					hideOnMobile: true,
+				},
 				{
 					label: 'Notifications',
 					icon: 'lucide-bell',
 					to: '/notifications',
 					condition: isMember.value,
 					class: 'mb-3',
+					hideOnMobile: true,
 				},
 			],
 		},

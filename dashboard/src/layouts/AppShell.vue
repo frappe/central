@@ -1,18 +1,15 @@
 <script setup lang="ts">
 import {
-	BottomSheet,
-	Breadcrumbs,
 	DesktopShell,
 	MobileNav,
 	MobileNavItem,
 	MobileShell,
 	ToastProvider,
 } from 'frappe-ui'
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
-import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
 import {
@@ -38,38 +35,16 @@ watch(searchOpen, (isOpen) => {
 })
 
 const route = useRoute()
-const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
-
-const mobileNavDrawer = ref(false)
-watch(
-	() => route.name,
-	() => {
-		resetBreadcrumbs()
-		mobileNavDrawer.value = false
-	},
-)
-
-const breadcrumbs = computed(
-	() => items.value ?? [{ label: (route.meta.title as string) ?? '' }],
-)
 </script>
 
 <template>
+	<!-- Neither shell renders a header of its own: both expose a PageHeaderTarget
+	     above their scroll region, and each page teleports its own header there.
+	     Owning one here instead put it *inside* MobileShell's scroll area, which
+	     is what cost every mobile page the bottom 48px behind the nav bar. -->
 	<MobileShell v-if="isMobile">
-		<header
-			class="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-4"
-		>
-			<button class="flex items-center gap-1" @click="mobileNavDrawer = true">
-				<Breadcrumbs :items="breadcrumbs" />
-				<span class="lucide-chevron-down size-4 text-ink-gray-5" />
-			</button>
-			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
-		</header>
-
-		<main class="h-full overflow-hidden">
-			<router-view />
-		</main>
+		<router-view />
 
 		<template #nav>
 			<MobileNav>
@@ -88,28 +63,27 @@ const breadcrumbs = computed(
 					label="Notifications"
 					icon="lucide-bell"
 					to="/notifications"
-					:active="route.name =='Notifications' "
+					:active="route.name === 'Notifications'"
 				/>
-				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
+				<!-- This bar only exists on mobile, so it goes straight to the hub.
+				     Pointing at /settings would bounce through the dialog route and
+				     land on a tab page instead of the list. -->
+				<MobileNavItem
+					label="Settings"
+					icon="lucide-settings"
+					to="/mobile-settings"
+					:active="String(route.name ?? '').startsWith('MobileSettings')"
+				/>
 			</MobileNav>
 		</template>
-
-		<BottomSheet v-model:open="mobileNavDrawer">
-			<Sidebar is-mobile class="p-4" />
-		</BottomSheet>
 	</MobileShell>
 
+	<!-- scroll=false: the servers map and the split panes own their own overflow,
+	     which is exactly the case frappe-ui documents this prop for. -->
 	<DesktopShell v-else :scroll="false" class="h-screen">
 		<template #sidebar>
 			<Sidebar />
 		</template>
-
-		<header
-			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4 sm:px-6"
-		>
-			<Breadcrumbs :items="breadcrumbs" />
-			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
-		</header>
 
 		<div class="min-h-0 flex-1 overflow-hidden">
 			<router-view />
@@ -117,8 +91,8 @@ const breadcrumbs = computed(
 	</DesktopShell>
 
 	<ToastProvider />
-	<!-- Desktop only: on mobile the same tabs are pages (/settings/:tab), so the
-	     dialog never mounts there. -->
+	<!-- Desktop only: on mobile the same tabs are pages (/mobile-settings/:tab),
+	     so the dialog never mounts there. -->
 	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
 </template>
