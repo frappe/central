@@ -67,6 +67,10 @@ def get_forecast(team: str | None = None) -> dict:
 		# Never quote the projection as a bare number: the engine already knows which
 		# part of it is owed and which is inferred, and the customer is owed the split
 		# (projection/basis.py).
+		# Last month's bill, so the projection can be read as a change rather than a
+		# number in isolation — "is this going up" is what the figure is looked at
+		# for, and it cannot be answered from one month alone.
+		**_previous_month(team, month_start),
 		"measured": frappe.utils.flt(invoice.get("measured")),
 		"estimated": frappe.utils.flt(invoice.get("estimated")),
 		"has_estimates": bool(invoice.get("has_estimates")),
@@ -80,6 +84,33 @@ def get_forecast(team: str | None = None) -> dict:
 		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
 		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
+	}
+
+
+def _previous_month(team: str, month_start) -> dict:
+	"""What the month before this one actually came to, and what to call it.
+
+	Compared like for like: a full projected month against a full billed one, both
+	inclusive of tax. Cancelled invoices are not a bill anyone paid, and a period
+	the team was not billed for is simply absent — a comparison against zero would
+	read as though spend had exploded.
+	"""
+	previous_start = frappe.utils.add_months(month_start, -1)
+	total = frappe.db.get_value(
+		"Invoice",
+		{
+			"team": team,
+			"invoice_type": "Billable",
+			"status": ["!=", "Cancelled"],
+			"period_start": previous_start,
+		},
+		"total",
+	)
+	if not total:
+		return {"previous_total": None, "previous_label": None}
+	return {
+		"previous_total": frappe.utils.flt(total),
+		"previous_label": frappe.utils.getdate(previous_start).strftime("%B"),
 	}
 
 

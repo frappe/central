@@ -62,6 +62,10 @@ export interface Forecast {
 	/** True when any part of the projection is inferred — the UI must not render a
 	 *  bare total when it is. */
 	has_estimates: boolean
+	/** Last month's billed total, so the projection reads as a change. Null when
+	 *  the team was not billed that month — there is nothing to compare against. */
+	previous_total: number | null
+	previous_label: string | null
 }
 
 /** get_next_payment — the next debit and anything the team's state says will stop it. */

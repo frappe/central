@@ -46,6 +46,23 @@ const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
 // that opens it is not offered. An action that leads nowhere is worse than no
 // action — it reads as something being broken.
 const hasCycle = computed(() => projected.value > 0)
+
+// Against last month. A projected total on its own answers "how much"; the
+// question people actually open this for is "is it going up", and that needs the
+// month before it. Compared like for like — a full projected month against a
+// full billed one — and shown only once there is a month to compare against.
+const previousTotal = computed(() => fc.value?.previous_total ?? null)
+const previousLabel = computed(() => fc.value?.previous_label ?? null)
+const change = computed(() => {
+	if (!hasCycle.value || !previousTotal.value || !previousLabel.value) return null
+	const delta = projected.value - previousTotal.value
+	// Under a percent either way is noise, not news.
+	if (Math.abs(delta) < previousTotal.value * 0.01) {
+		return `About the same as ${previousLabel.value}`
+	}
+	const direction = delta > 0 ? 'more' : 'less'
+	return `${money(Math.abs(delta), currency.value)} ${direction} than ${previousLabel.value}`
+})
 const taxLabel = computed(() => fc.value?.tax_type || 'tax')
 const measuredPct = computed(() => {
 	const total = measured.value + estimated.value
@@ -161,6 +178,9 @@ async function submitAlert(): Promise<void> {
 			<!-- The headline figure of the page. -->
 			<p class="mt-1.5 text-3xl-semibold tabular-nums text-ink-gray-9">
 				{{ money(projected, currency) }}
+			</p>
+			<p v-if="change" class="mt-1 text-p-sm text-ink-gray-6">
+				{{ change }}
 			</p>
 			<p class="mt-1 text-p-sm text-ink-gray-5">
 				<template v-if="!hasCycle">
