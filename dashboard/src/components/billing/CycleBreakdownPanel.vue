@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Badge, LoadingText } from 'frappe-ui'
+import { LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
+import ChargeBreakdown from '@/components/billing/ChargeBreakdown.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { billingPeriod } from '@/lib/date'
@@ -18,17 +19,7 @@ const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
 const lines = computed<BillingLine[]>(() => fc.value?.line_items ?? [])
 
-// Owed first, then inferred: the reader should meet the facts before the
-// estimates, and the totals below repeat that order.
-const ordered = computed(() =>
-	[...lines.value].sort(
-		(a, b) => Number(isEstimated(a)) - Number(isEstimated(b)),
-	),
-)
 
-function isEstimated(line: BillingLine): boolean {
-	return line.basis === 'Estimated' || line.basis === 'Assumed'
-}
 
 const period = computed(() =>
 	fc.value ? billingPeriod(fc.value.period_start, fc.value.period_end) : '',
@@ -50,31 +41,9 @@ const period = computed(() =>
 		</div>
 
 		<template v-else>
-			<ul class="divide-y divide-outline-gray-1">
-				<li
-					v-for="(line, idx) in ordered"
-					:key="idx"
-					class="flex items-start justify-between gap-3 px-4 py-3"
-				>
-					<div class="min-w-0">
-						<div class="truncate text-base-medium text-ink-gray-9">
-							{{ line.item }}
-						</div>
-						<div v-if="line.detail" class="mt-0.5 text-p-sm text-ink-gray-5">
-							{{ line.detail }}
-						</div>
-					</div>
-					<div class="flex shrink-0 items-center gap-2">
-						<span class="text-sm-medium tabular-nums text-ink-gray-9">
-							{{ money(line.amount, currency) }}
-						</span>
-						<!-- Only the inferred lines are marked. Tagging the facts too made
-						     every row carry a badge, which is noise: the estimate is the
-						     exception, and an exception is what a badge is for. -->
-						<Badge v-if="isEstimated(line)" theme="amber" label="Estimated" />
-					</div>
-				</li>
-			</ul>
+			<div class="p-4">
+				<ChargeBreakdown :lines="lines" :currency="currency" show-basis />
+			</div>
 
 			<div class="border-t border-outline-gray-2 p-4">
 				<div class="flex items-baseline justify-between gap-3 py-1">

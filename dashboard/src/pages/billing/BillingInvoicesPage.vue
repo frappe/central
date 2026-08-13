@@ -15,7 +15,6 @@ import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
 import { invoiceTheme } from '@/lib/status'
 import type {
-	BillingLine,
 	CollectionStatus,
 	InvoiceDetail,
 	InvoiceSummary,
@@ -149,53 +148,6 @@ const DOTS: Record<string, string> = {
 const dotClass = (theme: string): string =>
 	DOTS[theme] || 'bg-[var(--ink-gray-4)]'
 
-// Receipt sections — plan lines are the per-server bundles; everything else
-// (metered overage, à-la-carte components) reads as an add-on.
-const servers = computed(() =>
-	(detail.data?.items ?? []).filter((li) => li.kind === 'Plan'),
-)
-// Grouped per machine, keeping the order the lines arrived in (server, then
-// time). A team running three VMs gets three chains; flattened together they
-// read as one server that changed size nine times.
-const serverGroups = computed(() => {
-	const groups: {
-		key: string
-		name: string
-		id: string | null
-		lines: BillingLine[]
-		total: number
-	}[] = []
-	for (const li of servers.value) {
-		const key = li.subscription_resource || li.item
-		const last = groups[groups.length - 1]
-		if (last?.key === key) {
-			last.lines.push(li)
-			last.total += Number(li.amount || 0)
-		} else {
-			groups.push({
-				key,
-				name: li.server || li.server_id || li.item,
-				// Shown beside the name only when it adds something — for an unnamed
-				// machine the name IS the id, and printing it twice is noise.
-				id: li.server_id && li.server_id !== li.server ? li.server_id : null,
-				lines: [li],
-				total: Number(li.amount || 0),
-			})
-		}
-	}
-	// Biggest machine first. The lines arrive grouped by resource id, which is a
-	// hash — contiguity is all that ordering buys, and hash order on screen is
-	// arbitrary. Cost order answers the question someone opens a receipt with.
-	return groups.sort((a, b) => b.total - a.total)
-})
-// One server needs no heading — the section is already called Servers, and a
-// lone group header would just repeat it.
-const groupServers = computed(() => serverGroups.value.length > 1)
-const addons = computed(() =>
-	(detail.data?.items ?? []).filter((li) => li.kind !== 'Plan'),
-)
-const sum = (rows: BillingLine[]): number =>
-	rows.reduce((t, li) => t + Number(li.amount || 0), 0)
 
 const paidWithIcon = computed(() =>
 	/upi/i.test(detail.data?.paid_with?.method_type ?? '')
@@ -305,127 +257,11 @@ const eventDetail = (ev: {
 					<!-- No inner scroll: the panel already scrolls, and a second scroller
 					     here clipped the receipt mid-row once a team had more than one
 					     machine on the invoice. -->
-					<div class="shrink-0 space-y-4 px-4 pt-4">
-						<section v-if="servers.length">
-							<div class="mb-1 flex items-center justify-between gap-3">
-								<span
-									class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
-								>
-									{{
-                    serverGroups.length === 1
-                      ? 'Servers'
-                      : `Servers · ${serverGroups.length}`
-                  }}
-								</span>
-								<span class="text-p-sm tabular-nums text-ink-gray-5">
-									{{ money(sum(servers), detail.data.currency) }}
-								</span>
-							</div>
-							<div
-								v-for="group in serverGroups"
-								:key="group.key"
-								class="mb-1 last:mb-0"
-							>
-								<div
-									v-if="groupServers"
-									class="flex items-center justify-between gap-3 pt-1.5"
-								>
-									<span class="flex min-w-0 items-baseline gap-2">
-										<span class="truncate text-sm-medium text-ink-gray-8">
-											{{ group.name }}
-										</span>
-										<span
-											v-if="group.id"
-											class="shrink-0 font-mono text-xs text-ink-gray-4"
-										>
-											{{ group.id }}
-										</span>
-									</span>
-									<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-6">
-										{{ money(group.total, detail.data.currency) }}
-									</span>
-								</div>
-								<!-- One machine's charges are its history, not a list of separate
-								     things. The connector says so: a run of six rows under one
-								     heading otherwise reads as six machines at a glance, which is
-								     the opposite of what the invoice is showing. Drawn only where
-								     a machine actually changed during the period. -->
-								<ul
-									:class="
-                    groupServers
-                      ? group.lines.length > 1
-                        ? 'ml-[3px] border-l border-outline-gray-2 pl-4'
-                        : 'pl-[21px]'
-                      : ''
-                  "
-								>
-									<li
-										v-for="(li, idx) in group.lines"
-										:key="idx"
-										class="relative flex items-center justify-between gap-3 py-1.5"
-									>
-										<span
-											v-if="groupServers && group.lines.length > 1"
-											class="absolute -left-[19.5px] top-[14px] size-[7px] rounded-full bg-surface-gray-5 ring-2 ring-surface-white"
-											aria-hidden="true"
-										/>
-										<div class="min-w-0">
-											<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-										<!-- The rate belongs on the line. A mid-month resize splits one
-										     server into several segments, and without the rate they read as
-										     the same charge repeated — the price is the only thing that
-										     actually differs between them. -->
-											<p
-												v-if="li.detail || li.rate"
-												class="truncate text-p-sm text-ink-gray-5"
-											>
-												{{ li.detail }}
-												<template v-if="li.rate">
-													· {{ money(li.rate, detail.data.currency) }}/mo</template
-												>
-											</p>
-										</div>
-										<span
-											class="shrink-0 pl-3 text-sm tabular-nums text-ink-gray-8"
-										>
-											{{ money(li.amount, detail.data.currency) }}
-										</span>
-									</li>
-								</ul>
-							</div>
-						</section>
-
-						<section v-if="addons.length">
-							<div class="mb-1 flex items-center justify-between gap-3">
-								<span
-									class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
-								>
-									Services
-								</span>
-								<span class="text-p-sm tabular-nums text-ink-gray-5">
-									{{ money(sum(addons), detail.data.currency) }}
-								</span>
-							</div>
-							<ul>
-								<li
-									v-for="(li, idx) in addons"
-									:key="idx"
-									class="flex items-center justify-between gap-3 py-1.5"
-								>
-									<div class="min-w-0">
-										<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-										<p v-if="li.detail" class="truncate text-p-sm text-ink-gray-5">
-											{{ li.detail }}
-										</p>
-									</div>
-									<span
-										class="shrink-0 pl-3 text-sm tabular-nums text-ink-gray-8"
-									>
-										{{ money(li.amount, detail.data.currency) }}
-									</span>
-								</li>
-							</ul>
-						</section>
+					<div class="shrink-0 px-4 pt-4">
+						<ChargeBreakdown
+							:lines="detail.data.items"
+							:currency="detail.data.currency"
+						/>
 					</div>
 
 					<!-- Cost breakdown + Activity -->
