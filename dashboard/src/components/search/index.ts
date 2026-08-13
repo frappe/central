@@ -5,6 +5,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useInvoices } from '@/composables/useInvoices'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useServers } from '@/composables/useServers'
+import { openSettings } from '@/composables/useSettings'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
@@ -36,7 +37,7 @@ export function useSearchIndex() {
 	const { assets } = useServerMapData()
 	const { members } = useTeamMembers()
 	const { invoices } = useInvoices()
-	const { themeOptions, setTheme, switchTeamOpen } = useAppMenu()
+	const { themeOptions, setTheme } = useAppMenu()
 
 	return computed((): SearchGroups => {
 		// Insertion order is the display order: verbs first, then destinations.
@@ -76,9 +77,7 @@ export function useSearchIndex() {
 		actions.push({
 			name: 'Switch team',
 			icon: 'lucide-repeat',
-			onSelect: () => {
-				switchTeamOpen.value = true
-			},
+			onSelect: () => openSettings('teams'),
 		})
 
 		if (actions.length) groups.Actions = { items: actions }

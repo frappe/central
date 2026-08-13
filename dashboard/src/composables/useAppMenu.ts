@@ -1,8 +1,7 @@
-import { computed, h, ref } from 'vue'
+import { computed, h } from 'vue'
 import { useAuth } from '@/composables/useAuth'
+import { openSettings } from '@/composables/useSettings'
 import { useTheme } from '@/composables/useTheme'
-
-const switchTeamOpen = ref(false)
 
 const themeOptions = [
 	{ label: 'Light', icon: 'lucide-sun', value: 'light' },
@@ -23,9 +22,7 @@ export const useAppMenu = () => {
 		{
 			label: 'Switch team',
 			icon: 'lucide-repeat',
-			onClick: () => {
-				switchTeamOpen.value = true
-			},
+			onClick: () => openSettings('teams'),
 		},
 		{
 			label: 'Theme',
@@ -46,11 +43,15 @@ export const useAppMenu = () => {
 	])
 
 	const footerMenuItems = [
+		{
+			label: 'My profile',
+			icon: 'lucide-user',
+			onClick: () => openSettings('profile'),
+		},
 		{ label: 'Sign out', icon: 'lucide-log-out', onClick: logoutAndRedirect },
 	]
 
 	return {
-		switchTeamOpen,
 		themeOptions,
 		headerMenuItems,
 		footerMenuItems,
