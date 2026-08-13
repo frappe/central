@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { Button, LoadingText, useCall } from 'frappe-ui'
+import {
+	Breadcrumbs,
+	Button,
+	LoadingText,
+	PageHeader,
+	PageHeaderMobile,
+	useCall,
+} from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
+import NavDrawerTitle from '@/components/navigation/NavDrawerTitle.vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useSession } from '@/composables/useSession'
@@ -222,8 +230,28 @@ const levels = computed(() => {
 </script>
 
 <template>
-	<div class="h-full overflow-y-auto">
-		<div class="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8">
+	<PageHeaderMobile class="sm:hidden">
+		<NavDrawerTitle title="Limit tiers" />
+	</PageHeaderMobile>
+
+	<!-- 'Billing' is the sidebar group these three pages sit in, not a page above
+	     them — Overview is their sibling. So it labels the trail without linking. -->
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs
+			:items="[
+				{ label: 'Billing' },
+				{ label: 'Limit tiers', route: { name: 'SpendingLimits' } },
+			]"
+		/>
+	</PageHeader>
+
+	<!-- Desktop-only scroll box: DesktopShell doesn't scroll, so the page owns its
+	     overflow there. On mobile MobileShell is the scroller and this has to get
+	     out of the way, or the bottom nav eats the last rows. -->
+	<div class="sm:h-full sm:overflow-y-auto">
+		<div
+			class="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:gap-8 sm:px-6 sm:py-8"
+		>
 			<LoadingText v-if="tier.loading && !tier.data" :lines="6" />
 
 			<template v-else-if="levels.length">
@@ -231,7 +259,7 @@ const levels = computed(() => {
 				     the boxes. Current is reference, so its values sit one size below
 				     the gate values: the page's real news is the unmet gate. -->
 				<section v-if="cur">
-					<p class="text-p-base text-ink-gray-7">
+					<p class="text-p-md text-ink-gray-7 sm:text-p-base">
 						Current:
 						<span class="font-medium text-ink-gray-9">
 							{{ tierLabel(cur) }} tier
@@ -358,94 +386,102 @@ const levels = computed(() => {
 					</div>
 				</section>
 
-				<!-- Tiers table. The rail in the leading column is doing a semantic
-				     job, not a wayfinding one: it says "path you're on", where a bare
-				     table of prices reads as "menu you pick from". -->
-				<!-- No header row: every cell is self-labeling, and the ascending
-				     price edge explains itself. Column widths live in the colgroup
-				     since there are no header cells to carry them. -->
-				<table class="w-full text-left text-base">
-					<colgroup>
-						<col class="w-7" />
-						<col class="w-28" />
-						<col />
-						<col />
-					</colgroup>
+				<!-- The tiers ladder. The rail in the leading column is doing a
+				     semantic job, not a wayfinding one: it says "path you're on",
+				     where a bare list of prices reads as "menu you pick from".
+				     No headings: every value is self-labeling, and the ascending
+				     price edge explains itself.
 
-					<tbody>
-						<!-- No row dividers: the rail and the row rhythm do the separating,
-						     and a hairline would cut across the timeline. -->
-						<tr v-for="(l, rung) in levels" :key="l.tier">
-							<!-- The travelled track is solid and the road ahead is faint;
-							     both stop at the first and last dots so the ladder reads
-							     bounded rather than running off the table. -->
-							<td class="relative">
-								<!-- bg-surface-*, not bg-outline-*: outline tokens carry no
-								     background value, so a faint line needs a surface tone. -->
-								<span
-									v-if="rung !== 0"
-									class="absolute left-1/2 top-0 h-6 w-px -translate-x-1/2"
-									:class="
-										l.state === 'locked'
-											? 'bg-surface-gray-3'
-											: 'bg-surface-gray-5'
-									"
-									aria-hidden="true"
-								/>
-								<span
-									v-if="rung !== levels.length - 1"
-									class="absolute bottom-0 left-1/2 top-6 w-px -translate-x-1/2"
-									:class="
-										l.state === 'reached'
-											? 'bg-surface-gray-5'
-											: 'bg-surface-gray-3'
-									"
-									aria-hidden="true"
-								/>
-								<span
-									class="absolute left-1/2 top-6 -translate-x-1/2 -translate-y-1/2 rounded-full"
-									:class="DOT_CLASSES[l.state]"
-									aria-hidden="true"
-								/>
-							</td>
+				     Not a table, because the columns can't all survive 375px. Each
+				     rung is a wrapping flex row instead, so the three fields reflow:
+				     desktop keeps name | requirements | price on one line, and mobile
+				     puts name and price on the first line with the requirements —
+				     the longest field by far — spanning the full width beneath.
+				     Squeezed into a column, "≥ $300.00 paid to date" wrapped to four
+				     lines per rung. -->
+				<ul class="text-lg sm:text-base">
+					<!-- No row dividers: the rail and the row rhythm do the separating,
+					     and a hairline would cut across the timeline. -->
+					<li v-for="(l, rung) in levels" :key="l.tier" class="flex gap-3">
+						<!-- The travelled track is solid and the road ahead is faint;
+						     both stop at the first and last dots so the ladder reads
+						     bounded rather than running off the end. -->
+						<div class="relative w-3 shrink-0" aria-hidden="true">
+							<!-- bg-surface-*, not bg-outline-*: outline tokens carry no
+							     background value, so a faint line needs a surface tone. -->
+							<span
+								v-if="rung !== 0"
+								class="absolute left-1/2 top-0 h-6 w-px -translate-x-1/2"
+								:class="
+									l.state === 'locked'
+										? 'bg-surface-gray-3'
+										: 'bg-surface-gray-5'
+								"
+							/>
+							<span
+								v-if="rung !== levels.length - 1"
+								class="absolute bottom-0 left-1/2 top-6 w-px -translate-x-1/2"
+								:class="
+									l.state === 'reached'
+										? 'bg-surface-gray-5'
+										: 'bg-surface-gray-3'
+								"
+							/>
+							<!-- top-6 = the row's pt-4 (16px) plus half a line box. These
+							     tokens are 1.15 line-height, not Tailwind's 1.5, so a 14px
+							     name centres at ~24px and a 16px one at ~25px — 24 splits
+							     them; 28 sat visibly below the text. -->
+							<span
+								class="absolute left-1/2 top-6 -translate-x-1/2 -translate-y-1/2 rounded-full"
+								:class="DOT_CLASSES[l.state]"
+							/>
+						</div>
 
-							<!-- Rungs behind you dim as whole rows (the rail stays full
-							     strength) so the eye lands on current and next. -->
-							<td :class="l.state === 'reached' ? 'opacity-40' : ''">
-								<span class="font-semibold text-ink-gray-9">
-									{{ tierLabel(l) }}
-								</span>
-							</td>
+						<!-- Rungs behind you dim as whole rows (the rail stays full
+						     strength) so the eye lands on current and next. -->
+						<div
+							class="flex min-w-0 flex-1 flex-wrap items-start gap-x-4 gap-y-2 py-4"
+							:class="l.state === 'reached' ? 'opacity-40' : ''"
+						>
+							<!-- DOM order is the desktop reading order — name, requirements,
+							     price — so the accessibility tree and the tab order match what
+							     a sighted desktop user sees (order-* moves neither). Only
+							     mobile reorders, and there the visual order it produces is the
+							     same sequence read aloud, just wrapped onto two lines. -->
+							<span class="order-1 font-semibold text-ink-gray-9 sm:order-none sm:w-28">
+								{{ tierLabel(l) }}
+							</span>
 
-							<td :class="l.state === 'reached' ? 'opacity-40' : ''">
-								<ul class="flex flex-col gap-1.5">
-									<li
-										v-for="(req, i) in requirementsFor(l)"
-										:key="i"
-										class="flex items-center gap-2"
-									>
-										<span
-											class="size-3.5 shrink-0"
-											:class="
-                          req.met
-                            ? 'lucide-check text-ink-green-5'
-                            : 'lucide-minus text-ink-gray-4'
-                        "
-											aria-hidden="true"
-										/>
-										<span
-											:class="req.met ? 'text-ink-gray-9' : 'text-ink-gray-6'"
-										>
-											{{ req.text }}
-										</span>
-									</li>
-								</ul>
-							</td>
-
-							<td
-								class="text-right"
-								:class="l.state === 'reached' ? 'opacity-40' : ''"
+							<!-- w-full is what forces the wrap on mobile; on desktop it
+							     becomes the flexible middle column. -->
+							<ul
+								class="order-3 flex w-full flex-col gap-1.5 sm:order-none sm:w-auto sm:flex-1"
 							>
+								<!-- items-start, not items-center: a requirement that wraps to
+								     two lines would otherwise float its mark between them. -->
+								<li
+									v-for="(req, i) in requirementsFor(l)"
+									:key="i"
+									class="flex items-start gap-2"
+								>
+									<span
+										class="mt-1 size-3.5 shrink-0"
+										:class="
+											req.met
+												? 'lucide-check text-ink-green-5'
+												: 'lucide-minus text-ink-gray-4'
+										"
+										aria-hidden="true"
+									/>
+									<span :class="req.met ? 'text-ink-gray-9' : 'text-ink-gray-6'">
+										{{ req.text }}
+									</span>
+								</li>
+							</ul>
+
+							<!-- order-2 pulls this onto the name's line on mobile; on desktop
+							     it falls back to DOM order, which is already last. -->
+							<div class="order-2 ml-auto text-right sm:order-none">
 								<span
 									class="whitespace-nowrap font-semibold tabular-nums text-ink-gray-9"
 								>
@@ -453,16 +489,16 @@ const levels = computed(() => {
 								</span>
 								<p
 									v-if="l.max_resource_count != null"
-									class="whitespace-nowrap text-p-sm text-ink-gray-5"
+									class="whitespace-nowrap text-p-md text-ink-gray-5 sm:text-p-sm"
 								>
 									up to
 									{{ l.max_resource_count }}
 									resource{{ l.max_resource_count === 1 ? '' : 's' }}
 								</p>
-							</td>
-						</tr>
-					</tbody>
-				</table>
+							</div>
+						</div>
+					</li>
+				</ul>
 
 				<!-- Same fold as billing's Advanced section. -->
 				<section>
@@ -524,13 +560,3 @@ const levels = computed(() => {
 		<AddMethodDialog v-model="showAddMethod" @done="onMethodAdded" />
 	</div>
 </template>
-
-<style scoped>
-/* With no dividers or header, rhythm alone separates the rungs — hence a
-   little more air than the old ruled table had. */
-td {
-	padding-top: 1rem;
-	padding-bottom: 1rem;
-	vertical-align: top;
-}
-</style>
