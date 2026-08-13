@@ -83,6 +83,15 @@ const routes = [
 				component: () => import('@/pages/billing/BillingInvoicesPage.vue'),
 				meta: { title: 'Invoices' },
 			},
+			// The receipt only needs an address of its own on mobile, where it's a
+			// page instead of the panel docked beside the list. Arriving at desktop
+			// width hands straight back to /billing/invoices?invoice=.
+			{
+				path: 'billing/invoices/:name',
+				name: 'BillingInvoice',
+				component: () => import('@/pages/billing/InvoiceDetailPage.vue'),
+				meta: { title: 'Invoice' },
+			},
 			{
 				path: 'billing/reports',
 				name: 'BillingReports',
