@@ -305,10 +305,11 @@ export interface TeamNotification {
 	creation: string
 }
 
-/** list_notifications response — items plus the live unread count. */
+/** list_notifications response — one page, plus the live unread count. */
 export interface NotificationFeed {
 	items: TeamNotification[]
 	unread: number
+	has_next_page: boolean
 }
 
 /** get_notification_preferences — per-event-type delivery toggles (0/1), keyed by event. */

@@ -1,7 +1,11 @@
-import { computed } from 'vue'
+import { type Component, computed, defineAsyncComponent } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { openSearch } from '@/composables/useSearch'
 import { features } from '@/lib/features'
+
+const NotificationsPanel = defineAsyncComponent(
+	() => import('@/components/notifications/NotificationsPanel.vue'),
+)
 
 type SidebarItem = {
 	label: string
@@ -10,6 +14,7 @@ type SidebarItem = {
 	condition?: boolean
 	class?: string
 	onClick?: () => void
+	component?: Component
 }
 
 type SidebarSection = {
@@ -30,9 +35,8 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 				{
 					label: 'Notifications',
 					icon: 'lucide-bell',
-					to: '/notifications',
 					condition: isMember.value,
-					class: 'mb-3',
+					component: NotificationsPanel,
 				},
 			],
 		},
