@@ -2,16 +2,20 @@
 import { ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
+import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
 import EstimatedCard from '@/components/billing/EstimatedCard.vue'
-import MeteredServicesCard from '@/components/billing/MeteredServicesCard.vue'
+import NextPaymentCard from '@/components/billing/NextPaymentCard.vue'
+import PayingForCard from '@/components/billing/PayingForCard.vue'
+import PayingForPanel from '@/components/billing/PayingForPanel.vue'
 import PaymentMethodsCard from '@/components/billing/PaymentMethodsCard.vue'
+import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
-import SubscriptionsCard from '@/components/billing/SubscriptionsCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
 import Alert from '@/components/common/Alert.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { computed } from 'vue'
 
 // Billing › Overview (#69) — one scrollable surface that absorbs the legacy
 // Overview, Credits, Payment methods, Subscriptions, and Settings pages. Each card
@@ -22,7 +26,25 @@ import { useBillingSetup } from '@/composables/useBillingSetup'
 // complete we prompt the team to fill it (banner) and money-moving actions open
 // the same dialog (useBillingSetup.requireSetup → setupDialogOpen).
 const { complete, setupDialogOpen } = useBillingSetup()
-const showWalletHistory = ref(false)
+
+// One docked tray at a time: the panel column is a single 24rem slot, and two
+// open at once would stack two SidePanels side by side and squeeze the content
+// out. A single ref names which is showing, and each card's v-model writes it.
+type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | null
+const tray = ref<Tray>(null)
+
+function trayModel(name: Exclude<Tray, null>) {
+	return computed({
+		get: () => tray.value === name,
+		set: (open: boolean) => {
+			tray.value = open ? name : null
+		},
+	})
+}
+const showWalletHistory = trayModel('wallet')
+const showCycleBreakdown = trayModel('cycle')
+const showSchedule = trayModel('schedule')
+const showPayingFor = trayModel('payingFor')
 
 // Rare, scary verbs live folded under "Advanced" — reference, not news, same
 // pattern as the invoice Activity fold.
@@ -47,17 +69,25 @@ const advancedOpen = ref(false)
 					/>
 
 					<CollectionActionBanner />
-					<div class="cards-pair grid gap-4">
-						<EstimatedCard />
+					<!-- The cycle figure is the page's headline, so it gets the full
+               width; what happens to it next sits in the pair beneath. -->
+					<EstimatedCard
+						:active="showCycleBreakdown"
+						@open="showCycleBreakdown = true"
+					/>
+					<div class="cards-row grid gap-4">
+						<NextPaymentCard
+							:active="showSchedule"
+							@open="showSchedule = true"
+						/>
 						<WalletCard
 							:active="showWalletHistory"
 							@open="showWalletHistory = true"
 						/>
 					</div>
+					<PayingForCard @open="showPayingFor = true" />
 					<PaymentMethodsCard />
 					<BillingContactTaxCard @edit="setupDialogOpen = true" />
-					<SubscriptionsCard />
-					<MeteredServicesCard />
 
 					<!-- Advanced — collapsed home for the rare, destructive-adjacent
                verbs (Stop billing). -->
@@ -80,8 +110,12 @@ const advancedOpen = ref(false)
 				</div>
 			</div>
 
-			<!-- The shared docked SidePanel owns its own slide-in/out. -->
+			<!-- The shared docked SidePanel owns its own slide-in/out. Only one is
+           ever open (see `tray`), so they can all mount here. -->
 			<WalletHistoryPanel v-model:open="showWalletHistory" />
+			<CycleBreakdownPanel v-model:open="showCycleBreakdown" />
+			<PaymentSchedulePanel v-model:open="showSchedule" />
+			<PayingForPanel v-model:open="showPayingFor" />
 		</div>
 
 		<EditBillingProfileDialog v-model="setupDialogOpen" />
@@ -97,7 +131,7 @@ const advancedOpen = ref(false)
 	container-type: inline-size;
 }
 @container (min-width: 50rem) {
-	.cards-pair {
+	.cards-row {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 }

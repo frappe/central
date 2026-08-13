@@ -8,6 +8,7 @@ import { usePlans } from '@/composables/usePlans'
 import type { AssetRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { configIncludes, rateCardComplete } from '@/lib/composed'
+import { money } from '@/lib/format'
 import { getErrorMessage, successToast } from '@/lib/toast'
 import type { ComposedConfig, Profile } from '@/types/api'
 
@@ -46,6 +47,13 @@ type ComposedConfigResponse = {
 	vcpus?: number
 	memory_gb?: number
 	disk_gb?: number
+	lock?: {
+		locked_rate: number
+		list_rate: number
+		currency: string
+		/** How much per month sits between this server's rate and today's list. */
+		gives_up: number
+	} | null
 }
 const configCall = useCall<
 	ComposedConfigResponse,
@@ -59,6 +67,12 @@ const configCall = useCall<
 	immediate: false,
 })
 const subscription = computed(() => configCall.data?.subscription ?? null)
+
+// This server is held below today's price, and a resize re-prices at current
+// rates (ADR 0010). Say so before they commit: the rate does not come back, not
+// even by resizing to the size they are on now.
+const lock = computed(() => configCall.data?.lock ?? null)
+const losesLockedRate = computed(() => (lock.value?.gives_up ?? 0) > 0)
 
 // The region's menu, with this server's own spend freed back into the headroom so it
 // can grow into its own budget (exclude_subscription).
@@ -260,6 +274,12 @@ async function confirm() {
 			</p>
 			<div v-else class="space-y-4">
 				<Alert v-if="resizeError" theme="red" :title="resizeError" />
+				<Alert
+					v-if="losesLockedRate && lock"
+					theme="yellow"
+					title="Resizing will change your rate"
+					:description="`You pay ${money(lock.locked_rate, lock.currency)}/mo for this size; it now lists at ${money(lock.list_rate, lock.currency)}/mo. Any resize is priced at today's rates, and the old rate doesn't come back — including if you resize to this size again later.`"
+				/>
 				<div
 					v-if="needsRestart"
 					class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"

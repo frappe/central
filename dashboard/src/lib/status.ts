@@ -76,3 +76,22 @@ const INVOICE_THEME: Record<string, BadgeTheme> = {
 export function invoiceTheme(status: string | null | undefined): BadgeTheme {
 	return INVOICE_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
 }
+
+// Payment Attempt status → what a customer calls it, and its Badge theme. Same
+// doctrine as invoices: the ordinary outcome is grey and colour is spent only on
+// the states worth noticing — in-flight (nobody knows yet) and failed.
+const ATTEMPT_DISPLAY: Record<string, { label: string; theme: BadgeTheme }> = {
+	captured: { label: 'Paid', theme: 'gray' },
+	authorised: { label: 'Authorised', theme: 'orange' },
+	initiated: { label: 'Processing', theme: 'orange' },
+	failed: { label: 'Failed', theme: 'red' },
+	refunded: { label: 'Refunded', theme: 'gray' },
+}
+
+export function paymentAttemptDisplay(status: string | null | undefined): {
+	label: string
+	theme: BadgeTheme
+} {
+	const key = String(status ?? '').toLowerCase()
+	return ATTEMPT_DISPLAY[key] ?? { label: String(status ?? 'Unknown'), theme: 'gray' }
+}

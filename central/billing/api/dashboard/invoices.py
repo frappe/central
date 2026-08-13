@@ -64,6 +64,16 @@ def get_forecast(team: str | None = None) -> dict:
 		"period_end": str(month_end),
 		"projected_total": projected_total,
 		"subtotal": subtotal,
+		# Never quote the projection as a bare number: the engine already knows which
+		# part of it is owed and which is inferred, and the customer is owed the split
+		# (projection/basis.py).
+		# Last month's bill, so the projection can be read as a change rather than a
+		# number in isolation — "is this going up" is what the figure is looked at
+		# for, and it cannot be answered from one month alone.
+		**_previous_month(team, month_start),
+		"measured": frappe.utils.flt(invoice.get("measured")),
+		"estimated": frappe.utils.flt(invoice.get("estimated")),
+		"has_estimates": bool(invoice.get("has_estimates")),
 		"tax_amount": tax["output_tax_amount"],
 		"tax_type": tax["output_tax_type"],
 		"credit_balance": credit_balance,
@@ -74,6 +84,33 @@ def get_forecast(team: str | None = None) -> dict:
 		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
 		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
+	}
+
+
+def _previous_month(team: str, month_start) -> dict:
+	"""What the month before this one actually came to, and what to call it.
+
+	Compared like for like: a full projected month against a full billed one, both
+	inclusive of tax. Cancelled invoices are not a bill anyone paid, and a period
+	the team was not billed for is simply absent — a comparison against zero would
+	read as though spend had exploded.
+	"""
+	previous_start = frappe.utils.add_months(month_start, -1)
+	total = frappe.db.get_value(
+		"Invoice",
+		{
+			"team": team,
+			"invoice_type": "Billable",
+			"status": ["!=", "Cancelled"],
+			"period_start": previous_start,
+		},
+		"total",
+	)
+	if not total:
+		return {"previous_total": None, "previous_label": None}
+	return {
+		"previous_total": frappe.utils.flt(total),
+		"previous_label": frappe.utils.getdate(previous_start).strftime("%B"),
 	}
 
 
@@ -95,6 +132,7 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			"sub_category",
 			"cluster",
 			"asset_id",
+			"service_subject",
 			"billing_cycle",
 			"account_standing",
 			"start_date",
@@ -122,7 +160,11 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 	# composition. Batch both so a team with N composed configs stays O(1) queries.
 	composed = [r.name for r in rows if r.pricing_mode == "Composed"]
 	includes_by_sub = _composed_includes(composed)
-	segment_rate = _open_segment_rates(team) if composed else {}
+	# The open segment's locked rate is what this team is actually billed (ADR 0010),
+	# preset and composed alike. Read for every row, not only composed ones: quoting
+	# a preset at today's catalog rate shows a grandfathered customer a price they
+	# will never be charged.
+	segment_rate = _open_segment_rates(team)
 
 	plan_titles: dict[str, str] = {}
 	rate_cache: dict[tuple, float | None] = {}
@@ -139,10 +181,18 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			if r.plan and key not in rate_cache:
 				rate_cache[key] = frappe.get_doc("Plan", r.plan).get_rate(currency, r.cluster)
 			plan_title = plan_titles.get(r.plan)
-			monthly_rate = rate_cache.get(key)
+			# Catalog rate only as the fallback, for a subscription with no open
+			# segment yet (never provisioned, or cancelled).
+			monthly_rate = segment_rate.get(r.name)
+			if monthly_rate is None:
+				monthly_rate = rate_cache.get(key)
 		out.append(
 			{
 				"name": r.name,
+				# What metering and the cycle-cost read key on: an Asset-backed
+				# subscription by its asset, a team-level service by its synthesized
+				# subject (ADR 0013). Lets the card join a row to what it cost.
+				"resource_id": r.asset_id or r.service_subject,
 				"server": asset.title or None,
 				# Asset-backed = a real server; a subscription without one is a
 				# team-level metered service (the dashboard lists those separately).
@@ -421,8 +471,10 @@ def list_payment_attempts(team: str | None = None, limit: int = 100) -> list[dic
 	including the failed dunning retries that lead to suspension. This is the
 	customer's record of WHY a card-on-file team can still be past_due/suspended.
 	"""
+	from central.billing.payments import decline
+
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Payment Attempt",
 		filters={"team": team},
 		fields=[
@@ -436,11 +488,27 @@ def list_payment_attempts(team: str | None = None, limit: int = 100) -> list[dic
 			"failure_reason",
 			"retry_number",
 			"gateway_transaction_id",
+			"initiated_at",
+			"completed_at",
 			"creation",
 		],
-		order_by="creation desc",
 		limit=limit,
 	)
+	for row in rows:
+		# When the payment actually happened, not when we wrote the row. `creation`
+		# is the insert time, which for any backfilled or migrated attempt is simply
+		# the day it was imported — every attempt then reads as though it happened
+		# today. Same precedence the invoice timeline uses.
+		row["at"] = str(row.completed_at or row.initiated_at or row.creation)
+		# `failure_reason` is the gateway's own wording. Keep it (support quotes it)
+		# but lead with something the cardholder can act on.
+		row["reason"] = (
+			decline.customer_reason(row.failure_code) if row.status == "Failed" else None
+		)
+	# Sorted on that same resolved time — ordering by `creation` put a backfilled
+	# year of attempts in whatever order they happened to be inserted.
+	rows.sort(key=lambda r: r["at"], reverse=True)
+	return rows
 
 
 @frappe.whitelist()

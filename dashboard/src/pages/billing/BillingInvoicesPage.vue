@@ -15,7 +15,6 @@ import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
 import { invoiceTheme } from '@/lib/status'
 import type {
-	BillingLine,
 	CollectionStatus,
 	InvoiceDetail,
 	InvoiceSummary,
@@ -149,16 +148,6 @@ const DOTS: Record<string, string> = {
 const dotClass = (theme: string): string =>
 	DOTS[theme] || 'bg-[var(--ink-gray-4)]'
 
-// Receipt sections — plan lines are the per-server bundles; everything else
-// (metered overage, à-la-carte components) reads as an add-on.
-const servers = computed(() =>
-	(detail.data?.items ?? []).filter((li) => li.kind === 'Plan'),
-)
-const addons = computed(() =>
-	(detail.data?.items ?? []).filter((li) => li.kind !== 'Plan'),
-)
-const sum = (rows: BillingLine[]): number =>
-	rows.reduce((t, li) => t + Number(li.amount || 0), 0)
 
 const paidWithIcon = computed(() =>
 	/upi/i.test(detail.data?.paid_with?.method_type ?? '')
@@ -265,70 +254,14 @@ const eventDetail = (ev: {
 
 					<!-- Receipt: plan charges per server, then metered add-ons — each
                section a plain eyebrow with its subtotal, like the V2 receipt. -->
-					<div class="max-h-80 shrink-0 space-y-4 overflow-y-auto px-4 pt-4">
-						<section v-if="servers.length">
-							<div class="mb-1 flex items-center justify-between gap-3">
-								<span
-									class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
-								>
-									Servers
-								</span>
-								<span class="text-p-sm tabular-nums text-ink-gray-5">
-									{{ money(sum(servers), detail.data.currency) }}
-								</span>
-							</div>
-							<ul>
-								<li
-									v-for="(li, idx) in servers"
-									:key="idx"
-									class="flex items-center justify-between gap-3 py-1.5"
-								>
-									<div class="min-w-0">
-										<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-										<p v-if="li.detail" class="truncate text-p-sm text-ink-gray-5">
-											{{ li.detail }}
-										</p>
-									</div>
-									<span
-										class="shrink-0 pl-3 text-sm tabular-nums text-ink-gray-8"
-									>
-										{{ money(li.amount, detail.data.currency) }}
-									</span>
-								</li>
-							</ul>
-						</section>
-
-						<section v-if="addons.length">
-							<div class="mb-1 flex items-center justify-between gap-3">
-								<span
-									class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
-								>
-									Services
-								</span>
-								<span class="text-p-sm tabular-nums text-ink-gray-5">
-									{{ money(sum(addons), detail.data.currency) }}
-								</span>
-							</div>
-							<ul>
-								<li
-									v-for="(li, idx) in addons"
-									:key="idx"
-									class="flex items-center justify-between gap-3 py-1.5"
-								>
-									<div class="min-w-0">
-										<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-										<p v-if="li.detail" class="truncate text-p-sm text-ink-gray-5">
-											{{ li.detail }}
-										</p>
-									</div>
-									<span
-										class="shrink-0 pl-3 text-sm tabular-nums text-ink-gray-8"
-									>
-										{{ money(li.amount, detail.data.currency) }}
-									</span>
-								</li>
-							</ul>
-						</section>
+					<!-- No inner scroll: the panel already scrolls, and a second scroller
+					     here clipped the receipt mid-row once a team had more than one
+					     machine on the invoice. -->
+					<div class="shrink-0 px-4 pt-4">
+						<ChargeBreakdown
+							:lines="detail.data.items"
+							:currency="detail.data.currency"
+						/>
 					</div>
 
 					<!-- Cost breakdown + Activity -->

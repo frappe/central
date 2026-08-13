@@ -8,6 +8,8 @@ Gateways / per-team config. The orchestration that wires teams together lives in
 demo_scenarios.
 """
 
+import hashlib
+
 import frappe
 from frappe.utils.password import update_password
 
@@ -33,6 +35,9 @@ PLAN_SIZES = [
 	("plan-1vcpu", "Starter · 1 vCPU / 2 GB", 1, 2, 25, 100, 1500),
 	("plan-2vcpu", "Basic · 2 vCPU / 4 GB", 2, 4, 50, 200, 3000),
 	("plan-4vcpu", "Standard · 4 vCPU / 8 GB", 4, 8, 100, 400, 6000),
+	# The scenarios put a team on the top rung to demo grandfathering against a
+	# risen catalog price, so the ladder has to actually reach it.
+	("plan-8vcpu", "Business · 8 vCPU / 16 GB", 8, 16, 200, 800, 12000),
 ]
 
 # À-la-carte component rate card, per Resource Type (ADR 0009) — what powers the
@@ -73,7 +78,20 @@ RAZORPAY = "Razorpay"
 # PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD but
 # is NOT its default — Stripe stays the card default; PayPal is the opt-in rail.
 PAYPAL = "Paypal"
-ANCHOR = "2026-06-01"  # the current (open) billing month
+# The current (open) billing month — the month the seed is RUN in, not a date
+# frozen into the source. A fixed anchor silently rots: a demo seeded against a
+# hardcoded June still says June in August, so the spend chart trails off into
+# empty months and "this cycle" disagrees with what the servers are actually
+# accruing. Everything else in the demo derives from these three.
+ANCHOR = str(frappe.utils.get_first_day(frappe.utils.getdate()))
+ANCHOR_END = str(frappe.utils.get_last_day(frappe.utils.getdate()))
+ANCHOR_DUE = str(frappe.utils.add_days(frappe.utils.get_last_day(frappe.utils.getdate()), 7))
+
+
+def anchor_day(day: int) -> str:
+	"""A date inside the open month — for events that happen mid-cycle (a resize)."""
+	return str(frappe.utils.add_days(frappe.utils.getdate(ANCHOR), day - 1))
+
 DEMO_OWNER_PASSWORD = "abc@123"  # every demo owner logs into the console with this
 
 
@@ -126,6 +144,10 @@ def _atlas_instances():
 	rates to one) and a Region (the map's display metadata). A pre-existing, real
 	Atlas Instance is left untouched — only its Region metadata is (re)seeded."""
 	for cslug, _label, _cur in CLUSTERS:
+		# Region first: an Atlas Instance LINKS to it, so seeding the instance ahead
+		# of the region fails on a site that has no regions yet — which is every
+		# fresh demo site, the one case this seeder exists for.
+		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
 		if not frappe.db.exists("Atlas Instance", cslug):
 			frappe.get_doc(
 				{
@@ -136,7 +158,6 @@ def _atlas_instances():
 					"api_secret": "demo",
 				}
 			).insert(ignore_permissions=True)
-		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
 
 
 # Plans are autonamed by hash, so map the readable demo key to the generated
@@ -567,12 +588,16 @@ def _failed_attempt(team, invoice, pm, gateway, retry, when=None):
 	).insert(ignore_permissions=True)
 
 
-def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
+def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency, base=None):
 	"""Dunning-then-settle trail on a paid invoice: `retries` failed card attempts
-	(declined), each a day apart from the invoice's period end, followed by a
-	successful capture that settles it. This is what the invoice Activity shows."""
+	(declined), each a day apart, followed by a successful capture that settles it.
+	This is what the invoice Activity shows.
+
+	`base` is when the first attempt ran. It defaults to the day the invoice opens
+	rather than its period end — a bill is not collected before the month it covers
+	has closed."""
 	period_end = frappe.db.get_value("Invoice", invoice, "period_end")
-	base = frappe.utils.get_datetime(f"{period_end} 09:00:00")
+	base = frappe.utils.get_datetime(base or collection_moment(team, period_end))
 	for n in range(retries):
 		_failed_attempt(team, invoice, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
 	captured_at = frappe.utils.add_to_date(base, days=retries)
@@ -587,7 +612,9 @@ def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
 			"currency": currency,
 			"status": "Captured",
 			"retry_number": retries,
-			"gateway_transaction_id": f"pi_{invoice}",
+			# Gateway references are opaque ids, not our invoice names — a demo that
+			# shows "pi_INV-2026-02-00011" reads as fabricated next to the real ones.
+			"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
 			"resolved_by": "Webhook",
 			"initiated_at": captured_at,
 			"completed_at": captured_at,
@@ -622,7 +649,9 @@ def _settle_via_backup(team, invoice, primary_pm, gateway, amount, currency, whe
 		return None, None
 	# 3) the backup captures (stands in for the offline gateway), an hour later.
 	captured_at = frappe.utils.add_to_date(when, hours=1)
-	attempt = _capture_attempt(team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at)
+	attempt = _capture_attempt(
+		team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at, retry=1
+	)
 	frappe.db.set_value("Invoice", invoice, {"status": "Paid", "amount_paid": amount, "paid_at": captured_at})
 	return attempt, backup.name
 
@@ -820,17 +849,56 @@ def stage_resizes(primary_sub, base_cluster, base_plan, currency, kind):
 	* within_24h  — an upsize late one evening and a downsize the next morning,
 	                i.e. a second resize inside 24h of the first (spanning midnight).
 	"""
-	up = plan_name(_plan_after(base_plan, +1))
-	down = plan_name(_plan_after(base_plan, 0))  # back to the original size
+	base = plan_name(base_plan)
+	bigger = plan_name(_plan_after(base_plan, +1))
+	smaller = plan_name(_plan_after(base_plan, -1))
+	# Scale UP then back down — the way capacity is actually used: a busy spell is
+	# absorbed by a bigger machine and given back afterwards. Staging it the other
+	# way round (down, then up) told a story nobody has.
+	#
+	# `_plan_after` clamps at both ends, so a team already on the largest plan has
+	# no bigger size to go to; there the pair runs down-and-back instead, which is
+	# at least a real change. A one-rung ladder stages nothing.
+	other = bigger if bigger != base else smaller
+	if other == base:
+		return
+
 	if kind == "same_day":
-		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-15 09:30:00")
-		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 16:45:00")
+		_add_resize(primary_sub, other, currency, base_cluster, f"{anchor_day(15)} 09:30:00")
+		_add_resize(primary_sub, base, currency, base_cluster, f"{anchor_day(15)} 16:45:00")
 	elif kind == "within_24h":
-		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-14 20:00:00")
-		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 08:00:00")
+		_add_resize(primary_sub, other, currency, base_cluster, f"{anchor_day(14)} 20:00:00")
+		_add_resize(primary_sub, base, currency, base_cluster, f"{anchor_day(15)} 08:00:00")
 
 
 # --- payment attempts + refunds (terminal-state builders) -------------------
+
+
+def opens_on(period_end) -> str:
+	"""When the run would finalise this period's bill.
+
+	A month billed in arrears is not closed until it ends, so the invoice opens on
+	the 1st after the period — not on its last day. Seeding it a day early made the
+	demo show bills raised, and collected, before the month they cover had finished.
+	"""
+	return f"{frappe.utils.add_days(frappe.utils.getdate(period_end), 1)} 02:00:00"
+
+
+def collection_moment(team, period_end, after_days: int = 0) -> str:
+	"""A plausible moment for a collection against this period's bill.
+
+	Nothing can be collected before the invoice opens, so this always lands on or
+	after that. The day-within-the-window and the time of day are scattered from a
+	hash of (team, period) — deterministic, so a re-seed is stable, but varied, so
+	ten months of history does not read as a generated grid of identical 09:00
+	timestamps on identical dates.
+	"""
+	opens = frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
+	seed = int(hashlib.sha256(f"{team}:{period_end}".encode()).hexdigest()[:12], 16)
+	day = frappe.utils.add_days(opens, after_days + seed % 3)
+	hour = 6 + (seed // 3) % 14  # business-ish hours, never midnight-sharp
+	minute = (seed // 97) % 60
+	return f"{day} {hour:02d}:{minute:02d}:00"
 
 
 def backdate_invoice(invoice, when):
@@ -903,8 +971,13 @@ def draw_wallet_credit(invoice) -> float:
 	return frappe.utils.flt(frappe.db.get_value("Invoice", invoice, "expected_collection"))
 
 
-def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
-	"""A successful (Captured) card charge that settled the invoice."""
+def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None, retry=0):
+	"""A successful (Captured) card charge that settled the invoice.
+
+	`retry` matters: the attempt's idempotency key is hash(invoice, retry_number), so
+	a capture that follows a decline on the SAME invoice is a genuine second attempt
+	and must say so — leaving it at 0 collides with the decline's key.
+	"""
 	when = when or frappe.utils.now_datetime()
 	return (
 		frappe.get_doc(
@@ -917,6 +990,7 @@ def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
 				"amount": amount,
 				"currency": currency,
 				"status": "Captured",
+				"retry_number": retry,
 				"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
 				"resolved_by": "Webhook",
 				"initiated_at": when,

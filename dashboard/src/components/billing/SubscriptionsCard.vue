@@ -17,7 +17,7 @@ import type { SubscriptionRow } from '@/types/billing'
 // plan/region, monthly rate, ellipsis menu). The card owns the pause/resume calls
 // and the destructive-style pause confirm (a local Dialog, since this app mounts
 // no global <Dialogs /> container). Pause stops the linked VM.
-const { subscriptions } = useBillingOverview()
+const { subscriptions, cycleCosts } = useBillingOverview()
 const { canManageBilling } = useCapabilities()
 
 // Servers only: a subscription without an Asset is a team-level metered
@@ -27,6 +27,21 @@ const rows = computed(() =>
 	(subscriptions.data ?? []).filter((sub) => sub.has_server),
 )
 const loading = computed(() => subscriptions.loading && !subscriptions.data)
+
+// What each server has actually cost so far this cycle, keyed by the same
+// resource_id metering uses. The standing rate says what a full month costs; this
+// says what is on the bill today — a server started (or resized) mid-month is the
+// case where those differ and the customer notices.
+const costByResource = computed(() => {
+	const map = new Map<string, number>()
+	for (const item of cycleCosts.data?.items ?? [])
+		map.set(item.resource_id, item.amount)
+	return map
+})
+function cycleCost(sub: SubscriptionRow): number | null {
+	if (!sub.resource_id) return null
+	return costByResource.value.get(sub.resource_id) ?? null
+}
 
 const pause = useCall<unknown, { subscription: string }>({
 	url: method(API.pauseSubscription),
@@ -58,9 +73,11 @@ function subtitle(sub: SubscriptionRow): string {
 
 // Display state, most-terminal first: a terminated VM reads Terminated (not
 // Paused), a dunning one Suspended, a billing-paused one Paused, else its op state.
+type BadgeTheme = 'gray' | 'red' | 'blue' | 'green' | 'amber' | 'violet' | 'orange'
+
 function statusInfo(
 	sub: SubscriptionRow,
-): { label: string; theme: string } | null {
+): { label: string; theme: BadgeTheme } | null {
 	if (sub.status === 'Terminated') return { label: 'Terminated', theme: 'red' }
 	if (sub.account_standing === 'Suspended')
 		return { label: 'Suspended', theme: 'orange' }
@@ -166,18 +183,26 @@ function onOpen(sub: SubscriptionRow): void {
 					</div>
 				</component>
 				<div class="flex shrink-0 items-center gap-2">
-					<span
-						class="text-sm-medium tabular-nums"
-						:class="
-              isInactive(sub) && !isTerminated(sub) && sub.monthly_rate != null
-                ? 'text-ink-gray-4 line-through'
-                : isTerminated(sub)
-                  ? 'text-ink-gray-4'
-                  : 'text-ink-gray-9'
-            "
-					>
-						{{ priceLabel(sub) }}
-					</span>
+					<div class="text-right">
+						<span
+							class="block text-sm-medium tabular-nums"
+							:class="
+                isInactive(sub) && !isTerminated(sub) && sub.monthly_rate != null
+                  ? 'text-ink-gray-4 line-through'
+                  : isTerminated(sub)
+                    ? 'text-ink-gray-4'
+                    : 'text-ink-gray-9'
+              "
+						>
+							{{ priceLabel(sub) }}
+						</span>
+						<span
+							v-if="cycleCost(sub) != null"
+							class="block text-p-sm tabular-nums text-ink-gray-5"
+						>
+							{{ money(cycleCost(sub)!, sub.currency) }} so far
+						</span>
+					</div>
 					<SubscriptionRowActions
 						:subscription="sub"
 						:can-manage="canManageBilling"
