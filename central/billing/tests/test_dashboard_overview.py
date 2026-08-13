@@ -535,7 +535,7 @@ class TestResizeLockDisclosure(OverviewBase):
 		# Catalog lists this plan at 3000; this server locked in at 2000.
 		self._server(2000)
 
-		lock = _lock_disclosure(frappe.get_all("Subscription", {"team": TEAM}, pluck="name")[0], "INR")
+		lock = _lock_disclosure(TEAM, frappe.get_all("Subscription", {"team": TEAM}, pluck="name")[0], "INR")
 
 		self.assertEqual(lock["locked_rate"], 2000.0)
 		self.assertEqual(lock["list_rate"], 3000.0)
@@ -547,9 +547,38 @@ class TestResizeLockDisclosure(OverviewBase):
 		# Locked ABOVE today's list: resizing can only help, so no warning.
 		self._server(5000)
 
-		lock = _lock_disclosure(frappe.get_all("Subscription", {"team": TEAM}, pluck="name")[0], "INR")
+		lock = _lock_disclosure(TEAM, frappe.get_all("Subscription", {"team": TEAM}, pluck="name")[0], "INR")
 
 		self.assertEqual(lock["gives_up"], 0.0)
+
+	def test_the_disclosure_is_not_an_endpoint(self):
+		# It was, once: the decorator meant for get_composed_config landed on this
+		# helper, which put another tenant's rates one guessed id away from anyone
+		# authenticated. The boundary test catches an unguarded endpoint in general;
+		# this catches this specific function becoming one again.
+		import ast
+		import inspect
+
+		from central.billing.api.dashboard import catalog
+
+		decorated = {
+			fn.name
+			for fn in ast.parse(inspect.getsource(catalog)).body
+			if isinstance(fn, ast.FunctionDef)
+			and any("whitelist" in ast.unparse(d) for d in fn.decorator_list)
+		}
+
+		self.assertNotIn("_lock_disclosure", decorated)
+
+	def test_the_disclosure_refuses_another_team_s_subscription(self):
+		from central.billing.api.dashboard.catalog import _lock_disclosure
+
+		sub = self._server(2000)
+		other = ensure_team("team-overview-other")
+
+		# The scoping is in the read, not in the caller's good manners.
+		self.assertIsNone(_lock_disclosure(other, sub, "INR"))
+		self.assertIsNotNone(_lock_disclosure(TEAM, sub, "INR"))
 
 	def test_the_resize_picker_carries_the_disclosure(self):
 		from central.billing.api.dashboard.catalog import get_composed_config
@@ -561,3 +590,55 @@ class TestResizeLockDisclosure(OverviewBase):
 
 		self.assertTrue(config["resizable"])
 		self.assertEqual(config["lock"]["gives_up"], 1000.0)
+
+
+class TestForecastComparesToLastMonth(OverviewBase):
+	"""A projected total on its own says how much; the question it gets opened for
+	is whether it is going up, and that needs the month before it."""
+
+	def _billed(self, period_start, period_end, total, status="Paid"):
+		return frappe.get_doc(
+			{
+				"doctype": "Invoice",
+				"team": TEAM,
+				"invoice_type": "Billable",
+				"status": status,
+				"period_start": period_start,
+				"period_end": period_end,
+				"currency": "INR",
+				"subtotal": total,
+				"total": total,
+			}
+		).insert(ignore_permissions=True)
+
+	def _last_month(self):
+		start = frappe.utils.add_months(self.month_start, -1)
+		return str(start), str(frappe.utils.get_last_day(start))
+
+	def test_last_month_is_returned_for_comparison(self):
+		start, end = self._last_month()
+		self._billed(start, end, 8000)
+		self._provision(rate=3000)
+
+		fc = dashboard.get_forecast(TEAM)
+
+		self.assertEqual(fc["previous_total"], 8000.0)
+		self.assertEqual(fc["previous_label"], frappe.utils.getdate(start).strftime("%B"))
+
+	def test_a_team_with_no_previous_bill_has_nothing_to_compare(self):
+		# A comparison against zero would read as though spend had exploded.
+		self._provision(rate=3000)
+
+		fc = dashboard.get_forecast(TEAM)
+
+		self.assertIsNone(fc["previous_total"])
+		self.assertIsNone(fc["previous_label"])
+
+	def test_a_cancelled_invoice_is_not_a_bill_to_compare_against(self):
+		start, end = self._last_month()
+		self._billed(start, end, 8000, status="Cancelled")
+		self._provision(rate=3000)
+
+		fc = dashboard.get_forecast(TEAM)
+
+		self.assertIsNone(fc["previous_total"])

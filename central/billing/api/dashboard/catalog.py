@@ -252,18 +252,24 @@ def provision_composed_config(
 	return provision_composed_subscription(team, cluster, includes, sub_category)
 
 
-def _lock_disclosure(subscription: str, currency: str) -> dict | None:
+def _lock_disclosure(team: str, subscription: str, currency: str) -> dict | None:
 	"""What this server's rate is, against what the same shape costs today.
 
 	A resize re-prices at current rates (ADR 0010), so a customer holding a rate
 	below today's list is about to give it up — including if they resize back to the
 	size they are on now. They are entitled to know that before they confirm, not
 	after it shows up on a bill.
+
+	Scoped to `team` even though the caller already resolved the subscription from
+	a team-scoped read. A rate is tenant data, and a helper that takes a bare
+	subscription id and trusts whoever passed it is one stray decorator away from
+	handing another tenant's price to anyone who can guess an id — which is how
+	this function was first shipped.
 	"""
 	from central.billing.api.dashboard.spend import list_rate_for
 	from central.billing.catalog.subscriptions import active_segments
 
-	segments = active_segments({"name": subscription})
+	segments = active_segments({"name": subscription, "team": team})
 	if not segments:
 		return None
 	segment = segments[0]
@@ -337,7 +343,7 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
 		# What the resize would cost this server in price terms, so the picker can
 		# say it before the customer commits rather than after.
-		"lock": _lock_disclosure(sub.name, _team_currency(team)),
+		"lock": _lock_disclosure(team, sub.name, _team_currency(team)),
 	}
 
 
