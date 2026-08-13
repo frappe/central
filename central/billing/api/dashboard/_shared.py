@@ -6,6 +6,8 @@ Team resolution + access gating, currency/gateway lookups, and the line-item
 humaniser. Endpoint modules (account/invoices/methods) build on these.
 """
 
+from datetime import timedelta
+
 import frappe
 from frappe import _
 
@@ -264,14 +266,10 @@ def _describe_line(team: str, li) -> dict:
 		# Hourly lines come from a churn day (multiple resizes within 24h): they're
 		# tied to one calendar date, so name it. Daily lines span a range within the
 		# period — the invoice already carries the period dates, so no suffix.
-		if li.unit == "hour" and li.hours:
-			hours = f"{frappe.utils.flt(li.hours):g} hour(s)"
-			on = f" on {frappe.utils.getdate(li.charge_date).strftime('%-d %b')}" if li.charge_date else ""
-			row["detail"] = f"{hours}{on}"
-		elif li.days:
-			row["detail"] = f"{li.days} day(s)"
-		else:
-			row["detail"] = None
+		# Say WHEN, not just how long. A month with a resize in it is several lines
+		# for one server, and "13 day(s)" / "16 hour(s)" leaves the reader to work out
+		# the order and the changeover themselves.
+		row["detail"] = _billed_window(li)
 	else:
 		metered_plan = _metered_plan_for(li.resource_type)
 		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
@@ -299,6 +297,38 @@ def _describe_line(team: str, li) -> dict:
 			# No free tier — every used unit is billed at the per-unit rate.
 			row["detail"] = f"Metered · {_qty(billed)} {unit} used"
 	return row
+
+
+def _billed_window(li) -> str | None:
+	"""The span a line covers, in the words someone would use for it.
+
+	Whole days read as a date range ("1–13 Aug"); a churn date reads as the clock
+	hours on that date ("14 Aug, 20:00–24:00"), because that is the day a config
+	changed and the hours are the whole reason it is billed differently.
+	"""
+	start, end = li.get("period_from"), li.get("period_to")
+	if not start or not end:
+		# Pre-window invoices (issued before the span was recorded) still say how
+		# long, which is what they have.
+		if li.unit == "hour" and li.hours:
+			on = f" on {frappe.utils.getdate(li.charge_date).strftime('%-d %b')}" if li.charge_date else ""
+			return f"{frappe.utils.flt(li.hours):g} hour(s){on}"
+		return f"{li.days} day(s)" if li.days else None
+
+	start = frappe.utils.get_datetime(start)
+	end = frappe.utils.get_datetime(end)
+	if li.unit == "hour":
+		# The exclusive end lands on the next midnight; "24:00" reads as the end of
+		# the same day, where "00:00" would look like it ran for no time at all.
+		finish = "24:00" if end.date() > start.date() else end.strftime("%H:%M")
+		return f"{start.strftime('%-d %b')}, {start.strftime('%H:%M')}–{finish}"
+
+	last = end - timedelta(days=1)  # the window's end is exclusive
+	if start.date() == last.date():
+		return start.strftime("%-d %b")
+	if start.month == last.month:
+		return f"{start.strftime('%-d')}–{last.strftime('%-d %b')}"
+	return f"{start.strftime('%-d %b')} – {last.strftime('%-d %b')}"
 
 
 def _qty(value) -> str:

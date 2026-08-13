@@ -196,7 +196,17 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 					for other in segs
 					if cd in _dates_touched(other["start"], other["end"])
 				]
-				lines.append(_hourly_line(s, hours, b.hour_units, cd, explain, touching))
+				lines.append(
+					_hourly_line(
+						s, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end)
+					)
+				)
+
+	# Chronological. The loop above walks segment by segment, emitting each one's
+	# whole-day line before its hourly slivers, so the rows came out grouped by
+	# segment rather than in the order the changes happened — a resize read as a
+	# jumble instead of a sequence.
+	lines.sort(key=lambda ln: (ln.get("period_from") or datetime.max, ln.get("unit") == "hour"))
 	return lines
 
 
@@ -251,6 +261,13 @@ def _daily_line(seg: dict, days: int, day_units: int, explain: bool = False, bil
 		"rate": seg["rate"],
 		"days": days,
 		"hours": None,
+		# The window this line actually billed. Without it a resized month is a list
+		# of durations with no order and no "when" — six lines saying "13 day(s)"
+		# and "16 hour(s)" that the reader has to reassemble into a sequence.
+		"period_from": datetime.combine(min(billed_dates), time.min) if billed_dates else None,
+		"period_to": datetime.combine(max(billed_dates) + timedelta(days=1), time.min)
+		if billed_dates
+		else None,
 		"amount": frappe.utils.flt(days * seg["rate"] / day_units, 2),
 	}
 	if explain:
@@ -270,7 +287,13 @@ def _daily_line(seg: dict, days: int, day_units: int, explain: bool = False, bil
 
 
 def _hourly_line(
-	seg: dict, hours: float, hour_units: int, charge_date, explain: bool = False, touching=None
+	seg: dict,
+	hours: float,
+	hour_units: int,
+	charge_date,
+	explain: bool = False,
+	touching=None,
+	window=None,
 ) -> dict:
 	line = {
 		"subscription_resource": seg["asset"],
@@ -283,6 +306,8 @@ def _hourly_line(
 		"days": None,
 		"hours": frappe.utils.flt(hours, 2),
 		"charge_date": charge_date,
+		"period_from": window[0] if window else None,
+		"period_to": window[1] if window else None,
 		"amount": frappe.utils.flt(hours * seg["rate"] / hour_units, 2),
 	}
 	if explain:

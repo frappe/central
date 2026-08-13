@@ -485,3 +485,66 @@ class TestPaymentHistoryTime(OverviewBase):
 		self.assertTrue(rows[1]["at"].startswith("2026-03-01"))
 		# Newest first on the resolved time, not on insert order.
 		self.assertGreater(rows[0]["at"], rows[1]["at"])
+
+
+class TestResizedInvoiceReadsAsASequence(OverviewBase):
+	def test_lines_are_chronological_and_say_when_they_ran(self):
+		# One server resized down and back inside a month bills as several segments.
+		# They have to arrive in the order they happened and each say the window it
+		# covers, or the customer is handed durations with no sequence.
+		from central.billing.revenue.invoicing.lines import compute_line_items
+
+		sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		add_segment(sub, "Created", 9360, "2026-08-01 00:00:00", plan=PLAN)
+		add_segment(sub, "Plan Changed", 6000, "2026-08-14 20:00:00", plan=PLAN)
+		add_segment(sub, "Plan Changed", 12000, "2026-08-15 08:00:00", plan=PLAN)
+
+		lines = compute_line_items(TEAM, CLUSTER, "2026-08-01", "2026-08-31")
+		bundles = [ln for ln in lines if ln["resource_type"] == "bundle"]
+
+		self.assertGreater(len(bundles), 3)
+		starts = [ln["period_from"] for ln in bundles]
+		self.assertEqual(starts, sorted(starts), "lines must arrive in the order they happened")
+		for line in bundles:
+			self.assertIsNotNone(line["period_from"])
+			self.assertIsNotNone(line["period_to"])
+			self.assertLess(line["period_from"], line["period_to"])
+
+		# No gaps: each window picks up where the last left off, so the month reads
+		# as one continuous story rather than disconnected fragments.
+		for earlier, later in zip(bundles, bundles[1:], strict=False):
+			self.assertEqual(earlier["period_to"], later["period_from"])
+
+	def test_the_window_is_described_in_plain_dates(self):
+		from central.billing.api.dashboard._shared import _billed_window
+
+		daily = frappe._dict(
+			unit="day",
+			days=13,
+			hours=None,
+			charge_date=None,
+			period_from="2026-08-01 00:00:00",
+			period_to="2026-08-14 00:00:00",
+		)
+		hourly = frappe._dict(
+			unit="hour",
+			days=None,
+			hours=4,
+			charge_date="2026-08-14",
+			period_from="2026-08-14 20:00:00",
+			period_to="2026-08-15 00:00:00",
+		)
+
+		self.assertEqual(_billed_window(daily), "1–13 Aug")
+		# Midnight closes the day it ends, so it reads 24:00 rather than 00:00.
+		self.assertEqual(_billed_window(hourly), "14 Aug, 20:00–24:00")
+
+	def test_a_line_without_a_window_still_says_how_long(self):
+		# Invoices issued before the window was recorded keep working.
+		from central.billing.api.dashboard._shared import _billed_window
+
+		legacy = frappe._dict(
+			unit="day", days=30, hours=None, charge_date=None, period_from=None, period_to=None
+		)
+
+		self.assertEqual(_billed_window(legacy), "30 day(s)")
