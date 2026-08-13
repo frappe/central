@@ -158,7 +158,13 @@ const servers = computed(() =>
 // time). A team running three VMs gets three chains; flattened together they
 // read as one server that changed size nine times.
 const serverGroups = computed(() => {
-	const groups: { key: string; name: string; lines: BillingLine[]; total: number }[] = []
+	const groups: {
+		key: string
+		name: string
+		id: string | null
+		lines: BillingLine[]
+		total: number
+	}[] = []
 	for (const li of servers.value) {
 		const key = li.subscription_resource || li.item
 		const last = groups[groups.length - 1]
@@ -168,13 +174,19 @@ const serverGroups = computed(() => {
 		} else {
 			groups.push({
 				key,
-				name: li.server || li.item,
+				name: li.server || li.server_id || li.item,
+				// Shown beside the name only when it adds something — for an unnamed
+				// machine the name IS the id, and printing it twice is noise.
+				id: li.server_id && li.server_id !== li.server ? li.server_id : null,
 				lines: [li],
 				total: Number(li.amount || 0),
 			})
 		}
 	}
-	return groups
+	// Biggest machine first. The lines arrive grouped by resource id, which is a
+	// hash — contiguity is all that ordering buys, and hash order on screen is
+	// arbitrary. Cost order answers the question someone opens a receipt with.
+	return groups.sort((a, b) => b.total - a.total)
 })
 // One server needs no heading — the section is already called Servers, and a
 // lone group header would just repeat it.
@@ -314,8 +326,16 @@ const eventDetail = (ev: {
 									v-if="groupServers"
 									class="flex items-center justify-between gap-3 pt-1.5"
 								>
-									<span class="truncate text-sm-medium text-ink-gray-8">
-										{{ group.name }}
+									<span class="flex min-w-0 items-baseline gap-2">
+										<span class="truncate text-sm-medium text-ink-gray-8">
+											{{ group.name }}
+										</span>
+										<span
+											v-if="group.id"
+											class="shrink-0 font-mono text-xs text-ink-gray-4"
+										>
+											{{ group.id }}
+										</span>
 									</span>
 									<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-6">
 										{{ money(group.total, detail.data.currency) }}

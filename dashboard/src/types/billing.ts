@@ -37,6 +37,8 @@ export interface BillingLine {
 	basis?: 'Measured' | 'Estimated' | 'Assumed' | (string & {})
 	/** The machine this line was billed for — set on plan lines only. */
 	server?: string | null
+	/** Its technical id (what the Asset is named by), for support and logs. */
+	server_id?: string | null
 }
 
 /** get_forecast — current-cycle projection vs wallet. */

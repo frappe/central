@@ -27,6 +27,8 @@ The catalog shape + record builders live in demo._factory; this module is the
 orchestration.
 """
 
+import hashlib
+
 import frappe
 
 from central.billing.catalog import subscriptions
@@ -517,7 +519,11 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	for cluster, plan_key in resources:
 		idx += 1
 		plan = plan_name(plan_key)  # logical key -> the configurator-minted Plan name
-		resource = f"srv-{slug}-{idx}"
+		# Production names an Asset by its resource_id, which is a hash — the id the
+		# cluster, support and the invoice all know the machine by. A demo using
+		# "srv-acme-corp-1" hides that the grouping key is an opaque id, so it is
+		# shaped like the real thing (deterministic, so re-seeds are stable).
+		resource = "vm-" + hashlib.sha256(f"{slug}:{idx}".encode()).hexdigest()[:10]
 		catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 		rate = round(catalog * 0.78, 2) if (state == "grandfathered" and idx == 1) else catalog
 		sub = subscriptions.create_subscription(

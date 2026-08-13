@@ -267,6 +267,10 @@ def _describe_line(team: str, li) -> dict:
 		# sets of lines, and on the same plan they are otherwise indistinguishable —
 		# the plan title alone says what was billed but never what it was billed for.
 		row["server"] = _server_name(li.subscription_resource)
+		# The machine's technical id — what an Asset is actually named by, and what
+		# support and the cluster logs know it as. A friendly name is optional and
+		# may be absent or duplicated; this never is.
+		row["server_id"] = li.subscription_resource
 		# Hourly lines come from a churn day (multiple resizes within 24h): they're
 		# tied to one calendar date, so name it. Daily lines span a range within the
 		# period — the invoice already carries the period dates, so no suffix.
