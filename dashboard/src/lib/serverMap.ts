@@ -7,7 +7,7 @@ import type { Region } from '@/types/Region'
 // status into what the map shows (label, badge, dot colour, pulse). Terminated
 // assets never reach the map — useServerMapData filters them out.
 
-type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue'
+type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue'
 
 export interface ServerVisual {
 	/** Stable key the status filter matches on. */
@@ -25,14 +25,14 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		key: 'active',
 		label: 'Active',
 		badgeTheme: 'green',
-		dot: 'var(--ink-green-7)',
+		dot: 'var(--ink-green-6)',
 		pulse: false,
 	},
 	settingUp: {
 		key: 'settingUp',
 		label: 'Setting up',
-		badgeTheme: 'orange',
-		dot: 'var(--ink-amber-7)',
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
 		pulse: false,
 	},
 	paused: {
@@ -53,14 +53,14 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		key: 'broken',
 		label: 'Broken',
 		badgeTheme: 'red',
-		dot: 'var(--ink-red-7)',
+		dot: 'var(--ink-red-6)',
 		pulse: true,
 	},
 	resizing: {
 		key: 'resizing',
 		label: 'Resizing',
-		badgeTheme: 'orange',
-		dot: 'var(--ink-amber-7)',
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
 		pulse: false,
 	},
 }
@@ -438,7 +438,7 @@ export function siteVisual(status: string): ServerVisual {
 			key: 'active',
 			label: 'Running',
 			badgeTheme: 'green',
-			dot: 'var(--ink-green-7)',
+			dot: 'var(--ink-green-6)',
 			pulse: false,
 		}
 	if (status === 'Failed')
@@ -446,14 +446,14 @@ export function siteVisual(status: string): ServerVisual {
 			key: 'broken',
 			label: 'Failed',
 			badgeTheme: 'red',
-			dot: 'var(--ink-red-7)',
+			dot: 'var(--ink-red-6)',
 			pulse: true,
 		}
 	return {
 		key: 'settingUp',
 		label: status,
-		badgeTheme: 'orange',
-		dot: 'var(--ink-amber-7)',
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
 		pulse: false,
 	}
 }

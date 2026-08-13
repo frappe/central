@@ -70,7 +70,7 @@ function switchTo(team: Team): void {
 			<div
 				v-for="team in visible"
 				:key="team.name"
-				class="flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors duration-150 ease-in-out"
+				class="flex items-center gap-3 rounded-6 border px-3 py-2.5 transition-colors duration-150 ease-in-out"
 				:class="
 					team.name === activeTeam || team.name === selected
 						? 'border-outline-gray-3'

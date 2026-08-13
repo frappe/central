@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AxisChart } from 'frappe-ui'
+import { AxisChart } from 'frappe-ui/experimental'
 import { computed } from 'vue'
 import {
 	LOAD_SERIES,
@@ -53,7 +53,7 @@ const chartConfig = computed(() => ({
 </script>
 
 <template>
-	<section class="rounded-xl border border-outline-gray-2 p-5">
+	<section class="rounded-7 border border-outline-gray-2 p-5">
 		<div class="mb-4 flex items-baseline justify-between gap-3">
 			<h3 class="text-base font-semibold text-ink-gray-9">Load average</h3>
 

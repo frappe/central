@@ -65,14 +65,14 @@ async function onSubmit(): Promise<void> {
 			<div class="mt-1.5 flex items-center gap-2">
 				<button
 					type="button"
-					class="relative size-8 shrink-0 rounded-md"
+					class="relative size-8 shrink-0 rounded-5"
 					aria-label="Adding a team logo lands in a follow-up"
 					disabled
 				>
 					<Avatar v-if="name" :label="name" size="xl" shape="square" />
 					<span
 						v-else
-						class="grid size-8 place-items-center rounded-md bg-surface-gray-2"
+						class="grid size-8 place-items-center rounded-5 bg-surface-gray-2"
 					>
 						<span
 							class="lucide-users size-4 text-ink-gray-4"
@@ -93,7 +93,7 @@ async function onSubmit(): Promise<void> {
 			</div>
 			<p
 				class="mt-1.5 text-p-sm"
-				:class="duplicate ? 'text-ink-red-6' : 'text-ink-gray-5'"
+				:class="duplicate ? 'text-ink-red-5' : 'text-ink-gray-5'"
 			>
 				{{ duplicate
 						? `You already have a team called “${name}”`

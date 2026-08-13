@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { Button, Dialog, LoadingIndicator, Tabs, useCall } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	Dialog,
+	LoadingIndicator,
+	Tabs,
+	useCall,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import Alert from '@/components/common/Alert.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { usePlans } from '@/composables/usePlans'
 import type { AssetRow } from '@/composables/useServers'
@@ -115,8 +121,10 @@ function designableProfile(cls: string): Profile | null {
 	return canDesign.value ? profileFor(cls) : null
 }
 const hasTabs = computed(() => classes.value.length > 1)
-const classTabs = computed(() => classes.value.map((label) => ({ label })))
-const activeTab = ref(0)
+const classTabs = computed(() =>
+	classes.value.map((label) => ({ label, value: label })),
+)
+const activeTab = ref('')
 const soleClass = computed(() => classes.value[0] ?? 'General')
 const flatPresets = computed(() => groups.value[soleClass.value] ?? [])
 const flatProfile = computed<Profile | null>(() =>
@@ -159,13 +167,13 @@ watch([() => configCall.data, plans], () => {
 		const cls = cfg.sub_category ?? soleClass.value
 		selectedPlan.value = `custom:${cls}`
 		composedConfig.value = initial.value
-		activeTab.value = Math.max(0, classes.value.indexOf(cls))
+		activeTab.value = cls
 	} else if (cfg.plan && plans.value.some((p) => p.plan === cfg.plan)) {
 		selectedPlan.value = cfg.plan
 		const cls =
 			plans.value.find((p) => p.plan === cfg.plan)?.sub_category ??
 			soleClass.value
-		activeTab.value = Math.max(0, classes.value.indexOf(cls))
+		activeTab.value = cls
 	}
 })
 
@@ -175,7 +183,7 @@ watch(
 	(server) => {
 		selectedPlan.value = null
 		composedConfig.value = null
-		activeTab.value = 0
+		activeTab.value = ''
 		if (server && activeTeamId.value) configCall.reload()
 	},
 )
@@ -276,13 +284,13 @@ async function confirm() {
 				<Alert v-if="resizeError" theme="red" :title="resizeError" />
 				<Alert
 					v-if="losesLockedRate && lock"
-					theme="yellow"
+					theme="amber"
 					title="Resizing will change your rate"
 					:description="`You pay ${money(lock.locked_rate, lock.currency)}/mo for this size; it now lists at ${money(lock.list_rate, lock.currency)}/mo. Any resize is priced at today's rates, and the old rate doesn't come back — including if you resize to this size again later.`"
 				/>
 				<div
 					v-if="needsRestart"
-					class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"
+					class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"
 				>
 					Your server will be briefly stopped to apply the new size, then
 					started again automatically.
@@ -292,13 +300,13 @@ async function confirm() {
 					<template #tab-panel="{ tab }">
 						<PlanGroup
 							class="pt-4"
-							:presets="groups[tab.label] ?? []"
-							:profile="designableProfile(tab.label)"
+							:presets="groups[tab.value] ?? []"
+							:profile="designableProfile(String(tab.value))"
 							:rate-card="rateCard"
 							:available="available ?? 0"
 							:currency="currency ?? 'USD'"
 							:capacity="capacity"
-							:initial="initialFor(designableProfile(tab.label))"
+							:initial="initialFor(designableProfile(String(tab.value)))"
 							v-model:selected-plan="selectedPlan"
 							v-model:composed-config="composedConfig"
 						/>

@@ -212,7 +212,7 @@ watch(open, (isOpen) => {
 				</p>
 				<div
 					ref="cardEl"
-					class="rounded border border-outline-gray-2 px-3 py-3"
+					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
 				<div class="flex gap-2">
 					<Button
@@ -249,7 +249,7 @@ watch(open, (isOpen) => {
 						<button
 							v-for="tile in tiles"
 							:key="tile.instrument"
-							class="flex flex-col gap-1.5 rounded-lg border border-outline-gray-2 p-4 text-left transition-colors hover:border-outline-gray-3 disabled:cursor-not-allowed disabled:opacity-50"
+							class="flex flex-col gap-1.5 rounded-6 border border-outline-gray-2 p-4 text-left transition-colors hover:border-outline-gray-3 disabled:cursor-not-allowed disabled:opacity-50"
 							:disabled="loading || !!blockedReason(tile)"
 							@click="choose(tile)"
 						>
@@ -263,7 +263,7 @@ watch(open, (isOpen) => {
 							}}</span>
 							<span
 								v-if="blockedReason(tile)"
-								class="text-p-sm text-ink-amber-7"
+								class="text-p-sm text-ink-amber-6"
 								>{{ blockedReason(tile) }}</span
 							>
 							<span v-else class="text-p-sm text-ink-gray-5">{{
@@ -285,7 +285,7 @@ watch(open, (isOpen) => {
 				<!-- Razorpay card mandates need a contact; collect it inline when missing. -->
 				<div
 					v-if="askPhone"
-					class="space-y-2 rounded-lg border border-outline-gray-2 px-4 py-3"
+					class="space-y-2 rounded-6 border border-outline-gray-2 px-4 py-3"
 				>
 					<FormControl
 						v-model="phone"

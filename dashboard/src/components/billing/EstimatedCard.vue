@@ -117,7 +117,7 @@ const alertLabel = computed(() => {
 	return `Budget alert at ${money(spendAlert.value, currency.value)}`
 })
 const alertTint = computed(() =>
-	crossed.value ? '!text-ink-red-7' : near.value ? '!text-ink-amber-7' : '',
+	crossed.value ? '!text-ink-red-6' : near.value ? '!text-ink-amber-6' : '',
 )
 
 // Dialog: edit against a draft so Cancel leaves the live value untouched.
@@ -145,7 +145,7 @@ async function submitAlert(): Promise<void> {
 
 <template>
 	<div
-		class="rounded-lg border bg-surface-base p-5 transition-colors"
+		class="rounded-6 border bg-surface-base p-5 transition-colors"
 		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
 	>
 		<div class="flex h-6 items-center justify-between gap-2">
@@ -211,14 +211,14 @@ async function submitAlert(): Promise<void> {
 				<div class="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
 					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
 						<span
-							class="size-2 shrink-0 rounded-sm bg-surface-gray-10"
+							class="size-2 shrink-0 rounded-1 bg-surface-gray-10"
 							aria-hidden="true"
 						/>
 						{{ money(measured, currency) }} already owed
 					</span>
 					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
 						<span
-							class="estimated-fill size-2 shrink-0 rounded-sm"
+							class="estimated-fill size-2 shrink-0 rounded-1"
 							aria-hidden="true"
 						/>
 						{{ money(estimated, currency) }} estimated

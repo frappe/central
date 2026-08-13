@@ -14,9 +14,15 @@ import {
 	type Updater,
 	useVueTable,
 } from '@tanstack/vue-table'
-import { Button, Checkbox, Select, Skeleton, TextInput } from 'frappe-ui'
+import {
+	Alert,
+	Button,
+	Checkbox,
+	Select,
+	Skeleton,
+	TextInput,
+} from 'frappe-ui'
 import { computed, getCurrentInstance, h, ref } from 'vue'
-import Alert from '@/components/common/Alert.vue'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
 import {
@@ -472,9 +478,9 @@ const showListControls = computed(
 
 		<div
 			v-if="selectable && table.getSelectedRowModel().rows.length"
-			class="mb-2 flex flex-wrap items-center justify-between gap-3 rounded bg-surface-blue-1 px-3 py-2"
+			class="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-4 bg-surface-blue-1 px-3 py-2"
 		>
-			<p class="text-p-sm font-medium text-ink-blue-8">
+			<p class="text-p-sm font-medium text-ink-blue-7">
 				{{ table.getSelectedRowModel().rows.length }}
 				selected
 			</p>
@@ -496,7 +502,7 @@ const showListControls = computed(
 			v-if="error && hasRows"
 			theme="red"
 			:title="error"
-			:action="{ label: 'Retry', onClick: () => $emit('retry') }"
+			:primary-action="{ label: 'Retry', onClick: () => $emit('retry') }"
 			class="mb-2"
 		/>
 
@@ -566,7 +572,7 @@ const showListControls = computed(
 							class="min-w-0"
 						>
 							<Skeleton
-								class="h-3 rounded"
+								class="h-3 rounded-4"
 								:class="column === 1 ? 'w-2/3' : 'w-1/2'"
 							/>
 						</div>
@@ -627,7 +633,7 @@ const showListControls = computed(
 						v-for="row in pageRows"
 						:key="row.id"
 						role="row"
-						class="lv-row grid min-h-10 items-center gap-4 rounded-lg px-2 text-sm transition-colors duration-150 ease-in-out"
+						class="lv-row grid min-h-10 items-center gap-4 rounded-6 px-2 text-sm transition-colors duration-150 ease-in-out"
 						:class="[
               interactive ? 'cursor-pointer hover:bg-surface-gray-1' : 'cursor-default',
               row.getIsSelected() || activeKey === row.id
@@ -696,7 +702,7 @@ const showListControls = computed(
    — the rounded highlight floats clean instead of being sliced.
 
    The line is a pseudo-element rather than a border-top: a border traces the
-   row's rounded-lg corners and curls up at both ends, leaving little hooks. */
+   row's rounded-6 corners and curls up at both ends, leaving little hooks. */
 .lv-rows > .lv-row {
 	position: relative;
 }

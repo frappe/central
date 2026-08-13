@@ -224,7 +224,7 @@ export interface InvoiceActivity {
 	detail: string | null
 	amount: number
 	currency: Currency
-	theme: 'gray' | 'blue' | 'green' | 'red' | 'orange'
+	theme: 'gray' | 'blue' | 'green' | 'red' | 'amber'
 }
 
 /** get_invoice — one invoice with line items, tax block, and activity. */

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Alert } from 'frappe-ui'
 import { ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
@@ -13,7 +14,6 @@ import PaymentSchedulePanel from '@/components/billing/PaymentSchedulePanel.vue'
 import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
-import Alert from '@/components/common/Alert.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { computed } from 'vue'
 
@@ -62,10 +62,10 @@ const advancedOpen = ref(false)
                first — money-moving actions stay gated on it. -->
 					<Alert
 						v-if="!complete"
-						theme="yellow"
+						theme="amber"
 						title="Add your billing details"
 						description="Currency, legal name, and address are needed to add credit, save a payment method, and provision servers."
-						:action="{ label: 'Add billing details', onClick: () => (setupDialogOpen = true) }"
+						:primary-action="{ label: 'Add billing details', onClick: () => { setupDialogOpen = true } }"
 					/>
 
 					<CollectionActionBanner />
@@ -93,7 +93,7 @@ const advancedOpen = ref(false)
                verbs (Stop billing). -->
 					<section>
 						<button
-							class="-mx-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+							class="-mx-2 flex items-center gap-1.5 rounded-5 px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
 							:aria-expanded="advancedOpen"
 							@click="advancedOpen = !advancedOpen"
 						>

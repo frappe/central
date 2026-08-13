@@ -34,7 +34,7 @@ function reload(): void {
 		class="flex min-h-screen flex-col items-center justify-center px-6 py-12 text-center"
 	>
 		<div
-			class="flex size-10 items-center justify-center rounded-lg bg-surface-red-1 text-ink-red-7"
+			class="flex size-10 items-center justify-center rounded-6 bg-surface-red-1 text-ink-red-6"
 		>
 			<span class="lucide-triangle-alert size-5" aria-hidden="true" />
 		</div>

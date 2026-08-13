@@ -1,6 +1,6 @@
-import { useTheme as useFrappeUITheme } from 'frappe-ui'
+import { useColorScheme } from 'frappe-ui'
 
-// All theme logic for the console lives here, wrapping frappe-ui's useTheme.
+// All theme logic for the console lives here, wrapping frappe-ui's useColorScheme.
 // The app — including the pre-login AuthShell — defaults to light; frappe-ui
 // would otherwise follow the OS theme and render dark on dark-mode machines.
 // We only seed the default, so a theme the user later picks is still restored
@@ -10,5 +10,10 @@ export function useTheme() {
 	if (!localStorage.getItem('theme')) {
 		localStorage.setItem('theme', 'light')
 	}
-	return useFrappeUITheme()
+	const { colorScheme, setColorScheme, toggleColorScheme } = useColorScheme()
+	return {
+		currentTheme: colorScheme,
+		setTheme: setColorScheme,
+		toggleTheme: toggleColorScheme,
+	}
 }

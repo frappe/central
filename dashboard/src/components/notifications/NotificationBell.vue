@@ -28,10 +28,10 @@ function seeAll(): void {
 </script>
 
 <template>
-	<Popover v-model:open="open" placement="bottom-end">
+	<Popover v-model:open="open" side="bottom" align="end" bare>
 		<template #trigger>
 			<button
-				class="relative flex size-8 items-center justify-center rounded-md text-ink-gray-7 hover:bg-surface-gray-2"
+				class="relative flex size-8 items-center justify-center rounded-5 text-ink-gray-7 hover:bg-surface-gray-2"
 				aria-label="Notifications"
 			>
 				<span class="lucide-bell size-[18px]" aria-hidden="true" />
@@ -43,9 +43,9 @@ function seeAll(): void {
 				</span>
 			</button>
 		</template>
-		<template #body>
+		<template #default>
 			<div
-				class="mt-1 w-[22rem] overflow-hidden rounded-lg bg-surface-white shadow-2xl ring-1 ring-outline-gray-1"
+				class="mt-1 w-[22rem] overflow-hidden rounded-6 bg-surface-white shadow-2xl ring-1 ring-outline-gray-1"
 			>
 				<header
 					class="flex items-center justify-between border-b border-outline-gray-1 px-3 py-2"

@@ -72,7 +72,7 @@ function select(item: SearchItem): void {
 						>
 							<ListboxItem
 								:value="`${name}-${item.name}`"
-								class="flex w-full min-w-0 items-center gap-2 rounded px-2 py-2 text-base font-medium text-ink-gray-7 outline-none data-[highlighted]:bg-surface-gray-3"
+								class="flex w-full min-w-0 items-center gap-2 rounded-4 px-2 py-2 text-base font-medium text-ink-gray-7 outline-none data-[highlighted]:bg-surface-gray-3"
 								@select="select(item)"
 							>
 								<span
@@ -142,7 +142,7 @@ function select(item: SearchItem): void {
 
 /* Matches the frappe-ui docs command palette's key caps. */
 kbd {
-	@apply inline-flex items-center gap-0.5 whitespace-nowrap rounded-sm;
+	@apply inline-flex items-center gap-0.5 whitespace-nowrap rounded-1;
 	@apply bg-surface-gray-2 p-0.5 font-sans font-medium text-ink-gray-5;
 	font-size: 11px;
 	line-height: normal;

@@ -100,7 +100,7 @@ function useFrappeSocket(): FrappeSocket {
 
 	if (!socket) {
 		throw new Error(
-			'Frappe socket is unavailable. Call this composable inside setup() after installing FrappeUI.',
+			'Frappe socket is unavailable. Assign app.config.globalProperties.$socket in main.ts.',
 		)
 	}
 

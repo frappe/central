@@ -63,7 +63,7 @@ function widthPct(amount: number): number {
 <template>
 	<BillingCard title="Where it went">
 		<template #action>
-			<div class="flex overflow-hidden rounded-md border border-outline-gray-2">
+			<div class="flex overflow-hidden rounded-5 border border-outline-gray-2">
 				<button
 					v-for="opt in (['product', 'region'] as const)"
 					:key="opt"
@@ -92,7 +92,7 @@ function widthPct(amount: number): number {
 				<span
 					v-for="slice in slices"
 					:key="slice.label"
-					class="h-full rounded-sm first:rounded-l-full last:rounded-r-full"
+					class="h-full rounded-1 first:rounded-l-full last:rounded-r-full"
 					:class="slice.tone"
 					:style="{ width: `${widthPct(slice.amount)}%` }"
 				/>
@@ -106,7 +106,7 @@ function widthPct(amount: number): number {
 				>
 					<span class="flex min-w-0 items-baseline gap-2">
 						<span
-							class="size-2 shrink-0 translate-y-px rounded-sm"
+							class="size-2 shrink-0 translate-y-px rounded-1"
 							:class="slice.tone"
 							aria-hidden="true"
 						/>

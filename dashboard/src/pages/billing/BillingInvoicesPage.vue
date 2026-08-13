@@ -142,8 +142,8 @@ function pay(name: string): Promise<unknown> {
 // Timeline dot colour per event theme; gray for informational events, so color
 // stays reserved for outcomes.
 const DOTS: Record<string, string> = {
-	green: 'bg-[var(--ink-green-7)]',
-	red: 'bg-[var(--ink-red-7)]',
+	green: 'bg-[var(--ink-green-6)]',
+	red: 'bg-[var(--ink-red-6)]',
 }
 const dotClass = (theme: string): string =>
 	DOTS[theme] || 'bg-[var(--ink-gray-4)]'
@@ -246,7 +246,7 @@ const eventDetail = (ev: {
 			<div v-else-if="detail.data" class="flex min-h-0 flex-1 flex-col">
 					<p
 						v-if="isOverdue"
-						class="flex items-center gap-1.5 px-4 pt-4 text-p-sm text-ink-red-8"
+						class="flex items-center gap-1.5 px-4 pt-4 text-p-sm text-ink-red-7"
 					>
 						<span class="lucide-triangle-alert size-3.5 shrink-0" />
 						Due {{ shortDate(detail.data.due_date) }} — overdue
@@ -297,8 +297,8 @@ const eventDetail = (ev: {
 								v-if="detail.data.credit_applied"
 								class="flex justify-between gap-3"
 							>
-								<dt class="text-ink-green-6">Credits applied</dt>
-								<dd class="tabular-nums text-ink-green-6">
+								<dt class="text-ink-green-5">Credits applied</dt>
+								<dd class="tabular-nums text-ink-green-5">
 									−{{ money(detail.data.credit_applied, detail.data.currency) }}
 								</dd>
 							</div>

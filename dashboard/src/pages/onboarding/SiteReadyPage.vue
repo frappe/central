@@ -59,7 +59,7 @@ onUnmounted(() => clearTimeout(timer))
 	<AuthShell show-progress :step="4">
 		<template v-if="isReady && site">
 			<div
-				class="mb-6 grid size-10 place-items-center rounded-5 bg-surface-green-3 text-ink-green-8"
+				class="mb-6 grid size-10 place-items-center rounded-5 bg-surface-green-3 text-ink-green-7"
 			>
 				<span class="lucide-check size-5" aria-hidden="true" />
 			</div>

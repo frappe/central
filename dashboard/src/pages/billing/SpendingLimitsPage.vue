@@ -239,7 +239,7 @@ const levels = computed(() => {
 					</p>
 
 					<div
-						class="mt-3 rounded-lg border border-outline-gray-2 bg-surface-base p-5"
+						class="mt-3 rounded-6 border border-outline-gray-2 bg-surface-base p-5"
 					>
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div>
@@ -247,7 +247,7 @@ const levels = computed(() => {
 								<p
 									class="mt-1 text-base-semibold tabular-nums"
 									:class="
-										cycleRatio >= 0.8 ? 'text-ink-amber-7' : 'text-ink-gray-9'
+										cycleRatio >= 0.8 ? 'text-ink-amber-6' : 'text-ink-gray-9'
 									"
 								>
 									{{ money(monthlySpend, currency) }} of
@@ -261,7 +261,7 @@ const levels = computed(() => {
 									class="mt-1 text-base-semibold tabular-nums"
 									:class="
 										resourceRatio >= 0.8
-											? 'text-ink-amber-7'
+											? 'text-ink-amber-6'
 											: 'text-ink-gray-9'
 									"
 								>
@@ -285,7 +285,7 @@ const levels = computed(() => {
 				     fear named and defused, and the next step as a button. -->
 				<section
 					v-else
-					class="rounded-lg border border-outline-gray-2 bg-surface-base p-5"
+					class="rounded-6 border border-outline-gray-2 bg-surface-base p-5"
 				>
 					<!-- The headline is the thing the tier lets you DO, not the tier —
 				     and a team already gets its first server without one, so the
@@ -321,7 +321,7 @@ const levels = computed(() => {
 					<!-- One bordered container, gates as joined halves: an AND reads as
 					     one card with a shared wall, not two independent choices. -->
 					<div
-						class="mt-3 rounded-lg border border-outline-gray-2 bg-surface-base"
+						class="mt-3 rounded-6 border border-outline-gray-2 bg-surface-base"
 						:class="
 							gates.length > 1
 								? 'grid divide-y divide-outline-gray-2 sm:grid-cols-2 sm:divide-x sm:divide-y-0'
@@ -335,7 +335,7 @@ const levels = computed(() => {
 							>
 								<span
 									v-if="gate.done"
-									class="lucide-check size-4 shrink-0 text-ink-green-6"
+									class="lucide-check size-4 shrink-0 text-ink-green-5"
 									aria-hidden="true"
 								/>
 								{{ gate.detail }}
@@ -428,7 +428,7 @@ const levels = computed(() => {
 											class="size-3.5 shrink-0"
 											:class="
                           req.met
-                            ? 'lucide-check text-ink-green-6'
+                            ? 'lucide-check text-ink-green-5'
                             : 'lucide-minus text-ink-gray-4'
                         "
 											aria-hidden="true"
@@ -467,7 +467,7 @@ const levels = computed(() => {
 				<!-- Same fold as billing's Advanced section. -->
 				<section>
 					<button
-						class="-mx-2 flex items-center gap-1.5 rounded-md px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+						class="-mx-2 flex items-center gap-1.5 rounded-5 px-2 py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
 						:aria-expanded="howOpen"
 						@click="howOpen = !howOpen"
 					>
@@ -504,7 +504,7 @@ const levels = computed(() => {
 								href="https://support.frappe.io"
 								target="_blank"
 								rel="noopener noreferrer"
-								class="text-ink-blue-8 underline underline-offset-2 transition-opacity hover:opacity-80"
+								class="text-ink-blue-7 underline underline-offset-2 transition-opacity hover:opacity-80"
 								>support</a
 							>
 							and we'll review your account.

@@ -2,7 +2,7 @@
 import { Tooltip } from 'frappe-ui'
 
 // Shared chrome for the consolidated Billing Overview cards (#69). Mirrors the
-// frappe-cloud-v2 billing prototype: a rounded-lg hairline card with an inline
+// frappe-cloud-v2 billing prototype: a rounded-6 hairline card with an inline
 // semibold title (no header divider), an optional info tooltip beside the title,
 // an optional header action slot, and a padded body.
 defineProps<{ title: string; description?: string; titleInfo?: string }>()
@@ -10,7 +10,7 @@ defineProps<{ title: string; description?: string; titleInfo?: string }>()
 
 <template>
 	<section
-		class="rounded-lg border border-outline-gray-2 bg-surface-base"
+		class="rounded-6 border border-outline-gray-2 bg-surface-base"
 	>
 		<header class="flex items-center justify-between gap-3 px-5 pt-4">
 			<div class="min-w-0">

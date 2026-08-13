@@ -15,10 +15,10 @@ const emit = defineEmits<{ act: []; read: [] }>()
 // icon all but disappeared on a light surface.
 const SEVERITY: Record<NotificationSeverity, { icon: string; color: string }> =
 	{
-		Error: { icon: 'lucide-alert-circle', color: 'text-ink-red-8' },
-		Warning: { icon: 'lucide-alert-triangle', color: 'text-ink-amber-8' },
-		Success: { icon: 'lucide-check-circle-2', color: 'text-ink-green-8' },
-		Info: { icon: 'lucide-info', color: 'text-ink-blue-8' },
+		Error: { icon: 'lucide-alert-circle', color: 'text-ink-red-7' },
+		Warning: { icon: 'lucide-alert-triangle', color: 'text-ink-amber-7' },
+		Success: { icon: 'lucide-check-circle-2', color: 'text-ink-green-7' },
+		Info: { icon: 'lucide-info', color: 'text-ink-blue-7' },
 	}
 
 const look = computed(

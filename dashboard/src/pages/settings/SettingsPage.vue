@@ -49,7 +49,7 @@ const groups = computed(() => {
 	<div class="m-2 space-y-4">
 		<section v-for="group in groups" :key="group.label">
 			<p class="px-1 pb-1.5 text-xs text-ink-gray-5">{{ group.label }}</p>
-			<div class="divide-y divide-outline-gray-1 rounded border">
+			<div class="divide-y divide-outline-gray-1 rounded-4 border">
 				<Button
 					v-for="row in group.rows"
 					:key="row.tab.value"
@@ -71,7 +71,7 @@ const groups = computed(() => {
 			</div>
 		</section>
 
-		<div class="rounded border">
+		<div class="rounded-4 border">
 			<Button
 				theme="red"
 				variant="ghost"

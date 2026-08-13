@@ -14,7 +14,7 @@ defineProps<{
 </script>
 
 <template>
-	<section class="rounded-xl border border-outline-gray-2 p-5">
+	<section class="rounded-7 border border-outline-gray-2 p-5">
 		<h3 class="mb-5 text-base font-semibold text-ink-gray-9">
 			Server information
 		</h3>
