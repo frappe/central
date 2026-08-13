@@ -285,8 +285,18 @@ const eventDetail = (ev: {
 								>
 									<div class="min-w-0">
 										<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-										<p v-if="li.detail" class="truncate text-p-sm text-ink-gray-5">
+										<!-- The rate belongs on the line. A mid-month resize splits one
+										     server into several segments, and without the rate they read as
+										     the same charge repeated — the price is the only thing that
+										     actually differs between them. -->
+										<p
+											v-if="li.detail || li.rate"
+											class="truncate text-p-sm text-ink-gray-5"
+										>
 											{{ li.detail }}
+											<template v-if="li.rate">
+												· {{ money(li.rate, detail.data.currency) }}/mo</template
+											>
 										</p>
 									</div>
 									<span

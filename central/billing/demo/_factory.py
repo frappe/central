@@ -849,14 +849,23 @@ def stage_resizes(primary_sub, base_cluster, base_plan, currency, kind):
 	* within_24h  — an upsize late one evening and a downsize the next morning,
 	                i.e. a second resize inside 24h of the first (spanning midnight).
 	"""
-	up = plan_name(_plan_after(base_plan, +1))
-	down = plan_name(_plan_after(base_plan, 0))  # back to the original size
+	base = plan_name(base_plan)
+	bigger = plan_name(_plan_after(base_plan, +1))
+	smaller = plan_name(_plan_after(base_plan, -1))
+	# A resize has to change the size. `_plan_after` clamps at both ends of the
+	# ladder, so a team already on the largest plan resized to itself — six invoice
+	# lines all reading "8 vCPU / 16 GB", differing only by a rate, which is not a
+	# story about resizing at all. Step whichever way the ladder actually allows.
+	other = bigger if bigger != base else smaller
+	if other == base:
+		return  # a one-rung ladder: nothing to resize between, so stage nothing
+
 	if kind == "same_day":
-		_add_resize(primary_sub, up, currency, base_cluster, f"{anchor_day(15)} 09:30:00")
-		_add_resize(primary_sub, down, currency, base_cluster, f"{anchor_day(15)} 16:45:00")
+		_add_resize(primary_sub, other, currency, base_cluster, f"{anchor_day(15)} 09:30:00")
+		_add_resize(primary_sub, base, currency, base_cluster, f"{anchor_day(15)} 16:45:00")
 	elif kind == "within_24h":
-		_add_resize(primary_sub, up, currency, base_cluster, f"{anchor_day(14)} 20:00:00")
-		_add_resize(primary_sub, down, currency, base_cluster, f"{anchor_day(15)} 08:00:00")
+		_add_resize(primary_sub, other, currency, base_cluster, f"{anchor_day(14)} 20:00:00")
+		_add_resize(primary_sub, base, currency, base_cluster, f"{anchor_day(15)} 08:00:00")
 
 
 # --- payment attempts + refunds (terminal-state builders) -------------------
