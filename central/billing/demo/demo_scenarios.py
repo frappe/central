@@ -160,7 +160,7 @@ TEAMS = [
 		"t3",
 		"INR",
 		"grandfathered",
-		[("in-mumbai", "plan-8vcpu"), ("in-mumbai", "plan-2vcpu"), ("in-mumbai", "plan-1vcpu")],
+		[("in-mumbai", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu"), ("in-mumbai", "plan-1vcpu")],
 		"within_24h",
 	),
 	# t2: dunning — the current invoice is overdue with a trail of failed retries.

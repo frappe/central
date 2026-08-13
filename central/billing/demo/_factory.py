@@ -852,13 +852,16 @@ def stage_resizes(primary_sub, base_cluster, base_plan, currency, kind):
 	base = plan_name(base_plan)
 	bigger = plan_name(_plan_after(base_plan, +1))
 	smaller = plan_name(_plan_after(base_plan, -1))
-	# A resize has to change the size. `_plan_after` clamps at both ends of the
-	# ladder, so a team already on the largest plan resized to itself — six invoice
-	# lines all reading "8 vCPU / 16 GB", differing only by a rate, which is not a
-	# story about resizing at all. Step whichever way the ladder actually allows.
+	# Scale UP then back down — the way capacity is actually used: a busy spell is
+	# absorbed by a bigger machine and given back afterwards. Staging it the other
+	# way round (down, then up) told a story nobody has.
+	#
+	# `_plan_after` clamps at both ends, so a team already on the largest plan has
+	# no bigger size to go to; there the pair runs down-and-back instead, which is
+	# at least a real change. A one-rung ladder stages nothing.
 	other = bigger if bigger != base else smaller
 	if other == base:
-		return  # a one-rung ladder: nothing to resize between, so stage nothing
+		return
 
 	if kind == "same_day":
 		_add_resize(primary_sub, other, currency, base_cluster, f"{anchor_day(15)} 09:30:00")
