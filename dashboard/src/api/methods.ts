@@ -98,7 +98,6 @@ export const API = {
 	nextPayment: 'central.billing.api.dashboard.get_next_payment',
 	paymentSchedule: 'central.billing.api.dashboard.get_payment_schedule',
 	cycleCosts: 'central.billing.api.dashboard.get_cycle_costs',
-	lockedPrices: 'central.billing.api.dashboard.get_locked_prices',
 	spendHistory: 'central.billing.api.dashboard.get_spend_history',
 	statement: 'central.billing.api.dashboard.get_statement',
 	taxSummary: 'central.billing.api.dashboard.get_tax_summary',

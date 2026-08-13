@@ -8,7 +8,6 @@ import type {
 	CreditLedgerEntry,
 	CycleCosts,
 	Forecast,
-	LockedPrices,
 	NextPayment,
 	PaymentMethod,
 	SubscriptionRow,
@@ -77,12 +76,6 @@ const cycleCostsCall = useCall<CycleCosts, { team: string }>({
 	immediate: false,
 	refetch: true,
 })
-const lockedPricesCall = useCall<LockedPrices, { team: string }>({
-	url: method(API.lockedPrices),
-	params,
-	immediate: false,
-	refetch: true,
-})
 
 whenTeamReady(() => {
 	overviewCall.reload()
@@ -94,7 +87,6 @@ whenTeamReady(() => {
 	subscriptionsCall.reload()
 	nextPaymentCall.reload()
 	cycleCostsCall.reload()
-	lockedPricesCall.reload()
 })
 
 export function useBillingOverview() {
@@ -108,7 +100,6 @@ export function useBillingOverview() {
 		subscriptions: subscriptionsCall,
 		nextPayment: nextPaymentCall,
 		cycleCosts: cycleCostsCall,
-		lockedPrices: lockedPricesCall,
 		// The team's billing currency. The Billing Profile is the source of truth
 		// (it's what the setup dialog writes), so read it FIRST: after a profile is
 		// saved, reloadProfile() re-pulls it and every consumer (top-up, add-method)

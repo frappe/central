@@ -76,7 +76,6 @@ from central.billing.api.dashboard.services import (
 )
 from central.billing.api.dashboard.spend import (
 	get_cycle_costs,
-	get_locked_prices,
 )
 
 __all__ = [
@@ -98,7 +97,6 @@ __all__ = [
 	"get_fallback_offer",
 	"get_forecast",
 	"get_invoice",
-	"get_locked_prices",
 	"get_metered_services",
 	"get_next_payment",
 	"get_payment_method_options",

@@ -134,28 +134,6 @@ export interface CycleCosts {
 	total: number
 }
 
-/** get_locked_prices — each running rate against today's list price. */
-export interface LockedPriceRow {
-	subscription: string
-	title: string
-	plan: string | null
-	cluster: string | null
-	locked_rate: number
-	list_rate: number | null
-	saving: number
-	above_list: boolean
-	above_list_by: number
-	locked_at: string | null
-}
-
-export interface LockedPrices {
-	currency: Currency
-	rows: LockedPriceRow[]
-	monthly_saving: number
-	annual_saving: number
-	protected_count: number
-	above_list_count: number
-}
 
 /** One rung of the trust-tier ladder (customer-facing: Spending Limits). */
 export interface TierLevel {

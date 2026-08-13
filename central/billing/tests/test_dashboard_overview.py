@@ -170,37 +170,7 @@ class TestCycleCosts(OverviewBase):
 		self.assertEqual(out["total"], 0.0)
 
 
-class TestLockedPrices(OverviewBase):
-	def test_a_rate_below_list_is_reported_as_a_saving(self):
-		# Catalog says 3000; this segment locked at 2000 before a rise.
-		self._provision(rate=2000)
-
-		out = dashboard.get_locked_prices(TEAM)
-
-		row = out["rows"][0]
-		self.assertEqual(row["locked_rate"], 2000.0)
-		self.assertEqual(row["list_rate"], 3000.0)
-		self.assertEqual(row["saving"], 1000.0)
-		self.assertFalse(row["above_list"])
-		self.assertEqual(out["monthly_saving"], 1000.0)
-		self.assertEqual(out["annual_saving"], 12000.0)
-		self.assertEqual(out["protected_count"], 1)
-
-	def test_a_fallen_catalog_price_is_never_a_negative_saving(self):
-		# The lock cuts both ways: locked at 5000, catalog since down to 3000. The
-		# customer is over list and is told so — not shown a saving of -2000.
-		self._provision(rate=5000)
-
-		out = dashboard.get_locked_prices(TEAM)
-
-		row = out["rows"][0]
-		self.assertEqual(row["saving"], 0.0)
-		self.assertTrue(row["above_list"])
-		self.assertEqual(row["above_list_by"], 2000.0)
-		self.assertEqual(out["monthly_saving"], 0.0)
-		self.assertEqual(out["protected_count"], 0)
-		self.assertEqual(out["above_list_count"], 1)
-
+class TestSubscriptionQuotesTheLockedRate(OverviewBase):
 	def test_the_locked_rate_is_what_the_subscription_list_quotes(self):
 		# A grandfathered team must not be shown today's catalog rate as its price:
 		# the open segment is what it will actually be billed (ADR 0010).

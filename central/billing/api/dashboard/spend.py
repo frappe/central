@@ -1,11 +1,13 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""What the team is paying for this cycle, and where its price is held below list.
+"""What the team is paying for this cycle.
 
-Two reads behind the reworked Overview. Both are deliberately derived from the same
-places billing itself reads — the projection engine for money, the `Subscription
-Change` ledger for what is running (ADR 0010) — so a customer never sees a number
-the monthly run would disagree with.
+Derived from the same places billing itself reads — the projection engine for
+money, the `Subscription Change` ledger for what is running (ADR 0010) — so a
+customer never sees a number the monthly run would disagree with.
+
+`list_rate_for` lives here too: it answers "what would this cost at today's
+prices", which the resize disclosure needs to say what a resize gives up.
 """
 
 import frappe
@@ -50,57 +52,6 @@ def get_cycle_costs(team: str | None = None) -> dict:
 
 	items.sort(key=lambda i: i["amount"], reverse=True)
 	return {"currency": currency, "items": items, "total": frappe.utils.flt(sum(i["amount"] for i in items), 2)}
-
-
-@frappe.whitelist()
-def get_locked_prices(team: str | None = None) -> dict:
-	"""Where each running subscription's locked rate sits against today's list price.
-
-	A rate is locked when the segment opens and never re-read (ADR 0010), so a catalog
-	increase leaves the customer where they were. That protection is invisible unless
-	we show it.
-	"""
-	team = _resolve_team(team)
-	currency = _team_currency(team)
-
-	rows = []
-	monthly_saving = 0.0
-	for segment in team_active_segments(team):
-		listed = list_rate_for(segment, currency)
-		locked = frappe.utils.flt(segment.locked_rate)
-		gap = frappe.utils.flt(listed - locked, 2) if listed is not None else 0.0
-		if gap > 0:
-			monthly_saving += gap
-		rows.append(
-			{
-				"subscription": segment.subscription,
-				"title": _title_for(segment.resource_id, segment),
-				"plan": segment.plan,
-				"cluster": segment.cluster,
-				"locked_rate": locked,
-				# None where the plan has no rate in this currency/region today — an
-				# unpriced plan is not a saving of the whole rate.
-				"list_rate": listed,
-				"saving": max(gap, 0.0),
-				# The lock cuts both ways: where the catalog has since fallen below what
-				# this segment locked, the customer is paying over today's list. Never
-				# report that as a negative saving — say it, so re-locking is a choice
-				# they can make rather than something we quietly sat on.
-				"above_list": gap < 0,
-				"above_list_by": frappe.utils.flt(-gap, 2) if gap < 0 else 0.0,
-				"locked_at": _locked_at(segment.subscription),
-			}
-		)
-
-	rows.sort(key=lambda r: r["saving"], reverse=True)
-	return {
-		"currency": currency,
-		"rows": rows,
-		"monthly_saving": frappe.utils.flt(monthly_saving, 2),
-		"annual_saving": frappe.utils.flt(monthly_saving * 12, 2),
-		"protected_count": sum(1 for r in rows if r["saving"] > 0),
-		"above_list_count": sum(1 for r in rows if r["above_list"]),
-	}
 
 
 def _projected_lines(team: str, today) -> list:
