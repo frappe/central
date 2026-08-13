@@ -480,7 +480,6 @@ def _drop_stray_demo_teams() -> None:
 
 
 def _build_team(team, slug, tier, currency, state, resources, resize):
-	from collections import OrderedDict
 
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
@@ -505,18 +504,19 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	# balance is read off the actual draw, not the stale seed-time grant.
 	backdate_welcome_credit(team, f"{first_start} 00:00:00")
 
-	by_cluster = OrderedDict()
-	for cluster, plan in resources:
-		by_cluster.setdefault(cluster, []).append(plan)
-
-	# One subscription per cluster carries the per-region billing intent. The first
-	# cluster of a grandfathered team locks the launch (discounted) rate; the rest lock
-	# today's catalog rate. The customer sees ONE consolidated invoice per month.
+	# One subscription PER LISTED INSTANCE. This used to group by cluster and keep
+	# only the first plan in each, so a team whose scenario reads "3 instances in
+	# one region" was provisioned exactly one — and the consolidated invoice it is
+	# meant to demonstrate had a single line on it. The customer still sees ONE
+	# invoice a month; it just now has every machine on it.
+	#
+	# The first instance of a grandfathered team locks the launch (discounted) rate;
+	# the rest lock today's catalog rate.
 	subs = []
 	idx = 0
-	for cluster, plans in by_cluster.items():
+	for cluster, plan_key in resources:
 		idx += 1
-		plan = plan_name(plans[0])  # logical key -> the configurator-minted Plan name
+		plan = plan_name(plan_key)  # logical key -> the configurator-minted Plan name
 		resource = f"srv-{slug}-{idx}"
 		catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 		rate = round(catalog * 0.78, 2) if (state == "grandfathered" and idx == 1) else catalog
@@ -530,6 +530,10 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 			start_date=first_start,
 			resource_id=resource,
 		).name
+		# A readable name, so a receipt that groups by machine has a heading worth
+		# reading rather than the raw resource id.
+		if frappe.db.exists("Asset", resource):
+			frappe.db.set_value("Asset", resource, "title", f"{slug}-{idx}", update_modified=False)
 		opening = frappe.db.get_value(
 			"Subscription Change", {"subscription": sub, "change_type": "Created"}, "name"
 		)
@@ -623,7 +627,8 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	if mode == "Auto Charge" and currency == "INR":
 		arm_emandate(team)
 	final_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
-	return f"{len(resources)} instance(s) across {len(by_cluster)} region(s) — {note} [{final_mode}]"
+	regions = len({cluster for cluster, _plan in resources})
+	return f"{len(resources)} instance(s) across {regions} region(s) — {note} [{final_mode}]"
 
 
 def _run_overdue_cycle(team, inv, pm, gateway, due):

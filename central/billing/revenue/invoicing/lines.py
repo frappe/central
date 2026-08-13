@@ -69,7 +69,10 @@ def compute_line_items(
 	lines = []
 	for sub in subscriptions:
 		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
-	return lines
+	# Assembled per subscription in whatever order the query returned them, which is
+	# creation-desc — so a team's newest machine printed first and its oldest last.
+	# One rule for the whole invoice instead.
+	return _ordered(lines)
 
 
 def team_line_items(team: str, period_start, period_end, explain: bool = False, changes=None) -> list[dict]:
@@ -92,7 +95,27 @@ def team_line_items(team: str, period_start, period_end, explain: bool = False, 
 		if not cluster:
 			continue  # no live asset cluster — nothing to bill this subscription against
 		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
-	return lines
+	# Assembled per subscription in whatever order the query returned them, which is
+	# creation-desc — so a team's newest machine printed first and its oldest last.
+	return _ordered(lines)
+
+
+def _ordered(lines: list[dict]) -> list[dict]:
+	"""Grouped by machine, chronological within each.
+
+	A resize chain only means anything against one server, so ordering purely by
+	time shuffles several servers' lines together and destroys the sequence. Within
+	a machine the whole-day line for a date sorts ahead of that date's hourly
+	slivers, which is the order they happened in.
+	"""
+	return sorted(
+		lines,
+		key=lambda ln: (
+			ln.get("subscription_resource") or "",
+			ln.get("period_from") or datetime.max,
+			ln.get("unit") == "hour",
+		),
+	)
 
 
 def _period_bounds(period_start, period_end):
@@ -202,12 +225,10 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 					)
 				)
 
-	# Chronological. The loop above walks segment by segment, emitting each one's
-	# whole-day line before its hourly slivers, so the rows came out grouped by
-	# segment rather than in the order the changes happened — a resize read as a
-	# jumble instead of a sequence.
-	lines.sort(key=lambda ln: (ln.get("period_from") or datetime.max, ln.get("unit") == "hour"))
-	return lines
+	# Grouped by server, chronological within each. A resize chain only means
+	# anything against one machine, so sorting purely by time would shuffle three
+	# servers' lines together and destroy the sequence it was meant to show.
+	return _ordered(lines)
 
 
 def _resolve_changes(subscription_names: list[str], changes=None) -> dict:

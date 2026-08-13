@@ -35,6 +35,8 @@ export interface BillingLine {
 	/** Whether the quantity was observed or inferred (projection/basis.py). A stored
 	 *  invoice line is always Measured by the time it is issued. */
 	basis?: 'Measured' | 'Estimated' | 'Assumed' | (string & {})
+	/** The machine this line was billed for — set on plan lines only. */
+	server?: string | null
 }
 
 /** get_forecast — current-cycle projection vs wallet. */

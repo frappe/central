@@ -263,6 +263,10 @@ def _describe_line(team: str, li) -> dict:
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
 		row["item"] = title or li.plan or "Subscription plan"
 		row["kind"] = "Plan"
+		# Which machine this line belongs to. A team running three VMs gets three
+		# sets of lines, and on the same plan they are otherwise indistinguishable —
+		# the plan title alone says what was billed but never what it was billed for.
+		row["server"] = _server_name(li.subscription_resource)
 		# Hourly lines come from a churn day (multiple resizes within 24h): they're
 		# tied to one calendar date, so name it. Daily lines span a range within the
 		# period — the invoice already carries the period dates, so no suffix.
@@ -297,6 +301,13 @@ def _describe_line(team: str, li) -> dict:
 			# No free tier — every used unit is billed at the per-unit rate.
 			row["detail"] = f"Metered · {_qty(billed)} {unit} used"
 	return row
+
+
+def _server_name(resource_id: str | None) -> str | None:
+	"""The server's own name, falling back to the id metering keys it by."""
+	if not resource_id:
+		return None
+	return frappe.db.get_value("Asset", resource_id, "title") or resource_id
 
 
 def _billed_window(li) -> str | None:
