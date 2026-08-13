@@ -16,8 +16,11 @@ from central.central.doctype.central_sso_settings.central_sso_settings import AL
 BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
 METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
+LOG_TTL = METRICS_TTL
 ENROLL_SCOPE = "enroll"
 METRICS_SCOPE = "datum"
+LOG_SCOPE = "logs"
+LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
 
 
 def central_url() -> str:
@@ -99,6 +102,32 @@ def mint_metrics_token(audience: str, resource_id: str) -> str:
 		METRICS_SCOPE,
 		METRICS_TTL,
 		{"vm_access": {"metrics_extra_labels": [f"resource_id={resource_id}"]}},
+	)
+
+
+def mint_log_token(audience: str, resource_id: str) -> str:
+	"""A token the pilot presents to Datum's logs gateway.
+
+	Unlike the metrics token, this carries `resource_id` and `access` as
+	top-level claims Datum reads directly (``Identity.from_claims`` looks for
+	``resource_id`` and ``access``) — there is no vmauth bridge in front of
+	the logs path. `scope` keeps bench and enrollment tokens, signed with this
+	same key, from writing logs. Fluent Bit only writes, so `access` is
+	``["write"]``; reads come through the admin-facing path, not from a shipper.
+	"""
+	if not resource_id:
+		frappe.throw(
+			_("This pilot has no resource yet; a log token would be unattributable."),
+			frappe.ValidationError,
+		)
+	return _mint(
+		audience,
+		LOG_SCOPE,
+		LOG_TTL,
+		{
+			"resource_id": resource_id,
+			"access": LOG_ACCESS,
+		},
 	)
 
 

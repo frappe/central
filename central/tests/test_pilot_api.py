@@ -6,9 +6,9 @@ import jwt
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_to_date, now_datetime, set_request
 
-from central.api.pilot import heartbeat, metrics_token
+from central.api.pilot import heartbeat, log_token, metrics_token
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.sso import METRICS_SCOPE
+from central.sso import LOG_SCOPE, METRICS_SCOPE
 from central.tests.test_iam import ensure_user
 
 
@@ -80,3 +80,45 @@ class TestPilotAPI(IntegrationTestCase):
 		carry no resource id."""
 		with self.assertRaises(frappe.ValidationError):
 			self.call_metrics_token(self.token)
+
+	def call_log_token(self, token: str | None) -> dict:
+		headers = {"X-Pilot-Token": token} if token is not None else {}
+		set_request(method="GET", path="/api/method/central.api.pilot.log_token", headers=headers)
+		return log_token()
+
+	def test_log_token_carries_resource_id_and_write_access(self):
+		"""Datum reads `resource_id` and `access` as top-level claims — no vmauth
+		bridge sits in front of the logs path, unlike metrics."""
+		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", "vm-1")
+
+		claims = jwt.decode(self.call_log_token(self.token)["token"], options={"verify_signature": False})
+
+		self.assertEqual(claims["scope"], LOG_SCOPE)
+		self.assertEqual(claims["resource_id"], "vm-1")
+		self.assertEqual(claims["access"], ["write"])
+		# Tokens minted for the logs path must not carry the vmauth indirection
+		# the metrics path uses; a logs caller presenting this to Datum is read
+		# directly by Identity.from_claims.
+		self.assertNotIn("vm_access", claims)
+
+	def test_log_token_is_independent_of_metrics_token(self):
+		"""A separate mint so rotation of one does not invalidate the other."""
+		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", "vm-1")
+
+		metrics_claims = jwt.decode(
+			self.call_metrics_token(self.token)["token"], options={"verify_signature": False}
+		)
+		log_claims = jwt.decode(self.call_log_token(self.token)["token"], options={"verify_signature": False})
+
+		# Different scopes and different claim shapes — they are not the same token
+		# with the same payload, so revoking one (by key rotation scoped to a
+		# purpose, if that ever arrives) does not implicitly cover the other.
+		self.assertNotEqual(metrics_claims["scope"], log_claims["scope"])
+		self.assertIn("vm_access", metrics_claims)
+		self.assertNotIn("vm_access", log_claims)
+
+	def test_log_token_waits_for_the_resource(self):
+		"""Atlas binds the Asset after provisioning; before that the logs would
+		carry no resource id, same gate as the metrics token."""
+		with self.assertRaises(frappe.ValidationError):
+			self.call_log_token(self.token)
