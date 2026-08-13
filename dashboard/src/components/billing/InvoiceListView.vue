@@ -171,9 +171,11 @@ const filters: ListViewFilter[] = [
 		@row-click="emit('rowClick', $event)"
 	>
 		<template #filters>
+			<!-- Shares the filter row's mobile sizing: grow from a floor below `sm`,
+			     fixed 11rem from `sm` up. -->
 			<DateRangePicker
 				v-model="range"
-				class="w-44 shrink-0"
+				class="min-w-[9rem] flex-1 sm:w-44 sm:flex-none"
 				size="sm"
 				format="D MMM"
 				placeholder="Any date"

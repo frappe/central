@@ -446,11 +446,15 @@ const showListControls = computed(
 				</TextInput>
 				<!-- A plain Select, not a Combobox: filter option sets are short, so a
              search field inside the popover is noise. -->
+				<!-- Fixed widths only from `sm` up. On a phone two 160px filters miss a
+				     343px row by a pixel and stack one per line; growing from a 9rem
+				     floor packs them two to a row instead, and a third still wraps
+				     rather than squeezing all three thin. -->
 				<Select
 					v-for="filter in filters"
 					:key="filter.key"
 					:model-value="query.filters[filter.key] || ''"
-					class="w-40"
+					class="min-w-[9rem] flex-1 sm:w-40 sm:flex-none"
 					variant="subtle"
 					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
 					:options="[

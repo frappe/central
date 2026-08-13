@@ -5,6 +5,9 @@ import type { NotificationSeverity, TeamNotification } from '@/types/billing'
 // One feed row, shared by the bell dropdown (compact) and the /notifications page.
 // Plain list row: no background, no border — unread is the blue dot by the time.
 // Category is not shown here; it only drives the page's filter tabs.
+// Text sizes step up below `sm` (16/15 rather than 14/13): on a phone these are
+// the primary rows of a full-screen list. The timestamp stays at 13 — it's
+// metadata, and it shares the title's line.
 const props = defineProps<{
 	notification: TeamNotification
 	compact?: boolean
@@ -52,7 +55,7 @@ function timeAgo(ts: string): string {
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2">
 				<p
-					class="min-w-0 flex-1 text-base-medium text-ink-gray-9"
+					class="min-w-0 flex-1 text-lg-medium text-ink-gray-9 sm:text-base-medium"
 					:class="compact ? 'truncate' : ''"
 				>
 					{{ notification.title }}
@@ -69,7 +72,7 @@ function timeAgo(ts: string): string {
 
 			<p
 				v-if="notification.message"
-				class="mt-0.5 text-p-sm text-ink-gray-6"
+				class="mt-0.5 text-p-md text-ink-gray-6 sm:text-p-sm"
 				:class="compact ? 'line-clamp-2' : ''"
 			>
 				{{ notification.message }}
@@ -81,7 +84,7 @@ function timeAgo(ts: string): string {
 			>
 				<button
 					v-if="notification.action_label"
-					class="text-p-sm font-medium text-ink-gray-8 hover:text-ink-gray-9"
+					class="text-p-md font-medium text-ink-gray-8 hover:text-ink-gray-9 sm:text-p-sm"
 					@click="emit('act')"
 				>
 					{{ notification.action_label }}
@@ -89,7 +92,7 @@ function timeAgo(ts: string): string {
 				</button>
 				<button
 					v-if="!notification.is_read"
-					class="text-p-sm text-ink-gray-5 hover:text-ink-gray-8"
+					class="text-p-md text-ink-gray-5 hover:text-ink-gray-8 sm:text-p-sm"
 					@click="emit('read')"
 				>
 					Mark as read
