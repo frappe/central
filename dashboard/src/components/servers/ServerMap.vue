@@ -114,11 +114,50 @@ watch(base, (v) => {
 		)
 })
 
+// A container resize is not a reframe: the map must track its box exactly, not
+// glide 450ms behind it. Every size change disarms the transitions for the
+// frames it takes to land, then re-arms them for flyTo and reclustering. Without
+// this, a container that settles in two steps (which is what entering the page
+// does) plays the second step as a zoom-in from the first.
+const sizing = ref(false)
+let sizeRaf = 0
+function measure(w: number, h: number): void {
+	if (w === cw.value && h === ch.value) return
+	sizing.value = true
+	cw.value = w
+	ch.value = h
+	cancelAnimationFrame(sizeRaf)
+	// Two frames, in this order: commit the crisp raster while the transitions
+	// are still disarmed, then re-arm them. Committing it in the same patch that
+	// re-arms them would play the width/height correction as a 450ms animation.
+	sizeRaf = requestAnimationFrame(() => {
+		rasterK.value = k.value
+		sizeRaf = requestAnimationFrame(() => (sizing.value = false))
+	})
+}
+
+// The dotted world is one path of ~2000 subpaths. Sizing the SVG in pixels means
+// the browser re-rasterizes all of it, and a sidebar collapse hands us a new
+// size on every frame for 300ms — 20 rasters for one gesture. So a resize holds
+// the last raster and takes the difference as a scale instead: same geometry to
+// the pixel, but the compositor carries the frames. The crisp raster lands once
+// the size settles. Everything else that moves k (picker-mode flyTo) keeps
+// re-rasterizing per frame, which is what keeps the dots sharp while it glides.
+const rasterK = ref(0)
+watch([k, sizing], ([, isSizing]) => {
+	if (!isSizing) rasterK.value = k.value
+})
+
 let ro: ResizeObserver | undefined
 onMounted(() => {
+	// Measure before the first paint. The ResizeObserver's own first callback
+	// arrives a frame late, which would render one frame of a zero-sized map.
+	if (el.value) {
+		const r = el.value.getBoundingClientRect()
+		measure(r.width, r.height)
+	}
 	ro = new ResizeObserver(([entry]) => {
-		cw.value = entry.contentRect.width
-		ch.value = entry.contentRect.height
+		measure(entry.contentRect.width, entry.contentRect.height)
 	})
 	if (el.value) ro.observe(el.value)
 })
@@ -128,6 +167,7 @@ onBeforeUnmount(() => {
 	// (focusRaf) keeps writing zoom/tx/ty after unmount otherwise, and the
 	// hover debounces fire into a dead component.
 	cancelAnimationFrame(focusRaf)
+	cancelAnimationFrame(sizeRaf)
 	// window.clearTimeout(wheelT)
 	window.clearTimeout(showT)
 	window.clearTimeout(hideT)
@@ -147,11 +187,23 @@ function clampPan(): void {
 }
 watch([base, cw, ch], clampPan)
 
-const mapStyle = computed(() => ({
-	transform: `translate3d(${tx.value}px, ${ty.value}px, 0)`,
-	width: `${W * k.value}px`,
-	height: `${H * k.value}px`,
-}))
+const mapStyle = computed(() => {
+	// Falls back to k until the first raster is committed, so the map is never
+	// sized from a zero.
+	const rk = rasterK.value || k.value
+	const scale = rk ? k.value / rk : 1
+	return {
+		transform:
+			scale === 1
+				? `translate3d(${tx.value}px, ${ty.value}px, 0)`
+				: `translate3d(${tx.value}px, ${ty.value}px, 0) scale(${scale})`,
+		// The scale rides on top of the translate, so it has to grow from the
+		// corner the translate placed — not from the middle of the map.
+		transformOrigin: '0 0',
+		width: `${W * rk}px`,
+		height: `${H * rk}px`,
+	}
+})
 
 // function zoomAt(ax: number, ay: number, factor: number): void {
 // 	cancelFocus()
@@ -361,7 +413,18 @@ function isHot(n: MapNode): boolean {
 	return n.key === hoverKey.value || n.key === highlightKey.value
 }
 
-function posStyle(n: MapNode): CSSProperties {
+// Stacking order rides the outer wrapper; the position transform rides an inner
+// one. They must stay split: TransitionGroup's FLIP pass measures its own
+// children and, for any it thinks moved, clears their inline transform outright
+// (runtime-dom sets `style.transform = ''`). Vue never rewrites the value
+// afterwards — its style patch compares against the vnode, which still holds the
+// transform it wrote — so the node is stranded at the map's top-left corner
+// until some later patch changes the string. With the transform on an inner
+// element the wrapper's own rect never moves, so the FLIP pass finds nothing to
+// translate. (Safari lost this race on client-side navigation into the page:
+// its ResizeObserver lands a second, corrected size after the nodes have already
+// been placed, so that final reposition went through FLIP and stuck.)
+function zStyle(n: MapNode): CSSProperties {
 	const zBase =
 		n.type === 'marker'
 			? n.selected
@@ -372,11 +435,13 @@ function posStyle(n: MapNode): CSSProperties {
 				: n.type === 'cluster'
 					? 21
 					: 20
-	const { sx, sy } = screenOf(n)
 	return {
-		transform: `translate3d(${sx}px, ${sy}px, 0)`,
 		zIndex: isHot(n) ? 30 : zBase + (n.type === 'server' ? n.stackZ || 0 : 0),
 	}
+}
+function posStyle(n: MapNode): CSSProperties {
+	const { sx, sy } = screenOf(n)
+	return { transform: `translate3d(${sx}px, ${sy}px, 0)` }
 }
 
 // — Hover intent: a short delay in, a grace period out so the pointer can
@@ -513,18 +578,19 @@ function clickNode(n: MapNode): void {
 
 <template>
 	<!-- With zoom and pan restored, this element also takes:
-	     :class="[ready && 'sm-anim', (dragging || wheeling || focusing) && 'sm-drag', dragging ? 'cursor-grabbing' : interactive && zoom > 1 ? 'cursor-grab' : '']"
+	     :class="[ready && !sizing && 'sm-anim', (dragging || wheeling || focusing) && 'sm-drag', dragging ? 'cursor-grabbing' : interactive && zoom > 1 ? 'cursor-grab' : '']"
 	     :style="interactive && zoom > 1 ? { touchAction: 'none' } : undefined"
 	     @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp"
 	     @dblclick="onDblClick" @wheel="onWheel" -->
 	<div
 		ref="el"
 		class="relative isolate h-full w-full select-none overflow-hidden bg-surface-base"
-		:class="[ready && 'sm-anim', focusing && 'sm-drag']"
+		:class="[ready && !sizing && 'sm-anim', focusing && 'sm-drag']"
 		@pointerdown="onDown"
 	>
-		<!-- Dotted world. Resize the SVG itself so it re-rasterizes at each zoom;
-		     nodes ride the same curve below so they track the dots. -->
+		<!-- Dotted world. Sized in pixels so it re-rasterizes at each zoom, except
+		     across a container resize, which scales the last raster instead (see
+		     rasterK); nodes ride the same curve below so they track the dots. -->
 		<WorldDots
 			class="sm-map sm-pos absolute left-0 top-0 block text-ink-gray-2"
 			:style="mapStyle"
@@ -536,97 +602,99 @@ function clickNode(n: MapNode): void {
 			<div
 				v-for="n in nodes"
 				:key="n.key"
-				class="sm-pos absolute left-0 top-0"
-				:style="posStyle(n)"
+				class="pointer-events-none absolute left-0 top-0"
+				:style="zStyle(n)"
 			>
-				<div class="sm-center">
-					<!-- Single server: provider logo + status dot -->
-					<button
-						v-if="n.type === 'server'"
-						class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-						:aria-label="`${n.pin.name} — ${n.pin.visual.label}`"
-						@click="clickNode(n)"
-						@mouseenter="enterNode(n)"
-						@mouseleave="leaveNode"
-					>
-						<span
-							v-if="n.pin.visual.pulse"
-							class="sm-pulse absolute -inset-1.5 rounded-full"
-							style="background: var(--ink-red-6)"
-						/>
-						<span
-							class="relative block rounded-full transition-transform duration-150 ease-out group-active:scale-95"
-							:class="isHot(n) && 'scale-110'"
+				<div class="sm-pos pointer-events-auto" :style="posStyle(n)">
+					<div class="sm-center">
+						<!-- Single server: provider logo + status dot -->
+						<button
+							v-if="n.type === 'server'"
+							class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+							:aria-label="`${n.pin.name} — ${n.pin.visual.label}`"
+							@click="clickNode(n)"
+							@mouseenter="enterNode(n)"
+							@mouseleave="leaveNode"
 						>
-							<ProviderAvatar :provider="n.pin.provider" :size="36" />
-							<!-- The badge art is inset ~2px inside its box, so the stack
-                   separator ring hugs the visible disc, not the box edge. -->
 							<span
-								v-if="n.stacked"
-								class="pointer-events-none absolute inset-[2px] rounded-full ring-2 ring-[var(--surface-base)]"
+								v-if="n.pin.visual.pulse"
+								class="sm-pulse absolute -inset-1.5 rounded-full"
+								style="background: var(--ink-red-6)"
 							/>
-						</span>
-						<span
-							class="absolute bottom-0 right-0 size-3 rounded-full border-2 border-[var(--surface-base)]"
-							:style="{ background: n.pin.visual.dot }"
-						/>
-					</button>
+							<span
+								class="relative block rounded-full transition-transform duration-150 ease-out group-active:scale-95"
+								:class="isHot(n) && 'scale-110'"
+							>
+								<ProviderAvatar :provider="n.pin.provider" :size="36" />
+								<!-- The badge art is inset ~2px inside its box, so the stack
+	                   separator ring hugs the visible disc, not the box edge. -->
+								<span
+									v-if="n.stacked"
+									class="pointer-events-none absolute inset-[2px] rounded-full ring-2 ring-[var(--surface-base)]"
+								/>
+							</span>
+							<span
+								class="absolute bottom-0 right-0 size-3 rounded-full border-2 border-[var(--surface-base)]"
+								:style="{ background: n.pin.visual.dot }"
+							/>
+						</button>
 
-					<!-- Cluster: count in a dark disc, dominant provider as a badge -->
-					<button
-						v-else-if="n.type === 'cluster'"
-						class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-						:aria-label="`${n.members.length} servers in ${n.title}`"
-						@click="clickNode(n)"
-						@mouseenter="enterNode(n)"
-						@mouseleave="leaveNode"
-					>
-						<span
-							class="absolute -inset-2 rounded-full transition-colors"
-							:class="n.broken ? 'sm-pulse bg-surface-red-4' : 'bg-surface-gray-3 opacity-60'"
-						/>
-						<span
-							class="relative grid size-11 place-items-center rounded-full bg-surface-gray-1 text-base font-semibold text-ink-gray-9 shadow-md transition-transform duration-150 ease-out group-active:scale-95"
-							:class="isHot(n) && 'scale-105'"
+						<!-- Cluster: count in a dark disc, dominant provider as a badge -->
+						<button
+							v-else-if="n.type === 'cluster'"
+							class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+							:aria-label="`${n.members.length} servers in ${n.title}`"
+							@click="clickNode(n)"
+							@mouseenter="enterNode(n)"
+							@mouseleave="leaveNode"
 						>
-							{{ n.members.length }}
-						</span>
-						<span class="absolute -bottom-1 -right-1 block rounded-full">
-							<ProviderAvatar :provider="n.provider" :size="20" />
-						</span>
-					</button>
+							<span
+								class="absolute -inset-2 rounded-full transition-colors"
+								:class="n.broken ? 'sm-pulse bg-surface-red-4' : 'bg-surface-gray-3 opacity-60'"
+							/>
+							<span
+								class="relative grid size-11 place-items-center rounded-full bg-surface-gray-1 text-base font-semibold text-ink-gray-9 shadow-md transition-transform duration-150 ease-out group-active:scale-95"
+								:class="isHot(n) && 'scale-105'"
+							>
+								{{ n.members.length }}
+							</span>
+							<span class="absolute -bottom-1 -right-1 block rounded-full">
+								<ProviderAvatar :provider="n.provider" :size="20" />
+							</span>
+						</button>
 
-					<!-- Picker marker: a quiet dot; the picked region is the provider pin -->
-					<button
-						v-else-if="n.type === 'marker'"
-						class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-						:aria-label="`Region ${n.marker.regionLabel}`"
-						:title="`${n.marker.flag} ${n.marker.regionLabel}`"
-						@click="clickNode(n)"
-					>
-						<span v-if="n.selected" class="relative block rounded-full">
-							<ProviderAvatar :provider="n.marker.provider" :size="36" />
-						</span>
-						<span
+						<!-- Picker marker: a quiet dot; the picked region is the provider pin -->
+						<button
+							v-else-if="n.type === 'marker'"
+							class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+							:aria-label="`Region ${n.marker.regionLabel}`"
+							:title="`${n.marker.flag} ${n.marker.regionLabel}`"
+							@click="clickNode(n)"
+						>
+							<span v-if="n.selected" class="relative block rounded-full">
+								<ProviderAvatar :provider="n.marker.provider" :size="36" />
+							</span>
+							<span
+								v-else
+								class="block size-3 rounded-full transition-transform duration-150 ease-out group-hover:scale-125"
+								:class="isHot(n) && 'scale-125'"
+								style="background: var(--ink-gray-9)"
+							/>
+						</button>
+
+						<!-- Empty region: quiet + affordance -->
+						<button
 							v-else
-							class="block size-3 rounded-full transition-transform duration-150 ease-out group-hover:scale-125"
-							:class="isHot(n) && 'scale-125'"
-							style="background: var(--ink-gray-9)"
-						/>
-					</button>
-
-					<!-- Empty region: quiet + affordance -->
-					<button
-						v-else
-						class="grid size-7 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 shadow-sm transition-[transform,box-shadow] duration-150 ease-out hover:shadow-md active:scale-95"
-						:class="isHot(n) ? 'scale-110 shadow-md' : ''"
-						:aria-label="`New server in ${n.title}`"
-						@click="clickNode(n)"
-						@mouseenter="enterNode(n)"
-						@mouseleave="leaveNode"
-					>
-						<span class="lucide-plus size-3.5" />
-					</button>
+							class="grid size-7 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 shadow-sm transition-[transform,box-shadow] duration-150 ease-out hover:shadow-md active:scale-95"
+							:class="isHot(n) ? 'scale-110 shadow-md' : ''"
+							:aria-label="`New server in ${n.title}`"
+							@click="clickNode(n)"
+							@mouseenter="enterNode(n)"
+							@mouseleave="leaveNode"
+						>
+							<span class="lucide-plus size-3.5" />
+						</button>
+					</div>
 				</div>
 			</div>
 		</TransitionGroup>
