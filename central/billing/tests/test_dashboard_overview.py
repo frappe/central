@@ -548,3 +548,46 @@ class TestResizedInvoiceReadsAsASequence(OverviewBase):
 		)
 
 		self.assertEqual(_billed_window(legacy), "30 day(s)")
+
+
+class TestResizeLockDisclosure(OverviewBase):
+	"""A resize re-prices at current rates (ADR 0010). The customer has to be told
+	what that costs them BEFORE they confirm, not on the next invoice."""
+
+	def _server(self, locked_rate):
+		sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		add_segment(sub, "Created", locked_rate, f"{self.month_start} 00:00:00", plan=PLAN)
+		return sub
+
+	def test_a_rate_below_list_reports_what_the_resize_gives_up(self):
+		from central.billing.api.dashboard.catalog import _lock_disclosure
+
+		# Catalog lists this plan at 3000; this server locked in at 2000.
+		self._server(2000)
+
+		lock = _lock_disclosure(frappe.get_all("Subscription", {"team": TEAM}, pluck="name")[0], "INR")
+
+		self.assertEqual(lock["locked_rate"], 2000.0)
+		self.assertEqual(lock["list_rate"], 3000.0)
+		self.assertEqual(lock["gives_up"], 1000.0)
+
+	def test_a_rate_at_or_above_list_has_nothing_to_warn_about(self):
+		from central.billing.api.dashboard.catalog import _lock_disclosure
+
+		# Locked ABOVE today's list: resizing can only help, so no warning.
+		self._server(5000)
+
+		lock = _lock_disclosure(frappe.get_all("Subscription", {"team": TEAM}, pluck="name")[0], "INR")
+
+		self.assertEqual(lock["gives_up"], 0.0)
+
+	def test_the_resize_picker_carries_the_disclosure(self):
+		from central.billing.api.dashboard.catalog import get_composed_config
+
+		sub = self._server(2000)
+		asset = frappe.db.get_value("Subscription", sub, "asset_id")
+
+		config = get_composed_config(asset, TEAM)
+
+		self.assertTrue(config["resizable"])
+		self.assertEqual(config["lock"]["gives_up"], 1000.0)

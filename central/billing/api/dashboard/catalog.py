@@ -252,6 +252,35 @@ def provision_composed_config(
 	return provision_composed_subscription(team, cluster, includes, sub_category)
 
 
+def _lock_disclosure(subscription: str, currency: str) -> dict | None:
+	"""What this server's rate is, against what the same shape costs today.
+
+	A resize re-prices at current rates (ADR 0010), so a customer holding a rate
+	below today's list is about to give it up — including if they resize back to the
+	size they are on now. They are entitled to know that before they confirm, not
+	after it shows up on a bill.
+	"""
+	from central.billing.api.dashboard.spend import list_rate_for
+	from central.billing.catalog.subscriptions import active_segments
+
+	segments = active_segments({"name": subscription})
+	if not segments:
+		return None
+	segment = segments[0]
+	locked = frappe.utils.flt(segment.locked_rate)
+	listed = list_rate_for(segment, currency)
+	if listed is None or not locked:
+		return None
+	return {
+		"locked_rate": locked,
+		"list_rate": frappe.utils.flt(listed),
+		"currency": currency,
+		# Only a rate BELOW today's list is worth warning about; at or above it there
+		# is nothing to lose by re-pricing.
+		"gives_up": frappe.utils.flt(listed - locked, 2) if listed > locked else 0.0,
+	}
+
+
 @frappe.whitelist()
 def get_composed_config(asset: str, team: str | None = None) -> dict:
 	"""The config running on `asset`, pre-filling the resize slider (#84): its
@@ -306,6 +335,9 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 		"memory_gb": memory_gb,
 		"disk_gb": disk_gb,
 		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
+		# What the resize would cost this server in price terms, so the picker can
+		# say it before the customer commits rather than after.
+		"lock": _lock_disclosure(sub.name, _team_currency(team)),
 	}
 
 

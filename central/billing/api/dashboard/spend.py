@@ -66,7 +66,7 @@ def get_locked_prices(team: str | None = None) -> dict:
 	rows = []
 	monthly_saving = 0.0
 	for segment in team_active_segments(team):
-		listed = _list_rate(segment, currency)
+		listed = list_rate_for(segment, currency)
 		locked = frappe.utils.flt(segment.locked_rate)
 		gap = frappe.utils.flt(listed - locked, 2) if listed is not None else 0.0
 		if gap > 0:
@@ -169,7 +169,7 @@ def _title_for(resource_id: str, segment) -> str:
 	return resource_id
 
 
-def _list_rate(segment, currency: str):
+def list_rate_for(segment, currency: str):
 	"""What this subscription would cost if it were provisioned today.
 
 	A preset resolves to its plan's catalog rate; a composed config is re-summed from
