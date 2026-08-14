@@ -101,18 +101,24 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 				<template
 					v-if="!section.collapsible || !collapsedSections[section.label]"
 				>
-					<SidebarItem
+					<template
 						v-for="item in section.items.filter((i) => i.condition !== false)"
 						:key="item.label"
-						:icon="item.icon"
-						:to="item.to"
-						:onclick="item.onClick"
-						class="mb-0.5"
-						:class="item.class"
-						:active="!!item.to && item.to === route.path"
 					>
-						<span class="truncate text-sm">{{ item.label }}</span>
-					</SidebarItem>
+						<component :is="item.component" v-if="item.component" />
+
+						<SidebarItem
+							v-else
+							:icon="item.icon"
+							:to="item.to"
+							:onclick="item.onClick"
+							class="mb-0.5"
+							:class="item.class"
+							:active="!!item.to && item.to === route.path"
+						>
+							<span class="truncate text-sm">{{ item.label }}</span>
+						</SidebarItem>
+					</template>
 				</template>
 			</template>
 		</nav>

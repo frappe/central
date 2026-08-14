@@ -94,12 +94,6 @@ const routes = [
 				meta: { title: 'Limit tiers' },
 			},
 			{
-				path: 'notifications',
-				name: 'Notifications',
-				component: () => import('@/pages/notifications/NotificationsPage.vue'),
-				meta: { title: 'Notifications' },
-			},
-			{
 				path: 'settings',
 				name: 'Settings',
 				component: () => import('@/pages/settings/SettingsPage.vue'),
