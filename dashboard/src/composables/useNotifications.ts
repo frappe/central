@@ -1,5 +1,5 @@
 import { useCall } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, type Ref, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useFrappeEventListener } from '@/composables/useFrappeRealtime'
 import { useSession } from '@/composables/useSession'
@@ -15,12 +15,27 @@ const loaded = ref<TeamNotification[]>([])
 const unreadCount = ref(0)
 const hasMore = ref(false)
 
+const category = ref('')
+const unreadOnly = ref(false)
+
 const feedCall = useCall<
 	NotificationFeed,
-	{ team: string; start: number; limit: number }
+	{
+		team: string
+		start: number
+		limit: number
+		category: string
+		unread_only: number
+	}
 >({
 	url: method(API.notifications),
-	params: () => ({ ...teamParams(), start: start.value, limit: PAGE_SIZE }),
+	params: () => ({
+		...teamParams(),
+		start: start.value,
+		limit: PAGE_SIZE,
+		category: category.value,
+		unread_only: unreadOnly.value ? 1 : 0,
+	}),
 	immediate: false,
 	refetch: true,
 	onSuccess: (data: NotificationFeed) => {
@@ -54,6 +69,15 @@ const refresh = (): void => {
 	feedCall.reload()
 }
 
+const pagedFilter = <T>(source: Ref<T>) =>
+	computed<T>({
+		get: () => source.value,
+		set: (value: T) => {
+			start.value = 0
+			source.value = value
+		},
+	})
+
 whenTeamReady(refresh)
 
 export const useNotificationsRealtime = (): void => {
@@ -66,6 +90,8 @@ export const useNotificationsRealtime = (): void => {
 export const useNotifications = () => {
 	return {
 		items: computed<TeamNotification[]>(() => loaded.value),
+		category: pagedFilter(category),
+		unreadOnly: pagedFilter(unreadOnly),
 		unread: computed(() => unreadCount.value),
 		hasNextPage: computed(() => hasMore.value),
 		loading: computed(() => feedCall.loading),
@@ -86,6 +112,7 @@ export const useNotifications = () => {
 			await markAll.submit(teamParams())
 			for (const item of loaded.value) item.is_read = 1
 			unreadCount.value = 0
+			if (unreadOnly.value) refresh()
 		},
 	}
 }

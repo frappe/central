@@ -16,6 +16,8 @@ import type { NotificationSeverity, TeamNotification } from '@/types/billing'
 
 const {
 	items,
+	category,
+	unreadOnly,
 	unread,
 	hasNextPage,
 	loading,
@@ -32,7 +34,12 @@ const TABS = [
 	{ label: 'Unread', value: 'unread' },
 ]
 
-const activeTab = ref('all')
+const activeTab = computed({
+	get: () => (unreadOnly.value ? 'unread' : 'all'),
+	set: (value: string) => {
+		unreadOnly.value = value === 'unread'
+	},
+})
 
 const CATEGORIES = [
 	{ label: 'All categories', value: '', icon: 'lucide-list' },
@@ -41,18 +48,8 @@ const CATEGORIES = [
 	{ label: 'Team', value: 'Team', icon: 'lucide-users' },
 ]
 
-const category = ref('')
-
 const badge = computed(() =>
 	unread.value > 0 ? (unread.value > 99 ? '99+' : String(unread.value)) : '',
-)
-
-const visible = computed<TeamNotification[]>(() =>
-	items.value.filter(
-		(n) =>
-			(activeTab.value !== 'unread' || !n.is_read) &&
-			(!category.value || n.category === category.value),
-	),
 )
 
 const SEVERITY: Record<
@@ -147,18 +144,18 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 				<Select v-model="category" class="ml-auto" :options="CATEGORIES" />
 			</div>
 
-			<Scrollbar v-if="visible.length">
+			<Scrollbar v-if="items.length">
 				<button
-					v-for="n, i in visible"
+					v-for="n, i in items"
 					:key="n.name"
 					type="button"
 					class="flex w-full cursor-pointer items-start gap-4 p-4 text-left hover:bg-surface-gray-1"
-          :class="i == visible.length - 1 ? '' : 'border-b'"
+          :class="i == items.length - 1 ? '' : 'border-b'"
 					@click="onRowClick(n)"
 				>
 					<!-- severity square badge -->
 					<span
-						class="relative mt-0.5 grid size-8 shrink-0 place-items-center rounded"
+						class="relative mt-0.5 grid size-8 shrink-0 place-items-center rounded-4"
 						:class="look(n.severity).bg"
 					>
 						<span
