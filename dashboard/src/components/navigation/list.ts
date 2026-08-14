@@ -2,6 +2,7 @@ import { type Component, computed, defineAsyncComponent } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { openSearch } from '@/composables/useSearch'
 import { features } from '@/lib/features'
+import { useIsMobile } from '@/composables/useIsMobile'
 
 const NotificationsPanel = defineAsyncComponent(
 	() => import('@/components/notifications/NotificationsPanel.vue'),
@@ -24,6 +25,8 @@ type SidebarSection = {
 }
 
 export const sidebarSections = computed<SidebarSection[]>(() => {
+	const isMobile = useIsMobile()
+
 	const { canViewServers, canViewBilling, canViewServices, isMember } =
 		useCapabilities()
 
@@ -31,11 +34,16 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 		{
 			label: '',
 			items: [
-				{ label: 'Search', icon: 'lucide-search', onClick: openSearch },
+				{
+					label: 'Search',
+					icon: 'lucide-search',
+					onClick: openSearch,
+					condition: !isMobile.value,
+				},
 				{
 					label: 'Notifications',
 					icon: 'lucide-bell',
-					condition: isMember.value,
+					condition: isMember.value && !isMobile.value,
 					component: NotificationsPanel,
 				},
 			],
