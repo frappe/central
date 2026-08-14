@@ -11,8 +11,7 @@ import {
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
-import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
-import { useAppMenu } from '@/composables/useAppMenu'
+import SettingsModal from '@/components/settings/SettingsModal.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
@@ -41,7 +40,6 @@ watch(searchOpen, (isOpen) => {
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
-const { changeTeamOpen } = useAppMenu()
 
 const mobileNavDrawer = ref(false)
 watch(
@@ -119,6 +117,8 @@ const breadcrumbs = computed(
 	</DesktopShell>
 
 	<ToastProvider />
-	<ChangeTeamDialog v-model:open="changeTeamOpen" />
+	<!-- Desktop only: on mobile the same tabs are pages (/settings/:tab), so the
+	     dialog never mounts there. -->
+	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
 </template>

@@ -69,7 +69,10 @@ def compute_line_items(
 	lines = []
 	for sub in subscriptions:
 		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
-	return lines
+	# Assembled per subscription in whatever order the query returned them, which is
+	# creation-desc — so a team's newest machine printed first and its oldest last.
+	# One rule for the whole invoice instead.
+	return _ordered(lines)
 
 
 def team_line_items(team: str, period_start, period_end, explain: bool = False, changes=None) -> list[dict]:
@@ -92,7 +95,27 @@ def team_line_items(team: str, period_start, period_end, explain: bool = False, 
 		if not cluster:
 			continue  # no live asset cluster — nothing to bill this subscription against
 		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
-	return lines
+	# Assembled per subscription in whatever order the query returned them, which is
+	# creation-desc — so a team's newest machine printed first and its oldest last.
+	return _ordered(lines)
+
+
+def _ordered(lines: list[dict]) -> list[dict]:
+	"""Grouped by machine, chronological within each.
+
+	A resize chain only means anything against one server, so ordering purely by
+	time shuffles several servers' lines together and destroys the sequence. Within
+	a machine the whole-day line for a date sorts ahead of that date's hourly
+	slivers, which is the order they happened in.
+	"""
+	return sorted(
+		lines,
+		key=lambda ln: (
+			ln.get("subscription_resource") or "",
+			ln.get("period_from") or datetime.max,
+			ln.get("unit") == "hour",
+		),
+	)
 
 
 def _period_bounds(period_start, period_end):
@@ -196,8 +219,16 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 					for other in segs
 					if cd in _dates_touched(other["start"], other["end"])
 				]
-				lines.append(_hourly_line(s, hours, b.hour_units, cd, explain, touching))
-	return lines
+				lines.append(
+					_hourly_line(
+						s, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end)
+					)
+				)
+
+	# Grouped by server, chronological within each. A resize chain only means
+	# anything against one machine, so sorting purely by time would shuffle three
+	# servers' lines together and destroy the sequence it was meant to show.
+	return _ordered(lines)
 
 
 def _resolve_changes(subscription_names: list[str], changes=None) -> dict:
@@ -251,6 +282,13 @@ def _daily_line(seg: dict, days: int, day_units: int, explain: bool = False, bil
 		"rate": seg["rate"],
 		"days": days,
 		"hours": None,
+		# The window this line actually billed. Without it a resized month is a list
+		# of durations with no order and no "when" — six lines saying "13 day(s)"
+		# and "16 hour(s)" that the reader has to reassemble into a sequence.
+		"period_from": datetime.combine(min(billed_dates), time.min) if billed_dates else None,
+		"period_to": datetime.combine(max(billed_dates) + timedelta(days=1), time.min)
+		if billed_dates
+		else None,
 		"amount": frappe.utils.flt(days * seg["rate"] / day_units, 2),
 	}
 	if explain:
@@ -270,7 +308,13 @@ def _daily_line(seg: dict, days: int, day_units: int, explain: bool = False, bil
 
 
 def _hourly_line(
-	seg: dict, hours: float, hour_units: int, charge_date, explain: bool = False, touching=None
+	seg: dict,
+	hours: float,
+	hour_units: int,
+	charge_date,
+	explain: bool = False,
+	touching=None,
+	window=None,
 ) -> dict:
 	line = {
 		"subscription_resource": seg["asset"],
@@ -283,6 +327,8 @@ def _hourly_line(
 		"days": None,
 		"hours": frappe.utils.flt(hours, 2),
 		"charge_date": charge_date,
+		"period_from": window[0] if window else None,
+		"period_to": window[1] if window else None,
 		"amount": frappe.utils.flt(hours * seg["rate"] / hour_units, 2),
 	}
 	if explain:

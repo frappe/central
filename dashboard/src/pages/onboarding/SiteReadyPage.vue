@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, ErrorMessage } from 'frappe-ui'
+import { Button, ErrorMessage, Spinner } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { API } from '@/api/methods'
@@ -59,7 +59,7 @@ onUnmounted(() => clearTimeout(timer))
 	<AuthShell show-progress :step="4">
 		<template v-if="isReady && site">
 			<div
-				class="mb-6 grid size-10 place-items-center rounded-5 bg-surface-green-3 text-ink-green-8"
+				class="mb-6 grid size-10 place-items-center rounded-5 bg-surface-green-3 text-ink-green-7"
 			>
 				<span class="lucide-check size-5" aria-hidden="true" />
 			</div>
@@ -72,10 +72,7 @@ onUnmounted(() => clearTimeout(timer))
 			</p>
 
 			<div class="mt-8 flex items-center gap-3 text-ink-gray-5">
-				<span
-					class="lucide-loader-circle size-5 animate-spin"
-					aria-hidden="true"
-				/>
+				<Spinner size="lg" />
 				<span class="text-base">Taking you to your site…</span>
 			</div>
 		</template>
@@ -103,10 +100,7 @@ onUnmounted(() => clearTimeout(timer))
 				a moment — hang tight.
 			</p>
 			<div class="mt-8 flex items-center gap-3 text-ink-gray-5">
-				<span
-					class="lucide-loader-circle size-5 animate-spin"
-					aria-hidden="true"
-				/>
+				<Spinner size="lg" />
 				<span class="text-base">{{ site?.status || 'Pending' }}…</span>
 			</div>
 			<ErrorMessage v-if="error" class="mt-6" :message="error" />

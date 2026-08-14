@@ -4,10 +4,12 @@ import secrets
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils import cint, escape_html, random_string
 
 from central.iam import get_user_team_names
 from central.users import CENTRAL_USER_ROLE
+from central.utils.inputs import require_secret
 
 # Signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
 # signup (no User yet, so an abandoned signup leaves nothing behind — simpler than
@@ -167,3 +169,46 @@ def _enforce_signup_limit() -> None:
 			_("Too many users signed up recently. Please try again in an hour."),
 			frappe.TooManyRequestsError,
 		)
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=5, seconds=60 * 60, methods="POST")
+def change_password(old_password: str, new_password: str) -> dict:
+	"""Change the signed-in user's password, proving they know the current one.
+
+	Only ever acts on `frappe.session.user` — there is no user parameter to
+	abuse. Rate-limited so the old-password check can't be used to brute-force
+	an unattended session. Other sessions are signed out (the current one is
+	kept), so a stolen session dies with the password change."""
+	from frappe.core.doctype.user.user import handle_password_test_fail, test_password_strength
+	from frappe.utils.password import check_password, update_password
+
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Sign in to change your password."), frappe.PermissionError)
+
+	# Typed at the trust boundary: a JSON body can put a list or dict here, and
+	# the password helpers below would raise an unhandled error on one.
+	old_password = require_secret(old_password, _("Enter your current password."))
+	new_password = require_secret(new_password, _("Enter a new password."))
+
+	# A wrong password must NOT re-raise AuthenticationError: frappe's request
+	# handler treats that as a failed login and tears down the session, so a
+	# typo here would sign the user out of the console. Re-raise it as a plain
+	# validation error instead — the rate limit above is what stops guessing.
+	try:
+		check_password(user, old_password)
+	except frappe.AuthenticationError:
+		frappe.throw(_("Your current password is incorrect."), frappe.ValidationError)
+
+	if new_password == old_password:
+		frappe.throw(_("Choose a password you haven't used here before."), frappe.ValidationError)
+
+	# Honour the site's password policy, same as the reset flow does.
+	feedback = test_password_strength(new_password).get("feedback")
+	if feedback and not feedback.get("password_policy_validation_passed", False):
+		handle_password_test_fail(feedback)
+
+	update_password(user, new_password, logout_all_sessions=True)
+	frappe.db.set_value("User", user, "last_password_reset_date", frappe.utils.today())
+	return {"changed": True}

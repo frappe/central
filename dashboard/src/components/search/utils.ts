@@ -11,7 +11,14 @@ export const filterIndex = (
 	query: string,
 ): SearchGroups => {
 	const q = query.trim().toLowerCase()
-	if (!q) return index
+
+	// With no query the palette is a menu, not a dump of every record: entity
+	// groups stay searchable but only surface once you type.
+	if (!q) {
+		return Object.fromEntries(
+			Object.entries(index).filter(([, value]) => !value.searchOnly),
+		)
+	}
 
 	const result: SearchGroups = {}
 
@@ -19,7 +26,7 @@ export const filterIndex = (
 		const items = group.toLowerCase().includes(q)
 			? value.items
 			: value.items.filter((item) => item.name.toLowerCase().includes(q))
-		if (items.length) result[group] = { items }
+		if (items.length) result[group] = { ...value, items }
 	}
 
 	return result

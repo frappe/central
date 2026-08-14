@@ -50,7 +50,7 @@ const open = defineModel<boolean>('open', { default: false })
                the panel beside the close control rather than buried in the body. -->
 					<slot name="actions" />
 					<button
-						class="grid size-6 place-items-center rounded text-ink-gray-6 hover:bg-surface-gray-3"
+						class="grid size-6 place-items-center rounded-4 text-ink-gray-6 hover:bg-surface-gray-3"
 						aria-label="Close details"
 						@click="open = false"
 					>

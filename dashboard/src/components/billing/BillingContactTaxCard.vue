@@ -34,14 +34,14 @@ const isIndia = computed(() => country.value === 'India')
 </script>
 
 <template>
-	<BillingCard title="Billing contact & tax">
+	<BillingCard title="Billing details">
 		<template #action>
 			<Button
 				v-if="canManageBilling"
 				variant="ghost"
 				size="xs"
 				icon="lucide-pencil"
-				aria-label="Edit billing contact & tax"
+				label="Edit billing details"
 				@click="$emit('edit')"
 			/>
 		</template>
@@ -50,7 +50,7 @@ const isIndia = computed(() => country.value === 'India')
 			<LoadingText :lines="4" />
 		</div>
 
-		<dl v-else class="space-y-3 text-sm">
+		<dl v-else class="space-y-4 pt-1 text-base">
 			<div class="flex justify-between gap-3">
 				<dt class="text-ink-gray-5">Billing email</dt>
 				<dd
@@ -62,11 +62,14 @@ const isIndia = computed(() => country.value === 'India')
 			</div>
 			<div class="flex justify-between gap-3">
 				<dt class="shrink-0 text-ink-gray-5">Billing address</dt>
+				<!-- Capped at half the row so a long address wraps into a block, with
+				     paragraph leading since it's the one value here that runs to
+				     multiple lines. -->
 				<dd
-					class="text-right"
+					class="max-w-[50%] text-right text-p-base"
 					:class="address ? 'text-ink-gray-8' : 'text-ink-gray-5'"
 				>
-					{{ address || 'No address on file' }}
+					{{ address || 'Not set' }}
 				</dd>
 			</div>
 			<div class="flex justify-between gap-3">
@@ -83,7 +86,7 @@ const isIndia = computed(() => country.value === 'India')
 				<dd v-if="gstin" class="text-right font-mono text-ink-gray-8">
 					{{ gstin }}
 				</dd>
-				<Badge v-else theme="gray" label="Not provided" />
+				<Badge v-else theme="gray" label="Not set" />
 			</div>
 		</dl>
 	</BillingCard>

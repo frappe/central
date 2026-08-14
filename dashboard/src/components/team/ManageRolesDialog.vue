@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Avatar, Button, Dialog, FormControl, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useRegions } from '@/composables/useRegions'
@@ -102,6 +102,22 @@ const dominatingIndex = computed(() =>
 	rows.value.findIndex((r) => r.role === 'Admin'),
 )
 
+// A role on all resources subsumes the same role on a specific one — flag the
+// narrow rows while editing, and drop them on save (the backend does too).
+const shadowedIndexes = computed(() => {
+	const wildcardRoles = new Set(
+		rows.value.filter((r) => r.role && r.resource_type === '*').map((r) => r.role),
+	)
+	return new Set(
+		rows.value
+			.map((row, index) => ({ row, index }))
+			.filter(
+				({ row }) => row.resource_type !== '*' && wildcardRoles.has(row.role),
+			)
+			.map(({ index }) => index),
+	)
+})
+
 const canSubmit = computed(
 	() => rows.value.length > 0 && rows.value.every((r) => r.role),
 )
@@ -111,7 +127,8 @@ const submitting = ref(false)
 const submit = async (): Promise<void> => {
 	if (!canSubmit.value || !props.member) return
 	submitting.value = true
-	const ok = await setRoles(props.member.user, rows.value)
+	const grants = rows.value.filter((_, index) => !shadowedIndexes.value.has(index))
+	const ok = await setRoles(props.member.user, grants)
 	submitting.value = false
 	if (ok) open.value = false
 }
@@ -162,16 +179,17 @@ const dialogOptions = computed(() => ({
 					Assign roles to specific servers or sites, or to all resources.
 				</p>
 
-				<div
+				<Alert
 					v-if="dominatingIndex !== -1"
-					class="flex items-start gap-2 rounded-md border border-outline-gray-2 bg-surface-gray-1 p-3 text-p-sm text-ink-gray-6"
-				>
-					<span class="lucide-info mt-0.5 size-4 shrink-0" aria-hidden="true" />
-					<span
-						>Admin already covers everything, so the roles below stay inactive
-						until you remove it.</span
-					>
-				</div>
+					theme="blue"
+					title="Admin already covers everything"
+				/>
+
+				<Alert
+					v-if="shadowedIndexes.size"
+					theme="blue"
+					title="A role on all resources already covers the rest"
+				/>
 
 				<div class="space-y-2">
 					<div
@@ -198,7 +216,7 @@ const dialogOptions = computed(() => ({
 						<Button
 							variant="ghost"
 							icon="lucide-x"
-							aria-label="Remove role"
+							label="Remove role"
 							@click="removeRow(index)"
 						/>
 					</div>

@@ -1,19 +1,18 @@
 <script setup lang="ts">
-import { Button, Dialog, LoadingText, TabButtons } from 'frappe-ui'
+import { Button, LoadingText, TabButtons } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EmptyState from '@/components/common/EmptyState.vue'
 import NotificationItem from '@/components/notifications/NotificationItem.vue'
-import NotificationPreferences from '@/components/notifications/NotificationPreferences.vue'
 import { useNotifications } from '@/composables/useNotifications'
+import { openSettings } from '@/composables/useSettings'
 import type { TeamNotification } from '@/types/billing'
 
 // Notifications — the full inbox (all history + inline actions). Delivery
-// preferences live in a dialog behind the header's settings button.
+// preferences are a tab in the shared settings dialog, opened from the header's
+// settings button.
 const { items, unread, loading, markAsRead, markAllAsRead } = useNotifications()
 const router = useRouter()
-
-const preferencesOpen = ref(false)
 
 type Filter = 'all' | 'unread' | 'Billing' | 'Server'
 const filter = ref<Filter>('all')
@@ -49,8 +48,8 @@ async function onAct(n: TeamNotification): Promise<void> {
 			<Button
 				variant="ghost"
 				icon="lucide-settings-2"
-				aria-label="Notification preferences"
-				@click="preferencesOpen = true"
+				label="Notification preferences"
+				@click="openSettings('notifications')"
 			/>
 		</Teleport>
 
@@ -78,11 +77,5 @@ async function onAct(n: TeamNotification): Promise<void> {
 				/>
 			</div>
 		</div>
-
-		<Dialog v-model:open="preferencesOpen" title="Notification preferences">
-			<template #default>
-				<NotificationPreferences />
-			</template>
-		</Dialog>
 	</div>
 </template>

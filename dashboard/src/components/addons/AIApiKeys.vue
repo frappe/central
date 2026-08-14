@@ -130,7 +130,7 @@ const curlTemplate = computed(
 
 const copy = async (value: string, label: string): Promise<void> => {
 	await navigator.clipboard.writeText(value)
-	successToast(`${label} copied.`)
+	successToast(`${label} copied`)
 }
 
 const copyCurl = (): void => {
@@ -187,7 +187,7 @@ const confirmRevoke = async (): Promise<void> => {
 					:class="key.status === 'Active' && canManage ? 'cursor-pointer' : ''"
 				>
 					<span
-						class="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-gray-2 text-ink-gray-6"
+						class="grid size-8 shrink-0 place-items-center rounded-6 bg-surface-gray-2 text-ink-gray-6"
 					>
 						<lucide-key-round class="size-4" />
 					</span>
@@ -220,14 +220,14 @@ const confirmRevoke = async (): Promise<void> => {
 					<Dropdown
 						v-if="canManage && key.status === 'Active'"
 						:options="rowActions(key)"
-						placement="right"
+						align="end"
 					>
 						<template #trigger>
 							<Button
 								variant="ghost"
 								icon="lucide-ellipsis-vertical"
 								:loading="busyKey === key.name || revealingName === key.name"
-								aria-label="API key actions"
+								label="API key actions"
 								@click.stop
 							/>
 						</template>
@@ -303,13 +303,13 @@ const confirmRevoke = async (): Promise<void> => {
 					</label>
 					<div class="flex items-center gap-2">
 						<code
-							class="min-w-0 flex-1 truncate rounded-md border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
+							class="min-w-0 flex-1 truncate rounded-5 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
 						>
 							{{ details.gateway_url }}
 						</code>
 						<Button
 							icon="lucide-copy"
-							aria-label="Copy gateway URL"
+							label="Copy gateway URL"
 							@click="copy(details.gateway_url, 'Gateway URL')"
 						/>
 					</div>
@@ -321,18 +321,18 @@ const confirmRevoke = async (): Promise<void> => {
 					</label>
 					<div class="flex items-center gap-2">
 						<code
-							class="min-w-0 flex-1 truncate rounded-md border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
+							class="min-w-0 flex-1 truncate rounded-5 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2 font-mono text-sm text-ink-gray-8"
 						>
 							{{ maskedKey }}
 						</code>
 						<Button
 							:icon="secretRevealed ? 'lucide-eye-off' : 'lucide-eye'"
-							:aria-label="secretRevealed ? 'Hide key' : 'Reveal key'"
+							:label="secretRevealed ? 'Hide key' : 'Reveal key'"
 							@click="secretRevealed = !secretRevealed"
 						/>
 						<Button
 							icon="lucide-copy"
-							aria-label="Copy API key"
+							label="Copy API key"
 							@click="copy(details.api_key, 'API key')"
 						/>
 					</div>
@@ -356,17 +356,17 @@ const confirmRevoke = async (): Promise<void> => {
 				</div>
 
 				<div
-					class="flex border border-outline-gray-2 bg-surface-gray-2 rounded"
+					class="flex border border-outline-gray-2 bg-surface-gray-2 rounded-4"
 				>
 					<pre
-						class="flex overflow-x-auto rounded-md  p-3 font-mono text-xs leading-relaxed text-ink-gray-8"
+						class="flex overflow-x-auto rounded-5  p-3 font-mono text-xs leading-relaxed text-ink-gray-8"
 					>{{ curlTemplate }}</pre>
 
 					<Button
 						icon="lucide-copy"
 						size="sm"
 						class="sticky top-0 right-0 ml-auto"
-						aria-label="Copy command"
+						label="Copy command"
 						@click="copyCurl"
 					/>
 				</div>

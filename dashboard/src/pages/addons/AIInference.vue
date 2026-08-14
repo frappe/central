@@ -83,7 +83,7 @@ const activateService = async (): Promise<void> => {
 			<div class="mx-auto w-full max-w-3xl shrink-0 px-6 pt-8">
 				<div class="flex items-start gap-3">
 					<span
-						class="grid size-10 shrink-0 place-items-center rounded-lg bg-surface-gray-2 text-ink-gray-7"
+						class="grid size-10 shrink-0 place-items-center rounded-6 bg-surface-gray-2 text-ink-gray-7"
 					>
 						<lucide-sparkles class="size-5" />
 					</span>

@@ -19,6 +19,8 @@
   "days",
   "hours",
   "charge_date",
+  "period_from",
+  "period_to",
   "amount"
  ],
  "fields": [
@@ -86,6 +88,18 @@
    "fieldtype": "Date",
    "label": "Charge Date",
    "description": "The calendar date an hourly (churn-day) line was incurred; null for whole-day lines that span a range"
+  },
+  {
+   "fieldname": "period_from",
+   "fieldtype": "Datetime",
+   "label": "Period From",
+   "read_only": 1
+  },
+  {
+   "fieldname": "period_to",
+   "fieldtype": "Datetime",
+   "label": "Period To",
+   "read_only": 1
   },
   {
    "fieldname": "amount",

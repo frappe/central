@@ -14,9 +14,15 @@ import {
 	type Updater,
 	useVueTable,
 } from '@tanstack/vue-table'
-import { Button, Checkbox, Combobox, Skeleton, TextInput } from 'frappe-ui'
-import { computed, h, ref } from 'vue'
-import Alert from '@/components/common/Alert.vue'
+import {
+	Alert,
+	Button,
+	Checkbox,
+	Select,
+	Skeleton,
+	TextInput,
+} from 'frappe-ui'
+import { computed, getCurrentInstance, h, ref } from 'vue'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
 import {
@@ -46,6 +52,13 @@ const props = withDefaults(
 		emptyState?: ListViewEmptyState
 		/** Highlight the row whose rowKey matches this — for master/detail lists. */
 		activeKey?: string | null
+		/**
+		 * True while a page-owned #filters control (e.g. a date range) is
+		 * narrowing the rows it passes in — so an empty result reads as "no
+		 * matching results", not as a genuinely empty list. Pair with
+		 * @clear-filters to reset that control.
+		 */
+		externalFilterActive?: boolean
 	}>(),
 	{
 		loading: false,
@@ -61,6 +74,7 @@ const props = withDefaults(
 		itemLabel: 'row',
 		showCount: true,
 		activeKey: null,
+		externalFilterActive: false,
 		emptyState: () => ({
 			title: 'No data',
 			description: 'There is nothing to show yet.',
@@ -76,6 +90,8 @@ const emit = defineEmits<{
 	retry: []
 	rowClick: [row: TData]
 	selectionChange: [rows: TData[]]
+	/** Fired by the filtered empty state's Clear so pages reset their #filters controls too. */
+	clearFilters: []
 }>()
 
 const rowSelection = ref<RowSelectionState>({})
@@ -203,6 +219,11 @@ const hasActiveQuery = computed(
 		query.value.search !== '' ||
 		Object.values(query.value.filters).some(Boolean),
 )
+// Anything narrowing the list — our own query or a page-owned #filters
+// control. Decides whether an empty result is "no matches" or "no data".
+const filtersActive = computed(
+	() => hasActiveQuery.value || props.externalFilterActive,
+)
 const resultCount = computed(() =>
 	props.serverSide ? props.totalRows : filteredRows.value.length,
 )
@@ -234,7 +255,15 @@ const gridTemplateColumns = computed(() =>
 		.join(' '),
 )
 
+const scroller = ref<HTMLElement | null>(null)
+
 function clearFilters(): void {
+	// The page owns its #filters controls, so clearing those is delegated up.
+	emit('clearFilters')
+	// The empty state's Clear sits inside the h-scroll wrapper, and focusing it
+	// can scroll a squeezed list sideways — snap back so the returning rows
+	// start at their first column.
+	if (scroller.value) scroller.value.scrollLeft = 0
 	if (!hasActiveQuery.value && query.value.page === 1) return
 
 	query.value = {
@@ -342,6 +371,11 @@ function metaClass(className?: string): string {
 	return className?.replace(/\btable-cell\b/g, 'block') ?? ''
 }
 
+// Rows are interactive only when a page actually listens for row clicks —
+// otherwise no pointer cursor and no hover state (nothing would happen).
+const _inst = getCurrentInstance()
+const interactive = computed(() => !!_inst?.vnode.props?.onRowClick)
+
 function handleRowClick(row: Row<TData>): void {
 	emit('rowClick', row.original)
 }
@@ -376,30 +410,32 @@ function sameStringRecord(
 	)
 }
 
-// Search + filters are only useful once there's data (or an active query). On a
-// genuinely empty list they add noise, so hide them — the empty state + the
-// #toolbar action carry the page instead.
+// Search + filters stay visible even when the list is empty: page-owned
+// controls in the #filters slot (e.g. a date range) aren't part of
+// hasActiveQuery, so hiding on empty would strand a filter that matched
+// nothing with no way to clear it.
 const showListControls = computed(
-	() =>
-		(props.searchable || props.filters.length > 0) &&
-		(hasRows.value || hasActiveQuery.value || props.loading),
+	() => props.searchable || props.filters.length > 0,
 )
 </script>
 
 <template>
 	<section class="min-w-0">
 		<div
-			v-if="showListControls || $slots.toolbar"
+			v-if="showListControls || $slots.toolbar || $slots['controls-start']"
 			class="flex flex-wrap items-center justify-between gap-3 pb-3"
 		>
 			<div
-				v-if="showListControls"
+				v-if="showListControls || $slots['controls-start']"
 				class="flex min-w-0 flex-1 flex-wrap items-center gap-2"
 			>
+				<!-- Page-owned controls ahead of search — e.g. a view switcher that
+				     belongs on the same row as the list's own controls. -->
+				<slot name="controls-start" />
 				<TextInput
 					v-if="searchable"
 					:model-value="query.search"
-					class="w-full sm:w-64"
+					class="w-full sm:w-80"
 					:placeholder="searchPlaceholder"
 					:debounce="250"
 					@update:model-value="table.setGlobalFilter(String($event))"
@@ -408,13 +444,14 @@ const showListControls = computed(
 						<span class="lucide-search size-4" aria-hidden="true" />
 					</template>
 				</TextInput>
-				<Combobox
+				<!-- A plain Select, not a Combobox: filter option sets are short, so a
+             search field inside the popover is noise. -->
+				<Select
 					v-for="filter in filters"
 					:key="filter.key"
 					:model-value="query.filters[filter.key] || ''"
 					class="w-40"
-					trigger="button"
-					variant="outline"
+					variant="subtle"
 					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
 					:options="[
             {
@@ -425,12 +462,11 @@ const showListControls = computed(
           ]"
 					@update:model-value="updateFilter(filter.key, $event)"
 				/>
-				<Button
-					v-if="hasActiveQuery"
-					label="Clear"
-					variant="ghost"
-					@click="clearFilters"
-				/>
+				<!-- Page-specific filter controls (e.g. a date-range picker) that
+             belong with the built-in search + filters cluster. No toolbar
+             Clear button — each control offers its own "All"/"Any" reset, and
+             the filtered empty state carries a Clear for the dead-end case. -->
+				<slot name="filters" />
 			</div>
 			<div
 				v-if="$slots.toolbar"
@@ -442,9 +478,9 @@ const showListControls = computed(
 
 		<div
 			v-if="selectable && table.getSelectedRowModel().rows.length"
-			class="mb-2 flex flex-wrap items-center justify-between gap-3 rounded bg-surface-blue-1 px-3 py-2"
+			class="mb-2 flex flex-wrap items-center justify-between gap-3 rounded-4 bg-surface-blue-1 px-3 py-2"
 		>
-			<p class="text-p-sm font-medium text-ink-blue-8">
+			<p class="text-p-sm font-medium text-ink-blue-7">
 				{{ table.getSelectedRowModel().rows.length }}
 				selected
 			</p>
@@ -466,13 +502,13 @@ const showListControls = computed(
 			v-if="error && hasRows"
 			theme="red"
 			:title="error"
-			:action="{ label: 'Retry', onClick: () => $emit('retry') }"
+			:primary-action="{ label: 'Retry', onClick: () => $emit('retry') }"
 			class="mb-2"
 		/>
 
 		<!-- flex-1 is inert unless the caller makes the root section a flex column
          (class fall-through) to pin the pagination footer to the bottom. -->
-		<div class="relative min-w-0 flex-1 overflow-x-auto">
+		<div ref="scroller" class="relative min-w-0 flex-1 overflow-x-auto">
 			<div role="table" class="min-w-[720px]">
 				<div
 					v-if="hasRows || loading"
@@ -536,7 +572,7 @@ const showListControls = computed(
 							class="min-w-0"
 						>
 							<Skeleton
-								class="h-3 rounded"
+								class="h-3 rounded-4"
 								:class="column === 1 ? 'w-2/3' : 'w-1/2'"
 							/>
 						</div>
@@ -559,7 +595,7 @@ const showListControls = computed(
 							@retry="$emit('retry')"
 						/>
 						<ListViewState
-							v-else-if="hasActiveQuery"
+							v-else-if="filtersActive"
 							kind="filtered"
 							title="No matching results"
 							description="Change or clear the filters to see more results."
@@ -578,17 +614,32 @@ const showListControls = computed(
 					</div>
 				</div>
 
-				<div v-else role="rowgroup">
+				<!-- Rows exist but the query filtered them all out (client-side
+             column filters run inside the table, so the source rows are
+             still non-empty). Same dead-end, same way out. -->
+				<div v-else-if="!pageRows.length" role="row">
+					<div role="cell" :aria-colindex="1" :aria-colspan="visibleColumnCount">
+						<ListViewState
+							kind="filtered"
+							title="No matching results"
+							description="Change or clear the filters to see more results."
+							@clear="clearFilters"
+						/>
+					</div>
+				</div>
+
+				<div v-else role="rowgroup" class="lv-rows" :class="interactive ? 'lv-interactive' : ''">
 					<div
 						v-for="row in pageRows"
 						:key="row.id"
 						role="row"
-						class="grid h-10 cursor-default items-center gap-4 border-b border-outline-gray-1 px-2 text-sm transition-colors duration-150 ease-in-out hover:bg-surface-sidebar"
-						:class="
+						class="lv-row grid min-h-10 items-center gap-4 rounded-6 px-2 text-sm transition-colors duration-150 ease-in-out"
+						:class="[
+              interactive ? 'cursor-pointer hover:bg-surface-gray-1' : 'cursor-default',
               row.getIsSelected() || activeKey === row.id
-                ? 'bg-surface-gray-2 hover:bg-surface-gray-3'
-                : ''
-            "
+                ? 'lv-active bg-surface-gray-2'
+                : '',
+            ]"
 						:style="{ gridTemplateColumns }"
 						@click="handleRowClick(row)"
 					>
@@ -644,3 +695,33 @@ const showListControls = computed(
 		/>
 	</section>
 </template>
+
+<style scoped>
+/* divide-y by hand, so the lines can get out of the way: the hovered (when
+   rows are clickable) or active row hides its own divider AND the next row's
+   — the rounded highlight floats clean instead of being sliced.
+
+   The line is a pseudo-element rather than a border-top: a border traces the
+   row's rounded-6 corners and curls up at both ends, leaving little hooks. */
+.lv-rows > .lv-row {
+	position: relative;
+}
+.lv-rows > .lv-row + .lv-row::before {
+	content: '';
+	position: absolute;
+	inset-inline: 0;
+	top: 0;
+	height: 1px;
+	background: var(--outline-gray-1);
+	pointer-events: none;
+}
+/* `.lv-row.lv-active` rather than `.lv-active`: the divider rule above carries
+   three classes, so a two-class selector loses to it and the line over the
+   active row survives. Every selector here matches its weight. */
+.lv-rows > .lv-row.lv-active::before,
+.lv-rows > .lv-active + .lv-row::before,
+.lv-interactive > .lv-row:hover::before,
+.lv-interactive > .lv-row:hover + .lv-row::before {
+	background: transparent;
+}
+</style>

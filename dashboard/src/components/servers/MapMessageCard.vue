@@ -14,7 +14,7 @@ defineProps<{
 		class="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center px-4"
 	>
 		<div
-			class="pointer-events-auto flex w-[26rem] max-w-full flex-col items-center gap-1 rounded-xl border border-outline-gray-1 bg-surface-elevation-1 p-6 text-center shadow-lg"
+			class="pointer-events-auto flex w-[26rem] max-w-full flex-col items-center gap-1 rounded-7 border border-outline-gray-1 bg-surface-elevation-1 p-6 text-center shadow-lg"
 		>
 			<span
 				:class="[icon, iconClass || 'text-ink-gray-4']"

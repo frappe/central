@@ -40,6 +40,8 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 			"reauth_required",
 			"expiry_month",
 			"expiry_year",
+			"mandate_max_amount",
+			"mandate_currency",
 		],
 		order_by="priority asc, creation asc",
 	)
@@ -66,6 +68,7 @@ def get_payment_method_options(team: str | None = None) -> dict:
 	from central.billing.payments import instruments as instrument_catalogue
 
 	tiles = instrument_catalogue.available(currency, instrument_catalogue.MANDATE)
+	gap_note = instrument_catalogue.mandate_gap_note(currency)
 
 	methods: list[str] = []
 	publishable_key = None
@@ -91,6 +94,8 @@ def get_payment_method_options(team: str | None = None) -> dict:
 		"adapter_key": "Stripe" if card_gw else None,
 		"currency": currency,
 		"instruments": tiles,
+		# What no tile here can do, said plainly rather than left as an absence.
+		"note": gap_note,
 		"methods": methods,
 		"publishable_key": publishable_key,
 		**upi,
@@ -184,6 +189,7 @@ def setup_payment_method_order(
 	method_type: str = "UPI Autopay",
 	contact: str | None = None,
 	instrument: str | None = None,
+	after_decline: bool = False,
 ) -> dict:
 	"""Begin saving a Razorpay-rail method — a UPI Autopay mandate, or a card token
 	for a network Stripe will not register a mandate on.
@@ -192,7 +198,11 @@ def setup_payment_method_order(
 	the gateway is resolved from it rather than from the currency default. Callers
 	that predate the tiles still pass `method_type`. `contact` is the phone the UI
 	collects inline for a card mandate when the billing profile has none (Razorpay
-	requires a customer contact for recurring cards)."""
+	requires a customer contact for recurring cards).
+
+	`after_decline` says the customer got here from a card the other rail refused. It
+	is recorded as provenance, not taken on trust: the server checks for a real
+	terminal decline before stamping it."""
 	team = _resolve_team(team, authz.MANAGE)
 	_require_billing_setup(team)
 	currency = _team_currency(team)
@@ -202,6 +212,7 @@ def setup_payment_method_order(
 	entry = (
 		instrument_catalogue.get(instrument, instrument_catalogue.MANDATE) if instrument else None
 	)
+	reason = _fallback_reason(team, entry, after_decline)
 	gw = (
 		gateway
 		or (
@@ -211,10 +222,28 @@ def setup_payment_method_order(
 		or _add_method_gateway(currency).get("name")
 	)
 	if entry and entry["method_type"] == "Card":
-		return mandates.setup_card(team, gw, contact=contact, fallback_reason=entry["fallback_reason"])
+		return mandates.setup_card(team, gw, contact=contact, fallback_reason=reason)
 	if method_type == "Card" and not entry:
 		return mandates.setup_card(team, gw, contact=contact)
 	return mandates.setup_mandate(team, gw)
+
+
+def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str | None:
+	"""Why this method is landing off the default rail.
+
+	A claim of "my card was declined" is verified against the attempts we actually
+	made; unverified, it falls back to the reason the instrument itself gives. The
+	field feeds the gateway comparison report, so a wrong value there is a wrong
+	answer to which rail authorises better.
+	"""
+	from central.billing.payments import decline
+
+	instrument_reason = entry["fallback_reason"] if entry else None
+	if not after_decline:
+		return instrument_reason
+	if decline.recent_terminal_decline(team):
+		return "Stripe Decline"
+	return instrument_reason
 
 
 @frappe.whitelist(methods=["POST"])

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Switch, useCall } from 'frappe-ui'
+import { Button, SettingsRow, Switch, useCall } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams } from '@/composables/useTeamScope'
@@ -106,7 +106,7 @@ async function onSave(): Promise<void> {
 		}))
 		await save.submit({ ...teamParams(), preferences })
 		await load.reload()
-		successToast('Notification preferences saved.')
+		successToast('Notification preferences saved')
 	} catch (e) {
 		errorToast(e)
 	}
@@ -114,46 +114,53 @@ async function onSave(): Promise<void> {
 </script>
 
 <template>
-	<div class="mx-auto max-w-2xl">
-		<p class="mb-4 text-p-sm text-ink-gray-5">
-			Choose how each kind of notification reaches you. These apply to your
-			account on this team only.
-		</p>
-
+	<div>
+		<!-- Column headers, aligned to the switch cells below: with two switches
+		     per row, naming the channel once beats repeating a label against
+		     every toggle. -->
 		<div
-			class="divide-y divide-outline-gray-1 rounded-lg ring-1 ring-outline-gray-1"
+			class="flex items-center justify-end gap-6 pb-1 text-p-sm text-ink-gray-5"
 		>
-			<div
+			<span class="w-12 text-center">Email</span>
+			<span class="w-12 text-center">In-app</span>
+		</div>
+
+		<div class="divide-y divide-outline-gray-1 border-t border-outline-gray-1">
+			<!-- label-for="" opts out of SettingsRow's auto-label: it wires the
+			     title to the first control it finds, and here that would make
+			     clicking "Billing" toggle email only. -->
+			<SettingsRow
 				v-for="cat in CATEGORIES"
 				:key="cat.key"
-				class="flex items-start justify-between gap-4 px-4 py-3"
+				:title="cat.label"
+				:description="cat.hint"
+				label-for=""
 			>
-				<div class="min-w-0">
-					<p class="text-sm text-ink-gray-8">{{ cat.label }}</p>
-					<p class="text-p-sm text-ink-gray-5">{{ cat.hint }}</p>
+				<div class="flex items-center gap-6">
+					<span class="flex w-12 justify-center">
+						<Switch
+							v-model="state[cat.key].email"
+							:aria-label="`Email notifications for ${cat.label}`"
+						/>
+					</span>
+					<span class="flex w-12 justify-center">
+						<Switch
+							v-model="state[cat.key].in_app"
+							:aria-label="`In-app notifications for ${cat.label}`"
+						/>
+					</span>
 				</div>
-				<div class="flex shrink-0 items-center gap-6">
-					<label class="flex items-center gap-2">
-						<span class="text-p-sm text-ink-gray-6">Email</span>
-						<Switch v-model="state[cat.key].email" />
-					</label>
-					<label class="flex items-center gap-2">
-						<span class="text-p-sm text-ink-gray-6">In-app</span>
-						<Switch v-model="state[cat.key].in_app" />
-					</label>
-				</div>
-			</div>
+			</SettingsRow>
 		</div>
 
 		<div class="mt-4 flex justify-end">
 			<Button
 				variant="solid"
+				label="Save preferences"
 				:loading="save.loading"
 				:disabled="!dirty"
 				@click="onSave"
-			>
-				Save preferences
-			</Button>
+			/>
 		</div>
 	</div>
 </template>

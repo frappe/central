@@ -7,7 +7,7 @@ import type { Region } from '@/types/Region'
 // status into what the map shows (label, badge, dot colour, pulse). Terminated
 // assets never reach the map — useServerMapData filters them out.
 
-type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue'
+type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue'
 
 export interface ServerVisual {
 	/** Stable key the status filter matches on. */
@@ -25,14 +25,14 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		key: 'active',
 		label: 'Active',
 		badgeTheme: 'green',
-		dot: 'var(--ink-green-7)',
+		dot: 'var(--ink-green-6)',
 		pulse: false,
 	},
 	settingUp: {
 		key: 'settingUp',
 		label: 'Setting up',
-		badgeTheme: 'orange',
-		dot: 'var(--ink-amber-7)',
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
 		pulse: false,
 	},
 	paused: {
@@ -53,14 +53,14 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		key: 'broken',
 		label: 'Broken',
 		badgeTheme: 'red',
-		dot: 'var(--ink-red-7)',
+		dot: 'var(--ink-red-6)',
 		pulse: true,
 	},
 	resizing: {
 		key: 'resizing',
 		label: 'Resizing',
-		badgeTheme: 'orange',
-		dot: 'var(--ink-amber-7)',
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
 		pulse: false,
 	},
 }
@@ -209,10 +209,12 @@ export const MAP_WIDTH = 879
 export const MAP_HEIGHT = 443
 const LAT_TOP = 83
 const LAT_BOTTOM = -56
+// User zoom is gone (hover cards carry the detail); this caps how far picker
+// mode may zoom while framing its marker set.
 export const MAX_ZOOM = 5
-export const ZOOM_STEP = 1.7
-// Past this zoom, servers sharing a spot stop counting ("3") and fan out into an
-// overlapping avatar stack. Two zoom-in clicks (1.7² ≈ 2.89) get you there.
+// export const ZOOM_STEP = 1.7 // restored with the map's zoom controls
+// Past this zoom, servers sharing a spot stop counting ("3") and fan out into
+// an overlapping avatar stack — only reachable via the picker's marker fit.
 export const STACK_ZOOM = 2.8
 
 // Greedy proximity-cluster thresholds in SCREEN pixels (divided by scale k), so
@@ -436,7 +438,7 @@ export function siteVisual(status: string): ServerVisual {
 			key: 'active',
 			label: 'Running',
 			badgeTheme: 'green',
-			dot: 'var(--ink-green-7)',
+			dot: 'var(--ink-green-6)',
 			pulse: false,
 		}
 	if (status === 'Failed')
@@ -444,14 +446,14 @@ export function siteVisual(status: string): ServerVisual {
 			key: 'broken',
 			label: 'Failed',
 			badgeTheme: 'red',
-			dot: 'var(--ink-red-7)',
+			dot: 'var(--ink-red-6)',
 			pulse: true,
 		}
 	return {
 		key: 'settingUp',
 		label: status,
-		badgeTheme: 'orange',
-		dot: 'var(--ink-amber-7)',
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
 		pulse: false,
 	}
 }

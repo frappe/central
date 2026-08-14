@@ -11,6 +11,7 @@ import { onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
+import { useMyProfile } from '@/composables/useMyProfile'
 import { useSession } from '@/composables/useSession'
 import { sidebarSections } from './list'
 
@@ -18,6 +19,7 @@ const props = defineProps<{ isMobile?: boolean }>()
 
 const { activeTeamLabel } = useSession()
 const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
+const { profile } = useMyProfile()
 
 // The map pages want the full viewport, so the sidebar defaults collapsed
 // there and expanded everywhere else. Only crossing that boundary re-applies
@@ -77,10 +79,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 			:menu-items="headerMenuItems"
 		/>
 
-		<nav
-			class="flex-1 overflow-y-auto pt-2"
-			:class="sidebarCollapsed ? 'px-2.5' : 'px-2'"
-		>
+		<nav class="flex-1 overflow-y-auto px-2 pt-2">
 			<template
 				v-for="section in sidebarSections"
 				:key="section.label || 'main'"
@@ -133,29 +132,52 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 				match-trigger-width
 			>
 				<template #default="{ open }">
+					<!-- No transition on the button itself: `duration-*` alone animates
+					     ALL properties, so the open state's white card faded in over
+					     300ms and read as gray mid-fade. The collapse animation lives
+					     on the inner text div, which keeps its own duration. -->
 					<button
-						class="flex h-10 w-full items-center rounded px-1.5 duration-300 ease-in-out"
+						class="flex h-10 w-full items-center rounded-4 px-1.5"
 						:class="[
 							sidebarCollapsed ? 'justify-center' : '',
+							// z-10 lifts the open card above the menu popover's
+							// downward shadow-2xl — without it the shadow paints over
+							// the trigger and mutes the white card to gray. (The header
+							// never needs this: its menu opens downward, casting away.)
 							open
-								? 'bg-surface-elevation-2 shadow-sm'
+								? 'relative z-10 bg-surface-elevation-2 shadow-sm'
 								: 'hover:bg-surface-gray-3',
 						]"
 					>
-						<Avatar :label="currentUser ?? ''" size="md" />
+						<Avatar
+							:image="profile?.user_image ?? undefined"
+							:label="profile?.full_name || currentUser || ''"
+							size="md"
+						/>
+						<!-- Name first, email beneath — the email alone reads like a
+						     login prompt, not a person. -->
 						<div
-							class="flex-1 truncate text-left text-sm text-ink-gray-8 duration-300 ease-in-out"
+							class="min-w-0 flex-1 text-left duration-300 ease-in-out"
 							:class="
 								sidebarCollapsed
 									? 'ml-0 w-0 overflow-hidden opacity-0'
 									: 'ml-2 w-auto opacity-100'
 							"
 						>
-							{{ currentUser }}
+							<div class="truncate text-sm leading-4 text-ink-gray-8">
+								{{ profile?.full_name || currentUser }}
+							</div>
+							<div
+								v-if="profile?.full_name"
+								class="truncate text-xs leading-4 text-ink-gray-5"
+							>
+								{{ currentUser }}
+							</div>
 						</div>
+						<!-- Single up chevron — the menu opens upward. -->
 						<span
 							v-if="!sidebarCollapsed"
-							class="lucide-chevrons-up-down ml-2 size-4 shrink-0 text-ink-gray-5"
+							class="lucide-chevron-up ml-2 size-4 shrink-0 text-ink-gray-5"
 						/>
 					</button>
 				</template>

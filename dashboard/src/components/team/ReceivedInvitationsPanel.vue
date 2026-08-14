@@ -32,7 +32,7 @@ const focusedMissing = computed(
 <template>
 	<div class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
 		<div v-if="loading" class="mx-auto max-w-2xl space-y-3">
-			<Skeleton v-for="n in 2" :key="n" class="h-24 rounded-lg" />
+			<Skeleton v-for="n in 2" :key="n" class="h-24 rounded-6" />
 		</div>
 
 		<ListViewState
@@ -52,10 +52,10 @@ const focusedMissing = computed(
 			<article
 				v-for="invite in shown"
 				:key="invite.name"
-				class="rounded-lg border border-outline-gray-2 bg-surface-elevation-1 p-5"
+				class="rounded-6 border border-outline-gray-2 bg-surface-elevation-1 p-5"
 			>
 				<div class="flex items-start gap-3">
-					<Avatar :label="invite.team_name" size="xl" />
+					<Avatar :label="invite.team_name" size="xl" shape="square" />
 					<div class="min-w-0 flex-1">
 						<h2 class="truncate text-base font-semibold text-ink-gray-9">
 							{{ invite.team_name }}

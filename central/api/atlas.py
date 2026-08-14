@@ -14,14 +14,14 @@ def event(**kwargs) -> dict:
 	"""
 	Webhook sink for Atlas lifecycle events. Atlas authenticates with its scoped
 	Central service-user token; ingest_event resolves the sender from that session,
-	then queues the mirror update so Atlas gets a fast ack. Body: `type`, `payload`,
-	`occurred_at`.
+	then queues the mirror update so Atlas gets a fast ack. Body: `event_id`, `type`,
+	`payload`, `occurred_at`.
 
 	"""
 	data = frappe._dict(kwargs)
 	payload = frappe.parse_json(data.payload) if isinstance(data.payload, str) else (data.payload or {})
 
-	return ingest_event(data.type, payload, data.occurred_at)
+	return ingest_event(data.type, payload, data.occurred_at, data.event_id)
 
 
 # --- Inbound Atlas HTTP endpoints -------------------------------------------

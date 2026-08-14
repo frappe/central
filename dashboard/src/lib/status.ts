@@ -4,7 +4,7 @@ import type { Asset } from '@/types/Central/Asset'
 // The DocType statuses plus Central's own derived display state (see displayStatus).
 export type AssetStatus = NonNullable<Asset['status']> | 'Resizing'
 
-export type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue' | 'violet'
+export type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue' | 'violet'
 
 // A server mid-resize reads as "Resizing" regardless of the raw Atlas status (which
 // flips Running→Stopped→Running under it as the host power-cycles the VM). The flag is
@@ -50,7 +50,7 @@ export function isSettingUp(status?: AssetStatus): boolean {
 // Team Invitation status → Badge theme. Pending is in-flight (amber), Accepted is
 // done (green), everything else is inactive/neutral or a hard stop.
 const INVITATION_STATUS_THEME: Record<InvitationStatus, BadgeTheme> = {
-	Pending: 'orange',
+	Pending: 'amber',
 	Accepted: 'green',
 	Expired: 'gray',
 	Revoked: 'red',
@@ -62,10 +62,11 @@ export function invitationStatusTheme(status: InvitationStatus): BadgeTheme {
 }
 
 // Invoice status → Badge theme (case-insensitive), keyed by the Invoice DocType's
-// status options: Paid green, Open amber, Overdue red, Draft/Waived/Cancelled neutral.
+// status options. Paid is the normal state and stays gray — color is reserved
+// for states that need attention.
 const INVOICE_THEME: Record<string, BadgeTheme> = {
-	paid: 'green',
-	open: 'orange',
+	paid: 'gray',
+	open: 'amber',
 	overdue: 'red',
 	draft: 'gray',
 	waived: 'gray',
@@ -74,4 +75,23 @@ const INVOICE_THEME: Record<string, BadgeTheme> = {
 
 export function invoiceTheme(status: string | null | undefined): BadgeTheme {
 	return INVOICE_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
+}
+
+// Payment Attempt status → what a customer calls it, and its Badge theme. Same
+// doctrine as invoices: the ordinary outcome is grey and colour is spent only on
+// the states worth noticing — in-flight (nobody knows yet) and failed.
+const ATTEMPT_DISPLAY: Record<string, { label: string; theme: BadgeTheme }> = {
+	captured: { label: 'Paid', theme: 'gray' },
+	authorised: { label: 'Authorised', theme: 'amber' },
+	initiated: { label: 'Processing', theme: 'amber' },
+	failed: { label: 'Failed', theme: 'red' },
+	refunded: { label: 'Refunded', theme: 'gray' },
+}
+
+export function paymentAttemptDisplay(status: string | null | undefined): {
+	label: string
+	theme: BadgeTheme
+} {
+	const key = String(status ?? '').toLowerCase()
+	return ATTEMPT_DISPLAY[key] ?? { label: String(status ?? 'Unknown'), theme: 'gray' }
 }

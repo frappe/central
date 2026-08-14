@@ -16,6 +16,8 @@ export interface RefreshResponse {
 export interface Team {
 	name: string
 	label: string
+	/** Public file URL of the team's logo, or null for the initial-letter tint. */
+	logo: string | null
 	owner: string | null
 }
 
@@ -40,6 +42,8 @@ export interface TeamMemberRoleAssignment {
 export interface TeamMemberRow {
 	user: string
 	full_name: string
+	/** The frappe User's profile photo URL, when they've set one. */
+	user_image: string | null
 	roles: TeamMemberRoleAssignment[]
 	status: MemberStatus
 	is_owner: boolean

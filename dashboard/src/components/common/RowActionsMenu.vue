@@ -2,8 +2,8 @@
 import {
 	Button,
 	Dropdown,
+	type DropdownAlign,
 	type DropdownOptions,
-	type DropdownPlacement,
 } from 'frappe-ui'
 
 // One row's "⋯" action menu — the frappe-ui Dropdown + ghost ellipsis trigger that
@@ -17,16 +17,19 @@ withDefaults(
 		label: string
 		busy?: boolean
 		icon?: string
-		placement?: DropdownPlacement
+		align?: DropdownAlign
 	}>(),
-	{ busy: false, icon: 'lucide-ellipsis-vertical', placement: 'right' },
+	{ busy: false, icon: 'lucide-ellipsis-vertical', align: 'end' },
 )
 </script>
 
 <template>
-	<Dropdown v-if="options.length" :options="options" :placement="placement">
+	<Dropdown v-if="options.length" :options="options" :align="align">
 		<template #trigger>
+			<!-- Inset focus ring: list cells clip horizontally, so an outside
+			     focus outline gets sliced at the cell edge. -->
 			<Button
+				class="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-outline-gray-4"
 				variant="ghost"
 				:icon="icon"
 				:loading="busy"

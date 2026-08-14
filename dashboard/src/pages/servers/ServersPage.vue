@@ -105,7 +105,6 @@ const regionFilter = ref<{ provider: string; region: string }>({
 })
 const hoverId = ref<string | null>(null)
 const panelOpen = ref(false)
-const mapRef = ref<InstanceType<typeof ServerMap> | null>(null)
 
 // Servers and sites decorated into one sorted ResourceRow list (useFleetRows).
 const { rows } = useFleetRows(assets, sites, regions)
@@ -262,12 +261,7 @@ function canOpenBench(server: AssetRow): boolean {
 		canOpenServer.value && server.status === 'Running' && !!server.gateway_url
 	)
 }
-function onOpen(id: string): void {
-	const row = rows.value.find((r) => r.id === id)
-	if (!row) return
-	if (panelOpen.value) {
-		locationFilter.value = { ids: [id], label: row.name }
-	}
+function openResource(row: ResourceRow): void {
 	if (row.kind === 'site') {
 		if (canOpenServer.value && row.site?.url) openSite(row.site.name)
 		return
@@ -280,11 +274,16 @@ function onOpen(id: string): void {
 	// Not openable yet (still provisioning, stopped, …) — show the overview.
 	overviewServer.value = row.asset
 }
+function onOpen(id: string): void {
+	const row = rows.value.find((r) => r.id === id)
+	if (!row) return
+	if (panelOpen.value) {
+		locationFilter.value = { ids: [id], label: row.name }
+	}
+	openResource(row)
+}
 function onClusterOpen(payload: { ids: string[]; label: string }): void {
 	if (panelOpen.value) locationFilter.value = payload
-}
-function focusRow(row: ResourceRow): void {
-	mapRef.value?.focusPin(row.id)
 }
 function goNewServer(region: string): void {
 	router.push({ path: '/servers/new', query: { region } })
@@ -414,7 +413,6 @@ async function confirmSiteTerminate(): Promise<void> {
          the overlays' z-indexes from leaking above body-portaled menus. -->
 		<div v-else class="relative isolate flex-1 overflow-hidden">
 			<ServerMap
-				ref="mapRef"
 				class="absolute inset-0"
 				:pins="pins"
 				:spots="spots"
@@ -484,7 +482,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				:busy="busy"
 				:opening="opening"
 				:opening-site="openingSite"
-				@focus-row="focusRow"
+				@open-row="openResource"
 				@clear-location="locationFilter = null"
 				@overview="overviewServer = $event"
 				@open="open"
@@ -506,7 +504,7 @@ async function confirmSiteTerminate(): Promise<void> {
 			<MapMessageCard
 				v-else-if="error && !rows.length"
 				icon="lucide-circle-alert"
-				icon-class="text-ink-red-5"
+				icon-class="text-ink-red-4"
 				title="Couldn't load your servers"
 				:description="error"
 			>

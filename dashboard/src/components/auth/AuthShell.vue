@@ -37,7 +37,7 @@ withDefaults(
 				<span
 					v-for="index in steps"
 					:key="index"
-					class="h-1 flex-1 rounded"
+					class="h-1 flex-1 rounded-4"
 					:class="index <= step ? 'bg-surface-gray-6' : 'bg-surface-gray-3'"
 				/>
 			</div>

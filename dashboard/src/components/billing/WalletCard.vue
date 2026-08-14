@@ -6,6 +6,7 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { formatDate, money } from '@/lib/format'
+import { infoToast } from '@/lib/toast'
 
 // Wallet — the FC v2 prototype's funding card: balance, a one-line coverage
 // verdict, and (once there's a method to charge) the funding actions. The chevron
@@ -34,6 +35,14 @@ const short = computed(
 )
 const atRisk = computed(() => short.value && !hasWorkingMethod.value)
 
+// How far the balance goes against this cycle. A bare "card covers the rest" says
+// nothing about how much rest there is; a percentage is the same sentence with the
+// number the customer would otherwise have to work out.
+const coverPct = computed(() => {
+	if (projected.value <= 0) return null
+	return Math.min(100, Math.floor((balance.value / projected.value) * 100))
+})
+
 // Promotional credit on a clock. Only the soonest grant is named on the card —
 // the rest are in the wallet history — since the date the customer needs to act on
 // is the first one.
@@ -43,12 +52,18 @@ const showTopup = ref(false)
 function onAddCredit(): void {
 	if (requireSetup()) showTopup.value = true
 }
+
+// GROUNDING GAP (#69): no auto-recharge endpoint yet, so the button answers
+// with the same notice as the wallet panel's toggle.
+function onAutoRecharge(): void {
+	infoToast("Auto-recharge isn't available yet")
+}
 </script>
 
 <template>
 	<div
-		class="flex flex-col rounded-xl border bg-surface-elevation-1 p-5 transition-colors"
-		:class="active ? 'border-outline-gray-4 ring-1 ring-outline-gray-4' : 'border-outline-gray-2'"
+		class="flex flex-col rounded-6 border bg-surface-base p-5 transition-colors"
+		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
 	>
 		<div class="flex h-6 items-center justify-between gap-2">
 			<span class="flex items-center gap-1">
@@ -59,9 +74,7 @@ function onAddCredit(): void {
 				>
 					Wallet
 				</button>
-				<Tooltip
-					text="Applied to your invoice first, before any card is charged."
-				>
+				<Tooltip text="Pays invoices before your card is charged">
 					<span
 						class="lucide-info size-3.5 text-ink-gray-4"
 						aria-hidden="true"
@@ -70,7 +83,7 @@ function onAddCredit(): void {
 			</span>
 			<button
 				type="button"
-				class="grid size-6 place-items-center rounded text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
+				class="grid size-6 place-items-center rounded-4 text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
 				aria-label="Open wallet history"
 				@click="$emit('open')"
 			>
@@ -82,19 +95,22 @@ function onAddCredit(): void {
 			<LoadingText :lines="1" />
 		</div>
 		<template v-else>
-			<p class="mt-1.5 text-2xl font-semibold tabular-nums text-ink-gray-9">
+			<p class="mt-1.5 text-2xl-semibold tabular-nums text-ink-gray-9">
 				{{ money(balance, currency) }}
 			</p>
 			<!-- Coverage verdict — always the third line -->
 			<p
 				v-if="atRisk"
-				class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-red-3"
+				class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-red-6"
 			>
 				<span
 					class="lucide-triangle-alert size-3.5 shrink-0"
 					aria-hidden="true"
 				/>
-				Insufficient balance
+				<template v-if="coverPct != null">
+					Covers {{ coverPct }}% of this cycle
+				</template>
+				<template v-else>Insufficient balance</template>
 			</p>
 			<p
 				v-else-if="short"
@@ -104,9 +120,19 @@ function onAddCredit(): void {
 					class="lucide-credit-card size-3.5 shrink-0 text-ink-gray-4"
 					aria-hidden="true"
 				/>
-				Card covers the rest
+				<template v-if="coverPct != null">
+					Covers {{ coverPct }}% of this cycle · card covers the rest
+				</template>
+				<template v-else>Card covers the rest</template>
 			</p>
-			<p v-else class="mt-1.5 text-p-sm text-ink-gray-5">Covers this invoice</p>
+			<p v-else class="mt-1.5 text-p-sm text-ink-gray-5">
+				<!-- An empty wallet with nothing owed is a wallet with no credit in it;
+				     saying "nothing due this cycle" describes the cycle instead, which
+				     is the neighbouring card's job. -->
+				<template v-if="projected > 0">Covers this cycle in full</template>
+				<template v-else-if="balance > 0">Ready for your first invoice</template>
+				<template v-else>No credit added yet</template>
+			</p>
 
 			<!-- Free credit runs out; purchased credit doesn't. Say so before it does. -->
 			<p
@@ -132,7 +158,7 @@ function onAddCredit(): void {
 					size="sm"
 					label="Auto-recharge off"
 					class="-ml-2"
-					@click="$emit('open')"
+					@click="onAutoRecharge"
 				>
 					<template #prefix
 						><span class="lucide-zap size-4" aria-hidden="true" /></template

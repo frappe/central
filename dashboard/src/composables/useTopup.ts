@@ -100,7 +100,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 			})
 		} catch (e) {
 			if ((e as Error)?.message !== 'cancelled')
-				errorToast(e, 'Top-up could not be completed.')
+				errorToast(e, 'Top-up could not be completed')
 		}
 		return { card: false }
 	}
@@ -130,12 +130,12 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 						paypal_order_id: paypalOrderId,
 					})
 				} catch (e) {
-					errorToast(e, 'Top-up could not be completed.')
+					errorToast(e, 'Top-up could not be completed')
 				} finally {
 					submitting.value = false
 				}
 			},
-			onError: (e) => errorToast(e, 'PayPal could not start.'),
+			onError: (e) => errorToast(e, 'PayPal could not start'),
 		})
 	}
 
@@ -177,14 +177,14 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 			})
 			return confirm.data
 		} catch (e) {
-			errorToast(e, 'Top-up could not be completed.')
+			errorToast(e, 'Top-up could not be completed')
 		} finally {
 			submitting.value = false
 		}
 	}
 
 	function finish(res: unknown): void {
-		successToast('Wallet topped up.')
+		successToast('Wallet topped up')
 		onDone?.(res)
 	}
 

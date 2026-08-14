@@ -277,15 +277,28 @@ def reorder_payment_methods(team: str, ordered: list | str) -> dict:
 
 def delete_payment_method(payment_method: str) -> dict:
 	"""Remove a payment method and re-densify so the team keeps a dense, primary-
-	first order (or none if it was the last)."""
+	first order (or none if it was the last).
+
+	A mandate is revoked at the gateway FIRST. Deleting only our row would leave a
+	standing debit permission alive at the bank while the customer believes they
+	have withdrawn it — the one failure here that costs them money rather than
+	convenience. If the gateway refuses the revoke we keep the row, so the method
+	the customer can still see is the one the bank still honours.
+	"""
+	from central.billing.payments import mandates
+
 	method = frappe.get_doc("Payment Method", payment_method)
 	team = method.team
+	revoked = False
+	if method.method_type == mandates.MANDATE_METHOD and method.gateway_method_id:
+		mandates.cancel_mandate(payment_method)
+		revoked = True
 	frappe.delete_doc("Payment Method", method.name, ignore_permissions=True)
 	densify_priorities(team)
 	new_default = frappe.db.get_value(
 		"Payment Method", {"team": team, "priority": 0, "status": "Active"}, "name"
 	)
-	return {"deleted": payment_method, "new_default": new_default}
+	return {"deleted": payment_method, "new_default": new_default, "mandate_revoked": revoked}
 
 
 def expire_payment_methods(now=None) -> dict:

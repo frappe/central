@@ -67,7 +67,7 @@ const routes = [
 				path: 'addons/ai',
 				name: 'AIInference',
 				component: () => import('@/pages/addons/AIInference.vue'),
-				meta: { title: 'Add-on services', feature: ['addons', 'llm'] },
+				meta: { title: 'Services', feature: ['addons', 'llm'] },
 			},
 			{
 				path: 'billing',
@@ -82,10 +82,16 @@ const routes = [
 				meta: { title: 'Invoices' },
 			},
 			{
+				path: 'billing/reports',
+				name: 'BillingReports',
+				component: () => import('@/pages/billing/BillingReportsPage.vue'),
+				meta: { title: 'Reports' },
+			},
+			{
 				path: 'billing/limits',
 				name: 'SpendingLimits',
 				component: () => import('@/pages/billing/SpendingLimitsPage.vue'),
-				meta: { title: 'Spending Limits' },
+				meta: { title: 'Limit tiers' },
 			},
 			{
 				path: 'notifications',
@@ -99,6 +105,15 @@ const routes = [
 				component: () => import('@/pages/settings/SettingsPage.vue'),
 				meta: { title: 'Settings' },
 			},
+			// Mobile opens each settings tab as its own page — no dialog on a
+			// phone. Desktop reaches the same tabs through the settings dialog,
+			// but these routes stay valid there (deep links, browser Back).
+			{
+				path: 'settings/:tab',
+				name: 'SettingsTab',
+				component: () => import('@/pages/settings/SettingsDetailPage.vue'),
+				meta: { title: 'Settings' },
+			},
 			{ path: 'team', redirect: '/team/members' },
 			// Members + roles share one tabbed page. Settings fold into this surface
 			// (rename beside the title, transfer on member rows, delete in team menu).
@@ -108,7 +123,7 @@ const routes = [
 				path: 'team/members',
 				name: 'Members',
 				component: () => import('@/pages/team/AccessPage.vue'),
-				meta: { title: 'Teams' },
+				meta: { title: 'Team' },
 			},
 			{ path: 'team/roles', redirect: '/team/members' },
 			{ path: 'team/settings', redirect: '/team/members' },
@@ -137,7 +152,7 @@ const routes = [
 				path: 'addons',
 				name: 'Addons',
 				component: () => import('@/pages/addons/Page.vue'),
-				meta: { title: 'Add-on services', feature: 'addons' },
+				meta: { title: 'Services', feature: 'addons' },
 			},
 		],
 	},
