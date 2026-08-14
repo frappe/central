@@ -1,9 +1,9 @@
+import { type ColorScheme, useColorScheme } from 'frappe-ui'
 import { computed, h } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { openSettings } from '@/composables/useSettings'
-import { useTheme } from '@/composables/useTheme'
 
-const themeOptions = [
+const themeOptions: { label: string; icon: string; value: ColorScheme }[] = [
 	{ label: 'Light', icon: 'lucide-sun', value: 'light' },
 	{ label: 'Dark', icon: 'lucide-moon', value: 'dark' },
 	{ label: 'System', icon: 'lucide-monitor', value: 'system' },
@@ -11,7 +11,7 @@ const themeOptions = [
 
 export const useAppMenu = () => {
 	const { currentUser, logout } = useAuth()
-	const { currentTheme, setTheme } = useTheme()
+	const { colorScheme, setColorScheme } = useColorScheme()
 
 	const logoutAndRedirect = async () => {
 		await logout()
@@ -30,8 +30,8 @@ export const useAppMenu = () => {
 			submenu: themeOptions.map((theme) => ({
 				label: theme.label,
 				icon: theme.icon,
-				selected: currentTheme.value === theme.value,
-				onClick: () => setTheme(theme.value as 'light' | 'dark' | 'system'),
+				selected: colorScheme.value === theme.value,
+				onClick: () => setColorScheme(theme.value),
 				slots: {
 					suffix: ({ selected }: { selected: boolean }) =>
 						selected
@@ -56,8 +56,6 @@ export const useAppMenu = () => {
 		headerMenuItems,
 		footerMenuItems,
 		currentUser,
-		currentTheme,
-		setTheme,
 		logoutAndRedirect,
 	}
 }

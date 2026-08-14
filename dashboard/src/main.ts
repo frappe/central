@@ -2,12 +2,8 @@ import { FrappeUI } from 'frappe-ui'
 import { io } from 'socket.io-client'
 import { createApp } from 'vue'
 import App from '@/App.vue'
-import { useTheme } from '@/composables/useTheme'
 import { router } from '@/router'
 import './style.css'
-
-// Apply the stored (or default light) theme before the app mounts.
-useTheme()
 
 // The new data-fetching composables (useCall/useList) read window.csrf_token —
 // injected by central/www/dashboard.py — and POST relative to the served origin,
