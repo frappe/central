@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Button, Popover, Select, SidebarItem, TabButtons } from 'frappe-ui'
+import {
+	Button,
+	dayjsLocal,
+	Popover,
+	Select,
+	SidebarItem,
+	TabButtons,
+} from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -77,26 +84,6 @@ const SEVERITY: Record<
 const look = (severity: NotificationSeverity) =>
 	SEVERITY[severity] ?? SEVERITY.Info
 
-const timeAgo = (timestamp: string): string => {
-	const then = new Date(timestamp.replace(' ', 'T')).getTime()
-
-	if (Number.isNaN(then)) return ''
-
-	const seconds = Math.max(0, Math.floor((Date.now() - then) / 1000))
-	if (seconds < 60) return 'just now'
-
-	const minutes = Math.floor(seconds / 60)
-	if (minutes < 60) return `${minutes}m ago`
-
-	const hours = Math.floor(minutes / 60)
-	if (hours < 24) return `${hours}h ago`
-
-	const days = Math.floor(hours / 24)
-	if (days < 30) return `${days}d ago`
-
-	return new Date(then).toLocaleDateString()
-}
-
 const onRowClick = async (notification: TeamNotification): Promise<void> => {
 	await markAsRead(notification.name)
 
@@ -123,7 +110,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 						<span class="lucide-bell block size-4" aria-hidden="true" />
 						<span
 							v-if="unread > 0"
-							class="absolute right-[2px] top-0 block size-[5px] shrink-0 rounded-full bg-surface-blue-6"
+							class="absolute right-[1px] top-0 block size-[5px] shrink-0 rounded-full bg-surface-blue-6"
 							aria-hidden="true"
 						/>
 					</span>
@@ -194,7 +181,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 								{{ n.title }}
 							</span>
 							<span class="shrink-0 whitespace-nowrap text-xs text-ink-gray-5">
-								{{ timeAgo(n.creation) }}
+								{{ dayjsLocal(n.creation).fromNow() }}
 							</span>
 						</span>
 
