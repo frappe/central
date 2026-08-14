@@ -231,7 +231,7 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 				<div class="min-w-0">
 					<div class="flex items-center gap-2">
 						<p class="truncate font-medium text-ink-gray-9">{{ row.name }}</p>
-						<Badge v-if="row.invite" theme="orange" label="Invited" />
+						<Badge v-if="row.invite" theme="amber" label="Invited" />
 						<Badge
 							v-else-if="row.member?.status === 'Suspended'"
 							theme="red"

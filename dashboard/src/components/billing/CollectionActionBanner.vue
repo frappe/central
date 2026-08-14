@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { Button, Dialog, useCall } from 'frappe-ui'
+import { Alert, Button, Dialog, useCall } from 'frappe-ui'
 // "Action Required" banner — shown when an INR e-mandate team's bill crosses the
 // ₹15,000 silent-debit limit and the customer must choose how to keep paying
 // (ADR 0005 / payments-inr.md). Calm, not alarming: services keep running; this
 // is an invitation to decide. Backend feed: get_collection_status.
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
-import Alert from '@/components/common/Alert.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
@@ -73,9 +72,9 @@ const options = [
 <template>
 	<Alert
 		v-if="show && s"
-		theme="yellow"
+		theme="amber"
 		title="Action required — choose how to keep paying"
-		:action="canManageBilling ? { label: 'Choose how to pay', onClick: () => (choosing = true) } : null"
+		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
 		<template #description>
 			This month is heading to
@@ -96,7 +95,7 @@ const options = [
 					v-for="o in options"
 					:key="o.key"
 					type="button"
-					class="flex flex-col gap-2 rounded-lg border p-4 text-left transition-colors"
+					class="flex flex-col gap-2 rounded-6 border p-4 text-left transition-colors"
 					:class="
             chosen === o.key
               ? 'border-outline-gray-4 bg-surface-gray-2'

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { Avatar, Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Avatar, Button, Dialog, FormControl, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import Alert from '@/components/common/Alert.vue'
 import { useRegions } from '@/composables/useRegions'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'

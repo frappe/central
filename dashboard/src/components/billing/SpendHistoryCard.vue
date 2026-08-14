@@ -43,7 +43,7 @@ function heightPct(total: number): number {
 			>
 				<div
 					v-if="m.total > 0"
-					class="mx-auto w-full max-w-8 rounded-t-sm bg-surface-gray-10 transition-opacity group-hover:opacity-80"
+					class="mx-auto w-full max-w-8 rounded-t-1 bg-surface-gray-10 transition-opacity group-hover:opacity-80"
 					:style="{ height: `${heightPct(m.total)}%` }"
 				/>
 				<div v-else class="mx-auto h-px w-full max-w-8 bg-surface-gray-3" />

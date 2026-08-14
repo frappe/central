@@ -68,13 +68,13 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 			<!-- plan card -->
 			<template v-else>
 				<section
-					class="rounded-lg border border-outline-gray-2 bg-surface-base p-5"
+					class="rounded-6 border border-outline-gray-2 bg-surface-base p-5"
 				>
 					<div class="flex h-6 items-center justify-between gap-3">
 						<span class="text-p-sm text-ink-gray-5">Plan</span>
 						<Badge
 							:label="instance?.status ?? 'Active'"
-							:theme="instance?.status === 'Active' ? 'green' : 'orange'"
+							:theme="instance?.status === 'Active' ? 'green' : 'amber'"
 							variant="subtle"
 						/>
 					</div>

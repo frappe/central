@@ -504,7 +504,7 @@ async function confirmSiteTerminate(): Promise<void> {
 			<MapMessageCard
 				v-else-if="error && !rows.length"
 				icon="lucide-circle-alert"
-				icon-class="text-ink-red-5"
+				icon-class="text-ink-red-4"
 				title="Couldn't load your servers"
 				:description="error"
 			>

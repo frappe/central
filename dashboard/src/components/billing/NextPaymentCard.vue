@@ -36,7 +36,7 @@ const instrument = computed(() => {
 
 <template>
 	<div
-		class="flex flex-col rounded-lg border bg-surface-base p-5 transition-colors"
+		class="flex flex-col rounded-6 border bg-surface-base p-5 transition-colors"
 		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
 	>
 		<div class="flex h-6 items-center justify-between gap-2">
@@ -54,7 +54,7 @@ const instrument = computed(() => {
 			<button
 				v-if="amount > 0"
 				type="button"
-				class="grid size-6 place-items-center rounded text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
+				class="grid size-6 place-items-center rounded-4 text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
 				aria-label="Open payment schedule"
 				@click="$emit('open')"
 			>
@@ -79,7 +79,7 @@ const instrument = computed(() => {
 			     it — never as a guess about whether a card will work. -->
 			<div
 				v-if="blocker"
-				class="mt-3 rounded-md border border-outline-amber-2 bg-surface-amber-1 p-3"
+				class="mt-3 rounded-5 border border-outline-amber-2 bg-surface-amber-1 p-3"
 			>
 				<p class="text-base-medium text-ink-gray-9">{{ blocker.title }}</p>
 				<p v-if="blocker.fix" class="mt-0.5 text-p-sm text-ink-gray-7">

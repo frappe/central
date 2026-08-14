@@ -619,7 +619,7 @@ function clickNode(n: MapNode): void {
 							<span
 								v-if="n.pin.visual.pulse"
 								class="sm-pulse absolute -inset-1.5 rounded-full"
-								style="background: var(--ink-red-7)"
+								style="background: var(--ink-red-6)"
 							/>
 							<span
 								class="relative block rounded-full transition-transform duration-150 ease-out group-active:scale-95"
@@ -705,7 +705,7 @@ function clickNode(n: MapNode): void {
 				v-if="card"
 				:key="card.node.key"
 				data-map-card
-				class="absolute z-40 rounded-xl border border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
+				class="absolute z-40 rounded-7 border border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
 				:class="card.node.type === 'cluster' ? 'p-2' : 'p-4'"
 				:style="card.style"
 				@mouseenter="cancelHide"
@@ -734,7 +734,7 @@ function clickNode(n: MapNode): void {
 		<div
 			v-if="interactive"
 			data-map-controls
-			class="sm-controls absolute bottom-14 right-4 z-30 flex flex-col overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1 shadow-sm"
+			class="sm-controls absolute bottom-14 right-4 z-30 flex flex-col overflow-hidden rounded-6 border border-outline-gray-2 bg-surface-elevation-1 shadow-sm"
 			:style="{ transform: `translateX(${-panelOffset}px)` }"
 		>
 			<button

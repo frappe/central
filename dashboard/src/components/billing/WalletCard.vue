@@ -62,7 +62,7 @@ function onAutoRecharge(): void {
 
 <template>
 	<div
-		class="flex flex-col rounded-lg border bg-surface-base p-5 transition-colors"
+		class="flex flex-col rounded-6 border bg-surface-base p-5 transition-colors"
 		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
 	>
 		<div class="flex h-6 items-center justify-between gap-2">
@@ -83,7 +83,7 @@ function onAutoRecharge(): void {
 			</span>
 			<button
 				type="button"
-				class="grid size-6 place-items-center rounded text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
+				class="grid size-6 place-items-center rounded-4 text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
 				aria-label="Open wallet history"
 				@click="$emit('open')"
 			>
@@ -101,7 +101,7 @@ function onAutoRecharge(): void {
 			<!-- Coverage verdict — always the third line -->
 			<p
 				v-if="atRisk"
-				class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-red-7"
+				class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-red-6"
 			>
 				<span
 					class="lucide-triangle-alert size-3.5 shrink-0"

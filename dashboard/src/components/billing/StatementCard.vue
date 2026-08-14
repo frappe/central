@@ -82,7 +82,7 @@ const summary = computed(() => {
 			     a block of its own rather than another row in the same rhythm. Red type
 			     alone was carrying the emphasis and it read as list, not conclusion. -->
 			<div
-				class="mt-4 flex items-center justify-between gap-3 rounded-md border px-3.5 py-3"
+				class="mt-4 flex items-center justify-between gap-3 rounded-5 border px-3.5 py-3"
 				:class="
           owed
             ? 'border-outline-red-3 bg-surface-red-1'
@@ -92,12 +92,12 @@ const summary = computed(() => {
 				<span class="flex items-center gap-2">
 					<span
 						v-if="owed"
-						class="lucide-alert-circle size-4 shrink-0 text-ink-red-7"
+						class="lucide-alert-circle size-4 shrink-0 text-ink-red-6"
 						aria-hidden="true"
 					/>
 					<span
 						v-else
-						class="lucide-check-circle-2 size-4 shrink-0 text-ink-green-8"
+						class="lucide-check-circle-2 size-4 shrink-0 text-ink-green-7"
 						aria-hidden="true"
 					/>
 					<span class="text-base-medium text-ink-gray-8">
@@ -106,7 +106,7 @@ const summary = computed(() => {
 				</span>
 				<span
 					class="text-lg-semibold tabular-nums"
-					:class="owed ? 'text-ink-red-7' : 'text-ink-gray-9'"
+					:class="owed ? 'text-ink-red-6' : 'text-ink-gray-9'"
 				>
 					{{ money(data.closing_outstanding, currency) }}
 				</span>

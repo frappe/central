@@ -120,7 +120,7 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 		<template #role="{ row }">
 			<div class="flex min-w-0 items-center gap-3">
 				<div
-					class="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-gray-2 text-ink-gray-6"
+					class="flex size-8 shrink-0 items-center justify-center rounded-5 bg-surface-gray-2 text-ink-gray-6"
 				>
 					<span :class="`${roleDisplay(row).icon} size-4`" aria-hidden="true" />
 				</div>

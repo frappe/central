@@ -69,18 +69,6 @@ watch(
 	},
 )
 
-function optionModel(field: string) {
-	return computed<{ label: string; value: string } | null>({
-		get: () =>
-			form[field] ? { label: form[field], value: form[field] } : null,
-		set: (opt) => {
-			form[field] = opt?.value ?? ''
-		},
-	})
-}
-const countryModel = optionModel('country')
-const stateModel = optionModel('state')
-
 // Inline, as-you-type: an entered email must be well-formed (empty is fine —
 // the field is optional).
 const emailIssue = computed(() =>
@@ -141,9 +129,6 @@ async function submit(): Promise<void> {
 				<LoadingText :lines="6" />
 			</div>
 
-			<!-- Not a <form>: frappe-ui's Autocomplete trigger is a type-less (submit)
-           button, so a native form would save the profile just by opening/selecting
-           Country. The dialog's Save action drives submit() instead. -->
 			<div v-else class="space-y-6">
 				<div class="space-y-3">
 					<h3 class="text-sm-medium text-ink-gray-8">Contact</h3>
@@ -161,7 +146,7 @@ async function submit(): Promise<void> {
 								label="Billing email"
 								placeholder="billing@company.com"
 							/>
-							<p v-if="emailIssue" class="mt-1 text-p-xs text-ink-red-8">
+							<p v-if="emailIssue" class="mt-1 text-p-xs text-ink-red-7">
 								{{ emailIssue }}
 							</p>
 						</div>
@@ -180,12 +165,10 @@ async function submit(): Promise<void> {
 				<div class="space-y-3">
 					<h3 class="text-sm-medium text-ink-gray-8">Address</h3>
 					<div class="grid gap-4 sm:grid-cols-2">
-						<!-- The autocomplete variant swallows `description`/`required`, so
-                 the currency note renders as its own line below. -->
 						<div class="sm:col-span-2">
 							<FormControl
-								v-model="countryModel"
-								type="autocomplete"
+								v-model="form.country"
+								type="combobox"
 								label="Country"
 								placeholder="Select country"
 								:options="countryOptions"
@@ -212,8 +195,8 @@ async function submit(): Promise<void> {
 						<FormControl v-model="form.city" label="City" required />
 						<FormControl
 							v-if="isIndia"
-							v-model="stateModel"
-							type="autocomplete"
+							v-model="form.state"
+							type="combobox"
 							label="State"
 							placeholder="Select state"
 							:options="stateOptions"

@@ -10,10 +10,10 @@ defineEmits<{ create: []; dismiss: [] }>()
 <template>
 	<div class="absolute bottom-4 left-4 z-20 w-72 max-w-[calc(100%-2rem)]">
 		<div
-			class="relative rounded-xl border border-outline-gray-2 bg-surface-elevation-1 p-4 shadow-lg"
+			class="relative rounded-7 border border-outline-gray-2 bg-surface-elevation-1 p-4 shadow-lg"
 		>
 			<button
-				class="absolute right-2 top-2 grid size-6 place-items-center rounded-md text-ink-gray-5 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-7"
+				class="absolute right-2 top-2 grid size-6 place-items-center rounded-5 text-ink-gray-5 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-7"
 				aria-label="Dismiss"
 				@click="$emit('dismiss')"
 			>
@@ -21,7 +21,7 @@ defineEmits<{ create: []; dismiss: [] }>()
 			</button>
 
 			<div
-				class="flex size-8 items-center justify-center rounded-lg bg-surface-gray-2 text-ink-gray-7"
+				class="flex size-8 items-center justify-center rounded-6 bg-surface-gray-2 text-ink-gray-7"
 			>
 				<span class="lucide-server size-4" />
 			</div>

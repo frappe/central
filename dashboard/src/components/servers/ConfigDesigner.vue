@@ -235,7 +235,7 @@ function indexOf(ladder: number[], value: number): number {
 				v-for="p in profiles"
 				:key="p.sub_category"
 				type="button"
-				class="rounded-md border px-2.5 py-1 text-p-xs transition-colors"
+				class="rounded-5 border px-2.5 py-1 text-p-xs transition-colors"
 				:class="
           profileName === p.sub_category
             ? 'border-outline-gray-4 bg-surface-gray-2 text-ink-gray-9'
@@ -286,7 +286,7 @@ function indexOf(ladder: number[], value: number): number {
 				</div>
 				<button
 					type="button"
-					class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"
+					class="shrink-0 rounded-5 bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"
 					:disabled="diskIndex <= 0"
 					aria-label="Less storage"
 					@click="stepDisk(-1)"
@@ -301,7 +301,7 @@ function indexOf(ladder: number[], value: number): number {
 				/>
 				<button
 					type="button"
-					class="shrink-0 rounded-md bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"
+					class="shrink-0 rounded-5 bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"
 					:disabled="diskIndex >= maxDiskIndex"
 					aria-label="More storage"
 					@click="stepDisk(1)"
@@ -310,7 +310,7 @@ function indexOf(ladder: number[], value: number): number {
 				</button>
 			</div>
 
-			<p v-if="overHeadroom" class="text-p-xs text-ink-red-7">
+			<p v-if="overHeadroom" class="text-p-xs text-ink-red-6">
 				This config is over your remaining spending limit.
 			</p>
 			<p v-else-if="cappedByCapacity" class="text-p-xs text-ink-gray-5">

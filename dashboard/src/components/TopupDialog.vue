@@ -194,7 +194,7 @@ watch(open, (isOpen) => {
 				</p>
 				<div
 					ref="cardEl"
-					class="rounded border border-outline-gray-2 px-3 py-3"
+					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
 				<p class="text-p-sm text-ink-gray-5">
 					Card details are entered on Stripe's secure field — we never see your
@@ -223,7 +223,7 @@ watch(open, (isOpen) => {
 				<!-- Already told which instrument: say it, don't ask it again. -->
 				<div
 					v-if="fixed"
-					class="flex items-center gap-2 rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
+					class="flex items-center gap-2 rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5"
 				>
 					<span
 						:class="icons[instrument || ''] || 'lucide-credit-card'"
@@ -248,7 +248,7 @@ watch(open, (isOpen) => {
 						<button
 							v-for="tile in instruments"
 							:key="tile.instrument"
-							class="flex items-center gap-2 rounded-lg border p-3 text-left transition-colors"
+							class="flex items-center gap-2 rounded-6 border p-3 text-left transition-colors"
 							:class="
 								instrument === tile.instrument
 									? 'border-outline-gray-4 bg-surface-gray-1'

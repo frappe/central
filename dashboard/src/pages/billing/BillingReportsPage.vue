@@ -94,7 +94,7 @@ function exportUrl(report: string): string {
 				</div>
 				<div v-if="!neverBilled" class="flex items-center gap-2">
 					<div
-						class="flex overflow-hidden rounded-md border border-outline-gray-2"
+						class="flex overflow-hidden rounded-5 border border-outline-gray-2"
 					>
 						<button
 							v-for="opt in MONTH_OPTIONS"

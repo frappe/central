@@ -80,7 +80,7 @@ const amount = computed(() => Number(data.value?.amount ?? 0))
 				<div
 					v-for="b in data.blockers"
 					:key="b.code"
-					class="rounded-md border border-outline-amber-2 bg-surface-amber-1 p-3"
+					class="rounded-5 border border-outline-amber-2 bg-surface-amber-1 p-3"
 				>
 					<p class="text-base-medium text-ink-gray-9">{{ b.title }}</p>
 					<p v-if="b.fix" class="mt-0.5 text-p-sm text-ink-gray-7">{{ b.fix }}</p>

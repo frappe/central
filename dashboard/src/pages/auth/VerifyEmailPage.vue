@@ -100,7 +100,7 @@ function queryString(value: unknown): string {
 
 			<p
 				v-if="resent"
-				class="rounded bg-surface-green-2 px-3 py-2 text-p-sm text-ink-green-3"
+				class="rounded-4 bg-surface-green-2 px-3 py-2 text-p-sm text-ink-green-2"
 			>
 				A new code has been sent.
 			</p>

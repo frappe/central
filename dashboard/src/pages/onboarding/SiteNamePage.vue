@@ -118,7 +118,7 @@ async function createSite() {
 					>
 				</template>
 				<template v-if="availability?.available" #description>
-					<span class="flex items-center gap-1 text-ink-green-7">
+					<span class="flex items-center gap-1 text-ink-green-6">
 						<span class="lucide-check size-4" aria-hidden="true" />
 						<span
 							><span class="font-medium">{{ availability.fqdn }}</span>

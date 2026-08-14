@@ -11,13 +11,13 @@ defineEmits<{ retry: [] }>()
 	>
 		<p
 			v-if="stale.length"
-			class="pointer-events-auto rounded-md bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-7 shadow-sm"
+			class="pointer-events-auto rounded-5 bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-6 shadow-sm"
 		>
 			Showing last-known data — couldn't reach: {{ stale.join(', ') }}
 		</p>
 		<p
 			v-else-if="error && hasRows"
-			class="pointer-events-auto rounded-md bg-surface-red-1 px-3 py-2 text-p-sm text-ink-red-7 shadow-sm"
+			class="pointer-events-auto rounded-5 bg-surface-red-1 px-3 py-2 text-p-sm text-ink-red-6 shadow-sm"
 		>
 			{{ error }}
 			<button class="ml-1 font-medium underline" @click="$emit('retry')">

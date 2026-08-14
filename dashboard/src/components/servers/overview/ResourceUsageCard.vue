@@ -25,7 +25,7 @@ const cpuLabel = computed(() => {
 </script>
 
 <template>
-	<section class="rounded-xl border border-outline-gray-2 p-5">
+	<section class="rounded-7 border border-outline-gray-2 p-5">
 		<div class="mb-5 flex items-center justify-between gap-3">
 			<h3 class="text-base font-semibold text-ink-gray-9">Resource usage</h3>
 			<span class="flex items-center gap-1.5 text-sm text-ink-gray-5">

@@ -47,7 +47,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 
 <template>
 	<section
-		class="sp-float absolute left-4 top-4 z-30 overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1"
+		class="sp-float absolute left-4 top-4 z-30 overflow-hidden rounded-6 border border-outline-gray-2 bg-surface-elevation-1"
 		:class="open && 'sp-float-open'"
 		role="region"
 		aria-label="Your servers"
@@ -114,7 +114,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			>
 				<template v-for="(row, i) in rows" :key="row.id">
 					<div
-						class="sp-row group flex cursor-pointer items-center gap-3 rounded-lg px-2.5 py-2.5 transition-colors"
+						class="sp-row group flex cursor-pointer items-center gap-3 rounded-6 px-2.5 py-2.5 transition-colors"
 						:style="{ animationDelay: `${Math.min(i * 25, 200)}ms` }"
 						@click="$emit('openRow', row)"
 						@mouseenter="hoverId = row.id"

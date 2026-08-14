@@ -79,10 +79,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 			:menu-items="headerMenuItems"
 		/>
 
-		<nav
-			class="flex-1 overflow-y-auto pt-2"
-			:class="sidebarCollapsed ? 'px-2.5' : 'px-2'"
-		>
+		<nav class="flex-1 overflow-y-auto px-2 pt-2">
 			<template
 				v-for="section in sidebarSections"
 				:key="section.label || 'main'"
@@ -134,7 +131,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 					     300ms and read as gray mid-fade. The collapse animation lives
 					     on the inner text div, which keeps its own duration. -->
 					<button
-						class="flex h-10 w-full items-center rounded px-1.5"
+						class="flex h-10 w-full items-center rounded-4 px-1.5"
 						:class="[
 							sidebarCollapsed ? 'justify-center' : '',
 							// z-10 lifts the open card above the menu popover's

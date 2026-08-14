@@ -20,7 +20,7 @@ defineEmits<{
 	resume: [sub: SubscriptionRow]
 }>()
 
-type BadgeTheme = 'gray' | 'red' | 'blue' | 'green' | 'amber' | 'violet' | 'orange'
+type BadgeTheme = 'gray' | 'red' | 'blue' | 'green' | 'amber' | 'violet'
 
 function serverTitle(sub: SubscriptionRow): string {
 	return sub.server || sub.plan_title || sub.name
@@ -33,7 +33,7 @@ function serverSubtitle(sub: SubscriptionRow): string {
 }
 function statusInfo(sub: SubscriptionRow): { label: string; theme: BadgeTheme } | null {
 	if (sub.status === 'Terminated') return { label: 'Terminated', theme: 'red' }
-	if (sub.account_standing === 'Suspended') return { label: 'Suspended', theme: 'orange' }
+	if (sub.account_standing === 'Suspended') return { label: 'Suspended', theme: 'amber' }
 	if (!sub.enabled) return { label: 'Paused', theme: 'gray' }
 	if (sub.status === 'Stopped') return { label: 'Stopped', theme: 'gray' }
 	return null
@@ -134,7 +134,7 @@ function overAllowance(s: ServiceRow): boolean {
 					<span class="truncate text-base-medium text-ink-gray-9">
 						{{ row.service.title || row.service.plan }}
 					</span>
-					<Badge v-if="exhausted(row.service)" theme="orange" label="Exhausted" />
+					<Badge v-if="exhausted(row.service)" theme="amber" label="Exhausted" />
 					<Badge v-else-if="overAllowance(row.service)" theme="amber" label="Over" />
 				</div>
 				<div class="pl-6">

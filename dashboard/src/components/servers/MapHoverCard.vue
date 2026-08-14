@@ -99,7 +99,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 			</span>
 			<button
 				v-if="allowCreate"
-				class="grid size-5 shrink-0 place-items-center rounded-md text-ink-gray-6 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-8 active:scale-95"
+				class="grid size-5 shrink-0 place-items-center rounded-5 text-ink-gray-6 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-8 active:scale-95"
 				:title="`New server in ${node.title}`"
 				:aria-label="`New server in ${node.title}`"
 				@click="emit('new-server', node.members[0].cluster)"
@@ -110,7 +110,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 		<div
 			v-for="m in node.members"
 			:key="m.id"
-			class="group flex w-full items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-surface-gray-2"
+			class="group flex w-full items-center gap-2.5 rounded-6 p-1.5 transition-colors hover:bg-surface-gray-2"
 		>
 			<button
 				class="flex min-w-0 flex-1 items-center gap-2.5 text-left"
@@ -135,7 +135,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 			<!-- Server: open bench. Site: open its live URL. Same slot, per kind. -->
 			<button
 				v-if="m.kind === 'server' && m.server"
-				class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
+				class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
 				:disabled="!canOpenBench(m.server)"
 				title="Open bench"
 				aria-label="Open bench"
@@ -145,7 +145,7 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 			</button>
 			<button
 				v-else-if="m.site"
-				class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
+				class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
 				:class="{ '!opacity-100': openingSite === m.site.name }"
 				:disabled="!allowOpen || !m.site.url || openingSite === m.site.name"
 				title="Open site"

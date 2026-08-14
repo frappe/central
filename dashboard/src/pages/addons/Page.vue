@@ -148,7 +148,7 @@ const cards = computed(() =>
 				v-for="service in cards"
 				:key="service.title"
 				:to="service.linkable ? service.to : undefined"
-				class="flex flex-col gap-3 rounded-lg border p-4"
+				class="flex flex-col gap-3 rounded-6 border p-4"
 				:class="[
 					service.comingSoon
 						? 'border-dashed border-outline-gray-3'
@@ -157,7 +157,7 @@ const cards = computed(() =>
 				]"
 			>
 				<div class="flex items-start justify-between gap-3">
-					<div class="grid size-8 place-items-center rounded-md bg-surface-gray-2">
+					<div class="grid size-8 place-items-center rounded-5 bg-surface-gray-2">
 						<span :class="service.icon" class="size-4 text-ink-gray-6" />
 					</div>
 					<Badge

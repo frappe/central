@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { Badge, Button, FormControl, Tabs, useCall } from 'frappe-ui'
+import { Alert, Badge, Button, FormControl, Tabs, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
-import Alert from '@/components/common/Alert.vue'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerMap from '@/components/servers/ServerMap.vue'
@@ -200,8 +199,10 @@ function profileFor(cls: string): Profile | null {
 
 // Tabs when the region's presets span more than one profile; flat otherwise.
 const hasTabs = computed(() => classes.value.length > 1)
-const classTabs = computed(() => classes.value.map((label) => ({ label })))
-const activeTab = ref(0)
+const classTabs = computed(() =>
+	classes.value.map((label) => ({ label, value: label })),
+)
+const activeTab = ref('')
 
 // Flat layout: the sole preset class, or General when a region offers only a designer.
 const soleClass = computed(() => classes.value[0] ?? 'General')
@@ -272,7 +273,7 @@ const regionFull = computed(
 // Switching region re-prices the menu: reset the tab and drop a selection the new
 // region no longer offers (a preset that's gone, or a custom profile it lacks).
 watch(classes, () => {
-	activeTab.value = 0
+	activeTab.value = ''
 })
 watch([plans, canDesign], () => {
 	const sel = selectedPlan.value
@@ -480,7 +481,7 @@ async function submit() {
 									:key="p"
 									:class="
 										[
-											'flex w-full flex-col items-center gap-1 rounded-lg border p-2 transition-colors',
+											'flex w-full flex-col items-center gap-1 rounded-6 border p-2 transition-colors',
 											'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline-gray-4',
 											p === selectedProvider
 												? 'border-outline-gray-4 bg-surface-gray-1'
@@ -518,7 +519,7 @@ async function submit() {
 									size="sm"
 									variant="outline"
 									:class="[
-										'!rounded-lg focus-visible:!ring-1 focus-visible:!ring-outline-gray-4',
+										'!rounded-6 focus-visible:!ring-1 focus-visible:!ring-outline-gray-4',
 										r.region === selectedRegion
 											? '!border-outline-gray-4 !bg-surface-gray-1 font-medium !text-ink-gray-9'
 											: '',
@@ -565,7 +566,7 @@ async function submit() {
 
 							<Alert
 								v-else-if="regionFull"
-								theme="yellow"
+								theme="amber"
 								title="This region is at capacity"
 								:description="
 									[
@@ -578,7 +579,7 @@ async function submit() {
 
 							<div
 								v-else-if="bracketExhausted"
-								class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
+								class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-4 py-3"
 							>
 								<p class="text-p-sm font-medium text-ink-gray-8">
 									You've reached your spending limit
@@ -599,8 +600,8 @@ async function submit() {
 								<template #tab-panel="{ tab }">
 									<PlanGroup
 										class="pt-4"
-										:presets="groups[tab.label] ?? []"
-										:profile="designableProfile(tab.label)"
+										:presets="groups[tab.value] ?? []"
+										:profile="designableProfile(String(tab.value))"
 										:rate-card="rateCard"
 										:available="available ?? 0"
 										:currency="currency ?? 'USD'"
@@ -671,7 +672,7 @@ async function submit() {
            frames the provider's regions and takes clicks as picks. -->
 			<div class="p-4 lg:flex-1">
 				<div
-					class="relative h-72 w-full overflow-hidden rounded-xl border border-outline-gray-2 lg:h-full"
+					class="relative h-72 w-full overflow-hidden rounded-7 border border-outline-gray-2 lg:h-full"
 				>
 					<ServerMap
 						:interactive="false"

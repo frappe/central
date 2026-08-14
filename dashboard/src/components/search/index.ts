@@ -1,3 +1,4 @@
+import { useColorScheme } from 'frappe-ui'
 import { computed } from 'vue'
 import { sidebarSections } from '@/components/navigation/list'
 import { useAppMenu } from '@/composables/useAppMenu'
@@ -37,7 +38,8 @@ export function useSearchIndex() {
 	const { assets } = useServerMapData()
 	const { members } = useTeamMembers()
 	const { invoices } = useInvoices()
-	const { themeOptions, setTheme } = useAppMenu()
+	const { themeOptions } = useAppMenu()
+	const { setColorScheme } = useColorScheme()
 
 	return computed((): SearchGroups => {
 		// Insertion order is the display order: verbs first, then destinations.
@@ -97,7 +99,7 @@ export function useSearchIndex() {
 			items: themeOptions.map((theme) => ({
 				name: theme.label,
 				icon: theme.icon,
-				onSelect: () => setTheme(theme.value as 'light' | 'dark' | 'system'),
+				onSelect: () => setColorScheme(theme.value),
 			})),
 		}
 

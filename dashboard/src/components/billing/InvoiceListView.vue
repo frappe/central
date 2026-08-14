@@ -81,7 +81,7 @@ const columns = computed<ListViewColumn<InvoiceSummary>[]>(() => [
 					{
 						class: [
 							'truncate text-p-sm',
-							isOverdue(row.original) ? 'text-ink-red-8' : 'text-ink-gray-5',
+							isOverdue(row.original) ? 'text-ink-red-7' : 'text-ink-gray-5',
 						],
 					},
 					isOverdue(row.original)
@@ -187,14 +187,14 @@ const filters: ListViewFilter[] = [
 						v-for="p in datePresets"
 						:key="p.label"
 						type="button"
-						class="w-full rounded px-2 py-1.5 text-left text-base text-ink-gray-7 hover:bg-surface-gray-2"
+						class="w-full rounded-4 px-2 py-1.5 text-left text-base text-ink-gray-7 hover:bg-surface-gray-2"
 						@click="() => { setRange(p.range()); close() }"
 					>
 						{{ p.label }}
 					</button>
 					<button
 						type="button"
-						class="w-full rounded px-2 py-1.5 text-left text-base text-ink-gray-5 hover:bg-surface-gray-2"
+						class="w-full rounded-4 px-2 py-1.5 text-left text-base text-ink-gray-5 hover:bg-surface-gray-2"
 						@click="() => { clear(); close() }"
 					>
 						Any date

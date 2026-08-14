@@ -57,7 +57,7 @@ onMounted(() => {
 				:index="index - 1"
 				data-otp-input
 				:aria-label="`${label} digit ${index}`"
-				class="h-11 w-full min-w-0 rounded border border-outline-gray-2 bg-surface-base text-center text-lg font-medium text-ink-gray-8 transition-colors outline-none [appearance:textfield] hover:border-outline-gray-3 hover:shadow-sm focus:border-outline-gray-4 focus:shadow-sm focus:ring-0 disabled:cursor-not-allowed disabled:border-outline-gray-2 disabled:bg-surface-gray-1 disabled:text-ink-gray-5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+				class="h-11 w-full min-w-0 rounded-4 border border-outline-gray-2 bg-surface-base text-center text-lg font-medium text-ink-gray-8 transition-colors outline-none [appearance:textfield] hover:border-outline-gray-3 hover:shadow-sm focus:border-outline-gray-4 focus:shadow-sm focus:ring-0 disabled:cursor-not-allowed disabled:border-outline-gray-2 disabled:bg-surface-gray-1 disabled:text-ink-gray-5 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 			/>
 		</PinInputRoot>
 	</fieldset>
