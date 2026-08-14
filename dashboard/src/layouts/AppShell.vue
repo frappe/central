@@ -11,6 +11,7 @@ import {
 import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
+import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
@@ -84,12 +85,7 @@ const breadcrumbs = computed(
 					icon="lucide-search"
 					@click="openSearch"
 				/>
-				<MobileNavItem
-					label="Notifications"
-					icon="lucide-bell"
-					to="/notifications"
-					:active="route.name =='Notifications' "
-				/>
+				<NotificationsPanel mobile />
 				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
 			</MobileNav>
 		</template>

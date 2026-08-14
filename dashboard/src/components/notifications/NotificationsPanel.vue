@@ -2,6 +2,7 @@
 import {
 	Button,
 	dayjsLocal,
+	MobileNavItem,
 	Popover,
 	Select,
 	SidebarItem,
@@ -11,6 +12,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Scrollbar from '@/components/common/Scrollbar.vue'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotifications } from '@/composables/useNotifications'
 import type { NotificationSeverity, TeamNotification } from '@/types/billing'
 
@@ -26,7 +28,10 @@ const {
 	markAllAsRead,
 } = useNotifications()
 
+defineProps<{ mobile?: boolean }>()
+
 const router = useRouter()
+const isMobile = useIsMobile()
 const open = ref(false)
 
 const TABS = [
@@ -95,13 +100,27 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 	<Popover
 		v-model:open="open"
 		bare
-		side="right"
+		:side="isMobile ? 'top' : 'right'"
 		align="start"
-		:offset="9"
+		:offset="isMobile ? 0 : 9"
 		:collision-padding="0"
 	>
 		<template #trigger>
-			<SidebarItem label="Notifications" :suffix="badge" class="mb-3">
+			<MobileNavItem v-if="mobile" label="Notifications">
+				<span class="relative block size-6">
+					<span
+						class="lucide-bell block size-6 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+					<span
+						v-if="unread > 0"
+						class="absolute right-0 top-0 block size-1.5 shrink-0 rounded-full bg-surface-blue-6"
+						aria-hidden="true"
+					/>
+				</span>
+			</MobileNavItem>
+
+			<SidebarItem v-else label="Notifications" :suffix="badge" class="mb-3">
 				<template #prefix>
 					<span class="relative block size-4">
 						<span class="lucide-bell block size-4" aria-hidden="true" />
@@ -117,7 +136,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 
 		<!-- need shadow on right side only -->
 		<aside
-			class="flex h-screen w-screen flex-col border-outline-gray-1 bg-surface-base shadow-[6px_0_20px_-6px_rgb(0_0_0/0.10)] md:w-[430px] md:border-r"
+			class="flex h-[calc(100dvh-3.5rem)] w-screen flex-col border-outline-gray-1 bg-surface-base shadow-[6px_0_20px_-6px_rgb(0_0_0/0.10)] md:h-screen md:w-[430px] md:border-r"
 		>
 			<header
 				class="flex items-center gap-1 border-b border-outline-gray-1 py-2 pl-4 pr-2"
@@ -144,7 +163,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 				<Select v-model="category" class="ml-auto" :options="CATEGORIES" />
 			</div>
 
-			<Scrollbar v-if="items.length">
+			<Scrollbar v-if="items.length" class="min-h-0 flex-1">
 				<button
 					v-for="n, i in items"
 					:key="n.name"
