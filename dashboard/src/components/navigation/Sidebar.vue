@@ -79,10 +79,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 			:menu-items="headerMenuItems"
 		/>
 
-		<nav
-			class="flex-1 overflow-y-auto pt-2"
-			:class="sidebarCollapsed ? 'px-2.5' : 'px-2'"
-		>
+		<nav class="flex-1 overflow-y-auto px-2 pt-2">
 			<template
 				v-for="section in sidebarSections"
 				:key="section.label || 'main'"
