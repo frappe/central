@@ -57,7 +57,10 @@ watch(tabs, (available) => {
 </script>
 
 <template>
-	<SettingsDialog v-model="settingsOpen" v-model:tab="settingsTab">
+	<!-- `v-model:open`, not a bare `v-model`: SettingsDialog names its open model
+	     (`defineModel('open')`) and declares no `modelValue`, so a bare v-model
+	     binds a prop nothing reads and the dialog never opens. -->
+	<SettingsDialog v-model:open="settingsOpen" v-model:tab="settingsTab">
 		<SettingsSidebar>
 			<!-- The dialog names itself. aria-hidden because SettingsDialog already
 			     renders a screen-reader-only <h1>Settings</h1> — this is the same
