@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { Avatar, Button, TextInput } from 'frappe-ui'
+import {
+	Avatar,
+	Button,
+	vOnOutsideClick,
+	TextInput,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
+import { forgetSettingsOrigin } from '@/composables/useSettings'
 import type { Team } from '@/types/api'
 
 // Every team you belong to, one row each: name, then your standing in it, so
@@ -44,6 +50,10 @@ function selectTeam(team: Team): void {
 
 function switchTo(team: Team): void {
 	setActiveTeam(team.name)
+	// This list lives inside settings, so closing them would otherwise land on
+	// whatever page the old team was on — a server, an invoice — which the new
+	// team may not be able to read at all.
+	forgetSettingsOrigin()
 	selected.value = null
 	emit('switched', team)
 }
@@ -63,8 +73,16 @@ function switchTo(team: Team): void {
 		</TextInput>
 
 		<!-- Negative margin + matching padding so the scrollbar rides the outer
-		     edge instead of floating inside the content column. -->
-		<div class="-mr-4 max-h-80 space-y-1 overflow-y-auto pr-4 sm:-mr-6 sm:pr-6">
+		     edge instead of floating inside the content column.
+
+		     A selection is an offer, not a mode: clicking away withdraws it the
+		     same way clicking the row again does. Without this the "Switch team"
+		     button sat there indefinitely, since nothing outside the list cleared
+		     it. -->
+		<div
+			v-on-outside-click="() => (selected = null)"
+			class="-mr-4 max-h-80 space-y-1 overflow-y-auto pr-4 sm:-mr-6 sm:pr-6"
+		>
 			<!-- The row is a div holding a button, not a button holding a button:
 			     the name area selects, the action beside it switches. -->
 			<div
@@ -103,14 +121,18 @@ function switchTo(team: Team): void {
 					class="lucide-check size-4 shrink-0 text-ink-gray-7"
 					aria-hidden="true"
 				/>
+				<!-- `label` stays the full "Switch to <team>" for screen readers —
+				     the row it belongs to isn't announced with it. The visible text
+				     is just the verb; the row already names the team. -->
 				<Button
 					v-else-if="team.name === selected"
 					variant="solid"
+					icon-left="lucide-repeat"
 					:label="`Switch to ${team.label}`"
 					class="shrink-0"
 					@click="switchTo(team)"
 				>
-					Switch team
+					Switch
 				</Button>
 			</div>
 

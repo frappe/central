@@ -7,7 +7,7 @@ import {
 	SidebarItem,
 	SidebarLabel,
 } from 'frappe-ui'
-import { onScopeDispose, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
@@ -16,6 +16,21 @@ import { useSession } from '@/composables/useSession'
 import { sidebarSections } from './list'
 
 const props = defineProps<{ isMobile?: boolean }>()
+
+// Search and Notifications are their own tabs in the mobile bottom bar, so the
+// drawer drops them and shows only what the bar can't reach. A section left
+// empty by that drops out with them.
+const sections = computed(() =>
+	sidebarSections.value
+		.map((section) => ({
+			...section,
+			items: section.items.filter(
+				(item) =>
+					item.condition !== false && !(props.isMobile && item.hideOnMobile),
+			),
+		}))
+		.filter((section) => section.items.length > 0),
+)
 
 const { activeTeamLabel } = useSession()
 const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
@@ -80,10 +95,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 		/>
 
 		<nav class="flex-1 overflow-y-auto px-2 pt-2">
-			<template
-				v-for="section in sidebarSections"
-				:key="section.label || 'main'"
-			>
+			<template v-for="section in sections" :key="section.label || 'main'">
 				<SidebarLabel
 					v-if="section.label"
 					class="mt-2"
@@ -101,17 +113,31 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 				<template
 					v-if="!section.collapsible || !collapsedSections[section.label]"
 				>
+					<!-- In the mobile drawer these rows are the primary nav and get
+					     touched, not clicked: 16px labels, a proportionally larger
+					     icon, and a row tall enough to hit. The desktop rail keeps
+					     its denser sizing. -->
 					<SidebarItem
-						v-for="item in section.items.filter((i) => i.condition !== false)"
+						v-for="item in section.items"
 						:key="item.label"
 						:icon="item.icon"
 						:to="item.to"
 						:onclick="item.onClick"
 						class="mb-0.5"
-						:class="item.class"
+						:class="[item.class, isMobile ? '!h-10' : '']"
 						:active="!!item.to && item.to === route.path"
 					>
-						<span class="truncate text-sm">{{ item.label }}</span>
+						<template v-if="isMobile" #prefix>
+							<span
+								class="size-5 shrink-0 text-ink-gray-6"
+								:class="item.icon"
+								aria-hidden="true"
+							/>
+						</template>
+						<!-- text-lg is 16px in this preset; text-base is 14px. -->
+						<span class="truncate" :class="isMobile ? 'text-lg' : 'text-sm'">
+							{{ item.label }}
+						</span>
 					</SidebarItem>
 				</template>
 			</template>

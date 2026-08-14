@@ -1,8 +1,15 @@
 <script setup lang="ts">
-import { Badge, useCall } from 'frappe-ui'
+import {
+	Badge,
+	Breadcrumbs,
+	PageHeader,
+	PageHeaderMobile,
+	useCall,
+} from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
+import NavDrawerTitle from '@/components/navigation/NavDrawerTitle.vue'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { features } from '@/lib/features'
@@ -139,6 +146,14 @@ const cards = computed(() =>
 </script>
 
 <template>
+	<PageHeaderMobile class="sm:hidden">
+		<NavDrawerTitle title="Services" />
+	</PageHeaderMobile>
+
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs :items="[{ label: 'Services', route: { name: 'Addons' } }]" />
+	</PageHeader>
+
 	<div class="mx-auto mt-10 max-w-3xl px-5">
 		<section class="grid gap-3 md:grid-cols-2">
 			<!-- A card is a link only once its page exists, so nothing invites a

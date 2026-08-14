@@ -1,3 +1,5 @@
+import { shellScrollContainer } from 'frappe-ui'
+import { nextTick } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
@@ -81,6 +83,15 @@ const routes = [
 				component: () => import('@/pages/billing/BillingInvoicesPage.vue'),
 				meta: { title: 'Invoices' },
 			},
+			// The receipt only needs an address of its own on mobile, where it's a
+			// page instead of the panel docked beside the list. Arriving at desktop
+			// width hands straight back to /billing/invoices?invoice=.
+			{
+				path: 'billing/invoices/:name',
+				name: 'BillingInvoice',
+				component: () => import('@/pages/billing/InvoiceDetailPage.vue'),
+				meta: { title: 'Invoice' },
+			},
 			{
 				path: 'billing/reports',
 				name: 'BillingReports',
@@ -99,18 +110,26 @@ const routes = [
 				component: () => import('@/pages/notifications/NotificationsPage.vue'),
 				meta: { title: 'Notifications' },
 			},
+			// Two presentations, two URL spaces, each naming its tab. /settings is
+			// the desktop dialog — that route renders nothing and drives the dialog,
+			// so the open tab always shows in the address bar. /mobile-settings is
+			// the page stack a phone gets instead: a hub, then a page per tab.
+			{ path: 'settings', redirect: '/settings/profile' },
 			{
-				path: 'settings',
+				path: 'settings/:tab',
 				name: 'Settings',
+				component: () => import('@/pages/settings/SettingsDialogRoute.vue'),
+				meta: { title: 'Settings' },
+			},
+			{
+				path: 'mobile-settings',
+				name: 'MobileSettings',
 				component: () => import('@/pages/settings/SettingsPage.vue'),
 				meta: { title: 'Settings' },
 			},
-			// Mobile opens each settings tab as its own page — no dialog on a
-			// phone. Desktop reaches the same tabs through the settings dialog,
-			// but these routes stay valid there (deep links, browser Back).
 			{
-				path: 'settings/:tab',
-				name: 'SettingsTab',
+				path: 'mobile-settings/:tab',
+				name: 'MobileSettingsTab',
 				component: () => import('@/pages/settings/SettingsDetailPage.vue'),
 				meta: { title: 'Settings' },
 			},
@@ -161,6 +180,22 @@ const routes = [
 export const router = createRouter({
 	history: createWebHistory('/dashboard/'),
 	routes,
+	// The shells own the scroll region, not the window, so a returned position
+	// would be applied to a document that never scrolls. Drive the registered
+	// container instead — frappe-ui exposes this ref for exactly this spot.
+	//
+	// Without it a new page opens wherever the last one was left: the shell's
+	// scroll div outlives the route, where each page used to own a box that
+	// remounted at zero. Only a real path change resets — a query-only replace
+	// (settings tabs, ?invoice=) is the same page and keeps its place.
+	scrollBehavior(to, from) {
+		if (to.path === from.path) return
+		// The container is the shell's, so it survives the swap; waiting a tick
+		// only lets the incoming page lay out first.
+		return nextTick().then(() => {
+			shellScrollContainer.value?.scrollTo({ top: 0 })
+		})
+	},
 })
 
 // Session state is seeded synchronously from boot data (window.user), so the

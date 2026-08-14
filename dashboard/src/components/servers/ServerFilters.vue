@@ -1,12 +1,17 @@
 <script setup lang="ts">
-import { Combobox } from 'frappe-ui'
+import { Combobox, type ComboboxOption } from 'frappe-ui'
 import type { ServerVisual } from '@/lib/serverMap'
 
 // The top-right status + region filters over the map. Both scope the map pins
 // and the panel rows; the page owns the option lists and the resolved filters.
+//
+// Combobox in its default `input` trigger: typing happens in the trigger
+// itself, so the popover below is nothing but the option list — no search row
+// stacked inside it, and the list opens under the input rather than over it.
 defineProps<{
 	statusOptions: { label: string; value: string; dot?: string }[]
-	regionOptions: { label: string; value: string }[]
+	/** Grouped by provider, so this is Combobox's option union, not a flat list. */
+	regionOptions: ComboboxOption[]
 }>()
 
 const statusFilter = defineModel<ServerVisual['key'] | ''>('statusFilter', {
@@ -18,15 +23,19 @@ const regionSelection = defineModel<string>('regionSelection', {
 </script>
 
 <template>
-	<div class="absolute right-4 top-4 flex items-center gap-2">
+	<!-- Side by side these two run past the right edge of a phone, and into the
+	     list pill on the left. Stack them under each other until there's room. -->
+	<div
+		class="absolute right-4 top-4 flex flex-col items-end gap-2 sm:flex-row sm:items-center"
+	>
 		<Combobox
 			v-model="statusFilter"
-			trigger="button"
 			variant="outline"
 			size="md"
+			align="end"
+			class="w-40"
 			:options="statusOptions"
 		>
-			<!-- Button mode reuses #item-prefix on the trigger when a value is selected. -->
 			<template #item-prefix="{ item }">
 				<span
 					class="size-2 shrink-0 rounded-full transition-colors"
@@ -36,9 +45,10 @@ const regionSelection = defineModel<string>('regionSelection', {
 		</Combobox>
 		<Combobox
 			v-model="regionSelection"
-			trigger="button"
 			variant="outline"
 			size="md"
+			align="end"
+			class="w-40"
 			:options="regionOptions"
 		/>
 	</div>

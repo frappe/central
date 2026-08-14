@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { Avatar, Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
-import { settingsOpen } from '@/composables/useSettings'
+import { closeSettingsTo } from '@/composables/useSettings'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 
 // The active team's own settings — rename (team:edit) and the delete row
 // (team:delete). Ownership transfer is NOT here: it lives on the member's ⋯
 // menu in the roster, where the new owner is picked in context.
-const router = useRouter()
 const { activeTeamLabel, activeTeamLogo } = useSession()
 const { saving, rename, deleteTeam } = useTeamSettings()
 const { canEditTeam, canDeleteTeam } = useCapabilities()
@@ -52,8 +50,10 @@ const deleteOptions = computed(() => ({
 async function onDelete(): Promise<void> {
 	if (await deleteTeam()) {
 		confirmDelete.value = false
-		settingsOpen.value = false
-		router.push('/servers')
+		// Not "close, then navigate": closing is what sends you back to wherever
+		// settings were opened from, and that replace would supersede a push
+		// issued beside it — landing you on the deleted team's page.
+		closeSettingsTo('/servers')
 	}
 }
 </script>

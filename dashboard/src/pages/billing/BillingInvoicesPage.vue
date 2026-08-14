@@ -1,55 +1,45 @@
 <script setup lang="ts">
-import { Badge, Button, LoadingText, Spinner, useCall } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { API, method } from '@/api/methods'
+import {
+	Badge,
+	Breadcrumbs,
+	Button,
+	LoadingText,
+	PageHeader,
+	PageHeaderMobile,
+	Spinner,
+} from 'frappe-ui'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
+import InvoiceReceipt from '@/components/billing/InvoiceReceipt.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
+import NavDrawerTitle from '@/components/navigation/NavDrawerTitle.vue'
+import { invoicePath, useInvoiceDetail } from '@/composables/useInvoiceDetail'
 import { useInvoices } from '@/composables/useInvoices'
-import { usePayInvoice } from '@/composables/usePayInvoice'
-import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useSession } from '@/composables/useSession'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
 import { invoiceTheme } from '@/lib/status'
-import type {
-	CollectionStatus,
-	InvoiceDetail,
-	InvoiceSummary,
-} from '@/types/billing'
+import type { InvoiceSummary } from '@/types/billing'
 
 // Billing › Invoices (#70) — list (left) + docked 24rem receipt panel (right)
 // that slides in, mirroring the FC V2 prototype's invoice anatomy. Invoices come
 // from the team-scoped list_invoices/get_invoice endpoints (curated fields, not
 // raw reportview), so we filter client-side over that list.
+// A phone gets the list alone: there's no room to dock 24rem beside it, so a row
+// pushes /billing/invoices/:name instead and the receipt is a page of its own.
 const route = useRoute()
-const { canManageBilling } = useCapabilities()
+const router = useRouter()
+const isMobile = useIsMobile()
 const {
 	invoices,
 	loading: invoicesLoading,
 	reload: reloadInvoices,
 } = useInvoices()
 
-const collection = useCall<CollectionStatus, { team: string }>({
-	url: method(API.collectionStatus),
-	params: teamParams,
-	immediate: false,
-	refetch: true,
-})
-whenTeamReady(() => collection.reload())
-
 // ── Detail panel ──
 const selected = ref<InvoiceSummary | null>(null)
-const detail = useCall<InvoiceDetail, { name: string }>({
-	url: method(API.invoice),
-	immediate: false,
-})
-
-// Activity is folded away by default — for a settled invoice the log is
-// reference, not news. Fold it again when switching invoices.
-const activityExpanded = ref(false)
 
 // Holds the invoice while the panel slides out, so the receipt doesn't blank
 // mid-animation. `detail` keeps its data, so the body follows suit.
@@ -58,10 +48,16 @@ watch(selected, (invoice) => {
 	if (invoice) shown.value = invoice
 })
 
-async function selectRow(inv: InvoiceSummary): Promise<void> {
-	selected.value = inv
-	activityExpanded.value = false
-	await detail.submit({ name: inv.name })
+const { detail, isOverdue, settling, canPay, payBusy, pay } = useInvoiceDetail(
+	() => selected.value?.name ?? null,
+	{ onPaid: reloadInvoices },
+)
+
+// A row means "show me this invoice" — which is the panel here and a page on a
+// phone, where the panel doesn't render at all.
+function selectRow(inv: InvoiceSummary): void {
+	if (isMobile.value) router.push(invoicePath(inv.name))
+	else selected.value = inv
 }
 
 // Open the latest invoice expanded on first load — list_invoices is ordered newest
@@ -73,10 +69,23 @@ watch(
 	() => invoices.value,
 	(rows) => {
 		if (autoSelected || selected.value || !rows.length) return
+		const wanted = String(route.query.invoice ?? '')
+		const asked = wanted ? rows.find((r) => r.name === wanted) : undefined
+		// Nothing auto-opens on mobile: opening a receipt there is a navigation, and
+		// landing on the list only to be carried off it is not what tapping Invoices
+		// asked for. A deep link did ask for one invoice by name, so that still goes
+		// through — straight to its page, replacing so Back returns to the list.
+		if (isMobile.value) {
+			// Latch either way. Only the first list this page sees may carry you
+			// off it: leaving it unlatched means a later refetch — a payment, a
+			// team switch — can act on a `?invoice=` still sitting in the URL and
+			// yank you off a list you've been reading for minutes.
+			autoSelected = true
+			if (asked) router.replace(invoicePath(asked.name))
+			return
+		}
 		autoSelected = true
-		const wanted = route.query.invoice
-		const row = (wanted && rows.find((r) => r.name === wanted)) || rows[0]
-		selectRow(row)
+		selectRow(asked ?? rows[0])
 	},
 	{ immediate: true },
 )
@@ -91,93 +100,32 @@ watch(activeTeam, (team, previous) => {
 	shown.value = null
 	autoSelected = false
 })
-
-// Open OR Overdue is still collectable — an overdue invoice is the one the customer
-// most needs to settle (dunning failed on the card), so it must offer Pay too.
-const isPayable = computed(() =>
-	['open', 'overdue'].includes(String(detail.data?.status).toLowerCase()),
-)
-// The panel's one pre-items line, and only in the problem state — its single
-// use of color above the fold.
-const isOverdue = computed(
-	() =>
-		String(detail.data?.status).toLowerCase() === 'overdue' &&
-		!!detail.data?.due_date,
-)
-// A charge already in flight (or captured, awaiting the settlement webhook) means
-// the money is moving — show a "settling" status, never a second Pay button.
-const settling = computed(
-	() => isPayable.value && !!detail.data?.payment_in_progress,
-)
-// Only offer Pay when something is actually collectable — a zero-due invoice
-// (e.g. a trial Cost Report) must never render a "Pay 0.00" button.
-const hasDue = computed(() => Number(detail.data?.expected_collection) > 0)
-const canPay = computed(
-	() =>
-		canManageBilling.value &&
-		isPayable.value &&
-		!settling.value &&
-		hasDue.value,
-)
-
-function refresh(): void {
-	reloadInvoices()
-	if (selected.value) detail.submit({ name: selected.value.name })
-}
-const { run: payInvoice, loading: paying } = usePayInvoice({ onDone: refresh })
-const { run: payCheckout, loading: payingCheckout } = usePayInvoiceCheckout({
-	onDone: refresh,
-})
-
-// manual_checkout teams settle on-session (any amount, no ₹15k limit); everyone
-// else uses the off-session charge against their saved method.
-const manualMode = computed(
-	() => collection.data?.collection_mode === 'Manual Checkout',
-)
-const payBusy = computed(() => paying.value || payingCheckout.value)
-function pay(name: string): Promise<unknown> {
-	return manualMode.value ? payCheckout(name) : payInvoice(name)
-}
-
-// Timeline dot colour per event theme; gray for informational events, so color
-// stays reserved for outcomes.
-const DOTS: Record<string, string> = {
-	green: 'bg-[var(--ink-green-6)]',
-	red: 'bg-[var(--ink-red-6)]',
-}
-const dotClass = (theme: string): string =>
-	DOTS[theme] || 'bg-[var(--ink-gray-4)]'
-
-
-const paidWithIcon = computed(() =>
-	/upi/i.test(detail.data?.paid_with?.method_type ?? '')
-		? 'lucide-smartphone'
-		: 'lucide-credit-card',
-)
-
-// "31 May 2026, 09:00" → "31 May 2026": the date carries the story; the
-// clock time is noise at timeline granularity.
-const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
-
-// One gray sentence under the label: amount first, then the backend's detail.
-const eventDetail = (ev: {
-	detail: string | null
-	amount: number
-	currency?: string
-}): string => {
-	const parts: string[] = []
-	if (ev.amount)
-		parts.push(money(ev.amount, ev.currency || detail.data?.currency))
-	if (ev.detail) parts.push(ev.detail)
-	return parts.join(' · ')
-}
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
+	<PageHeaderMobile class="sm:hidden">
+		<NavDrawerTitle title="Invoices" />
+	</PageHeaderMobile>
+
+	<!-- 'Billing' is the sidebar group Invoices sits in, not a page above it —
+	     Overview is its sibling. So it labels the trail without linking. -->
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs
+			:items="[
+				{ label: 'Billing' },
+				{ label: 'Invoices', route: { name: 'BillingInvoices' } },
+			]"
+		/>
+	</PageHeader>
+
+	<!-- The list/receipt row is desktop-only scaffolding: DesktopShell doesn't
+	     scroll, so the panes own their overflow there. On mobile MobileShell is
+	     the scroller and the page has to fall through to it, or the bottom nav
+	     eats the last rows. -->
+	<div class="sm:flex sm:h-full sm:min-h-0">
 		<!-- LIST — capped and centered so rows stay scannable when the panel is
          closed; the cap matches the Limit tiers page. -->
-		<div class="min-w-0 flex-1 overflow-y-auto">
+		<div class="sm:min-w-0 sm:flex-1 sm:overflow-y-auto">
 			<div class="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6">
 				<InvoiceListView
 					:invoices="invoices"
@@ -191,9 +139,12 @@ const eventDetail = (ev: {
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
          list, never over it. Header carries all invoice identity: number +
          status together, so the body never needs a labelled "Status" row.
+         Desktop only: at 24rem it can't sit beside anything on a phone, and
+         stacked under the list it's just an overflowing second screen.
          GROUNDING GAP (#70): no email-invoice / download-PDF endpoints yet,
          so both header actions stay disabled until the backend lands them. -->
 		<SidePanel
+			v-if="!isMobile"
 			:open="!!selected"
 			@update:open="(v: boolean) => !v && (selected = null)"
 		>
@@ -240,165 +191,11 @@ const eventDetail = (ev: {
 				<LoadingText :lines="6" />
 			</div>
 
-			<!-- Body: the receipt list scrolls on its own; the cost breakdown and
-           Activity sit below it, so the totals never shift as the list
-           scrolls. Activity opens below and is revealed by scrolling. -->
-			<div v-else-if="detail.data" class="flex min-h-0 flex-1 flex-col">
-					<p
-						v-if="isOverdue"
-						class="flex items-center gap-1.5 px-4 pt-4 text-p-sm text-ink-red-7"
-					>
-						<span class="lucide-triangle-alert size-3.5 shrink-0" />
-						Due {{ shortDate(detail.data.due_date) }} — overdue
-					</p>
-
-					<!-- Receipt: plan charges per server, then metered add-ons — each
-               section a plain eyebrow with its subtotal, like the V2 receipt. -->
-					<!-- No inner scroll: the panel already scrolls, and a second scroller
-					     here clipped the receipt mid-row once a team had more than one
-					     machine on the invoice. -->
-					<div class="shrink-0 px-4 pt-4">
-						<ChargeBreakdown
-							:lines="detail.data.items"
-							:currency="detail.data.currency"
-						/>
-					</div>
-
-					<!-- Cost breakdown + Activity -->
-					<div class="mt-4 border-t border-outline-gray-2 px-4">
-						<dl class="space-y-2 py-3 text-sm">
-							<div class="flex justify-between gap-3">
-								<dt class="text-ink-gray-5">Subtotal</dt>
-								<dd class="tabular-nums text-ink-gray-8">
-									{{ money(detail.data.subtotal, detail.data.currency) }}
-								</dd>
-							</div>
-							<div
-								v-if="detail.data.output_tax_amount"
-								class="flex justify-between gap-3"
-							>
-								<dt class="text-ink-gray-5">
-									{{ detail.data.output_tax_type || 'Tax' }}
-									<template v-if="detail.data.output_tax_rate">
-										({{ detail.data.output_tax_rate }}%)</template
-									>
-								</dt>
-								<dd class="tabular-nums text-ink-gray-8">
-									{{ money(detail.data.output_tax_amount, detail.data.currency) }}
-								</dd>
-							</div>
-							<p
-								v-if="detail.data.zero_rating_reason"
-								class="text-p-sm text-ink-gray-5"
-							>
-								{{ detail.data.zero_rating_reason }}
-							</p>
-							<div
-								v-if="detail.data.credit_applied"
-								class="flex justify-between gap-3"
-							>
-								<dt class="text-ink-green-5">Credits applied</dt>
-								<dd class="tabular-nums text-ink-green-5">
-									−{{ money(detail.data.credit_applied, detail.data.currency) }}
-								</dd>
-							</div>
-							<div
-								class="mt-1 flex justify-between gap-3 border-t border-outline-gray-1 pt-2.5 font-semibold"
-							>
-								<dt class="text-ink-gray-8">Total</dt>
-								<dd class="tabular-nums text-ink-gray-9">
-									{{ money(detail.data.total, detail.data.currency) }}
-								</dd>
-							</div>
-							<!-- Which method settled it — a quiet receipt line, not a form
-                   row. Falls back to the paid amount when the method is gone. -->
-							<div
-								v-if="detail.data.paid_with"
-								class="flex justify-between gap-3 text-p-sm text-ink-gray-5"
-							>
-								<dt>Paid with</dt>
-								<dd class="flex min-w-0 items-center gap-1.5">
-									<span
-										class="size-3.5 shrink-0 text-ink-gray-4"
-										:class="paidWithIcon"
-										aria-hidden="true"
-									/>
-									<span class="truncate">{{ detail.data.paid_with.label }}</span>
-								</dd>
-							</div>
-							<div
-								v-else-if="detail.data.amount_paid"
-								class="flex justify-between gap-3 text-p-sm text-ink-gray-5"
-							>
-								<dt>Paid</dt>
-								<dd class="tabular-nums">
-									{{ money(detail.data.amount_paid, detail.data.currency) }}
-								</dd>
-							</div>
-						</dl>
-
-						<!-- Activity — this invoice's own history. Folded away entirely:
-                 for a settled invoice the log is reference, not news. -->
-						<section
-							v-if="detail.data.activity?.length"
-							class="border-t border-outline-gray-1 py-3"
-						>
-							<button
-								class="flex w-full items-center gap-1.5 text-left"
-								:aria-expanded="activityExpanded"
-								@click="activityExpanded = !activityExpanded"
-							>
-								<span
-									class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-5 transition-transform duration-150 ease-out"
-									:class="activityExpanded ? 'rotate-90' : ''"
-								/>
-								<h3 class="text-sm-medium text-ink-gray-8">Activity</h3>
-								<span class="text-p-sm text-ink-gray-5">
-									{{ detail.data.activity.length }}
-								</span>
-							</button>
-							<ol v-if="activityExpanded" class="relative mt-3">
-								<li
-									v-for="(ev, idx) in detail.data.activity"
-									:key="idx"
-									class="relative flex gap-3 pb-4 last:pb-0"
-								>
-									<!-- Rail: one continuous line running through the column, with
-                       the solid dot sitting on top of it. The line is dropped on
-                       the last row so it doesn't dangle. -->
-									<div class="relative flex w-2.5 shrink-0 justify-center">
-										<span
-											v-if="idx < detail.data.activity.length - 1"
-											class="absolute left-1/2 top-2 h-[calc(100%+1rem)] w-px -translate-x-1/2 bg-[var(--outline-gray-2)]"
-										/>
-										<span
-											class="relative z-10 mt-1 size-2 shrink-0 rounded-full"
-											:class="dotClass(ev.theme)"
-										/>
-									</div>
-									<div class="min-w-0 flex-1">
-										<div class="flex items-baseline justify-between gap-2">
-											<span class="text-sm-medium text-ink-gray-8">
-												{{ ev.title }}
-											</span>
-											<span
-												class="shrink-0 tabular-nums text-p-sm text-ink-gray-5"
-											>
-												{{ eventDate(ev.at) }}
-											</span>
-										</div>
-										<p
-											v-if="eventDetail(ev)"
-											class="mt-0.5 break-words text-p-sm text-ink-gray-5"
-										>
-											{{ eventDetail(ev) }}
-										</p>
-									</div>
-								</li>
-							</ol>
-						</section>
-					</div>
-				</div>
+			<InvoiceReceipt
+				v-else-if="detail.data"
+				:invoice="detail.data"
+				:overdue="isOverdue"
+			/>
 
 			<!-- The footer carries only the one state-dependent action. Settling an
            invoice is the helpful way out of an overdue state, not a
@@ -411,7 +208,7 @@ const eventDetail = (ev: {
 					icon-left="lucide-credit-card"
 					:label="`Pay ${money(detail.data.expected_collection, detail.data.currency)} now`"
 					:loading="payBusy"
-					@click="pay(detail.data.name)"
+					@click="pay()"
 				/>
 				<div
 					v-else

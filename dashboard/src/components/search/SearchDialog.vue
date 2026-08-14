@@ -10,6 +10,7 @@ import {
 } from 'reka-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useIsMobile } from '@/composables/useIsMobile'
 import type { SearchItem } from './index'
 import { useSearchIndex } from './index'
 import { filterIndex, highlightMatch } from './utils'
@@ -17,6 +18,9 @@ import { filterIndex, highlightMatch } from './utils'
 const open = defineModel<boolean>('open', { default: false })
 
 const router = useRouter()
+// The footer is nothing but keyboard hints, and a touch device has no keyboard
+// to offer them to — arrows, enter, esc and ⌘K are all unreachable there.
+const isMobile = useIsMobile()
 const query = ref('')
 const searchIndex = useSearchIndex()
 
@@ -103,6 +107,7 @@ function select(item: SearchItem): void {
 				</ListboxContent>
 
 				<div
+					v-if="!isMobile"
 					class="mt-2 flex items-center justify-between border-t border-outline-gray-1 px-2.5 py-2 text-xs text-ink-gray-6"
 				>
 					<div class="flex items-center gap-4">
