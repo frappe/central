@@ -614,11 +614,28 @@ class TestAtlasMirror(IntegrationTestCase):
 		# nothing written on the request thread — the worker does it
 		self.assertFalse(frappe.db.exists("Asset", "vm-q"))
 
-	def test_unknown_event_type_is_acked_without_queuing(self):
+	def test_unknown_event_type_is_recorded_ignored_not_queued(self):
+		# A type Central doesn't mirror yet is stored Ignored (audit trail stays complete),
+		# but never queued for a mirror write — so a missing handler can't strand a row.
 		frappe.set_user(self.service_user)
 		try:
 			with patch("frappe.enqueue") as enqueue:
-				result = ingest_event(self.region, "vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00")
+				result = ingest_event(
+					self.region, "vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00", "evt-unknown-1"
+				)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(result, {"ok": True, "queued": False})
+		enqueue.assert_not_called()
+		self.assertEqual(frappe.db.get_value("Atlas Event", {"event_id": "evt-unknown-1"}, "status"), "Ignored")
+
+	def test_event_without_id_is_acked_without_storing(self):
+		# A validly-signed but malformed event (no id/type) can't be deduped or stored —
+		# ack it so Atlas stops retrying, and write nothing.
+		frappe.set_user(self.service_user)
+		try:
+			with patch("frappe.enqueue") as enqueue:
+				result = ingest_event(self.region, None, {}, "2026-06-18 10:00:00", None)
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(result, {"ok": True, "queued": False})
