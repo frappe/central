@@ -6,6 +6,7 @@ import unicodedata
 import frappe
 from frappe import _
 
+from central.errors import server_action, throw_action_error
 from central.iam import can, resolve_team
 from central.integrations.atlas import AtlasClient, reconcile
 
@@ -425,6 +426,7 @@ def _plan_resources(plan: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@server_action
 def create_server(
 	team: str | None = None,
 	region: str | None = None,
@@ -458,7 +460,7 @@ def create_server(
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
-		frappe.throw(_("You can't create servers for this team."), frappe.PermissionError)
+		throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action="create")
 	if _is_staging_trial_team(team):
 		# Trial: free credits fund it, no full profile. Size comes from the plan, not the
 		# caller, so the VM matches what the plan sells (and its rate).
@@ -472,7 +474,7 @@ def create_server(
 
 		require_billing_profile(team, "create servers")
 	if not region:
-		frappe.throw(_("Region is required."), frappe.ValidationError)
+		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="Region")
 	_validate_frappe_version(frappe_version, region)
 	friendly_title, atlas_title = _server_names(title, subdomain)
 
@@ -500,6 +502,7 @@ def create_server(
 
 
 @frappe.whitelist(methods=["POST"])
+@server_action
 def create_composed_server(
 	team: str | None = None,
 	region: str | None = None,
@@ -530,13 +533,13 @@ def create_composed_server(
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
-		frappe.throw(_("You can't create servers for this team."), frappe.PermissionError)
+		throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action="create")
 	# A server bills the team, so it needs a billing profile first.
 	from central.billing.api.dashboard._shared import require_billing_profile
 
 	require_billing_profile(team, "create servers")
 	if not region:
-		frappe.throw(_("Region is required."), frappe.ValidationError)
+		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="Region")
 	if isinstance(includes, str):
 		includes = frappe.parse_json(includes)
 	_validate_frappe_version(frappe_version, region)
@@ -564,18 +567,21 @@ def create_composed_server(
 
 
 @frappe.whitelist(methods=["POST"])
+@server_action
 def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Start a stopped server. Gated on `server:power`."""
 	return _run_command("start", "server:power", "start", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
+@server_action
 def stop_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Stop a running server. Gated on `server:power`."""
 	return _run_command("stop", "server:power", "stop", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
+@server_action
 def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Terminate a server. Gated on `server:terminate`."""
 	return _run_command("terminate", "server:terminate", "terminate", team, resource_id)
@@ -589,9 +595,9 @@ def _run_command(
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, capability):
-		frappe.throw(_("You can't {0} servers for this team.").format(action), frappe.PermissionError)
+		throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action=action)
 	if not resource_id:
-		frappe.throw(_("resource_id is required."), frappe.ValidationError)
+		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="A server")
 
 	# The asset must be in this team's mirror — also how we route to its Atlas.
 	asset = frappe.db.get_value(
@@ -601,12 +607,12 @@ def _run_command(
 		as_dict=True,
 	)
 	if not asset:
-		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+		throw_action_error("SERVER_NOT_FOUND", exc=frappe.DoesNotExistError, resource_id=resource_id)
 
 	# A resize power-cycles the VM in the background; a manual start/stop mid-flight would
 	# race it. Terminate is still allowed — the user may want to abandon the machine.
 	if asset.resize_in_progress and action in ("start", "stop"):
-		frappe.throw(_("This server is resizing — you can {0} it once that finishes.").format(action))
+		throw_action_error("SERVER_BUSY_RESIZING", action=action)
 
 	instance = frappe.get_doc("Atlas Instance", asset.cluster)
 	task = AtlasClient(instance).vm_action(resource_id, atlas_method)

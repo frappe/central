@@ -790,6 +790,19 @@ class TestAtlasMirror(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "resizing"):
 			start_server(team=self.team.name, resource_id=asset)
 
+	def test_blocked_action_reaches_the_client_as_an_envelope(self):
+		# The whole point of the server-action wiring: a blocked action surfaces a stable
+		# code + clean message, not a bare FrappeException.
+		asset = self._stopped_asset("vm-resizing-env", resize_in_progress=1)
+		frappe.set_user(self.owner)
+		try:
+			with self.assertRaises(frappe.ValidationError) as caught:
+				start_server(team=self.team.name, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(caught.exception.envelope["code"], "SERVER_BUSY_RESIZING")
+		self.assertEqual(frappe.message_log[-1]["server_action_error"]["code"], "SERVER_BUSY_RESIZING")
+
 	def test_start_allowed_once_resize_clears(self):
 		asset = self._stopped_asset("vm-idle", resize_in_progress=0)
 		frappe.set_user(self.owner)
