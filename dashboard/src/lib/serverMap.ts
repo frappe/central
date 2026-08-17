@@ -78,6 +78,17 @@ const STATUS_VISUAL: Record<string, ServerVisual> = {
 }
 
 export function statusVisual(server: AssetRow): ServerVisual {
+	// A live action wins: show its transitional label, pulsing to read as "working now",
+	// from the click until the mirror confirms — so the row never looks like nothing happened.
+	if (server.pending_action) {
+		return {
+			key: 'settingUp',
+			label: server.pending_action,
+			badgeTheme: 'amber',
+			dot: 'var(--ink-amber-6)',
+			pulse: true,
+		}
+	}
 	if (isResizing(server)) return VISUALS.resizing
 	return STATUS_VISUAL[displayStatus(server)] ?? VISUALS.settingUp
 }
@@ -432,7 +443,19 @@ export function computeNodes({
 
 // A site's status mapped onto the shared server visual vocabulary, so the unified
 // assets list (and its status filter) can treat a site like the VM it is.
-export function siteVisual(status: string): ServerVisual {
+export function siteVisual(
+	status: string,
+	pendingAction?: string | null,
+): ServerVisual {
+	// A live site action wins, same as servers — show its label, pulsing, until the mirror confirms.
+	if (pendingAction)
+		return {
+			key: 'settingUp',
+			label: pendingAction,
+			badgeTheme: 'amber',
+			dot: 'var(--ink-amber-6)',
+			pulse: true,
+		}
 	if (status === 'Running')
 		return {
 			key: 'active',

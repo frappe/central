@@ -27,7 +27,12 @@ export type AssetRow = Pick<
 	| 'gateway_url'
 	| 'resize_in_progress'
 	| 'last_synced_at'
->
+> & {
+	// Transitional label ("Terminating"/"Provisioning"/…) while an action is in flight.
+	// Overlaid by central.api.servers.registry from the active Resource Action, not an
+	// Asset field — so the row reads as "…ing" until the mirror catches up.
+	pending_action?: string | null
+}
 
 // The server lifecycle command path (create / power / terminate / open-in-bench /
 // mirror refresh). The fleet *list* is read separately through useServerMapData;

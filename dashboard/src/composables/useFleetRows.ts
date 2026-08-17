@@ -54,7 +54,7 @@ export function useFleetRows(
 				// The user-entered name ("demo.in"); the full FQDN drops to the secondary
 				// line (specs) so a site reads like the VM it is, not a routing string.
 				name: site.subdomain || site.name,
-				visual: siteVisual(site.status),
+				visual: siteVisual(site.status, site.pending_action),
 				specs: site.name,
 				cluster: site.region ?? '',
 				region,
