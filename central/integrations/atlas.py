@@ -18,6 +18,7 @@ from frappe.utils.password import get_decrypted_password
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.central.doctype.resource_action.resource_action import ResourceAction
 from central.central.doctype.site.site import Site
 from central.errors import throw_action_error
 from central.host_task import run_host_task
@@ -132,20 +133,23 @@ class AtlasClient:
 			# failure is a network/timeout — transient, and safe to retry.
 			if sentence:
 				throw_action_error("ATLAS_REJECTED", exc=AtlasError, message=sentence, action=action)
-			throw_action_error("REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region)
+			throw_action_error(
+				"REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region
+			)
 
 	def ping(self) -> dict:
 		"""Reachability + auth check against the frappe ping endpoint."""
 		return self.client().get_api("ping")
 
-	def vm_action(self, name: str, method: str) -> str:
-		"""Invoke a Virtual Machine lifecycle method (start/stop/terminate) as the
-		operator; return the resulting Task name."""
-		return self._post(
-			"run_doc_method",
-			{"dt": "Virtual Machine", "dn": name, "method": method},
-			action=f"{method} this server",
-		)
+	def vm_action(self, name: str, method: str, *, correlation_id: str | None = None) -> str:
+		"""Invoke a Virtual Machine lifecycle method (start/stop/terminate) as the operator;
+		return the resulting Task name. `correlation_id` rides back on the resulting event so
+		Central can match it to the Resource Action that requested it."""
+		params = {"dt": "Virtual Machine", "dn": name, "method": method}
+		if correlation_id:
+			params["args"] = json.dumps({"correlation_id": correlation_id})
+
+		return self._post("run_doc_method", params, action=f"{method} this server")
 
 	def resize_vm(
 		self,
@@ -186,6 +190,7 @@ class AtlasClient:
 		disk_gigabytes: int,
 		cpu_max_cores: float | None = None,
 		frappe_version: str | None = None,
+		correlation_id: str | None = None,
 	) -> dict:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
 		Returns the new VM in the Asset-mirror shape so the caller can upsert it.
@@ -205,6 +210,8 @@ class AtlasClient:
 			params["cpu_max_cores"] = cpu_max_cores
 		if frappe_version:
 			params["frappe_version"] = frappe_version
+		if correlation_id:
+			params["correlation_id"] = correlation_id
 		# Same enrollment carriage as create_site: mint the single-use bootstrap token and
 		# credential id so the bench can run `bench admin enroll` on first boot. Without it
 		# a server provisions fine but never enrols, and Open Console refuses it with
@@ -342,16 +349,20 @@ class AtlasClient:
 		team: str,
 		subdomain: str,
 		region: str | None = None,
+		correlation_id: str | None = None,
 	) -> dict:
 		"""
 		Provision a self-serve site on this Atlas for a Central team (the operator
 		write). Returns the site in the Site-mirror shape so the caller can upsert it.
+		`correlation_id` rides back on the site.* events so Central can match the outcome.
 		"""
 
 		params: dict = {"team": team, "subdomain": subdomain}
 
 		if region:
 			params["region"] = region
+		if correlation_id:
+			params["correlation_id"] = correlation_id
 		params.update(self._pilot_credential(team))
 
 		# Durability: minting the bootstrap token lazily generates Central's signing key on
@@ -411,14 +422,14 @@ class AtlasClient:
 			action="refresh this site's login link",
 		)
 
-	def terminate_site(self, name: str) -> dict:
+	def terminate_site(self, name: str, *, correlation_id: str | None = None) -> dict:
 		"""Tear down a self-serve site and its 1:1 backing VM. The Atlas Site controller
 		terminates the guest + VM; the site.* events flip the mirror to Terminated."""
-		return self._post(
-			"run_doc_method",
-			{"dt": "Site", "dn": name, "method": "terminate"},
-			action="terminate this site",
-		)
+		params = {"dt": "Site", "dn": name, "method": "terminate"}
+		if correlation_id:
+			params["args"] = json.dumps({"correlation_id": correlation_id})
+
+		return self._post("run_doc_method", params, action="terminate this site")
 
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""
@@ -562,6 +573,8 @@ def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
 	Asset.mirror_vm(cluster, payload, occurred_at=occurred_at)
 	# Once Atlas echoes the pilot_credential_id, bind the credential to its VM.
 	PilotCredential.link_asset(payload.get("pilot_credential_id"), payload.get("name"))
+	# Confirm the action that asked for this change (create/start/stop/restart) against its outcome.
+	ResourceAction.record_mirror_status(payload.get("correlation_id"), payload.get("status"))
 
 
 def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
@@ -572,10 +585,14 @@ def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
 		Asset.mark_terminated(resource_id, last_event_at=occurred_at)
 	# The pilot dies with its VM — kill its Central credential so a leaked token is inert.
 	PilotCredential.revoke_by_id(payload.get("pilot_credential_id"))
+	# A delete is the terminal outcome of a terminate action.
+	ResourceAction.record_mirror_status(payload.get("correlation_id"), "Terminated")
 
 
 def _on_site(cluster: str, payload: dict, occurred_at) -> None:
 	Site.mirror_site(cluster, payload, occurred_at=occurred_at)
+	# Confirm the site action (create/terminate) this status carries the outcome of.
+	ResourceAction.record_mirror_status(payload.get("correlation_id"), payload.get("status"))
 
 
 _EVENT_HANDLERS = {
