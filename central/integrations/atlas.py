@@ -19,6 +19,7 @@ from frappe.utils.password import get_decrypted_password
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.site.site import Site
+from central.errors import throw_action_error
 from central.host_task import run_host_task
 
 # Central's integration with the regional Atlas clusters (Edge B), all in one place:
@@ -125,14 +126,13 @@ class AtlasClient:
 				title=f"Atlas '{self.instance.region}': {action} failed",
 				message=str(exception),
 			)
-			message = _remote_error_message(exception)
-			frappe.throw(
-				message
-				or _("Could not {0} — Atlas '{1}' is unreachable. Try again shortly.").format(
-					action, self.instance.region
-				),
-				AtlasError,
-			)
+			sentence = _remote_error_message(exception)
+
+			# The region's own sentence is the best message a user can get; without one the
+			# failure is a network/timeout — transient, and safe to retry.
+			if sentence:
+				throw_action_error("ATLAS_REJECTED", exc=AtlasError, message=sentence, action=action)
+			throw_action_error("REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region)
 
 	def ping(self) -> dict:
 		"""Reachability + auth check against the frappe ping endpoint."""
@@ -549,10 +549,10 @@ def signature_matches(secret: str, timestamp, raw_body: bytes, signature: str) -
 
 
 def _reject_signature(reason: str):
-	"""Log the specific reason for operators — repeated rejections mean secret drift or a
-	forged caller, invisible before this — but throw one uniform 403 so a caller can't
-	probe which check failed. A file logger, not Error Log, so a flood can't bloat the DB."""
-	frappe.logger("atlas_webhook").warning(f"rejected inbound webhook: {reason}")
+	"""Log the specific reason to the Error Log for operators — repeated rejections mean
+	secret drift or a forged caller, invisible before this — but throw one uniform 403 so a
+	caller can't probe which check failed."""
+	frappe.log_error(title="Rejected inbound Atlas webhook", message=reason)
 
 	# Uniform 403. Don't set http_status_code — Frappe's exception handler overrides it.
 	frappe.throw(_("Invalid webhook signature."), frappe.PermissionError)
