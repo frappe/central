@@ -61,6 +61,15 @@ class TestThrowActionError(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action="terminate")
 
+	def test_surfaced_message_folds_in_the_remediation(self):
+		# frappe-ui drops the structured envelope, so the "how to resolve" has to ride the
+		# message the client actually reads.
+		with self.assertRaises(frappe.PermissionError):
+			throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action="terminate")
+		surfaced = frappe.message_log[-1]["message"]
+		self.assertIn("isn't allowed to terminate", surfaced)
+		self.assertIn("Ask a team admin", surfaced)
+
 
 class TestToErrorResponse(IntegrationTestCase):
 	def test_preserves_a_user_facing_validation_message(self):

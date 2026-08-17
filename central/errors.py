@@ -179,6 +179,7 @@ def _reraise_with_envelope(exc: Exception, envelope: dict) -> None:
 	its message, so enrich that entry and keep the original type (and status); anything
 	else gets a fresh message and is re-raised as a ResourceActionError."""
 	if isinstance(exc, (frappe.ValidationError, frappe.PermissionError)) and frappe.message_log:
+		frappe.message_log[-1]["message"] = _display_message(envelope)
 		frappe.message_log[-1][ENVELOPE_KEY] = envelope
 		exc.envelope = envelope
 		raise exc
@@ -190,11 +191,18 @@ def _reraise_with_envelope(exc: Exception, envelope: dict) -> None:
 	raise error from exc
 
 
+def _display_message(envelope: dict) -> str:
+	"""What the user reads: what happened, then how to resolve it. frappe-ui surfaces only
+	this line and drops the structured envelope, so the remediation has to ride here too."""
+	remediation = envelope.get("remediation")
+	return f"{envelope['message']} {remediation}".strip() if remediation else envelope["message"]
+
+
 def _carry(envelope: dict) -> None:
 	"""Append the message-log entry that carries this envelope to the client."""
 	frappe.message_log.append(
 		frappe._dict(
-			message=envelope["message"],
+			message=_display_message(envelope),
 			title=envelope["title"],
 			indicator="red",
 			raise_exception=1,
