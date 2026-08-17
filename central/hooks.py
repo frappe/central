@@ -188,6 +188,9 @@ scheduler_events = {
 		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
 		# backstop that corrects drift the event push (central.api.atlas.event) missed.
 		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
+		# Resource actions: resolve any action stuck in flight because its confirming event
+		# was lost — mark it Succeeded if the mirror already reached the goal, else Timed Out.
+		"*/5 * * * *": ["central.central.doctype.resource_action.resource_action.sweep_stale"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
@@ -337,6 +340,7 @@ before_request = ["central.oauth.install_oauth_claim_patch"]
 permission_query_conditions = {
 	"Asset": "central.permissions.asset_query_conditions",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
+	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
@@ -346,6 +350,7 @@ permission_query_conditions = {
 has_permission = {
 	"Asset": "central.permissions.asset_has_permission",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
+	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",

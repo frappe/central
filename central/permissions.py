@@ -90,6 +90,15 @@ def asset_has_permission(doc, user: str | None = None, ptype: str | None = None,
 	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
 
 
+def resource_action_query_conditions(user: str | None = None) -> str:
+	return _team_field_query_conditions("Resource Action", "server:view", user)
+
+
+def resource_action_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	# Read-only for tenants: actions are written server-side by the API, never in the portal.
+	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
+
+
 def site_query_conditions(user: str | None = None) -> str:
 	return _team_field_query_conditions("Site", "server:view", user)
 

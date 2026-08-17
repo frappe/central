@@ -11,9 +11,9 @@ from frappe.tests import IntegrationTestCase
 from central.errors import (
 	ENVELOPE_KEY,
 	ERROR_CATALOG,
-	ServerActionError,
+	ResourceActionError,
 	build_envelope,
-	server_action,
+	resource_action,
 	throw_action_error,
 	to_error_response,
 )
@@ -37,7 +37,9 @@ class TestErrorCatalog(IntegrationTestCase):
 		self.assertEqual(env["code"], "SERVER_NOT_FOUND")
 
 	def test_message_override_wins(self):
-		env = build_envelope("ATLAS_REJECTED", message="No capacity — retry shortly.", action="create this server")
+		env = build_envelope(
+			"ATLAS_REJECTED", message="No capacity — retry shortly.", action="create this server"
+		)
 		self.assertEqual(env["message"], "No capacity — retry shortly.")
 		self.assertIn("create this server", env["title"])
 
@@ -50,7 +52,7 @@ class TestThrowActionError(IntegrationTestCase):
 		frappe.clear_messages()
 
 	def test_carries_envelope_on_the_message_log(self):
-		with self.assertRaises(ServerActionError) as caught:
+		with self.assertRaises(ResourceActionError) as caught:
 			throw_action_error("SERVER_BUSY_RESIZING", action="start")
 		self.assertEqual(caught.exception.envelope["code"], "SERVER_BUSY_RESIZING")
 		self.assertEqual(frappe.message_log[-1][ENVELOPE_KEY]["code"], "SERVER_BUSY_RESIZING")
@@ -77,29 +79,29 @@ class TestToErrorResponse(IntegrationTestCase):
 		log.assert_called_once()
 
 	def test_prebuilt_envelope_passes_through(self):
-		error = ServerActionError("x")
+		error = ResourceActionError("x")
 		error.envelope = {"code": "ATLAS_REJECTED"}
 		self.assertEqual(to_error_response(error)["code"], "ATLAS_REJECTED")
 
 
-class TestServerActionDecorator(IntegrationTestCase):
+class TestResourceActionDecorator(IntegrationTestCase):
 	def setUp(self):
 		frappe.clear_messages()
 
 	def test_unexpected_exception_becomes_a_clean_envelope(self):
-		@server_action
+		@resource_action
 		def boom():
 			raise KeyError("internal detail")
 
 		with patch("central.errors.frappe.log_error"):
-			with self.assertRaises(ServerActionError) as caught:
+			with self.assertRaises(ResourceActionError) as caught:
 				boom()
 		self.assertEqual(caught.exception.envelope["code"], "UNEXPECTED")
 		# The raw exception text must never surface to the user.
 		self.assertNotIn("internal detail", caught.exception.envelope["message"])
 
 	def test_clean_validation_error_passes_through_enriched(self):
-		@server_action
+		@resource_action
 		def bad():
 			frappe.throw("Region is required.", frappe.ValidationError)
 
@@ -109,10 +111,10 @@ class TestServerActionDecorator(IntegrationTestCase):
 		self.assertIn("Region is required", str(caught.exception))
 
 	def test_prebuilt_error_is_not_reprocessed(self):
-		@server_action
+		@resource_action
 		def rejected():
 			throw_action_error("ATLAS_REJECTED", message="No capacity.", action="create this server")
 
-		with self.assertRaises(ServerActionError) as caught:
+		with self.assertRaises(ResourceActionError) as caught:
 			rejected()
 		self.assertEqual(caught.exception.envelope["message"], "No capacity.")

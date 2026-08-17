@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 
 from central.api.site_login import site_login_url
+from central.errors import resource_action
 from central.iam import can, get_user_team_names, resolve_team
 from central.integrations.atlas import AtlasClient
 
@@ -28,6 +29,7 @@ def _default_region() -> str:
 
 
 @frappe.whitelist(methods=["POST"])
+@resource_action
 def create_site(subdomain: str, region: str | None = None) -> dict:
 	"""Provision a self-serve site for the user's team. Gated on `server:create`.
 
@@ -45,12 +47,29 @@ def create_site(subdomain: str, region: str | None = None) -> dict:
 
 	region = region or _default_region()
 	client = AtlasClient.for_region(region)
-	site = client.create_site(team=team, subdomain=subdomain)
+
+	# Track provisioning: site create is async (clone→deploy→route runs on Atlas after
+	# this returns), so the "Provisioning…" state and its eventual pass/fail land here.
+	tracked = frappe.get_doc(
+		{"doctype": "Resource Action", "resource_type": "Site", "action": "create", "team": team}
+	).insert(ignore_permissions=True)
+	try:
+		site = client.create_site(team=team, subdomain=subdomain, correlation_id=tracked.name)
+	except Exception as exc:
+		tracked.fail_from_exception(exc)
+		raise
 
 	from central.central.doctype.site.site import Site
 
 	Site.mirror_site(client.instance.name, site)
-	return {"name": site.get("name"), "fqdn": site.get("fqdn"), "status": site.get("status")}
+	tracked.attach_resource(site.get("name"))
+
+	return {
+		"name": site.get("name"),
+		"fqdn": site.get("fqdn"),
+		"status": site.get("status"),
+		"action": tracked.name,
+	}
 
 
 @frappe.whitelist(methods=["GET"])
@@ -106,6 +125,7 @@ def site_domain(region: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@resource_action
 def terminate_site(name: str) -> dict:
 	"""Terminate a self-serve site (and its 1:1 backing VM). Gated on `server:terminate` —
 	a site is a VM, so removing it is authorized like tearing down a server (site-level
@@ -126,6 +146,22 @@ def terminate_site(name: str) -> dict:
 		frappe.throw(_("Site {0} has no backing region to terminate.").format(name), frappe.ValidationError)
 
 	instance = frappe.get_doc("Atlas Instance", site.cluster)
-	AtlasClient(instance).terminate_site(name)
 
-	return {"name": name, "status": "Terminating"}
+	tracked = frappe.get_doc(
+		{
+			"doctype": "Resource Action",
+			"resource_type": "Site",
+			"action": "terminate",
+			"team": site.team,
+			"resource_id": name,
+		}
+	).insert(ignore_permissions=True)
+	try:
+		AtlasClient(instance).terminate_site(name, correlation_id=tracked.name)
+	except Exception as exc:
+		tracked.fail_from_exception(exc)
+		raise
+
+	tracked.mark_sent()
+
+	return {"name": name, "status": "Terminating", "action": tracked.name}

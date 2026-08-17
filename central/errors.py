@@ -9,7 +9,7 @@ switches on; `message`/`remediation` are the words a person reads (see the Wix "
 better error messages" guidance: plain language, cause, reassurance, next step).
 
 Wire this at the two ends of the Server flow: `throw_action_error` where Central raises a
-known failure, and the `@server_action` decorator on the whitelisted endpoints so nothing
+known failure, and the `@resource_action` decorator on the whitelisted endpoints so nothing
 — not even an unexpected bug — reaches the user as a bare exception.
 """
 
@@ -21,10 +21,10 @@ import frappe
 from frappe import _
 
 # The message key the envelope rides on inside each _server_messages entry.
-ENVELOPE_KEY = "server_action_error"
+ENVELOPE_KEY = "action_error"
 
 
-class ServerActionError(frappe.ValidationError):
+class ResourceActionError(frappe.ValidationError):
 	"""A server-flow failure already shaped into a user-facing envelope."""
 
 
@@ -68,6 +68,18 @@ ERROR_CATALOG: dict[str, dict] = {
 		"remediation": "",
 		"retriable": False,
 	},
+	"ACTION_FAILED": {
+		"title": "The {action} didn't complete",
+		"message": "Your server reported a failure while trying to {action}, and it's now in a failed state.",
+		"remediation": "Try the action again. If it keeps failing, contact support so we can look into it.",
+		"retriable": True,
+	},
+	"ACTION_TIMED_OUT": {
+		"title": "The {action} is taking too long",
+		"message": "We haven't heard back that the {action} finished. It may still complete on its own.",
+		"remediation": "Refresh your server list in a few minutes. If it still looks stuck, contact support.",
+		"retriable": True,
+	},
 	"VALIDATION_ERROR": {
 		"title": "Please check and try again",
 		"message": "We couldn't complete that action.",
@@ -91,7 +103,9 @@ class _SafeContext(dict):
 		return ""
 
 
-def build_envelope(code: str, *, message: str | None = None, remediation: str | None = None, **context) -> dict:
+def build_envelope(
+	code: str, *, message: str | None = None, remediation: str | None = None, **context
+) -> dict:
 	"""Shape one catalog entry into an envelope, filling templates from `context`.
 	`message`/`remediation` override the catalog copy when the caller has better words
 	(e.g. the region's own error sentence)."""
@@ -102,12 +116,14 @@ def build_envelope(code: str, *, message: str | None = None, remediation: str | 
 		"code": code if code in ERROR_CATALOG else "UNEXPECTED",
 		"title": _(entry["title"]).format_map(source),
 		"message": (message or _(entry["message"])).format_map(source),
-		"remediation": (remediation if remediation is not None else _(entry["remediation"])).format_map(source),
+		"remediation": (remediation if remediation is not None else _(entry["remediation"])).format_map(
+			source
+		),
 		"retriable": entry["retriable"],
 	}
 
 
-def throw_action_error(code: str, *, exc: type[Exception] = ServerActionError, **context) -> None:
+def throw_action_error(code: str, *, exc: type[Exception] = ResourceActionError, **context) -> None:
 	"""Raise a known server-flow failure as a clean, structured error. Pass `exc` to keep
 	the right HTTP status (e.g. frappe.PermissionError for 403); pass `message`/`remediation`
 	in `context` to override the catalog copy."""
@@ -139,8 +155,8 @@ def to_error_response(exc: Exception) -> dict:
 	return build_envelope("UNEXPECTED")
 
 
-def server_action(func):
-	"""Guarantee a whitelisted server action fails as a clean envelope, never a bare
+def resource_action(func):
+	"""Guarantee a whitelisted action endpoint fails as a clean envelope, never a bare
 	exception. An error already shaped by `throw_action_error` passes through untouched;
 	anything else is converted, preserving the user's message and the exception's status."""
 
@@ -161,7 +177,7 @@ def server_action(func):
 def _reraise_with_envelope(exc: Exception, envelope: dict) -> None:
 	"""Attach the envelope to what the client receives. A frappe exception already logged
 	its message, so enrich that entry and keep the original type (and status); anything
-	else gets a fresh message and is re-raised as a ServerActionError."""
+	else gets a fresh message and is re-raised as a ResourceActionError."""
 	if isinstance(exc, (frappe.ValidationError, frappe.PermissionError)) and frappe.message_log:
 		frappe.message_log[-1][ENVELOPE_KEY] = envelope
 		exc.envelope = envelope
@@ -169,7 +185,7 @@ def _reraise_with_envelope(exc: Exception, envelope: dict) -> None:
 
 	_carry(envelope)
 
-	error = ServerActionError(envelope["message"])
+	error = ResourceActionError(envelope["message"])
 	error.envelope = envelope
 	raise error from exc
 

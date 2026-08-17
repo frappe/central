@@ -6,7 +6,8 @@ import unicodedata
 import frappe
 from frappe import _
 
-from central.errors import server_action, throw_action_error
+from central.central.doctype.resource_action.resource_action import ResourceAction
+from central.errors import resource_action, throw_action_error
 from central.iam import can, resolve_team
 from central.integrations.atlas import AtlasClient, reconcile
 
@@ -159,6 +160,13 @@ def registry(team: str | None = None) -> dict:
 		],
 		order_by="cluster asc, resource_id asc",
 	)
+	# Overlay the transitional label of any in-flight action, so a just-clicked
+	# start/stop/terminate (or a still-provisioning create) reads as "…ing" until the
+	# mirror catches up — instead of looking like nothing happened.
+	pending = ResourceAction.pending_labels(team)
+	for asset in assets:
+		asset["pending_action"] = pending.get(asset["resource_id"])
+
 	# A site is a VM too — flat and uncapped, symmetric with servers. `name` is the FQDN
 	# (the stable id + terminate key); `subdomain` is the user-entered display name.
 	sites = frappe.get_all(
@@ -167,6 +175,10 @@ def registry(team: str | None = None) -> dict:
 		fields=["name", "subdomain", "status", "url", "region"],
 		order_by="subdomain asc",
 	)
+	# Same overlay for sites; a VM id and a site FQDN never collide, so one map covers both.
+	for site in sites:
+		site["pending_action"] = pending.get(site["name"])
+
 	return {"team": team, "assets": assets, "sites": sites}
 
 
@@ -426,7 +438,7 @@ def _plan_resources(plan: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-@server_action
+@resource_action
 def create_server(
 	team: str | None = None,
 	region: str | None = None,
@@ -479,15 +491,27 @@ def create_server(
 	friendly_title, atlas_title = _server_names(title, subdomain)
 
 	client = AtlasClient.for_region(region)
-	vm = client.create_vm(
-		team=team,
-		title=atlas_title,
-		vcpus=int(vcpus or 1),
-		memory_megabytes=int(memory_megabytes or 512),
-		disk_gigabytes=int(disk_gigabytes or 10),
-		cpu_max_cores=cpu_max_cores,
-		frappe_version=frappe_version,
-	)
+
+	# Track provisioning: create is the one async path (boot→deploy→mint runs on Atlas
+	# after this returns), so the "Provisioning…" state and its eventual pass/fail land here.
+	tracked = frappe.get_doc(
+		{"doctype": "Resource Action", "resource_type": "Server", "action": "create", "team": team}
+	).insert(ignore_permissions=True)
+	try:
+		vm = client.create_vm(
+			team=team,
+			title=atlas_title,
+			vcpus=int(vcpus or 1),
+			memory_megabytes=int(memory_megabytes or 512),
+			disk_gigabytes=int(disk_gigabytes or 10),
+			cpu_max_cores=cpu_max_cores,
+			frappe_version=frappe_version,
+			correlation_id=tracked.name,
+		)
+	except Exception as exc:
+		tracked.fail_from_exception(exc)
+		raise
+
 	resource_id = vm.get("name")
 	# Record the contract for the bundle. Guarded so a raw-size call (no plan) still
 	# provisions a VM without a subscription, as before.
@@ -498,11 +522,13 @@ def create_server(
 	# Asset. Otherwise preset creates render the UUID/Pending shell until the next
 	# reconcile, instead of the user-facing title/status Atlas already returned.
 	resource_id = _mirror_provisioned_vm(region, vm, friendly_title)
-	return {"resource_id": resource_id, "server": vm, "subscription": subscription}
+	tracked.attach_resource(resource_id)
+
+	return {"resource_id": resource_id, "server": vm, "subscription": subscription, "action": tracked.name}
 
 
 @frappe.whitelist(methods=["POST"])
-@server_action
+@resource_action
 def create_composed_server(
 	team: str | None = None,
 	region: str | None = None,
@@ -552,36 +578,48 @@ def create_composed_server(
 
 	qty = composition_quantities(includes)
 	client = AtlasClient.for_region(region)
-	vm = client.create_vm(
-		team=team,
-		title=atlas_title,
-		vcpus=int(qty.get(COMPUTE, 1)) or 1,
-		memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
-		disk_gigabytes=int(qty.get(DISK, 0)) or 10,
-		frappe_version=frappe_version,
-	)
+
+	tracked = frappe.get_doc(
+		{"doctype": "Resource Action", "resource_type": "Server", "action": "create", "team": team}
+	).insert(ignore_permissions=True)
+	try:
+		vm = client.create_vm(
+			team=team,
+			title=atlas_title,
+			vcpus=int(qty.get(COMPUTE, 1)) or 1,
+			memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
+			disk_gigabytes=int(qty.get(DISK, 0)) or 10,
+			frappe_version=frappe_version,
+			correlation_id=tracked.name,
+		)
+	except Exception as exc:
+		tracked.fail_from_exception(exc)
+		raise
+
 	resource_id = vm.get("name")
 	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
 	resource_id = _mirror_provisioned_vm(region, vm, friendly_title)
-	return {"resource_id": resource_id, "server": vm}
+	tracked.attach_resource(resource_id)
+
+	return {"resource_id": resource_id, "server": vm, "action": tracked.name}
 
 
 @frappe.whitelist(methods=["POST"])
-@server_action
+@resource_action
 def start_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Start a stopped server. Gated on `server:power`."""
 	return _run_command("start", "server:power", "start", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
-@server_action
+@resource_action
 def stop_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Stop a running server. Gated on `server:power`."""
 	return _run_command("stop", "server:power", "stop", team, resource_id)
 
 
 @frappe.whitelist(methods=["POST"])
-@server_action
+@resource_action
 def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Terminate a server. Gated on `server:terminate`."""
 	return _run_command("terminate", "server:terminate", "terminate", team, resource_id)
@@ -615,5 +653,23 @@ def _run_command(
 		throw_action_error("SERVER_BUSY_RESIZING", action=action)
 
 	instance = frappe.get_doc("Atlas Instance", asset.cluster)
-	task = AtlasClient(instance).vm_action(resource_id, atlas_method)
-	return {"resource_id": resource_id, "task": task}
+
+	# Track the action so the console shows it in flight and its outcome has a home.
+	tracked = frappe.get_doc(
+		{
+			"doctype": "Resource Action",
+			"resource_type": "Server",
+			"action": action,
+			"team": team,
+			"resource_id": resource_id,
+		}
+	).insert(ignore_permissions=True)
+	try:
+		task = AtlasClient(instance).vm_action(resource_id, atlas_method, correlation_id=tracked.name)
+	except Exception as exc:
+		tracked.fail_from_exception(exc)
+		raise
+
+	tracked.mark_sent(task)
+
+	return {"resource_id": resource_id, "task": task, "action": tracked.name}
