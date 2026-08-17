@@ -6,22 +6,32 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.integrations.atlas import ingest_event
+from central.integrations.atlas import ingest_event, verify_atlas_webhook
 
 
-@frappe.whitelist(methods=["POST"])
-def event(**kwargs) -> dict:
-	"""
-	Webhook sink for Atlas lifecycle events. Atlas authenticates with its scoped
-	Central service-user token; ingest_event resolves the sender from that session,
-	then queues the mirror update so Atlas gets a fast ack. Body: `event_id`, `type`,
-	`payload`, `occurred_at`.
-
-	"""
-	data = frappe._dict(kwargs)
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@verify_atlas_webhook
+def event() -> dict:
+	"""Webhook sink for Atlas lifecycle events (spec/16-central.md). The decorator is the
+	only gate — nothing keyed on payload content runs until the HMAC verifies."""
+	context = frappe.local.atlas_webhook
+	body = context.raw.decode() if isinstance(context.raw, bytes) else context.raw
+	data = frappe.parse_json(body) if body else None
+	if not isinstance(data, dict):
+		# Signed but not an object (array, null, empty) — ack like an unknown event type.
+		data = frappe._dict()
 	payload = frappe.parse_json(data.payload) if isinstance(data.payload, str) else (data.payload or {})
 
-	return ingest_event(data.type, payload, data.occurred_at, data.event_id)
+	return ingest_event(
+		context.cluster,
+		data.type,
+		payload,
+		data.occurred_at,
+		data.event_id,
+		raw_body=context.raw,
+		signature=context.signature,
+		signature_timestamp=context.timestamp,
+	)
 
 
 # --- Inbound Atlas HTTP endpoints -------------------------------------------

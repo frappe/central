@@ -23,6 +23,39 @@ change. Only the first item requires a coordinated bench-side change.
 - **Rollout:** bump `CAPABILITY_VERSION` and ship the bench reader together; keep the
   claim additive (scope defaults to `"*"`) so an un-updated bench keeps working.
 
+### 2. HMAC-signed `event` webhooks (replaces token auth for that one endpoint)
+- **Central change:** `central.api.atlas.event` moves to `allow_guest=True` and is
+  gated by the `@verify_atlas_webhook` decorator (ordered under `@frappe.whitelist`,
+  matching `central/utils/guards.py`) — an HMAC-SHA256 over
+  `X-Atlas-Timestamp + raw body`, keyed on a new `Atlas Instance.webhook_secret`
+  (minted/rotated alongside the service-user creds; see `TUNNEL.md`'s "Per-Atlas
+  Central service user"). The gate stashes the verified context (cluster, raw body,
+  signature, timestamp) on `frappe.local.atlas_webhook`; `ingest_event` no longer
+  resolves the sender from `frappe.session.user` (`_atlas_cluster()` is deleted) and
+  persists the raw bytes + signature so the stored `Atlas Event` row stays
+  re-verifiable. `ping`/`sizes`/`images` are unaffected, still plain token auth.
+- **Why Atlas is affected:** Atlas must sign `post_event` requests
+  (`X-Atlas-Region`/`X-Atlas-Timestamp`/`X-Atlas-Signature` headers,
+  `hmac.compare_digest`-verified) and must send **no**
+  `Authorization` header on them — Frappe authenticates any token it is given even
+  on an `allow_guest` route, so including one would let a stale `api_secret` 401 a
+  correctly signed event. An unsigned `event` call is rejected outright once
+  Central's gate is live.
+- **Atlas-side work required:** `CentralClient.post_event` signs the exact bytes
+  sent (`data=`, not `json=` — `requests`'s own serialization isn't guaranteed
+  byte-identical to what's signed); `Central Settings` gains a `webhook_secret`
+  field; `deliver()`'s "not registered" skip gate is extended to also require
+  `webhook_secret`, so a build with the signing code but no secret yet just skips
+  (durable outbox) instead of sending unsigned.
+- **Rollout (hard cutover, no contract-version field — uses doctype state as the
+  readiness signal instead):** (1) ship Central's schema + mint/push, endpoint
+  unchanged — dormant; (2) ship Atlas's schema + signing + the extended skip gate;
+  (3) re-register every `Atlas Instance` to push fresh `webhook_secret`, confirm
+  `status="Active"` instances all have one set; (4) only then deploy Central's
+  gate flip (`allow_guest=True` + signature-only). Flipping (4) before (3) is
+  complete for a region's instance permanently breaks that region's event delivery
+  until it's re-registered.
+
 ## Central-only — token-adjacent, but **no** Atlas/bench change needed
 
 - **Shorten the Datum `METRICS_TTL`** (1 year → days/week): the pilot already

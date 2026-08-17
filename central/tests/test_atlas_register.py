@@ -122,6 +122,7 @@ class TestAtlasRegister(IntegrationTestCase):
 		# peer_endpoint = host of base_url : listen port.
 		self.assertEqual(instance.peer_endpoint, "blr.atlas.example.test:51820")
 		self.assertTrue(instance.service_user)
+		self.assertTrue(instance.get_password("webhook_secret", raise_exception=False))
 
 		# provision_tunnel got the hub identity + allocated ip + pushed service creds.
 		payload = provision_tunnel.call_args.args[1]
@@ -132,6 +133,9 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertNotIn("atlas_id", payload)
 		self.assertTrue(payload["service_api_key"])
 		self.assertTrue(payload["service_api_secret"])
+		self.assertTrue(payload["service_webhook_secret"])
+		# The pushed secret is the same one stored on the instance for verification.
+		self.assertEqual(payload["service_webhook_secret"], instance.get_password("webhook_secret"))
 
 		# hub-peer-add ran with the returned key + the /32 + the endpoint.
 		add_call = run_host_task.call_args
@@ -173,12 +177,14 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertNotIn("atlas_id", payload)
 		self.assertTrue(payload["service_api_key"])
 		self.assertTrue(payload["service_api_secret"])
+		self.assertTrue(payload["service_webhook_secret"])
 		self.assertNotIn("tunnel_ip", payload)
 		self.assertNotIn("hub_public_key", payload)
 
 		instance.reload()
 		self.assertEqual(instance.tunnel_status, "Inactive")
 		self.assertTrue(instance.service_user)
+		self.assertTrue(instance.get_password("webhook_secret", raise_exception=False))
 		self.assertFalse(instance.tunnel_ip)
 		self.assertFalse(instance.tunnel_url)  # data path stays on base_url
 		self.assertFalse(instance.peer_public_key)
