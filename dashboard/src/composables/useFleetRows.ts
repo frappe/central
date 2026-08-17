@@ -61,7 +61,11 @@ export function useFleetRows(
 				regionLabel: region ? regionLabel(region) : (site.region ?? ''),
 				flag: flagEmoji(region?.country_code),
 				provider: region?.provider ?? null,
-				site: { name: site.name, url: site.url },
+				site: {
+					name: site.name,
+					url: site.url,
+					pending_action: site.pending_action,
+				},
 			}
 		}),
 	)

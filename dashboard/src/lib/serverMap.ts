@@ -179,7 +179,7 @@ export interface MapPin {
 	/** The raw asset row, for the server actions menu the page wires in. */
 	server?: AssetRow
 	// — Site-only (undefined on server pins) —
-	site?: { name: string; url: string | null }
+	site?: { name: string; url: string | null; pending_action?: string | null }
 }
 
 /** A server or site decorated into one list/map shape. A site is a 1:1-backed VM,
@@ -197,7 +197,7 @@ export interface ResourceRow {
 	flag: string
 	provider: string | null
 	asset?: AssetRow
-	site?: { name: string; url: string | null }
+	site?: { name: string; url: string | null; pending_action?: string | null }
 }
 
 /** An empty Active region — a "+" affordance on the map. */

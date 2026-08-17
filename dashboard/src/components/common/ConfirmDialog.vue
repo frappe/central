@@ -1,11 +1,12 @@
 <script setup lang="ts" generic="T">
-import { Dialog } from 'frappe-ui'
+import { Dialog, ErrorMessage } from 'frappe-ui'
 import { computed } from 'vue'
 
 // One confirm dialog for the "hold a pending target, ask before acting" pattern.
 // Controlled by the caller: bind the pending item (or null) with v-model:target —
 // null closes it. Emits confirm(target) for the caller to run the mutation; pass
-// :loading while it runs. Body is the message prop, or a default slot for richer copy.
+// :loading while it runs. On failure the caller keeps the target set and passes :error,
+// so the dialog stays open with the reason inline instead of vanishing behind a toast.
 const props = withDefaults(
 	defineProps<{
 		target: T | null
@@ -15,6 +16,7 @@ const props = withDefaults(
 		/** Set 'red' for a destructive action; omit for a neutral solid confirm. */
 		theme?: 'red'
 		loading?: boolean
+		error?: string
 	}>(),
 	{ confirmLabel: 'Confirm' },
 )
@@ -53,5 +55,6 @@ const actions = computed(() => [
 		:actions="actions"
 	>
 		<slot />
+		<ErrorMessage v-if="error" class="mt-2" :message="error" />
 	</Dialog>
 </template>

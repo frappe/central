@@ -122,6 +122,9 @@ async function runCommand(
 	call: typeof startCall,
 	server: AssetRow,
 	verb: Verb,
+	// A quick, reversible power action toasts on failure; a destructive one (terminate)
+	// throws so the caller can hold its confirm dialog open and show the reason inline.
+	surface: 'toast' | 'throw' = 'toast',
 ): Promise<void> {
 	busy.value = server.resource_id
 	try {
@@ -131,8 +134,12 @@ async function runCommand(
 			resource_id: server.resource_id,
 		})
 		if (call.error) throw call.error
-		successToast(`${verb} requested for ${server.title || server.resource_id}`)
+		if (surface === 'toast')
+			successToast(
+				`${verb} requested for ${server.title || server.resource_id}`,
+			)
 	} catch (e) {
+		if (surface === 'throw') throw e
 		errorToast(e)
 	} finally {
 		busy.value = ''
@@ -156,7 +163,7 @@ export function useServers() {
 		return runCommand(stopCall, server, 'Stop')
 	}
 	function terminate(server: AssetRow) {
-		return runCommand(terminateCall, server, 'Terminate')
+		return runCommand(terminateCall, server, 'Terminate', 'throw')
 	}
 
 	// Open the VM's bench via a scoped SSO assertion. The tab is opened

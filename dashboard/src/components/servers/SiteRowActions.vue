@@ -6,7 +6,7 @@ import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 // 1:1-backed VM, so it reuses the server capabilities (site-level caps are
 // deferred). Presentational — it emits the verb; the page owns the calls.
 const props = defineProps<{
-	site: { name: string; url: string | null }
+	site: { name: string; url: string | null; pending_action?: string | null }
 	canOpen: boolean
 	canTerminate: boolean
 	busy?: boolean
@@ -25,7 +25,9 @@ const options = computed(() => {
 			icon: 'lucide-external-link',
 			onClick: () => emit('open', props.site.name),
 		})
-	if (props.canTerminate)
+	// An action is in flight: don't offer Terminate until it settles, mirroring the API
+	// which rejects a second command mid-flight (same rule as ServerRowActions).
+	if (props.canTerminate && !props.site.pending_action)
 		items.push({
 			label: 'Terminate',
 			icon: 'lucide-trash-2',
