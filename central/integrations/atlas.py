@@ -443,11 +443,13 @@ def ingest_event(
 	signature: str | None = None,
 	signature_timestamp: str | None = None,
 ) -> dict:
-	"""Persist the event under the caller-verified `cluster`, then queue the mirror write.
-	raw_body/signature/signature_timestamp are kept verbatim so the row stays
-	self-verifying; raw_payload is reserialized and never verifies."""
+	"""Persist the event under the caller-verified `cluster`, then queue the mirror write
+	for the types Central mirrors. raw_body/signature/signature_timestamp are kept verbatim
+	so the row stays self-verifying; raw_payload is reserialized and never verifies."""
 
-	if event_type not in _EVENT_HANDLERS:
+	# A validly-signed but malformed event (no id or type) can't be stored or deduped —
+	# ack it so Atlas stops retrying, as before. Real events always carry both.
+	if not (event_id and event_type):
 		return {"ok": True, "queued": False}
 
 	# A redelivery carries the same event_id, so skip anything we've already stored.
@@ -456,7 +458,11 @@ def ingest_event(
 	if frappe.db.exists("Atlas Event", {"event_id": event_id}):
 		return {"ok": True, "queued": False}
 
-	# after_insert enqueues the mirror write once this row commits.
+	# Record every authenticated event. A type Central doesn't mirror yet lands as Ignored
+	# rather than vanishing — so the audit trail is complete and a handler added later has
+	# history to replay. after_insert queues the mirror write only for a Received row.
+	handled = event_type in _EVENT_HANDLERS
+
 	frappe.get_doc(
 		{
 			"doctype": "Atlas Event",
@@ -468,11 +474,11 @@ def ingest_event(
 			"signature_timestamp": signature_timestamp,
 			"raw_body": raw_body.decode() if isinstance(raw_body, bytes) else raw_body,
 			"raw_payload": frappe.as_json(payload or {}),
-			"status": "Received",
+			"status": "Received" if handled else "Ignored",
 		}
 	).insert(ignore_permissions=True)
 
-	return {"ok": True, "queued": True}
+	return {"ok": True, "queued": handled}
 
 
 def apply_event(event_name: str) -> None:
@@ -520,18 +526,18 @@ def _authenticate_atlas_webhook(raw_body: bytes) -> frappe._dict:
 	timestamp = frappe.get_request_header("X-Atlas-Timestamp")
 	signature = frappe.get_request_header("X-Atlas-Signature")
 	if not (region and timestamp and signature):
-		_reject_signature()
+		_reject_signature("missing signature headers")
 
 	instance = frappe.db.get_value("Atlas Instance", {"region": region, "status": ["!=", "Disabled"]})
 	if not instance:
-		_reject_signature()
+		_reject_signature(f"unknown or disabled region '{region}'")
 
 	secret = get_decrypted_password("Atlas Instance", instance, "webhook_secret", raise_exception=False)
 	if not secret:
-		_reject_signature()
+		_reject_signature(f"no webhook secret for region '{region}'")
 
 	if not signature_matches(secret, timestamp, raw_body, signature):
-		_reject_signature()
+		_reject_signature(f"signature mismatch for region '{region}'")
 
 	return frappe._dict(cluster=instance, raw=raw_body, signature=signature, timestamp=timestamp)
 
@@ -542,7 +548,12 @@ def signature_matches(secret: str, timestamp, raw_body: bytes, signature: str) -
 	return hmac.compare_digest(expected.encode(), signature.encode())
 
 
-def _reject_signature():
+def _reject_signature(reason: str):
+	"""Log the specific reason for operators — repeated rejections mean secret drift or a
+	forged caller, invisible before this — but throw one uniform 403 so a caller can't
+	probe which check failed. A file logger, not Error Log, so a flood can't bloat the DB."""
+	frappe.logger("atlas_webhook").warning(f"rejected inbound webhook: {reason}")
+
 	# Uniform 403. Don't set http_status_code — Frappe's exception handler overrides it.
 	frappe.throw(_("Invalid webhook signature."), frappe.PermissionError)
 
