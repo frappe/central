@@ -982,3 +982,88 @@ class TestAtlasMirror(IntegrationTestCase):
 			"2026-07-02 10:00:00",
 		)
 		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")
+
+
+class TestTerminateIdempotency(IntegrationTestCase):
+	"""Terminating a resource Atlas no longer has (e.g. a stale mirror row) is idempotent
+	success, not a scary 'region unreachable' — the reported terminate bug."""
+
+	def setUp(self):
+		from central.tests.test_iam import ensure_user
+
+		frappe.set_user("Administrator")
+		self.owner = ensure_user("term.owner@example.test")
+		self.team = frappe.db.get_value("Team", {"owner_user": self.owner}, "name")
+		self.region = "blr-term"
+		if not frappe.db.exists("Region", self.region):
+			frappe.get_doc(
+				{"doctype": "Region", "region": self.region, "display_name": "Term", "provider": "Fake"}
+			).insert(ignore_permissions=True)
+		if not frappe.db.exists("Atlas Instance", self.region):
+			frappe.get_doc(
+				{
+					"doctype": "Atlas Instance",
+					"region": self.region,
+					"base_url": "https://atlas.example.test",
+					"status": "Active",
+					"api_key": "k",
+					"api_secret": "s",
+				}
+			).insert(ignore_permissions=True)
+		self._no_commit = patch.object(frappe.db, "commit")
+		self._no_commit.start()
+
+	def tearDown(self):
+		self._no_commit.stop()
+		frappe.set_user("Administrator")
+
+	def _asset(self, resource_id):
+		frappe.get_doc(
+			{
+				"doctype": "Asset",
+				"resource_id": resource_id,
+				"team": self.team,
+				"cluster": self.region,
+				"status": "Running",
+			}
+		).insert(ignore_permissions=True)
+		return resource_id
+
+	def test_terminate_succeeds_when_atlas_says_gone(self):
+		from central.integrations.atlas import AtlasResourceGone
+
+		asset = self._asset("vm-gone")
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.atlas.AtlasClient.vm_action",
+				side_effect=AtlasResourceGone("gone"),
+			):
+				result = terminate_server(team=self.team, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Asset", asset, "status"), "Terminated")
+		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")
+
+	def test_start_still_errors_when_atlas_says_gone(self):
+		from central.integrations.atlas import AtlasResourceGone
+
+		asset = self._asset("vm-gone2")
+		frappe.db.set_value("Asset", asset, "status", "Stopped")
+		# In production _run_doc_method raises this via throw_action_error, so it carries an
+		# envelope and propagates as-is through the @resource_action decorator.
+		gone = AtlasResourceGone("This server no longer exists in its region.")
+		gone.envelope = {
+			"code": "RESOURCE_GONE",
+			"message": "This server no longer exists in its region.",
+			"remediation": "",
+			"retriable": False,
+		}
+		frappe.set_user(self.owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.vm_action", side_effect=gone):
+				with self.assertRaises(AtlasResourceGone):
+					start_server(team=self.team, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Asset", asset, "status"), "Stopped")

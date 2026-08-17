@@ -80,7 +80,7 @@ class ResourceAction(Document):
 		# would otherwise discard the outcome and leave the action stuck in flight.
 		self._apply(commit=True)
 
-	def _succeed(self) -> None:
+	def succeed(self) -> None:
 		self.status = "Succeeded"
 		self.completed_at = frappe.utils.now_datetime()
 		self._apply()
@@ -101,7 +101,7 @@ class ResourceAction(Document):
 		if mirror_status == "Failed":
 			doc._finish_error("Failed", build_envelope("ACTION_FAILED", action=doc.action))
 		elif mirror_status == SUCCESS_MIRROR_STATUS.get(doc.action):
-			doc._succeed()
+			doc.succeed()
 		elif mirror_status in IN_PROGRESS_MIRROR_STATUS and doc.status != "In Progress":
 			doc.status = "In Progress"
 			doc._apply()
@@ -141,7 +141,7 @@ class ResourceAction(Document):
 		goal = SUCCESS_MIRROR_STATUS.get(doc.action)
 		reached = doc.resource_id and goal and frappe.db.get_value(mirror, doc.resource_id, "status") == goal
 		if reached:
-			doc._succeed()
+			doc.succeed()
 		else:
 			doc._finish_error("Timed Out", build_envelope("ACTION_TIMED_OUT", action=doc.action))
 

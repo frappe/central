@@ -45,6 +45,16 @@ class AtlasError(frappe.ValidationError):
 	pass
 
 
+class AtlasResourceGone(AtlasError):
+	"""Atlas has no such resource (HTTP 404). For terminate this means already gone —
+	the caller can treat it as idempotent success; for other actions it's a clean error."""
+
+
+# Generous bound for a synchronous lifecycle call (Atlas runs terminate/start on the host
+# in-request); long enough for a real op, short enough that a dead region can't pin a worker.
+LIFECYCLE_TIMEOUT = 120
+
+
 # The last line of a Python traceback is always "<dotted.ExcType>: <message>". That is
 # the only part of a remote failure worth showing a caller, so it is what we lift out of
 # the traceback FrappeClient hands us (see `_post`).
@@ -73,6 +83,18 @@ def _remote_error_message(exception: Exception) -> str | None:
 		if match:
 			return match.group("message").strip() or None
 	return None
+
+
+def _server_message(response: requests.Response) -> str | None:
+	"""Atlas's own error sentence from a failed response's `_server_messages`, or None."""
+	try:
+		raw = response.json().get("_server_messages")
+		if not raw:
+			return None
+		first = frappe.parse_json(frappe.parse_json(raw)[0])
+		return frappe.utils.strip_html_tags(first.get("message") or "") or None
+	except Exception:
+		return None
 
 
 def get_atlas_instance(region: str):
@@ -137,6 +159,48 @@ class AtlasClient:
 				"REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region
 			)
 
+	def _run_doc_method(self, dt: str, dn: str, method: str, args: dict | None, *, action: str) -> Any:
+		"""Invoke a whitelisted controller method on Atlas, reading the real HTTP status so a
+		missing doc (404) is told apart from an unreachable region — unlike FrappeClient, which
+		collapses both into an opaque failure. Returns the method's result; raises
+		AtlasResourceGone on 404 (for terminate that means already gone), AtlasError otherwise."""
+		if self.instance.status == "Disabled":
+			frappe.throw(_("Atlas '{0}' is disabled.").format(self.instance.region), AtlasError)
+		if not self.instance.api_key:
+			frappe.throw(_("Atlas '{0}' has no admin API key.").format(self.instance.region), AtlasError)
+
+		url = self._data_url().rstrip("/") + "/api/method/run_doc_method"
+		params = {"dt": dt, "dn": dn, "method": method}
+		if args:
+			params["args"] = json.dumps(args)
+		secret = self.instance.get_password("api_secret")
+
+		try:
+			response = requests.post(
+				url,
+				headers={"Authorization": f"token {self.instance.api_key}:{secret}"},
+				data=params,
+				timeout=LIFECYCLE_TIMEOUT,
+			)
+		except requests.RequestException:
+			throw_action_error(
+				"REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region
+			)
+
+		if response.ok:
+			return response.json().get("message")
+
+		# Keep the full body for operators; hand the caller Atlas's own sentence.
+		frappe.log_error(
+			title=f"Atlas '{self.instance.region}': {action} failed", message=response.text[:2000]
+		)
+		if response.status_code == 404:
+			throw_action_error("RESOURCE_GONE", exc=AtlasResourceGone, action=action)
+		sentence = _server_message(response)
+		if sentence:
+			throw_action_error("ATLAS_REJECTED", exc=AtlasError, message=sentence, action=action)
+		throw_action_error("REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region)
+
 	def ping(self) -> dict:
 		"""Reachability + auth check against the frappe ping endpoint."""
 		return self.client().get_api("ping")
@@ -145,11 +209,9 @@ class AtlasClient:
 		"""Invoke a Virtual Machine lifecycle method (start/stop/terminate) as the operator;
 		return the resulting Task name. `correlation_id` rides back on the resulting event so
 		Central can match it to the Resource Action that requested it."""
-		params = {"dt": "Virtual Machine", "dn": name, "method": method}
-		if correlation_id:
-			params["args"] = json.dumps({"correlation_id": correlation_id})
+		args = {"correlation_id": correlation_id} if correlation_id else None
 
-		return self._post("run_doc_method", params, action=f"{method} this server")
+		return self._run_doc_method("Virtual Machine", name, method, args, action=f"{method} this server")
 
 	def resize_vm(
 		self,
@@ -424,12 +486,11 @@ class AtlasClient:
 
 	def terminate_site(self, name: str, *, correlation_id: str | None = None) -> dict:
 		"""Tear down a self-serve site and its 1:1 backing VM. The Atlas Site controller
-		terminates the guest + VM; the site.* events flip the mirror to Terminated."""
-		params = {"dt": "Site", "dn": name, "method": "terminate"}
-		if correlation_id:
-			params["args"] = json.dumps({"correlation_id": correlation_id})
+		terminates the guest + VM; the site.* events flip the mirror to Terminated. Raises
+		AtlasResourceGone if the site is already gone on Atlas, so terminate stays idempotent."""
+		args = {"correlation_id": correlation_id} if correlation_id else None
 
-		return self._post("run_doc_method", params, action="terminate this site")
+		return self._run_doc_method("Site", name, "terminate", args, action="terminate this site")
 
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""

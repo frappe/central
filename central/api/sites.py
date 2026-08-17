@@ -6,7 +6,7 @@ from frappe import _
 from central.api.site_login import site_login_url
 from central.errors import resource_action
 from central.iam import can, get_user_team_names, resolve_team
-from central.integrations.atlas import AtlasClient
+from central.integrations.atlas import AtlasClient, AtlasResourceGone
 
 # Self-serve site endpoints for the SMB onboarding flow. Reads come from the Site
 # mirror (kept fresh by the site.* events Atlas pushes); writes go to Atlas as the
@@ -158,6 +158,12 @@ def terminate_site(name: str) -> dict:
 	).insert(ignore_permissions=True)
 	try:
 		AtlasClient(instance).terminate_site(name, correlation_id=tracked.name)
+	except AtlasResourceGone:
+		# Already gone on Atlas (e.g. a stale mirror row) — terminate is idempotent: reflect
+		# it on the mirror and succeed rather than surfacing a scary "region down".
+		frappe.get_doc("Site", name).db_set("status", "Terminated", notify=True)
+		tracked.succeed()
+		return {"name": name, "status": "Terminated", "action": tracked.name}
 	except Exception as exc:
 		tracked.fail_from_exception(exc)
 		raise

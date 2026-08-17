@@ -68,6 +68,12 @@ ERROR_CATALOG: dict[str, dict] = {
 		"remediation": "",
 		"retriable": False,
 	},
+	"RESOURCE_GONE": {
+		"title": "No longer exists",
+		"message": "This server no longer exists in its region — it may already have been removed.",
+		"remediation": "Refresh your list to see the current state.",
+		"retriable": False,
+	},
 	"ACTION_FAILED": {
 		"title": "The {action} didn't complete",
 		"message": "Your server reported a failure while trying to {action}, and it's now in a failed state.",

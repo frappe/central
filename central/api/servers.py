@@ -9,7 +9,7 @@ from frappe import _
 from central.central.doctype.resource_action.resource_action import ResourceAction
 from central.errors import resource_action, throw_action_error
 from central.iam import can, resolve_team
-from central.integrations.atlas import AtlasClient, reconcile
+from central.integrations.atlas import AtlasClient, AtlasResourceGone, reconcile
 
 # Server endpoints for the console. Reads come from the Asset mirror; commands go
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
@@ -666,6 +666,17 @@ def _run_command(
 	).insert(ignore_permissions=True)
 	try:
 		task = AtlasClient(instance).vm_action(resource_id, atlas_method, correlation_id=tracked.name)
+	except AtlasResourceGone as exc:
+		# The VM is already gone on Atlas. Terminate is idempotent — reflect it and succeed;
+		# start/stop of a vanished server is a real (clean) error, so let it surface.
+		if action == "terminate":
+			from central.central.doctype.asset.asset import Asset
+
+			Asset.mark_terminated(resource_id, last_event_at=frappe.utils.now_datetime())
+			tracked.succeed()
+			return {"resource_id": resource_id, "task": None, "action": tracked.name}
+		tracked.fail_from_exception(exc)
+		raise
 	except Exception as exc:
 		tracked.fail_from_exception(exc)
 		raise
