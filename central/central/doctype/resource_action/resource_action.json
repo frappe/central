@@ -1,0 +1,152 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-08-17 00:00:00.000000",
+ "description": "One tenant-triggered lifecycle action on a fleet resource (a server or a site) and its outcome. The name is the correlation id Central sends to Atlas and matches on the returning event.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "resource_type",
+  "action",
+  "team",
+  "resource_id",
+  "column_break_main",
+  "status",
+  "atlas_task",
+  "completed_at",
+  "section_break_error",
+  "error_code",
+  "retriable",
+  "error_message",
+  "remediation"
+ ],
+ "fields": [
+  {
+   "fieldname": "resource_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Resource Type",
+   "options": "Server\nSite",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Action",
+   "options": "create\nstart\nstop\nterminate\nresize",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Team",
+   "options": "Team",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The server (VM id) or site (FQDN) this action targets, snapshotted so the row stays meaningful after the resource is gone.",
+   "fieldname": "resource_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Resource ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Queued",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Queued\nSent\nIn Progress\nSucceeded\nFailed\nTimed Out",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "description": "The Atlas Task this action produced, for operator cross-reference.",
+   "fieldname": "atlas_task",
+   "fieldtype": "Data",
+   "label": "Atlas Task",
+   "read_only": 1
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_error",
+   "fieldtype": "Section Break",
+   "label": "Failure"
+  },
+  {
+   "description": "Stable error code from the failure envelope (central/errors.py).",
+   "fieldname": "error_code",
+   "fieldtype": "Data",
+   "label": "Error Code",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "retriable",
+   "fieldtype": "Check",
+   "label": "Retriable",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remediation",
+   "fieldtype": "Small Text",
+   "label": "Remediation",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-17 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Resource Action",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Central User"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
