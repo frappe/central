@@ -4,7 +4,7 @@
 Edits central/__init__.py (read by Frappe and flit) and package.json (the
 dashboard) so they stay in sync, then prints the diff. It does not commit or
 tag — review the change, make a `chore(release): vX.Y.Z` commit, and publish
-the release from GitHub. See RELEASING.md.
+the release from GitHub.
 
 Run from the app root:
     python scripts/release.py 0.1.0
