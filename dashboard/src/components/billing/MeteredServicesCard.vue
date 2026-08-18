@@ -111,7 +111,7 @@ function exhausted(row: ServiceRow): boolean {
 <template>
 	<BillingCard
 		title="Metered services"
-		title-info="Team-level services billed by usage (AI tokens, email, PDF, storage) — no server required."
+		title-info="Team-level services billed by usage (AI tokens, email, PDF, storage). No server required."
 	>
 		<template v-if="canManageBilling" #action>
 			<Button

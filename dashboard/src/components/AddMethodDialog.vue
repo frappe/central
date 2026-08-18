@@ -241,11 +241,11 @@ watch(open, (isOpen) => {
 				<p class="text-p-sm text-ink-gray-5">
 					<template v-if="stripeSubmitting">
 						Validating your card with a small temporary charge that's refunded
-						right away. This can take a few seconds — please don't close this
-						window.
+						right away. This can take a few seconds, so please don't close
+						this window.
 					</template>
 					<template v-else>
-						Card details are entered on Stripe's secure field — we never see
+						Card details are entered on Stripe's secure field. We never see
 						your card number.
 					</template>
 				</p>

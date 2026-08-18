@@ -37,7 +37,7 @@ function heightPct(total: number): number {
 				v-for="m in months"
 				:key="m.month"
 				class="group flex h-full flex-1 flex-col justify-end"
-				:title="`${m.label} — ${money(m.total, history.currency)}`"
+				:title="`${m.label}: ${money(m.total, history.currency)}`"
 			>
 				<div
 					v-if="m.total > 0"

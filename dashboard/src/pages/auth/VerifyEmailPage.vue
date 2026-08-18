@@ -95,7 +95,7 @@ function queryString(value: unknown): string {
 				@complete="verify"
 			/>
 			<p v-if="devHint" class="text-p-sm text-ink-gray-5">
-				Demo — any 6 digits work.
+				Demo: any 6 digits work.
 			</p>
 
 			<p

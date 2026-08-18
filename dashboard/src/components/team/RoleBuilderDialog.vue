@@ -90,7 +90,7 @@ async function submit() {
 				<div>
 					<p class="mb-1 text-base-medium text-ink-gray-7">Capabilities</p>
 					<p class="mb-3 text-p-sm text-ink-gray-5">
-						Pick what this role can do — any view access it needs is added
+						Pick what this role can do. Any view access it needs is added
 						automatically
 					</p>
 					<!-- Bleeds through the Dialog's right padding (px-4 sm:px-6) so the

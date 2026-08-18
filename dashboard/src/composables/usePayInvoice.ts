@@ -43,7 +43,7 @@ export function usePayInvoice({
 			infoToast((res.reason && reasons[res.reason]) || 'No payment was started')
 		} else if (res) {
 			successToast(
-				'Payment initiated — the invoice updates once the gateway confirms.',
+				'Payment initiated. The invoice updates once the gateway confirms.',
 			)
 		}
 		onDone?.(res)
