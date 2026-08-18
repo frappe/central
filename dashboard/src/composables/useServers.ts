@@ -27,7 +27,12 @@ export type AssetRow = Pick<
 	| 'gateway_url'
 	| 'resize_in_progress'
 	| 'last_synced_at'
->
+> & {
+	// Transitional label ("Terminating"/"Provisioning"/…) while an action is in flight.
+	// Overlaid by central.api.servers.registry from the active Resource Action, not an
+	// Asset field — so the row reads as "…ing" until the mirror catches up.
+	pending_action?: string | null
+}
 
 // The server lifecycle command path (create / power / terminate / open-in-bench /
 // mirror refresh). The fleet *list* is read separately through useServerMapData;
@@ -117,6 +122,9 @@ async function runCommand(
 	call: typeof startCall,
 	server: AssetRow,
 	verb: Verb,
+	// A quick, reversible power action toasts on failure; a destructive one (terminate)
+	// throws so the caller can hold its confirm dialog open and show the reason inline.
+	surface: 'toast' | 'throw' = 'toast',
 ): Promise<void> {
 	busy.value = server.resource_id
 	try {
@@ -126,8 +134,12 @@ async function runCommand(
 			resource_id: server.resource_id,
 		})
 		if (call.error) throw call.error
-		successToast(`${verb} requested for ${server.title || server.resource_id}`)
+		if (surface === 'toast')
+			successToast(
+				`${verb} requested for ${server.title || server.resource_id}`,
+			)
 	} catch (e) {
+		if (surface === 'throw') throw e
 		errorToast(e)
 	} finally {
 		busy.value = ''
@@ -151,7 +163,7 @@ export function useServers() {
 		return runCommand(stopCall, server, 'Stop')
 	}
 	function terminate(server: AssetRow) {
-		return runCommand(terminateCall, server, 'Terminate')
+		return runCommand(terminateCall, server, 'Terminate', 'throw')
 	}
 
 	// Open the VM's bench via a scoped SSO assertion. The tab is opened

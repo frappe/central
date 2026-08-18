@@ -425,7 +425,7 @@ async function submit() {
 								type="text"
 								placeholder="e.g. Acme Production"
 								:maxlength="60"
-								class="mt-2 max-w-xs"
+								class="mt-2 max-w-xs auto-f" autofocus
 							/>
 							<div class="mt-3 max-w-xs">
 								<div class="flex items-center justify-between">

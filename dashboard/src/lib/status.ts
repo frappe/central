@@ -13,11 +13,14 @@ export function isResizing(server: { resize_in_progress?: 0 | 1 }): boolean {
 	return server.resize_in_progress === 1
 }
 
-/** The status to show for a row: "Resizing" while a reshape job runs, else the mirror. */
+/** The status to show for a row: a live action's transitional label ("Terminating"…)
+ *  takes precedence, then "Resizing" while a reshape job runs, else the mirror status. */
 export function displayStatus(server: {
 	status?: AssetStatus
 	resize_in_progress?: 0 | 1
-}): AssetStatus {
+	pending_action?: string | null
+}): string {
+	if (server.pending_action) return server.pending_action
 	return isResizing(server) ? 'Resizing' : (server.status ?? 'Pending')
 }
 
@@ -93,5 +96,10 @@ export function paymentAttemptDisplay(status: string | null | undefined): {
 	theme: BadgeTheme
 } {
 	const key = String(status ?? '').toLowerCase()
-	return ATTEMPT_DISPLAY[key] ?? { label: String(status ?? 'Unknown'), theme: 'gray' }
+	return (
+		ATTEMPT_DISPLAY[key] ?? {
+			label: String(status ?? 'Unknown'),
+			theme: 'gray',
+		}
+	)
 }

@@ -9,7 +9,11 @@ from frappe.utils.password import get_decrypted_password
 class AtlasEvent(Document):
 	def after_insert(self):
 		"""Queue the mirror write once the row is durably committed, so the inbound
-		webhook gets a fast ack and processing survives a lost immediate job."""
+		webhook gets a fast ack and processing survives a lost immediate job. An Ignored
+		row (a type Central doesn't mirror yet) is recorded only, never applied."""
+		if self.status != "Received":
+			return
+
 		frappe.enqueue(
 			"central.integrations.atlas.apply_event",
 			queue="short",

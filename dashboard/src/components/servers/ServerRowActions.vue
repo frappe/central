@@ -47,6 +47,9 @@ const options = computed(() => {
 		icon: 'lucide-gauge',
 		onClick: () => emit('overview', props.server),
 	})
+	// An action is in flight (Provisioning/Starting/Terminating/…): offer nothing else until
+	// it settles, mirroring the API which rejects a second command mid-flight.
+	if (props.server.pending_action) return items
 	// Mid-resize the VM is power-cycling in the background: power + resize actions are
 	// blocked (the API rejects them too) until the reshape job clears the flag.
 	const resizing = isResizing(props.server)

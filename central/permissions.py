@@ -90,6 +90,19 @@ def asset_has_permission(doc, user: str | None = None, ptype: str | None = None,
 	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
 
 
+def resource_action_query_conditions(user: str | None = None) -> str:
+	return _team_field_query_conditions("Resource Action", "server:view", user)
+
+
+def resource_action_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+	# Read needs server:view; opening an action needs any server-mutating capability on the
+	# team (the endpoint additionally gates the specific action). Outcomes are written by the
+	# Atlas webhook / sweep, not the portal, so tenants get no write/delete here.
+	return _team_field_has_permission(
+		doc, ("server:view",), ("server:create", "server:power", "server:terminate"), user, ptype
+	)
+
+
 def site_query_conditions(user: str | None = None) -> str:
 	return _team_field_query_conditions("Site", "server:view", user)
 
