@@ -51,7 +51,11 @@ def get_cycle_costs(team: str | None = None) -> dict:
 		)
 
 	items.sort(key=lambda i: i["amount"], reverse=True)
-	return {"currency": currency, "items": items, "total": frappe.utils.flt(sum(i["amount"] for i in items), 2)}
+	return {
+		"currency": currency,
+		"items": items,
+		"total": frappe.utils.flt(sum(i["amount"] for i in items), 2),
+	}
 
 
 def _projected_lines(team: str, today) -> list:
@@ -77,7 +81,9 @@ def _cost_by_resource(lines) -> dict:
 		resource_id = line.subscription_resource
 		if not resource_id:
 			continue
-		totals[resource_id] = frappe.utils.flt(totals.get(resource_id, 0.0) + frappe.utils.flt(line.amount), 2)
+		totals[resource_id] = frappe.utils.flt(
+			totals.get(resource_id, 0.0) + frappe.utils.flt(line.amount), 2
+		)
 	return totals
 
 
@@ -97,9 +103,7 @@ def _metered_usage(team: str) -> dict:
 		allowance = frappe.utils.flt(row.locked_allowance)
 		if not allowance:
 			continue
-		current = usage.setdefault(
-			row.resource_id, {"used": 0.0, "allowance": allowance, "unit": row.unit}
-		)
+		current = usage.setdefault(row.resource_id, {"used": 0.0, "allowance": allowance, "unit": row.unit})
 		current["used"] = frappe.utils.flt(current["used"] + frappe.utils.flt(row.quantity), 2)
 	for entry in usage.values():
 		entry["over"] = entry["used"] > entry["allowance"]

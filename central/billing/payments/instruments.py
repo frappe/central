@@ -137,9 +137,7 @@ def mandate_gap_note(currency: str) -> str | None:
 def get(instrument: str, surface: str = MANDATE) -> dict:
 	entry = BY_KEY.get((surface, instrument))
 	if not entry:
-		frappe.throw(
-			frappe._("{0} is not a payment option here.").format(instrument), frappe.ValidationError
-		)
+		frappe.throw(frappe._("{0} is not a payment option here.").format(instrument), frappe.ValidationError)
 	return entry
 
 

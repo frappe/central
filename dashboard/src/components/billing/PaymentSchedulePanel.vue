@@ -4,8 +4,8 @@ import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import SidePanel from '@/components/common/SidePanel.vue'
 import { useSession } from '@/composables/useSession'
-import { formatDate, money } from '@/lib/format'
 import { shortDate } from '@/lib/date'
+import { formatDate, money } from '@/lib/format'
 import type { PaymentSchedule } from '@/types/billing'
 
 // The tray behind "Next payment": the debit itself, the 24-hour pre-debit notices
@@ -94,7 +94,10 @@ const blockerLines = computed(() => {
 			</div>
 
 			<!-- The compliance record, made the customer's -->
-			<div v-if="data?.notices?.length" class="border-b border-outline-gray-2 p-4">
+			<div
+				v-if="data?.notices?.length"
+				class="border-b border-outline-gray-2 p-4"
+			>
 				<p class="mb-2 text-p-sm text-ink-gray-5">
 					Advance notices we sent you before debiting
 				</p>

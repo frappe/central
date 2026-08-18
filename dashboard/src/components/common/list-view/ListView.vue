@@ -14,14 +14,7 @@ import {
 	type Updater,
 	useVueTable,
 } from '@tanstack/vue-table'
-import {
-	Alert,
-	Button,
-	Checkbox,
-	Select,
-	Skeleton,
-	TextInput,
-} from 'frappe-ui'
+import { Alert, Button, Checkbox, Select, Skeleton, TextInput } from 'frappe-ui'
 import { computed, getCurrentInstance, h, ref } from 'vue'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
@@ -50,6 +43,9 @@ const props = withDefaults(
 		itemLabel?: string
 		showCount?: boolean
 		emptyState?: ListViewEmptyState
+		/** Tailwind classes for each body row — density knob for panels whose rows
+		 *  carry an avatar and two stacked lines. Defaults to a single-line height. */
+		rowClass?: string
 		/** Highlight the row whose rowKey matches this — for master/detail lists. */
 		activeKey?: string | null
 		/**
@@ -73,6 +69,7 @@ const props = withDefaults(
 		countLoading: false,
 		itemLabel: 'row',
 		showCount: true,
+		rowClass: 'min-h-10',
 		activeKey: null,
 		externalFilterActive: false,
 		emptyState: () => ({
@@ -618,7 +615,11 @@ const showListControls = computed(
              column filters run inside the table, so the source rows are
              still non-empty). Same dead-end, same way out. -->
 				<div v-else-if="!pageRows.length" role="row">
-					<div role="cell" :aria-colindex="1" :aria-colspan="visibleColumnCount">
+					<div
+						role="cell"
+						:aria-colindex="1"
+						:aria-colspan="visibleColumnCount"
+					>
 						<ListViewState
 							kind="filtered"
 							title="No matching results"
@@ -628,17 +629,20 @@ const showListControls = computed(
 					</div>
 				</div>
 
-				<div v-else role="rowgroup" class="lv-rows" :class="interactive ? 'lv-interactive' : ''">
+				<div v-else role="rowgroup">
+					<!-- Hairline lives in the gap above each row (a straight ::before, not a
+					     border-top, which would trace the rounded-6 corners into hooks). The
+					     row's small top margin keeps the rounded hover/active highlight clear
+					     of the line, so nothing has to be hidden on hover. -->
 					<div
 						v-for="row in pageRows"
 						:key="row.id"
 						role="row"
-						class="lv-row grid min-h-10 items-center gap-4 rounded-6 px-2 text-sm transition-colors duration-150 ease-in-out"
+						class="relative mt-1 grid items-center gap-4 rounded-6 px-2 text-sm transition-colors duration-150 ease-in-out first:mt-0 before:pointer-events-none before:absolute before:inset-x-0 before:-top-0.5 before:h-px before:bg-[var(--outline-gray-1)] before:content-[''] first:before:hidden"
 						:class="[
+              rowClass,
               interactive ? 'cursor-pointer hover:bg-surface-gray-1' : 'cursor-default',
-              row.getIsSelected() || activeKey === row.id
-                ? 'lv-active bg-surface-gray-2'
-                : '',
+              row.getIsSelected() || activeKey === row.id ? 'bg-surface-gray-2' : '',
             ]"
 						:style="{ gridTemplateColumns }"
 						@click="handleRowClick(row)"
@@ -695,33 +699,3 @@ const showListControls = computed(
 		/>
 	</section>
 </template>
-
-<style scoped>
-/* divide-y by hand, so the lines can get out of the way: the hovered (when
-   rows are clickable) or active row hides its own divider AND the next row's
-   — the rounded highlight floats clean instead of being sliced.
-
-   The line is a pseudo-element rather than a border-top: a border traces the
-   row's rounded-6 corners and curls up at both ends, leaving little hooks. */
-.lv-rows > .lv-row {
-	position: relative;
-}
-.lv-rows > .lv-row + .lv-row::before {
-	content: '';
-	position: absolute;
-	inset-inline: 0;
-	top: 0;
-	height: 1px;
-	background: var(--outline-gray-1);
-	pointer-events: none;
-}
-/* `.lv-row.lv-active` rather than `.lv-active`: the divider rule above carries
-   three classes, so a two-class selector loses to it and the line over the
-   active row survives. Every selector here matches its weight. */
-.lv-rows > .lv-row.lv-active::before,
-.lv-rows > .lv-active + .lv-row::before,
-.lv-interactive > .lv-row:hover::before,
-.lv-interactive > .lv-row:hover + .lv-row::before {
-	background: transparent;
-}
-</style>

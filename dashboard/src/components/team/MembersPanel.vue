@@ -19,8 +19,8 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useTeamInvitations } from '@/composables/useTeamInvitations'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
-import { useTeamSettings } from '@/composables/useTeamSettings'
 import { teamParams } from '@/composables/useTeamScope'
+import { useTeamSettings } from '@/composables/useTeamSettings'
 import { formatDate } from '@/lib/format'
 import { resourceScopeLabel, roleOnResourceLabel } from '@/lib/resourceScope'
 import type {
@@ -197,6 +197,7 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 		search-placeholder="Search members by name, email"
 		:filters="roleFilters"
 		item-label="member"
+		row-class="min-h-12 py-1.5"
 		:show-count="false"
 		:empty-state="{
 			title: 'No members yet',
@@ -258,7 +259,8 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 					</p>
 				</div>
 				<p v-if="row.roles.length > 3" class="text-p-sm text-ink-gray-5">
-					+{{ row.roles.length - 3 }} more
+					+{{ row.roles.length - 3 }}
+					more
 				</p>
 				<p v-if="!row.roles.length" class="text-p-sm text-ink-gray-5">
 					No access grants
@@ -288,21 +290,9 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 		</template>
 	</ListView>
 
-
 	<!-- A fresh invite has to land in the roster right away — that's the point. -->
 	<InviteMemberDialog v-model:open="inviteDialog" @invited="reloadInvites" />
 	<ManageRolesDialog v-model:member="manageAccessFor" />
 	<RemoveMemberDialog v-model:member="removeTarget" />
 	<TransferOwnershipDialog v-model:member="transferTarget" />
 </template>
-
-<style scoped>
-/* Body rows need room for an avatar + two stacked lines (name, email); the
-   shared ListView otherwise renders a fixed single-line h-10 row. Scoped to
-   this panel's rowgroup only — the header row sits outside it. */
-:deep([role="rowgroup"] > [role="row"]) {
-	height: auto;
-	min-height: 4rem;
-	padding-block: 0.5rem;
-}
-</style>

@@ -40,12 +40,10 @@ export function usePayInvoice({
 				nothing_due: 'This invoice has nothing left to pay.',
 				not_open: 'This invoice is no longer open.',
 			}
-			infoToast(
-				(res.reason && reasons[res.reason]) || 'No payment was started',
-			)
+			infoToast((res.reason && reasons[res.reason]) || 'No payment was started')
 		} else if (res) {
 			successToast(
-				'Payment initiated — the invoice updates once the gateway confirms.',
+				'Payment initiated. The invoice updates once the gateway confirms.',
 			)
 		}
 		onDone?.(res)

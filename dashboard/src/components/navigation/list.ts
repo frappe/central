@@ -1,8 +1,8 @@
 import { type Component, computed, defineAsyncComponent } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { openSearch } from '@/composables/useSearch'
 import { features } from '@/lib/features'
-import { useIsMobile } from '@/composables/useIsMobile'
 
 const NotificationsPanel = defineAsyncComponent(
 	() => import('@/components/notifications/NotificationsPanel.vue'),

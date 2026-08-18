@@ -130,7 +130,9 @@ def get_statement(team: str | None = None, from_date: str | None = None, to_date
 
 
 @frappe.whitelist()
-def get_tax_summary(team: str | None = None, from_date: str | None = None, to_date: str | None = None) -> dict:
+def get_tax_summary(
+	team: str | None = None, from_date: str | None = None, to_date: str | None = None
+) -> dict:
 	"""Tax charged and withheld per period, grouped by the mechanic that applied.
 
 	A working paper, not a filing: the statutory invoice lives in ERPNext (ADR 0019),
@@ -237,7 +239,9 @@ def list_refunds(team: str | None = None, limit: int = 50) -> list[dict]:
 
 
 @frappe.whitelist()
-def export_csv(report: str, team: str | None = None, from_date: str | None = None, to_date: str | None = None):
+def export_csv(
+	report: str, team: str | None = None, from_date: str | None = None, to_date: str | None = None
+):
 	"""Download one report as CSV. Sets the response directly — Frappe streams it."""
 	team = _resolve_team(team)
 	builders = {

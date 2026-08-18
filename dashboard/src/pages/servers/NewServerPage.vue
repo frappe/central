@@ -19,13 +19,13 @@ import {
 } from '@/lib/composed'
 import { money } from '@/lib/format'
 import { planPrice, planResources } from '@/lib/plans'
-import { infoToast } from '@/lib/toast'
 import {
 	flagEmoji,
 	hasMapCoords,
 	type MapSpot,
 	regionLabel,
 } from '@/lib/serverMap'
+import { infoToast } from '@/lib/toast'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
 import type { Region } from '@/types/Region'
 
@@ -301,10 +301,10 @@ watch(
 	{ immediate: true },
 )
 const VERSION_LABELS: Record<string, string> = {
-	v15: 'Version 15 — stable, what most teams run',
-	v16: 'Version 16 — latest features, newest apps',
-	v14: 'Version 14 — older, for apps that need it',
-	nightly: 'Nightly — develop branch, for testing only',
+	v15: 'Version 15: stable, what most teams run',
+	v16: 'Version 16: latest features, newest apps',
+	v14: 'Version 14: older, for apps that need it',
+	nightly: 'Nightly: develop branch, for testing only',
 }
 // Versions offered in the picker for now — only v16; others stay hidden until we're
 // ready to provision them. Widen this list to bring them back.
@@ -338,7 +338,7 @@ const price = computed<string | null>(() => {
 	return selectedPlanObj.value ? planPrice(selectedPlanObj.value) : null
 })
 const ctaLabel = computed(() =>
-	price.value ? `Create server — ${price.value}` : 'Create server',
+	price.value ? `Create server - ${price.value}` : 'Create server',
 )
 
 const submitting = computed(() => creating.value || creatingComposed.value)
@@ -367,8 +367,9 @@ async function submit() {
 		return
 	}
 	try {
+		let createdId = ''
 		if (isCustom.value && composedConfig.value) {
-			await createComposed({
+			createdId = await createComposed({
 				region: selectedRegion.value,
 				title: name.value.trim(),
 				subdomain: subdomain.value,
@@ -377,7 +378,7 @@ async function submit() {
 				frappe_version: version.value || undefined,
 			})
 		} else if (selectedPlanObj.value) {
-			await create({
+			createdId = await create({
 				region: selectedRegion.value,
 				title: name.value.trim(),
 				subdomain: subdomain.value,
@@ -386,7 +387,12 @@ async function submit() {
 				frappe_version: version.value || undefined,
 			})
 		}
-		router.push('/servers')
+		// Hand the new server's id to the map so it can reload the fleet and open the
+		// list on its provisioning row, instead of landing on a stale, empty map.
+		router.push({
+			path: '/servers',
+			query: createdId ? { created: createdId } : {},
+		})
 	} catch {
 		// create() already surfaced the error; stay on the form.
 	}
@@ -425,7 +431,8 @@ async function submit() {
 								type="text"
 								placeholder="e.g. Acme Production"
 								:maxlength="60"
-								class="mt-2 max-w-xs auto-f" autofocus
+								class="mt-2 max-w-xs auto-f"
+								autofocus
 							/>
 							<div class="mt-3 max-w-xs">
 								<div class="flex items-center justify-between">
@@ -571,8 +578,8 @@ async function submit() {
 								:description="
 									[
 										`${selectedRegion} can't fit a new server right now.`,
-										'Try another region, or check back shortly —',
-										'capacity frees up as machines are removed.',
+										'Try another region, or check back shortly.',
+										'Capacity frees up as machines are removed.',
 									].join(' ')
 								"
 							/>
@@ -585,7 +592,7 @@ async function submit() {
 									You've reached your spending limit
 								</p>
 								<p class="mt-1 text-p-sm text-ink-gray-5">
-									No plans — preset or custom — fit your remaining headroom in
+									No plans (preset or custom) fit your remaining headroom in
 									this region. Remove a server to free some up, or contact
 									support to raise your limit.
 								</p>

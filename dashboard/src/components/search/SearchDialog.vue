@@ -97,8 +97,7 @@ function select(item: SearchItem): void {
 						v-if="query && !hasResults"
 						class="my-8 text-center text-base text-ink-gray-6"
 					>
-						No results for "<b class="text-ink-gray-9">{{ query }}</b
-						>"
+						No results for "<b class="text-ink-gray-9">{{ query }}</b>"
 					</div>
 				</ListboxContent>
 

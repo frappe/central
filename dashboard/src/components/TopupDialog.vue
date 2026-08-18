@@ -31,12 +31,14 @@ const amount = ref<number | null>(null)
 const presets = [1000, 5000, 10000, 25000]
 
 const { activeTeam } = useSession()
-const options = useCall<{ instruments: PaymentInstrument[] }, { team: string }>({
-	url: method(API.topupOptions),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
+const options = useCall<{ instruments: PaymentInstrument[] }, { team: string }>(
+	{
+		url: method(API.topupOptions),
+		params: () => ({ team: activeTeam.value! }),
+		immediate: false,
+		refetch: true,
+	},
+)
 const instruments = computed(() => options.data?.instruments ?? [])
 const instrument = ref<string | null>(null)
 
@@ -197,7 +199,7 @@ watch(open, (isOpen) => {
 					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
 				<p class="text-p-sm text-ink-gray-5">
-					Card details are entered on Stripe's secure field — we never see your
+					Card details are entered on Stripe's secure field. We never see your
 					card number. Your billing address is taken from your billing profile.
 				</p>
 			</div>

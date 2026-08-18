@@ -181,6 +181,12 @@ function exportUrl(report: string, windowed = true): string {
 						label="Go to billing overview"
 						@click="router.push({ name: 'Billing' })"
 					/>
+					<PaymentHistoryCard
+						:export-url="exportUrl('payments')"
+						@open="showPayments = true"
+					/>
+					<RefundsCard />
+					<TaxSummaryCard />
 				</template>
 			</EmptyState>
 

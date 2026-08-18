@@ -233,9 +233,7 @@ class TestEventEndpointSignatureGate(IntegrationTestCase):
 		# vm.rebooted isn't a known handler: recorded Ignored for the audit trail, never queued.
 		self.assertEqual(result, {"ok": True, "queued": False})
 		enqueue.assert_not_called()
-		self.assertEqual(
-			frappe.db.get_value("Atlas Event", {"event_id": "evt-e2e-1"}, "status"), "Ignored"
-		)
+		self.assertEqual(frappe.db.get_value("Atlas Event", {"event_id": "evt-e2e-1"}, "status"), "Ignored")
 
 	def test_badly_signed_post_is_rejected_before_any_write(self) -> None:
 		# The gate throws rather than returning a body: the decorator runs before the

@@ -48,7 +48,8 @@ const hasCycle = computed(() => projected.value > 0)
 const previousTotal = computed(() => fc.value?.previous_total ?? null)
 const previousLabel = computed(() => fc.value?.previous_label ?? null)
 const change = computed(() => {
-	if (!hasCycle.value || !previousTotal.value || !previousLabel.value) return null
+	if (!hasCycle.value || !previousTotal.value || !previousLabel.value)
+		return null
 	const delta = projected.value - previousTotal.value
 	// Under a percent either way is noise, not news.
 	if (Math.abs(delta) < previousTotal.value * 0.01) {

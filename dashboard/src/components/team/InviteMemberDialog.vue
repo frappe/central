@@ -160,13 +160,22 @@ async function submit() {
 					autocomplete="off"
 				/>
 				<div class="flex items-end gap-2">
-					<FormControl v-model="role" type="select" label="Role" :options="roleOptions"
+					<FormControl
+						v-model="role"
+						type="select"
+						label="Role"
+						:options="roleOptions"
 						placeholder="Choose a role"
-class="min-w-0 flex-1"
-/>
+						class="min-w-0 flex-1"
+					/>
 					<span class="mb-1 shrink-0 text-p-sm text-ink-gray-5">on</span>
-					<FormControl v-model="resource" type="select" label="Resource" :options="resourceOptions"
-						class="min-w-0 flex-1" />
+					<FormControl
+						v-model="resource"
+						type="select"
+						label="Resource"
+						:options="resourceOptions"
+						class="min-w-0 flex-1"
+					/>
 				</div>
 				<FormControl
 					v-model.number="expiresInDays"

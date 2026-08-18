@@ -130,7 +130,7 @@ const columns = computed<ListViewColumn<InvoiceSummary>[]>(() => [
 					variant: 'ghost',
 					icon: 'lucide-download',
 					disabled: true,
-					title: 'Download PDF — coming soon',
+					title: 'Download PDF (coming soon)',
 					label: 'Download invoice',
 				}),
 			]),

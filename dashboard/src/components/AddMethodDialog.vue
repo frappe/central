@@ -105,7 +105,9 @@ const marks: Record<string, ('visa' | 'mastercard' | 'rupay' | 'upi')[]> = {
 
 function blockedReason(tile: PaymentInstrument): string | null {
 	if (tile.instrument === 'UPI Autopay' && upiBlocked.value)
-		return options.data?.upi_block_reason || 'Not available for your account yet.'
+		return (
+			options.data?.upi_block_reason || 'Not available for your account yet.'
+		)
 	return null
 }
 
@@ -252,12 +254,12 @@ watch(open, (isOpen) => {
 				<p class="text-p-sm text-ink-gray-5">
 					<template v-if="stripeSubmitting">
 						Validating your card with a small temporary charge that's refunded
-						right away. This can take a few seconds — please don't close this
+						right away. This can take a few seconds, so please don't close this
 						window.
 					</template>
 					<template v-else>
-						Card details are entered on Stripe's secure field — we never see
-						your card number.
+						Card details are entered on Stripe's secure field. We never see your
+						card number.
 					</template>
 				</p>
 			</div>

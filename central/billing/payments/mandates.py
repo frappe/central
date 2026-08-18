@@ -411,7 +411,9 @@ def apply_mandate_event(event_name: str) -> dict:
 	status = (mandate.get("status") or "").lower()
 
 	method = (
-		frappe.db.get_value("Payment Method", {"gateway_mandate_id": mandate_id}, ["name", "team"], as_dict=True)
+		frappe.db.get_value(
+			"Payment Method", {"gateway_mandate_id": mandate_id}, ["name", "team"], as_dict=True
+		)
 		if mandate_id
 		else None
 	)

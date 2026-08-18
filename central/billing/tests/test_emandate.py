@@ -158,7 +158,9 @@ class TestWhoOwesAPredebitNotice(IntegrationTestCase):
 					"subtotal": 500,
 					"total": 500,
 					"expected_collection": 500,
-					"items": [{"resource_type": "bundle", "plan": "p", "rate": 500, "days": 30, "amount": 500}],
+					"items": [
+						{"resource_type": "bundle", "plan": "p", "rate": 500, "days": 30, "amount": 500}
+					],
 				}
 			)
 			.insert(ignore_permissions=True)

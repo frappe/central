@@ -43,7 +43,7 @@ async function choose(): Promise<void> {
 	await setMode.submit({ team: activeTeam.value!, mode: chosen.value })
 	successToast(
 		chosen.value === 'Prepaid'
-			? 'Prepaid wallet on — add credits to cover usage'
+			? 'Prepaid wallet on: add credits to cover usage'
 			: "You'll pay each invoice yourself",
 	)
 	choosing.value = false
@@ -73,22 +73,19 @@ const options = [
 	<Alert
 		v-if="show && s"
 		theme="amber"
-		title="Action required — choose how to keep paying"
+		title="Action required: choose how to keep paying"
 		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
 		<template #description>
 			This month is heading to
 			<span class="font-medium">{{ money(s.projected_total, currency) }}</span>
-			— past the
+			, past the
 			<span class="font-medium">{{ money(s.threshold, currency) }}</span>
 			limit for automatic payments. Your services keep running.
 		</template>
 	</Alert>
 
-	<Dialog
-		v-model:open="choosing"
-		title="How do you want to pay?"
-	>
+	<Dialog v-model:open="choosing" title="How do you want to pay?">
 		<template #default>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<button
@@ -108,9 +105,7 @@ const options = [
 						class="size-5 text-ink-gray-7"
 						aria-hidden="true"
 					/>
-					<span class="text-base-medium text-ink-gray-9"
-						>{{ o.title }}</span
-					>
+					<span class="text-base-medium text-ink-gray-9">{{ o.title }}</span>
 					<span class="text-p-sm text-ink-gray-6">{{ o.blurb }}</span>
 					<span class="mt-auto text-p-sm text-ink-gray-5">{{ o.fit }}</span>
 				</button>

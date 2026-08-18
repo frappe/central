@@ -502,9 +502,7 @@ def list_payment_attempts(team: str | None = None, limit: int = 100) -> list[dic
 		row["at"] = str(row.completed_at or row.initiated_at or row.creation)
 		# `failure_reason` is the gateway's own wording. Keep it (support quotes it)
 		# but lead with something the cardholder can act on.
-		row["reason"] = (
-			decline.customer_reason(row.failure_code) if row.status == "Failed" else None
-		)
+		row["reason"] = decline.customer_reason(row.failure_code) if row.status == "Failed" else None
 	# Sorted on that same resolved time — ordering by `creation` put a backfilled
 	# year of attempts in whatever order they happened to be inserted.
 	rows.sort(key=lambda r: r["at"], reverse=True)

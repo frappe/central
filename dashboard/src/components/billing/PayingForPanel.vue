@@ -11,7 +11,8 @@ import { money } from '@/lib/format'
 // is where the long tail goes, so the card never grows its own scrollbar.
 const open = defineModel<boolean>('open', { default: false })
 const { canManageBilling } = useCapabilities()
-const { rows, loading, currency, total, busy, openServer, askPause, onResume } = usePayingFor()
+const { rows, loading, currency, total, busy, openServer, askPause, onResume } =
+	usePayingFor()
 
 const subtitle = computed(() =>
 	rows.value.length

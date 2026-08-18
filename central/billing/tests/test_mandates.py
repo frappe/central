@@ -451,6 +451,4 @@ class TestMandateRevokedAtTheGateway(IntegrationTestCase):
 		out = self._deliver("active")
 		self.assertEqual(out["result"], "mandate_still_live")
 		self.assertEqual(frappe.db.get_value("Payment Method", self.method, "status"), "Active")
-		self.assertEqual(
-			frappe.db.get_value("Billing Profile", self.TEAM, "collection_mode"), "Auto Charge"
-		)
+		self.assertEqual(frappe.db.get_value("Billing Profile", self.TEAM, "collection_mode"), "Auto Charge")

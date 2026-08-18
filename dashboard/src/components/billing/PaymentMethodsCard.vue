@@ -208,7 +208,9 @@ function onAdd(): void {
 
 		<div v-if="loading" class="space-y-3 py-1">
 			<div v-for="i in 2" :key="i" class="flex items-center gap-3">
-				<span class="size-4 shrink-0 animate-pulse rounded-4 bg-surface-gray-2" />
+				<span
+					class="size-4 shrink-0 animate-pulse rounded-4 bg-surface-gray-2"
+				/>
 				<div class="flex-1 space-y-1.5">
 					<span
 						class="block h-3.5 w-40 animate-pulse rounded-4 bg-surface-gray-2"
@@ -297,9 +299,7 @@ function onAdd(): void {
 					</div>
 				</div>
 			</div>
-
 		</template>
-
 
 		<ConfirmDialog
 			v-model:target="pendingRemove"

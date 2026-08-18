@@ -81,7 +81,9 @@ function isEstimated(li: BillingLine): boolean {
 	<div class="space-y-4">
 		<section v-if="servers.length">
 			<div class="mb-1 flex items-center justify-between gap-3">
-				<span class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5">
+				<span
+					class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
+				>
 					{{ serverGroups.length === 1 ? 'Servers' : `Servers · ${serverGroups.length}` }}
 				</span>
 				<span class="text-p-sm tabular-nums text-ink-gray-5">
@@ -97,8 +99,13 @@ function isEstimated(li: BillingLine): boolean {
 				>
 				<div v-if="named" class="flex items-center justify-between gap-3">
 					<span class="flex min-w-0 items-baseline gap-2">
-						<span class="truncate text-sm-medium text-ink-gray-8">{{ group.name }}</span>
-						<span v-if="group.id" class="shrink-0 font-mono text-xs text-ink-gray-4">
+						<span class="truncate text-sm-medium text-ink-gray-8"
+							>{{ group.name }}</span
+						>
+						<span
+							v-if="group.id"
+							class="shrink-0 font-mono text-xs text-ink-gray-4"
+						>
 							{{ group.id }}
 						</span>
 					</span>
@@ -159,7 +166,9 @@ function isEstimated(li: BillingLine): boolean {
 
 		<section v-if="services.length">
 			<div class="mb-1 flex items-center justify-between gap-3">
-				<span class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5">
+				<span
+					class="text-p-xs font-medium uppercase tracking-wide text-ink-gray-5"
+				>
 					Services
 				</span>
 				<span class="text-p-sm tabular-nums text-ink-gray-5">

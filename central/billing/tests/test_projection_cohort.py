@@ -371,7 +371,7 @@ class TestTheReport(CohortTestBase):
 			"USD",
 		)
 		frappe.db.commit()
-		_c, rows, _m, _chart, summary = self._execute(batch=inr)
+		_c, _rows, _m, _chart, summary = self._execute(batch=inr)
 		currencies = {t.get("currency") for t in summary if t.get("datatype") == "Currency"}
 		self.assertIn("INR", currencies)
 		self.assertIn("USD", currencies)

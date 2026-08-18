@@ -130,7 +130,9 @@ function onAutoRecharge(): void {
 				     saying "nothing due this cycle" describes the cycle instead, which
 				     is the neighbouring card's job. -->
 				<template v-if="projected > 0">Covers this cycle in full</template>
-				<template v-else-if="balance > 0">Ready for your first invoice</template>
+				<template v-else-if="balance > 0"
+					>Ready for your first invoice</template
+				>
 				<template v-else>No credit added yet</template>
 			</p>
 

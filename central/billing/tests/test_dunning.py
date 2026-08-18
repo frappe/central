@@ -330,7 +330,7 @@ class TestTheLadderIsAList(IntegrationTestCase):
 		)
 
 	def _on(self, schedule, stage, attempt=None):
-		return [s for s in schedule if s.stage == stage and (attempt is None or s.attempt == attempt)][0]
+		return next(s for s in schedule if s.stage == stage and (attempt is None or s.attempt == attempt))
 
 	def test_every_stage_lands_the_configured_number_of_days_out(self):
 		sched = dunning.dunning_schedule(self.START, self._policy())
@@ -344,7 +344,7 @@ class TestTheLadderIsAList(IntegrationTestCase):
 		sched = dunning.dunning_schedule(self.START, self._policy())
 		self.assertEqual([s.day for s in sched], sorted(s.day for s in sched))
 		last_retry = [i for i, s in enumerate(sched) if s.stage == "Retry"][-1]
-		overdue = [i for i, s in enumerate(sched) if s.stage == "Overdue"][0]
+		overdue = next(i for i, s in enumerate(sched) if s.stage == "Overdue")
 		self.assertLess(last_retry, overdue)
 
 	def test_with_no_retries_the_invoice_is_overdue_immediately(self):

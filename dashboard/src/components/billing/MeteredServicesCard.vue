@@ -111,7 +111,7 @@ function exhausted(row: ServiceRow): boolean {
 <template>
 	<BillingCard
 		title="Metered services"
-		title-info="Team-level services billed by usage (AI tokens, email, PDF, storage) — no server required."
+		title-info="Team-level services billed by usage (AI tokens, email, PDF, storage). No server required."
 	>
 		<template v-if="canManageBilling" #action>
 			<Button
@@ -126,7 +126,9 @@ function exhausted(row: ServiceRow): boolean {
 
 		<div v-if="loading" class="space-y-3 py-1">
 			<div v-for="i in 2" :key="i" class="flex items-center gap-3">
-				<span class="size-4 shrink-0 animate-pulse rounded-4 bg-surface-gray-2" />
+				<span
+					class="size-4 shrink-0 animate-pulse rounded-4 bg-surface-gray-2"
+				/>
 				<div class="flex-1 space-y-1.5">
 					<span
 						class="block h-3.5 w-40 animate-pulse rounded-4 bg-surface-gray-2"

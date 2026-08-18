@@ -92,6 +92,7 @@ def anchor_day(day: int) -> str:
 	"""A date inside the open month — for events that happen mid-cycle (a resize)."""
 	return str(frappe.utils.add_days(frappe.utils.getdate(ANCHOR), day - 1))
 
+
 DEMO_OWNER_PASSWORD = "abc@123"  # every demo owner logs into the console with this
 
 
