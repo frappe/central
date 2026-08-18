@@ -194,11 +194,16 @@ function onAdd(): void {
 	>
 		<template v-if="canManageBilling" #action>
 			<Button
+				variant="ghost"
 				size="xs"
-				:label="ordered.length ? 'Add method' : 'Add payment method'"
-				icon-left="lucide-plus"
+				label="Add payment method"
+				tooltip="Add payment method"
 				@click="onAdd"
-			/>
+			>
+				<template #icon>
+					<span class="lucide-plus size-4" aria-hidden="true" />
+				</template>
+			</Button>
 		</template>
 
 		<div v-if="loading" class="space-y-3 py-1">

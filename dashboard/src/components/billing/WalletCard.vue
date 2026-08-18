@@ -107,7 +107,7 @@ function onAutoRecharge(): void {
 					class="lucide-triangle-alert size-3.5 shrink-0"
 					aria-hidden="true"
 				/>
-				<template v-if="coverPct != null">
+				<template v-if="coverPct">
 					Covers {{ coverPct }}% of this cycle
 				</template>
 				<template v-else>Insufficient balance</template>
@@ -120,10 +120,10 @@ function onAutoRecharge(): void {
 					class="lucide-credit-card size-3.5 shrink-0 text-ink-gray-4"
 					aria-hidden="true"
 				/>
-				<template v-if="coverPct != null">
-					Covers {{ coverPct }}% of this cycle · card covers the rest
+				<template v-if="coverPct">
+					Covers {{ coverPct }}% · card pays the rest
 				</template>
-				<template v-else>Card covers the rest</template>
+				<template v-else>Card pays this cycle</template>
 			</p>
 			<p v-else class="mt-1.5 text-p-sm text-ink-gray-5">
 				<!-- An empty wallet with nothing owed is a wallet with no credit in it;

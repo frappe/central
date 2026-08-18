@@ -21,7 +21,7 @@ const subtitle = computed(() =>
 </script>
 
 <template>
-	<SidePanel v-model:open="open" title="What you're paying for" :subtitle="subtitle">
+	<SidePanel v-model:open="open" title="Subscriptions" :subtitle="subtitle">
 		<div v-if="loading" class="space-y-3 p-4">
 			<LoadingText :lines="6" />
 		</div>

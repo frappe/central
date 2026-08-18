@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
+import {
+	Button,
+	Dialog,
+	FormControl,
+	LoadingText,
+	Tooltip,
+	useCall,
+} from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
+import PaymentNetworkMark from '@/components/PaymentNetworkMark.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
+import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
 import { useAddStripeCard } from '@/composables/useAddStripeCard'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
@@ -16,11 +24,6 @@ import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 // 0023) and it is a shorter list than wallet recharge: netbanking pays once and
 // cannot be saved, so it is not here at all.
 //
-// The tiles come from the backend and the instrument decides the rail. Our card
-// rail registers mandates on Visa and Mastercard only, so every other network is a
-// separate tile on the other rail — named, not detected, because Stripe Elements
-// iframes the card number. Stripe capture happens in an embedded Element; Razorpay
-// runs its hosted sheet.
 const open = defineModel<boolean>({ default: false })
 // Set when the dialog is opened from a "your card was declined" prompt, so the
 // method that comes out of it records why it is on the other rail.
@@ -61,19 +64,26 @@ async function launchGateway(
 	contact?: string,
 	instrument?: string,
 ): Promise<void> {
+	const keepInstrument = selected.value?.instrument ?? null
+	const keepPhone = phone.value
 	open.value = false
 	await nextTick()
 	const res = await run(methodType, contact, instrument, props.afterDecline)
-	if (!res) open.value = true
+	if (!res) {
+		open.value = true
+		phone.value = keepPhone
+		selected.value =
+			tiles.value.find((t) => t.instrument === keepInstrument) ?? null
+	}
 }
 
 const upiBlocked = computed(() => options.data && !options.data.allow_upi)
 
 const tiles = computed(() => options.data?.instruments ?? [])
+const hasUpi = computed(() =>
+	tiles.value.some((t) => t.instrument.startsWith('UPI')),
+)
 
-// A card no rail will hold a mandate on has one honest destination, so the line
-// saying so *is* the way there: tap it and the top-up opens. Our dialog closes
-// first — two stacked modals is how the second one ends up behind the first.
 const showTopup = ref(false)
 
 function goToTopup(): void {
@@ -81,33 +91,54 @@ function goToTopup(): void {
 	showTopup.value = true
 }
 
-const icons: Record<string, string> = {
-	Card: 'lucide-credit-card',
-	'RuPay Card': 'lucide-credit-card',
-	'UPI Autopay': 'lucide-smartphone',
+function iconFor(tile: PaymentInstrument): string {
+	return tile.instrument === 'UPI Autopay'
+		? 'lucide-smartphone'
+		: 'lucide-credit-card'
 }
 
-// A tile the customer can't act on right now, with the reason to show in its place.
+const marks: Record<string, ('visa' | 'mastercard' | 'rupay' | 'upi')[]> = {
+	Card: ['visa', 'mastercard'],
+	'RuPay Card': ['rupay'],
+	'UPI Autopay': ['upi'],
+}
+
 function blockedReason(tile: PaymentInstrument): string | null {
 	if (tile.instrument === 'UPI Autopay' && upiBlocked.value)
 		return options.data?.upi_block_reason || 'Not available for your account yet.'
 	return null
 }
 
-function subtitle(tile: PaymentInstrument): string {
-	if (tile.instrument === 'UPI Autopay' && options.data?.upi_limit)
+function infoText(tile: PaymentInstrument): string | null {
+	if (tile.instrument !== 'UPI Autopay') return null
+	if (options.data?.upi_limit)
 		return `Mandate up to ${money(options.data.upi_limit, options.data.currency)}`
 	return tile.description
 }
 
-function choose(tile: PaymentInstrument): void {
+const selected = ref<PaymentInstrument | null>(null)
+
+function select(tile: PaymentInstrument): void {
 	if (blockedReason(tile)) return
+	selected.value = tile
+}
+
+watch(
+	() => options.data,
+	(d) => {
+		if (!selected.value) return
+		const fresh = d?.instruments?.find(
+			(t) => t.instrument === selected.value?.instrument,
+		)
+		selected.value = fresh && !blockedReason(fresh) ? fresh : null
+	},
+)
+
+function onContinue(): void {
+	const tile = selected.value
+	if (!tile || blockedReason(tile)) return
 	if (tile.adapter_key === 'Stripe') {
-		onCard()
-		return
-	}
-	if (needsPhone(tile) && !phone.value.trim()) {
-		askPhone.value = true
+		void startStripeMode()
 		return
 	}
 	launchGateway(
@@ -116,6 +147,14 @@ function choose(tile: PaymentInstrument): void {
 		tile.instrument,
 	)
 }
+
+const canContinue = computed(
+	() =>
+		!!selected.value &&
+		!blockedReason(selected.value) &&
+		!loading.value &&
+		!(askPhone.value && !phone.value.trim()),
+)
 
 // A card mandate on the RuPay rail needs a customer contact. Phone is optional on
 // the billing profile, so collect it inline when it's missing.
@@ -126,14 +165,17 @@ function choose(tile: PaymentInstrument): void {
 const hasPhone = computed(() => !!String(profile.data?.phone || '').trim())
 
 function needsPhone(tile: PaymentInstrument): boolean {
-	return tile.adapter_key === 'Razorpay' && tile.instrument !== 'UPI Autopay' && !hasPhone.value
+	return (
+		tile.adapter_key === 'Razorpay' &&
+		tile.instrument !== 'UPI Autopay' &&
+		!hasPhone.value
+	)
 }
-const askPhone = ref(false)
+const askPhone = computed(() => !!selected.value && needsPhone(selected.value))
 const phone = ref('')
 
 // Stripe card capture happens in an embedded Element (separate rail from
 // Razorpay's hosted Checkout). We swap the method picker for the card field once
-// the customer chooses Card on a Stripe gateway.
 const stripeMode = ref(false)
 const stripeLoading = ref(false)
 const cardEl = ref<HTMLElement | null>(null)
@@ -145,7 +187,8 @@ const {
 	submitting: stripeSubmitting,
 } = useAddStripeCard({ onDone: done })
 
-async function startStripe(): Promise<void> {
+async function startStripeMode(): Promise<void> {
+	stripeMode.value = true
 	stripeLoading.value = true
 	await nextTick() // the Element needs its mount node in the DOM
 	try {
@@ -153,25 +196,13 @@ async function startStripe(): Promise<void> {
 			team: activeTeam.value!,
 			publishableKey: options.data?.publishable_key,
 		})
+		if (!stripeMode.value || !open.value) destroyStripe()
 	} catch (e) {
 		errorToast(e, 'Could not start Stripe card setup.')
 		cancelStripe()
 	} finally {
 		stripeLoading.value = false
 	}
-}
-
-async function onCard(): Promise<void> {
-	if (options.data?.adapter_key === 'Stripe') {
-		stripeMode.value = true
-		await startStripe()
-		return
-	}
-	if (!hasPhone.value && !phone.value.trim() && options.data?.adapter_key === 'Razorpay') {
-		askPhone.value = true
-		return
-	}
-	launchGateway('Card', phone.value.trim() || undefined)
 }
 
 function cancelStripe(): void {
@@ -183,7 +214,6 @@ function cancelStripe(): void {
 // have just completed its billing profile (picking a non-INR currency) without a
 // team switch, so the reads warmed at mount would otherwise still offer the INR
 // gateway. On close, tear down the Stripe Element and reset inline state so a
-// reopen starts on the method picker (not a stale Stripe field).
 watch(open, (isOpen) => {
 	if (isOpen) {
 		options.reload()
@@ -192,14 +222,19 @@ watch(open, (isOpen) => {
 		destroyStripe()
 		stripeMode.value = false
 		stripeLoading.value = false
-		askPhone.value = false
 		phone.value = ''
+		selected.value = null
 	}
 })
 </script>
 
 <template>
-	<Dialog v-model:open="open" title="Add payment method">
+	<Dialog
+		v-model:open="open"
+		title="Add payment method"
+		:dismissible="!stripeSubmitting"
+		:show-close-button="!stripeSubmitting"
+	>
 		<template #default>
 			<div v-if="options.loading && !options.data" class="space-y-2">
 				<LoadingText :lines="3" />
@@ -214,20 +249,6 @@ watch(open, (isOpen) => {
 					ref="cardEl"
 					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
-				<div class="flex gap-2">
-					<Button
-						variant="solid"
-						:label="stripeSubmitting ? 'Validating…' : 'Add card'"
-						:loading="stripeSubmitting"
-						:disabled="!stripeComplete"
-						@click="submitStripe"
-					/>
-					<Button
-						label="Cancel"
-						:disabled="stripeSubmitting"
-						@click="cancelStripe"
-					/>
-				</div>
 				<p class="text-p-sm text-ink-gray-5">
 					<template v-if="stripeSubmitting">
 						Validating your card with a small temporary charge that's refunded
@@ -242,50 +263,67 @@ watch(open, (isOpen) => {
 			</div>
 
 			<div v-else-if="options.data" class="space-y-4">
-				<!-- No "how do you want to pay" heading — the dialog title and the
-				     two option cards already say it. -->
-				<div>
-					<div class="grid gap-3 sm:grid-cols-2">
-						<button
-							v-for="tile in tiles"
-							:key="tile.instrument"
-							class="flex flex-col gap-1.5 rounded-6 border border-outline-gray-2 p-4 text-left transition-colors hover:border-outline-gray-3 disabled:cursor-not-allowed disabled:opacity-50"
-							:disabled="loading || !!blockedReason(tile)"
-							@click="choose(tile)"
-						>
+				<div class="flex items-center gap-2">
+					<span
+						class="lucide-lock size-3.5 shrink-0 text-ink-gray-5"
+						aria-hidden="true"
+					/>
+					<p class="text-p-sm text-ink-gray-5">
+						Authorised on your bank's page. We never see your
+						{{ hasUpi ? 'card or UPI' : 'card' }} details.
+					</p>
+				</div>
+
+				<div aria-label="Payment method" class="space-y-2.5">
+					<button
+						v-for="tile in tiles"
+						:key="tile.instrument"
+						type="button"
+						:aria-pressed="selected?.instrument === tile.instrument"
+						class="flex w-full items-center gap-2.5 rounded-6 border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+						:class="
+							selected?.instrument === tile.instrument
+								? 'border-outline-gray-4'
+								: 'border-outline-gray-2 hover:border-outline-gray-3'
+						"
+						:disabled="loading || !!blockedReason(tile)"
+						@click="select(tile)"
+					>
+						<span
+							:class="iconFor(tile)"
+							class="size-4 shrink-0 text-ink-gray-7"
+							aria-hidden="true"
+						/>
+						<span class="text-base font-medium text-ink-gray-9">{{
+							tile.label
+						}}</span>
+						<Tooltip
+						v-if="infoText(tile) && !blockedReason(tile)"
+						:text="infoText(tile)!"
+					>
 							<span
-								:class="icons[tile.instrument] || 'lucide-credit-card'"
-								class="size-5 text-ink-gray-7"
+								class="lucide-info size-3.5 text-ink-gray-4"
 								aria-hidden="true"
 							/>
-							<span class="text-sm font-medium text-ink-gray-9">{{
-								tile.label
-							}}</span>
-							<span
-								v-if="blockedReason(tile)"
-								class="text-p-sm text-ink-amber-6"
-								>{{ blockedReason(tile) }}</span
-							>
-							<span v-else class="text-p-sm text-ink-gray-5">{{
-								subtitle(tile)
-							}}</span>
-						</button>
-					</div>
-					<button
-						v-if="options.data.note"
-						type="button"
-						class="mt-3 flex w-full items-center justify-center gap-1.5 text-p-sm text-ink-gray-6 underline decoration-outline-gray-3 underline-offset-4 hover:text-ink-gray-8"
-						@click="goToTopup"
-					>
-						{{ options.data.note }}
-						<span class="lucide-arrow-right size-3.5" aria-hidden="true" />
+						</Tooltip>
+						<span
+							v-if="blockedReason(tile)"
+							class="ml-auto text-right text-p-sm text-ink-amber-6"
+							>{{ blockedReason(tile) }}</span
+						>
+						<span v-else class="ml-auto flex shrink-0 items-center gap-1.5">
+							<PaymentNetworkMark
+								v-for="mark in marks[tile.instrument] ?? []"
+								:key="mark"
+								:network="mark"
+							/>
+						</span>
 					</button>
 				</div>
 
-				<!-- Razorpay card mandates need a contact; collect it inline when missing. -->
 				<div
 					v-if="askPhone"
-					class="space-y-2 rounded-6 border border-outline-gray-2 px-4 py-3"
+					class="rounded-6 border border-outline-gray-2 px-4 py-3"
 				>
 					<FormControl
 						v-model="phone"
@@ -294,33 +332,61 @@ watch(open, (isOpen) => {
 						placeholder="Mobile number"
 						description="A recurring card on this rail needs a contact number. Saved to your billing profile."
 					/>
-					<Button
-						variant="solid"
-						label="Continue"
-						:loading="loading"
-						:disabled="!phone.trim()"
-						@click="launchGateway('Card', phone.trim(), 'RuPay Card')"
-					/>
 				</div>
 
-				<!-- The customer chose an instrument, not a provider, and two tiles here
-             may sit on different providers, so this line names neither. Flat
-             footer, not a box. -->
-				<div class="flex items-center gap-2 pt-1">
+				<div v-if="options.data.note" class="flex items-center gap-2">
 					<span
-						class="lucide-lock size-3.5 shrink-0 text-ink-gray-5"
+						class="lucide-info size-3.5 shrink-0 text-ink-gray-4"
 						aria-hidden="true"
 					/>
 					<p class="text-p-sm text-ink-gray-5">
-						You'll authorise this on your bank's or card network's secure page.
-						We never see your card or UPI details.
+						Amex and Diners can't be auto-charged. Add credit instead.
 					</p>
 				</div>
+			</div>
+
+			<div v-else class="space-y-3">
+				<p class="text-p-sm text-ink-gray-5">Couldn't load payment options.</p>
+				<Button variant="subtle" label="Retry" @click="options.reload()" />
+			</div>
+		</template>
+
+		<template #actions>
+			<div v-if="stripeMode" class="flex justify-end gap-2">
+				<Button
+					variant="outline"
+					label="Cancel"
+					:disabled="stripeSubmitting"
+					@click="cancelStripe"
+				/>
+				<Button
+					variant="solid"
+					:label="stripeSubmitting ? 'Validating…' : 'Add card'"
+					:loading="stripeSubmitting"
+					:disabled="!stripeComplete"
+					@click="submitStripe"
+				/>
+			</div>
+			<div v-else class="flex items-center gap-2">
+				<Button
+					v-if="options.data?.note"
+					variant="subtle"
+					label="Add credit"
+					@click="goToTopup"
+				/>
+				<div class="flex-1" />
+				<Button variant="outline" label="Cancel" @click="open = false" />
+				<Button
+					variant="solid"
+					label="Continue"
+					:loading="loading"
+					:disabled="!canContinue"
+					@click="onContinue"
+				/>
 			</div>
 		</template>
 	</Dialog>
 
-	<!-- Opened from the Amex/Diners line above, after this dialog has closed. -->
 	<TopupDialog
 		v-model="showTopup"
 		:currency="options.data?.currency || 'INR'"

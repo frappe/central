@@ -18,9 +18,9 @@ import type { RefundRow } from '@/types/billing'
 // deliver is worse than saying less.
 const { activeTeam } = useSession()
 
-const refunds = useCall<RefundRow[], { team: string }>({
+const refunds = useCall<RefundRow[], { team: string; limit: number }>({
 	url: method(API.refunds),
-	params: () => ({ team: activeTeam.value! }),
+	params: () => ({ team: activeTeam.value!, limit: 1000 }),
 	immediate: false,
 	refetch: true,
 })
@@ -37,46 +37,44 @@ const STATUS_THEME: Record<string, string> = {
 function destinationLabel(row: RefundRow): string {
 	return row.destination === 'Wallet'
 		? 'Returned to your wallet'
-		: 'Returned to your original payment method'
+		: 'Returned to your payment method'
 }
 </script>
 
 <template>
-	<BillingCard v-if="loading || rows.length" title="Refunds">
+	<BillingCard
+		v-if="loading || rows.length"
+		title="Refunds"
+		description="Every refund on this account."
+	>
 		<LoadingText v-if="loading" :lines="2" />
 
 		<ul v-else class="divide-y divide-outline-gray-1">
 			<li v-for="row in rows" :key="row.name" class="py-3 first:pt-0">
-				<div class="flex items-start justify-between gap-3">
-					<div class="min-w-0">
-						<div class="flex items-center gap-2">
-							<span class="text-base-medium text-ink-gray-9">
-								{{ money(row.amount, row.currency) }}
-							</span>
-							<Badge
-								:theme="(STATUS_THEME[row.status] as any) || 'gray'"
-								:label="row.status"
-							/>
-						</div>
-						<p class="mt-0.5 text-p-sm text-ink-gray-5">
-							{{ destinationLabel(row) }}
-						</p>
-						<p v-if="row.reason" class="mt-0.5 text-p-sm text-ink-gray-5">
-							{{ row.reason }}
-						</p>
-					</div>
-					<div class="shrink-0 text-right">
-						<p class="text-p-sm text-ink-gray-5">
-							{{ formatDate(row.completed_at || row.created_at) }}
-						</p>
-						<p
-							v-if="row.gateway_reference"
-							class="mt-0.5 font-mono text-xs text-ink-gray-4"
-						>
-							{{ row.gateway_reference }}
-						</p>
-					</div>
+				<div class="grid grid-cols-[1fr_5rem_7rem] items-center gap-3">
+					<span class="text-base-medium tabular-nums text-ink-gray-9">
+						{{ money(row.amount, row.currency) }}
+					</span>
+					<span class="flex justify-end">
+						<Badge
+							:theme="(STATUS_THEME[row.status] as any) || 'gray'"
+							variant="subtle"
+							:label="row.status"
+						/>
+					</span>
+					<span class="text-right text-p-sm text-ink-gray-5">
+						{{ formatDate(row.completed_at || row.created_at) }}
+					</span>
 				</div>
+				<p class="mt-1 text-p-sm text-ink-gray-7">
+					{{ destinationLabel(row) }}<template v-if="row.reason"> — {{ row.reason }}</template>
+				</p>
+				<p
+					v-if="row.gateway_reference"
+					class="mt-0.5 truncate font-mono text-xs text-ink-gray-4"
+				>
+					{{ row.gateway_reference }}
+				</p>
 			</li>
 		</ul>
 	</BillingCard>

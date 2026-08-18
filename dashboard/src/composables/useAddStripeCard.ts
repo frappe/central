@@ -21,6 +21,7 @@ import { useCall } from 'frappe-ui'
 import { ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { errorToast, successToast } from '@/lib/toast'
+import { capitalise } from '@/lib/format'
 
 interface CardSetupOrder {
 	client_secret?: string
@@ -140,10 +141,6 @@ export function useAddStripeCard({
 	}
 
 	return { mount, submit, destroy, complete, submitting }
-}
-
-function capitalise(s: string | undefined): string {
-	return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
 }
 
 // India mandates come back on the SetupIntent, either expanded or as a bare id.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
-import { ref } from 'vue'
+import { provide, ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
@@ -32,12 +32,17 @@ const { complete, setupDialogOpen } = useBillingSetup()
 // out. A single ref names which is showing, and each card's v-model writes it.
 type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | null
 const tray = ref<Tray>(null)
+const traySwitching = ref(false)
+provide('side-panel-switching', traySwitching)
 
 function trayModel(name: Exclude<Tray, null>) {
 	return computed({
 		get: () => tray.value === name,
 		set: (open: boolean) => {
-			tray.value = open ? name : null
+			const next = open ? name : null
+			traySwitching.value =
+				tray.value !== null && next !== null && next !== tray.value
+			tray.value = next
 		},
 	})
 }

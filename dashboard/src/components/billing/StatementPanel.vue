@@ -1,38 +1,18 @@
 <script setup lang="ts">
-import { Badge, LoadingText, useCall } from 'frappe-ui'
-import { computed, watch } from 'vue'
-import { API, method } from '@/api/methods'
+import { Badge, LoadingText } from 'frappe-ui'
+import { computed } from 'vue'
 import SidePanel from '@/components/common/SidePanel.vue'
-import { useSession } from '@/composables/useSession'
 import { billingPeriod } from '@/lib/date'
 import { invoiceTheme } from '@/lib/status'
 import { money } from '@/lib/format'
 import type { Statement } from '@/types/billing'
 
-// The full statement line by line. The card carries the totals and the most
-// recent few; a year of invoices belongs here rather than behind a scrollbar
-// inside a card.
+const props = defineProps<{ statement: Statement | null; loading: boolean }>()
 const open = defineModel<boolean>('open', { default: false })
-const { activeTeam } = useSession()
 
-const statement = useCall<Statement, { team: string }>({
-	url: method(API.statement),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-})
-watch(open, (isOpen) => {
-	if (isOpen && activeTeam.value) statement.reload()
-})
-
-const loading = computed(() => statement.loading && !statement.data)
-const data = computed(() => statement.data)
+const data = computed(() => props.statement)
 const currency = computed(() => data.value?.currency ?? 'INR')
-// Newest first. The API returns the period ascending (it is a statement, and a
-// statement is read forwards), but every history surface in the console — the
-// card this tray opens from, the Invoices list, payments — puts the most recent
-// row at the top, and the tray disagreeing with the card it came from is jarring.
 const rows = computed(() => [...(data.value?.rows ?? [])].reverse())
-
 </script>
 
 <template>

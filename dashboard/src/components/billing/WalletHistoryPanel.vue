@@ -48,7 +48,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 	>
 		<!-- Auto-recharge — the Switch's own label prop, so clicking the text
            toggles it too (the label is wired to the control, not beside it). -->
-		<div class="border-b border-outline-gray-1 px-4 pb-3 pt-1.5">
+		<div class="mx-4 border-b border-outline-gray-1 pb-3 pt-1.5">
 			<Switch
 				label="Auto-recharge"
 				:model-value="autoRecharge"
@@ -68,11 +68,11 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 				>
 					No credit activity yet.
 				</div>
-				<ul v-else class="divide-y divide-outline-gray-1">
+				<ul v-else class="divide-y divide-outline-gray-1 px-4">
 					<li
 						v-for="(e, idx) in ledger.data"
 						:key="idx"
-						class="flex items-center gap-3 px-4 py-3"
+						class="flex items-center gap-3 py-3"
 					>
 						<span
 							class="grid size-8 shrink-0 place-items-center rounded-full"

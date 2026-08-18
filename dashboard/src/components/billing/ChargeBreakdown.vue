@@ -64,6 +64,14 @@ const named = computed(() => serverGroups.value.length > 1)
 const sum = (rows: BillingLine[]): number =>
 	rows.reduce((t, li) => t + Number(li.amount || 0), 0)
 
+const segmented = (group: { lines: BillingLine[] }): boolean =>
+	group.lines.length > 1
+function showRate(li: BillingLine, group: { lines: BillingLine[] }): boolean {
+	if (!li.rate) return false
+	if (segmented(group)) return true
+	return Math.abs(Number(li.rate) - Number(li.amount || 0)) >= 0.005
+}
+
 function isEstimated(li: BillingLine): boolean {
 	return li.basis === 'Estimated' || li.basis === 'Assumed'
 }
@@ -81,8 +89,13 @@ function isEstimated(li: BillingLine): boolean {
 				</span>
 			</div>
 
-			<div v-for="group in serverGroups" :key="group.key" class="mb-1 last:mb-0">
-				<div v-if="named" class="flex items-center justify-between gap-3 pt-1.5">
+			<div class="divide-y divide-outline-gray-1">
+				<div
+					v-for="group in serverGroups"
+					:key="group.key"
+					class="py-2 first:pt-0.5 last:pb-0"
+				>
+				<div v-if="named" class="flex items-center justify-between gap-3">
 					<span class="flex min-w-0 items-baseline gap-2">
 						<span class="truncate text-sm-medium text-ink-gray-8">{{ group.name }}</span>
 						<span v-if="group.id" class="shrink-0 font-mono text-xs text-ink-gray-4">
@@ -117,26 +130,30 @@ function isEstimated(li: BillingLine): boolean {
 						/>
 						<div class="min-w-0">
 							<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-							<p v-if="li.detail || li.rate" class="truncate text-p-sm text-ink-gray-5">
+							<p v-if="li.detail || showRate(li, group)" class="truncate text-p-sm text-ink-gray-5">
 								{{ li.detail }}
-								<template v-if="li.rate">
+								<template v-if="showRate(li, group)">
 									· {{ money(li.rate, currency) }}/mo</template
 								>
 							</p>
 						</div>
-						<span class="flex shrink-0 items-center gap-2 pl-3">
+						<span
+							v-if="segmented(group) || (showBasis && isEstimated(li))"
+							class="flex shrink-0 items-center gap-2 pl-3"
+						>
 							<Badge
 								v-if="showBasis && isEstimated(li)"
 								theme="amber"
 								variant="subtle"
 								label="Estimated"
 							/>
-							<span class="text-sm tabular-nums text-ink-gray-8">
+							<span v-if="segmented(group)" class="text-sm tabular-nums text-ink-gray-8">
 								{{ money(li.amount, currency) }}
 							</span>
 						</span>
 					</li>
 				</ul>
+				</div>
 			</div>
 		</section>
 
@@ -149,11 +166,11 @@ function isEstimated(li: BillingLine): boolean {
 					{{ money(sum(services), currency) }}
 				</span>
 			</div>
-			<ul>
+			<ul class="divide-y divide-outline-gray-1">
 				<li
 					v-for="(li, idx) in services"
 					:key="idx"
-					class="flex items-center justify-between gap-3 py-1.5"
+					class="flex items-center justify-between gap-3 py-2 first:pt-0.5 last:pb-0"
 				>
 					<div class="min-w-0">
 						<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>

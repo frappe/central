@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoadingText } from 'frappe-ui'
+import { Alert, LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { shortDate } from '@/lib/date'
@@ -24,12 +24,10 @@ const amount = computed(() => Number(np.value?.amount ?? 0))
 const blocker = computed(() => np.value?.blockers?.[0])
 const chargeOn = computed(() => shortDate(np.value?.charge_on))
 
-// What we will draw on. Credits-only teams have no instrument and that is not a
-// fault — say what will happen instead of leaving the line blank.
 const instrument = computed(() => {
 	const method = np.value?.method
-	if (method?.label) return method.label
-	if (np.value?.collection_mode === 'Prepaid') return 'Wallet balance'
+	if (method?.label) return `from ${method.label}`
+	if (np.value?.collection_mode === 'Prepaid') return 'from your wallet'
 	return null
 })
 </script>
@@ -77,15 +75,7 @@ const instrument = computed(() => {
 
 			<!-- The reason the card is here. Only ever shown where the data entails
 			     it — never as a guess about whether a card will work. -->
-			<div
-				v-if="blocker"
-				class="mt-3 rounded-5 border border-outline-amber-2 bg-surface-amber-1 p-3"
-			>
-				<p class="text-base-medium text-ink-gray-9">{{ blocker.title }}</p>
-				<p v-if="blocker.fix" class="mt-0.5 text-p-sm text-ink-gray-7">
-					{{ blocker.fix }}
-				</p>
-			</div>
+			<Alert v-if="blocker" class="mt-3" theme="amber" :title="blocker.title" />
 			<p
 				v-else
 				class="mt-1.5 flex items-center gap-1.5 text-p-sm text-ink-gray-5"

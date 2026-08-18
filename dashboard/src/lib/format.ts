@@ -58,6 +58,14 @@ export function formatSyncedAt(value: string | null | undefined): string {
 	})
 }
 
+export function capitalise(s: string | null | undefined): string {
+	return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
+}
+
+export function plural(n: number, word: string, pluralWord?: string): string {
+	return `${n} ${n === 1 ? word : (pluralWord ?? `${word}s`)}`
+}
+
 /** ISO date (no time) → short label, e.g. "Jul 7, 2026". Returns '' when unset. */
 export function formatDate(value: string | null | undefined): string {
 	if (!value) return ''

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { onBeforeUnmount, watch } from 'vue'
+import { inject, onBeforeUnmount, ref, watch } from 'vue'
+import type { Ref } from 'vue'
 
 // The docked detail panel every page shares — a 24rem column that slides in
 // beside the content (never over it), the billing invoice panel's anatomy made
@@ -12,6 +13,11 @@ import { onBeforeUnmount, watch } from 'vue'
 // own `min-w-0 flex-1 overflow-y-auto` content column.
 defineProps<{ title?: string; subtitle?: string }>()
 const open = defineModel<boolean>('open', { default: false })
+
+// True while the page swaps one tray for another: the column is already
+// docked, so the leaving panel vanishes in place and the entering one fades
+// in, instead of two 24rem slides fighting over the layout.
+const switching = inject<Ref<boolean>>('side-panel-switching', ref(false))
 
 // The panel is docked, not modal, so it never holds focus — Esc has to be
 // caught on the document. A stacked dialog owns Esc first: closing both at once
@@ -34,7 +40,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 </script>
 
 <template>
-	<Transition name="slide" appear>
+	<Transition :name="switching ? 'switch' : 'slide'" appear>
 		<aside
 			v-if="open"
 			class="flex w-[24rem] shrink-0 flex-col border-l border-outline-gray-2 bg-surface-base"
@@ -104,5 +110,16 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 	/* -24rem mirrors w-[24rem]: net layout width 0 while hidden. */
 	transform: translateX(100%);
 	margin-inline-end: -24rem;
+}
+
+/* Tray-to-tray: leave vanishes in place, enter only fades. */
+.switch-leave-active {
+	display: none;
+}
+.switch-enter-active {
+	transition: opacity 150ms ease-out;
+}
+.switch-enter-from {
+	opacity: 0;
 }
 </style>

@@ -8,7 +8,6 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
-import { money } from '@/lib/format'
 
 // What you're paying for — servers and team-level metered services in one list,
 // each row carrying what it has cost so far this cycle.
@@ -27,7 +26,6 @@ const {
 	rows,
 	loading,
 	currency,
-	total,
 	busy,
 	pendingPause,
 	openServer,
@@ -48,21 +46,7 @@ function goToAddons(): void {
 </script>
 
 <template>
-	<BillingCard
-		title="What you're paying for"
-		:description="total > 0 ? `${money(total, currency)} so far this cycle` : undefined"
-	>
-		<template v-if="canManageBilling" #action>
-			<Button
-				variant="ghost"
-				size="xs"
-				icon="lucide-plus"
-				title="Browse add-ons"
-				label="Add-ons"
-				@click="goToAddons"
-			/>
-		</template>
-
+	<BillingCard title="Subscriptions">
 		<div v-if="loading" class="space-y-3 py-1">
 			<div v-for="i in 3" :key="i" class="flex items-center gap-3">
 				<span class="size-4 shrink-0 animate-pulse rounded-4 bg-surface-gray-2" />
