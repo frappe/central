@@ -264,8 +264,8 @@ async function confirm() {
 				<LoadingIndicator class="h-6 w-6 text-ink-gray-5" />
 				<p class="text-p-base font-medium text-ink-gray-8">Starting resize…</p>
 				<p class="max-w-xs text-p-sm text-ink-gray-5">
-					The reshape runs in the background. The server shows “Resizing” in
-					the list and comes back on its own when it’s done.
+					The reshape runs in the background. The server shows “Resizing” in the
+					list and comes back on its own when it’s done.
 				</p>
 			</div>
 			<p

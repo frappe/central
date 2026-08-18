@@ -180,8 +180,8 @@ const matchingPreset = computed<Plan | null>(() => {
 							<span class="font-medium text-ink-gray-7"
 								>{{ matchingPreset.title }}</span
 							>
-							preset offers this exact shape. It may be cheaper than building
-							it à la carte.
+							preset offers this exact shape. It may be cheaper than building it
+							à la carte.
 						</p>
 					</div>
 				</div>

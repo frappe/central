@@ -80,8 +80,8 @@ const period = computed(() =>
 
 				<p v-if="fc?.has_estimates" class="mt-3 text-p-sm text-ink-gray-5">
 					Estimated lines are metered services nobody has finished using this
-					month. They're inferred from your own usage so far. Everything else
-					is already fixed.
+					month. They're inferred from your own usage so far. Everything else is
+					already fixed.
 				</p>
 			</div>
 		</template>
