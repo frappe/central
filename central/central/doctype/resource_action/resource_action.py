@@ -154,6 +154,11 @@ class ResourceAction(Document):
 			doc._finish_error("Timed Out", build_envelope("ACTION_TIMED_OUT", action=doc.action))
 
 
+def sweep_stale(minutes: int = 15) -> int:
+	"""Scheduler entry point; hooks target module functions, not classmethods."""
+	return ResourceAction.sweep_stale(minutes)
+
+
 def open_action(
 	resource_type: str,
 	action: str,
