@@ -6,7 +6,6 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { formatDate, money } from '@/lib/format'
-import { infoToast } from '@/lib/toast'
 
 // Wallet — the FC v2 prototype's funding card: balance, a one-line coverage
 // verdict, and (once there's a method to charge) the funding actions. The chevron
@@ -55,9 +54,6 @@ function onAddCredit(): void {
 
 // GROUNDING GAP (#69): no auto-recharge endpoint yet, so the button answers
 // with the same notice as the wallet panel's toggle.
-function onAutoRecharge(): void {
-	infoToast("Auto-recharge isn't available yet")
-}
 </script>
 
 <template>
@@ -153,19 +149,8 @@ function onAutoRecharge(): void {
 			<!-- Funding actions, once there's a method to charge. -->
 			<div
 				v-if="hasMethod && canManageBilling"
-				class="mt-auto flex items-center justify-between gap-2 pt-4"
+				class="mt-auto flex items-center justify-end gap-2 pt-4"
 			>
-				<Button
-					variant="ghost"
-					size="sm"
-					label="Auto-recharge off"
-					class="-ml-2"
-					@click="onAutoRecharge"
-				>
-					<template #prefix
-						><span class="lucide-zap size-4" aria-hidden="true" /></template
-					>
-				</Button>
 				<Button
 					variant="subtle"
 					size="sm"

@@ -12,7 +12,7 @@ defineProps<{ title: string; description?: string; titleInfo?: string }>()
 	<section
 		class="flex flex-col rounded-6 border border-outline-gray-2 bg-surface-base"
 	>
-		<header class="flex items-start justify-between gap-3 px-5 pt-4">
+		<header class="flex items-start justify-between gap-3 px-5 pt-5">
 			<div class="min-w-0">
 				<div class="flex items-center gap-1.5">
 					<h2 class="truncate text-base-semibold text-ink-gray-8">
@@ -29,7 +29,7 @@ defineProps<{ title: string; description?: string; titleInfo?: string }>()
 					{{ description }}
 				</p>
 			</div>
-			<div class="shrink-0">
+			<div class="-my-1 flex shrink-0 items-center">
 				<slot name="action" />
 			</div>
 		</header>

@@ -25,7 +25,11 @@ const period = computed(() =>
 </script>
 
 <template>
-	<SidePanel v-model:open="open" title="This cycle" :subtitle="period">
+	<SidePanel
+		v-model:open="open"
+		title="Breakdown of this cycle"
+		:subtitle="period"
+	>
 		<div v-if="loading" class="space-y-3 p-4">
 			<LoadingText :lines="6" />
 		</div>

@@ -4,7 +4,6 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PayingForRow from '@/components/billing/PayingForRow.vue'
-import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
@@ -22,28 +21,11 @@ const VISIBLE = 5
 defineEmits<{ open: [] }>()
 const router = useRouter()
 const { canManageBilling } = useCapabilities()
-const {
-	rows,
-	loading,
-	currency,
-	busy,
-	pendingPause,
-	openServer,
-	askPause,
-	confirmPause,
-	onResume,
-} = usePayingFor()
+const { rows, loading, currency, openServer } = usePayingFor()
 
 const visible = computed(() => rows.value.slice(0, VISIBLE))
 const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
 
-function serverTitle(sub: {
-	server: string | null
-	plan_title: string | null
-	name: string
-}): string {
-	return sub.server || sub.plan_title || sub.name
-}
 function goToAddons(): void {
 	router.push({ name: 'Addons' })
 }
@@ -74,18 +56,14 @@ function goToAddons(): void {
 					:key="row.id"
 					:row="row"
 					:currency="currency"
-					:can-manage="canManageBilling"
-					:busy="busy"
 					@open="openServer"
-					@pause="askPause"
-					@resume="onResume"
 				/>
 			</div>
 			<Button
 				v-if="hidden"
 				variant="ghost"
 				size="sm"
-				class="-ml-2 mt-2"
+				class="-mb-2 -ml-2 mt-2"
 				:label="`View all ${rows.length}`"
 				@click="$emit('open')"
 			>
@@ -105,14 +83,5 @@ function goToAddons(): void {
 				<Button variant="subtle" label="Browse add-ons" @click="goToAddons" />
 			</template>
 		</EmptyState>
-
-		<ConfirmDialog
-			v-model:target="pendingPause"
-			title="Pause billing"
-			:message="`Pause billing for ${pendingPause ? serverTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
-			confirm-label="Pause billing"
-			:loading="busy === pendingPause?.name"
-			@confirm="confirmPause"
-		/>
 	</BillingCard>
 </template>

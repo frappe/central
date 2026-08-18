@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
+import {
+	Button,
+	Dialog,
+	FormControl,
+	LoadingText,
+	Tooltip,
+	useCall,
+} from 'frappe-ui'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -221,8 +228,9 @@ const alertLabel = computed(() => {
 		return `Nearing your ${money(spendAlert.value, currency.value)} alert`
 	return `Budget alert at ${money(spendAlert.value, currency.value)}`
 })
+// Same red the delta row raises; quiet gray until there is something to say.
 const alertTint = computed(() =>
-	crossed.value ? '!text-ink-red-6' : near.value ? '!text-ink-amber-6' : '',
+	crossed.value ? 'text-ink-red-7' : near.value ? 'text-ink-amber-6' : '',
 )
 
 // Dialog: edit against a draft so Cancel leaves the live value untouched.
@@ -263,17 +271,30 @@ async function submitAlert(): Promise<void> {
 				This cycle
 			</button>
 			<span v-else class="text-p-sm text-ink-gray-5">This cycle</span>
-			<Button
-				v-if="hasCycle"
-				variant="ghost"
-				size="sm"
-				label="Breakdown"
-				@click="$emit('open')"
-			>
-				<template #suffix>
+			<div class="flex items-center gap-0.5">
+				<Tooltip v-if="canManageBilling" :text="alertLabel">
+					<button
+						type="button"
+						class="grid size-6 place-items-center rounded-4 transition-colors hover:bg-surface-gray-2"
+						:class="
+							alertTint || 'text-ink-gray-4 hover:text-ink-gray-6'
+						"
+						:aria-label="alertLabel"
+						@click="openDialog"
+					>
+						<span class="lucide-bell size-4" aria-hidden="true" />
+					</button>
+				</Tooltip>
+				<button
+					v-if="hasCycle"
+					type="button"
+					class="grid size-6 place-items-center rounded-4 text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
+					aria-label="Breakdown"
+					@click="$emit('open')"
+				>
 					<span class="lucide-chevron-right size-4" aria-hidden="true" />
-				</template>
-			</Button>
+				</button>
+			</div>
 		</div>
 
 		<div v-if="loading" class="mt-2 w-40">
@@ -281,7 +302,7 @@ async function submitAlert(): Promise<void> {
 		</div>
 		<template v-else>
 			<div class="mt-1.5 flex flex-wrap items-baseline gap-x-2.5">
-				<span class="text-3xl-semibold tabular-nums text-ink-gray-9">
+				<span class="text-2xl-semibold tabular-nums text-ink-gray-9">
 					{{ money(projected, currency) }}
 				</span>
 				<span v-if="change" class="flex min-w-0 items-center gap-1 text-sm">
@@ -330,7 +351,7 @@ async function submitAlert(): Promise<void> {
 						@mouseleave="leaveSegment"
 					/>
 				</div>
-				<div class="mt-1.5 -ml-2 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+				<div class="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-0.5">
 					<Button
 						v-for="segment in allSegments"
 						:key="segment.label"
@@ -402,21 +423,6 @@ async function submitAlert(): Promise<void> {
 					</div>
 				</Teleport>
 			</template>
-
-			<div v-if="canManageBilling" class="mt-3">
-				<Button
-					variant="ghost"
-					size="sm"
-					class="-ml-2"
-					:class="alertTint"
-					:label="alertLabel"
-					@click="openDialog"
-				>
-					<template #prefix
-						><span class="lucide-bell size-4" aria-hidden="true" /></template
-					>
-				</Button>
-			</div>
 		</template>
 
 		<Dialog v-model:open="dialogOpen" title="Set a budget alert">

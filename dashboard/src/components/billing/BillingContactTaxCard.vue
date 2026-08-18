@@ -50,7 +50,7 @@ const isIndia = computed(() => country.value === 'India')
 			<LoadingText :lines="4" />
 		</div>
 
-		<dl v-else class="space-y-4 pt-1 text-base">
+		<dl v-else class="space-y-4 pt-3 text-base">
 			<div class="flex justify-between gap-3">
 				<dt class="text-ink-gray-5">Billing email</dt>
 				<dd

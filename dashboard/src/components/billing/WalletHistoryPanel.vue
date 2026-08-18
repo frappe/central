@@ -46,16 +46,15 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 		title="Wallet history"
 		:subtitle="`Balance ${money(balance, currency)}`"
 	>
-		<!-- Auto-recharge — the Switch's own label prop, so clicking the text
-           toggles it too (the label is wired to the control, not beside it). -->
-		<div class="mx-4 border-b border-outline-gray-1 pb-3 pt-1.5">
+		<template #actions>
 			<Switch
+				class="mr-1"
 				label="Auto-recharge"
 				:model-value="autoRecharge"
 				:disabled="!canManageBilling"
 				@update:model-value="onAutoRecharge"
 			/>
-		</div>
+		</template>
 
 		<!-- Ledger -->
 		<div class="min-h-0 flex-1 overflow-y-auto">
