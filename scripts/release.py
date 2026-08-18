@@ -61,7 +61,18 @@ def main() -> int:
 	set_package_version(version)
 	set_dashboard_version(version)
 
-	subprocess.run(["git", "--no-pager", "diff", "--", str(INIT_PY), str(PACKAGE_JSON)], cwd=ROOT)
+	subprocess.run(
+		[
+			"git",
+			"--no-pager",
+			"diff",
+			"--",
+			str(INIT_PY),
+			str(PACKAGE_JSON),
+			str(DASHBOARD_PACKAGE_JSON),
+		],
+		cwd=ROOT,
+	)
 	print("\nNext:")
 	print(f'  git commit -am "chore(release): v{version}"')
 	print(f"  git push, then draft the v{version} release on GitHub with generated notes.")
