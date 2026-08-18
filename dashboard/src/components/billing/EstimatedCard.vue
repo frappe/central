@@ -310,9 +310,6 @@ async function submitAlert(): Promise<void> {
 					<template v-if="daysRemaining != null">
 						· {{ daysRemaining }} days left</template
 					>
-					<template v-if="taxAmount">
-						· incl. {{ money(taxAmount, currency) }} {{ taxLabel }}</template
-					>
 				</template>
 			</p>
 
