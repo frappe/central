@@ -33,9 +33,9 @@ import frappe
 
 from central.billing.catalog import subscriptions
 from central.billing.demo._factory import (
+	ANCHOR,
 	ANCHOR_DUE,
 	ANCHOR_END,
-	ANCHOR,
 	SERVICES,
 	STRIPE,
 	_add_backup_card,
@@ -47,8 +47,6 @@ from central.billing.demo._factory import (
 	_gateway_customer,
 	_gateways,
 	_month_periods,
-	collection_moment,
-	opens_on,
 	_payment_setup,
 	_profile,
 	_settle_via_backup,
@@ -65,9 +63,11 @@ from central.billing.demo._factory import (
 	backdate_invoice,
 	backdate_welcome_credit,
 	bank_pending_attempt,
+	collection_moment,
 	draw_wallet_credit,
 	make_refund,
 	meter_service_usage,
+	opens_on,
 	plan_name,
 	set_collection_mode,
 	stage_resizes,
@@ -271,9 +271,7 @@ def seed() -> dict:
 
 def _raise_catalog_prices(factor: float = 1.18) -> None:
 	"""Put every VM plan's catalog rate up, leaving locked segments untouched."""
-	for rate in frappe.get_all(
-		"Catalog Rate", filters={"priced_doctype": "Plan"}, fields=["name", "rate"]
-	):
+	for rate in frappe.get_all("Catalog Rate", filters={"priced_doctype": "Plan"}, fields=["name", "rate"]):
 		frappe.db.set_value(
 			"Catalog Rate",
 			rate.name,
@@ -482,7 +480,6 @@ def _drop_stray_demo_teams() -> None:
 
 
 def _build_team(team, slug, tier, currency, state, resources, resize):
-
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
 	_tier(team, tier)  # tier lives on the Billing Profile, so set it after _profile
@@ -704,9 +701,7 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 
 	# --- dispute: charge captured, then charged back to source ------------------
 	if state == "dispute":
-		frappe.db.set_value(
-			"Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": ANCHOR_DUE}
-		)
+		frappe.db.set_value("Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": ANCHOR_DUE})
 		attempt = _capture_attempt(team, inv, pm, gateway, total, currency)
 		make_refund(
 			team, inv, attempt, total, currency, "Source", "Cardholder dispute — chargeback", chargeback=True
@@ -735,9 +730,7 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 
 	# --- refund as credits (→ wallet) -------------------------------------------
 	if state == "refund_wallet":
-		frappe.db.set_value(
-			"Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": ANCHOR_DUE}
-		)
+		frappe.db.set_value("Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": ANCHOR_DUE})
 		attempt = _capture_attempt(team, inv, pm, gateway, total, currency)
 		refund_amt = round(total * 0.15, 2)
 		make_refund(team, inv, attempt, refund_amt, currency, "Wallet", "Partial overcharge")

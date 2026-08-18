@@ -54,7 +54,8 @@ const hasCycle = computed(() => projected.value > 0)
 const previousTotal = computed(() => fc.value?.previous_total ?? null)
 const previousLabel = computed(() => fc.value?.previous_label ?? null)
 const change = computed(() => {
-	if (!hasCycle.value || !previousTotal.value || !previousLabel.value) return null
+	if (!hasCycle.value || !previousTotal.value || !previousLabel.value)
+		return null
 	const delta = projected.value - previousTotal.value
 	// Under a percent either way is noise, not news.
 	if (Math.abs(delta) < previousTotal.value * 0.01) {
@@ -214,14 +215,16 @@ async function submitAlert(): Promise<void> {
 							class="size-2 shrink-0 rounded-1 bg-surface-gray-10"
 							aria-hidden="true"
 						/>
-						{{ money(measured, currency) }} already owed
+						{{ money(measured, currency) }}
+						already owed
 					</span>
 					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
 						<span
 							class="estimated-fill size-2 shrink-0 rounded-1"
 							aria-hidden="true"
 						/>
-						{{ money(estimated, currency) }} estimated
+						{{ money(estimated, currency) }}
+						estimated
 					</span>
 				</div>
 			</template>

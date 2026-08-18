@@ -63,7 +63,10 @@ const hidden = computed(() => Math.max(0, all.value.length - VISIBLE))
 							<span class="text-base-medium tabular-nums text-ink-gray-9">
 								{{ money(row.amount, row.currency) }}
 							</span>
-							<span v-if="row.retry_number" class="shrink-0 text-p-sm text-ink-gray-4">
+							<span
+								v-if="row.retry_number"
+								class="shrink-0 text-p-sm text-ink-gray-4"
+							>
 								retry {{ row.retry_number }}
 							</span>
 						</span>

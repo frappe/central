@@ -26,6 +26,4 @@ def execute():
 		return
 
 	row = frappe.qb.DocType("Payment Gateway Currency")
-	frappe.qb.update(row).set(row.requires_predebit_notice, 0).where(
-		row.parent.isin(SELF_NOTIFYING)
-	).run()
+	frappe.qb.update(row).set(row.requires_predebit_notice, 0).where(row.parent.isin(SELF_NOTIFYING)).run()

@@ -93,7 +93,9 @@ class TestForecastBasis(OverviewBase):
 				"currency": "INR",
 				"subtotal": 1000,
 				"total": 1000,
-				"items": [{"resource_type": "bundle", "plan": PLAN, "rate": 1000, "days": 30, "amount": 1000}],
+				"items": [
+					{"resource_type": "bundle", "plan": PLAN, "rate": 1000, "days": 30, "amount": 1000}
+				],
 			}
 		).insert(ignore_permissions=True)
 

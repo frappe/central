@@ -28,7 +28,8 @@ watch(open, () => (typed.value = ''))
 
 const expected = computed(() => props.member?.full_name ?? '')
 const confirmed = computed(
-	() => typed.value.trim().toLowerCase() === expected.value.trim().toLowerCase(),
+	() =>
+		typed.value.trim().toLowerCase() === expected.value.trim().toLowerCase(),
 )
 
 async function confirm(): Promise<void> {
@@ -70,8 +71,8 @@ const dialogOptions = computed(() => ({
 	>
 		<div class="space-y-4">
 			<p class="text-p-base text-ink-gray-7">
-				<span class="font-medium text-ink-gray-9">{{ expected }}</span> becomes
-				the owner of
+				<span class="font-medium text-ink-gray-9">{{ expected }}</span>
+				becomes the owner of
 				<span class="font-medium text-ink-gray-9">{{ activeTeamLabel }}</span>
 				and you drop to Admin. Only the new owner can hand it back.
 			</p>

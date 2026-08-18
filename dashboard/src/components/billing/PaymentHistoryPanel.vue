@@ -45,7 +45,10 @@ const rows = computed(() => attempts.data ?? [])
 						<span class="text-base-medium tabular-nums text-ink-gray-9">
 							{{ money(row.amount, row.currency) }}
 						</span>
-						<span v-if="row.retry_number" class="shrink-0 text-p-sm text-ink-gray-4">
+						<span
+							v-if="row.retry_number"
+							class="shrink-0 text-p-sm text-ink-gray-4"
+						>
 							retry {{ row.retry_number }}
 						</span>
 					</span>
@@ -60,7 +63,9 @@ const rows = computed(() => attempts.data ?? [])
 						</span>
 					</span>
 				</div>
-				<p v-if="row.reason" class="mt-1 text-p-sm text-ink-gray-7">{{ row.reason }}</p>
+				<p v-if="row.reason" class="mt-1 text-p-sm text-ink-gray-7">
+					{{ row.reason }}
+				</p>
 				<!-- The gateway's own wording, kept here for anyone quoting it to support. -->
 				<p
 					v-if="row.failure_reason && row.failure_reason !== row.reason"

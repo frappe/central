@@ -60,7 +60,9 @@ class TestTheOffer(IntegrationTestCase):
 					"subtotal": 5000,
 					"total": 5000,
 					"expected_collection": 5000,
-					"items": [{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}],
+					"items": [
+						{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}
+					],
 				}
 			)
 			.insert(ignore_permissions=True)
@@ -78,9 +80,7 @@ class TestTheOffer(IntegrationTestCase):
 				"initiated_at": frappe.utils.now_datetime(),
 			}
 		).insert(ignore_permissions=True)
-		frappe.db.set_value(
-			"Payment Attempt", attempt.name, {"status": status, "failure_code": failure_code}
-		)
+		frappe.db.set_value("Payment Attempt", attempt.name, {"status": status, "failure_code": failure_code})
 		return inv
 
 	def test_a_refused_stripe_card_offers_razorpay_with_the_amount_filled_in(self):
@@ -145,7 +145,9 @@ class TestTheGatewaysOwnHold(IntegrationTestCase):
 					"subtotal": 5000,
 					"total": 5000,
 					"expected_collection": 5000,
-					"items": [{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}],
+					"items": [
+						{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}
+					],
 				}
 			)
 			.insert(ignore_permissions=True)
@@ -241,7 +243,9 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 					"subtotal": 5000,
 					"total": 5000,
 					"expected_collection": 5000,
-					"items": [{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}],
+					"items": [
+						{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}
+					],
 				}
 			)
 			.insert(ignore_permissions=True)
@@ -305,9 +309,7 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 			collection.collect_invoice(self.invoice)
 
 		self.assertTrue(
-			frappe.db.exists(
-				"Billing Notification Log", {"team": TEAM, "event_type": "Add Payment Method"}
-			)
+			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Add Payment Method"})
 		)
 
 	def test_nothing_is_asked_of_a_team_that_never_had_a_method(self):
@@ -323,9 +325,7 @@ class TestOneInvoiceIsNeverChargedTwiceAcrossRails(IntegrationTestCase):
 
 		self.assertEqual(out["reason"], "no_method")
 		self.assertFalse(
-			frappe.db.exists(
-				"Billing Notification Log", {"team": TEAM, "event_type": "Add Payment Method"}
-			)
+			frappe.db.exists("Billing Notification Log", {"team": TEAM, "event_type": "Add Payment Method"})
 		)
 
 
@@ -359,7 +359,9 @@ class TestWhereAMethodSaysItCameFrom(IntegrationTestCase):
 					"subtotal": 5000,
 					"total": 5000,
 					"expected_collection": 5000,
-					"items": [{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}],
+					"items": [
+						{"resource_type": "bundle", "plan": "p", "rate": 5000, "days": 30, "amount": 5000}
+					],
 				}
 			)
 			.insert(ignore_permissions=True)

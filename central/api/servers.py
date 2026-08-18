@@ -657,15 +657,23 @@ def _run_command(
 
 			Asset.mark_terminated(resource_id, last_event_at=frappe.utils.now_datetime())
 			open_action(
-				"Server", action, team=team, resource_id=resource_id,
-				correlation_id=correlation_id, status="Succeeded",
+				"Server",
+				action,
+				team=team,
+				resource_id=resource_id,
+				correlation_id=correlation_id,
+				status="Succeeded",
 			)
 			return {"resource_id": resource_id, "task": None, "action": correlation_id}
 		raise
 
 	open_action(
-		"Server", action, team=team, resource_id=resource_id,
-		correlation_id=correlation_id, atlas_task=task,
+		"Server",
+		action,
+		team=team,
+		resource_id=resource_id,
+		correlation_id=correlation_id,
+		atlas_task=task,
 	)
 
 	return {"resource_id": resource_id, "task": task, "action": correlation_id}

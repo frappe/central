@@ -209,9 +209,7 @@ def setup_payment_method_order(
 	from central.billing.payments import instruments as instrument_catalogue
 	from central.billing.payments import mandates
 
-	entry = (
-		instrument_catalogue.get(instrument, instrument_catalogue.MANDATE) if instrument else None
-	)
+	entry = instrument_catalogue.get(instrument, instrument_catalogue.MANDATE) if instrument else None
 	reason = _fallback_reason(team, entry, after_decline)
 	gw = (
 		gateway

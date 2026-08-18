@@ -148,7 +148,6 @@ const DOTS: Record<string, string> = {
 const dotClass = (theme: string): string =>
 	DOTS[theme] || 'bg-[var(--ink-gray-4)]'
 
-
 const paidWithIcon = computed(() =>
 	/upi/i.test(detail.data?.paid_with?.method_type ?? '')
 		? 'lucide-smartphone'
@@ -244,161 +243,161 @@ const eventDetail = (ev: {
            Activity sit below it, so the totals never shift as the list
            scrolls. Activity opens below and is revealed by scrolling. -->
 			<div v-else-if="detail.data" class="flex min-h-0 flex-1 flex-col">
-					<p
-						v-if="isOverdue"
-						class="flex items-center gap-1.5 px-4 pt-4 text-p-sm text-ink-red-7"
-					>
-						<span class="lucide-triangle-alert size-3.5 shrink-0" />
-						Due {{ shortDate(detail.data.due_date) }} — overdue
-					</p>
+				<p
+					v-if="isOverdue"
+					class="flex items-center gap-1.5 px-4 pt-4 text-p-sm text-ink-red-7"
+				>
+					<span class="lucide-triangle-alert size-3.5 shrink-0" />
+					Due {{ shortDate(detail.data.due_date) }} — overdue
+				</p>
 
-					<!-- Receipt: plan charges per server, then metered add-ons — each
+				<!-- Receipt: plan charges per server, then metered add-ons — each
                section a plain eyebrow with its subtotal, like the V2 receipt. -->
-					<!-- No inner scroll: the panel already scrolls, and a second scroller
+				<!-- No inner scroll: the panel already scrolls, and a second scroller
 					     here clipped the receipt mid-row once a team had more than one
 					     machine on the invoice. -->
-					<div class="shrink-0 px-4 pt-4">
-						<ChargeBreakdown
-							:lines="detail.data.items"
-							:currency="detail.data.currency"
-						/>
-					</div>
+				<div class="shrink-0 px-4 pt-4">
+					<ChargeBreakdown
+						:lines="detail.data.items"
+						:currency="detail.data.currency"
+					/>
+				</div>
 
-					<!-- Cost breakdown + Activity -->
-					<div class="mt-4 border-t border-outline-gray-2 px-4">
-						<dl class="space-y-2 py-3 text-sm">
-							<div class="flex justify-between gap-3">
-								<dt class="text-ink-gray-5">Subtotal</dt>
-								<dd class="tabular-nums text-ink-gray-8">
-									{{ money(detail.data.subtotal, detail.data.currency) }}
-								</dd>
-							</div>
-							<div
-								v-if="detail.data.output_tax_amount"
-								class="flex justify-between gap-3"
-							>
-								<dt class="text-ink-gray-5">
-									{{ detail.data.output_tax_type || 'Tax' }}
-									<template v-if="detail.data.output_tax_rate">
-										({{ detail.data.output_tax_rate }}%)</template
-									>
-								</dt>
-								<dd class="tabular-nums text-ink-gray-8">
-									{{ money(detail.data.output_tax_amount, detail.data.currency) }}
-								</dd>
-							</div>
-							<p
-								v-if="detail.data.zero_rating_reason"
-								class="text-p-sm text-ink-gray-5"
-							>
-								{{ detail.data.zero_rating_reason }}
-							</p>
-							<div
-								v-if="detail.data.credit_applied"
-								class="flex justify-between gap-3"
-							>
-								<dt class="text-ink-green-5">Credits applied</dt>
-								<dd class="tabular-nums text-ink-green-5">
-									−{{ money(detail.data.credit_applied, detail.data.currency) }}
-								</dd>
-							</div>
-							<div
-								class="mt-1 flex justify-between gap-3 border-t border-outline-gray-1 pt-2.5 font-semibold"
-							>
-								<dt class="text-ink-gray-8">Total</dt>
-								<dd class="tabular-nums text-ink-gray-9">
-									{{ money(detail.data.total, detail.data.currency) }}
-								</dd>
-							</div>
-							<!-- Which method settled it — a quiet receipt line, not a form
-                   row. Falls back to the paid amount when the method is gone. -->
-							<div
-								v-if="detail.data.paid_with"
-								class="flex justify-between gap-3 text-p-sm text-ink-gray-5"
-							>
-								<dt>Paid with</dt>
-								<dd class="flex min-w-0 items-center gap-1.5">
-									<span
-										class="size-3.5 shrink-0 text-ink-gray-4"
-										:class="paidWithIcon"
-										aria-hidden="true"
-									/>
-									<span class="truncate">{{ detail.data.paid_with.label }}</span>
-								</dd>
-							</div>
-							<div
-								v-else-if="detail.data.amount_paid"
-								class="flex justify-between gap-3 text-p-sm text-ink-gray-5"
-							>
-								<dt>Paid</dt>
-								<dd class="tabular-nums">
-									{{ money(detail.data.amount_paid, detail.data.currency) }}
-								</dd>
-							</div>
-						</dl>
-
-						<!-- Activity — this invoice's own history. Folded away entirely:
-                 for a settled invoice the log is reference, not news. -->
-						<section
-							v-if="detail.data.activity?.length"
-							class="border-t border-outline-gray-1 py-3"
+				<!-- Cost breakdown + Activity -->
+				<div class="mt-4 border-t border-outline-gray-2 px-4">
+					<dl class="space-y-2 py-3 text-sm">
+						<div class="flex justify-between gap-3">
+							<dt class="text-ink-gray-5">Subtotal</dt>
+							<dd class="tabular-nums text-ink-gray-8">
+								{{ money(detail.data.subtotal, detail.data.currency) }}
+							</dd>
+						</div>
+						<div
+							v-if="detail.data.output_tax_amount"
+							class="flex justify-between gap-3"
 						>
-							<button
-								class="flex w-full items-center gap-1.5 text-left"
-								:aria-expanded="activityExpanded"
-								@click="activityExpanded = !activityExpanded"
-							>
-								<span
-									class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-5 transition-transform duration-150 ease-out"
-									:class="activityExpanded ? 'rotate-90' : ''"
-								/>
-								<h3 class="text-sm-medium text-ink-gray-8">Activity</h3>
-								<span class="text-p-sm text-ink-gray-5">
-									{{ detail.data.activity.length }}
-								</span>
-							</button>
-							<ol v-if="activityExpanded" class="relative mt-3">
-								<li
-									v-for="(ev, idx) in detail.data.activity"
-									:key="idx"
-									class="relative flex gap-3 pb-4 last:pb-0"
+							<dt class="text-ink-gray-5">
+								{{ detail.data.output_tax_type || 'Tax' }}
+								<template v-if="detail.data.output_tax_rate">
+									({{ detail.data.output_tax_rate }}%)</template
 								>
-									<!-- Rail: one continuous line running through the column, with
+							</dt>
+							<dd class="tabular-nums text-ink-gray-8">
+								{{ money(detail.data.output_tax_amount, detail.data.currency) }}
+							</dd>
+						</div>
+						<p
+							v-if="detail.data.zero_rating_reason"
+							class="text-p-sm text-ink-gray-5"
+						>
+							{{ detail.data.zero_rating_reason }}
+						</p>
+						<div
+							v-if="detail.data.credit_applied"
+							class="flex justify-between gap-3"
+						>
+							<dt class="text-ink-green-5">Credits applied</dt>
+							<dd class="tabular-nums text-ink-green-5">
+								−{{ money(detail.data.credit_applied, detail.data.currency) }}
+							</dd>
+						</div>
+						<div
+							class="mt-1 flex justify-between gap-3 border-t border-outline-gray-1 pt-2.5 font-semibold"
+						>
+							<dt class="text-ink-gray-8">Total</dt>
+							<dd class="tabular-nums text-ink-gray-9">
+								{{ money(detail.data.total, detail.data.currency) }}
+							</dd>
+						</div>
+						<!-- Which method settled it — a quiet receipt line, not a form
+                   row. Falls back to the paid amount when the method is gone. -->
+						<div
+							v-if="detail.data.paid_with"
+							class="flex justify-between gap-3 text-p-sm text-ink-gray-5"
+						>
+							<dt>Paid with</dt>
+							<dd class="flex min-w-0 items-center gap-1.5">
+								<span
+									class="size-3.5 shrink-0 text-ink-gray-4"
+									:class="paidWithIcon"
+									aria-hidden="true"
+								/>
+								<span class="truncate">{{ detail.data.paid_with.label }}</span>
+							</dd>
+						</div>
+						<div
+							v-else-if="detail.data.amount_paid"
+							class="flex justify-between gap-3 text-p-sm text-ink-gray-5"
+						>
+							<dt>Paid</dt>
+							<dd class="tabular-nums">
+								{{ money(detail.data.amount_paid, detail.data.currency) }}
+							</dd>
+						</div>
+					</dl>
+
+					<!-- Activity — this invoice's own history. Folded away entirely:
+                 for a settled invoice the log is reference, not news. -->
+					<section
+						v-if="detail.data.activity?.length"
+						class="border-t border-outline-gray-1 py-3"
+					>
+						<button
+							class="flex w-full items-center gap-1.5 text-left"
+							:aria-expanded="activityExpanded"
+							@click="activityExpanded = !activityExpanded"
+						>
+							<span
+								class="lucide-chevron-right size-3.5 shrink-0 text-ink-gray-5 transition-transform duration-150 ease-out"
+								:class="activityExpanded ? 'rotate-90' : ''"
+							/>
+							<h3 class="text-sm-medium text-ink-gray-8">Activity</h3>
+							<span class="text-p-sm text-ink-gray-5">
+								{{ detail.data.activity.length }}
+							</span>
+						</button>
+						<ol v-if="activityExpanded" class="relative mt-3">
+							<li
+								v-for="(ev, idx) in detail.data.activity"
+								:key="idx"
+								class="relative flex gap-3 pb-4 last:pb-0"
+							>
+								<!-- Rail: one continuous line running through the column, with
                        the solid dot sitting on top of it. The line is dropped on
                        the last row so it doesn't dangle. -->
-									<div class="relative flex w-2.5 shrink-0 justify-center">
+								<div class="relative flex w-2.5 shrink-0 justify-center">
+									<span
+										v-if="idx < detail.data.activity.length - 1"
+										class="absolute left-1/2 top-2 h-[calc(100%+1rem)] w-px -translate-x-1/2 bg-[var(--outline-gray-2)]"
+									/>
+									<span
+										class="relative z-10 mt-1 size-2 shrink-0 rounded-full"
+										:class="dotClass(ev.theme)"
+									/>
+								</div>
+								<div class="min-w-0 flex-1">
+									<div class="flex items-baseline justify-between gap-2">
+										<span class="text-sm-medium text-ink-gray-8">
+											{{ ev.title }}
+										</span>
 										<span
-											v-if="idx < detail.data.activity.length - 1"
-											class="absolute left-1/2 top-2 h-[calc(100%+1rem)] w-px -translate-x-1/2 bg-[var(--outline-gray-2)]"
-										/>
-										<span
-											class="relative z-10 mt-1 size-2 shrink-0 rounded-full"
-											:class="dotClass(ev.theme)"
-										/>
-									</div>
-									<div class="min-w-0 flex-1">
-										<div class="flex items-baseline justify-between gap-2">
-											<span class="text-sm-medium text-ink-gray-8">
-												{{ ev.title }}
-											</span>
-											<span
-												class="shrink-0 tabular-nums text-p-sm text-ink-gray-5"
-											>
-												{{ eventDate(ev.at) }}
-											</span>
-										</div>
-										<p
-											v-if="eventDetail(ev)"
-											class="mt-0.5 break-words text-p-sm text-ink-gray-5"
+											class="shrink-0 tabular-nums text-p-sm text-ink-gray-5"
 										>
-											{{ eventDetail(ev) }}
-										</p>
+											{{ eventDate(ev.at) }}
+										</span>
 									</div>
-								</li>
-							</ol>
-						</section>
-					</div>
+									<p
+										v-if="eventDetail(ev)"
+										class="mt-0.5 break-words text-p-sm text-ink-gray-5"
+									>
+										{{ eventDetail(ev) }}
+									</p>
+								</div>
+							</li>
+						</ol>
+					</section>
 				</div>
+			</div>
 
 			<!-- The footer carries only the one state-dependent action. Settling an
            invoice is the helpful way out of an overdue state, not a

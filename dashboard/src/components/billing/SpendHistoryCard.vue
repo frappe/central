@@ -12,9 +12,7 @@ import type { SpendHistory } from '@/types/billing'
 const props = defineProps<{ history: SpendHistory }>()
 
 const months = computed(() => props.history.months)
-const peak = computed(() =>
-	Math.max(1, ...months.value.map((m) => m.total)),
-)
+const peak = computed(() => Math.max(1, ...months.value.map((m) => m.total)))
 const average = computed(() => {
 	const billed = months.value.filter((m) => m.total > 0)
 	if (!billed.length) return 0

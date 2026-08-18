@@ -1,5 +1,4 @@
-
-export interface CentralSettings{
+export interface CentralSettings {
 	name: string
 	creation: string
 	modified: string

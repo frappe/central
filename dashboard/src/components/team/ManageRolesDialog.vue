@@ -106,7 +106,9 @@ const dominatingIndex = computed(() =>
 // narrow rows while editing, and drop them on save (the backend does too).
 const shadowedIndexes = computed(() => {
 	const wildcardRoles = new Set(
-		rows.value.filter((r) => r.role && r.resource_type === '*').map((r) => r.role),
+		rows.value
+			.filter((r) => r.role && r.resource_type === '*')
+			.map((r) => r.role),
 	)
 	return new Set(
 		rows.value
@@ -127,7 +129,9 @@ const submitting = ref(false)
 const submit = async (): Promise<void> => {
 	if (!canSubmit.value || !props.member) return
 	submitting.value = true
-	const grants = rows.value.filter((_, index) => !shadowedIndexes.value.has(index))
+	const grants = rows.value.filter(
+		(_, index) => !shadowedIndexes.value.has(index),
+	)
 	const ok = await setRoles(props.member.user, grants)
 	submitting.value = false
 	if (ok) open.value = false

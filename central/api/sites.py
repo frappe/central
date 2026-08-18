@@ -153,8 +153,12 @@ def terminate_site(name: str) -> dict:
 		# it on the mirror and record a Succeeded action rather than a scary "region down".
 		frappe.get_doc("Site", name).db_set("status", "Terminated", notify=True)
 		open_action(
-			"Site", "terminate", team=site.team, resource_id=name,
-			correlation_id=correlation_id, status="Succeeded",
+			"Site",
+			"terminate",
+			team=site.team,
+			resource_id=name,
+			correlation_id=correlation_id,
+			status="Succeeded",
 		)
 		return {"name": name, "status": "Terminated", "action": correlation_id}
 

@@ -26,7 +26,8 @@ const loading = computed(() => tax.loading && !tax.data)
 const data = computed(() => tax.data)
 const currency = computed(() => data.value?.currency ?? 'INR')
 const hasTax = computed(
-	() => (data.value?.total_tax ?? 0) > 0 || (data.value?.total_withheld ?? 0) > 0,
+	() =>
+		(data.value?.total_tax ?? 0) > 0 || (data.value?.total_withheld ?? 0) > 0,
 )
 </script>
 
@@ -43,7 +44,9 @@ const hasTax = computed(
 						class="flex items-baseline justify-between gap-3 py-2.5 first:pt-0"
 					>
 						<div class="min-w-0">
-							<span class="text-p-sm text-ink-gray-8">{{ bucket.tax_type }}</span>
+							<span class="text-p-sm text-ink-gray-8"
+								>{{ bucket.tax_type }}</span
+							>
 							<span class="ml-1.5 text-p-sm text-ink-gray-4">
 								on {{ money(bucket.taxable, currency) }}
 							</span>
@@ -57,7 +60,9 @@ const hasTax = computed(
 					v-if="data.total_withheld > 0"
 					class="mt-2 flex items-baseline justify-between gap-3 border-t border-outline-gray-1 pt-2.5"
 				>
-					<span class="text-p-sm text-ink-gray-8">Withheld at source (TDS)</span>
+					<span class="text-p-sm text-ink-gray-8"
+						>Withheld at source (TDS)</span
+					>
 					<span class="text-p-sm tabular-nums text-ink-gray-9">
 						{{ money(data.total_withheld, currency) }}
 					</span>

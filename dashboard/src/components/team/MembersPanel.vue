@@ -19,8 +19,8 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useTeamInvitations } from '@/composables/useTeamInvitations'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamRoles } from '@/composables/useTeamRoles'
-import { useTeamSettings } from '@/composables/useTeamSettings'
 import { teamParams } from '@/composables/useTeamScope'
+import { useTeamSettings } from '@/composables/useTeamSettings'
 import { formatDate } from '@/lib/format'
 import { resourceScopeLabel, roleOnResourceLabel } from '@/lib/resourceScope'
 import type {
@@ -258,7 +258,8 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 					</p>
 				</div>
 				<p v-if="row.roles.length > 3" class="text-p-sm text-ink-gray-5">
-					+{{ row.roles.length - 3 }} more
+					+{{ row.roles.length - 3 }}
+					more
 				</p>
 				<p v-if="!row.roles.length" class="text-p-sm text-ink-gray-5">
 					No access grants
@@ -287,7 +288,6 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 			/>
 		</template>
 	</ListView>
-
 
 	<!-- A fresh invite has to land in the roster right away — that's the point. -->
 	<InviteMemberDialog v-model:open="inviteDialog" @invited="reloadInvites" />

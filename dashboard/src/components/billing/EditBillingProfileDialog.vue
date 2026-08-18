@@ -2,11 +2,11 @@
 import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { emailError as validateEmail } from '@/lib/auth'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { emailError as validateEmail } from '@/lib/auth'
 import { errorToast, infoToast, successToast } from '@/lib/toast'
 import type { BillingGeo } from '@/types/billing'
 
@@ -101,7 +101,7 @@ const save = useCall<SaveBillingProfileResponse, Record<string, unknown>>({
 })
 async function submit(): Promise<void> {
 	if (missingRequired.value.length) {
-		infoToast(`Missing: ${missingRequired.value.join(", ")}`)
+		infoToast(`Missing: ${missingRequired.value.join(', ')}`)
 		return
 	}
 	try {
@@ -174,11 +174,9 @@ async function submit(): Promise<void> {
 								:options="countryOptions"
 							/>
 							<p class="mt-1 text-p-xs text-ink-gray-5">
-								{{
-									currencyLocked
+								{{ currencyLocked
 										? `Billed in ${form.currency} — locked, your team already has billing activity.`
-										: `Sets your billing currency (${form.currency || 'USD'}).`
-								}}
+										: `Sets your billing currency (${form.currency || 'USD'}).` }}
 							</p>
 						</div>
 						<FormControl

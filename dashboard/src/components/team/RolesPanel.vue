@@ -174,7 +174,7 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 <style scoped>
 /* Same row height as the members list, so switching tabs doesn't change
    the list's rhythm. */
-:deep([role='rowgroup'] > [role='row']) {
+:deep([role="rowgroup"] > [role="row"]) {
 	height: auto;
 	min-height: 4rem;
 	padding-block: 0.5rem;

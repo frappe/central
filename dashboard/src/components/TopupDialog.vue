@@ -31,12 +31,14 @@ const amount = ref<number | null>(null)
 const presets = [1000, 5000, 10000, 25000]
 
 const { activeTeam } = useSession()
-const options = useCall<{ instruments: PaymentInstrument[] }, { team: string }>({
-	url: method(API.topupOptions),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
+const options = useCall<{ instruments: PaymentInstrument[] }, { team: string }>(
+	{
+		url: method(API.topupOptions),
+		params: () => ({ team: activeTeam.value! }),
+		immediate: false,
+		refetch: true,
+	},
+)
 const instruments = computed(() => options.data?.instruments ?? [])
 const instrument = ref<string | null>(null)
 

@@ -69,7 +69,7 @@ const loading = computed(() => history.loading && !history.data)
 // Nothing has ever been billed — not "nothing this month". The distinction is
 // what separates a first-run state from a quiet period.
 const neverBilled = computed(
-  () => !loading.value && (history.data?.invoice_count ?? 0) === 0,
+	() => !loading.value && (history.data?.invoice_count ?? 0) === 0,
 )
 
 // Export goes through a plain link, not fetch: the endpoint sets a binary
@@ -84,82 +84,82 @@ function exportUrl(report: string): string {
 	<div class="flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
 			<div class="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
-			<header class="flex flex-wrap items-end justify-between gap-3">
-				<div>
-					<h1 class="text-lg-semibold text-ink-gray-9">Reports</h1>
-					<p class="mt-0.5 text-p-sm text-ink-gray-5">
-						Your billing history — what you've spent, paid and been charged tax
-						on.
-					</p>
-				</div>
-				<div v-if="!neverBilled" class="flex items-center gap-2">
-					<div
-						class="flex overflow-hidden rounded-5 border border-outline-gray-2"
-					>
-						<button
-							v-for="opt in MONTH_OPTIONS"
-							:key="opt.value"
-							type="button"
-							class="border-r border-outline-gray-2 px-2.5 py-1 text-p-sm last:border-r-0 transition-colors"
-							:class="
+				<header class="flex flex-wrap items-end justify-between gap-3">
+					<div>
+						<h1 class="text-lg-semibold text-ink-gray-9">Reports</h1>
+						<p class="mt-0.5 text-p-sm text-ink-gray-5">
+							Your billing history — what you've spent, paid and been charged
+							tax on.
+						</p>
+					</div>
+					<div v-if="!neverBilled" class="flex items-center gap-2">
+						<div
+							class="flex overflow-hidden rounded-5 border border-outline-gray-2"
+						>
+							<button
+								v-for="opt in MONTH_OPTIONS"
+								:key="opt.value"
+								type="button"
+								class="border-r border-outline-gray-2 px-2.5 py-1 text-p-sm last:border-r-0 transition-colors"
+								:class="
                 months === opt.value
                   ? 'bg-surface-gray-2 text-ink-gray-9'
                   : 'text-ink-gray-6 hover:bg-surface-gray-1'
               "
-							@click="setMonths(opt.value)"
+								@click="setMonths(opt.value)"
+							>
+								{{ opt.label }}
+							</button>
+						</div>
+						<Button
+							variant="subtle"
+							size="sm"
+							:link="exportUrl('statement')"
+							label="Export CSV"
 						>
-							{{ opt.label }}
-						</button>
+							<template #prefix>
+								<span class="lucide-download size-4" aria-hidden="true" />
+							</template>
+						</Button>
 					</div>
-					<Button
-						variant="subtle"
-						size="sm"
-						:link="exportUrl('statement')"
-						label="Export CSV"
-					>
-						<template #prefix>
-							<span class="lucide-download size-4" aria-hidden="true" />
-						</template>
-					</Button>
+				</header>
+
+				<div v-if="loading" class="space-y-5">
+					<BillingCard v-for="i in 2" :key="i" title=" ">
+						<LoadingText :lines="4" />
+					</BillingCard>
 				</div>
-			</header>
 
-			<div v-if="loading" class="space-y-5">
-				<BillingCard v-for="i in 2" :key="i" title=" ">
-					<LoadingText :lines="4" />
-				</BillingCard>
-			</div>
+				<!-- One first-run state for the whole page. -->
+				<EmptyState
+					v-else-if="neverBilled"
+					icon="lucide-chart-no-axes-column"
+					title="No billing history yet"
+					description="Once your first invoice is issued, this page shows what you've spent month by month, where it went, and everything you've paid."
+				>
+					<template #action>
+						<Button
+							variant="subtle"
+							label="Go to billing overview"
+							@click="router.push({ name: 'Billing' })"
+						/>
+					</template>
+				</EmptyState>
 
-			<!-- One first-run state for the whole page. -->
-			<EmptyState
-				v-else-if="neverBilled"
-				icon="lucide-chart-no-axes-column"
-				title="No billing history yet"
-				description="Once your first invoice is issued, this page shows what you've spent month by month, where it went, and everything you've paid."
-			>
-				<template #action>
-					<Button
-						variant="subtle"
-						label="Go to billing overview"
-						@click="router.push({ name: 'Billing' })"
+				<template v-else>
+					<SpendHistoryCard :history="history.data!" />
+					<SpendSplitCard :history="history.data!" />
+					<StatementCard
+						:export-url="exportUrl('statement')"
+						@open="showStatement = true"
 					/>
+					<PaymentHistoryCard
+						:export-url="exportUrl('payments')"
+						@open="showPayments = true"
+					/>
+					<RefundsCard />
+					<TaxSummaryCard />
 				</template>
-			</EmptyState>
-
-			<template v-else>
-				<SpendHistoryCard :history="history.data!" />
-				<SpendSplitCard :history="history.data!" />
-				<StatementCard
-					:export-url="exportUrl('statement')"
-					@open="showStatement = true"
-				/>
-				<PaymentHistoryCard
-					:export-url="exportUrl('payments')"
-					@open="showPayments = true"
-				/>
-				<RefundsCard />
-				<TaxSummaryCard />
-			</template>
 			</div>
 		</div>
 

@@ -14,14 +14,7 @@ import {
 	type Updater,
 	useVueTable,
 } from '@tanstack/vue-table'
-import {
-	Alert,
-	Button,
-	Checkbox,
-	Select,
-	Skeleton,
-	TextInput,
-} from 'frappe-ui'
+import { Alert, Button, Checkbox, Select, Skeleton, TextInput } from 'frappe-ui'
 import { computed, getCurrentInstance, h, ref } from 'vue'
 import ListViewPagination from './ListViewPagination.vue'
 import ListViewState from './ListViewState.vue'
@@ -618,7 +611,11 @@ const showListControls = computed(
              column filters run inside the table, so the source rows are
              still non-empty). Same dead-end, same way out. -->
 				<div v-else-if="!pageRows.length" role="row">
-					<div role="cell" :aria-colindex="1" :aria-colspan="visibleColumnCount">
+					<div
+						role="cell"
+						:aria-colindex="1"
+						:aria-colspan="visibleColumnCount"
+					>
 						<ListViewState
 							kind="filtered"
 							title="No matching results"
@@ -628,7 +625,12 @@ const showListControls = computed(
 					</div>
 				</div>
 
-				<div v-else role="rowgroup" class="lv-rows" :class="interactive ? 'lv-interactive' : ''">
+				<div
+					v-else
+					role="rowgroup"
+					class="lv-rows"
+					:class="interactive ? 'lv-interactive' : ''"
+				>
 					<div
 						v-for="row in pageRows"
 						:key="row.id"
@@ -707,7 +709,7 @@ const showListControls = computed(
 	position: relative;
 }
 .lv-rows > .lv-row + .lv-row::before {
-	content: '';
+	content: "";
 	position: absolute;
 	inset-inline: 0;
 	top: 0;
