@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 import frappe
+from frappe import _
 from frappe.query_builder import Order
 
-from central.utils.guards import require_capability, require_team_member
 from central.iam import can, expand_capabilities, get_all_capabilities, user_has_operator_bypass
+from central.utils.guards import require_capability, require_team_member
 
 # Team-roster reads + role management for the console's Team screens. Visibility
 # is "being a member" (any capability on the team); mutations delegate to the Team
@@ -16,12 +17,36 @@ from central.iam import can, expand_capabilities, get_all_capabilities, user_has
 @frappe.whitelist(methods=["GET"])
 @require_team_member
 def list_team_members(team: str) -> list[dict[str, Any]]:
-	"""Roster of the team the caller belongs to (user, role, status, owner flag)."""
+	"""Roster of the team the caller belongs to (user, full name, role grants, status,
+	owner flag) — one entry per user, folding their Team Member rows into a `roles` list."""
 	doc = frappe.get_doc("Team", team)
-	return [
-		{"user": m.user, "role": m.role, "status": m.status, "is_owner": m.user == doc.owner_user}
-		for m in doc.members
-	]
+	users = {
+		u.name: u
+		for u in frappe.get_all(
+			"User",
+			filters={"name": ["in", [m.user for m in doc.members]]},
+			fields=["name", "full_name", "user_image"],
+		)
+	}
+
+	roster: dict[str, dict[str, Any]] = {}
+	for m in doc.members:
+		entry = roster.get(m.user)
+		if entry is None:
+			user = users.get(m.user)
+			entry = {
+				"user": m.user,
+				"full_name": (user and user.full_name) or m.user,
+				"user_image": user and user.user_image,
+				"roles": [],
+				"status": m.status,
+				"is_owner": m.user == doc.owner_user,
+			}
+			roster[m.user] = entry
+		entry["roles"].append(
+			{"role": m.role, "resource_type": m.resource_type, "resource_name": m.resource_name}
+		)
+	return list(roster.values())
 
 
 @frappe.whitelist(methods=["GET"])
@@ -52,7 +77,13 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 	for row in rows:
 		entry = roles.get(row.name)
 		if entry is None:
-			entry = {"name": row.name, "role_name": row.role_name, "is_system": row.is_system, "team": row.team, "capabilities": []}
+			entry = {
+				"name": row.name,
+				"role_name": row.role_name,
+				"is_system": row.is_system,
+				"team": row.team,
+				"capabilities": [],
+			}
 			roles[row.name] = entry
 		if row.capability:
 			entry["capabilities"].append(row.capability)
@@ -81,8 +112,17 @@ def list_team_invitations(team: str, status: str | None = None) -> list[dict[str
 		"Team Invitation",
 		filters=filters,
 		fields=[
-			"name", "email", "role", "status", "invited_by",
-			"expires_on", "accepted_by", "accepted_at", "creation",
+			"name",
+			"email",
+			"role",
+			"resource_type",
+			"resource_name",
+			"status",
+			"invited_by",
+			"expires_on",
+			"accepted_by",
+			"accepted_at",
+			"creation",
 		],
 		order_by="creation desc",
 		limit=100,
@@ -123,7 +163,9 @@ def delete_team(team: str) -> dict[str, Any]:
 	references don't block the delete."""
 	for doctype in ("Asset", "Site"):
 		if frappe.db.exists(doctype, {"team": team}):
-			frappe.throw("Remove this team's servers and sites before deleting it.", frappe.ValidationError)
+			frappe.throw(
+				_("Remove this team's servers and sites before deleting it."), frappe.ValidationError
+			)
 	# force=True: clear the child links that would otherwise raise LinkExistsError on the Team delete.
 	for name in frappe.get_all("Team Invitation", {"team": team}, pluck="name"):
 		frappe.delete_doc("Team Invitation", name, ignore_permissions=True, force=True)
@@ -134,8 +176,21 @@ def delete_team(team: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def invite_team_member(team: str, email: str, role: str, expires_in_days: int = 7) -> str:
-	return frappe.get_doc("Team", team).invite_member(email, role, expires_in_days)
+def invite_team_member(
+	team: str,
+	email: str,
+	role: str,
+	expires_in_days: int = 7,
+	resource_type: str = "*",
+	resource_name: str | None = None,
+) -> str:
+	return frappe.get_doc("Team", team).invite_member(
+		email,
+		role,
+		expires_in_days,
+		resource_type=resource_type or "*",
+		resource_name=resource_name,
+	)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -161,9 +216,11 @@ def decline_invitation(invitation: str) -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
-def set_team_member_role(team: str, user: str, role: str) -> dict:
-	frappe.get_doc("Team", team).set_member_role(user, role)
-	return {"team": team, "user": user, "role": role}
+def set_team_member_roles(team: str, user: str, roles: list[dict] | str) -> dict:
+	if isinstance(roles, str):
+		roles = frappe.parse_json(roles)  # the console posts a JSON-encoded array
+	frappe.get_doc("Team", team).set_member_roles(user, roles)
+	return {"team": team, "user": user, "roles": roles}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -187,7 +244,7 @@ def create_custom_role(team: str, role_name: str, capabilities: list | str) -> d
 	valid = set(get_all_capabilities())
 	picked = [c for c in capabilities if c in valid]
 	if not picked:
-		frappe.throw("Pick at least one capability.", frappe.ValidationError)
+		frappe.throw(_("Pick at least one capability."), frappe.ValidationError)
 	# Persist the implied dependencies too (e.g. server:create pulls in server:view +
 	# cluster:view), so the saved role is usable and matches what enforcement grants.
 	rows = [{"capability": c} for c in expand_capabilities(picked) if c in valid]
@@ -210,13 +267,13 @@ def delete_custom_role(role: str) -> dict:
 	refuses system roles and roles still referenced by a member or pending invite."""
 	doc = frappe.get_doc("Team Role", role)
 	if doc.is_system:
-		frappe.throw("System roles cannot be deleted.", frappe.ValidationError)
+		frappe.throw(_("System roles cannot be deleted."), frappe.ValidationError)
 	if not can(frappe.session.user, doc.team, "team:manage_members") and not user_has_operator_bypass():
-		frappe.throw("You can't manage roles for this team.", frappe.PermissionError)
+		frappe.throw(_("You can't manage roles for this team."), frappe.PermissionError)
 	if frappe.db.exists("Team Member", {"role": role}):
-		frappe.throw("Reassign members off this role before deleting it.", frappe.ValidationError)
+		frappe.throw(_("Reassign members off this role before deleting it."), frappe.ValidationError)
 	if frappe.db.exists("Team Invitation", {"role": role, "status": "Pending"}):
-		frappe.throw("A pending invitation still uses this role.", frappe.ValidationError)
+		frappe.throw(_("A pending invitation still uses this role."), frappe.ValidationError)
 	# Authorized above; the Team Role doctype grants delete only to System Manager.
 	frappe.delete_doc("Team Role", role, ignore_permissions=True)
 	return {"role": role, "deleted": True}

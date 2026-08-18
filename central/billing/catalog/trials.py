@@ -13,6 +13,17 @@ expiry reuses the suspend directive on the entitlement-token channel.
 """
 
 import frappe
+from frappe import _
+
+
+def trial_plan_names() -> set[str] | None:
+	"""Active plans an admin has flagged available on trial, or None when none are.
+
+	None means "no trial-specific narrowing" — every otherwise-eligible plan
+	qualifies — the same contract the old `trial_plans` site-config list carried
+	when it was unset. Flag specific plans to restrict; flag none to leave open."""
+	names = set(frappe.get_all("Plan", filters={"available_on_trial": 1, "is_active": 1}, pluck="name"))
+	return names or None
 
 
 def entry_tier() -> str | None:
@@ -60,7 +71,7 @@ def convert_to_paid(team: str, level: str | None = None):
 			limit=1,
 		)
 		if not paid:
-			frappe.throw("No paid tier level configured to convert into.", frappe.ValidationError)
+			frappe.throw(_("No paid tier level configured to convert into."), frappe.ValidationError)
 		level = paid[0].name
 
 	from central.billing.catalog import entitlements
@@ -86,8 +97,8 @@ def expire_trial(team: str, cluster_slices: dict | None = None) -> dict:
 	staged enforcement (#14). Running resources are not touched here — the
 	directive carries the intent.
 	"""
-	from central.billing.platform import notifications
 	from central.billing.catalog.entitlements import issue_token
+	from central.billing.platform import notifications
 
 	notifications.notify(team, "Trial Expiring", context={})
 	return issue_token(team, cluster_slices or {}, suspend=True)

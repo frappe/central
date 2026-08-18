@@ -5,11 +5,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
-from central.iam import can, user_has_operator_bypass
+from central.iam import can, clear_grants_cache, user_has_operator_bypass
 
 
 class Team(Document):
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -32,19 +31,36 @@ class Team(Document):
 			return
 		self.owner_user = self.owner_user or frappe.session.user
 		if not any(member.user == self.owner_user for member in self.members):
-			self.append("members", {"user": self.owner_user, "role": "Owner", "status": "Active"})
+			self.append(
+				"members",
+				{"user": self.owner_user, "role": "Owner", "resource_type": "*", "status": "Active"},
+			)
 
 	def validate(self) -> None:
+		self._absorb_wildcard_grants()
 		self._validate_unique_members()
 		self._validate_owner_membership()
 		self._validate_role_scope()
 		self._validate_changes()
 
+	def on_update(self) -> None:
+		# Team and member-row edits change resolved capabilities; drop the request-cached
+		# grants so later checks in this request see the new state.
+		clear_grants_cache()
+
 	def on_trash(self) -> None:
 		self._require_capability("team:delete")
+		clear_grants_cache()
 
-	@frappe.whitelist(methods=["POST"])
-	def invite_member(self, email: str, role: str, expires_in_days: int = 7) -> str:
+	# Internal; the HTTP surface is central.api.teams.invite_team_member.
+	def invite_member(
+		self,
+		email: str,
+		role: str,
+		expires_in_days: int = 7,
+		resource_type: str = "*",
+		resource_name: str | None = None,
+	) -> str:
 		self._require_capability("team:manage_members")
 		invitation = frappe.get_doc(
 			{
@@ -53,60 +69,165 @@ class Team(Document):
 				"email": email,
 				"role": role,
 				"expires_in_days": expires_in_days,
+				"resource_type": resource_type or "*",
+				"resource_name": resource_name,
 			}
 		)
 		invitation.insert()
 		return invitation.name
 
-	@frappe.whitelist(methods=["POST"])
-	def set_member_role(self, user: str, role: str) -> None:
+	# Internal; the HTTP surface is central.api.teams.set_team_member_roles.
+	def set_member_roles(self, user: str, roles: list[dict]) -> None:
+		"""Replace every non-Owner role grant `user` holds with `roles`, each a
+		{role, resource_type, resource_name} dict. Full-replace, not incremental,
+		to match the Manage Roles dialog's edit-then-save flow."""
 		self._require_capability("team:manage_members")
-		self._validate_member_change_target(user, role)
-		self._get_member(user).role = role
+		self._validate_member_change_target(user)
+		if not roles:
+			frappe.throw(_("A member must hold at least one role."))
+		for grant in roles:
+			if grant.get("role") == "Owner":
+				frappe.throw(_("Use Transfer Ownership to assign the Owner role."))
+
+		existing = self._get_member_rows(user)
+		if not existing:
+			frappe.throw(_("User {0} is not a member of this team.").format(user))
+		status = existing[0].status
+
+		for row in existing:
+			self.remove(row)
+		for grant in roles:
+			self.append(
+				"members",
+				{
+					"user": user,
+					"role": grant["role"],
+					"resource_type": grant.get("resource_type") or "*",
+					"resource_name": grant.get("resource_name"),
+					"status": status,
+				},
+			)
 		self.save()
 
-	@frappe.whitelist(methods=["POST"])
+		from central.notification.engine import dispatch
+
+		dispatch(
+			team=self.name,
+			event_type="role_change",
+			message=", ".join(g["role"] for g in roles),
+			affected_user=user,
+		)
+
+	# Internal; the HTTP surface is central.api.teams.set_team_member_status.
 	def set_member_status(self, user: str, status: str) -> None:
 		self._require_capability("team:manage_members")
 		if status not in {"Active", "Suspended"}:
 			frappe.throw(_("Invalid team member status."))
 		self._validate_member_change_target(user)
-		self._get_member(user).status = status
+		rows = self._get_member_rows(user)
+		if not rows:
+			frappe.throw(_("User {0} is not a member of this team.").format(user))
+		for row in rows:
+			row.status = status
 		self.save()
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.remove_team_member.
 	def remove_member(self, user: str) -> None:
 		self._require_capability("team:manage_members")
 		self._validate_member_change_target(user)
-		self.remove(self._get_member(user))
+		rows = self._get_member_rows(user)
+		if not rows:
+			frappe.throw(_("User {0} is not a member of this team.").format(user))
+		for row in rows:
+			self.remove(row)
 		self.save()
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.transfer_team_ownership.
 	def transfer_ownership(self, user: str) -> None:
+		"""Owner is exclusive: promoting `user` drops every role grant they held
+		before, since Owner already covers everything those grants did."""
 		self._require_current_owner()
-		new_owner = self._get_member(user)
-		if new_owner.status != "Active":
+		new_owner_rows = self._get_member_rows(user)
+		if not any(row.status == "Active" for row in new_owner_rows):
 			frappe.throw(_("The new owner must be an active team member."))
 
-		current_owner = self._get_member(self.owner_user)
-		current_owner.role = "Admin"
-		new_owner.role = "Owner"
+		current_owner_row = self._get_member(self.owner_user, role="Owner")
+		current_owner_row.role = "Admin"
+
+		for row in new_owner_rows:
+			self.remove(row)
+		self.append(
+			"members",
+			{"user": user, "role": "Owner", "resource_type": "*", "status": "Active"},
+		)
 		self.owner_user = user
 		self.flags.transferring_ownership = True
 		self.save()
 
-	def add_member_from_invitation(self, user: str, role: str) -> None:
+	def add_member_from_invitation(
+		self,
+		user: str,
+		role: str,
+		resource_type: str = "*",
+		resource_name: str | None = None,
+	) -> None:
 		if any(member.user == user for member in self.members):
 			return
-		self.append("members", {"user": user, "role": role, "status": "Active"})
+		self.append(
+			"members",
+			{
+				"user": user,
+				"role": role,
+				"resource_type": resource_type or "*",
+				"resource_name": None if (resource_type or "*") == "*" else resource_name,
+				"status": "Active",
+			},
+		)
 		self.flags.from_team_invitation = True
 		# The accepted invitation authorizes this write before the invitee is a member.
 		self.save(ignore_permissions=True)
 
+		from central.notification.engine import dispatch
+
+		dispatch(
+			team=self.name,
+			event_type="member_joined",
+			message=user,
+		)
+
+	def _absorb_wildcard_grants(self) -> None:
+		"""A role granted on all resources ("*") subsumes the same role on any
+		specific resource, so holding both is contradictory — the narrow row
+		grants nothing and reads as less access than the member actually has.
+		Saves normalize silently: the wildcard stays, its shadowed rows go."""
+		wildcards = self._wildcard_keys(self)
+		shadowed = [row for row in self.members if self._is_shadowed(row, wildcards)]
+		for row in shadowed:
+			self.remove(row)
+
+	@staticmethod
+	def _wildcard_keys(doc) -> set[tuple[str, str]]:
+		return {(row.user, row.role) for row in doc.members if row.resource_type == "*"}
+
+	@staticmethod
+	def _is_shadowed(row, wildcards: set[tuple[str, str]]) -> bool:
+		return row.resource_type != "*" and (row.user, row.role) in wildcards
+
+	@staticmethod
+	def _effective_grants(doc) -> list:
+		"""Member rows minus the ones a wildcard grant absorbs — the state a save
+		normalizes to. Change detection compares this on both sides, so dropping
+		rows that were already shadowed in storage doesn't read as a member edit
+		and block a metadata-only save for someone without team:manage_members."""
+		wildcards = Team._wildcard_keys(doc)
+		return [row for row in doc.members if not Team._is_shadowed(row, wildcards)]
+
 	def _validate_unique_members(self) -> None:
-		users = [row.user for row in self.members if row.user]
-		if len(users) != len(set(users)):
-			frappe.throw(_("A user can appear only once in a team."))
+		grants = [
+			(row.user, row.role, row.resource_type, row.resource_name) for row in self.members if row.user
+		]
+		if len(grants) != len(set(grants)):
+			frappe.throw(_("A member cannot hold the same role on the same resource twice."))
 
 	def _validate_owner_membership(self) -> None:
 		if not self.owner_user:
@@ -157,8 +278,8 @@ class Team(Document):
 		)
 
 	def _validate_sensitive_member_changes(self, previous) -> None:
-		before = {member.user: (member.role, member.status) for member in previous.members}
-		after = {member.user: (member.role, member.status) for member in self.members}
+		before = self._grants_by_user(previous)
+		after = self._grants_by_user(self)
 
 		if self.owner_user != previous.owner_user or before.get(previous.owner_user) != after.get(
 			previous.owner_user
@@ -169,24 +290,34 @@ class Team(Document):
 			changed = before.get(user) != after.get(user)
 			if changed and user == frappe.session.user and not self.flags.transferring_ownership:
 				frappe.throw(_("You cannot change your own team membership."), frappe.PermissionError)
-			before_role = before.get(user, (None, None))[0]
-			after_role = after.get(user, (None, None))[0]
-			if changed and (before_role == "Owner" or after_role == "Owner"):
+			before_roles = {grant[0] for grant in before.get(user, frozenset())}
+			after_roles = {grant[0] for grant in after.get(user, frozenset())}
+			if changed and ("Owner" in before_roles or "Owner" in after_roles):
 				self._require_current_owner(previous.owner_user)
 
-	def _validate_member_change_target(self, user: str, role: str | None = None) -> None:
+	@staticmethod
+	def _grants_by_user(doc) -> dict[str, frozenset]:
+		grants: dict[str, set] = {}
+		for member in Team._effective_grants(doc):
+			grants.setdefault(member.user, set()).add(
+				(member.role, member.resource_type, member.resource_name, member.status)
+			)
+		return {user: frozenset(rows) for user, rows in grants.items()}
+
+	def _validate_member_change_target(self, user: str) -> None:
 		if user == frappe.session.user and not self._is_operator():
 			frappe.throw(_("You cannot change your own team membership."), frappe.PermissionError)
 		if user == self.owner_user:
 			frappe.throw(_("Transfer ownership before changing the current owner."))
-		if role == "Owner":
-			frappe.throw(_("Use Transfer Ownership to assign the Owner role."))
 
-	def _get_member(self, user: str):
+	def _get_member(self, user: str, role: str | None = None):
 		for member in self.members:
-			if member.user == user:
+			if member.user == user and (role is None or member.role == role):
 				return member
 		frappe.throw(_("User {0} is not a member of this team.").format(user))
+
+	def _get_member_rows(self, user: str) -> list:
+		return [member for member in self.members if member.user == user]
 
 	def _require_capability(self, capability: str) -> None:
 		if not self._is_operator() and not can(frappe.session.user, self.name, capability):
@@ -197,8 +328,11 @@ class Team(Document):
 			frappe.throw(_("Only the current team owner can do this."), frappe.PermissionError)
 
 	@staticmethod
-	def _member_state(doc) -> list[tuple[str, str, str]]:
-		return sorted((member.user, member.role, member.status) for member in doc.members)
+	def _member_state(doc) -> list[tuple[str, str, str, str, str]]:
+		return sorted(
+			(member.user, member.role, member.resource_type, member.resource_name or "", member.status)
+			for member in Team._effective_grants(doc)
+		)
 
 	@staticmethod
 	def _is_operator() -> bool:

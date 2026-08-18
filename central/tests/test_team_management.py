@@ -8,15 +8,15 @@ from central.api.identity import my_invitations
 from central.api.teams import (
 	create_custom_role,
 	create_team,
+	decline_invitation,
 	delete_custom_role,
 	delete_team,
-	decline_invitation,
 	invite_team_member,
 	list_team_invitations,
 	rename_team,
 	resend_invitation,
 	revoke_invitation,
-	set_team_member_role,
+	set_team_member_roles,
 	transfer_team_ownership,
 )
 from central.central.doctype.team_invitation.team_invitation import expire_pending_invitations
@@ -39,6 +39,23 @@ def create_user(email: str) -> str:
 	return email
 
 
+def _ensure_event_type(event_type, **overrides):
+	frappe.db.delete("Notification Event Type", {"event_type": event_type})
+	defaults = {
+		"doctype": "Notification Event Type",
+		"event_type": event_type,
+		"category": "Team",
+		"severity": "Info",
+		"required_cap": "team:manage_members",
+		"in_app_title": "Notification",
+		"in_app_body": "{{ message }}",
+		"direct_recipients": "None",
+		"create_in_app": 0,
+	}
+	defaults.update(overrides)
+	return frappe.get_doc(defaults).insert(ignore_permissions=True)
+
+
 class TestTeamManagement(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -59,8 +76,80 @@ class TestTeamManagement(IntegrationTestCase):
 			}
 		).insert()
 
+		_ensure_event_type(
+			"member_invited",
+			direct_recipients="Affected User",
+			in_app_body="You have been invited to join {{ context.team_name }}.\n\nView invitation: {{ context.invitation_url }}",
+		)
+		_ensure_event_type("role_change", direct_recipients="Affected User")
+		_ensure_event_type("member_joined")
+
 	def tearDown(self):
 		frappe.set_user("Administrator")
+
+	def test_wildcard_grant_absorbs_same_role_resource_grants(self):
+		# "Developer on everything" plus "Developer on one server" is
+		# contradictory — the save keeps the wildcard and drops its shadow.
+		frappe.set_user(self.owner)
+		frappe.get_doc("Team", self.team.name).set_member_roles(
+			self.viewer,
+			[
+				{"role": "Developer", "resource_type": "*", "resource_name": None},
+				{"role": "Developer", "resource_type": "Server", "resource_name": "srv-x"},
+				{"role": "Billing", "resource_type": "Server", "resource_name": "srv-x"},
+			],
+		)
+
+		grants = [
+			(row.role, row.resource_type, row.resource_name or None)
+			for row in frappe.get_doc("Team", self.team.name).members
+			if row.user == self.viewer
+		]
+		self.assertIn(("Developer", "*", None), grants)
+		self.assertNotIn(("Developer", "Server", "srv-x"), grants)
+		# A different role scoped to the same resource is a real grant — kept.
+		self.assertIn(("Billing", "Server", "srv-x"), grants)
+
+	def test_shadowed_rows_do_not_block_a_metadata_only_save(self):
+		# A stored team can already hold a wildcard and its shadow — rows written
+		# before this rule existed. Normalizing them away on save is not a member
+		# edit, so someone holding only team:edit must still be able to rename.
+		frappe.set_user(self.owner)
+		editor = create_custom_role(self.team.name, "Editor Only", ["team:edit"])["role"]
+		frappe.get_doc("Team", self.team.name).set_member_roles(
+			self.viewer, [{"role": editor, "resource_type": "*"}]
+		)
+
+		# Written straight to the table: a normal save would absorb it on the way in.
+		frappe.set_user("Administrator")
+		frappe.get_doc(
+			{
+				"doctype": "Team Member",
+				"parenttype": "Team",
+				"parentfield": "members",
+				"parent": self.team.name,
+				"user": self.viewer,
+				"status": "Active",
+				"role": editor,
+				"resource_type": "Server",
+				"resource_name": "srv-x",
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user(self.viewer)  # holds team:edit, not team:manage_members
+		team = frappe.get_doc("Team", self.team.name)
+		team.team_name = "Renamed Team"
+		team.save()
+
+		saved = frappe.get_doc("Team", self.team.name)
+		grants = [
+			(row.role, row.resource_type, row.resource_name or None)
+			for row in saved.members
+			if row.user == self.viewer
+		]
+		self.assertEqual(saved.team_name, "Renamed Team")
+		self.assertIn((editor, "*", None), grants)
+		self.assertNotIn((editor, "Server", "srv-x"), grants)
 
 	def test_owner_invites_existing_user_and_user_accepts(self):
 		frappe.set_user(self.owner)
@@ -80,14 +169,13 @@ class TestTeamManagement(IntegrationTestCase):
 	def test_invitation_uses_email_template(self):
 		frappe.set_user(self.owner)
 
-		with patch("central.central.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
+		with patch("central.notification.engine.frappe.sendmail") as sendmail:
 			invitation_name = frappe.get_doc("Team", self.team.name).invite_member(self.invitee, "Developer")
 
 		message = sendmail.call_args.kwargs["message"]
-		self.assertIn("Join Managed Team", message)
-		self.assertIn("Developer", message)
+		self.assertIn("You have been invited to join Managed Team", message)
 		self.assertIn(f"/dashboard/invitations/{invitation_name}", message)
-		self.assertIn("View invitation", message)
+		self.assertIn("View invitation:", message)
 
 	def test_admin_can_invite_but_viewer_cannot(self):
 		frappe.set_user(self.admin)
@@ -166,12 +254,51 @@ class TestTeamManagement(IntegrationTestCase):
 		team = frappe.get_doc("Team", self.team.name)
 
 		with self.assertRaises(frappe.PermissionError):
-			team.set_member_role(self.admin, "Developer")
+			team.set_member_roles(self.admin, [{"role": "Developer", "resource_type": "*"}])
 		with self.assertRaises(frappe.ValidationError):
-			team.set_member_role(self.viewer, "Owner")
+			team.set_member_roles(self.viewer, [{"role": "Owner", "resource_type": "*"}])
 
-		team.set_member_role(self.viewer, "Developer")
+		team.set_member_roles(self.viewer, [{"role": "Developer", "resource_type": "*"}])
 		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
+
+	def test_member_can_hold_multiple_roles_with_unioned_capabilities(self):
+		# Proves the IAM engine needed no changes: resolve_user_grants already
+		# keys grants by (team, role) and unions capabilities across every
+		# Team Member row a user holds, so adding a second role grant is enough.
+		frappe.set_user(self.owner)
+		team = frappe.get_doc("Team", self.team.name)
+		billing_only = create_custom_role(self.team.name, "Billing Only", ["server:view"])["role"]
+
+		team.set_member_roles(
+			self.viewer,
+			[
+				{"role": billing_only, "resource_type": "*"},
+				{"role": "Developer", "resource_type": "Server", "resource_name": "some-server"},
+			],
+		)
+
+		self.assertTrue(can(self.viewer, self.team.name, "server:view"))
+		self.assertTrue(can(self.viewer, self.team.name, "server:create"))
+
+	def test_duplicate_role_resource_grant_is_rejected(self):
+		frappe.set_user(self.owner)
+		team = frappe.get_doc("Team", self.team.name)
+
+		with self.assertRaises(frappe.ValidationError):
+			team.set_member_roles(
+				self.viewer,
+				[
+					{"role": "Developer", "resource_type": "*"},
+					{"role": "Developer", "resource_type": "*"},
+				],
+			)
+
+	def test_member_must_keep_at_least_one_role(self):
+		frappe.set_user(self.owner)
+		team = frappe.get_doc("Team", self.team.name)
+
+		with self.assertRaises(frappe.ValidationError):
+			team.set_member_roles(self.viewer, [])
 
 	def test_only_owner_can_transfer_ownership(self):
 		frappe.set_user(self.admin)
@@ -210,6 +337,29 @@ class TestTeamManagement(IntegrationTestCase):
 		frappe.set_user(self.viewer)
 		with self.assertRaises(frappe.PermissionError):
 			list_team_invitations(self.team.name)
+
+	def test_invite_can_scope_role_to_a_resource(self):
+		frappe.set_user(self.owner)
+		name = invite_team_member(
+			self.team.name,
+			self.invitee,
+			"Developer",
+			resource_type="Server",
+			resource_name="srv-acme",
+		)
+
+		invitation = frappe.get_doc("Team Invitation", name)
+		self.assertEqual(invitation.resource_type, "Server")
+		self.assertEqual(invitation.resource_name, "srv-acme")
+
+		frappe.set_user(self.invitee)
+		invitation.accept()
+
+		team = frappe.get_doc("Team", self.team.name)
+		grant = team._get_member(self.invitee)
+		self.assertEqual(grant.role, "Developer")
+		self.assertEqual(grant.resource_type, "Server")
+		self.assertEqual(grant.resource_name, "srv-acme")
 
 	def test_resend_invitation_extends_expiry_and_re_emails(self):
 		frappe.set_user(self.owner)
@@ -267,13 +417,29 @@ class TestTeamManagement(IntegrationTestCase):
 			delete_custom_role("Viewer")
 
 		# In use by a member -> refused until reassigned.
-		set_team_member_role(self.team.name, self.viewer, role)
+		set_team_member_roles(self.team.name, self.viewer, [{"role": role, "resource_type": "*"}])
 		with self.assertRaises(frappe.ValidationError):
 			delete_custom_role(role)
 
-		set_team_member_role(self.team.name, self.viewer, "Viewer")
+		set_team_member_roles(self.team.name, self.viewer, [{"role": "Viewer", "resource_type": "*"}])
 		self.assertTrue(delete_custom_role(role)["deleted"])
 		self.assertFalse(frappe.db.exists("Team Role", role))
+
+	def test_two_custom_roles_get_distinct_names(self):
+		# Regression: Team Role.autoname was `format:TEAM-ROLE-.#####`, which the
+		# format: handler left as the literal string, so the FIRST custom role on a
+		# site inserted and the SECOND raised DuplicateEntryError. Create two in one
+		# test (each other test creates at most one and rolls back, hiding the bug).
+		frappe.set_user(self.owner)
+		first = create_custom_role(self.team.name, "Role One", ["server:view"])["role"]
+		second = create_custom_role(self.team.name, "Role Two", ["server:snapshot"])["role"]
+
+		self.assertNotEqual(first, second)
+		self.assertTrue(first.startswith("TEAM-ROLE-"))
+		self.assertTrue(second.startswith("TEAM-ROLE-"))
+		# The malformed literal must never be a stored name.
+		self.assertNotEqual(first, "TEAM-ROLE-.#####")
+		self.assertNotEqual(second, "TEAM-ROLE-.#####")
 
 	def test_rename_team_needs_team_edit(self):
 		frappe.set_user(self.admin)
@@ -319,3 +485,17 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertTrue(delete_team(team)["deleted"])
 		self.assertFalse(frappe.db.exists("Team", team))
 		self.assertFalse(frappe.db.exists("Team Invitation", invite))
+
+
+class TestTeamsSurfaceStaysSingleDoor(IntegrationTestCase):
+	"""central.api.teams is the sole HTTP door for team/invitation mutations; the
+	doc methods it delegates to stay internal. Re-whitelisting one would recreate a
+	double surface (the bug this guards)."""
+
+	def test_delegated_doc_methods_are_not_whitelisted(self):
+		from central.central.doctype.team.team import Team
+		from central.central.doctype.team_invitation.team_invitation import TeamInvitation
+
+		for method in (Team.invite_member, TeamInvitation.accept, TeamInvitation.revoke):
+			with self.subTest(method=method.__qualname__), self.assertRaises(frappe.PermissionError):
+				frappe.is_whitelisted(method)

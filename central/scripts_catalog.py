@@ -36,10 +36,6 @@ def scripts_directory() -> Path:
 	return _repo_root() / "scripts"
 
 
-def allowed_scripts() -> list[str]:
-	return sorted(HUB_SCRIPTS)
-
-
 def resolve(script: str) -> Path:
 	"""Locate a hub script under `central/scripts/`. Raises ValueError for anything
 	not in `HUB_SCRIPTS` (the privileged-runner gate) and FileNotFoundError if the

@@ -98,12 +98,12 @@ terminal (current-month) settlement/refund/dunning path, plus its historical mon
 
 | Slug | Tier | Cur. | Scenario | Resources | Resize | Collection mode | Metered services |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `northwind` | t3 | USD | `bank_pending` | 12-instance fleet (2 regions) | — | Stripe Auto | AI 260k, PDF 45k |
-| `initech` | t2 | USD | `partial_card` | 4vCPU + 2vCPU (+ composed) | — | Stripe Auto | Email 130k |
-| `soylent` | t1 | USD | `dispute` | 2vCPU | — | Stripe Auto | — |
-| `globex` | t1 | USD | `fallback` | 2vCPU | — | Stripe Auto | — |
+| `northwind` | t3 | USD | `bank_pending` | 12-instance fleet (2 regions) | — | Auto Charge | AI 260k, PDF 45k |
+| `initech` | t2 | USD | `partial_card` | 4vCPU + 2vCPU (+ composed) | — | Auto Charge | Email 130k |
+| `soylent` | t1 | USD | `dispute` | 2vCPU | — | Auto Charge | — |
+| `globex` | t1 | USD | `fallback` | 2vCPU | — | Auto Charge | — |
 | `harbor` | t0 | USD | `credits_full` | 1vCPU | same day | Prepaid | — |
-| `acme-corp` | t3 | INR | `grandfathered` | 8+2+1 vCPU (Mumbai) | within 24h | E-Mandate | AI 280k, Email 90k |
+| `acme-corp` | t3 | INR | `grandfathered` | 8+2+1 vCPU (Mumbai) | within 24h | Auto Charge | AI 280k, Email 90k |
 | `umbrella` | t2 | INR | `overdue` | 4vCPU + 2vCPU (+ composed) | — | Manual Checkout | PDF 75k |
 | `stark-ind` | t1 | INR | `retry` | 2vCPU | — | Manual Checkout | Email 90k |
 | `hooli` | t1 | INR | `refund_wallet` | 1vCPU | — | Manual Checkout | — |
@@ -138,11 +138,11 @@ Matches `billing/payments/refunds.py`:
   double charge refunded in full (`globex`). A full source refund flips the attempt to `Refunded`.
 - **Partial overcharges always go to the wallet** as credit (`hooli`), applied on the next invoice.
 
-### Settlement sources (ADR 0005, #50 collection modes)
+### Settlement sources (ADR 0022 collection modes)
 
-- **Stripe Auto** — saved-card autopay (the four USD card teams).
-- **E-Mandate** — Razorpay UPI Autopay ≤ ₹15k silent ceiling; over it trips **Action Required**
-  (`acme-corp` — its open invoice is over the ceiling, so the banner reads Action Required).
+- **Auto Charge** — the saved method is debited off-session: a card for the four USD teams, a
+  UPI Autopay mandate for `acme-corp`, which is held to the ₹15k silent ceiling and trips
+  **Action Required** above it (its open invoice is over the ceiling, so the banner reads that).
 - **Manual Checkout** — customer pays via a checkout link.
 - **Prepaid** — settles from the wallet; no card on file.
 

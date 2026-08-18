@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 from frappe.utils import today
 
+from central.billing import settings as billing_settings
 from central.iam import get_user_team_names
 
 CENTRAL_USER_ROLE = "Central User"
@@ -26,7 +27,7 @@ def bootstrap_user_team(doc, method: str | None = None) -> None:
 				"doctype": "Team",
 				"team_name": _default_team_name(doc),
 				"owner_user": doc.name,
-				"is_staging_trial": 1 if frappe.conf.get("central_trial_provisioning") else 0,
+				"is_staging_trial": 1 if billing_settings.provision_teams_as_trial() else 0,
 				"members": [
 					{
 						"user": doc.name,

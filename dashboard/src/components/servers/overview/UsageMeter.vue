@@ -18,7 +18,7 @@ defineEmits<{ action: [] }>()
 				<button
 					v-if="actionLabel"
 					type="button"
-					class="grid size-4 place-items-center rounded text-ink-gray-5 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-8"
+					class="grid size-4 place-items-center rounded-4 text-ink-gray-5 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-8"
 					:aria-label="actionLabel"
 					@click="$emit('action')"
 				>
@@ -29,7 +29,7 @@ defineEmits<{ action: [] }>()
 		</div>
 		<div class="h-1 overflow-hidden rounded-full bg-surface-gray-2">
 			<div
-				class="h-full rounded-full bg-ink-gray-8 transition-[width] duration-300"
+				class="h-full rounded-full bg-surface-gray-10 transition-[width] duration-300"
 				:style="{ width: `${percent}%` }"
 			/>
 		</div>

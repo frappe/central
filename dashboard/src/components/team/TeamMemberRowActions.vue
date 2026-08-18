@@ -1,79 +1,57 @@
 <script setup lang="ts">
+import { type DropdownOptions } from 'frappe-ui'
 import { computed } from 'vue'
-import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
-import type { MemberStatus, TeamMemberRow, TeamRoleRow } from '@/types/api'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
+import type { TeamMemberRow } from '@/types/api'
 
 const props = defineProps<{
 	member: TeamMemberRow
-	roles: TeamRoleRow[]
 	canManage: boolean
+	/** Current user is the team owner — enables transfer on other members. */
+	isOwner: boolean
 	busy?: boolean
 }>()
 
 const emit = defineEmits<{
-	setRole: [user: string, role: string]
-	setStatus: [user: string, status: MemberStatus]
-	remove: [user: string]
+	manageAccess: [member: TeamMemberRow]
+	transferRequested: [member: TeamMemberRow]
+	removeRequested: [member: TeamMemberRow]
 }>()
 
-const assignableRoles = computed(() =>
-	props.roles.filter(
-		(role) => role.role_name !== 'Owner' && role.name !== props.member.role,
-	),
-)
-
 const options = computed<DropdownOptions>(() => {
-	if (!props.canManage || props.member.is_owner) return []
+	if (props.member.is_owner) return []
 
 	const items: DropdownOptions = []
-	if (assignableRoles.value.length) {
+
+	if (props.canManage) {
 		items.push({
-			group: 'Change role',
-			options: assignableRoles.value.map((role) => ({
-				label: role.role_name,
-				onClick: () => emit('setRole', props.member.user, role.name),
-			})),
+			label: 'Manage access',
+			icon: 'lucide-shield',
+			onClick: () => emit('manageAccess', props.member),
 		})
 	}
 
-	items.push({
-		group: 'Membership',
-		options: [
-			{
-				label: props.member.status === 'Active' ? 'Suspend' : 'Reactivate',
-				icon:
-					props.member.status === 'Active'
-						? 'lucide-circle-pause'
-						: 'lucide-circle-play',
-				onClick: () =>
-					emit(
-						'setStatus',
-						props.member.user,
-						props.member.status === 'Active' ? 'Suspended' : 'Active',
-					),
-			},
-			{
-				label: 'Remove',
-				icon: 'lucide-user-x',
-				theme: 'red',
-				onClick: () => emit('remove', props.member.user),
-			},
-		],
-	})
+	if (props.isOwner && props.member.status === 'Active') {
+		items.push({
+			label: 'Transfer ownership',
+			icon: 'lucide-crown',
+			onClick: () => emit('transferRequested', props.member),
+		})
+	}
+
+	if (props.canManage) {
+		items.push({
+			label: 'Remove from team',
+			icon: 'lucide-user-x',
+			theme: 'red',
+			onClick: () => emit('removeRequested', props.member),
+		})
+	}
+
 	return items
 })
 </script>
 
 <template>
-	<Dropdown v-if="options.length" :options="options" placement="right">
-		<template #trigger>
-			<Button
-				variant="ghost"
-				icon="lucide-ellipsis-vertical"
-				:loading="busy"
-				aria-label="Member actions"
-				@click.stop
-			/>
-		</template>
-	</Dropdown>
+	<RowActionsMenu :options="options" label="Member actions" :busy="busy" />
 </template>

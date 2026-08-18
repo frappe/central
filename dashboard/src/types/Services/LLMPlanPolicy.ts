@@ -1,6 +1,6 @@
 import { LLMPlanTier } from './LLMPlanTier'
 
-export interface LLMPlanPolicy{
+export interface LLMPlanPolicy {
 	name: string
 	creation: string
 	modified: string

@@ -17,11 +17,53 @@
   {
    "hidden": 0,
    "is_query_report": 0,
+   "label": "Billing Simulator",
+   "link_count": 0,
+   "link_to": "billing-simulator",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Billing Scenario",
+   "link_count": 0,
+   "link_to": "Billing Scenario",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
    "label": "Revenue & AR Reports",
    "link_count": 3,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Collection Outlook",
+   "link_count": 0,
+   "link_to": "Collection Outlook",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "dependencies": "Invoice"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "Billing Projection",
+   "link_count": 0,
+   "link_to": "Billing Projection",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link",
+   "dependencies": "Billing Projection Summary"
   },
   {
    "hidden": 0,
@@ -388,7 +430,7 @@
    "hidden": 0,
    "is_query_report": 0,
    "label": "Notifications",
-   "link_count": 3,
+   "link_count": 2,
    "link_type": "DocType",
    "onboard": 0,
    "type": "Card Break"
@@ -409,16 +451,6 @@
    "label": "Billing Notification Log",
    "link_count": 0,
    "link_to": "Billing Notification Log",
-   "link_type": "DocType",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "is_query_report": 0,
-   "label": "Notification Preference",
-   "link_count": 0,
-   "link_to": "Notification Preference",
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
@@ -520,9 +552,28 @@
    "link_type": "DocType",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Settings",
+   "link_count": 1,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Billing Settings",
+   "link_count": 0,
+   "link_to": "Billing Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-07-06 12:00:00.000000",
+ "modified": "2026-08-03 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Billing",

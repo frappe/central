@@ -1,0 +1,157 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-08-07 00:00:00.000000",
+ "description": "One cohort projection: what was asked for, what it cost, and whether it finished.",
+ "doctype": "DocType",
+ "editable_grid": 0,
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-08-07 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing Projection Batch",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "export": 1,
+   "share": 1,
+   "delete": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "fields": [
+  {
+   "fieldname": "as_of",
+   "fieldtype": "Date",
+   "label": "As Of",
+   "in_list_view": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "period_start",
+   "fieldtype": "Date",
+   "label": "Period Start"
+  },
+  {
+   "fieldname": "months",
+   "fieldtype": "Int",
+   "label": "Months",
+   "default": "1"
+  },
+  {
+   "fieldname": "column_break_state",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "batch_state",
+   "fieldtype": "Select",
+   "label": "State",
+   "options": "Queued\nRunning\nComplete\nPartial\nAborted",
+   "default": "Queued",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "started_at",
+   "fieldtype": "Datetime",
+   "label": "Started At"
+  },
+  {
+   "fieldname": "completed_at",
+   "fieldtype": "Datetime",
+   "label": "Completed At"
+  },
+  {
+   "fieldname": "section_break_scope",
+   "fieldtype": "Section Break",
+   "label": "Scope"
+  },
+  {
+   "fieldname": "scenario",
+   "fieldtype": "Link",
+   "label": "Scenario",
+   "options": "Billing Scenario",
+   "description": "Projected under this scenario's overrides instead of the live configuration."
+  },
+  {
+   "fieldname": "filters",
+   "fieldtype": "Code",
+   "label": "Filters",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "column_break_counts",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "teams_expected",
+   "fieldtype": "Int",
+   "label": "Teams Expected"
+  },
+  {
+   "fieldname": "teams_projected",
+   "fieldtype": "Int",
+   "label": "Teams Projected",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "estimated_seconds",
+   "fieldtype": "Float",
+   "label": "Estimated Seconds"
+  },
+  {
+   "fieldname": "section_break_sample",
+   "fieldtype": "Section Break",
+   "label": "Sampling"
+  },
+  {
+   "fieldname": "sampled",
+   "fieldtype": "Check",
+   "label": "Sampled",
+   "default": "0",
+   "description": "Figures are extrapolated from a sample, not measured across the cohort."
+  },
+  {
+   "fieldname": "sample_size",
+   "fieldtype": "Int",
+   "label": "Sample Size"
+  },
+  {
+   "fieldname": "column_break_note",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "note",
+   "fieldtype": "Small Text",
+   "label": "Note"
+  }
+ ],
+ "field_order": [
+  "as_of",
+  "period_start",
+  "months",
+  "column_break_state",
+  "batch_state",
+  "started_at",
+  "completed_at",
+  "section_break_scope",
+  "scenario",
+  "filters",
+  "column_break_counts",
+  "teams_expected",
+  "teams_projected",
+  "estimated_seconds",
+  "section_break_sample",
+  "sampled",
+  "sample_size",
+  "column_break_note",
+  "note"
+ ]
+}

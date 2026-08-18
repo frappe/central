@@ -18,10 +18,13 @@ class PlanConfigurator(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
+		from frappe.types import DF
+
 		from central.billing.doctype.plan_configurator_plan.plan_configurator_plan import PlanConfiguratorPlan
 		from central.billing.doctype.plan_configurator_rate.plan_configurator_rate import PlanConfiguratorRate
-		from central.billing.doctype.plan_configurator_simple_plan.plan_configurator_simple_plan import PlanConfiguratorSimplePlan
-		from frappe.types import DF
+		from central.billing.doctype.plan_configurator_simple_plan.plan_configurator_simple_plan import (
+			PlanConfiguratorSimplePlan,
+		)
 
 		base_disk_gb: DF.Float
 		base_rates: DF.Table[PlanConfiguratorRate]
@@ -29,14 +32,18 @@ class PlanConfigurator(Document):
 		billing_cycle: DF.Literal["Monthly", "Annual"]
 		builder: DF.ReadOnly | None
 		category: DF.Link
-		ceiling_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
+		ceiling_vcpu: DF.Literal[
+			"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"
+		]
 		is_active: DF.Check
 		memory_ratio: DF.Literal["1:2", "1:4", "1:6", "1:8"]
 		plan_name_prefix: DF.Data
 		provision_target: DF.ReadOnly | None
 		rungs: DF.Table[PlanConfiguratorPlan]
 		simple_plans: DF.Table[PlanConfiguratorSimplePlan]
-		start_vcpu: DF.Literal["1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"]
+		start_vcpu: DF.Literal[
+			"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8", "16", "32", "64", "128", "256", "512", "1024"
+		]
 		sub_category: DF.Link | None
 		template_name: DF.Data
 		transfer_step_gb: DF.Float
@@ -90,7 +97,7 @@ class PlanConfigurator(Document):
 			if currencies is None or r.currency in currencies
 		]
 		if not rows:
-			frappe.throw("Add at least one base rate (currency + price).")
+			frappe.throw(_("Add at least one base rate (currency + price)."))
 		return rows
 
 	@frappe.whitelist()
@@ -138,9 +145,9 @@ class PlanConfigurator(Document):
 		subset of plans. This picks where/what to ship; the specs are edited above."""
 		if self._builder() == "Simple":
 			if not self.simple_plans:
-				frappe.throw("Add at least one plan row, then generate.")
+				frappe.throw(_("Add at least one plan row, then generate."))
 		elif not self.rungs:
-			frappe.throw("Populate the rungs first, then edit and generate.")
+			frappe.throw(_("Populate the rungs first, then edit and generate."))
 		frappe.enqueue(
 			run_generation,
 			queue="long",
@@ -174,7 +181,7 @@ class PlanConfigurator(Document):
 	def _generate_vm_rungs(self, selected, cluster, currencies) -> dict:
 		rungs = [r for r in self.rungs if selected is None or r.plan_name in selected]
 		if not rungs:
-			frappe.throw("No rungs selected to generate.")
+			frappe.throw(_("No rungs selected to generate."))
 		result = configurator.generate_plans(
 			rungs=rungs,
 			billing_cycle=self.billing_cycle,
@@ -190,7 +197,7 @@ class PlanConfigurator(Document):
 	def _generate_simple(self, selected, cluster, currencies) -> dict:
 		rows = [r for r in self.simple_plans if selected is None or r.title in selected]
 		if not rows:
-			frappe.throw("No plans selected to generate.")
+			frappe.throw(_("No plans selected to generate."))
 		sub_category = self._resolved_sub_category()
 		created, skipped = [], []
 		for row in rows:

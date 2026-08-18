@@ -14,7 +14,7 @@ billing links; the executor (Grove) owns the runtime and mints the credentials.
 | **LLM Plan Policy** | The LLM access policy for one Billing Plan. | Maps that plan to its allowed model tiers. One policy per Plan. |
 | **LLM Plan Tier** | One allowed-tier row inside an LLM Plan Policy. | Not managed on its own. |
 | **Managed Service** | A team's activated add-on and the subscription that entitles it. | Requires an active subscription in the service's Plan Category. |
-| **Site Service Credential** | One site's provider credential and status for an active managed service. | Provider usage is grouped through active credentials and reported to Billing. |
+| **Service Credential** | A provider credential under a managed service, either per-`Site` (bench-delivered) or a team-level API key (`Team`, with a `label`), set by `subject_type`. | Provider usage is grouped through active credentials of both subject types and reported to Billing. |
 
 ## Billing setup for LLM Hosting
 

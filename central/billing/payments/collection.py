@@ -22,7 +22,7 @@ event-driven, not a synchronous try/except cascade:
 
 import frappe
 
-from central.billing.payments import charges
+from central.billing.payments import charges, decline
 
 
 def ordered_methods(team: str) -> list:
@@ -56,6 +56,30 @@ def next_method_for(invoice: str, team: str):
 	return None
 
 
+def _ask_for_another_method(inv) -> None:
+	"""Tell a customer we have run out of ways to charge them.
+
+	Only after something has actually been tried and refused. A team that has never
+	added a method is already being asked elsewhere (onboarding, the Action Required
+	banner), and this notification would be the third voice saying it.
+
+	The engine dedupes on unread notifications for the same event and invoice, so a
+	dunning run that re-enters here daily does not repeat itself.
+	"""
+	tried = frappe.get_all("Payment Attempt", filters={"invoice": inv.name, "status": "Failed"}, limit=1)
+	if not tried:
+		return
+
+	from central.billing.platform import notifications
+
+	notifications.notify(
+		inv.team,
+		"Add Payment Method",
+		reference_doctype="Invoice",
+		reference_name=inv.name,
+	)
+
+
 def collect_invoice(invoice: str) -> dict:
 	"""Charge the next untried method; rotate immediately on a synchronous decline.
 
@@ -77,13 +101,22 @@ def collect_invoice(invoice: str) -> dict:
 
 		method = next_method_for(invoice, inv.team)
 		if not method:
-			# Every method has failed (or there are none) — leave it for dunning.
+			# Every method has failed (or there are none) — leave it for dunning, and
+			# ask the customer for another way to pay. Off-session there is nobody to
+			# offer the other rail to in the moment, so the ask has to arrive as a
+			# notification instead (ADR 0022 §5, ADR 0023).
+			_ask_for_another_method(inv)
 			return {"collected": False, "reason": "no_method"}
 
 		result = charges.pay_invoice(invoice, method.name, method.gateway)
 
-		# A synchronous decline: rotate to the next method now (immediate fallback).
+		# A synchronous decline: rotate to the next method now (immediate fallback) —
+		# but only when the decline is final. An ambiguous failure may still settle at
+		# the gateway, and charging a second method on top of it pays one invoice
+		# twice; reconciliation resolves those instead (ADR 0022).
 		if result.get("status") == "Failed":
+			if not decline.is_terminal(result.get("failure_code")):
+				return {"collected": False, "reason": "ambiguous_failure", "attempt": result.get("attempt")}
 			continue
 		# Captured (awaiting webhook), in-flight, or a transient timeout: stop here.
 		return result

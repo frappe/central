@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Dropdown } from 'frappe-ui'
+import { computed } from 'vue'
 
 // A compact value dropdown over a discrete ladder (vCPU / RAM / Storage), styled as
 // a pill — the precise-picking companion to the slider (#84). Rungs past the
@@ -34,7 +34,7 @@ const current = computed(
 		<template #trigger>
 			<button
 				type="button"
-				class="flex items-center gap-1.5 rounded-md bg-surface-gray-2 px-3 py-1.5 text-p-sm font-medium text-ink-gray-8 hover:bg-surface-gray-3"
+				class="flex items-center gap-1.5 rounded-5 bg-surface-gray-2 px-3 py-1.5 text-p-sm font-medium text-ink-gray-8 hover:bg-surface-gray-3"
 			>
 				<span>{{ current }}</span>
 				<span

@@ -22,8 +22,14 @@ def execute():
 	for tt in frappe.get_all(
 		"Trust Tier",
 		fields=[
-			"name", "team", "level", "tier", "manual_override",
-			"max_spend", "promoted_at", "promotion_basis",
+			"name",
+			"team",
+			"level",
+			"tier",
+			"manual_override",
+			"max_spend",
+			"promoted_at",
+			"promotion_basis",
 		],
 	):
 		team = tt.team or tt.name

@@ -1,6 +1,6 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""Card Payment Method lifecycle (issue #05).
+r"""Card Payment Method lifecycle (issue #05).
 
 Adding a card is a two-step, gateway-mediated flow: the customer initiates
 setup (Stripe SetupIntent -> client secret), confirms with the card on the
@@ -17,7 +17,10 @@ adapter through the registry, keeping the gateway seam intact.
 """
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
+
+from central.billing.states import transition
 
 CARD_METHOD = "Card"
 
@@ -68,13 +71,15 @@ def ensure_gateway_customer(team: str, gateway: str, adapter, customer_id: str |
 
 	cid = adapter.create_customer(gateway_customer_info(team))  # external side-effect
 	try:
-		frappe.get_doc({
-			"doctype": "Gateway Customer",
-			"team": team,
-			"gateway": gateway,
-			"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
-			"gateway_customer_id": cid,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Gateway Customer",
+				"team": team,
+				"gateway": gateway,
+				"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
+				"gateway_customer_id": cid,
+			}
+		).insert(ignore_permissions=True)
 	except frappe.DuplicateEntryError:
 		# A concurrent setup minted+stored one first — use the stored id (and let
 		# the just-created duplicate at the gateway lie idle; harmless).
@@ -98,7 +103,12 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 	_discard_abandoned_setups(team, gateway)
 	adapter = _adapter(gateway)
 	gateway_customer_id = ensure_gateway_customer(team, gateway, adapter, gateway_customer_id)
-	handles = adapter.setup_payment_method(team, {"customer_id": gateway_customer_id})
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	ceiling = mandate_ceiling(team, gateway, currency)
+	handles = adapter.setup_payment_method(
+		team,
+		{"customer_id": gateway_customer_id, "currency": currency, "max_amount": ceiling},
+	)
 
 	method = frappe.get_doc(
 		{
@@ -109,10 +119,33 @@ def initiate_payment_method_setup(team: str, gateway: str, gateway_customer_id: 
 			"status": "Pending Validation",
 			"gateway_customer_id": gateway_customer_id,
 			"setup_reference": handles.get("setup_intent_id"),
+			"mandate_max_amount": ceiling,
+			"mandate_currency": currency if ceiling else None,
 		}
 	).insert(ignore_permissions=True)
 
 	return {**handles, "payment_method": method.name}
+
+
+def mandate_ceiling(team: str, gateway: str, currency: str | None) -> float | None:
+	"""What a card mandate in this currency is registered for, or None where the
+	rail needs no mandate.
+
+	The customer authenticates once against this number and the bank enforces it,
+	so it is the same ceiling the charge path checks: the regulatory limit on the
+	rail, held down by the team's trust tier where the tier is lower. Registering
+	anything higher would consent the customer to more than we may ever take.
+	"""
+	from central.billing.gateways import capabilities
+	from central.billing.payments import mandates
+
+	if not currency:
+		return None
+	ceiling = capabilities.silent_charge_ceiling(gateway, currency)
+	if ceiling is None:
+		return None
+	cap = frappe.utils.flt(mandates.team_cap(team))
+	return float(min(ceiling, cap)) if cap else float(ceiling)
 
 
 def _discard_abandoned_setups(team: str, gateway: str):
@@ -123,8 +156,10 @@ def _discard_abandoned_setups(team: str, gateway: str):
 	for name in frappe.get_all(
 		"Payment Method",
 		filters={
-			"team": team, "gateway": gateway,
-			"status": "Pending Validation", "gateway_method_id": ["in", [None, ""]],
+			"team": team,
+			"gateway": gateway,
+			"status": "Pending Validation",
+			"gateway_method_id": ["in", [None, ""]],
 		},
 		pluck="name",
 	):
@@ -138,6 +173,8 @@ def confirm_payment_method(
 	expiry_month: int | None = None,
 	expiry_year: int | None = None,
 	gateway_customer_id: str | None = None,
+	gateway_mandate_id: str | None = None,
+	card_network: str | None = None,
 ) -> dict:
 	"""Confirm a card the customer authorised on the frontend.
 
@@ -150,6 +187,11 @@ def confirm_payment_method(
 	method.gateway_method_id = gateway_method_id
 	if gateway_customer_id:
 		method.gateway_customer_id = gateway_customer_id
+	if gateway_mandate_id:
+		method.gateway_mandate_id = gateway_mandate_id
+	if card_network:
+		# What the gateway reported the card to be. We never read the number ourselves.
+		method.card_network = card_network.title()
 	if display_label:
 		method.display_label = display_label
 	if expiry_month:
@@ -159,11 +201,11 @@ def confirm_payment_method(
 	method.save(ignore_permissions=True)
 
 	if not _adapter(method.gateway).validate_payment_method(method):
-		method.status = "Failed"
+		transition(method, "Failed", actor=frappe.session.user, reason="validation failed")
 		method.save(ignore_permissions=True)
 		return method
 
-	method.status = "Active"
+	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.save(ignore_permissions=True)
 	densify_priorities(method.team)
@@ -214,7 +256,7 @@ def set_default_payment_method(payment_method: str) -> Document:
 	"""Make this the team's primary (priority 0). Only an active method can be."""
 	method = frappe.get_doc("Payment Method", payment_method)
 	if method.status != "Active":
-		frappe.throw("Only an active payment method can be the primary.", frappe.ValidationError)
+		frappe.throw(_("Only an active payment method can be the primary."), frappe.ValidationError)
 	# Sort it ahead of everyone, then re-densify resolves the rest.
 	frappe.db.set_value("Payment Method", method.name, "priority", -1, update_modified=False)
 	densify_priorities(method.team)
@@ -227,7 +269,7 @@ def reorder_payment_methods(team: str, ordered: list | str) -> dict:
 		ordered = frappe.parse_json(ordered)
 	for i, name in enumerate(ordered):
 		if frappe.db.get_value("Payment Method", name, "team") != team:
-			frappe.throw("Method does not belong to this team.", frappe.ValidationError)
+			frappe.throw(_("Method does not belong to this team."), frappe.ValidationError)
 		frappe.db.set_value("Payment Method", name, "priority", i, update_modified=False)
 	densify_priorities(team)
 	return {"team": team, "ordered": ordered}
@@ -235,15 +277,28 @@ def reorder_payment_methods(team: str, ordered: list | str) -> dict:
 
 def delete_payment_method(payment_method: str) -> dict:
 	"""Remove a payment method and re-densify so the team keeps a dense, primary-
-	first order (or none if it was the last)."""
+	first order (or none if it was the last).
+
+	A mandate is revoked at the gateway FIRST. Deleting only our row would leave a
+	standing debit permission alive at the bank while the customer believes they
+	have withdrawn it — the one failure here that costs them money rather than
+	convenience. If the gateway refuses the revoke we keep the row, so the method
+	the customer can still see is the one the bank still honours.
+	"""
+	from central.billing.payments import mandates
+
 	method = frappe.get_doc("Payment Method", payment_method)
 	team = method.team
+	revoked = False
+	if method.method_type == mandates.MANDATE_METHOD and method.gateway_method_id:
+		mandates.cancel_mandate(payment_method)
+		revoked = True
 	frappe.delete_doc("Payment Method", method.name, ignore_permissions=True)
 	densify_priorities(team)
 	new_default = frappe.db.get_value(
 		"Payment Method", {"team": team, "priority": 0, "status": "Active"}, "name"
 	)
-	return {"deleted": payment_method, "new_default": new_default}
+	return {"deleted": payment_method, "new_default": new_default, "mandate_revoked": revoked}
 
 
 def expire_payment_methods(now=None) -> dict:
@@ -265,10 +320,15 @@ def expire_payment_methods(now=None) -> dict:
 			continue
 		month_start = frappe.utils.getdate(f"{int(m.expiry_year):04d}-{int(m.expiry_month):02d}-01")
 		if frappe.utils.get_last_day(month_start) < today:
-			frappe.db.set_value("Payment Method", m.name, "status", "Expired")
+			md = frappe.get_doc("Payment Method", m.name)
+			transition(md, "Expired", actor="scheduler", reason="card expiry date passed")
+			md.save(ignore_permissions=True)
 			expired.append(m.name)
 			notifications.notify(
-				m.team, "Card Expiry", context={"label": m.display_label or "Card"},
-				reference_doctype="Payment Method", reference_name=m.name,
+				m.team,
+				"Card Expiry",
+				context={"label": m.display_label or "Card"},
+				reference_doctype="Payment Method",
+				reference_name=m.name,
 			)
 	return {"expired": expired}

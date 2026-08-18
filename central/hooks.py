@@ -12,6 +12,7 @@ fixtures = [
 	"Trust Tier Level",
 	{"dt": "Team Role", "filters": [["is_system", "=", 1]]},
 	{"dt": "Role", "filters": [["name", "in", ["Central User"]]]},
+	"Notification Event Type",
 ]
 
 # The TypeScript UI owns the product route.
@@ -114,6 +115,8 @@ website_user_home_page = "dashboard"
 after_install = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
+	"central.billing.settings.ensure_welcome_credit_amounts",
+	"central.billing.gateways.setup.ensure_gateway_records",
 ]
 
 # Uninstallation
@@ -185,32 +188,28 @@ scheduler_events = {
 		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
 		# backstop that corrects drift the event push (central.api.atlas.event) missed.
 		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
-		# Billing: the monthly run. Drafting fires once, on the 1st, and fans the
-		# just-closed month out as one page job per team. Collection is NOT a second
-		# tick a fixed few hours later — at scale drafting may still be running then,
-		# and a one-shot scan would collect only what existed at that instant and
-		# orphan the rest. It is a daily sweep instead (see the `daily` list below):
-		# `collect_due_invoices` drains every Draft whose month has closed, re-running
-		# until nothing is owed. Rating is heavy and local, collection slow and
-		# external, so they stay separate ticks.
-		"0 1 1 * *": ["central.billing.revenue.invoicing.draft_monthly_invoices"],
+		# Resource actions: resolve any action stuck in flight because its confirming event
+		# was lost — mark it Succeeded if the mirror already reached the goal, else Timed Out.
+		"*/5 * * * *": ["central.central.doctype.resource_action.resource_action.sweep_stale"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
-		# Billing: collect the monthly run. A daily sweep of every Draft whose month
-		# has closed (period_end <= the just-closed month), fanned out as page jobs.
-		# Re-runs harmlessly: a settled draft drops out of the scan, so once the run
-		# has drained this is a cheap indexed no-op. Runs before dunning so a fresh
-		# charge is attempted before any retry ladder is considered.
-		"central.billing.revenue.invoicing.collect_due_invoices",
+		# Central: prune finished Host Task rows (unbounded stdout/stderr longtext).
+		"central.host_task.prune_host_tasks",
 		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
 		# and pruning Payment Attempt / Webhook Event logs.
 		"central.billing.revenue.dunning.run_dunning",
 		"central.billing.payments.charges.cleanup_payment_logs",
+		"central.billing.projection.batch.prune",
 		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
 		"central.billing.payments.emandate.run_emandate_cycle",
 		# Backfill Subscriptions for any Running Asset missing an active one.
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
+		# Write off promotional credit that has run out of time. Ordered after
+		# collection on purpose: credit that was still good this morning settles
+		# today's invoice before it is swept, so the customer gets the full benefit
+		# of the last day they were given.
+		"central.billing.revenue.credits.run_credit_expiry",
 		# Services (LLM): refresh the model catalog from the Grove backend.
 		"central.services.llm.sync_models",
 		# Assert the money invariants that no DB constraint can hold (they span
@@ -229,8 +228,15 @@ scheduler_events = {
 		# hanging for up to a day — and the key it needs to re-send safely expires in
 		# about one (ADR 0017).
 		"central.billing.payments.reconciliation.run_reconciliation",
+		# The sweeps above detect what they cannot fix; this is what pages a human
+		# about it — unresolved invariants, failed webhooks, attempts still in flight.
+		"central.billing.platform.alerts.run_operator_alerts",
 	],
 	"monthly": [
+		# Billing: on the 1st, bill the just-closed month end-to-end for every team —
+		# draft one consolidated invoice per team, then open + collect (credits→card).
+		# The production trigger for the two-phase invoicing (#09/#10).
+		"central.billing.revenue.invoicing.run_monthly_billing",
 		# Billing: cards expire at the end of their printed month; flip lapsed ones.
 		"central.billing.payments.payments.expire_payment_methods",
 	],
@@ -245,6 +251,7 @@ scheduler_events = {
 after_migrate = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
+	"central.billing.gateways.setup.ensure_gateway_records",
 ]
 
 # Testing
@@ -255,6 +262,8 @@ after_migrate = [
 before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
+	"central.billing.settings.ensure_welcome_credit_amounts",
+	"central.billing.gateways.setup.ensure_gateway_records",
 ]
 
 # Extend DocType Class
@@ -331,6 +340,7 @@ before_request = ["central.oauth.install_oauth_claim_patch"]
 permission_query_conditions = {
 	"Asset": "central.permissions.asset_query_conditions",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
+	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
@@ -340,6 +350,7 @@ permission_query_conditions = {
 has_permission = {
 	"Asset": "central.permissions.asset_has_permission",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
+	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",

@@ -15,23 +15,31 @@ residual shortfall at settlement flows into dunning.
 """
 
 import frappe
+from frappe import _
 
+from central.billing import settings
 from central.billing.revenue import credits
 
 AUTOPAY_METHODS = ("Card", "UPI Autopay")
-FORECAST_NOTIFY_RATIO = 0.8
 
 
-def settlement_sources(team: str) -> dict:
-	"""What the team can settle with: active autopay method and/or wallet credit."""
-	has_autopay = bool(
-		frappe.get_all(
-			"Payment Method",
-			filters={"team": team, "method_type": ["in", AUTOPAY_METHODS], "status": "Active"},
-			limit=1,
+def settlement_sources(team: str, source=None) -> dict:
+	"""What the team can settle with: active autopay method and/or wallet credit.
+
+	`source` defers the evolving parts — the wallet, and whether a method is still
+	active — to a projection's roll-forward state. Absent, everything is read live.
+	"""
+	if source is not None:
+		has_autopay = bool(source.has_autopay(team))
+	else:
+		has_autopay = bool(
+			frappe.get_all(
+				"Payment Method",
+				filters={"team": team, "method_type": ["in", AUTOPAY_METHODS], "status": "Active"},
+				limit=1,
+			)
 		)
-	)
-	has_credits = credits.get_balance(team)["balance"] > 0
+	has_credits = credits.get_balance(team, source=source)["balance"] > 0
 	return {
 		"has_autopay": has_autopay,
 		"has_credits": has_credits,
@@ -44,52 +52,57 @@ def ensure_settlement_source(team: str):
 	"""Onboarding gate: refuse a team with no way to pay (card/mandate or credits)."""
 	if not settlement_sources(team)["has_any"]:
 		frappe.throw(
-			"A team needs at least one settlement source (autopay or prepaid credits) "
-			"before it can provision.",
+			_(
+				"A team needs at least one settlement source (autopay or prepaid credits) "
+				"before it can provision."
+			),
 			frappe.ValidationError,
 		)
 
 
-def _tier_cap(team: str):
+def _tier_cap(team: str, source=None):
+	if source is not None:
+		return frappe.utils.flt(source.tier_cap(team))
+
 	from central.billing.catalog.entitlements import get_team_caps
 
 	return frappe.utils.flt(get_team_caps(team).max_spend)
 
 
-def effective_spend_cap(team: str):
+def effective_spend_cap(team: str, source=None):
 	"""The cap the team is actually held to.
 
 	Autopay teams follow the trust tier directly (the card is the backstop).
 	Credits-only teams are gated by the wallet: `min(tier cap, balance)` — a cap
 	enforced without a backstop would be unsecured in a postpaid system.
 	"""
-	tier_cap = _tier_cap(team)
-	sources = settlement_sources(team)
+	tier_cap = _tier_cap(team, source)
+	sources = settlement_sources(team, source)
 	if sources["credits_only"]:
-		return min(tier_cap, frappe.utils.flt(credits.get_balance(team)["balance"]))
+		return min(tier_cap, frappe.utils.flt(credits.get_balance(team, source=source)["balance"]))
 	return tier_cap
 
 
-def can_accept_spend(team: str, projected_spend) -> bool:
+def can_accept_spend(team: str, projected_spend, source=None) -> bool:
 	"""Whether a new provision's projected run-rate fits the effective cap.
 
 	For credits-only teams this denies provisioning beyond wallet coverage; for
 	autopay teams it is the plain tier check.
 	"""
-	return frappe.utils.flt(projected_spend) <= effective_spend_cap(team)
+	return frappe.utils.flt(projected_spend) <= effective_spend_cap(team, source)
 
 
-def credit_forecast(team: str, projected_spend, notify: bool = True) -> dict:
+def credit_forecast(team: str, projected_spend, notify: bool = True, source=None) -> dict:
 	"""Compare projected month-end spend to the wallet balance.
 
 	Returns the utilisation and whether a top-up prompt is due (projected spend
 	has reached ~80% of the balance). Fires the prompt as a side effect when
 	`notify` and the threshold is crossed; the #20 suite is the real sender.
 	"""
-	balance = frappe.utils.flt(credits.get_balance(team)["balance"])
+	balance = frappe.utils.flt(credits.get_balance(team, source=source)["balance"])
 	projected = frappe.utils.flt(projected_spend)
 	utilisation = (projected / balance) if balance > 0 else (1.0 if projected > 0 else 0.0)
-	should_notify = utilisation >= FORECAST_NOTIFY_RATIO
+	should_notify = utilisation >= settings.forecast_notify_ratio()
 
 	if notify and should_notify:
 		_notify_top_up(team, balance, projected, utilisation)

@@ -1,5 +1,5 @@
-import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import type { Team } from '@/types/api'
 
@@ -55,6 +55,11 @@ export function useSession() {
 			() =>
 				(teamsCall.data ?? []).find((t) => t.name === activeTeam.value)
 					?.label ?? 'Central',
+		),
+		activeTeamLogo: computed(
+			() =>
+				(teamsCall.data ?? []).find((t) => t.name === activeTeam.value)?.logo ??
+				null,
 		),
 		setActiveTeam: selectTeam,
 		reload: () => teamsCall.reload(),

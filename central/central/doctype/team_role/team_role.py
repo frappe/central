@@ -7,15 +7,15 @@ from frappe.model.document import Document
 
 
 class TeamRole(Document):
-
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.central.doctype.role_capability.role_capability import RoleCapability
 		from frappe.types import DF
+
+		from central.central.doctype.role_capability.role_capability import RoleCapability
 
 		capabilities: DF.Table[RoleCapability]
 		is_system: DF.Check

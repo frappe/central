@@ -7,10 +7,9 @@ Top-ups credit the wallet only after the gateway confirms the money moved
 """
 
 import frappe
+from frappe import _
 
 from central.billing import authz
-from central.billing.revenue import credits, invoicing, metering
-from central.billing.revenue.tax import resolve_tax
 from central.billing.api.dashboard._shared import (
 	_describe_line,
 	_enabled_gateway_for_currency,
@@ -20,9 +19,9 @@ from central.billing.api.dashboard._shared import (
 	_require_manage,
 	_require_view,
 	_resolve_team,
-	_team_clusters,
 	_team_currency,
 )
+from central.billing.revenue import credits
 
 
 @frappe.whitelist()
@@ -38,23 +37,43 @@ def get_forecast(team: str | None = None) -> dict:
 	month_start = frappe.utils.get_first_day(today)
 	month_end = frappe.utils.get_last_day(today)
 
-	line_items = []
-	for cluster in _team_clusters(team):
-		line_items += invoicing.compute_line_items(team, cluster, month_start, month_end)
-		line_items += metering.metered_line_items(team, cluster, month_start, month_end)
+	# The customer's forecast is a projection under one fixed scenario: this team, this
+	# month, live configuration, everything settles. Running it through the same engine
+	# an operator simulates with is what stops the two numbers drifting apart — there is
+	# no second rating path to keep in step.
+	from central.billing.projection import engine
 
-	subtotal = frappe.utils.flt(sum(li["amount"] for li in line_items), 2)
-	tax = resolve_tax(team, subtotal)
-	projected_total = frappe.utils.flt(subtotal + tax["output_tax_amount"], 2)
+	# Not strictly guarded: this is a customer page, and it must not fail because the
+	# request that reached it happened to write something first.
+	projection = engine.project(team, month_start, month_end, today=today, mode="Optimistic", guarded=False)
+	invoice = projection["invoice"] or {}
+	line_items = invoice.get("lines") or []
+
+	subtotal = frappe.utils.flt(invoice.get("subtotal"))
+	projected_total = frappe.utils.flt(invoice.get("total"))
 	credit_balance = frappe.utils.flt(credits.get_balance(team)["balance"])
 	shortfall = max(0.0, frappe.utils.flt(projected_total - credit_balance, 2))
-	currency = _team_currency(team)
+	currency = projection["currency"] or _team_currency(team)
+	tax = {
+		"output_tax_amount": frappe.utils.flt(invoice.get("output_tax_amount")),
+		"output_tax_type": invoice.get("output_tax_type"),
+	}
 
 	return {
 		"period_start": str(month_start),
 		"period_end": str(month_end),
 		"projected_total": projected_total,
 		"subtotal": subtotal,
+		# Never quote the projection as a bare number: the engine already knows which
+		# part of it is owed and which is inferred, and the customer is owed the split
+		# (projection/basis.py).
+		# Last month's bill, so the projection can be read as a change rather than a
+		# number in isolation — "is this going up" is what the figure is looked at
+		# for, and it cannot be answered from one month alone.
+		**_previous_month(team, month_start),
+		"measured": frappe.utils.flt(invoice.get("measured")),
+		"estimated": frappe.utils.flt(invoice.get("estimated")),
+		"has_estimates": bool(invoice.get("has_estimates")),
 		"tax_amount": tax["output_tax_amount"],
 		"tax_type": tax["output_tax_type"],
 		"credit_balance": credit_balance,
@@ -65,6 +84,33 @@ def get_forecast(team: str | None = None) -> dict:
 		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
 		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
+	}
+
+
+def _previous_month(team: str, month_start) -> dict:
+	"""What the month before this one actually came to, and what to call it.
+
+	Compared like for like: a full projected month against a full billed one, both
+	inclusive of tax. Cancelled invoices are not a bill anyone paid, and a period
+	the team was not billed for is simply absent — a comparison against zero would
+	read as though spend had exploded.
+	"""
+	previous_start = frappe.utils.add_months(month_start, -1)
+	total = frappe.db.get_value(
+		"Invoice",
+		{
+			"team": team,
+			"invoice_type": "Billable",
+			"status": ["!=", "Cancelled"],
+			"period_start": previous_start,
+		},
+		"total",
+	)
+	if not total:
+		return {"previous_total": None, "previous_label": None}
+	return {
+		"previous_total": frappe.utils.flt(total),
+		"previous_label": frappe.utils.getdate(previous_start).strftime("%B"),
 	}
 
 
@@ -79,8 +125,19 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 	rows = frappe.get_all(
 		"Subscription",
 		filters={"team": team},
-		fields=["name", "plan", "pricing_mode", "sub_category", "cluster", "asset_id",
-				"billing_cycle", "account_standing", "start_date", "enabled"],
+		fields=[
+			"name",
+			"plan",
+			"pricing_mode",
+			"sub_category",
+			"cluster",
+			"asset_id",
+			"service_subject",
+			"billing_cycle",
+			"account_standing",
+			"start_date",
+			"enabled",
+		],
 		order_by="creation desc",
 	)
 	currency = _team_currency(team)
@@ -103,7 +160,11 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 	# composition. Batch both so a team with N composed configs stays O(1) queries.
 	composed = [r.name for r in rows if r.pricing_mode == "Composed"]
 	includes_by_sub = _composed_includes(composed)
-	segment_rate = _open_segment_rates(team) if composed else {}
+	# The open segment's locked rate is what this team is actually billed (ADR 0010),
+	# preset and composed alike. Read for every row, not only composed ones: quoting
+	# a preset at today's catalog rate shows a grandfathered customer a price they
+	# will never be charged.
+	segment_rate = _open_segment_rates(team)
 
 	plan_titles: dict[str, str] = {}
 	rate_cache: dict[tuple, float | None] = {}
@@ -120,24 +181,37 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			if r.plan and key not in rate_cache:
 				rate_cache[key] = frappe.get_doc("Plan", r.plan).get_rate(currency, r.cluster)
 			plan_title = plan_titles.get(r.plan)
-			monthly_rate = rate_cache.get(key)
-		out.append({
-			"name": r.name,
-			"server": asset.title or None,
-			"gateway_url": asset.gateway_url or None,
-			# The VM's operational state (Running/Stopped/Terminated/…) — the list shows
-			# it distinctly from the billing-paused flag, and gates resume on it.
-			"status": asset.status or None,
-			"plan": r.plan,
-			"plan_title": plan_title,
-			"cluster": r.cluster,
-			"region": region_label(r.cluster),
-			"billing_cycle": r.billing_cycle,
-			"account_standing": r.account_standing,
-			"enabled": r.enabled,
-			"monthly_rate": monthly_rate,
-			"currency": currency,
-		})
+			# Catalog rate only as the fallback, for a subscription with no open
+			# segment yet (never provisioned, or cancelled).
+			monthly_rate = segment_rate.get(r.name)
+			if monthly_rate is None:
+				monthly_rate = rate_cache.get(key)
+		out.append(
+			{
+				"name": r.name,
+				# What metering and the cycle-cost read key on: an Asset-backed
+				# subscription by its asset, a team-level service by its synthesized
+				# subject (ADR 0013). Lets the card join a row to what it cost.
+				"resource_id": r.asset_id or r.service_subject,
+				"server": asset.title or None,
+				# Asset-backed = a real server; a subscription without one is a
+				# team-level metered service (the dashboard lists those separately).
+				"has_server": bool(r.asset_id),
+				"gateway_url": asset.gateway_url or None,
+				# The VM's operational state (Running/Stopped/Terminated/…) — the list shows
+				# it distinctly from the billing-paused flag, and gates resume on it.
+				"status": asset.status or None,
+				"plan": r.plan,
+				"plan_title": plan_title,
+				"cluster": r.cluster,
+				"region": region_label(r.cluster),
+				"billing_cycle": r.billing_cycle,
+				"account_standing": r.account_standing,
+				"enabled": r.enabled,
+				"monthly_rate": monthly_rate,
+				"currency": currency,
+			}
+		)
 	return out
 
 
@@ -204,8 +278,17 @@ def list_invoices(team: str | None = None) -> list[dict]:
 	return frappe.get_all(
 		"Invoice",
 		filters={"team": team},
-		fields=["name", "period_start", "period_end", "status", "invoice_type",
-				"total", "amount_paid", "currency", "due_date"],
+		fields=[
+			"name",
+			"period_start",
+			"period_end",
+			"status",
+			"invoice_type",
+			"total",
+			"amount_paid",
+			"currency",
+			"due_date",
+		],
 		order_by="period_start desc",
 	)
 
@@ -224,16 +307,46 @@ def get_invoice(name: str) -> dict:
 	payment_in_progress = bool(
 		frappe.db.exists("Payment Attempt", {"invoice": name, "status": ["in", _IN_FLIGHT]})
 	)
+
+	# Which method settled it — a quiet receipt line on the paid invoice. Read
+	# from the capturing attempt (not the team's current default), so history
+	# stays true after the method is replaced.
+	paid_with = None
+	if doc.status == "Paid":
+		method = frappe.db.get_value(
+			"Payment Attempt",
+			{"invoice": name, "status": "Captured"},
+			"payment_method",
+			order_by="creation desc",
+		)
+		pm = (
+			frappe.db.get_value("Payment Method", method, ["display_label", "method_type"], as_dict=True)
+			if method
+			else None
+		)
+		if pm:
+			paid_with = {"label": pm.display_label, "method_type": pm.method_type}
+
 	return {
-		"name": doc.name, "team": doc.team, "status": doc.status, "invoice_type": doc.invoice_type,
-		"period_start": str(doc.period_start), "period_end": str(doc.period_end),
-		"currency": doc.currency, "subtotal": doc.subtotal,
-		"output_tax_type": doc.output_tax_type, "output_tax_rate": doc.output_tax_rate,
+		"name": doc.name,
+		"team": doc.team,
+		"status": doc.status,
+		"invoice_type": doc.invoice_type,
+		"period_start": str(doc.period_start),
+		"period_end": str(doc.period_end),
+		"currency": doc.currency,
+		"subtotal": doc.subtotal,
+		"output_tax_type": doc.output_tax_type,
+		"output_tax_rate": doc.output_tax_rate,
 		"output_tax_amount": doc.output_tax_amount,
-		"zero_rating_reason": doc.zero_rating_reason, "total": doc.total,
-		"credit_applied": doc.credit_applied, "expected_collection": doc.expected_collection,
-		"amount_paid": doc.amount_paid, "due_date": str(doc.due_date) if doc.due_date else None,
+		"zero_rating_reason": doc.zero_rating_reason,
+		"total": doc.total,
+		"credit_applied": doc.credit_applied,
+		"expected_collection": doc.expected_collection,
+		"amount_paid": doc.amount_paid,
+		"due_date": str(doc.due_date) if doc.due_date else None,
 		"payment_in_progress": payment_in_progress,
+		"paid_with": paid_with,
 		"items": [_describe_line(doc.team, li) for li in doc.items],
 		"activity": _invoice_activity(doc),
 	}
@@ -252,15 +365,17 @@ def _invoice_activity(doc) -> list[dict]:
 	"""Full lifecycle of one invoice as a timeline: finalised → credits applied →
 	card attempts (incl. failed retries) → settled. This is the per-invoice
 	payment history shown inside the invoice (no separate tab)."""
-	events = [{
-		"at": str(doc.creation),
-		"kind": "issued",
-		"title": "Invoice finalised",
-		"detail": f"{doc.invoice_type} · {doc.period_start} → {doc.period_end}",
-		"amount": frappe.utils.flt(doc.total),
-		"currency": doc.currency,
-		"theme": "gray",
-	}]
+	events = [
+		{
+			"at": str(doc.creation),
+			"kind": "issued",
+			"title": "Invoice finalised",
+			"detail": f"{doc.invoice_type} · {doc.period_start} → {doc.period_end}",
+			"amount": frappe.utils.flt(doc.total),
+			"currency": doc.currency,
+			"theme": "gray",
+		}
+	]
 
 	for e in frappe.get_all(
 		"Credit Ledger Entry",
@@ -268,54 +383,72 @@ def _invoice_activity(doc) -> list[dict]:
 		fields=["amount", "currency", "created_at", "creation", "note"],
 		order_by="creation asc",
 	):
-		events.append({
-			"at": str(e.created_at or e.creation),
-			"kind": "credit",
-			"title": "Credits applied",
-			"detail": "Drawn from wallet balance",
-			"amount": frappe.utils.flt(e.amount),
-			"currency": e.currency,
-			"theme": "blue",
-		})
+		events.append(
+			{
+				"at": str(e.created_at or e.creation),
+				"kind": "credit",
+				"title": "Credits applied",
+				"detail": "Drawn from wallet balance",
+				"amount": frappe.utils.flt(e.amount),
+				"currency": e.currency,
+				"theme": "blue",
+			}
+		)
 
 	for p in frappe.get_all(
 		"Payment Attempt",
 		filters={"invoice": doc.name},
-		fields=["status", "amount", "currency", "gateway", "gateway_transaction_id",
-				"failure_code", "failure_reason", "retry_number",
-				"initiated_at", "completed_at", "creation"],
+		fields=[
+			"status",
+			"amount",
+			"currency",
+			"gateway",
+			"gateway_transaction_id",
+			"failure_code",
+			"failure_reason",
+			"retry_number",
+			"initiated_at",
+			"completed_at",
+			"creation",
+		],
 		order_by="creation asc",
 	):
 		failed = p.status == "Failed"
-		detail = p.failure_reason if failed else (
-			f"Txn {p.gateway_transaction_id}" if p.gateway_transaction_id else p.gateway
+		detail = (
+			p.failure_reason
+			if failed
+			else (f"Txn {p.gateway_transaction_id}" if p.gateway_transaction_id else p.gateway)
 		)
 		if p.retry_number:
 			detail = f"{detail or ''} · retry #{p.retry_number}".strip(" ·")
-		events.append({
-			"at": str(p.completed_at or p.initiated_at or p.creation),
-			"kind": "payment",
-			"title": _PAYMENT_TITLES.get(p.status, f"Card payment {str(p.status).lower()}"),
-			"detail": detail,
-			"amount": frappe.utils.flt(p.amount),
-			"currency": p.currency,
-			"theme": "green" if p.status == "Captured" else ("red" if failed else "orange"),
-		})
+		events.append(
+			{
+				"at": str(p.completed_at or p.initiated_at or p.creation),
+				"kind": "payment",
+				"title": _PAYMENT_TITLES.get(p.status, f"Card payment {str(p.status).lower()}"),
+				"detail": detail,
+				"amount": frappe.utils.flt(p.amount),
+				"currency": p.currency,
+				"theme": "green" if p.status == "Captured" else ("red" if failed else "orange"),
+			}
+		)
 
 	events.sort(key=lambda x: x["at"])
 
 	# Closure marker, pinned to the last real event so it stays the newest event —
 	# the list is returned newest-first, so this reads at the top.
 	if doc.status == "Paid":
-		events.append({
-			"at": events[-1]["at"] if events else str(doc.creation),
-			"kind": "paid",
-			"title": "Invoice settled",
-			"detail": None,
-			"amount": frappe.utils.flt(doc.total),
-			"currency": doc.currency,
-			"theme": "green",
-		})
+		events.append(
+			{
+				"at": events[-1]["at"] if events else str(doc.creation),
+				"kind": "paid",
+				"title": "Invoice settled",
+				"detail": None,
+				"amount": frappe.utils.flt(doc.total),
+				"currency": doc.currency,
+				"theme": "green",
+			}
+		)
 
 	for e in events:
 		e["at"] = _fmt_when(e["at"])
@@ -338,22 +471,58 @@ def list_payment_attempts(team: str | None = None, limit: int = 100) -> list[dic
 	including the failed dunning retries that lead to suspension. This is the
 	customer's record of WHY a card-on-file team can still be past_due/suspended.
 	"""
+	from central.billing.payments import decline
+
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Payment Attempt",
 		filters={"team": team},
-		fields=["name", "status", "amount", "currency", "gateway", "invoice",
-				"failure_code", "failure_reason", "retry_number",
-				"gateway_transaction_id", "creation"],
-		order_by="creation desc",
+		fields=[
+			"name",
+			"status",
+			"amount",
+			"currency",
+			"gateway",
+			"invoice",
+			"failure_code",
+			"failure_reason",
+			"retry_number",
+			"gateway_transaction_id",
+			"initiated_at",
+			"completed_at",
+			"creation",
+		],
 		limit=limit,
 	)
+	for row in rows:
+		# When the payment actually happened, not when we wrote the row. `creation`
+		# is the insert time, which for any backfilled or migrated attempt is simply
+		# the day it was imported — every attempt then reads as though it happened
+		# today. Same precedence the invoice timeline uses.
+		row["at"] = str(row.completed_at or row.initiated_at or row.creation)
+		# `failure_reason` is the gateway's own wording. Keep it (support quotes it)
+		# but lead with something the cardholder can act on.
+		row["reason"] = decline.customer_reason(row.failure_code) if row.status == "Failed" else None
+	# Sorted on that same resolved time — ordering by `creation` put a backfilled
+	# year of attempts in whatever order they happened to be inserted.
+	rows.sort(key=lambda r: r["at"], reverse=True)
+	return rows
 
 
 @frappe.whitelist()
 def get_credit_balance(team: str | None = None) -> dict:
+	"""The wallet balance, and how much of it is promotional credit on a clock.
+
+	`expiring` is one row per grant that still has an expiry ahead of it, soonest
+	first, so the customer can see what they stand to lose and when. Purchased
+	credit never appears there — it doesn't expire."""
 	team = _resolve_team(team)
-	return {"balance": frappe.utils.flt(credits.get_balance(team)["balance"]), "currency": _team_currency(team)}
+	currency = _team_currency(team)
+	return {
+		"balance": frappe.utils.flt(credits.get_balance(team)["balance"]),
+		"currency": currency,
+		"expiring": credits.expiring_credits(team, currency),
+	}
 
 
 @frappe.whitelist()
@@ -362,8 +531,16 @@ def credit_ledger(team: str | None = None, limit: int = 50) -> list[dict]:
 	return frappe.get_all(
 		"Credit Ledger Entry",
 		filters={"team": team},
-		fields=["entry_type", "amount", "running_balance", "currency", "note", "created_at",
-				"reference_type", "reference_name"],
+		fields=[
+			"entry_type",
+			"amount",
+			"running_balance",
+			"currency",
+			"note",
+			"created_at",
+			"reference_type",
+			"reference_name",
+		],
 		order_by="creation desc",
 		limit=limit,
 	)
@@ -379,6 +556,40 @@ def pay_invoice(invoice: str | None = None) -> dict:
 	return charges.pay_invoice(invoice)
 
 
+@frappe.whitelist()
+def get_fallback_offer(invoice: str | None = None) -> dict:
+	"""The other rail to offer after a card was finally refused (ADR 0022).
+
+	Returns the instrument to put one tap away, with the amount already filled in,
+	so the customer never meets an empty second card form. Empty where the last
+	attempt is not a terminal decline: a timeout may still settle at the gateway,
+	and charging a second rail on top of it pays one invoice twice.
+	"""
+	team = frappe.db.get_value("Invoice", invoice, "team")
+	_require_manage(team)
+	from central.billing.payments import decline
+
+	inv = frappe.db.get_value("Invoice", invoice, ["currency", "expected_collection"], as_dict=True)
+	last = frappe.get_all(
+		"Payment Attempt",
+		filters={"invoice": invoice},
+		fields=["gateway", "status", "failure_code"],
+		order_by="creation desc",
+		limit=1,
+	)
+	if not last or last[0].status != "Failed" or not decline.is_terminal(last[0].failure_code):
+		return {"offer": None}
+
+	tile = decline.alternate_rail(team, inv.currency, last[0].gateway)
+	if not tile:
+		return {"offer": None}
+	return {
+		"offer": tile,
+		"amount": frappe.utils.flt(inv.expected_collection),
+		"currency": inv.currency,
+	}
+
+
 @frappe.whitelist(methods=["POST"])
 def pay_invoice_checkout(invoice: str | None = None) -> dict:
 	"""Open an on-session gateway checkout to pay an invoice yourself
@@ -391,22 +602,56 @@ def pay_invoice_checkout(invoice: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def confirm_invoice_checkout(attempt: str | None = None, razorpay_order_id: str | None = None,
-							 razorpay_payment_id: str | None = None,
-							 razorpay_signature: str | None = None) -> dict:
+def confirm_invoice_checkout(
+	attempt: str | None = None,
+	razorpay_order_id: str | None = None,
+	razorpay_payment_id: str | None = None,
+	razorpay_signature: str | None = None,
+) -> dict:
 	"""Verify the on-session checkout callback; the invoice settles on the webhook."""
 	team = frappe.db.get_value("Payment Attempt", attempt, "team")
 	_require_manage(team)
 	from central.billing.payments import charges
 
 	return charges.confirm_invoice_payment(
-		attempt, razorpay_order_id=razorpay_order_id,
-		razorpay_payment_id=razorpay_payment_id, razorpay_signature=razorpay_signature)
+		attempt,
+		razorpay_order_id=razorpay_order_id,
+		razorpay_payment_id=razorpay_payment_id,
+		razorpay_signature=razorpay_signature,
+	)
+
+
+@frappe.whitelist()
+def get_topup_options(team: str | None = None) -> dict:
+	"""The instruments a wallet recharge can be paid with (ADR 0023).
+
+	A different list from the mandate surface: this one pays once with the customer
+	present, so netbanking belongs here and a card of any network Stripe accepts is
+	fine. `publishable_key` is returned for the Stripe rail, which collects the card
+	in-app rather than redirecting.
+	"""
+	team = _resolve_team(team)
+	currency = _team_currency(team)
+	from central.billing.payments import instruments as instrument_catalogue
+
+	tiles = instrument_catalogue.available(currency, instrument_catalogue.RECHARGE)
+	publishable_key = None
+	card_gw = _enabled_gateway_for_currency(currency, "Stripe")
+	if card_gw:
+		from central.billing.gateways.registry import get_adapter
+
+		publishable_key = get_adapter(frappe.get_doc("Payment Gateway", card_gw)).get_credential("api_key")
+	return {"currency": currency, "instruments": tiles, "publishable_key": publishable_key}
 
 
 @frappe.whitelist(methods=["POST"])
-def create_topup_order(team: str | None = None, amount: float | None = None,
-					   gateway: str | None = None, method: str | None = None) -> dict:
+def create_topup_order(
+	team: str | None = None,
+	amount: float | None = None,
+	gateway: str | None = None,
+	method: str | None = None,
+	instrument: str | None = None,
+) -> dict:
 	"""Start a wallet top-up by creating a real gateway order. The UI opens the
 	gateway's checkout against it; the wallet is credited only after the gateway
 	confirms (verify in confirm_topup) — never magically.
@@ -424,7 +669,7 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 	_require_billing_setup(team)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
-		frappe.throw("Top-up amount must be greater than zero.", frappe.ValidationError)
+		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
 	currency = _team_currency(team)
 	display_paypal = False
 	if method == "paypal":
@@ -433,12 +678,26 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 			gw = _enabled_gateway_for_currency(currency, "Razorpay")
 			if not gw:
 				frappe.throw(
-					f"PayPal via Razorpay needs an enabled Razorpay gateway that handles {currency}.",
+					_("PayPal via Razorpay needs an enabled Razorpay gateway that handles {0}.").format(
+						currency
+					),
 					frappe.ValidationError,
 				)
 			display_paypal = True
 		else:
 			gw = pp.name
+	elif instrument:
+		# The recharge surface: the customer picked an instrument and that decides the
+		# rail (ADR 0023). Resolving by currency default instead would put every INR
+		# top-up on one provider, including the card ones Stripe should take.
+		from central.billing.payments import instruments as instrument_catalogue
+
+		gw = instrument_catalogue.gateway_for(instrument, currency, instrument_catalogue.RECHARGE)
+		if not gw:
+			frappe.throw(
+				_("{0} isn't available for {1} top-ups.").format(instrument, currency),
+				frappe.ValidationError,
+			)
 	else:
 		gw = gateway or _gateway_for_currency(currency)
 	from central.billing.gateways.registry import get_adapter
@@ -463,15 +722,28 @@ def create_topup_order(team: str | None = None, amount: float | None = None,
 	# sheet, Paypal → PayPal Buttons against the returned order_id (ADR 0007). For a
 	# Via-Razorpay PayPal top-up the adapter_key is Razorpay (settlement runs there) and
 	# display_paypal asks the sheet to surface the PayPal block.
-	return {"gateway": gw, "adapter_key": gw_doc.adapter_key, "display_paypal": display_paypal,
-			"amount": amount, "currency": currency, "receipt": receipt, **handles}
+	return {
+		"gateway": gw,
+		"adapter_key": gw_doc.adapter_key,
+		"display_paypal": display_paypal,
+		"amount": amount,
+		"currency": currency,
+		"receipt": receipt,
+		**handles,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
-def confirm_topup(team: str | None = None, amount: float | None = None, gateway: str | None = None,
-				  razorpay_order_id: str | None = None, razorpay_payment_id: str | None = None,
-				  razorpay_signature: str | None = None, payment_intent: str | None = None,
-				  paypal_order_id: str | None = None) -> dict:
+def confirm_topup(
+	team: str | None = None,
+	amount: float | None = None,
+	gateway: str | None = None,
+	razorpay_order_id: str | None = None,
+	razorpay_payment_id: str | None = None,
+	razorpay_signature: str | None = None,
+	payment_intent: str | None = None,
+	paypal_order_id: str | None = None,
+) -> dict:
 	"""Credit the wallet only after the gateway confirms the money really moved.
 	Razorpay confirms via the checkout-callback signature; Stripe by retrieving the
 	PaymentIntent the SPA charged; PayPal by capturing the approved order. Each
@@ -491,11 +763,13 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 		# The callback signature binds order_id|payment_id, NOT the amount — so the
 		# request figure can't be trusted. Fetch the payment server-side and credit
 		# what Razorpay actually captured, mirroring the Stripe/PayPal branches.
-		ok = adapter.verify_payment_signature({
-			"razorpay_order_id": razorpay_order_id,
-			"razorpay_payment_id": razorpay_payment_id,
-			"razorpay_signature": razorpay_signature,
-		})
+		ok = adapter.verify_payment_signature(
+			{
+				"razorpay_order_id": razorpay_order_id,
+				"razorpay_payment_id": razorpay_payment_id,
+				"razorpay_signature": razorpay_signature,
+			}
+		)
 		reference = razorpay_payment_id
 		if ok:
 			payment = adapter.get_payment(razorpay_payment_id)
@@ -504,7 +778,7 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 			if minor is None:
 				# A captured payment always carries an amount; a response without
 				# one must not fall through to the client-supplied figure.
-				frappe.throw("Razorpay reported no amount for this payment.", frappe.ValidationError)
+				frappe.throw(_("Razorpay reported no amount for this payment."), frappe.ValidationError)
 			amount = frappe.utils.flt(minor) / 100
 			if payment.get("currency"):
 				currency = payment["currency"].upper()
@@ -515,7 +789,7 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 		ok = capture.get("status") == "COMPLETED"
 		reference = capture.get("id")
 		if capture.get("amount") is None:
-			frappe.throw("PayPal reported no amount for this capture.", frappe.ValidationError)
+			frappe.throw(_("PayPal reported no amount for this capture."), frappe.ValidationError)
 		amount = frappe.utils.flt(capture["amount"])
 		if capture.get("currency"):
 			currency = capture["currency"].upper()
@@ -528,12 +802,18 @@ def confirm_topup(team: str | None = None, amount: float | None = None, gateway:
 		reference = intent.get("id")
 		minor = intent.get("amount_received") or intent.get("amount")
 		if minor is None:
-			frappe.throw("Stripe reported no amount for this payment intent.", frappe.ValidationError)
+			frappe.throw(_("Stripe reported no amount for this payment intent."), frappe.ValidationError)
 		amount = frappe.utils.flt(minor) / 100
 		if intent.get("currency"):
 			currency = intent["currency"].upper()
 	if not ok:
-		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
-	return credits.purchase(team, amount, currency,
-		reference_name=reference, note=f"Wallet top-up ({reference})",
-		gateway_payment_id=reference, gateway=gw_doc.adapter_key)
+		frappe.throw(_("Payment confirmation failed."), frappe.ValidationError)
+	return credits.purchase(
+		team,
+		amount,
+		currency,
+		reference_name=reference,
+		note=f"Wallet top-up ({reference})",
+		gateway_payment_id=reference,
+		gateway=gw_doc.adapter_key,
+	)

@@ -10,6 +10,7 @@ stored and a background job is enqueued.
 """
 
 import frappe
+from frappe import _
 
 
 @frappe.whitelist(allow_guest=True)
@@ -47,12 +48,16 @@ def process_webhook(adapter_key: str, payload: bytes, headers: dict) -> dict:
 
 
 def _resolve_gateway(adapter_key: str):
-	name = frappe.db.get_value(
-		"Payment Gateway", {"adapter_key": adapter_key, "is_enabled": 1}, "name"
-	)
-	if not name:
-		frappe.throw(f"No enabled Payment Gateway for adapter '{adapter_key}'")
-	return frappe.get_doc("Payment Gateway", name)
+	"""The gateway row this callback URL belongs to.
+
+	There is one callback URL per adapter, so the adapter is the only thing an
+	inbound request identifies itself by — which is exactly why a gateway row is
+	named after its adapter. The lookup is a primary-key read: no ambiguity about
+	which webhook_secret verifies the signature.
+	"""
+	if not frappe.db.get_value("Payment Gateway", adapter_key, "is_enabled"):
+		frappe.throw(_("No enabled Payment Gateway for adapter '{0}'").format(adapter_key))
+	return frappe.get_doc("Payment Gateway", adapter_key)
 
 
 def _store_and_enqueue(gateway, event, payload: bytes):
@@ -90,9 +95,12 @@ def _store_and_enqueue(gateway, event, payload: bytes):
 def handle_webhook_event(event_name: str):
 	"""Background state transition for a stored Webhook Event.
 
-	Charge settlement (Open -> Paid) lives in charges.apply_webhook; this is the
-	dispatch point. Other event families are added as their issues land.
+	Charge settlement (Open -> Paid) lives in charges.apply_webhook; mandate
+	lifecycle in mandates.apply_mandate_event. This is the dispatch point.
 	"""
-	from central.billing.payments import charges
+	from central.billing.payments import charges, mandates
 
+	event_type = frappe.db.get_value("Webhook Event", event_name, "event_type") or ""
+	if event_type.startswith("mandate."):
+		return mandates.apply_mandate_event(event_name)
 	return charges.apply_webhook(event_name)

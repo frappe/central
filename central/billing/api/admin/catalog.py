@@ -5,9 +5,10 @@ cluster/plan run-rate consumption, and trial→paid conversion analysis.
 """
 
 import frappe
+from frappe import _
 
-from central.billing.authz import require_operator
 from central.billing.api.admin._shared import _active_segments, _plan_monthly_inr, _to_inr
+from central.billing.authz import require_operator
 
 
 @frappe.whitelist()
@@ -22,36 +23,60 @@ def get_catalog() -> dict:
 	for seg in segments:
 		resources_by_plan[seg.plan] = resources_by_plan.get(seg.plan, 0) + 1
 	plans = []
-	for p in frappe.get_all("Plan", fields=["name", "title", "billing_cycle", "is_active"], order_by="name asc"):
-		plans.append({
-			**p,
-			"inr_rate": _plan_monthly_inr(p.name, None),
-			"active_resources": resources_by_plan.get(p.name, 0),
-		})
+	for p in frappe.get_all(
+		"Plan", fields=["name", "title", "billing_cycle", "is_active"], order_by="name asc"
+	):
+		plans.append(
+			{
+				**p,
+				"inr_rate": _plan_monthly_inr(p.name, None),
+				"active_resources": resources_by_plan.get(p.name, 0),
+			}
+		)
 	clusters = {}
 	for seg in segments:
-		c = clusters.setdefault(seg.cluster or "global", {"cluster": seg.cluster or "global", "resources": 0, "teams": set()})
+		c = clusters.setdefault(
+			seg.cluster or "global", {"cluster": seg.cluster or "global", "resources": 0, "teams": set()}
+		)
 		c["resources"] += 1
 		c["teams"].add(seg.team)
 	cluster_rows = sorted(
-		({"cluster": c["cluster"], "resources": c["resources"], "teams": len(c["teams"])} for c in clusters.values()),
-		key=lambda r: r["resources"], reverse=True,
+		(
+			{"cluster": c["cluster"], "resources": c["resources"], "teams": len(c["teams"])}
+			for c in clusters.values()
+		),
+		key=lambda r: r["resources"],
+		reverse=True,
 	)
 	return {"plans": plans, "clusters": cluster_rows}
 
 
 @frappe.whitelist(methods=["POST"])
-def create_configured_plan(title: str, vcpu: float, ratio: str = "1:2", disk_gb: float = 0,
-						   memory_gb: float | None = None, billing_cycle: str = "Monthly",
-						   category: str = "VM Plans", sub_category: str | None = None) -> dict:
+def create_configured_plan(
+	title: str,
+	vcpu: float,
+	ratio: str = "1:2",
+	disk_gb: float = 0,
+	memory_gb: float | None = None,
+	billing_cycle: str = "Monthly",
+	category: str = "VM Plans",
+	sub_category: str | None = None,
+) -> dict:
 	"""Author a bundle Plan from configurator inputs — operator only. The one HTTP
 	door to `plans.create_configured_plan`; the primitive itself is not whitelisted."""
 	require_operator()
 	from central.billing.catalog import plans
 
 	name = plans.create_configured_plan(
-		title, vcpu, ratio=ratio, disk_gb=disk_gb, memory_gb=memory_gb,
-		billing_cycle=billing_cycle, category=category, sub_category=sub_category)
+		title,
+		vcpu,
+		ratio=ratio,
+		disk_gb=disk_gb,
+		memory_gb=memory_gb,
+		billing_cycle=billing_cycle,
+		category=category,
+		sub_category=sub_category,
+	)
 	return {"plan": name}
 
 
@@ -62,7 +87,7 @@ def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> 
 	new rate. Zero new plans."""
 	require_operator()
 	if not frappe.db.exists("Plan", plan):
-		frappe.throw(f"Plan {plan!r} does not exist.")
+		frappe.throw(_("Plan {0!r} does not exist.").format(plan))
 	cluster = cluster or None
 
 	existing = frappe.get_all(
@@ -84,7 +109,12 @@ def update_plan_rate(plan: str, currency: str, rate: int, cluster: str = "") -> 
 				"rate": rate,
 			}
 		).insert(ignore_permissions=True)
-	return {"plan": plan, "currency": currency, "cluster": cluster or "global", "rate": frappe.utils.flt(rate)}
+	return {
+		"plan": plan,
+		"currency": currency,
+		"cluster": cluster or "global",
+		"rate": frappe.utils.flt(rate),
+	}
 
 
 def update_component_rate(resource_type: str, currency: str, rate: int, cluster: str = "") -> dict:
@@ -110,7 +140,10 @@ def get_cluster_consumption() -> list[dict]:
 	require_operator()
 	out = {}
 	for seg in _active_segments():
-		c = out.setdefault(seg.cluster or "global", {"cluster": seg.cluster or "global", "resources": 0, "monthly": 0.0, "currency": "INR"})
+		c = out.setdefault(
+			seg.cluster or "global",
+			{"cluster": seg.cluster or "global", "resources": 0, "monthly": 0.0, "currency": "INR"},
+		)
 		c["resources"] += 1
 		c["monthly"] = frappe.utils.flt(c["monthly"] + _segment_monthly_inr(seg), 2)
 	return sorted(out.values(), key=lambda r: r["monthly"], reverse=True)
@@ -154,8 +187,13 @@ def get_conversion() -> dict:
 	trial = sum(1 for t in tiers if t.tier == entry)
 	paid = total - trial
 	converted = sum(1 for t in tiers if (t.promotion_basis or "").startswith("converted"))
-	return {"total_teams": total, "trial": trial, "paid": paid, "converted": converted,
-			"conversion_rate": round(paid / total, 3) if total else 0}
+	return {
+		"total_teams": total,
+		"trial": trial,
+		"paid": paid,
+		"converted": converted,
+		"conversion_rate": round(paid / total, 3) if total else 0,
+	}
 
 
 @frappe.whitelist()
@@ -168,21 +206,37 @@ def get_trial_detail() -> dict:
 
 	entry = entry_tier()
 	invoices = frappe.get_all(
-		"Invoice", filters={"invoice_type": "Cost Report"},
+		"Invoice",
+		filters={"invoice_type": "Cost Report"},
 		fields=["name", "team", "subtotal", "currency", "period_start", "period_end"],
 		order_by="period_start desc",
 	)
 	by_team = {}
-	still_on_trial, converted_subsidy, trial_subsidy = 0.0, 0.0, 0.0
+	converted_subsidy, trial_subsidy = 0.0, 0.0
 	for inv in invoices:
 		tier = frappe.db.get_value("Billing Profile", inv.team, "trust_tier")
 		on_trial = tier == entry
 		inr = _to_inr(inv.subtotal, inv.currency)
-		t = by_team.setdefault(inv.team, {"team": inv.team, "on_trial": on_trial, "tier": tier or "—",
-											"subsidy": 0.0, "currency": inv.currency, "invoices": []})
+		t = by_team.setdefault(
+			inv.team,
+			{
+				"team": inv.team,
+				"on_trial": on_trial,
+				"tier": tier or "—",
+				"subsidy": 0.0,
+				"currency": inv.currency,
+				"invoices": [],
+			},
+		)
 		t["subsidy"] = frappe.utils.flt(t["subsidy"] + frappe.utils.flt(inv.subtotal), 2)
-		t["invoices"].append({"name": inv.name, "subtotal": frappe.utils.flt(inv.subtotal, 2),
-							   "period_start": str(inv.period_start), "period_end": str(inv.period_end)})
+		t["invoices"].append(
+			{
+				"name": inv.name,
+				"subtotal": frappe.utils.flt(inv.subtotal, 2),
+				"period_start": str(inv.period_start),
+				"period_end": str(inv.period_end),
+			}
+		)
 		if on_trial:
 			trial_subsidy += inr
 		else:
@@ -207,12 +261,16 @@ def get_trial_costs_detail() -> dict:
 
 	entry = entry_tier()
 	unconverted, converted = 0.0, 0.0
-	for inv in frappe.get_all("Invoice", filters={"invoice_type": "Cost Report"}, fields=["team", "subtotal"]):
+	for inv in frappe.get_all(
+		"Invoice", filters={"invoice_type": "Cost Report"}, fields=["team", "subtotal"]
+	):
 		tier = frappe.db.get_value("Billing Profile", inv.team, "trust_tier")
 		if tier == entry:
 			unconverted += frappe.utils.flt(inv.subtotal)
 		else:
 			converted += frappe.utils.flt(inv.subtotal)
-	return {"unconverted_subsidy": frappe.utils.flt(unconverted, 2),
-			"converted_cost": frappe.utils.flt(converted, 2),
-			"total": frappe.utils.flt(unconverted + converted, 2)}
+	return {
+		"unconverted_subsidy": frappe.utils.flt(unconverted, 2),
+		"converted_cost": frappe.utils.flt(converted, 2),
+		"total": frappe.utils.flt(unconverted + converted, 2),
+	}

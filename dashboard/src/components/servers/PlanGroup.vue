@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ConfigDesigner from '@/components/servers/ConfigDesigner.vue'
-import { planSpecs, planPrice } from '@/lib/plans'
-import { money } from '@/lib/format'
 import { configSpecs, estimateConfig } from '@/lib/composed'
+import { money } from '@/lib/format'
+import { planPrice, planSpecs } from '@/lib/plans'
 import type {
 	Capacity,
 	ComposedConfig,
@@ -85,7 +85,7 @@ const matchingPreset = computed<Plan | null>(() => {
 			:key="plan.plan"
 			:class="
 				[
-					'flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm',
+					'flex cursor-pointer items-center gap-3 rounded-6 border px-3 py-2 text-sm',
 					'transition-colors',
 					'focus-within:border-outline-gray-4 focus-within:ring-1 focus-within:ring-outline-gray-4',
 					selectedPlan === plan.plan
@@ -122,7 +122,7 @@ const matchingPreset = computed<Plan | null>(() => {
 			v-if="profile"
 			:class="
 				[
-					'rounded-lg border transition-colors',
+					'rounded-6 border transition-colors',
 					'focus-within:border-outline-gray-4 focus-within:ring-1 focus-within:ring-outline-gray-4',
 					isCustom
 						? 'border-outline-gray-4 bg-surface-gray-1'

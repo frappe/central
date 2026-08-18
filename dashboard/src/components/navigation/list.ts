@@ -1,25 +1,56 @@
-import { computed } from 'vue'
+import { type Component, computed, defineAsyncComponent } from 'vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useIsMobile } from '@/composables/useIsMobile'
+import { openSearch } from '@/composables/useSearch'
+import { features } from '@/lib/features'
 
-export const sidebarSections = computed(() => {
+const NotificationsPanel = defineAsyncComponent(
+	() => import('@/components/notifications/NotificationsPanel.vue'),
+)
+
+type SidebarItem = {
+	label: string
+	icon: string
+	to?: string
+	condition?: boolean
+	class?: string
+	onClick?: () => void
+	component?: Component
+}
+
+type SidebarSection = {
+	label: string
+	collapsible?: boolean
+	items: SidebarItem[]
+}
+
+export const sidebarSections = computed<SidebarSection[]>(() => {
+	const isMobile = useIsMobile()
+
 	const { canViewServers, canViewBilling, canViewServices, isMember } =
 		useCapabilities()
 
 	return [
 		{
+			label: '',
 			items: [
-				{ label: 'Search', icon: 'lucide-search' },
+				{
+					label: 'Search',
+					icon: 'lucide-search',
+					onClick: openSearch,
+					condition: !isMobile.value,
+				},
 				{
 					label: 'Notifications',
 					icon: 'lucide-bell',
-					to: '/notifications',
-					condition: isMember.value,
-					class: 'mb-3',
+					condition: isMember.value && !isMobile.value,
+					component: NotificationsPanel,
 				},
 			],
 		},
 
 		{
+			label: '',
 			items: [
 				{
 					label: 'Servers',
@@ -28,23 +59,18 @@ export const sidebarSections = computed(() => {
 					condition: canViewServers.value,
 				},
 				{
-					label: 'Teams',
+					label: 'Services',
+					icon: 'lucide-blocks',
+					to: '/addons',
+					condition: features.addons && canViewServices.value,
+				},
+				// The sent-invitations page (/team/invitations) still exists but has
+				// no sidebar entry — pending invites are managed from the Team page.
+				{
+					label: 'Team',
 					icon: 'lucide-users',
 					to: '/team/members',
 					condition: isMember.value,
-				},
-			],
-		},
-
-		{
-			label: 'Services',
-			collapsible: true,
-			items: [
-				{
-					label: 'LLM',
-					icon: 'lucide-sparkles',
-					to: '/services/llm',
-					condition: canViewServices.value,
 				},
 			],
 		},
@@ -65,7 +91,13 @@ export const sidebarSections = computed(() => {
 					condition: canViewBilling.value,
 				},
 				{
-					label: 'Limit Tiers',
+					label: 'Reports',
+					icon: 'lucide-chart-no-axes-column',
+					to: '/billing/reports',
+					condition: canViewBilling.value,
+				},
+				{
+					label: 'Limit tiers',
 					icon: 'lucide-layers',
 					to: '/billing/limits',
 					condition: canViewBilling.value,

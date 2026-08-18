@@ -62,6 +62,43 @@ def config() -> dict:
 	return {"jwks_url": jwks_url(), "audience_id": credential.audience_id}
 
 
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def metrics_token() -> dict:
+	"""The JWT this pilot presents to Datum when pushing metrics.
+
+	Separate from `config` because it expires: the pilot re-fetches on a 401 or when
+	the expiry nears. Refused until Atlas binds the Asset, since the samples would
+	carry no resource id."""
+	from central.sso import METRICS_TTL, mint_metrics_token
+
+	credential = frappe.local.pilot_credential
+	return {
+		"token": mint_metrics_token(credential.audience_id, credential.asset),
+		"expires_in": METRICS_TTL,
+		"resource_id": credential.asset,
+	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def log_token() -> dict:
+	"""The JWT this pilot presents to Datum when shipping logs.
+
+	Sibling of `metrics_token`: same gating (refused until Atlas binds the Asset),
+	separate token so rotation is independent. Datum reads `resource_id` and
+	`access` as top-level claims — no vmauth bridge — so the pilot re-fetches on a
+	401 or when the expiry nears, exactly as it does for metrics."""
+	from central.sso import LOG_TTL, mint_log_token
+
+	credential = frappe.local.pilot_credential
+	return {
+		"token": mint_log_token(credential.audience_id, credential.asset),
+		"expires_in": LOG_TTL,
+		"resource_id": credential.asset,
+	}
+
+
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def enroll(bootstrap_token: str) -> dict:
 	"""First-boot handshake: exchange a single-use, create-time bootstrap token for this

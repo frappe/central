@@ -1,14 +1,21 @@
 <script setup lang="ts">
+import {
+	Alert,
+	Button,
+	Dialog,
+	LoadingIndicator,
+	Tabs,
+	useCall,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { Button, Dialog, LoadingIndicator, Tabs, useCall } from 'frappe-ui'
-import PlanGroup from '@/components/servers/PlanGroup.vue'
-import Alert from '@/components/common/Alert.vue'
 import { API, method } from '@/api/methods'
+import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { usePlans } from '@/composables/usePlans'
+import type { AssetRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { configIncludes, rateCardComplete } from '@/lib/composed'
+import { money } from '@/lib/format'
 import { getErrorMessage, successToast } from '@/lib/toast'
-import type { AssetRow } from '@/composables/useServers'
 import type { ComposedConfig, Profile } from '@/types/api'
 
 // Resize a server with the same plan picker used to create it (#84): its region's
@@ -46,6 +53,13 @@ type ComposedConfigResponse = {
 	vcpus?: number
 	memory_gb?: number
 	disk_gb?: number
+	lock?: {
+		locked_rate: number
+		list_rate: number
+		currency: string
+		/** How much per month sits between this server's rate and today's list. */
+		gives_up: number
+	} | null
 }
 const configCall = useCall<
 	ComposedConfigResponse,
@@ -59,6 +73,12 @@ const configCall = useCall<
 	immediate: false,
 })
 const subscription = computed(() => configCall.data?.subscription ?? null)
+
+// This server is held below today's price, and a resize re-prices at current
+// rates (ADR 0010). Say so before they commit: the rate does not come back, not
+// even by resizing to the size they are on now.
+const lock = computed(() => configCall.data?.lock ?? null)
+const losesLockedRate = computed(() => (lock.value?.gives_up ?? 0) > 0)
 
 // The region's menu, with this server's own spend freed back into the headroom so it
 // can grow into its own budget (exclude_subscription).
@@ -101,8 +121,10 @@ function designableProfile(cls: string): Profile | null {
 	return canDesign.value ? profileFor(cls) : null
 }
 const hasTabs = computed(() => classes.value.length > 1)
-const classTabs = computed(() => classes.value.map((label) => ({ label })))
-const activeTab = ref(0)
+const classTabs = computed(() =>
+	classes.value.map((label) => ({ label, value: label })),
+)
+const activeTab = ref('')
 const soleClass = computed(() => classes.value[0] ?? 'General')
 const flatPresets = computed(() => groups.value[soleClass.value] ?? [])
 const flatProfile = computed<Profile | null>(() =>
@@ -145,13 +167,13 @@ watch([() => configCall.data, plans], () => {
 		const cls = cfg.sub_category ?? soleClass.value
 		selectedPlan.value = `custom:${cls}`
 		composedConfig.value = initial.value
-		activeTab.value = Math.max(0, classes.value.indexOf(cls))
+		activeTab.value = cls
 	} else if (cfg.plan && plans.value.some((p) => p.plan === cfg.plan)) {
 		selectedPlan.value = cfg.plan
 		const cls =
 			plans.value.find((p) => p.plan === cfg.plan)?.sub_category ??
 			soleClass.value
-		activeTab.value = Math.max(0, classes.value.indexOf(cls))
+		activeTab.value = cls
 	}
 })
 
@@ -161,7 +183,7 @@ watch(
 	(server) => {
 		selectedPlan.value = null
 		composedConfig.value = null
-		activeTab.value = 0
+		activeTab.value = ''
 		if (server && activeTeamId.value) configCall.reload()
 	},
 )
@@ -260,9 +282,15 @@ async function confirm() {
 			</p>
 			<div v-else class="space-y-4">
 				<Alert v-if="resizeError" theme="red" :title="resizeError" />
+				<Alert
+					v-if="losesLockedRate && lock"
+					theme="amber"
+					title="Resizing will change your rate"
+					:description="`You pay ${money(lock.locked_rate, lock.currency)}/mo for this size; it now lists at ${money(lock.list_rate, lock.currency)}/mo. Any resize is priced at today's rates, and the old rate doesn't come back — including if you resize to this size again later.`"
+				/>
 				<div
 					v-if="needsRestart"
-					class="rounded-lg border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"
+					class="rounded-6 border border-outline-gray-2 bg-surface-gray-1 px-3 py-2.5 text-p-sm text-ink-gray-6"
 				>
 					Your server will be briefly stopped to apply the new size, then
 					started again automatically.
@@ -272,13 +300,13 @@ async function confirm() {
 					<template #tab-panel="{ tab }">
 						<PlanGroup
 							class="pt-4"
-							:presets="groups[tab.label] ?? []"
-							:profile="designableProfile(tab.label)"
+							:presets="groups[tab.value] ?? []"
+							:profile="designableProfile(String(tab.value))"
 							:rate-card="rateCard"
 							:available="available ?? 0"
 							:currency="currency ?? 'USD'"
 							:capacity="capacity"
-							:initial="initialFor(designableProfile(tab.label))"
+							:initial="initialFor(designableProfile(String(tab.value)))"
 							v-model:selected-plan="selectedPlan"
 							v-model:composed-config="composedConfig"
 						/>

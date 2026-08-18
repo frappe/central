@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { Tabs } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { Tabs } from 'frappe-ui'
-import SentInvitationsPanel from '@/components/team/SentInvitationsPanel.vue'
 import ReceivedInvitationsPanel from '@/components/team/ReceivedInvitationsPanel.vue'
+import SentInvitationsPanel from '@/components/team/SentInvitationsPanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useMyInvitations } from '@/composables/useMyInvitations'
 
@@ -19,22 +19,26 @@ const receivedLabel = computed(() =>
 )
 
 const tabs = computed(() => {
-	const received = { label: receivedLabel.value, icon: 'lucide-inbox' }
+	const received = {
+		label: receivedLabel.value,
+		value: 'received',
+		icon: 'lucide-inbox',
+	}
 	return canManageMembers.value
-		? [{ label: 'Sent', icon: 'lucide-send' }, received]
+		? [{ label: 'Sent', value: 'sent', icon: 'lucide-send' }, received]
 		: [received]
 })
 
 // Managers default to Sent; everyone else (or an email deep-link) opens Received.
 const wantReceived = !!route.params.name || !canManageMembers.value
-const tabIndex = ref(wantReceived && canManageMembers.value ? 1 : 0)
+const activeTab = ref(wantReceived ? 'received' : 'sent')
 </script>
 
 <template>
 	<div class="flex h-full flex-col">
-		<Tabs v-model="tabIndex" :tabs="tabs">
+		<Tabs v-model="activeTab" :tabs="tabs">
 			<template #tab-panel="{ tab }">
-				<SentInvitationsPanel v-if="tab.label === 'Sent'" />
+				<SentInvitationsPanel v-if="tab.value === 'sent'" />
 				<ReceivedInvitationsPanel v-else />
 			</template>
 		</Tabs>

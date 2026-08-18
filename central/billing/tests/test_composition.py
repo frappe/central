@@ -3,13 +3,13 @@
 """Composed-config shape validation against the optimisation profile (#81)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.composition import (
 	composition_quantities,
 	parse_vcpu_steps,
 	validate_composition,
 )
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
 def _config(vcpu, ram, disk=None):

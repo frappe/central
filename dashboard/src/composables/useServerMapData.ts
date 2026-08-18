@@ -1,10 +1,10 @@
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed, onScopeDispose } from 'vue'
 import { API, method } from '@/api/methods'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { useFrappeListInvalidation } from '@/composables/common/useFrappeRealtime'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
+import { useFrappeListInvalidation } from '@/composables/useFrappeRealtime'
 import type { AssetRow } from '@/composables/useServers'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
+import { getErrorMessage, isAbortError } from '@/lib/toast'
 
 // The team's whole fleet in one read — servers (the Asset mirror) and self-serve
 // sites (the Site mirror, each a 1:1-backed VM), so the map/panel unify them from a
@@ -21,6 +21,8 @@ export interface SiteRow {
 	status: string
 	region: string | null
 	url: string | null
+	// Transitional label while a site action is in flight (see AssetRow.pending_action).
+	pending_action?: string | null
 }
 
 type RegistryResponse = { team: string; assets: AssetRow[]; sites: SiteRow[] }
@@ -48,6 +50,9 @@ export function useServerMapData() {
 	// (resize flag, termination) land live. One shared debounce coalesces a burst
 	// that touches both doctypes into a single reload.
 	useFrappeListInvalidation(['Asset', 'Site'], reloadOnce, { debounceMs: 0 })
+	// The invalidation listener self-disposes per scope; clear the shared debounce
+	// too so a pending reload never fires into a torn-down singleton.
+	onScopeDispose(() => window.clearTimeout(reloadTimer))
 
 	return {
 		// Terminated servers are gone, not a state to render — excluded here so no

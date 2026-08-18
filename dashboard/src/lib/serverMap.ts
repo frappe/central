@@ -1,12 +1,13 @@
-import { displayStatus, isResizing } from '@/lib/status'
 import type { AssetRow } from '@/composables/useServers'
+import { formatMemory } from '@/lib/format'
+import { displayStatus, isResizing } from '@/lib/status'
 import type { Region } from '@/types/Region'
 
 // Display mapping for the servers map: one place that turns an Asset's mirror
 // status into what the map shows (label, badge, dot colour, pulse). Terminated
 // assets never reach the map — useServerMapData filters them out.
 
-type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue'
+type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue'
 
 export interface ServerVisual {
 	/** Stable key the status filter matches on. */
@@ -24,14 +25,14 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		key: 'active',
 		label: 'Active',
 		badgeTheme: 'green',
-		dot: 'var(--ink-green-7)',
+		dot: 'var(--ink-green-6)',
 		pulse: false,
 	},
 	settingUp: {
 		key: 'settingUp',
 		label: 'Setting up',
-		badgeTheme: 'orange',
-		dot: 'var(--ink-amber-7)',
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
 		pulse: false,
 	},
 	paused: {
@@ -52,14 +53,14 @@ const VISUALS: Record<ServerVisual['key'], ServerVisual> = {
 		key: 'broken',
 		label: 'Broken',
 		badgeTheme: 'red',
-		dot: 'var(--ink-red-7)',
+		dot: 'var(--ink-red-6)',
 		pulse: true,
 	},
 	resizing: {
 		key: 'resizing',
 		label: 'Resizing',
-		badgeTheme: 'orange',
-		dot: 'var(--ink-amber-7)',
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
 		pulse: false,
 	},
 }
@@ -77,6 +78,17 @@ const STATUS_VISUAL: Record<string, ServerVisual> = {
 }
 
 export function statusVisual(server: AssetRow): ServerVisual {
+	// A live action wins: show its transitional label, pulsing to read as "working now",
+	// from the click until the mirror confirms — so the row never looks like nothing happened.
+	if (server.pending_action) {
+		return {
+			key: 'settingUp',
+			label: server.pending_action,
+			badgeTheme: 'amber',
+			dot: 'var(--ink-amber-6)',
+			pulse: true,
+		}
+	}
 	if (isResizing(server)) return VISUALS.resizing
 	return STATUS_VISUAL[displayStatus(server)] ?? VISUALS.settingUp
 }
@@ -90,12 +102,6 @@ export const STATUS_FILTERS: ServerVisual[] = [
 	VISUALS.stopped,
 	VISUALS.broken,
 ]
-
-function formatMemory(megabytes: number): string {
-	if (megabytes < 1024) return `${megabytes} MB`
-	const gigabytes = megabytes / 1024
-	return `${Number.isInteger(gigabytes) ? gigabytes : gigabytes.toFixed(1)} GB`
-}
 
 /** "4 vCPU, 8 GB RAM, 75 GB Disk" from the mirror's raw size fields. */
 export function specLine(server: AssetRow): string {
@@ -173,7 +179,25 @@ export interface MapPin {
 	/** The raw asset row, for the server actions menu the page wires in. */
 	server?: AssetRow
 	// — Site-only (undefined on server pins) —
-	site?: { name: string; url: string | null }
+	site?: { name: string; url: string | null; pending_action?: string | null }
+}
+
+/** A server or site decorated into one list/map shape. A site is a 1:1-backed VM,
+ *  so it wears the same provider avatar and lists in the same sorted stream as a
+ *  server; only its `asset`/`site` payload and ⋯ actions differ. */
+export interface ResourceRow {
+	kind: 'server' | 'site'
+	id: string
+	name: string
+	visual: ServerVisual
+	specs: string
+	cluster: string
+	region: Region | undefined
+	regionLabel: string
+	flag: string
+	provider: string | null
+	asset?: AssetRow
+	site?: { name: string; url: string | null; pending_action?: string | null }
 }
 
 /** An empty Active region — a "+" affordance on the map. */
@@ -196,10 +220,12 @@ export const MAP_WIDTH = 879
 export const MAP_HEIGHT = 443
 const LAT_TOP = 83
 const LAT_BOTTOM = -56
+// User zoom is gone (hover cards carry the detail); this caps how far picker
+// mode may zoom while framing its marker set.
 export const MAX_ZOOM = 5
-export const ZOOM_STEP = 1.7
-// Past this zoom, servers sharing a spot stop counting ("3") and fan out into an
-// overlapping avatar stack. Two zoom-in clicks (1.7² ≈ 2.89) get you there.
+// export const ZOOM_STEP = 1.7 // restored with the map's zoom controls
+// Past this zoom, servers sharing a spot stop counting ("3") and fan out into
+// an overlapping avatar stack — only reachable via the picker's marker fit.
 export const STACK_ZOOM = 2.8
 
 // Greedy proximity-cluster thresholds in SCREEN pixels (divided by scale k), so
@@ -417,10 +443,40 @@ export function computeNodes({
 
 // A site's status mapped onto the shared server visual vocabulary, so the unified
 // assets list (and its status filter) can treat a site like the VM it is.
-export function siteVisual(status: string): ServerVisual {
+export function siteVisual(
+	status: string,
+	pendingAction?: string | null,
+): ServerVisual {
+	// A live site action wins, same as servers — show its label, pulsing, until the mirror confirms.
+	if (pendingAction)
+		return {
+			key: 'settingUp',
+			label: pendingAction,
+			badgeTheme: 'amber',
+			dot: 'var(--ink-amber-6)',
+			pulse: true,
+		}
 	if (status === 'Running')
-		return { key: 'active', label: 'Running', badgeTheme: 'green', dot: 'var(--ink-green-7)', pulse: false }
+		return {
+			key: 'active',
+			label: 'Running',
+			badgeTheme: 'green',
+			dot: 'var(--ink-green-6)',
+			pulse: false,
+		}
 	if (status === 'Failed')
-		return { key: 'broken', label: 'Failed', badgeTheme: 'red', dot: 'var(--ink-red-7)', pulse: true }
-	return { key: 'settingUp', label: status, badgeTheme: 'orange', dot: 'var(--ink-amber-7)', pulse: false }
+		return {
+			key: 'broken',
+			label: 'Failed',
+			badgeTheme: 'red',
+			dot: 'var(--ink-red-6)',
+			pulse: true,
+		}
+	return {
+		key: 'settingUp',
+		label: status,
+		badgeTheme: 'amber',
+		dot: 'var(--ink-amber-6)',
+		pulse: false,
+	}
 }

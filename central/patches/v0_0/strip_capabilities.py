@@ -57,9 +57,7 @@ def _reassign_retired_role_members() -> None:
 	"""Move every member on a retired role onto its successor before the role goes,
 	so the membership keeps resolving and the team still saves."""
 	for retired, successor in RETIRED_ROLES.items():
-		frappe.db.set_value(
-			"Team Member", {"role": retired}, "role", successor, update_modified=False
-		)
+		frappe.db.set_value("Team Member", {"role": retired}, "role", successor, update_modified=False)
 
 
 def _delete_retired_roles() -> None:

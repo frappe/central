@@ -35,9 +35,7 @@ def billable_line_items(filters: dict | None = None) -> list[dict]:
 	elif to_date:
 		conditions["period_start"] = ["<=", to_date]
 
-	invoices = frappe.get_all(
-		"Invoice", filters=conditions, fields=["name", "currency", "period_start"]
-	)
+	invoices = frappe.get_all("Invoice", filters=conditions, fields=["name", "currency", "period_start"])
 	if not invoices:
 		return []
 	invoice_by_name = {i.name: i for i in invoices}
@@ -53,14 +51,16 @@ def billable_line_items(filters: dict | None = None) -> list[dict]:
 		inv = invoice_by_name.get(it.parent)
 		if not inv:
 			continue
-		rows.append({
-			"invoice": it.parent,
-			"currency": inv.currency or "INR",
-			"period_start": inv.period_start,
-			"cluster": it.cluster or "",
-			"plan": it.plan or "",
-			"resource_type": it.resource_type or "",
-			"amount": flt(it.amount),
-			"recurring": it.resource_type == "bundle",
-		})
+		rows.append(
+			{
+				"invoice": it.parent,
+				"currency": inv.currency or "INR",
+				"period_start": inv.period_start,
+				"cluster": it.cluster or "",
+				"plan": it.plan or "",
+				"resource_type": it.resource_type or "",
+				"amount": flt(it.amount),
+				"recurring": it.resource_type == "bundle",
+			}
+		)
 	return rows

@@ -11,16 +11,74 @@ the flat price for a fixed bundle and the per-unit price for a metered
 single-resource Plan (ADR 0008).
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 import frappe
+
+# A projection asking "what if we raised this price". Every rate resolution in the
+# module comes through `get_catalog_rates`, so overriding here reaches plan rates, the
+# component rate card and live-priced metered plans alike — without any of them
+# learning that a simulator exists.
+#
+# It changes what is *read*. No Catalog Rate row is touched, which is what makes the
+# question safe to ask against production.
+_rate_overrides: ContextVar[tuple] = ContextVar("catalog_rate_overrides", default=())
+
+
+@contextmanager
+def overridden_rates(overrides):
+	"""Read catalog rates as if these were published, for this block only.
+
+	Each override names what it reprices — `priced_doctype` and `priced_for`, optionally
+	narrowed to a `cluster` and `currency` — and either a flat `rate` or a `percent`
+	change applied to whatever is configured.
+	"""
+	token = _rate_overrides.set(tuple(overrides or ()))
+	try:
+		yield
+	finally:
+		_rate_overrides.reset(token)
+
+
+def active_rate_overrides() -> tuple:
+	"""What is currently being pretended about prices, for showing on the output."""
+	return _rate_overrides.get()
+
+
+def _apply_overrides(priced_doctype: str, priced_for: str, rows: list) -> list:
+	"""Rewrite the rows a projection should see. Returns the rows unchanged when idle."""
+	overrides = _rate_overrides.get()
+	if not overrides:
+		return rows
+
+	for override in overrides:
+		if override.get("priced_doctype") != priced_doctype:
+			continue
+		if override.get("priced_for") and override["priced_for"] != priced_for:
+			continue
+		for row in rows:
+			if override.get("cluster") and row.cluster != override["cluster"]:
+				continue
+			if override.get("currency") and row.currency != override["currency"]:
+				continue
+			if override.get("rate") is not None:
+				row.rate = frappe.utils.flt(override["rate"])
+			elif override.get("percent"):
+				row.rate = frappe.utils.flt(
+					frappe.utils.flt(row.rate) * (1 + frappe.utils.flt(override["percent"]) / 100.0), 6
+				)
+	return rows
 
 
 def get_catalog_rates(priced_doctype: str, priced_for: str) -> list:
 	"""All `Catalog Rate` rows (cluster/currency/rate) for one priced plan."""
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Catalog Rate",
 		filters={"priced_doctype": priced_doctype, "priced_for": priced_for},
 		fields=["cluster", "currency", "rate"],
 	)
+	return _apply_overrides(priced_doctype, priced_for, rows)
 
 
 def set_catalog_rates(priced_doctype: str, priced_for: str, rates) -> None:

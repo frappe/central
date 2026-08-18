@@ -6,20 +6,21 @@
 //   1. initiate_card_setup → an off-session SetupIntent (client_secret) + a
 //      pending Payment Method doc.
 //   2. confirmCardSetup with the card → Stripe attaches the method to the team's
-//      customer and returns the pm_… handle.
+//      customer and returns the pm_… handle, plus a mandate_… id in currencies
+//      where recurring debits are regulated (India).
 //   3. confirm_card → backend runs the micro-charge validation and activates it.
 //
 // publishableKey + client_secret come from the backend; we never hardcode a key.
 
-import { ref } from 'vue'
 import {
 	loadStripe,
 	type Stripe,
 	type StripeCardElement,
 } from '@stripe/stripe-js'
 import { useCall } from 'frappe-ui'
+import { ref } from 'vue'
 import { API, method } from '@/api/methods'
-import { successToast, errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 
 interface CardSetupOrder {
 	client_secret?: string
@@ -98,7 +99,7 @@ export function useAddStripeCard({
 				})
 			if (pmError) throw pmError
 
-			const { error: setupError } = await stripe.confirmCardSetup(
+			const { setupIntent, error: setupError } = await stripe.confirmCardSetup(
 				order.client_secret,
 				{
 					payment_method: paymentMethod.id,
@@ -113,17 +114,21 @@ export function useAddStripeCard({
 				display_label: `${capitalise(c?.brand)} ····${c?.last4}`,
 				expiry_month: c?.exp_month,
 				expiry_year: c?.exp_year,
+				// Present where the currency required a mandate at setup (India); every
+				// later off-session debit quotes it.
+				gateway_mandate_id: mandateId(setupIntent),
+				card_network: c?.brand,
 			})
 			const res = confirm.data
 			if (!res || res.status !== 'Active') {
-				errorToast("We couldn't verify that card. Please try a different one.")
+				errorToast("Couldn't verify that card. Try a different one")
 				return
 			}
-			successToast('Card added.')
+			successToast('Card added')
 			onDone?.(res)
 			return res
 		} catch (e) {
-			errorToast(e, 'Could not add card.')
+			errorToast(e, 'Could not add card')
 		} finally {
 			submitting.value = false
 		}
@@ -141,4 +146,14 @@ export function useAddStripeCard({
 
 function capitalise(s: string | undefined): string {
 	return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''
+}
+
+// India mandates come back on the SetupIntent, either expanded or as a bare id.
+// stripe-js does not type the field, so read it off defensively.
+function mandateId(setupIntent: unknown): string | undefined {
+	const mandate = (setupIntent as { mandate?: unknown } | undefined)?.mandate
+	if (typeof mandate === 'string') return mandate
+	if (mandate && typeof mandate === 'object')
+		return (mandate as { id?: string }).id
+	return undefined
 }

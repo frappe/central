@@ -18,14 +18,16 @@ TEAM_B = "team-pmm-b"
 
 
 def _book(team, entry_type, amount, reference_type, currency="INR"):
-	frappe.get_doc({
-		"doctype": "Credit Ledger Entry",
-		"team": team,
-		"entry_type": entry_type,
-		"amount": amount,
-		"currency": currency,
-		"reference_type": reference_type,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Credit Ledger Entry",
+			"team": team,
+			"entry_type": entry_type,
+			"amount": amount,
+			"currency": currency,
+			"reference_type": reference_type,
+		}
+	).insert(ignore_permissions=True)
 
 
 class TestPaymentMethodMixCredits(IntegrationTestCase):

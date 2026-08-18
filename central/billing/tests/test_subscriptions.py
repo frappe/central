@@ -3,10 +3,10 @@
 """Subscription intent + two-axis state model (issue #04)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import subscriptions
 from central.billing.catalog.subscriptions import InvalidTransition
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan
 
 PLAN = "bundle-sub-test"
@@ -104,13 +104,20 @@ class TestAccountStandingStateMachine(SubscriptionTestBase):
 		# current -> suspended skips the grace step.
 		with self.assertRaises(InvalidTransition):
 			subscriptions.set_standing(sub.name, "Suspended")
-		# current -> current is a no-op transition, not allowed.
-		with self.assertRaises(InvalidTransition):
-			subscriptions.set_standing(sub.name, "Current")
-		# Move to past_due, then an illegal jump back-and-forth.
+
+	def test_same_standing_is_an_idempotent_noop(self):
+		# Dunning re-applies the same standing on each retry day: it must not raise or
+		# record a spurious change — the move already happened.
+		sub = self.make_sub()  # starts Current
+		subscriptions.set_standing(sub.name, "Current")
+		self.assertEqual(frappe.db.get_value("Subscription", sub.name, "account_standing"), "Current")
 		subscriptions.set_standing(sub.name, "Past Due")
-		with self.assertRaises(InvalidTransition):
-			subscriptions.set_standing(sub.name, "Past Due")  # same-state
+		subscriptions.set_standing(sub.name, "Past Due")  # same-state, no-op
+		self.assertEqual(frappe.db.get_value("Subscription", sub.name, "account_standing"), "Past Due")
+		self.assertEqual(
+			frappe.db.count("Subscription Change", {"subscription": sub.name, "change_type": "Past Due"}),
+			1,  # recorded once, not twice
+		)
 
 	def test_unknown_standing_raises(self):
 		sub = self.make_sub()
@@ -129,7 +136,10 @@ class TestReconciliation(SubscriptionTestBase):
 		# Provisioning the resource opens its billing segment (ADR 0010 — the ledger is
 		# the lock); reconcile resolves the resource's open segment for its plan.
 		sub = subscriptions.create_subscription(
-			team=TEAM, cluster="ap-south-1", plan=PLAN, billing_cycle="Monthly",
+			team=TEAM,
+			cluster="ap-south-1",
+			plan=PLAN,
+			billing_cycle="Monthly",
 			resource_id="srv-sub-1",
 		)
 		result = subscriptions.reconcile_with_agent_event(sub.name, "srv-sub-1")

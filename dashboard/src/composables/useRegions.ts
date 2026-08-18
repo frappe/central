@@ -1,5 +1,5 @@
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import type { Region } from '@/types/Region'

@@ -3,12 +3,11 @@
 """Re-point billing's `team` from a free-text `Data` slug to the real Central
 `Team` (issue #43, ADR 0004 §4).
 
-Runs **pre_model_sync** — while `team` is still a `Data` column on all 16 billing
+Runs **pre_model_sync** — while `team` is still a `Data` column on all 13 billing
 tables — so we can ensure a `Team` per legacy slug, rewrite every value to the
-`Team.name`, and rename the five `field:team`-named docs (Credit Wallet, Trust
-Tier, Tax Profile, Billing Profile, Notification Preference) so their `name`
-still equals `team`. The field-type flip to `Link → Team` then lands on values
-that are already valid links.
+`Team.name`, and rename the `field:team`-named docs (Credit Wallet, Tax Profile,
+Billing Profile) so their `name` still equals `team`. The field-type flip to
+`Link → Team` then lands on values that are already valid links.
 
 Access continuity is part of the migration, not a follow-up: every user who
 could reach a team's billing under the old model (`User.billing_team`) becomes
@@ -22,11 +21,13 @@ Idempotent and re-runnable: a value that is already a `Team.name` is left alone.
 from collections import Counter, defaultdict
 
 import frappe
+from frappe import _
 from frappe.model.rename_doc import rename_doc
 
 # The billing DocTypes carrying `team` (Notification Log was renamed to Billing
 # Notification Log in #41; Price Lock was retired into the Subscription Change
-# ledger by ADR 0010 / #86).
+# ledger by ADR 0010 / #86; the old per-team Notification Preference was replaced
+# by the Notification Event Type registry in the notification module).
 TEAM_DOCTYPES = [
 	"Subscription",
 	"Invoice",
@@ -41,7 +42,6 @@ TEAM_DOCTYPES = [
 	"Billing Profile",
 	"Entitlement Token",
 	"Billing Notification Log",
-	"Notification Preference",
 ]
 
 # Of those, the ones autonamed `field:team` — their document `name` *is* the
@@ -51,7 +51,6 @@ FIELD_TEAM_DOCTYPES = [
 	"Credit Wallet",
 	"Tax Profile",
 	"Billing Profile",
-	"Notification Preference",
 ]
 
 MEMBER_ROLE = "Billing"  # carries billing:view + billing:manage
@@ -142,9 +141,7 @@ def _ensure_team(slug: str, member_users: list[str]) -> str:
 			"doctype": "Team",
 			"team_name": slug,
 			"owner_user": owner,
-			"members": [
-				{"user": u, "role": MEMBER_ROLE, "status": "Active"} for u in others
-			],
+			"members": [{"user": u, "role": MEMBER_ROLE, "status": "Active"} for u in others],
 		}
 	).insert(ignore_permissions=True)
 	return team.name
@@ -192,9 +189,7 @@ def _rewrite_team_values(mapping: dict[str, str]) -> None:
 		for slug, team_name in mapping.items():
 			if slug == team_name:
 				continue
-			frappe.qb.update(table).set(table.team, team_name).where(
-				table.team == slug
-			).run()
+			frappe.qb.update(table).set(table.team, team_name).where(table.team == slug).run()
 
 
 def _rename_field_team_docs(mapping: dict[str, str]) -> None:
@@ -230,8 +225,9 @@ def _assert_round_trip(before: dict[str, Counter], mapping: dict[str, str]) -> N
 		)
 		if expected != actual:
 			frappe.throw(
-				f"Team migration round-trip mismatch on {doctype}: "
-				f"expected {dict(expected)}, got {dict(actual)}"
+				_("Team migration round-trip mismatch on {0}: expected {1}, got {2}").format(
+					doctype, dict(expected), dict(actual)
+				)
 			)
 
 
@@ -243,9 +239,7 @@ def _drop_billing_team_field() -> None:
 	keeps no field of its own on User; the `team` link is the identity. Frappe does
 	not auto-drop orphaned columns, so the DDL is explicit."""
 	if frappe.db.exists("Custom Field", "User-billing_team"):
-		frappe.delete_doc(
-			"Custom Field", "User-billing_team", force=True, ignore_permissions=True
-		)
+		frappe.delete_doc("Custom Field", "User-billing_team", force=True, ignore_permissions=True)
 	if "billing_team" in frappe.db.get_table_columns("User"):
 		# IF EXISTS so a stale column cache can't make a re-run error.
 		frappe.db.sql_ddl("ALTER TABLE `tabUser` DROP COLUMN IF EXISTS `billing_team`")

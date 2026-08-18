@@ -1,11 +1,8 @@
-import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
-import { createListViewQuery } from '@/components/common/list-view'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
-import { useFrappeList } from '@/composables/common/useFrappeList'
-import { successToast, errorToast, getErrorMessage, isAbortError } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 import type { RefreshResponse } from '@/types/api'
 import type { Asset } from '@/types/Central/Asset'
 
@@ -30,12 +27,17 @@ export type AssetRow = Pick<
 	| 'gateway_url'
 	| 'resize_in_progress'
 	| 'last_synced_at'
->
+> & {
+	// Transitional label ("Terminating"/"Provisioning"/…) while an action is in flight.
+	// Overlaid by central.api.servers.registry from the active Resource Action, not an
+	// Asset field — so the row reads as "…ing" until the mirror catches up.
+	pending_action?: string | null
+}
 
-// The team's servers, read from the Asset DocType through Frappe reportview, plus
-// the lifecycle command path. The mirror is kept fresh by Atlas's event push +
-// the reconcile pull, so a command's effect lands on the next refresh, not
-// synchronously — hence every action `reload()`s after it fires.
+// The server lifecycle command path (create / power / terminate / open-in-bench /
+// mirror refresh). The fleet *list* is read separately through useServerMapData;
+// callers reload that after a command, since a command's effect lands on the next
+// mirror refresh (Atlas event push + reconcile pull), not synchronously.
 
 const { activeTeam } = useSession()
 
@@ -43,42 +45,7 @@ const { activeTeam } = useSession()
 type TeamParams = { team: string }
 type CommandParams = { team: string; resource_id: string }
 
-const query = ref(
-	createListViewQuery({
-		pageSize: 20,
-		sort: { key: 'cluster', direction: 'asc' },
-	}),
-)
-
-const registry = useFrappeList<AssetRow>({
-	doctype: 'Asset',
-	fields: [
-		'name',
-		'resource_id',
-		'title',
-		'cluster',
-		'status',
-		'plan',
-		'frappe_version',
-		'vcpus',
-		'memory_megabytes',
-		'disk_gigabytes',
-		'ipv6_address',
-		'public_ipv4',
-		'gateway_url',
-		'resize_in_progress',
-		'last_synced_at',
-	],
-	query,
-	filters: () => [['team', '=', activeTeam.value]],
-	searchFields: ['title', 'resource_id', 'cluster', 'status'],
-	sortableFields: ['title', 'cluster', 'status', 'resource_id'],
-	defaultOrderBy: 'cluster asc, resource_id asc',
-})
-
-whenTeamReady(() => registry.reload())
-
-// Re-pulls the mirror from every Active Atlas, then re-reads it.
+// Re-pulls the mirror from every Active Atlas.
 const refresh = useCall<RefreshResponse, TeamParams>({
 	url: method(API.refreshAssets),
 	method: 'POST',
@@ -155,6 +122,9 @@ async function runCommand(
 	call: typeof startCall,
 	server: AssetRow,
 	verb: Verb,
+	// A quick, reversible power action toasts on failure; a destructive one (terminate)
+	// throws so the caller can hold its confirm dialog open and show the reason inline.
+	surface: 'toast' | 'throw' = 'toast',
 ): Promise<void> {
 	busy.value = server.resource_id
 	try {
@@ -164,9 +134,12 @@ async function runCommand(
 			resource_id: server.resource_id,
 		})
 		if (call.error) throw call.error
-		successToast(`${verb} requested for ${server.title || server.resource_id}.`)
-		registry.reload()
+		if (surface === 'toast')
+			successToast(
+				`${verb} requested for ${server.title || server.resource_id}`,
+			)
 	} catch (e) {
+		if (surface === 'throw') throw e
 		errorToast(e)
 	} finally {
 		busy.value = ''
@@ -174,13 +147,10 @@ async function runCommand(
 }
 
 export function useServers() {
-	registry.listenForUpdates()
-
 	async function refreshAssets(): Promise<void> {
 		try {
 			await refresh.submit({ team: activeTeam.value! })
 			if (refresh.error) throw refresh.error
-			registry.reload()
 		} catch (e) {
 			errorToast(e)
 		}
@@ -193,7 +163,7 @@ export function useServers() {
 		return runCommand(stopCall, server, 'Stop')
 	}
 	function terminate(server: AssetRow) {
-		return runCommand(terminateCall, server, 'Terminate')
+		return runCommand(terminateCall, server, 'Terminate', 'throw')
 	}
 
 	// Open the VM's bench via a scoped SSO assertion. The tab is opened
@@ -227,8 +197,7 @@ export function useServers() {
 			errorToast(createCall.error)
 			throw createCall.error
 		}
-		successToast(`Creating ${params.title} in ${params.region}.`)
-		registry.reload()
+		successToast(`Creating ${params.title} in ${params.region}`)
 		return createCall.data?.resource_id ?? ''
 	}
 
@@ -241,22 +210,11 @@ export function useServers() {
 			errorToast(createComposedCall.error)
 			throw createComposedCall.error
 		}
-		successToast(`Creating ${params.title} in ${params.region}.`)
-		registry.reload()
+		successToast(`Creating ${params.title} in ${params.region}`)
 		return createComposedCall.data?.resource_id ?? ''
 	}
 
 	return {
-		servers: registry.rows,
-		totalRows: registry.totalRows,
-		countLoading: registry.countLoading,
-		query,
-		loading: registry.loading,
-		error: computed(() => {
-			const e = registry.error.value
-			if (!e || isAbortError(e)) return null
-			return getErrorMessage(e, "Couldn't load servers.")
-		}),
 		refreshing: computed(() => refresh.loading),
 		creating: computed(() => createCall.loading),
 		creatingComposed: computed(() => createComposedCall.loading),
@@ -265,7 +223,6 @@ export function useServers() {
 		stale: computed<string[]>(() => refresh.data?.stale ?? []),
 		busy,
 		opening,
-		reload: () => registry.reload(),
 		refreshAssets,
 		create,
 		createComposed,

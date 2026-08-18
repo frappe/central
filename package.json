@@ -1,5 +1,5 @@
 {
-  "name": "press",
+  "name": "central",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/frappe/central.git"
@@ -19,7 +19,7 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
   },
-  "version": "0.0.0",
+  "version": "0.1.0",
   "devDependencies": {
     "@playwright/test": "^1.61.0"
   }

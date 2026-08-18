@@ -9,6 +9,8 @@
   "team",
   "email",
   "role",
+  "resource_type",
+  "resource_name",
   "status",
   "column_break_details",
   "invited_by",
@@ -34,6 +36,7 @@
    "in_standard_filter": 1,
    "label": "Email",
    "reqd": 1,
+   "search_index": 1,
    "set_only_once": 1
   },
   {
@@ -43,6 +46,24 @@
    "label": "Team Role",
    "options": "Team Role",
    "reqd": 1,
+   "search_index": 1,
+   "set_only_once": 1
+  },
+  {
+   "default": "*",
+   "fieldname": "resource_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Resource Type",
+   "options": "*\nServer\nSite",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "depends_on": "eval:doc.resource_type!==\"*\"",
+   "fieldname": "resource_name",
+   "fieldtype": "Data",
+   "label": "Resource Name",
    "set_only_once": 1
   },
   {

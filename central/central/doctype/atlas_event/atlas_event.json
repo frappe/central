@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-08-03 00:00:00.000000",
+ "description": "Durable store of received Atlas events, written before background processing.",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "cluster",
+  "event_id",
+  "event_type",
+  "status",
+  "column_break_main",
+  "occurred_at",
+  "processed_at",
+  "signature_timestamp",
+  "signature",
+  "error",
+  "section_break_payload",
+  "raw_payload",
+  "raw_body"
+ ],
+ "fields": [
+  {
+   "fieldname": "cluster",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Cluster",
+   "options": "Atlas Instance",
+   "reqd": 1
+  },
+  {
+   "fieldname": "event_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "event_type",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event Type",
+   "reqd": 1
+  },
+  {
+   "default": "Received",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Received\nProcessed\nFailed\nIgnored"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "occurred_at",
+   "fieldtype": "Datetime",
+   "label": "Occurred At"
+  },
+  {
+   "fieldname": "processed_at",
+   "fieldtype": "Datetime",
+   "label": "Processed At"
+  },
+  {
+   "description": "The X-Atlas-Timestamp this event's signature was verified against, stored exactly as received — part of the signed string, so verify_signature needs it.",
+   "fieldname": "signature_timestamp",
+   "fieldtype": "Data",
+   "label": "Signature Timestamp",
+   "read_only": 1
+  },
+  {
+   "description": "The X-Atlas-Signature this event was admitted on. Stored with raw_body so the row stays re-verifiable after the request is gone.",
+   "fieldname": "signature",
+   "fieldtype": "Data",
+   "label": "Signature",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error"
+  },
+  {
+   "fieldname": "section_break_payload",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Parsed handler input. NOT what the signature covers — re-serialized JSON is not byte-identical, so verify against raw_body only.",
+   "fieldname": "raw_payload",
+   "fieldtype": "JSON",
+   "label": "Raw Payload"
+  },
+  {
+   "description": "The exact request body Atlas signed, byte for byte. The artifact verify_signature recomputes the HMAC over.",
+   "fieldname": "raw_body",
+   "fieldtype": "Code",
+   "label": "Raw Body",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Atlas Event",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -9,9 +9,9 @@ usage and one-off add-ons bill at list. See final-plan-pricing.md §5 / ADR 0001
 """
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.revenue import invoicing
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import add_segment, make_billing_subscription, make_plan
 
 TEAM = "team-commitment"
@@ -32,18 +32,22 @@ def push_event(event_id, resource_id, rate, effective_from, event_type="subscrib
 
 def make_commitment(team, floor, discount_pct, started_at="2026-06-01", term_months=12, currency="INR"):
 	frappe.db.delete("Commitment", {"team": team})
-	return frappe.get_doc(
-		{
-			"doctype": "Commitment",
-			"team": team,
-			"floor": floor,
-			"currency": currency,
-			"discount_pct": discount_pct,
-			"term_months": term_months,
-			"started_at": started_at,
-			"status": "Active",
-		}
-	).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Commitment",
+				"team": team,
+				"floor": floor,
+				"currency": currency,
+				"discount_pct": discount_pct,
+				"term_months": term_months,
+				"started_at": started_at,
+				"status": "Active",
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 class CommitmentTestBase(IntegrationTestCase):
@@ -168,7 +172,7 @@ class TestCommitmentClawback(CommitmentTestBase):
 		self.assertEqual(frappe.db.get_value("Commitment", commitment, "status"), "Active")
 
 	def test_clawback_is_idempotent(self):
-		commitment = make_commitment(TEAM, floor=800, discount_pct=20, started_at="2026-06-01")
+		make_commitment(TEAM, floor=800, discount_pct=20, started_at="2026-06-01")
 		push_event("e1", "R1", 1000, "2026-06-01 00:00:00", "subscribed")
 		invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		push_event("e2", "R1", 1000, "2026-07-16 00:00:00", "Cancelled")

@@ -15,10 +15,12 @@ class Plan(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 		from frappe.types import DF
 
+		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
+
 		annual_discount_pct: DF.Float
+		available_on_trial: DF.Check
 		billing_cycle: DF.Literal["Monthly", "Annual"]
 		category: DF.Link
 		includes: DF.Table[PlanIncludes]
@@ -39,9 +41,7 @@ class Plan(Document):
 		keys off the single include, and a bundle needs its composition. The field is
 		also `reqd`; this surfaces the invariant with a clear message server-side."""
 		if not self.includes:
-			frappe.throw(
-				_("A Plan must include at least one resource — it needs to declare what it bills.")
-			)
+			frappe.throw(_("A Plan must include at least one resource — it needs to declare what it bills."))
 
 	def is_metered_single_resource(self) -> bool:
 		"""True when this Plan is a metering target: a single-resource plan under a
@@ -92,9 +92,7 @@ class Plan(Document):
 		owner = frappe.db.get_value("Plan Sub-Category", self.sub_category, "category")
 		if owner != self.category:
 			frappe.throw(
-				_("Sub-Category {0} belongs to {1}, not {2}.").format(
-					self.sub_category, owner, self.category
-				)
+				_("Sub-Category {0} belongs to {1}, not {2}.").format(self.sub_category, owner, self.category)
 			)
 
 	def _validate_includes_against_category(self):
@@ -136,8 +134,7 @@ class Plan(Document):
 			"billing_cycle": self.billing_cycle,
 			"is_active": self.is_active,
 			"rates": [
-				{"cluster": r.cluster or None, "currency": r.currency, "rate": r.rate}
-				for r in rate_rows
+				{"cluster": r.cluster or None, "currency": r.currency, "rate": r.rate} for r in rate_rows
 			],
 			"includes": [
 				{

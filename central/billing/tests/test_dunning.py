@@ -6,19 +6,26 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from frappe.tests import IntegrationTestCase
 
-from central.billing.revenue import dunning
+from central.billing import settings
 from central.billing.catalog import subscriptions
-from central.billing.gateways.base import PaymentResult
 from central.billing.catalog.signing import generate_keypair
+from central.billing.gateways.base import PaymentResult
+from central.billing.revenue import dunning
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
-from central.billing.tests.utils import ensure_atlas_instance, ensure_team, make_plan, set_team_tier
+from central.billing.tests.utils import (
+	billing_settings,
+	ensure_atlas_instance,
+	ensure_team,
+	make_plan,
+	set_team_tier,
+)
 
 TEAM = "team-dunning"
 CLUSTER = "ap-south-1"
 PLAN = "bundle-dunning-test"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 DUE = "2026-06-01"
 
 
@@ -41,7 +48,7 @@ class DunningTestBase(IntegrationTestCase):
 		ensure_team(TEAM)
 		ensure_atlas_instance(CLUSTER)
 		make_plan(PLAN)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._priv, self._pub = generate_keypair()
 		frappe.conf.entitlement_private_key = self._priv
 		self._purge()
@@ -63,30 +70,54 @@ class DunningTestBase(IntegrationTestCase):
 		frappe.db.commit()
 
 	def _card(self):
-		return frappe.get_doc(
-			{
-				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY,
-				"method_type": "Card", "status": "Active",
-				"gateway_method_id": "pm_x", "gateway_customer_id": "cus_x", "is_default": 1,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"method_type": "Card",
+					"status": "Active",
+					"gateway_method_id": "pm_x",
+					"gateway_customer_id": "cus_x",
+					"is_default": 1,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _subscription(self, with_card=True):
 		return subscriptions.create_subscription(
-			team=TEAM, cluster=CLUSTER, plan=PLAN, billing_cycle="Monthly",
+			team=TEAM,
+			cluster=CLUSTER,
+			plan=PLAN,
+			billing_cycle="Monthly",
 			default_payment_method=self._card() if with_card else None,
 			gateway=GATEWAY if with_card else None,
 		).name
 
 	def _open_invoice(self, sub, total=1000):
-		return frappe.get_doc(
-			{
-				"doctype": "Invoice", "team": TEAM, "subscription": sub, "invoice_type": "Billable",
-				"status": "Open", "period_start": "2026-05-01", "period_end": "2026-05-31",
-				"currency": "INR", "subtotal": total, "total": total,
-				"expected_collection": total, "due_date": DUE,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"subscription": sub,
+					"invoice_type": "Billable",
+					"status": "Open",
+					"period_start": "2026-05-01",
+					"period_end": "2026-05-31",
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"expected_collection": total,
+					"due_date": DUE,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _attempts(self, inv):
 		return frappe.db.count("Payment Attempt", {"invoice": inv})
@@ -125,9 +156,14 @@ class TestRetrySchedule(DunningTestBase):
 		sub = self._subscription()  # primary card pm_x (priority 0)
 		frappe.get_doc(
 			{
-				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY,
-				"method_type": "Card", "status": "Active", "gateway_method_id": "pm_y",
-				"gateway_customer_id": "cus_x", "priority": 1,
+				"doctype": "Payment Method",
+				"team": TEAM,
+				"gateway": GATEWAY,
+				"method_type": "Card",
+				"status": "Active",
+				"gateway_method_id": "pm_y",
+				"gateway_customer_id": "cus_x",
+				"priority": 1,
 			}
 		).insert(ignore_permissions=True)
 		inv = self._open_invoice(sub)
@@ -177,6 +213,19 @@ class TestStagedEscalation(DunningTestBase):
 
 		self.assertTrue(self._has_directive("terminate"))
 
+	def test_the_ladder_follows_billing_settings(self):
+		"""A shortened ladder escalates on its own days, not the shipped ones."""
+		sub = self._subscription()
+		inv = self._open_invoice(sub)
+		with billing_settings(dunning_retry_days="1, 2", suspend_after_days=4, terminate_after_days=6):
+			with declining_gateway():
+				for d in (1, 2, 4, 6):
+					dunning.process_invoice_dunning(inv, now=day(d))
+
+		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
+		self.assertTrue(self._has_directive("suspend"))
+		self.assertTrue(self._has_directive("terminate"))
+
 	def test_cost_report_invoice_is_not_dunned(self):
 		sub = self._subscription()
 		inv = self._open_invoice(sub)
@@ -220,8 +269,6 @@ class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
 		self.assertNotEqual(self._standing(sub), "Past Due")
 
 	def test_the_deferred_ladder_still_runs_from_the_fair_date(self):
-		from central.billing.revenue.invoicing import DEFAULT_DUE_DAYS
-
 		sub = self._subscription()
 		inv = self._open_invoice(sub)
 		dunning.defer_dunning(inv, "the run backed up")
@@ -229,7 +276,10 @@ class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
 		# Deferral is grace, not amnesty: a week after the date we could actually
 		# have asked on, the ladder escalates exactly as it always would.
 		fair = frappe.db.get_value("Invoice", inv, "dunning_starts_on")
-		self.assertEqual(fair, frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), DEFAULT_DUE_DAYS)))
+		self.assertEqual(
+			fair,
+			frappe.utils.getdate(frappe.utils.add_days(frappe.utils.nowdate(), settings.invoice_due_days())),
+		)
 		with declining_gateway():
 			dunning.process_invoice_dunning(inv, now=frappe.utils.add_days(fair, 7))
 		self.assertEqual(frappe.db.get_value("Invoice", inv, "status"), "Overdue")
@@ -263,3 +313,74 @@ class TestOurDelayIsNotTheirDelinquency(DunningTestBase):
 		inv = self._open_invoice(sub)
 		dunning.defer_dunning(inv, "the run backed up")
 		self.assertEqual(str(frappe.db.get_value("Invoice", inv, "due_date")), DUE)
+
+
+class TestTheLadderIsAList(IntegrationTestCase):
+	"""The schedule is date arithmetic over the policy, so it can be drawn without
+	being run — and the executor walks the same list."""
+
+	START = "2026-06-01"
+
+	def _policy(self, retries=(1, 3, 7), suspend=14, terminate=44):
+		return frappe._dict(
+			retry_days=list(retries),
+			overdue_after=list(retries)[-1] if retries else 0,
+			suspend_after=suspend,
+			terminate_after=terminate,
+		)
+
+	def _on(self, schedule, stage, attempt=None):
+		return next(s for s in schedule if s.stage == stage and (attempt is None or s.attempt == attempt))
+
+	def test_every_stage_lands_the_configured_number_of_days_out(self):
+		sched = dunning.dunning_schedule(self.START, self._policy())
+		self.assertEqual(str(self._on(sched, "Retry", 1).date), "2026-06-02")
+		self.assertEqual(str(self._on(sched, "Retry", 3).date), "2026-06-08")
+		self.assertEqual(str(self._on(sched, "Overdue").date), "2026-06-08")
+		self.assertEqual(str(self._on(sched, "Suspend").date), "2026-06-15")
+		self.assertEqual(str(self._on(sched, "Terminate").date), "2026-07-15")
+
+	def test_the_ladder_is_ordered_and_a_retry_precedes_the_overdue_it_shares_a_day_with(self):
+		sched = dunning.dunning_schedule(self.START, self._policy())
+		self.assertEqual([s.day for s in sched], sorted(s.day for s in sched))
+		last_retry = [i for i, s in enumerate(sched) if s.stage == "Retry"][-1]
+		overdue = next(i for i, s in enumerate(sched) if s.stage == "Overdue")
+		self.assertLess(last_retry, overdue)
+
+	def test_with_no_retries_the_invoice_is_overdue_immediately(self):
+		sched = dunning.dunning_schedule(self.START, self._policy(retries=()))
+		self.assertEqual(str(self._on(sched, "Overdue").date), self.START)
+		self.assertFalse([s for s in sched if s.stage == "Retry"])
+
+	def test_an_explicit_policy_is_used_instead_of_the_settings(self):
+		sched = dunning.dunning_schedule(self.START, self._policy(retries=(2,), suspend=5, terminate=9))
+		self.assertEqual(str(self._on(sched, "Suspend").date), "2026-06-06")
+		self.assertEqual(str(self._on(sched, "Terminate").date), "2026-06-10")
+
+	def test_nothing_is_reached_before_the_clock_starts(self):
+		sched = dunning.dunning_schedule(self.START, self._policy())
+		self.assertEqual(dunning.stages_reached(sched, "2026-05-31"), set())
+		self.assertEqual(dunning.stages_reached(sched, self.START), set())
+
+	def test_stages_accumulate_as_the_dates_pass(self):
+		sched = dunning.dunning_schedule(self.START, self._policy())
+		self.assertEqual(dunning.stages_reached(sched, "2026-06-02"), {"Retry"})
+		self.assertEqual(dunning.stages_reached(sched, "2026-06-08"), {"Retry", "Overdue"})
+		self.assertEqual(dunning.stages_reached(sched, "2026-06-15"), {"Retry", "Overdue", "Suspend"})
+		self.assertEqual(
+			dunning.stages_reached(sched, "2026-07-15"),
+			{"Retry", "Overdue", "Suspend", "Terminate"},
+		)
+
+	def test_the_policy_reads_the_settings(self):
+		with billing_settings(dunning_retry_days="2, 5", suspend_after_days=9, terminate_after_days=20):
+			policy = dunning.dunning_policy()
+		self.assertEqual(policy.retry_days, [2, 5])
+		self.assertEqual(policy.overdue_after, 5)
+		self.assertEqual(policy.suspend_after, 9)
+		self.assertEqual(policy.terminate_after, 20)
+
+	def test_drawing_the_ladder_touches_no_documents(self):
+		with patch.object(frappe.db, "get_value") as read:
+			dunning.dunning_schedule(self.START, self._policy())
+			self.assertFalse(read.called)

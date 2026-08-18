@@ -22,10 +22,11 @@ The flow is deliberately split so curated, real-world catalogues (à la the clou
 """
 
 import frappe
+from frappe import _
 from frappe.utils import flt
 
-from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.catalog.plans import RATIO_FACTORS
+from central.billing.catalog.pricing import set_catalog_rate
 
 _MAX_RUNGS = 24  # safety bound on the doubling loop
 
@@ -33,8 +34,21 @@ _MAX_RUNGS = 24  # safety bound on the doubling loop
 # from 1/16 up to 1024 (final-plan-pricing.md §4). Stored as the fraction string
 # (what the admin sees); `parse_vcpu` turns it into the float the ladder uses.
 VCPU_CHOICES = (
-	"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8",
-	"16", "32", "64", "128", "256", "512", "1024",
+	"1/16",
+	"1/8",
+	"1/4",
+	"1/2",
+	"1",
+	"2",
+	"4",
+	"8",
+	"16",
+	"32",
+	"64",
+	"128",
+	"256",
+	"512",
+	"1024",
 )
 
 
@@ -86,11 +100,11 @@ def build_ladder(
 	ceiling = parse_vcpu(ceiling_vcpu)
 	factor = RATIO_FACTORS.get(memory_ratio)
 	if not factor:
-		frappe.throw(f"Memory ratio must be one of {', '.join(RATIO_FACTORS)}.")
+		frappe.throw(_("Memory ratio must be one of {0}.").format(", ".join(RATIO_FACTORS)))
 	if start <= 0:
-		frappe.throw("Start vCPU must be greater than zero.")
+		frappe.throw(_("Start vCPU must be greater than zero."))
 	if ceiling < start:
-		frappe.throw("Ceiling vCPU must be at least the start vCPU.")
+		frappe.throw(_("Ceiling vCPU must be at least the start vCPU."))
 
 	rungs = []
 	vcpu = start
@@ -232,9 +246,9 @@ def apply_pricing(
 	other clusters' rows. Returns names created vs updated.
 	"""
 	if not currency:
-		frappe.throw("Currency is required.")
+		frappe.throw(_("Currency is required."))
 	if flt(base_rate) <= 0:
-		frappe.throw("Base rate must be greater than zero.")
+		frappe.throw(_("Base rate must be greater than zero."))
 
 	created, updated = [], []
 	for row in plan_multipliers:
@@ -243,7 +257,7 @@ def apply_pricing(
 		# 6 dp, matching Catalog Rate.rate — a per-unit consumer rate (e.g. per token)
 		# is a small fraction of a cent, so rounding to 2 would zero it out.
 		rate = flt(flt(base_rate) * flt(multiplier), 6)
-		_, was_created = set_catalog_rate("Plan", plan, currency, rate, cluster=cluster)
+		_name, was_created = set_catalog_rate("Plan", plan, currency, rate, cluster=cluster)
 		(created if was_created else updated).append(plan)
 	return {"created": created, "updated": updated, "cluster": cluster or None, "currency": currency}
 

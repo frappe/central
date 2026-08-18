@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Button, Dropdown } from 'frappe-ui'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
+import type { AssetRow } from '@/composables/useServers'
 import {
 	canStart,
 	canStop,
@@ -8,7 +9,6 @@ import {
 	isSettingUp,
 	isTerminated,
 } from '@/lib/status'
-import type { AssetRow } from '@/composables/useServers'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
 // server's status and the user's capabilities — the same rules the API enforces
@@ -47,6 +47,9 @@ const options = computed(() => {
 		icon: 'lucide-gauge',
 		onClick: () => emit('overview', props.server),
 	})
+	// An action is in flight (Provisioning/Starting/Terminating/…): offer nothing else until
+	// it settles, mirroring the API which rejects a second command mid-flight.
+	if (props.server.pending_action) return items
 	// Mid-resize the VM is power-cycling in the background: power + resize actions are
 	// blocked (the API rejects them too) until the reshape job clears the flag.
 	const resizing = isResizing(props.server)
@@ -85,11 +88,7 @@ const options = computed(() => {
 			disabled: resizing,
 			onClick: () => emit('resize', props.server),
 		})
-	if (
-		props.canTerminate &&
-		!isTerminated(props.server.status) &&
-		!settingUp
-	)
+	if (props.canTerminate && !isTerminated(props.server.status) && !settingUp)
 		items.push({
 			label: 'Terminate',
 			icon: 'lucide-trash-2',
@@ -101,14 +100,9 @@ const options = computed(() => {
 </script>
 
 <template>
-	<Dropdown v-if="options.length" :options="options" placement="right">
-		<template #trigger>
-			<Button
-				variant="ghost"
-				icon="lucide-ellipsis-vertical"
-				:loading="busy || opening"
-				aria-label="Server actions"
-			/>
-		</template>
-	</Dropdown>
+	<RowActionsMenu
+		:options="options"
+		label="Server actions"
+		:busy="busy || opening"
+	/>
 </template>

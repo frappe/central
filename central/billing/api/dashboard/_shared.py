@@ -6,7 +6,10 @@ Team resolution + access gating, currency/gateway lookups, and the line-item
 humaniser. Endpoint modules (account/invoices/methods) build on these.
 """
 
+from datetime import timedelta
+
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.catalog.subscriptions import team_active_segments
@@ -32,7 +35,7 @@ def _resolve_team(team: str | None, require: str = authz.VIEW) -> str:
 	mutation endpoint that takes a `team` argument."""
 	team = team or _default_team()
 	if not team:
-		frappe.throw("No billing team in context.", frappe.ValidationError)
+		frappe.throw(_("No billing team in context."), frappe.ValidationError)
 	authz.require_capability(team, require)
 	return team
 
@@ -77,7 +80,11 @@ def _team_currency(team: str) -> str:
 # customers, and for India the state is only enforced when a GSTIN is entered
 # (see BillingProfile.validate_india_state).
 _REQUIRED_PROFILE_FIELDS = (
-	"currency", "legal_name", "address_line1", "city", "country",
+	"currency",
+	"legal_name",
+	"address_line1",
+	"city",
+	"country",
 )
 _PROFILE_FIELD_LABELS = {
 	"currency": "currency",
@@ -123,8 +130,9 @@ def require_billing_profile(team: str, action: str):
 	missing = _missing_profile_labels(team)
 	if missing:
 		frappe.throw(
-			f"Complete your billing profile before you can {action}. "
-			f"Missing: {', '.join(missing)}.",
+			_("Complete your billing profile before you can {0}. Missing: {1}.").format(
+				action, ", ".join(missing)
+			),
 			frappe.ValidationError,
 		)
 
@@ -155,24 +163,22 @@ def _gateway_for_currency(currency: str) -> str:
 	try:
 		return resolve_gateway_for_currency(currency)
 	except GatewayNotFound:
-		frappe.throw(f"No payment gateway configured for {currency} top-ups.", frappe.ValidationError)
+		frappe.throw(
+			_("No payment gateway configured for {0} top-ups.").format(currency), frappe.ValidationError
+		)
 
 
 def _enabled_gateway_for_currency(currency: str, adapter_key: str) -> str | None:
-	"""Name of an enabled gateway with this adapter_key that handles this currency,
-	or None. Unlike the default-resolver, this picks by adapter regardless of the
-	is_default flag — used when a flow needs a specific rail (PayPal, or the Razorpay
-	a Via-Razorpay PayPal row delegates to)."""
-	rows = frappe.get_all(
-		"Payment Gateway Currency", filters={"currency": currency}, fields=["parent"]
-	)
-	for r in rows:
-		gw = frappe.db.get_value(
-			"Payment Gateway", r.parent, ["name", "adapter_key", "is_enabled"], as_dict=True
-		)
-		if gw and gw.is_enabled and gw.adapter_key == adapter_key:
-			return gw.name
-	return None
+	"""Name of the enabled gateway for this adapter, if it handles this currency.
+
+	Unlike the default-resolver this picks by adapter regardless of the is_default
+	flag — used when a flow needs a specific rail (PayPal, or the Razorpay a
+	Via-Razorpay PayPal row delegates to). A gateway row is named after its adapter,
+	so "the Stripe gateway" is a primary-key read, not a search with a tiebreak."""
+	if not frappe.db.get_value("Payment Gateway", adapter_key, "is_enabled"):
+		return None
+	handles = frappe.db.exists("Payment Gateway Currency", {"parent": adapter_key, "currency": currency})
+	return adapter_key if handles else None
 
 
 def _paypal_gateway_for_currency(currency: str) -> str:
@@ -186,7 +192,7 @@ def _paypal_gateway_for_currency(currency: str) -> str:
 	if gw:
 		return gw
 	frappe.throw(
-		f"PayPal top-ups need an enabled PayPal gateway that handles {currency}.",
+		_("PayPal top-ups need an enabled PayPal gateway that handles {0}.").format(currency),
 		frappe.ValidationError,
 	)
 
@@ -208,21 +214,10 @@ def _add_method_gateway(currency: str):
 	if gw and gw.adapter_key == "Razorpay":
 		return gw
 
-	# The default gateway is not Razorpay — but if an enabled Razorpay gateway
-	# also handles this currency (non-default), prefer it for UPI.
-	rzp = frappe.db.get_value(
-		"Payment Gateway",
-		{"adapter_key": "Razorpay", "is_enabled": 1},
-		["name", "adapter_key"],
-		as_dict=True,
-		order_by="creation asc",
-	)
-	if rzp:
-		rzp_currencies = frappe.get_all(
-			"Payment Gateway Currency", {"parent": rzp.name, "currency": currency}, pluck="name"
-		)
-		if rzp_currencies:
-			return rzp
+	# The default gateway is not Razorpay — but if Razorpay is enabled and also
+	# handles this currency (non-default), prefer it for UPI.
+	if _enabled_gateway_for_currency(currency, "Razorpay"):
+		return frappe._dict(name="Razorpay", adapter_key="Razorpay")
 
 	return gw or frappe._dict()
 
@@ -246,29 +241,43 @@ def _describe_line(team: str, li) -> dict:
 	plan TITLE and spell out what drove the charge: a plan's monthly fee
 	(prorated days), or a metered overage above the plan's included allowance.
 	"""
+	from central.billing.projection.basis import MEASURED
 	from central.billing.revenue.metering import _metered_plan_for
+
 	row = {
-		"resource_type": li.resource_type, "plan": li.plan,
+		"resource_type": li.resource_type,
+		"plan": li.plan,
 		"subscription_resource": li.subscription_resource,
-		"days": li.days, "hours": li.hours, "quantity": li.quantity,
-		"rate": li.rate, "amount": li.amount, "unit": li.unit,
+		"days": li.days,
+		"hours": li.hours,
+		"quantity": li.quantity,
+		"rate": li.rate,
+		"amount": li.amount,
+		"unit": li.unit,
 		"charge_date": li.charge_date,
+		# A projected line knows whether its quantity was observed or inferred; a
+		# stored line item is always a fact by the time it reaches an invoice.
+		"basis": li.get("basis") or MEASURED,
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None
 		row["item"] = title or li.plan or "Subscription plan"
 		row["kind"] = "Plan"
+		# Which machine this line belongs to. A team running three VMs gets three
+		# sets of lines, and on the same plan they are otherwise indistinguishable —
+		# the plan title alone says what was billed but never what it was billed for.
+		row["server"] = _server_name(li.subscription_resource)
+		# The machine's technical id — what an Asset is actually named by, and what
+		# support and the cluster logs know it as. A friendly name is optional and
+		# may be absent or duplicated; this never is.
+		row["server_id"] = li.subscription_resource
 		# Hourly lines come from a churn day (multiple resizes within 24h): they're
 		# tied to one calendar date, so name it. Daily lines span a range within the
 		# period — the invoice already carries the period dates, so no suffix.
-		if li.unit == "hour" and li.hours:
-			hours = f"{frappe.utils.flt(li.hours):g} hour(s)"
-			on = f" on {frappe.utils.getdate(li.charge_date).strftime('%-d %b')}" if li.charge_date else ""
-			row["detail"] = f"{hours}{on}"
-		elif li.days:
-			row["detail"] = f"{li.days} day(s)"
-		else:
-			row["detail"] = None
+		# Say WHEN, not just how long. A month with a resize in it is several lines
+		# for one server, and "13 day(s)" / "16 hour(s)" leaves the reader to work out
+		# the order and the changeover themselves.
+		row["detail"] = _billed_window(li)
 	else:
 		metered_plan = _metered_plan_for(li.resource_type)
 		title = frappe.db.get_value("Plan", metered_plan.name, "title") if metered_plan else None
@@ -296,6 +305,45 @@ def _describe_line(team: str, li) -> dict:
 			# No free tier — every used unit is billed at the per-unit rate.
 			row["detail"] = f"Metered · {_qty(billed)} {unit} used"
 	return row
+
+
+def _server_name(resource_id: str | None) -> str | None:
+	"""The server's own name, falling back to the id metering keys it by."""
+	if not resource_id:
+		return None
+	return frappe.db.get_value("Asset", resource_id, "title") or resource_id
+
+
+def _billed_window(li) -> str | None:
+	"""The span a line covers, in the words someone would use for it.
+
+	Whole days read as a date range ("1–13 Aug"); a churn date reads as the clock
+	hours on that date ("14 Aug, 20:00–24:00"), because that is the day a config
+	changed and the hours are the whole reason it is billed differently.
+	"""
+	start, end = li.get("period_from"), li.get("period_to")
+	if not start or not end:
+		# Pre-window invoices (issued before the span was recorded) still say how
+		# long, which is what they have.
+		if li.unit == "hour" and li.hours:
+			on = f" on {frappe.utils.getdate(li.charge_date).strftime('%-d %b')}" if li.charge_date else ""
+			return f"{frappe.utils.flt(li.hours):g} hour(s){on}"
+		return f"{li.days} day(s)" if li.days else None
+
+	start = frappe.utils.get_datetime(start)
+	end = frappe.utils.get_datetime(end)
+	if li.unit == "hour":
+		# The exclusive end lands on the next midnight; "24:00" reads as the end of
+		# the same day, where "00:00" would look like it ran for no time at all.
+		finish = "24:00" if end.date() > start.date() else end.strftime("%H:%M")
+		return f"{start.strftime('%-d %b')}, {start.strftime('%H:%M')}–{finish}"
+
+	last = end - timedelta(days=1)  # the window's end is exclusive
+	if start.date() == last.date():
+		return start.strftime("%-d %b")
+	if start.month == last.month:
+		return f"{start.strftime('%-d')}–{last.strftime('%-d %b')}"
+	return f"{start.strftime('%-d %b')} – {last.strftime('%-d %b')}"
 
 
 def _qty(value) -> str:

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import UsageMeter from '@/components/servers/overview/UsageMeter.vue'
-import { formatBytes, usagePercent } from '@/utils/bytes'
+import { formatBytes, usagePercent } from '@/lib/bytes'
 
 const props = defineProps<{
 	available: boolean
@@ -25,11 +25,14 @@ const cpuLabel = computed(() => {
 </script>
 
 <template>
-	<section class="rounded-xl border border-outline-gray-2 p-5">
+	<section class="rounded-7 border border-outline-gray-2 p-5">
 		<div class="mb-5 flex items-center justify-between gap-3">
 			<h3 class="text-base font-semibold text-ink-gray-9">Resource usage</h3>
 			<span class="flex items-center gap-1.5 text-sm text-ink-gray-5">
-				<span class="size-1.5 rounded-full bg-ink-green-6" aria-hidden="true" />
+				<span
+					class="size-1.5 rounded-full bg-surface-green-7"
+					aria-hidden="true"
+				/>
 				Last 24 hours
 			</span>
 		</div>

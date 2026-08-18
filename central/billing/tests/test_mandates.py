@@ -12,35 +12,21 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
+from central.billing.catalog.entitlements import recompute_trust_tier
+from central.billing.payments import mandates
+from central.billing.tests.test_entitlements import make_ladder
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
-from central.billing.payments import mandates
-from central.billing.catalog.entitlements import recompute_trust_tier
-from central.billing.tests.test_entitlements import make_ladder
-
 TEAM = "team-mandate"
-GATEWAY = "GW-Mandate-Razorpay"
+GATEWAY = "Razorpay"
 
 
 def make_gateway():
-	if frappe.db.exists("Payment Gateway", GATEWAY):
-		frappe.delete_doc("Payment Gateway", GATEWAY, force=True)
-	frappe.get_doc(
-		{
-			"doctype": "Payment Gateway",
-			"__newname": GATEWAY,
-			"title": "Razorpay (Mandate Test)",
-			"adapter_key": "Razorpay",
-			"currency": "INR",
-			"api_key": "rzp_test_key",
-			"api_secret": "rzp_test_secret",
-			"webhook_secret": "rzp_whsec",
-			"is_enabled": 1,
-			"supports_mandates": 1,
-		}
-	).insert(ignore_permissions=True)
+	from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+
+	make_razorpay_gateway([("INR", 1)])
 
 
 @contextmanager
@@ -64,9 +50,7 @@ class MandateTestBase(IntegrationTestCase):
 		ensure_team(TEAM)
 		make_ladder()
 		make_gateway()
-		for name in frappe.get_all(
-			"Payment Method", filters={"team": TEAM}, pluck="name"
-		):
+		for name in frappe.get_all("Payment Method", filters={"team": TEAM}, pluck="name"):
 			frappe.delete_doc("Payment Method", name, force=True)
 		frappe.db.delete("Gateway Customer", {"team": TEAM})
 		complete_billing_profile(TEAM)  # carries a phone — Razorpay recurring needs a contact
@@ -81,7 +65,7 @@ class TestMandateSetup(MandateTestBase):
 			result = mandates.setup_mandate(TEAM, GATEWAY, customer_id="cust_x")
 
 		# The mandate order was authorised at the team's current cap (t0 = 100).
-		args, kwargs = adapter.setup_payment_method.call_args
+		args, _kwargs = adapter.setup_payment_method.call_args
 		self.assertEqual(args[1]["max_amount"], 100)
 
 		method = frappe.get_doc("Payment Method", result["payment_method"])
@@ -169,9 +153,7 @@ class TestMandateCancel(MandateTestBase):
 				{"razorpay_token_id": "token_live", "razorpay_signature": "s"},
 			)
 			mandates.cancel_mandate(result["payment_method"])
-			adapter.cancel_mandate.assert_called_once_with(
-				"token_live", customer_reference="cust_x"
-			)
+			adapter.cancel_mandate.assert_called_once_with("token_live", customer_reference="cust_x")
 		self.assertEqual(
 			frappe.db.get_value("Payment Method", result["payment_method"], "status"),
 			"Cancelled",
@@ -189,9 +171,17 @@ class TestUpiRecurringLimit(MandateTestBase):
 	def _invoice(self, total):
 		return frappe.get_doc(
 			{
-				"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": "Open",
-				"period_start": "2026-05-01", "period_end": "2026-05-31", "currency": "INR",
-				"subtotal": total, "total": total, "expected_collection": total, "amount_paid": 0,
+				"doctype": "Invoice",
+				"team": TEAM,
+				"invoice_type": "Billable",
+				"status": "Open",
+				"period_start": "2026-05-01",
+				"period_end": "2026-05-31",
+				"currency": "INR",
+				"subtotal": total,
+				"total": total,
+				"expected_collection": total,
+				"amount_paid": 0,
 			}
 		).insert(ignore_permissions=True)
 
@@ -199,8 +189,9 @@ class TestUpiRecurringLimit(MandateTestBase):
 		self.assertTrue(mandates.upi_eligibility(TEAM)["eligible"])  # t0 cap = 100
 
 	def test_blocked_when_cap_at_limit(self):
-		frappe.db.set_value("Billing Profile", TEAM,
-			{"manual_override": 1, "override_max_spend": mandates.UPI_RECURRING_MAX})
+		frappe.db.set_value(
+			"Billing Profile", TEAM, {"manual_override": 1, "override_max_spend": mandates.UPI_RECURRING_MAX}
+		)
 		elig = mandates.upi_eligibility(TEAM)
 		self.assertFalse(elig["eligible"])
 		self.assertIn("cap", elig["reason"].lower())
@@ -227,8 +218,9 @@ class TestRazorpayCardSetup(MandateTestBase):
 		self.assertEqual(method.status, "Pending Validation")
 
 	def test_card_setup_works_even_when_upi_is_blocked(self):
-		frappe.db.set_value("Billing Profile", TEAM,
-			{"manual_override": 1, "override_max_spend": mandates.UPI_RECURRING_MAX})
+		frappe.db.set_value(
+			"Billing Profile", TEAM, {"manual_override": 1, "override_max_spend": mandates.UPI_RECURRING_MAX}
+		)
 		with stub_adapter():
 			result = mandates.setup_card(TEAM, GATEWAY)  # no exception
 		self.assertEqual(
@@ -257,9 +249,7 @@ class TestRazorpayCardSetup(MandateTestBase):
 			mandates.setup_card(TEAM, GATEWAY)
 
 			adapter.create_customer.assert_not_called()
-			self.assertEqual(
-				adapter.setup_payment_method.call_args.args[1]["customer_id"], "cust_created"
-			)
+			self.assertEqual(adapter.setup_payment_method.call_args.args[1]["customer_id"], "cust_created")
 
 	def test_customer_stored_before_order_so_failure_does_not_orphan(self):
 		# The customer is stored the instant it's minted, BEFORE the order — so an
@@ -314,10 +304,15 @@ class TestRazorpayCardSetup(MandateTestBase):
 		# to the contact-bearing customer (fetched via create) and use IT for the
 		# order — never proceed with the contactless one (which fails "contact
 		# required") — and repoint the stored row.
-		frappe.get_doc({
-			"doctype": "Gateway Customer", "team": TEAM, "gateway": GATEWAY,
-			"adapter_key": "Razorpay", "gateway_customer_id": "cust_stale",
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Gateway Customer",
+				"team": TEAM,
+				"gateway": GATEWAY,
+				"adapter_key": "Razorpay",
+				"gateway_customer_id": "cust_stale",
+			}
+		).insert(ignore_permissions=True)
 		with stub_adapter() as adapter:
 			adapter.update_customer.side_effect = Exception("Customer already exists for the merchant")
 			adapter.create_customer.return_value = "cust_with_contact"
@@ -345,26 +340,115 @@ class TestAddMethodGatewayResolution(IntegrationTestCase):
 	for INR (so UPI is offered) even when a Stripe-INR gateway is the currency
 	default; Stripe for currencies with no Razorpay."""
 
-	def _gw(self, name, adapter, currency, default=0):
-		if frappe.db.exists("Payment Gateway", name):
-			frappe.delete_doc("Payment Gateway", name, force=True)
-		frappe.get_doc({
-			"doctype": "Payment Gateway", "__newname": name, "title": name,
-			"adapter_key": adapter, "api_key": "k", "api_secret": "s",
-			"webhook_secret": "w", "is_enabled": 1,
-			"supports_mandates": 1 if adapter == "Razorpay" else 0,
-			"currencies": [{"currency": currency, "is_default": default}],
-		}).insert(ignore_permissions=True)
+	def setUp(self):
+		from central.billing.tests.utils import configure_gateway
+
+		# Start from a clean routing table so each test's own config decides.
+		for adapter_key in ("Stripe", "Razorpay", "Paypal"):
+			configure_gateway(adapter_key, [], is_enabled=0)
+
+	def tearDown(self):
+		# One shared row per adapter: the wipe above outlives this class unless the
+		# baseline routing is restored for whatever runs next.
+		from central.billing.tests.utils import reset_gateway_roster
+
+		reset_gateway_roster()
+
+	def _gw(self, adapter, currency, default=0):
+		from central.billing.tests.utils import configure_gateway
+
+		return configure_gateway(
+			adapter,
+			[(currency, default)],
+			api_key="k",
+			api_secret="s",
+			webhook_secret="w",
+			is_enabled=1,
+			supports_mandates=1 if adapter == "Razorpay" else 0,
+		)
 
 	def test_razorpay_wins_over_default_stripe_for_inr(self):
 		from central.billing.api import dashboard
 
-		self._gw("GW-Res-Stripe-INR", "Stripe", "INR", default=1)
-		self._gw("GW-Res-RZP-INR", "Razorpay", "INR", default=0)
+		self._gw("Stripe", "INR", default=1)
+		self._gw("Razorpay", "INR", default=0)
 		self.assertEqual(dashboard._shared._add_method_gateway("INR").adapter_key, "Razorpay")
 
 	def test_stripe_when_no_razorpay_for_currency(self):
 		from central.billing.api import dashboard
 
-		self._gw("GW-Res-Stripe-EUR", "Stripe", "EUR", default=1)
+		self._gw("Stripe", "EUR", default=1)
 		self.assertEqual(dashboard._shared._add_method_gateway("EUR").adapter_key, "Stripe")
+
+
+class TestMandateRevokedAtTheGateway(IntegrationTestCase):
+	"""A mandate the customer or their bank revokes (ADR 0022). Nothing failed —
+	nothing was attempted — but the next debit cannot run, so the team is put in
+	front of the choice now rather than discovering it through an unpaid invoice."""
+
+	TEAM = "team-mandate-revoked"
+
+	def setUp(self):
+		from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+		ensure_team(self.TEAM)
+		complete_billing_profile(self.TEAM)
+		frappe.db.delete("Payment Method", {"team": self.TEAM})
+		frappe.db.delete("Webhook Event", {})
+		frappe.db.set_value("Billing Profile", self.TEAM, "collection_mode", "Auto Charge")
+		self.gateway = make_stripe_gateway(currencies=(("USD", 1), ("INR", 0))).name
+		self.method = (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": self.TEAM,
+					"gateway": self.gateway,
+					"method_type": "Card",
+					"status": "Active",
+					"gateway_method_id": "pm_india",
+					"gateway_mandate_id": "mandate_india",
+					"gateway_customer_id": "cus_india",
+					"mandate_max_amount": 15000,
+					"mandate_currency": "INR",
+					"display_label": "Visa ····4242",
+					"validated_at": frappe.utils.now_datetime(),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def _deliver(self, status):
+		from central.billing.payments import webhooks
+
+		event = frappe.get_doc(
+			{
+				"doctype": "Webhook Event",
+				"gateway": self.gateway,
+				"gateway_event_id": f"evt_{frappe.generate_hash(8)}",
+				"event_type": "mandate.updated",
+				"status": "Received",
+				"raw_payload": frappe.as_json(
+					{"data": {"object": {"id": "mandate_india", "status": status}}}
+				),
+			}
+		).insert(ignore_permissions=True)
+		return webhooks.handle_webhook_event(event.name)
+
+	def test_a_revoked_mandate_retires_the_method_and_asks_the_customer(self):
+		out = self._deliver("inactive")
+		self.assertEqual(out["result"], "mandate_revoked")
+		method = frappe.get_doc("Payment Method", self.method)
+		self.assertEqual(method.status, "Cancelled")
+		self.assertTrue(method.reauth_required)
+		profile = frappe.db.get_value(
+			"Billing Profile", self.TEAM, ["collection_mode", "collection_action_reason"], as_dict=True
+		)
+		self.assertEqual(profile.collection_mode, "Action Required")
+		self.assertEqual(profile.collection_action_reason, "mandate_failed")
+
+	def test_a_live_mandate_changes_nothing(self):
+		out = self._deliver("active")
+		self.assertEqual(out["result"], "mandate_still_live")
+		self.assertEqual(frappe.db.get_value("Payment Method", self.method, "status"), "Active")
+		self.assertEqual(frappe.db.get_value("Billing Profile", self.TEAM, "collection_mode"), "Auto Charge")

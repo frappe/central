@@ -8,6 +8,7 @@ rewritten.
 """
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -20,7 +21,15 @@ class SubscriptionChange(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		change_type: DF.Literal["Created", "Plan Changed", "Payment Method Changed", "Past Due", "Suspended", "Reactivated", "Cancelled"]
+		change_type: DF.Literal[
+			"Created",
+			"Plan Changed",
+			"Payment Method Changed",
+			"Past Due",
+			"Suspended",
+			"Reactivated",
+			"Cancelled",
+		]
 		changed_by: DF.Data | None
 		currency: DF.Link | None
 		effective_at: DF.Datetime | None
@@ -34,6 +43,6 @@ class SubscriptionChange(Document):
 	def validate(self):
 		if not self.is_new():
 			frappe.throw(
-				"Subscription Change is append-only; history cannot be edited.",
+				_("Subscription Change is append-only; history cannot be edited."),
 				frappe.ValidationError,
 			)

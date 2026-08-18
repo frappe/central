@@ -1,25 +1,24 @@
 <script setup lang="ts">
 import {
+	type CSSProperties,
 	computed,
 	onBeforeUnmount,
 	onMounted,
 	ref,
 	watch,
-	type CSSProperties,
 } from 'vue'
-import { Badge, Button } from 'frappe-ui'
+import MapHoverCard from '@/components/servers/MapHoverCard.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import WorldDots from '@/components/servers/WorldDots.vue'
 import {
 	computeNodes,
-	project,
-	MAP_WIDTH,
 	MAP_HEIGHT,
+	MAP_WIDTH,
 	MAX_ZOOM,
-	ZOOM_STEP,
 	type MapNode,
 	type MapPin,
 	type MapSpot,
+	project,
 } from '@/lib/serverMap'
 
 // The interactive servers map, ported from the FC V2 prototype. Purely
@@ -36,14 +35,16 @@ const props = withDefaults(
 		selectedId?: string | null
 		/** Server id hovered elsewhere (the side panel) — bumps its node. */
 		highlightId?: string | null
-		/** Push the zoom controls left when a panel overlays the right edge (px). */
+		/** Width a panel overlays on the right edge (px) — cards clamp to the rest. */
 		panelOffset?: number
-		/** False = no drag/wheel/dblclick/controls; the map frames itself (markers). */
+		/** False = picker mode; the map frames its markers itself. */
 		interactive?: boolean
 		/** Show create affordances inside cards (page gates on server:create). */
 		allowCreate?: boolean
 		/** Show direct bench-open affordances inside cluster cards. */
 		allowOpen?: boolean
+		/** Site name currently being opened — spins its cluster-card open button. */
+		openingSite?: string | null
 	}>(),
 	{
 		pins: () => [],
@@ -55,6 +56,7 @@ const props = withDefaults(
 		interactive: true,
 		allowCreate: false,
 		allowOpen: false,
+		openingSite: null,
 	},
 )
 
@@ -73,23 +75,28 @@ const emit = defineEmits<{
 	select: [region: string]
 }>()
 
-// Aliases for the projection frame the lib owns, so the pan/zoom math below reads
+// Aliases for the projection frame the lib owns, so the framing math below reads
 // unchanged. project() and computeNodes() (clustering) live in lib/serverMap.
 const W = MAP_WIDTH
 const H = MAP_HEIGHT
 const MAX_Z = MAX_ZOOM
-const STEP = ZOOM_STEP
+// User zoom and pan are retired: the map contain-fits the world and hover
+// cards carry the detail. The implementation stays commented in place rather
+// than deleted, so bringing it back is uncommenting these blocks, the handlers
+// on the root element, and the controls at the end of the template — plus
+// re-exporting ZOOM_STEP from lib/serverMap.
+// const STEP = ZOOM_STEP
 
-// — Viewport: contain-fit the world, then zoom/pan on top. At zoom 1 the map
-//   is centered and locked; zoomed in, it pans within the map's own bounds.
+// Contain-fit the world. There is no user zoom/pan; the zoom/translate state
+// below exists only so picker mode can frame its marker set.
 const el = ref<HTMLDivElement | null>(null)
 const cw = ref(0)
 const ch = ref(0)
 const zoom = ref(1)
 const tx = ref(0)
 const ty = ref(0)
-const dragging = ref(false)
-const wheeling = ref(false)
+// const dragging = ref(false)
+// const wheeling = ref(false)
 const focusing = ref(false)
 
 const base = computed(() =>
@@ -107,15 +114,64 @@ watch(base, (v) => {
 		)
 })
 
+// A container resize is not a reframe: the map must track its box exactly, not
+// glide 450ms behind it. Every size change disarms the transitions for the
+// frames it takes to land, then re-arms them for flyTo and reclustering. Without
+// this, a container that settles in two steps (which is what entering the page
+// does) plays the second step as a zoom-in from the first.
+const sizing = ref(false)
+let sizeRaf = 0
+function measure(w: number, h: number): void {
+	if (w === cw.value && h === ch.value) return
+	sizing.value = true
+	cw.value = w
+	ch.value = h
+	cancelAnimationFrame(sizeRaf)
+	// Two frames, in this order: commit the crisp raster while the transitions
+	// are still disarmed, then re-arm them. Committing it in the same patch that
+	// re-arms them would play the width/height correction as a 450ms animation.
+	sizeRaf = requestAnimationFrame(() => {
+		rasterK.value = k.value
+		sizeRaf = requestAnimationFrame(() => (sizing.value = false))
+	})
+}
+
+// The dotted world is one path of ~2000 subpaths. Sizing the SVG in pixels means
+// the browser re-rasterizes all of it, and a sidebar collapse hands us a new
+// size on every frame for 300ms — 20 rasters for one gesture. So a resize holds
+// the last raster and takes the difference as a scale instead: same geometry to
+// the pixel, but the compositor carries the frames. The crisp raster lands once
+// the size settles. Everything else that moves k (picker-mode flyTo) keeps
+// re-rasterizing per frame, which is what keeps the dots sharp while it glides.
+const rasterK = ref(0)
+watch([k, sizing], ([, isSizing]) => {
+	if (!isSizing) rasterK.value = k.value
+})
+
 let ro: ResizeObserver | undefined
 onMounted(() => {
+	// Measure before the first paint. The ResizeObserver's own first callback
+	// arrives a frame late, which would render one frame of a zero-sized map.
+	if (el.value) {
+		const r = el.value.getBoundingClientRect()
+		measure(r.width, r.height)
+	}
 	ro = new ResizeObserver(([entry]) => {
-		cw.value = entry.contentRect.width
-		ch.value = entry.contentRect.height
+		measure(entry.contentRect.width, entry.contentRect.height)
 	})
 	if (el.value) ro.observe(el.value)
 })
-onBeforeUnmount(() => ro?.disconnect())
+onBeforeUnmount(() => {
+	ro?.disconnect()
+	// Tear down every timer/RAF this component owns — the flyTo RAF loop
+	// (focusRaf) keeps writing zoom/tx/ty after unmount otherwise, and the
+	// hover debounces fire into a dead component.
+	cancelAnimationFrame(focusRaf)
+	cancelAnimationFrame(sizeRaf)
+	// window.clearTimeout(wheelT)
+	window.clearTimeout(showT)
+	window.clearTimeout(hideT)
+})
 
 function clampPan(): void {
 	const w = W * k.value
@@ -131,32 +187,42 @@ function clampPan(): void {
 }
 watch([base, cw, ch], clampPan)
 
-const mapStyle = computed(() => ({
-	transform: `translate3d(${tx.value}px, ${ty.value}px, 0)`,
-	width: `${W * k.value}px`,
-	height: `${H * k.value}px`,
-}))
+const mapStyle = computed(() => {
+	// Falls back to k until the first raster is committed, so the map is never
+	// sized from a zero.
+	const rk = rasterK.value || k.value
+	const scale = rk ? k.value / rk : 1
+	return {
+		transform:
+			scale === 1
+				? `translate3d(${tx.value}px, ${ty.value}px, 0)`
+				: `translate3d(${tx.value}px, ${ty.value}px, 0) scale(${scale})`,
+		// The scale rides on top of the translate, so it has to grow from the
+		// corner the translate placed — not from the middle of the map.
+		transformOrigin: '0 0',
+		width: `${W * rk}px`,
+		height: `${H * rk}px`,
+	}
+})
 
-function zoomAt(ax: number, ay: number, factor: number): void {
-	cancelFocus()
-	const zNew = Math.min(MAX_Z, Math.max(1, zoom.value * factor))
-	if (zNew === zoom.value) return
-	const kOld = k.value
-	const kNew = base.value * zNew
-	tx.value = ax - ((ax - tx.value) / kOld) * kNew
-	ty.value = ay - ((ay - ty.value) / kOld) * kNew
-	zoom.value = zNew
-	hideCard()
-	clampPan()
-}
-function zoomStep(dir: number): void {
-	zoomAt(cw.value / 2, ch.value / 2, dir > 0 ? STEP : 1 / STEP)
-}
+// function zoomAt(ax: number, ay: number, factor: number): void {
+// 	cancelFocus()
+// 	const zNew = Math.min(MAX_Z, Math.max(1, zoom.value * factor))
+// 	if (zNew === zoom.value) return
+// 	const kOld = k.value
+// 	const kNew = base.value * zNew
+// 	tx.value = ax - ((ax - tx.value) / kOld) * kNew
+// 	ty.value = ay - ((ay - ty.value) / kOld) * kNew
+// 	zoom.value = zNew
+// 	hideCard()
+// 	clampPan()
+// }
+// function zoomStep(dir: number): void {
+// 	zoomAt(cw.value / 2, ch.value / 2, dir > 0 ? STEP : 1 / STEP)
+// }
 
-// Focus a node in one continuous move: zoom to (at least) the stack level
-// while the node glides to the viewport centre. Driven frame-by-frame (CSS
-// transitions off) — zoom interpolates in log space and the node's on-screen
-// path is eased explicitly, so the combined motion never swings.
+// Reframe in one continuous move. Driven frame-by-frame rather than by CSS:
+// zoom interpolates in log space so the combined motion never swings.
 let focusRaf = 0
 function cancelFocus(): void {
 	cancelAnimationFrame(focusRaf)
@@ -184,9 +250,12 @@ function flyTo(wx: number, wy: number, z1: number): void {
 	}
 	focusRaf = requestAnimationFrame(frame)
 }
-function focusOn(n: MapNode): void {
-	flyTo(n.x, n.y, Math.min(MAX_Z, Math.max(zoom.value, STEP * STEP)))
-}
+
+// Focus a node in one continuous move: zoom to (at least) the stack level while
+// the node glides to the viewport centre.
+// function focusOn(n: MapNode): void {
+// 	flyTo(n.x, n.y, Math.min(MAX_Z, Math.max(zoom.value, STEP * STEP)))
+// }
 
 // Picker mode frames itself: fit the marker set (new provider = new frame).
 // First layout lands in place; later changes glide.
@@ -224,16 +293,16 @@ watch([() => props.markers, base], fitMarkers)
 
 // — Drag to pan (only when zoomed in). A real click is distinguished from a
 //   drag by a 4px slop; after a drag the trailing click is swallowed.
-interface DragState {
-	x: number
-	y: number
-	tx: number
-	ty: number
-	id: number
-	moved: boolean
-}
-let drag: DragState | null = null
-let suppressClick = false
+// interface DragState {
+// 	x: number
+// 	y: number
+// 	tx: number
+// 	ty: number
+// 	id: number
+// 	moved: boolean
+// }
+// let drag: DragState | null = null
+// let suppressClick = false
 function closestOf(e: Event, selector: string): Element | null {
 	return (e.target as Element | null)?.closest(selector) ?? null
 }
@@ -241,72 +310,72 @@ function onDown(e: PointerEvent): void {
 	if (e.button !== 0 || !props.interactive) return
 	// A locked card (its ⋯ menu was opened) closes on any press outside it.
 	if (cardLocked.value && !closestOf(e, '[data-map-card]')) hideCard()
-	if (zoom.value <= 1) return
-	if (closestOf(e, '[data-map-card],[data-map-controls]')) return
-	drag = {
-		x: e.clientX,
-		y: e.clientY,
-		tx: tx.value,
-		ty: ty.value,
-		id: e.pointerId,
-		moved: false,
-	}
+	// if (zoom.value <= 1) return
+	// if (closestOf(e, '[data-map-card],[data-map-controls]')) return
+	// drag = {
+	// 	x: e.clientX,
+	// 	y: e.clientY,
+	// 	tx: tx.value,
+	// 	ty: ty.value,
+	// 	id: e.pointerId,
+	// 	moved: false,
+	// }
 }
-function onMove(e: PointerEvent): void {
-	if (!drag) return
-	const dx = e.clientX - drag.x
-	const dy = e.clientY - drag.y
-	if (!drag.moved && Math.hypot(dx, dy) < 4) return
-	if (!drag.moved) {
-		drag.moved = true
-		dragging.value = true
-		cancelFocus() // don't fight the user for the viewport
-		hideCard()
-		el.value?.setPointerCapture?.(drag.id)
-	}
-	tx.value = drag.tx + dx
-	ty.value = drag.ty + dy
-	clampPan()
-}
-function onUp(): void {
-	if (drag?.moved) {
-		suppressClick = true
-		setTimeout(() => (suppressClick = false), 0)
-	}
-	drag = null
-	dragging.value = false
-}
-function onDblClick(e: MouseEvent): void {
-	if (!props.interactive) return
-	if (closestOf(e, '[data-map-card],[data-map-controls]')) return
-	if (!el.value) return
-	const r = el.value.getBoundingClientRect()
-	zoomAt(e.clientX - r.left, e.clientY - r.top, STEP)
-}
+// function onMove(e: PointerEvent): void {
+// 	if (!drag) return
+// 	const dx = e.clientX - drag.x
+// 	const dy = e.clientY - drag.y
+// 	if (!drag.moved && Math.hypot(dx, dy) < 4) return
+// 	if (!drag.moved) {
+// 		drag.moved = true
+// 		dragging.value = true
+// 		cancelFocus() // don't fight the user for the viewport
+// 		hideCard()
+// 		el.value?.setPointerCapture?.(drag.id)
+// 	}
+// 	tx.value = drag.tx + dx
+// 	ty.value = drag.ty + dy
+// 	clampPan()
+// }
+// function onUp(): void {
+// 	if (drag?.moved) {
+// 		suppressClick = true
+// 		setTimeout(() => (suppressClick = false), 0)
+// 	}
+// 	drag = null
+// 	dragging.value = false
+// }
+// function onDblClick(e: MouseEvent): void {
+// 	if (!props.interactive) return
+// 	if (closestOf(e, '[data-map-card],[data-map-controls]')) return
+// 	if (!el.value) return
+// 	const r = el.value.getBoundingClientRect()
+// 	zoomAt(e.clientX - r.left, e.clientY - r.top, STEP)
+// }
 
-// Trackpad: pinch (ctrl+wheel) zooms at the cursor; two-finger scroll pans
-// when zoomed in. Both move without the zoom transition.
-let wheelT: number | undefined
-function onWheel(e: WheelEvent): void {
-	if (!props.interactive) return
-	const pinch = e.ctrlKey || e.metaKey
-	if (!pinch && zoom.value <= 1) return
-	e.preventDefault()
-	wheeling.value = true
-	cancelFocus()
-	window.clearTimeout(wheelT)
-	wheelT = window.setTimeout(() => (wheeling.value = false), 140)
-	hideCard()
-	if (pinch) {
-		if (!el.value) return
-		const r = el.value.getBoundingClientRect()
-		zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01))
-	} else {
-		tx.value -= e.deltaX
-		ty.value -= e.deltaY
-		clampPan()
-	}
-}
+// Trackpad: pinch (ctrl+wheel) zooms at the cursor; two-finger scroll pans when
+// zoomed in. Both move without the zoom transition.
+// let wheelT: number | undefined
+// function onWheel(e: WheelEvent): void {
+// 	if (!props.interactive) return
+// 	const pinch = e.ctrlKey || e.metaKey
+// 	if (!pinch && zoom.value <= 1) return
+// 	e.preventDefault()
+// 	wheeling.value = true
+// 	cancelFocus()
+// 	window.clearTimeout(wheelT)
+// 	wheelT = window.setTimeout(() => (wheeling.value = false), 140)
+// 	hideCard()
+// 	if (pinch) {
+// 		if (!el.value) return
+// 		const r = el.value.getBoundingClientRect()
+// 		zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.01))
+// 	} else {
+// 		tx.value -= e.deltaX
+// 		ty.value -= e.deltaY
+// 		clampPan()
+// 	}
+// }
 
 // Cluster the fleet into positioned nodes — pure, in lib/serverMap. Reclusters as
 // k/zoom change so groups split apart on zoom-in.
@@ -344,7 +413,18 @@ function isHot(n: MapNode): boolean {
 	return n.key === hoverKey.value || n.key === highlightKey.value
 }
 
-function posStyle(n: MapNode): CSSProperties {
+// Stacking order rides the outer wrapper; the position transform rides an inner
+// one. They must stay split: TransitionGroup's FLIP pass measures its own
+// children and, for any it thinks moved, clears their inline transform outright
+// (runtime-dom sets `style.transform = ''`). Vue never rewrites the value
+// afterwards — its style patch compares against the vnode, which still holds the
+// transform it wrote — so the node is stranded at the map's top-left corner
+// until some later patch changes the string. With the transform on an inner
+// element the wrapper's own rect never moves, so the FLIP pass finds nothing to
+// translate. (Safari lost this race on client-side navigation into the page:
+// its ResizeObserver lands a second, corrected size after the nodes have already
+// been placed, so that final reposition went through FLIP and stuck.)
+function zStyle(n: MapNode): CSSProperties {
 	const zBase =
 		n.type === 'marker'
 			? n.selected
@@ -355,11 +435,13 @@ function posStyle(n: MapNode): CSSProperties {
 				: n.type === 'cluster'
 					? 21
 					: 20
-	const { sx, sy } = screenOf(n)
 	return {
-		transform: `translate3d(${sx}px, ${sy}px, 0)`,
 		zIndex: isHot(n) ? 30 : zBase + (n.type === 'server' ? n.stackZ || 0 : 0),
 	}
+}
+function posStyle(n: MapNode): CSSProperties {
+	const { sx, sy } = screenOf(n)
+	return { transform: `translate3d(${sx}px, ${sy}px, 0)` }
 }
 
 // — Hover intent: a short delay in, a grace period out so the pointer can
@@ -372,7 +454,7 @@ const cardLocked = ref(false)
 let showT: number | undefined
 let hideT: number | undefined
 function enterNode(n: MapNode): void {
-	if (dragging.value || cardLocked.value) return
+	if (cardLocked.value) return
 	window.clearTimeout(hideT)
 	window.clearTimeout(showT)
 	showT = window.setTimeout(() => (hoverKey.value = n.key), 40)
@@ -385,10 +467,6 @@ function leaveNode(): void {
 }
 function cancelHide(): void {
 	window.clearTimeout(hideT)
-}
-
-function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
-	return props.allowOpen && server.status === 'Running' && !!server.gateway_url
 }
 
 function hideCard(): void {
@@ -411,7 +489,7 @@ const card = computed<CardPlacement | null>(() => {
 	const { sx, sy } = screenOf(node)
 	const width = node.type === 'server' ? 320 : 288
 	// The side panel overlays the map's right edge, so the card clamps to the
-	// uncovered width — same treatment as the zoom controls.
+	// uncovered width.
 	const visibleW = cw.value - props.panelOffset
 	// Stacked avatars overlap sideways, so their card drops below instead of
 	// covering the neighbours to the right.
@@ -461,16 +539,16 @@ const card = computed<CardPlacement | null>(() => {
 	}
 })
 
-// Let the page focus the map from the side panel: glide to the node that
-// holds this server (its own pin, or the cluster it's grouped into).
-function focusPin(id: string): void {
-	const n = nodeForServer(id)
-	if (n) focusOn(n)
-}
-defineExpose({ focusPin })
+// Let the page focus the map from the side panel: glide to the node that holds
+// this server (its own pin, or the cluster it's grouped into).
+// function focusPin(id: string): void {
+// 	const n = nodeForServer(id)
+// 	if (n) focusOn(n)
+// }
+// defineExpose({ focusPin })
 
 function clickNode(n: MapNode): void {
-	if (suppressClick) return
+	// if (suppressClick) return
 	if (n.type === 'marker') {
 		emit('select', n.marker.id)
 	} else if (n.type === 'server') {
@@ -487,29 +565,32 @@ function clickNode(n: MapNode): void {
 	} else if (n.type === 'plus') {
 		emit('new-server', n.targets[0].id)
 	} else {
-		// A cluster focuses the map on itself, zooming to the stack level. The
-		// page narrows the list to this spot if the panel happens to be open.
-		focusOn(n)
+		// A cluster's members are browsed in its hover card; clicking locks the
+		// card open, and the page narrows its list if the panel is open. With
+		// zoom restored this focused the map on the stack instead: focusOn(n).
+		window.clearTimeout(showT)
+		hoverKey.value = n.key
+		cardLocked.value = true
 		emit('cluster-open', { ids: n.members.map((m) => m.id), label: n.title })
 	}
 }
 </script>
 
 <template>
+	<!-- With zoom and pan restored, this element also takes:
+	     :class="[ready && !sizing && 'sm-anim', (dragging || wheeling || focusing) && 'sm-drag', dragging ? 'cursor-grabbing' : interactive && zoom > 1 ? 'cursor-grab' : '']"
+	     :style="interactive && zoom > 1 ? { touchAction: 'none' } : undefined"
+	     @pointermove="onMove" @pointerup="onUp" @pointercancel="onUp"
+	     @dblclick="onDblClick" @wheel="onWheel" -->
 	<div
 		ref="el"
 		class="relative isolate h-full w-full select-none overflow-hidden bg-surface-base"
-		:class="[ready && 'sm-anim', (dragging || wheeling || focusing) && 'sm-drag', dragging ? 'cursor-grabbing' : interactive && zoom > 1 ? 'cursor-grab' : '']"
-		:style="interactive && zoom > 1 ? { touchAction: 'none' } : undefined"
+		:class="[ready && !sizing && 'sm-anim', focusing && 'sm-drag']"
 		@pointerdown="onDown"
-		@pointermove="onMove"
-		@pointerup="onUp"
-		@pointercancel="onUp"
-		@dblclick="onDblClick"
-		@wheel="onWheel"
 	>
-		<!-- Dotted world. Resize the SVG itself so it re-rasterizes at each zoom;
-		     nodes ride the same curve below so they track the dots. -->
+		<!-- Dotted world. Sized in pixels so it re-rasterizes at each zoom, except
+		     across a container resize, which scales the last raster instead (see
+		     rasterK); nodes ride the same curve below so they track the dots. -->
 		<WorldDots
 			class="sm-map sm-pos absolute left-0 top-0 block text-ink-gray-2"
 			:style="mapStyle"
@@ -521,97 +602,99 @@ function clickNode(n: MapNode): void {
 			<div
 				v-for="n in nodes"
 				:key="n.key"
-				class="sm-pos absolute left-0 top-0"
-				:style="posStyle(n)"
+				class="pointer-events-none absolute left-0 top-0"
+				:style="zStyle(n)"
 			>
-				<div class="sm-center">
-					<!-- Single server: provider logo + status dot -->
-					<button
-						v-if="n.type === 'server'"
-						class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-						:aria-label="`${n.pin.name} — ${n.pin.visual.label}`"
-						@click="clickNode(n)"
-						@mouseenter="enterNode(n)"
-						@mouseleave="leaveNode"
-					>
-						<span
-							v-if="n.pin.visual.pulse"
-							class="sm-pulse absolute -inset-1.5 rounded-full"
-							style="background: var(--ink-red-7)"
-						/>
-						<span
-							class="relative block rounded-full transition-transform duration-150 ease-out group-active:scale-95"
-							:class="isHot(n) && 'scale-110'"
+				<div class="sm-pos pointer-events-auto" :style="posStyle(n)">
+					<div class="sm-center">
+						<!-- Single server: provider logo + status dot -->
+						<button
+							v-if="n.type === 'server'"
+							class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+							:aria-label="`${n.pin.name} — ${n.pin.visual.label}`"
+							@click="clickNode(n)"
+							@mouseenter="enterNode(n)"
+							@mouseleave="leaveNode"
 						>
-							<ProviderAvatar :provider="n.pin.provider" :size="36" />
-							<!-- The badge art is inset ~2px inside its box, so the stack
-                   separator ring hugs the visible disc, not the box edge. -->
 							<span
-								v-if="n.stacked"
-								class="pointer-events-none absolute inset-[2px] rounded-full ring-2 ring-[var(--surface-base)]"
+								v-if="n.pin.visual.pulse"
+								class="sm-pulse absolute -inset-1.5 rounded-full"
+								style="background: var(--ink-red-6)"
 							/>
-						</span>
-						<span
-							class="absolute bottom-0 right-0 size-3 rounded-full border-2 border-[var(--surface-base)]"
-							:style="{ background: n.pin.visual.dot }"
-						/>
-					</button>
+							<span
+								class="relative block rounded-full transition-transform duration-150 ease-out group-active:scale-95"
+								:class="isHot(n) && 'scale-110'"
+							>
+								<ProviderAvatar :provider="n.pin.provider" :size="36" />
+								<!-- The badge art is inset ~2px inside its box, so the stack
+	                   separator ring hugs the visible disc, not the box edge. -->
+								<span
+									v-if="n.stacked"
+									class="pointer-events-none absolute inset-[2px] rounded-full ring-2 ring-[var(--surface-base)]"
+								/>
+							</span>
+							<span
+								class="absolute bottom-0 right-0 size-3 rounded-full border-2 border-[var(--surface-base)]"
+								:style="{ background: n.pin.visual.dot }"
+							/>
+						</button>
 
-					<!-- Cluster: count in a dark disc, dominant provider as a badge -->
-					<button
-						v-else-if="n.type === 'cluster'"
-						class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-						:aria-label="`${n.members.length} servers in ${n.title}`"
-						@click="clickNode(n)"
-						@mouseenter="enterNode(n)"
-						@mouseleave="leaveNode"
-					>
-						<span
-							class="absolute -inset-2 rounded-full transition-colors"
-							:class="n.broken ? 'sm-pulse bg-surface-red-4' : 'bg-surface-gray-3 opacity-60'"
-						/>
-						<span
-							class="relative grid size-11 place-items-center rounded-full bg-surface-gray-1 text-base font-semibold text-ink-gray-9 shadow-md transition-transform duration-150 ease-out group-active:scale-95"
-							:class="isHot(n) && 'scale-105'"
+						<!-- Cluster: count in a dark disc, dominant provider as a badge -->
+						<button
+							v-else-if="n.type === 'cluster'"
+							class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+							:aria-label="`${n.members.length} servers in ${n.title}`"
+							@click="clickNode(n)"
+							@mouseenter="enterNode(n)"
+							@mouseleave="leaveNode"
 						>
-							{{ n.members.length }}
-						</span>
-						<span class="absolute -bottom-1 -right-1 block rounded-full">
-							<ProviderAvatar :provider="n.provider" :size="20" />
-						</span>
-					</button>
+							<span
+								class="absolute -inset-2 rounded-full transition-colors"
+								:class="n.broken ? 'sm-pulse bg-surface-red-4' : 'bg-surface-gray-3 opacity-60'"
+							/>
+							<span
+								class="relative grid size-11 place-items-center rounded-full bg-surface-gray-1 text-base font-semibold text-ink-gray-9 shadow-md transition-transform duration-150 ease-out group-active:scale-95"
+								:class="isHot(n) && 'scale-105'"
+							>
+								{{ n.members.length }}
+							</span>
+							<span class="absolute -bottom-1 -right-1 block rounded-full">
+								<ProviderAvatar :provider="n.provider" :size="20" />
+							</span>
+						</button>
 
-					<!-- Picker marker: a quiet dot; the picked region is the provider pin -->
-					<button
-						v-else-if="n.type === 'marker'"
-						class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-						:aria-label="`Region ${n.marker.regionLabel}`"
-						:title="`${n.marker.flag} ${n.marker.regionLabel}`"
-						@click="clickNode(n)"
-					>
-						<span v-if="n.selected" class="relative block rounded-full">
-							<ProviderAvatar :provider="n.marker.provider" :size="36" />
-						</span>
-						<span
+						<!-- Picker marker: a quiet dot; the picked region is the provider pin -->
+						<button
+							v-else-if="n.type === 'marker'"
+							class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
+							:aria-label="`Region ${n.marker.regionLabel}`"
+							:title="`${n.marker.flag} ${n.marker.regionLabel}`"
+							@click="clickNode(n)"
+						>
+							<span v-if="n.selected" class="relative block rounded-full">
+								<ProviderAvatar :provider="n.marker.provider" :size="36" />
+							</span>
+							<span
+								v-else
+								class="block size-3 rounded-full transition-transform duration-150 ease-out group-hover:scale-125"
+								:class="isHot(n) && 'scale-125'"
+								style="background: var(--ink-gray-9)"
+							/>
+						</button>
+
+						<!-- Empty region: quiet + affordance -->
+						<button
 							v-else
-							class="block size-3 rounded-full transition-transform duration-150 ease-out group-hover:scale-125"
-							:class="isHot(n) && 'scale-125'"
-							style="background: var(--ink-gray-9)"
-						/>
-					</button>
-
-					<!-- Empty region: quiet + affordance -->
-					<button
-						v-else
-						class="grid size-7 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 shadow-sm transition-[transform,box-shadow] duration-150 ease-out hover:shadow-md active:scale-95"
-						:class="isHot(n) ? 'scale-110 shadow-md' : ''"
-						:aria-label="`New server in ${n.title}`"
-						@click="clickNode(n)"
-						@mouseenter="enterNode(n)"
-						@mouseleave="leaveNode"
-					>
-						<span class="lucide-plus size-3.5" />
-					</button>
+							class="grid size-7 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 shadow-sm transition-[transform,box-shadow] duration-150 ease-out hover:shadow-md active:scale-95"
+							:class="isHot(n) ? 'scale-110 shadow-md' : ''"
+							:aria-label="`New server in ${n.title}`"
+							@click="clickNode(n)"
+							@mouseenter="enterNode(n)"
+							@mouseleave="leaveNode"
+						>
+							<span class="lucide-plus size-3.5" />
+						</button>
+					</div>
 				</div>
 			</div>
 		</TransitionGroup>
@@ -622,180 +705,36 @@ function clickNode(n: MapNode): void {
 				v-if="card"
 				:key="card.node.key"
 				data-map-card
-				class="absolute z-40 rounded-xl border border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
+				class="absolute z-40 rounded-7 border border-outline-gray-1 bg-surface-elevation-1 shadow-xl"
 				:class="card.node.type === 'cluster' ? 'p-2' : 'p-4'"
 				:style="card.style"
 				@mouseenter="cancelHide"
 				@mouseleave="leaveNode"
 				@click.capture="cardLocked = true"
 			>
-				<!-- Single VM (server or site): real mirror fields only. The IP/Plan/Version
-             rows are server-only and simply don't render for a site (fields absent). -->
-				<template v-if="card.node.type === 'server'">
-					<div class="flex items-start gap-2">
-						<div class="min-w-0 flex-1">
-							<div class="flex items-center gap-2">
-								<span class="truncate text-base font-semibold text-ink-gray-9"
-									>{{ card.node.pin.name }}</span
-								>
-								<Badge
-									:theme="card.node.pin.visual.badgeTheme"
-									variant="subtle"
-									size="sm"
-									:label="card.node.pin.visual.label"
-								/>
-							</div>
-							<div
-								v-if="card.node.pin.specs"
-								class="mt-0.5 truncate text-sm text-ink-gray-5"
-							>
-								{{ card.node.pin.specs }}
-							</div>
-						</div>
-						<div class="-mr-1.5 -mt-1" @click.stop>
-							<slot name="card-actions" :pin="card.node.pin" />
-						</div>
-					</div>
-					<div class="mt-3 flex items-baseline justify-between gap-3 text-sm">
-						<span class="shrink-0 font-medium text-ink-gray-8">Region</span>
-						<span class="truncate text-ink-gray-9"
-							>{{ card.node.pin.flag }} {{ card.node.pin.regionLabel }}</span
-						>
-					</div>
-					<div
-						v-if="card.node.pin.publicIpv4"
-						class="mt-2 flex items-baseline justify-between gap-3 text-sm"
-					>
-						<span class="shrink-0 font-medium text-ink-gray-8">IP</span>
-						<span class="truncate font-mono text-[13px] text-ink-gray-9"
-							>{{ card.node.pin.publicIpv4 }}</span
-						>
-					</div>
-					<div
-						v-if="card.node.pin.plan"
-						class="mt-2 flex items-baseline justify-between gap-3 text-sm"
-					>
-						<span class="shrink-0 font-medium text-ink-gray-8">Plan</span>
-						<span class="truncate text-ink-gray-9"
-							>{{ card.node.pin.plan }}</span
-						>
-					</div>
-					<div
-						v-if="card.node.pin.frappeVersion"
-						class="mt-2 flex items-baseline justify-between gap-3 text-sm"
-					>
-						<span class="shrink-0 font-medium text-ink-gray-8">Version</span>
-						<span class="truncate text-ink-gray-9"
-							>{{ card.node.pin.frappeVersion }}</span
-						>
-					</div>
-				</template>
-
-				<!-- Cluster: the servers at this spot -->
-				<template v-else-if="card.node.type === 'cluster'">
-					<div
-						class="flex items-center justify-between gap-2 px-1.5 pb-1 pt-0.5"
-					>
-						<span class="min-w-0 truncate text-xs font-medium text-ink-gray-5">
-							{{ card.node.members[0].flag }} {{ card.node.title }} ·
-							{{ card.node.members.length }} servers
-						</span>
-						<button
-							v-if="allowCreate"
-							class="grid size-5 shrink-0 place-items-center rounded-md text-ink-gray-6 transition-colors hover:bg-surface-gray-2 hover:text-ink-gray-8 active:scale-95"
-							:title="`New server in ${card.node.title}`"
-							:aria-label="`New server in ${card.node.title}`"
-							@click="emit('new-server', card.node.members[0].cluster)"
-						>
-							<span class="lucide-plus size-3.5" />
-						</button>
-					</div>
-					<div
-						v-for="m in card.node.members"
-						:key="m.id"
-						class="group flex w-full items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-surface-gray-2"
-					>
-						<button
-							class="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-							@click="emit('open', m.id)"
-						>
-							<span class="relative shrink-0">
-								<ProviderAvatar :provider="m.provider" :size="28" />
-								<span
-									class="absolute -bottom-px -right-px size-2.5 rounded-full border-2 border-[var(--surface-elevation-1)]"
-									:style="{ background: m.visual.dot }"
-								/>
-							</span>
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium text-ink-gray-8"
-									>{{ m.name }}</span
-								>
-								<span class="block truncate text-xs text-ink-gray-5"
-									>{{ m.specs }}</span
-								>
-							</span>
-						</button>
-						<!-- Server: open bench. Site: open its live URL. Same slot, per kind. -->
-						<button
-							v-if="m.kind === 'server' && m.server"
-							class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
-							:disabled="!canOpenBench(m.server)"
-							title="Open bench"
-							aria-label="Open bench"
-							@click.stop="emit('open-server', m.server)"
-						>
-							<span class="lucide-arrow-up-right size-3.5" />
-						</button>
-						<button
-							v-else-if="m.site"
-							class="grid size-7 shrink-0 place-items-center rounded text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
-							:disabled="!allowOpen || !m.site.url"
-							title="Open site"
-							aria-label="Open site"
-							@click.stop="m.site.url && emit('open-site', m.site.name)"
-						>
-							<span class="lucide-arrow-up-right size-3.5" />
-						</button>
-					</div>
-				</template>
-
-				<!-- Empty region: a direct path to create (markers never open cards) -->
-				<template v-else-if="card.node.type === 'plus'">
-					<div class="text-base font-semibold text-ink-gray-9">
-						No servers in this region
-					</div>
-					<div class="mt-0.5 text-sm text-ink-gray-5">
-						{{ card.node.title }}
-					</div>
-					<div class="mt-3 flex items-center gap-2">
-						<span class="text-sm text-ink-gray-6">Providers available</span>
-						<button
-							v-for="t in card.node.targets"
-							:key="t.id"
-							class="block shrink-0 rounded-full transition-transform duration-150 ease-out hover:scale-110 active:scale-95"
-							:title="`New server in ${t.flag} ${t.regionLabel}`"
-							@click="emit('new-server', t.id)"
-						>
-							<ProviderAvatar :provider="t.provider" :size="20" />
-						</button>
-					</div>
-					<Button
-						class="mt-3"
-						variant="subtle"
-						size="sm"
-						label="New server"
-						icon-left="lucide-plus"
-						@click="emit('new-server', card.node.targets[0].id)"
-					/>
-				</template>
+				<MapHoverCard
+					:node="card.node"
+					:allow-create="allowCreate"
+					:allow-open="allowOpen"
+					:opening-site="openingSite"
+					@open="emit('open', $event)"
+					@open-server="emit('open-server', $event)"
+					@open-site="emit('open-site', $event)"
+					@new-server="emit('new-server', $event)"
+				>
+					<template #card-actions="{ pin }">
+						<slot name="card-actions" :pin="pin" />
+					</template>
+				</MapHoverCard>
 			</div>
 		</Transition>
 
-		<!-- Zoom controls; slide left when the server panel overlays the right edge -->
+		<!-- Zoom controls, retired with user zoom/pan. They slid left when the
+		     server panel overlaid the right edge.
 		<div
 			v-if="interactive"
 			data-map-controls
-			class="sm-controls absolute bottom-14 right-4 z-30 flex flex-col overflow-hidden rounded-lg border border-outline-gray-2 bg-surface-elevation-1 shadow-sm"
+			class="sm-controls absolute bottom-14 right-4 z-30 flex flex-col overflow-hidden rounded-6 border border-outline-gray-2 bg-surface-elevation-1 shadow-sm"
 			:style="{ transform: `translateX(${-panelOffset}px)` }"
 		>
 			<button
@@ -815,13 +754,14 @@ function clickNode(n: MapNode): void {
 				<span class="lucide-zoom-out size-4" />
 			</button>
 		</div>
+		-->
 	</div>
 </template>
 
 <style scoped>
 /* The map layer and every node share one curve, so pins track the dots
-   through the whole zoom. Transitions only arm after the first layout (the
-   map must appear in place, not animate in); dragging and pinching switch
+   through a reframe. Transitions only arm after the first layout (the map
+   must appear in place, not animate in); the frame-driven marker fit switches
    back to direct updates. */
 .sm-pos {
 	will-change: transform;
@@ -874,9 +814,9 @@ function clickNode(n: MapNode): void {
 	opacity: 0;
 }
 
-.sm-controls {
+/* .sm-controls {
 	transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
-}
+} */
 
 .sm-pulse {
 	animation: sm-pulse 1.8s ease-in-out infinite;
@@ -893,8 +833,7 @@ function clickNode(n: MapNode): void {
 
 @media (prefers-reduced-motion: reduce) {
 	.sm-pos,
-	.sm-center,
-	.sm-controls {
+	.sm-center {
 		transition: none;
 	}
 	.sm-pulse {

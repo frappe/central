@@ -4,10 +4,10 @@
 Frappe Box Remote Storage — each authored on the masters, billed by the existing spine."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.platform.sync import receive_meter_rollups
 from central.billing.revenue import metering
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	_clear_metered_plans,
 	ensure_team,
@@ -76,10 +76,15 @@ class TestAITokensBilling(IntegrationTestCase):
 
 	def _meter(self, qty):
 		return {
-			"resource_id": self.RESOURCE, "resource_type": "Tokens", "meter_type": "Counter",
-			"period_start": "2026-06-01 00:00:00", "period_end": "2026-06-30 23:59:59",
-			"quantity": qty, "unit": "Nos",
-			"idempotency_key": f"{self.RESOURCE}:Counter:2026-06-01", "status": "open",
+			"resource_id": self.RESOURCE,
+			"resource_type": "Tokens",
+			"meter_type": "Counter",
+			"period_start": "2026-06-01 00:00:00",
+			"period_end": "2026-06-30 23:59:59",
+			"quantity": qty,
+			"unit": "Nos",
+			"idempotency_key": f"{self.RESOURCE}:Counter:2026-06-01",
+			"status": "open",
 		}
 
 	def test_overage_above_allowance_bills(self):
@@ -139,14 +144,17 @@ class TestIPSnapshotAreMeteredOnly(IntegrationTestCase):
 	def test_snapshot_cannot_be_in_a_tokens_plan(self):
 		with self.assertRaises(frappe.ValidationError):
 			make_plan(
-				"bad-snap", category="AI Tokens",
+				"bad-snap",
+				category="AI Tokens",
 				includes=[{"resource_type": "Snapshot", "quantity": 1, "unit": "GB"}],
 			)
 
 	def test_snapshot_is_valid_as_a_metered_plan(self):
 		name = make_metered_plan(
-			"meter-snapshot-fam", resource_type="Snapshot",
-			pricing_mode="Live", rates=[{"cluster": "", "currency": "USD", "rate": 1}],
+			"meter-snapshot-fam",
+			resource_type="Snapshot",
+			pricing_mode="Live",
+			rates=[{"cluster": "", "currency": "USD", "rate": 1}],
 		)
 		plan = frappe.get_doc("Plan", name)
 		self.assertEqual({i.resource_type for i in plan.includes}, {"Snapshot"})

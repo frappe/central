@@ -2,10 +2,49 @@
 # For license information, please see license.txt
 """Shared helpers for billing tests."""
 
+import time
+from contextlib import contextmanager
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.catalog.pricing import set_catalog_rates
+
+_SWEEP_DEADLOCK_RETRIES = 3
+
+
+@contextmanager
+def billing_settings(**values):
+	"""Temporarily change Billing Settings, restoring them on the way out.
+
+	Frappe's own `change_settings` assigns with `setattr`, which leaves a child table
+	as raw dicts; `doc.set` converts them, so this handles `welcome_credit_amounts`
+	too. Restoring matters because a Single is site-wide state that the per-test
+	rollback (and BillingTestCase's row sweep, which commits) won't undo.
+
+	Child rows are snapshotted as plain dicts, without their `name`. Replacing a table
+	deletes its rows, so putting the original Documents back would have Frappe UPDATE
+	rows that no longer exist — the write lands nowhere and the table is left empty for
+	every test that follows."""
+	settings = frappe.get_doc("Billing Settings")
+	before = {key: _snapshot(settings.get(key)) for key in values}
+	for key, value in values.items():
+		settings.set(key, value)
+	settings.save(ignore_permissions=True)
+	try:
+		yield settings
+	finally:
+		settings = frappe.get_doc("Billing Settings")
+		for key, value in before.items():
+			settings.set(key, value)
+		settings.save(ignore_permissions=True)
+
+
+def _snapshot(value):
+	"""A settings value that can be written back later — child rows as fresh dicts."""
+	if isinstance(value, list):
+		return [row.as_dict(no_default_fields=True) for row in value]
+	return value
 
 
 class BillingTestCase(IntegrationTestCase):
@@ -21,25 +60,97 @@ class BillingTestCase(IntegrationTestCase):
 	"""
 
 	# Top-level doctypes these tests create. Frappe links aren't DB foreign keys, so
-	# raw deletes (frappe.db.delete) need no dependency ordering; child rows (e.g.
-	# Team Member) are cleared via their parent below.
+	# raw deletes (frappe.db.delete) need no dependency ordering. Child rows need
+	# explicit cleanup because raw deletes do not run the parent document hooks.
 	_TRACKED = (
-		"Payment Attempt", "Refund", "Credit Ledger Entry", "Credit Wallet",
-		"Invoice", "Subscription Change", "Subscription", "Gateway Customer",
-		"Entitlement Token", "Commitment", "Usage Rollup", "Payment Method",
-		"Tax Profile", "Billing Profile", "Team Invitation", "Team Role",
-		"Catalog Rate", "Plan", "Asset", "Team", "Atlas Instance", "Region", "User",
-		"Webhook Event", "Notification Log",
+		"Payment Attempt",
+		"Refund",
+		"Credit Ledger Entry",
+		"Credit Wallet",
+		"Invoice",
+		"Subscription Change",
+		"Subscription",
+		"Gateway Customer",
+		"Entitlement Token",
+		"Commitment",
+		"Usage Rollup",
+		"Payment Method",
+		"Tax Profile",
+		"Billing Profile",
+		"Team Invitation",
+		"Team Role",
+		"Catalog Rate",
+		"Plan",
+		"Asset",
+		"Team",
+		"Atlas Instance",
+		"Region",
+		"User",
+		"Webhook Event",
+		"Notification Log",
+		"Billing Event",
+		"Billing Run",
+	)
+
+	# Payment Gateway is a fixed roster (one row per adapter), not something a test
+	# creates — so it can't be swept, it has to be put back. These are the fields a
+	# test reconfigures; the Password fields live in __Auth and are left alone.
+	_GATEWAY_FIELDS = (
+		"is_enabled",
+		"supports_mandates",
+		"paypal_settlement_mode",
+		"credentials_validated_at",
+		"webhook_endpoint_id",
 	)
 
 	def run(self, result=None):
 		before = {doctype: set(frappe.get_all(doctype, pluck="name")) for doctype in self._TRACKED}
+		gateways = self._snapshot_gateways()
 		try:
 			return super().run(result)
 		finally:
 			self._sweep(before)
+			self._restore_gateways(gateways)
+
+	def _snapshot_gateways(self) -> dict:
+		return {
+			gw.name: (gw, frappe.get_all("Payment Gateway Currency", {"parent": gw.name}, ["*"]))
+			for gw in frappe.get_all("Payment Gateway", fields=["name", *self._GATEWAY_FIELDS])
+		}
+
+	def _restore_gateways(self, snapshot: dict) -> None:
+		"""Put every gateway back the way the test found it — config and currency rows.
+
+		A test that commits (the top-up flows do, via ensure_gateway_customer) outlives
+		the per-test rollback, so a currency row it added would silently re-route the
+		next test's payments."""
+		for name, (values, currency_rows) in snapshot.items():
+			if not frappe.db.exists("Payment Gateway", name):
+				continue
+			frappe.db.set_value(
+				"Payment Gateway",
+				name,
+				{field: values.get(field) for field in self._GATEWAY_FIELDS},
+				update_modified=False,
+			)
+			frappe.db.delete("Payment Gateway Currency", {"parent": name})
+			for row in currency_rows:
+				frappe.get_doc({"doctype": "Payment Gateway Currency", **row}).db_insert()
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- outlive a test's own commit
 
 	def _sweep(self, before: dict) -> None:
+		for attempt in range(_SWEEP_DEADLOCK_RETRIES):
+			try:
+				self._sweep_once(before)
+				frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist the sweep past a test's own commit
+				return
+			except frappe.QueryDeadlockError:
+				frappe.db.rollback()
+				if attempt == _SWEEP_DEADLOCK_RETRIES - 1:
+					raise
+				time.sleep(0.05 * (attempt + 1))
+
+	def _sweep_once(self, before: dict) -> None:
 		removed_teams: list[str] = []
 		for doctype in self._TRACKED:
 			added = list(set(frappe.get_all(doctype, pluck="name")) - before[doctype])
@@ -47,17 +158,29 @@ class BillingTestCase(IntegrationTestCase):
 				continue
 			if doctype == "Team":
 				removed_teams = added
+			if doctype == "Plan":
+				frappe.db.delete("Plan Includes", {"parent": ["in", added]})
 			frappe.db.delete(doctype, {"name": ["in", added]})
 		if removed_teams:
 			frappe.db.delete("Team Member", {"parenttype": "Team", "parent": ["in", removed_teams]})
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- persist the sweep past a test's own commit
+
 
 # frappe.enqueue doesn't run inline in tests unless now=True, so patch it with this to
 # execute an enqueued job synchronously — dropping the queue-control kwargs and calling
 # the target with the real ones. Usage: patch("frappe.enqueue", side_effect=run_enqueued_inline).
 _ENQUEUE_CONTROL_KWARGS = (
-	"queue", "timeout", "enqueue_after_commit", "job_id", "at_front", "is_async", "now",
-	"deduplicate", "event", "on_success", "on_failure", "job_name",
+	"queue",
+	"timeout",
+	"enqueue_after_commit",
+	"job_id",
+	"at_front",
+	"is_async",
+	"now",
+	"deduplicate",
+	"event",
+	"on_success",
+	"on_failure",
+	"job_name",
 )
 
 
@@ -67,6 +190,7 @@ def run_enqueued_inline(method, **kwargs):
 	if isinstance(method, str):  # enqueue takes a dotted path or a callable
 		method = frappe.get_attr(method)
 	return method(**kwargs)
+
 
 DEFAULT_RATES = [
 	{"cluster": "", "currency": "USD", "rate": 40},
@@ -94,6 +218,52 @@ def ensure_atlas_instance(region):
 	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
 
 	return _ensure_atlas_instance(region)
+
+
+def configure_gateway(adapter_key, currencies, **values):
+	"""Put the one gateway row for `adapter_key` into a known state, and return it.
+
+	Gateway rows are seeded per adapter (`gateways.setup.ensure_gateway_records`) and
+	named after it, so a test configures the existing row rather than creating one —
+	there is no second Stripe to create. `currencies` is a list of (currency,
+	is_default) pairs and REPLACES whatever the row carried.
+	"""
+	from central.billing.gateways.setup import ensure_gateway_records
+
+	# The roster is seeded by a before_tests hook, but a site set up before this
+	# landed won't have run it — seeding here keeps the fixture self-sufficient.
+	ensure_gateway_records()
+
+	doc = frappe.get_doc("Payment Gateway", adapter_key)
+	doc.update(values)
+	doc.currencies = []
+	for currency, is_default in currencies:
+		doc.append("currencies", {"currency": currency, "is_default": is_default})
+	doc.flags.skip_credential_validation = True
+	doc.save(ignore_permissions=True)
+	return doc
+
+
+def disable_gateway(adapter_key):
+	"""Take a gateway out of play without deleting it (deleting the roster row would
+	strand every Link that points at it)."""
+	frappe.db.set_value("Payment Gateway", adapter_key, "is_enabled", 0)
+
+
+def reset_gateway_roster():
+	"""Restore the routing the rest of the suite assumes: Stripe settles USD,
+	Razorpay settles INR, PayPal is off.
+
+	There is one shared row per adapter (ADR 0021), so a test that rewires the
+	roster rewires it for everything that runs after — where the old throwaway rows
+	could be abandoned harmlessly. A test that wipes the roster owes it a restore.
+	"""
+	from central.billing.tests.test_razorpay_adapter import make_razorpay_gateway
+	from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+
+	configure_gateway("Paypal", [], is_enabled=0)
+	make_stripe_gateway()
+	make_razorpay_gateway()
 
 
 def make_plan(name, rates=None, includes=None, **kwargs):
@@ -243,10 +413,17 @@ def complete_billing_profile(team, currency="INR"):
 	bypassing the API's gateway-supported-currency check, so it works regardless of
 	which gateways a given test has configured."""
 	values = {
-		"doctype": "Billing Profile", "team": team, "currency": currency,
-		"legal_name": f"{team} Ltd", "email": "billing@test.example", "phone": "9999999999",
-		"address_line1": "1 Test Street", "city": "Pune",
-		"state": "Maharashtra", "country": "India", "pincode": "411001",
+		"doctype": "Billing Profile",
+		"team": team,
+		"currency": currency,
+		"legal_name": f"{team} Ltd",
+		"email": "billing@test.example",
+		"phone": "9999999999",
+		"address_line1": "1 Test Street",
+		"city": "Pune",
+		"state": "Maharashtra",
+		"country": "India",
+		"pincode": "411001",
 	}
 	if frappe.db.exists("Billing Profile", team):
 		doc = frappe.get_doc("Billing Profile", team)
@@ -278,8 +455,9 @@ def make_billing_subscription(team, cluster, plan, start_date=None, clear_change
 	return sub.name
 
 
-def seed_running_resource(team, resource_id, cluster, plan, rate=1000, currency="INR",
-						  effective_at="2026-06-01 00:00:00"):
+def seed_running_resource(
+	team, resource_id, cluster, plan, rate=1000, currency="INR", effective_at="2026-06-01 00:00:00"
+):
 	"""Seed a provisioned, running resource on the Subscription Change ledger (ADR 0010):
 	its Asset (named by `resource_id`) + Subscription + an open `Created` segment at
 	`rate`/`currency`. The ledger replacement for the retired price-lock event seeding
@@ -313,9 +491,9 @@ def set_team_tier(team, level="t1", max_spend=None, manual_override=1):
 	exists; an explicit `max_spend` is stored as a bespoke `override_max_spend` so
 	get_team_caps returns exactly it regardless of the level's currency thresholds."""
 	if not frappe.db.exists("Billing Profile", team):
-		frappe.get_doc(
-			{"doctype": "Billing Profile", "team": team, "currency": "INR"}
-		).insert(ignore_permissions=True)
+		frappe.get_doc({"doctype": "Billing Profile", "team": team, "currency": "INR"}).insert(
+			ignore_permissions=True
+		)
 	values = {
 		"trust_tier_level": level,
 		"trust_tier": level,

@@ -3,9 +3,11 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
+from central.api.site_login import site_login_url
+from central.central.doctype.resource_action.resource_action import open_action
+from central.errors import resource_action
 from central.iam import can, get_user_team_names, resolve_team
-from central.integrations.atlas import AtlasClient
-from central.integrations.pilot import fetch_site_login_url
+from central.integrations.atlas import AtlasClient, AtlasResourceGone
 
 # Self-serve site endpoints for the SMB onboarding flow. Reads come from the Site
 # mirror (kept fresh by the site.* events Atlas pushes); writes go to Atlas as the
@@ -28,6 +30,7 @@ def _default_region() -> str:
 
 
 @frappe.whitelist(methods=["POST"])
+@resource_action
 def create_site(subdomain: str, region: str | None = None) -> dict:
 	"""Provision a self-serve site for the user's team. Gated on `server:create`.
 
@@ -45,12 +48,24 @@ def create_site(subdomain: str, region: str | None = None) -> dict:
 
 	region = region or _default_region()
 	client = AtlasClient.for_region(region)
-	site = client.create_site(team=team, subdomain=subdomain)
+
+	# site create is async (clone→deploy→route runs on Atlas after this returns). A
+	# rejection surfaces as an envelope and leaves no row; we open the tracking action
+	# only once Atlas has accepted the create.
+	correlation_id = frappe.generate_hash()
+	site = client.create_site(team=team, subdomain=subdomain, correlation_id=correlation_id)
 
 	from central.central.doctype.site.site import Site
 
 	Site.mirror_site(client.instance.name, site)
-	return {"name": site.get("name"), "fqdn": site.get("fqdn"), "status": site.get("status")}
+	open_action("Site", "create", team=team, resource_id=site.get("name"), correlation_id=correlation_id)
+
+	return {
+		"name": site.get("name"),
+		"fqdn": site.get("fqdn"),
+		"status": site.get("status"),
+		"action": correlation_id,
+	}
 
 
 @frappe.whitelist(methods=["GET"])
@@ -64,9 +79,7 @@ def get_site(name: str) -> dict:
 	expired by the time the tenant lands here we regenerate a fresh one on read, so
 	the link they click always works."""
 	user = frappe.session.user
-	mirror = frappe.db.get_value(
-		"Site", name, ["team", "cluster", "status"], as_dict=True
-	)
+	mirror = frappe.db.get_value("Site", name, ["team", "cluster", "status"], as_dict=True)
 	if not mirror:
 		frappe.throw(_("No site '{0}'.").format(name), frappe.DoesNotExistError)
 	if mirror.team not in get_user_team_names(user):
@@ -86,75 +99,8 @@ def get_site(name: str) -> dict:
 		"name": doc.name,
 		"status": doc.status,
 		"url": doc.url if running else None,
-		"login_url": _site_login_url(doc) if running else None,
+		"login_url": site_login_url(doc) if running else None,
 	}
-
-
-def _site_login_url(doc) -> str | None:
-	"""Prefer a Central-signed assertion the site's own pilot exchanges (no Atlas hop);
-	fall back to Atlas's regenerated URL when the pilot isn't enrolled or reachable yet."""
-	return _pilot_site_login_url(doc) or _fresh_site_login_url(doc)
-
-
-def _pilot_site_login_url(doc) -> str | None:
-	"""Relay a Central-signed assertion to the site's own pilot, which returns a desk URL with a
-	fresh local session. Resolves the hosting bench's audience + gateway from the credential
-	Central bound at create_site; None (→ Atlas fallback) until the pilot enrolled and its VM is
-	Running."""
-	if not doc.pilot_credential_id:
-		return None
-	credential = frappe.qb.DocType("Pilot Credential")
-	asset = frappe.qb.DocType("Asset")
-	row = (
-		frappe.qb.from_(credential)
-		.inner_join(asset)
-		.on(credential.asset == asset.name)
-		.select(credential.audience_id, asset.gateway_url, asset.status)
-		.where((credential.name == doc.pilot_credential_id) & (credential.status == "Active"))
-	).run(as_dict=True)
-	if not row or row[0].status != "Running":
-		return None
-	gateway = (row[0].gateway_url or "").rstrip("/")
-	if not gateway:
-		return None
-	return fetch_site_login_url(gateway, row[0].audience_id, doc.name)
-
-
-def _fresh_site_login_url(doc) -> str | None:
-	"""The site's usable one-click login URL: the stored one if it hasn't expired,
-	else a freshly-regenerated one. The URL is a short-lived (24h) session, so a
-	tenant who lands on a stale mirror row would otherwise get a dead link — we
-	re-mint on read instead. Best-effort: if the regenerate call fails (Atlas
-	unreachable), fall back to the stored URL rather than blocking the handoff."""
-	if doc.login_url and not _login_url_expired(doc.login_url_expires_at):
-		return doc.login_url
-	try:
-		return _regenerate_site_login(doc.name, doc.cluster).get("login_url") or doc.login_url
-	except Exception:
-		frappe.log_error(title=f"Regenerate login failed for site {doc.name}")
-		return doc.login_url or None
-
-
-def _login_url_expired(expires_at) -> bool:
-	"""True if a stored login URL is at/past its expiry (or carries no expiry — treat
-	an unstamped URL as unusable and force a regenerate). A small skew guard trims the
-	tail so we don't hand out a URL that dies mid-click."""
-	if not expires_at:
-		return True
-	skew = frappe.utils.add_to_date(frappe.utils.now_datetime(), seconds=30)
-	return frappe.utils.get_datetime(expires_at) <= skew
-
-
-def _regenerate_site_login(name: str, cluster: str) -> dict:
-	"""Ask Atlas to re-mint the site's login URL, re-mirror the fresh handoff, and
-	return it. The Atlas Site controller re-signs the session in the guest and returns
-	the Site-mirror shape; we upsert it so the stored URL + expiry stay in lockstep."""
-	from central.central.doctype.site.site import Site
-
-	instance = frappe.get_doc("Atlas Instance", cluster)
-	fresh = AtlasClient(instance).regenerate_site_login(name)
-	Site.mirror_site(cluster, fresh, synced_at=frappe.utils.now_datetime())
-	return fresh
 
 
 @frappe.whitelist(methods=["GET"])
@@ -175,6 +121,7 @@ def site_domain(region: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@resource_action
 def terminate_site(name: str) -> dict:
 	"""Terminate a self-serve site (and its 1:1 backing VM). Gated on `server:terminate` —
 	a site is a VM, so removing it is authorized like tearing down a server (site-level
@@ -195,6 +142,26 @@ def terminate_site(name: str) -> dict:
 		frappe.throw(_("Site {0} has no backing region to terminate.").format(name), frappe.ValidationError)
 
 	instance = frappe.get_doc("Atlas Instance", site.cluster)
-	AtlasClient(instance).terminate_site(name)
 
-	return {"name": name, "status": "Terminating"}
+	# Open the tracking action only once Atlas accepts. A rejection surfaces as an envelope
+	# (via @resource_action) and leaves no row to strand.
+	correlation_id = frappe.generate_hash()
+	try:
+		AtlasClient(instance).terminate_site(name, correlation_id=correlation_id)
+	except AtlasResourceGone:
+		# Already gone on Atlas (e.g. a stale mirror row) — terminate is idempotent: reflect
+		# it on the mirror and record a Succeeded action rather than a scary "region down".
+		frappe.get_doc("Site", name).db_set("status", "Terminated", notify=True)
+		open_action(
+			"Site",
+			"terminate",
+			team=site.team,
+			resource_id=name,
+			correlation_id=correlation_id,
+			status="Succeeded",
+		)
+		return {"name": name, "status": "Terminated", "action": correlation_id}
+
+	open_action("Site", "terminate", team=site.team, resource_id=name, correlation_id=correlation_id)
+
+	return {"name": name, "status": "Terminating", "action": correlation_id}

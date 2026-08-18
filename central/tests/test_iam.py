@@ -1,7 +1,6 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.identity import fc_teams
 from central.iam import can, expand_capabilities, get_effective_permissions, get_fc_teams_claim
 from central.oauth import install_oauth_claim_patch
 
@@ -47,10 +46,10 @@ class TestCentralIAM(IntegrationTestCase):
 		return team
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
-		# 13 capabilities across two live planes: central (5) + atlas (8). v3 makes
+		# 15 capabilities across two live planes: central (7) + atlas (8). v3 makes
 		# server the atomic unit — the bench plane and asset:view are dropped.
-		self.assertEqual(frappe.db.count("Capability"), 13)
-		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 5)
+		self.assertEqual(frappe.db.count("Capability"), 15)
+		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 7)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 8)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "bench"}), 0)
 		# The retired roles are gone; the five-rung ladder is all that remains.
@@ -66,7 +65,14 @@ class TestCentralIAM(IntegrationTestCase):
 
 		# Full server lifecycle is shared by Owner, Admin, and Developer.
 		for caps in (owner_caps, admin_caps, developer_caps):
-			for cap in ("server:create", "server:power", "server:resize", "server:snapshot", "server:terminate", "server:open"):
+			for cap in (
+				"server:create",
+				"server:power",
+				"server:resize",
+				"server:snapshot",
+				"server:terminate",
+				"server:open",
+			):
 				self.assertIn(cap, caps)
 		# Team management is Owner/Admin; deleting the team is Owner-only.
 		for caps in (owner_caps, admin_caps):
@@ -80,9 +86,19 @@ class TestCentralIAM(IntegrationTestCase):
 			self.assertIn(cap, admin_caps)
 			self.assertIn(cap, billing_caps)
 			self.assertNotIn(cap, developer_caps)
-		# Viewer is a pure inventory auditor; Billing adds billing to that read view.
-		self.assertEqual(viewer_caps, {"cluster:view", "server:view"})
-		self.assertEqual(billing_caps, {"billing:view", "billing:manage", "cluster:view", "server:view"})
+		# Viewer can read services; Billing can configure them as well.
+		self.assertEqual(viewer_caps, {"cluster:view", "server:view", "service:view"})
+		self.assertEqual(
+			billing_caps,
+			{
+				"billing:view",
+				"billing:manage",
+				"cluster:view",
+				"server:view",
+				"service:view",
+				"service:manage",
+			},
+		)
 
 		# server:open is the console gate; the read-only Viewer and Billing lack it.
 		for caps in (owner_caps, admin_caps, developer_caps):
@@ -134,7 +150,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertEqual(effective["user"], self.viewer)
 		self.assertEqual(
 			effective["teams"][team.name]["caps"],
-			["cluster:view", "server:view"],
+			["cluster:view", "server:view", "service:view"],
 		)
 		self.assertEqual(effective["teams"][team.name]["grants"][0]["source"], "member")
 
@@ -200,11 +216,3 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertIn(team.name, claim)
 		self.assertTrue(can(email, team.name, "team:manage_members"))
 		self.assertTrue(can(email, team.name, "server:terminate"))
-
-	def test_central_user_cannot_inspect_another_users_fc_teams(self):
-		frappe.set_user(self.viewer)
-		try:
-			with self.assertRaises(frappe.PermissionError):
-				fc_teams(self.developer)
-		finally:
-			frappe.set_user("Administrator")

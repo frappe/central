@@ -2,18 +2,22 @@
 # For license information, please see license.txt
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.entitlements import issue_token, recompute_trust_tier
 from central.billing.catalog.signing import generate_keypair, verify_payload
 from central.billing.tests.test_entitlements import make_ladder
-from central.billing.tests.utils import clear_team_tier, ensure_team
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
 
 class TestIssueToken(IntegrationTestCase):
 	def setUp(self):
 		make_ladder()
 		ensure_team("team-token")
+		# Pin the currency to INR up front, as the real signup flow does. t1/t2 are
+		# priced only in INR, so without this recompute would auto-create the profile in
+		# the site's default currency (USD here) and the t1 cap would resolve to 0.
+		complete_billing_profile("team-token", currency="INR")
 		clear_team_tier("team-token")
 		# Central holds the private key; the public key goes to the cluster.
 		self.private_key, self.public_key = generate_keypair()

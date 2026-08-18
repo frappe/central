@@ -10,8 +10,8 @@ every cut and lets each report be asserted against known totals.
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.report.mrr_and_ytd_revenue.mrr_and_ytd_revenue import execute as mrr_execute
 from central.billing.report.atlas_based_revenue.atlas_based_revenue import execute as cluster_execute
+from central.billing.report.mrr_and_ytd_revenue.mrr_and_ytd_revenue import execute as mrr_execute
 from central.billing.report.services_revenue.services_revenue import execute as services_execute
 from central.billing.tests.utils import ensure_team
 
@@ -20,11 +20,20 @@ TEAM = "team-revenue-report"
 
 def _invoice(period_start, period_end, items, status="Paid", currency="INR"):
 	total = sum(i["amount"] for i in items)
-	frappe.get_doc({
-		"doctype": "Invoice", "team": TEAM, "invoice_type": "Billable", "status": status,
-		"period_start": period_start, "period_end": period_end, "currency": currency,
-		"subtotal": total, "total": total, "items": items,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Invoice",
+			"team": TEAM,
+			"invoice_type": "Billable",
+			"status": status,
+			"period_start": period_start,
+			"period_end": period_end,
+			"currency": currency,
+			"subtotal": total,
+			"total": total,
+			"items": items,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _bundle(amount, cluster="in-mumbai", plan=""):

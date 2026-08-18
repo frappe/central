@@ -16,6 +16,10 @@ central.patches.v0_0.migrate_team_to_central_team
 # Widen the decimal columns to varchar before sync (the sync can't cast a '1/8'
 # default against a decimal column) and relabel stored values — issue #33.
 central.patches.v0_0.configurator_vcpu_dropdown
+# Collapse Payment Gateway to one row per adapter and rename each survivor to its
+# adapter_key. Runs before the sync flips naming to `field:adapter_key`, so the
+# rows are already unique by the time that rule takes effect.
+central.patches.v0_0.one_gateway_per_adapter
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -106,3 +110,28 @@ central.patches.v0_0.make_central_users_portal_only
 # surviving roles). Server is the atomic unit now.
 central.patches.v0_0.strip_capabilities
 central.patches.v0_0.backfill_region
+# Carry the welcome credit amounts that were constants in the code onto the new
+# Billing Settings, so a migrated site keeps granting what it granted yesterday.
+central.patches.v0_0.seed_welcome_credit_amounts
+# Rename the one stale `TEAM-ROLE-.#####` row left by the malformed format: autoname
+# (the second custom role used to raise DuplicateEntryError) — PR 1.
+central.patches.v0_0.fix_team_role_autoname
+central.patches.v0_0.merge_service_credentials
+# The silent-debit ceiling moved off the adapter onto the (gateway, currency) row —
+# fill it in for INR, where an empty ceiling would read as no ceiling (ADR 0022).
+central.patches.v0_0.set_inr_silent_ceiling
+# Stripe Auto and E-Mandate named providers, not behaviours, and an Indian Stripe
+# mandate is both at once — they become Auto Charge (ADR 0022).
+central.patches.v0_0.collapse_collection_modes
+# Stripe issues its own pre-debit notice and holds the charge 26 hours, so we must
+# not arm a window on top of it (ADR 0023).
+central.patches.v0_0.stripe_owns_its_predebit_notice
+# The trial-plan allow-list moved from the `trial_plans` site-config list onto a
+# per-Plan `available_on_trial` check; flag the plans a migrated site already offered.
+central.patches.v0_0.seed_available_on_trial
+# Whether new teams are staging trials moved from the `central_trial_provisioning`
+# conf flag onto Billing Settings; carry a staging bench's conf value over.
+central.patches.v0_0.seed_provision_teams_as_trial
+# The SSO issuer / JWKS base URL moved from the `central_url` conf key onto Central
+# SSO Settings; carry a deployment's configured value over.
+central.patches.v0_0.seed_central_sso_issuer_url

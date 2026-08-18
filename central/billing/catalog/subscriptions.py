@@ -18,19 +18,10 @@ writes an append-only Subscription Change.
 
 import frappe
 
-
-class InvalidTransition(frappe.ValidationError):
-	"""An account-standing transition that the state machine does not permit."""
-
-
-# Account-standing transitions Central allows. Suspension is staged through
-# past_due (grace) — never a direct current -> suspended jump; reactivation
-# returns to current from either past_due or suspended.
-_STANDING_TRANSITIONS = {
-	"Current": {"Past Due"},
-	"Past Due": {"Current", "Suspended"},
-	"Suspended": {"Current"},
-}
+# The account-standing state machine (which moves are legal) now lives in the one
+# transition authority; re-exported so callers that catch `subscriptions.InvalidTransition`
+# keep working. Suspension is still staged through Past Due (grace), never a direct jump.
+from central.billing.states import InvalidTransition, transition
 
 # The Subscription Change type that records a move *into* a standing.
 _STANDING_CHANGE_TYPE = {
@@ -125,7 +116,7 @@ def _asset_shape(includes) -> dict:
 	reflects what was provisioned. Empty for a preset (the Plan carries the shape)."""
 	if not includes:
 		return {}
-	from central.billing.catalog.composition import composition_quantities, COMPUTE, MEMORY, DISK
+	from central.billing.catalog.composition import COMPUTE, DISK, MEMORY, composition_quantities
 
 	qty = composition_quantities(includes)
 	return {
@@ -165,9 +156,18 @@ def provision_composed_subscription(
 	enforce_headroom(team, resolve_config_rate(includes, currency, cluster))
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
-		team, cluster, plan=None, billing_cycle=billing_cycle, start_date=start_date,
-		default_payment_method=default_payment_method, gateway=gateway, changed_by=changed_by,
-		resource_id=resource_id, pricing_mode="Composed", includes=includes, sub_category=sub_category,
+		team,
+		cluster,
+		plan=None,
+		billing_cycle=billing_cycle,
+		start_date=start_date,
+		default_payment_method=default_payment_method,
+		gateway=gateway,
+		changed_by=changed_by,
+		resource_id=resource_id,
+		pricing_mode="Composed",
+		includes=includes,
+		sub_category=sub_category,
 	)
 	opening = frappe.db.get_value(
 		"Subscription Change",
@@ -205,8 +205,14 @@ def provision_subscription(
 	subscription + the locked handles."""
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
-		team, cluster, plan, billing_cycle=billing_cycle, start_date=start_date,
-		default_payment_method=default_payment_method, gateway=gateway, changed_by=changed_by,
+		team,
+		cluster,
+		plan,
+		billing_cycle=billing_cycle,
+		start_date=start_date,
+		default_payment_method=default_payment_method,
+		gateway=gateway,
+		changed_by=changed_by,
 		resource_id=resource_id,
 	)
 
@@ -313,7 +319,9 @@ def _assert_service_plan(plan: str) -> str:
 		frappe.throw(frappe._("Unknown plan {0}.").format(plan), frappe.ValidationError)
 	if frappe.db.get_value("Plan Category", category, "provision_target") == "Server":
 		frappe.throw(
-			frappe._("Plan {0} provisions a server — subscribe it through the server flow, not as a team-level service.").format(plan),
+			frappe._(
+				"Plan {0} provisions a server — subscribe it through the server flow, not as a team-level service."
+			).format(plan),
 			frappe.ValidationError,
 		)
 	return category
@@ -384,7 +392,9 @@ def begin_resize(
 
 	# No live VM to reshape → re-lock the contract inline (nothing slow to defer).
 	if not asset or asset.status not in ("Running", "Paused", "Stopped"):
-		_apply_resize(subscription, plan=plan, includes=includes, sub_category=sub_category, changed_by=changed_by)
+		_apply_resize(
+			subscription, plan=plan, includes=includes, sub_category=sub_category, changed_by=changed_by
+		)
 		return {"queued": False, "resized": True}
 
 	# Slow path: flag the VM Resizing (pushed live to the Console) and defer the reshape.
@@ -424,7 +434,9 @@ def _plan_resize(doc, asset, plan, includes, sub_category) -> dict | None:
 		from central.billing.catalog.pricing import resolve_config_rate
 
 		rows = [dict(r) for r in (includes or [])]
-		if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(rows):
+		if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(
+			rows
+		):
 			return None
 		shape = _asset_shape(rows)
 		new_rate = resolve_config_rate(rows, currency, cluster)
@@ -474,15 +486,25 @@ def _notify_resize_failed(subscription: str, asset_id: str) -> None:
 	team = frappe.db.get_value("Subscription", subscription, "team")
 	if not team:
 		return
-	from central.notifications import create_notification
+	from central.notification import engine
 
-	create_notification(
-		team, "Server resize failed",
-		category="Server", event_type="Resize Failed", severity="Error",
+	engine.ensure_event_type(
+		"resize_failed",
+		category="Server",
+		severity="Error",
+		required_cap="server:view",
+		in_app_title="Resize failed: {{ reference_name }}",
+		in_app_body="Server resize failed for {{ reference_name }}: {{ message }}",
+		action_label="View server",
+		action_route="/servers",
+	)
+	engine.dispatch(
+		team,
+		"resize_failed",
 		message=f"The resize of server {asset_id} could not be applied and was rolled back. "
 		"Billing stayed on the previous plan. You can retry the resize.",
-		reference_doctype="Asset", reference_name=asset_id,
-		action_label="View server", action_route="/servers",
+		reference_doctype="Asset",
+		reference_name=asset_id,
 	)
 
 
@@ -526,7 +548,9 @@ def resize_composed_subscription(
 	enforce_headroom(doc.team, new_rate, exclude=subscription)
 
 	# Resizing to the identical composition already running is a no-op (no event).
-	if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(rows):
+	if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(
+		rows
+	):
 		return doc
 
 	if asset:
@@ -592,7 +616,9 @@ def _guard_disk_shrink(asset_id: str, shape: dict) -> None:
 	current_disk = frappe.utils.cint(frappe.db.get_value("Asset", asset_id, "disk_gigabytes"))
 	if shape["disk_gigabytes"] < current_disk:
 		frappe.throw(
-			frappe._("Disk can't shrink: this server has a {0} GB disk — choose a size with at least that much storage.").format(current_disk)
+			frappe._(
+				"Disk can't shrink: this server has a {0} GB disk — choose a size with at least that much storage."
+			).format(current_disk)
 		)
 
 
@@ -785,7 +811,7 @@ def team_run_rate(team: str, exclude: str | None = None) -> float:
 	measure headroom as if the config being resized weren't there. One batched query
 	via `team_active_segments` (no per-subscription N+1, review notes #2)."""
 	return frappe.utils.flt(
-		sum(s.locked_rate for s in team_active_segments(team) if s.subscription != exclude)
+		sum(s.locked_rate for s in active_segments({"team": team, "enabled": 1}) if s.subscription != exclude)
 	)
 
 
@@ -866,9 +892,7 @@ def _control_subscription_server(sub, action: str) -> None:
 	apply (e.g. stopping an already-stopped server)."""
 	if not sub.asset_id:
 		return
-	asset = frappe.db.get_value(
-		"Asset", sub.asset_id, ["resource_id", "status"], as_dict=True
-	)
+	asset = frappe.db.get_value("Asset", sub.asset_id, ["resource_id", "status"], as_dict=True)
 	if not asset or not asset.resource_id:
 		return
 	if asset.status not in _SERVER_ACTION_FROM.get(action, set()):
@@ -882,19 +906,18 @@ def _control_subscription_server(sub, action: str) -> None:
 def set_standing(subscription: str, new_standing: str, changed_by: str | None = None, reason=None):
 	"""Move a subscription's account standing through the allowed transitions.
 
-	Raises InvalidTransition for any move the state machine forbids (same-state,
-	skipping the grace step, unknown standing). Records the move as an
-	append-only Subscription Change. Never touches operational state.
+	Routes the move through the transition authority: it raises InvalidTransition for a
+	forbidden move (skipping the grace step, an unknown standing) and appends a Billing
+	Event. A move to the current standing is an idempotent no-op — dunning re-applies the
+	same standing on each retry day and must not error or record a spurious change. The
+	move is also recorded as an append-only Subscription Change (the load-bearing ledger).
 	"""
 	doc = frappe.get_doc("Subscription", subscription)
 	current = doc.account_standing
+	if current == new_standing:
+		return
 
-	if new_standing not in _STANDING_TRANSITIONS.get(current, set()):
-		raise InvalidTransition(
-			f"Cannot move account standing from '{current}' to '{new_standing}'."
-		)
-
-	doc.account_standing = new_standing
+	transition(doc, new_standing, reason=reason, actor=changed_by)
 	doc.save(ignore_permissions=True)
 	_record_change(
 		subscription,
@@ -937,8 +960,6 @@ def backfill_missing_subscriptions():
 
 	running_assets = frappe.get_all("Asset", filters={"status": "Running"}, pluck="name")
 	for asset_id in running_assets:
-		has_active_subscription = frappe.db.exists(
-			"Subscription", {"asset_id": asset_id, "enabled": 1}
-		)
+		has_active_subscription = frappe.db.exists("Subscription", {"asset_id": asset_id, "enabled": 1})
 		if not has_active_subscription:
 			create_subscription(asset_id)

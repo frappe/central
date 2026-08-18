@@ -7,16 +7,16 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
-from central.billing.payments import charges, collection, payments
 from central.billing.gateways.base import PaymentResult
+from central.billing.payments import charges, collection, payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_team, make_plan
 
 TEAM = "team-fallback"
 PLAN = "bundle-fallback-test"
-GATEWAY = "GW-Fallback-Stripe"
+GATEWAY = "Stripe"
 
 
 def _result(success, txn_id):
@@ -43,7 +43,7 @@ class FallbackTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		make_plan(PLAN)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		self._purge()
 		self.primary = self._card("Visa ····0001", "pm_primary", priority=0)
 		self.backup = self._card("Visa ····0002", "pm_backup", priority=1)
@@ -60,36 +60,67 @@ class FallbackTestBase(IntegrationTestCase):
 		frappe.db.commit()
 
 	def _card(self, label, gw_id, priority, reauth=0):
-		return frappe.get_doc(
-			{
-				"doctype": "Payment Method", "team": TEAM, "gateway": GATEWAY,
-				"method_type": "Card", "status": "Active", "display_label": label,
-				"gateway_method_id": gw_id, "gateway_customer_id": "cus_1",
-				"priority": priority, "is_default": 1 if priority == 0 else 0,
-				"reauth_required": reauth,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": TEAM,
+					"gateway": GATEWAY,
+					"method_type": "Card",
+					"status": "Active",
+					"display_label": label,
+					"gateway_method_id": gw_id,
+					"gateway_customer_id": "cus_1",
+					"priority": priority,
+					"is_default": 1 if priority == 0 else 0,
+					"reauth_required": reauth,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _open_invoice(self, total=1000):
-		return frappe.get_doc(
-			{
-				"doctype": "Invoice", "team": TEAM, "status": "Open",
-				"period_start": "2026-06-01", "period_end": "2026-06-30", "currency": "INR",
-				"subtotal": total, "total": total, "credit_applied": 0,
-				"expected_collection": total, "amount_paid": 0,
-			}
-		).insert(ignore_permissions=True).name
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"status": "Open",
+					"period_start": "2026-06-01",
+					"period_end": "2026-06-30",
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"credit_applied": 0,
+					"expected_collection": total,
+					"amount_paid": 0,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _failure_event(self, txn_id):
-		payload = {"id": f"evt_{txn_id}", "type": "payment_intent.payment_failed",
-				   "data": {"object": {"id": txn_id}}}
-		return frappe.get_doc(
-			{
-				"doctype": "Webhook Event", "gateway": GATEWAY, "gateway_event_id": f"evt_{txn_id}",
-				"event_type": "payment_intent.payment_failed", "raw_payload": json.dumps(payload),
-				"status": "Received",
-			}
-		).insert(ignore_permissions=True).name
+		payload = {
+			"id": f"evt_{txn_id}",
+			"type": "payment_intent.payment_failed",
+			"data": {"object": {"id": txn_id}},
+		}
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Webhook Event",
+					"gateway": GATEWAY,
+					"gateway_event_id": f"evt_{txn_id}",
+					"event_type": "payment_intent.payment_failed",
+					"raw_payload": json.dumps(payload),
+					"status": "Received",
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _attempts(self):
 		return frappe.get_all(
@@ -139,9 +170,9 @@ class TestWebhookFallback(FallbackTestBase):
 	def test_async_decline_rotates_to_backup(self):
 		inv = self._open_invoice()
 		with stub_charges([(True, "pi_primary"), (True, "pi_backup")]):
-			collection.collect_invoice(inv)            # primary captured, awaiting webhook
+			collection.collect_invoice(inv)  # primary captured, awaiting webhook
 			event = self._failure_event("pi_primary")  # bank reverses the primary
-			charges.apply_webhook(event)               # -> rotates to backup
+			charges.apply_webhook(event)  # -> rotates to backup
 
 		attempts = {a.gateway_transaction_id: a for a in self._attempts() if a.gateway_transaction_id}
 		self.assertIn("pi_backup", attempts)

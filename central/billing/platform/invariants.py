@@ -34,7 +34,7 @@ TOLERANCE = 0.01
 # Payment Attempts are pruned on a rolling window (charges.cleanup_payment_logs), so an
 # invoice older than the window has no attempts to reconcile against and would report a
 # false violation. Audits that read attempts stay inside the window.
-from central.billing.payments.charges import LOG_RETENTION_DEFAULT_DAYS
+from central.billing import settings
 
 STUCK_ATTEMPT_MINUTES = 30
 
@@ -71,7 +71,7 @@ def _differs(a, b) -> bool:
 
 
 def _attempt_cutoff():
-	days = int(frappe.conf.get("payment_log_retention_days") or LOG_RETENTION_DEFAULT_DAYS)
+	days = settings.payment_log_retention_days()
 	return frappe.utils.add_to_date(frappe.utils.now_datetime(), days=-days)
 
 
@@ -97,9 +97,7 @@ def check_wallet_matches_ledger() -> list[Violation]:
 
 	violations = []
 	seen = set()
-	for w in frappe.get_all(
-		"Credit Wallet", fields=["name", "team", "currency", "balance"]
-	):
+	for w in frappe.get_all("Credit Wallet", fields=["name", "team", "currency", "balance"]):
 		key = (w.team, w.currency)
 		seen.add(key)
 		expected = ledger.get(key, 0.0)
@@ -172,8 +170,7 @@ def check_running_balance_chain() -> list[Violation]:
 					subject=e.name,
 					expected=running[key],
 					actual=frappe.utils.flt(e.running_balance),
-					detail="running_balance chain breaks here — an entry is missing, "
-					"reordered or altered.",
+					detail="running_balance chain breaks here — an entry is missing, reordered or altered.",
 				)
 			)
 	return violations
@@ -231,8 +228,7 @@ def check_paid_invoice_is_covered() -> list[Violation]:
 	for inv in frappe.get_all(
 		"Invoice",
 		filters={"status": "Paid", "invoice_type": ["!=", "Cost Report"]},
-		fields=["name", "team", "currency", "total", "tds_amount", "amount_paid",
-				"credit_applied"],
+		fields=["name", "team", "currency", "total", "tds_amount", "amount_paid", "credit_applied"],
 	):
 		owed = frappe.utils.flt(inv.total) - frappe.utils.flt(inv.tds_amount)
 		settled = frappe.utils.flt(inv.amount_paid) + frappe.utils.flt(inv.credit_applied)
@@ -359,9 +355,7 @@ def check_no_stuck_attempts() -> list[Violation]:
 	them to terminal by asking the gateway. One that is still sitting here is one the
 	sweeper has not answered — and possibly money taken with no settled record.
 	"""
-	stale = frappe.utils.add_to_date(
-		frappe.utils.now_datetime(), minutes=-STUCK_ATTEMPT_MINUTES
-	)
+	stale = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-STUCK_ATTEMPT_MINUTES)
 	return [
 		Violation(
 			check="P4",

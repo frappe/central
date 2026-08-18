@@ -7,6 +7,7 @@ for billing (machine pace). This module serves the first role only.
 """
 
 import frappe
+from frappe import _
 
 # Memory-ratio pre-fills for the Plan Configurator (issue #33). Authoring-only:
 # the ratio derives a default memory; the resulting GB is what's stored, never
@@ -14,7 +15,9 @@ import frappe
 RATIO_FACTORS = {"1:2": 2, "1:4": 4, "1:6": 6, "1:8": 8}
 
 
-def configure_includes(vcpu: float, ratio: str = "1:2", disk_gb: float = 0, memory_gb: float | None = None) -> list[dict]:
+def configure_includes(
+	vcpu: float, ratio: str = "1:2", disk_gb: float = 0, memory_gb: float | None = None
+) -> list[dict]:
 	"""Build plain Plan Includes rows from configurator inputs.
 
 	Memory is pre-filled from the ratio (`vcpu × factor`) unless `memory_gb`
@@ -24,8 +27,14 @@ def configure_includes(vcpu: float, ratio: str = "1:2", disk_gb: float = 0, memo
 	"""
 	vcpu = frappe.utils.flt(vcpu)
 	if ratio not in RATIO_FACTORS:
-		frappe.throw(f"Unknown memory ratio {ratio!r}; expected one of {sorted(RATIO_FACTORS)}.")
-	memory = frappe.utils.flt(memory_gb) if memory_gb is not None else frappe.utils.flt(vcpu * RATIO_FACTORS[ratio])
+		frappe.throw(
+			_("Unknown memory ratio {0!r}; expected one of {1}.").format(ratio, sorted(RATIO_FACTORS))
+		)
+	memory = (
+		frappe.utils.flt(memory_gb)
+		if memory_gb is not None
+		else frappe.utils.flt(vcpu * RATIO_FACTORS[ratio])
+	)
 	return [
 		{"resource_type": "Compute", "quantity": vcpu, "unit": "vCPU"},
 		{"resource_type": "Memory", "quantity": memory, "unit": "GB"},

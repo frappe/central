@@ -2,20 +2,18 @@
 import { Tooltip } from 'frappe-ui'
 
 // Shared chrome for the consolidated Billing Overview cards (#69). Mirrors the
-// frappe-cloud-v2 billing prototype: a rounded-xl hairline card with an inline
+// frappe-cloud-v2 billing prototype: a rounded-6 hairline card with an inline
 // semibold title (no header divider), an optional info tooltip beside the title,
 // an optional header action slot, and a padded body.
 defineProps<{ title: string; description?: string; titleInfo?: string }>()
 </script>
 
 <template>
-	<section
-		class="rounded-xl border border-outline-gray-2 bg-surface-elevation-1"
-	>
+	<section class="rounded-6 border border-outline-gray-2 bg-surface-base">
 		<header class="flex items-center justify-between gap-3 px-5 pt-4">
 			<div class="min-w-0">
 				<div class="flex items-center gap-1.5">
-					<h2 class="truncate text-base font-semibold text-ink-gray-8">
+					<h2 class="truncate text-base-semibold text-ink-gray-8">
 						{{ title }}
 					</h2>
 					<Tooltip v-if="titleInfo" :text="titleInfo">
@@ -33,8 +31,12 @@ defineProps<{ title: string; description?: string; titleInfo?: string }>()
 				<slot name="action" />
 			</div>
 		</header>
-		<div class="px-5 pb-5 pt-4">
+		<!-- Only render the body when there is body content — a description-only
+         card (e.g. Stop billing) would otherwise carry the body's empty
+         padding as a phantom gap. -->
+		<div v-if="$slots.default" class="px-5 pb-5 pt-2">
 			<slot />
 		</div>
+		<div v-else class="pb-4" />
 	</section>
 </template>

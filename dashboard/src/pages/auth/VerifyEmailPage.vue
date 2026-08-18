@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
-import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
+import { computed, ref } from 'vue'
+import { type LocationQueryRaw, useRoute, useRouter } from 'vue-router'
+import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import OtpInput from '@/components/common/OtpInput.vue'
-import { API } from '@/api/methods'
 import { frappeErrorMessage, methodUrl, postFrappe } from '@/lib/auth'
 
 const route = useRoute()
@@ -100,7 +100,7 @@ function queryString(value: unknown): string {
 
 			<p
 				v-if="resent"
-				class="rounded bg-surface-green-2 px-3 py-2 text-p-sm text-ink-green-3"
+				class="rounded-4 bg-surface-green-2 px-3 py-2 text-p-sm text-ink-green-2"
 			>
 				A new code has been sent.
 			</p>

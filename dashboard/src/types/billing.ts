@@ -32,6 +32,13 @@ export interface BillingLine {
 	rate?: number
 	unit?: string | null
 	amount: number
+	/** Whether the quantity was observed or inferred (projection/basis.py). A stored
+	 *  invoice line is always Measured by the time it is issued. */
+	basis?: 'Measured' | 'Estimated' | 'Assumed' | (string & {})
+	/** The machine this line was billed for — set on plan lines only. */
+	server?: string | null
+	/** Its technical id (what the Asset is named by), for support and logs. */
+	server_id?: string | null
 }
 
 /** get_forecast — current-cycle projection vs wallet. */
@@ -48,6 +55,87 @@ export interface Forecast {
 	currency: Currency
 	credit_alert: boolean
 	line_items: BillingLine[]
+	/** Already owed: a locked rate over elapsed days, a landed rollup. */
+	measured: number
+	/** Inferred, because the period has not happened yet. */
+	estimated: number
+	/** True when any part of the projection is inferred — the UI must not render a
+	 *  bare total when it is. */
+	has_estimates: boolean
+	/** Last month's billed total, so the projection reads as a change. Null when
+	 *  the team was not billed that month — there is nothing to compare against. */
+	previous_total: number | null
+	previous_label: string | null
+}
+
+/** get_next_payment — the next debit and anything the team's state says will stop it. */
+export interface PaymentBlocker {
+	code: string
+	title: string
+	fix: string | null
+}
+
+export interface ChargingMethod {
+	label: string | null
+	method_type: string | null
+	card_network: string | null
+	ceiling: number | null
+}
+
+export interface NextPayment {
+	currency: Currency
+	amount: number
+	charge_on: string | null
+	invoice: string | null
+	period_end: string | null
+	collection_mode: string | null
+	method: ChargingMethod | null
+	/** Empty blockers is not a promise of success — only that nothing decides otherwise. */
+	will_auto_charge: boolean
+	blockers: PaymentBlocker[]
+}
+
+export interface PredebitNotice {
+	sent_at: string
+	invoice: string | null
+	subject: string | null
+	status: string | null
+}
+
+export interface DunningStage {
+	date: string
+	stage: string
+	day: number
+}
+
+export interface PaymentSchedule extends NextPayment {
+	notices: PredebitNotice[]
+	if_unpaid: DunningStage[]
+}
+
+/** get_cycle_costs — what the team is paying for this cycle, per subject. */
+export interface CycleUsage {
+	used: number
+	allowance: number
+	unit: string | null
+	over: boolean
+}
+
+export interface CycleCostItem {
+	resource_id: string
+	title: string
+	plan: string | null
+	cluster: string | null
+	is_service: boolean
+	amount: number
+	currency: Currency
+	usage: CycleUsage | null
+}
+
+export interface CycleCosts {
+	currency: Currency
+	items: CycleCostItem[]
+	total: number
 }
 
 /** One rung of the trust-tier ladder (customer-facing: Spending Limits). */
@@ -71,6 +159,8 @@ export interface TrustTier {
 		resources_used: number
 		paid_invoices: number
 		cumulative_paid: number
+		first_paid_at: string | null
+		last_paid_invoice_amount: number
 	}
 	all_levels: (TierLevel | null)[]
 }
@@ -79,6 +169,15 @@ export interface TrustTier {
 export interface CreditBalance {
 	balance: number
 	currency: Currency
+	/** Promotional credit still on a clock, soonest expiry first. */
+	expiring: ExpiringCredit[]
+}
+
+/** One promotional grant with time left on it. Purchased credit never expires. */
+export interface ExpiringCredit {
+	amount: number
+	expires_on: string
+	ledger_entry: string
 }
 
 /** credit_ledger row — append-only wallet movement (ADR 0006). */
@@ -93,13 +192,15 @@ export interface CreditLedgerEntry {
 	reference_name: string | null
 }
 
+// Mirrors the Invoice DocType's status Select options — keep in sync with
+// central/billing/doctype/invoice/invoice.json.
 export type InvoiceStatus =
 	| 'Draft'
-	| 'Unpaid'
+	| 'Open'
 	| 'Paid'
 	| 'Overdue'
-	| 'Void'
-	| (string & {})
+	| 'Waived'
+	| 'Cancelled'
 
 /** list_invoices row — summary only. */
 export interface InvoiceSummary {
@@ -122,7 +223,7 @@ export interface InvoiceActivity {
 	detail: string | null
 	amount: number
 	currency: Currency
-	theme: 'gray' | 'blue' | 'green' | 'red' | 'orange'
+	theme: 'gray' | 'blue' | 'green' | 'red' | 'amber'
 }
 
 /** get_invoice — one invoice with line items, tax block, and activity. */
@@ -146,6 +247,8 @@ export interface InvoiceDetail {
 	due_date: string | null
 	/** A charge is in flight (or captured, awaiting the settlement webhook). */
 	payment_in_progress: boolean
+	/** The method that settled a Paid invoice (from the capturing attempt). */
+	paid_with: { label: string; method_type: string } | null
 	items: BillingLine[]
 	activity: InvoiceActivity[]
 }
@@ -153,8 +256,13 @@ export interface InvoiceDetail {
 /** list_subscriptions row — per-server plan. */
 export interface SubscriptionRow {
 	name: string
+	/** What metering keys on: the Asset for a server, the synthesized subject for a
+	 *  team-level service. Joins a row to what it has cost this cycle. */
+	resource_id: string | null
 	/** Friendly server name (Asset.title), e.g. "atlas-web-01". */
 	server: string | null
+	/** Asset-backed = a real server; false = a team-level metered service. */
+	has_server: boolean
 	/** Asset gateway URL for the "Open server" action. */
 	gateway_url: string | null
 	plan: string
@@ -187,13 +295,38 @@ export interface PaymentMethod {
 	reauth_required: boolean | number
 	expiry_month: number | null
 	expiry_year: number | null
+	/** Mandate ceiling — what the bank will let us debit in one go. */
+	mandate_max_amount?: number | null
+	mandate_currency?: string | null
 }
 
 /** get_payment_method_options — what the team may add, resolved from its currency. */
+/** One tile on a payment surface. The customer picks an instrument and the
+ *  instrument picks the gateway (ADR 0023) — we never detect the card network.
+ *  Recharge and auto-pay setup return different lists. */
+export interface PaymentInstrument {
+	instrument:
+		| 'Card'
+		| 'RuPay Card'
+		| 'UPI'
+		| 'UPI Autopay'
+		| 'Netbanking'
+		| (string & {})
+	label: string
+	description: string
+	gateway: string
+	adapter_key: 'Stripe' | 'Razorpay' | (string & {})
+	/** Which surface offered it: 'recharge' pays once, 'mandate' is saved. */
+	surface: 'recharge' | 'mandate' | (string & {})
+}
+
 export interface PaymentMethodOptions {
 	gateway: string | null
 	adapter_key: 'Stripe' | 'Razorpay' | (string & {})
 	currency: Currency
+	instruments: PaymentInstrument[]
+	/** What no tile on this surface can do — e.g. cards no rail will hold a mandate on. */
+	note?: string | null
 	methods: PaymentMethodType[]
 	allow_upi: boolean
 	upi_block_reason: string | null
@@ -242,6 +375,8 @@ export interface BillingSettings {
 export interface CollectionStatus {
 	mode?: string
 	collection_mode?: string
+	/** Networks no rail will auto-charge — shown before the customer picks how to pay. */
+	mandate_gap_note?: string | null
 	action_required: boolean
 	reason: string | null
 	threshold: number | null
@@ -271,10 +406,11 @@ export interface TeamNotification {
 	creation: string
 }
 
-/** list_notifications response — items plus the live unread count. */
+/** list_notifications response — one page, plus the live unread count. */
 export interface NotificationFeed {
 	items: TeamNotification[]
 	unread: number
+	has_next_page: boolean
 }
 
 /** get_notification_preferences — per-event-type delivery toggles (0/1), keyed by event. */
@@ -282,3 +418,129 @@ export interface NotificationPreferences {
 	team: string
 	[event: string]: number | string
 }
+
+/** get_spend_history — the period-ranged reads behind Billing → Reports. */
+export interface SpendMonth {
+	month: string
+	label: string
+	total: number
+	paid: number
+	currency: Currency
+}
+
+export interface SpendSlice {
+	label: string
+	amount: number
+}
+
+export interface SpendHistory {
+	currency: Currency
+	from_date: string
+	months: SpendMonth[]
+	by_product: SpendSlice[]
+	by_region: SpendSlice[]
+	total: number
+	invoice_count: number
+}
+
+export interface StatementRow {
+	invoice: string
+	period_start: string
+	period_end: string
+	status: InvoiceStatus
+	total: number
+	tax: number
+	credit_applied: number
+	amount_paid: number
+}
+
+export interface Statement {
+	currency: Currency
+	from_date: string
+	to_date: string
+	opening_outstanding: number
+	charged: number
+	settled_by_credits: number
+	settled_by_payment: number
+	closing_outstanding: number
+	rows: StatementRow[]
+}
+
+export interface TaxBucket {
+	tax_type: string
+	taxable: number
+	tax: number
+	invoices: number
+}
+
+export interface TaxSummary {
+	currency: Currency
+	from_date: string
+	to_date: string
+	by_type: TaxBucket[]
+	total_tax: number
+	total_withheld: number
+	/** Central's own rating, not the statutory document (ADR 0019). */
+	is_working_paper: boolean
+}
+
+export interface RefundRow {
+	name: string
+	invoice: string | null
+	amount: number
+	currency: Currency
+	destination: 'Source' | 'Wallet' | (string & {})
+	status: 'Initiated' | 'Completed' | 'Failed' | (string & {})
+	reason: string | null
+	/** The provider's refund id — NOT a bank-traceable ARN. */
+	gateway_reference: string | null
+	created_at: string
+	completed_at: string | null
+}
+
+/** list_payment_attempts — every charge against the team, across invoices. */
+export interface PaymentAttempt {
+	name: string
+	status:
+		| 'Initiated'
+		| 'Authorised'
+		| 'Captured'
+		| 'Failed'
+		| 'Refunded'
+		| (string & {})
+	amount: number
+	currency: Currency
+	gateway: string | null
+	invoice: string | null
+	failure_code: string | null
+	/** The gateway's own wording — kept for quoting to support. */
+	failure_reason: string | null
+	/** The decline said to the cardholder. Null unless the attempt failed. */
+	reason: string | null
+	retry_number: number | null
+	gateway_transaction_id: string | null
+	/** When the payment actually happened — completed, else initiated, else the
+	 *  row's own creation. Never render `creation`: for a backfilled attempt that
+	 *  is the day it was imported. */
+	at: string
+	creation: string
+}
+
+/** A team-level metered service as the dashboard lists it. */
+export interface ServiceRow {
+	service_subject: string
+	plan: string
+	title: string | null
+	resource_type: string | null
+	cluster: string | null
+	currency: string
+	unit: string | null
+	settlement_mode: string
+	allowance: number
+	period_usage: number
+}
+
+/** One line of "what you're paying for" — a server or a metered service. */
+export type PayingForItem =
+	| { kind: 'server'; id: string; cost: number | null; sub: SubscriptionRow }
+	| { kind: 'service'; id: string; cost: number | null; service: ServiceRow }

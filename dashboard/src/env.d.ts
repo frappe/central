@@ -2,6 +2,7 @@
 
 declare module '*.vue' {
 	import type { DefineComponent } from 'vue'
+
 	const component: DefineComponent<{}, {}, any>
 	export default component
 }
@@ -16,4 +17,11 @@ interface Window {
 	site_name?: string
 	socketio_port?: number
 	onboarding_complete?: boolean
+	features?: {
+		addons?: boolean
+		llm?: boolean
+		pdf?: boolean
+		email?: boolean
+		storage?: boolean
+	}
 }

@@ -1,5 +1,4 @@
-
-export interface Add-onService{
+export interface AddOnService {
 	name: string
 	creation: string
 	modified: string

@@ -34,9 +34,27 @@ def get_columns() -> list[dict]:
 		{"label": _("Cluster"), "fieldname": "cluster", "fieldtype": "Data", "width": 130},
 		{"label": _("Region"), "fieldname": "region", "fieldtype": "Data", "width": 180},
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 90},
-		{"label": _("Recurring"), "fieldname": "recurring", "fieldtype": "Currency", "options": "currency", "width": 140},
-		{"label": _("Usage & Services"), "fieldname": "usage", "fieldtype": "Currency", "options": "currency", "width": 150},
-		{"label": _("Revenue"), "fieldname": "revenue", "fieldtype": "Currency", "options": "currency", "width": 150},
+		{
+			"label": _("Recurring"),
+			"fieldname": "recurring",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 140,
+		},
+		{
+			"label": _("Usage & Services"),
+			"fieldname": "usage",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 150,
+		},
+		{
+			"label": _("Revenue"),
+			"fieldname": "revenue",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 150,
+		},
 		{"label": _("Share %"), "fieldname": "share", "fieldtype": "Percent", "width": 100},
 	]
 
@@ -57,12 +75,17 @@ def get_data(filters: dict) -> list[dict]:
 	for (cluster, currency), g in agg.items():
 		revenue = g["recurring"] + g["usage"]
 		total = currency_total.get(currency) or 0.0
-		rows.append({
-			"cluster": cluster, "region": region_label(cluster) or cluster, "currency": currency,
-			"recurring": flt(g["recurring"], 2), "usage": flt(g["usage"], 2),
-			"revenue": flt(revenue, 2),
-			"share": flt(revenue / total * 100, 2) if total else 0.0,
-		})
+		rows.append(
+			{
+				"cluster": cluster,
+				"region": region_label(cluster) or cluster,
+				"currency": currency,
+				"recurring": flt(g["recurring"], 2),
+				"usage": flt(g["usage"], 2),
+				"revenue": flt(revenue, 2),
+				"share": flt(revenue / total * 100, 2) if total else 0.0,
+			}
+		)
 	rows.sort(key=lambda r: (r["currency"], -r["revenue"]))
 	return rows
 
@@ -74,8 +97,10 @@ def get_chart(rows: list[dict]) -> dict | None:
 	currencies = sorted({r["currency"] for r in rows})
 	by_key = {(r["cluster"], r["currency"]): r["revenue"] for r in rows}
 	datasets = [
-		{"name": _("Revenue ({0})").format(currency),
-		 "values": [flt(by_key.get((c, currency), 0.0), 2) for c in clusters]}
+		{
+			"name": _("Revenue ({0})").format(currency),
+			"values": [flt(by_key.get((c, currency), 0.0), 2) for c in clusters],
+		}
 		for currency in currencies
 	]
 	# One bar per cluster, grouped by currency (a single-currency run reads as a
@@ -89,8 +114,19 @@ def get_summary(rows: list[dict]) -> list[dict]:
 		crows = [r for r in rows if r["currency"] == currency]
 		total = sum(flt(r["revenue"]) for r in crows)
 		top = max(crows, key=lambda r: r["revenue"])
-		summary.append({"label": _("Revenue ({0})").format(currency), "value": flt(total, 2),
-						"datatype": "Float", "indicator": "green"})
-		summary.append({"label": _("Top Cluster ({0})").format(currency),
-						"value": f"{top['cluster']} · {top['share']}%", "datatype": "Data"})
+		summary.append(
+			{
+				"label": _("Revenue ({0})").format(currency),
+				"value": flt(total, 2),
+				"datatype": "Float",
+				"indicator": "green",
+			}
+		)
+		summary.append(
+			{
+				"label": _("Top Cluster ({0})").format(currency),
+				"value": f"{top['cluster']} · {top['share']}%",
+				"datatype": "Data",
+			}
+		)
 	return summary

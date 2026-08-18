@@ -21,7 +21,7 @@
  ],
  "fields": [
   {
-   "description": "The site FQDN in Atlas (the source of truth) — the one routing identity.",
+   "description": "The site FQDN in Atlas (the source of truth) \u2014 the one routing identity.",
    "fieldname": "site_name",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -45,7 +45,8 @@
    "in_standard_filter": 1,
    "label": "Team",
    "options": "Team",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "description": "The cluster (Atlas Instance / region) this site lives in.",
@@ -82,7 +83,7 @@
    "read_only": 1
   },
   {
-   "description": "The hosting bench's pilot credential / JWT audience — set at create_site, the key for a Central-minted site login.",
+   "description": "The hosting bench's pilot credential / JWT audience \u2014 set at create_site, the key for a Central-minted site login.",
    "fieldname": "pilot_credential_id",
    "fieldtype": "Data",
    "label": "Pilot Credential ID",

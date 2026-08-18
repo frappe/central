@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
 import { Button, ErrorMessage, TextInput } from 'frappe-ui'
+import { onMounted, onScopeDispose, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import AuthShell from '@/components/auth/AuthShell.vue'
 import { API } from '@/api/methods'
+import AuthShell from '@/components/auth/AuthShell.vue'
 import {
 	frappeErrorMessage,
 	getFrappe,
@@ -47,6 +47,9 @@ watch(subdomain, (value) => {
 	debounce = setTimeout(() => check(value.trim()), 400)
 })
 
+// The debounce timer outlives the component if the user navigates away mid-type.
+onScopeDispose(() => clearTimeout(debounce))
+
 async function check(value: string) {
 	checking.value = true
 	try {
@@ -54,13 +57,16 @@ async function check(value: string) {
 			methodUrl(API.checkSubdomain),
 			{ subdomain: value },
 		)
-		// Ignore a stale response if the user kept typing.
+		// Ignore a stale response if the user kept typing — and leave `checking`
+		// alone: a newer request is in flight and owns the spinner. Clearing it
+		// here (as a `finally` did) flickers the spinner off under the live request.
 		if (value !== subdomain.value.trim()) return
 		availability.value = result
 		if (result.domain) domain.value = result.domain
+		checking.value = false
 	} catch (exception) {
+		if (value !== subdomain.value.trim()) return
 		error.value = frappeErrorMessage(exception, 'Could not check that name.')
-	} finally {
 		checking.value = false
 	}
 }
@@ -112,7 +118,7 @@ async function createSite() {
 					>
 				</template>
 				<template v-if="availability?.available" #description>
-					<span class="flex items-center gap-1 text-ink-green-7">
+					<span class="flex items-center gap-1 text-ink-green-6">
 						<span class="lucide-check size-4" aria-hidden="true" />
 						<span
 							><span class="font-medium">{{ availability.fqdn }}</span>

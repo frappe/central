@@ -18,6 +18,7 @@ only the sync surface (`platform/sync.py`).
 from __future__ import annotations
 
 import frappe
+from frappe import _
 
 from central import iam
 
@@ -54,7 +55,7 @@ def require_capability(team: str, capability: str) -> None:
 	if is_operator(user):
 		return
 	if not iam.can(user, team, capability):
-		frappe.throw("Not permitted to access this team's billing.", frappe.PermissionError)
+		frappe.throw(_("Not permitted to access this team's billing."), frappe.PermissionError)
 
 
 def require_billing_view(team: str) -> None:
@@ -68,4 +69,4 @@ def require_billing_manage(team: str) -> None:
 def require_operator() -> None:
 	"""Gate the cross-team admin console — platform staff (System Manager) only."""
 	if not is_operator():
-		frappe.throw("Operator access is required for this endpoint.", frappe.PermissionError)
+		frappe.throw(_("Operator access is required for this endpoint."), frappe.PermissionError)

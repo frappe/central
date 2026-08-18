@@ -15,9 +15,12 @@ about. It can never leave a charge with no record of it at all.
 """
 
 import frappe
+from frappe import _
 
+from central.billing import settings
 from central.billing.doctype.payment_attempt.payment_attempt import idempotency_key
 from central.billing.gateways.base import GatewayTimeout
+from central.billing.states import transition
 
 # An attempt occupying the invoice — a second charge must not start beside it.
 _IN_FLIGHT = ("Initiated", "Authorised", "Captured")
@@ -38,9 +41,6 @@ _AUTHORISED_EVENTS = {
 _SUCCESS_EVENTS = {"payment_intent.succeeded", "charge.succeeded", "payment.captured"}
 _FAILURE_EVENTS = {"payment_intent.payment_failed", "charge.failed", "payment.failed"}
 
-# Logs (Payment Attempt + Webhook Event) are kept on a rolling window and pruned
-# daily; site-config `payment_log_retention_days` overrides the default.
-LOG_RETENTION_DEFAULT_DAYS = 90  # ~3 months
 _TERMINAL_ATTEMPT = ("Captured", "Failed", "Refunded")
 _UNSETTLED_INVOICE = ("Open", "Overdue")
 
@@ -104,12 +104,12 @@ def _claim_attempt(invoice: str, payment_method: str | None, gateway: str | None
 	method_name, gateway_name = _resolve_method(inv, payment_method, gateway)
 	adapter = _adapter_for(gateway_name)
 
-	# A debit the gateway can't pull silently (Razorpay > ₹15,000 — an RBI off-session
-	# rule) is never attempted: it would just fail. Instead raise Action Required so
-	# the customer picks manual checkout / prepaid (ADR 0005, #50). Stripe (no silent
-	# ceiling) and sub-₹15k charges pass straight through.
-	amount_minor = int(round(frappe.utils.flt(inv.expected_collection) * 100))
-	if not adapter.can_charge_silently(amount_minor):
+	# A debit the gateway can't pull silently in this currency (INR above ₹15,000 —
+	# an RBI off-session rule that binds Stripe India and Razorpay alike) is never
+	# attempted: it would just fail. Instead raise Action Required so the customer
+	# picks manual checkout / prepaid (ADR 0022, #106). An uncapped currency and
+	# anything under the ceiling pass straight through.
+	if not adapter.can_charge_silently(frappe.utils.flt(inv.expected_collection), inv.currency):
 		from central.billing.payments import collection_mode
 
 		collection_mode.trip(inv.team, "invoice_over_threshold")
@@ -183,17 +183,40 @@ def _charge_claimed_attempt(attempt_name: str) -> dict:
 		return {"charged": False, "reason": "timeout", "attempt": attempt.name}
 
 	attempt.gateway_transaction_id = result.gateway_transaction_id
+	# The gateway is holding the charge on purpose — Stripe's India pre-debit window,
+	# where the bank notifies the customer first and the money moves a day later. It
+	# has neither succeeded nor failed, so the attempt stays in flight and nothing
+	# retries or falls back against it (ADR 0023).
+	if result.hold_until:
+		attempt.gateway_hold_until = result.hold_until
+		attempt.save(ignore_permissions=True)
+		_persist()
+		return {
+			"charged": False,
+			"attempt": attempt.name,
+			"status": attempt.status,
+			"reason": "gateway_hold",
+			"hold_until": result.hold_until,
+		}
 	if result.success:
-		attempt.status = "Captured"  # gateway captured; invoice Paid waits on webhook
+		# gateway captured; invoice Paid waits on the webhook
+		transition(attempt, "Captured", actor="gateway", correlation=attempt.invoice)
 	else:
-		attempt.status = "Failed"
-		_stamp_failure(attempt, result.failure_code, result.decline_code,
-					   result.failure_reason, result.raw)
+		transition(
+			attempt, "Failed", actor="gateway", correlation=attempt.invoice, reason=result.failure_reason
+		)
+		_stamp_failure(attempt, result.failure_code, result.decline_code, result.failure_reason, result.raw)
 		attempt.completed_at = frappe.utils.now_datetime()
+		_retire_method_if_mandate_failed(attempt, result.failure_code)
 	attempt.save(ignore_permissions=True)
 	_persist()
 
-	return {"charged": result.success, "attempt": attempt.name, "status": attempt.status}
+	return {
+		"charged": result.success,
+		"attempt": attempt.name,
+		"status": attempt.status,
+		"failure_code": result.failure_code,
+	}
 
 
 def resume_attempt(attempt: str) -> dict:
@@ -265,27 +288,40 @@ def create_invoice_payment_order(invoice: str, gateway: str | None = None) -> di
 			"retry_number": frappe.db.count("Payment Attempt", {"invoice": invoice}),
 		}
 	).insert(ignore_permissions=True)
-	return {"created": True, "attempt": attempt.name, "gateway": gateway_name,
-			"adapter_key": gw_doc.adapter_key, "amount": amount, "currency": inv.currency,
-			"receipt": receipt, **handles}
+	return {
+		"created": True,
+		"attempt": attempt.name,
+		"gateway": gateway_name,
+		"adapter_key": gw_doc.adapter_key,
+		"amount": amount,
+		"currency": inv.currency,
+		"receipt": receipt,
+		**handles,
+	}
 
 
-def confirm_invoice_payment(attempt: str, razorpay_order_id: str | None = None,
-							razorpay_payment_id: str | None = None,
-							razorpay_signature: str | None = None) -> dict:
+def confirm_invoice_payment(
+	attempt: str,
+	razorpay_order_id: str | None = None,
+	razorpay_payment_id: str | None = None,
+	razorpay_signature: str | None = None,
+) -> dict:
 	"""Verify the on-session checkout callback and stamp the attempt with the gateway
 	payment id. The invoice flips to Paid on the capture webhook (webhook-truth),
 	not here — so a faked callback can never mark an invoice paid on its own."""
 	att = frappe.get_doc("Payment Attempt", attempt)
-	ok = _adapter_for(att.gateway).verify_payment_signature({
-		"razorpay_order_id": razorpay_order_id,
-		"razorpay_payment_id": razorpay_payment_id,
-		"razorpay_signature": razorpay_signature,
-	})
+	ok = _adapter_for(att.gateway).verify_payment_signature(
+		{
+			"razorpay_order_id": razorpay_order_id,
+			"razorpay_payment_id": razorpay_payment_id,
+			"razorpay_signature": razorpay_signature,
+		}
+	)
 	if not ok:
-		frappe.throw("Payment confirmation failed.", frappe.ValidationError)
+		frappe.throw(_("Payment confirmation failed."), frappe.ValidationError)
 	att.gateway_transaction_id = razorpay_payment_id
-	att.status = "Captured"  # gateway captured; invoice Paid waits on the webhook
+	# gateway captured; invoice Paid waits on the webhook
+	transition(att, "Captured", actor="gateway", correlation=att.invoice)
 	att.save(ignore_permissions=True)
 	return {"confirmed": True, "attempt": att.name, "status": att.status}
 
@@ -315,7 +351,7 @@ def _resolve_method(inv, payment_method, gateway):
 			pass
 
 	if not method_name or not gateway_name:
-		frappe.throw(f"No payment method/gateway resolved for {inv.name}", frappe.ValidationError)
+		frappe.throw(_("No payment method/gateway resolved for {0}").format(inv.name), frappe.ValidationError)
 	return method_name, gateway_name
 
 
@@ -373,7 +409,7 @@ def apply_webhook(event_name: str) -> dict:
 		# Funds held, capture pending. Advance only from initiated — never walk a
 		# terminal attempt backwards if the capture/fail webhook arrived first.
 		if attempt.status == "Initiated":
-			attempt.status = "Authorised"
+			transition(attempt, "Authorised", actor="webhook", correlation=attempt.invoice)
 			attempt.save(ignore_permissions=True)
 		_mark_event(event, "Processed")
 		return {"handled": True, "result": "Authorised", "attempt": attempt_name}
@@ -385,21 +421,28 @@ def apply_webhook(event_name: str) -> dict:
 		# webhook). Gate on invoice status, not attempt status, and act once.
 		inv_status = frappe.db.get_value("Invoice", attempt.invoice, "status")
 		if inv_status != "Paid" and attempt.status not in ("Failed", "Refunded"):
-			attempt.status = "Failed"
+			transition(attempt, "Failed", actor="webhook", correlation=attempt.invoice)
 			# Off-session declines surface their real reason here, not on the sync
 			# charge response — pull it off the event so the attempt records why.
 			detail = _extract_failure(adapter_key, payload)
 			if detail:
-				_stamp_failure(attempt, detail.get("failure_code"), detail.get("decline_code"),
-							   detail.get("failure_reason"), detail.get("raw"))
+				_stamp_failure(
+					attempt,
+					detail.get("failure_code"),
+					detail.get("decline_code"),
+					detail.get("failure_reason"),
+					detail.get("raw"),
+				)
 			attempt.completed_at = frappe.utils.now_datetime()
 			attempt.save(ignore_permissions=True)
 			from central.billing.platform import notifications
 
 			notifications.notify(
-				attempt.team, "Payment Failure",
+				attempt.team,
+				"Payment Failure",
 				context={"invoice": attempt.invoice, "reason": attempt.failure_reason or "declined"},
-				reference_doctype="Invoice", reference_name=attempt.invoice,
+				reference_doctype="Invoice",
+				reference_name=attempt.invoice,
 			)
 			# Async decline: rotate to the next untried method (#28). No-op once
 			# every method has been exhausted.
@@ -411,7 +454,7 @@ def apply_webhook(event_name: str) -> dict:
 		return {"handled": True, "result": "Failed", "attempt": attempt_name, "fell_back": fell_back}
 
 	settled = _settle_invoice(attempt)
-	attempt.status = "Captured"
+	transition(attempt, "Captured", actor="webhook", correlation=attempt.invoice)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Webhook"
 	attempt.save(ignore_permissions=True)
@@ -435,15 +478,25 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 	if inv.status == "Paid":
 		return False  # a duplicate webhook — already settled
 	inv.amount_paid = frappe.utils.flt(amount)
-	inv.status = "Paid"
+	inv.paid_at = frappe.utils.now_datetime()
+	transition(
+		inv,
+		"Paid",
+		reason="gateway capture settled",
+		actor="webhook",
+		correlation=inv.name,
+		amount=inv.amount_paid,
+	)
 	inv.save(ignore_permissions=True)
 
 	from central.billing.platform import notifications
 
 	notifications.notify(
-		inv.team, "Payment Success",
+		inv.team,
+		"Payment Success",
 		message=f"Invoice {inv.name} paid ({inv.amount_paid} {inv.currency or ''}).",
-		reference_doctype="Invoice", reference_name=inv.name,
+		reference_doctype="Invoice",
+		reference_name=inv.name,
 	)
 
 	# Async, one-way, non-blocking push to the statutory SOR (#17).
@@ -460,7 +513,7 @@ def cleanup_payment_logs(now=None) -> dict:
 	"""Daily: prune Payment Attempt + Webhook Event logs past the retention window.
 
 	These are high-volume append-only logs (one row per charge / per inbound
-	callback). They are kept on a rolling window — site-config
+	callback). They are kept on a rolling window — Billing Settings'
 	`payment_log_retention_days`, default 90 (~3 months) — and older rows are
 	dropped. Statutory amounts live on the Invoice / ERPNext Sales Invoice (the
 	SOR), so pruning the gateway log loses no money trail.
@@ -469,7 +522,7 @@ def cleanup_payment_logs(now=None) -> dict:
 	authorised), an attempt on an unsettled invoice (Open/Overdue), or one
 	referenced by a Refund is kept regardless of age.
 	"""
-	days = int(frappe.conf.get("payment_log_retention_days") or LOG_RETENTION_DEFAULT_DAYS)
+	days = settings.payment_log_retention_days()
 	cutoff = frappe.utils.add_to_date(now or frappe.utils.now_datetime(), days=-days)
 
 	attempts = _prune_payment_attempts(cutoff)
@@ -493,7 +546,9 @@ def _prune_payment_attempts(cutoff) -> int:
 			continue
 		if frappe.db.get_value("Invoice", a.invoice, "status") in _UNSETTLED_INVOICE:
 			continue
-		frappe.delete_doc("Payment Attempt", a.name, ignore_permissions=True, force=True, delete_permanently=True)
+		frappe.delete_doc(
+			"Payment Attempt", a.name, ignore_permissions=True, force=True, delete_permanently=True
+		)
 		deleted += 1
 	return deleted
 
@@ -546,10 +601,36 @@ def _extract_failure(adapter_key: str, payload: dict) -> dict | None:
 			"failure_code": entity.get("error_code"),
 			"decline_code": entity.get("error_reason"),
 			"failure_reason": entity.get("error_description"),
-			"raw": {k: entity.get(k) for k in (
-				"error_code", "error_description", "error_reason", "error_source", "error_step")},
+			"raw": {
+				k: entity.get(k)
+				for k in ("error_code", "error_description", "error_reason", "error_source", "error_step")
+			},
 		}
 	return None
+
+
+def _retire_method_if_mandate_failed(attempt, failure_code):
+	"""A mandate failure is not a decline to hold against the card.
+
+	`payment_intent_mandate_invalid` and its siblings mean the standing permission
+	is gone or the customer refused this debit at the bank. Retrying the same method
+	cannot work, and the card may be perfectly good, so the method is retired and the
+	customer is asked to authorise again (ADR 0023).
+	"""
+	from central.billing.payments import decline
+
+	if not decline.is_mandate_failure(failure_code) or not attempt.payment_method:
+		return
+	method = frappe.get_doc("Payment Method", attempt.payment_method)
+	if method.status == "Cancelled":
+		return
+	transition(method, "Cancelled", actor="gateway", reason=f"mandate failure: {failure_code}")
+	method.reauth_required = 1
+	method.save(ignore_permissions=True)
+
+	from central.billing.payments import collection_mode
+
+	collection_mode.trip(attempt.team, "mandate_failed")
 
 
 def _stamp_failure(attempt, failure_code, decline_code, failure_reason, raw):
@@ -651,19 +732,26 @@ def _credit_topup(event, topup: dict) -> dict:
 	from central.billing.revenue import credits
 
 	result = credits.purchase(
-		topup["team"], topup["amount"], topup["currency"] or "INR",
+		topup["team"],
+		topup["amount"],
+		topup["currency"] or "INR",
 		reference_name=topup["payment_id"],
 		note=f"Wallet top-up ({topup['payment_id']})",
 		gateway_payment_id=topup["payment_id"],
 		gateway=topup.get("gateway"),
 	)
 	_mark_event(event, "Processed")
-	return {"handled": True, "result": "topup_credited", "team": topup["team"],
-			"payment_id": topup["payment_id"], "ledger_entry": result["ledger_entry"]}
+	return {
+		"handled": True,
+		"result": "topup_credited",
+		"team": topup["team"],
+		"payment_id": topup["payment_id"],
+		"ledger_entry": result["ledger_entry"],
+	}
 
 
 def _mark_event(event, status: str):
-	event.status = status
+	transition(event, status, actor="webhook", correlation=event.gateway_event_id)
 	event.processed_at = frappe.utils.now_datetime()
 	event.save(ignore_permissions=True)
 

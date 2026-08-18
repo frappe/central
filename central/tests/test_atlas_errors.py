@@ -6,13 +6,19 @@ string, so before `AtlasClient._post` an Atlas-side `frappe.throw` ("region full
 Atlas internals — the actionable sentence buried in the last line.
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
+import requests
 from frappe.frappeclient import FrappeException
 from frappe.tests import IntegrationTestCase
 
-from central.integrations.atlas import AtlasClient, AtlasError, _remote_error_message
+from central.integrations.atlas import (
+	AtlasClient,
+	AtlasError,
+	AtlasResourceGone,
+	_remote_error_message,
+)
 
 # A verbatim capture of what FrappeClient raised for a create that hit a full region.
 CONSOLIDATION_TRACEBACK = """FrappeClient Request Failed
@@ -91,3 +97,54 @@ class TestAtlasClientPost(IntegrationTestCase):
 				self.client._post("atlas.api.provision.create_vm", {}, action="create this server"),
 				{"name": "vm-1"},
 			)
+
+
+class TestRunDocMethod(IntegrationTestCase):
+	"""The lifecycle path reads the real HTTP status, so a missing doc (404) is told apart
+	from an unreachable region — the fix for terminate mislabelling a gone resource."""
+
+	def _client(self):
+		instance = frappe._dict(
+			region="blr-rdm",
+			status="Active",
+			tunnel_status=None,
+			tunnel_url=None,
+			base_url="https://atlas.example.test",
+			api_key="k",
+		)
+		instance.get_password = lambda field, *a, **k: "s"
+		return AtlasClient(instance)
+
+	def test_404_raises_resource_gone(self):
+		response = MagicMock(ok=False, status_code=404, text="{}")
+		with patch("central.integrations.atlas.requests.post", return_value=response):
+			with self.assertRaises(AtlasResourceGone):
+				self._client()._run_doc_method("Site", "x", "terminate", None, action="terminate this site")
+
+	def test_connection_error_reads_as_region_unavailable(self):
+		with patch("central.integrations.atlas.requests.post", side_effect=requests.ConnectionError()):
+			with self.assertRaises(AtlasError) as caught:
+				self._client()._run_doc_method("Site", "x", "terminate", None, action="terminate this site")
+		self.assertNotIsInstance(caught.exception, AtlasResourceGone)
+		self.assertIn("terminate this site", str(caught.exception))
+
+	def test_remote_sentence_surfaces_on_other_error(self):
+		body = {"_server_messages": frappe.as_json([frappe.as_json({"message": "No capacity here."})])}
+		response = MagicMock(ok=False, status_code=417, text=frappe.as_json(body))
+		response.json.return_value = body
+		with patch("central.integrations.atlas.requests.post", return_value=response):
+			with self.assertRaises(AtlasError) as caught:
+				self._client()._run_doc_method(
+					"Virtual Machine", "x", "start", None, action="start this server"
+				)
+		self.assertNotIsInstance(caught.exception, AtlasResourceGone)
+		self.assertIn("No capacity here.", str(caught.exception))
+
+	def test_success_returns_the_message(self):
+		response = MagicMock(ok=True)
+		response.json.return_value = {"message": "task-9"}
+		with patch("central.integrations.atlas.requests.post", return_value=response):
+			out = self._client()._run_doc_method(
+				"Virtual Machine", "x", "start", None, action="start this server"
+			)
+		self.assertEqual(out, "task-9")

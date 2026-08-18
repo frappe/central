@@ -10,11 +10,12 @@ worker, is `run.py`'s business.
 """
 
 import frappe
+from frappe import _
 
+from central.billing import settings
 from central.billing.revenue import credits
 from central.billing.revenue.invoicing.generate import generate_draft_invoice
-
-DEFAULT_DUE_DAYS = 7
+from central.billing.states import transition
 
 
 def open_and_collect(invoice: str, collect: bool = True) -> dict:
@@ -50,7 +51,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	if doc.invoice_type == "Cost Report":
 		doc.credit_applied = 0
 		doc.expected_collection = 0
-		doc.status = "Open"
+		transition(doc, "Open", reason="cost report opened", actor="scheduler")
 		doc.save(ignore_permissions=True)
 		return {"invoice": invoice, "claimed": True, "cost_report": True, "expected_collection": 0}
 
@@ -64,7 +65,11 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		applied = min(frappe.utils.flt(balance), collectable)
 		if applied > 0:
 			credits.apply_credit(
-				doc.team, applied, doc.currency, reference_type="Invoice", reference_name=invoice,
+				doc.team,
+				applied,
+				doc.currency,
+				reference_type="Invoice",
+				reference_name=invoice,
 				note=f"Credit applied to {invoice}",
 			)
 
@@ -78,17 +83,23 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	# three days later. A backlog delays collection; it never shortens the customer's
 	# window. From here the two diverge — due_date is the accounting fact and stays
 	# put, while dunning_starts_on moves if we fail to ask again (dunning.defer_dunning).
-	doc.due_date = frappe.utils.add_days(frappe.utils.nowdate(), DEFAULT_DUE_DAYS)
+	doc.due_date = frappe.utils.add_days(frappe.utils.nowdate(), settings.invoice_due_days())
 	doc.dunning_starts_on = doc.due_date
 
 	# Credits cover it in full — settled, no card charge needed.
 	if doc.expected_collection <= 0:
-		doc.status = "Paid"
+		doc.paid_at = frappe.utils.now_datetime()
+		transition(doc, "Paid", reason="credits covered in full", actor="scheduler", amount=applied)
 		doc.save(ignore_permissions=True)
-		return {"invoice": invoice, "claimed": True, "credit_applied": applied,
-				"expected_collection": 0, "status": "Paid"}
+		return {
+			"invoice": invoice,
+			"claimed": True,
+			"credit_applied": applied,
+			"expected_collection": 0,
+			"status": "Paid",
+		}
 
-	doc.status = "Open"
+	transition(doc, "Open", reason="drafted invoice opened for collection", actor="scheduler")
 	doc.save(ignore_permissions=True)
 
 	# Leg 2 — charge the remainder, walking the team's methods primary→backup
@@ -99,8 +110,14 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 		charge = collection.collect_invoice(invoice)
 
-	return {"invoice": invoice, "claimed": True, "credit_applied": applied,
-			"expected_collection": doc.expected_collection, "status": "Open", "charge": charge}
+	return {
+		"invoice": invoice,
+		"claimed": True,
+		"credit_applied": applied,
+		"expected_collection": doc.expected_collection,
+		"status": "Open",
+		"charge": charge,
+	}
 
 
 def cancel_invoice(invoice: str, reason: str | None = None) -> str:
@@ -111,10 +128,12 @@ def cancel_invoice(invoice: str, reason: str | None = None) -> str:
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	if doc.status == "Paid":
-		frappe.throw("A paid invoice cannot be cancelled — issue a refund instead.", frappe.ValidationError)
+		frappe.throw(
+			_("A paid invoice cannot be cancelled — issue a refund instead."), frappe.ValidationError
+		)
 	if doc.status == "Cancelled":
 		return invoice
-	doc.status = "Cancelled"
+	transition(doc, "Cancelled", reason=reason, actor=frappe.session.user)
 	doc.save(ignore_permissions=True)
 	if reason:
 		doc.add_comment("Info", f"Cancelled: {reason}")

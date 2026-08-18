@@ -1,20 +1,20 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
 import { Badge, Button, Dialog, useCall } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import ListViewState from '@/components/common/list-view/ListViewState.vue'
-import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import LoadAverageCard from '@/components/servers/overview/LoadAverageCard.vue'
 import OverviewSkeleton from '@/components/servers/overview/OverviewSkeleton.vue'
 import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.vue'
 import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
+import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import { useRegions } from '@/composables/useRegions'
+import type { AssetRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
+import type { LoadPoint } from '@/lib/loadChart'
+import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getErrorMessage } from '@/lib/toast'
-import type { AssetRow } from '@/composables/useServers'
-import type { LoadPoint } from '@/utils/loadChart'
-import { formatPlanLabel } from '@/utils/planLabel'
 
 type Overview = {
 	server: AssetRow & {
@@ -63,14 +63,11 @@ const overviewCall = useCall<Overview, { team: string; resource_id: string }>({
 	immediate: false,
 })
 
+// No reset on close: the dialog is still fading out then, and blanking the
+// state mid-leave flashes the skeleton over the content. load() resets
+// everything at the start of the next open instead.
 watch([open, () => props.server?.resource_id], ([isOpen, resourceId]) => {
-	if (!isOpen) {
-		overview.value = null
-		overviewError.value = ''
-		hasLoaded.value = false
-		return
-	}
-	if (!resourceId || !activeTeam.value) return
+	if (!isOpen || !resourceId || !activeTeam.value) return
 	void load(resourceId)
 })
 
@@ -166,7 +163,9 @@ const planLabel = computed(() =>
 					<div class="min-w-0">
 						<div class="flex flex-wrap items-center gap-2">
 							<Dialog.Title as-child>
-								<h2 class="truncate text-xl font-semibold leading-6 text-ink-gray-9">
+								<h2
+									class="truncate text-xl font-semibold leading-6 text-ink-gray-9"
+								>
 									{{ title }}
 								</h2>
 							</Dialog.Title>

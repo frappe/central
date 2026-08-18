@@ -1,10 +1,12 @@
 # Copyright (c) 2026, Frappe and contributors
 # For license information, please see license.txt
-"""E-mandate off-session collection with the RBI pre-debit notice (#50 item 3, ADR 0005).
+"""Off-session collection with the RBI pre-debit notice (ADR 0005, ADR 0022).
 
-An Indian e-mandate (Razorpay UPI Autopay / card mandate) may auto-debit silently
-only up to ₹15,000, and only AFTER a pre-debit notification sent ≥24h before the
-debit. So collecting an `emandate` team's invoice is two-phase:
+An Indian mandate may auto-debit silently only up to ₹15,000, and only AFTER a
+pre-debit notification sent ≥24h before the debit. That is true of a Stripe India
+card mandate and a Razorpay UPI Autopay mandate alike, because it is a rule about
+the debit rather than about the provider. So collecting an `Auto Charge` team's
+invoice is two-phase:
 
   1. schedule_predebit — notify the customer and stamp the earliest debit time
      (now + 24h) on the invoice. If the bill is over the silent ceiling it is NOT
@@ -14,7 +16,7 @@ debit. So collecting an `emandate` team's invoice is two-phase:
 
 Both are idempotent and safe to re-run from the daily scheduler. The customer-side
 heads-up is sent here; the bank's own RBI pre-debit notification is dispatched by
-the gateway at debit time (a Razorpay adapter concern, kept out of this orchestration).
+the gateway at debit time (an adapter concern, kept out of this orchestration).
 """
 
 import frappe
@@ -24,13 +26,29 @@ from central.billing.payments import collection, collection_mode
 PREDEBIT_NOTICE_HOURS = 24
 
 
+def _rail_requires_notice(team: str) -> bool:
+	"""Whether this team's rail owes a pre-debit notice before each off-session debit.
+
+	It is a property of (gateway, currency), so an Indian mandate on Stripe owes one
+	exactly as a Razorpay one does, and a USD card owes none.
+	"""
+	from central.billing.gateways import capabilities
+
+	gateway, currency = collection_mode.team_rail(team)
+	return bool(gateway and currency and capabilities.requires_predebit_notice(gateway, currency))
+
+
 def schedule_predebit(invoice: str, now=None) -> dict:
 	"""Send the pre-debit notice for an e-mandate invoice and arm its debit window.
 	Over the silent ceiling → fork to Action Required rather than promise a debit we
 	can't make off-session. Idempotent (skips an already-notified invoice)."""
 	inv = frappe.get_doc("Invoice", invoice)
-	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "E-Mandate":
-		return {"invoice": invoice, "skipped": "not_emandate"}
+	if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
+		return {"invoice": invoice, "skipped": "not_auto_charge"}
+	if not _rail_requires_notice(inv.team):
+		# A rail that debits without a notice is collected by the ordinary sweep. Arming
+		# a 24h window here would delay every international charge for nothing.
+		return {"invoice": invoice, "skipped": "no_notice_required"}
 	if inv.invoice_type != "Billable" or inv.status not in ("Open", "Overdue"):
 		return {"invoice": invoice, "skipped": "not_collectable"}
 	if frappe.utils.flt(inv.expected_collection) <= 0:
@@ -42,7 +60,8 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	# customer's choice (manual checkout / prepaid) instead of notifying a debit
 	# that would fail.
 	st = collection_mode.evaluate(
-		inv.team, projected_amount=frappe.utils.flt(inv.expected_collection),
+		inv.team,
+		projected_amount=frappe.utils.flt(inv.expected_collection),
 		reason="invoice_over_threshold",
 	)
 	if st["action_required"]:
@@ -51,7 +70,8 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	now_dt = frappe.utils.get_datetime(now) if now else frappe.utils.now_datetime()
 	charge_after = frappe.utils.add_to_date(now_dt, hours=PREDEBIT_NOTICE_HOURS)
 	frappe.db.set_value(
-		"Invoice", invoice,
+		"Invoice",
+		invoice,
 		{"predebit_notified_at": now_dt, "predebit_charge_after": charge_after},
 		update_modified=False,
 	)
@@ -59,13 +79,15 @@ def schedule_predebit(invoice: str, now=None) -> dict:
 	from central.billing.platform import notifications
 
 	notifications.notify(
-		inv.team, "Pre-debit Notice",
+		inv.team,
+		"Pre-debit Notice",
 		context={
 			"invoice": invoice,
 			"amount": f"{frappe.utils.flt(inv.expected_collection)} {inv.currency or ''}".strip(),
 			"charge_on": frappe.utils.format_datetime(charge_after),
 		},
-		reference_doctype="Invoice", reference_name=invoice,
+		reference_doctype="Invoice",
+		reference_name=invoice,
 	)
 	return {"invoice": invoice, "notified": True, "charge_after": str(charge_after)}
 
@@ -87,7 +109,7 @@ def charge_due(now=None) -> list[dict]:
 	)
 	out = []
 	for inv in due:
-		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "E-Mandate":
+		if frappe.db.get_value("Billing Profile", inv.team, "collection_mode") != "Auto Charge":
 			continue
 		out.append({"invoice": inv.name, **collection.collect_invoice(inv.name)})
 	return out

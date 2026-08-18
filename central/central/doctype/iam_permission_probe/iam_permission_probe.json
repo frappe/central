@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 0,
-"autoname": "format:IAM-PROBE-{#####}",
+ "autoname": "format:IAM-PROBE-{#####}",
  "creation": "2026-06-08 00:00:00.000000",
  "doctype": "DocType",
  "editable_grid": 0,
@@ -22,7 +22,8 @@
    "in_list_view": 1,
    "label": "User",
    "options": "User",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "team",
@@ -30,7 +31,8 @@
    "in_list_view": 1,
    "label": "Team",
    "options": "Team",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "capability",
@@ -38,7 +40,8 @@
    "in_list_view": 1,
    "label": "Capability",
    "options": "Capability",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "column_break_result",

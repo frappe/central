@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { Button, ErrorMessage } from 'frappe-ui'
+import { ref } from 'vue'
 import AuthShell from '@/components/auth/AuthShell.vue'
 import ValidatedFormControl from '@/components/common/formComponents/ValidatedFormControl.vue'
 import { emailError, frappeErrorMessage, postFrappe } from '@/lib/auth'
@@ -71,7 +71,7 @@ async function resetPassword() {
 
 		<template v-else>
 			<div
-				class="mb-6 grid size-10 place-items-center rounded-5 bg-surface-green-2 text-ink-green-3"
+				class="mb-6 grid size-10 place-items-center rounded-5 bg-surface-green-2 text-ink-green-2"
 			>
 				<span class="lucide-mail-check size-5" aria-hidden="true" />
 			</div>

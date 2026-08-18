@@ -8,6 +8,8 @@ ported from the working press implementation; the structure is the new adapter
 model. The UPI Autopay mandate *lifecycle* (cap = trust tier) is issue #08.
 """
 
+from typing import ClassVar
+
 import frappe
 import razorpay
 import requests
@@ -40,23 +42,20 @@ RAZORPAY_WEBHOOK_EVENTS = [
 
 class RazorpayAdapter(GatewayAdapter):
 	# common_site_config.json overrides for live keys (see GatewayAdapter.get_credential).
-	conf_keys = {
+	conf_keys: ClassVar[dict[str, str]] = {
 		"api_key": "razorpay_key_id",
 		"api_secret": "razorpay_key_secret",
 		"webhook_secret": "razorpay_webhook_secret",
 	}
 
-	# RBI caps a silent (off-session) recurring debit at ₹15,000; above it the
-	# customer must re-authenticate every cycle, so we don't auto-charge there
-	# (ADR 0005). Each debit is preceded by a pre-debit notification.
+	# Razorpay pulls UPI Autopay and card mandates off-session. How much it may
+	# pull silently, and whether a pre-debit notice precedes it, are set per
+	# currency on the gateway row (ADR 0022) — INR is capped at ₹15,000 by the RBI,
+	# and that binds every gateway settling INR, not this one in particular.
 	supports_off_session_charge = True
-	max_silent_charge = 15_00_000  # ₹15,000 in paise
-	requires_predebit_notice = True
 
 	def _client(self):
-		return razorpay.Client(
-			auth=(self.get_credential("api_key"), self.get_credential("api_secret"))
-		)
+		return razorpay.Client(auth=(self.get_credential("api_key"), self.get_credential("api_secret")))
 
 	def validate_credentials(self) -> dict:
 		"""Cheapest authed read — list one payment to prove key/secret work.
@@ -77,11 +76,13 @@ class RazorpayAdapter(GatewayAdapter):
 		secret = frappe.generate_hash(length=32)
 		# Razorpay wants events as an object {name: 1}, not a list — a list is
 		# serialised positionally and the API rejects it ("Invalid event name/names: 1, 2, 3").
-		webhook = self._client().webhook.create({
-			"url": callback_url,
-			"secret": secret,
-			"events": {name: 1 for name in (events or RAZORPAY_WEBHOOK_EVENTS)},
-		})
+		webhook = self._client().webhook.create(
+			{
+				"url": callback_url,
+				"secret": secret,
+				"events": {name: 1 for name in (events or RAZORPAY_WEBHOOK_EVENTS)},
+			}
+		)
 		return {"endpoint_id": webhook.get("id"), "secret": secret}
 
 	def setup_payment_method(self, team, setup_data: dict) -> dict:
@@ -133,7 +134,7 @@ class RazorpayAdapter(GatewayAdapter):
 		reuses the same receipt.
 		"""
 		client = self._client()
-		amount_paise = int(round((invoice.amount or 0) * 100))
+		amount_paise = round((invoice.amount or 0) * 100)
 		currency = (invoice.currency or "").upper()
 		try:
 			order = client.order.create(
@@ -183,7 +184,7 @@ class RazorpayAdapter(GatewayAdapter):
 		try:
 			refund = client.payment.refund(
 				payment_attempt.gateway_transaction_id,
-				{"amount": int(round((amount or 0) * 100))},
+				{"amount": round((amount or 0) * 100)},
 			)
 		except _TRANSIENT as e:
 			raise GatewayTimeout(str(e)) from e
@@ -224,44 +225,63 @@ class RazorpayAdapter(GatewayAdapter):
 		crediting path must read it from here, never from the request."""
 		return self._client().payment.fetch(payment_id)
 
-	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None,
-					 customer: str | None = None) -> dict:
+	def create_order(
+		self, amount, currency: str, receipt: str, notes: dict | None = None, customer: str | None = None
+	) -> dict:
 		"""A one-time Razorpay order for a wallet top-up; the UI opens Checkout against it."""
-		order = self._client().order.create({
-			"amount": int(round((amount or 0) * 100)),
-			"currency": (currency or "INR").upper(),
-			"receipt": receipt,
-			"payment_capture": 1,  # auto-capture so the top-up settles + the webhook fires
-			"notes": notes or {},
-		})
+		order = self._client().order.create(
+			{
+				"amount": round((amount or 0) * 100),
+				"currency": (currency or "INR").upper(),
+				"receipt": receipt,
+				"payment_capture": 1,  # auto-capture so the top-up settles + the webhook fires
+				"notes": notes or {},
+			}
+		)
 		# `amount_in_subunits` (paise) is what Razorpay Checkout reads; it is kept
 		# distinct from the human-currency `amount` create_topup_order returns, so
 		# the spread of these handles never clobbers the rupee amount confirm_topup
 		# credits the wallet with. `customer_id` rides along (an order takes no customer
 		# server-side) so Checkout prefills the same customer reused for recurring charges.
-		return {"order_id": order.get("id"), "key_id": self.get_credential("api_key"),
-				"amount_in_subunits": order.get("amount"), "currency": (currency or "INR").upper(),
-				"customer_id": customer}
+		return {
+			"order_id": order.get("id"),
+			"key_id": self.get_credential("api_key"),
+			"amount_in_subunits": order.get("amount"),
+			"currency": (currency or "INR").upper(),
+			"customer_id": customer,
+		}
 
-	def create_checkout_session(self, amount, currency: str, receipt: str,
-								success_url: str, cancel_url: str, notes: dict | None = None,
-								customer: str | None = None) -> dict:
+	def create_checkout_session(
+		self,
+		amount,
+		currency: str,
+		receipt: str,
+		success_url: str,
+		cancel_url: str,
+		notes: dict | None = None,
+		customer: str | None = None,
+	) -> dict:
 		"""A hosted Razorpay Payment Link — the hosted-checkout equivalent of a Stripe
 		Checkout Session. The UI redirects to `checkout_url` (the link's short URL);
 		Razorpay returns the payer to `success_url` and fires the payment webhook.
 		`cancel_url` is unused — a Payment Link carries a single callback."""
-		link = self._client().payment_link.create({
-			"amount": int(round((amount or 0) * 100)),
-			"currency": (currency or "INR").upper(),
-			"accept_partial": False,
-			"description": (notes or {}).get("purpose") or "Payment",
-			"reference_id": receipt,
-			"callback_url": success_url,
-			"callback_method": "get",
-			"notes": notes or {},
-		})
-		return {"checkout_url": link.get("short_url"), "session_id": link.get("id"),
-				"key_id": self.get_credential("api_key")}
+		link = self._client().payment_link.create(
+			{
+				"amount": round((amount or 0) * 100),
+				"currency": (currency or "INR").upper(),
+				"accept_partial": False,
+				"description": (notes or {}).get("purpose") or "Payment",
+				"reference_id": receipt,
+				"callback_url": success_url,
+				"callback_method": "get",
+				"notes": notes or {},
+			}
+		)
+		return {
+			"checkout_url": link.get("short_url"),
+			"session_id": link.get("id"),
+			"key_id": self.get_credential("api_key"),
+		}
 
 	def get_checkout_session(self, session_id: str) -> dict:
 		"""Fetch the Payment Link to confirm it was paid (status == 'paid')."""

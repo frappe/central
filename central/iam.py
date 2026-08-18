@@ -5,6 +5,7 @@ from typing import Any
 
 import frappe
 from frappe import _
+from frappe.utils.caching import request_cache
 
 OPERATOR_BYPASS_ROLE = "System Manager"
 
@@ -48,21 +49,19 @@ def expand_capabilities(caps: list[str]) -> list[str]:
 
 def user_has_operator_bypass(user: str | None = None) -> bool:
 	"""The only non-team-membership bypass in Central IAM."""
-	user = user or frappe.session.user
+	# Resolve before the cached call: the request cache must key on the concrete
+	# user, never on a bare no-arg () that would pin the first caller's session
+	# user (e.g. Administrator) onto every later caller in the same request.
+	return _user_has_operator_bypass(user or frappe.session.user)
+
+
+@request_cache
+def _user_has_operator_bypass(user: str) -> bool:
 	return OPERATOR_BYPASS_ROLE in frappe.get_roles(user)
 
 
 def get_all_capabilities() -> list[str]:
 	return frappe.get_all("Capability", pluck="name", order_by="name")
-
-
-def get_role_capabilities(role: str) -> list[str]:
-	return frappe.get_all(
-		"Role Capability",
-		filters={"parent": role, "parenttype": "Team Role", "parentfield": "capabilities"},
-		pluck="capability",
-		order_by="idx asc",
-	)
 
 
 def get_user_team_names(user: str) -> list[str]:
@@ -97,24 +96,22 @@ def is_active_team_member(user: str, team: str) -> bool:
 	team_doc = frappe.qb.DocType("Team")
 
 	query = (
-			frappe.qb.from_(member)
-			.join(team_doc)
-			.on(team_doc.name == member.parent)
-			.select(member.name)
-			.where(
-				(member.parenttype == "Team")
-				& (member.parentfield == "members")
-				& (member.user == user)
-				& (member.status == "Active")
-				& (team_doc.name == team)
-				& (team_doc.status == "Active")
-			)
-			.limit(1)
+		frappe.qb.from_(member)
+		.join(team_doc)
+		.on(team_doc.name == member.parent)
+		.select(member.name)
+		.where(
+			(member.parenttype == "Team")
+			& (member.parentfield == "members")
+			& (member.user == user)
+			& (member.status == "Active")
+			& (team_doc.name == team)
+			& (team_doc.status == "Active")
 		)
-
-	return bool(
-		query.run()
+		.limit(1)
 	)
+
+	return bool(query.run())
 
 
 def resolve_team(user: str, team: str | None = None) -> str:
@@ -173,8 +170,13 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 	).run(as_dict=True)
 
 
+@request_cache
 def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
-	"""Resolve Team Member -> Team Role -> Capability into token-ready grants."""
+	"""Resolve Team Member -> Team Role -> Capability into token-ready grants.
+
+	Request-cached: `can()` (via permission_query_conditions on every Asset/Site/
+	Team Invitation list query) and the notification feed call this per row/member,
+	so within one request the 4-table join runs once per user, not per call."""
 	grants_by_team: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
 	if user_has_operator_bypass(user):
@@ -217,6 +219,16 @@ def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 	return dict(grants_by_team)
 
 
+def clear_grants_cache() -> None:
+	"""Drop the request-cached IAM grants after a Team write, so later capability checks
+	in the same request see the new membership. This also isolates test methods, which
+	share one request while each rebuilds its team under a fresh name. Clearing the whole
+	request cache is safe — it is transparent, and Team writes are rare."""
+	cache = getattr(frappe.local, "request_cache", None)
+	if cache is not None:
+		cache.clear()
+
+
 def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]]]:
 	user = user or frappe.session.user
 	if not user or user == "Guest":
@@ -225,10 +237,11 @@ def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]
 
 
 def can(user: str, team: str, capability: str) -> bool:
-	if not frappe.db.exists("Capability", capability):
-		return False
-	if not frappe.db.exists("Team", {"name": team, "status": "Active"}):
-		return False
+	# No pre-flight db.exists probes: resolve_user_grants only returns Active teams
+	# (the join filters team.status), so an inactive/unknown team yields no grants,
+	# and an unknown capability simply won't match any grant's caps — both fall
+	# through to False without a separate round-trip. resolve_user_grants is
+	# request-cached, so the per-row/per-member callers pay one join, not N.
 	if user_has_operator_bypass(user):
 		return True
 

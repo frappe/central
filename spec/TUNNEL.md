@@ -100,8 +100,16 @@ is *that Atlas's* identity on Central, the principal it authenticates as when it
 calls in) whose role grants **only** the inbound Atlas endpoints — `event`, `sizes`,
 `images`, `ping` — and **nothing else**. Central generates its API key/secret, links
 it on the `Atlas Instance` (`service_user`), and pushes the key/secret to Atlas in
-`provision_tunnel`. Atlas reports events authenticated as this user. Rotation =
-re-provision.
+`provision_tunnel`. Rotation = re-provision.
+
+Alongside those creds, Central also mints a `webhook_secret` — the HMAC signing
+key for the `event` webhook specifically (see `ATLAS_COORDINATION.md`'s wire
+contract section). It has no natural home on the service user (it authenticates
+a *request signature*, not a session), so it's stored directly on `Atlas Instance`
+and pushed as `service_webhook_secret` in the same `provision_tunnel`/`link_local`
+payload. `ping` still authenticates as the service user above; only `event` uses
+the signature. Rotation is the same event as the service-user creds — one
+re-register rotates all three.
 
 This is distinct from the OAuth identity seam in [IAM.md](./IAM.md): that governs
 *end-user* sessions; this is the *machine* identity one Atlas uses to call Central.

@@ -1,12 +1,12 @@
 <script setup lang="ts">
+import { AxisChart } from 'frappe-ui/experimental'
 import { computed } from 'vue'
-import { AxisChart } from 'frappe-ui'
 import {
 	LOAD_SERIES,
+	type LoadPoint,
 	peakLoad,
 	toLoadChartRows,
-	type LoadPoint,
-} from '@/utils/loadChart'
+} from '@/lib/loadChart'
 
 const props = defineProps<{
 	points: LoadPoint[]
@@ -53,7 +53,7 @@ const chartConfig = computed(() => ({
 </script>
 
 <template>
-	<section class="rounded-xl border border-outline-gray-2 p-5">
+	<section class="rounded-7 border border-outline-gray-2 p-5">
 		<div class="mb-4 flex items-baseline justify-between gap-3">
 			<h3 class="text-base font-semibold text-ink-gray-9">Load average</h3>
 
@@ -65,10 +65,7 @@ const chartConfig = computed(() => ({
 		<div v-if="hasSeries" class="load-chart h-44">
 			<AxisChart :config="chartConfig" />
 		</div>
-		<p
-			v-else
-			class="grid h-44 place-items-center text-sm text-ink-gray-5"
-		>
+		<p v-else class="grid h-44 place-items-center text-sm text-ink-gray-5">
 			Monitoring has not collected enough history yet.
 		</p>
 	</section>
@@ -76,7 +73,7 @@ const chartConfig = computed(() => ({
 
 <style scoped>
 /* AxisChart's ECharts shell defaults to min-h-[300px]; keep the card compact. */
-.load-chart :deep([dir='ltr']) {
+.load-chart :deep([dir="ltr"]) {
 	height: 100%;
 	min-height: 0;
 	min-width: 0;

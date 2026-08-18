@@ -7,6 +7,8 @@
  "field_order": [
   "user",
   "role",
+  "resource_type",
+  "resource_name",
   "status"
  ],
  "fields": [
@@ -16,7 +18,8 @@
    "in_list_view": 1,
    "label": "User",
    "options": "User",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "role",
@@ -24,7 +27,22 @@
    "in_list_view": 1,
    "label": "Role",
    "options": "Team Role",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "default": "*",
+   "fieldname": "resource_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Resource Type",
+   "options": "*\nServer\nSite",
    "reqd": 1
+  },
+  {
+   "fieldname": "resource_name",
+   "fieldtype": "Data",
+   "label": "Resource Name"
   },
   {
    "default": "Active",

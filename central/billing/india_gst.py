@@ -61,5 +61,3 @@ def india_state_options() -> list[str]:
 def state_code(state: str | None) -> str | None:
 	"""The 2-digit GST code for an Indian state, or None if unrecognised."""
 	return GST_STATE_CODES.get((state or "").strip())
-
-

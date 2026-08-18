@@ -10,7 +10,8 @@ The classic collections worklist: chase the 60+/90+ columns first.
 
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, nowdate, date_diff
+from frappe.utils import date_diff, flt, getdate, nowdate
+
 from central.billing.report._currency import split_currency_columns
 
 BUCKETS = [
@@ -34,7 +35,13 @@ def execute(filters: dict | None = None):
 
 def get_columns() -> list[dict]:
 	cols = [
-		{"label": _("Invoice"), "fieldname": "invoice", "fieldtype": "Link", "options": "Invoice", "width": 160},
+		{
+			"label": _("Invoice"),
+			"fieldname": "invoice",
+			"fieldtype": "Link",
+			"options": "Invoice",
+			"width": 160,
+		},
 		{"label": _("Team"), "fieldname": "team", "fieldtype": "Link", "options": "Team", "width": 140},
 		{"label": _("Status"), "fieldname": "status", "fieldtype": "Data", "width": 80},
 		{"label": _("Due Date"), "fieldname": "due_date", "fieldtype": "Date", "width": 100},
@@ -42,10 +49,24 @@ def get_columns() -> list[dict]:
 		{"label": _("Currency"), "fieldname": "currency", "fieldtype": "Data", "width": 80},
 	]
 	for fieldname, label, _days in BUCKETS:
-		cols.append({"label": label, "fieldname": fieldname, "fieldtype": "Currency",
-					 "options": "currency", "width": 110})
-	cols.append({"label": _("Outstanding"), "fieldname": "outstanding", "fieldtype": "Currency",
-				 "options": "currency", "width": 130})
+		cols.append(
+			{
+				"label": label,
+				"fieldname": fieldname,
+				"fieldtype": "Currency",
+				"options": "currency",
+				"width": 110,
+			}
+		)
+	cols.append(
+		{
+			"label": _("Outstanding"),
+			"fieldname": "outstanding",
+			"fieldtype": "Currency",
+			"options": "currency",
+			"width": 130,
+		}
+	)
 	return cols
 
 
@@ -85,17 +106,27 @@ def get_data(filters: dict, as_of):
 		row = {b[0]: 0.0 for b in BUCKETS}
 		row[bucket] = outstanding
 		currency = inv.currency or "INR"
-		row.update({
-			"invoice": inv.invoice, "team": inv.team, "status": inv.status,
-			"due_date": inv.due_date, "days_overdue": max(days_overdue, 0),
-			"currency": currency, "outstanding": outstanding,
-		})
+		row.update(
+			{
+				"invoice": inv.invoice,
+				"team": inv.team,
+				"status": inv.status,
+				"due_date": inv.due_date,
+				"days_overdue": max(days_overdue, 0),
+				"currency": currency,
+				"outstanding": outstanding,
+			}
+		)
 		rows.append(row)
 		outstanding_by_currency[currency] = outstanding_by_currency.get(currency, 0.0) + outstanding
 
 	summary = [
-		{"label": _("Outstanding ({0})").format(currency), "value": flt(amount, 2),
-		 "datatype": "Float", "indicator": "red"}
+		{
+			"label": _("Outstanding ({0})").format(currency),
+			"value": flt(amount, 2),
+			"datatype": "Float",
+			"indicator": "red",
+		}
 		for currency, amount in sorted(outstanding_by_currency.items())
 	]
 	return rows, summary

@@ -6,32 +6,28 @@ from unittest.mock import patch
 
 import frappe
 import stripe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.base import GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
-def make_stripe_gateway(name="GW-Test-Stripe"):
-	import frappe
+def make_stripe_gateway(currencies=(("USD", 1),)):
+	"""The Stripe gateway, configured for test. There is only one (named "Stripe")."""
+	from central.billing.tests.utils import configure_gateway
 
-	if frappe.db.exists("Payment Gateway", name):
-		frappe.delete_doc("Payment Gateway", name, force=True)
-	doc = frappe.get_doc(
-		{
-			"doctype": "Payment Gateway",
-			"__newname": name,
-			"title": "Stripe (Test)",
-			"adapter_key": "Stripe",
-			"currencies": [{"currency": "USD", "is_default": 1}],
-			"api_secret": "sk_test_123",
-			"webhook_secret": "whsec_test_123",
-			"is_enabled": 1,
-		}
+	return configure_gateway(
+		"Stripe",
+		currencies,
+		# api_key is Stripe's *publishable* key — the one the browser SDK needs, and
+		# what get_payment_method_options hands the client. Set it here so the fixture
+		# doesn't silently lean on a stripe_publishable_key in common_site_config.
+		api_key="pk_test_123",
+		api_secret="sk_test_123",
+		webhook_secret="whsec_test_123",
+		is_enabled=1,
 	)
-	doc.insert(ignore_permissions=True)
-	return doc
 
 
 class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
@@ -158,7 +154,9 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		adapter = self.make_adapter()
 		endpoint = frappe._dict(id="we_123", secret="whsec_live_xyz")
 		with patch.object(stripe.WebhookEndpoint, "create", return_value=endpoint) as m:
-			result = adapter.register_webhook("https://site/api/method/central.billing.payments.webhooks.stripe")
+			result = adapter.register_webhook(
+				"https://site/api/method/central.billing.payments.webhooks.stripe"
+			)
 		self.assertEqual(result["endpoint_id"], "we_123")
 		self.assertEqual(result["secret"], "whsec_live_xyz")
 		self.assertEqual(
@@ -192,7 +190,8 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 	def test_create_checkout_session_handles_real_stripe_object(self):
 		adapter = self.make_adapter()
 		session = stripe.checkout.Session.construct_from(
-			{"id": "cs_x", "url": "https://checkout.stripe/cs_x"}, "sk_test")
+			{"id": "cs_x", "url": "https://checkout.stripe/cs_x"}, "sk_test"
+		)
 		with patch.object(stripe.checkout.Session, "create", return_value=session):
 			out = adapter.create_checkout_session(50.0, "EUR", "rcpt", "https://ok", "https://no")
 		self.assertEqual(out["checkout_url"], "https://checkout.stripe/cs_x")
@@ -201,8 +200,15 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 	def test_get_checkout_session_normalises_real_stripe_object(self):
 		adapter = self.make_adapter()
 		session = stripe.checkout.Session.construct_from(
-			{"id": "cs_x", "payment_status": "paid", "payment_intent": "pi_x",
-			 "amount_total": 5000, "currency": "eur"}, "sk_test")
+			{
+				"id": "cs_x",
+				"payment_status": "paid",
+				"payment_intent": "pi_x",
+				"amount_total": 5000,
+				"currency": "eur",
+			},
+			"sk_test",
+		)
 		with patch.object(stripe.checkout.Session, "retrieve", return_value=session):
 			out = adapter.get_checkout_session("cs_x")
 		self.assertEqual(out["payment_status"], "paid")
@@ -219,9 +225,68 @@ class TestStripeAdapter(GatewayAdapterContract, IntegrationTestCase):
 		from what Stripe actually charged, so it must normalise a real StripeObject."""
 		adapter = self.make_adapter()
 		intent = stripe.PaymentIntent.construct_from(
-			{"id": "pi_x", "status": "succeeded", "amount_received": 5000, "currency": "eur"}, "sk_test")
+			{"id": "pi_x", "status": "succeeded", "amount_received": 5000, "currency": "eur"}, "sk_test"
+		)
 		with patch.object(stripe.PaymentIntent, "retrieve", return_value=intent):
 			out = adapter.get_payment_intent("pi_x")
 		self.assertEqual(out["status"], "succeeded")
 		self.assertEqual(out["amount_received"], 5000)
 		self.assertEqual(out["currency"], "eur")
+
+
+class TestIndiaCardMandate(IntegrationTestCase):
+	"""Stripe India registers the mandate an Indian recurring card debit needs, and
+	every later debit quotes it (ADR 0022)."""
+
+	def setUp(self):
+		self.gateway = make_stripe_gateway(currencies=(("USD", 1), ("INR", 0)))
+		self.adapter = StripeAdapter(self.gateway)
+
+	def _setup_intent(self, **setup_data):
+		intent = stripe.SetupIntent.construct_from({"id": "seti_x", "client_secret": "seti_x_sec"}, "sk")
+		with patch.object(stripe.SetupIntent, "create", return_value=intent) as create:
+			self.adapter.setup_payment_method(frappe._dict(name="t"), {"customer_id": "cus_x", **setup_data})
+		return create.call_args.kwargs
+
+	def test_an_inr_card_registers_a_mandate(self):
+		params = self._setup_intent(currency="INR", max_amount=15000)
+		options = params["payment_method_options"]["card"]["mandate_options"]
+		self.assertEqual(options["amount"], 1500000)  # paise
+		self.assertEqual(options["amount_type"], "maximum")
+		self.assertEqual(options["currency"], "inr")
+		self.assertEqual(options["supported_types"], ["india"])
+		# Usage-based billing has no fixed amount and no fixed date.
+		self.assertEqual(options["interval"], "sporadic")
+
+	def test_the_registered_maximum_is_the_ceiling_we_enforce(self):
+		"""The customer consents to one number and the bank enforces it, so it must be
+		the number the charge path checks — not a second one that could drift."""
+		params = self._setup_intent(currency="INR", max_amount=8000)
+		self.assertEqual(params["payment_method_options"]["card"]["mandate_options"]["amount"], 800000)
+
+	def test_a_usd_card_asks_for_no_mandate(self):
+		params = self._setup_intent(currency="USD", max_amount=None)
+		self.assertNotIn("payment_method_options", params)
+
+	def test_an_off_session_debit_quotes_the_mandate(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(gateway_method_id="pm_x", gateway_mandate_id="mandate_x", team="t")
+		with patch.object(stripe.PaymentIntent, "create", return_value=intent) as create:
+			self.adapter.charge(
+				frappe._dict(name="INV-1", amount=1000, currency="INR", customer_id="cus_x", team="t"),
+				method,
+				"key-1",
+			)
+		self.assertEqual(create.call_args.kwargs["mandate"], "mandate_x")
+		self.assertTrue(create.call_args.kwargs["off_session"])
+
+	def test_a_card_with_no_mandate_sends_none(self):
+		intent = stripe.PaymentIntent.construct_from({"id": "pi_x", "status": "succeeded"}, "sk")
+		method = frappe._dict(gateway_method_id="pm_x", team="t")
+		with patch.object(stripe.PaymentIntent, "create", return_value=intent) as create:
+			self.adapter.charge(
+				frappe._dict(name="INV-1", amount=50, currency="USD", customer_id="cus_x", team="t"),
+				method,
+				"key-2",
+			)
+		self.assertNotIn("mandate", create.call_args.kwargs)

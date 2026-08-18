@@ -4,25 +4,36 @@
 from unittest.mock import patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.base import GatewayAuthError, GatewayUnsupported
 from central.billing.gateways.stripe_adapter import StripeAdapter
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+
+_CONTROLLER = "central.billing.doctype.payment_gateway.payment_gateway"
 
 
-def _new_gateway(name="GW-Setup-Test", **overrides):
-	"""Build (unsaved) a Stripe gateway with setup validation forced on."""
-	if frappe.db.exists("Payment Gateway", name):
-		frappe.delete_doc("Payment Gateway", name, force=True)
-	values = {
-		"doctype": "Payment Gateway", "__newname": name, "title": "Stripe (Setup)",
-		"adapter_key": "Stripe",
-		"currencies": [{"currency": "USD", "is_default": 1}],
-		"api_secret": "sk_live_xyz",
-		**overrides,
-	}
-	doc = frappe.get_doc(values)
+def _new_gateway(**overrides):
+	"""The Stripe gateway with freshly-typed keys and setup validation forced on.
+
+	Returned unsaved: these tests assert on what `save()` does. The row itself always
+	exists (one per adapter, seeded), so this configures rather than creates."""
+	from central.billing.gateways.setup import ensure_gateway_records
+
+	ensure_gateway_records()
+	doc = frappe.get_doc("Payment Gateway", "Stripe")
+	doc.currencies = []
+	doc.append("currencies", {"currency": "USD", "is_default": 1})
+	doc.update(
+		{
+			"api_secret": "sk_live_xyz",
+			"webhook_secret": None,
+			"webhook_endpoint_id": None,
+			"credentials_validated_at": None,
+			"is_enabled": 1,
+			**overrides,
+		}
+	)
 	doc.flags.force_credential_validation = True
 	return doc
 
@@ -51,17 +62,21 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 		doc = _new_gateway(is_enabled=0)
 		with patch.object(StripeAdapter, "validate_credentials", side_effect=GatewayAuthError("bad key")):
 			with self.assertRaises(frappe.ValidationError):
-				doc.insert(ignore_permissions=True)
+				doc.save(ignore_permissions=True)
 
 	def test_valid_keys_stamp_validated_at_and_autofill_webhook(self):
 		doc = _new_gateway()
 		identity = {"account_id": "acct_1", "currency": "USD"}
 		registered = {"endpoint_id": "we_1", "secret": "whsec_auto"}
 		with (
+			# The test site is *.local, which the controller (rightly) refuses to
+			# register a callback for — stand in a publicly reachable host so the
+			# registration path this test is about actually runs.
+			patch(f"{_CONTROLLER}.get_url", return_value="https://billing.example.com"),
 			patch.object(StripeAdapter, "validate_credentials", return_value=identity),
 			patch.object(StripeAdapter, "register_webhook", return_value=registered) as reg,
 		):
-			doc.insert(ignore_permissions=True)
+			doc.save(ignore_permissions=True)
 
 		self.assertTrue(doc.credentials_validated_at)
 		self.assertEqual(doc.webhook_endpoint_id, "we_1")
@@ -80,33 +95,36 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 		doc = _new_gateway()  # configured USD
 		with (
 			patch.object(
-				StripeAdapter, "validate_credentials",
+				StripeAdapter,
+				"validate_credentials",
 				return_value={"account_id": "a", "currency": "EUR"},
 			),
 			patch.object(
-				StripeAdapter, "register_webhook",
+				StripeAdapter,
+				"register_webhook",
 				return_value={"endpoint_id": "we_x", "secret": "whsec_x"},
 			),
 		):
-			doc.insert(ignore_permissions=True)
+			doc.save(ignore_permissions=True)
 		self.assertTrue(doc.credentials_validated_at)
 
 	def test_cannot_enable_without_validated_credentials(self):
 		# No keys entered → nothing to validate, but is_enabled is on.
 		doc = _new_gateway(api_secret="", is_enabled=1)
 		with self.assertRaises(frappe.ValidationError):
-			doc.insert(ignore_permissions=True)
+			doc.save(ignore_permissions=True)
 
 	def test_manual_secret_kept_when_gateway_cannot_self_register(self):
 		doc = _new_gateway(webhook_secret="whsec_manual")
 		with (
 			patch.object(
-				StripeAdapter, "validate_credentials",
+				StripeAdapter,
+				"validate_credentials",
 				return_value={"account_id": "a", "currency": "USD"},
 			),
 			patch.object(StripeAdapter, "register_webhook", side_effect=GatewayUnsupported("nope")),
 		):
-			doc.insert(ignore_permissions=True)
+			doc.save(ignore_permissions=True)
 		self.assertFalse(doc.webhook_endpoint_id)
 		self.assertEqual(doc.get_password("webhook_secret"), "whsec_manual")
 
@@ -114,15 +132,18 @@ class TestGatewaySetupValidation(IntegrationTestCase):
 		doc = _new_gateway()
 		with (
 			patch.object(
-				StripeAdapter, "validate_credentials",
+				StripeAdapter,
+				"validate_credentials",
 				return_value={"account_id": "a", "currency": "USD"},
 			),
-			patch.object(StripeAdapter, "register_webhook", return_value={"endpoint_id": "we", "secret": "s"}),
+			patch.object(
+				StripeAdapter, "register_webhook", return_value={"endpoint_id": "we", "secret": "s"}
+			),
 		):
-			doc.insert(ignore_permissions=True)
+			doc.save(ignore_permissions=True)
 
 		# Edit a non-secret field; the secret field now holds the '*****' mask.
-		doc.title = "Stripe (Setup) updated"
+		doc.supports_mandates = 1
 		with patch.object(StripeAdapter, "validate_credentials") as vc:
 			doc.save(ignore_permissions=True)
 		vc.assert_not_called()
@@ -135,7 +156,7 @@ class TestGatewayCredentialResolution(IntegrationTestCase):
 	def test_falls_back_to_doc_when_not_in_site_config(self):
 		from central.billing.gateways.registry import get_adapter
 
-		gw = make_stripe_gateway("GW-Cred-Test")
+		gw = make_stripe_gateway()
 		adapter = get_adapter(gw)
 		# stripe_webhook_secret is not in this site's config -> read off the doc.
 		self.assertNotIn("stripe_webhook_secret", frappe.conf)
@@ -144,7 +165,7 @@ class TestGatewayCredentialResolution(IntegrationTestCase):
 	def test_site_config_key_overrides_the_doc(self):
 		from central.billing.gateways.registry import get_adapter
 
-		gw = make_stripe_gateway("GW-Cred-Test2")
+		gw = make_stripe_gateway()
 		adapter = get_adapter(gw)
 		with patch.dict(frappe.local.conf, {"stripe_webhook_secret": "whsec_from_conf"}):
 			self.assertEqual(adapter.get_credential("webhook_secret"), "whsec_from_conf")

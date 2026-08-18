@@ -8,6 +8,7 @@ This module owns only the historical/promotion side.
 """
 
 import frappe
+from frappe import _
 
 from central.billing.catalog.signing import sign_payload
 
@@ -51,9 +52,7 @@ def cap_for(level, currency):
 def get_ladder():
 	"""Admin-defined ladder rungs, ordered low → high, each carrying its
 	per-currency thresholds as `thresholds = {currency: {max_spend, min_cumulative_paid}}`."""
-	levels = frappe.get_all(
-		"Trust Tier Level", fields=list(_LEVEL_FIELDS), order_by="sequence asc"
-	)
+	levels = frappe.get_all("Trust Tier Level", fields=list(_LEVEL_FIELDS), order_by="sequence asc")
 	by_parent: dict[str, dict] = {}
 	for row in frappe.get_all(
 		"Trust Tier Threshold",
@@ -124,8 +123,13 @@ def get_team_caps(team: str):
 	override = profile.override_max_spend if profile.manual_override else 0
 	if level is None:
 		return frappe._dict(
-			tier=None, currency=currency, max_spend=override or 0, max_resource_count=0,
-			allowed_plans=None, allowed_clusters=None, allowed_resource_types=None,
+			tier=None,
+			currency=currency,
+			max_spend=override or 0,
+			max_resource_count=0,
+			allowed_plans=None,
+			allowed_clusters=None,
+			allowed_resource_types=None,
 		)
 	max_spend = override or cap_for(level, currency)
 	return frappe._dict(
@@ -209,7 +213,7 @@ def issue_token(
 	sliced_spend = sum((s.get("max_spend") or 0) for s in cluster_slices.values())
 	if sliced_spend > (caps.max_spend or 0):
 		frappe.throw(
-			f"Cluster slices sum ({sliced_spend}) exceed team cap ({caps.max_spend})",
+			_("Cluster slices sum ({0}) exceed team cap ({1})").format(sliced_spend, caps.max_spend),
 			frappe.ValidationError,
 		)
 

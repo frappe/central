@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { useSession } from '@/composables/useSession'
 import { fetchBillingSetup } from '@/data/billingSetup'
+import { features } from '@/lib/features'
 
 const routes = [
 	{
@@ -62,14 +63,11 @@ const routes = [
 				component: () => import('@/pages/servers/NewServerPage.vue'),
 				meta: { title: 'New server' },
 			},
-			// Services are reached directly from the sidebar's Services group; a bare
-			// /services falls through to the one service today.
-			{ path: 'services', redirect: '/services/llm' },
 			{
-				path: 'services/:service',
-				name: 'ServiceDetail',
-				component: () => import('@/pages/services/ServiceDetailPage.vue'),
-				meta: { title: 'Services' },
+				path: 'addons/ai',
+				name: 'AIInference',
+				component: () => import('@/pages/addons/AIInference.vue'),
+				meta: { title: 'Services', feature: ['addons', 'llm'] },
 			},
 			{
 				path: 'billing',
@@ -84,16 +82,16 @@ const routes = [
 				meta: { title: 'Invoices' },
 			},
 			{
+				path: 'billing/reports',
+				name: 'BillingReports',
+				component: () => import('@/pages/billing/BillingReportsPage.vue'),
+				meta: { title: 'Reports' },
+			},
+			{
 				path: 'billing/limits',
 				name: 'SpendingLimits',
 				component: () => import('@/pages/billing/SpendingLimitsPage.vue'),
-				meta: { title: 'Spending Limits' },
-			},
-			{
-				path: 'notifications',
-				name: 'Notifications',
-				component: () => import('@/pages/notifications/NotificationsPage.vue'),
-				meta: { title: 'Notifications' },
+				meta: { title: 'Limit tiers' },
 			},
 			{
 				path: 'settings',
@@ -101,8 +99,20 @@ const routes = [
 				component: () => import('@/pages/settings/SettingsPage.vue'),
 				meta: { title: 'Settings' },
 			},
+			// Mobile opens each settings tab as its own page — no dialog on a
+			// phone. Desktop reaches the same tabs through the settings dialog,
+			// but these routes stay valid there (deep links, browser Back).
+			{
+				path: 'settings/:tab',
+				name: 'SettingsTab',
+				component: () => import('@/pages/settings/SettingsDetailPage.vue'),
+				meta: { title: 'Settings' },
+			},
 			{ path: 'team', redirect: '/team/members' },
-			// Members + roles share one tabbed page; /team/roles is kept as an alias.
+			// Members + roles share one tabbed page. Settings fold into this surface
+			// (rename beside the title, transfer on member rows, delete in team menu).
+			// /team/roles and /team/settings stay as aliases; invitations stay routable
+			// but are hidden from the sidebar for now.
 			{
 				path: 'team/members',
 				name: 'Members',
@@ -110,17 +120,12 @@ const routes = [
 				meta: { title: 'Team' },
 			},
 			{ path: 'team/roles', redirect: '/team/members' },
+			{ path: 'team/settings', redirect: '/team/members' },
 			{
 				path: 'team/invitations',
 				name: 'TeamInvitations',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
-			},
-			{
-				path: 'team/settings',
-				name: 'TeamSettings',
-				component: () => import('@/pages/team/TeamSettingsPage.vue'),
-				meta: { title: 'Team settings' },
 			},
 			// Personal invitation inbox + the email deep-link both open the Invitations
 			// page on its Received tab.
@@ -135,6 +140,13 @@ const routes = [
 				name: 'FocusedInvitation',
 				component: () => import('@/pages/team/InvitationsPage.vue'),
 				meta: { title: 'Invitations' },
+			},
+
+			{
+				path: 'addons',
+				name: 'Addons',
+				component: () => import('@/pages/addons/Page.vue'),
+				meta: { title: 'Services', feature: 'addons' },
 			},
 		],
 	},
@@ -166,6 +178,17 @@ router.beforeEach((to) => {
 			path: '/login',
 			query: { 'redirect-to': `/dashboard${to.fullPath}` },
 		}
+	}
+
+	// A route behind a disabled feature flag doesn't exist for this session.
+	// `feature` may name one flag or several (e.g. the AI page needs both the
+	// Add-ons area and the LLM service); any one off redirects away.
+	if (to.meta.feature) {
+		const required = Array.isArray(to.meta.feature)
+			? to.meta.feature
+			: [to.meta.feature]
+		if (required.some((flag) => !features[flag as keyof typeof features]))
+			return '/servers'
 	}
 
 	// A finished user has no reason to re-enter onboarding.

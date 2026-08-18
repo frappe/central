@@ -27,6 +27,7 @@ from central.billing.catalog.composition import (
 from central.billing.catalog.entitlements import get_team_caps
 from central.billing.catalog.pricing import resolve_component_rate, resolve_rate
 from central.billing.catalog.rate_card import COMPONENT_UNITS
+from central.billing.catalog.trials import trial_plan_names
 
 
 def _allowlist(value) -> set[str] | None:
@@ -99,12 +100,12 @@ def get_eligible_plans(
 	allowed_plans = _allowlist(caps.allowed_plans)
 	allowed_clusters = _allowlist(caps.allowed_clusters)
 
-	# Staging trials: narrow the menu to the configured entry plans (`trial_plans` in
-	# site config; unset = no extra narrowing) and offer no design-your-own — a trial
-	# can't provision a composed server without a full billing profile.
+	# Staging trials: narrow the menu to the plans flagged Available on Trial (none
+	# flagged = no extra narrowing) and offer no design-your-own — a trial can't
+	# provision a composed server without a full billing profile.
 	is_staging_trial = bool(frappe.db.get_value("Team", team, "is_staging_trial"))
 	if is_staging_trial:
-		trial_plans = _allowlist(frappe.conf.get("trial_plans"))
+		trial_plans = trial_plan_names()
 		if trial_plans is not None:
 			allowed_plans = trial_plans if allowed_plans is None else (allowed_plans & trial_plans)
 
@@ -113,12 +114,19 @@ def get_eligible_plans(
 	# headroom (capacity). None = don't gate — the flag is off, no Atlas is registered, or
 	# the check couldn't be reached (fail-soft).
 	is_resize = bool(exclude_subscription)
-	capacity = _resize_capacity(cluster, exclude_subscription, team) if is_resize else _region_capacity(cluster)
+	capacity = (
+		_resize_capacity(cluster, exclude_subscription, team) if is_resize else _region_capacity(cluster)
+	)
 	capacity_block = _capacity_block(capacity)
 
 	header = {
-		"team": team, "cluster": cluster, "currency": currency, "tier": caps.tier,
-		"max_spend": spend_cap, "current_spend": current_spend, "available": available,
+		"team": team,
+		"cluster": cluster,
+		"currency": currency,
+		"tier": caps.tier,
+		"max_spend": spend_cap,
+		"current_spend": current_spend,
+		"available": available,
 		"capacity": capacity_block,
 	}
 	# A "design your own" config needs the same three things the slider does: the
@@ -244,6 +252,41 @@ def provision_composed_config(
 	return provision_composed_subscription(team, cluster, includes, sub_category)
 
 
+def _lock_disclosure(team: str, subscription: str, currency: str) -> dict | None:
+	"""What this server's rate is, against what the same shape costs today.
+
+	A resize re-prices at current rates (ADR 0010), so a customer holding a rate
+	below today's list is about to give it up — including if they resize back to the
+	size they are on now. They are entitled to know that before they confirm, not
+	after it shows up on a bill.
+
+	Scoped to `team` even though the caller already resolved the subscription from
+	a team-scoped read. A rate is tenant data, and a helper that takes a bare
+	subscription id and trusts whoever passed it is one stray decorator away from
+	handing another tenant's price to anyone who can guess an id — which is how
+	this function was first shipped.
+	"""
+	from central.billing.api.dashboard.spend import list_rate_for
+	from central.billing.catalog.subscriptions import active_segments
+
+	segments = active_segments({"name": subscription, "team": team})
+	if not segments:
+		return None
+	segment = segments[0]
+	locked = frappe.utils.flt(segment.locked_rate)
+	listed = list_rate_for(segment, currency)
+	if listed is None or not locked:
+		return None
+	return {
+		"locked_rate": locked,
+		"list_rate": frappe.utils.flt(listed),
+		"currency": currency,
+		# Only a rate BELOW today's list is worth warning about; at or above it there
+		# is nothing to lose by re-pricing.
+		"gives_up": frappe.utils.flt(listed - locked, 2) if listed > locked else 0.0,
+	}
+
+
 @frappe.whitelist()
 def get_composed_config(asset: str, team: str | None = None) -> dict:
 	"""The config running on `asset`, pre-filling the resize slider (#84): its
@@ -279,9 +322,10 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 		vcpus, memory_gb, disk_gb = qty.get(COMPUTE, 0), qty.get(MEMORY, 0), qty.get(DISK, 0)
 	else:
 		# A preset carries no composition — its shape lives on the mirrored VM.
-		shape = frappe.db.get_value(
-			"Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
-		) or frappe._dict()
+		shape = (
+			frappe.db.get_value("Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True)
+			or frappe._dict()
+		)
 		vcpus = shape.vcpus or 0
 		memory_gb = (shape.memory_megabytes or 0) / 1024
 		disk_gb = shape.disk_gigabytes or 0
@@ -297,13 +341,14 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 		"memory_gb": memory_gb,
 		"disk_gb": disk_gb,
 		"available": max(0.0, cap - team_run_rate(team, exclude=sub.name)),
+		# What the resize would cost this server in price terms, so the picker can
+		# say it before the customer commits rather than after.
+		"lock": _lock_disclosure(team, sub.name, _team_currency(team)),
 	}
 
 
 @frappe.whitelist(methods=["POST"])
-def resize_composed_config(
-	subscription: str, includes: list | str, sub_category: str | None = None
-) -> dict:
+def resize_composed_config(subscription: str, includes: list | str, sub_category: str | None = None) -> dict:
 	"""Resize a running config from the slider (#84) — the changed-event re-lock (#82).
 	Re-validates the new shape + headroom server-side before re-locking at the current
 	rate card. Returns whether a new segment was opened (a no-op resize returns False)."""
@@ -315,9 +360,13 @@ def resize_composed_config(
 		includes = frappe.parse_json(includes)
 	from central.billing.catalog.subscriptions import resize_composed_subscription
 
-	before = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	before = frappe.db.count(
+		"Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"}
+	)
 	resize_composed_subscription(subscription, includes, sub_category)
-	after = frappe.db.count("Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"})
+	after = frappe.db.count(
+		"Subscription Change", {"subscription": subscription, "change_type": "Plan Changed"}
+	)
 	return {"subscription": subscription, "resized": after > before}
 
 
@@ -444,9 +493,7 @@ def _valid_capacity(raw) -> dict | None:
 	`disk_gigabytes` — so `_plan_fits`/`_capacity_block` can index it without a KeyError.
 	Anything that doesn't fit that shape returns None (→ don't gate); a successful call
 	must never crash the menu just because Atlas returned an unexpected body."""
-	if not isinstance(raw, dict) or not all(
-		key in raw for key in ("available", "unmeasured", "largest_vm")
-	):
+	if not isinstance(raw, dict) or not all(key in raw for key in ("available", "unmeasured", "largest_vm")):
 		return None
 	largest = raw.get("largest_vm")
 	if largest is not None:
@@ -542,7 +589,6 @@ def _plan_row(plan, currency: str, cluster: str | None, rate, includes) -> dict:
 		"cluster": cluster,
 		"rate": frappe.utils.flt(rate),
 		"includes": [
-			{"resource_type": i.resource_type, "quantity": i.quantity, "unit": i.unit}
-			for i in includes
+			{"resource_type": i.resource_type, "quantity": i.quantity, "unit": i.unit} for i in includes
 		],
 	}

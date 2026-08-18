@@ -10,8 +10,8 @@ unlike the pilot facade which is fixed to its own team.
 
 import frappe
 
-from central.billing.authz import require_operator
 from central.billing.api.dashboard._shared import _team_currency, require_billing_profile
+from central.billing.authz import require_operator
 
 
 @frappe.whitelist()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -64,7 +65,7 @@ class CentralTunnelSettings(Document):
 		runner, then stores the returned public key and flips `hub_status` to
 		Active."""
 		if "System Manager" not in frappe.get_roles():
-			frappe.throw("Not permitted.", frappe.PermissionError)
+			frappe.throw(_("Not permitted."), frappe.PermissionError)
 
 		from central.host_task import parse_result, run_host_task
 

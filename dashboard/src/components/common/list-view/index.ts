@@ -1,5 +1,4 @@
 export { default as ListView } from './ListView.vue'
-export { createListViewQuery } from './types'
 export type {
 	ListViewColumn,
 	ListViewEmptyState,
@@ -9,3 +8,4 @@ export type {
 	ListViewSort,
 	ListViewTable,
 } from './types'
+export { createListViewQuery } from './types'

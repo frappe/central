@@ -16,6 +16,8 @@ time-of-use gap, and `generate_draft_invoices` enqueues one job *per team* — s
 scheduler double-fire or a manual run overlapping the cron double-billed the team.
 """
 
+import time
+
 import frappe
 
 from central.billing.catalog import commitments
@@ -119,96 +121,29 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	if existing:
 		return existing
 
-	from central.billing.revenue.metering import metered_line_items
-	from central.billing.catalog.trials import invoice_type_for
-
-	cluster = frappe.db.get_value("Asset", sub.asset_id, "cluster") if sub.asset_id else None
-	lines = compute_line_items(sub.team, cluster, period_start, period_end)
-	lines += metered_line_items(sub.team, cluster, period_start, period_end)
-	if not lines:
+	rated = rate_subscription_period(subscription, period_start, period_end)
+	if not rated:
 		return None
 
-	from central.billing.revenue.tax import resolve_tax
-
-	subtotal = frappe.utils.flt(sum(line["amount"] for line in lines), 2)
-	# Commitment (#30 discount / #31 clawback) adjusts the taxable base; subtotal
-	# stays gross. Discount reduces it; a breach clawback adds the repaid discount.
-	commitment = commitments.resolve_commitment(sub.team, lines, period_start)
-	discount = commitment["discount"]
-	clawback = commitment["clawback"]
-	taxable_base = frappe.utils.flt(subtotal - discount + clawback, 2)
-	currency = frappe.db.get_value("Billing Profile", sub.team, "currency")
-	tax = resolve_tax(sub.team, taxable_base)
-	total = frappe.utils.flt(taxable_base + tax["output_tax_amount"], 2)
-	# expected_collection = total - tds (credits reduce it further at open).
-	expected = frappe.utils.flt(total - tax["tds_amount"], 2)
-
-	# The single branch point: an entry-tier (free/trial) team's invoice is a
-	# cost_report — computed identically, but a true cost rather than a bill.
-	name = _insert_invoice(
-		{
-			"doctype": "Invoice",
-			"team": sub.team,
-			"subscription": subscription,
-			"invoice_type": invoice_type_for(sub.team),
-			"status": "Draft",
-			"period_start": period_start,
-			"period_end": period_end,
-			"currency": currency,
-			"items": lines,
-			"subtotal": subtotal,
-			"commitment_discount": discount,
-			"commitment_clawback": clawback,
-			"output_tax_type": tax["output_tax_type"],
-			"output_tax_rate": tax["output_tax_rate"],
-			"output_tax_amount": tax["output_tax_amount"],
-			"zero_rating_reason": tax["zero_rating_reason"],
-			"tds_applicable": tax["tds_applicable"],
-			"tds_rate": tax["tds_rate"],
-			"tds_amount": tax["tds_amount"],
-			"total": total,
-			"credit_applied": 0,
-			"expected_collection": expected,
-			"amount_paid": 0,
-		}
-	)
-	commitments.mark_breached(commitment)
+	name = _insert_invoice(rated.payload)
+	commitments.mark_breached(rated.commitment)
 	return name
 
 
-def generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
-	"""One consolidated invoice per team per period, across every cluster it runs in.
+def _rate(team: str, lines: list[dict], period_start, period_end, subscription: str | None):
+	"""Price a set of billable lines into an invoice payload. Reads only.
 
-	A team that runs instances in several regions should see a SINGLE monthly
-	invoice, not one per region — so this aggregates the day-weighted fixed lines
-	plus metered overage from all of the team's clusters into one Invoice.
-	Idempotent per (team, period) — including under concurrency, which the read below
-	cannot deliver on its own. `generate_draft_invoices` enqueues one job per team, so
-	two workers could both read "no invoice" and both insert; the unique index on
-	`period_key` is what stops the team being billed twice (ADR 0018).
+	The arithmetic every draft shares: gross subtotal, the commitment adjustment,
+	tax on the adjusted base, and what we expect to actually collect. Nothing here
+	writes, so the same call answers "what will this period cost?" for a period that
+	has not happened yet.
 
-	`subscription` is the primary subscription (its default payment method funds
-	the auto-charge in open_and_collect); defaults to any of the team's subs.
+	Returns the payload alongside the commitment verdict that shaped it. The verdict
+	is handed back rather than acted on because marking a commitment breached is a
+	write, and this function does not do those.
 	"""
-	existing = _live_invoice(team, period_start, period_end)
-	if existing:
-		return existing
-
-	from central.billing.revenue.metering import metered_line_items_for_clusters
-	from central.billing.revenue.tax import resolve_tax
 	from central.billing.catalog.trials import invoice_type_for
-
-	# Read the team once, not once per cluster: team_line_items pulls every
-	# subscription's fixed lines in one pass, and the metered rollups for all the
-	# team's clusters come back in a single query.
-	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
-	clusters = sorted({
-		c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c
-	})
-	lines = team_line_items(team, period_start, period_end)
-	lines += metered_line_items_for_clusters(team, clusters, period_start, period_end)
-	if not lines:
-		return None
+	from central.billing.revenue.tax import resolve_tax
 
 	subtotal = frappe.utils.flt(sum(line["amount"] for line in lines), 2)
 	# Commitment (#30 discount / #31 clawback) adjusts the taxable base; subtotal
@@ -220,12 +155,14 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	tax = resolve_tax(team, taxable_base)
 	total = frappe.utils.flt(taxable_base + tax["output_tax_amount"], 2)
+	# expected_collection = total - tds (credits reduce it further at open).
 	expected = frappe.utils.flt(total - tax["tds_amount"], 2)
-	if subscription is None:
-		subscription = primary_subscription(team)
 
-	name = _insert_invoice(
-		{
+	return frappe._dict(
+		commitment=commitment,
+		# The single branch point: an entry-tier (free/trial) team's invoice is a
+		# cost_report — computed identically, but a true cost rather than a bill.
+		payload={
 			"doctype": "Invoice",
 			"team": team,
 			"subscription": subscription,
@@ -249,7 +186,119 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 			"credit_applied": 0,
 			"expected_collection": expected,
 			"amount_paid": 0,
-		}
+		},
 	)
-	commitments.mark_breached(commitment)
+
+
+def rate_subscription_period(subscription: str, period_start, period_end, explain: bool = False):
+	"""What one subscription's cluster would bill the team for the period. Reads only.
+
+	Returns None when there was no billable runtime.
+	"""
+	from central.billing.revenue.metering import metered_line_items
+
+	sub = frappe.get_doc("Subscription", subscription)
+	cluster = frappe.db.get_value("Asset", sub.asset_id, "cluster") if sub.asset_id else None
+	lines = compute_line_items(sub.team, cluster, period_start, period_end, explain=explain)
+	lines += metered_line_items(sub.team, cluster, period_start, period_end, explain=explain)
+	if not lines:
+		return None
+	return _rate(sub.team, lines, period_start, period_end, subscription)
+
+
+def team_clusters(team: str) -> list[str]:
+	"""Every cluster the team runs an asset in, resolved in one pass."""
+	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
+	return sorted(
+		{c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c}
+	)
+
+
+def rate_team_period(
+	team: str,
+	period_start,
+	period_end,
+	subscription: str | None = None,
+	metered: list[dict] | None = None,
+	explain: bool = False,
+	changes=None,
+):
+	"""What the team's whole book would bill for the period, across every cluster.
+	Reads only.
+
+	The rating half of `generate_team_invoice` — same lines, same commitment, same
+	tax, no insert. Returns None when the team has nothing billable.
+
+	`metered` replaces the metered lines rather than adding to them. The run leaves it
+	unset and bills the rollups that landed; a projection supplies estimated usage,
+	because a period that has not happened has no rollups and would otherwise be rated
+	as though the team used nothing.
+	"""
+	from central.billing.revenue.metering import metered_line_items_for_clusters
+
+	# Read the team once, not once per cluster: team_line_items pulls every
+	# subscription's fixed lines in one pass, and the metered rollups for all the
+	# team's clusters come back in a single query.
+	lines = team_line_items(team, period_start, period_end, explain=explain, changes=changes)
+	if metered is None:
+		lines += metered_line_items_for_clusters(
+			team, team_clusters(team), period_start, period_end, explain=explain
+		)
+	else:
+		lines += list(metered)
+	if not lines:
+		return None
+
+	if subscription is None:
+		subscription = primary_subscription(team)
+	return _rate(team, lines, period_start, period_end, subscription)
+
+
+def _generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
+	"""One consolidated invoice per team per period, across every cluster it runs in.
+
+	A team that runs instances in several regions should see a SINGLE monthly
+	invoice, not one per region — so this aggregates the day-weighted fixed lines
+	plus metered overage from all of the team's clusters into one Invoice.
+	Idempotent per (team, period) — including under concurrency, which the read below
+	cannot deliver on its own. `generate_draft_invoices` enqueues one job per team, so
+	two workers could both read "no invoice" and both insert; the unique index on
+	`period_key` is what stops the team being billed twice (ADR 0018).
+
+	`subscription` is the primary subscription (its default payment method funds
+	the auto-charge in open_and_collect); defaults to any of the team's subs.
+	"""
+	existing = _live_invoice(team, period_start, period_end)
+	if existing:
+		return existing
+
+	rated = rate_team_period(team, period_start, period_end, subscription)
+	if not rated:
+		return None
+
+	name = _insert_invoice(rated.payload)
+	commitments.mark_breached(rated.commitment)
 	return name
+
+
+_INVOICE_DEADLOCK_RETRIES = 5
+
+
+def generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
+	"""Generate one team's invoice, yielding cleanly when concurrent workers contend.
+
+	The unique period key still decides the winner. A database deadlock is merely the
+	lock manager picking a loser before that key can report the winner, so retry it and
+	return the already-created invoice just like a duplicate-key race.
+	"""
+	for attempt in range(_INVOICE_DEADLOCK_RETRIES):
+		try:
+			return _generate_team_invoice(team, period_start, period_end, subscription)
+		except frappe.QueryDeadlockError:
+			frappe.db.rollback()
+			if attempt == _INVOICE_DEADLOCK_RETRIES - 1:
+				existing = _live_invoice(team, period_start, period_end, for_update=True)
+				if existing:
+					return existing
+				raise
+			time.sleep(0.05 * (attempt + 1))

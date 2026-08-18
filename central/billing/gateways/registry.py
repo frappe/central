@@ -3,6 +3,7 @@
 """Resolve a Payment Gateway config row to its GatewayAdapter implementation."""
 
 import frappe
+from frappe import _
 
 from central.billing.gateways.base import GatewayAdapter
 
@@ -13,17 +14,21 @@ class GatewayNotFound(frappe.ValidationError):
 
 def resolve_gateway_for_currency(currency: str) -> str:
 	"""Return the name of the enabled Payment Gateway whose currencies child table
-	has an is_default row for `currency`. Raises GatewayNotFound if none configured."""
-	name = frappe.db.get_value(
+	has an is_default row for `currency`. Raises GatewayNotFound if none configured.
+
+	Every default row for the currency is considered, not just the first: the
+	uniqueness rule only clears the flag on *enabled* gateways, so a gateway that was
+	switched off keeps its default flag and would otherwise shadow the live one.
+	"""
+	names = frappe.get_all(
 		"Payment Gateway Currency",
-		{"currency": currency, "is_default": 1},
-		"parent",
+		filters={"currency": currency, "is_default": 1},
+		pluck="parent",
 	)
-	if name and frappe.db.get_value("Payment Gateway", name, "is_enabled"):
-		return name
-	raise GatewayNotFound(
-		f"No enabled payment gateway is configured as the default for {currency}."
-	)
+	for name in names:
+		if frappe.db.get_value("Payment Gateway", name, "is_enabled"):
+			return name
+	raise GatewayNotFound(f"No enabled payment gateway is configured as the default for {currency}.")
 
 
 def supported_currencies() -> list[str]:
@@ -56,6 +61,6 @@ def get_adapter(gateway) -> GatewayAdapter:
 
 	adapter_class = adapters.get(gateway.adapter_key)
 	if not adapter_class:
-		frappe.throw(f"No GatewayAdapter registered for adapter_key '{gateway.adapter_key}'")
+		frappe.throw(_("No GatewayAdapter registered for adapter_key '{0}'").format(gateway.adapter_key))
 
 	return adapter_class(gateway)

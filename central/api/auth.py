@@ -4,12 +4,12 @@ import secrets
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils import cint, escape_html, random_string
-from frappe.utils.oauth import get_oauth2_authorize_url, get_oauth_keys
-from frappe.utils.password import get_decrypted_password
 
 from central.iam import get_user_team_names
 from central.users import CENTRAL_USER_ROLE
+from central.utils.inputs import require_secret
 
 # Signup is OTP-based: `sign_up` emails a 6-digit code and caches the pending
 # signup (no User yet, so an abandoned signup leaves nothing behind — simpler than
@@ -59,6 +59,7 @@ def verify_signup(email: str, code: str) -> dict:
 	code = (code or "").strip()
 	pending = frappe.cache.get_value(_otp_key(email))
 
+	# NOTE: will be removed once we have setup proper email service
 	# for developer mode, any 6-digit code passes
 	if frappe.conf.developer_mode and pending and len(code) == 6 and code.isdigit():
 		pending["code"] = code
@@ -134,15 +135,17 @@ def _code_matches(pending: dict, code: str) -> bool:
 
 
 def _create_verified_user(email: str, full_name: str):
-	user = frappe.get_doc({
-		"doctype": "User",
-		"email": email,
-		"first_name": escape_html(full_name),
-		"enabled": 1,
-		"new_password": random_string(10),
-		"user_type": "Website User",
-		"roles": [{"role": role} for role in _signup_roles()],
-	})
+	user = frappe.get_doc(
+		{
+			"doctype": "User",
+			"email": email,
+			"first_name": escape_html(full_name),
+			"enabled": 1,
+			"new_password": random_string(10),
+			"user_type": "Website User",
+			"roles": [{"role": role} for role in _signup_roles()],
+		}
+	)
 	user.flags.ignore_permissions = True
 	user.flags.ignore_password_policy = True
 	user.flags.no_welcome_mail = True
@@ -159,56 +162,6 @@ def _signup_roles() -> list[str]:
 	return roles
 
 
-def build_auth_context() -> dict:
-	return {
-		"user": frappe.session.user or "Guest",
-		"provider_logins": _provider_logins(),
-		"onboarding_complete": _onboarding_complete(),
-	}
-
-
-def _onboarding_complete() -> bool:
-	"""True once the user's team owns a live site — the signal the SPA uses to keep a
-	brand-new user inside the onboarding funnel (and let a returning one skip it).
-	A first-run user (no team or no site yet) is still onboarding."""
-	user = frappe.session.user
-	if not user or user == "Guest":
-		return False
-	teams = get_user_team_names(user)
-	if not teams:
-		return False
-	return bool(frappe.db.exists("Site", {"team": ["in", teams], "status": ["!=", "Terminated"]}))
-
-
-def _provider_logins() -> list[dict[str, str]]:
-	providers = frappe.get_all(
-		"Social Login Key",
-		filters={"enable_social_login": 1},
-		fields=["name", "client_id", "base_url", "provider_name", "icon"],
-		order_by="name",
-	)
-	return [
-		{
-			"name": provider.name,
-			"label": provider.provider_name,
-			"icon": provider.icon or "",
-			"auth_url": get_oauth2_authorize_url(provider.name, "/dashboard/servers"),
-		}
-		for provider in providers
-		if _provider_is_configured(provider)
-	]
-
-
-def _provider_is_configured(provider) -> bool:
-	client_secret = get_decrypted_password(
-		"Social Login Key",
-		provider.name,
-		"client_secret",
-		raise_exception=False,
-	)
-	return bool(provider.client_id and client_secret and provider.base_url and get_oauth_keys(provider.name))
-
-
 def _enforce_signup_limit() -> None:
 	limit = cint(frappe.get_system_settings("max_signups_allowed_per_hour") or 300)
 	if frappe.db.get_creation_count("User", 60) >= limit:
@@ -216,3 +169,46 @@ def _enforce_signup_limit() -> None:
 			_("Too many users signed up recently. Please try again in an hour."),
 			frappe.TooManyRequestsError,
 		)
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=5, seconds=60 * 60, methods="POST")
+def change_password(old_password: str, new_password: str) -> dict:
+	"""Change the signed-in user's password, proving they know the current one.
+
+	Only ever acts on `frappe.session.user` — there is no user parameter to
+	abuse. Rate-limited so the old-password check can't be used to brute-force
+	an unattended session. Other sessions are signed out (the current one is
+	kept), so a stolen session dies with the password change."""
+	from frappe.core.doctype.user.user import handle_password_test_fail, test_password_strength
+	from frappe.utils.password import check_password, update_password
+
+	user = frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("Sign in to change your password."), frappe.PermissionError)
+
+	# Typed at the trust boundary: a JSON body can put a list or dict here, and
+	# the password helpers below would raise an unhandled error on one.
+	old_password = require_secret(old_password, _("Enter your current password."))
+	new_password = require_secret(new_password, _("Enter a new password."))
+
+	# A wrong password must NOT re-raise AuthenticationError: frappe's request
+	# handler treats that as a failed login and tears down the session, so a
+	# typo here would sign the user out of the console. Re-raise it as a plain
+	# validation error instead — the rate limit above is what stops guessing.
+	try:
+		check_password(user, old_password)
+	except frappe.AuthenticationError:
+		frappe.throw(_("Your current password is incorrect."), frappe.ValidationError)
+
+	if new_password == old_password:
+		frappe.throw(_("Choose a password you haven't used here before."), frappe.ValidationError)
+
+	# Honour the site's password policy, same as the reset flow does.
+	feedback = test_password_strength(new_password).get("feedback")
+	if feedback and not feedback.get("password_policy_validation_passed", False):
+		handle_password_test_fail(feedback)
+
+	update_password(user, new_password, logout_all_sessions=True)
+	frappe.db.set_value("User", user, "last_password_reset_date", frappe.utils.today())
+	return {"changed": True}

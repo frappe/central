@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Button, Dropdown } from 'frappe-ui'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { SubscriptionRow } from '@/types/billing'
 
 // The lifecycle menu for one subscription row — mirrors ServerRowActions. Which
@@ -53,14 +53,10 @@ const options = computed(() => {
 </script>
 
 <template>
-	<Dropdown v-if="options.length" :options="options" placement="bottom-end">
-		<template #trigger>
-			<Button
-				variant="ghost"
-				icon="lucide-ellipsis"
-				:loading="busy"
-				aria-label="Subscription actions"
-			/>
-		</template>
-	</Dropdown>
+	<RowActionsMenu
+		:options="options"
+		label="Subscription actions"
+		icon="lucide-ellipsis"
+		:busy="busy"
+	/>
 </template>

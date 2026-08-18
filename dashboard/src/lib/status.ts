@@ -1,27 +1,10 @@
-import type { Asset } from '@/types/Central/Asset'
 import type { InvitationStatus } from '@/types/api'
+import type { Asset } from '@/types/Central/Asset'
 
-export type AssetStatus = NonNullable<Asset['status']> | (string & {})
+// The DocType statuses plus Central's own derived display state (see displayStatus).
+export type AssetStatus = NonNullable<Asset['status']> | 'Resizing'
 
-type BadgeTheme = 'green' | 'gray' | 'orange' | 'red' | 'blue' | 'violet'
-
-// Asset status → Badge theme. Mirrors the Atlas lifecycle: Running is healthy,
-// transient states are amber, terminal/failure states are red, the rest neutral.
-const STATUS_THEME: Record<string, BadgeTheme> = {
-	Running: 'green',
-	Pending: 'orange',
-	Provisioning: 'orange',
-	Deploying: 'orange',
-	Resizing: 'orange',
-	Paused: 'orange',
-	Stopped: 'gray',
-	Failed: 'red',
-	Terminated: 'red',
-}
-
-export function statusTheme(status: AssetStatus): BadgeTheme {
-	return STATUS_THEME[status] ?? 'gray'
-}
+export type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue' | 'violet'
 
 // A server mid-resize reads as "Resizing" regardless of the raw Atlas status (which
 // flips Running→Stopped→Running under it as the host power-cycles the VM). The flag is
@@ -30,11 +13,14 @@ export function isResizing(server: { resize_in_progress?: 0 | 1 }): boolean {
 	return server.resize_in_progress === 1
 }
 
-/** The status to show for a row: "Resizing" while a reshape job runs, else the mirror. */
+/** The status to show for a row: a live action's transitional label ("Terminating"…)
+ *  takes precedence, then "Resizing" while a reshape job runs, else the mirror status. */
 export function displayStatus(server: {
 	status?: AssetStatus
 	resize_in_progress?: 0 | 1
-}): AssetStatus {
+	pending_action?: string | null
+}): string {
+	if (server.pending_action) return server.pending_action
 	return isResizing(server) ? 'Resizing' : (server.status ?? 'Pending')
 }
 
@@ -54,7 +40,11 @@ export function isTerminated(status?: AssetStatus): boolean {
 }
 
 /** Atlas is still provisioning the VM — power/open/terminate aren't available yet. */
-const SETTING_UP_STATES: AssetStatus[] = ['Pending', 'Provisioning', 'Deploying']
+const SETTING_UP_STATES: AssetStatus[] = [
+	'Pending',
+	'Provisioning',
+	'Deploying',
+]
 
 export function isSettingUp(status?: AssetStatus): boolean {
 	return status === undefined || SETTING_UP_STATES.includes(status)
@@ -63,7 +53,7 @@ export function isSettingUp(status?: AssetStatus): boolean {
 // Team Invitation status → Badge theme. Pending is in-flight (amber), Accepted is
 // done (green), everything else is inactive/neutral or a hard stop.
 const INVITATION_STATUS_THEME: Record<InvitationStatus, BadgeTheme> = {
-	Pending: 'orange',
+	Pending: 'amber',
 	Accepted: 'green',
 	Expired: 'gray',
 	Revoked: 'red',
@@ -74,39 +64,42 @@ export function invitationStatusTheme(status: InvitationStatus): BadgeTheme {
 	return INVITATION_STATUS_THEME[status] ?? 'gray'
 }
 
-// Subscription / invoice account-standing → Badge theme. Current is healthy,
-// past_due/dunning amber, suspended/terminated red.
-const STANDING_THEME: Record<string, BadgeTheme> = {
-	Current: 'green',
-	Active: 'green',
-	Paid: 'green',
-	Trialing: 'blue',
-	past_due: 'orange',
-	Past_Due: 'orange',
-	Overdue: 'orange',
-	Unpaid: 'orange',
-	Dunning: 'orange',
-	suspended: 'red',
-	Suspended: 'red',
-	Terminated: 'red',
-	Void: 'gray',
-}
-
-export function standingTheme(standing: string | null | undefined): BadgeTheme {
-	return (standing ? STANDING_THEME[standing] : undefined) ?? 'gray'
-}
-
-// Invoice status → Badge theme (case-insensitive): Paid green, Open/Unpaid amber,
-// Overdue red, Void/Draft neutral.
+// Invoice status → Badge theme (case-insensitive), keyed by the Invoice DocType's
+// status options. Paid is the normal state and stays gray — color is reserved
+// for states that need attention.
 const INVOICE_THEME: Record<string, BadgeTheme> = {
-	paid: 'green',
-	open: 'orange',
-	unpaid: 'orange',
+	paid: 'gray',
+	open: 'amber',
 	overdue: 'red',
-	void: 'gray',
 	draft: 'gray',
+	waived: 'gray',
+	cancelled: 'gray',
 }
 
 export function invoiceTheme(status: string | null | undefined): BadgeTheme {
 	return INVOICE_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
+}
+
+// Payment Attempt status → what a customer calls it, and its Badge theme. Same
+// doctrine as invoices: the ordinary outcome is grey and colour is spent only on
+// the states worth noticing — in-flight (nobody knows yet) and failed.
+const ATTEMPT_DISPLAY: Record<string, { label: string; theme: BadgeTheme }> = {
+	captured: { label: 'Paid', theme: 'gray' },
+	authorised: { label: 'Authorised', theme: 'amber' },
+	initiated: { label: 'Processing', theme: 'amber' },
+	failed: { label: 'Failed', theme: 'red' },
+	refunded: { label: 'Refunded', theme: 'gray' },
+}
+
+export function paymentAttemptDisplay(status: string | null | undefined): {
+	label: string
+	theme: BadgeTheme
+} {
+	const key = String(status ?? '').toLowerCase()
+	return (
+		ATTEMPT_DISPLAY[key] ?? {
+			label: String(status ?? 'Unknown'),
+			theme: 'gray',
+		}
+	)
 }

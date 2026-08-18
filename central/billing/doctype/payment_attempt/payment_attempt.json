@@ -23,6 +23,7 @@
   "resolved_by",
   "column_break_result",
   "initiated_at",
+  "gateway_hold_until",
   "completed_at",
   "section_break_failure",
   "failure_code",
@@ -77,7 +78,7 @@
    "fieldtype": "Data",
    "label": "Idempotency Key",
    "unique": 1,
-   "description": "sha256(invoice:retry_number) — same charge, same key, so the gateway dedupes a repeat"
+   "description": "sha256(invoice:retry_number) \u2014 same charge, same key, so the gateway dedupes a repeat"
   },
   {
    "default": "0",
@@ -109,7 +110,7 @@
    "fieldtype": "Select",
    "label": "Resolved By",
    "options": "\nWebhook\nReconciliation",
-   "description": "How the terminal state was reached — audit provenance (#21)"
+   "description": "How the terminal state was reached \u2014 audit provenance (#21)"
   },
   {
    "fieldname": "column_break_result",
@@ -119,6 +120,13 @@
    "fieldname": "initiated_at",
    "fieldtype": "Datetime",
    "label": "Initiated At"
+  },
+  {
+   "fieldname": "gateway_hold_until",
+   "fieldtype": "Datetime",
+   "label": "Gateway Hold Until",
+   "read_only": 1,
+   "description": "The gateway is deliberately holding this charge until then (Stripe's India pre-debit window). Not stuck, so reconciliation leaves it alone until it passes."
   },
   {
    "fieldname": "completed_at",
@@ -139,7 +147,7 @@
    "fieldname": "decline_code",
    "fieldtype": "Data",
    "label": "Decline Code",
-   "description": "Granular decline reason (Stripe decline_code — insufficient_funds, lost_card, …); why the card_declined family actually failed"
+   "description": "Granular decline reason (Stripe decline_code \u2014 insufficient_funds, lost_card, \u2026); why the card_declined family actually failed"
   },
   {
    "fieldname": "failure_reason",

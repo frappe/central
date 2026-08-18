@@ -151,8 +151,9 @@ class PayPalAdapter(GatewayAdapter):
 
 	# --- on-session one-time top-up -----------------------------------------
 
-	def create_order(self, amount, currency: str, receipt: str, notes: dict | None = None,
-					 customer: str | None = None) -> dict:
+	def create_order(
+		self, amount, currency: str, receipt: str, notes: dict | None = None, customer: str | None = None
+	) -> dict:
 		"""A one-time CAPTURE-intent PayPal Order for a wallet top-up. The SPA renders
 		PayPal Buttons against `order_id` (client_id is the public client identifier);
 		`confirm_topup` captures it server-side. PayPal settles us directly, so the
@@ -218,10 +219,12 @@ class PayPalAdapter(GatewayAdapter):
 			f"{self._base()}/v2/checkout/orders",
 			json={
 				"intent": "CAPTURE",
-				"purchase_units": [{
-					"amount": {"currency_code": currency, "value": f"{amount:.2f}"},
-					"custom_id": receipt,
-				}],
+				"purchase_units": [
+					{
+						"amount": {"currency_code": currency, "value": f"{amount:.2f}"},
+						"custom_id": receipt,
+					}
+				],
 			},
 			headers=self._headers(receipt),
 			timeout=30,
@@ -254,8 +257,12 @@ class PayPalAdapter(GatewayAdapter):
 		)
 		if 400 <= resp.status_code < 500:
 			body = _safe_json(resp)
-			return {"id": None, "status": "DECLINED", "failure_code": body.get("name"),
-					"failure_reason": body.get("message")}
+			return {
+				"id": None,
+				"status": "DECLINED",
+				"failure_code": body.get("name"),
+				"failure_reason": body.get("message"),
+			}
 		resp.raise_for_status()
 		return _extract_capture(resp.json())
 
@@ -313,7 +320,7 @@ def _link(doc: dict, rel: str):
 def _safe_json(resp) -> dict:
 	try:
 		return resp.json()
-	except Exception:  # noqa: BLE001
+	except Exception:
 		return {}
 
 
@@ -324,7 +331,11 @@ def _extract_capture(order: dict) -> dict:
 	if captures:
 		cap = captures[0]
 		amt = cap.get("amount") or {}
-		return {"id": cap.get("id"), "status": cap.get("status"),
-				"amount": amt.get("value"), "currency": amt.get("currency_code")}
+		return {
+			"id": cap.get("id"),
+			"status": cap.get("status"),
+			"amount": amt.get("value"),
+			"currency": amt.get("currency_code"),
+		}
 	# Fall back to the order's own status when the shape is flatter.
 	return {"id": order.get("id"), "status": order.get("status")}

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import {
 	BottomSheet,
 	Breadcrumbs,
@@ -10,25 +8,48 @@ import {
 	MobileShell,
 	ToastProvider,
 } from 'frappe-ui'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
-import ChangeTeamDialog from '@/components/team/ChangeTeamDialog.vue'
-import { useNotificationsRealtime } from '@/composables/useNotifications'
+import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
+import SettingsModal from '@/components/settings/SettingsModal.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
-import { useIsMobile } from '@/composables/common/useIsMobile'
-import { useAppMenu } from '@/composables/useAppMenu'
+import { useIsMobile } from '@/composables/useIsMobile'
+import { useNotificationsRealtime } from '@/composables/useNotifications'
+import {
+	openSearch,
+	searchOpen,
+	useSearchShortcut,
+} from '@/composables/useSearch'
+
+// The search palette builds an index off several team-scoped feeds (servers,
+// members, invoices…). Mount it lazily on first open so those fetches never fire
+// for a user who never searches; once mounted it stays, so its close animation runs.
+const SearchDialog = defineAsyncComponent(
+	() => import('@/components/search/SearchDialog.vue'),
+)
+const searchMounted = ref(false)
 
 useNotificationsRealtime()
+useSearchShortcut()
+
+// Keep it mounted once opened so re-opening is instant and the exit transition plays.
+watch(searchOpen, (isOpen) => {
+	if (isOpen) searchMounted.value = true
+})
 
 const route = useRoute()
 const { items, resetBreadcrumbs } = useBreadcrumbs()
 const isMobile = useIsMobile()
-const { changeTeamOpen } = useAppMenu()
 
 const mobileNavDrawer = ref(false)
-watch(() => route.name, () => {
-	resetBreadcrumbs()
-	mobileNavDrawer.value = false
-})
+watch(
+	() => route.name,
+	() => {
+		resetBreadcrumbs()
+		mobileNavDrawer.value = false
+	},
+)
 
 const breadcrumbs = computed(
 	() => items.value ?? [{ label: (route.meta.title as string) ?? '' }],
@@ -59,8 +80,12 @@ const breadcrumbs = computed(
 					to="/home"
 					:active="route.name === 'Home'"
 				/>
-				<MobileNavItem label="Search" icon="lucide-search" />
-				<MobileNavItem label="Notifications" icon="lucide-bell" to="/notifications"  :active="route.name =='Notifications' "/>
+				<MobileNavItem
+					label="Search"
+					icon="lucide-search"
+					@click="openSearch"
+				/>
+				<NotificationsPanel mobile />
 				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
 			</MobileNav>
 		</template>
@@ -88,5 +113,8 @@ const breadcrumbs = computed(
 	</DesktopShell>
 
 	<ToastProvider />
-	<ChangeTeamDialog v-model:open="changeTeamOpen" />
+	<!-- Desktop only: on mobile the same tabs are pages (/settings/:tab), so the
+	     dialog never mounts there. -->
+	<SettingsModal v-if="!isMobile" />
+	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
 </template>

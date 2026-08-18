@@ -29,17 +29,29 @@ def split_currency_columns(columns, rows, money_fields, currency_field="currency
 			continue  # currency now lives in each split column's header
 		if fieldname in money:
 			for currency in currencies:
-				new_columns.append({
-					"label": f"{col['label']} ({currency})",
-					"fieldname": f"{fieldname}_{currency.lower()}",
-					"fieldtype": "Currency",
-					"options": currency,
-					"width": col.get("width", 120),
-				})
+				new_columns.append(
+					{
+						"label": f"{col['label']} ({currency})",
+						"fieldname": f"{fieldname}_{currency.lower()}",
+						"fieldtype": "Currency",
+						# A Currency column's `options` names a FIELD ON THE ROW that
+						# holds the currency — never the currency itself. Frappe looks up
+						# `row[options]`, and a literal code finds nothing and falls back
+						# to the site default, so every column silently rendered in the
+						# wrong symbol. Each split column gets its own carrier field.
+						"options": _carrier(currency),
+						"width": col.get("width", 120),
+					}
+				)
 		else:
 			new_columns.append(col)
 
 	for row in rows:
+		# Every carrier is set on every row, not just the row's own currency: a column
+		# formats using its carrier, so a blank one would send that cell back to the
+		# site default even when the cell is empty.
+		for currency in currencies:
+			row[_carrier(currency)] = currency
 		currency = (row.get(currency_field) or "").strip()
 		if not currency:
 			continue
@@ -48,3 +60,8 @@ def split_currency_columns(columns, rows, money_fields, currency_field="currency
 			if value is not None:
 				row[f"{fieldname}_{currency.lower()}"] = value
 	return new_columns
+
+
+def _carrier(currency: str) -> str:
+	"""The per-row field a split column reads its currency from."""
+	return f"currency_{currency.lower()}"

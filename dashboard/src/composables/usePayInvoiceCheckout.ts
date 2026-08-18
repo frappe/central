@@ -6,18 +6,18 @@
 // confirm but the invoice flips to Paid only when the capture webhook lands — so
 // we toast "received, confirming" not "paid".
 
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed } from 'vue'
 import { API, method } from '@/api/methods'
-import { openRazorpayCheckout, type GatewayOrder } from '@/lib/gateway'
-import { successToast, infoToast, errorToast } from '@/lib/toast'
+import { openRazorpayCheckout, type RazorpayOrder } from '@/lib/gateway'
+import { errorToast, infoToast, successToast } from '@/lib/toast'
 
 export function usePayInvoiceCheckout({
 	onDone,
 }: {
 	onDone?: (res: unknown) => void
 } = {}) {
-	const create = useCall<GatewayOrder, { invoice: string }>({
+	const create = useCall<RazorpayOrder, { invoice: string }>({
 		url: method(API.payInvoiceCheckout),
 		method: 'POST',
 		immediate: false,
@@ -33,7 +33,7 @@ export function usePayInvoiceCheckout({
 			await create.submit({ invoice })
 			const order = create.data
 			if (!order || order.created === false) {
-				infoToast('No payment was started.')
+				infoToast('No payment was started')
 				return order
 			}
 			const handles = await openRazorpayCheckout(order, {
@@ -54,7 +54,7 @@ export function usePayInvoiceCheckout({
 			return res
 		} catch (e) {
 			if ((e as Error)?.message === 'cancelled') return
-			errorToast(e, 'Could not complete the payment.')
+			errorToast(e, 'Could not complete the payment')
 		}
 	}
 

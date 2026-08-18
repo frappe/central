@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import functools
+import hashlib
+import hmac
 import json
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
@@ -10,10 +14,13 @@ import frappe
 import requests
 from frappe import _
 from frappe.frappeclient import FrappeClient, FrappeException
+from frappe.utils.password import get_decrypted_password
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.central.doctype.resource_action.resource_action import ResourceAction
 from central.central.doctype.site.site import Site
+from central.errors import throw_action_error
 from central.host_task import run_host_task
 
 # Central's integration with the regional Atlas clusters (Edge B), all in one place:
@@ -36,6 +43,16 @@ CAPACITY_TIMEOUT = 3
 
 class AtlasError(frappe.ValidationError):
 	pass
+
+
+class AtlasResourceGone(AtlasError):
+	"""Atlas has no such resource (HTTP 404). For terminate this means already gone —
+	the caller can treat it as idempotent success; for other actions it's a clean error."""
+
+
+# Generous bound for a synchronous lifecycle call (Atlas runs terminate/start on the host
+# in-request); long enough for a real op, short enough that a dead region can't pin a worker.
+LIFECYCLE_TIMEOUT = 120
 
 
 # The last line of a Python traceback is always "<dotted.ExcType>: <message>". That is
@@ -68,11 +85,23 @@ def _remote_error_message(exception: Exception) -> str | None:
 	return None
 
 
+def _server_message(response: requests.Response) -> str | None:
+	"""Atlas's own error sentence from a failed response's `_server_messages`, or None."""
+	try:
+		raw = response.json().get("_server_messages")
+		if not raw:
+			return None
+		first = frappe.parse_json(frappe.parse_json(raw)[0])
+		return frappe.utils.strip_html_tags(first.get("message") or "") or None
+	except Exception:
+		return None
+
+
 def get_atlas_instance(region: str):
 	"""Resolve a region (= cluster) to its `Atlas Instance`, or raise."""
 	name = frappe.db.get_value("Atlas Instance", {"region": region})
 	if not name:
-		frappe.throw(f"No Atlas registered for region '{region}'.", AtlasError)
+		frappe.throw(_("No Atlas registered for region '{0}'.").format(region), AtlasError)
 	return frappe.get_doc("Atlas Instance", name)
 
 
@@ -92,7 +121,7 @@ class AtlasClient:
 		(spec/21-tunnel.md § Credentials); the target is the tunnel_url over wg0 once the
 		tunnel is Active, and the public base_url only during bootstrap."""
 		if self.instance.status == "Disabled":
-			frappe.throw(f"Atlas '{self.instance.region}' is disabled.", AtlasError)
+			frappe.throw(_("Atlas '{0}' is disabled.").format(self.instance.region), AtlasError)
 		return self._admin_client(self._data_url())
 
 	def _data_url(self) -> str:
@@ -120,27 +149,69 @@ class AtlasClient:
 				title=f"Atlas '{self.instance.region}': {action} failed",
 				message=str(exception),
 			)
-			message = _remote_error_message(exception)
-			frappe.throw(
-				message
-				or _("Could not {0} — Atlas '{1}' is unreachable. Try again shortly.").format(
-					action, self.instance.region
-				),
-				AtlasError,
+			sentence = _remote_error_message(exception)
+
+			# The region's own sentence is the best message a user can get; without one the
+			# failure is a network/timeout — transient, and safe to retry.
+			if sentence:
+				throw_action_error("ATLAS_REJECTED", exc=AtlasError, message=sentence, action=action)
+			throw_action_error(
+				"REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region
 			)
+
+	def _run_doc_method(self, dt: str, dn: str, method: str, args: dict | None, *, action: str) -> Any:
+		"""Invoke a whitelisted controller method on Atlas, reading the real HTTP status so a
+		missing doc (404) is told apart from an unreachable region — unlike FrappeClient, which
+		collapses both into an opaque failure. Returns the method's result; raises
+		AtlasResourceGone on 404 (for terminate that means already gone), AtlasError otherwise."""
+		if self.instance.status == "Disabled":
+			frappe.throw(_("Atlas '{0}' is disabled.").format(self.instance.region), AtlasError)
+		if not self.instance.api_key:
+			frappe.throw(_("Atlas '{0}' has no admin API key.").format(self.instance.region), AtlasError)
+
+		url = self._data_url().rstrip("/") + "/api/method/run_doc_method"
+		params = {"dt": dt, "dn": dn, "method": method}
+		if args:
+			params["args"] = json.dumps(args)
+		secret = self.instance.get_password("api_secret")
+
+		try:
+			response = requests.post(
+				url,
+				headers={"Authorization": f"token {self.instance.api_key}:{secret}"},
+				data=params,
+				timeout=LIFECYCLE_TIMEOUT,
+			)
+		except requests.RequestException:
+			throw_action_error(
+				"REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region
+			)
+
+		if response.ok:
+			return response.json().get("message")
+
+		# Keep the full body for operators; hand the caller Atlas's own sentence.
+		frappe.log_error(
+			title=f"Atlas '{self.instance.region}': {action} failed", message=response.text[:2000]
+		)
+		if response.status_code == 404:
+			throw_action_error("RESOURCE_GONE", exc=AtlasResourceGone, action=action)
+		sentence = _server_message(response)
+		if sentence:
+			throw_action_error("ATLAS_REJECTED", exc=AtlasError, message=sentence, action=action)
+		throw_action_error("REGION_UNAVAILABLE", exc=AtlasError, action=action, region=self.instance.region)
 
 	def ping(self) -> dict:
 		"""Reachability + auth check against the frappe ping endpoint."""
 		return self.client().get_api("ping")
 
-	def vm_action(self, name: str, method: str) -> str:
-		"""Invoke a Virtual Machine lifecycle method (start/stop/terminate) as the
-		operator; return the resulting Task name."""
-		return self._post(
-			"run_doc_method",
-			{"dt": "Virtual Machine", "dn": name, "method": method},
-			action=f"{method} this server",
-		)
+	def vm_action(self, name: str, method: str, *, correlation_id: str | None = None) -> str:
+		"""Invoke a Virtual Machine lifecycle method (start/stop/terminate) as the operator;
+		return the resulting Task name. `correlation_id` rides back on the resulting event so
+		Central can match it to the Resource Action that requested it."""
+		args = {"correlation_id": correlation_id} if correlation_id else None
+
+		return self._run_doc_method("Virtual Machine", name, method, args, action=f"{method} this server")
 
 	def resize_vm(
 		self,
@@ -181,6 +252,7 @@ class AtlasClient:
 		disk_gigabytes: int,
 		cpu_max_cores: float | None = None,
 		frappe_version: str | None = None,
+		correlation_id: str | None = None,
 	) -> dict:
 		"""Provision a VM on this Atlas for a Central team (the operator write).
 		Returns the new VM in the Asset-mirror shape so the caller can upsert it.
@@ -200,6 +272,8 @@ class AtlasClient:
 			params["cpu_max_cores"] = cpu_max_cores
 		if frappe_version:
 			params["frappe_version"] = frappe_version
+		if correlation_id:
+			params["correlation_id"] = correlation_id
 		# Same enrollment carriage as create_site: mint the single-use bootstrap token and
 		# credential id so the bench can run `bench admin enroll` on first boot. Without it
 		# a server provisions fine but never enrols, and Open Console refuses it with
@@ -240,9 +314,9 @@ class AtlasClient:
 		caller's fail-soft path treats it as 'don't gate' (show the full menu). Returns the
 		endpoint's `message` payload."""
 		if self.instance.status == "Disabled":
-			frappe.throw(f"Atlas '{self.instance.region}' is disabled.", AtlasError)
+			frappe.throw(_("Atlas '{0}' is disabled.").format(self.instance.region), AtlasError)
 		if not self.instance.api_key:
-			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+			frappe.throw(_("Atlas '{0}' has no admin API key.").format(self.instance.region), AtlasError)
 		url = self._data_url().rstrip("/") + "/api/method/" + method
 		secret = self.instance.get_password("api_secret")
 		response = requests.get(
@@ -276,7 +350,7 @@ class AtlasClient:
 
 	def _admin_client(self, base_url: str) -> FrappeClient:
 		if not self.instance.api_key:
-			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+			frappe.throw(_("Atlas '{0}' has no admin API key.").format(self.instance.region), AtlasError)
 		return FrappeClient(
 			base_url,
 			api_key=self.instance.api_key,
@@ -320,7 +394,7 @@ class AtlasClient:
 		request with a bounded timeout; the host work commits server-side regardless and
 		the caller (remove_tunnel) tolerates the timeout and re-verifies over base_url."""
 		if not self.instance.api_key:
-			frappe.throw(f"Atlas '{self.instance.region}' has no admin API key.", AtlasError)
+			frappe.throw(_("Atlas '{0}' has no admin API key.").format(self.instance.region), AtlasError)
 		url = base_url.rstrip("/") + "/api/method/atlas.atlas.api.central_link.deprovision_tunnel"
 		secret = self.instance.get_password("api_secret")
 		response = requests.post(
@@ -337,16 +411,20 @@ class AtlasClient:
 		team: str,
 		subdomain: str,
 		region: str | None = None,
+		correlation_id: str | None = None,
 	) -> dict:
 		"""
 		Provision a self-serve site on this Atlas for a Central team (the operator
 		write). Returns the site in the Site-mirror shape so the caller can upsert it.
+		`correlation_id` rides back on the site.* events so Central can match the outcome.
 		"""
 
 		params: dict = {"team": team, "subdomain": subdomain}
 
 		if region:
 			params["region"] = region
+		if correlation_id:
+			params["correlation_id"] = correlation_id
 		params.update(self._pilot_credential(team))
 
 		# Durability: minting the bootstrap token lazily generates Central's signing key on
@@ -375,7 +453,9 @@ class AtlasClient:
 		pilot_credential_id = f"pcred-{frappe.generate_hash(length=16)}"
 		# Reserve the row now (no token) so the vm.* events can bind its Asset link even if
 		# they arrive before the pilot boots and enrols. The token is issued only at enroll.
-		PilotCredential.reserve(team=team, pilot_credential_id=pilot_credential_id, audience_id=pilot_credential_id)
+		PilotCredential.reserve(
+			team=team, pilot_credential_id=pilot_credential_id, audience_id=pilot_credential_id
+		)
 
 		return {
 			"pilot_credential_id": pilot_credential_id,
@@ -404,15 +484,13 @@ class AtlasClient:
 			action="refresh this site's login link",
 		)
 
-	def terminate_site(self, name: str) -> dict:
+	def terminate_site(self, name: str, *, correlation_id: str | None = None) -> dict:
 		"""Tear down a self-serve site and its 1:1 backing VM. The Atlas Site controller
-		terminates the guest + VM; the site.* events flip the mirror to Terminated."""
-		return self._post(
-			"run_doc_method",
-			{"dt": "Site", "dn": name, "method": "terminate"},
-			action="terminate this site",
-		)
+		terminates the guest + VM; the site.* events flip the mirror to Terminated. Raises
+		AtlasResourceGone if the site is already gone on Atlas, so terminate stays idempotent."""
+		args = {"correlation_id": correlation_id} if correlation_id else None
 
+		return self._run_doc_method("Site", name, "terminate", args, action="terminate this site")
 
 	def check_subdomain(self, subdomain: str, region: str | None = None) -> dict:
 		"""Best-effort availability pre-check: {available, reason, fqdn, domain}."""
@@ -427,56 +505,137 @@ class AtlasClient:
 # --- inbound push: webhook events (central.api.atlas.event delegates here) ---
 
 
-def ingest_event(event_type: str, payload: dict, occurred_at) -> dict:
-	"""
-	Resolve the sender from its authenticated session, then queue the mirror write so
-	Atlas gets a fast ack. The write runs in a background job — it's idempotent and
-	last-writer-wins, and the periodic reconcile is the backstop if a job is ever lost.
-	ping and unknown event types have nothing to mirror, so they're acknowledged
-	without queuing.
-	"""
+def ingest_event(
+	cluster: str,
+	event_type: str,
+	payload: dict,
+	occurred_at,
+	event_id: str | None = None,
+	raw_body: bytes | None = None,
+	signature: str | None = None,
+	signature_timestamp: str | None = None,
+) -> dict:
+	"""Persist the event under the caller-verified `cluster`, then queue the mirror write
+	for the types Central mirrors. raw_body/signature/signature_timestamp are kept verbatim
+	so the row stays self-verifying; raw_payload is reserialized and never verifies."""
 
-	cluster = _atlas_cluster()
-
-	if event_type not in _EVENT_HANDLERS:
+	# A validly-signed but malformed event (no id or type) can't be stored or deduped —
+	# ack it so Atlas stops retrying, as before. Real events always carry both.
+	if not (event_id and event_type):
 		return {"ok": True, "queued": False}
 
-	frappe.enqueue(
-		apply_event,
-		queue="short",
-		enqueue_after_commit=True,
-		cluster=cluster,
-		event_type=event_type,
-		payload=payload or {},
-		occurred_at=occurred_at,
-	)
+	# A redelivery carries the same event_id, so skip anything we've already stored.
+	# The unique constraint on event_id is the backstop against a concurrent double
+	# delivery slipping past this check.
+	if frappe.db.exists("Atlas Event", {"event_id": event_id}):
+		return {"ok": True, "queued": False}
 
-	return {"ok": True, "queued": True}
+	# Record every authenticated event. A type Central doesn't mirror yet lands as Ignored
+	# rather than vanishing — so the audit trail is complete and a handler added later has
+	# history to replay. after_insert queues the mirror write only for a Received row.
+	handled = event_type in _EVENT_HANDLERS
+
+	frappe.get_doc(
+		{
+			"doctype": "Atlas Event",
+			"cluster": cluster,
+			"event_id": event_id,
+			"event_type": event_type,
+			"occurred_at": occurred_at,
+			"signature": signature,
+			"signature_timestamp": signature_timestamp,
+			"raw_body": raw_body.decode() if isinstance(raw_body, bytes) else raw_body,
+			"raw_payload": frappe.as_json(payload or {}),
+			"status": "Received" if handled else "Ignored",
+		}
+	).insert(ignore_permissions=True)
+
+	return {"ok": True, "queued": handled}
 
 
-def apply_event(cluster: str, event_type: str, payload: dict, occurred_at) -> None:
-	"""Background job: apply one verified Atlas event to the Asset mirror."""
-	_EVENT_HANDLERS[event_type](cluster, payload or {}, occurred_at)
+def apply_event(event_name: str) -> None:
+	"""Background job: apply one stored Atlas event to the Asset mirror."""
+	event = frappe.get_doc("Atlas Event", event_name)
+	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
+
+	try:
+		_EVENT_HANDLERS[event.event_type](event.cluster, payload, event.occurred_at)
+	except Exception as exception:
+		# Commit the failure stamp before re-raising: the job runner rolls back on the
+		# way out, which would otherwise discard it and leave the row stuck at Received.
+		frappe.db.set_value(
+			"Atlas Event",
+			event_name,
+			{"status": "Failed", "error": str(exception)},
+			update_modified=False,
+		)
+		frappe.db.commit()
+		raise
+
+	event.status = "Processed"
+	event.processed_at = frappe.utils.now_datetime()
+	event.save(ignore_permissions=True)
 
 
-def _atlas_cluster() -> str:
-	"""The cluster an event came from — resolved from the authenticated sender. Each
-	Atlas calls in as its own scoped service user (set on the Atlas Instance at
-	registration), so the session identity IS the cluster: unforgeable, and no need
-	for the caller to assert who it is in the payload. Doubles as the 'known sender'
-	check — events from a session that owns no enabled Atlas are refused."""
-	cluster = frappe.db.get_value(
-		"Atlas Instance", {"service_user": frappe.session.user, "status": ["!=", "Disabled"]}
-	)
-	if not cluster:
-		frappe.throw(f"'{frappe.session.user}' is not a known or enabled Atlas.", frappe.PermissionError)
-	return cluster
+def verify_atlas_webhook(func: Callable) -> Callable:
+	"""Authenticates the HMAC over the raw body before the handler runs, stashing the
+	verified context on frappe.local. functools.wraps is required — Frappe maps request
+	args off the wrapped signature."""
+
+	@functools.wraps(func)
+	def wrapper(*args, **kwargs):
+		frappe.local.atlas_webhook = _authenticate_atlas_webhook(frappe.request.get_data())
+		return func(*args, **kwargs)
+
+	return wrapper
+
+
+def _authenticate_atlas_webhook(raw_body: bytes) -> frappe._dict:
+	"""Authenticate an inbound webhook and return its verified context. X-Atlas-Region only
+	selects which secret to check, never trusted on its own; every failure throws the same
+	generic message."""
+	region = frappe.get_request_header("X-Atlas-Region")
+	timestamp = frappe.get_request_header("X-Atlas-Timestamp")
+	signature = frappe.get_request_header("X-Atlas-Signature")
+	if not (region and timestamp and signature):
+		_reject_signature("missing signature headers")
+
+	instance = frappe.db.get_value("Atlas Instance", {"region": region, "status": ["!=", "Disabled"]})
+	if not instance:
+		_reject_signature(f"unknown or disabled region '{region}'")
+
+	secret = get_decrypted_password("Atlas Instance", instance, "webhook_secret", raise_exception=False)
+	if not secret:
+		_reject_signature(f"no webhook secret for region '{region}'")
+
+	if not signature_matches(secret, timestamp, raw_body, signature):
+		_reject_signature(f"signature mismatch for region '{region}'")
+
+	return frappe._dict(cluster=instance, raw=raw_body, signature=signature, timestamp=timestamp)
+
+
+def signature_matches(secret: str, timestamp, raw_body: bytes, signature: str) -> bool:
+	"""Constant-time check. Bytes not str — compare_digest raises TypeError on non-ASCII."""
+	expected = hmac.new(secret.encode(), f"{timestamp}.".encode() + raw_body, hashlib.sha256).hexdigest()
+	return hmac.compare_digest(expected.encode(), signature.encode())
+
+
+def _reject_signature(reason: str):
+	"""Log the specific reason to the Error Log for operators — repeated rejections mean
+	secret drift or a forged caller, invisible before this — but throw one uniform 403 so a
+	caller can't probe which check failed."""
+	frappe.log_error(title="Rejected inbound Atlas webhook", message=reason)
+
+	# Uniform 403. Don't set http_status_code — Frappe's exception handler overrides it.
+	frappe.throw(_("Invalid webhook signature."), frappe.PermissionError)
 
 
 def _on_vm(cluster: str, payload: dict, occurred_at) -> None:
 	Asset.mirror_vm(cluster, payload, occurred_at=occurred_at)
 	# Once Atlas echoes the pilot_credential_id, bind the credential to its VM.
 	PilotCredential.link_asset(payload.get("pilot_credential_id"), payload.get("name"))
+	# Confirm the action that asked for this change (create/start/stop/restart) against its outcome.
+	ResourceAction.record_mirror_status(payload.get("correlation_id"), payload.get("status"))
 
 
 def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
@@ -487,10 +646,14 @@ def _on_vm_deleted(cluster: str, payload: dict, occurred_at) -> None:
 		Asset.mark_terminated(resource_id, last_event_at=occurred_at)
 	# The pilot dies with its VM — kill its Central credential so a leaked token is inert.
 	PilotCredential.revoke_by_id(payload.get("pilot_credential_id"))
+	# A delete is the terminal outcome of a terminate action.
+	ResourceAction.record_mirror_status(payload.get("correlation_id"), "Terminated")
 
 
 def _on_site(cluster: str, payload: dict, occurred_at) -> None:
 	Site.mirror_site(cluster, payload, occurred_at=occurred_at)
+	# Confirm the site action (create/terminate) this status carries the outcome of.
+	ResourceAction.record_mirror_status(payload.get("correlation_id"), payload.get("status"))
 
 
 _EVENT_HANDLERS = {
@@ -526,25 +689,32 @@ def _notify_cluster_degraded(cluster: str) -> None:
 	"""Warn teams running in an unreachable cluster that their console view may be
 	stale. Fans out one Server-category warning per affected team, deduped to a single
 	open notice per (team, cluster) so a flapping/slow Atlas doesn't spam the feed."""
-	from central.notifications import create_notification
+	from central.notification import engine
 
 	teams = frappe.get_all(
-		"Asset", filters={"cluster": cluster, "status": ["!=", "Terminated"]},
-		pluck="team", distinct=True,
+		"Asset",
+		filters={"cluster": cluster, "status": ["!=", "Terminated"]},
+		pluck="team",
+		distinct=True,
 	)
 	for team in {t for t in teams if t}:
-		if frappe.db.exists(
-			"Team Notification",
-			{"team": team, "event_type": "Cluster Degraded", "reference_name": cluster, "is_read": 0},
-		):
-			continue
-		create_notification(
-			team, f"Region {cluster} is temporarily unreachable",
-			category="Server", event_type="Cluster Degraded", severity="Warning",
+		engine.ensure_event_type(
+			"cluster_degraded",
+			category="Server",
+			severity="Warning",
+			required_cap="server:view",
+			in_app_title="Region unavailable: {{ reference_name }}",
+			in_app_body="Region {{ reference_name }}: {{ message }}",
+			action_label="View servers",
+			action_route="/servers",
+		)
+		engine.dispatch(
+			team,
+			"cluster_degraded",
 			message=f"Central couldn't reach {cluster} on the last sync. Your servers keep running; "
 			"their status in the console may be delayed until the region recovers.",
-			reference_doctype="Atlas Instance", reference_name=cluster,
-			action_label="View servers", action_route="/servers",
+			reference_doctype="Atlas Instance",
+			reference_name=cluster,
 		)
 
 
@@ -589,16 +759,16 @@ def register_atlas(instance) -> dict:
 	rolls back the Central-side half and raises TunnelRegistrationError; the instance
 	stays whatever it was (Atlas's auto-revert reopens its own firewall)."""
 	if "System Manager" not in frappe.get_roles():
-		frappe.throw("Not permitted.", frappe.PermissionError)
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
 	if not (instance.api_key and instance.get_password("api_secret", raise_exception=False)):
-		frappe.throw("Set the Atlas admin API key and secret before registering.", TunnelRegistrationError)
+		frappe.throw(_("Set the Atlas admin API key and secret before registering."), TunnelRegistrationError)
 
 	if instance.skip_tunnel:
 		return _register_local(instance)
 
 	settings = frappe.get_single("Central Tunnel Settings")
 	if settings.hub_status != "Active":
-		frappe.throw("Initialize the hub before registering an Atlas.", TunnelRegistrationError)
+		frappe.throw(_("Initialize the hub before registering an Atlas."), TunnelRegistrationError)
 
 	# Re-registering an already-registered (Inactive) instance just re-tunnels it: reuse
 	# its identity, and on failure fall back to Inactive rather than tearing the identity
@@ -614,6 +784,7 @@ def register_atlas(instance) -> dict:
 	tunnel_ip = instance.tunnel_ip or settings.allocate_tunnel_ip()
 	service_user = _ensure_service_user(instance)
 	api_key, api_secret = _rotate_service_credentials(service_user)
+	webhook_secret = _rotate_webhook_secret(instance)
 
 	peer_added = False
 	try:
@@ -628,6 +799,7 @@ def register_atlas(instance) -> dict:
 				"central_url": frappe.utils.get_url(),
 				"service_api_key": api_key,
 				"service_api_secret": api_secret,
+				"service_webhook_secret": webhook_secret,
 			},
 		)
 		peer_public_key = provision["wg_public_key"]
@@ -679,6 +851,7 @@ def _register_local(instance) -> dict:
 
 	service_user = _ensure_service_user(instance)
 	api_key, api_secret = _rotate_service_credentials(service_user)
+	webhook_secret = _rotate_webhook_secret(instance)
 
 	client.link_local(
 		instance.base_url,
@@ -686,6 +859,7 @@ def _register_local(instance) -> dict:
 			"central_url": frappe.utils.get_url(),
 			"service_api_key": api_key,
 			"service_api_secret": api_secret,
+			"service_webhook_secret": webhook_secret,
 		},
 	)
 
@@ -701,18 +875,20 @@ def _ensure_service_user(instance) -> str:
 	it calls in (`atlas-<region>@<central-site>`). Its only role is `Atlas Service`
 	(desk-less) — it holds no operator powers; the inbound event/sizes/images/ping
 	endpoints are all it ever needs to reach."""
-	email = f"atlas-{_slug(instance.region)}@{frappe.local.site}"
+	email = _service_user_email(instance.region)
 	if frappe.db.exists("User", email):
 		user = frappe.get_doc("User", email)
 	else:
-		user = frappe.get_doc({
-			"doctype": "User",
-			"email": email,
-			"first_name": f"Atlas {instance.region}",
-			"user_type": "System User",
-			"send_welcome_email": 0,
-			"enabled": 1,
-		}).insert(ignore_permissions=True)
+		user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": email,
+				"first_name": f"Atlas {instance.region}",
+				"user_type": "System User",
+				"send_welcome_email": 0,
+				"enabled": 1,
+			}
+		).insert(ignore_permissions=True)
 	_ensure_service_role(user)
 	return user.name
 
@@ -741,6 +917,14 @@ def _rotate_service_credentials(user_name: str) -> tuple[str, str]:
 	return api_key, api_secret
 
 
+def _rotate_webhook_secret(instance) -> str:
+	"""Fresh signing secret, in-memory only — the caller's save() persists it. A direct DB
+	write would be wiped: _save_passwords() clears Password fields reading empty."""
+	secret = frappe.generate_hash(length=32)
+	instance.webhook_secret = secret
+	return secret
+
+
 def _verify_over_tunnel(client, tunnel_url: str, attempts: int = 8, delay: float = 2.0) -> None:
 	"""Ping the Atlas over wg0 until it answers. The hub adds the peer immediately
 	before this, so the first packet triggers the WireGuard handshake and can race it
@@ -763,12 +947,21 @@ def _peer_endpoint(base_url: str, listen_port: int) -> str:
 	listen port (https://blr.atlas.example.com → blr.atlas.example.com:51820)."""
 	host = urlparse(base_url).hostname
 	if not host:
-		frappe.throw(f"Cannot derive a wg endpoint from base_url '{base_url}'.", TunnelRegistrationError)
+		frappe.throw(
+			_("Cannot derive a wg endpoint from base_url '{0}'.").format(base_url), TunnelRegistrationError
+		)
 	return f"{host}:{listen_port}"
 
 
 def _slug(text: str) -> str:
 	return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _service_user_email(region: str) -> str:
+	"""Build a valid service-user address for both hosted and local site names."""
+	site = frappe.local.site
+	domain = site if "." in site else f"{_slug(site)}.local"
+	return f"atlas-{_slug(region)}@{domain}"
 
 
 def _rollback(instance, service_user: str | None, peer_added: bool, was_registered: bool) -> None:
@@ -821,7 +1014,7 @@ def remove_tunnel(instance) -> dict:
 	public) before dropping wg0, so the response races the teardown — a dropped
 	connection is expected and tolerated, re-verified over the now-public base_url."""
 	if "System Manager" not in frappe.get_roles():
-		frappe.throw("Not permitted.", frappe.PermissionError)
+		frappe.throw(_("Not permitted."), frappe.PermissionError)
 
 	if instance.tunnel_status in ("Active", "Provisioning"):
 		client = AtlasClient(instance)

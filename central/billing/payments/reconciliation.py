@@ -28,6 +28,8 @@ at the gateway and settles it through the same idempotent path.
 
 import frappe
 
+from central.billing.states import transition
+
 _AMBIGUOUS = ("Initiated", "Authorised")
 _GATEWAY_SUCCESS = {"succeeded", "captured", "paid", "completed"}
 _GATEWAY_FAILED = {"failed", "canceled", "cancelled", "declined", "expired", "voided"}
@@ -52,6 +54,13 @@ def reconcile_attempt(attempt_name: str, now=None) -> dict:
 	attempt = frappe.get_doc("Payment Attempt", attempt_name)
 	if attempt.status not in _AMBIGUOUS:
 		return {"attempt": attempt_name, "skipped": "already_terminal"}
+
+	# A charge the gateway said it would hold is not a charge nobody answered for.
+	# Stripe's India pre-debit window runs 26 hours by design, which is well past the
+	# point this job would otherwise call it stuck and wake someone up (ADR 0023).
+	now_dt = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
+	if attempt.gateway_hold_until and now_dt < frappe.utils.get_datetime(attempt.gateway_hold_until):
+		return {"attempt": attempt_name, "skipped": "gateway_hold", "until": str(attempt.gateway_hold_until)}
 
 	if not attempt.gateway_transaction_id:
 		return _resolve_unanswered(attempt, now)
@@ -97,7 +106,9 @@ def reconcile_captured_attempt(attempt_name: str, now=None) -> dict:
 	# truth. Without a confirmed success we don't guess — settle nothing.
 	status = ""
 	if attempt.gateway_transaction_id:
-		status = (_adapter(attempt.gateway).get_transaction_status(attempt.gateway_transaction_id) or "").lower()
+		status = (
+			_adapter(attempt.gateway).get_transaction_status(attempt.gateway_transaction_id) or ""
+		).lower()
 	if status not in _GATEWAY_SUCCESS:
 		now = frappe.utils.get_datetime(now or frappe.utils.now_datetime())
 		started = frappe.utils.get_datetime(attempt.initiated_at or attempt.creation)
@@ -144,9 +155,7 @@ def _captured_unsettled_attempts(cutoff) -> list:
 		.on(PA.invoice == INV.name)
 		.select(PA.name)
 		.where(
-			(PA.status == "Captured")
-			& (PA.initiated_at <= cutoff)
-			& (INV.status.isin(_UNSETTLED_INVOICE))
+			(PA.status == "Captured") & (PA.initiated_at <= cutoff) & (INV.status.isin(_UNSETTLED_INVOICE))
 		)
 	).run(pluck=True)
 
@@ -192,7 +201,7 @@ def _resolve_paid(attempt):
 	"""Settle through the same idempotent path a webhook uses; tag provenance."""
 	from central.billing.payments import charges
 
-	attempt.status = "Captured"
+	transition(attempt, "Captured", actor="reconciliation", correlation=attempt.invoice)
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
 	attempt.save(ignore_permissions=True)
@@ -200,7 +209,7 @@ def _resolve_paid(attempt):
 
 
 def _resolve_failed(attempt, reason: str):
-	attempt.status = "Failed"
+	transition(attempt, "Failed", actor="reconciliation", correlation=attempt.invoice, reason=reason[:140])
 	attempt.completed_at = frappe.utils.now_datetime()
 	attempt.resolved_by = "Reconciliation"
 	attempt.failure_reason = reason[:140]
@@ -219,7 +228,8 @@ def _alert_ops(attempt, gateway_status: str):
 	if attempt.invoice:
 		try:
 			frappe.get_doc("Invoice", attempt.invoice).add_comment(
-				"Info", f"Reconciliation could not resolve attempt {attempt.name} (gateway: {gateway_status})."
+				"Info",
+				f"Reconciliation could not resolve attempt {attempt.name} (gateway: {gateway_status}).",
 			)
-		except Exception:  # noqa: BLE001
+		except Exception:
 			pass

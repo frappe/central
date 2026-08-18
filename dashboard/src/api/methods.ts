@@ -19,10 +19,13 @@ export const API = {
 	listTeamInvitations: 'central.api.teams.list_team_invitations',
 	createTeam: 'central.api.teams.create_team',
 	renameTeam: 'central.api.teams.rename_team',
+	myProfile: 'central.api.identity.my_profile',
+	updateProfile: 'central.api.identity.update_profile',
+	changePassword: 'central.api.auth.change_password',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
 	inviteTeamMember: 'central.api.teams.invite_team_member',
-	setTeamMemberRole: 'central.api.teams.set_team_member_role',
+	setTeamMemberRoles: 'central.api.teams.set_team_member_roles',
 	setTeamMemberStatus: 'central.api.teams.set_team_member_status',
 	removeTeamMember: 'central.api.teams.remove_team_member',
 	createCustomRole: 'central.api.teams.create_custom_role',
@@ -43,7 +46,6 @@ export const API = {
 	stopServer: 'central.api.servers.stop_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
-	listResources: 'central.api.resources.list_resources',
 
 	// ── Managed add-on services (central.services.api.dashboard) ──
 	// service:view for the reads, service:manage for the mutations + key reveal.
@@ -93,21 +95,29 @@ export const API = {
 	paymentMethodOptions:
 		'central.billing.api.dashboard.get_payment_method_options',
 	subscriptions: 'central.billing.api.dashboard.list_subscriptions',
+	nextPayment: 'central.billing.api.dashboard.get_next_payment',
+	paymentSchedule: 'central.billing.api.dashboard.get_payment_schedule',
+	cycleCosts: 'central.billing.api.dashboard.get_cycle_costs',
+	spendHistory: 'central.billing.api.dashboard.get_spend_history',
+	statement: 'central.billing.api.dashboard.get_statement',
+	taxSummary: 'central.billing.api.dashboard.get_tax_summary',
+	refunds: 'central.billing.api.dashboard.list_refunds',
+	exportCsv: 'central.billing.api.dashboard.export_csv',
 	meteredServices: 'central.billing.api.dashboard.get_metered_services',
 	billingProfile: 'central.billing.api.dashboard.get_billing_profile',
 	billingGeo: 'central.billing.api.dashboard.get_billing_geo',
 	billingSettings: 'central.billing.api.dashboard.get_billing_settings',
 	collectionStatus: 'central.billing.api.dashboard.get_collection_status',
-	notifications: 'central.billing.api.dashboard.list_notifications',
-	notificationBadge: 'central.billing.api.dashboard.notification_badge',
-	notificationPreferences:
-		'central.billing.api.dashboard.get_notification_preferences',
+	notifications: 'central.notification.api.list_notifications',
+	notificationBadge: 'central.notification.api.notification_badge',
+	notificationPreferences: 'central.notification.api.get_user_preferences',
 
 	// ── Billing: mutations (POST, billing:manage) ──
 	payInvoice: 'central.billing.api.dashboard.pay_invoice',
 	payInvoiceCheckout: 'central.billing.api.dashboard.pay_invoice_checkout',
 	confirmInvoiceCheckout:
 		'central.billing.api.dashboard.confirm_invoice_checkout',
+	topupOptions: 'central.billing.api.dashboard.get_topup_options',
 	createTopupOrder: 'central.billing.api.dashboard.create_topup_order',
 	confirmTopup: 'central.billing.api.dashboard.confirm_topup',
 	initiateCardSetup: 'central.billing.api.dashboard.initiate_card_setup',
@@ -124,11 +134,10 @@ export const API = {
 	saveBillingProfile: 'central.billing.api.dashboard.save_billing_profile',
 	saveBillingSettings: 'central.billing.api.dashboard.save_billing_settings',
 	setCollectionMode: 'central.billing.api.dashboard.set_collection_mode',
-	saveNotificationPreferences:
-		'central.billing.api.dashboard.save_notification_preferences',
-	markNotificationRead: 'central.billing.api.dashboard.mark_notification_read',
+	saveNotificationPreferences: 'central.notification.api.save_user_preferences',
+	markNotificationRead: 'central.notification.api.mark_notification_read',
 	markAllNotificationsRead:
-		'central.billing.api.dashboard.mark_all_notifications_read',
+		'central.notification.api.mark_all_notifications_read',
 	pauseSubscription: 'central.billing.api.dashboard.pause_subscription',
 	resumeSubscription: 'central.billing.api.dashboard.resume_subscription',
 	subscribeMeteredService:

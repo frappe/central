@@ -5,7 +5,8 @@ from frappe import _
 from frappe.utils import cint
 
 
-@frappe.whitelist(methods=["POST"])
+# NOTE: Not a web endpoint — a local dev bootstrap run via `bench execute` (it has no
+# role check beyond developer_mode, so it must never be reachable over HTTP).
 def setup_local(
 	region: str = "in-bengaluru",
 	atlas_base_url: str | None = None,

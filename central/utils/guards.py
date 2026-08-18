@@ -5,6 +5,7 @@ import inspect
 from collections.abc import Callable
 
 import frappe
+from frappe import _
 
 from central.iam import can, is_active_team_member, user_has_operator_bypass
 
@@ -13,9 +14,23 @@ from central.iam import can, is_active_team_member, user_has_operator_bypass
 # functools.wraps keeps the original signature so Frappe still maps request args.
 
 
+@functools.cache
+def _signature(func: Callable) -> inspect.Signature:
+	# A function's signature never changes, so resolve it once and cache it —
+	# `inspect.signature` is the expensive part and this runs on every gated request.
+	return inspect.signature(func)
+
+
+def bound_args(func: Callable, args: tuple, kwargs: dict) -> dict:
+	"""All call arguments as a name→value dict, whether passed positionally or by
+	keyword. The one signature resolver shared by the decorators here and the
+	service permission helpers (central.services.permissions)."""
+	return _signature(func).bind_partial(*args, **kwargs).arguments
+
+
 def _call_arg(func: Callable, args: tuple, kwargs: dict, name: str):
-	"""Read a named argument from the call, whether passed positionally or by keyword."""
-	return inspect.signature(func).bind_partial(*args, **kwargs).arguments.get(name)
+	"""Read one named argument from the call."""
+	return bound_args(func, args, kwargs).get(name)
 
 
 def require_team_member(func: Callable) -> Callable:
@@ -25,7 +40,7 @@ def require_team_member(func: Callable) -> Callable:
 	def wrapper(*args, **kwargs):
 		team = _call_arg(func, args, kwargs, "team")
 		if not user_has_operator_bypass() and not is_active_team_member(frappe.session.user, team):
-			frappe.throw("You are not a member of this team.", frappe.PermissionError)
+			frappe.throw(_("You are not a member of this team."), frappe.PermissionError)
 		return func(*args, **kwargs)
 
 	return wrapper
@@ -56,7 +71,9 @@ def require_self_or_operator(func: Callable) -> Callable:
 		# `user` defaults to the caller — same resolution the handlers use.
 		target = _call_arg(func, args, kwargs, "user") or frappe.session.user
 		if frappe.session.user != target and "System Manager" not in frappe.get_roles():
-			frappe.throw("Only System Manager can inspect another user's permissions", frappe.PermissionError)
+			frappe.throw(
+				_("Only System Manager can inspect another user's permissions"), frappe.PermissionError
+			)
 		return func(*args, **kwargs)
 
 	return wrapper

@@ -1,64 +1,118 @@
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed, type Ref, ref } from 'vue'
 import { API, method } from '@/api/methods'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
+import { useFrappeEventListener } from '@/composables/useFrappeRealtime'
 import { useSession } from '@/composables/useSession'
-import { useFrappeEventListener } from '@/composables/common/useFrappeRealtime'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import type { NotificationFeed, TeamNotification } from '@/types/billing'
 
-// The team's unified in-app notification feed (billing + server). A module
-// singleton — the topbar bell and the /notifications page read the same data, so a
-// mark-read in one reflects in the other. Re-pulls on team switch, and refreshes
-// live off the team-namespaced `team_notification:<team>` realtime nudge.
+const PAGE_SIZE = 20
 
 const { activeTeam } = useSession()
 
-const feedCall = useCall<NotificationFeed, { team: string; limit: number }>({
+const start = ref(0)
+const loaded = ref<TeamNotification[]>([])
+const unreadCount = ref(0)
+const hasMore = ref(false)
+
+const category = ref('')
+const unreadOnly = ref(false)
+
+const feedCall = useCall<
+	NotificationFeed,
+	{
+		team: string
+		start: number
+		limit: number
+		category: string
+		unread_only: number
+	}
+>({
 	url: method(API.notifications),
-	params: () => ({ ...teamParams(), limit: 100 }),
+	params: () => ({
+		...teamParams(),
+		start: start.value,
+		limit: PAGE_SIZE,
+		category: category.value,
+		unread_only: unreadOnly.value ? 1 : 0,
+	}),
 	immediate: false,
 	refetch: true,
+	onSuccess: (data: NotificationFeed) => {
+		if (start.value === 0) {
+			loaded.value = data.items
+		} else {
+			const seen = new Set(loaded.value.map((item) => item.name))
+			loaded.value = [
+				...loaded.value,
+				...data.items.filter((item) => !seen.has(item.name)),
+			]
+		}
+		unreadCount.value = data.unread
+		hasMore.value = data.has_next_page
+	},
 })
 
-const markRead = useCall<{ unread: number }, { name: string }>({
+const markRead = useCall<{ unread: number }, { team: string; name: string }>({
 	url: method(API.markNotificationRead),
 	method: 'POST',
 	immediate: false,
 })
-const markAll = useCall<{ unread: number }, Record<string, never>>({
+const markAll = useCall<{ unread: number }, { team: string }>({
 	url: method(API.markAllNotificationsRead),
 	method: 'POST',
 	immediate: false,
 })
 
-whenTeamReady(() => feedCall.reload())
+const refresh = (): void => {
+	start.value = 0
+	feedCall.reload()
+}
 
-// Live badge: the writer emits `team_notification:<team>` (payload just the team).
-// Must run inside a component setup() (it needs the socket off the component
-// instance), so it can't live at module scope — AppShell calls this once on mount.
-export function useNotificationsRealtime(): void {
+const pagedFilter = <T>(source: Ref<T>) =>
+	computed<T>({
+		get: () => source.value,
+		set: (value: T) => {
+			start.value = 0
+			source.value = value
+		},
+	})
+
+whenTeamReady(refresh)
+
+export const useNotificationsRealtime = (): void => {
 	useFrappeEventListener<{ team: string }>(
 		() => (activeTeam.value ? `team_notification:${activeTeam.value}` : ''),
-		() => feedCall.reload(),
+		refresh,
 	)
 }
 
-const items = computed<TeamNotification[]>(() => feedCall.data?.items ?? [])
-const unread = computed(() => feedCall.data?.unread ?? 0)
-
-export function useNotifications() {
+export const useNotifications = () => {
 	return {
-		items,
-		unread,
+		items: computed<TeamNotification[]>(() => loaded.value),
+		category: pagedFilter(category),
+		unreadOnly: pagedFilter(unreadOnly),
+		unread: computed(() => unreadCount.value),
+		hasNextPage: computed(() => hasMore.value),
 		loading: computed(() => feedCall.loading),
-		reload: () => feedCall.reload(),
-		async markAsRead(name: string): Promise<void> {
-			await markRead.submit({ name })
+		refresh,
+		loadMore: async (): Promise<void> => {
+			if (!hasMore.value || feedCall.loading) return
+			start.value += PAGE_SIZE
 			await feedCall.reload()
 		},
-		async markAllAsRead(): Promise<void> {
-			await markAll.submit({})
-			await feedCall.reload()
+		markAsRead: async (name: string): Promise<void> => {
+			const row = loaded.value.find((item) => item.name === name)
+			if (!row || row.is_read) return
+			row.is_read = 1
+			const response = await markRead.submit({ ...teamParams(), name })
+			unreadCount.value = response?.unread ?? Math.max(0, unreadCount.value - 1)
+		},
+		markAllAsRead: async (): Promise<void> => {
+			await markAll.submit(teamParams())
+			for (const item of loaded.value) item.is_read = 1
+			unreadCount.value = 0
+			if (unreadOnly.value) refresh()
 		},
 	}
 }

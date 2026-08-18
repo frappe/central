@@ -7,10 +7,10 @@
 // when the gateway webhook lands. So this composable never asserts success — it
 // asserts "we kicked off a charge".
 
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed } from 'vue'
 import { API, method } from '@/api/methods'
-import { successToast, infoToast, errorToast } from '@/lib/toast'
+import { errorToast, infoToast, successToast } from '@/lib/toast'
 
 interface PayResult {
 	charged?: boolean
@@ -27,7 +27,7 @@ export function usePayInvoice({
 		url: method(API.payInvoice),
 		method: 'POST',
 		immediate: false,
-		onError: (e: unknown) => errorToast(e, 'Could not start the payment.'),
+		onError: (e: unknown) => errorToast(e, 'Could not start the payment'),
 	})
 
 	async function run(invoice: string): Promise<PayResult | undefined> {
@@ -40,9 +40,7 @@ export function usePayInvoice({
 				nothing_due: 'This invoice has nothing left to pay.',
 				not_open: 'This invoice is no longer open.',
 			}
-			infoToast(
-				(res.reason && reasons[res.reason]) || 'No payment was started.',
-			)
+			infoToast((res.reason && reasons[res.reason]) || 'No payment was started')
 		} else if (res) {
 			successToast(
 				'Payment initiated — the invoice updates once the gateway confirms.',

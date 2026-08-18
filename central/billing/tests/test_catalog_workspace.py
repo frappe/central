@@ -3,9 +3,9 @@
 """Verb-first catalog Desk workspace + the Metered Add-ons report (ADR 0012, #88)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.report.metered_add_ons.metered_add_ons import execute
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import make_metered_plan
 
 
@@ -49,15 +49,15 @@ class TestVerbFirstWorkspace(IntegrationTestCase):
 		# Retire opens a filtered Plan list (deactivate), not the Configurator.
 		self.assertIn("Retire a plan / add-on", by_label)
 
-	def test_how_it_works_block_renders(self):
+	def test_catalog_guidance_block_renders(self):
 		paragraphs = [b for b in self.content if b["type"] == "paragraph"]
-		self.assertTrue(any("How it works" in p["data"]["text"] for p in paragraphs))
+		self.assertTrue(any("Plan Configurator" in p["data"]["text"] for p in paragraphs))
 
 	def test_metered_add_ons_report_is_surfaced(self):
-		by_label = {s.label: s for s in self.ws.shortcuts}
-		self.assertIn("Metered add-ons", by_label)
-		self.assertEqual(by_label["Metered add-ons"].link_to, "Metered Add-ons")
-		self.assertEqual(by_label["Metered add-ons"].type, "Report")
+		by_label = {link.label: link for link in self.ws.links}
+		self.assertIn("Metered Add-ons", by_label)
+		self.assertEqual(by_label["Metered Add-ons"].link_to, "Metered Add-ons")
+		self.assertEqual(by_label["Metered Add-ons"].link_type, "Report")
 
 	def test_retired_doctypes_are_not_linked(self):
 		linked = {l.link_to for l in self.ws.links if l.type == "Link"}

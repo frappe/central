@@ -38,7 +38,9 @@ def _dates_touched(start_dt: datetime, end_dt: datetime) -> list:
 	return out
 
 
-def compute_line_items(team: str, cluster: str, period_start, period_end) -> list[dict]:
+def compute_line_items(
+	team: str, cluster: str, period_start, period_end, explain: bool = False, changes=None
+) -> list[dict]:
 	"""Time-weighted fixed line items for one (team, cluster) over the billing month.
 
 	Each `Created`/`Plan Changed` Subscription-Change row opens a segment at its
@@ -51,9 +53,7 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	run bills a whole team at once and uses `team_line_items` instead, which reads the
 	team's subscriptions once rather than once per cluster.
 	"""
-	subscriptions = frappe.get_all(
-		"Subscription", filters={"team": team}, fields=["name", "asset_id"]
-	)
+	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
 	# Resolve every asset's cluster in one query (not a get_value per subscription),
 	# then keep only the subs whose asset runs in this cluster.
 	clusters = _asset_clusters([s.asset_id for s in subscriptions])
@@ -63,16 +63,19 @@ def compute_line_items(team: str, cluster: str, period_start, period_end) -> lis
 
 	# All these subscriptions' changes in one query, grouped by subscription — not a
 	# query per subscription.
-	changes_by_sub = _changes_by_subscription([s.name for s in subscriptions])
+	changes_by_sub = _resolve_changes([s.name for s in subscriptions], changes)
 
 	bounds = _period_bounds(period_start, period_end)
 	lines = []
 	for sub in subscriptions:
-		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds)
-	return lines
+		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
+	# Assembled per subscription in whatever order the query returned them, which is
+	# creation-desc — so a team's newest machine printed first and its oldest last.
+	# One rule for the whole invoice instead.
+	return _ordered(lines)
 
 
-def team_line_items(team: str, period_start, period_end) -> list[dict]:
+def team_line_items(team: str, period_start, period_end, explain: bool = False, changes=None) -> list[dict]:
 	"""Every fixed line item for a team across all the clusters it runs in, from ONE
 	read of its subscriptions, their asset clusters and their changes.
 
@@ -81,11 +84,9 @@ def team_line_items(team: str, period_start, period_end) -> list[dict]:
 	re-reads the whole team once per cluster; this reads it once and tags each line with
 	its own subscription's cluster. The union of lines is identical either way.
 	"""
-	subscriptions = frappe.get_all(
-		"Subscription", filters={"team": team}, fields=["name", "asset_id"]
-	)
+	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
 	clusters = _asset_clusters([s.asset_id for s in subscriptions])
-	changes_by_sub = _changes_by_subscription([s.name for s in subscriptions])
+	changes_by_sub = _resolve_changes([s.name for s in subscriptions], changes)
 
 	bounds = _period_bounds(period_start, period_end)
 	lines = []
@@ -93,8 +94,28 @@ def team_line_items(team: str, period_start, period_end) -> list[dict]:
 		cluster = clusters.get(sub.asset_id)
 		if not cluster:
 			continue  # no live asset cluster — nothing to bill this subscription against
-		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds)
-	return lines
+		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
+	# Assembled per subscription in whatever order the query returned them, which is
+	# creation-desc — so a team's newest machine printed first and its oldest last.
+	return _ordered(lines)
+
+
+def _ordered(lines: list[dict]) -> list[dict]:
+	"""Grouped by machine, chronological within each.
+
+	A resize chain only means anything against one server, so ordering purely by
+	time shuffles several servers' lines together and destroys the sequence. Within
+	a machine the whole-day line for a date sorts ahead of that date's hourly
+	slivers, which is the order they happened in.
+	"""
+	return sorted(
+		lines,
+		key=lambda ln: (
+			ln.get("subscription_resource") or "",
+			ln.get("period_from") or datetime.max,
+			ln.get("unit") == "hour",
+		),
+	)
 
 
 def _period_bounds(period_start, period_end):
@@ -113,7 +134,7 @@ def _period_bounds(period_start, period_end):
 	)
 
 
-def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
+def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = False) -> list[dict]:
 	"""The daily/hourly fixed lines for one subscription in one cluster.
 
 	Splits the subscription's rate-snapshot changes into billable segments, marks the
@@ -137,11 +158,22 @@ def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
 		end = min(seg_end_dt, b.period_end_excl_dt)
 		if start >= b.period_end_excl_dt or end <= b.period_start_dt:
 			continue  # no overlap with this month
-		segs.append({
-			"start": start, "end": end, "rate": frappe.utils.flt(change.locked_rate),
-			"plan": change.new_value, "asset": sub.asset_id, "cluster": cluster,
-			"churn": held_hours < CHURN_WINDOW_HOURS,
-		})
+		segs.append(
+			{
+				"start": start,
+				"end": end,
+				# When the rate was actually locked, before any clamping to this billing
+				# window. `start` answers "what does this month bill"; this answers "when
+				# was this price set", which is what grandfathering turns on — and the two
+				# are the same only in the month a resource was provisioned.
+				"opened_at": seg_start_dt,
+				"rate": frappe.utils.flt(change.locked_rate),
+				"plan": change.new_value,
+				"asset": sub.asset_id,
+				"cluster": cluster,
+				"churn": held_hours < CHURN_WINDOW_HOURS,
+			}
+		)
 
 	# A churn segment (< 24h) turns every date it touches into an hourly date; the
 	# 24h window spans midnight, so a cross-day churn marks both dates.
@@ -157,14 +189,14 @@ def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
 		# mid-day resize still sends the whole transition day to one plan.
 		d0 = max(s["start"].date(), b.ps)
 		d1 = min(s["end"].date(), b.pe + timedelta(days=1))  # exclusive
-		days = 0
+		billed_dates = []
 		d = d0
 		while d < d1:
 			if d not in churn_dates:
-				days += 1
+				billed_dates.append(d)
 			d += timedelta(days=1)
-		if days:
-			lines.append(_daily_line(s, days, b.day_units))
+		if billed_dates:
+			lines.append(_daily_line(s, len(billed_dates), b.day_units, explain, billed_dates))
 
 		# Hourly pass — this segment's real hours on each churn date it touches.
 		for cd in _dates_touched(s["start"], s["end"]):
@@ -174,8 +206,43 @@ def _subscription_lines(sub, cluster: str, changes: list, b) -> list[dict]:
 			day_end = min(s["end"], datetime.combine(cd + timedelta(days=1), time.min))
 			hours = (day_end - day_start).total_seconds() / 3600.0
 			if hours > 0:
-				lines.append(_hourly_line(s, hours, b.hour_units, cd))
-	return lines
+				# Which configs shared this date is the whole explanation for why it went
+				# hourly, so carry them rather than leaving the reader to infer it.
+				touching = [
+					{
+						"from": str(other["start"]),
+						"to": str(other["end"]),
+						"rate": other["rate"],
+						"plan": other["plan"],
+						"held_under_24h": other["churn"],
+					}
+					for other in segs
+					if cd in _dates_touched(other["start"], other["end"])
+				]
+				lines.append(
+					_hourly_line(s, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end))
+				)
+
+	# Grouped by server, chronological within each. A resize chain only means
+	# anything against one machine, so sorting purely by time would shuffle three
+	# servers' lines together and destroy the sequence it was meant to show.
+	return _ordered(lines)
+
+
+def _resolve_changes(subscription_names: list[str], changes=None) -> dict:
+	"""Where the rate-snapshot segments come from.
+
+	The run reads them from Subscription Change, which is the only source there is. A
+	projection may supply its own — the real rows plus a hypothetical resize, say — so
+	that an invented change is rated by exactly the code that rates a real one, churn
+	window and all. `changes` is either a ready-made mapping or a callable taking the
+	subscription names; absent, nothing changes.
+	"""
+	if changes is None:
+		return _changes_by_subscription(subscription_names)
+	if callable(changes):
+		return changes(subscription_names)
+	return changes
 
 
 def _changes_by_subscription(subscription_names: list[str]) -> dict:
@@ -202,19 +269,81 @@ def _changes_by_subscription(subscription_names: list[str]) -> dict:
 	return grouped
 
 
-def _daily_line(seg: dict, days: int, day_units: int) -> dict:
-	return {
-		"subscription_resource": seg["asset"], "plan": seg["plan"], "cluster": seg["cluster"],
-		"resource_type": "bundle", "unit": "day", "quantity": 1, "rate": seg["rate"],
-		"days": days, "hours": None,
+def _daily_line(seg: dict, days: int, day_units: int, explain: bool = False, billed_dates=None) -> dict:
+	line = {
+		"subscription_resource": seg["asset"],
+		"plan": seg["plan"],
+		"cluster": seg["cluster"],
+		"resource_type": "bundle",
+		"unit": "day",
+		"quantity": 1,
+		"rate": seg["rate"],
+		"days": days,
+		"hours": None,
+		# The window this line actually billed. Without it a resized month is a list
+		# of durations with no order and no "when" — six lines saying "13 day(s)"
+		# and "16 hour(s)" that the reader has to reassemble into a sequence.
+		"period_from": datetime.combine(min(billed_dates), time.min) if billed_dates else None,
+		"period_to": datetime.combine(max(billed_dates) + timedelta(days=1), time.min)
+		if billed_dates
+		else None,
 		"amount": frappe.utils.flt(days * seg["rate"] / day_units, 2),
 	}
+	if explain:
+		line["derivation"] = {
+			"mode": "Daily",
+			"why": "the config was held for a day or more, so whole days are billed",
+			"segment_from": str(seg["start"]),
+			"segment_to": str(seg["end"]),
+			"rate_locked_at": str(seg["opened_at"]),
+			"locked_rate": seg["rate"],
+			"days": days,
+			"day_units": day_units,
+			"dates": [str(d) for d in (billed_dates or [])],
+			"arithmetic": f"{days} ÷ {day_units} × {seg['rate']}",
+		}
+	return line
 
 
-def _hourly_line(seg: dict, hours: float, hour_units: int, charge_date) -> dict:
-	return {
-		"subscription_resource": seg["asset"], "plan": seg["plan"], "cluster": seg["cluster"],
-		"resource_type": "bundle", "unit": "hour", "quantity": 1, "rate": seg["rate"],
-		"days": None, "hours": frappe.utils.flt(hours, 2), "charge_date": charge_date,
+def _hourly_line(
+	seg: dict,
+	hours: float,
+	hour_units: int,
+	charge_date,
+	explain: bool = False,
+	touching=None,
+	window=None,
+) -> dict:
+	line = {
+		"subscription_resource": seg["asset"],
+		"plan": seg["plan"],
+		"cluster": seg["cluster"],
+		"resource_type": "bundle",
+		"unit": "hour",
+		"quantity": 1,
+		"rate": seg["rate"],
+		"days": None,
+		"hours": frappe.utils.flt(hours, 2),
+		"charge_date": charge_date,
+		"period_from": window[0] if window else None,
+		"period_to": window[1] if window else None,
 		"amount": frappe.utils.flt(hours * seg["rate"] / hour_units, 2),
 	}
+	if explain:
+		line["derivation"] = {
+			"mode": "Hourly",
+			"why": (
+				"a config on this date was held for less than 24 hours, so the whole date bills by the hour"
+			),
+			"charge_date": str(charge_date),
+			"segment_from": str(seg["start"]),
+			"segment_to": str(seg["end"]),
+			"rate_locked_at": str(seg["opened_at"]),
+			"locked_rate": seg["rate"],
+			"hours": frappe.utils.flt(hours, 2),
+			"hour_units": hour_units,
+			"dates": [str(charge_date)],
+			"configs_on_this_date": touching or [],
+			"arithmetic": f"{frappe.utils.flt(hours, 2)} ÷ {hour_units} × {seg['rate']}",
+		}
+	return line

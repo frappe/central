@@ -1,9 +1,14 @@
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { successToast, errorToast, getErrorMessage, isAbortError } from '@/lib/toast'
 import { submitOrThrow } from '@/lib/frappeCall'
+import {
+	errorToast,
+	getErrorMessage,
+	isAbortError,
+	successToast,
+} from '@/lib/toast'
 import type { CapabilityInfo, TeamRoleRow } from '@/types/api'
 
 // Roles available on the active team (system + this team's custom roles), each
@@ -74,7 +79,7 @@ export function useTeamRoles() {
 				role_name: roleName,
 				capabilities: JSON.stringify(capabilities),
 			})
-			successToast(`Created role “${roleName}”.`)
+			successToast(`Created role “${roleName}”`)
 			rolesCall.reload()
 		} catch (e) {
 			errorToast(e)
@@ -85,7 +90,7 @@ export function useTeamRoles() {
 	async function deleteRole(role: string, roleName: string): Promise<void> {
 		try {
 			await submitOrThrow(deleteRoleCall, { role })
-			successToast(`Deleted role “${roleName}”.`)
+			successToast(`Deleted role “${roleName}”`)
 			rolesCall.reload()
 		} catch (e) {
 			errorToast(e)

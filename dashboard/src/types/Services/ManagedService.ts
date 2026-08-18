@@ -1,5 +1,4 @@
-
-export interface ManagedService{
+export interface ManagedService {
 	name: string
 	creation: string
 	modified: string
@@ -17,7 +16,7 @@ export interface ManagedService{
 	/**	Subscription : Link - Subscription	*/
 	subscription: string
 	/**	Status : Select	*/
-	status?: "Draft" | "Provisioning" | "Active" | "Failed" | "Suspended"
+	status?: 'Draft' | 'Provisioning' | 'Active' | 'Failed' | 'Suspended'
 	/**	Provider Reference : Data	*/
 	provider_ref?: string
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { type DropdownOptions } from 'frappe-ui'
 import { computed } from 'vue'
-import { Button, Dropdown, type DropdownOptions } from 'frappe-ui'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { InvitationRow } from '@/types/api'
 
 const props = defineProps<{
@@ -34,15 +35,5 @@ const options = computed<DropdownOptions>(() => {
 </script>
 
 <template>
-	<Dropdown v-if="options.length" :options="options" placement="right">
-		<template #trigger>
-			<Button
-				variant="ghost"
-				icon="lucide-ellipsis-vertical"
-				:loading="busy"
-				aria-label="Invitation actions"
-				@click.stop
-			/>
-		</template>
-	</Dropdown>
+	<RowActionsMenu :options="options" label="Invitation actions" :busy="busy" />
 </template>

@@ -3,7 +3,9 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.servers import refresh_assets, registry, start_server
+from central.api.servers import refresh_assets, registry, start_server, terminate_server
+from central.api.sites import create_site, terminate_site
+from central.central.doctype.resource_action.resource_action import ResourceAction
 from central.integrations.atlas import apply_event, ingest_event, reconcile, reconcile_atlas
 from central.tests.test_iam import ensure_user
 
@@ -49,14 +51,33 @@ class TestAtlasMirror(IntegrationTestCase):
 		else:
 			frappe.db.set_value("Atlas Instance", self.region, "service_user", self.service_user)
 
+		# Neutralise commits: a _fail-path commit would otherwise flush this transaction and
+		# leak fixtures across tests. Every assertion here reads within the test transaction.
+		self._no_commit = patch.object(frappe.db, "commit")
+		self._no_commit.start()
+
 	def tearDown(self):
+		self._no_commit.stop()
 		frappe.set_user("Administrator")
 
 	def _push(self, event_type, vm, occurred_at):
-		# ingest_event verifies the sender then queues the work; here we run the
-		# worker (apply_event) directly to assert its mirror effect. The
-		# verify-and-queue path is covered by the dispatch tests below.
-		apply_event(self.region, event_type, vm, occurred_at)
+		# ingest_event verifies the sender, persists the event, then queues the work;
+		# here we store the row and run the worker (apply_event) directly to assert
+		# its mirror effect. after_insert's enqueue is stubbed so the only apply is the
+		# explicit one below. The verify-and-queue path is covered by the dispatch
+		# tests below.
+		with patch("frappe.enqueue"):
+			event = frappe.get_doc(
+				{
+					"doctype": "Atlas Event",
+					"cluster": self.region,
+					"event_id": frappe.generate_hash(length=12),
+					"event_type": event_type,
+					"occurred_at": occurred_at,
+					"raw_payload": frappe.as_json(vm),
+				}
+			).insert(ignore_permissions=True)
+		apply_event(event.name)
 
 	# --- push -----------------------------------------------------------------
 
@@ -87,18 +108,10 @@ class TestAtlasMirror(IntegrationTestCase):
 		)
 		self.assertEqual(frappe.db.get_value("Asset", "vm-1", "status"), "Stopped")
 
-	def test_push_from_unknown_atlas_is_refused(self):
-		# A session that owns no Atlas Instance can't push events.
-		frappe.set_user(self.outsider)
-		try:
-			with self.assertRaises(frappe.PermissionError):
-				ingest_event(
-					"vm.created",
-					{"name": "vm-x", "team": self.team.name, "status": "Running"},
-					"2026-06-18 10:00:00",
-				)
-		finally:
-			frappe.set_user("Administrator")
+	# Identity/auth is now HMAC-signature-based (@verify_atlas_webhook), not a
+	# session-token check — see test_atlas_webhook_signature.py for that coverage.
+	# ingest_event itself no longer resolves or refuses a sender; it trusts whatever
+	# cluster its caller (event()) already verified.
 
 	def test_push_skips_untenanted_vm(self):
 		self._push("vm.created", {"name": "vm-op", "team": None, "status": "Running"}, "2026-06-18 10:00:00")
@@ -165,16 +178,28 @@ class TestAtlasMirror(IntegrationTestCase):
 	def test_vm_resized_event_updates_mirror_shape(self):
 		self._push(
 			"vm.created",
-			{"name": "vm-r", "team": self.team.name, "status": "Stopped",
-			 "vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 40},
+			{
+				"name": "vm-r",
+				"team": self.team.name,
+				"status": "Stopped",
+				"vcpus": 2,
+				"memory_megabytes": 4096,
+				"disk_gigabytes": 40,
+			},
 			"2026-06-18 10:00:00",
 		)
 		# A resize leaves the VM Stopped, so no status_changed ever fires — the
 		# vm.resized event is how the mirror learns the new shape.
 		self._push(
 			"vm.resized",
-			{"name": "vm-r", "team": self.team.name, "status": "Stopped",
-			 "vcpus": 4, "memory_megabytes": 16384, "disk_gigabytes": 80},
+			{
+				"name": "vm-r",
+				"team": self.team.name,
+				"status": "Stopped",
+				"vcpus": 4,
+				"memory_megabytes": 16384,
+				"disk_gigabytes": 80,
+			},
 			"2026-06-18 10:05:00",
 		)
 		asset = frappe.get_doc("Asset", "vm-r")
@@ -185,8 +210,12 @@ class TestAtlasMirror(IntegrationTestCase):
 		# arrive once Running (Atlas gates them on status).
 		self._push(
 			"vm.created",
-			{"name": "vm-b", "team": self.team.name, "status": "Pending",
-			 "gateway_url": "https://acme.blr1.frappe.dev"},
+			{
+				"name": "vm-b",
+				"team": self.team.name,
+				"status": "Pending",
+				"gateway_url": "https://acme.blr1.frappe.dev",
+			},
 			"2026-06-18 10:00:00",
 		)
 		asset = frappe.get_doc("Asset", "vm-b")
@@ -196,10 +225,14 @@ class TestAtlasMirror(IntegrationTestCase):
 		# The Running event carries the minted handoff — it lands on the mirror.
 		self._push(
 			"vm.status_changed",
-			{"name": "vm-b", "team": self.team.name, "status": "Running",
-			 "gateway_url": "https://acme.blr1.frappe.dev",
-			 "login_url": "https://acme.blr1.frappe.dev/app?sid=abc",
-			 "login_url_expires_at": "2026-06-18 10:05:00"},
+			{
+				"name": "vm-b",
+				"team": self.team.name,
+				"status": "Running",
+				"gateway_url": "https://acme.blr1.frappe.dev",
+				"login_url": "https://acme.blr1.frappe.dev/app?sid=abc",
+				"login_url_expires_at": "2026-06-18 10:05:00",
+			},
 			"2026-06-18 10:01:00",
 		)
 		asset.reload()
@@ -210,8 +243,12 @@ class TestAtlasMirror(IntegrationTestCase):
 		# reconcile shape before another Running) must not blank the stored handoff.
 		self._push(
 			"vm.status_changed",
-			{"name": "vm-b", "team": self.team.name, "status": "Stopped",
-			 "gateway_url": "https://acme.blr1.frappe.dev"},
+			{
+				"name": "vm-b",
+				"team": self.team.name,
+				"status": "Stopped",
+				"gateway_url": "https://acme.blr1.frappe.dev",
+			},
 			"2026-06-18 10:10:00",
 		)
 		asset.reload()
@@ -232,10 +269,15 @@ class TestAtlasMirror(IntegrationTestCase):
 		# The Running event carries the minted handoff — it lands on the mirror.
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "handoff",
-			 "status": "Running", "url": f"https://{fqdn}",
-			 "login_url": f"https://{fqdn}/app?sid=xyz",
-			 "login_url_expires_at": "2026-06-19 10:00:00"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "handoff",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"login_url": f"https://{fqdn}/app?sid=xyz",
+				"login_url_expires_at": "2026-06-19 10:00:00",
+			},
 			"2026-06-18 10:05:00",
 		)
 		site.reload()
@@ -260,17 +302,20 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "fresh.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "fresh",
-			 "status": "Running", "url": f"https://{fqdn}",
-			 "login_url": f"https://{fqdn}/app?sid=fresh",
-			 "login_url_expires_at": "2099-01-01 00:00:00"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "fresh",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"login_url": f"https://{fqdn}/app?sid=fresh",
+				"login_url_expires_at": "2099-01-01 00:00:00",
+			},
 			"2026-06-18 10:05:00",
 		)
 		frappe.set_user(self.owner)
 		try:
-			with patch(
-				"central.integrations.atlas.AtlasClient.regenerate_site_login"
-			) as regen:
+			with patch("central.integrations.atlas.AtlasClient.regenerate_site_login") as regen:
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
@@ -285,15 +330,23 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "stale.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "stale",
-			 "status": "Running", "url": f"https://{fqdn}",
-			 "login_url": f"https://{fqdn}/app?sid=stale",
-			 "login_url_expires_at": "2000-01-01 00:00:00"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "stale",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"login_url": f"https://{fqdn}/app?sid=stale",
+				"login_url_expires_at": "2000-01-01 00:00:00",
+			},
 			"2026-06-18 10:05:00",
 		)
 		fresh = {
-			"name": fqdn, "team": self.team.name, "subdomain": "stale",
-			"status": "Running", "url": f"https://{fqdn}",
+			"name": fqdn,
+			"team": self.team.name,
+			"subdomain": "stale",
+			"status": "Running",
+			"url": f"https://{fqdn}",
 			"login_url": f"https://{fqdn}/app?sid=fresh",
 			"login_url_expires_at": "2099-01-01 00:00:00",
 		}
@@ -315,8 +368,14 @@ class TestAtlasMirror(IntegrationTestCase):
 		if frappe.db.exists("Asset", rid):
 			frappe.delete_doc("Asset", rid, force=True, ignore_permissions=True)
 		frappe.get_doc(
-			{"doctype": "Asset", "resource_id": rid, "team": self.team.name,
-			 "cluster": self.region, "status": status, "gateway_url": gateway or None}
+			{
+				"doctype": "Asset",
+				"resource_id": rid,
+				"team": self.team.name,
+				"cluster": self.region,
+				"status": status,
+				"gateway_url": gateway or None,
+			}
 		).insert(ignore_permissions=True)
 		if frappe.db.exists("Pilot Credential", pcid):
 			frappe.delete_doc("Pilot Credential", pcid, force=True)
@@ -339,8 +398,14 @@ class TestAtlasMirror(IntegrationTestCase):
 		desk_url = f"https://{fqdn}/desk?sid=real-session"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "direct", "status": "Running",
-			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-direct"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "direct",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"pilot_credential_id": "pcred-direct",
+			},
 			"2026-06-18 10:05:00",
 		)
 		self._backing_pilot("pcred-direct", "vm-direct")
@@ -349,9 +414,10 @@ class TestAtlasMirror(IntegrationTestCase):
 		response.json.return_value = {"url": desk_url}
 		frappe.set_user(self.owner)
 		try:
-			with patch("central.integrations.pilot.requests.post", return_value=response) as post, patch(
-				"central.integrations.atlas.AtlasClient.regenerate_site_login"
-			) as regen:
+			with (
+				patch("central.integrations.pilot.requests.post", return_value=response) as post,
+				patch("central.integrations.atlas.AtlasClient.regenerate_site_login") as regen,
+			):
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
@@ -361,8 +427,11 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertEqual(post.call_args.args[0], f"https://vm.blr1.frappe.dev/api/v1/sites/{fqdn}/login")
 		token = post.call_args.kwargs["headers"]["Authorization"].split(" ", 1)[1]
 		claims = jwt.decode(
-			token, RSAAlgorithm.from_jwk(jwks_document()["keys"][0]),
-			algorithms=[ALGORITHM], audience="pcred-direct", issuer=central_url(),
+			token,
+			RSAAlgorithm.from_jwk(jwks_document()["keys"][0]),
+			algorithms=[ALGORITHM],
+			audience="pcred-direct",
+			issuer=central_url(),
 		)
 		self.assertEqual((claims["scope"], claims["site"]), ("site", fqdn))
 
@@ -376,21 +445,37 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "relayfail.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "relayfail", "status": "Running",
-			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-relayfail"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "relayfail",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"pilot_credential_id": "pcred-relayfail",
+			},
 			"2026-06-18 10:05:00",
 		)
 		self._backing_pilot("pcred-relayfail", "vm-relayfail")
-		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "relayfail", "status": "Running",
-			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
-			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		fresh = {
+			"name": fqdn,
+			"team": self.team.name,
+			"subdomain": "relayfail",
+			"status": "Running",
+			"url": f"https://{fqdn}",
+			"login_url": f"https://{fqdn}/app?sid=atlas",
+			"login_url_expires_at": "2099-01-01 00:00:00",
+		}
 		frappe.set_user(self.owner)
 		try:
-			with patch(
-				"central.integrations.pilot.requests.post", side_effect=requests.RequestException("boom")
-			), patch("central.integrations.pilot.frappe.log_error") as log, patch(
-				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
-			) as regen:
+			with (
+				patch(
+					"central.integrations.pilot.requests.post", side_effect=requests.RequestException("boom")
+				),
+				patch("central.integrations.pilot.frappe.log_error") as log,
+				patch(
+					"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+				) as regen,
+			):
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
@@ -405,21 +490,35 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "mintfail.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "mintfail", "status": "Running",
-			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-mintfail"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "mintfail",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"pilot_credential_id": "pcred-mintfail",
+			},
 			"2026-06-18 10:05:00",
 		)
 		self._backing_pilot("pcred-mintfail", "vm-mintfail")
-		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "mintfail", "status": "Running",
-			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
-			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		fresh = {
+			"name": fqdn,
+			"team": self.team.name,
+			"subdomain": "mintfail",
+			"status": "Running",
+			"url": f"https://{fqdn}",
+			"login_url": f"https://{fqdn}/app?sid=atlas",
+			"login_url_expires_at": "2099-01-01 00:00:00",
+		}
 		frappe.set_user(self.owner)
 		try:
-			with patch(
-				"central.integrations.pilot.mint_site_login", side_effect=RuntimeError("signing key")
-			), patch("central.integrations.pilot.frappe.log_error") as log, patch(
-				"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
-			) as regen:
+			with (
+				patch("central.integrations.pilot.mint_site_login", side_effect=RuntimeError("signing key")),
+				patch("central.integrations.pilot.frappe.log_error") as log,
+				patch(
+					"central.integrations.atlas.AtlasClient.regenerate_site_login", return_value=fresh
+				) as regen,
+			):
 				got = sites.get_site(fqdn)
 		finally:
 			frappe.set_user("Administrator")
@@ -431,8 +530,13 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "woc.blr1.frappe.dev"
 		self._push(
 			"site.created",
-			{"name": fqdn, "team": self.team.name, "subdomain": "woc",
-			 "status": "Provisioning", "pilot_credential_id": "pcred-woc"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "woc",
+				"status": "Provisioning",
+				"pilot_credential_id": "pcred-woc",
+			},
 			"2026-06-18 10:00:00",
 		)
 		self.assertEqual(frappe.db.get_value("Site", fqdn, "pilot_credential_id"), "pcred-woc")
@@ -451,16 +555,28 @@ class TestAtlasMirror(IntegrationTestCase):
 		fqdn = "notready.blr1.frappe.dev"
 		self._push(
 			"site.status_changed",
-			{"name": fqdn, "team": self.team.name, "subdomain": "notready", "status": "Running",
-			 "url": f"https://{fqdn}", "pilot_credential_id": "pcred-notready",
-			 "login_url": f"https://{fqdn}/app?sid=stale",
-			 "login_url_expires_at": "2000-01-01 00:00:00"},
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "notready",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"pilot_credential_id": "pcred-notready",
+				"login_url": f"https://{fqdn}/app?sid=stale",
+				"login_url_expires_at": "2000-01-01 00:00:00",
+			},
 			"2026-06-18 10:05:00",
 		)
 		self._backing_pilot("pcred-notready", "vm-notready", status="Stopped")
-		fresh = {"name": fqdn, "team": self.team.name, "subdomain": "notready", "status": "Running",
-			 "url": f"https://{fqdn}", "login_url": f"https://{fqdn}/app?sid=atlas",
-			 "login_url_expires_at": "2099-01-01 00:00:00"}
+		fresh = {
+			"name": fqdn,
+			"team": self.team.name,
+			"subdomain": "notready",
+			"status": "Running",
+			"url": f"https://{fqdn}",
+			"login_url": f"https://{fqdn}/app?sid=atlas",
+			"login_url_expires_at": "2099-01-01 00:00:00",
+		}
 		frappe.set_user(self.owner)
 		try:
 			with patch(
@@ -483,7 +599,9 @@ class TestAtlasMirror(IntegrationTestCase):
 			task = client.resize_vm("vm-x", vcpus=4, memory_megabytes=16384, disk_gigabytes=80)
 		self.assertEqual(task, "task-9")
 		params = make_client.return_value.post_api.call_args.kwargs["params"]
-		self.assertEqual((params["dt"], params["dn"], params["method"]), ("Virtual Machine", "vm-x", "resize"))
+		self.assertEqual(
+			(params["dt"], params["dn"], params["method"]), ("Virtual Machine", "vm-x", "resize")
+		)
 		self.assertEqual(
 			json.loads(params["args"]),
 			{"vcpus": 4, "memory_megabytes": 16384, "disk_gigabytes": 80},
@@ -496,7 +614,7 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.service_user)
 		try:
 			with patch("frappe.enqueue") as enqueue:
-				result = ingest_event("vm.created", vm, "2026-06-18 10:00:00")
+				result = ingest_event(self.region, "vm.created", vm, "2026-06-18 10:00:00", "evt-q-1")
 		finally:
 			frappe.set_user("Administrator")
 		self.assertTrue(result["queued"])
@@ -504,24 +622,85 @@ class TestAtlasMirror(IntegrationTestCase):
 		# nothing written on the request thread — the worker does it
 		self.assertFalse(frappe.db.exists("Asset", "vm-q"))
 
-	def test_unknown_event_type_is_acked_without_queuing(self):
+	def test_unknown_event_type_is_recorded_ignored_not_queued(self):
+		# A type Central doesn't mirror yet is stored Ignored (audit trail stays complete),
+		# but never queued for a mirror write — so a missing handler can't strand a row.
 		frappe.set_user(self.service_user)
 		try:
 			with patch("frappe.enqueue") as enqueue:
-				result = ingest_event("vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00")
+				result = ingest_event(
+					self.region, "vm.rebooted", {"name": "vm-z"}, "2026-06-18 10:00:00", "evt-unknown-1"
+				)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(result, {"ok": True, "queued": False})
+		enqueue.assert_not_called()
+		self.assertEqual(
+			frappe.db.get_value("Atlas Event", {"event_id": "evt-unknown-1"}, "status"), "Ignored"
+		)
+
+	def test_event_without_id_is_acked_without_storing(self):
+		# A validly-signed but malformed event (no id/type) can't be deduped or stored —
+		# ack it so Atlas stops retrying, and write nothing.
+		frappe.set_user(self.service_user)
+		try:
+			with patch("frappe.enqueue") as enqueue:
+				result = ingest_event(self.region, None, {}, "2026-06-18 10:00:00", None)
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(result, {"ok": True, "queued": False})
 		enqueue.assert_not_called()
 
+	def test_duplicate_event_id_is_deduped_not_requeued(self):
+		vm = {"name": "vm-dup", "team": self.team.name, "status": "Running"}
+		frappe.set_user(self.service_user)
+		try:
+			with patch("frappe.enqueue") as enqueue:
+				first = ingest_event(self.region, "vm.created", vm, "2026-06-18 10:00:00", "evt-dup-1")
+				second = ingest_event(self.region, "vm.created", vm, "2026-06-18 10:00:01", "evt-dup-1")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(first["queued"])
+		self.assertFalse(second["queued"])
+		enqueue.assert_called_once()
+		self.assertEqual(frappe.db.count("Atlas Event", {"event_id": "evt-dup-1"}), 1)
+
+	def test_apply_event_stamps_failed_when_handler_raises(self):
+		# A handler error must be recorded durably and re-raised. The stamp is committed
+		# before the re-raise so the job runner's rollback can't strand the row at Received.
+		with patch("frappe.enqueue"):
+			event = frappe.get_doc(
+				{
+					"doctype": "Atlas Event",
+					"cluster": self.region,
+					"event_id": frappe.generate_hash(length=12),
+					"event_type": "vm.created",
+					"occurred_at": "2026-06-18 10:00:00",
+					"raw_payload": frappe.as_json({"name": "vm-fail"}),
+				}
+			).insert(ignore_permissions=True)
+
+		def boom(*args, **kwargs):
+			raise RuntimeError("handler boom")
+
+		with patch.dict("central.integrations.atlas._EVENT_HANDLERS", {"vm.created": boom}):
+			with self.assertRaises(RuntimeError):
+				apply_event(event.name)
+
+		event.reload()
+		self.assertEqual(event.status, "Failed")
+		self.assertIn("handler boom", event.error)
+
 	def test_mirror_recovers_when_exists_check_loses_insert_race(self):
+		# Same event arrives twice at the same time.
 		from central.central.doctype.asset.asset import Asset
 
-		self._push("vm.created", {"name": "vm-race", "team": self.team.name, "status": "Pending"}, "2026-06-18 10:00:00")
+		self._push(
+			"vm.created",
+			{"name": "vm-race", "team": self.team.name, "status": "Pending"},
+			"2026-06-18 10:00:00",
+		)
 
-		# Simulate the REPEATABLE READ race: a concurrent writer's exists-check misses
-		# the row, so it takes the insert path and hits the duplicate key. mirror_vm
-		# must recover by updating, not raise DuplicateEntryError.
 		real_exists = frappe.db.exists
 
 		def blind_to_asset(dt, *a, **k):
@@ -555,13 +734,13 @@ class TestAtlasMirror(IntegrationTestCase):
 				seen["for_update"] = kwargs.get("for_update")
 			return real_get_doc(*args, **kwargs)
 
+		# mirror_vm on an existing row takes the update path → central.mirror._apply,
+		# which must lock+load in one current read (get_doc(for_update=True)).
 		with patch("frappe.get_doc", side_effect=tracking_get_doc):
-			Asset._update_mirror(
-				"vm-lock",
+			Asset.mirror_vm(
 				self.region,
 				{"name": "vm-lock", "team": self.team.name, "status": "Deploying"},
-				"2026-06-18 10:05:00",
-				None,
+				occurred_at="2026-06-18 10:05:00",
 			)
 		self.assertTrue(seen.get("for_update"))
 		self.assertEqual(frappe.db.get_value("Asset", "vm-lock", "status"), "Deploying")
@@ -590,7 +769,9 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertIn("vm-4", ids)
 
 	def test_reconcile_is_failsoft_when_atlas_unreachable(self):
-		with patch("central.integrations.atlas.AtlasClient.central_vms", side_effect=Exception("unreachable")):
+		with patch(
+			"central.integrations.atlas.AtlasClient.central_vms", side_effect=Exception("unreachable")
+		):
 			result = reconcile(team=self.team.name)
 		self.assertIn(self.region, result["stale"])
 
@@ -604,7 +785,11 @@ class TestAtlasMirror(IntegrationTestCase):
 	# --- power gate while resizing --------------------------------------------
 
 	def _stopped_asset(self, resource_id, **extra):
-		self._push("vm.created", {"name": resource_id, "team": self.team.name, "status": "Stopped"}, "2026-07-02 10:00:00")
+		self._push(
+			"vm.created",
+			{"name": resource_id, "team": self.team.name, "status": "Stopped"},
+			"2026-07-02 10:00:00",
+		)
 		if extra:
 			frappe.db.set_value("Asset", resource_id, extra)
 		return resource_id
@@ -615,9 +800,314 @@ class TestAtlasMirror(IntegrationTestCase):
 		with self.assertRaisesRegex(frappe.ValidationError, "resizing"):
 			start_server(team=self.team.name, resource_id=asset)
 
+	def test_blocked_action_reaches_the_client_as_an_envelope(self):
+		# The whole point of the server-action wiring: a blocked action surfaces a stable
+		# code + clean message, not a bare FrappeException.
+		asset = self._stopped_asset("vm-resizing-env", resize_in_progress=1)
+		frappe.set_user(self.owner)
+		try:
+			with self.assertRaises(frappe.ValidationError) as caught:
+				start_server(team=self.team.name, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(caught.exception.envelope["code"], "SERVER_BUSY_RESIZING")
+		self.assertEqual(frappe.message_log[-1]["action_error"]["code"], "SERVER_BUSY_RESIZING")
+
 	def test_start_allowed_once_resize_clears(self):
 		asset = self._stopped_asset("vm-idle", resize_in_progress=0)
 		frappe.set_user(self.owner)
 		with patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-1") as vm_action:
-			start_server(team=self.team.name, resource_id=asset)
-		vm_action.assert_called_once_with(asset, "start")
+			result = start_server(team=self.team.name, resource_id=asset)
+		self.assertEqual(vm_action.call_args.args, (asset, "start"))
+		self.assertEqual(vm_action.call_args.kwargs["correlation_id"], result["action"])
+
+	# --- server action tracking -----------------------------------------------
+
+	def test_start_tracks_action_and_marks_it_sent(self):
+		asset = self._stopped_asset("vm-track-start")
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.atlas.AtlasClient.vm_action", return_value="task-7"
+			) as vm_action:
+				result = start_server(team=self.team.name, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		action = frappe.get_doc("Resource Action", {"correlation_id": result["action"]})
+		self.assertEqual((action.action, action.status, action.resource_id), ("start", "Sent", asset))
+		self.assertEqual(action.atlas_task, "task-7")
+		# The id returned to the client is the correlation id sent to Atlas.
+		self.assertEqual(vm_action.call_args.kwargs["correlation_id"], result["action"])
+		self.assertEqual(action.correlation_id, result["action"])
+
+	def test_confirming_event_marks_action_succeeded(self):
+		asset = self._stopped_asset("vm-track-ok")
+		frappe.set_user(self.owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-8"):
+				result = start_server(team=self.team.name, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		# Atlas echoes the correlation id on the Running event its op produced.
+		self._push(
+			"vm.status_changed",
+			{"name": asset, "team": self.team.name, "status": "Running", "correlation_id": result["action"]},
+			"2026-07-02 10:05:00",
+		)
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
+
+	def test_terminate_action_succeeds_on_delete_event(self):
+		asset = self._stopped_asset("vm-track-term")
+		frappe.set_user(self.owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.vm_action", return_value="t"):
+				result = terminate_server(team=self.team.name, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		self._push("vm.deleted", {"name": asset, "correlation_id": result["action"]}, "2026-07-02 11:00:00")
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
+
+	def test_registry_exposes_pending_action_while_in_flight(self):
+		asset = self._stopped_asset("vm-pending")
+		frappe.set_user(self.owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.vm_action", return_value="t"):
+				start_server(team=self.team.name, resource_id=asset)
+			rows = {a["resource_id"]: a for a in registry(team=self.team.name)["assets"]}
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(rows[asset]["pending_action"], "Starting")
+
+	def test_rejected_command_surfaces_envelope_and_opens_no_row(self):
+		from central.integrations.atlas import AtlasError
+
+		asset = self._stopped_asset("vm-track-fail")
+		error = AtlasError("No capacity — retry shortly.")
+		error.envelope = {
+			"code": "ATLAS_REJECTED",
+			"message": "No capacity — retry shortly.",
+			"remediation": "",
+			"retriable": False,
+		}
+		frappe.set_user(self.owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.vm_action", side_effect=error):
+				with self.assertRaises(AtlasError) as caught:
+					start_server(team=self.team.name, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		# A synchronous rejection surfaces the envelope and opens no tracking row — nothing is
+		# in flight, so there is nothing for the sweep to later false-time-out.
+		self.assertEqual(caught.exception.envelope["code"], "ATLAS_REJECTED")
+		self.assertFalse(frappe.db.exists("Resource Action", {"resource_id": asset, "action": "start"}))
+
+	def test_sweep_times_out_a_stuck_action(self):
+		action = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": "start",
+				"team": self.team.name,
+				"resource_id": "vm-ghost",
+				"correlation_id": frappe.generate_hash(),
+				"status": "Sent",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Resource Action", action.name, "creation", "2020-01-01 00:00:00")
+		swept = ResourceAction.sweep_stale(minutes=15)
+		self.assertGreaterEqual(swept, 1)
+		self.assertEqual(frappe.db.get_value("Resource Action", action.name, "status"), "Timed Out")
+
+	# --- site actions (self-serve / signup) -----------------------------------
+
+	def _single_team_user(self, email):
+		"""A user whose only team is the personal one auto-created on insert, so
+		resolve_team(user) is unambiguous — the self-serve/signup contract create_site uses."""
+		owner = ensure_user(email)
+		return owner, frappe.db.get_value("Team", {"owner_user": owner}, "name")
+
+	def test_create_site_tracks_a_site_action_and_confirms_on_running(self):
+		owner, team = self._single_team_user("site.creator@example.test")
+		mirror = {
+			"name": "acme.blr1.frappe.dev",
+			"fqdn": "acme.blr1.frappe.dev",
+			"team": team,
+			"subdomain": "acme",
+			"status": "Pending",
+		}
+		frappe.set_user(owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.create_site", return_value=mirror) as create:
+				result = create_site(subdomain="acme")
+		finally:
+			frappe.set_user("Administrator")
+		action = frappe.get_doc("Resource Action", {"correlation_id": result["action"]})
+		self.assertEqual((action.resource_type, action.action, action.status), ("Site", "create", "Sent"))
+		self.assertEqual(action.resource_id, "acme.blr1.frappe.dev")
+		self.assertEqual(create.call_args.kwargs["correlation_id"], result["action"])
+		# Atlas echoes the correlation id on the site's Running event.
+		self._push(
+			"site.status_changed",
+			{
+				"name": "acme.blr1.frappe.dev",
+				"team": team,
+				"subdomain": "acme",
+				"status": "Running",
+				"correlation_id": result["action"],
+			},
+			"2026-07-02 10:05:00",
+		)
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
+
+	def test_terminate_site_tracks_and_confirms_on_terminated(self):
+		owner, team = self._single_team_user("site.remover@example.test")
+		self._push(
+			"site.created",
+			{"name": "bye.blr1.frappe.dev", "team": team, "subdomain": "bye", "status": "Running"},
+			"2026-07-02 09:00:00",
+		)
+		frappe.set_user(owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.terminate_site", return_value={}):
+				result = terminate_site(name="bye.blr1.frappe.dev")
+		finally:
+			frappe.set_user("Administrator")
+		action = frappe.get_doc("Resource Action", {"correlation_id": result["action"]})
+		self.assertEqual((action.resource_type, action.action, action.status), ("Site", "terminate", "Sent"))
+		self._push(
+			"site.status_changed",
+			{
+				"name": "bye.blr1.frappe.dev",
+				"team": self.team.name,
+				"subdomain": "bye",
+				"status": "Terminated",
+				"correlation_id": result["action"],
+			},
+			"2026-07-02 10:00:00",
+		)
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
+
+	def test_create_opens_no_row_when_a_post_accept_step_fails(self):
+		# Regression: create_site commits internally, so a row inserted *before* the Atlas call
+		# would be frozen mid-flight if a later step threw — the sweep would then false-time-out
+		# a create that never tracked anything. Opening the row only after the whole create
+		# succeeds means a post-accept failure simply leaves no orphan row to strand.
+		owner, team = self._single_team_user("site.halfway@example.test")
+		mirror = {
+			"name": "half.blr1.frappe.dev",
+			"fqdn": "half.blr1.frappe.dev",
+			"team": team,
+			"subdomain": "half",
+			"status": "Pending",
+		}
+		frappe.set_user(owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.create_site", return_value=mirror):
+				with patch(
+					"central.central.doctype.site.site.Site.mirror_site", side_effect=RuntimeError("boom")
+				):
+					with self.assertRaises(Exception):
+						create_site(subdomain="half")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("Resource Action", {"resource_id": "half.blr1.frappe.dev"}))
+
+
+class TestTerminateIdempotency(IntegrationTestCase):
+	"""Terminating a resource Atlas no longer has (e.g. a stale mirror row) is idempotent
+	success, not a scary 'region unreachable' — the reported terminate bug."""
+
+	def setUp(self):
+		from central.tests.test_iam import ensure_user
+
+		frappe.set_user("Administrator")
+		self.owner = ensure_user("term.owner@example.test")
+		self.team = frappe.db.get_value("Team", {"owner_user": self.owner}, "name")
+		self.region = "blr-term"
+		if not frappe.db.exists("Region", self.region):
+			frappe.get_doc(
+				{"doctype": "Region", "region": self.region, "display_name": "Term", "provider": "Fake"}
+			).insert(ignore_permissions=True)
+		if not frappe.db.exists("Atlas Instance", self.region):
+			frappe.get_doc(
+				{
+					"doctype": "Atlas Instance",
+					"region": self.region,
+					"base_url": "https://atlas.example.test",
+					"status": "Active",
+					"api_key": "k",
+					"api_secret": "s",
+				}
+			).insert(ignore_permissions=True)
+		self._no_commit = patch.object(frappe.db, "commit")
+		self._no_commit.start()
+
+	def tearDown(self):
+		self._no_commit.stop()
+		frappe.set_user("Administrator")
+
+	def _asset(self, resource_id):
+		frappe.get_doc(
+			{
+				"doctype": "Asset",
+				"resource_id": resource_id,
+				"team": self.team,
+				"cluster": self.region,
+				"status": "Running",
+			}
+		).insert(ignore_permissions=True)
+		return resource_id
+
+	def test_terminate_succeeds_when_atlas_says_gone(self):
+		from central.integrations.atlas import AtlasResourceGone
+
+		asset = self._asset("vm-gone")
+		frappe.set_user(self.owner)
+		try:
+			with patch(
+				"central.integrations.atlas.AtlasClient.vm_action",
+				side_effect=AtlasResourceGone("gone"),
+			):
+				result = terminate_server(team=self.team, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Asset", asset, "status"), "Terminated")
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
+
+	def test_start_still_errors_when_atlas_says_gone(self):
+		from central.integrations.atlas import AtlasResourceGone
+
+		asset = self._asset("vm-gone2")
+		frappe.db.set_value("Asset", asset, "status", "Stopped")
+		# In production _run_doc_method raises this via throw_action_error, so it carries an
+		# envelope and propagates as-is through the @resource_action decorator.
+		gone = AtlasResourceGone("This server no longer exists in its region.")
+		gone.envelope = {
+			"code": "RESOURCE_GONE",
+			"message": "This server no longer exists in its region.",
+			"remediation": "",
+			"retriable": False,
+		}
+		frappe.set_user(self.owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.vm_action", side_effect=gone):
+				with self.assertRaises(AtlasResourceGone):
+					start_server(team=self.team, resource_id=asset)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Asset", asset, "status"), "Stopped")

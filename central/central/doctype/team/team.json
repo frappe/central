@@ -9,6 +9,7 @@
  "field_order": [
   "naming_series",
   "team_name",
+  "team_logo",
   "owner_user",
   "column_break_header",
   "status",
@@ -31,6 +32,11 @@
    "in_list_view": 1,
    "label": "Team Name",
    "reqd": 1
+  },
+  {
+   "fieldname": "team_logo",
+   "fieldtype": "Attach Image",
+   "label": "Team Logo"
   },
   {
    "fieldname": "owner_user",
@@ -173,11 +179,6 @@
   {
    "group": "Notifications",
    "link_doctype": "Team Notification",
-   "link_fieldname": "team"
-  },
-  {
-   "group": "Notifications",
-   "link_doctype": "Notification Preference",
    "link_fieldname": "team"
   },
   {

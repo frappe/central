@@ -13,21 +13,21 @@
 // India-export billing address rides on the PaymentIntent from the Billing
 // Profile (server-side), so the customer is never re-asked for it.
 
-import { computed, ref } from 'vue'
 import {
 	loadStripe,
 	type Stripe,
 	type StripeCardElement,
 } from '@stripe/stripe-js'
 import { useCall } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import {
-	openRazorpayCheckout,
-	mountPayPalButtons,
 	type GatewayOrder,
+	mountPayPalButtons,
+	openRazorpayCheckout,
 } from '@/lib/gateway'
-import { successToast, errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 
 interface BeginResult {
 	card?: boolean
@@ -58,17 +58,22 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	//  - Stripe → { card: true }: dialog mounts the card Element.
 	//  - Paypal → { paypal: true }: dialog mounts PayPal Buttons (ADR 0007).
 	//  - Razorpay → collected in its hosted sheet, the whole top-up resolves here.
-	// `payMethod` is 'paypal' for an international PayPal top-up.
+	// `payMethod` is 'paypal' for an international PayPal top-up; `instrument` is the
+	// recharge tile the customer chose (Card / RuPay card / UPI / Netbanking).
 	async function begin(
 		amount: number,
 		payMethod?: string,
 		onSheet?: () => void,
+		instrument?: string,
 	): Promise<BeginResult> {
 		try {
 			await createOrder.submit({
 				team: activeTeam.value,
 				amount,
 				method: payMethod,
+				// What the customer tapped. The backend resolves the rail from it, so a
+				// card top-up reaches Stripe even though Razorpay owns the INR default.
+				instrument,
 			})
 			if (createOrder.error) throw createOrder.error
 			// Capture locally: the shared `order` is nulled by destroy() when the dialog
@@ -95,7 +100,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 			})
 		} catch (e) {
 			if ((e as Error)?.message !== 'cancelled')
-				errorToast(e, 'Top-up could not be completed.')
+				errorToast(e, 'Top-up could not be completed')
 		}
 		return { card: false }
 	}
@@ -113,7 +118,7 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	// the order server-side (confirm_topup) and credit what PayPal actually took.
 	async function mountPayPal(el: Element): Promise<void> {
 		const o = order
-		if (!o) return
+		if (o?.adapter_key !== 'Paypal') return
 		await mountPayPalButtons(el, o, {
 			onApprove: async (paypalOrderId: string) => {
 				submitting.value = true
@@ -125,20 +130,21 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 						paypal_order_id: paypalOrderId,
 					})
 				} catch (e) {
-					errorToast(e, 'Top-up could not be completed.')
+					errorToast(e, 'Top-up could not be completed')
 				} finally {
 					submitting.value = false
 				}
 			},
-			onError: (e) => errorToast(e, 'PayPal could not start.'),
+			onError: (e) => errorToast(e, 'PayPal could not start'),
 		})
 	}
 
 	// Mount the Stripe card Element for the order begin() created.
 	async function mountCard(el: string | HTMLElement): Promise<void> {
-		if (!order?.publishable_key)
+		const o = order
+		if (o?.adapter_key !== 'Stripe' || !o.publishable_key)
 			throw new Error('Stripe publishable key missing.')
-		stripe = await loadStripe(order.publishable_key)
+		stripe = await loadStripe(o.publishable_key)
 		if (!stripe) throw new Error('Stripe.js failed to load.')
 		card = stripe.elements().create('card', { hidePostalCode: true })
 		card.on('change', (e) => (cardComplete.value = !!e.complete))
@@ -149,7 +155,8 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	// what Stripe actually charged.
 	async function pay(): Promise<unknown> {
 		const o = order
-		if (!stripe || !card || !o?.client_secret) return
+		if (!stripe || !card || o?.adapter_key !== 'Stripe' || !o.client_secret)
+			return
 		submitting.value = true
 		try {
 			const { paymentIntent, error } = await stripe.confirmCardPayment(
@@ -170,14 +177,14 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 			})
 			return confirm.data
 		} catch (e) {
-			errorToast(e, 'Top-up could not be completed.')
+			errorToast(e, 'Top-up could not be completed')
 		} finally {
 			submitting.value = false
 		}
 	}
 
 	function finish(res: unknown): void {
-		successToast('Wallet topped up.')
+		successToast('Wallet topped up')
 		onDone?.(res)
 	}
 

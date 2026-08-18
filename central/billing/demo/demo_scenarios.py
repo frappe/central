@@ -27,27 +27,29 @@ The catalog shape + record builders live in demo._factory; this module is the
 orchestration.
 """
 
+import hashlib
+
 import frappe
 
-from central.billing.revenue import invoicing, credits
 from central.billing.catalog import subscriptions
-from central.billing.payments.provisioning import provision_billing_profile
 from central.billing.demo._factory import (
 	ANCHOR,
+	ANCHOR_DUE,
+	ANCHOR_END,
 	SERVICES,
 	STRIPE,
+	_add_backup_card,
 	_capture_attempt,
 	_catalog,
 	_ensure_demo_team,
 	_ensure_signing_key,
-	_add_backup_card,
 	_failed_attempt,
 	_gateway_customer,
-	_settle_via_backup,
 	_gateways,
 	_month_periods,
 	_payment_setup,
 	_profile,
+	_settle_via_backup,
 	_settle_with_retries,
 	_tax,
 	_team_members,
@@ -55,20 +57,24 @@ from central.billing.demo._factory import (
 	_tiers,
 	_wipe_all,
 	activate_team_assets,
+	add_composed_subscription,
+	arm_emandate,
 	backdate_credit_debits,
 	backdate_invoice,
 	backdate_welcome_credit,
-	add_composed_subscription,
-	arm_emandate,
 	bank_pending_attempt,
+	collection_moment,
 	draw_wallet_credit,
 	make_refund,
 	meter_service_usage,
+	opens_on,
 	plan_name,
 	set_collection_mode,
 	stage_resizes,
 	subscribe_service,
 )
+from central.billing.payments.provisioning import provision_billing_profile
+from central.billing.revenue import credits, invoicing
 
 # service plan slug -> (resource_type, unit), for reporting usage against a subject.
 _SERVICE_META = {s[2]: (s[1], s[4]) for s in SERVICES}
@@ -102,14 +108,20 @@ _TEAM_SERVICES = {
 # Teams that also compose a custom VM in the à-la-carte selector (design-your-own, ADR 0009).
 _COMPOSED_TEAMS = ("initech", "umbrella")
 
-# Collection mode per team (ADR 0005, #50), chosen to cover the spectrum on screen.
+# Collection mode per team (ADR 0022), chosen to cover the spectrum on screen.
 _COLLECTION_MODES = {
 	# INR
-	"acme-corp": "E-Mandate", "umbrella": "Manual Checkout", "stark-ind": "Manual Checkout",
-	"hooli": "Manual Checkout", "piedpiper": "Prepaid",
+	"acme-corp": "Auto Charge",
+	"umbrella": "Manual Checkout",
+	"stark-ind": "Manual Checkout",
+	"hooli": "Manual Checkout",
+	"piedpiper": "Prepaid",
 	# USD
-	"northwind": "Stripe Auto", "initech": "Stripe Auto", "soylent": "Stripe Auto",
-	"globex": "Stripe Auto", "harbor": "Prepaid",
+	"northwind": "Auto Charge",
+	"initech": "Auto Charge",
+	"soylent": "Auto Charge",
+	"globex": "Auto Charge",
+	"harbor": "Prepaid",
 }
 
 # Card teams: which historical month indices show a failed-then-settled dunning trail
@@ -134,8 +146,7 @@ TEAMS = [
 	# still awaiting the bank, so the current invoice is frozen for any action.
 	("northwind", "t3", "USD", "bank_pending", _FLEET, None),
 	# t2: current bill settled partly from wallet credits, the remainder on the card.
-	("initech", "t2", "USD", "partial_card", [
-		("me-dubai", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu")], None),
+	("initech", "t2", "USD", "partial_card", [("me-dubai", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu")], None),
 	# t1: a paid invoice later charged back — dispute → refunded to source.
 	("soylent", "t1", "USD", "dispute", [("me-dubai", "plan-2vcpu")], None),
 	# t1: primary card declines, settlement rotates to a backup card that captures (#28);
@@ -144,14 +155,18 @@ TEAMS = [
 	# t0: no history; free credits granted, its first bill settles fully from them.
 	# Also resized its VM twice in a single day.
 	("harbor", "t0", "USD", "credits_full", [("me-dubai", "plan-1vcpu")], "same_day"),
-
 	# --- five INR teams, mirroring the same tier ladder ----------------------
 	# t3: grandfathered launch rate + metered overage; a VM resize within 24h; UPI e-mandate.
-	("acme-corp", "t3", "INR", "grandfathered", [
-		("in-mumbai", "plan-8vcpu"), ("in-mumbai", "plan-2vcpu"), ("in-mumbai", "plan-1vcpu")], "within_24h"),
+	(
+		"acme-corp",
+		"t3",
+		"INR",
+		"grandfathered",
+		[("in-mumbai", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu"), ("in-mumbai", "plan-1vcpu")],
+		"within_24h",
+	),
 	# t2: dunning — the current invoice is overdue with a trail of failed retries.
-	("umbrella", "t2", "INR", "overdue", [
-		("in-mumbai", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu")], None),
+	("umbrella", "t2", "INR", "overdue", [("in-mumbai", "plan-4vcpu"), ("in-mumbai", "plan-2vcpu")], None),
 	# t1: a payment attempt fails with a reason, then settles on retry (+ metered).
 	("stark-ind", "t1", "INR", "retry", [("in-mumbai", "plan-2vcpu")], None),
 	# t1: a paid invoice partially refunded as wallet credits (→ wallet).
@@ -175,15 +190,17 @@ def _ensure_setup_wizard() -> None:
 	from frappe.desk.page.setup_wizard.setup_wizard import setup_complete
 
 	if not frappe.is_setup_complete():
-		setup_complete({
-			"language": "English",
-			"country": "India",
-			"timezone": "Asia/Kolkata",
-			"currency": "INR",
-			"full_name": "Billing Admin",
-			"email": DEMO_ADMIN,
-			"password": DEMO_ADMIN_PASSWORD,
-		})
+		setup_complete(
+			{
+				"language": "English",
+				"country": "India",
+				"timezone": "Asia/Kolkata",
+				"currency": "INR",
+				"full_name": "Billing Admin",
+				"email": DEMO_ADMIN,
+				"password": DEMO_ADMIN_PASSWORD,
+			}
+		)
 		frappe.db.commit()
 	_ensure_billing_admin()
 
@@ -194,10 +211,14 @@ def _ensure_billing_admin() -> None:
 	from frappe.utils.password import update_password
 
 	if not frappe.db.exists("User", DEMO_ADMIN):
-		user = frappe.get_doc({
-			"doctype": "User", "email": DEMO_ADMIN, "first_name": "Billing Admin",
-			"send_welcome_email": 0,
-		})
+		user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": DEMO_ADMIN,
+				"first_name": "Billing Admin",
+				"send_welcome_email": 0,
+			}
+		)
 		user.flags.ignore_password_policy = True
 		user.append_roles("System Manager")
 		user.insert(ignore_permissions=True)
@@ -212,7 +233,7 @@ def _ensure_billing_admin() -> None:
 def seed() -> dict:
 	"""Wipe all billing data and rebuild the ten-team demo end to end.
 
-	    bench --site demo-billing.local execute central.billing.demo.demo_scenarios.seed
+	bench --site demo-billing.local execute central.billing.demo.demo_scenarios.seed
 	"""
 	_ensure_setup_wizard()
 	_wipe_all()
@@ -234,11 +255,30 @@ def seed() -> dict:
 	# never hand-injected rows.
 	_seed_notification_feed(slug_to_team)
 
+	# Prices went up after everyone signed. Nothing about a running subscription
+	# changes — the rate is locked on its open segment (ADR 0010) — which is exactly
+	# what makes grandfathering visible: every existing team is now sitting below
+	# list, and the console can finally say so. Done LAST so it lands on top of the
+	# locks the teams already hold.
+	_raise_catalog_prices()
+
 	# NOTE: the demo does NOT touch the Billing workspace — the app ships the real
 	# "Catalog Administration" workspace as a file fixture (billing/workspace/billing),
 	# which `bench migrate` installs. Overwriting it here made the demo site diverge.
 	frappe.db.commit()
 	return results
+
+
+def _raise_catalog_prices(factor: float = 1.18) -> None:
+	"""Put every VM plan's catalog rate up, leaving locked segments untouched."""
+	for rate in frappe.get_all("Catalog Rate", filters={"priced_doctype": "Plan"}, fields=["name", "rate"]):
+		frappe.db.set_value(
+			"Catalog Rate",
+			rate.name,
+			"rate",
+			round(frappe.utils.flt(rate.rate) * factor, 2),
+			update_modified=False,
+		)
 
 
 def _seed_notification_feed(slug_to_team: dict):
@@ -247,12 +287,12 @@ def _seed_notification_feed(slug_to_team: dict):
 
 	Billing events go through the real `notifications.notify` sender (which records a
 	Team Notification via the wired feed); Server Failed is triggered by flipping a
-	real Asset to Failed (the `Asset.on_update` hook emits it); Resize Failed and
-	Cluster Degraded use `create_notification` — the same writer the real hooks call.
+	real Asset to Failed (the `on_update` hook emits it); Resize Failed and
+	Cluster Degraded use `engine.dispatch` — the same writer the real hooks use.
 	The overdue team already emits Invoice Overdue + Server Suspended via real dunning.
 	"""
 	from central.billing.platform import notifications
-	from central.notifications import create_notification
+	from central.notification import engine
 
 	# (slug, event_type, extra context) — one representative billing event per team,
 	# matched to its scenario. `invoice` context is filled from the team's latest bill.
@@ -266,7 +306,7 @@ def _seed_notification_feed(slug_to_team: dict):
 		("harbor", "Credit Low", {"utilisation": "88%"}),
 		("piedpiper", "Credit Low", {"utilisation": "91%"}),
 		("acme-corp", "Mandate Reauth", {}),
-		("northwind", "Pre-debit Notice", {"amount": "$4,200.00", "charge_on": "2026-07-07"}),
+		("northwind", "Pre-debit Notice", {"amount": "$4,200.00", "charge_on": ANCHOR_DUE}),
 	]
 	for slug, event, ctx in billing:
 		team = slug_to_team.get(slug)
@@ -276,8 +316,11 @@ def _seed_notification_feed(slug_to_team: dict):
 		context = dict(ctx)
 		context.setdefault("invoice", inv)
 		notifications.notify(
-			team, event, context=context,
-			reference_doctype="Invoice" if inv else None, reference_name=inv,
+			team,
+			event,
+			context=context,
+			reference_doctype="Invoice" if inv else None,
+			reference_name=inv,
 		)
 
 	# Server Failed — flip one real Running Asset to Failed; the on_update hook fires.
@@ -292,21 +335,41 @@ def _seed_notification_feed(slug_to_team: dict):
 	# Resize Failed + Cluster Degraded — the same writer the real hooks use.
 	acme = slug_to_team.get("acme-corp")
 	if acme:
-		create_notification(
-			acme, "Server resize failed", category="Server", event_type="Resize Failed",
-			severity="Error", message="A background resize could not be applied and was rolled "
+		engine.ensure_event_type(
+			"resize_failed",
+			category="Server",
+			severity="Error",
+			required_cap="server:view",
+			in_app_title="Resize failed: {{ reference_name }}",
+			in_app_body="Server resize failed for {{ reference_name }}: {{ message }}",
+			action_label="View server",
+			action_route="/servers",
+		)
+		engine.dispatch(
+			acme,
+			"resize_failed",
+			message="A background resize could not be applied and was rolled "
 			"back. Billing stayed on the previous plan. You can retry the resize.",
-			action_label="View server", action_route="/servers",
 		)
 	umbrella = slug_to_team.get("umbrella")
 	if umbrella:
-		create_notification(
-			umbrella, "Region in-mumbai is temporarily unreachable", category="Server",
-			event_type="Cluster Degraded", severity="Warning",
+		engine.ensure_event_type(
+			"cluster_degraded",
+			category="Server",
+			severity="Warning",
+			required_cap="server:view",
+			in_app_title="Region unavailable: {{ reference_name }}",
+			in_app_body="Region {{ reference_name }}: {{ message }}",
+			action_label="View servers",
+			action_route="/servers",
+		)
+		engine.dispatch(
+			umbrella,
+			"cluster_degraded",
 			message="Central couldn't reach in-mumbai on the last sync. Your servers keep running; "
 			"their status in the console may be delayed until the region recovers.",
-			reference_doctype="Atlas Instance", reference_name="in-mumbai",
-			action_label="View servers", action_route="/servers",
+			reference_doctype="Atlas Instance",
+			reference_name="in-mumbai",
 		)
 
 
@@ -332,8 +395,10 @@ def summary() -> dict:
 	top = max(line_counts, key=line_counts.get) if line_counts else None
 
 	return {
-		"teams": [_team_summary(slug, tier, currency, state)
-				  for slug, tier, currency, state, _resources, _resize in TEAMS],
+		"teams": [
+			_team_summary(slug, tier, currency, state)
+			for slug, tier, currency, state, _resources, _resize in TEAMS
+		],
 		"totals": {
 			"teams_by_currency": by_currency,
 			"paid_invoices": frappe.db.count("Invoice", {"status": "Paid"}),
@@ -341,13 +406,17 @@ def summary() -> dict:
 			"overdue_invoices": frappe.db.count("Invoice", {"status": "Overdue"}),
 			"failed_attempts": frappe.db.count("Payment Attempt", {"status": "Failed"}),
 			"in_flight_attempts": frappe.db.count("Payment Attempt", {"status": "Initiated"}),
-			"refunds": {r.destination: frappe.db.count("Refund", {"destination": r.destination})
-						for r in frappe.get_all("Refund", fields=["destination"], group_by="destination")},
+			"refunds": {
+				r.destination: frappe.db.count("Refund", {"destination": r.destination})
+				for r in frappe.get_all("Refund", fields=["destination"], group_by="destination")
+			},
 			"resizes": frappe.db.count("Subscription Change", {"change_type": "Plan Changed"}),
 			"credit_ledger_entries": frappe.db.count("Credit Ledger Entry"),
 			"usage_rollups": frappe.db.count("Usage Rollup"),
 			"largest_invoice": {"invoice": top, "line_items": line_counts.get(top)} if top else None,
-			"months_covered": sorted({str(d)[:7] for d in frappe.get_all("Invoice", pluck="period_start") if d}),
+			"months_covered": sorted(
+				{str(d)[:7] for d in frappe.get_all("Invoice", pluck="period_start") if d}
+			),
 		},
 	}
 
@@ -411,19 +480,17 @@ def _drop_stray_demo_teams() -> None:
 
 
 def _build_team(team, slug, tier, currency, state, resources, resize):
-	from collections import OrderedDict
-
 	_tax(team, currency)
 	_profile(team, slug, currency, resources[0][0])
 	_tier(team, tier)  # tier lives on the Billing Profile, so set it after _profile
-	# Signup provisioning grants the ruled welcome credits ($25 / ₹2500) once, in the
-	# team's currency — the same rule production runs (WELCOME_CREDITS), not a random grant.
+	# Signup provisioning grants the welcome credits once, in the team's currency and at
+	# the amount Billing Settings carries — the same rule production runs, not a random grant.
 	provision_billing_profile(team)
 	_team_members(team, slug)  # members on varied system roles + a custom role
 	gateway, pm = _payment_setup(team, slug, currency, state)
 	# A top-up-only team has no card, but its wallet top-up still mints a customer.
 	if pm is None and state in _TOPUP_STATES:
-		_gateway_customer(team, STRIPE[currency], f"cus_{slug}")
+		_gateway_customer(team, STRIPE, f"cus_{slug}")
 	# A fallback team keeps a second, lower-priority card so settlement can rotate to it
 	# when the primary declines (#28).
 	if state == "fallback":
@@ -436,32 +503,47 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	# balance is read off the actual draw, not the stale seed-time grant.
 	backdate_welcome_credit(team, f"{first_start} 00:00:00")
 
-	by_cluster = OrderedDict()
-	for cluster, plan in resources:
-		by_cluster.setdefault(cluster, []).append(plan)
-
-	# One subscription per cluster carries the per-region billing intent. The first
-	# cluster of a grandfathered team locks the launch (discounted) rate; the rest lock
-	# today's catalog rate. The customer sees ONE consolidated invoice per month.
+	# One subscription PER LISTED INSTANCE. This used to group by cluster and keep
+	# only the first plan in each, so a team whose scenario reads "3 instances in
+	# one region" was provisioned exactly one — and the consolidated invoice it is
+	# meant to demonstrate had a single line on it. The customer still sees ONE
+	# invoice a month; it just now has every machine on it.
+	#
+	# The first instance of a grandfathered team locks the launch (discounted) rate;
+	# the rest lock today's catalog rate.
 	subs = []
 	idx = 0
-	for cluster, plans in by_cluster.items():
+	for cluster, plan_key in resources:
 		idx += 1
-		plan = plan_name(plans[0])  # logical key -> the configurator-minted Plan name
-		resource = f"srv-{slug}-{idx}"
+		plan = plan_name(plan_key)  # logical key -> the configurator-minted Plan name
+		# Production names an Asset by its resource_id, which is a hash — the id the
+		# cluster, support and the invoice all know the machine by. A demo using
+		# "srv-acme-corp-1" hides that the grouping key is an opaque id, so it is
+		# shaped like the real thing (deterministic, so re-seeds are stable).
+		resource = "vm-" + hashlib.sha256(f"{slug}:{idx}".encode()).hexdigest()[:10]
 		catalog = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 		rate = round(catalog * 0.78, 2) if (state == "grandfathered" and idx == 1) else catalog
 		sub = subscriptions.create_subscription(
-			team=team, cluster=cluster, plan=pname, billing_cycle="Monthly",
-			default_payment_method=pm, gateway=gateway,
-			start_date=first_start, resource_id=resource,
+			team=team,
+			cluster=cluster,
+			plan=plan,
+			billing_cycle="Monthly",
+			default_payment_method=pm,
+			gateway=gateway,
+			start_date=first_start,
+			resource_id=resource,
 		).name
+		# A readable name, so a receipt that groups by machine has a heading worth
+		# reading rather than the raw resource id.
+		if frappe.db.exists("Asset", resource):
+			frappe.db.set_value("Asset", resource, "title", f"{slug}-{idx}", update_modified=False)
 		opening = frappe.db.get_value(
 			"Subscription Change", {"subscription": sub, "change_type": "Created"}, "name"
 		)
 		if opening:
 			frappe.db.set_value(
-				"Subscription Change", opening,
+				"Subscription Change",
+				opening,
 				{"locked_rate": rate, "effective_at": f"{first_start} 00:00:00"},
 				update_modified=False,
 			)
@@ -480,7 +562,7 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	for svc_slug, usage in _TEAM_SERVICES.get(slug, []):
 		_sub, subject = subscribe_service(team, plan_name(svc_slug), resources[0][0], pm, gateway)
 		resource_type, unit = _SERVICE_META[svc_slug]
-		meter_service_usage(subject, resource_type, usage, unit, ANCHOR, "2026-06-30")
+		meter_service_usage(subject, resource_type, usage, unit, ANCHOR, ANCHOR_END)
 
 	# VM resize(s) staged on the current month's bill (multiple in a day / within 24h).
 	if resize:
@@ -492,8 +574,11 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 		inv = invoicing.generate_team_invoice(team, start, end, subscription=primary_sub)
 		if not inv:
 			continue
-		# Finalised the morning the period closed — before that month's payment attempts.
-		backdate_invoice(inv, f"{end} 08:00:00")
+		# Finalised when the run would actually open it: the 1st after the period
+		# closed, not its last day. A bill cannot be raised — or paid — before the
+		# month it covers has finished.
+		opened_at = opens_on(end)
+		backdate_invoice(inv, opened_at)
 		# The overdue team's most recent bill is left unpaid and dunned to Overdue +
 		# suspended. Anchoring it to a CLOSED month (due 7 days after the month ended)
 		# means the whole cycle — decline retries, Day-7 Overdue, Day-14 suspend — sits
@@ -511,31 +596,42 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 			remainder = draw_wallet_credit(inv)
 			# Credits are drawn at invoice-open time, before the card — pin the debit to
 			# the finalisation moment so it sorts ahead of that month's card attempts.
-			backdate_credit_debits(inv, f"{end} 08:00:00")
+			backdate_credit_debits(inv, opened_at)
 			if frappe.db.get_value("Invoice", inv, "status") == "Paid":
 				continue  # welcome credit covered it in full — no card needed
 		retries = _RETRY_HISTORY.get(i, 0) if pm else 0
 		if retries:
-			_settle_with_retries(team, inv, pm, gateway, retries, remainder, currency)
+			_settle_with_retries(
+				team, inv, pm, gateway, retries, remainder, currency, base=collection_moment(team, end)
+			)
 		else:
 			# No dunning trail this month — a single card capture settles the remainder
 			# after credits. Record it (backdated to the morning after finalisation) so the
 			# payment history is complete; without it the invoice reads as Paid with the
 			# card portion collected but no card charge ever shown.
 			if remainder > 0 and pm:
-				_capture_attempt(team, inv, pm, gateway, remainder, currency, when=f"{end} 09:00:00")
-			frappe.db.set_value("Invoice", inv, {
-				"status": "Paid", "amount_paid": remainder, "due_date": frappe.utils.add_days(end, 7),
-			})
+				_capture_attempt(
+					team, inv, pm, gateway, remainder, currency, when=collection_moment(team, end)
+				)
+			frappe.db.set_value(
+				"Invoice",
+				inv,
+				{
+					"status": "Paid",
+					"amount_paid": remainder,
+					"due_date": frappe.utils.add_days(end, 7),
+				},
+			)
 
 	note = _finish_current_month(team, primary_sub, currency, state, pm, gateway)
 
-	mode = _COLLECTION_MODES.get(slug, "Stripe Auto" if currency != "INR" else "Prepaid")
+	mode = _COLLECTION_MODES.get(slug, "Auto Charge" if currency != "INR" else "Prepaid")
 	set_collection_mode(team, mode)
-	if mode == "E-Mandate":
+	if mode == "Auto Charge" and currency == "INR":
 		arm_emandate(team)
 	final_mode = frappe.db.get_value("Billing Profile", team, "collection_mode")
-	return f"{len(resources)} instance(s) across {len(by_cluster)} region(s) — {note} [{final_mode}]"
+	regions = len({cluster for cluster, _plan in resources})
+	return f"{len(resources)} instance(s) across {regions} region(s) — {note} [{final_mode}]"
 
 
 def _run_overdue_cycle(team, inv, pm, gateway, due):
@@ -560,17 +656,17 @@ def _run_overdue_cycle(team, inv, pm, gateway, due):
 def _finish_current_month(team, sub, currency, state, pm, gateway):
 	"""Build the current (June) invoice — one consolidated invoice — in the team's
 	terminal state, exercising one settlement / refund / dunning path each."""
-	inv = invoicing.generate_team_invoice(team, ANCHOR, "2026-06-30", subscription=sub)
+	inv = invoicing.generate_team_invoice(team, ANCHOR, ANCHOR_END, subscription=sub)
 	if not inv:
 		return state
 	# Finalised end of the current month — before this month's settlement/refund events.
-	backdate_invoice(inv, "2026-06-30 08:00:00")
+	backdate_invoice(inv, f"{ANCHOR_END} 08:00:00")
 	total = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "total"))
 	collectable = frappe.utils.flt(frappe.db.get_value("Invoice", inv, "expected_collection"))
 
 	# --- charge stuck in-flight — Stripe still awaiting the bank -----------------
 	if state == "bank_pending":
-		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": "2026-07-07"})
+		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": ANCHOR_DUE})
 		bank_pending_attempt(team, inv, pm, gateway, collectable, currency)
 		return "charge in-flight (awaiting bank) — invoice frozen"
 
@@ -580,22 +676,36 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 		balance = frappe.utils.flt(credits.get_balance(team)["balance"])
 		applied = round(min(balance, collectable), 2)
 		if applied > 0:
-			credits.apply_credit(team, applied, currency, reference_type="Invoice",
-				reference_name=inv, note=f"Credit applied to {inv}")
+			credits.apply_credit(
+				team,
+				applied,
+				currency,
+				reference_type="Invoice",
+				reference_name=inv,
+				note=f"Credit applied to {inv}",
+			)
 		remainder = round(collectable - applied, 2)
 		_capture_attempt(team, inv, pm, gateway, remainder, currency)
-		frappe.db.set_value("Invoice", inv, {
-			"status": "Paid", "credit_applied": applied, "expected_collection": remainder,
-			"amount_paid": remainder, "due_date": "2026-07-07",
-		})
+		frappe.db.set_value(
+			"Invoice",
+			inv,
+			{
+				"status": "Paid",
+				"credit_applied": applied,
+				"expected_collection": remainder,
+				"amount_paid": remainder,
+				"due_date": ANCHOR_DUE,
+			},
+		)
 		return f"part from credits ({applied}), remainder captured on card"
 
 	# --- dispute: charge captured, then charged back to source ------------------
 	if state == "dispute":
-		frappe.db.set_value("Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": "2026-07-07"})
+		frappe.db.set_value("Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": ANCHOR_DUE})
 		attempt = _capture_attempt(team, inv, pm, gateway, total, currency)
-		make_refund(team, inv, attempt, total, currency, "Source",
-			"Cardholder dispute — chargeback", chargeback=True)
+		make_refund(
+			team, inv, attempt, total, currency, "Source", "Cardholder dispute — chargeback", chargeback=True
+		)
 		return "Paid then disputed — full chargeback to source"
 
 	# --- autopay fallback: primary declines, a backup card captures -------------
@@ -605,37 +715,46 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 	# to the wallet instead (see refund_wallet).
 	if state == "fallback":
 		# Open first, so the fallback reads as a real collection run before it settles.
-		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": "2026-07-07"})
-		_attempt, backup_pm = _settle_via_backup(team, inv, pm, gateway, collectable, currency,
-			when="2026-06-30 09:00:00")
-		# Duplicate capture on the same invoice, then its full refund to source.
-		dup = _capture_attempt(team, inv, backup_pm, gateway, collectable, currency,
-			when="2026-06-30 11:00:00")
-		make_refund(team, inv, dup, collectable, currency, "Source",
-			"Duplicate charge — full refund to card")
+		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": ANCHOR_DUE})
+		_attempt, backup_pm = _settle_via_backup(
+			team, inv, pm, gateway, collectable, currency, when=f"{ANCHOR_END} 09:00:00"
+		)
+		# Duplicate capture on the same invoice, then its full refund to source. It is
+		# the THIRD attempt against this invoice (decline, backup capture, then this),
+		# and the attempt key is hash(invoice, retry_number) — so it has to say so.
+		dup = _capture_attempt(
+			team, inv, backup_pm, gateway, collectable, currency, when=f"{ANCHOR_END} 11:00:00", retry=2
+		)
+		make_refund(team, inv, dup, collectable, currency, "Source", "Duplicate charge — full refund to card")
 		return "primary declined → backup captured (#28); duplicate charge refunded in full → source"
 
 	# --- refund as credits (→ wallet) -------------------------------------------
 	if state == "refund_wallet":
-		frappe.db.set_value("Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": "2026-07-07"})
+		frappe.db.set_value("Invoice", inv, {"status": "Paid", "amount_paid": total, "due_date": ANCHOR_DUE})
 		attempt = _capture_attempt(team, inv, pm, gateway, total, currency)
 		refund_amt = round(total * 0.15, 2)
 		make_refund(team, inv, attempt, refund_amt, currency, "Wallet", "Partial overcharge")
-		credits.refund_to_wallet(team, refund_amt, currency=currency,
-			reference_type="Refund", reference_name=f"{team}-refund", note="Partial overcharge → wallet")
+		credits.refund_to_wallet(
+			team,
+			refund_amt,
+			currency=currency,
+			reference_type="Refund",
+			reference_name=f"{team}-refund",
+			note="Partial overcharge → wallet",
+		)
 		return "Paid + partial refund → wallet (credits)"
 
 	# --- dunning: the overdue bill is the last CLOSED month (built + dunned in the
 	# historical loop, where the cycle fits before 'today'). The current month is a
 	# fresh, not-yet-due Open invoice — realistic for a team carrying an overdue bill.
 	if state == "overdue":
-		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": "2026-07-07", "amount_paid": 0})
+		frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": ANCHOR_DUE, "amount_paid": 0})
 		return "prior month overdue → suspended; current month open"
 
 	# --- one failed attempt (with reason), then settled on retry ----------------
 	if state == "retry":
 		_settle_with_retries(team, inv, pm, gateway, 1, collectable, currency)
-		frappe.db.set_value("Invoice", inv, "due_date", "2026-07-07")
+		frappe.db.set_value("Invoice", inv, "due_date", ANCHOR_DUE)
 		return "1 declined attempt (card_declined) then captured"
 
 	# --- full settlement from the welcome credits -------------------------------
@@ -644,6 +763,9 @@ def _finish_current_month(team, sub, currency, state, pm, gateway):
 		return "settled fully from welcome credits (no card touched)"
 
 	# active / grandfathered — leave the current invoice Open.
-	frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": "2026-07-07"})
-	return "grandfathered (locked launch rate), open current invoice" if state == "grandfathered" \
+	frappe.db.set_value("Invoice", inv, {"status": "Open", "due_date": ANCHOR_DUE})
+	return (
+		"grandfathered (locked launch rate), open current invoice"
+		if state == "grandfathered"
 		else "active, open current invoice"
+	)

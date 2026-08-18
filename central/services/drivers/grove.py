@@ -48,7 +48,9 @@ class GroveDriver:
 		response = requests.post(url, json={"bootstrap_token": bootstrap_secret}, timeout=_TIMEOUT)
 
 		if response.status_code >= 400:
-			frappe.throw(_("Grove enrollment failed ({0}): {1}").format(response.status_code, response.text[:200]))
+			frappe.throw(
+				_("Grove enrollment failed ({0}): {1}").format(response.status_code, response.text[:200])
+			)
 
 		return response.json().get("message", {})
 
@@ -70,6 +72,8 @@ class GroveDriver:
 
 		response = requests.post(url, json=body, headers=headers, timeout=_TIMEOUT)
 		if response.status_code >= 400:
-			frappe.throw(_("Grove request failed ({0}): {1}").format(response.status_code, response.text[:200]))
+			frappe.throw(
+				_("Grove request failed ({0}): {1}").format(response.status_code, response.text[:200])
+			)
 
 		return response.json().get("message", {})

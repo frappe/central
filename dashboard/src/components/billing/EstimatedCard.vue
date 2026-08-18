@@ -1,14 +1,14 @@
 <script setup lang="ts">
+import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { useCall, Button, Dialog, FormControl, LoadingText } from 'frappe-ui'
+import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
-import { useCapabilities } from '@/composables/useCapabilities'
-import { API, method } from '@/api/methods'
-import { money, currencySymbol } from '@/lib/format'
-import { shortDate } from '@/lib/date'
-import { successToast, errorToast } from '@/lib/toast'
+import { ordinalDate } from '@/lib/date'
+import { currencySymbol, money } from '@/lib/format'
+import { errorToast, successToast } from '@/lib/toast'
 import type { BillingSettings } from '@/types/billing'
 
 // Estimated this cycle — the projected month-end bill, when it bills + days left,
@@ -16,6 +16,13 @@ import type { BillingSettings } from '@/types/billing'
 // prototype: the alert is a quiet ghost button pinned to the card's foot that
 // tints amber/red as spend nears/crosses the threshold, and opens a small dialog.
 // Reads get_forecast (+ get_billing_settings).
+//
+// The projection is never quoted as a bare number: the engine already knows which
+// part of it is a locked rate over elapsed days and which is inferred from usage
+// nobody has finished (projection/basis.py), and the customer is owed that split.
+// The bar and its legend are that split; the breakdown tray is the detail.
+defineProps<{ active?: boolean }>()
+defineEmits<{ open: [] }>()
 const { forecast, currency } = useBillingOverview()
 const { activeTeam } = useSession()
 const { canManageBilling } = useCapabilities()
@@ -24,9 +31,44 @@ const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
 const projected = computed(() => Number(fc.value?.projected_total ?? 0))
 const billsOn = computed(() =>
-	fc.value?.period_end ? shortDate(fc.value.period_end) : '',
+	fc.value?.period_end ? ordinalDate(fc.value.period_end) : '',
 )
 const daysRemaining = computed(() => fc.value?.days_remaining ?? null)
+
+// Owed vs inferred. Fall back to treating the whole projection as owed when the
+// split is absent (an older cached response), never the other way round — calling
+// a fact an estimate is the less honest failure.
+const measured = computed(() => Number(fc.value?.measured ?? projected.value))
+const estimated = computed(() => Number(fc.value?.estimated ?? 0))
+const hasEstimates = computed(() => Boolean(fc.value?.has_estimates))
+const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
+// Nothing accrued yet: the tray would open on an empty list, so the affordance
+// that opens it is not offered. An action that leads nowhere is worse than no
+// action — it reads as something being broken.
+const hasCycle = computed(() => projected.value > 0)
+
+// Against last month. A projected total on its own answers "how much"; the
+// question people actually open this for is "is it going up", and that needs the
+// month before it. Compared like for like — a full projected month against a
+// full billed one — and shown only once there is a month to compare against.
+const previousTotal = computed(() => fc.value?.previous_total ?? null)
+const previousLabel = computed(() => fc.value?.previous_label ?? null)
+const change = computed(() => {
+	if (!hasCycle.value || !previousTotal.value || !previousLabel.value)
+		return null
+	const delta = projected.value - previousTotal.value
+	// Under a percent either way is noise, not news.
+	if (Math.abs(delta) < previousTotal.value * 0.01) {
+		return `About the same as ${previousLabel.value}`
+	}
+	const direction = delta > 0 ? 'more' : 'less'
+	return `${money(Math.abs(delta), currency.value)} ${direction} than ${previousLabel.value}`
+})
+const taxLabel = computed(() => fc.value?.tax_type || 'tax')
+const measuredPct = computed(() => {
+	const total = measured.value + estimated.value
+	return total > 0 ? Math.round((measured.value / total) * 100) : 100
+})
 
 // ── Billing alert (spend-alert threshold) ────────────────────────────────────
 // Notify the team once projected spend crosses this amount (0 = off). Stored on
@@ -76,7 +118,7 @@ const alertLabel = computed(() => {
 	return `Budget alert at ${money(spendAlert.value, currency.value)}`
 })
 const alertTint = computed(() =>
-	crossed.value ? '!text-ink-red-3' : near.value ? '!text-ink-amber-3' : '',
+	crossed.value ? '!text-ink-red-6' : near.value ? '!text-ink-amber-6' : '',
 )
 
 // Dialog: edit against a draft so Cancel leaves the live value untouched.
@@ -93,7 +135,7 @@ async function submitAlert(): Promise<void> {
 			spend_alert_threshold: Number(draft.value) || 0,
 		})
 		spendAlert.value = Number(draft.value) || 0
-		successToast('Billing alert saved.')
+		successToast('Billing alert saved')
 		dialogOpen.value = false
 		settings.reload()
 	} catch (e) {
@@ -104,28 +146,94 @@ async function submitAlert(): Promise<void> {
 
 <template>
 	<div
-		class="flex flex-col rounded-xl border border-outline-gray-2 bg-surface-elevation-1 p-5"
+		class="rounded-6 border bg-surface-base p-5 transition-colors"
+		:class="active ? 'border-outline-gray-4' : 'border-outline-gray-2'"
 	>
-		<div class="flex h-6 items-center">
-			<span class="text-p-sm text-ink-gray-5">Estimated this cycle</span>
+		<div class="flex h-6 items-center justify-between gap-2">
+			<button
+				v-if="hasCycle"
+				type="button"
+				class="text-p-sm text-ink-gray-5 transition-colors hover:text-ink-gray-7"
+				@click="$emit('open')"
+			>
+				This cycle
+			</button>
+			<span v-else class="text-p-sm text-ink-gray-5">This cycle</span>
+			<Button
+				v-if="hasCycle"
+				variant="ghost"
+				size="sm"
+				label="Breakdown"
+				@click="$emit('open')"
+			>
+				<template #suffix>
+					<span class="lucide-chevron-right size-4" aria-hidden="true" />
+				</template>
+			</Button>
 		</div>
 
-		<div v-if="loading" class="mt-2 w-32">
-			<LoadingText :lines="1" />
+		<div v-if="loading" class="mt-2 w-40">
+			<LoadingText :lines="2" />
 		</div>
 		<template v-else>
-			<p class="mt-1.5 text-2xl font-semibold tabular-nums text-ink-gray-9">
+			<!-- The headline figure of the page. -->
+			<p class="mt-1.5 text-3xl-semibold tabular-nums text-ink-gray-9">
 				{{ money(projected, currency) }}
 			</p>
-			<p class="mt-1.5 text-p-sm text-ink-gray-5">
-				<template v-if="billsOn">Bills {{ billsOn }}</template>
-				<template v-if="daysRemaining != null">
-					· {{ daysRemaining }} days left</template
-				>
+			<p v-if="change" class="mt-1 text-p-sm text-ink-gray-6">
+				{{ change }}
+			</p>
+			<p class="mt-1 text-p-sm text-ink-gray-5">
+				<template v-if="!hasCycle">
+					Nothing has been billed yet this cycle
+				</template>
+				<template v-else>
+					<template v-if="billsOn">Bills {{ billsOn }}</template>
+					<template v-if="daysRemaining != null">
+						· {{ daysRemaining }} days left</template
+					>
+				</template>
 			</p>
 
-			<div v-if="canManageBilling" class="mt-auto pt-4">
+			<!-- Split bar: solid is owed, hatched is inferred. Only drawn when part
+			     of the figure actually is an estimate — a bill that is entirely fact
+			     should not be given a bar that implies doubt. -->
+			<template v-if="hasEstimates">
+				<div
+					class="mt-4 flex h-1.5 overflow-hidden rounded-full bg-surface-gray-2"
+					aria-hidden="true"
+				>
+					<span
+						class="bg-surface-gray-10"
+						:style="{ width: `${measuredPct}%` }"
+					/>
+					<span class="estimated-fill flex-1" />
+				</div>
+				<div class="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
+					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
+						<span
+							class="size-2 shrink-0 rounded-1 bg-surface-gray-10"
+							aria-hidden="true"
+						/>
+						{{ money(measured, currency) }}
+						already owed
+					</span>
+					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
+						<span
+							class="estimated-fill size-2 shrink-0 rounded-1"
+							aria-hidden="true"
+						/>
+						{{ money(estimated, currency) }}
+						estimated
+					</span>
+				</div>
+			</template>
+
+			<div
+				class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-outline-gray-1 pt-3"
+			>
 				<Button
+					v-if="canManageBilling"
 					variant="ghost"
 					size="sm"
 					class="-ml-2"
@@ -137,6 +245,10 @@ async function submitAlert(): Promise<void> {
 						><span class="lucide-bell size-4" aria-hidden="true" /></template
 					>
 				</Button>
+				<span v-else />
+				<span v-if="taxAmount" class="text-p-sm text-ink-gray-5">
+					incl. {{ money(taxAmount, currency) }} {{ taxLabel }}
+				</span>
 			</div>
 		</template>
 
@@ -168,3 +280,18 @@ async function submitAlert(): Promise<void> {
 		</Dialog>
 	</div>
 </template>
+
+<style scoped>
+/* Estimated spend is drawn as a hatch of the SAME ink the measured part uses, not
+   a second hue: it is the same money, differing only in whether it has happened
+   yet. Keeping it monochrome also keeps the card inside the dashboard's meter
+   convention (ink-gray-8 on surface-gray-2), where colour means state, not
+   category. */
+.estimated-fill {
+	background-image: repeating-linear-gradient(
+		45deg,
+		var(--surface-gray-7) 0 3px,
+		var(--surface-gray-3) 3px 6px
+	);
+}
+</style>

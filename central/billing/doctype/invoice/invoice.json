@@ -38,6 +38,7 @@
   "credit_applied",
   "expected_collection",
   "amount_paid",
+  "paid_at",
   "section_break_ext",
   "erpnext_invoice",
   "erpnext_sync_status",
@@ -238,6 +239,12 @@
    "fieldname": "amount_paid",
    "fieldtype": "Currency",
    "label": "Amount Paid"
+  },
+  {
+   "fieldname": "paid_at",
+   "fieldtype": "Datetime",
+   "label": "Paid At",
+   "description": "Set the moment status flips to Paid — the real settlement time, not the invoice's creation."
   },
   {
    "fieldname": "section_break_ext",

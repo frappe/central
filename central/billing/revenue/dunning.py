@@ -2,7 +2,9 @@
 # For license information, please see license.txt
 """Retry / dunning + staged suspension (issue #14).
 
-Failed-payment handling, end to end and time-staged off the invoice due date:
+Failed-payment handling, end to end and time-staged off the invoice due date. The
+days below are the shipped defaults; the ladder itself is configured on Billing
+Settings, so the stages are read per run rather than fixed here:
 
   Day 1 / 3 / 7   retry the charge (each a new Payment Attempt), notify with the
                   failure reason.
@@ -20,12 +22,10 @@ _state on the Agent).
 
 import frappe
 
+from central.billing import settings
 from central.billing.catalog import subscriptions
 from central.billing.catalog.entitlements import issue_token
-
-RETRY_DAYS = [1, 3, 7]
-SUSPEND_AFTER_DAYS = 14
-TERMINATE_AFTER_DAYS = 44
+from central.billing.states import transition
 
 
 def defer_dunning(invoice: str, reason: str) -> bool:
@@ -45,9 +45,7 @@ def defer_dunning(invoice: str, reason: str) -> bool:
 	trying. `due_date` is untouched: what the customer owes and when they owed it is
 	an accounting fact, and AR aging must keep telling the truth.
 	"""
-	from central.billing.revenue.invoicing import DEFAULT_DUE_DAYS
-
-	fair_start = frappe.utils.add_days(frappe.utils.nowdate(), DEFAULT_DUE_DAYS)
+	fair_start = frappe.utils.add_days(frappe.utils.nowdate(), settings.invoice_due_days())
 	current = frappe.db.get_value("Invoice", invoice, "dunning_starts_on")
 	if current and frappe.utils.getdate(current) >= frappe.utils.getdate(fair_start):
 		return False
@@ -64,6 +62,57 @@ def dunning_clock_start(invoice_doc):
 	honest answer.
 	"""
 	return invoice_doc.get("dunning_starts_on") or invoice_doc.due_date
+
+
+def dunning_policy() -> frappe._dict:
+	"""The ladder's knobs, read once.
+
+	`overdue_after` is not its own setting — the invoice falls overdue once the last
+	retry has been spent, so with no retries configured there is nothing to wait for
+	and it goes overdue on day zero.
+	"""
+	retry_days = settings.dunning_retry_days()
+	return frappe._dict(
+		retry_days=retry_days,
+		overdue_after=retry_days[-1] if retry_days else 0,
+		suspend_after=settings.suspend_after_days(),
+		terminate_after=settings.terminate_after_days(),
+	)
+
+
+# Stages that land on the same day still have an order: a retry is attempted before
+# the invoice is declared overdue, and suspension precedes termination.
+_STAGE_ORDER = {"Retry": 0, "Overdue": 1, "Suspend": 2, "Terminate": 3}
+
+
+def dunning_schedule(clock_start, policy=None) -> list[frappe._dict]:
+	"""The dated ladder for an invoice whose dunning clock starts on `clock_start`.
+
+	Pure date arithmetic over the policy — no document reads, no writes, and no
+	knowledge of any particular invoice. `process_invoice_dunning` executes this
+	schedule; anything that wants to *show* the ladder without running it (which
+	dates, which stage, when the resource stops) reads the same list.
+
+	Pass an explicit `policy` to ask what a different ladder would do.
+	"""
+	policy = policy or dunning_policy()
+	start = frappe.utils.getdate(clock_start)
+	stages = [
+		frappe._dict(stage="Retry", attempt=n, day=day) for n, day in enumerate(policy.retry_days, start=1)
+	]
+	stages.append(frappe._dict(stage="Overdue", day=policy.overdue_after))
+	stages.append(frappe._dict(stage="Suspend", day=policy.suspend_after))
+	stages.append(frappe._dict(stage="Terminate", day=policy.terminate_after))
+
+	for s in stages:
+		s.date = frappe.utils.add_days(start, s.day)
+	return sorted(stages, key=lambda s: (s.day, _STAGE_ORDER[s.stage]))
+
+
+def stages_reached(schedule: list, on) -> set:
+	"""The stage names whose date has arrived by `on`."""
+	today = frappe.utils.getdate(on)
+	return {s.stage for s in schedule if frappe.utils.getdate(s.date) <= today}
 
 
 def _notify(invoice, message: str):
@@ -100,9 +149,11 @@ def retry_payment(invoice_name: str) -> dict:
 			n = frappe.db.count("Payment Attempt", {"invoice": invoice_name})
 			reason = attempt.failure_reason or attempt.failure_code or "declined"
 			notifications.notify(
-				attempt.team, "Payment Retry",
+				attempt.team,
+				"Payment Retry",
 				message=f"Payment retry {n} for invoice {invoice_name} failed: {reason}",
-				reference_doctype="Invoice", reference_name=invoice_name,
+				reference_doctype="Invoice",
+				reference_name=invoice_name,
 			)
 	return result
 
@@ -122,9 +173,7 @@ def _advance_standing(subscription: str, target: str):
 
 def _active_directive(team: str, field: str) -> bool:
 	"""True if the team's latest token already carries this directive."""
-	name = frappe.db.get_value(
-		"Entitlement Token", {"team": team}, "name", order_by="creation desc"
-	)
+	name = frappe.db.get_value("Entitlement Token", {"team": team}, "name", order_by="creation desc")
 	return bool(name and frappe.db.get_value("Entitlement Token", name, field))
 
 
@@ -142,8 +191,11 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	if not inv.due_date:
 		return {"invoice": invoice_name, "skipped": "no_due_date"}
 
-	days = (frappe.utils.getdate(now) - frappe.utils.getdate(dunning_clock_start(inv))).days
-	if days < RETRY_DAYS[0]:
+	clock_start = dunning_clock_start(inv)
+	days = (frappe.utils.getdate(now) - frappe.utils.getdate(clock_start)).days
+	policy = dunning_policy()
+	reached = stages_reached(dunning_schedule(clock_start, policy), now)
+	if policy.retry_days and "Retry" not in reached:
 		return {"invoice": invoice_name, "days_overdue": days, "action": "none"}
 
 	sub = frappe.get_doc("Subscription", inv.subscription) if inv.subscription else None
@@ -154,10 +206,10 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# stages below escalate. Credits-only teams (no methods) skip straight there.
 	from central.billing.payments import collection
 
-	# Off-session retries only make sense for an auto-charge mode. manual_checkout
-	# (customer pays on-session) and action_required (paused at the ₹15k threshold)
+	# Off-session retries only make sense for an auto-charge mode. Manual Checkout
+	# (customer pays on-session) and Action Required (paused at the ₹15k threshold)
 	# are never silently retried — dunning just escalates and asks them to act
-	# (ADR 0005, #50). prepaid/stripe_auto/emandate retry iff a method exists.
+	# (ADR 0005). Auto Charge and Prepaid retry iff a method exists.
 	mode = _collection_mode(inv.team)
 	auto_charge = mode not in ("Manual Checkout", "Action Required")
 	if inv.status == "Open" and auto_charge and collection.next_method_for(invoice_name, inv.team):
@@ -170,40 +222,54 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	standing = sub.account_standing if sub else None
 
 	# --- Day 7: Overdue + past_due, still running --------------------------
-	if days >= RETRY_DAYS[-1]:
+	if "Overdue" in reached:
 		if inv.status == "Open":
-			inv.db_set("status", "Overdue")
+			transition(inv, "Overdue", reason="dunning: past due window elapsed", actor="scheduler")
+			inv.save(ignore_permissions=True)
 			actions.append("overdue")
 			from central.billing.platform import notifications
 
 			notifications.notify(
-				inv.team, "Invoice Overdue", message=_overdue_message(invoice_name, mode),
+				inv.team,
+				"Invoice Overdue",
+				message=_overdue_message(invoice_name, mode),
 				context={"invoice": invoice_name},
-				reference_doctype="Invoice", reference_name=invoice_name,
+				reference_doctype="Invoice",
+				reference_name=invoice_name,
 			)
 		if sub:
 			standing = _advance_standing(inv.subscription, "Past Due")
 
 	# --- Day 14: suspend directive -> Agent stops --------------------------
-	if days >= SUSPEND_AFTER_DAYS and sub:
+	if "Suspend" in reached and sub:
 		standing = _advance_standing(inv.subscription, "Suspended")
 		if standing == "Suspended" and not _active_directive(sub.team, "suspend"):
 			issue_token(sub.team, {}, suspend=True)
 			_notify(inv, f"Suspended for non-payment (day {days}); resource stopped, data preserved.")
-			from central.notifications import create_notification
+			from central.notification import engine
 
-			create_notification(
-				inv.team, "Server suspended for non-payment",
-				category="Server", event_type="Server Suspended", severity="Error",
+			engine.ensure_event_type(
+				"server_suspended",
+				category="Server",
+				severity="Error",
+				required_cap="server:view",
+				in_app_title="Server suspended: {{ reference_name }}",
+				in_app_body="Server {{ reference_name }} suspended for non-payment: {{ message }}",
+				action_label="Pay now",
+				action_route="/billing/invoices",
+			)
+			engine.dispatch(
+				inv.team,
+				"server_suspended",
 				message=f"A server was suspended after {days} days overdue on invoice {invoice_name}. "
 				"Data is preserved — settle the invoice to restore it.",
-				reference_doctype="Invoice", reference_name=invoice_name,
-				action_label="Pay now", action_route="/billing/invoices",
+				reference_doctype="Invoice",
+				reference_name=invoice_name,
 			)
 			actions.append("suspend")
 
 	# --- Day 44: terminate directive -> Agent terminates -------------------
-	if days >= TERMINATE_AFTER_DAYS and sub and not _active_directive(sub.team, "terminate"):
+	if "Terminate" in reached and sub and not _active_directive(sub.team, "terminate"):
 		issue_token(sub.team, {}, suspend=True, terminate=True)
 		_notify(inv, f"Terminated after the suspension window (day {days}).")
 		actions.append("terminate")

@@ -14,6 +14,7 @@ import frappe
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from frappe import _
 
 
 def canonical(payload: dict) -> bytes:
@@ -27,16 +28,14 @@ def generate_keypair() -> tuple[str, str]:
 	private = key.private_bytes(
 		serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption()
 	)
-	public = key.public_key().public_bytes(
-		serialization.Encoding.Raw, serialization.PublicFormat.Raw
-	)
+	public = key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
 	return base64.b64encode(private).decode(), base64.b64encode(public).decode()
 
 
 def _private_key() -> Ed25519PrivateKey:
 	b64 = frappe.conf.get("entitlement_private_key")
 	if not b64:
-		frappe.throw("entitlement_private_key is not configured in site config")
+		frappe.throw(_("entitlement_private_key is not configured in site config"))
 	return Ed25519PrivateKey.from_private_bytes(base64.b64decode(b64))
 
 

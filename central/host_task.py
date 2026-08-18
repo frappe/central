@@ -26,6 +26,7 @@ import time
 from typing import TYPE_CHECKING
 
 import frappe
+from frappe import _
 
 from central.scripts_catalog import resolve
 
@@ -93,7 +94,7 @@ def _execute(
 		stdout, stderr, exit_code = _run_script(script, variables, env, timeout_seconds)
 	except subprocess.TimeoutExpired as timeout:
 		_finalize(task, "", f"Timed out after {timeout.timeout}s", None, "Failure", _elapsed_ms(start))
-		frappe.throw(f"Host Task {task.name} timed out after {timeout.timeout}s")
+		frappe.throw(_("Host Task {0} timed out after {1}s").format(task.name, timeout.timeout))
 	except Exception as exception:
 		_finalize(task, "", str(exception), None, "Failure", _elapsed_ms(start))
 		raise frappe.ValidationError(str(exception)) from exception
@@ -101,7 +102,9 @@ def _execute(
 	status = "Success" if exit_code == 0 else "Failure"
 	_finalize(task, stdout, stderr, exit_code, status, _elapsed_ms(start))
 	if status == "Failure":
-		frappe.throw(f"Host Task {task.name} ({script}) exited {exit_code}: {stderr[-500:]}")
+		frappe.throw(
+			_("Host Task {0} ({1}) exited {2}: {3}").format(task.name, script, exit_code, stderr[-500:])
+		)
 
 
 def _run_script(
@@ -163,3 +166,26 @@ def _finalize(
 
 def _elapsed_ms(start: float) -> int:
 	return int((time.monotonic() - start) * 1000)
+
+
+def prune_host_tasks(now=None) -> dict:
+	"""Daily: drop finished Host Tasks past the retention window.
+
+	A Host Task is the record of one run of a privileged host/hub script (the
+	WireGuard hub + tunnel scripts driven by `run_host_task`): it captures the
+	script name, exit code, status, and the full stdout/stderr as longtext. It is
+	an operational audit log, not a system of record — nothing downstream reads an
+	old task — so the rows accumulate one-per-run and the longtext columns grow the
+	table without bound. Prune terminal tasks (Success/Failure) older than
+	`host_task_retention_days` (default 30 days); live tasks (Pending/Running) are
+	kept regardless of age. Modelled on billing's cleanup_payment_logs."""
+	days = frappe.utils.cint(frappe.get_cached_doc("Central Settings").host_task_retention_days)
+	cutoff = frappe.utils.add_to_date(now or frappe.utils.now_datetime(), days=-days)
+	names = frappe.get_all(
+		"Host Task",
+		filters={"status": ("in", ("Success", "Failure")), "creation": ("<", cutoff)},
+		pluck="name",
+	)
+	for name in names:
+		frappe.delete_doc("Host Task", name, ignore_permissions=True, force=True)
+	return {"cutoff": str(cutoff), "deleted": len(names)}

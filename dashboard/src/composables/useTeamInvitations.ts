@@ -1,10 +1,11 @@
-import { computed } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { useBusyRunner } from '@/composables/useBusyRunner'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
+import { useCapabilities } from '@/composables/useCapabilities'
+import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { submitOrThrow } from '@/lib/frappeCall'
+import { getErrorMessage, isAbortError } from '@/lib/toast'
 import type { InvitationRow } from '@/types/api'
 
 // The active team's invitations — the manager's view (gated server-side on
@@ -18,7 +19,22 @@ const invitationsCall = useCall<InvitationRow[], { team: string }>({
 	immediate: false,
 })
 
-whenTeamReady(() => invitationsCall.reload())
+// The roster shows pending invites inline, so this module now loads on the Teams
+// page for everyone. list_team_invitations is gated on team:manage_members, so
+// wait for the capability rather than firing a request a viewer can only 403 on.
+const { canManageMembers } = useCapabilities()
+whenTeamReady(() => {
+	if (canManageMembers.value) invitationsCall.reload()
+})
+watch(canManageMembers, (can, was) => {
+	if (can && !was) invitationsCall.reload()
+})
+
+// Losing the capability — a demotion, or a switch to a team you don't manage —
+// has to take the fetched rows with it: they carry invitees' email addresses,
+// roles and resource scopes, and this call's data outlives any one page. Every
+// read below is gated on the live capability rather than on what was fetched
+// while it still held.
 
 const resendCall = useCall<{ expires_on: string }, { invitation: string }>({
 	url: method(API.resendInvitation),
@@ -53,11 +69,16 @@ export function useTeamInvitations() {
 	}
 
 	return {
-		invitations: computed<InvitationRow[]>(() => invitationsCall.data ?? []),
+		invitations: computed<InvitationRow[]>(() =>
+			canManageMembers.value ? (invitationsCall.data ?? []) : [],
+		),
 		loading: computed(
-			() => invitationsCall.loading || !invitationsCall.isFinished,
+			() =>
+				canManageMembers.value &&
+				(invitationsCall.loading || !invitationsCall.isFinished),
 		),
 		error: computed(() => {
+			if (!canManageMembers.value) return null
 			if (!invitationsCall.error || isAbortError(invitationsCall.error))
 				return null
 			return getErrorMessage(
@@ -66,7 +87,9 @@ export function useTeamInvitations() {
 			)
 		}),
 		busy,
-		reload: () => invitationsCall.reload(),
+		reload: () => {
+			if (canManageMembers.value) invitationsCall.reload()
+		},
 		resend,
 		revoke,
 	}

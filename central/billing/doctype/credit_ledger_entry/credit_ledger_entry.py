@@ -9,6 +9,7 @@ re-save after creation. Corrections are new entries, not edits.
 """
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -16,6 +17,6 @@ class CreditLedgerEntry(Document):
 	def validate(self):
 		if not self.is_new():
 			frappe.throw(
-				"Credit Ledger Entry is append-only; book a correcting entry instead of editing.",
+				_("Credit Ledger Entry is append-only; book a correcting entry instead of editing."),
 				frappe.ValidationError,
 			)

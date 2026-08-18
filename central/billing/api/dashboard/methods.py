@@ -5,6 +5,7 @@ setup, and fallback-order management. Gateway secrets are never returned.
 """
 
 import frappe
+from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
@@ -29,22 +30,45 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 	return frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
-		fields=["name", "method_type", "status", "display_label", "is_default", "priority",
-				"reauth_required", "expiry_month", "expiry_year"],
+		fields=[
+			"name",
+			"method_type",
+			"status",
+			"display_label",
+			"is_default",
+			"priority",
+			"reauth_required",
+			"expiry_month",
+			"expiry_year",
+			"mandate_max_amount",
+			"mandate_currency",
+		],
 		order_by="priority asc, creation asc",
 	)
 
 
 @frappe.whitelist()
 def get_payment_method_options(team: str | None = None) -> dict:
-	"""What the team can set up, resolved from their billing currency (ADR 0005).
+	"""What the team can set up, resolved from their billing currency (ADR 0023).
 
-	Saved cards are a Stripe-only rail in every currency, so Card is the primary
-	option wherever an enabled Stripe gateway handles the currency. INR additionally
-	offers a Razorpay UPI Autopay e-mandate (gated by the recurring limit); it rides
-	Razorpay independently of the card gateway. Foreign currencies are card-only."""
+	The customer picks an instrument and the instrument picks the gateway. Stripe
+	takes everything a Stripe India account can carry — here, a Visa or Mastercard
+	mandate — and Razorpay takes what it cannot: UPI Autopay, and card mandates on
+	RuPay, Amex and Diners. An INR team therefore sees three tiles; elsewhere there
+	is only the card.
+
+	This is the **mandate** surface: what can be saved and debited later. Wallet
+	recharge is a different surface with its own instruments (netbanking tops up a
+	wallet but cannot be saved), served by `create_topup_order`.
+
+	`instruments` is the tile list. `methods` is the older flat list of what can be
+	saved, kept for callers that have not moved to tiles yet."""
 	team = _resolve_team(team)
 	currency = _team_currency(team)
+	from central.billing.payments import instruments as instrument_catalogue
+
+	tiles = instrument_catalogue.available(currency, instrument_catalogue.MANDATE)
+	gap_note = instrument_catalogue.mandate_gap_note(currency)
 
 	methods: list[str] = []
 	publishable_key = None
@@ -63,11 +87,19 @@ def get_payment_method_options(team: str | None = None) -> dict:
 
 		elig = mandates.upi_eligibility(team)
 		methods.append("UPI Autopay")
-		upi = {"allow_upi": elig["eligible"], "upi_block_reason": elig["reason"],
-			   "upi_limit": elig["limit"]}
+		upi = {"allow_upi": elig["eligible"], "upi_block_reason": elig["reason"], "upi_limit": elig["limit"]}
 
-	return {"gateway": card_gw, "adapter_key": "Stripe" if card_gw else None,
-			"currency": currency, "methods": methods, "publishable_key": publishable_key, **upi}
+	return {
+		"gateway": card_gw,
+		"adapter_key": "Stripe" if card_gw else None,
+		"currency": currency,
+		"instruments": tiles,
+		# What no tile here can do, said plainly rather than left as an absence.
+		"note": gap_note,
+		"methods": methods,
+		"publishable_key": publishable_key,
+		**upi,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -85,71 +117,156 @@ def initiate_card_setup(team: str | None = None, gateway: str | None = None) -> 
 
 
 @frappe.whitelist(methods=["POST"])
-def confirm_card(payment_method: str | None = None, gateway_method_id: str | None = None,
-				 display_label: str | None = None, expiry_month: int | None = None,
-				 expiry_year: int | None = None) -> dict:
-	"""Confirm a card the gateway SDK tokenised — runs the micro-charge validation."""
+def confirm_card(
+	payment_method: str | None = None,
+	gateway_method_id: str | None = None,
+	display_label: str | None = None,
+	expiry_month: int | None = None,
+	expiry_year: int | None = None,
+	gateway_mandate_id: str | None = None,
+	card_network: str | None = None,
+) -> dict:
+	"""Confirm a card the gateway SDK tokenised — runs the micro-charge validation.
+
+	`gateway_mandate_id` is present where the currency required a mandate at setup
+	(India); later off-session debits quote it."""
 	from central.billing.payments import payments
 
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
 	method = payments.confirm_payment_method(
-		payment_method, gateway_method_id=gateway_method_id, display_label=display_label,
-		expiry_month=expiry_month, expiry_year=expiry_year)
+		payment_method,
+		gateway_method_id=gateway_method_id,
+		display_label=display_label,
+		expiry_month=expiry_month,
+		expiry_year=expiry_year,
+		gateway_mandate_id=gateway_mandate_id,
+		card_network=card_network,
+	)
 	return {"payment_method": method.name, "status": method.status}
 
 
 @frappe.whitelist(methods=["POST"])
-def add_demo_card(team: str | None = None, gateway: str | None = None,
-				  display_label: str = "Visa ····4242", expiry_month: int = 12,
-				  expiry_year: int = 2030) -> dict:
+def add_demo_card(
+	team: str | None = None,
+	gateway: str | None = None,
+	display_label: str = "Visa ····4242",
+	expiry_month: int = 12,
+	expiry_year: int = 2030,
+) -> dict:
 	"""Demo convenience: register an active card without a live gateway round-trip.
 	(Production uses initiate_card_setup + confirm_card with the gateway SDK.)"""
 	team = _resolve_team(team, authz.MANAGE)
 	from central.billing.payments import payments
 
-	name = frappe.get_doc({
-		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
-		"status": "Active", "display_label": display_label, "gateway_method_id": f"pm_{frappe.generate_hash(6)}",
-		"gateway_customer_id": f"cus_{team}", "expiry_month": expiry_month, "expiry_year": expiry_year,
-		"validated_at": frappe.utils.now_datetime(),
-	}).insert(ignore_permissions=True).name
+	name = (
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": team,
+				"gateway": gateway,
+				"method_type": "Card",
+				"status": "Active",
+				"display_label": display_label,
+				"gateway_method_id": f"pm_{frappe.generate_hash(6)}",
+				"gateway_customer_id": f"cus_{team}",
+				"expiry_month": expiry_month,
+				"expiry_year": expiry_year,
+				"validated_at": frappe.utils.now_datetime(),
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 	payments.densify_priorities(team)  # append at the end of the fallback order
 	return {"payment_method": name, "status": "Active"}
 
 
 @frappe.whitelist(methods=["POST"])
-def setup_payment_method_order(team: str | None = None, gateway: str | None = None,
-							   method_type: str = "UPI Autopay", contact: str | None = None) -> dict:
-	"""Begin adding a Razorpay recurring method — UPI Autopay mandate (ceiling =
-	trust-tier cap) or a card token. `contact` is the phone the UI collects inline
-	for a card mandate when the billing profile has none (Razorpay requires a
-	customer contact for recurring cards). Returns the order handles the UI runs
-	Razorpay Checkout against (#08)."""
+def setup_payment_method_order(
+	team: str | None = None,
+	gateway: str | None = None,
+	method_type: str = "UPI Autopay",
+	contact: str | None = None,
+	instrument: str | None = None,
+	after_decline: bool = False,
+) -> dict:
+	"""Begin saving a Razorpay-rail method — a UPI Autopay mandate, or a card token
+	for a network Stripe will not register a mandate on.
+
+	`instrument` is what the customer tapped, and it decides the rail (ADR 0023);
+	the gateway is resolved from it rather than from the currency default. Callers
+	that predate the tiles still pass `method_type`. `contact` is the phone the UI
+	collects inline for a card mandate when the billing profile has none (Razorpay
+	requires a customer contact for recurring cards).
+
+	`after_decline` says the customer got here from a card the other rail refused. It
+	is recorded as provenance, not taken on trust: the server checks for a real
+	terminal decline before stamping it."""
 	team = _resolve_team(team, authz.MANAGE)
 	_require_billing_setup(team)
-	gw = gateway or _add_method_gateway(_team_currency(team)).get("name")
+	currency = _team_currency(team)
+	from central.billing.payments import instruments as instrument_catalogue
 	from central.billing.payments import mandates
 
-	if method_type == "Card":
+	entry = instrument_catalogue.get(instrument, instrument_catalogue.MANDATE) if instrument else None
+	reason = _fallback_reason(team, entry, after_decline)
+	gw = (
+		gateway
+		or (
+			instrument
+			and instrument_catalogue.gateway_for(instrument, currency, instrument_catalogue.MANDATE)
+		)
+		or _add_method_gateway(currency).get("name")
+	)
+	if entry and entry["method_type"] == "Card":
+		return mandates.setup_card(team, gw, contact=contact, fallback_reason=reason)
+	if method_type == "Card" and not entry:
 		return mandates.setup_card(team, gw, contact=contact)
 	return mandates.setup_mandate(team, gw)
 
 
+def _fallback_reason(team: str, entry: dict | None, after_decline: bool) -> str | None:
+	"""Why this method is landing off the default rail.
+
+	A claim of "my card was declined" is verified against the attempts we actually
+	made; unverified, it falls back to the reason the instrument itself gives. The
+	field feeds the gateway comparison report, so a wrong value there is a wrong
+	answer to which rail authorises better.
+	"""
+	from central.billing.payments import decline
+
+	instrument_reason = entry["fallback_reason"] if entry else None
+	if not after_decline:
+		return instrument_reason
+	if decline.recent_terminal_decline(team):
+		return "Stripe Decline"
+	return instrument_reason
+
+
 @frappe.whitelist(methods=["POST"])
-def confirm_payment_method_order(payment_method: str | None = None, razorpay_payment_id: str | None = None,
-								 razorpay_order_id: str | None = None, razorpay_signature: str | None = None,
-								 razorpay_token_id: str | None = None) -> dict:
+def confirm_payment_method_order(
+	payment_method: str | None = None,
+	razorpay_payment_id: str | None = None,
+	razorpay_order_id: str | None = None,
+	razorpay_signature: str | None = None,
+	razorpay_token_id: str | None = None,
+) -> dict:
 	"""Confirm the Razorpay Checkout callback — verifies the signature, activates
 	the mandate. Real gateway verification, not a stub."""
 	team = frappe.db.get_value("Payment Method", payment_method, "team")
 	_require_manage(team)
 	from central.billing.payments import mandates
 
-	method = mandates.confirm_mandate(payment_method, {
-		"razorpay_payment_id": razorpay_payment_id, "razorpay_order_id": razorpay_order_id,
-		"razorpay_signature": razorpay_signature, "razorpay_token_id": razorpay_token_id,
-	})
+	method = mandates.confirm_mandate(
+		payment_method,
+		{
+			"razorpay_payment_id": razorpay_payment_id,
+			"razorpay_order_id": razorpay_order_id,
+			"razorpay_signature": razorpay_signature,
+			"razorpay_token_id": razorpay_token_id,
+		},
+	)
 	return {"payment_method": method.name, "status": method.status}
 
 

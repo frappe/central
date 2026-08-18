@@ -52,14 +52,18 @@ class TestAssetSubscriptionSync(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.owner = ensure_user("asset.sub.owner@example.test")
-		self.team = frappe.get_doc(
-			{
-				"doctype": "Team",
-				"team_name": "Asset Sub Team",
-				"owner_user": self.owner,
-				"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
-			}
-		).insert().name
+		self.team = (
+			frappe.get_doc(
+				{
+					"doctype": "Team",
+					"team_name": "Asset Sub Team",
+					"owner_user": self.owner,
+					"members": [{"user": self.owner, "role": "Owner", "status": "Active"}],
+				}
+			)
+			.insert()
+			.name
+		)
 		self.cluster = "blr-asset-sub"
 		ensure_region(self.cluster)
 		if not frappe.db.exists("Atlas Instance", self.cluster):
@@ -81,13 +85,20 @@ class TestAssetSubscriptionSync(IntegrationTestCase):
 		for resource_id in self._assets:
 			for change in frappe.get_all(
 				"Subscription Change",
-				filters={"subscription": ["in", frappe.get_all(
-					"Subscription", filters={"team": self.team, "asset_id": resource_id}, pluck="name"
-				)]},
+				filters={
+					"subscription": [
+						"in",
+						frappe.get_all(
+							"Subscription", filters={"team": self.team, "asset_id": resource_id}, pluck="name"
+						),
+					]
+				},
 				pluck="name",
 			):
 				frappe.delete_doc("Subscription Change", change, force=True)
-			for sub in frappe.get_all("Subscription", filters={"team": self.team, "asset_id": resource_id}, pluck="name"):
+			for sub in frappe.get_all(
+				"Subscription", filters={"team": self.team, "asset_id": resource_id}, pluck="name"
+			):
 				frappe.delete_doc("Subscription", sub, force=True)
 			frappe.delete_doc("Asset", resource_id, force=True)
 

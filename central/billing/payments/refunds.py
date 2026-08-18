@@ -17,8 +17,10 @@ issued line item is never mutated (see billing.reissue_invoice).
 """
 
 import frappe
+from frappe import _
 
 from central.billing.revenue import credits
+from central.billing.states import transition
 
 
 def _adapter(gateway: str):
@@ -36,13 +38,13 @@ def issue_refund(payment_attempt: str, amount=None, destination: str = "Source",
 	attempt = frappe.get_doc("Payment Attempt", payment_attempt)
 	if attempt.status not in ("Captured", "Refunded"):
 		frappe.throw(
-			f"Only a captured charge can be refunded (attempt is {attempt.status}).",
+			_("Only a captured charge can be refunded (attempt is {0}).").format(attempt.status),
 			frappe.ValidationError,
 		)
 
 	amount = frappe.utils.flt(amount) if amount else frappe.utils.flt(attempt.amount)
 	if amount <= 0 or amount > frappe.utils.flt(attempt.amount):
-		frappe.throw("Refund amount must be > 0 and <= the captured amount.", frappe.ValidationError)
+		frappe.throw(_("Refund amount must be > 0 and <= the captured amount."), frappe.ValidationError)
 
 	refund = frappe.get_doc(
 		{
@@ -90,7 +92,9 @@ def _to_wallet(refund, attempt):
 		reference_name=refund.name,
 		note=refund.reason or f"Overcharge refund for {attempt.invoice}",
 	)
-	refund.status = "Completed"
+	transition(
+		refund, "Completed", actor=frappe.session.user, correlation=attempt.invoice, amount=refund.amount
+	)
 	refund.completed_at = frappe.utils.now_datetime()
 	refund.save(ignore_permissions=True)
 	return refund
@@ -100,11 +104,24 @@ def _to_source(refund, attempt, reason):
 	"""Refund to the gateway via the adapter (symmetric across gateways)."""
 	result = _adapter(attempt.gateway).refund(attempt, refund.amount, reason or "")
 	refund.gateway_refund_id = result.gateway_refund_id
-	refund.status = "Completed" if result.success else "Failed"
+	transition(
+		refund,
+		"Completed" if result.success else "Failed",
+		actor=frappe.session.user,
+		correlation=attempt.invoice,
+		amount=refund.amount,
+	)
 	if result.success:
 		refund.completed_at = frappe.utils.now_datetime()
 		# A full refund marks the attempt refunded (the invoice still stays Paid).
 		if frappe.utils.flt(refund.amount) >= frappe.utils.flt(attempt.amount):
-			frappe.db.set_value("Payment Attempt", attempt.name, "status", "Refunded")
+			transition(
+				attempt,
+				"Refunded",
+				actor=frappe.session.user,
+				correlation=attempt.invoice,
+				amount=refund.amount,
+			)
+			attempt.save(ignore_permissions=True)
 	refund.save(ignore_permissions=True)
 	return refund

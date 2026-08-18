@@ -19,6 +19,7 @@ selects one of two modes:
 """
 
 import frappe
+from frappe import _
 
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
 
@@ -111,9 +112,7 @@ def _locked_terms(resource_id: str, resource_type: str):
 	rate = 0
 	plan = _metered_plan_for(resource_type)
 	if plan:
-		rate = frappe.utils.flt(
-			resolve_rate(get_catalog_rates("Plan", plan.name), seg.currency, seg.cluster)
-		)
+		rate = frappe.utils.flt(resolve_rate(get_catalog_rates("Plan", plan.name), seg.currency, seg.cluster))
 
 	return {
 		"team": seg.team,
@@ -151,6 +150,46 @@ def _settlement_from_plan(plan) -> str:
 	return frappe.db.get_value("Plan Category", category, "settlement_mode") or "Postpaid Overage"
 
 
+def live_rollup(name: str) -> str:
+	"""Follow a rollup's supersede chain to the row that is actually billed."""
+	seen = {name}
+	while True:
+		nxt = frappe.db.get_value("Usage Rollup", name, "superseded_by")
+		if not nxt or nxt in seen:
+			return name
+		seen.add(nxt)
+		name = nxt
+
+
+def override_terms(rollup: str, rate=None, allowance=None, reason: str | None = None) -> str:
+	"""Re-price one rollup by writing a new version of it, never by editing the old.
+
+	Locked terms are what makes a metered charge auditable, so a correction adds a row
+	and points the old one at it. The quantity carries over; only the terms move.
+	"""
+	name = live_rollup(rollup)
+	old = frappe.get_doc("Usage Rollup", name)
+	if rate is None and allowance is None:
+		frappe.throw(_("Nothing to correct: give a rate, an allowance, or both."), frappe.ValidationError)
+
+	new = frappe.copy_doc(old)
+	new.locked_rate = old.locked_rate if rate is None else rate
+	new.locked_allowance = old.locked_allowance if allowance is None else allowance
+	new.superseded_by = None
+	new.idempotency_key = f"{old.idempotency_key}::v{_version_of(old.idempotency_key) + 1}"
+	new.insert(ignore_permissions=True)
+
+	frappe.db.set_value("Usage Rollup", name, "superseded_by", new.name)
+	old.add_comment("Info", f"Terms corrected -> {new.name}: {reason or 'no reason given'}")
+	return new.name
+
+
+def _version_of(idempotency_key: str) -> int:
+	"""The version suffix on a rollup key, 0 for an original."""
+	_head, _sep, tail = idempotency_key.rpartition("::v")
+	return frappe.utils.cint(tail) if tail.isdigit() else 0
+
+
 def ingest_rollup(meter: dict) -> str | None:
 	"""Idempotently store one meter rollup, keyed by the period-identity idempotency_key.
 	Both reporting modes (ADR 0015) land as one Usage Rollup row per period; the locked
@@ -179,12 +218,22 @@ def ingest_rollup(meter: dict) -> str | None:
 	qty = frappe.utils.flt(meter.get("quantity"))
 	seq = frappe.utils.cint(meter.get("sequence"))
 
-	for _ in range(_INGEST_RACE_RETRIES):
+	for _attempt in range(_INGEST_RACE_RETRIES):
 		existing = frappe.db.get_value(
-			"Usage Rollup", {"idempotency_key": key}, ["name", "quantity", "sequence"],
-			as_dict=True, for_update=True,
+			"Usage Rollup",
+			{"idempotency_key": key},
+			["name", "quantity", "sequence", "superseded_by"],
+			as_dict=True,
+			for_update=True,
 		)
 		if existing:
+			# A later report for a re-priced period belongs on the row that is billed,
+			# not on the superseded one it would otherwise land on.
+			if existing.superseded_by:
+				head = live_rollup(existing.name)
+				existing = frappe.db.get_value(
+					"Usage Rollup", head, ["name", "quantity", "sequence"], as_dict=True, for_update=True
+				)
 			_apply_report(existing, mode, qty, seq)
 			return key
 
@@ -225,7 +274,8 @@ def _apply_report(existing, mode: str, qty: float, seq: int) -> None:
 		if seq <= frappe.utils.cint(existing.sequence):
 			return  # duplicate / out-of-order batch — already counted
 		frappe.db.set_value(
-			"Usage Rollup", existing.name,
+			"Usage Rollup",
+			existing.name,
 			{"quantity": frappe.utils.flt(existing.quantity) + qty, "sequence": seq},
 		)
 	else:
@@ -256,7 +306,9 @@ def _insert_rollup(meter: dict, terms: dict, qty: float, seq: int, key: str) -> 
 	).insert(ignore_permissions=True)
 
 
-def metered_line_items(team: str, cluster: str, period_start, period_end) -> list[dict]:
+def metered_line_items(
+	team: str, cluster: str, period_start, period_end, explain: bool = False
+) -> list[dict]:
 	"""Metered line items for one (team, cluster) over the billing month.
 
 	One line per rollup whose period falls in the billing month:
@@ -264,10 +316,12 @@ def metered_line_items(team: str, cluster: str, period_start, period_end) -> lis
 	within the allowance contributes no line. Single-cluster entry point — the monthly
 	run bills a whole team at once via `metered_line_items_for_clusters`.
 	"""
-	return _metered_lines(team, [cluster], period_start, period_end)
+	return _metered_lines(team, [cluster], period_start, period_end, explain)
 
 
-def metered_line_items_for_clusters(team: str, clusters, period_start, period_end) -> list[dict]:
+def metered_line_items_for_clusters(
+	team: str, clusters, period_start, period_end, explain: bool = False
+) -> list[dict]:
 	"""Metered line items for a team across several clusters, from ONE rollup query.
 
 	The monthly run consolidates a team's clusters into a single invoice; scanning
@@ -275,10 +329,10 @@ def metered_line_items_for_clusters(team: str, clusters, period_start, period_en
 	N+1. This fetches every cluster's rollups in one query and resolves each metered
 	family once. The billed set is exactly the per-cluster union.
 	"""
-	return _metered_lines(team, list(clusters), period_start, period_end)
+	return _metered_lines(team, list(clusters), period_start, period_end, explain)
 
 
-def _metered_lines(team: str, clusters: list, period_start, period_end) -> list[dict]:
+def _metered_lines(team: str, clusters: list, period_start, period_end, explain: bool = False) -> list[dict]:
 	"""One line per overage rollup for `team` in any of `clusters` (see the two public
 	wrappers). The rollup carries its own cluster, so a multi-cluster run tags each line
 	correctly and prices Live plans against the rollup's cluster."""
@@ -294,12 +348,21 @@ def _metered_lines(team: str, clusters: list, period_start, period_end) -> list[
 	rollups = (
 		frappe.qb.from_(Rollup)
 		.select(
-			Rollup.resource_id, Rollup.resource_type, Rollup.meter_type, Rollup.quantity,
-			Rollup.unit, Rollup.currency, Rollup.locked_allowance, Rollup.locked_rate,
+			Rollup.resource_id,
+			Rollup.resource_type,
+			Rollup.meter_type,
+			Rollup.quantity,
+			Rollup.unit,
+			Rollup.currency,
+			Rollup.locked_allowance,
+			Rollup.locked_rate,
 			Rollup.cluster,
 		)
 		.where(Rollup.team == team)
 		.where(Rollup.cluster.isin(clusters))
+		# A superseded row has been replaced by a corrected-terms version; billing the
+		# old one as well would double-charge the same usage.
+		.where(Rollup.superseded_by.isnull())
 		.where(
 			Rollup.period_start.isnull()
 			| (
@@ -366,19 +429,40 @@ def _metered_lines(team: str, clusters: list, period_start, period_end) -> list[
 			continue
 
 		amount = frappe.utils.flt(billable_qty * rate, 2)
-		lines.append(
-			{
-				"subscription_resource": r.resource_id,
-				"plan": None,
-				"cluster": r.cluster,
-				"resource_type": r.resource_type,
+		line = {
+			"subscription_resource": r.resource_id,
+			"plan": None,
+			"cluster": r.cluster,
+			"resource_type": r.resource_type,
+			"unit": r.unit,
+			"quantity": billable_qty,
+			"rate": rate,
+			"days": 0,
+			"amount": amount,
+		}
+		if explain:
+			live = bool(plan and plan.pricing_mode == "Live")
+			line["derivation"] = {
+				"mode": "Metered",
+				"why": (
+					"only usage past the allowance is billed"
+					if allowance
+					else "this family carries no allowance, so every unit is billed"
+				),
+				"measured_quantity": frappe.utils.flt(r.quantity),
+				"allowance": frappe.utils.flt(allowance),
+				"billable_quantity": billable_qty,
 				"unit": r.unit,
-				"quantity": billable_qty,
 				"rate": rate,
-				"days": 0,
-				"amount": amount,
+				# Where the rate came from matters: a live-priced family follows today's
+				# catalog, a grandfathered one is held at the terms locked when the usage
+				# was ingested.
+				"rate_source": "current catalog rate" if live else "locked at ingest",
+				"arithmetic": (
+					f"max(0, {frappe.utils.flt(r.quantity)} − {frappe.utils.flt(allowance)}) × {rate}"
+				),
 			}
-		)
+		lines.append(line)
 
 	if unpriced:
 		frappe.throw(

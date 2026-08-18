@@ -6,15 +6,14 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
-
-from central.billing.tests.utils import ensure_team
 
 from central.billing.payments import payments
 from central.billing.tests.test_stripe_adapter import make_stripe_gateway
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
+from central.billing.tests.utils import ensure_team
 
 TEAM = "team-cards"
-GATEWAY = "GW-Test-Stripe"
+GATEWAY = "Stripe"
 
 
 @contextmanager
@@ -34,7 +33,7 @@ def stub_adapter(validate=True):
 class CardTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
-		make_stripe_gateway(GATEWAY)
+		make_stripe_gateway()
 		for name in frappe.get_all("Payment Method", filters={"team": TEAM}, pluck="name"):
 			frappe.delete_doc("Payment Method", name, force=True)
 		frappe.db.delete("Gateway Customer", {"team": TEAM})
@@ -94,9 +93,7 @@ class TestDefaultAndDelete(CardTestBase):
 		payments.set_default_payment_method(second)
 		self.assertFalse(frappe.db.get_value("Payment Method", first, "is_default"))
 		self.assertTrue(frappe.db.get_value("Payment Method", second, "is_default"))
-		defaults = frappe.get_all(
-			"Payment Method", filters={"team": TEAM, "is_default": 1}, pluck="name"
-		)
+		defaults = frappe.get_all("Payment Method", filters={"team": TEAM, "is_default": 1}, pluck="name")
 		self.assertEqual(len(defaults), 1)
 
 	def test_non_active_method_cannot_be_default(self):
@@ -147,9 +144,10 @@ class TestStripeTestModeIntegration(CardTestBase):
 	def test_add_validate_active_via_stripe_adapter(self):
 		import stripe
 
-		with patch.object(stripe.SetupIntent, "create") as setup_create, patch.object(
-			stripe.Customer, "create"
-		) as customer_create:
+		with (
+			patch.object(stripe.SetupIntent, "create") as setup_create,
+			patch.object(stripe.Customer, "create") as customer_create,
+		):
 			setup_create.return_value = {"client_secret": "seti_secret", "id": "seti_1"}
 			customer_create.return_value = {"id": "cus_1"}  # off-session SetupIntent needs a customer
 			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
@@ -161,9 +159,10 @@ class TestStripeTestModeIntegration(CardTestBase):
 		)
 
 		# Confirm: the micro-charge succeeds and is auto-refunded -> active.
-		with patch.object(stripe.PaymentIntent, "create") as pi_create, patch.object(
-			stripe.Refund, "create"
-		) as refund_create:
+		with (
+			patch.object(stripe.PaymentIntent, "create") as pi_create,
+			patch.object(stripe.Refund, "create") as refund_create,
+		):
 			pi_create.return_value = {"id": "pi_micro", "status": "succeeded"}
 			method = payments.confirm_payment_method(
 				setup["payment_method"],
@@ -175,3 +174,43 @@ class TestStripeTestModeIntegration(CardTestBase):
 		refund_create.assert_called_once()  # micro-charge refunded
 		self.assertEqual(method.status, "Active")
 		self.assertTrue(method.is_default)
+
+
+class TestIndianCardMandateSetup(CardTestBase):
+	"""An INR card is saved as a mandate, and the mandate the bank issues is stored
+	so later debits can quote it (ADR 0022)."""
+
+	def setUp(self):
+		from central.billing.tests.utils import complete_billing_profile, set_team_tier
+
+		super().setUp()
+		make_stripe_gateway(currencies=(("USD", 1), ("INR", 0)))
+		complete_billing_profile(TEAM, currency="INR")
+		set_team_tier(TEAM, level="t1", max_spend=50000)
+
+	def test_setup_asks_for_a_mandate_up_to_the_rbi_ceiling(self):
+		with stub_adapter() as adapter:
+			payments.initiate_payment_method_setup(TEAM, GATEWAY)
+		setup_data = adapter.setup_payment_method.call_args.args[1]
+		self.assertEqual(setup_data["currency"], "INR")
+		self.assertEqual(setup_data["max_amount"], 15000.0)
+
+	def test_a_lower_tier_cap_lowers_what_the_customer_consents_to(self):
+		from central.billing.tests.utils import set_team_tier
+
+		set_team_tier(TEAM, level="t0", max_spend=6000)
+		with stub_adapter() as adapter:
+			payments.initiate_payment_method_setup(TEAM, GATEWAY)
+		self.assertEqual(adapter.setup_payment_method.call_args.args[1]["max_amount"], 6000.0)
+
+	def test_the_mandate_reference_is_stored_on_confirm(self):
+		with stub_adapter(validate=True):
+			setup = payments.initiate_payment_method_setup(TEAM, GATEWAY)
+			method = payments.confirm_payment_method(
+				setup["payment_method"],
+				gateway_method_id="pm_india",
+				gateway_mandate_id="mandate_india",
+			)
+		self.assertEqual(method.gateway_mandate_id, "mandate_india")
+		self.assertEqual(method.mandate_max_amount, 15000.0)
+		self.assertEqual(method.mandate_currency, "INR")

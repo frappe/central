@@ -9,7 +9,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.host_task import _variables_to_flags, parse_result, run_host_task
+from central.host_task import _variables_to_flags, parse_result, prune_host_tasks, run_host_task
 
 
 def _write_script(body: str) -> str:
@@ -59,3 +59,19 @@ class IntegrationTestHostTask(IntegrationTestCase):
 		task = frappe.get_last_doc("Host Task")
 		self.assertEqual(task.status, "Failure")
 		self.assertEqual(task.exit_code, 3)
+
+	def test_prune_honours_central_settings_window(self):
+		frappe.db.set_single_value("Central Settings", "host_task_retention_days", 7)
+		self.addCleanup(frappe.db.set_single_value, "Central Settings", "host_task_retention_days", 30)
+		script = _write_script('import sys\nprint("ATLAS_RESULT=" + \'{"ok": 1}\')\nsys.exit(0)\n')
+		try:
+			with patch("central.host_task.resolve", return_value=Path(script)):
+				task = run_host_task(script="hub-up.py", variables={})
+		finally:
+			os.unlink(script)
+
+		# 'now' eight days on: a fresh Success task is past the 7-day window (it would
+		# survive the 30-day default, so this proves the window is read from the Single).
+		future = frappe.utils.add_to_date(frappe.utils.now_datetime(), days=8)
+		prune_host_tasks(now=future)
+		self.assertFalse(frappe.db.exists("Host Task", task.name))

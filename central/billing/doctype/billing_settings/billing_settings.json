@@ -1,0 +1,204 @@
+{
+ "actions": [],
+ "creation": "2026-08-03 00:00:00.000000",
+ "description": "Billing policy knobs that are expected to change without a code release.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_credits",
+  "grant_welcome_credits",
+  "promotional_credit_validity_days",
+  "welcome_credit_amounts",
+  "section_break_trials",
+  "provision_teams_as_trial",
+  "section_break_invoicing",
+  "invoice_due_days",
+  "column_break_invoicing",
+  "forecast_notify_percent",
+  "section_break_dunning",
+  "dunning_retry_days",
+  "column_break_dunning",
+  "suspend_after_days",
+  "terminate_after_days",
+  "section_break_projection",
+  "projection_budget_seconds",
+  "section_break_retention",
+  "payment_log_retention_days",
+  "section_break_routing",
+  "enable_gateway_fallback",
+  "section_break_tax",
+  "default_gst_rate"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_credits",
+   "fieldtype": "Section Break",
+   "label": "Welcome Credits"
+  },
+  {
+   "default": "1",
+   "description": "Grant welcome credits when a team completes its billing profile.",
+   "fieldname": "grant_welcome_credits",
+   "fieldtype": "Check",
+   "label": "Grant Welcome Credits"
+  },
+  {
+   "default": "0",
+   "depends_on": "grant_welcome_credits",
+   "description": "Days a welcome credit stays usable. 0 means it never expires.",
+   "fieldname": "promotional_credit_validity_days",
+   "fieldtype": "Int",
+   "label": "Validity (Days)",
+   "non_negative": 1
+  },
+  {
+   "depends_on": "grant_welcome_credits",
+   "description": "Amount granted per currency. A currency with no row gets no credits.",
+   "fieldname": "welcome_credit_amounts",
+   "fieldtype": "Table",
+   "label": "Amounts",
+   "options": "Welcome Credit Amount"
+  },
+  {
+   "fieldname": "section_break_trials",
+   "fieldtype": "Section Break",
+   "label": "Trials"
+  },
+  {
+   "default": "0",
+   "description": "Create every new team as a staging trial — it provisions servers on welcome credits without a full billing profile. For staging deployments.",
+   "fieldname": "provision_teams_as_trial",
+   "fieldtype": "Check",
+   "label": "Provision Teams as Trial"
+  },
+  {
+   "fieldname": "section_break_invoicing",
+   "fieldtype": "Section Break",
+   "label": "Invoicing"
+  },
+  {
+   "default": "7",
+   "description": "Days after an invoice opens before it falls due.",
+   "fieldname": "invoice_due_days",
+   "fieldtype": "Int",
+   "label": "Due Days",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "column_break_invoicing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "80",
+   "description": "Warn a team once forecast spend reaches this much of its cap.",
+   "fieldname": "forecast_notify_percent",
+   "fieldtype": "Percent",
+   "label": "Spend Warning At"
+  },
+  {
+   "fieldname": "section_break_dunning",
+   "fieldtype": "Section Break",
+   "label": "Dunning"
+  },
+  {
+   "default": "1, 3, 7",
+   "description": "Days past due to retry payment on, comma separated.",
+   "fieldname": "dunning_retry_days",
+   "fieldtype": "Data",
+   "label": "Retry Days"
+  },
+  {
+   "fieldname": "column_break_dunning",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "14",
+   "description": "Days past due before a subscription is suspended.",
+   "fieldname": "suspend_after_days",
+   "fieldtype": "Int",
+   "label": "Suspend After (Days)",
+   "non_negative": 1
+  },
+  {
+   "default": "44",
+   "description": "Days past due before a subscription is terminated.",
+   "fieldname": "terminate_after_days",
+   "fieldtype": "Int",
+   "label": "Terminate After (Days)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "section_break_projection",
+   "fieldtype": "Section Break",
+   "label": "Projections"
+  },
+  {
+   "default": "300",
+   "description": "How long a cohort projection may be expected to take before it is refused. This is a production safety limit: raising it is how the bound stops bounding.",
+   "fieldname": "projection_budget_seconds",
+   "fieldtype": "Int",
+   "label": "Projection Budget (Seconds)"
+  },
+  {
+   "fieldname": "section_break_retention",
+   "fieldtype": "Section Break",
+   "label": "Log Retention"
+  },
+  {
+   "default": "90",
+   "description": "Rolling window (days) the gateway logs — Payment Attempt and Webhook Event — are kept before daily pruning. Live/unsettled rows are kept regardless.",
+   "fieldname": "payment_log_retention_days",
+   "fieldtype": "Int",
+   "label": "Payment Log Retention (Days)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "section_break_routing",
+   "fieldtype": "Section Break",
+   "label": "Gateway Routing"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_gateway_fallback",
+   "fieldtype": "Check",
+   "label": "Offer Another Rail After a Terminal Decline",
+   "description": "When a card is finally refused, offer the customer the other gateway once, amount prefilled. Ambiguous failures (timeouts, abandoned 3DS) never fall back whatever this says. Which gateway is primary per currency is the Default flag on Payment Gateway Currency, so it stays in one place."
+  },
+  {
+   "fieldname": "section_break_tax",
+   "fieldtype": "Section Break",
+   "label": "Tax"
+  },
+  {
+   "default": "18",
+   "description": "Output GST rate put on a new Indian team's tax profile.",
+   "fieldname": "default_gst_rate",
+   "fieldtype": "Percent",
+   "label": "Default GST Rate"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-08-03 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Billing Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

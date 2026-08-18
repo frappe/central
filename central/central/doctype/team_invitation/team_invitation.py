@@ -1,16 +1,11 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
-from contextlib import suppress
-
 import frappe
 from frappe import _
-from frappe.desk.doctype.notification_log.notification_log import enqueue_create_notification
 from frappe.model.document import Document
 from frappe.utils import (
 	add_days,
-	format_date,
-	get_fullname,
 	get_url,
 	getdate,
 	now,
@@ -35,6 +30,8 @@ class TeamInvitation(Document):
 		email: DF.Data
 		expires_on: DF.Date | None
 		invited_by: DF.Link | None
+		resource_name: DF.Data | None
+		resource_type: DF.Literal["*", "Server", "Site"]
 		role: DF.Link
 		status: DF.Literal["Pending", "Accepted", "Expired", "Revoked", "Declined"]
 		team: DF.Link
@@ -46,6 +43,9 @@ class TeamInvitation(Document):
 		self.email = self.email.strip().lower()
 		self.status = "Pending"
 		self.invited_by = frappe.session.user
+		self.resource_type = self.resource_type or "*"
+		if self.resource_type == "*":
+			self.resource_name = None
 		expires_in_days = int(self.expires_in_days or 7)
 		if not 1 <= expires_in_days <= 30:
 			frappe.throw(_("Invitation expiry must be between 1 and 30 days."))
@@ -58,49 +58,35 @@ class TeamInvitation(Document):
 		if self.is_new():
 			self._require_manager()
 		self._validate_role()
+		self._validate_resource()
 		self._validate_user()
 		self._validate_duplicate()
 		self._validate_update()
 
 	def after_insert(self) -> None:
-		self._send_invitation_email()
+		self._send_invitation_notification()
 
-	def _send_invitation_email(self) -> None:
-		"""Notify the invitee — Desk notification + best-effort email. Shared by the
-		initial send (after_insert) and resend so both stay identical."""
+	def _send_invitation_notification(self) -> None:
+		from central.notification.engine import dispatch
+
 		team_name = frappe.db.get_value("Team", self.team, "team_name")
 		invitation_url = get_url(f"/dashboard/invitations/{self.name}")
-		subject = _("Invitation to join {0}").format(team_name)
-		message = frappe.render_template(
-			"central/templates/emails/team_invitation.html",
-			{
+
+		dispatch(
+			team=self.team,
+			event_type="member_invited",
+			context={
 				"team_name": team_name,
-				"role": self.role,
-				"invited_by": get_fullname(self.invited_by),
-				"expires_on": format_date(self.expires_on),
 				"invitation_url": invitation_url,
+				"role": self.role,
+				"expires_on": str(self.expires_on),
 			},
+			reference_doctype=self.doctype,
+			reference_name=self.name,
+			affected_user=self.email,
 		)
 
-		enqueue_create_notification(
-			self.email,
-			{
-				"subject": subject,
-				"type": "Alert",
-				"document_type": self.doctype,
-				"document_name": self.name,
-				"from_user": self.invited_by,
-			},
-		)
-
-		with suppress(frappe.OutgoingEmailError):
-			frappe.sendmail(
-				recipients=[self.email],
-				subject=subject,
-				message=message,
-			)
-
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.accept_invitation.
 	def accept(self) -> dict:
 		return self.accept_for_user(frappe.session.user)
 
@@ -115,7 +101,12 @@ class TeamInvitation(Document):
 			frappe.throw(_("This invitation has expired."))
 
 		team = frappe.get_doc("Team", self.team)
-		team.add_member_from_invitation(user, self.role)
+		team.add_member_from_invitation(
+			user,
+			self.role,
+			resource_type=self.resource_type or "*",
+			resource_name=self.resource_name,
+		)
 
 		self.status = "Accepted"
 		self.accepted_by = user
@@ -124,7 +115,7 @@ class TeamInvitation(Document):
 		self.save()
 		return {"team": self.team, "role": self.role, "accepted": True}
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.revoke_invitation.
 	def revoke(self) -> bool:
 		self._require_manager()
 		if self.status == "Revoked":
@@ -136,21 +127,19 @@ class TeamInvitation(Document):
 		self.save()
 		return True
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.resend_invitation.
 	def resend(self) -> dict:
-		"""Re-send a pending invitation, extending its expiry from today. Manager-only."""
 		self._require_manager()
 		if self.status != "Pending":
 			frappe.throw(_("Only a pending invitation can be resent."))
 		self.expires_on = add_days(today(), int(self.expires_in_days or 7))
 		self.flags.from_invitation_action = True
 		self.save()
-		self._send_invitation_email()
+		self._send_invitation_notification()
 		return {"name": self.name, "expires_on": self.expires_on}
 
-	@frappe.whitelist(methods=["POST"])
+	# Internal; the HTTP surface is central.api.teams.decline_invitation.
 	def decline(self) -> bool:
-		"""Invitee declines their own pending invitation."""
 		if self.email != frappe.session.user and not user_has_operator_bypass():
 			frappe.throw(_("This invitation belongs to another user."), frappe.PermissionError)
 		if self.status != "Pending":
@@ -166,6 +155,16 @@ class TeamInvitation(Document):
 		role_team, is_system = frappe.db.get_value("Team Role", self.role, ["team", "is_system"]) or (None, 0)
 		if not is_system and role_team != self.team:
 			frappe.throw(_("Team Role {0} does not belong to this team.").format(self.role))
+
+	def _validate_resource(self) -> None:
+		resource_type = self.resource_type or "*"
+		if resource_type not in {"*", "Server", "Site"}:
+			frappe.throw(_("Invalid resource type."))
+		if resource_type == "*":
+			self.resource_name = None
+			return
+		if not self.resource_name:
+			frappe.throw(_("Resource name is required when scoping an invitation."))
 
 	def _validate_user(self) -> None:
 		if not self.is_new():
@@ -194,7 +193,18 @@ class TeamInvitation(Document):
 		if not previous:
 			return
 
-		fields = ("team", "email", "role", "status", "invited_by", "expires_on", "accepted_by", "accepted_at")
+		fields = (
+			"team",
+			"email",
+			"role",
+			"resource_type",
+			"resource_name",
+			"status",
+			"invited_by",
+			"expires_on",
+			"accepted_by",
+			"accepted_at",
+		)
 		if any(self.get(field) != previous.get(field) for field in fields):
 			frappe.throw(_("Use the invitation actions to change its status."), frappe.PermissionError)
 

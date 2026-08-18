@@ -2,19 +2,38 @@
 # For license information, please see license.txt
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.entitlements import evaluate_tier, get_ladder, recompute_trust_tier
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import clear_team_tier, complete_billing_profile, ensure_team
 
 # Money limits are INR here; make_ladder seeds them as the level's INR threshold.
 LADDER = [
-	{"tier": "t0", "sequence": 0, "is_default": 1, "max_spend": 100, "max_resource_count": 1,
-	 "min_paid_invoices": 0, "min_cumulative_paid": 0},
-	{"tier": "t1", "sequence": 1, "max_spend": 300, "max_resource_count": 5,
-	 "min_paid_invoices": 3, "min_cumulative_paid": 300},
-	{"tier": "t2", "sequence": 2, "max_spend": 1000, "max_resource_count": 20,
-	 "min_paid_invoices": 6, "min_cumulative_paid": 1000},
+	{
+		"tier": "t0",
+		"sequence": 0,
+		"is_default": 1,
+		"max_spend": 100,
+		"max_resource_count": 1,
+		"min_paid_invoices": 0,
+		"min_cumulative_paid": 0,
+	},
+	{
+		"tier": "t1",
+		"sequence": 1,
+		"max_spend": 300,
+		"max_resource_count": 5,
+		"min_paid_invoices": 3,
+		"min_cumulative_paid": 300,
+	},
+	{
+		"tier": "t2",
+		"sequence": 2,
+		"max_spend": 1000,
+		"max_resource_count": 20,
+		"min_paid_invoices": 6,
+		"min_cumulative_paid": 1000,
+	},
 ]
 
 

@@ -16,6 +16,8 @@ export interface RefreshResponse {
 export interface Team {
 	name: string
 	label: string
+	/** Public file URL of the team's logo, or null for the initial-letter tint. */
+	logo: string | null
 	owner: string | null
 }
 
@@ -28,10 +30,21 @@ export type InvitationStatus =
 	| 'Revoked'
 	| 'Declined'
 
+export type ResourceType = '*' | 'Server' | 'Site'
+
+export interface TeamMemberRoleAssignment {
+	role: string
+	resource_type: ResourceType
+	resource_name: string | null
+}
+
 /** central.api.teams.list_team_members item. */
 export interface TeamMemberRow {
 	user: string
-	role: string
+	full_name: string
+	/** The frappe User's profile photo URL, when they've set one. */
+	user_image: string | null
+	roles: TeamMemberRoleAssignment[]
 	status: MemberStatus
 	is_owner: boolean
 }
@@ -53,11 +66,25 @@ export interface CapabilityInfo {
 	description: string
 }
 
+/** central.api.servers.registry response. */
+export interface TeamRegistry {
+	team: string
+	assets: {
+		name: string
+		resource_id: string
+		title: string
+		cluster: string
+	}[]
+	sites: { name: string; subdomain: string; region: string }[]
+}
+
 /** central.api.teams.list_team_invitations item (the manager's view). */
 export interface InvitationRow {
 	name: string
 	email: string
 	role: string
+	resource_type: ResourceType
+	resource_name: string | null
 	status: InvitationStatus
 	invited_by: string | null
 	expires_on: string | null

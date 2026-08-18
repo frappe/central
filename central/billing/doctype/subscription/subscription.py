@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -55,7 +56,9 @@ class Subscription(Document):
 		)
 		if duplicate:
 			frappe.throw(
-				f"Team {self.team} already has an active subscription ({duplicate}) for asset {self.asset_id}.",
+				_("Team {0} already has an active subscription ({1}) for asset {2}.").format(
+					self.team, duplicate, self.asset_id
+				),
 				frappe.DuplicateEntryError,
 			)
 
@@ -78,7 +81,9 @@ class Subscription(Document):
 		)
 		if duplicate:
 			frappe.throw(
-				f"Service subject {self.service_subject} already has an active subscription ({duplicate}).",
+				_("Service subject {0} already has an active subscription ({1}).").format(
+					self.service_subject, duplicate
+				),
 				frappe.DuplicateEntryError,
 			)
 

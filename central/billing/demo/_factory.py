@@ -8,6 +8,8 @@ Gateways / per-team config. The orchestration that wires teams together lives in
 demo_scenarios.
 """
 
+import hashlib
+
 import frappe
 from frappe.utils.password import update_password
 
@@ -33,6 +35,9 @@ PLAN_SIZES = [
 	("plan-1vcpu", "Starter · 1 vCPU / 2 GB", 1, 2, 25, 100, 1500),
 	("plan-2vcpu", "Basic · 2 vCPU / 4 GB", 2, 4, 50, 200, 3000),
 	("plan-4vcpu", "Standard · 4 vCPU / 8 GB", 4, 8, 100, 400, 6000),
+	# The scenarios put a team on the top rung to demo grandfathering against a
+	# risen catalog price, so the ladder has to actually reach it.
+	("plan-8vcpu", "Business · 8 vCPU / 16 GB", 8, 16, 200, 800, 12000),
 ]
 
 # À-la-carte component rate card, per Resource Type (ADR 0009) — what powers the
@@ -66,12 +71,28 @@ TIERS = [
 # Output tax follows the customer's billing currency (place of supply).
 TAX_BY_CURRENCY = {"INR": ("GST", 18), "USD": ("VAT", 5)}
 
-STRIPE = {"INR": "GW-Stripe-INR", "USD": "GW-Stripe-USD"}
-RAZORPAY = "GW-Razorpay"
+# A gateway row is named after its adapter — one row per provider, carrying every
+# currency it settles.
+STRIPE = "Stripe"
+RAZORPAY = "Razorpay"
 # PayPal is a directly-settled standalone gateway (ADR 0007). It lists USD but
 # is NOT its default — Stripe stays the card default; PayPal is the opt-in rail.
-PAYPAL = "GW-PayPal"
-ANCHOR = "2026-06-01"  # the current (open) billing month
+PAYPAL = "Paypal"
+# The current (open) billing month — the month the seed is RUN in, not a date
+# frozen into the source. A fixed anchor silently rots: a demo seeded against a
+# hardcoded June still says June in August, so the spend chart trails off into
+# empty months and "this cycle" disagrees with what the servers are actually
+# accruing. Everything else in the demo derives from these three.
+ANCHOR = str(frappe.utils.get_first_day(frappe.utils.getdate()))
+ANCHOR_END = str(frappe.utils.get_last_day(frappe.utils.getdate()))
+ANCHOR_DUE = str(frappe.utils.add_days(frappe.utils.get_last_day(frappe.utils.getdate()), 7))
+
+
+def anchor_day(day: int) -> str:
+	"""A date inside the open month — for events that happen mid-cycle (a resize)."""
+	return str(frappe.utils.add_days(frappe.utils.getdate(ANCHOR), day - 1))
+
+
 DEMO_OWNER_PASSWORD = "abc@123"  # every demo owner logs into the console with this
 
 
@@ -91,19 +112,30 @@ def _tiers():
 			}
 			for c in CURRENCIES
 		]
-		_upsert("Trust Tier Level", level, {
-			"tier": level, "sequence": seq, "is_default": default,
-			"max_resource_count": res, "min_paid_invoices": inv,
-			"thresholds": thresholds,
-		}, newname=True)
+		_upsert(
+			"Trust Tier Level",
+			level,
+			{
+				"tier": level,
+				"sequence": seq,
+				"is_default": default,
+				"max_resource_count": res,
+				"min_paid_invoices": inv,
+				"thresholds": thresholds,
+			},
+			newname=True,
+		)
 
 
 # Map metadata per demo cluster, so seeded servers pin on the console map. On a
 # real deployment the operator maintains this on the Region; here we seed it.
 _CLUSTER_REGION = {
 	"in-bengaluru": {
-		"display_name": "Bengaluru, India", "provider": "Frappe",
-		"country_code": "IN", "latitude": 12.9716, "longitude": 77.5946,
+		"display_name": "Bengaluru, India",
+		"provider": "Frappe",
+		"country_code": "IN",
+		"latitude": 12.9716,
+		"longitude": 77.5946,
 	},
 }
 
@@ -113,45 +145,25 @@ def _atlas_instances():
 	rates to one) and a Region (the map's display metadata). A pre-existing, real
 	Atlas Instance is left untouched — only its Region metadata is (re)seeded."""
 	for cslug, _label, _cur in CLUSTERS:
-		if not frappe.db.exists("Atlas Instance", cslug):
-			frappe.get_doc({
-				"doctype": "Atlas Instance", "region": cslug,
-				"base_url": f"https://{cslug}.atlas.demo", "api_key": "demo", "api_secret": "demo",
-			}).insert(ignore_permissions=True)
+		# Region first: an Atlas Instance LINKS to it, so seeding the instance ahead
+		# of the region fails on a site that has no regions yet — which is every
+		# fresh demo site, the one case this seeder exists for.
 		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
+		if not frappe.db.exists("Atlas Instance", cslug):
+			frappe.get_doc(
+				{
+					"doctype": "Atlas Instance",
+					"region": cslug,
+					"base_url": f"https://{cslug}.atlas.demo",
+					"api_key": "demo",
+					"api_secret": "demo",
+				}
+			).insert(ignore_permissions=True)
 
 
-# Plan is autonamed by hash (naming_rule Random), so its `name` is not the demo
-# slug. This maps the readable slug → the created Plan's real name so callers can
-# resolve a plan without knowing the hash. Populated by _catalog().
-PLAN_BY_SLUG: dict[str, str] = {}
-
-
-def plan_name(slug: str) -> str:
-	"""The real (hash) name of a demo Plan, from its slug."""
-	return PLAN_BY_SLUG.get(slug, slug)
-
-
-def _catalog():
-	_atlas_instances()
-	PLAN_BY_SLUG.clear()
-	for slug, title, vcpu, ram, disk, transfer, base_inr in PLAN_SIZES:
-		rates = []
-		for cslug, _label, _cur in CLUSTERS:
-			for currency in CURRENCIES:
-				rate = round(base_inr * CLUSTER_MULT[cslug] / FX[currency], 2)
-				rates.append({"cluster": cslug, "currency": currency, "rate": rate})
-		plan = _upsert("Plan", slug, {
-			"title": title, "billing_cycle": "Monthly", "is_active": 1,
-			"includes": [
-				{"resource_type": "Compute", "quantity": vcpu, "unit": "vCPU"},
-				{"resource_type": "Memory", "quantity": ram, "unit": "GB"},
-				{"resource_type": "Disk", "quantity": disk, "unit": "GB"},
-				{"resource_type": "Transfer", "quantity": transfer, "unit": "GB"},
-			],
-		}, newname=True)
-		PLAN_BY_SLUG[slug] = plan
-		set_catalog_rates("Plan", plan, rates)
+# Plans are autonamed by hash, so map the readable demo key to the generated
+# name once the Plan Configurator has minted each plan.
+_PLAN_BY_KEY: dict[str, str] = {}
 
 
 def plan_name(key: str) -> str:
@@ -184,31 +196,39 @@ def _vm_plans():
 	the base_rate — so re-running generation per cluster (as an admin would when a
 	region onboards) yields the regional prices. The Plans are minted on the first
 	run and reused (idempotent) on the rest."""
-	doc = frappe.get_doc({
-		"doctype": "Plan Configurator",
-		"template_name": "VM Bundles (demo)",
-		"category": "VM Plans",
-		"sub_category": "General",
-		"start_vcpu": "1", "ceiling_vcpu": "16",
-		"billing_cycle": "Monthly",
-		"is_active": 1,
-		"plan_name_prefix": "Bundle",
-		"rungs": [
-			{"plan_name": slug, "label": title, "vcpu": vcpu, "memory_gb": ram,
-			 "disk_gb": disk, "transfer_gb": transfer, "multiplier": base}
-			for slug, title, vcpu, ram, disk, transfer, base in PLAN_SIZES
-		],
-	}).insert(ignore_permissions=True)
+	doc = frappe.get_doc(
+		{
+			"doctype": "Plan Configurator",
+			"template_name": "VM Bundles (demo)",
+			"category": "VM Plans",
+			"sub_category": "General",
+			"start_vcpu": "1",
+			"ceiling_vcpu": "16",
+			"billing_cycle": "Monthly",
+			"is_active": 1,
+			"plan_name_prefix": "Bundle",
+			"rungs": [
+				{
+					"plan_name": slug,
+					"label": title,
+					"vcpu": vcpu,
+					"memory_gb": ram,
+					"disk_gb": disk,
+					"transfer_gb": transfer,
+					"multiplier": base,
+				}
+				for slug, title, vcpu, ram, disk, transfer, base in PLAN_SIZES
+			],
+		}
+	).insert(ignore_permissions=True)
 
 	for cslug, _label, _cur in CLUSTERS:
-		doc.set("base_rates", [
-			{"currency": c, "base_rate": CLUSTER_MULT[cslug] / FX[c]} for c in CURRENCIES
-		])
+		doc.set("base_rates", [{"currency": c, "base_rate": CLUSTER_MULT[cslug] / FX[c]} for c in CURRENCIES])
 		doc.save(ignore_permissions=True)
 		doc.generate_and_price(cluster=cslug, currencies=list(CURRENCIES))
 
 	doc.reload()
-	for rung, size in zip(doc.rungs, PLAN_SIZES):
+	for rung, size in zip(doc.rungs, PLAN_SIZES, strict=True):
 		_PLAN_BY_KEY[size[0]] = rung.plan
 
 
@@ -217,17 +237,20 @@ def _component_rate_card():
 	Configurator's component-rate card — the same 'Publish Rates' path the Desk tool
 	uses — rather than writing Catalog Rate rows by hand. Global (blank-cluster) rate
 	per currency for each priced component."""
-	doc = frappe.get_doc({
-		"doctype": "Plan Configurator",
-		"template_name": "Component Rate Card (demo)",
-		"category": "VM Plans",
-		"start_vcpu": "1", "ceiling_vcpu": "16",
-		"component_rates": [
-			{"resource_type": rt, "currency": c, "rate": round(base_inr / FX[c], 4)}
-			for rt, base_inr in COMPONENT_RATES_INR.items()
-			for c in CURRENCIES
-		],
-	}).insert(ignore_permissions=True)
+	doc = frappe.get_doc(
+		{
+			"doctype": "Plan Configurator",
+			"template_name": "Component Rate Card (demo)",
+			"category": "VM Plans",
+			"start_vcpu": "1",
+			"ceiling_vcpu": "16",
+			"component_rates": [
+				{"resource_type": rt, "currency": c, "rate": round(base_inr / FX[c], 4)}
+				for rt, base_inr in COMPONENT_RATES_INR.items()
+				for c in CURRENCIES
+			],
+		}
+	).insert(ignore_permissions=True)
 	doc.apply_component_card(cluster=None)
 
 
@@ -238,19 +261,27 @@ def _service_catalog():
 	ensure_catalog_masters. Single-resource metered Plan per family, per-unit priced,
 	globally (ADR 0013/0015/0008)."""
 	for category, resource_type, slug, title, unit, allowance, rates in SERVICES:
-		doc = frappe.get_doc({
-			"doctype": "Plan Configurator",
-			"template_name": f"{title} (demo)",
-			"category": category,
-			"start_vcpu": "1", "ceiling_vcpu": "16",
-			"billing_cycle": "Monthly",
-			"is_active": 1,
-			"simple_plans": [
-				{"title": title, "resource_type": resource_type,
-				 "quantity": allowance, "unit": unit, "multiplier": 1}
-			],
-			"base_rates": [{"currency": c, "base_rate": rate} for c, rate in rates.items()],
-		}).insert(ignore_permissions=True)
+		doc = frappe.get_doc(
+			{
+				"doctype": "Plan Configurator",
+				"template_name": f"{title} (demo)",
+				"category": category,
+				"start_vcpu": "1",
+				"ceiling_vcpu": "16",
+				"billing_cycle": "Monthly",
+				"is_active": 1,
+				"simple_plans": [
+					{
+						"title": title,
+						"resource_type": resource_type,
+						"quantity": allowance,
+						"unit": unit,
+						"multiplier": 1,
+					}
+				],
+				"base_rates": [{"currency": c, "base_rate": rate} for c, rate in rates.items()],
+			}
+		).insert(ignore_permissions=True)
 		doc.generate_and_price(cluster=None, currencies=list(rates.keys()))
 		doc.reload()
 		_PLAN_BY_KEY[slug] = doc.simple_plans[0].plan
@@ -260,35 +291,67 @@ def _gateways():
 	# Demo keys are placeholders — skip live credential validation / webhook
 	# auto-registration so the seed runs offline.
 	seed = {"skip_credential_validation": True}
-	for currency, name in STRIPE.items():
-		_upsert("Payment Gateway", name, {
-			"title": f"Stripe ({currency})", "adapter_key": "Stripe",
-			"api_secret": "sk_test_demo", "webhook_secret": "whsec_demo", "is_enabled": 1,
-			"currencies": [{"currency": currency, "is_default": 1}],
-		}, newname=True, flags=seed)
-	_upsert("Payment Gateway", RAZORPAY, {
-		"title": "Razorpay (India)", "adapter_key": "Razorpay",
-		"api_key": "rzp_test", "api_secret": "rzp_secret", "webhook_secret": "rzp_whsec",
-		"is_enabled": 1, "supports_mandates": 1,
-		"currencies": [{"currency": "INR", "is_default": 1}],
-	}, newname=True, flags=seed)
+	# One Stripe account settles both currencies. It claims the INR default too, but
+	# Razorpay is seeded after and takes it — Stripe keeps INR as a card-only rail.
+	_upsert(
+		"Payment Gateway",
+		STRIPE,
+		{
+			"adapter_key": "Stripe",
+			"api_secret": "sk_test_demo",
+			"webhook_secret": "whsec_demo",
+			"is_enabled": 1,
+			"currencies": [
+				{"currency": "INR", "is_default": 1},
+				{"currency": "USD", "is_default": 1},
+			],
+		},
+		flags=seed,
+	)
+	_upsert(
+		"Payment Gateway",
+		RAZORPAY,
+		{
+			"adapter_key": "Razorpay",
+			"api_key": "rzp_test",
+			"api_secret": "rzp_secret",
+			"webhook_secret": "rzp_whsec",
+			"is_enabled": 1,
+			"supports_mandates": 1,
+			"currencies": [{"currency": "INR", "is_default": 1}],
+		},
+		flags=seed,
+	)
 	# PayPal — directly-settled standalone gateway (ADR 0007). Non-default for USD
 	# so Stripe stays the card default; PayPal is the opt-in international rail whose
 	# capture ids reconcile against PayPal's own ledger.
-	_upsert("Payment Gateway", PAYPAL, {
-		"title": "PayPal (International)", "adapter_key": "Paypal",
-		"api_key": "paypal_client_id", "api_secret": "paypal_secret", "webhook_secret": "paypal_whid",
-		"is_enabled": 1,
-		"currencies": [{"currency": "USD", "is_default": 0}],
-	}, newname=True, flags=seed)
+	_upsert(
+		"Payment Gateway",
+		PAYPAL,
+		{
+			"adapter_key": "Paypal",
+			"api_key": "paypal_client_id",
+			"api_secret": "paypal_secret",
+			"webhook_secret": "paypal_whid",
+			"is_enabled": 1,
+			"currencies": [{"currency": "USD", "is_default": 0}],
+		},
+		flags=seed,
+	)
 
 
 def _tier(team, level):
 	# The tier is a link on the Billing Profile; the cap resolves live from the
 	# level × the team's currency. manual_override pins the demo team's tier.
-	frappe.db.set_value("Billing Profile", team, {
-		"trust_tier_level": level, "trust_tier": level, "manual_override": 1,
-	})
+	frappe.db.set_value(
+		"Billing Profile",
+		team,
+		{
+			"trust_tier_level": level,
+			"trust_tier": level,
+			"manual_override": 1,
+		},
+	)
 
 
 def _tax(team, currency):
@@ -310,14 +373,22 @@ _GEO_BY_CLUSTER = {
 def _profile(team, slug, currency, cluster):
 	india = currency == "INR"
 	country, state, city, pincode = _GEO_BY_CLUSTER.get(cluster, ("India", "Maharashtra", "Mumbai", "400001"))
-	_upsert("Billing Profile", team, {
-		"team": team, "currency": currency,
-		"legal_name": f"{slug.replace('-', ' ').title()} Ltd",
-		"email": f"billing@{slug}.example",
-		"gstin": "27AAPFU0939F1ZV" if india else None,
-		"address_line1": "1 Demo Street", "city": city,
-		"state": state, "country": country, "pincode": pincode,
-	})
+	_upsert(
+		"Billing Profile",
+		team,
+		{
+			"team": team,
+			"currency": currency,
+			"legal_name": f"{slug.replace('-', ' ').title()} Ltd",
+			"email": f"billing@{slug}.example",
+			"gstin": "27AAPFU0939F1ZV" if india else None,
+			"address_line1": "1 Demo Street",
+			"city": city,
+			"state": state,
+			"country": country,
+			"pincode": pincode,
+		},
+	)
 
 
 # --- team roster (members + custom role) ------------------------------------
@@ -358,10 +429,19 @@ def _custom_role(team):
 	for existing in frappe.get_all("Team Role", {"team": team, "is_system": 0}, pluck="name"):
 		frappe.delete_doc("Team Role", existing, force=True, ignore_permissions=True)
 	name, caps = _CUSTOM_ROLE
-	return frappe.get_doc({
-		"doctype": "Team Role", "role_name": name, "is_system": 0, "team": team,
-		"capabilities": [{"capability": c} for c in caps],
-	}).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Team Role",
+				"role_name": name,
+				"is_system": 0,
+				"team": team,
+				"capabilities": [{"capability": c} for c in caps],
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _ensure_member_user(email, full_name):
@@ -370,10 +450,16 @@ def _ensure_member_user(email, full_name):
 	if frappe.db.exists("User", email):
 		return email
 	first, _, last = full_name.partition(" ")
-	frappe.get_doc({
-		"doctype": "User", "email": email, "first_name": first, "last_name": last or None,
-		"send_welcome_email": 0, "enabled": 0,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "User",
+			"email": email,
+			"first_name": first,
+			"last_name": last or None,
+			"send_welcome_email": 0,
+			"enabled": 0,
+		}
+	).insert(ignore_permissions=True)
 	return email
 
 
@@ -389,22 +475,49 @@ def _payment_setup(team, slug, currency, state):
 		return None, None  # settled from wallet / free credits — no card needed
 	if currency == "INR" and slug in _MANDATE_TEAMS:
 		# An INR team on UPI Autopay (mandate ceiling = tier cap).
-		pm = frappe.get_doc({
-			"doctype": "Payment Method", "team": team, "gateway": RAZORPAY,
-			"method_type": "UPI Autopay", "status": "Active", "display_label": "UPI Autopay",
-			"gateway_method_id": f"token_{slug}", "gateway_customer_id": f"cust_{slug}",
-			"mandate_max_amount": 200000, "mandate_currency": "INR", "is_default": 1,
-			"validated_at": frappe.utils.now_datetime(),
-		}).insert(ignore_permissions=True).name
+		pm = (
+			frappe.get_doc(
+				{
+					"doctype": "Payment Method",
+					"team": team,
+					"gateway": RAZORPAY,
+					"method_type": "UPI Autopay",
+					"status": "Active",
+					"display_label": "UPI Autopay",
+					"gateway_method_id": f"token_{slug}",
+					"gateway_customer_id": f"cust_{slug}",
+					"mandate_max_amount": 200000,
+					"mandate_currency": "INR",
+					"is_default": 1,
+					"validated_at": frappe.utils.now_datetime(),
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 		_gateway_customer(team, RAZORPAY, f"cust_{slug}")
 		return RAZORPAY, pm
-	gateway = STRIPE[currency]
-	pm = frappe.get_doc({
-		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
-		"status": "Active", "display_label": "Visa ····4242", "gateway_method_id": f"pm_{slug}",
-		"gateway_customer_id": f"cus_{slug}", "expiry_month": 11, "expiry_year": 2030,
-		"is_default": 1, "validated_at": frappe.utils.now_datetime(),
-	}).insert(ignore_permissions=True).name
+	gateway = STRIPE
+	pm = (
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": team,
+				"gateway": gateway,
+				"method_type": "Card",
+				"status": "Active",
+				"display_label": "Visa ····4242",
+				"gateway_method_id": f"pm_{slug}",
+				"gateway_customer_id": f"cus_{slug}",
+				"expiry_month": 11,
+				"expiry_year": 2030,
+				"is_default": 1,
+				"validated_at": frappe.utils.now_datetime(),
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 	_gateway_customer(team, gateway, f"cus_{slug}")
 	return gateway, pm
 
@@ -413,13 +526,27 @@ def _add_backup_card(team, slug, gateway, priority=1):
 	"""A second, lower-priority Card on the same gateway customer — the backup method
 	autopay rotates to when the primary declines (#28). The primary from `_payment_setup`
 	carries priority 0, so this one (priority 1) sits behind it in `ordered_methods`."""
-	return frappe.get_doc({
-		"doctype": "Payment Method", "team": team, "gateway": gateway, "method_type": "Card",
-		"status": "Active", "display_label": "Mastercard ····5454",
-		"gateway_method_id": f"pm_{slug}_backup", "gateway_customer_id": f"cus_{slug}",
-		"expiry_month": 8, "expiry_year": 2031, "is_default": 0, "priority": priority,
-		"validated_at": frappe.utils.now_datetime(),
-	}).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Payment Method",
+				"team": team,
+				"gateway": gateway,
+				"method_type": "Card",
+				"status": "Active",
+				"display_label": "Mastercard ····5454",
+				"gateway_method_id": f"pm_{slug}_backup",
+				"gateway_customer_id": f"cus_{slug}",
+				"expiry_month": 8,
+				"expiry_year": 2031,
+				"is_default": 0,
+				"priority": priority,
+				"validated_at": frappe.utils.now_datetime(),
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _gateway_customer(team, gateway, customer_id):
@@ -430,43 +557,80 @@ def _gateway_customer(team, gateway, customer_id):
 	existing = frappe.db.get_value("Gateway Customer", {"team": team, "gateway": gateway}, "name")
 	if existing:
 		frappe.delete_doc("Gateway Customer", existing, force=True)
-	frappe.get_doc({
-		"doctype": "Gateway Customer", "team": team, "gateway": gateway,
-		"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
-		"gateway_customer_id": customer_id,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Gateway Customer",
+			"team": team,
+			"gateway": gateway,
+			"adapter_key": frappe.db.get_value("Payment Gateway", gateway, "adapter_key"),
+			"gateway_customer_id": customer_id,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _failed_attempt(team, invoice, pm, gateway, retry, when=None):
 	when = when or frappe.utils.now_datetime()
-	frappe.get_doc({
-		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
-		"payment_method": pm, "amount": frappe.db.get_value("Invoice", invoice, "expected_collection"),
-		"currency": frappe.db.get_value("Invoice", invoice, "currency"), "status": "Failed",
-		"failure_code": "card_declined", "failure_reason": "Your card was declined.",
-		"retry_number": retry, "initiated_at": when, "completed_at": when,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Payment Attempt",
+			"invoice": invoice,
+			"team": team,
+			"gateway": gateway,
+			"payment_method": pm,
+			"amount": frappe.db.get_value("Invoice", invoice, "expected_collection"),
+			"currency": frappe.db.get_value("Invoice", invoice, "currency"),
+			"status": "Failed",
+			"failure_code": "card_declined",
+			"failure_reason": "Your card was declined.",
+			"retry_number": retry,
+			"initiated_at": when,
+			"completed_at": when,
+		}
+	).insert(ignore_permissions=True)
 
 
-def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency):
+def _settle_with_retries(team, invoice, pm, gateway, retries, amount, currency, base=None):
 	"""Dunning-then-settle trail on a paid invoice: `retries` failed card attempts
-	(declined), each a day apart from the invoice's period end, followed by a
-	successful capture that settles it. This is what the invoice Activity shows."""
+	(declined), each a day apart, followed by a successful capture that settles it.
+	This is what the invoice Activity shows.
+
+	`base` is when the first attempt ran. It defaults to the day the invoice opens
+	rather than its period end — a bill is not collected before the month it covers
+	has closed."""
 	period_end = frappe.db.get_value("Invoice", invoice, "period_end")
-	base = frappe.utils.get_datetime(f"{period_end} 09:00:00")
+	base = frappe.utils.get_datetime(base or collection_moment(team, period_end))
 	for n in range(retries):
 		_failed_attempt(team, invoice, pm, gateway, n, when=frappe.utils.add_to_date(base, days=n))
 	captured_at = frappe.utils.add_to_date(base, days=retries)
-	frappe.get_doc({
-		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
-		"payment_method": pm, "amount": amount, "currency": currency, "status": "Captured",
-		"retry_number": retries, "gateway_transaction_id": f"pi_{invoice}",
-		"resolved_by": "Webhook", "initiated_at": captured_at, "completed_at": captured_at,
-	}).insert(ignore_permissions=True)
-	frappe.db.set_value("Invoice", invoice, {
-		"status": "Paid", "amount_paid": amount,
-		"due_date": frappe.utils.add_days(period_end, 7),
-	})
+	frappe.get_doc(
+		{
+			"doctype": "Payment Attempt",
+			"invoice": invoice,
+			"team": team,
+			"gateway": gateway,
+			"payment_method": pm,
+			"amount": amount,
+			"currency": currency,
+			"status": "Captured",
+			"retry_number": retries,
+			# Gateway references are opaque ids, not our invoice names — a demo that
+			# shows "pi_INV-2026-02-00011" reads as fabricated next to the real ones.
+			"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
+			"resolved_by": "Webhook",
+			"initiated_at": captured_at,
+			"completed_at": captured_at,
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.set_value(
+		"Invoice",
+		invoice,
+		{
+			"status": "Paid",
+			"amount_paid": amount,
+			"paid_at": captured_at,
+			"due_date": frappe.utils.add_days(period_end, 7),
+		},
+	)
 
 
 def _settle_via_backup(team, invoice, primary_pm, gateway, amount, currency, when=None):
@@ -486,8 +650,10 @@ def _settle_via_backup(team, invoice, primary_pm, gateway, amount, currency, whe
 		return None, None
 	# 3) the backup captures (stands in for the offline gateway), an hour later.
 	captured_at = frappe.utils.add_to_date(when, hours=1)
-	attempt = _capture_attempt(team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at)
-	frappe.db.set_value("Invoice", invoice, {"status": "Paid", "amount_paid": amount})
+	attempt = _capture_attempt(
+		team, invoice, backup.name, backup.gateway, amount, currency, when=captured_at, retry=1
+	)
+	frappe.db.set_value("Invoice", invoice, {"status": "Paid", "amount_paid": amount, "paid_at": captured_at})
 	return attempt, backup.name
 
 
@@ -511,7 +677,8 @@ def arm_emandate(team):
 	if not open_inv:
 		return
 	st = collection_mode.evaluate(
-		team, projected_amount=frappe.utils.flt(open_inv.expected_collection),
+		team,
+		projected_amount=frappe.utils.flt(open_inv.expected_collection),
 		reason="invoice_over_threshold",
 	)
 	if not st["action_required"]:
@@ -556,7 +723,7 @@ def _ensure_signing_key():
 	try:
 		frappe.installer.update_site_config("entitlement_private_key", priv)
 		frappe.installer.update_site_config("entitlement_public_key", pub)
-	except Exception:  # noqa: BLE001 — in-memory conf is enough for the seed run
+	except Exception:
 		pass
 
 
@@ -570,10 +737,14 @@ def _ensure_demo_team(slug):
 	`_wipe_all` leaves Teams intact, so a re-seed reuses the same team."""
 	owner = f"owner-{slug}@example.com"
 	if not frappe.db.exists("User", owner):
-		frappe.get_doc({
-			"doctype": "User", "email": owner, "send_welcome_email": 0,
-			"first_name": slug.replace("-", " ").title(),
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": owner,
+				"send_welcome_email": 0,
+				"first_name": slug.replace("-", " ").title(),
+			}
+		).insert(ignore_permissions=True)
 	# Every demo owner signs into the console with the same password. Set it on each
 	# seed (owners persist across reseeds) via update_password, which writes the hash
 	# directly and so bypasses the site's password-strength policy.
@@ -586,9 +757,17 @@ def _ensure_demo_team(slug):
 	team = frappe.db.get_value("Team", {"owner_user": owner}, "name")
 	if team:
 		return team
-	return frappe.get_doc({
-		"doctype": "Team", "team_name": slug, "owner_user": owner,
-	}).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Team",
+				"team_name": slug,
+				"owner_user": owner,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _wipe_all():
@@ -596,20 +775,40 @@ def _wipe_all():
 	# Child tables must be wiped explicitly — deleting a parent via frappe.db.delete
 	# does NOT cascade, so orphan rows (e.g. old EUR Trust Tier Thresholds, gateway
 	# currencies) would otherwise accumulate across re-seeds.
-	children = ("Catalog Rate", "Plan Includes", "Invoice Line Item",
-				"Subscription Change", "Trust Tier Threshold", "Payment Gateway Currency",
-				"Plan Configurator Plan", "Plan Configurator Rate",
-				"Plan Configurator Simple Plan", "Plan Configurator Component Rate")
-	transactional = ("Invoice", "Payment Attempt", "Refund", "Payment Method", "Gateway Customer",
-					 "Usage Rollup", "Credit Ledger Entry", "Credit Wallet",
-					 "Billing Notification Log", "Team Notification",
-					 "Entitlement Token", "Webhook Event", "Subscription", "Asset")
+	children = (
+		"Catalog Rate",
+		"Plan Includes",
+		"Invoice Line Item",
+		"Subscription Change",
+		"Trust Tier Threshold",
+		"Payment Gateway Currency",
+		"Plan Configurator Plan",
+		"Plan Configurator Rate",
+		"Plan Configurator Simple Plan",
+		"Plan Configurator Component Rate",
+	)
+	transactional = (
+		"Invoice",
+		"Payment Attempt",
+		"Refund",
+		"Payment Method",
+		"Gateway Customer",
+		"Usage Rollup",
+		"Credit Ledger Entry",
+		"Credit Wallet",
+		"Billing Notification Log",
+		"Team Notification",
+		"Entitlement Token",
+		"Webhook Event",
+		"Subscription",
+		"Asset",
+	)
 	config = ("Tax Profile", "Billing Profile")
 	catalog = ("Plan Configurator", "Plan", "Payment Gateway", "Trust Tier Level")
 	for dt in children + transactional + config + catalog:
 		try:
 			frappe.db.delete(dt)
-		except Exception:  # noqa: BLE001 — some doctypes may not exist on older sites
+		except Exception:
 			pass
 	frappe.db.commit()
 
@@ -630,31 +829,77 @@ def _add_resize(sub, plan, currency, cluster, effective_at):
 	the price-lock). The invoice day-weights every segment, so back-to-back resizes in
 	a single period show up as distinct slivers in the bill and the change history."""
 	rate = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
-	frappe.get_doc({
-		"doctype": "Subscription Change", "subscription": sub, "change_type": "Plan Changed",
-		"new_value": plan, "locked_rate": rate, "currency": currency, "effective_at": effective_at,
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Subscription Change",
+			"subscription": sub,
+			"change_type": "Plan Changed",
+			"new_value": plan,
+			"locked_rate": rate,
+			"currency": currency,
+			"effective_at": effective_at,
+		}
+	).insert(ignore_permissions=True)
 
 
 def stage_resizes(primary_sub, base_cluster, base_plan, currency, kind):
 	"""Two resizes on the current (June) invoice, in one of two shapes:
 
-	  * same_day    — an upsize and a downsize within the SAME calendar day, so the
-	                  bill carries two same-day Plan Changed slivers.
-	  * within_24h  — an upsize late one evening and a downsize the next morning,
-	                  i.e. a second resize inside 24h of the first (spanning midnight).
+	* same_day    — an upsize and a downsize within the SAME calendar day, so the
+	                bill carries two same-day Plan Changed slivers.
+	* within_24h  — an upsize late one evening and a downsize the next morning,
+	                i.e. a second resize inside 24h of the first (spanning midnight).
 	"""
-	up = plan_name(_plan_after(base_plan, +1))
-	down = plan_name(_plan_after(base_plan, 0))  # back to the original size
+	base = plan_name(base_plan)
+	bigger = plan_name(_plan_after(base_plan, +1))
+	smaller = plan_name(_plan_after(base_plan, -1))
+	# Scale UP then back down — the way capacity is actually used: a busy spell is
+	# absorbed by a bigger machine and given back afterwards. Staging it the other
+	# way round (down, then up) told a story nobody has.
+	#
+	# `_plan_after` clamps at both ends, so a team already on the largest plan has
+	# no bigger size to go to; there the pair runs down-and-back instead, which is
+	# at least a real change. A one-rung ladder stages nothing.
+	other = bigger if bigger != base else smaller
+	if other == base:
+		return
+
 	if kind == "same_day":
-		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-15 09:30:00")
-		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 16:45:00")
+		_add_resize(primary_sub, other, currency, base_cluster, f"{anchor_day(15)} 09:30:00")
+		_add_resize(primary_sub, base, currency, base_cluster, f"{anchor_day(15)} 16:45:00")
 	elif kind == "within_24h":
-		_add_resize(primary_sub, up, currency, base_cluster, "2026-06-14 20:00:00")
-		_add_resize(primary_sub, down, currency, base_cluster, "2026-06-15 08:00:00")
+		_add_resize(primary_sub, other, currency, base_cluster, f"{anchor_day(14)} 20:00:00")
+		_add_resize(primary_sub, base, currency, base_cluster, f"{anchor_day(15)} 08:00:00")
 
 
 # --- payment attempts + refunds (terminal-state builders) -------------------
+
+
+def opens_on(period_end) -> str:
+	"""When the run would finalise this period's bill.
+
+	A month billed in arrears is not closed until it ends, so the invoice opens on
+	the 1st after the period — not on its last day. Seeding it a day early made the
+	demo show bills raised, and collected, before the month they cover had finished.
+	"""
+	return f"{frappe.utils.add_days(frappe.utils.getdate(period_end), 1)} 02:00:00"
+
+
+def collection_moment(team, period_end, after_days: int = 0) -> str:
+	"""A plausible moment for a collection against this period's bill.
+
+	Nothing can be collected before the invoice opens, so this always lands on or
+	after that. The day-within-the-window and the time of day are scattered from a
+	hash of (team, period) — deterministic, so a re-seed is stable, but varied, so
+	ten months of history does not read as a generated grid of identical 09:00
+	timestamps on identical dates.
+	"""
+	opens = frappe.utils.add_days(frappe.utils.getdate(period_end), 1)
+	seed = int(hashlib.sha256(f"{team}:{period_end}".encode()).hexdigest()[:12], 16)
+	day = frappe.utils.add_days(opens, after_days + seed % 3)
+	hour = 6 + (seed // 3) % 14  # business-ish hours, never midnight-sharp
+	minute = (seed // 97) % 60
+	return f"{day} {hour:02d}:{minute:02d}:00"
 
 
 def backdate_invoice(invoice, when):
@@ -727,15 +972,35 @@ def draw_wallet_credit(invoice) -> float:
 	return frappe.utils.flt(frappe.db.get_value("Invoice", invoice, "expected_collection"))
 
 
-def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None):
-	"""A successful (Captured) card charge that settled the invoice."""
+def _capture_attempt(team, invoice, pm, gateway, amount, currency, when=None, retry=0):
+	"""A successful (Captured) card charge that settled the invoice.
+
+	`retry` matters: the attempt's idempotency key is hash(invoice, retry_number), so
+	a capture that follows a decline on the SAME invoice is a genuine second attempt
+	and must say so — leaving it at 0 collides with the decline's key.
+	"""
 	when = when or frappe.utils.now_datetime()
-	return frappe.get_doc({
-		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
-		"payment_method": pm, "amount": amount, "currency": currency, "status": "Captured",
-		"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}", "resolved_by": "Webhook",
-		"initiated_at": when, "completed_at": when,
-	}).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": team,
+				"gateway": gateway,
+				"payment_method": pm,
+				"amount": amount,
+				"currency": currency,
+				"status": "Captured",
+				"retry_number": retry,
+				"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
+				"resolved_by": "Webhook",
+				"initiated_at": when,
+				"completed_at": when,
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def bank_pending_attempt(team, invoice, pm, gateway, amount, currency):
@@ -743,12 +1008,24 @@ def bank_pending_attempt(team, invoice, pm, gateway, amount, currency):
 	response (no webhook yet). The attempt is 'Initiated' — reconciliation treats it
 	as ambiguous — so the invoice is frozen (no Pay Now / no retry) until it resolves."""
 	now = frappe.utils.now_datetime()
-	return frappe.get_doc({
-		"doctype": "Payment Attempt", "invoice": invoice, "team": team, "gateway": gateway,
-		"payment_method": pm, "amount": amount, "currency": currency, "status": "Initiated",
-		"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
-		"initiated_at": now,  # completed_at left blank — the bank hasn't answered
-	}).insert(ignore_permissions=True).name
+	return (
+		frappe.get_doc(
+			{
+				"doctype": "Payment Attempt",
+				"invoice": invoice,
+				"team": team,
+				"gateway": gateway,
+				"payment_method": pm,
+				"amount": amount,
+				"currency": currency,
+				"status": "Initiated",
+				"gateway_transaction_id": f"pi_{frappe.generate_hash(length=20)}",
+				"initiated_at": now,  # completed_at left blank — the bank hasn't answered
+			}
+		)
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def make_refund(team, invoice, attempt, amount, currency, destination, reason, chargeback=False):
@@ -758,12 +1035,22 @@ def make_refund(team, invoice, attempt, amount, currency, destination, reason, c
 	and a partial correction always goes to the wallet (refunds.partial_overcharge). A full
 	refund to source flips the original attempt to Refunded (mirrors refunds._to_source);
 	`chargeback` forces that flip for a dispute. The invoice stays Paid throughout."""
-	frappe.get_doc({
-		"doctype": "Refund", "payment_attempt": attempt, "invoice": invoice, "team": team,
-		"amount": amount, "currency": currency, "destination": destination, "status": "Completed",
-		"reason": reason, "gateway_refund_id": f"re_{frappe.generate_hash(length=20)}",
-		"created_at": frappe.utils.now_datetime(), "completed_at": frappe.utils.now_datetime(),
-	}).insert(ignore_permissions=True)
+	frappe.get_doc(
+		{
+			"doctype": "Refund",
+			"payment_attempt": attempt,
+			"invoice": invoice,
+			"team": team,
+			"amount": amount,
+			"currency": currency,
+			"destination": destination,
+			"status": "Completed",
+			"reason": reason,
+			"gateway_refund_id": f"re_{frappe.generate_hash(length=20)}",
+			"created_at": frappe.utils.now_datetime(),
+			"completed_at": frappe.utils.now_datetime(),
+		}
+	).insert(ignore_permissions=True)
 	captured = frappe.utils.flt(frappe.db.get_value("Payment Attempt", attempt, "amount"))
 	if chargeback or (destination == "Source" and frappe.utils.flt(amount) >= captured):
 		frappe.db.set_value("Payment Attempt", attempt, "status", "Refunded")
@@ -799,9 +1086,15 @@ def add_composed_subscription(team, cluster, currency, start_date, pm, gateway, 
 	from central.billing.catalog.subscriptions import provision_composed_subscription
 
 	res = provision_composed_subscription(
-		team=team, cluster=cluster, includes=_COMPOSED_INCLUDES, sub_category="General",
-		billing_cycle="Monthly", start_date=start_date,
-		default_payment_method=pm, gateway=gateway, resource_id=resource_id,
+		team=team,
+		cluster=cluster,
+		includes=_COMPOSED_INCLUDES,
+		sub_category="General",
+		billing_cycle="Monthly",
+		start_date=start_date,
+		default_payment_method=pm,
+		gateway=gateway,
+		resource_id=resource_id,
 	)
 	return res["subscription"]
 
@@ -811,8 +1104,11 @@ def subscribe_service(team, service_slug, cluster, pm, gateway):
 	from central.billing.catalog.subscriptions import provision_service_subscription
 
 	res = provision_service_subscription(
-		team=team, plan=service_slug, cluster=cluster,
-		default_payment_method=pm, gateway=gateway,
+		team=team,
+		plan=service_slug,
+		cluster=cluster,
+		default_payment_method=pm,
+		gateway=gateway,
 	)
 	return res["subscription"], res["service_subject"]
 
@@ -823,9 +1119,18 @@ def meter_service_usage(subject, resource_type, quantity, unit, period_start, pe
 	so anything past the allowance bills as overage on the period's invoice."""
 	from central.billing.platform.sync import record_meter_rollups
 
-	record_meter_rollups([{
-		"resource_id": subject, "resource_type": resource_type, "meter_type": "Counter",
-		"period_start": f"{period_start} 00:00:00", "period_end": f"{period_end} 23:59:59",
-		"quantity": quantity, "unit": unit,
-		"idempotency_key": f"{subject}:counter:{period_start}", "status": "closed",
-	}])
+	record_meter_rollups(
+		[
+			{
+				"resource_id": subject,
+				"resource_type": resource_type,
+				"meter_type": "Counter",
+				"period_start": f"{period_start} 00:00:00",
+				"period_end": f"{period_end} 23:59:59",
+				"quantity": quantity,
+				"unit": unit,
+				"idempotency_key": f"{subject}:counter:{period_start}",
+				"status": "closed",
+			}
+		]
+	)

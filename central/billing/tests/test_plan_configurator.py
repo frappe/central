@@ -12,10 +12,10 @@ Authoring-only resource math: millicores/ratio never reach the data or billing.
 """
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog import configurator, plans
 from central.billing.catalog.pricing import get_catalog_rates, resolve_rate
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance
 
 PREFIX = "CfgTest"
@@ -118,10 +118,14 @@ class TestBuildLadder(IntegrationTestCase):
 	def test_ratio_is_configurable_on_the_sub_category(self):
 		# The fallback ratio is data, not code: set the authoritative numeric ram_ratio
 		# on the master and a blank configurator ratio follows it as a 1:N string (#81).
-		frappe.get_doc({
-			"doctype": "Plan Sub-Category", "sub_category_name": "Cfg Ratio Test",
-			"category": "VM Plans", "ram_ratio": 6,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Plan Sub-Category",
+				"sub_category_name": "Cfg Ratio Test",
+				"category": "VM Plans",
+				"ram_ratio": 6,
+			}
+		).insert(ignore_permissions=True)
 		self.addCleanup(frappe.delete_doc, "Plan Sub-Category", "Cfg Ratio Test", force=True)
 		self.assertEqual(configurator.ratio_for("Cfg Ratio Test", None), "1:6")
 		# An explicit ratio still overrides the master.
@@ -135,11 +139,12 @@ class TestBuildLadder(IntegrationTestCase):
 
 	def test_rung_includes_skips_zero_disk_and_transfer(self):
 		self.assertEqual(
-			[r["resource_type"] for r in configurator.rung_includes(1, 2, 0, 0)],
-			["Compute", "Memory"])
+			[r["resource_type"] for r in configurator.rung_includes(1, 2, 0, 0)], ["Compute", "Memory"]
+		)
 		self.assertEqual(
 			[r["resource_type"] for r in configurator.rung_includes(1, 2, 25, 4000)],
-			["Compute", "Memory", "Disk", "Transfer"])
+			["Compute", "Memory", "Disk", "Transfer"],
+		)
 
 	def test_bad_inputs_throw(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -152,13 +157,20 @@ class TestGenerate(IntegrationTestCase):
 	def setUp(self):
 		_cleanup()
 		ensure_atlas_instance("ap-south-1")
-		self.cfg = frappe.get_doc({
-			"doctype": "Plan Configurator", "template_name": TEMPLATE,
-			"start_vcpu": "1/8", "ceiling_vcpu": "4",
-			"memory_ratio": "1:2", "base_disk_gb": 10, "plan_name_prefix": PREFIX,
-			"billing_cycle": "Monthly", "is_active": 1,
-			"base_rates": [{"currency": "INR", "base_rate": 100}, {"currency": "USD", "base_rate": 2}],
-		}).insert(ignore_permissions=True)
+		self.cfg = frappe.get_doc(
+			{
+				"doctype": "Plan Configurator",
+				"template_name": TEMPLATE,
+				"start_vcpu": "1/8",
+				"ceiling_vcpu": "4",
+				"memory_ratio": "1:2",
+				"base_disk_gb": 10,
+				"plan_name_prefix": PREFIX,
+				"billing_cycle": "Monthly",
+				"is_active": 1,
+				"base_rates": [{"currency": "INR", "base_rate": 100}, {"currency": "USD", "base_rate": 2}],
+			}
+		).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		_cleanup()
@@ -194,8 +206,7 @@ class TestGenerate(IntegrationTestCase):
 		data = self.cfg.preview()  # works off the formula before rungs exist
 		self.assertEqual(data["currencies"], ["INR", "USD"])
 		first = data["rungs"][0]  # smallest rung, ×1
-		self.assertEqual(
-			{x["currency"]: x["rate"] for x in first["rates"]}, {"INR": 100, "USD": 2})
+		self.assertEqual({x["currency"]: x["rate"] for x in first["rates"]}, {"INR": 100, "USD": 2})
 
 	def test_edited_rung_is_honoured(self):
 		# Populate, then hand-edit a rung's memory off-ratio before generating.
@@ -220,8 +231,7 @@ class TestGenerate(IntegrationTestCase):
 
 		self.cfg.generate_and_price()
 		plan = _plan_for(self.cfg, f"{PREFIX} 1 vCPU 3 GB")
-		self.assertEqual(
-			next(i.quantity for i in plan.includes if i.resource_type == "Memory"), 3)
+		self.assertEqual(next(i.quantity for i in plan.includes if i.resource_type == "Memory"), 3)
 		self.assertEqual(plan.get_rate("INR"), 800)  # 100 × 8
 
 	def test_generate_is_idempotent(self):
@@ -250,7 +260,12 @@ class TestGenerate(IntegrationTestCase):
 		self.assertEqual(resolve_rate(big_rows, "INR", "ap-south-1"), 1600)
 		# USD was not selected, so no regional USD row for the small plan either.
 		self.assertFalse(
-			[r for r in get_catalog_rates("Plan", small_id) if r.cluster == "ap-south-1" and r.currency == "USD"])
+			[
+				r
+				for r in get_catalog_rates("Plan", small_id)
+				if r.cluster == "ap-south-1" and r.currency == "USD"
+			]
+		)
 
 	def test_reprice_cluster_updates_rate_in_place(self):
 		self._generate()
@@ -262,8 +277,11 @@ class TestGenerate(IntegrationTestCase):
 		self.assertEqual(out["pricing"][0]["updated"], [small_id])
 		self.assertEqual(resolve_rate(get_catalog_rates("Plan", small_id), "INR", "ap-south-1"), 250)
 		# No duplicate row was created.
-		rows = [r for r in get_catalog_rates("Plan", small_id)
-				if r.cluster == "ap-south-1" and r.currency == "INR"]
+		rows = [
+			r
+			for r in get_catalog_rates("Plan", small_id)
+			if r.cluster == "ap-south-1" and r.currency == "INR"
+		]
 		self.assertEqual(len(rows), 1)
 
 	def test_run_generation_job(self):
@@ -278,12 +296,19 @@ class TestGenerate(IntegrationTestCase):
 		self.assertEqual(out["created"], [row.plan])
 
 	def test_sub_category_drives_ratio_and_composition(self):
-		mem = frappe.get_doc({
-			"doctype": "Plan Configurator", "template_name": "Cfg Test Mem",
-			"sub_category": "Memory Optimised", "start_vcpu": "1", "ceiling_vcpu": "1",
-			"plan_name_prefix": PREFIX, "billing_cycle": "Monthly", "is_active": 1,
-			"base_rates": [{"currency": "INR", "base_rate": 500}],
-		}).insert(ignore_permissions=True)
+		mem = frappe.get_doc(
+			{
+				"doctype": "Plan Configurator",
+				"template_name": "Cfg Test Mem",
+				"sub_category": "Memory Optimised",
+				"start_vcpu": "1",
+				"ceiling_vcpu": "1",
+				"plan_name_prefix": PREFIX,
+				"billing_cycle": "Monthly",
+				"is_active": 1,
+				"base_rates": [{"currency": "INR", "base_rate": 500}],
+			}
+		).insert(ignore_permissions=True)
 		mem.populate_rungs()
 		mem.generate_and_price()
 		plan = _plan_for(mem, f"{PREFIX} 1 vCPU 8 GB")  # 1:8 from the class
@@ -294,13 +319,20 @@ class TestGenerate(IntegrationTestCase):
 	def test_explicit_ratio_overrides_sub_category(self):
 		# Profile is Memory Optimised (1:8) but the configurator sets 1:2 — the
 		# configurator's ratio wins, so 1 vCPU yields 2 GB, not 8 GB.
-		cfg = frappe.get_doc({
-			"doctype": "Plan Configurator", "template_name": "Cfg Test Override",
-			"sub_category": "Memory Optimised", "memory_ratio": "1:2",
-			"start_vcpu": "1", "ceiling_vcpu": "1",
-			"plan_name_prefix": PREFIX, "billing_cycle": "Monthly", "is_active": 1,
-			"base_rates": [{"currency": "INR", "base_rate": 500}],
-		}).insert(ignore_permissions=True)
+		cfg = frappe.get_doc(
+			{
+				"doctype": "Plan Configurator",
+				"template_name": "Cfg Test Override",
+				"sub_category": "Memory Optimised",
+				"memory_ratio": "1:2",
+				"start_vcpu": "1",
+				"ceiling_vcpu": "1",
+				"plan_name_prefix": PREFIX,
+				"billing_cycle": "Monthly",
+				"is_active": 1,
+				"base_rates": [{"currency": "INR", "base_rate": 500}],
+			}
+		).insert(ignore_permissions=True)
 		self.assertEqual(cfg.memory_ratio, "1:2")  # not overwritten by the profile
 		cfg.populate_rungs()
 		cfg.generate_and_price()
@@ -311,26 +343,37 @@ class TestGenerate(IntegrationTestCase):
 	def test_reproduces_general_purpose_family(self):
 		# DigitalOcean's General Purpose ladder, exactly (USD): the configurator's
 		# formula reproduces vCPU/RAM/disk/transfer/price across the rungs.
-		gp = frappe.get_doc({
-			"doctype": "Plan Configurator", "template_name": "Cfg Test GP",
-			"sub_category": "General", "start_vcpu": "2", "ceiling_vcpu": "16",
-			"base_disk_gb": 25, "base_transfer_gb": 4000, "transfer_step_gb": 1000,
-			"plan_name_prefix": "CfgGP", "billing_cycle": "Monthly", "is_active": 1,
-			"base_rates": [{"currency": "USD", "base_rate": 63}],
-		}).insert(ignore_permissions=True)
+		gp = frappe.get_doc(
+			{
+				"doctype": "Plan Configurator",
+				"template_name": "Cfg Test GP",
+				"sub_category": "General",
+				"start_vcpu": "2",
+				"ceiling_vcpu": "16",
+				"base_disk_gb": 25,
+				"base_transfer_gb": 4000,
+				"transfer_step_gb": 1000,
+				"plan_name_prefix": "CfgGP",
+				"billing_cycle": "Monthly",
+				"is_active": 1,
+				"base_rates": [{"currency": "USD", "base_rate": 63}],
+			}
+		).insert(ignore_permissions=True)
 		gp.populate_rungs()
 		gp.generate_and_price()
 
 		entry = _plan_for(gp, "CfgGP 2 vCPU 8 GB")  # $63
 		self.assertEqual(
 			{i.resource_type: i.quantity for i in entry.includes},
-			{"Compute": 2, "Memory": 8, "Disk": 25, "Transfer": 4000})
+			{"Compute": 2, "Memory": 8, "Disk": 25, "Transfer": 4000},
+		)
 		self.assertEqual(entry.get_rate("USD"), 63)
 
 		top = _plan_for(gp, "CfgGP 16 vCPU 64 GB")  # $504
 		self.assertEqual(
 			{i.resource_type: i.quantity for i in top.includes},
-			{"Compute": 16, "Memory": 64, "Disk": 200, "Transfer": 7000})
+			{"Compute": 16, "Memory": 64, "Disk": 200, "Transfer": 7000},
+		)
 		self.assertEqual(top.get_rate("USD"), 504)
 
 
@@ -343,13 +386,18 @@ class TestSimpleBuilder(IntegrationTestCase):
 	def setUp(self):
 		_cleanup()
 		if not frappe.db.exists("Resource Type", "Tokens"):
-			frappe.get_doc({"doctype": "Resource Type", "resource_type_name": "Tokens"}).insert(ignore_permissions=True)
+			frappe.get_doc({"doctype": "Resource Type", "resource_type_name": "Tokens"}).insert(
+				ignore_permissions=True
+			)
 		if not frappe.db.exists("Plan Category", self.CATEGORY):
-			frappe.get_doc({
-				"doctype": "Plan Category", "category_name": self.CATEGORY,
-				"configurator_builder": "Simple",
-				"allowed_resource_types": [{"resource_type": "Tokens"}],
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Plan Category",
+					"category_name": self.CATEGORY,
+					"configurator_builder": "Simple",
+					"allowed_resource_types": [{"resource_type": "Tokens"}],
+				}
+			).insert(ignore_permissions=True)
 
 	def tearDown(self):
 		_cleanup()
@@ -357,16 +405,35 @@ class TestSimpleBuilder(IntegrationTestCase):
 			frappe.delete_doc("Plan Sub-Category", "Premium Tokens", force=True, ignore_permissions=True)
 
 	def _cfg(self, template="Cfg Simple", simple_plans=None, **extra):
-		return frappe.get_doc({
-			"doctype": "Plan Configurator", "template_name": template,
-			"category": self.CATEGORY, "billing_cycle": "Monthly", "is_active": 1,
-			"base_rates": [{"currency": "USD", "base_rate": 10}],
-			"simple_plans": simple_plans if simple_plans is not None else [
-				{"title": "Tokens 10M", "resource_type": "Tokens", "quantity": 10, "unit": "Nos", "multiplier": 1},
-				{"title": "Tokens 100M", "resource_type": "Tokens", "quantity": 100, "unit": "Nos", "multiplier": 10},
-			],
-			**extra,
-		}).insert(ignore_permissions=True)
+		return frappe.get_doc(
+			{
+				"doctype": "Plan Configurator",
+				"template_name": template,
+				"category": self.CATEGORY,
+				"billing_cycle": "Monthly",
+				"is_active": 1,
+				"base_rates": [{"currency": "USD", "base_rate": 10}],
+				"simple_plans": simple_plans
+				if simple_plans is not None
+				else [
+					{
+						"title": "Tokens 10M",
+						"resource_type": "Tokens",
+						"quantity": 10,
+						"unit": "Nos",
+						"multiplier": 1,
+					},
+					{
+						"title": "Tokens 100M",
+						"resource_type": "Tokens",
+						"quantity": 100,
+						"unit": "Nos",
+						"multiplier": 10,
+					},
+				],
+				**extra,
+			}
+		).insert(ignore_permissions=True)
 
 	def test_builder_dispatches_from_family(self):
 		self.assertEqual(self._cfg().builder, "Simple")  # fetched from the category
@@ -393,18 +460,25 @@ class TestSimpleBuilder(IntegrationTestCase):
 		self.assertEqual(len(out["skipped"]), 2)
 
 	def test_off_family_resource_type_is_rejected(self):
-		cfg = self._cfg(template="Cfg Simple Bad", simple_plans=[
-			{"title": "Bad", "resource_type": "Disk", "quantity": 1, "unit": "GB", "multiplier": 1}])
+		cfg = self._cfg(
+			template="Cfg Simple Bad",
+			simple_plans=[
+				{"title": "Bad", "resource_type": "Disk", "quantity": 1, "unit": "GB", "multiplier": 1}
+			],
+		)
 		with self.assertRaises(frappe.ValidationError):
 			cfg.generate_and_price()
 
 	def test_honours_a_custom_sub_category(self):
 		# A sub-category outside the seeded presets — minted inline via the Link's
 		# quick-create in the UI; created directly here — is carried onto the plans.
-		frappe.get_doc({
-			"doctype": "Plan Sub-Category", "sub_category_name": "Premium Tokens",
-			"category": self.CATEGORY,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Plan Sub-Category",
+				"sub_category_name": "Premium Tokens",
+				"category": self.CATEGORY,
+			}
+		).insert(ignore_permissions=True)
 		cfg = self._cfg(template="Cfg Simple Custom", sub_category="Premium Tokens")
 		cfg.generate_and_price()
 		cfg.reload()

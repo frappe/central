@@ -12,6 +12,7 @@
   "sub_category",
   "column_break_head",
   "is_active",
+  "available_on_trial",
   "billing_cycle",
   "annual_discount_pct",
   "section_break_includes",
@@ -35,6 +36,13 @@
   {
    "fieldname": "column_break_head",
    "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "available_on_trial",
+   "fieldtype": "Check",
+   "label": "Available on Trial",
+   "description": "Offer this plan to staging-trial teams. If no plan is flagged, trials are not narrowed and every otherwise-eligible plan qualifies."
   },
   {
    "default": "Monthly",

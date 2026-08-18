@@ -3,7 +3,6 @@
 """Composed-config component rate card — Resource Type priced via Catalog Rate (#79)."""
 
 import frappe
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.catalog.pricing import (
 	resolve_component_rate,
@@ -11,6 +10,7 @@ from central.billing.catalog.pricing import (
 	set_catalog_rate,
 )
 from central.billing.catalog.rate_card import ensure_component_rate_card
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import ensure_atlas_instance
 
 

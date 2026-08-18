@@ -7,31 +7,25 @@ from unittest.mock import MagicMock, patch
 import frappe
 import razorpay
 import requests
-from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 from central.billing.gateways.razorpay_adapter import RazorpayAdapter
 from central.billing.tests.gateway_contract import GatewayAdapterContract
+from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 
 
-def make_razorpay_gateway(name="GW-Test-Razorpay"):
-	if frappe.db.exists("Payment Gateway", name):
-		frappe.delete_doc("Payment Gateway", name, force=True)
-	doc = frappe.get_doc(
-		{
-			"doctype": "Payment Gateway",
-			"__newname": name,
-			"title": "Razorpay (Test)",
-			"adapter_key": "Razorpay",
-			"currencies": [{"currency": "INR", "is_default": 1}],
-			"api_key": "rzp_test_key",
-			"api_secret": "rzp_test_secret",
-			"webhook_secret": "rzp_whsec",
-			"is_enabled": 1,
-			"supports_mandates": 1,
-		}
+def make_razorpay_gateway(currencies=(("INR", 1),)):
+	"""The Razorpay gateway, configured for test. There is only one (named "Razorpay")."""
+	from central.billing.tests.utils import configure_gateway
+
+	return configure_gateway(
+		"Razorpay",
+		currencies,
+		api_key="rzp_test_key",
+		api_secret="rzp_test_secret",
+		webhook_secret="rzp_whsec",
+		is_enabled=1,
+		supports_mandates=1,
 	)
-	doc.insert(ignore_permissions=True)
-	return doc
 
 
 class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
@@ -150,7 +144,9 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 		adapter = self.make_adapter()
 		with self._client() as c:
 			c.webhook.create.return_value = {"id": "wh_123"}
-			result = adapter.register_webhook("https://site/api/method/central.billing.payments.webhooks.razorpay")
+			result = adapter.register_webhook(
+				"https://site/api/method/central.billing.payments.webhooks.razorpay"
+			)
 		self.assertEqual(result["endpoint_id"], "wh_123")
 		# Razorpay takes a caller-chosen secret: we generate one and register it.
 		self.assertTrue(result["secret"])
@@ -192,9 +188,7 @@ class TestRazorpayAdapter(GatewayAdapterContract, IntegrationTestCase):
 	def test_verify_payment_signature_invalid(self):
 		adapter = self.make_adapter()
 		with self._client() as c:
-			c.utility.verify_payment_signature.side_effect = razorpay.errors.SignatureVerificationError(
-				"bad"
-			)
+			c.utility.verify_payment_signature.side_effect = razorpay.errors.SignatureVerificationError("bad")
 			self.assertFalse(adapter.verify_payment_signature({}))
 
 	def test_cancel_mandate_revokes_token(self):

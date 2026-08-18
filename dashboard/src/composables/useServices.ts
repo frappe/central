@@ -1,10 +1,10 @@
-import { computed, ref } from 'vue'
 import { useCall } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { submitOrThrow } from '@/lib/frappeCall'
-import { successToast, errorToast } from '@/lib/toast'
+import { errorToast, successToast } from '@/lib/toast'
 
 // The team's add-on services (LLM hosting via Grove today). One module-level
 // composable so the catalogue and the detail page share one fetch. Central owns team
@@ -24,13 +24,18 @@ export interface ServiceModel {
 	tier: string
 }
 
+export interface ServiceEnabledSite {
+	site: string
+	cluster: string | null
+}
+
 export interface ServiceInstance {
 	managed_service: string
 	service: string
 	status: string
 	plan: string | null
 	plan_title: string | null
-	enabled_sites: string[]
+	enabled_sites: ServiceEnabledSite[]
 	models: ServiceModel[]
 }
 
@@ -42,6 +47,7 @@ export interface ServiceApiKey {
 	gateway_url: string | null
 	last_usage_total: number
 	creation: string
+	masked_key: string
 }
 
 // The secret + endpoint, returned on generate and on reveal.
@@ -165,7 +171,7 @@ export function useServices() {
 			busyKey.value = name
 			try {
 				await submitOrThrow(revokeKeyCall, { name })
-				successToast('API key revoked.')
+				successToast('API key revoked')
 				await reloadApiKeys()
 			} catch (e) {
 				errorToast(e)

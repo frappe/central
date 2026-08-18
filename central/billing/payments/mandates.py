@@ -13,6 +13,9 @@ through the registry, keeping the gateway seam intact (see gateways/base.py).
 """
 
 import frappe
+from frappe import _
+
+from central.billing.states import transition
 
 MANDATE_METHOD = "UPI Autopay"
 CARD_METHOD = "Card"
@@ -61,8 +64,13 @@ def upi_eligibility(team: str) -> dict:
 			f"Your last invoice (₹{last:,.0f}) is at or above the ₹{UPI_RECURRING_MAX:,.0f} "
 			"UPI Autopay recurring limit — set up a card instead."
 		)
-	return {"eligible": reason is None, "reason": reason, "cap": cap,
-			"last_invoice": last, "limit": UPI_RECURRING_MAX}
+	return {
+		"eligible": reason is None,
+		"reason": reason,
+		"cap": cap,
+		"last_invoice": last,
+		"limit": UPI_RECURRING_MAX,
+	}
 
 
 def _adapter(gateway: str):
@@ -123,7 +131,7 @@ def _require_card_contact(
 	phone = contact or str(p.phone or "").strip()
 	if not phone:
 		frappe.throw(
-			"A phone number is required to set up a recurring card payment with Razorpay.",
+			_("A phone number is required to set up automatic payments on this card."),
 			frappe.ValidationError,
 		)
 	# An inline-provided phone is saved to the profile so it's collected only once.
@@ -189,6 +197,7 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 			"gateway": gateway,
 			"method_type": MANDATE_METHOD,
 			"status": "Pending Validation",
+			"card_network": "UPI",
 			"mandate_max_amount": cap,
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
@@ -199,7 +208,13 @@ def setup_mandate(team: str, gateway: str, customer_id: str | None = None, is_de
 	return {**handles, "payment_method": method.name, "prefill": _prefill(team)}
 
 
-def setup_card(team: str, gateway: str, customer_id: str | None = None, contact: str | None = None) -> dict:
+def setup_card(
+	team: str,
+	gateway: str,
+	customer_id: str | None = None,
+	contact: str | None = None,
+	fallback_reason: str | None = None,
+) -> dict:
 	"""Begin a Razorpay recurring-card authorisation (no UPI MCC limit).
 
 	Same Checkout → token → recurring-charge machinery as a UPI mandate, but on
@@ -224,6 +239,8 @@ def setup_card(team: str, gateway: str, customer_id: str | None = None, contact:
 			"status": "Pending Validation",
 			"mandate_currency": "INR",
 			"gateway_customer_id": customer_id,
+			"fallback_reason": fallback_reason,
+			"card_network": "RuPay" if fallback_reason == "Rupay" else None,
 		}
 	).insert(ignore_permissions=True)
 
@@ -244,12 +261,12 @@ def confirm_mandate(payment_method: str, callback: dict):
 	adapter = _adapter(method.gateway)
 
 	if not adapter.verify_payment_signature(callback):
-		method.status = "Failed"
+		transition(method, "Failed", actor=frappe.session.user, reason="mandate signature invalid")
 		method.save(ignore_permissions=True)
-		frappe.throw("Mandate authorisation signature invalid", frappe.ValidationError)
+		frappe.throw(_("Mandate authorisation signature invalid"), frappe.ValidationError)
 
 	method.gateway_method_id = callback.get("razorpay_token_id") or callback.get("token_id")
-	method.status = "Active"
+	transition(method, "Active", actor=frappe.session.user)
 	method.validated_at = frappe.utils.now_datetime()
 	method.reauth_required = 0
 	method.save(ignore_permissions=True)
@@ -273,7 +290,7 @@ def cancel_mandate(payment_method: str):
 		_adapter(method.gateway).cancel_mandate(
 			method.gateway_method_id, customer_reference=method.gateway_customer_id
 		)
-	method.status = "Cancelled"
+	transition(method, "Cancelled", actor=frappe.session.user, reason="mandate revoked")
 	method.save(ignore_permissions=True)
 	return method
 
@@ -367,3 +384,50 @@ def _retire_superseded_mandates(new_method):
 	)
 	for name in siblings:
 		cancel_mandate(name)
+
+
+# --- mandate lifecycle from the gateway -------------------------------------
+
+# Stripe reports a mandate that can no longer be debited as `inactive`; Razorpay
+# calls the same thing a cancelled/revoked token. Either way the customer's
+# standing permission is gone and the method cannot be charged off-session.
+_DEAD_MANDATE_STATUSES = ("inactive", "cancelled", "canceled", "revoked", "expired")
+
+
+def apply_mandate_event(event_name: str) -> dict:
+	"""Mark the Payment Method a gateway mandate event refers to.
+
+	A revoked mandate is not a failed charge — nothing was attempted — but it does
+	mean the next one cannot run. So the method drops out of the charge order and
+	the team is put in front of the same choice a failed registration gives them,
+	rather than discovering it when an invoice quietly goes unpaid.
+	"""
+	from central.billing.payments import charges, collection_mode
+
+	event = frappe.get_doc("Webhook Event", event_name)
+	payload = frappe.parse_json(event.raw_payload) if event.raw_payload else {}
+	mandate = ((payload.get("data") or {}).get("object")) or {}
+	mandate_id = mandate.get("id")
+	status = (mandate.get("status") or "").lower()
+
+	method = (
+		frappe.db.get_value(
+			"Payment Method", {"gateway_mandate_id": mandate_id}, ["name", "team"], as_dict=True
+		)
+		if mandate_id
+		else None
+	)
+	if not method:
+		charges._mark_event(event, "Ignored")
+		return {"handled": False, "reason": "no_method_for_mandate"}
+	if status not in _DEAD_MANDATE_STATUSES:
+		charges._mark_event(event, "Processed")
+		return {"handled": True, "result": "mandate_still_live", "payment_method": method.name}
+
+	doc = frappe.get_doc("Payment Method", method.name)
+	transition(doc, "Cancelled", actor="webhook", reason="mandate revoked at the gateway")
+	doc.reauth_required = 1
+	doc.save(ignore_permissions=True)
+	collection_mode.trip(method.team, "mandate_failed")
+	charges._mark_event(event, "Processed")
+	return {"handled": True, "result": "mandate_revoked", "payment_method": method.name}

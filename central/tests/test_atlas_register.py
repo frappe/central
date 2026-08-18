@@ -14,6 +14,7 @@ from central.integrations.atlas import (
 	SERVICE_ROLE,
 	AtlasClient,
 	TunnelRegistrationError,
+	_service_user_email,
 	register_atlas,
 	remove_tunnel,
 )
@@ -27,7 +28,9 @@ def _set_hub(active: bool = True) -> None:
 	frappe.db.set_single_value("Central Tunnel Settings", "tunnel_cidr", "10.88.0.0/16")
 	frappe.db.set_single_value("Central Tunnel Settings", "hub_public_key", "HUBPUBKEY=")
 	frappe.db.set_single_value("Central Tunnel Settings", "hub_endpoint", "203.0.113.1:51820")
-	frappe.db.set_single_value("Central Tunnel Settings", "hub_status", "Active" if active else "Uninitialized")
+	frappe.db.set_single_value(
+		"Central Tunnel Settings", "hub_status", "Active" if active else "Uninitialized"
+	)
 
 
 def _make_plain_user() -> str:
@@ -100,7 +103,12 @@ class TestAtlasRegister(IntegrationTestCase):
 	def test_register_happy_path(self) -> None:
 		instance = self.make_instance("blr-happy")
 		ping, provision, confirm, host_task = self._patched()
-		with ping as admin_ping, provision as provision_tunnel, confirm as confirm_tunnel, host_task as run_host_task:
+		with (
+			ping as admin_ping,
+			provision as provision_tunnel,
+			confirm as confirm_tunnel,
+			host_task as run_host_task,
+		):
 			out = register_atlas(instance)
 
 		self.assertEqual(out["tunnel_status"], "Active")
@@ -114,6 +122,7 @@ class TestAtlasRegister(IntegrationTestCase):
 		# peer_endpoint = host of base_url : listen port.
 		self.assertEqual(instance.peer_endpoint, "blr.atlas.example.test:51820")
 		self.assertTrue(instance.service_user)
+		self.assertTrue(instance.get_password("webhook_secret", raise_exception=False))
 
 		# provision_tunnel got the hub identity + allocated ip + pushed service creds.
 		payload = provision_tunnel.call_args.args[1]
@@ -124,6 +133,9 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertNotIn("atlas_id", payload)
 		self.assertTrue(payload["service_api_key"])
 		self.assertTrue(payload["service_api_secret"])
+		self.assertTrue(payload["service_webhook_secret"])
+		# The pushed secret is the same one stored on the instance for verification.
+		self.assertEqual(payload["service_webhook_secret"], instance.get_password("webhook_secret"))
 
 		# hub-peer-add ran with the returned key + the /32 + the endpoint.
 		add_call = run_host_task.call_args
@@ -165,12 +177,14 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertNotIn("atlas_id", payload)
 		self.assertTrue(payload["service_api_key"])
 		self.assertTrue(payload["service_api_secret"])
+		self.assertTrue(payload["service_webhook_secret"])
 		self.assertNotIn("tunnel_ip", payload)
 		self.assertNotIn("hub_public_key", payload)
 
 		instance.reload()
 		self.assertEqual(instance.tunnel_status, "Inactive")
 		self.assertTrue(instance.service_user)
+		self.assertTrue(instance.get_password("webhook_secret", raise_exception=False))
 		self.assertFalse(instance.tunnel_ip)
 		self.assertFalse(instance.tunnel_url)  # data path stays on base_url
 		self.assertFalse(instance.peer_public_key)
@@ -193,7 +207,7 @@ class TestAtlasRegister(IntegrationTestCase):
 			register_atlas(instance)
 
 		instance.reload()
-		expected = f"atlas-blr-svc@{frappe.local.site}"
+		expected = _service_user_email("blr-svc")
 		self.assertEqual(instance.service_user, expected)
 		user = frappe.get_doc("User", expected)
 		roles = {row.role for row in user.roles}
@@ -281,8 +295,9 @@ class TestAtlasRegister(IntegrationTestCase):
 		instance = self._register("blr-retunnel")
 		service_user, tunnel_ip = instance.service_user, instance.tunnel_ip
 		# strip the tunnel (Inactive, still registered)
-		with patch.object(AtlasClient, "deprovision_tunnel", return_value={}), patch(
-			"central.integrations.atlas.run_host_task", return_value=MagicMock()
+		with (
+			patch.object(AtlasClient, "deprovision_tunnel", return_value={}),
+			patch("central.integrations.atlas.run_host_task", return_value=MagicMock()),
 		):
 			remove_tunnel(instance)
 		instance.reload()
@@ -339,7 +354,7 @@ class TestAtlasRegister(IntegrationTestCase):
 		# Peer was never added, so no hub-peer-remove either.
 		run_host_task.assert_not_called()
 		# The scoped service user was cleaned up.
-		self.assertFalse(frappe.db.exists("User", f"atlas-blr-provfail@{frappe.local.site}"))
+		self.assertFalse(frappe.db.exists("User", _service_user_email("blr-provfail")))
 
 	def test_rollback_when_confirm_fails_removes_peer(self) -> None:
 		instance = self.make_instance("blr-confirmfail")
@@ -357,4 +372,4 @@ class TestAtlasRegister(IntegrationTestCase):
 		scripts = [call.kwargs["script"] for call in run_host_task.call_args_list]
 		self.assertIn("hub-peer-add.py", scripts)
 		self.assertIn("hub-peer-remove.py", scripts)
-		self.assertFalse(frappe.db.exists("User", f"atlas-blr-confirmfail@{frappe.local.site}"))
+		self.assertFalse(frappe.db.exists("User", _service_user_email("blr-confirmfail")))
