@@ -62,7 +62,8 @@ const title = computed(() => {
 			: rows.length === 1
 				? `on your ${billingPeriod(rows[0].period_start, rows[0].period_end)} invoice`
 				: `on ${plural(rows.length, 'open invoice')}`
-	const andEarlier = earlier.value > 0 && rows.length ? ' and earlier invoices' : ''
+	const andEarlier =
+		earlier.value > 0 && rows.length ? ' and earlier invoices' : ''
 	const s = story.value
 	const inFlight = s.inFlight ?? preWindowInFlight.value
 	if (inFlight)

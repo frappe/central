@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { inject, onBeforeUnmount, ref, watch } from 'vue'
 import type { Ref } from 'vue'
+import { inject, onBeforeUnmount, ref, watch } from 'vue'
 
 // The docked detail panel every page shares — a 24rem column that slides in
 // beside the content (never over it), the billing invoice panel's anatomy made

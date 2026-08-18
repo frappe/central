@@ -99,7 +99,10 @@ function overAllowance(s: ServiceRow): boolean {
 				@click="$emit('open', row.sub)"
 			>
 				<div class="flex items-center gap-2">
-					<span class="lucide-server mt-0.5 size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
+					<span
+						class="lucide-server mt-0.5 size-4 shrink-0 text-ink-gray-5"
+						aria-hidden="true"
+					/>
 					<span
 						class="truncate text-base-medium text-ink-gray-9"
 						:class="row.sub.gateway_url ? 'transition-colors group-hover:text-ink-gray-7' : ''"

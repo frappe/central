@@ -3,8 +3,8 @@ import { Badge, Button, LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import { billingPeriod } from '@/lib/date'
-import { attemptStory, invoiceTheme, type AttemptStory } from '@/lib/status'
 import { capitalise, formatDate, money, plural } from '@/lib/format'
+import { type AttemptStory, attemptStory, invoiceTheme } from '@/lib/status'
 import type { PaymentAttempt, Statement, StatementRow } from '@/types/billing'
 
 const VISIBLE = 5
@@ -20,8 +20,8 @@ const currency = computed(() => props.statement?.currency ?? 'INR')
 const rows = computed(() =>
 	(props.statement?.rows ?? []).slice(-VISIBLE).reverse(),
 )
-const hidden = computed(
-	() => Math.max(0, (props.statement?.rows?.length ?? 0) - VISIBLE),
+const hidden = computed(() =>
+	Math.max(0, (props.statement?.rows?.length ?? 0) - VISIBLE),
 )
 
 const storyByInvoice = computed(() => {
@@ -69,7 +69,11 @@ function settledBy(row: StatementRow): string {
 		parts.push(`${money(row.credit_applied, currency.value)} from credits`)
 	const unsettled = row.status === 'Open' || row.status === 'Overdue'
 	const story = storyByInvoice.value.get(row.invoice)
-	let text = story ? (unsettled ? unsettledText(story) : settledText(story)) : ''
+	let text = story
+		? unsettled
+			? unsettledText(story)
+			: settledText(story)
+		: ''
 	if (!text && !unsettled && row.amount_paid > 0)
 		text = `${money(row.amount_paid, currency.value)} paid`
 	if (text) parts.push(text)
@@ -98,50 +102,50 @@ function settledBy(row: StatementRow): string {
 
 		<template v-else>
 			<template v-if="statement">
-			<div
-				v-if="rows.length"
-				class="grid grid-cols-[7.5rem_1fr_5rem_7rem] items-center gap-3 pb-2 pt-3 text-xs uppercase tracking-wide text-ink-gray-4"
-			>
-				<span>Period</span>
-				<span>Settled by</span>
-				<span class="text-right">Status</span>
-				<span class="text-right">Amount</span>
-			</div>
-
-			<ul
-				v-if="rows.length"
-				class="divide-y divide-outline-gray-1 border-t border-outline-gray-1"
-			>
-				<li
-					v-for="row in rows"
-					:key="row.invoice"
-					class="grid grid-cols-[7.5rem_1fr_5rem_7rem] items-center gap-3 py-2.5"
+				<div
+					v-if="rows.length"
+					class="grid grid-cols-[7.5rem_1fr_5rem_7rem] items-center gap-3 pb-2 pt-3 text-xs uppercase tracking-wide text-ink-gray-4"
 				>
-					<span
-						class="truncate text-p-sm text-ink-gray-8"
-						:title="billingPeriod(row.period_start, row.period_end)"
-					>
-						{{ billingPeriod(row.period_start, row.period_end) }}
-					</span>
-					<span class="truncate text-p-sm text-ink-gray-6">
-						{{ settledBy(row) || '—' }}
-					</span>
-					<span class="flex justify-end">
-						<Badge
-							:theme="invoiceTheme(row.status)"
-							variant="subtle"
-							:label="row.status"
-						/>
-					</span>
-					<span class="text-right text-p-sm tabular-nums text-ink-gray-9">
-						{{ money(row.total, currency) }}
-					</span>
-				</li>
-			</ul>
+					<span>Period</span>
+					<span>Settled by</span>
+					<span class="text-right">Status</span>
+					<span class="text-right">Amount</span>
+				</div>
 
-			<p v-else class="py-2 text-p-sm text-ink-gray-5">
-				No invoices in this period.
-			</p>
+				<ul
+					v-if="rows.length"
+					class="divide-y divide-outline-gray-1 border-t border-outline-gray-1"
+				>
+					<li
+						v-for="row in rows"
+						:key="row.invoice"
+						class="grid grid-cols-[7.5rem_1fr_5rem_7rem] items-center gap-3 py-2.5"
+					>
+						<span
+							class="truncate text-p-sm text-ink-gray-8"
+							:title="billingPeriod(row.period_start, row.period_end)"
+						>
+							{{ billingPeriod(row.period_start, row.period_end) }}
+						</span>
+						<span class="truncate text-p-sm text-ink-gray-6">
+							{{ settledBy(row) || '—' }}
+						</span>
+						<span class="flex justify-end">
+							<Badge
+								:theme="invoiceTheme(row.status)"
+								variant="subtle"
+								:label="row.status"
+							/>
+						</span>
+						<span class="text-right text-p-sm tabular-nums text-ink-gray-9">
+							{{ money(row.total, currency) }}
+						</span>
+					</li>
+				</ul>
+
+				<p v-else class="py-2 text-p-sm text-ink-gray-5">
+					No invoices in this period.
+				</p>
 			</template>
 
 			<p v-else class="py-2 text-p-sm text-ink-gray-5">

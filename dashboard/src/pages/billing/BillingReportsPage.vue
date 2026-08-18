@@ -138,7 +138,9 @@ const attemptsLoading = computed(() => attempts.loading && !attempts.data)
 const hasDebt = computed(() => {
 	const s = statement.data
 	if (!s) return false
-	return Number(s.closing_outstanding ?? 0) + Number(s.opening_outstanding ?? 0) > 0
+	return (
+		Number(s.closing_outstanding ?? 0) + Number(s.opening_outstanding ?? 0) > 0
+	)
 })
 const neverBilled = computed(
 	() =>
@@ -162,111 +164,114 @@ function exportUrl(report: string, windowed = true): string {
 	<div class="flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
 			<div class="mx-auto w-full max-w-5xl space-y-5 px-6 py-8">
-			<div v-if="loading" class="space-y-5">
-				<BillingCard v-for="i in 2" :key="i" title=" ">
-					<LoadingText :lines="4" />
-				</BillingCard>
-			</div>
+				<div v-if="loading" class="space-y-5">
+					<BillingCard v-for="i in 2" :key="i" title=" ">
+						<LoadingText :lines="4" />
+					</BillingCard>
+				</div>
 
-			<!-- One first-run state for the whole page. -->
-			<EmptyState
-				v-else-if="neverBilled"
-				icon="lucide-chart-no-axes-column"
-				title="No billing history yet"
-				description="Your spend, payments and tax show up here after your first invoice."
-			>
-				<template #action>
-					<Button
-						variant="subtle"
-						label="Go to billing overview"
-						@click="router.push({ name: 'Billing' })"
+				<!-- One first-run state for the whole page. -->
+				<EmptyState
+					v-else-if="neverBilled"
+					icon="lucide-chart-no-axes-column"
+					title="No billing history yet"
+					description="Your spend, payments and tax show up here after your first invoice."
+				>
+					<template #action>
+						<Button
+							variant="subtle"
+							label="Go to billing overview"
+							@click="router.push({ name: 'Billing' })"
+						/>
+						<PaymentHistoryCard
+							:export-url="exportUrl('payments')"
+							@open="showPayments = true"
+						/>
+						<RefundsCard />
+						<TaxSummaryCard />
+					</template>
+				</EmptyState>
+
+				<EmptyState
+					v-else-if="!history.data"
+					icon="lucide-chart-no-axes-column"
+					title="Couldn't load reports"
+					description="Something went wrong on our side."
+				>
+					<template #action>
+						<Button variant="subtle" label="Retry" @click="history.reload()" />
+					</template>
+				</EmptyState>
+
+				<template v-else>
+					<OutstandingAlert
+						:statement="statement.data ?? null"
+						:attempts="attempts.data ?? null"
 					/>
-					<PaymentHistoryCard
-						:export-url="exportUrl('payments')"
-						@open="showPayments = true"
+
+					<TabButtons v-model="months" :options="MONTH_OPTIONS" />
+
+					<div class="flex flex-wrap gap-4">
+						<NumberCard
+							class="min-w-44 flex-1"
+							title="Total spend"
+							:value="history.data?.total ?? null"
+							:prefix="symbol"
+							:precision="2"
+							:delta-caption="invoiceCaption"
+							:loading="loading"
+						/>
+						<NumberCard
+							class="min-w-44 flex-1"
+							title="Average month"
+							:value="history.data ? average : null"
+							:prefix="symbol"
+							:precision="2"
+							delta-caption="in months with billing"
+							:loading="loading"
+						/>
+						<NumberCard
+							class="min-w-44 flex-1"
+							title="Paid by credits"
+							:value="statement.data?.settled_by_credits ?? null"
+							:prefix="creditsSymbol"
+							:precision="2"
+							delta-caption="from your wallet"
+							:loading="statementLoading"
+						/>
+						<NumberCard
+							class="min-w-44 flex-1"
+							title="Tax charged"
+							:value="tax.data?.total_tax ?? null"
+							:prefix="taxSymbol"
+							:precision="2"
+							:delta-caption="taxCaption"
+							:loading="taxLoading"
+						/>
+					</div>
+
+					<div class="flex flex-wrap gap-5">
+						<SpendHistoryCard
+							class="min-w-[24rem] flex-[3_1_0%]"
+							:history="history.data"
+							:export-url="exportUrl('spend', false)"
+						/>
+						<SpendSplitCard
+							class="min-w-[20rem] flex-[2_1_0%]"
+							:history="history.data"
+						/>
+					</div>
+
+					<StatementCard
+						:statement="statement.data ?? null"
+						:attempts="attempts.data ?? []"
+						:loading="statementLoading"
+						:export-url="exportUrl('statement')"
+						@open="showStatement = true"
+						@open-payments="showPayments = true"
 					/>
 					<RefundsCard />
-					<TaxSummaryCard />
 				</template>
-			</EmptyState>
-
-			<EmptyState
-				v-else-if="!history.data"
-				icon="lucide-chart-no-axes-column"
-				title="Couldn't load reports"
-				description="Something went wrong on our side."
-			>
-				<template #action>
-					<Button variant="subtle" label="Retry" @click="history.reload()" />
-				</template>
-			</EmptyState>
-
-			<template v-else>
-				<OutstandingAlert
-					:statement="statement.data ?? null"
-					:attempts="attempts.data ?? null"
-				/>
-
-				<TabButtons v-model="months" :options="MONTH_OPTIONS" />
-
-				<div class="flex flex-wrap gap-4">
-					<NumberCard
-						class="min-w-44 flex-1"
-						title="Total spend"
-						:value="history.data?.total ?? null"
-						:prefix="symbol"
-						:precision="2"
-						:delta-caption="invoiceCaption"
-						:loading="loading"
-					/>
-					<NumberCard
-						class="min-w-44 flex-1"
-						title="Average month"
-						:value="history.data ? average : null"
-						:prefix="symbol"
-						:precision="2"
-						delta-caption="in months with billing"
-						:loading="loading"
-					/>
-					<NumberCard
-						class="min-w-44 flex-1"
-						title="Paid by credits"
-						:value="statement.data?.settled_by_credits ?? null"
-						:prefix="creditsSymbol"
-						:precision="2"
-						delta-caption="from your wallet"
-						:loading="statementLoading"
-					/>
-					<NumberCard
-						class="min-w-44 flex-1"
-						title="Tax charged"
-						:value="tax.data?.total_tax ?? null"
-						:prefix="taxSymbol"
-						:precision="2"
-						:delta-caption="taxCaption"
-						:loading="taxLoading"
-					/>
-				</div>
-
-				<div class="flex flex-wrap gap-5">
-					<SpendHistoryCard
-						class="min-w-[24rem] flex-[3_1_0%]"
-						:history="history.data"
-						:export-url="exportUrl('spend', false)"
-					/>
-					<SpendSplitCard class="min-w-[20rem] flex-[2_1_0%]" :history="history.data" />
-				</div>
-
-				<StatementCard
-					:statement="statement.data ?? null"
-					:attempts="attempts.data ?? []"
-					:loading="statementLoading"
-					:export-url="exportUrl('statement')"
-					@open="showStatement = true"
-					@open-payments="showPayments = true"
-				/>
-				<RefundsCard />
-			</template>
 			</div>
 		</div>
 

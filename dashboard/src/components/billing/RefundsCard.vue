@@ -67,7 +67,8 @@ function destinationLabel(row: RefundRow): string {
 					</span>
 				</div>
 				<p class="mt-1 text-p-sm text-ink-gray-7">
-					{{ destinationLabel(row) }}<template v-if="row.reason"> — {{ row.reason }}</template>
+					{{ destinationLabel(row) }}
+					<template v-if="row.reason"> — {{ row.reason }}</template>
 				</p>
 				<p
 					v-if="row.gateway_reference"

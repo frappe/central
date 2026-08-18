@@ -82,12 +82,14 @@ const allSegments = computed(() => {
 		{ label: 'So far', amount: measured.value },
 		{ label: 'Estimated', amount: estimated.value },
 	].filter((row) => row.amount > 0)
-	if (taxAmount.value) rows.push({ label: taxLabel.value, amount: taxAmount.value })
+	if (taxAmount.value)
+		rows.push({ label: taxLabel.value, amount: taxAmount.value })
 	return rows.map((row, i) => ({ ...row, colorClass: RAMP[i] }))
 })
 
 const hiddenSegments = ref<string[]>([])
-const isHidden = (label: string): boolean => hiddenSegments.value.includes(label)
+const isHidden = (label: string): boolean =>
+	hiddenSegments.value.includes(label)
 const segments = computed(() => {
 	const visible = allSegments.value.filter((s) => !isHidden(s.label))
 	const total = visible.reduce((t, s) => t + s.amount, 0)
@@ -387,13 +389,17 @@ async function submitAlert(): Promise<void> {
 									class="size-2 shrink-0 rounded-1"
 									:class="tooltip.colorClass"
 								/>
-								<span class="truncate text-ink-gray-6">{{ tooltip.label }}</span>
+								<span class="truncate text-ink-gray-6"
+									>{{ tooltip.label }}</span
+								>
 							</span>
 							<span
 								class="shrink-0 text-p-sm-semibold tabular-nums text-ink-gray-8"
 							>
 								{{ tooltip.value }}
-								<span class="text-p-sm text-ink-gray-5">{{ tooltip.percent }}</span>
+								<span class="text-p-sm text-ink-gray-5"
+									>{{ tooltip.percent }}</span
+								>
 							</span>
 						</div>
 					</div>
@@ -444,4 +450,3 @@ async function submitAlert(): Promise<void> {
 		</Dialog>
 	</div>
 </template>
-

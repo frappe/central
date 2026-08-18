@@ -272,7 +272,8 @@ watch(open, (isOpen) => {
 					/>
 					<p class="text-p-sm text-ink-gray-5">
 						Authorised on your bank's page. We never see your
-						{{ hasUpi ? 'card or UPI' : 'card' }} details.
+						{{ hasUpi ? 'card or UPI' : 'card' }}
+						details.
 					</p>
 				</div>
 
@@ -296,13 +297,13 @@ watch(open, (isOpen) => {
 							class="size-4 shrink-0 text-ink-gray-7"
 							aria-hidden="true"
 						/>
-						<span class="text-base font-medium text-ink-gray-9">{{
-							tile.label
-						}}</span>
+						<span class="text-base font-medium text-ink-gray-9"
+							>{{ tile.label }}</span
+						>
 						<Tooltip
-						v-if="infoText(tile) && !blockedReason(tile)"
-						:text="infoText(tile)!"
-					>
+							v-if="infoText(tile) && !blockedReason(tile)"
+							:text="infoText(tile)!"
+						>
 							<span
 								class="lucide-info size-3.5 text-ink-gray-4"
 								aria-hidden="true"

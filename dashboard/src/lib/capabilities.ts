@@ -1,5 +1,5 @@
-import type { CapabilityInfo } from '@/types/api'
 import { capitalise } from '@/lib/format'
+import type { CapabilityInfo } from '@/types/api'
 
 // Display-only grouping by capability prefix; the slugs sent to the backend are
 // unchanged.

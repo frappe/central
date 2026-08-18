@@ -16,8 +16,7 @@ export function useInstantChartResize(
 	onMounted(() => {
 		observer = new ResizeObserver((entries) => {
 			const box = entries[entries.length - 1]?.contentRect
-			if (!box || (box.width === lastWidth && box.height === lastHeight))
-				return
+			if (!box || (box.width === lastWidth && box.height === lastHeight)) return
 			lastWidth = box.width
 			lastHeight = box.height
 			if (first) {

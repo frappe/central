@@ -86,9 +86,9 @@ const blockerLines = computed(() => {
 			<div v-if="blockers.length" class="border-b border-outline-gray-2 p-4">
 				<Alert theme="amber" :title="blockers[0].title">
 					<template v-if="blockerLines.length" #description>
-						<span v-for="line in blockerLines" :key="line" class="block">{{
-							line
-						}}</span>
+						<span v-for="line in blockerLines" :key="line" class="block"
+							>{{ line }}</span
+						>
 					</template>
 				</Alert>
 			</div>

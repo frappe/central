@@ -97,69 +97,75 @@ function isEstimated(li: BillingLine): boolean {
 					:key="group.key"
 					class="py-2 first:pt-0.5 last:pb-0"
 				>
-				<div v-if="named" class="flex items-center justify-between gap-3">
-					<span class="flex min-w-0 items-baseline gap-2">
-						<span class="truncate text-sm-medium text-ink-gray-8"
-							>{{ group.name }}</span
-						>
-						<span
-							v-if="group.id"
-							class="shrink-0 font-mono text-xs text-ink-gray-4"
-						>
-							{{ group.id }}
+					<div v-if="named" class="flex items-center justify-between gap-3">
+						<span class="flex min-w-0 items-baseline gap-2">
+							<span class="truncate text-sm-medium text-ink-gray-8"
+								>{{ group.name }}</span
+							>
+							<span
+								v-if="group.id"
+								class="shrink-0 font-mono text-xs text-ink-gray-4"
+							>
+								{{ group.id }}
+							</span>
 						</span>
-					</span>
-					<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-6">
-						{{ money(group.total, currency) }}
-					</span>
-				</div>
+						<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-6">
+							{{ money(group.total, currency) }}
+						</span>
+					</div>
 
-				<!-- The connector is only drawn where a machine actually changed during
+					<!-- The connector is only drawn where a machine actually changed during
 				     the period; one row is not a sequence. -->
-				<ul
-					:class="
+					<ul
+						:class="
             named
               ? group.lines.length > 1
                 ? 'ml-[3px] border-l border-outline-gray-2 pl-4'
                 : 'pl-[21px]'
               : ''
           "
-				>
-					<li
-						v-for="(li, idx) in group.lines"
-						:key="idx"
-						class="relative flex items-center justify-between gap-3 py-1.5"
 					>
-						<span
-							v-if="named && group.lines.length > 1"
-							class="absolute -left-[19.5px] top-[14px] size-[7px] rounded-full bg-surface-gray-5 ring-2 ring-surface-white"
-							aria-hidden="true"
-						/>
-						<div class="min-w-0">
-							<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-							<p v-if="li.detail || showRate(li, group)" class="truncate text-p-sm text-ink-gray-5">
-								{{ li.detail }}
-								<template v-if="showRate(li, group)">
-									· {{ money(li.rate, currency) }}/mo</template
-								>
-							</p>
-						</div>
-						<span
-							v-if="segmented(group) || (showBasis && isEstimated(li))"
-							class="flex shrink-0 items-center gap-2 pl-3"
+						<li
+							v-for="(li, idx) in group.lines"
+							:key="idx"
+							class="relative flex items-center justify-between gap-3 py-1.5"
 						>
-							<Badge
-								v-if="showBasis && isEstimated(li)"
-								theme="amber"
-								variant="subtle"
-								label="Estimated"
+							<span
+								v-if="named && group.lines.length > 1"
+								class="absolute -left-[19.5px] top-[14px] size-[7px] rounded-full bg-surface-gray-5 ring-2 ring-surface-white"
+								aria-hidden="true"
 							/>
-							<span v-if="segmented(group)" class="text-sm tabular-nums text-ink-gray-8">
-								{{ money(li.amount, currency) }}
+							<div class="min-w-0">
+								<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
+								<p
+									v-if="li.detail || showRate(li, group)"
+									class="truncate text-p-sm text-ink-gray-5"
+								>
+									{{ li.detail }}
+									<template v-if="showRate(li, group)">
+										· {{ money(li.rate, currency) }}/mo</template
+									>
+								</p>
+							</div>
+							<span
+								v-if="segmented(group) || (showBasis && isEstimated(li))"
+								class="flex shrink-0 items-center gap-2 pl-3"
+							>
+								<Badge
+									v-if="showBasis && isEstimated(li)"
+									theme="amber"
+									variant="subtle"
+									label="Estimated"
+								/>
+								<span
+									v-if="segmented(group)"
+									class="text-sm tabular-nums text-ink-gray-8"
+								>
+									{{ money(li.amount, currency) }}
+								</span>
 							</span>
-						</span>
-					</li>
-				</ul>
+						</li>
+					</ul>
 				</div>
 			</div>
 		</section>

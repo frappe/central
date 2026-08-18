@@ -47,8 +47,12 @@ const visible = computed(() => rows.value.slice(0, shown.value))
 						<span class="text-base-medium tabular-nums text-ink-gray-9">
 							{{ money(row.amount, row.currency) }}
 						</span>
-						<span v-if="row.retry_number" class="shrink-0 text-p-sm text-ink-gray-4">
-							{{ ordinal(row.retry_number) }} retry
+						<span
+							v-if="row.retry_number"
+							class="shrink-0 text-p-sm text-ink-gray-4"
+						>
+							{{ ordinal(row.retry_number) }}
+							retry
 						</span>
 					</span>
 					<span class="flex shrink-0 items-center gap-3">
@@ -62,7 +66,9 @@ const visible = computed(() => rows.value.slice(0, shown.value))
 						</span>
 					</span>
 				</div>
-				<p v-if="row.reason" class="mt-1 text-p-sm text-ink-gray-7">{{ row.reason }}</p>
+				<p v-if="row.reason" class="mt-1 text-p-sm text-ink-gray-7">
+					{{ row.reason }}
+				</p>
 				<p
 					v-if="row.failure_reason && row.failure_reason !== row.reason"
 					class="mt-0.5 text-p-sm text-ink-gray-4"
