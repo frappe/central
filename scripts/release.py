@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 INIT_PY = ROOT / "central" / "__init__.py"
 PACKAGE_JSON = ROOT / "package.json"
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
-
+DASHBOARD_PACKAGE_JSON = ROOT / "dashboard" / "package.json"
 
 def current_version() -> str:
 	match = re.search(r'__version__ = "([^"]*)"', INIT_PY.read_text())
@@ -42,6 +42,11 @@ def set_package_version(version: str) -> None:
 	data["version"] = version
 	PACKAGE_JSON.write_text(json.dumps(data, indent=2) + "\n")
 
+def set_dashboard_version(version: str) -> None:
+	data = json.loads(DASHBOARD_PACKAGE_JSON.read_text())
+	data["version"] = version
+	DASHBOARD_PACKAGE_JSON.write_text(json.dumps(data, indent=2) + "\n")
+
 
 def main() -> int:
 	if len(sys.argv) != 2:
@@ -54,6 +59,7 @@ def main() -> int:
 	print(f"{current_version()} -> {version}")
 	set_init_version(version)
 	set_package_version(version)
+	set_dashboard_version(version)
 
 	subprocess.run(["git", "--no-pager", "diff", "--", str(INIT_PY), str(PACKAGE_JSON)], cwd=ROOT)
 	print("\nNext:")
