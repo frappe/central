@@ -9,9 +9,7 @@ defineProps<{ title: string; description?: string; titleInfo?: string }>()
 </script>
 
 <template>
-	<section
-		class="rounded-6 border border-outline-gray-2 bg-surface-base"
-	>
+	<section class="rounded-6 border border-outline-gray-2 bg-surface-base">
 		<header class="flex items-center justify-between gap-3 px-5 pt-4">
 			<div class="min-w-0">
 				<div class="flex items-center gap-1.5">

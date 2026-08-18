@@ -19,13 +19,13 @@ import {
 } from '@/lib/composed'
 import { money } from '@/lib/format'
 import { planPrice, planResources } from '@/lib/plans'
-import { infoToast } from '@/lib/toast'
 import {
 	flagEmoji,
 	hasMapCoords,
 	type MapSpot,
 	regionLabel,
 } from '@/lib/serverMap'
+import { infoToast } from '@/lib/toast'
 import type { ComposedConfig, Plan, Profile } from '@/types/api'
 import type { Region } from '@/types/Region'
 
@@ -425,7 +425,8 @@ async function submit() {
 								type="text"
 								placeholder="e.g. Acme Production"
 								:maxlength="60"
-								class="mt-2 max-w-xs auto-f" autofocus
+								class="mt-2 max-w-xs auto-f"
+								autofocus
 							/>
 							<div class="mt-3 max-w-xs">
 								<div class="flex items-center justify-between">

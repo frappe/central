@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
@@ -15,7 +15,6 @@ import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
-import { computed } from 'vue'
 
 // Billing › Overview (#69) — one scrollable surface that absorbs the legacy
 // Overview, Credits, Payment methods, Subscriptions, and Settings pages. Each card

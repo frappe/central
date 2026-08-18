@@ -9,6 +9,8 @@ own state entails failure, and never claim a charge will succeed. And the locked
 read must not report a fallen catalog price as a negative saving.
 """
 
+from itertools import pairwise
+
 import frappe
 
 from central.billing.api import dashboard
@@ -93,7 +95,9 @@ class TestForecastBasis(OverviewBase):
 				"currency": "INR",
 				"subtotal": 1000,
 				"total": 1000,
-				"items": [{"resource_type": "bundle", "plan": PLAN, "rate": 1000, "days": 30, "amount": 1000}],
+				"items": [
+					{"resource_type": "bundle", "plan": PLAN, "rate": 1000, "days": 30, "amount": 1000}
+				],
 			}
 		).insert(ignore_permissions=True)
 
@@ -482,7 +486,7 @@ class TestResizedInvoiceReadsAsASequence(OverviewBase):
 
 		# No gaps: each window picks up where the last left off, so the month reads
 		# as one continuous story rather than disconnected fragments.
-		for earlier, later in zip(bundles, bundles[1:], strict=False):
+		for earlier, later in pairwise(bundles):
 			self.assertEqual(earlier["period_to"], later["period_from"])
 
 	def test_the_window_is_described_in_plain_dates(self):

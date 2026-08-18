@@ -85,10 +85,7 @@ const options = [
 		</template>
 	</Alert>
 
-	<Dialog
-		v-model:open="choosing"
-		title="How do you want to pay?"
-	>
+	<Dialog v-model:open="choosing" title="How do you want to pay?">
 		<template #default>
 			<div class="grid gap-3 sm:grid-cols-2">
 				<button
@@ -108,9 +105,7 @@ const options = [
 						class="size-5 text-ink-gray-7"
 						aria-hidden="true"
 					/>
-					<span class="text-base-medium text-ink-gray-9"
-						>{{ o.title }}</span
-					>
+					<span class="text-base-medium text-ink-gray-9">{{ o.title }}</span>
 					<span class="text-p-sm text-ink-gray-6">{{ o.blurb }}</span>
 					<span class="mt-auto text-p-sm text-ink-gray-5">{{ o.fit }}</span>
 				</button>

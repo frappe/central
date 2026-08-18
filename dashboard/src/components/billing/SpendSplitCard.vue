@@ -21,7 +21,12 @@ const axis = ref<'product' | 'region'>('product')
 // Stepped down from the near-black end of the ramp on purpose: at full width a
 // #171717 band is a slab, not a chart. gray-9 still reads as clearly the darkest
 // step while leaving the card calm.
-const TONES = ['bg-surface-gray-9', 'bg-surface-gray-7', 'bg-surface-gray-5', 'bg-surface-gray-4']
+const TONES = [
+	'bg-surface-gray-9',
+	'bg-surface-gray-7',
+	'bg-surface-gray-5',
+	'bg-surface-gray-4',
+]
 const OTHER_TONE = 'bg-surface-gray-3'
 const MAX_SLICES = 4
 
@@ -110,7 +115,9 @@ function widthPct(amount: number): number {
 							:class="slice.tone"
 							aria-hidden="true"
 						/>
-						<span class="truncate text-p-sm text-ink-gray-8">{{ slice.label }}</span>
+						<span class="truncate text-p-sm text-ink-gray-8"
+							>{{ slice.label }}</span
+						>
 					</span>
 					<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-6">
 						{{ money(slice.amount, history.currency) }}

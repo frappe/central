@@ -28,7 +28,7 @@ SETTINGS = "Billing Settings"
 # Nothing here writes. An override changes what a projection *reads*, never what the
 # document holds, so the answer to "what would a 2/5/10 ladder do" costs nobody their
 # real configuration.
-_overrides: ContextVar[dict] = ContextVar("billing_settings_overrides", default={})
+_overrides: ContextVar[dict | None] = ContextVar("billing_settings_overrides", default=None)
 
 
 @contextmanager
@@ -37,7 +37,7 @@ def overridden(**values):
 
 	Nests: an inner override wins for the fields it names and leaves the rest alone.
 	"""
-	merged = {**_overrides.get(), **{k: v for k, v in values.items() if v is not None}}
+	merged = {**(_overrides.get() or {}), **{k: v for k, v in values.items() if v is not None}}
 	token = _overrides.set(merged)
 	try:
 		yield merged
@@ -47,12 +47,12 @@ def overridden(**values):
 
 def active_overrides() -> dict:
 	"""What is currently being pretended, if anything — for showing on the output."""
-	return dict(_overrides.get())
+	return dict(_overrides.get() or {})
 
 
 def _override(field):
 	"""The overridden value for `field`, or `_MISSING` when it is not being pretended."""
-	return _overrides.get().get(field, _MISSING)
+	return (_overrides.get() or {}).get(field, _MISSING)
 
 
 class _Missing:

@@ -25,8 +25,7 @@ export function groupCapabilitiesByCategory(
 	for (const cap of palette) {
 		const prefix = cap.name.split(':')[0]
 		const label =
-			CATEGORY_LABEL[prefix] ??
-			prefix.charAt(0).toUpperCase() + prefix.slice(1)
+			CATEGORY_LABEL[prefix] ?? prefix.charAt(0).toUpperCase() + prefix.slice(1)
 		const list = byLabel.get(label) ?? []
 		list.push(cap)
 		byLabel.set(label, list)

@@ -165,11 +165,11 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 
 			<Scrollbar v-if="items.length" class="min-h-0 flex-1">
 				<button
-					v-for="n, i in items"
+					v-for="(n, i) in items"
 					:key="n.name"
 					type="button"
 					class="flex w-full cursor-pointer items-start gap-4 p-4 text-left hover:bg-surface-gray-1"
-          :class="i == items.length - 1 ? '' : 'border-b'"
+					:class="i == items.length - 1 ? '' : 'border-b'"
 					@click="onRowClick(n)"
 				>
 					<!-- severity square badge -->

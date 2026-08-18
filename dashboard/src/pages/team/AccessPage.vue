@@ -47,7 +47,9 @@ const memberCountText = computed(() => {
 						<p class="text-lg font-semibold text-ink-gray-9">
 							{{ activeTeamLabel }}
 						</p>
-						<p class="mt-0.5 text-p-base text-ink-gray-5">{{ memberCountText }}</p>
+						<p class="mt-0.5 text-p-base text-ink-gray-5">
+							{{ memberCountText }}
+						</p>
 					</div>
 
 					<!-- Icon-only: renaming/deleting the team is rare — a label would

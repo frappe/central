@@ -87,8 +87,7 @@ const CATALOG = [
 // is the only step. Asking the router beats a hand-kept flag here, which would
 // be a second place to remember and a dead link when someone forgets.
 const router = useRouter()
-const isRouted = (to: string): boolean =>
-	router.resolve(to).matched.length > 0
+const isRouted = (to: string): boolean => router.resolve(to).matched.length > 0
 
 const number = new Intl.NumberFormat(undefined, {
 	notation: 'compact',
@@ -157,7 +156,9 @@ const cards = computed(() =>
 				]"
 			>
 				<div class="flex items-start justify-between gap-3">
-					<div class="grid size-8 place-items-center rounded-5 bg-surface-gray-2">
+					<div
+						class="grid size-8 place-items-center rounded-5 bg-surface-gray-2"
+					>
 						<span :class="service.icon" class="size-4 text-ink-gray-6" />
 					</div>
 					<Badge

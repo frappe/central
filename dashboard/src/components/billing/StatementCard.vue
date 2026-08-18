@@ -6,8 +6,8 @@ import BillingCard from '@/components/billing/BillingCard.vue'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { billingPeriod } from '@/lib/date'
-import { invoiceTheme } from '@/lib/status'
 import { money } from '@/lib/format'
+import { invoiceTheme } from '@/lib/status'
 import type { Statement } from '@/types/billing'
 
 // Statement of account — opening, charged, settled, closing. The shape someone
@@ -36,7 +36,9 @@ const currency = computed(() => data.value?.currency ?? 'INR')
 
 const owed = computed(() => Number(data.value?.closing_outstanding ?? 0) > 0)
 const rows = computed(() => (data.value?.rows ?? []).slice(-VISIBLE).reverse())
-const hidden = computed(() => Math.max(0, (data.value?.rows?.length ?? 0) - VISIBLE))
+const hidden = computed(() =>
+	Math.max(0, (data.value?.rows?.length ?? 0) - VISIBLE),
+)
 
 const summary = computed(() => {
 	const d = data.value
@@ -48,7 +50,6 @@ const summary = computed(() => {
 		{ label: 'Paid by card', value: d.settled_by_payment },
 	]
 })
-
 </script>
 
 <template>
@@ -157,8 +158,8 @@ const summary = computed(() => {
 			     (ADR 0019) and we cannot hand it over yet, so this must not imply a
 			     download that does not exist (#70). -->
 			<p class="mt-3 text-p-sm text-ink-gray-5">
-				A summary of your account, for reconciling against your own records. Your
-				tax invoices are issued separately.
+				A summary of your account, for reconciling against your own records.
+				Your tax invoices are issued separately.
 			</p>
 		</template>
 	</BillingCard>

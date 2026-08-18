@@ -4,8 +4,8 @@ import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import SidePanel from '@/components/common/SidePanel.vue'
 import { useSession } from '@/composables/useSession'
-import { formatDate, money } from '@/lib/format'
 import { shortDate } from '@/lib/date'
+import { formatDate, money } from '@/lib/format'
 import type { PaymentSchedule } from '@/types/billing'
 
 // The tray behind "Next payment": the debit itself, the 24-hour pre-debit notices
@@ -76,19 +76,27 @@ const amount = computed(() => Number(data.value?.amount ?? 0))
 			</div>
 
 			<!-- Anything that stops it, and what to do -->
-			<div v-if="data?.blockers?.length" class="border-b border-outline-gray-2 p-4">
+			<div
+				v-if="data?.blockers?.length"
+				class="border-b border-outline-gray-2 p-4"
+			>
 				<div
 					v-for="b in data.blockers"
 					:key="b.code"
 					class="rounded-5 border border-outline-amber-2 bg-surface-amber-1 p-3"
 				>
 					<p class="text-base-medium text-ink-gray-9">{{ b.title }}</p>
-					<p v-if="b.fix" class="mt-0.5 text-p-sm text-ink-gray-7">{{ b.fix }}</p>
+					<p v-if="b.fix" class="mt-0.5 text-p-sm text-ink-gray-7">
+						{{ b.fix }}
+					</p>
 				</div>
 			</div>
 
 			<!-- The compliance record, made the customer's -->
-			<div v-if="data?.notices?.length" class="border-b border-outline-gray-2 p-4">
+			<div
+				v-if="data?.notices?.length"
+				class="border-b border-outline-gray-2 p-4"
+			>
 				<p class="mb-2 text-p-sm text-ink-gray-5">
 					Advance notices we sent you before debiting
 				</p>

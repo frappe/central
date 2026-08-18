@@ -5,7 +5,11 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { errorToast, successToast } from '@/lib/toast'
-import type { PayingForItem, ServiceRow, SubscriptionRow } from '@/types/billing'
+import type {
+	PayingForItem,
+	ServiceRow,
+	SubscriptionRow,
+} from '@/types/billing'
 
 // Servers + team-level metered services as one ranked list, and the two verbs
 // that act on them. A module singleton so the Overview card and its tray read the
@@ -47,7 +51,8 @@ export function usePayingFor() {
 
 	const costById = computed(() => {
 		const map = new Map<string, number>()
-		for (const item of cycleCosts.data?.items ?? []) map.set(item.resource_id, item.amount)
+		for (const item of cycleCosts.data?.items ?? [])
+			map.set(item.resource_id, item.amount)
 		return map
 	})
 
@@ -59,20 +64,27 @@ export function usePayingFor() {
 			.map((sub) => ({
 				kind: 'server' as const,
 				id: sub.name,
-				cost: sub.resource_id ? (costById.value.get(sub.resource_id) ?? null) : null,
+				cost: sub.resource_id
+					? (costById.value.get(sub.resource_id) ?? null)
+					: null,
 				sub,
 			}))
-		const metered: PayingForItem[] = (servicesCall.data?.services ?? []).map((service) => ({
-			kind: 'service' as const,
-			id: service.service_subject,
-			cost: costById.value.get(service.service_subject) ?? null,
-			service,
-		}))
-		return [...servers, ...metered].sort((a, b) => (b.cost ?? 0) - (a.cost ?? 0))
+		const metered: PayingForItem[] = (servicesCall.data?.services ?? []).map(
+			(service) => ({
+				kind: 'service' as const,
+				id: service.service_subject,
+				cost: costById.value.get(service.service_subject) ?? null,
+				service,
+			}),
+		)
+		return [...servers, ...metered].sort(
+			(a, b) => (b.cost ?? 0) - (a.cost ?? 0),
+		)
 	})
 
 	const currency = computed(
-		() => cycleCosts.data?.currency ?? subscriptions.data?.[0]?.currency ?? 'INR',
+		() =>
+			cycleCosts.data?.currency ?? subscriptions.data?.[0]?.currency ?? 'INR',
 	)
 	const total = computed(() => Number(cycleCosts.data?.total ?? 0))
 
@@ -113,7 +125,8 @@ export function usePayingFor() {
 			pendingPause.value = null
 			return runVerb(sub, pause, 'Billing paused, server stopping…')
 		},
-		onResume: (sub: SubscriptionRow) => runVerb(sub, resume, 'Billing resumed, server starting…'),
+		onResume: (sub: SubscriptionRow) =>
+			runVerb(sub, resume, 'Billing resumed, server starting…'),
 		reload: () => servicesCall.reload(),
 	}
 }

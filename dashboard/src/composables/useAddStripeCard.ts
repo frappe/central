@@ -99,10 +99,12 @@ export function useAddStripeCard({
 				})
 			if (pmError) throw pmError
 
-			const { setupIntent, error: setupError } =
-				await stripe.confirmCardSetup(order.client_secret, {
+			const { setupIntent, error: setupError } = await stripe.confirmCardSetup(
+				order.client_secret,
+				{
 					payment_method: paymentMethod.id,
-				})
+				},
+			)
 			if (setupError) throw setupError
 
 			const c = paymentMethod.card

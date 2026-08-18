@@ -5,8 +5,8 @@ import { API, method } from '@/api/methods'
 import SidePanel from '@/components/common/SidePanel.vue'
 import { useSession } from '@/composables/useSession'
 import { billingPeriod } from '@/lib/date'
-import { invoiceTheme } from '@/lib/status'
 import { money } from '@/lib/format'
+import { invoiceTheme } from '@/lib/status'
 import type { Statement } from '@/types/billing'
 
 // The full statement line by line. The card carries the totals and the most
@@ -32,7 +32,6 @@ const currency = computed(() => data.value?.currency ?? 'INR')
 // card this tray opens from, the Invoices list, payments — puts the most recent
 // row at the top, and the tray disagreeing with the card it came from is jarring.
 const rows = computed(() => [...(data.value?.rows ?? [])].reverse())
-
 </script>
 
 <template>
@@ -55,11 +54,16 @@ const rows = computed(() => [...(data.value?.rows ?? [])].reverse())
 						{{ billingPeriod(row.period_start, row.period_end) }}
 					</span>
 					<p v-if="row.credit_applied" class="mt-0.5 text-p-sm text-ink-gray-5">
-						{{ money(row.credit_applied, currency) }} from credits
+						{{ money(row.credit_applied, currency) }}
+						from credits
 					</p>
 				</div>
 				<div class="flex shrink-0 items-center gap-3">
-					<Badge :theme="invoiceTheme(row.status)" variant="subtle" :label="row.status" />
+					<Badge
+						:theme="invoiceTheme(row.status)"
+						variant="subtle"
+						:label="row.status"
+					/>
 					<span class="w-24 text-right text-p-sm tabular-nums text-ink-gray-9">
 						{{ money(row.total, currency) }}
 					</span>

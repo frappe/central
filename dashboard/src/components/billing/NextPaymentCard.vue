@@ -71,8 +71,8 @@ const instrument = computed(() => {
 				{{ chargeOn || '—' }}
 			</p>
 			<p class="mt-1.5 text-p-sm text-ink-gray-5">
-				{{ money(amount, currency) }}<template v-if="instrument"> ·
-					{{ instrument }}</template>
+				{{ money(amount, currency) }}
+				<template v-if="instrument"> ·{{ instrument }}</template>
 			</p>
 
 			<!-- The reason the card is here. Only ever shown where the data entails

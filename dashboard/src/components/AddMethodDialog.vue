@@ -2,8 +2,8 @@
 import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
 import TopupDialog from '@/components/TopupDialog.vue'
+import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
 import { useAddStripeCard } from '@/composables/useAddStripeCard'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
@@ -90,7 +90,9 @@ const icons: Record<string, string> = {
 // A tile the customer can't act on right now, with the reason to show in its place.
 function blockedReason(tile: PaymentInstrument): string | null {
 	if (tile.instrument === 'UPI Autopay' && upiBlocked.value)
-		return options.data?.upi_block_reason || 'Not available for your account yet.'
+		return (
+			options.data?.upi_block_reason || 'Not available for your account yet.'
+		)
 	return null
 }
 
@@ -126,7 +128,11 @@ function choose(tile: PaymentInstrument): void {
 const hasPhone = computed(() => !!String(profile.data?.phone || '').trim())
 
 function needsPhone(tile: PaymentInstrument): boolean {
-	return tile.adapter_key === 'Razorpay' && tile.instrument !== 'UPI Autopay' && !hasPhone.value
+	return (
+		tile.adapter_key === 'Razorpay' &&
+		tile.instrument !== 'UPI Autopay' &&
+		!hasPhone.value
+	)
 }
 const askPhone = ref(false)
 const phone = ref('')
@@ -167,7 +173,11 @@ async function onCard(): Promise<void> {
 		await startStripe()
 		return
 	}
-	if (!hasPhone.value && !phone.value.trim() && options.data?.adapter_key === 'Razorpay') {
+	if (
+		!hasPhone.value &&
+		!phone.value.trim() &&
+		options.data?.adapter_key === 'Razorpay'
+	) {
 		askPhone.value = true
 		return
 	}
@@ -258,17 +268,17 @@ watch(open, (isOpen) => {
 								class="size-5 text-ink-gray-7"
 								aria-hidden="true"
 							/>
-							<span class="text-sm font-medium text-ink-gray-9">{{
-								tile.label
-							}}</span>
+							<span class="text-sm font-medium text-ink-gray-9"
+								>{{ tile.label }}</span
+							>
 							<span
 								v-if="blockedReason(tile)"
 								class="text-p-sm text-ink-amber-6"
 								>{{ blockedReason(tile) }}</span
 							>
-							<span v-else class="text-p-sm text-ink-gray-5">{{
-								subtitle(tile)
-							}}</span>
+							<span v-else class="text-p-sm text-ink-gray-5"
+								>{{ subtitle(tile) }}</span
+							>
 						</button>
 					</div>
 					<button

@@ -19,24 +19,21 @@ const loading = computed(() => forecast.loading && !forecast.data)
 const fc = computed(() => forecast.data)
 const lines = computed<BillingLine[]>(() => fc.value?.line_items ?? [])
 
-
-
 const period = computed(() =>
 	fc.value ? billingPeriod(fc.value.period_start, fc.value.period_end) : '',
 )
 </script>
 
 <template>
-	<SidePanel
-		v-model:open="open"
-		title="This cycle"
-		:subtitle="period"
-	>
+	<SidePanel v-model:open="open" title="This cycle" :subtitle="period">
 		<div v-if="loading" class="space-y-3 p-4">
 			<LoadingText :lines="6" />
 		</div>
 
-		<div v-else-if="!lines.length" class="px-4 py-12 text-center text-p-sm text-ink-gray-5">
+		<div
+			v-else-if="!lines.length"
+			class="px-4 py-12 text-center text-p-sm text-ink-gray-5"
+		>
 			Nothing is being billed this cycle yet.
 		</div>
 
@@ -83,8 +80,8 @@ const period = computed(() =>
 
 				<p v-if="fc?.has_estimates" class="mt-3 text-p-sm text-ink-gray-5">
 					Estimated lines are metered services nobody has finished using this
-					month. They're inferred from your own usage so far — everything else is
-					already fixed.
+					month. They're inferred from your own usage so far — everything else
+					is already fixed.
 				</p>
 			</div>
 		</template>

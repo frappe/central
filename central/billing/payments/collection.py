@@ -66,9 +66,7 @@ def _ask_for_another_method(inv) -> None:
 	The engine dedupes on unread notifications for the same event and invoice, so a
 	dunning run that re-enters here daily does not repeat itself.
 	"""
-	tried = frappe.get_all(
-		"Payment Attempt", filters={"invoice": inv.name, "status": "Failed"}, limit=1
-	)
+	tried = frappe.get_all("Payment Attempt", filters={"invoice": inv.name, "status": "Failed"}, limit=1)
 	if not tried:
 		return
 

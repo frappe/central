@@ -138,7 +138,6 @@ export interface CycleCosts {
 	total: number
 }
 
-
 /** One rung of the trust-tier ladder (customer-facing: Spending Limits). */
 export interface TierLevel {
 	tier: string
@@ -502,7 +501,13 @@ export interface RefundRow {
 /** list_payment_attempts — every charge against the team, across invoices. */
 export interface PaymentAttempt {
 	name: string
-	status: 'Initiated' | 'Authorised' | 'Captured' | 'Failed' | 'Refunded' | (string & {})
+	status:
+		| 'Initiated'
+		| 'Authorised'
+		| 'Captured'
+		| 'Failed'
+		| 'Refunded'
+		| (string & {})
 	amount: number
 	currency: Currency
 	gateway: string | null

@@ -220,9 +220,7 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 					if cd in _dates_touched(other["start"], other["end"])
 				]
 				lines.append(
-					_hourly_line(
-						s, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end)
-					)
+					_hourly_line(s, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end))
 				)
 
 	# Grouped by server, chronological within each. A resize chain only means
