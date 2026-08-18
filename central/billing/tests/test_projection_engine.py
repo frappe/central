@@ -150,7 +150,7 @@ class TestTheCalendar(ProjectionTestBase):
 		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
 		frappe.db.commit()
 		cal = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")["calendar"]
-		suspend = [s for s in cal["if_never_paid"] if s["stage"] == "Suspend"][0]
+		suspend = next(s for s in cal["if_never_paid"] if s["stage"] == "Suspend")
 		expected = frappe.utils.add_days(cal["due_on"], suspend["day"])
 		self.assertEqual(suspend["date"], str(expected))
 
