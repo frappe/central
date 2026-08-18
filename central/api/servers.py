@@ -6,7 +6,7 @@ import unicodedata
 import frappe
 from frappe import _
 
-from central.central.doctype.resource_action.resource_action import ResourceAction
+from central.central.doctype.resource_action.resource_action import ResourceAction, open_action
 from central.errors import resource_action, throw_action_error
 from central.iam import can, resolve_team
 from central.integrations.atlas import AtlasClient, AtlasResourceGone, reconcile
@@ -492,25 +492,21 @@ def create_server(
 
 	client = AtlasClient.for_region(region)
 
-	# Track provisioning: create is the one async path (boot→deploy→mint runs on Atlas
-	# after this returns), so the "Provisioning…" state and its eventual pass/fail land here.
-	tracked = frappe.get_doc(
-		{"doctype": "Resource Action", "resource_type": "Server", "action": "create", "team": team}
-	).insert(ignore_permissions=True)
-	try:
-		vm = client.create_vm(
-			team=team,
-			title=atlas_title,
-			vcpus=int(vcpus or 1),
-			memory_megabytes=int(memory_megabytes or 512),
-			disk_gigabytes=int(disk_gigabytes or 10),
-			cpu_max_cores=cpu_max_cores,
-			frappe_version=frappe_version,
-			correlation_id=tracked.name,
-		)
-	except Exception as exc:
-		tracked.fail_from_exception(exc)
-		raise
+	# create is the one async path (boot→deploy→mint runs on Atlas after this returns).
+	# A rejection surfaces as an envelope and leaves no row; we open the tracking action
+	# only once Atlas has accepted, so its "Provisioning…" state and eventual outcome ride
+	# the request's own commit.
+	correlation_id = frappe.generate_hash()
+	vm = client.create_vm(
+		team=team,
+		title=atlas_title,
+		vcpus=int(vcpus or 1),
+		memory_megabytes=int(memory_megabytes or 512),
+		disk_gigabytes=int(disk_gigabytes or 10),
+		cpu_max_cores=cpu_max_cores,
+		frappe_version=frappe_version,
+		correlation_id=correlation_id,
+	)
 
 	resource_id = vm.get("name")
 	# Record the contract for the bundle. Guarded so a raw-size call (no plan) still
@@ -522,9 +518,9 @@ def create_server(
 	# Asset. Otherwise preset creates render the UUID/Pending shell until the next
 	# reconcile, instead of the user-facing title/status Atlas already returned.
 	resource_id = _mirror_provisioned_vm(region, vm, friendly_title)
-	tracked.attach_resource(resource_id)
+	open_action("Server", "create", team=team, resource_id=resource_id, correlation_id=correlation_id)
 
-	return {"resource_id": resource_id, "server": vm, "subscription": subscription, "action": tracked.name}
+	return {"resource_id": resource_id, "server": vm, "subscription": subscription, "action": correlation_id}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -579,29 +575,23 @@ def create_composed_server(
 	qty = composition_quantities(includes)
 	client = AtlasClient.for_region(region)
 
-	tracked = frappe.get_doc(
-		{"doctype": "Resource Action", "resource_type": "Server", "action": "create", "team": team}
-	).insert(ignore_permissions=True)
-	try:
-		vm = client.create_vm(
-			team=team,
-			title=atlas_title,
-			vcpus=int(qty.get(COMPUTE, 1)) or 1,
-			memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
-			disk_gigabytes=int(qty.get(DISK, 0)) or 10,
-			frappe_version=frappe_version,
-			correlation_id=tracked.name,
-		)
-	except Exception as exc:
-		tracked.fail_from_exception(exc)
-		raise
+	correlation_id = frappe.generate_hash()
+	vm = client.create_vm(
+		team=team,
+		title=atlas_title,
+		vcpus=int(qty.get(COMPUTE, 1)) or 1,
+		memory_megabytes=int(qty.get(MEMORY, 0) * 1024) or 512,
+		disk_gigabytes=int(qty.get(DISK, 0)) or 10,
+		frappe_version=frappe_version,
+		correlation_id=correlation_id,
+	)
 
 	resource_id = vm.get("name")
 	provision_composed_subscription(team, region, includes, sub_category, resource_id=resource_id)
 	resource_id = _mirror_provisioned_vm(region, vm, friendly_title)
-	tracked.attach_resource(resource_id)
+	open_action("Server", "create", team=team, resource_id=resource_id, correlation_id=correlation_id)
 
-	return {"resource_id": resource_id, "server": vm, "action": tracked.name}
+	return {"resource_id": resource_id, "server": vm, "action": correlation_id}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -654,33 +644,28 @@ def _run_command(
 
 	instance = frappe.get_doc("Atlas Instance", asset.cluster)
 
-	# Track the action so the console shows it in flight and its outcome has a home.
-	tracked = frappe.get_doc(
-		{
-			"doctype": "Resource Action",
-			"resource_type": "Server",
-			"action": action,
-			"team": team,
-			"resource_id": resource_id,
-		}
-	).insert(ignore_permissions=True)
+	# Open the tracking action only once Atlas accepts the command. A rejection surfaces as
+	# an envelope (via the endpoint's @resource_action) and leaves no row to strand.
+	correlation_id = frappe.generate_hash()
 	try:
-		task = AtlasClient(instance).vm_action(resource_id, atlas_method, correlation_id=tracked.name)
-	except AtlasResourceGone as exc:
-		# The VM is already gone on Atlas. Terminate is idempotent — reflect it and succeed;
-		# start/stop of a vanished server is a real (clean) error, so let it surface.
+		task = AtlasClient(instance).vm_action(resource_id, atlas_method, correlation_id=correlation_id)
+	except AtlasResourceGone:
+		# The VM is already gone on Atlas. Terminate is idempotent — reflect it and record a
+		# Succeeded action; start/stop of a vanished server is a real (clean) error, surfaced.
 		if action == "terminate":
 			from central.central.doctype.asset.asset import Asset
 
 			Asset.mark_terminated(resource_id, last_event_at=frappe.utils.now_datetime())
-			tracked.succeed()
-			return {"resource_id": resource_id, "task": None, "action": tracked.name}
-		tracked.fail_from_exception(exc)
-		raise
-	except Exception as exc:
-		tracked.fail_from_exception(exc)
+			open_action(
+				"Server", action, team=team, resource_id=resource_id,
+				correlation_id=correlation_id, status="Succeeded",
+			)
+			return {"resource_id": resource_id, "task": None, "action": correlation_id}
 		raise
 
-	tracked.mark_sent(task)
+	open_action(
+		"Server", action, team=team, resource_id=resource_id,
+		correlation_id=correlation_id, atlas_task=task,
+	)
 
-	return {"resource_id": resource_id, "task": task, "action": tracked.name}
+	return {"resource_id": resource_id, "task": task, "action": correlation_id}

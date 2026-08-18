@@ -833,11 +833,12 @@ class TestAtlasMirror(IntegrationTestCase):
 				result = start_server(team=self.team.name, resource_id=asset)
 		finally:
 			frappe.set_user("Administrator")
-		action = frappe.get_doc("Resource Action", result["action"])
+		action = frappe.get_doc("Resource Action", {"correlation_id": result["action"]})
 		self.assertEqual((action.action, action.status, action.resource_id), ("start", "Sent", asset))
 		self.assertEqual(action.atlas_task, "task-7")
-		# The correlation id sent to Atlas is the action's own name.
-		self.assertEqual(vm_action.call_args.kwargs["correlation_id"], action.name)
+		# The id returned to the client is the correlation id sent to Atlas.
+		self.assertEqual(vm_action.call_args.kwargs["correlation_id"], result["action"])
+		self.assertEqual(action.correlation_id, result["action"])
 
 	def test_confirming_event_marks_action_succeeded(self):
 		asset = self._stopped_asset("vm-track-ok")
@@ -853,7 +854,10 @@ class TestAtlasMirror(IntegrationTestCase):
 			{"name": asset, "team": self.team.name, "status": "Running", "correlation_id": result["action"]},
 			"2026-07-02 10:05:00",
 		)
-		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
 
 	def test_terminate_action_succeeds_on_delete_event(self):
 		asset = self._stopped_asset("vm-track-term")
@@ -864,7 +868,10 @@ class TestAtlasMirror(IntegrationTestCase):
 		finally:
 			frappe.set_user("Administrator")
 		self._push("vm.deleted", {"name": asset, "correlation_id": result["action"]}, "2026-07-02 11:00:00")
-		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
 
 	def test_registry_exposes_pending_action_while_in_flight(self):
 		asset = self._stopped_asset("vm-pending")
@@ -877,7 +884,7 @@ class TestAtlasMirror(IntegrationTestCase):
 			frappe.set_user("Administrator")
 		self.assertEqual(rows[asset]["pending_action"], "Starting")
 
-	def test_failed_command_marks_action_failed_with_envelope(self):
+	def test_rejected_command_surfaces_envelope_and_opens_no_row(self):
 		from central.integrations.atlas import AtlasError
 
 		asset = self._stopped_asset("vm-track-fail")
@@ -891,12 +898,14 @@ class TestAtlasMirror(IntegrationTestCase):
 		frappe.set_user(self.owner)
 		try:
 			with patch("central.integrations.atlas.AtlasClient.vm_action", side_effect=error):
-				with self.assertRaises(AtlasError):
+				with self.assertRaises(AtlasError) as caught:
 					start_server(team=self.team.name, resource_id=asset)
 		finally:
 			frappe.set_user("Administrator")
-		action = frappe.get_doc("Resource Action", {"resource_id": asset, "action": "start"})
-		self.assertEqual((action.status, action.error_code), ("Failed", "ATLAS_REJECTED"))
+		# A synchronous rejection surfaces the envelope and opens no tracking row — nothing is
+		# in flight, so there is nothing for the sweep to later false-time-out.
+		self.assertEqual(caught.exception.envelope["code"], "ATLAS_REJECTED")
+		self.assertFalse(frappe.db.exists("Resource Action", {"resource_id": asset, "action": "start"}))
 
 	def test_sweep_times_out_a_stuck_action(self):
 		action = frappe.get_doc(
@@ -906,9 +915,10 @@ class TestAtlasMirror(IntegrationTestCase):
 				"action": "start",
 				"team": self.team.name,
 				"resource_id": "vm-ghost",
+				"correlation_id": frappe.generate_hash(),
+				"status": "Sent",
 			}
 		).insert(ignore_permissions=True)
-		frappe.db.set_value("Resource Action", action.name, "status", "Sent")
 		frappe.db.set_value("Resource Action", action.name, "creation", "2020-01-01 00:00:00")
 		swept = ResourceAction.sweep_stale(minutes=15)
 		self.assertGreaterEqual(swept, 1)
@@ -937,10 +947,10 @@ class TestAtlasMirror(IntegrationTestCase):
 				result = create_site(subdomain="acme")
 		finally:
 			frappe.set_user("Administrator")
-		action = frappe.get_doc("Resource Action", result["action"])
+		action = frappe.get_doc("Resource Action", {"correlation_id": result["action"]})
 		self.assertEqual((action.resource_type, action.action, action.status), ("Site", "create", "Sent"))
 		self.assertEqual(action.resource_id, "acme.blr1.frappe.dev")
-		self.assertEqual(create.call_args.kwargs["correlation_id"], action.name)
+		self.assertEqual(create.call_args.kwargs["correlation_id"], result["action"])
 		# Atlas echoes the correlation id on the site's Running event.
 		self._push(
 			"site.status_changed",
@@ -953,7 +963,10 @@ class TestAtlasMirror(IntegrationTestCase):
 			},
 			"2026-07-02 10:05:00",
 		)
-		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
 
 	def test_terminate_site_tracks_and_confirms_on_terminated(self):
 		owner, team = self._single_team_user("site.remover@example.test")
@@ -968,7 +981,7 @@ class TestAtlasMirror(IntegrationTestCase):
 				result = terminate_site(name="bye.blr1.frappe.dev")
 		finally:
 			frappe.set_user("Administrator")
-		action = frappe.get_doc("Resource Action", result["action"])
+		action = frappe.get_doc("Resource Action", {"correlation_id": result["action"]})
 		self.assertEqual((action.resource_type, action.action, action.status), ("Site", "terminate", "Sent"))
 		self._push(
 			"site.status_changed",
@@ -981,7 +994,35 @@ class TestAtlasMirror(IntegrationTestCase):
 			},
 			"2026-07-02 10:00:00",
 		)
-		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
+
+	def test_create_opens_no_row_when_a_post_accept_step_fails(self):
+		# Regression: create_site commits internally, so a row inserted *before* the Atlas call
+		# would be frozen mid-flight if a later step threw — the sweep would then false-time-out
+		# a create that never tracked anything. Opening the row only after the whole create
+		# succeeds means a post-accept failure simply leaves no orphan row to strand.
+		owner, team = self._single_team_user("site.halfway@example.test")
+		mirror = {
+			"name": "half.blr1.frappe.dev",
+			"fqdn": "half.blr1.frappe.dev",
+			"team": team,
+			"subdomain": "half",
+			"status": "Pending",
+		}
+		frappe.set_user(owner)
+		try:
+			with patch("central.integrations.atlas.AtlasClient.create_site", return_value=mirror):
+				with patch(
+					"central.central.doctype.site.site.Site.mirror_site", side_effect=RuntimeError("boom")
+				):
+					with self.assertRaises(Exception):
+						create_site(subdomain="half")
+		finally:
+			frappe.set_user("Administrator")
+		self.assertFalse(frappe.db.exists("Resource Action", {"resource_id": "half.blr1.frappe.dev"}))
 
 
 class TestTerminateIdempotency(IntegrationTestCase):
@@ -1043,7 +1084,10 @@ class TestTerminateIdempotency(IntegrationTestCase):
 		finally:
 			frappe.set_user("Administrator")
 		self.assertEqual(frappe.db.get_value("Asset", asset, "status"), "Terminated")
-		self.assertEqual(frappe.db.get_value("Resource Action", result["action"], "status"), "Succeeded")
+		self.assertEqual(
+			frappe.db.get_value("Resource Action", {"correlation_id": result["action"]}, "status"),
+			"Succeeded",
+		)
 
 	def test_start_still_errors_when_atlas_says_gone(self):
 		from central.integrations.atlas import AtlasResourceGone

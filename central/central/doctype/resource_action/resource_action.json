@@ -3,7 +3,7 @@
  "allow_rename": 0,
  "autoname": "hash",
  "creation": "2026-08-17 00:00:00.000000",
- "description": "One tenant-triggered lifecycle action on a fleet resource (a server or a site) and its outcome. The name is the correlation id Central sends to Atlas and matches on the returning event.",
+ "description": "One tenant-triggered lifecycle action on a fleet resource (a server or a site) and its outcome. Opened only once Atlas accepts the command, so a synchronous rejection never leaves a row.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -12,6 +12,7 @@
   "action",
   "team",
   "resource_id",
+  "correlation_id",
   "column_break_main",
   "status",
   "atlas_task",
@@ -62,17 +63,26 @@
    "read_only": 1
   },
   {
+   "description": "The id Central sends to Atlas with the command; the returning event echoes it so the outcome lands on this row.",
+   "fieldname": "correlation_id",
+   "fieldtype": "Data",
+   "label": "Correlation ID",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1
+  },
+  {
    "fieldname": "column_break_main",
    "fieldtype": "Column Break"
   },
   {
-   "default": "Queued",
+   "default": "Sent",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Queued\nSent\nIn Progress\nSucceeded\nFailed\nTimed Out",
+   "options": "Sent\nIn Progress\nSucceeded\nFailed\nTimed Out",
    "read_only": 1,
    "reqd": 1
   },
@@ -142,6 +152,7 @@
    "write": 1
   },
   {
+   "create": 1,
    "read": 1,
    "role": "Central User"
   }

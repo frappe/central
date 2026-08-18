@@ -4,6 +4,7 @@ import frappe
 from frappe import _
 
 from central.api.site_login import site_login_url
+from central.central.doctype.resource_action.resource_action import open_action
 from central.errors import resource_action
 from central.iam import can, get_user_team_names, resolve_team
 from central.integrations.atlas import AtlasClient, AtlasResourceGone
@@ -48,27 +49,22 @@ def create_site(subdomain: str, region: str | None = None) -> dict:
 	region = region or _default_region()
 	client = AtlasClient.for_region(region)
 
-	# Track provisioning: site create is async (clone→deploy→route runs on Atlas after
-	# this returns), so the "Provisioning…" state and its eventual pass/fail land here.
-	tracked = frappe.get_doc(
-		{"doctype": "Resource Action", "resource_type": "Site", "action": "create", "team": team}
-	).insert(ignore_permissions=True)
-	try:
-		site = client.create_site(team=team, subdomain=subdomain, correlation_id=tracked.name)
-	except Exception as exc:
-		tracked.fail_from_exception(exc)
-		raise
+	# site create is async (clone→deploy→route runs on Atlas after this returns). A
+	# rejection surfaces as an envelope and leaves no row; we open the tracking action
+	# only once Atlas has accepted the create.
+	correlation_id = frappe.generate_hash()
+	site = client.create_site(team=team, subdomain=subdomain, correlation_id=correlation_id)
 
 	from central.central.doctype.site.site import Site
 
 	Site.mirror_site(client.instance.name, site)
-	tracked.attach_resource(site.get("name"))
+	open_action("Site", "create", team=team, resource_id=site.get("name"), correlation_id=correlation_id)
 
 	return {
 		"name": site.get("name"),
 		"fqdn": site.get("fqdn"),
 		"status": site.get("status"),
-		"action": tracked.name,
+		"action": correlation_id,
 	}
 
 
@@ -147,27 +143,21 @@ def terminate_site(name: str) -> dict:
 
 	instance = frappe.get_doc("Atlas Instance", site.cluster)
 
-	tracked = frappe.get_doc(
-		{
-			"doctype": "Resource Action",
-			"resource_type": "Site",
-			"action": "terminate",
-			"team": site.team,
-			"resource_id": name,
-		}
-	).insert(ignore_permissions=True)
+	# Open the tracking action only once Atlas accepts. A rejection surfaces as an envelope
+	# (via @resource_action) and leaves no row to strand.
+	correlation_id = frappe.generate_hash()
 	try:
-		AtlasClient(instance).terminate_site(name, correlation_id=tracked.name)
+		AtlasClient(instance).terminate_site(name, correlation_id=correlation_id)
 	except AtlasResourceGone:
 		# Already gone on Atlas (e.g. a stale mirror row) — terminate is idempotent: reflect
-		# it on the mirror and succeed rather than surfacing a scary "region down".
+		# it on the mirror and record a Succeeded action rather than a scary "region down".
 		frappe.get_doc("Site", name).db_set("status", "Terminated", notify=True)
-		tracked.succeed()
-		return {"name": name, "status": "Terminated", "action": tracked.name}
-	except Exception as exc:
-		tracked.fail_from_exception(exc)
-		raise
+		open_action(
+			"Site", "terminate", team=site.team, resource_id=name,
+			correlation_id=correlation_id, status="Succeeded",
+		)
+		return {"name": name, "status": "Terminated", "action": correlation_id}
 
-	tracked.mark_sent()
+	open_action("Site", "terminate", team=site.team, resource_id=name, correlation_id=correlation_id)
 
-	return {"name": name, "status": "Terminating", "action": tracked.name}
+	return {"name": name, "status": "Terminating", "action": correlation_id}

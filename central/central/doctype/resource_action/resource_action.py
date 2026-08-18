@@ -3,7 +3,7 @@ from __future__ import annotations
 import frappe
 from frappe.model.document import Document
 
-from central.errors import build_envelope, to_error_response
+from central.errors import build_envelope
 
 # Which mirror status means "this action reached its goal". Servers and sites share the
 # same status vocabulary, so one map covers both.
@@ -26,11 +26,15 @@ PENDING_LABEL = {
 	"resize": "Resizing",
 }
 
-PENDING_STATES = ("Queued", "Sent", "In Progress")
+PENDING_STATES = ("Sent", "In Progress")
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
 
 
 class ResourceAction(Document):
+	"""A lifecycle action, opened only once Atlas has accepted the command (status Sent).
+	A synchronous rejection never reaches here — it surfaces as an error envelope and leaves
+	no row — so every write rides the request's own commit and none of them force one."""
+
 	# begin: auto-generated types
 	from typing import TYPE_CHECKING
 
@@ -40,34 +44,40 @@ class ResourceAction(Document):
 		action: DF.Literal["create", "start", "stop", "terminate", "resize"]
 		atlas_task: DF.Data | None
 		completed_at: DF.Datetime | None
+		correlation_id: DF.Data
 		error_code: DF.Data | None
 		error_message: DF.SmallText | None
 		remediation: DF.SmallText | None
 		resource_id: DF.Data | None
 		resource_type: DF.Literal["Server", "Site"]
 		retriable: DF.Check
-		status: DF.Literal["Queued", "Sent", "In Progress", "Succeeded", "Failed", "Timed Out"]
+		status: DF.Literal["Sent", "In Progress", "Succeeded", "Failed", "Timed Out"]
 		team: DF.Link
 	# end: auto-generated types
 
-	def attach_resource(self, resource_id: str) -> None:
-		"""Bind the id a create only learns after Atlas replies, then mark it sent."""
-		self.resource_id = resource_id
-		self.mark_sent()
+	def before_save(self) -> None:
+		"""One owner for the completion stamp: any terminal status carries its timestamp."""
+		if self.status in TERMINAL_STATES and not self.completed_at:
+			self.completed_at = frappe.utils.now_datetime()
 
-	def mark_sent(self, atlas_task: str | None = None) -> None:
-		"""Atlas accepted the command; the action is now in flight pending its outcome."""
-		if self.status in TERMINAL_STATES:
+	def on_update(self) -> None:
+		"""Nudge the console to re-read after every state change (insert included), so the
+		transitional badge flips live over the same list channel the mirror already uses."""
+		if not self.resource_id:
 			return
 
-		self.status = "Sent"
-		if atlas_task:
-			self.atlas_task = atlas_task
-		self._apply()
+		mirror = "Site" if self.resource_type == "Site" else "Asset"
+		frappe.publish_realtime(
+			"list_update",
+			{"doctype": mirror, "name": self.resource_id},
+			doctype=mirror,
+			after_commit=True,
+		)
 
-	def fail_from_exception(self, exc: Exception) -> None:
-		"""Record a synchronous failure from the envelope the exception already carries."""
-		self._finish_error("Failed", to_error_response(exc))
+	# Outcome writes below record what Atlas reported, not what a tenant asked for. They run
+	# from the HMAC-verified webhook (as Guest) or the sweep (as Administrator), never from the
+	# portal, and a tenant must never be able to rewrite an outcome — so these bypass the
+	# doc permission check that the create path (open_action) deliberately honours.
 
 	def _finish_error(self, status: str, envelope: dict) -> None:
 		self.status = status
@@ -75,26 +85,24 @@ class ResourceAction(Document):
 		self.error_message = envelope.get("message")
 		self.remediation = envelope.get("remediation")
 		self.retriable = 1 if envelope.get("retriable") else 0
-		self.completed_at = frappe.utils.now_datetime()
-		# Commit before any caller re-raises: the request rolls back on the way out, which
-		# would otherwise discard the outcome and leave the action stuck in flight.
-		self._apply(commit=True)
+		self.save(ignore_permissions=True)
 
 	def succeed(self) -> None:
 		self.status = "Succeeded"
-		self.completed_at = frappe.utils.now_datetime()
-		self._apply()
+		self.save(ignore_permissions=True)
 
 	@classmethod
 	def record_mirror_status(cls, correlation_id: str | None, mirror_status: str | None) -> None:
-		"""Transition the action a returning Atlas event confirms. The event's correlation id
-		is this row's name; an unknown or already-finished action is ignored."""
+		"""Transition the action a returning Atlas event confirms, matched by correlation id.
+		An unknown or already-finished action is ignored."""
 		if not (correlation_id and mirror_status):
 			return
-		if not frappe.db.exists("Resource Action", correlation_id):
+
+		name = frappe.db.get_value("Resource Action", {"correlation_id": correlation_id})
+		if not name:
 			return
 
-		doc = frappe.get_doc("Resource Action", correlation_id)
+		doc = frappe.get_doc("Resource Action", name)
 		if doc.status in TERMINAL_STATES:
 			return
 
@@ -104,7 +112,7 @@ class ResourceAction(Document):
 			doc.succeed()
 		elif mirror_status in IN_PROGRESS_MIRROR_STATUS and doc.status != "In Progress":
 			doc.status = "In Progress"
-			doc._apply()
+			doc.save(ignore_permissions=True)
 
 	@classmethod
 	def pending_labels(cls, team: str) -> dict[str, str]:
@@ -145,22 +153,32 @@ class ResourceAction(Document):
 		else:
 			doc._finish_error("Timed Out", build_envelope("ACTION_TIMED_OUT", action=doc.action))
 
-	def _apply(self, *, commit: bool = False) -> None:
-		self.save(ignore_permissions=True)
-		if commit:
-			frappe.db.commit()
-		self._poke_console()
 
-	def _poke_console(self) -> None:
-		"""Nudge the console to re-read once this row commits, so the transitional state flips
-		live over the same list channel the mirror already uses — no polling."""
-		if not self.resource_id:
-			return
+def open_action(
+	resource_type: str,
+	action: str,
+	*,
+	team: str,
+	resource_id: str,
+	correlation_id: str,
+	status: str = "Sent",
+	atlas_task: str | None = None,
+) -> ResourceAction:
+	"""Open a tracking row once Atlas has accepted the command. `status` is Sent for an
+	in-flight action, or Succeeded for one Atlas confirmed synchronously (idempotent
+	terminate of an already-gone resource).
 
-		mirror = "Site" if self.resource_type == "Site" else "Asset"
-		frappe.publish_realtime(
-			"list_update",
-			{"doctype": mirror, "name": self.resource_id},
-			doctype=mirror,
-			after_commit=True,
-		)
+	Runs as the acting tenant: the create permission is real (Central User + a server-mutating
+	capability on the team, see central/permissions.py), so no permission is bypassed here."""
+	return frappe.get_doc(
+		{
+			"doctype": "Resource Action",
+			"resource_type": resource_type,
+			"action": action,
+			"team": team,
+			"resource_id": resource_id,
+			"correlation_id": correlation_id,
+			"status": status,
+			"atlas_task": atlas_task,
+		}
+	).insert()
