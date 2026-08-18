@@ -197,6 +197,7 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 		search-placeholder="Search members by name, email"
 		:filters="roleFilters"
 		item-label="member"
+		row-class="min-h-12 py-1.5"
 		:show-count="false"
 		:empty-state="{
 			title: 'No members yet',
@@ -295,14 +296,3 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 	<RemoveMemberDialog v-model:member="removeTarget" />
 	<TransferOwnershipDialog v-model:member="transferTarget" />
 </template>
-
-<style scoped>
-/* Body rows need room for an avatar + two stacked lines (name, email); the
-   shared ListView otherwise renders a fixed single-line h-10 row. Scoped to
-   this panel's rowgroup only — the header row sits outside it. */
-:deep([role="rowgroup"] > [role="row"]) {
-	height: auto;
-	min-height: 4rem;
-	padding-block: 0.5rem;
-}
-</style>

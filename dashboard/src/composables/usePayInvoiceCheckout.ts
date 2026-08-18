@@ -48,7 +48,7 @@ export function usePayInvoiceCheckout({
 			})
 			const res = confirm.data
 			successToast(
-				'Payment received — the invoice updates once the gateway confirms.',
+				'Payment received. The invoice updates once the gateway confirms.',
 			)
 			onDone?.(res)
 			return res

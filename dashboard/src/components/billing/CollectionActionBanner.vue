@@ -43,7 +43,7 @@ async function choose(): Promise<void> {
 	await setMode.submit({ team: activeTeam.value!, mode: chosen.value })
 	successToast(
 		chosen.value === 'Prepaid'
-			? 'Prepaid wallet on — add credits to cover usage'
+			? 'Prepaid wallet on: add credits to cover usage'
 			: "You'll pay each invoice yourself",
 	)
 	choosing.value = false
@@ -73,13 +73,13 @@ const options = [
 	<Alert
 		v-if="show && s"
 		theme="amber"
-		title="Action required — choose how to keep paying"
+		title="Action required: choose how to keep paying"
 		:primary-action="canManageBilling ? { label: 'Choose how to pay', onClick: () => { choosing = true } } : undefined"
 	>
 		<template #description>
 			This month is heading to
 			<span class="font-medium">{{ money(s.projected_total, currency) }}</span>
-			— past the
+			, past the
 			<span class="font-medium">{{ money(s.threshold, currency) }}</span>
 			limit for automatic payments. Your services keep running.
 		</template>

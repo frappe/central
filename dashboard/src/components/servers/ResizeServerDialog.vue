@@ -243,7 +243,7 @@ async function confirm() {
 		const name = props.server?.title || props.server?.resource_id
 		successToast(
 			resizeCall.data?.queued
-				? `Resizing ${name} — the server list shows its progress.`
+				? `Resizing ${name}. The server list shows its progress.`
 				: `Resized ${name}.`,
 		)
 		emit('resized')
@@ -264,8 +264,8 @@ async function confirm() {
 				<LoadingIndicator class="h-6 w-6 text-ink-gray-5" />
 				<p class="text-p-base font-medium text-ink-gray-8">Starting resize…</p>
 				<p class="max-w-xs text-p-sm text-ink-gray-5">
-					The reshape runs in the background — the server shows “Resizing” in
-					the list and comes back on its own when it’s done.
+					The reshape runs in the background. The server shows “Resizing” in the
+					list and comes back on its own when it’s done.
 				</p>
 			</div>
 			<p
@@ -286,7 +286,7 @@ async function confirm() {
 					v-if="losesLockedRate && lock"
 					theme="amber"
 					title="Resizing will change your rate"
-					:description="`You pay ${money(lock.locked_rate, lock.currency)}/mo for this size; it now lists at ${money(lock.list_rate, lock.currency)}/mo. Any resize is priced at today's rates, and the old rate doesn't come back — including if you resize to this size again later.`"
+					:description="`You pay ${money(lock.locked_rate, lock.currency)}/mo for this size; it now lists at ${money(lock.list_rate, lock.currency)}/mo. Any resize is priced at today's rates, and the old rate doesn't come back, including if you resize to this size again later.`"
 				/>
 				<div
 					v-if="needsRestart"

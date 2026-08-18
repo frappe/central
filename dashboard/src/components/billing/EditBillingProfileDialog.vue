@@ -175,7 +175,7 @@ async function submit(): Promise<void> {
 							/>
 							<p class="mt-1 text-p-xs text-ink-gray-5">
 								{{ currencyLocked
-										? `Billed in ${form.currency} — locked, your team already has billing activity.`
+										? `Billed in ${form.currency}: locked, your team already has billing activity.`
 										: `Sets your billing currency (${form.currency || 'USD'}).` }}
 							</p>
 						</div>

@@ -76,5 +76,7 @@ const memberCountText = computed(() => {
 				</RolesPanel>
 			</main>
 		</div>
+
+		<div id="team-page-aside" class="contents" />
 	</div>
 </template>

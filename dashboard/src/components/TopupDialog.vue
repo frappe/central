@@ -199,7 +199,7 @@ watch(open, (isOpen) => {
 					class="rounded-4 border border-outline-gray-2 px-3 py-3"
 				/>
 				<p class="text-p-sm text-ink-gray-5">
-					Card details are entered on Stripe's secure field — we never see your
+					Card details are entered on Stripe's secure field. We never see your
 					card number. Your billing address is taken from your billing profile.
 				</p>
 			</div>

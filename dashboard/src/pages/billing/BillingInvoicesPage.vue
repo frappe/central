@@ -223,14 +223,14 @@ const eventDetail = (ev: {
 					variant="ghost"
 					icon="lucide-mail"
 					:disabled="true"
-					title="Email invoice — coming soon"
+					title="Email invoice (coming soon)"
 					label="Email invoice"
 				/>
 				<Button
 					variant="ghost"
 					icon="lucide-download"
 					:disabled="true"
-					title="Download PDF — coming soon"
+					title="Download PDF (coming soon)"
 					label="Download PDF"
 				/>
 			</template>
@@ -248,7 +248,7 @@ const eventDetail = (ev: {
 					class="flex items-center gap-1.5 px-4 pt-4 text-p-sm text-ink-red-7"
 				>
 					<span class="lucide-triangle-alert size-3.5 shrink-0" />
-					Due {{ shortDate(detail.data.due_date) }} — overdue
+					Due {{ shortDate(detail.data.due_date) }} (overdue)
 				</p>
 
 				<!-- Receipt: plan charges per server, then metered add-ons — each

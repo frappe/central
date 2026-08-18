@@ -103,7 +103,7 @@ const instrument = computed(() => {
 				{{ money(0, currency) }}
 			</p>
 			<p class="mt-1.5 text-p-sm text-ink-gray-5">
-				Nothing to pay yet — we'll bill on the 1st for whatever you run.
+				Nothing to pay yet. We'll bill on the 1st for whatever you run.
 			</p>
 		</template>
 	</div>
