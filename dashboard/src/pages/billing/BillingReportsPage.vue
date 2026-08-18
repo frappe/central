@@ -88,8 +88,8 @@ function exportUrl(report: string): string {
 					<div>
 						<h1 class="text-lg-semibold text-ink-gray-9">Reports</h1>
 						<p class="mt-0.5 text-p-sm text-ink-gray-5">
-							Your billing history — what you've spent, paid and been charged
-							tax on.
+							Your billing history: what you've spent, paid and been charged tax
+							on.
 						</p>
 					</div>
 					<div v-if="!neverBilled" class="flex items-center gap-2">

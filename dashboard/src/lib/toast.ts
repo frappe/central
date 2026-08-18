@@ -19,7 +19,7 @@ interface FrappeError {
 
 export function errorToast(
 	e: unknown,
-	fallback = "We couldn't complete that — please try again.",
+	fallback = "We couldn't complete that. Please try again.",
 ): void {
 	if (isAbortError(e)) return
 	toast.error(getErrorMessage(e, fallback))
@@ -51,7 +51,7 @@ export function isAbortError(e: unknown): boolean {
 
 export function getErrorMessage(
 	e: unknown,
-	fallback = "We couldn't complete that — please try again.",
+	fallback = "We couldn't complete that. Please try again.",
 ): string {
 	const err = (e ?? {}) as FrappeError
 	const msg =

@@ -97,7 +97,7 @@ onUnmounted(() => clearTimeout(timer))
 			<p class="mt-2 text-p-base text-ink-gray-5">
 				We're provisioning
 				<span class="font-medium text-ink-gray-8">{{ name }}</span>. This takes
-				a moment — hang tight.
+				a moment. Hang tight.
 			</p>
 			<div class="mt-8 flex items-center gap-3 text-ink-gray-5">
 				<Spinner size="lg" />

@@ -28,7 +28,7 @@ const { canManageBilling } = useCapabilities()
 			theme="red"
 			label="Suspend all"
 			:disabled="true"
-			title="Suspend all servers — coming soon"
+			title="Suspend all servers (coming soon)"
 			class="shrink-0"
 		/>
 	</section>

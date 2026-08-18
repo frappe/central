@@ -96,6 +96,7 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 		searchable
 		search-placeholder="Search roles..."
 		item-label="role"
+		row-class="min-h-12 py-1.5"
 		:show-count="false"
 		:active-key="selectedKey"
 		:empty-state="{ title: 'No roles yet', description: 'Create a role to grant capabilities to members.' }"
@@ -170,13 +171,3 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 
 	<RoleBuilderDialog v-model:open="newRoleDialog" @created="reload" />
 </template>
-
-<style scoped>
-/* Same row height as the members list, so switching tabs doesn't change
-   the list's rhythm. */
-:deep([role="rowgroup"] > [role="row"]) {
-	height: auto;
-	min-height: 4rem;
-	padding-block: 0.5rem;
-}
-</style>

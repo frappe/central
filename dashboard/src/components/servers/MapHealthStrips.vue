@@ -13,7 +13,7 @@ defineEmits<{ retry: [] }>()
 			v-if="stale.length"
 			class="pointer-events-auto rounded-5 bg-surface-amber-1 px-3 py-2 text-p-sm text-ink-amber-6 shadow-sm"
 		>
-			Showing last-known data — couldn't reach: {{ stale.join(', ') }}
+			Showing last-known data. Couldn't reach: {{ stale.join(', ') }}
 		</p>
 		<p
 			v-else-if="error && hasRows"

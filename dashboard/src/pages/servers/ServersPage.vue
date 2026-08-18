@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button, Spinner, useCall } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -43,6 +43,7 @@ import signingInHtml from './signing-in.html?raw'
 // Lifecycle actions reuse useServers so the map, panel, and ⋯ menus share one path.
 
 const router = useRouter()
+const route = useRoute()
 
 const { assets, sites, loading, error, reload } = useServerMapData()
 const { regions } = useRegions()
@@ -293,6 +294,23 @@ watch(panelOpen, (isOpen) => {
 	if (!isOpen) locationFilter.value = null
 })
 
+// Landing straight from "Create server" (?created=<id>): open the list so the new
+// server's provisioning row is visible right away, not hidden behind the collapsed pill.
+const cameFromCreate =
+	typeof route.query.created === 'string' && !!route.query.created
+
+// Opening the map shows the current fleet. The feed is a shared singleton that only
+// reloads on team-ready or a live event, so a server created while this page was
+// unmounted (the New server flow) wouldn't be here yet — reload on every entry.
+onMounted(() => {
+	if (activeTeam.value) reload()
+	if (cameFromCreate) {
+		panelOpen.value = true
+		// Drop the flag so a back/refresh doesn't reopen the panel.
+		router.replace({ path: '/servers', query: {} })
+	}
+})
+
 // — Commands. One feed carries servers and sites, so a single reload refreshes both.
 function reloadAll(): void {
 	reload()
@@ -360,7 +378,7 @@ async function openSite(name: string): Promise<void> {
 			tab?.close()
 			errorToast(
 				undefined,
-				"Couldn't open the site — it may not be ready yet. Try again in a moment.",
+				"Couldn't open the site. It may not be ready yet. Try again in a moment.",
 			)
 		}
 	} catch (e) {

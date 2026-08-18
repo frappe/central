@@ -611,7 +611,7 @@ function clickNode(n: MapNode): void {
 						<button
 							v-if="n.type === 'server'"
 							class="group relative block rounded-full outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-4"
-							:aria-label="`${n.pin.name} — ${n.pin.visual.label}`"
+							:aria-label="`${n.pin.name}: ${n.pin.visual.label}`"
 							@click="clickNode(n)"
 							@mouseenter="enterNode(n)"
 							@mouseleave="leaveNode"
