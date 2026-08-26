@@ -18,7 +18,9 @@ class ServiceBackend(Document):
 		control_api_key: DF.Data
 		control_api_secret: DF.Password
 		is_active: DF.Check
+		metrics_token: DF.Password | None
 		region: DF.Data | None
+		rpc_secret: DF.Password | None
 		s3_endpoint: DF.Data | None
 		service: DF.Link
 	# end: auto-generated types

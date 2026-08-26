@@ -8,16 +8,32 @@ from frappe import _
 from central.services.drivers.garage import GarageDriver
 from central.services.provisioning import active_managed_service, get_active_service, get_backend
 
-# Object storage is minted per bench, not per site: a bench is the thing that holds a
-# credential (in bench.toml) and the thing an operator enables. Central owns the mint —
-# a bench never reaches Garage's admin API, only its S3 gateway with the key it was
-# handed. Ownership comes from the authenticated pilot credential's team.
-#
-# One bench, one bucket, named by the user. Garage's aliases are cluster-wide, so a
-# name taken by another tenant is simply refused rather than adopted.
+# One bucket per bench, named by the user. Central owns the mint; a bench only ever
+# reaches the S3 gateway, never Garage's admin API.
 
 SERVICE = "storage"
+SECRET_LENGTH = 32
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+
+
+def mint_cluster_tokens(region: str, host: str) -> dict:
+	"""The secrets a Garage node needs in its `garage.toml`. Opaque, not signed: Garage
+	compares the bearer token it was configured with, it verifies nothing.
+
+	Idempotent per region — every node in a cluster needs the same `rpc_secret`."""
+	backend = _cluster_backend(region, host)
+	if not backend.get_password("control_api_secret", raise_exception=False):
+		backend.control_api_secret = frappe.generate_hash(length=SECRET_LENGTH)
+		backend.metrics_token = frappe.generate_hash(length=SECRET_LENGTH)
+		backend.rpc_secret = frappe.generate_hash(length=SECRET_LENGTH)
+		backend.is_active = 1
+		backend.save(ignore_permissions=True)
+
+	return {
+		"admin_token": backend.get_password("control_api_secret"),
+		"metrics_token": backend.get_password("metrics_token"),
+		"rpc_secret": backend.get_password("rpc_secret"),
+	}
 
 
 def enable_bench(pilot_credential: str, bucket: str) -> dict:
@@ -26,8 +42,7 @@ def enable_bench(pilot_credential: str, bucket: str) -> dict:
 	validate_bucket_name(bucket)
 	credential = _existing_credential(pilot_credential)
 	if credential and credential.label != bucket:
-		# One bucket per bench: honouring a rename here would strand the first bucket's
-		# objects behind a name nothing points at any more.
+		# A rename would strand the first bucket's objects behind a dead name.
 		frappe.throw(_("This bench already owns the bucket {0}.").format(credential.label))
 	if credential and credential.status == "Active":
 		return _config(frappe.get_doc("Service Credential", credential.name))
@@ -37,7 +52,6 @@ def enable_bench(pilot_credential: str, bucket: str) -> dict:
 	backend = get_backend(get_active_service(SERVICE).name)
 
 	driver = GarageDriver()
-	# A re-enable keeps its existing bucket; only a bench that never had one creates.
 	bucket_id = driver.get_bucket_id(backend, bucket) if credential else None
 	key = driver.mint_key(backend, pilot_credential, bucket_id or driver.create_bucket(backend, bucket))
 
@@ -97,6 +111,26 @@ def validate_bucket_name(bucket: str) -> None:
 		)
 
 
+def _cluster_backend(region: str, host: str):
+	"""One region's Garage cluster row, reserved on first ask. The first host to ask
+	stays the entry node Central drives."""
+	add_on = get_active_service(SERVICE)
+	name = frappe.db.get_value("Service Backend", {"service": add_on.name, "region": region})
+	if name:
+		return frappe.get_doc("Service Backend", name)
+
+	return frappe.get_doc(
+		{
+			"doctype": "Service Backend",
+			"service": add_on.name,
+			"region": region,
+			"base_url": f"http://{host}:3903",
+			"s3_endpoint": f"http://{host}:3900",
+			"is_active": 0,
+		}
+	).insert(ignore_permissions=True)
+
+
 def _existing_credential(pilot_credential: str):
 	return frappe.db.get_value(
 		"Service Credential",
@@ -107,7 +141,6 @@ def _existing_credential(pilot_credential: str):
 
 
 def _config(credential) -> dict:
-	# S3 needs both key halves plus the bucket, unlike a single-secret service.
 	return {
 		"credential": credential.name,
 		"endpoint_url": credential.gateway_url,

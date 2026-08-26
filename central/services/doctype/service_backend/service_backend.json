@@ -15,7 +15,9 @@
   "is_active",
   "control_section",
   "control_api_key",
-  "control_api_secret"
+  "control_api_secret",
+  "metrics_token",
+  "rpc_secret"
  ],
  "fields": [
   {
@@ -67,6 +69,18 @@
    "fieldtype": "Password",
    "label": "Control API Secret",
    "read_only": 1
+  },
+  {
+   "description": "Garage only: the token its metrics endpoint expects. Minted by Central, seeded into garage.toml.",
+   "fieldname": "metrics_token",
+   "fieldtype": "Password",
+   "label": "Metrics Token"
+  },
+  {
+   "description": "Garage only: the shared secret every node in the cluster uses to talk to its peers. Identical across nodes.",
+   "fieldname": "rpc_secret",
+   "fieldtype": "Password",
+   "label": "RPC Secret"
   }
  ],
  "grid_page_length": 50,

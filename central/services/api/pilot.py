@@ -90,8 +90,7 @@ def _resolve_credential(team: str, service: str, site: str) -> str | None:
 @pilot_credential_auth
 def enable_storage(bucket: str) -> dict:
 	"""Create this bench's bucket under the name the user chose and mint its S3 key. The
-	bench is identified by the credential it authenticated with, never by an argument, so
-	one bench cannot enable storage as another."""
+	bench is the one that authenticated, never an argument."""
 	return storage.enable_bench(frappe.local.pilot_credential.name, bucket)
 
 
