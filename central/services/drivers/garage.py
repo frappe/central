@@ -33,6 +33,10 @@ class GarageDriver:
 
 		return response.json()["id"] if response.ok else None
 
+	def bucket_exists(self, backend: Document, bucket_id: str) -> bool:
+		"""Whether a bucket still exists, by the id Central recorded when it created it."""
+		return self._request(backend, "GetBucketInfo", method="GET", params={"id": bucket_id}).ok
+
 	def mint_key(self, backend: Document, name: str, bucket_id: str) -> dict:
 		"""Create a key then allow it on that bucket. A key that cannot be granted is
 		deleted rather than left live with no bucket and nothing tracking it."""

@@ -16,7 +16,6 @@ SERVICE = "storage"
 SECRET_LENGTH = 32
 CLUSTER_SECRETS = ("control_api_secret", "metrics_token", "rpc_secret")
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
-_LEAK = "Garage {0} left behind after a failed provision"
 
 
 def mint_cluster_tokens(region: str, host: str) -> dict:
@@ -67,12 +66,10 @@ def enable_bench(pilot_credential: str, bucket: str) -> dict:
 	validate_bucket_name(bucket)
 	credential = _existing_credential(pilot_credential)
 	if credential and credential.label != bucket:
-		frappe.throw(_("This bench already owns the bucket {0}.").format(credential.label))
+		frappe.throw(_(f"This bench already owns the bucket {credential.label}."))
 	if credential and credential.status == "Active":
 		return _config(frappe.get_doc("Service Credential", credential.name))
 
-	team = frappe.db.get_value("Pilot Credential", pilot_credential, "team")
-	managed_service = active_managed_service(team, SERVICE)
 	# The cluster that holds this bench's bucket, not whichever backend is active now: a
 	# key can only be minted or revoked at the Garage that owns the bucket.
 	backend = (
@@ -81,20 +78,22 @@ def enable_bench(pilot_credential: str, bucket: str) -> dict:
 		else get_backend(get_active_service(SERVICE).name)
 	)
 
-	stored = _reserve(credential, pilot_credential, managed_service, bucket, backend)
+	stored = _reserve(credential, pilot_credential, bucket, backend)
 	driver = GarageDriver()
+	known_bucket_id = credential.provider_bucket_id if credential else None
+	fresh_bucket_id = None
 	key = None
 
-	# A retry adopts by id alone; re-resolving the name could land on a bucket another
-	# tenant claimed since. The id is recorded the moment the bucket exists.
-	bucket_id = credential.provider_bucket_id if credential else None
-	fresh_bucket_id = None
-	if not bucket_id:
-		bucket_id = fresh_bucket_id = driver.create_bucket(backend, bucket)
-		stored.db_set("provider_bucket_id", bucket_id, commit=not frappe.in_test)
-
 	try:
-		key = driver.mint_key(backend, pilot_credential, bucket_id)
+		if known_bucket_id and not driver.bucket_exists(backend, known_bucket_id):
+			frappe.throw(_(f"Bucket {bucket} no longer exists on this cluster."))
+		if not known_bucket_id:
+			# Recorded straight away: a retry adopts by id alone, since re-resolving the
+			# name could land on a bucket another tenant claimed since.
+			fresh_bucket_id = driver.create_bucket(backend, bucket)
+			stored.db_set("provider_bucket_id", fresh_bucket_id, commit=not frappe.in_test)
+
+		key = driver.mint_key(backend, pilot_credential, known_bucket_id or fresh_bucket_id)
 		stored.update(
 			{
 				"status": "Active",
@@ -124,23 +123,29 @@ def _discard(
 		try:
 			driver.revoke_key(backend, key["access_key_id"])
 		except Exception:
-			frappe.log_error(title=_LEAK.format("key"), message=f"{key['access_key_id']} is still live.")
+			frappe.log_error(
+				title="Garage key left behind after a failed provision",
+				message=f"{key['access_key_id']} is still live.",
+			)
 
 	if fresh_bucket_id:
 		try:
 			driver.delete_bucket(backend, fresh_bucket_id)
 			stored.db_set("provider_bucket_id", None, commit=not frappe.in_test)
 		except Exception:
-			frappe.log_error(title=_LEAK.format("bucket"), message=f"{fresh_bucket_id} still exists.")
+			frappe.log_error(
+				title="Garage bucket left behind after a failed provision",
+				message=f"{fresh_bucket_id} still exists.",
+			)
 
 
-def _reserve(
-	credential, pilot_credential: str, managed_service: str, bucket: str, backend: Document
-) -> Document:
-	"""Record the bucket and its cluster before Garage is touched. The row must survive a
-	failure mid-provision: without it the bucket is untracked, and the next attempt cannot
-	tell its own orphan from another tenant's. (Skipped under tests, where the row stays
-	visible inside the test transaction.)"""
+def _reserve(credential, pilot_credential: str, bucket: str, backend: Document) -> Document:
+	"""Record the bucket and its cluster before Garage is touched, once the team's
+	entitlement is confirmed. The row must survive a failure mid-provision: without it the
+	bucket is untracked, and the next attempt cannot tell its own orphan from another
+	tenant's. (Skipped under tests, where the row stays visible in the test transaction.)"""
+	team = frappe.db.get_value("Pilot Credential", pilot_credential, "team")
+	managed_service = active_managed_service(team, SERVICE)
 	stored = (
 		frappe.get_doc("Service Credential", credential.name)
 		if credential
@@ -194,9 +199,9 @@ def validate_bucket_name(bucket: str) -> None:
 	if not bucket or not BUCKET_NAME_PATTERN.match(bucket):
 		frappe.throw(
 			_(
-				"{0} is not a valid bucket name. Use 3-63 characters: lowercase letters, "
+				f"{bucket} is not a valid bucket name. Use 3-63 characters: lowercase letters, "
 				"digits, dots and hyphens, starting and ending with a letter or digit."
-			).format(bucket)
+			)
 		)
 
 

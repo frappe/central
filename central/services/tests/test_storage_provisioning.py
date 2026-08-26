@@ -84,6 +84,7 @@ class TestStorageProvisioning(IntegrationTestCase):
 		return patch.multiple(
 			GarageDriver,
 			get_bucket_id=MagicMock(return_value=existing_bucket),
+			bucket_exists=MagicMock(return_value=True),
 			create_bucket=MagicMock(return_value=_BUCKET_ID),
 			mint_key=MagicMock(return_value=_KEY),
 			delete_bucket=MagicMock(),
@@ -291,6 +292,31 @@ class TestStorageProvisioning(IntegrationTestCase):
 
 		self.assertEqual(revoke.call_args.args[0].name, self.backend.name)
 		self.assertNotEqual(revoke.call_args.args[0].name, newer.name)
+
+	def test_a_vanished_bucket_is_reported_not_recreated(self):
+		with self._mint():
+			storage.enable_bench(self.pilot, _BUCKET)
+
+		stored = frappe.get_doc("Service Credential", {"pilot_credential": self.pilot})
+		stored.db_set("status", "Revoked")
+
+		with self._mint(), patch.object(GarageDriver, "bucket_exists", return_value=False):
+			with self.assertRaisesRegex(frappe.ValidationError, "no longer exists"):
+				storage.enable_bench(self.pilot, _BUCKET)
+			GarageDriver.create_bucket.assert_not_called()
+
+	def test_a_bench_cannot_claim_another_benchs_bucket(self):
+		with self._mint():
+			storage.enable_bench(self.pilot, _BUCKET)
+
+		other = f"pcred-storage-{frappe.generate_hash(length=8)}"
+		PilotCredential.mint(team=self.team, pilot_credential_id=other)
+
+		# Real create_bucket, so the name check runs: the second bench is refused rather
+		# than handed a key on the first bench's bucket.
+		with patch.object(GarageDriver, "get_bucket_id", return_value=_BUCKET_ID):
+			with self.assertRaisesRegex(frappe.ValidationError, "already taken"):
+				storage.enable_bench(other, _BUCKET)
 
 	def test_cluster_tokens_are_minted_once_per_region(self):
 		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
