@@ -19,6 +19,7 @@ class ServiceBackend(Document):
 		control_api_secret: DF.Password
 		is_active: DF.Check
 		region: DF.Data | None
+		s3_endpoint: DF.Data | None
 		service: DF.Link
 	# end: auto-generated types
 

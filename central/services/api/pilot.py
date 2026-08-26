@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 
 from central.api.pilot import pilot_credential_auth
-from central.services import provisioning
+from central.services import provisioning, storage
 
 # The bench↔Central service surface. The bench (Pilot) is authoritative for "these
 # are my sites" and drives enable/disable per site; Central owns entitlement + key
@@ -83,3 +83,29 @@ def _resolve_credential(team: str, service: str, site: str) -> str | None:
 		{"subject_type": "Site", "managed_service": managed_service, "site": site, "status": "Active"},
 		"name",
 	)
+
+
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def enable_storage(bucket: str) -> dict:
+	"""Create this bench's bucket under the name the user chose and mint its S3 key. The
+	bench is identified by the credential it authenticated with, never by an argument, so
+	one bench cannot enable storage as another."""
+	return storage.enable_bench(frappe.local.pilot_credential.name, bucket)
+
+
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def disable_storage() -> dict:
+	"""Revoke this bench's S3 key. Its bucket and objects are left untouched."""
+	return storage.disable_bench(frappe.local.pilot_credential.name)
+
+
+# nosemgrep: guest-whitelisted-method -- pilot_credential_auth verifies the caller below.
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def storage_config() -> dict:
+	"""The bench pulls its delivered S3 config (endpoint, bucket, both key halves)."""
+	return storage.bench_config(frappe.local.pilot_credential.name)

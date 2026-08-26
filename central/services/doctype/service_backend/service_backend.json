@@ -11,6 +11,7 @@
   "service",
   "region",
   "base_url",
+  "s3_endpoint",
   "is_active",
   "control_section",
   "control_api_key",
@@ -37,6 +38,12 @@
    "fieldtype": "Data",
    "label": "Base URL",
    "reqd": 1
+  },
+  {
+   "description": "Object-storage data endpoint handed to benches (Garage :3900). Base URL is the admin API (:3903).",
+   "fieldname": "s3_endpoint",
+   "fieldtype": "Data",
+   "label": "S3 Endpoint"
   },
   {
    "default": "1",
