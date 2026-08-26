@@ -4,6 +4,7 @@ import re
 
 import frappe
 from frappe import _
+from frappe.model.document import Document
 
 from central.services.drivers.garage import GarageDriver
 from central.services.provisioning import active_managed_service, get_active_service, get_backend
@@ -13,6 +14,7 @@ from central.services.provisioning import active_managed_service, get_active_ser
 
 SERVICE = "storage"
 SECRET_LENGTH = 32
+CLUSTER_SECRETS = ("control_api_secret", "metrics_token", "rpc_secret")
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 
@@ -21,11 +23,16 @@ def mint_cluster_tokens(region: str, host: str) -> dict:
 	compares the bearer token it was configured with, it verifies nothing.
 
 	Idempotent per region — every node in a cluster needs the same `rpc_secret`."""
-	backend = _cluster_backend(region, host)
-	if not backend.get_password("control_api_secret", raise_exception=False):
-		backend.control_api_secret = frappe.generate_hash(length=SECRET_LENGTH)
-		backend.metrics_token = frappe.generate_hash(length=SECRET_LENGTH)
-		backend.rpc_secret = frappe.generate_hash(length=SECRET_LENGTH)
+	return cluster_tokens(_cluster_backend(region, host))
+
+
+def cluster_tokens(backend: Document) -> dict:
+	"""One cluster's secrets, generated on first ask and returned unchanged after. Each
+	is filled in on its own so a partially configured row completes rather than throws."""
+	missing = [f for f in CLUSTER_SECRETS if not backend.get_password(f, raise_exception=False)]
+	if missing:
+		for fieldname in missing:
+			backend.set(fieldname, frappe.generate_hash(length=SECRET_LENGTH))
 		backend.is_active = 1
 		backend.save(ignore_permissions=True)
 
@@ -111,7 +118,7 @@ def validate_bucket_name(bucket: str) -> None:
 		)
 
 
-def _cluster_backend(region: str, host: str):
+def _cluster_backend(region: str, host: str) -> Document:
 	"""One region's Garage cluster row, reserved on first ask. The first host to ask
 	stays the entry node Central drives."""
 	add_on = get_active_service(SERVICE)
@@ -131,7 +138,7 @@ def _cluster_backend(region: str, host: str):
 	).insert(ignore_permissions=True)
 
 
-def _existing_credential(pilot_credential: str):
+def _existing_credential(pilot_credential: str) -> frappe._dict | None:
 	return frappe.db.get_value(
 		"Service Credential",
 		{"subject_type": "Bench", "pilot_credential": pilot_credential},
@@ -140,7 +147,7 @@ def _existing_credential(pilot_credential: str):
 	)
 
 
-def _config(credential) -> dict:
+def _config(credential: Document) -> dict:
 	return {
 		"credential": credential.name,
 		"endpoint_url": credential.gateway_url,

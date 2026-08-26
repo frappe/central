@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import NoReturn
+
 import frappe
 import requests
 from frappe import _
+from frappe.model.document import Document
 
 _TIMEOUT = 30
 
@@ -14,7 +17,7 @@ class GarageDriver:
 
 	key = "storage"
 
-	def create_bucket(self, backend, bucket: str) -> str:
+	def create_bucket(self, backend: Document, bucket: str) -> str:
 		"""Create a bucket and return its id. Fails if the name is taken: Garage aliases
 		are cluster-wide, and adopting a bucket Central did not create here would hand a
 		key to whatever already sits under that name."""
@@ -23,12 +26,14 @@ class GarageDriver:
 
 		return self._call(backend, "CreateBucket", body={"globalAlias": bucket})["id"]
 
-	def get_bucket_id(self, backend, bucket: str) -> str | None:
-		info = self._call(backend, "GetBucketInfo", method="GET", params={"globalAlias": bucket}, throw=False)
+	def get_bucket_id(self, backend: Document, bucket: str) -> str | None:
+		"""The bucket's id, or None when no such alias exists — a 404 is an answer here,
+		not a failure."""
+		response = self._request(backend, "GetBucketInfo", method="GET", params={"globalAlias": bucket})
 
-		return info["id"] if info else None
+		return response.json()["id"] if response.ok else None
 
-	def mint_key(self, backend, name: str, bucket_id: str) -> dict:
+	def mint_key(self, backend: Document, name: str, bucket_id: str) -> dict:
 		"""Create a key then allow key on that bucket."""
 		key = self._call(backend, "CreateKey", body={"name": name})
 		self._call(
@@ -43,20 +48,41 @@ class GarageDriver:
 
 		return {"access_key_id": key["accessKeyId"], "secret_access_key": key["secretAccessKey"]}
 
-	def revoke_key(self, backend, access_key_id: str) -> None:
+	def provision_site(self, backend: Document, site: str, options: dict) -> NoReturn:
+		frappe.throw(_("Object storage is issued per bench, not per site."))
+
+	def provision_key(self, backend: Document, name: str, email: str, options: dict) -> NoReturn:
+		frappe.throw(_("Object storage keys are issued per bench, not per team."))
+
+	def revoke_key(self, backend: Document, access_key_id: str) -> None:
 		"""Revoke key access."""
 		self._call(backend, "DeleteKey", params={"id": access_key_id})
 
 	def _call(
 		self,
-		backend,
+		backend: Document,
 		endpoint: str,
 		method: str = "POST",
 		params: dict | None = None,
 		body: dict | None = None,
-		throw: bool = True,
-	) -> dict | None:
-		response = requests.request(
+	) -> dict:
+		response = self._request(backend, endpoint, method=method, params=params, body=body)
+		if not response.ok:
+			frappe.throw(
+				_("Garage request failed ({0}): {1}").format(response.status_code, response.text[:200])
+			)
+
+		return response.json()
+
+	def _request(
+		self,
+		backend: Document,
+		endpoint: str,
+		method: str = "POST",
+		params: dict | None = None,
+		body: dict | None = None,
+	) -> requests.Response:
+		return requests.request(
 			method,
 			f"{backend.base_url.rstrip('/')}/v2/{endpoint}",
 			params=params,
@@ -64,11 +90,3 @@ class GarageDriver:
 			headers={"Authorization": f"Bearer {backend.get_password('control_api_secret')}"},
 			timeout=_TIMEOUT,
 		)
-		if response.status_code >= 400:
-			if not throw:
-				return None
-			frappe.throw(
-				_("Garage request failed ({0}): {1}").format(response.status_code, response.text[:200])
-			)
-
-		return response.json()

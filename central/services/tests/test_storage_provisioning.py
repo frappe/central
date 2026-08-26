@@ -142,7 +142,6 @@ class TestStorageProvisioning(IntegrationTestCase):
 			storage.bench_config(self.pilot)
 
 	def test_a_name_another_tenant_holds_is_refused(self):
-		# Adopting a bucket Central did not create here would hand over someone else's objects.
 		with (
 			patch.object(GarageDriver, "get_bucket_id", return_value="someone-elses-bucket"),
 			self.assertRaises(frappe.ValidationError),
@@ -159,6 +158,16 @@ class TestStorageProvisioning(IntegrationTestCase):
 			storage.enable_bench(self.pilot, _BUCKET)
 		with self._mint(), self.assertRaisesRegex(frappe.ValidationError, "already owns the bucket"):
 			storage.enable_bench(self.pilot, "other-name")
+
+	def test_enrolling_a_garage_backend_mints_its_secrets(self):
+		first = self.backend.enroll()
+		second = frappe.get_doc("Service Backend", self.backend.name).enroll()
+
+		self.assertEqual(first, second)
+		self.assertEqual(
+			frappe.get_doc("Service Backend", self.backend.name).get_password("rpc_secret"),
+			first["rpc_secret"],
+		)
 
 	def test_cluster_tokens_are_minted_once_per_region(self):
 		# Nodes 2 and 3 ask after node 1; identical secrets are what lets them cluster.

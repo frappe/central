@@ -33,19 +33,30 @@ class ServiceBackend(Document):
 		# can arbitrate. NULL <> "" in MariaDB, which is what duplicated rows.
 		self.region = self.region or ""
 
+	@property
+	def handler_key(self) -> str | None:
+		return frappe.db.get_value("Add-on Service", self.service, "handler_key")
+
 	@frappe.whitelist()
-	def enroll(self) -> None:
-		"""Desk entry point. The one-time bootstrap secret is read from the raw request
-		and popped, so it is never recorded as a logged whitelist argument."""
+	def enroll(self) -> dict | None:
+		"""Desk entry point. Garage mints its own cluster secrets and returns them to seed
+		into `garage.toml`; every other backend exchanges a bootstrap secret, popped from
+		the raw request so it is never logged as a whitelist argument."""
+		if self.handler_key == "storage":
+			from central.services.storage import cluster_tokens
+
+			return cluster_tokens(self)
+
 		self.apply_control_credential(pop_bootstrap_secret())
+
+		return None
 
 	def apply_control_credential(self, bootstrap_secret: str) -> None:
 		"""Exchange a bootstrap secret for this backend's own control credential, minted
 		by the executor. Stores it write-only and activates."""
 		from central.services.drivers.base import get_driver
 
-		handler = frappe.db.get_value("Add-on Service", self.service, "handler_key")
-		credentials = get_driver(handler).enroll(self.base_url, bootstrap_secret)
+		credentials = get_driver(self.handler_key).enroll(self.base_url, bootstrap_secret)
 
 		self.control_api_key = credentials["api_key"]
 		self.control_api_secret = credentials["api_secret"]

@@ -22,9 +22,13 @@ class ServiceDriver(Protocol):
 def get_driver(handler_key: str) -> ServiceDriver:
 	"""Resolve a shipped driver by its code key. Drivers are code, never a
 	database-supplied import path."""
+	from central.services.drivers.garage import GarageDriver
 	from central.services.drivers.grove import GroveDriver
 
-	drivers: dict[str, ServiceDriver] = {GroveDriver.key: GroveDriver()}
+	drivers: dict[str, ServiceDriver] = {
+		GroveDriver.key: GroveDriver(),
+		GarageDriver.key: GarageDriver(),
+	}
 
 	driver = drivers.get(handler_key)
 	if not driver:
