@@ -1,6 +1,8 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
+from urllib.parse import urlparse
+
 import frappe
 from frappe.model.document import Document
 
@@ -32,6 +34,32 @@ class ServiceBackend(Document):
 		# NULL so re-register lookups match and the unique index (on_doctype_update)
 		# can arbitrate. NULL <> "" in MariaDB, which is what duplicated rows.
 		self.region = self.region or ""
+		self._validate_endpoint("base_url")
+		self._validate_endpoint("s3_endpoint")
+		if self.handler_key == "storage" and not self.s3_endpoint:
+			frappe.throw(frappe._("An object-storage backend needs an S3 endpoint to hand out."))
+
+	def _validate_endpoint(self, fieldname: str) -> None:
+		"""A malformed endpoint surfaces as an opaque requests error on the first call to
+		the provider, far from the typo. Reject it at the row instead."""
+		value = (self.get(fieldname) or "").strip()
+		if not value:
+			return
+
+		parsed = urlparse(value)
+		try:
+			parsed.port
+		except ValueError:
+			parsed = None
+
+		if not parsed or not parsed.scheme or not parsed.hostname:
+			frappe.throw(
+				frappe._("{0} is not a valid URL: {1}").format(
+					self.meta.get_label(fieldname), frappe.bold(value)
+				)
+			)
+
+		self.set(fieldname, value.rstrip("/"))
 
 	@property
 	def handler_key(self) -> str | None:

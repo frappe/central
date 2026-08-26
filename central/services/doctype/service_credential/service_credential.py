@@ -8,10 +8,10 @@ from frappe.model.document import Document
 
 class ServiceCredential(Document):
 	"""A provider credential Central issued under a team's Managed Service. `subject_type`
-	discriminates the shapes that share the same billing meter: a per-`Site` credential the
-	bench delivers to one site, a team-level API key (`Team`) with a `label` for use in the
-	customer's own apps, or a per-`Bench` object-storage key scoped to that bench's bucket.
-	Each is revocable on its own."""
+	discriminates the two shapes that share the same billing meter: a per-`Site` credential
+	the bench delivers to one site, or a team-level credential (`Team`) with a `label` — an
+	API key for the customer's own apps, or an object-storage bucket and its key. Each is
+	revocable on its own."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -26,13 +26,12 @@ class ServiceCredential(Document):
 		label: DF.Data | None
 		last_usage_total: DF.Float
 		managed_service: DF.Link
-		pilot_credential: DF.Link | None
 		provider_bucket_id: DF.Data | None
 		provider_ref: DF.Data | None
 		service_backend: DF.Link | None
 		site: DF.Link | None
 		status: DF.Literal["Active", "Revoked", "Failed", "Provisioning"]
-		subject_type: DF.Literal["Site", "Team", "Bench"]
+		subject_type: DF.Literal["Site", "Team"]
 	# end: auto-generated types
 
 	def validate(self) -> None:
@@ -40,8 +39,6 @@ class ServiceCredential(Document):
 			self._validate_site_subject()
 		elif self.subject_type == "Team" and not self.label:
 			frappe.throw(_("A team API key needs a label."))
-		elif self.subject_type == "Bench" and not self.pilot_credential:
-			frappe.throw(_("A bench credential needs a pilot credential."))
 
 	def _validate_site_subject(self) -> None:
 		if not self.site:
@@ -67,11 +64,4 @@ def on_doctype_update():
 	# NULL site, which a unique index treats as distinct, so they never collide here.
 	frappe.db.add_unique(
 		"Service Credential", ["managed_service", "site"], constraint_name="unique_managed_service_site"
-	)
-	# The same arbiter for bench credentials. Site and team rows carry a NULL pilot
-	# credential, so they never collide on this index.
-	frappe.db.add_unique(
-		"Service Credential",
-		["managed_service", "pilot_credential"],
-		constraint_name="unique_managed_service_bench",
 	)
