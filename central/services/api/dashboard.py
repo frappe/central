@@ -173,6 +173,7 @@ def revoke_bucket_key(name: str) -> dict:
 @require_service_capability("service:view")
 def list_buckets(managed_service: str) -> list[dict]:
 	"""The team's object-storage buckets, masked (no raw secrets). service:view."""
+	print(managed_service)
 	rows = frappe.get_all(
 		"Service Credential",
 		filters={"managed_service": managed_service, "subject_type": "Team"},
@@ -188,7 +189,9 @@ def list_buckets(managed_service: str) -> list[dict]:
 		order_by="creation desc",
 	)
 	for row in rows:
-		row["masked_key"] = _mask_key(get_decrypted_password("Service Credential", row.name, "api_key"))
+		row["masked_key"] = _mask_key(
+			get_decrypted_password("Service Credential", row.name, "api_key", raise_exception=False)
+		)
 		row["region"] = frappe.db.get_value("Service Backend", row.service_backend, "region")
 
 	return rows

@@ -178,6 +178,25 @@ class TestStorageProvisioning(IntegrationTestCase):
 			storage.create_bucket(self.team, _BUCKET)
 
 		self.assertEqual(delete_bucket.call_args.args[-1], _BUCKET_ID)
+		# Garage is clean, so nothing is left to retry from.
+		self.assertFalse(
+			frappe.db.exists("Service Credential", {"managed_service": self.managed.name})
+		)
+
+	def test_a_clean_rollback_lets_the_next_attempt_start_fresh(self):
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
+			self.assertRaises(RuntimeError),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		with self._mint():
+			config = storage.create_bucket(self.team, _BUCKET)
+			# A fresh create, not an adopted reservation.
+			GarageDriver.create_bucket.assert_called_once()
+
+		self.assertEqual(config["status"], "Active")
 
 	def test_a_key_that_cannot_be_stored_is_revoked(self):
 		original_save = frappe.model.document.Document.save
@@ -210,6 +229,20 @@ class TestStorageProvisioning(IntegrationTestCase):
 			storage.create_bucket(self.team, _BUCKET)
 
 		delete_bucket.assert_called_once()
+
+	def test_a_row_survives_when_cleanup_could_not_finish(self):
+		# The bucket is still out there, so the row is the only record of it.
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
+			patch.object(GarageDriver, "delete_bucket", side_effect=RuntimeError("delete failed")),
+			self.assertRaises(RuntimeError),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		stranded = frappe.get_doc("Service Credential", {"managed_service": self.managed.name})
+		self.assertEqual(stranded.status, "Failed")
+		self.assertEqual(stranded.provider_bucket_id, _BUCKET_ID)
 
 	def test_enrolling_a_garage_backend_mints_its_secrets(self):
 		first = self.backend.enroll()

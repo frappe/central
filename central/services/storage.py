@@ -16,10 +16,8 @@ BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 
 def mint_cluster_tokens(region: str, host: str) -> dict:
-	"""The secrets a Garage node needs in its `garage.toml`. Opaque, not signed: Garage
-	compares the bearer token it was configured with. Idempotent per region — every node
-	in a cluster needs the same `rpc_secret`, and the first host to ask stays the entry
-	node Central drives."""
+	"""A node's `garage.toml` secrets. Idempotent per region: every node in a cluster
+	needs the same `rpc_secret`, and the first host to ask stays the entry node."""
 	add_on = get_active_service(SERVICE)
 	name = frappe.db.get_value("Service Backend", {"service": add_on.name, "region": region})
 	backend = (
@@ -41,8 +39,8 @@ def mint_cluster_tokens(region: str, host: str) -> dict:
 
 
 def cluster_tokens(backend: Document) -> dict:
-	"""One cluster's secrets, generated on first ask and returned unchanged after. Filled
-	in per field so a partially configured row completes rather than throws."""
+	"""Generated on first ask, unchanged after. Per field, so a partly configured row
+	completes rather than throws."""
 	missing = [f for f in CLUSTER_SECRETS if not backend.get_password(f, raise_exception=False)]
 	if missing:
 		for fieldname in missing:
@@ -58,9 +56,7 @@ def cluster_tokens(backend: Document) -> dict:
 
 
 def create_bucket(team: str, bucket: str) -> dict:
-	"""Create a bucket for the team and mint the key that reaches it. The name is the
-	user's, and Garage aliases are cluster-wide, so a name another team holds is refused
-	rather than borrowed."""
+	"""Create the team's bucket and mint the key scoped to it."""
 	validate_bucket_name(bucket)
 	managed_service = active_managed_service(team, SERVICE)
 	if frappe.db.exists(
@@ -88,7 +84,6 @@ def create_bucket(team: str, bucket: str) -> dict:
 		)
 		stored.save()
 	except Exception:
-		print("DISCARDING")
 		_discard(driver, backend, stored, key, bucket_id)
 		raise
 
@@ -97,7 +92,7 @@ def create_bucket(team: str, bucket: str) -> dict:
 
 def revoke_bucket(name: str) -> dict:
 	"""Revoke a bucket's key at the cluster that issued it. The bucket and its objects
-	stay: revoking access is not a delete."""
+	stay."""
 	stored = frappe.get_doc("Service Credential", name)
 	if stored.status == "Revoked":
 		return {"name": name, "status": "Revoked"}
@@ -115,7 +110,15 @@ def _reserve(managed_service: str, bucket: str, backend: Document) -> Document:
 	failure mid-create: without it the bucket is untracked, and nothing can tell Central's
 	own orphan from another tenant's. (Skipped under tests, where the row stays visible in
 	the test transaction.)"""
-	stored = frappe.new_doc("Service Credential")
+
+	abandoned = frappe.db.get_value(
+		"Service Credential",
+		{"managed_service": managed_service, "label": bucket, "status": "Provisioning"},
+		"name",
+	)
+	stored = (
+		frappe.get_doc("Service Credential", abandoned) if abandoned else frappe.new_doc("Service Credential")
+	)
 	stored.update(
 		{
 			"subject_type": "Team",
@@ -135,13 +138,16 @@ def _reserve(managed_service: str, bucket: str, backend: Document) -> Document:
 def _discard(
 	driver: GarageDriver, backend: Document, stored: Document, key: dict | None, bucket_id: str | None
 ) -> None:
-	"""Undo a half-finished create. Every step is attempted and none may raise — one
-	failed cleanup must not skip the next, and none of them may replace the error the
-	caller is about to re-raise. What could not be undone is logged to reconcile."""
+	"""Undo a half-finished create. Nothing here may raise: a failed cleanup must not skip
+	the next, nor replace the error the caller is re-raising. The row goes only when Garage
+	is provably clean; otherwise it stays as Failed, the only record of what leaked."""
+	discarded = True
+
 	if key:
 		try:
 			driver.revoke_key(backend, key["access_key_id"])
 		except Exception:
+			discarded = False
 			frappe.log_error(
 				title="Garage key left behind after a failed provision",
 				message=f"{key['access_key_id']} is still live.",
@@ -150,17 +156,24 @@ def _discard(
 	if bucket_id:
 		try:
 			driver.delete_bucket(backend, bucket_id)
-			stored.db_set("provider_bucket_id", None, commit=not frappe.in_test)
 		except Exception:
+			discarded = False
 			frappe.log_error(
 				title="Garage bucket left behind after a failed provision",
 				message=f"{bucket_id} still exists.",
 			)
 
+	if not discarded:
+		stored.db_set("status", "Failed", commit=not frappe.in_test)
+		return
+
+	stored.delete(ignore_permissions=True)
+	if not frappe.in_test:
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- undo the committed reservation
+
 
 def validate_bucket_name(bucket: str) -> None:
-	"""S3 bucket naming, which Garage's global aliases follow: 3-63 characters, lowercase
-	letters, digits, dots and hyphens, starting and ending alphanumeric."""
+	"""S3 bucket naming, which Garage's global aliases follow."""
 	if not bucket or not BUCKET_NAME_PATTERN.match(bucket):
 		frappe.throw(
 			_(
