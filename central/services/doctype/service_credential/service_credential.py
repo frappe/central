@@ -28,8 +28,9 @@ class ServiceCredential(Document):
 		managed_service: DF.Link
 		pilot_credential: DF.Link | None
 		provider_ref: DF.Data | None
+		service_backend: DF.Link | None
 		site: DF.Link | None
-		status: DF.Literal["Active", "Revoked", "Failed"]
+		status: DF.Literal["Active", "Revoked", "Failed", "Provisioning"]
 		subject_type: DF.Literal["Site", "Team", "Bench"]
 	# end: auto-generated types
 

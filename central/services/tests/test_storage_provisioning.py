@@ -1,7 +1,7 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -46,13 +46,12 @@ class TestStorageProvisioning(IntegrationTestCase):
 			.insert()
 			.name
 		)
-		# A fresh id per test: reusing one would bind this bench to the previous team.
 		self.pilot = f"pcred-storage-{frappe.generate_hash(length=8)}"
 		PilotCredential.mint(team=self.team, pilot_credential_id=self.pilot)
 		subscription = frappe.get_doc({"doctype": "Subscription", "team": self.team}).insert().name
 
 		_ensure_storage_service()
-		# Frappe rolls back only at class teardown, so clear our own rows between methods.
+		# Frappe rolls back only at class teardown; clear our own rows between methods.
 		for managed in frappe.get_all(
 			"Managed Service", {"team": self.team, "add_on_service": "storage"}, pluck="name"
 		):
@@ -84,9 +83,11 @@ class TestStorageProvisioning(IntegrationTestCase):
 		"""Garage stubbed out; `existing_bucket` is what GetBucketInfo would find."""
 		return patch.multiple(
 			GarageDriver,
-			get_bucket_id=lambda *args, **kwargs: existing_bucket,
-			create_bucket=lambda *args, **kwargs: _BUCKET_ID,
-			mint_key=lambda *args, **kwargs: _KEY,
+			get_bucket_id=MagicMock(return_value=existing_bucket),
+			create_bucket=MagicMock(return_value=_BUCKET_ID),
+			mint_key=MagicMock(return_value=_KEY),
+			delete_bucket=MagicMock(),
+			revoke_key=MagicMock(),
 		)
 
 	def test_enable_bench_stores_encrypted_credential(self):
@@ -169,8 +170,95 @@ class TestStorageProvisioning(IntegrationTestCase):
 			first["rpc_secret"],
 		)
 
+	def test_a_failed_mint_leaves_a_reservation_the_retry_adopts(self):
+		with self._mint(), patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")):
+			with self.assertRaises(RuntimeError):
+				storage.enable_bench(self.pilot, _BUCKET)
+
+		reserved = frappe.get_doc("Service Credential", {"pilot_credential": self.pilot})
+		self.assertEqual(reserved.status, "Provisioning")
+		self.assertEqual(reserved.label, _BUCKET)
+
+		with self._mint(existing_bucket=_BUCKET_ID):
+			config = storage.enable_bench(self.pilot, _BUCKET)
+			self.assertFalse(GarageDriver.create_bucket.called)
+
+		self.assertEqual(config["credential"], reserved.name)
+		self.assertEqual(config["status"], "Active")
+
+	def test_a_bucket_this_attempt_created_is_deleted_on_failure(self):
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaises(RuntimeError),
+		):
+			storage.enable_bench(self.pilot, _BUCKET)
+
+		self.assertEqual(delete_bucket.call_args.args[-1], _BUCKET_ID)
+
+	def test_an_adopted_bucket_survives_a_failed_retry(self):
+		with self._mint(), patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("down")):
+			with self.assertRaises(RuntimeError):
+				storage.enable_bench(self.pilot, _BUCKET)
+
+		with (
+			self._mint(existing_bucket=_BUCKET_ID),
+			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("down")),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaises(RuntimeError),
+		):
+			storage.enable_bench(self.pilot, _BUCKET)
+
+		delete_bucket.assert_not_called()
+
+	def test_a_key_that_cannot_be_stored_is_revoked(self):
+		original_save = frappe.model.document.Document.save
+
+		def fail_on_activation(doc, *args, **kwargs):
+			if doc.doctype == "Service Credential" and doc.status == "Active":
+				raise RuntimeError("db gone")
+			return original_save(doc, *args, **kwargs)
+
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "revoke_key") as revoke,
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			patch.object(frappe.model.document.Document, "save", fail_on_activation),
+			self.assertRaises(RuntimeError),
+		):
+			storage.enable_bench(self.pilot, _BUCKET)
+
+		revoke.assert_called_once()
+		delete_bucket.assert_called_once()
+		self.assertEqual(revoke.call_args.args[-1], _KEY["access_key_id"])
+
+	def test_disable_revokes_at_the_issuing_cluster_not_the_active_one(self):
+		with self._mint():
+			storage.enable_bench(self.pilot, _BUCKET)
+
+		# A second cluster comes up and the first goes inactive; the key still lives on
+		# the one that minted it.
+		frappe.db.set_value("Service Backend", self.backend.name, "is_active", 0)
+		newer = frappe.get_doc(
+			{
+				"doctype": "Service Backend",
+				"service": "storage",
+				"region": "newer-dc",
+				"base_url": "http://garage-2.localhost:3903",
+				"s3_endpoint": "http://garage-2.localhost:3900",
+				"control_api_secret": "admin-token",
+				"is_active": 1,
+			}
+		).insert()
+
+		with patch.object(GarageDriver, "revoke_key") as revoke:
+			storage.disable_bench(self.pilot)
+
+		self.assertEqual(revoke.call_args.args[0].name, self.backend.name)
+		self.assertNotEqual(revoke.call_args.args[0].name, newer.name)
+
 	def test_cluster_tokens_are_minted_once_per_region(self):
-		# Nodes 2 and 3 ask after node 1; identical secrets are what lets them cluster.
 		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
 		first = storage.mint_cluster_tokens("test-dc", "10.0.0.1")
 		second = storage.mint_cluster_tokens("test-dc", "10.0.0.2")

@@ -34,17 +34,22 @@ class GarageDriver:
 		return response.json()["id"] if response.ok else None
 
 	def mint_key(self, backend: Document, name: str, bucket_id: str) -> dict:
-		"""Create a key then allow key on that bucket."""
+		"""Create a key then allow it on that bucket. A key that cannot be granted is
+		deleted rather than left live with no bucket and nothing tracking it."""
 		key = self._call(backend, "CreateKey", body={"name": name})
-		self._call(
-			backend,
-			"AllowBucketKey",
-			body={
-				"bucketId": bucket_id,
-				"accessKeyId": key["accessKeyId"],
-				"permissions": {"read": True, "write": True, "owner": False},
-			},
-		)
+		try:
+			self._call(
+				backend,
+				"AllowBucketKey",
+				body={
+					"bucketId": bucket_id,
+					"accessKeyId": key["accessKeyId"],
+					"permissions": {"read": True, "write": True, "owner": False},
+				},
+			)
+		except Exception:
+			self.revoke_key(backend, key["accessKeyId"])
+			raise
 
 		return {"access_key_id": key["accessKeyId"], "secret_access_key": key["secretAccessKey"]}
 
@@ -53,6 +58,11 @@ class GarageDriver:
 
 	def provision_key(self, backend: Document, name: str, email: str, options: dict) -> NoReturn:
 		frappe.throw(_("Object storage keys are issued per bench, not per team."))
+
+	def delete_bucket(self, backend: Document, bucket_id: str) -> None:
+		"""Destroy a bucket. Garage refuses a non-empty one, which is the backstop that
+		keeps this from ever taking objects with it."""
+		self._call(backend, "DeleteBucket", params={"id": bucket_id})
 
 	def revoke_key(self, backend: Document, access_key_id: str) -> None:
 		"""Revoke key access."""
