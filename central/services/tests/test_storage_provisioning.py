@@ -179,7 +179,8 @@ class TestStorageProvisioning(IntegrationTestCase):
 		self.assertEqual(reserved.status, "Provisioning")
 		self.assertEqual(reserved.label, _BUCKET)
 
-		with self._mint(existing_bucket=_BUCKET_ID):
+		reserved.db_set("provider_bucket_id", _BUCKET_ID)
+		with self._mint():
 			config = storage.enable_bench(self.pilot, _BUCKET)
 			self.assertFalse(GarageDriver.create_bucket.called)
 
@@ -202,8 +203,13 @@ class TestStorageProvisioning(IntegrationTestCase):
 			with self.assertRaises(RuntimeError):
 				storage.enable_bench(self.pilot, _BUCKET)
 
+		# A bucket that predates the retry may hold objects, so a second failure must
+		# not take it with it.
+		reserved = frappe.get_doc("Service Credential", {"pilot_credential": self.pilot})
+		reserved.db_set("provider_bucket_id", _BUCKET_ID)
+
 		with (
-			self._mint(existing_bucket=_BUCKET_ID),
+			self._mint(),
 			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("down")),
 			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
 			self.assertRaises(RuntimeError),
@@ -211,6 +217,34 @@ class TestStorageProvisioning(IntegrationTestCase):
 			storage.enable_bench(self.pilot, _BUCKET)
 
 		delete_bucket.assert_not_called()
+
+	def test_a_retry_never_adopts_a_bucket_by_name(self):
+		"""The alias can belong to another tenant by the time the retry runs; only the
+		reserved bucket id is safe to grant a key on."""
+		with self._mint(), patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("down")):
+			with self.assertRaises(RuntimeError):
+				storage.enable_bench(self.pilot, _BUCKET)
+
+		reserved = frappe.get_doc("Service Credential", {"pilot_credential": self.pilot})
+		self.assertIsNone(reserved.provider_bucket_id)
+
+		# The name now resolves to a stranger's bucket. The retry must create, not adopt.
+		with self._mint(existing_bucket="another-tenants-bucket"):
+			storage.enable_bench(self.pilot, _BUCKET)
+			GarageDriver.create_bucket.assert_called_once()
+			self.assertEqual(GarageDriver.mint_key.call_args.args[-1], _BUCKET_ID)
+
+	def test_cleanup_continues_and_preserves_the_original_error(self):
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
+			patch.object(GarageDriver, "revoke_key", side_effect=RuntimeError("revoke failed")),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaisesRegex(RuntimeError, "garage down"),
+		):
+			storage.enable_bench(self.pilot, _BUCKET)
+
+		delete_bucket.assert_called_once()
 
 	def test_a_key_that_cannot_be_stored_is_revoked(self):
 		original_save = frappe.model.document.Document.save

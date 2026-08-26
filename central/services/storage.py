@@ -16,13 +16,32 @@ SERVICE = "storage"
 SECRET_LENGTH = 32
 CLUSTER_SECRETS = ("control_api_secret", "metrics_token", "rpc_secret")
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+_LEAK = "Garage {0} left behind after a failed provision"
 
 
 def mint_cluster_tokens(region: str, host: str) -> dict:
 	"""The secrets a Garage node needs in its `garage.toml`. Opaque, not signed: Garage
 	compares the bearer token it was configured with. Idempotent per region — every node
-	in a cluster needs the same `rpc_secret`."""
-	return cluster_tokens(_cluster_backend(region, host))
+	in a cluster needs the same `rpc_secret`, and the first host to ask stays the entry
+	node Central drives."""
+	add_on = get_active_service(SERVICE)
+	name = frappe.db.get_value("Service Backend", {"service": add_on.name, "region": region})
+	backend = (
+		frappe.get_doc("Service Backend", name)
+		if name
+		else frappe.get_doc(
+			{
+				"doctype": "Service Backend",
+				"service": add_on.name,
+				"region": region,
+				"base_url": f"http://{host}:3903",
+				"s3_endpoint": f"http://{host}:3900",
+				"is_active": 0,
+			}
+		).insert(ignore_permissions=True)
+	)
+
+	return cluster_tokens(backend)
 
 
 def cluster_tokens(backend: Document) -> dict:
@@ -54,17 +73,27 @@ def enable_bench(pilot_credential: str, bucket: str) -> dict:
 
 	team = frappe.db.get_value("Pilot Credential", pilot_credential, "team")
 	managed_service = active_managed_service(team, SERVICE)
-	backend = _issuing_backend(credential)
+	# The cluster that holds this bench's bucket, not whichever backend is active now: a
+	# key can only be minted or revoked at the Garage that owns the bucket.
+	backend = (
+		frappe.get_doc("Service Backend", credential.service_backend)
+		if credential and credential.service_backend
+		else get_backend(get_active_service(SERVICE).name)
+	)
 
 	stored = _reserve(credential, pilot_credential, managed_service, bucket, backend)
-
 	driver = GarageDriver()
-	bucket_id = (credential and driver.get_bucket_id(backend, bucket)) or None
-	created = not bucket_id
 	key = None
 
+	# A retry adopts by id alone; re-resolving the name could land on a bucket another
+	# tenant claimed since. The id is recorded the moment the bucket exists.
+	bucket_id = credential.provider_bucket_id if credential else None
+	fresh_bucket_id = None
+	if not bucket_id:
+		bucket_id = fresh_bucket_id = driver.create_bucket(backend, bucket)
+		stored.db_set("provider_bucket_id", bucket_id, commit=not frappe.in_test)
+
 	try:
-		bucket_id = bucket_id or driver.create_bucket(backend, bucket)
 		key = driver.mint_key(backend, pilot_credential, bucket_id)
 		stored.update(
 			{
@@ -76,19 +105,33 @@ def enable_bench(pilot_credential: str, bucket: str) -> dict:
 		)
 		stored.save()
 	except Exception:
-		_discard(driver, backend, key, bucket_id if created else None)
+		_discard(driver, backend, stored, key, fresh_bucket_id)
 		raise
 
 	return _config(stored)
 
 
-def _discard(driver: GarageDriver, backend: Document, key: dict | None, bucket_id: str | None) -> None:
-	"""Undo a half-finished provision. The bucket goes only when this attempt created it:
-	an adopted one predates the attempt and may hold objects."""
+def _discard(
+	driver: GarageDriver, backend: Document, stored: Document, key: dict | None, fresh_bucket_id: str | None
+) -> None:
+	"""Undo a half-finished provision. Only a bucket this attempt created is passed here;
+	one carried over from an earlier attempt may hold objects.
+
+	Every step is attempted and none may raise — one failed cleanup must not skip the
+	next, and none of them may replace the provisioning error the caller is about to
+	re-raise. What could not be undone is logged for an operator to reconcile."""
 	if key:
-		driver.revoke_key(backend, key["access_key_id"])
-	if bucket_id:
-		driver.delete_bucket(backend, bucket_id)
+		try:
+			driver.revoke_key(backend, key["access_key_id"])
+		except Exception:
+			frappe.log_error(title=_LEAK.format("key"), message=f"{key['access_key_id']} is still live.")
+
+	if fresh_bucket_id:
+		try:
+			driver.delete_bucket(backend, fresh_bucket_id)
+			stored.db_set("provider_bucket_id", None, commit=not frappe.in_test)
+		except Exception:
+			frappe.log_error(title=_LEAK.format("bucket"), message=f"{fresh_bucket_id} still exists.")
 
 
 def _reserve(
@@ -157,40 +200,11 @@ def validate_bucket_name(bucket: str) -> None:
 		)
 
 
-def _cluster_backend(region: str, host: str) -> Document:
-	"""One region's Garage cluster row, reserved on first ask. The first host to ask
-	stays the entry node Central drives."""
-	add_on = get_active_service(SERVICE)
-	name = frappe.db.get_value("Service Backend", {"service": add_on.name, "region": region})
-	if name:
-		return frappe.get_doc("Service Backend", name)
-
-	return frappe.get_doc(
-		{
-			"doctype": "Service Backend",
-			"service": add_on.name,
-			"region": region,
-			"base_url": f"http://{host}:3903",
-			"s3_endpoint": f"http://{host}:3900",
-			"is_active": 0,
-		}
-	).insert(ignore_permissions=True)
-
-
-def _issuing_backend(credential) -> Document:
-	"""The cluster that holds this bench's bucket, not whichever backend is active now.
-	A key can only be minted or revoked at the Garage that owns the bucket."""
-	if credential and credential.service_backend:
-		return frappe.get_doc("Service Backend", credential.service_backend)
-
-	return get_backend(get_active_service(SERVICE).name)
-
-
 def _existing_credential(pilot_credential: str) -> frappe._dict | None:
 	return frappe.db.get_value(
 		"Service Credential",
 		{"subject_type": "Bench", "pilot_credential": pilot_credential},
-		["name", "status", "label", "service_backend"],
+		["name", "status", "label", "service_backend", "provider_bucket_id"],
 		as_dict=True,
 	)
 

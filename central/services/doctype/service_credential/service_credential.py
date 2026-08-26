@@ -27,6 +27,7 @@ class ServiceCredential(Document):
 		last_usage_total: DF.Float
 		managed_service: DF.Link
 		pilot_credential: DF.Link | None
+		provider_bucket_id: DF.Data | None
 		provider_ref: DF.Data | None
 		service_backend: DF.Link | None
 		site: DF.Link | None
