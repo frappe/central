@@ -59,13 +59,14 @@ const serverGroups = computed(() => {
 	return groups.sort((a, b) => b.total - a.total)
 })
 
-// One machine needs no heading: the section is already called Servers.
 const named = computed(() => serverGroups.value.length > 1)
 const sum = (rows: BillingLine[]): number =>
 	rows.reduce((t, li) => t + Number(li.amount || 0), 0)
 
 const segmented = (group: { lines: BillingLine[] }): boolean =>
 	group.lines.length > 1
+const showAmount = (group: { lines: BillingLine[] }): boolean =>
+	segmented(group) || !named.value
 function showRate(li: BillingLine, group: { lines: BillingLine[] }): boolean {
 	if (!li.rate) return false
 	if (segmented(group)) return true
@@ -114,8 +115,6 @@ function isEstimated(li: BillingLine): boolean {
 						</span>
 					</div>
 
-					<!-- The connector is only drawn where a machine actually changed during
-				     the period; one row is not a sequence. -->
 					<ul
 						:class="
             named
@@ -132,7 +131,7 @@ function isEstimated(li: BillingLine): boolean {
 						>
 							<span
 								v-if="named && group.lines.length > 1"
-								class="absolute -left-[19.5px] top-[14px] size-[7px] rounded-full bg-surface-gray-5 ring-2 ring-surface-white"
+								class="absolute -left-[19.5px] top-[14px] size-[7px] rounded-full bg-surface-gray-5 ring-2 ring-surface-base"
 								aria-hidden="true"
 							/>
 							<div class="min-w-0">
@@ -148,7 +147,7 @@ function isEstimated(li: BillingLine): boolean {
 								</p>
 							</div>
 							<span
-								v-if="segmented(group) || (showBasis && isEstimated(li))"
+								v-if="showAmount(group) || (showBasis && isEstimated(li))"
 								class="flex shrink-0 items-center gap-2 pl-3"
 							>
 								<Badge
@@ -158,7 +157,7 @@ function isEstimated(li: BillingLine): boolean {
 									label="Estimated"
 								/>
 								<span
-									v-if="segmented(group)"
+									v-if="showAmount(group)"
 									class="text-sm tabular-nums text-ink-gray-8"
 								>
 									{{ money(li.amount, currency) }}

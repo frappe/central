@@ -1,5 +1,9 @@
+<script lang="ts">
+export type PaymentNetwork = 'visa' | 'mastercard' | 'rupay' | 'upi'
+</script>
+
 <script setup lang="ts">
-defineProps<{ network: 'visa' | 'mastercard' | 'rupay' | 'upi' }>()
+defineProps<{ network: PaymentNetwork }>()
 </script>
 
 <template>
@@ -83,7 +87,7 @@ defineProps<{ network: 'visa' | 'mastercard' | 'rupay' | 'upi' }>()
 		</svg>
 
 		<svg
-			v-else
+			v-else-if="network === 'upi'"
 			viewBox="3.3 0 127.4 34.5"
 			class="h-[13px] w-auto"
 			role="img"

@@ -7,9 +7,6 @@ import type {
 	SubscriptionRow,
 } from '@/types/billing'
 
-// One row of "what you're paying for". Lives in its own component because the
-// card shows the top few and the tray shows all of them — rendering the row twice
-// is how the two quietly drift apart.
 defineProps<{
 	row: PayingForItem
 	currency: string

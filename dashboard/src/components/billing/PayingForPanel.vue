@@ -6,8 +6,6 @@ import SidePanel from '@/components/common/SidePanel.vue'
 import { usePayingFor } from '@/composables/usePayingFor'
 import { money } from '@/lib/format'
 
-// Everything being billed this cycle, in full. The card keeps the top few; this
-// is where the long tail goes, so the card never grows its own scrollbar.
 const open = defineModel<boolean>('open', { default: false })
 const { rows, loading, currency, total, openServer } = usePayingFor()
 

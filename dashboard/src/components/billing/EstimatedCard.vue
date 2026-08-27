@@ -7,7 +7,9 @@ import {
 	Tooltip,
 	useCall,
 } from 'frappe-ui'
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import type { ChartTooltipItem } from 'frappe-ui/charts'
+import { ChartTooltip } from 'frappe-ui/charts'
+import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -77,21 +79,25 @@ const change = computed(() => {
 })
 const taxLabel = computed(() => fc.value?.tax_type || 'tax')
 
-// Ramp + hover card duplicated from the chart package (style.css, ChartTooltip):
-// importing the charts barrel would pull echarts into this page's bundle.
-const RAMP = [
-	'bg-[#2283c3] dark:bg-[#137ab9]',
-	'bg-[#84c5f9] dark:bg-[#7bbbef]',
-	'bg-[#289e60] dark:bg-[#189557]',
-]
+const MEASURED_COLOR = 'var(--chart-categorical-1)'
+const ESTIMATED_COLOR = 'var(--chart-categorical-2)'
+const TAX_COLOR = 'var(--chart-categorical-3)'
 const allSegments = computed(() => {
 	const rows = [
-		{ label: 'So far', amount: measured.value },
-		{ label: 'Estimated', amount: estimated.value },
+		{ label: 'So far', amount: measured.value, color: MEASURED_COLOR },
+		{
+			label: 'Estimated',
+			amount: estimated.value,
+			color: ESTIMATED_COLOR,
+		},
 	].filter((row) => row.amount > 0)
 	if (taxAmount.value)
-		rows.push({ label: taxLabel.value, amount: taxAmount.value })
-	return rows.map((row, i) => ({ ...row, colorClass: RAMP[i] }))
+		rows.push({
+			label: taxLabel.value,
+			amount: taxAmount.value,
+			color: TAX_COLOR,
+		})
+	return rows
 })
 
 const hiddenSegments = ref<string[]>([])
@@ -122,63 +128,40 @@ function formatPercent(percent: number): string {
 }
 
 const hovered = ref<string | null>(null)
-// A hidden label can stay hovered (its legend row is what the pointer is on
-// when it gets hidden); it must not dim the rest of the bar.
 const dimmed = (label: string): boolean =>
 	hovered.value !== null && !isHidden(hovered.value) && hovered.value !== label
 
-const TOOLTIP_OFFSET = 12
-const tooltip = reactive({
-	open: false,
-	x: 0,
-	y: 0,
-	label: '',
-	colorClass: '',
-	value: '',
-	percent: '',
+const tooltipOpen = ref(false)
+const tooltipX = ref(0)
+const tooltipY = ref(0)
+const tooltipItems = computed<ChartTooltipItem[]>(() => {
+	const segment = segments.value.find((s) => s.label === hovered.value)
+	if (!segment) return []
+	return [
+		{
+			name: segment.label,
+			label: segment.label,
+			color: segment.color,
+			value: segment.amount,
+			formattedValue: money(segment.amount, currency.value),
+			percent: segment.pct,
+		},
+	]
 })
-const tooltipEl = ref<HTMLElement | null>(null)
-const tooltipPlaced = ref(false)
-const tooltipPosition = ref<Record<string, string>>({ left: '0px', top: '0px' })
-watch(
-	() => [tooltip.open, tooltip.x, tooltip.y, tooltip.label] as const,
-	async () => {
-		if (!tooltip.open) return
-		tooltipPlaced.value = false
-		await nextTick()
-		const el = tooltipEl.value
-		if (!el) return
-		const { width, height } = el.getBoundingClientRect()
-		const flipX = tooltip.x + TOOLTIP_OFFSET + width > window.innerWidth
-		const flipY = tooltip.y + TOOLTIP_OFFSET + height > window.innerHeight
-		tooltipPosition.value = {
-			left: `${flipX ? tooltip.x - TOOLTIP_OFFSET - width : tooltip.x + TOOLTIP_OFFSET}px`,
-			top: `${flipY ? tooltip.y - TOOLTIP_OFFSET - height : tooltip.y + TOOLTIP_OFFSET}px`,
-		}
-		tooltipPlaced.value = true
-	},
-)
-function enterSegment(
-	segment: { label: string; amount: number; pct: number; colorClass: string },
-	event: MouseEvent,
-): void {
-	hovered.value = segment.label
-	tooltip.label = segment.label
-	tooltip.colorClass = segment.colorClass
-	tooltip.value = money(segment.amount, currency.value)
-	tooltip.percent = formatPercent(segment.pct)
-	tooltip.x = event.clientX
-	tooltip.y = event.clientY
-	tooltip.open = true
+function onSegmentEnter(label: string, event: MouseEvent): void {
+	hovered.value = label
+	tooltipX.value = event.clientX
+	tooltipY.value = event.clientY
+	tooltipOpen.value = true
 }
-function moveSegment(event: MouseEvent): void {
-	if (!tooltip.open) return
-	tooltip.x = event.clientX
-	tooltip.y = event.clientY
+function onSegmentMove(event: MouseEvent): void {
+	if (!tooltipOpen.value) return
+	tooltipX.value = event.clientX
+	tooltipY.value = event.clientY
 }
-function leaveSegment(): void {
+function onSegmentLeave(): void {
 	hovered.value = null
-	tooltip.open = false
+	tooltipOpen.value = false
 }
 
 // ── Billing alert (spend-alert threshold) ────────────────────────────────────
@@ -228,7 +211,6 @@ const alertLabel = computed(() => {
 		return `Nearing your ${money(spendAlert.value, currency.value)} alert`
 	return `Budget alert at ${money(spendAlert.value, currency.value)}`
 })
-// Same red the delta row raises; quiet gray until there is something to say.
 const alertTint = computed(() =>
 	crossed.value ? 'text-ink-red-7' : near.value ? 'text-ink-amber-6' : '',
 )
@@ -279,7 +261,7 @@ async function submitAlert(): Promise<void> {
 						:class="
 							alertTint || 'text-ink-gray-4 hover:text-ink-gray-6'
 						"
-						:aria-label="alertLabel"
+						aria-label="Budget alert"
 						@click="openDialog"
 					>
 						<span class="lucide-bell size-4" aria-hidden="true" />
@@ -341,16 +323,21 @@ async function submitAlert(): Promise<void> {
 						:key="segment.label"
 						class="h-full rounded-[4px] transition-[opacity,transform,width] duration-150"
 						:class="[
-							segment.colorClass,
 							dimmed(segment.label) ? 'opacity-75' : '',
 							hovered === segment.label ? 'scale-y-125' : '',
 						]"
-						:style="{ width: `${segment.pct}%` }"
-						@mouseenter="enterSegment(segment, $event)"
-						@mousemove="moveSegment"
-						@mouseleave="leaveSegment"
+						:style="{ width: `${segment.pct}%`, backgroundColor: segment.color }"
+						@mouseenter="onSegmentEnter(segment.label, $event)"
+						@mousemove="onSegmentMove"
+						@mouseleave="onSegmentLeave"
 					/>
 				</div>
+				<ChartTooltip
+					:open="tooltipOpen"
+					:x="tooltipX"
+					:y="tooltipY"
+					:items="tooltipItems"
+				/>
 				<div class="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-0.5">
 					<Button
 						v-for="segment in allSegments"
@@ -368,10 +355,8 @@ async function submitAlert(): Promise<void> {
 						<span class="flex items-center gap-1.5">
 							<span
 								class="size-2 shrink-0 rounded-full"
-								:class="[
-									segment.colorClass,
-									isHidden(segment.label) ? 'opacity-30' : '',
-								]"
+								:class="isHidden(segment.label) ? 'opacity-30' : ''"
+								:style="{ backgroundColor: segment.color }"
 							/>
 							<span
 								:class="
@@ -389,39 +374,6 @@ async function submitAlert(): Promise<void> {
 						</span>
 					</Button>
 				</div>
-
-				<Teleport to="body">
-					<div
-						v-if="tooltip.open"
-						ref="tooltipEl"
-						class="pointer-events-none fixed z-[100] max-w-xs rounded-6 border border-outline-gray-1 bg-surface-elevation-2 px-3 py-2 shadow-lg"
-						:style="{
-							...tooltipPosition,
-							visibility: tooltipPlaced ? 'visible' : 'hidden',
-						}"
-						role="tooltip"
-					>
-						<div class="flex items-center justify-between gap-5 text-p-sm">
-							<span class="flex min-w-0 items-center gap-2">
-								<span
-									class="size-2 shrink-0 rounded-1"
-									:class="tooltip.colorClass"
-								/>
-								<span class="truncate text-ink-gray-6"
-									>{{ tooltip.label }}</span
-								>
-							</span>
-							<span
-								class="shrink-0 text-p-sm-semibold tabular-nums text-ink-gray-8"
-							>
-								{{ tooltip.value }}
-								<span class="text-p-sm text-ink-gray-5"
-									>{{ tooltip.percent }}</span
-								>
-							</span>
-						</div>
-					</div>
-				</Teleport>
 			</template>
 		</template>
 

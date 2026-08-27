@@ -8,14 +8,6 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
 
-// What you're paying for — servers and team-level metered services in one list,
-// each row carrying what it has cost so far this cycle.
-//
-// The card shows the biggest few and hands the rest to a tray. An overview that
-// scrolls internally stops being an overview: the page already scrolls, and a
-// second scrollbar inside a card hides rows behind a gesture nobody makes. Five
-// is enough to show the shape of the spend; the tray is where you go to read all
-// of it.
 const VISIBLE = 5
 
 defineEmits<{ open: [] }>()

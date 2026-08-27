@@ -51,9 +51,6 @@ const showTopup = ref(false)
 function onAddCredit(): void {
 	if (requireSetup()) showTopup.value = true
 }
-
-// GROUNDING GAP (#69): no auto-recharge endpoint yet, so the button answers
-// with the same notice as the wallet panel's toggle.
 </script>
 
 <template>

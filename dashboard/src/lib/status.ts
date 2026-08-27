@@ -105,8 +105,6 @@ export function paymentAttemptDisplay(status: string | null | undefined): {
 	)
 }
 
-/** One invoice's attempt history, classified — the shared read the outstanding
- *  banner and the statement's Settled-by column both narrate from. */
 export interface AttemptStory {
 	/** Newest successful capture. */
 	captured: PaymentAttempt | null

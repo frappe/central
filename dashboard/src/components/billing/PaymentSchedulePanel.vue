@@ -33,7 +33,6 @@ const data = computed(() => schedule.data)
 const currency = computed(() => data.value?.currency ?? 'INR')
 const amount = computed(() => Number(data.value?.amount ?? 0))
 const blockers = computed(() => data.value?.blockers ?? [])
-// Empty = the Alert stays one row instead of growing an empty description slot.
 const blockerLines = computed(() => {
 	const lead = blockers.value[0]
 	if (!lead) return []
@@ -86,7 +85,7 @@ const blockerLines = computed(() => {
 			<div v-if="blockers.length" class="border-b border-outline-gray-2 p-4">
 				<Alert theme="amber" :title="blockers[0].title">
 					<template v-if="blockerLines.length" #description>
-						<span v-for="line in blockerLines" :key="line" class="block"
+						<span v-for="(line, idx) in blockerLines" :key="idx" class="block"
 							>{{ line }}</span
 						>
 					</template>

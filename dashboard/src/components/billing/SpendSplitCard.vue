@@ -3,7 +3,6 @@ import { TabButtons } from 'frappe-ui'
 import { DonutChart } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
-import { useInstantChartResize } from '@/composables/useInstantChartResize'
 import { money } from '@/lib/format'
 import type { SpendHistory, SpendSlice } from '@/types/billing'
 
@@ -25,10 +24,6 @@ const formatMoney = (value: number): string =>
 const cardTitle = computed(() =>
 	axis.value === 'product' ? 'Spend by product' : 'Spend by region',
 )
-
-const plotEl = ref<HTMLElement | null>(null)
-const chartRef = ref<InstanceType<typeof DonutChart> | null>(null)
-useInstantChartResize(plotEl, chartRef)
 </script>
 
 <template>
@@ -43,9 +38,8 @@ useInstantChartResize(plotEl, chartRef)
 			/>
 		</template>
 
-		<div ref="plotEl" class="h-full min-h-64">
+		<div class="h-full min-h-64">
 			<DonutChart
-				ref="chartRef"
 				:data="source"
 				category="label"
 				value="amount"

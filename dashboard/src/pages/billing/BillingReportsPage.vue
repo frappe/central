@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { Button, dayjs, LoadingText, TabButtons, useCall } from 'frappe-ui'
 import { NumberCard } from 'frappe-ui/charts'
-import { computed, provide, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import OutstandingAlert from '@/components/billing/OutstandingAlert.vue'
-import PaymentHistoryPanel from '@/components/billing/PaymentHistoryPanel.vue'
 import RefundsCard from '@/components/billing/RefundsCard.vue'
 import SpendHistoryCard from '@/components/billing/SpendHistoryCard.vue'
 import SpendSplitCard from '@/components/billing/SpendSplitCard.vue'
@@ -15,6 +14,7 @@ import StatementPanel from '@/components/billing/StatementPanel.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { useTrayColumn } from '@/composables/useTrayColumn'
 import { currencySymbol, money, plural } from '@/lib/format'
 import type {
 	PaymentAttempt,
@@ -107,34 +107,13 @@ const taxCaption = computed(() => {
 	return `across ${charged.length} tax types`
 })
 
-// One docked tray at a time, same as Overview: the panel column is a single
-type Tray = 'payments' | 'statement' | null
-const tray = ref<Tray>(null)
-const traySwitching = ref(false)
-provide('side-panel-switching', traySwitching)
-function trayModel(name: Exclude<Tray, null>) {
-	return computed({
-		get: () => tray.value === name,
-		set: (open: boolean) => {
-			if (open) {
-				traySwitching.value = tray.value !== null && tray.value !== name
-				tray.value = name
-				statement.reload()
-				attempts.reload()
-			} else if (tray.value === name) {
-				traySwitching.value = false
-				tray.value = null
-			}
-		},
-	})
-}
-const showPayments = trayModel('payments')
+type Tray = 'statement'
+const { trayModel } = useTrayColumn<Tray>()
 const showStatement = trayModel('statement')
 
 const loading = computed(() => history.loading && !history.data)
 const statementLoading = computed(() => statement.loading && !statement.data)
 const taxLoading = computed(() => tax.loading && !tax.data)
-const attemptsLoading = computed(() => attempts.loading && !attempts.data)
 const hasDebt = computed(() => {
 	const s = statement.data
 	if (!s) return false
@@ -151,12 +130,9 @@ const neverBilled = computed(
 		!hasDebt.value,
 )
 
-// Export goes through a plain link, not fetch: the endpoint sets a binary
-// response and the browser's own download handling is the right thing here.
-function exportUrl(report: string, windowed = true): string {
+function exportUrl(report: string): string {
 	const team = encodeURIComponent(activeTeam.value ?? '')
-	const range = windowed ? `&from_date=${fromDate.value}` : ''
-	return `/api/method/${API.exportCsv}?report=${report}&team=${team}${range}`
+	return `/api/method/${API.exportCsv}?report=${report}&team=${team}&from_date=${fromDate.value}`
 }
 </script>
 
@@ -183,12 +159,6 @@ function exportUrl(report: string, windowed = true): string {
 							label="Go to billing overview"
 							@click="router.push({ name: 'Billing' })"
 						/>
-						<PaymentHistoryCard
-							:export-url="exportUrl('payments')"
-							@open="showPayments = true"
-						/>
-						<RefundsCard />
-						<TaxSummaryCard />
 					</template>
 				</EmptyState>
 
@@ -254,7 +224,7 @@ function exportUrl(report: string, windowed = true): string {
 						<SpendHistoryCard
 							class="min-w-[24rem] flex-[3_1_0%]"
 							:history="history.data"
-							:export-url="exportUrl('spend', false)"
+							:export-url="exportUrl('spend')"
 						/>
 						<SpendSplitCard
 							class="min-w-[20rem] flex-[2_1_0%]"
@@ -264,11 +234,9 @@ function exportUrl(report: string, windowed = true): string {
 
 					<StatementCard
 						:statement="statement.data ?? null"
-						:attempts="attempts.data ?? []"
 						:loading="statementLoading"
 						:export-url="exportUrl('statement')"
 						@open="showStatement = true"
-						@open-payments="showPayments = true"
 					/>
 					<RefundsCard />
 				</template>
@@ -279,12 +247,6 @@ function exportUrl(report: string, windowed = true): string {
 			v-model:open="showStatement"
 			:statement="statement.data ?? null"
 			:loading="statementLoading"
-		/>
-		<PaymentHistoryPanel
-			v-model:open="showPayments"
-			:attempts="attempts.data ?? null"
-			:loading="attemptsLoading"
-			:export-url="exportUrl('payments', false)"
 		/>
 	</div>
 </template>

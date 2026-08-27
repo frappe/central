@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Badge, LoadingText, useCall } from 'frappe-ui'
-import { computed } from 'vue'
+import { Badge, Button, LoadingText, useCall } from 'frappe-ui'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import { useSession } from '@/composables/useSession'
@@ -8,19 +8,13 @@ import { whenTeamReady } from '@/composables/useTeamScope'
 import { formatDate, money } from '@/lib/format'
 import type { RefundRow } from '@/types/billing'
 
-// Refunds raised on this team's payments. Renders nothing at all when there are
-// none — an empty "Refunds" card on a healthy account is a question the customer
-// didn't ask, and one they may read as a problem.
-//
-// The reference shown is the PROVIDER's refund id, not the bank's ARN. Wording
-// stays deliberately short of "trace this with your bank": the ARN arrives on a
-// dispute/refund webhook we don't route yet, and promising traceability we can't
-// deliver is worse than saying less.
 const { activeTeam } = useSession()
 
+const LIMIT = 1000
+const PAGE = 100
 const refunds = useCall<RefundRow[], { team: string; limit: number }>({
 	url: method(API.refunds),
-	params: () => ({ team: activeTeam.value!, limit: 1000 }),
+	params: () => ({ team: activeTeam.value!, limit: LIMIT }),
 	immediate: false,
 	refetch: true,
 })
@@ -28,6 +22,14 @@ whenTeamReady(() => refunds.reload())
 
 const loading = computed(() => refunds.loading && !refunds.data)
 const rows = computed(() => refunds.data ?? [])
+const truncated = computed(() => rows.value.length >= LIMIT)
+const shown = ref(PAGE)
+const visible = computed(() => rows.value.slice(0, shown.value))
+const description = computed(() =>
+	truncated.value
+		? `The most recent ${LIMIT.toLocaleString()} refunds on this account.`
+		: 'Every refund on this account.',
+)
 
 const STATUS_THEME: Record<string, string> = {
 	Completed: 'green',
@@ -45,12 +47,12 @@ function destinationLabel(row: RefundRow): string {
 	<BillingCard
 		v-if="loading || rows.length"
 		title="Refunds"
-		description="Every refund on this account."
+		:description="description"
 	>
 		<LoadingText v-if="loading" :lines="2" />
 
 		<ul v-else class="divide-y divide-outline-gray-1">
-			<li v-for="row in rows" :key="row.name" class="py-3 first:pt-0">
+			<li v-for="row in visible" :key="row.name" class="py-3 first:pt-0">
 				<div class="grid grid-cols-[1fr_5rem_7rem] items-center gap-3">
 					<span class="text-base-medium tabular-nums text-ink-gray-9">
 						{{ money(row.amount, row.currency) }}
@@ -76,6 +78,15 @@ function destinationLabel(row: RefundRow): string {
 				>
 					{{ row.gateway_reference }}
 				</p>
+			</li>
+			<li v-if="rows.length > shown" class="py-3">
+				<Button
+					variant="ghost"
+					size="sm"
+					class="-ml-2"
+					:label="`Show all ${rows.length}`"
+					@click="shown = rows.length"
+				/>
 			</li>
 		</ul>
 	</BillingCard>

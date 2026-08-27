@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Alert } from 'frappe-ui'
-import { computed, provide, ref } from 'vue'
+import { ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
@@ -15,6 +15,7 @@ import StopBillingCard from '@/components/billing/StopBillingCard.vue'
 import WalletCard from '@/components/billing/WalletCard.vue'
 import WalletHistoryPanel from '@/components/billing/WalletHistoryPanel.vue'
 import { useBillingSetup } from '@/composables/useBillingSetup'
+import { useTrayColumn } from '@/composables/useTrayColumn'
 
 // Billing › Overview (#69) — one scrollable surface that absorbs the legacy
 // Overview, Credits, Payment methods, Subscriptions, and Settings pages. Each card
@@ -26,25 +27,8 @@ import { useBillingSetup } from '@/composables/useBillingSetup'
 // the same dialog (useBillingSetup.requireSetup → setupDialogOpen).
 const { complete, setupDialogOpen } = useBillingSetup()
 
-// One docked tray at a time: the panel column is a single 24rem slot, and two
-// open at once would stack two SidePanels side by side and squeeze the content
-// out. A single ref names which is showing, and each card's v-model writes it.
-type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | null
-const tray = ref<Tray>(null)
-const traySwitching = ref(false)
-provide('side-panel-switching', traySwitching)
-
-function trayModel(name: Exclude<Tray, null>) {
-	return computed({
-		get: () => tray.value === name,
-		set: (open: boolean) => {
-			const next = open ? name : null
-			traySwitching.value =
-				tray.value !== null && next !== null && next !== tray.value
-			tray.value = next
-		},
-	})
-}
+type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor'
+const { trayModel } = useTrayColumn<Tray>()
 const showWalletHistory = trayModel('wallet')
 const showCycleBreakdown = trayModel('cycle')
 const showSchedule = trayModel('schedule')

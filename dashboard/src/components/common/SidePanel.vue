@@ -1,6 +1,13 @@
+<script lang="ts">
+import type { InjectionKey, Ref } from 'vue'
+
+export const SIDE_PANEL_SWITCHING: InjectionKey<Ref<boolean>> = Symbol(
+	'side-panel-switching',
+)
+</script>
+
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import type { Ref } from 'vue'
 import { inject, onBeforeUnmount, ref, watch } from 'vue'
 
 // The docked detail panel every page shares — a 24rem column that slides in
@@ -14,10 +21,7 @@ import { inject, onBeforeUnmount, ref, watch } from 'vue'
 defineProps<{ title?: string; subtitle?: string }>()
 const open = defineModel<boolean>('open', { default: false })
 
-// True while the page swaps one tray for another: the column is already
-// docked, so the leaving panel vanishes in place and the entering one fades
-// in, instead of two 24rem slides fighting over the layout.
-const switching = inject<Ref<boolean>>('side-panel-switching', ref(false))
+const switching = inject(SIDE_PANEL_SWITCHING, ref(false))
 
 // The panel is docked, not modal, so it never holds focus — Esc has to be
 // caught on the document. A stacked dialog owns Esc first: closing both at once
@@ -112,7 +116,6 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 	margin-inline-end: -24rem;
 }
 
-/* Tray-to-tray: leave vanishes in place, enter only fades. */
 .switch-leave-active {
 	display: none;
 }

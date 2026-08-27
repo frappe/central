@@ -1,15 +1,10 @@
 <script setup lang="ts">
-import {
-	Button,
-	Dialog,
-	FormControl,
-	LoadingText,
-	Tooltip,
-	useCall,
-} from 'frappe-ui'
+import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
-import PaymentNetworkMark from '@/components/PaymentNetworkMark.vue'
+import PaymentNetworkMark, {
+	type PaymentNetwork,
+} from '@/components/PaymentNetworkMark.vue'
 import TopupDialog from '@/components/TopupDialog.vue'
 import { useAddPaymentMethod } from '@/composables/useAddPaymentMethod'
 import { useAddStripeCard } from '@/composables/useAddStripeCard'
@@ -20,13 +15,7 @@ import { money } from '@/lib/format'
 import { errorToast } from '@/lib/toast'
 import type { PaymentInstrument, PaymentMethodOptions } from '@/types/billing'
 
-// Pick an instrument to save for auto-pay. This is the **mandate** surface (ADR
-// 0023) and it is a shorter list than wallet recharge: netbanking pays once and
-// cannot be saved, so it is not here at all.
-//
 const open = defineModel<boolean>({ default: false })
-// Set when the dialog is opened from a "your card was declined" prompt, so the
-// method that comes out of it records why it is on the other rail.
 const props = withDefaults(defineProps<{ afterDecline?: boolean }>(), {
 	afterDecline: false,
 })
@@ -97,7 +86,7 @@ function iconFor(tile: PaymentInstrument): string {
 		: 'lucide-credit-card'
 }
 
-const marks: Record<string, ('visa' | 'mastercard' | 'rupay' | 'upi')[]> = {
+const marks: Record<string, PaymentNetwork[]> = {
 	Card: ['visa', 'mastercard'],
 	'RuPay Card': ['rupay'],
 	'UPI Autopay': ['upi'],
@@ -176,8 +165,6 @@ function needsPhone(tile: PaymentInstrument): boolean {
 const askPhone = computed(() => !!selected.value && needsPhone(selected.value))
 const phone = ref('')
 
-// Stripe card capture happens in an embedded Element (separate rail from
-// Razorpay's hosted Checkout). We swap the method picker for the card field once
 const stripeMode = ref(false)
 const stripeLoading = ref(false)
 const cardEl = ref<HTMLElement | null>(null)
@@ -212,10 +199,6 @@ function cancelStripe(): void {
 	stripeMode.value = false
 }
 
-// On open, re-pull the currency-derived gateway options + profile: the team may
-// have just completed its billing profile (picking a non-INR currency) without a
-// team switch, so the reads warmed at mount would otherwise still offer the INR
-// gateway. On close, tear down the Stripe Element and reset inline state so a
 watch(open, (isOpen) => {
 	if (isOpen) {
 		options.reload()
@@ -300,15 +283,12 @@ watch(open, (isOpen) => {
 						<span class="text-base font-medium text-ink-gray-9"
 							>{{ tile.label }}</span
 						>
-						<Tooltip
+						<span
 							v-if="infoText(tile) && !blockedReason(tile)"
-							:text="infoText(tile)!"
+							class="min-w-0 truncate text-p-sm text-ink-gray-5"
 						>
-							<span
-								class="lucide-info size-3.5 text-ink-gray-4"
-								aria-hidden="true"
-							/>
-						</Tooltip>
+							{{ infoText(tile) }}
+						</span>
 						<span
 							v-if="blockedReason(tile)"
 							class="ml-auto text-right text-p-sm text-ink-amber-6"

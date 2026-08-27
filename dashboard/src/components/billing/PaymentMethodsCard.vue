@@ -197,7 +197,6 @@ function onAdd(): void {
 				variant="ghost"
 				size="xs"
 				label="Add payment method"
-				tooltip="Add payment method"
 				@click="onAdd"
 			>
 				<template #icon>
