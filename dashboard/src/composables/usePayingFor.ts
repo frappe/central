@@ -39,9 +39,11 @@ const resume = useCall<unknown, { subscription: string }>({
 
 const busy = ref('')
 const pendingPause = ref<SubscriptionRow | null>(null)
+const pendingAssignGroup = ref<SubscriptionRow | null>(null)
 
 export function usePayingFor() {
-	const { subscriptions, cycleCosts } = useBillingOverview()
+	const { subscriptions, cycleCosts, reloadSubscriptionGrouping } =
+		useBillingOverview()
 
 	const loading = computed(
 		() =>
@@ -117,6 +119,7 @@ export function usePayingFor() {
 		total,
 		busy,
 		pendingPause,
+		pendingAssignGroup,
 		openServer,
 		askPause: (sub: SubscriptionRow) => {
 			pendingPause.value = sub
@@ -127,6 +130,10 @@ export function usePayingFor() {
 		},
 		onResume: (sub: SubscriptionRow) =>
 			runVerb(sub, resume, 'Billing resumed, server starting…'),
+		askAssignGroup: (sub: SubscriptionRow) => {
+			pendingAssignGroup.value = sub
+		},
+		onAssignedGroup: () => reloadSubscriptionGrouping(),
 		reload: () => servicesCall.reload(),
 	}
 }

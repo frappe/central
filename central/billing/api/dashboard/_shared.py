@@ -52,6 +52,32 @@ def _require_manage(team: str) -> str:
 	return team
 
 
+def _validate_own_billing_group(team: str, billing_group: str | None) -> None:
+	"""Refuse to earmark a credit movement to another team's Billing Group.
+
+	`Credit Ledger Entry` carries no controller validation of its own on this field
+	(unlike `Subscription`/`Payment Method`, which validate same-team on save) — this
+	is the API-boundary equivalent, checked before any money moves."""
+	if not billing_group:
+		return
+	if frappe.db.get_value("Billing Group", billing_group, "team") != team:
+		frappe.throw(_("That billing group does not belong to this team."), frappe.ValidationError)
+
+
+def _billing_group_titles(names) -> dict:
+	"""name -> title for a batch of Billing Group ids, one query regardless of how
+	many rows reference them (list_subscriptions / list_invoices / list_payment_methods
+	resolve their `billing_group` link to a display title this way instead of one
+	lookup per row)."""
+	names = [n for n in set(names) if n]
+	if not names:
+		return {}
+	return {
+		g.name: g.title
+		for g in frappe.get_all("Billing Group", filters={"name": ["in", names]}, fields=["name", "title"])
+	}
+
+
 def _team_resource_count(team: str) -> int:
 	"""How many resources the team is running: its open billing segments (ADR 0010),
 	preset and composed alike (#86)."""

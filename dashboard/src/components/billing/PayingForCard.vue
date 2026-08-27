@@ -2,6 +2,7 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import AssignBillingGroupDialog from '@/components/billing/AssignBillingGroupDialog.vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PayingForRow from '@/components/billing/PayingForRow.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -30,10 +31,13 @@ const {
 	total,
 	busy,
 	pendingPause,
+	pendingAssignGroup,
 	openServer,
 	askPause,
 	confirmPause,
 	onResume,
+	askAssignGroup,
+	onAssignedGroup,
 } = usePayingFor()
 
 const visible = computed(() => rows.value.slice(0, VISIBLE))
@@ -95,6 +99,7 @@ function goToAddons(): void {
 					@open="openServer"
 					@pause="askPause"
 					@resume="onResume"
+					@assign-group="askAssignGroup"
 				/>
 			</div>
 			<Button
@@ -129,6 +134,10 @@ function goToAddons(): void {
 			confirm-label="Pause billing"
 			:loading="busy === pendingPause?.name"
 			@confirm="confirmPause"
+		/>
+		<AssignBillingGroupDialog
+			v-model:subscription="pendingAssignGroup"
+			@assigned="onAssignedGroup"
 		/>
 	</BillingCard>
 </template>

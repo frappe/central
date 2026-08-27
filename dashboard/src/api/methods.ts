@@ -95,6 +95,7 @@ export const API = {
 	paymentMethodOptions:
 		'central.billing.api.dashboard.get_payment_method_options',
 	subscriptions: 'central.billing.api.dashboard.list_subscriptions',
+	billingGroups: 'central.billing.api.dashboard.list_billing_groups',
 	nextPayment: 'central.billing.api.dashboard.get_next_payment',
 	paymentSchedule: 'central.billing.api.dashboard.get_payment_schedule',
 	cycleCosts: 'central.billing.api.dashboard.get_cycle_costs',
@@ -140,6 +141,14 @@ export const API = {
 		'central.notification.api.mark_all_notifications_read',
 	pauseSubscription: 'central.billing.api.dashboard.pause_subscription',
 	resumeSubscription: 'central.billing.api.dashboard.resume_subscription',
+	setSubscriptionBillingGroup:
+		'central.billing.api.dashboard.set_subscription_billing_group',
+	createBillingGroup: 'central.billing.api.dashboard.create_billing_group',
+	renameBillingGroup: 'central.billing.api.dashboard.rename_billing_group',
+	setBillingGroupEnabled:
+		'central.billing.api.dashboard.set_billing_group_enabled',
+	setPaymentMethodBillingGroup:
+		'central.billing.api.dashboard.set_payment_method_billing_group',
 	subscribeMeteredService:
 		'central.billing.api.dashboard.subscribe_metered_service',
 } as const

@@ -2,6 +2,7 @@
 import { Button, Dialog, FormControl, useCall } from 'frappe-ui'
 import { computed, nextTick, type Ref, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
+import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { useTopup } from '@/composables/useTopup'
 import { currencySymbol, money } from '@/lib/format'
@@ -29,6 +30,20 @@ const emit = defineEmits<{ done: [res?: unknown] }>()
 
 const amount = ref<number | null>(null)
 const presets = [1000, 5000, 10000, 25000]
+
+// Which Billing Group this top-up earmarks its credit to (ARCHITECTURE.md §2.1)
+// — offered only to teams that actually have one, so a team with no groups never
+// sees a decision that means nothing to it. Empty string = the general pool.
+const GENERAL = ''
+const selectedGroup = ref(GENERAL)
+const { groups } = useBillingOverview()
+const groupOptions = computed(() => [
+	{ label: 'General wallet (consolidated)', value: GENERAL },
+	...(groups.data ?? [])
+		.filter((g) => g.enabled)
+		.map((g) => ({ label: g.title, value: g.name })),
+])
+const hasGroups = computed(() => groupOptions.value.length > 1)
 
 const { activeTeam } = useSession()
 const options = useCall<{ instruments: PaymentInstrument[] }, { team: string }>(
@@ -115,6 +130,7 @@ async function submit(): Promise<void> {
 			open.value = false
 		},
 		instrument.value ?? undefined,
+		selectedGroup.value || null,
 	)
 	if (paypal)
 		return enterPhase(
@@ -179,6 +195,7 @@ watch(open, (isOpen) => {
 		cardLoading.value = false
 		paypalPhase.value = false
 		paypalLoading.value = false
+		selectedGroup.value = GENERAL
 	}
 })
 </script>
@@ -282,6 +299,14 @@ watch(open, (isOpen) => {
 						/>
 					</div>
 				</div>
+				<FormControl
+					v-if="hasGroups"
+					type="select"
+					v-model="selectedGroup"
+					:options="groupOptions"
+					label="Billing group"
+					description="Earmark this top-up to one group's own budget, instead of the general wallet."
+				/>
 				<div>
 					<p class="mb-1.5 text-p-sm text-ink-gray-5">Amount</p>
 					<div class="mb-2 flex flex-wrap gap-2">

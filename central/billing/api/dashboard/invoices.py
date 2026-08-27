@@ -11,6 +11,7 @@ from frappe import _
 
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
+	_billing_group_titles,
 	_describe_line,
 	_enabled_gateway_for_currency,
 	_gateway_for_currency,
@@ -20,6 +21,7 @@ from central.billing.api.dashboard._shared import (
 	_require_view,
 	_resolve_team,
 	_team_currency,
+	_validate_own_billing_group,
 )
 from central.billing.revenue import credits
 
@@ -42,12 +44,21 @@ def get_forecast(team: str | None = None) -> dict:
 	# an operator simulates with is what stops the two numbers drifting apart — there is
 	# no second rating path to keep in step.
 	from central.billing.projection import engine
+	from central.billing.revenue.invoicing.generate import _resource_group_map
 
 	# Not strictly guarded: this is a customer page, and it must not fail because the
 	# request that reached it happened to write something first.
 	projection = engine.project(team, month_start, month_end, today=today, mode="Optimistic", guarded=False)
 	invoice = projection["invoice"] or {}
 	line_items = invoice.get("lines") or []
+	# The forecast rates ALL_SCOPES (every Billing Group's lines combined, not one
+	# invoice's — see generate.ALL_SCOPES), so unlike a real Invoice this breakdown
+	# has no single scope of its own: each line needs its OWN tag to tell the
+	# dashboard which of the team's eventual invoices it will land on. Same map
+	# real drafting uses (`_scope_lines`), so the breakdown previews it exactly —
+	# a disabled group's lines read as consolidated here too, not stale-tagged.
+	group_map = _resource_group_map(team)
+	group_titles = _billing_group_titles(group_map.values())
 
 	subtotal = frappe.utils.flt(invoice.get("subtotal"))
 	projected_total = frappe.utils.flt(invoice.get("total"))
@@ -83,8 +94,23 @@ def get_forecast(team: str | None = None) -> dict:
 		# Warn when the projected bill outruns the wallet (a top-up may be due).
 		"credit_alert": shortfall > 0,
 		# Spell out each service/plan + metered overage driving the projection.
-		"line_items": [_describe_line(team, frappe._dict(li)) for li in line_items],
+		"line_items": [_describe_forecast_line(team, li, group_map, group_titles) for li in line_items],
 	}
+
+
+def _describe_forecast_line(team: str, li: dict, group_map: dict, group_titles: dict) -> dict:
+	"""`_describe_line`, plus which Billing Group scope this line belongs to.
+
+	Only the ALL_SCOPES forecast needs this (get_forecast) — a real Invoice's own
+	lines all share its one `billing_group` already, so `get_invoice` has no use
+	for a per-line tag. `subscription_resource` is the asset id for a server line;
+	absent from `group_map` (never tagged, or tagged into a disabled group) reads
+	as the consolidated scope, same as real drafting."""
+	row = _describe_line(team, frappe._dict(li))
+	group = group_map.get(li.get("subscription_resource"))
+	row["billing_group"] = group
+	row["billing_group_title"] = group_titles.get(group)
+	return row
 
 
 def _previous_month(team: str, month_start) -> dict:
@@ -137,10 +163,12 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			"account_standing",
 			"start_date",
 			"enabled",
+			"billing_group",
 		],
 		order_by="creation desc",
 	)
 	currency = _team_currency(team)
+	group_titles = _billing_group_titles(r.billing_group for r in rows)
 	# Batch the asset lookup so a team with N subscriptions costs one query, not N.
 	asset_ids = list({r.asset_id for r in rows if r.asset_id})
 	assets = (
@@ -210,6 +238,8 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 				"enabled": r.enabled,
 				"monthly_rate": monthly_rate,
 				"currency": currency,
+				"billing_group": r.billing_group,
+				"billing_group_title": group_titles.get(r.billing_group),
 			}
 		)
 	return out
@@ -271,11 +301,24 @@ def resume_subscription(subscription: str, team: str | None = None) -> dict:
 	return {"name": doc.name, "enabled": doc.enabled}
 
 
+@frappe.whitelist(methods=["POST"])
+def set_subscription_billing_group(subscription: str, billing_group: str | None = None) -> dict:
+	"""Tag a subscription into a Billing Group, or clear it (`billing_group=None`)
+	back onto the team's consolidated invoice. `Subscription.validate_billing_group`
+	is the authority on same-team / enabled — this only gates who may call it."""
+	owner = frappe.db.get_value("Subscription", subscription, "team")
+	_require_manage(owner)
+	doc = frappe.get_doc("Subscription", subscription)
+	doc.billing_group = billing_group or None
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name, "billing_group": doc.billing_group}
+
+
 @frappe.whitelist()
 def list_invoices(team: str | None = None) -> list[dict]:
 	"""Invoice history — summary only (no internal/admin fields)."""
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Invoice",
 		filters={"team": team},
 		fields=[
@@ -288,9 +331,14 @@ def list_invoices(team: str | None = None) -> list[dict]:
 			"amount_paid",
 			"currency",
 			"due_date",
+			"billing_group",
 		],
 		order_by="period_start desc",
 	)
+	group_titles = _billing_group_titles(r.billing_group for r in rows)
+	for r in rows:
+		r["billing_group_title"] = group_titles.get(r.billing_group)
+	return rows
 
 
 @frappe.whitelist()
@@ -332,6 +380,10 @@ def get_invoice(name: str) -> dict:
 		"team": doc.team,
 		"status": doc.status,
 		"invoice_type": doc.invoice_type,
+		"billing_group": doc.billing_group,
+		"billing_group_title": (
+			frappe.db.get_value("Billing Group", doc.billing_group, "title") if doc.billing_group else None
+		),
 		"period_start": str(doc.period_start),
 		"period_end": str(doc.period_end),
 		"currency": doc.currency,
@@ -651,6 +703,7 @@ def create_topup_order(
 	gateway: str | None = None,
 	method: str | None = None,
 	instrument: str | None = None,
+	billing_group: str | None = None,
 ) -> dict:
 	"""Start a wallet top-up by creating a real gateway order. The UI opens the
 	gateway's checkout against it; the wallet is credited only after the gateway
@@ -667,6 +720,7 @@ def create_topup_order(
 	    reference stored is the razorpay_payment_id."""
 	team = _resolve_team(team, authz.MANAGE)
 	_require_billing_setup(team)
+	_validate_own_billing_group(team, billing_group)
 	amount = frappe.utils.flt(amount)
 	if amount <= 0:
 		frappe.throw(_("Top-up amount must be greater than zero."), frappe.ValidationError)
@@ -743,6 +797,7 @@ def confirm_topup(
 	razorpay_signature: str | None = None,
 	payment_intent: str | None = None,
 	paypal_order_id: str | None = None,
+	billing_group: str | None = None,
 ) -> dict:
 	"""Credit the wallet only after the gateway confirms the money really moved.
 	Razorpay confirms via the checkout-callback signature; Stripe by retrieving the
@@ -751,8 +806,17 @@ def confirm_topup(
 	and records the gateway's own reference — for PayPal the capture id, which
 	settles directly and so reconciles against PayPal's ledger (#21, ADR 0007). The
 	wallet is credited in the team's own currency. Idempotent on the gateway payment
-	id, so a capture webhook crediting in parallel is a no-op."""
+	id, so a capture webhook crediting in parallel is a no-op.
+
+	`billing_group` earmarks the credit to that group's own budget (ARCHITECTURE.md
+	§2.1) instead of the general pool — e.g. a partner topping up for one specific
+	end-customer. Re-validated here (not just trusted from create_topup_order),
+	since the two calls are separate round-trips and the group could in principle
+	have been disabled between them — though `credits.purchase` itself does not
+	gate on `enabled`, only on same-team, so a disabled group can still receive a
+	top-up; it simply will not partition an invoice while disabled."""
 	team = _resolve_team(team, authz.MANAGE)
+	_validate_own_billing_group(team, billing_group)
 	currency = _team_currency(team)
 	amount = frappe.utils.flt(amount)
 	from central.billing.gateways.registry import get_adapter
@@ -816,4 +880,5 @@ def confirm_topup(
 		note=f"Wallet top-up ({reference})",
 		gateway_payment_id=reference,
 		gateway=gw_doc.adapter_key,
+		billing_group=billing_group,
 	)

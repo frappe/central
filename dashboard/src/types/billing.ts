@@ -39,6 +39,11 @@ export interface BillingLine {
 	server?: string | null
 	/** Its technical id (what the Asset is named by), for support and logs. */
 	server_id?: string | null
+	/** Which of the team's eventual invoices this line lands on — only set on the
+	 *  ALL_SCOPES forecast (get_forecast); a stored Invoice's lines share its own
+	 *  billing_group already, so get_invoice never sets this per line. */
+	billing_group?: string | null
+	billing_group_title?: string | null
 }
 
 /** get_forecast — current-cycle projection vs wallet. */
@@ -213,6 +218,9 @@ export interface InvoiceSummary {
 	amount_paid: number
 	currency: Currency
 	due_date: string | null
+	/** null = the team's consolidated invoice (every ungrouped asset). */
+	billing_group: string | null
+	billing_group_title: string | null
 }
 
 /** One event in an invoice's lifecycle timeline (issued → credits → payment → settled). */
@@ -232,6 +240,8 @@ export interface InvoiceDetail {
 	team: string
 	status: InvoiceStatus
 	invoice_type: string
+	billing_group: string | null
+	billing_group_title: string | null
 	period_start: string
 	period_end: string
 	currency: Currency
@@ -280,6 +290,23 @@ export interface SubscriptionRow {
 	/** Resolved monthly price for the team's currency + region. */
 	monthly_rate: number | null
 	currency: string
+	/** Billing Group this resource is tagged into; null = the team's consolidated invoice. */
+	billing_group: string | null
+	billing_group_title: string | null
+}
+
+/** list_billing_groups row — a user-defined bill partition (ARCHITECTURE.md §2.1).
+ *  A team's subscriptions/cards/credits tagged into the same group bill and settle
+ *  on their own, separate from the team's consolidated (ungrouped) invoice. */
+export interface BillingGroup {
+	name: string
+	title: string
+	enabled: boolean | number
+	/** How many of the team's active subscriptions are currently tagged into it. */
+	resource_count: number
+	/** Account standing of the subscription this group's invoices anchor on — null
+	 *  only when nothing has been tagged into it yet. */
+	standing: string | null
 }
 
 export type PaymentMethodType = 'Card' | 'UPI Autopay' | (string & {})
@@ -298,6 +325,9 @@ export interface PaymentMethod {
 	/** Mandate ceiling — what the bank will let us debit in one go. */
 	mandate_max_amount?: number | null
 	mandate_currency?: string | null
+	/** Billing Group this method is earmarked to; null = the team's general (untagged) pool. */
+	billing_group: string | null
+	billing_group_title: string | null
 }
 
 /** get_payment_method_options — what the team may add, resolved from its currency. */

@@ -10,6 +10,7 @@ from frappe import _
 from central.billing import authz
 from central.billing.api.dashboard._shared import (
 	_add_method_gateway,
+	_billing_group_titles,
 	_card_gateway,
 	_enabled_gateway_for_currency,
 	_require_billing_setup,
@@ -27,7 +28,7 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 	card clears the micro-charge it isn't usable, isn't in the charge order, and
 	would only confuse the list (it has no label/expiry yet)."""
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
 		fields=[
@@ -42,9 +43,14 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 			"expiry_year",
 			"mandate_max_amount",
 			"mandate_currency",
+			"billing_group",
 		],
 		order_by="priority asc, creation asc",
 	)
+	group_titles = _billing_group_titles(r.billing_group for r in rows)
+	for r in rows:
+		r["billing_group_title"] = group_titles.get(r.billing_group)
+	return rows
 
 
 @frappe.whitelist()
@@ -297,3 +303,21 @@ def reorder_payment_methods(team: str | None = None, ordered: list | str | None 
 	from central.billing.payments import payments
 
 	return payments.reorder_payment_methods(team, ordered)
+
+
+@frappe.whitelist(methods=["POST"])
+def set_payment_method_billing_group(payment_method: str, billing_group: str | None = None) -> dict:
+	"""Earmark a payment method to a Billing Group, or clear it (`billing_group=None`)
+	back into the team's general (untagged) pool. `PaymentMethod._validate_billing_group`
+	is the authority on same-team / enabled — this only gates who may call it.
+
+	A group's own earmarked method(s) are tried first when its invoice is charged,
+	falling back to the team's general methods if declined or none are set
+	(`collection.scoped_methods`, ARCHITECTURE.md §2.1) — never the reverse: the
+	consolidated invoice never uses a group's earmarked method."""
+	team = frappe.db.get_value("Payment Method", payment_method, "team")
+	_require_manage(team)
+	doc = frappe.get_doc("Payment Method", payment_method)
+	doc.billing_group = billing_group or None
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name, "billing_group": doc.billing_group}

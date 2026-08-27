@@ -26,6 +26,12 @@ from central.billing.api.dashboard.account import (
 	set_collection_mode,
 	whoami,
 )
+from central.billing.api.dashboard.billing_groups import (
+	create_billing_group,
+	list_billing_groups,
+	rename_billing_group,
+	set_billing_group_enabled,
+)
 from central.billing.api.dashboard.catalog import (
 	get_eligible_plans,
 )
@@ -46,6 +52,7 @@ from central.billing.api.dashboard.invoices import (
 	pay_invoice,
 	pay_invoice_checkout,
 	resume_subscription,
+	set_subscription_billing_group,
 )
 from central.billing.api.dashboard.methods import (
 	add_demo_card,
@@ -57,6 +64,7 @@ from central.billing.api.dashboard.methods import (
 	remove_payment_method,
 	reorder_payment_methods,
 	set_default_payment_method,
+	set_payment_method_billing_group,
 	setup_payment_method_order,
 )
 from central.billing.api.dashboard.outlook import (
@@ -84,6 +92,7 @@ __all__ = [
 	"confirm_invoice_checkout",
 	"confirm_payment_method_order",
 	"confirm_topup",
+	"create_billing_group",
 	"create_topup_order",
 	"credit_ledger",
 	"export_csv",
@@ -108,6 +117,7 @@ __all__ = [
 	"get_topup_options",
 	"get_trust_tier",
 	"initiate_card_setup",
+	"list_billing_groups",
 	"list_invoices",
 	"list_payment_attempts",
 	"list_payment_methods",
@@ -118,12 +128,16 @@ __all__ = [
 	"pay_invoice",
 	"pay_invoice_checkout",
 	"remove_payment_method",
+	"rename_billing_group",
 	"reorder_payment_methods",
 	"resume_subscription",
 	"save_billing_profile",
 	"save_billing_settings",
+	"set_billing_group_enabled",
 	"set_collection_mode",
 	"set_default_payment_method",
+	"set_payment_method_billing_group",
+	"set_subscription_billing_group",
 	"setup_payment_method_order",
 	"subscribe_metered_service",
 	"whoami",

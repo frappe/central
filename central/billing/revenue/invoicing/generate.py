@@ -69,12 +69,37 @@ def _resource_group_map(team: str) -> dict:
 	return {r.asset_id: r.billing_group for r in rows if r.asset_id and r.billing_group in active}
 
 
-def _scope_lines(lines: list[dict], team: str, billing_group: str | None) -> list[dict]:
+class _AllScopes:
+	"""Sentinel for `billing_group`: skip scoping entirely and keep every line,
+	regardless of which Billing Group (if any) its resource is tagged into.
+
+	`billing_group=None` already has a real, load-bearing meaning — "the
+	consolidated scope specifically" (what a team's own un-grouped invoice bills,
+	and what `generate_team_invoice(..., billing_group=None)` drafts) — so it
+	cannot double as "don't scope at all" without breaking real invoice drafting.
+	This sentinel is that separate, explicit "give me everything" request: the
+	projection engine's whole-team reads (get_forecast, get_cycle_costs, get_next_payment
+	— "what is this team paying, ignoring how its bill happens to be partitioned")
+	want every line, not just the consolidated scope's. Never pass this to
+	anything that inserts an Invoice — only to a read.
+	"""
+
+	def __repr__(self) -> str:
+		return "ALL_SCOPES"
+
+
+ALL_SCOPES = _AllScopes()
+
+
+def _scope_lines(lines: list[dict], team: str, billing_group) -> list[dict]:
 	"""Keep only the lines belonging to this invoice's Billing-Group scope.
 
 	Each line carries its resource (`subscription_resource`); a resource maps to a
 	group via its subscription. `billing_group` unset = the consolidated scope
-	(every ungrouped asset, plus standalone metered resources that map to no group)."""
+	(every ungrouped asset, plus standalone metered resources that map to no group).
+	`billing_group=ALL_SCOPES` skips the filter — see `_AllScopes`."""
+	if billing_group is ALL_SCOPES:
+		return lines
 	group_map = _resource_group_map(team)
 	return [l for l in lines if group_map.get(l.get("subscription_resource")) == billing_group]
 
@@ -273,8 +298,9 @@ def rate_team_period(
 	tax, no insert. Returns None when the scope has nothing billable.
 
 	`billing_group` restricts the lines to that scope: unset = the team's
-	consolidated set of ungrouped assets (what a whole-team projection wants); set =
-	one Billing Group's assets only.
+	consolidated set of ungrouped assets; set = one Billing Group's assets only.
+	Pass `ALL_SCOPES` for a genuine whole-team reading across every scope at once
+	(what the projection engine's dashboard reads want — see `_AllScopes`).
 
 	`metered` replaces the metered lines rather than adding to them. The run leaves it
 	unset and bills the rollups that landed; a projection supplies estimated usage,
@@ -299,7 +325,11 @@ def rate_team_period(
 	if not lines:
 		return None
 
-	return _rate(team, lines, period_start, period_end, billing_group)
+	# The payload's own `billing_group` field records which single scope this rating
+	# belongs to — ALL_SCOPES isn't one, so it's never a valid value to carry past
+	# this point (and isn't JSON-safe for a read endpoint to return).
+	scope = None if billing_group is ALL_SCOPES else billing_group
+	return _rate(team, lines, period_start, period_end, scope)
 
 
 def _generate_team_invoice(team: str, period_start, period_end, billing_group: str | None = None):

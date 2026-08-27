@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import type {
+	BillingGroup,
 	BillingProfile,
 	CreditBalance,
 	CreditLedgerEntry,
@@ -63,6 +64,12 @@ const subscriptionsCall = useCall<SubscriptionRow[], { team: string }>({
 	immediate: false,
 	refetch: true,
 })
+const groupsCall = useCall<BillingGroup[], { team: string }>({
+	url: method(API.billingGroups),
+	params,
+	immediate: false,
+	refetch: true,
+})
 
 const nextPaymentCall = useCall<NextPayment, { team: string }>({
 	url: method(API.nextPayment),
@@ -85,6 +92,7 @@ whenTeamReady(() => {
 	methodsCall.reload()
 	profileCall.reload()
 	subscriptionsCall.reload()
+	groupsCall.reload()
 	nextPaymentCall.reload()
 	cycleCostsCall.reload()
 })
@@ -98,6 +106,7 @@ export function useBillingOverview() {
 		methods: methodsCall,
 		profile: profileCall,
 		subscriptions: subscriptionsCall,
+		groups: groupsCall,
 		nextPayment: nextPaymentCall,
 		cycleCosts: cycleCostsCall,
 		// The team's billing currency. The Billing Profile is the source of truth
@@ -131,6 +140,14 @@ export function useBillingOverview() {
 		reloadProfile(): void {
 			profileCall.reload()
 			overviewCall.reload()
+		},
+		reloadGroups: () => groupsCall.reload(),
+		// Tagging a subscription into/out of a group moves it between invoice
+		// scopes — both reads carry group state (the subscription's badge, the
+		// group's resource_count), so a retag refreshes both at once.
+		reloadSubscriptionGrouping(): void {
+			subscriptionsCall.reload()
+			groupsCall.reload()
 		},
 	}
 }

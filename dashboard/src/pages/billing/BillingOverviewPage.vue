@@ -2,6 +2,8 @@
 import { Alert } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import BillingContactTaxCard from '@/components/billing/BillingContactTaxCard.vue'
+import BillingGroupsCard from '@/components/billing/BillingGroupsCard.vue'
+import BillingGroupsPanel from '@/components/billing/BillingGroupsPanel.vue'
 import CollectionActionBanner from '@/components/billing/CollectionActionBanner.vue'
 import CycleBreakdownPanel from '@/components/billing/CycleBreakdownPanel.vue'
 import EditBillingProfileDialog from '@/components/billing/EditBillingProfileDialog.vue'
@@ -29,7 +31,7 @@ const { complete, setupDialogOpen } = useBillingSetup()
 // One docked tray at a time: the panel column is a single 24rem slot, and two
 // open at once would stack two SidePanels side by side and squeeze the content
 // out. A single ref names which is showing, and each card's v-model writes it.
-type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | null
+type Tray = 'wallet' | 'cycle' | 'schedule' | 'payingFor' | 'billingGroups' | null
 const tray = ref<Tray>(null)
 
 function trayModel(name: Exclude<Tray, null>) {
@@ -44,6 +46,7 @@ const showWalletHistory = trayModel('wallet')
 const showCycleBreakdown = trayModel('cycle')
 const showSchedule = trayModel('schedule')
 const showPayingFor = trayModel('payingFor')
+const showBillingGroups = trayModel('billingGroups')
 
 // Rare, scary verbs live folded under "Advanced" — reference, not news, same
 // pattern as the invoice Activity fold.
@@ -85,6 +88,7 @@ const advancedOpen = ref(false)
 						/>
 					</div>
 					<PayingForCard @open="showPayingFor = true" />
+					<BillingGroupsCard @open="showBillingGroups = true" />
 					<PaymentMethodsCard />
 					<BillingContactTaxCard @edit="setupDialogOpen = true" />
 
@@ -115,6 +119,7 @@ const advancedOpen = ref(false)
 			<CycleBreakdownPanel v-model:open="showCycleBreakdown" />
 			<PaymentSchedulePanel v-model:open="showSchedule" />
 			<PayingForPanel v-model:open="showPayingFor" />
+			<BillingGroupsPanel v-model:open="showBillingGroups" />
 		</div>
 
 		<EditBillingProfileDialog v-model="setupDialogOpen" />

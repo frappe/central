@@ -37,7 +37,7 @@ class ProjectionTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Usage Rollup"):
+		for dt in ("Invoice", "Usage Rollup", "Billing Group"):
 			frappe.db.delete(dt, {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
@@ -82,6 +82,37 @@ class TestProjectingAPeriod(ProjectionTestBase):
 		self.assertEqual(out["period_start"], "2026-09-01")
 		self.assertEqual(out["as_of"], "2026-08-06")
 		self.assertEqual(out["currency"], "INR")
+
+
+class TestProjectionCoversEveryBillingGroupScope(ProjectionTestBase):
+	"""Regression: `rate_team_period`'s `billing_group=None` means "the
+	consolidated scope only" (needed so real invoice drafting doesn't leak a
+	group's lines onto the team's ungrouped bill) — but the dashboard's "what is
+	this team paying" reads must show EVERY scope, or a server disappears from
+	the customer's own overview the moment they tag it into a group."""
+
+	def test_a_grouped_resources_cost_still_shows_in_the_teams_projection(self):
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		group = frappe.get_doc({"doctype": "Billing Group", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", self.sub, "billing_group", group)
+		frappe.db.commit()
+
+		out = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")
+
+		self.assertIsNotNone(out["invoice"])
+		self.assertEqual(out["invoice"]["subtotal"], 12000.0)
+
+	def test_a_mix_of_grouped_and_ungrouped_resources_are_both_counted(self):
+		add_segment(self.sub, "Created", 12000, "2026-06-01 00:00:00")
+		other = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		group = frappe.get_doc({"doctype": "Billing Group", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", other, "billing_group", group)
+		add_segment(other, "Created", 5000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		out = engine.project(TEAM, "2026-09-01", "2026-09-30", today="2026-08-06")
+
+		self.assertEqual(out["invoice"]["subtotal"], 17000.0)
 
 
 class TestEstimatedUsageReachesTheInvoice(ProjectionTestBase):
