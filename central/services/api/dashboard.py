@@ -280,5 +280,4 @@ def _resolve_subscription(team: str, add_on) -> str | None:
 	plans = frappe.get_all("Plan", filters={"category": add_on.plan_category}, pluck="name")
 	if not plans:
 		return None
-	print(frappe.db.get_value("Subscription", {"team": team, "enabled": 1, "plan": ["in", plans]}, "name"))
 	return frappe.db.get_value("Subscription", {"team": team, "enabled": 1, "plan": ["in", plans]}, "name")
