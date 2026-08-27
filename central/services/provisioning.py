@@ -8,6 +8,7 @@ from frappe import _
 from central.services.drivers.base import get_driver
 
 if typing.TYPE_CHECKING:
+	from central.services.doctype.add_on_service.add_on_service import AddonService
 	from central.services.doctype.service_backend.service_backend import ServiceBackend
 
 # The minting core: Central owns entitlement + key issuance + storage. Who triggers a
@@ -128,7 +129,7 @@ def get_managed_service(managed_service: str):
 	return service
 
 
-def get_active_service(service: str):
+def get_active_service(service: str) -> AddonService:
 	add_on = frappe.db.get_value(
 		"Add-on Service",
 		service,

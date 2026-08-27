@@ -114,39 +114,25 @@ def cluster_tokens(backend: ServiceBackend) -> dict:
 	}
 
 
-def _reserve(managed_service: str, bucket: str, backend: ServiceBackend) -> ServiceCredential:
-	"""Record the bucket and its cluster before Garage is touched. The row must survive a
-	failure mid-create: without it the bucket is untracked, and nothing can tell Central's
-	own orphan from another tenant's. (Skipped under tests, where the row stays visible in
-	the test transaction.)"""
+def validate_bucket_name(driver: GarageDriver, backend: ServiceBackend, bucket: str) -> None:
+	"""S3 bucket naming, which Garage's global aliases follow."""
+	if not bucket or not BUCKET_NAME_PATTERN.match(bucket):
+		frappe.throw(
+			_(
+				f"{bucket} is not a valid bucket name. Use 3-63 characters: lowercase letters, "
+				"digits, dots and hyphens, starting and ending with a letter or digit."
+			)
+		)
 
-	abandoned = frappe.db.get_value(
-		"Service Credential",
-		{"managed_service": managed_service, "label": bucket, "status": "Provisioning"},
-		"name",
-	)
-	stored = (
-		frappe.get_doc("Service Credential", abandoned) if abandoned else frappe.new_doc("Service Credential")
-	)
-	stored.update(
-		{
-			"subject_type": "Team",
-			"managed_service": managed_service,
-			"service_backend": backend.name,
-			"label": bucket,
-			"status": "Provisioning",
-		}
-	)
-	stored.save()
-	if not frappe.in_test:
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- record of intent, see docstring
-
-	return stored
+	if driver.get_bucket_id(backend, bucket):
+		frappe.throw(
+			_("The bucket name {0} is already taken. Pick another.").format(bucket),
+			title=_("Bucket name taken"),
+		)
 
 
-def create_bucket(team: str, bucket: str) -> dict:
-	"""Create the team's bucket and mint the key scoped to it."""
-	validate_bucket_name(bucket)
+def create_service_credential(team: str, bucket: str, backend: ServiceBackend) -> ServiceCredential:
+	"""Create a Service Credential document for the bucket, without provisioning it yet."""
 	managed_service = active_managed_service(team, SERVICE)
 
 	if frappe.db.exists(
@@ -154,54 +140,70 @@ def create_bucket(team: str, bucket: str) -> dict:
 	):
 		frappe.throw(_(f"You already have a bucket named {bucket}."))
 
+	return frappe.get_doc(
+		{
+			"doctype": "Service Credential",
+			"subject_type": "Team",
+			"managed_service": managed_service,
+			"service_backend": backend.name,
+			"label": bucket,
+			"status": "Provisioning",
+		}
+	)
+
+
+def _config(credential: ServiceCredential) -> dict:
+	return {
+		"credential": credential.name,
+		"endpoint_url": credential.gateway_url,
+		"bucket": credential.label,
+		"access_key_id": credential.provider_ref,
+		"secret_access_key": credential.get_password("api_key"),
+		"status": "Active",
+	}
+
+
+def create_bucket(team: str, bucket: str) -> dict:
+	"""Create the team's bucket and mint the key scoped to it. The name goes on last, so a
+	failure leaves at most an unnamed, keyless bucket: nothing to find, and nothing holding
+	the name against a retry."""
 	backend = get_backend(get_active_service(SERVICE).name)
-	stored = _reserve(managed_service, bucket, backend)
 	driver = GarageDriver()
+	validate_bucket_name(driver, backend, bucket)
 
-	with BucketProvisioningContext(stored) as ctx:
-		# Only a reservation an earlier attempt left behind carries an id, and only by
-		# id — never by name, which another team may hold by now.
-		adopted = bool(stored.provider_bucket_id) and driver.bucket_exists(
-			backend,
-			stored.provider_bucket_id,
-		)
+	credential = create_service_credential(team, bucket, backend)
+	bucket_id = driver.create_bucket(backend)
 
-		if adopted:
-			bucket_id = stored.provider_bucket_id
-		else:
-			bucket_id = driver.create_bucket(backend, bucket)
-			stored.db_set("provider_bucket_id", bucket_id, commit=not frappe.in_test)
-
-			def drop_created_bucket() -> None:
-				# Clearing the id is part of the rollback: it is what tells the context
-				# the reservation no longer names anything.
-				driver.delete_bucket(backend, bucket_id)
-				stored.db_set("provider_bucket_id", None, commit=False)
-
-			ctx.add_rollback(
-				action=drop_created_bucket,
-				error_title="Garage bucket left behind after a failed provision",
-				error_msg=f"{bucket_id} still exists.",
-			)
-
+	try:
 		key = driver.mint_key(backend, bucket, bucket_id)
-		ctx.add_rollback(
-			action=lambda: driver.revoke_key(backend, key["access_key_id"]),
-			error_title="Garage key left behind after a failed provision",
-			error_msg=f"{key['access_key_id']} is still live.",
-		)
-
-		stored.update(
+		driver.attach_alias(backend, bucket_id, bucket)
+		credential.update(
 			{
 				"status": "Active",
 				"gateway_url": backend.s3_endpoint,
+				"provider_bucket_id": bucket_id,
 				"provider_ref": key["access_key_id"],
 				"api_key": key["secret_access_key"],
 			}
-		)
-		stored.save()
+		).insert()
+	except Exception:
+		_discard(driver, backend, bucket_id)
+		raise
 
-	return _config(stored)
+	return _config(credential)
+
+
+def _discard(driver: GarageDriver, backend: ServiceBackend, bucket_id: str) -> None:
+	"""Delete the bucket this attempt made, keys and all. Best effort: the cluster that
+	refused the provision can refuse this too, and it must not raise over the error being
+	propagated. What survives is unnamed, so it blocks nothing."""
+	try:
+		driver.delete_bucket(backend, bucket_id)
+	except Exception:
+		frappe.log_error(
+			title="Garage bucket left behind after a failed provision",
+			message=f"Unnamed bucket {bucket_id}.\n\n{frappe.get_traceback()}",
+		)
 
 
 def revoke_bucket(name: str) -> dict:
@@ -217,25 +219,3 @@ def revoke_bucket(name: str) -> dict:
 	stored.db_set("status", "Revoked")
 
 	return {"name": name, "status": "Revoked"}
-
-
-def validate_bucket_name(bucket: str) -> None:
-	"""S3 bucket naming, which Garage's global aliases follow."""
-	if not bucket or not BUCKET_NAME_PATTERN.match(bucket):
-		frappe.throw(
-			_(
-				f"{bucket} is not a valid bucket name. Use 3-63 characters: lowercase letters, "
-				"digits, dots and hyphens, starting and ending with a letter or digit."
-			)
-		)
-
-
-def _config(credential: ServiceCredential) -> dict:
-	return {
-		"credential": credential.name,
-		"endpoint_url": credential.gateway_url,
-		"bucket": credential.label,
-		"access_key_id": credential.provider_ref,
-		"secret_access_key": credential.get_password("api_key"),
-		"status": "Active",
-	}

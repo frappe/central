@@ -86,8 +86,8 @@ class TestStorageProvisioning(IntegrationTestCase):
 		return patch.multiple(
 			GarageDriver,
 			get_bucket_id=MagicMock(return_value=existing_bucket),
-			bucket_exists=MagicMock(return_value=bool(existing_bucket)),
 			create_bucket=MagicMock(return_value=_BUCKET_ID),
+			attach_alias=MagicMock(),
 			mint_key=MagicMock(return_value=_KEY),
 			delete_bucket=MagicMock(),
 			revoke_key=MagicMock(),
@@ -123,9 +123,31 @@ class TestStorageProvisioning(IntegrationTestCase):
 				storage.create_bucket(self.team, _BUCKET)
 
 	def test_a_name_another_tenant_holds_is_refused(self):
-		with patch.object(GarageDriver, "get_bucket_id", return_value="someone-elses-bucket"):
+		# Refused before anything is created: the alias already resolves elsewhere.
+		with self._mint(existing_bucket="someone-elses-bucket"):
 			with self.assertRaisesRegex(frappe.ValidationError, "already taken"):
-				GarageDriver().create_bucket(self.backend, _BUCKET)
+				storage.create_bucket(self.team, _BUCKET)
+			GarageDriver.create_bucket.assert_not_called()
+
+	def test_a_name_lost_to_a_concurrent_request_is_refused_cleanly(self):
+		# Both callers passed the availability check; Garage arbitrates at attach time.
+		conflict = MagicMock(ok=False, status_code=400)
+		conflict.text = '{"message": "Bad request: Alias acme-backups already exists and points to different bucket: 578bd02af7bc"}'
+
+		# attach_alias stays real — it is the code under test; only the wire is faked.
+		with (
+			patch.object(GarageDriver, "get_bucket_id", return_value=None),
+			patch.object(GarageDriver, "create_bucket", return_value=_BUCKET_ID),
+			patch.object(GarageDriver, "mint_key", return_value=_KEY),
+			patch.object(GarageDriver, "_request", return_value=conflict),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaisesRegex(frappe.ValidationError, "already taken"),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		# The loser's bucket goes with it, and Garage's raw text never reaches the user.
+		delete_bucket.assert_called_once()
+		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
 
 	def test_an_invalid_bucket_name_is_refused(self):
 		for name in ("ab", "Acme-Backups", "-leading", "trailing-", "under_score"):
@@ -182,85 +204,41 @@ class TestStorageProvisioning(IntegrationTestCase):
 		# Garage is clean, so nothing is left to retry from.
 		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
 
-	def test_a_clean_rollback_lets_the_next_attempt_start_fresh(self):
-		with (
-			self._mint(),
-			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
-			self.assertRaises(RuntimeError),
-		):
-			storage.create_bucket(self.team, _BUCKET)
-
+	def test_the_name_goes_on_only_once_the_bucket_is_usable(self):
 		with self._mint():
-			config = storage.create_bucket(self.team, _BUCKET)
-			# A fresh create, not an adopted reservation.
+			storage.create_bucket(self.team, _BUCKET)
+
+			# Created unnamed, then keyed, then named: an abandoned attempt holds no name.
 			GarageDriver.create_bucket.assert_called_once()
+			self.assertNotIn(_BUCKET, GarageDriver.create_bucket.call_args.args)
+			self.assertEqual(GarageDriver.attach_alias.call_args.args[-1], _BUCKET)
 
-		self.assertEqual(config["status"], "Active")
-
-	def test_a_key_that_cannot_be_stored_is_revoked(self):
-		original_save = frappe.model.document.Document.save
-
-		def fail_on_activation(doc, *args, **kwargs):
-			if doc.doctype == "Service Credential" and doc.status == "Active":
-				raise RuntimeError("db gone")
-			return original_save(doc, *args, **kwargs)
-
-		with (
-			self._mint(),
-			patch.object(GarageDriver, "revoke_key") as revoke,
-			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
-			patch.object(frappe.model.document.Document, "save", fail_on_activation),
-			self.assertRaises(RuntimeError),
-		):
-			storage.create_bucket(self.team, _BUCKET)
-
-		revoke.assert_called_once()
-		delete_bucket.assert_called_once()
-
-	def test_cleanup_continues_and_preserves_the_original_error(self):
-		with (
-			self._mint(),
-			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
-			patch.object(GarageDriver, "revoke_key", side_effect=RuntimeError("revoke failed")),
-			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
-			self.assertRaisesRegex(RuntimeError, "garage down"),
-		):
-			storage.create_bucket(self.team, _BUCKET)
-
-		delete_bucket.assert_called_once()
-
-	def test_an_adopted_bucket_keeps_its_reservation_when_the_retry_fails(self):
-		# A bucket outlived an earlier attempt (its worker was killed before rollback),
-		# so the row is its only record: deleting it would strand the bucket.
-		reservation = storage._reserve(self.managed.name, _BUCKET, self.backend)
-		reservation.db_set("provider_bucket_id", _BUCKET_ID)
-
-		with (
-			self._mint(existing_bucket=_BUCKET_ID),
-			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("down")),
-			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
-			self.assertRaises(RuntimeError),
-		):
-			storage.create_bucket(self.team, _BUCKET)
-
-		delete_bucket.assert_not_called()
-		kept = frappe.get_doc("Service Credential", reservation.name)
-		self.assertEqual(kept.status, "Provisioning")
-		self.assertEqual(kept.provider_bucket_id, _BUCKET_ID)
-
-	def test_a_row_survives_when_cleanup_could_not_finish(self):
-		# The bucket is still out there, so the row is the only record of it.
+	def test_a_failed_cleanup_does_not_mask_the_original_error(self):
 		with (
 			self._mint(),
 			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
 			patch.object(GarageDriver, "delete_bucket", side_effect=RuntimeError("delete failed")),
+			self.assertRaisesRegex(RuntimeError, "garage down"),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+	def test_a_credential_that_cannot_be_stored_takes_the_bucket_with_it(self):
+		original_insert = frappe.model.document.Document.insert
+
+		def fail_on_activation(doc, *args, **kwargs):
+			if doc.doctype == "Service Credential":
+				raise RuntimeError("db gone")
+			return original_insert(doc, *args, **kwargs)
+
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			patch.object(frappe.model.document.Document, "insert", fail_on_activation),
 			self.assertRaises(RuntimeError),
 		):
 			storage.create_bucket(self.team, _BUCKET)
 
-		stranded = frappe.get_doc("Service Credential", {"managed_service": self.managed.name})
-		self.assertEqual(stranded.status, "Failed")
-		self.assertEqual(stranded.provider_bucket_id, _BUCKET_ID)
+		delete_bucket.assert_called_once()
 
 	def test_enrolling_a_garage_backend_mints_its_secrets(self):
 		first = self.backend.enroll()

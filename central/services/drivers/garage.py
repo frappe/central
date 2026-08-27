@@ -7,7 +7,6 @@ import frappe
 import requests
 from frappe import _
 
-
 if typing.TYPE_CHECKING:
 	from central.services.doctype.service_backend.service_backend import ServiceBackend
 
@@ -21,14 +20,29 @@ class GarageDriver:
 
 	key = "storage"
 
-	def create_bucket(self, backend: ServiceBackend, bucket: str) -> str:
-		"""Create a bucket and return its id. Fails if the name is taken: Garage aliases
-		are cluster-wide, and adopting a bucket Central did not create here would hand a
-		key to whatever already sits under that name."""
-		if self.get_bucket_id(backend, bucket):
-			frappe.throw(_("The bucket name {0} is already taken. Pick another.").format(bucket))
+	def create_bucket(self, backend: ServiceBackend) -> str:
+		"""Create an unnamed bucket and return its id. The name goes on last, once the
+		bucket is usable — an abandoned one is then invisible and squats no name."""
+		return self._call(backend, "CreateBucket", body={})["id"]
 
-		return self._call(backend, "CreateBucket", body={"globalAlias": bucket})["id"]
+	def attach_alias(self, backend: ServiceBackend, bucket_id: str, alias: str) -> None:
+		"""Name the bucket, once it is usable. Garage arbitrates the name: it is the only
+		thing that can, since two callers can both pass an availability check and only one
+		can win. Its rejection names the winning bucket's id, so it is answered rather than
+		relayed."""
+		response = self._request(
+			backend, "AddBucketAlias", body={"bucketId": bucket_id, "globalAlias": alias}
+		)
+		if not response.ok:
+			if "already exists" in response.text:
+				frappe.throw(
+					_("The bucket name {0} is already taken. Pick another.").format(alias),
+					title=_("Bucket name taken"),
+				)
+
+			frappe.throw(
+				_("Garage request failed ({0}): {1}").format(response.status_code, response.text[:200])
+			)
 
 	def get_bucket_id(self, backend: ServiceBackend, bucket: str) -> str | None:
 		"""The bucket's id, or None when no such alias exists — a 404 is an answer here,
@@ -36,10 +50,6 @@ class GarageDriver:
 		response = self._request(backend, "GetBucketInfo", method="GET", params={"globalAlias": bucket})
 
 		return response.json()["id"] if response.ok else None
-
-	def bucket_exists(self, backend: ServiceBackend, bucket_id: str) -> bool:
-		"""Whether a bucket still exists, by the id Central recorded when it created it."""
-		return self._request(backend, "GetBucketInfo", method="GET", params={"id": bucket_id}).ok
 
 	def mint_key(self, backend: ServiceBackend, name: str, bucket_id: str) -> dict:
 		"""Create a key then allow it on that bucket. A key that cannot be granted is
