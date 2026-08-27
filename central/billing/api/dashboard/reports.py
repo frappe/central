@@ -302,7 +302,10 @@ def _payments_csv(team, from_date, to_date) -> list[list]:
 
 
 def _spend_csv(team, from_date, to_date) -> list[list]:
-	data = get_spend_history(team, months=12)
+	"""The chart's 3/6/12 tab reaches us as from_date; get_spend_history counts back
+	in whole months from today, so turn that date back into a month count."""
+	months = frappe.utils.month_diff(frappe.utils.nowdate(), from_date) if from_date else 12
+	data = get_spend_history(team, months=months)
 	rows = [["Month", "Currency", "Billed", "Paid"]]
 	rows += [[m["month"], data["currency"], m["total"], m["paid"]] for m in data["months"]]
 	return rows
