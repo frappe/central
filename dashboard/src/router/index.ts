@@ -70,6 +70,12 @@ const routes = [
 				meta: { title: 'Services', feature: ['addons', 'llm'] },
 			},
 			{
+				path: 'addons/object-storage',
+				name: 'ObjectStorage',
+				component: () => import('@/pages/addons/ObjectStorage.vue'),
+				meta: { title: 'Services', feature: ['addons', 'storage'] },
+			},
+			{
 				path: 'billing',
 				name: 'Billing',
 				component: () => import('@/pages/billing/BillingOverviewPage.vue'),
