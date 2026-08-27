@@ -148,7 +148,7 @@ def _discard(
 	driver: GarageDriver,
 	backend: ServiceBackend,
 	bucket_id: str,
-	key: str | None = None,
+	key: dict[str] | None = None,
 	credential: ServiceCredential | None = None,
 ) -> None:
 	"""Delete the bucket this attempt made, keys and all, and the row if it was committed.
