@@ -22,7 +22,8 @@ const router = useRouter()
 const serviceKey = 'storage'
 
 const { canManageServices, canManageBilling } = useCapabilities()
-const { offers, offersLoading, instance, loadInstance, activate } = useServices()
+const { offers, offersLoading, instance, loadInstance, activate } =
+	useServices()
 const { activeTeam } = useSession()
 const { setBreadcrumbs } = useBreadcrumbs()
 

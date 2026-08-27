@@ -179,9 +179,7 @@ class TestStorageProvisioning(IntegrationTestCase):
 
 		self.assertEqual(delete_bucket.call_args.args[-1], _BUCKET_ID)
 		# Garage is clean, so nothing is left to retry from.
-		self.assertFalse(
-			frappe.db.exists("Service Credential", {"managed_service": self.managed.name})
-		)
+		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
 
 	def test_a_clean_rollback_lets_the_next_attempt_start_fresh(self):
 		with (

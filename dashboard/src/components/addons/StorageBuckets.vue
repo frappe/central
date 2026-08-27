@@ -8,7 +8,10 @@ import {
 	FormControl,
 	Spinner,
 } from 'frappe-ui'
-import { ListRowItem, ListView as UntypedListView } from 'frappe-ui/experimental'
+import {
+	ListRowItem,
+	ListView as UntypedListView,
+} from 'frappe-ui/experimental'
 import { type Component, computed, ref, watch } from 'vue'
 
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -94,7 +97,6 @@ watch(details, () => (secretRevealed.value = false))
 const createOpen = ref(false)
 const newName = ref('')
 const creating = ref(false)
-
 
 const openCreate = (): void => {
 	newName.value = ''
@@ -194,7 +196,10 @@ const copy = async (value: string, label: string): Promise<void> => {
 			</template>
 		</FormControl>
 
-		<div v-if="bucketsLoading && !buckets.length" class="flex h-40 justify-center py-12">
+		<div
+			v-if="bucketsLoading && !buckets.length"
+			class="flex h-40 justify-center py-12"
+		>
 			<Spinner class="size-5 text-ink-gray-5" />
 		</div>
 
@@ -214,7 +219,10 @@ const copy = async (value: string, label: string): Promise<void> => {
 			</template>
 		</EmptyState>
 
-		<p v-else-if="!rows.length" class="py-12 text-center text-p-sm text-ink-gray-5">
+		<p
+			v-else-if="!rows.length"
+			class="py-12 text-center text-p-sm text-ink-gray-5"
+		>
 			No buckets match “{{ search }}”.
 		</p>
 
@@ -311,7 +319,10 @@ const copy = async (value: string, label: string): Promise<void> => {
 			@keyup.enter="create"
 		/>
 
-		<p v-if="creating" class="mt-3 flex items-center gap-2 text-p-sm text-ink-gray-5">
+		<p
+			v-if="creating"
+			class="mt-3 flex items-center gap-2 text-p-sm text-ink-gray-5"
+		>
 			<Spinner class="size-3.5" />
 			Creating the bucket and minting its key. This can take a few seconds.
 		</p>
