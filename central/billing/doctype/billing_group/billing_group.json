@@ -45,6 +45,11 @@
    "group": "Billing",
    "link_doctype": "Subscription",
    "link_fieldname": "billing_group"
+  },
+  {
+   "group": "Payments",
+   "link_doctype": "Payment Method",
+   "link_fieldname": "billing_group"
   }
  ],
  "modified": "2026-08-27 11:10:46.832878",

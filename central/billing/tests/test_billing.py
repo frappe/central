@@ -307,6 +307,71 @@ class TestOpenAndCollect(BillingTestBase):
 		self.assertEqual(len(debits), 1)
 
 
+class TestBillingGroupCreditIsolation(BillingTestBase):
+	"""End-to-end: open_and_collect draws a group invoice from ONLY that group's
+	own tagged credit, and the consolidated invoice from ONLY the general pool —
+	credits.py's isolation guard exercised through the real settlement path."""
+
+	def _grouped_invoices(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		grouped_sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		group = frappe.get_doc({"doctype": "Billing Group", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", grouped_sub, "billing_group", group)
+		add_segment(grouped_sub, "Created", 2000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		run.generate_draft_invoices("2026-06-01", "2026-06-30")
+		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group"])
+		by_group = {(i.billing_group or None): i.name for i in invoices}
+		return group, by_group[None], by_group[group]
+
+	def test_group_invoice_settles_only_from_its_own_budget(self):
+		group, consolidated, grouped = self._grouped_invoices()
+		credits.purchase(TEAM, 2000, "INR", billing_group=group)  # covers the group invoice in full
+		credits.purchase(TEAM, 1000, "INR")  # covers the consolidated invoice in full
+		frappe.db.commit()
+
+		invoicing.open_and_collect(grouped)
+		invoicing.open_and_collect(consolidated)
+
+		grouped_doc = frappe.get_doc("Invoice", grouped)
+		consolidated_doc = frappe.get_doc("Invoice", consolidated)
+		self.assertEqual(grouped_doc.credit_applied, 2000.0)
+		self.assertEqual(grouped_doc.status, "Paid")
+		self.assertEqual(consolidated_doc.credit_applied, 1000.0)
+		self.assertEqual(consolidated_doc.status, "Paid")
+		# Each invoice's credit came from its own scope, not spillover.
+		self.assertEqual(credits.group_budget(TEAM, "INR", group), 0)
+		self.assertEqual(credits.general_pool_balance(TEAM, "INR"), 0)
+
+	def test_group_invoice_does_not_fall_back_to_the_general_pool_when_short(self):
+		group, _consolidated, grouped = self._grouped_invoices()
+		credits.purchase(TEAM, 500, "INR", billing_group=group)  # short of the 2000 owed
+		credits.purchase(TEAM, 5000, "INR")  # plenty in the general pool, but off-limits
+		frappe.db.commit()
+
+		invoicing.open_and_collect(grouped, collect=False)
+
+		grouped_doc = frappe.get_doc("Invoice", grouped)
+		self.assertEqual(grouped_doc.credit_applied, 500.0)
+		# The remainder is left for card/UPI — NOT quietly pulled from the general pool.
+		self.assertEqual(grouped_doc.expected_collection, 1500.0)
+		self.assertEqual(credits.general_pool_balance(TEAM, "INR"), 5000)
+
+	def test_consolidated_invoice_never_draws_a_groups_reserved_budget(self):
+		group, consolidated, _grouped = self._grouped_invoices()
+		credits.purchase(TEAM, 5000, "INR", billing_group=group)  # reserved for the group only
+		frappe.db.commit()
+
+		invoicing.open_and_collect(consolidated, collect=False)
+
+		consolidated_doc = frappe.get_doc("Invoice", consolidated)
+		self.assertEqual(consolidated_doc.credit_applied, 0.0)
+		self.assertEqual(consolidated_doc.expected_collection, 1000.0)
+		# The group's reservation is untouched.
+		self.assertEqual(credits.group_budget(TEAM, "INR", group), 5000)
+
+
 class TestTerminationCancelsBilling(BillingTestBase):
 	"""Terminating the VM must close the billing segment, not just pause it."""
 

@@ -60,9 +60,14 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
 	if collectable > 0:
 		# Draw and debit in the invoice's own currency — a USD team's wallet must be
-		# debited in USD, not the apply_credit default (INR).
-		balance = credits.get_balance(doc.team, doc.currency)["balance"]
-		applied = min(frappe.utils.flt(balance), collectable)
+		# debited in USD, not the apply_credit default (INR). A group invoice draws
+		# ONLY that group's own earmarked budget (no fallback to the general pool);
+		# the consolidated invoice draws ONLY the general pool. Never each other's.
+		if doc.billing_group:
+			available = credits.group_budget(doc.team, doc.currency, doc.billing_group)
+		else:
+			available = credits.general_pool_balance(doc.team, doc.currency)
+		applied = min(frappe.utils.flt(available), collectable)
 		if applied > 0:
 			credits.apply_credit(
 				doc.team,
@@ -71,6 +76,7 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 				reference_type="Invoice",
 				reference_name=invoice,
 				note=f"Credit applied to {invoice}",
+				billing_group=doc.billing_group,
 			)
 
 	doc.credit_applied = applied

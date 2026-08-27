@@ -115,6 +115,65 @@ def _lock_and_read_balance(team: str, currency: str) -> float:
 	return frappe.utils.flt(rows[0]) if rows else 0.0
 
 
+def _group_ledger_sum(team: str, currency: str, billing_group: str) -> float:
+	"""SUM(Credit) - SUM(Debit) for entries tagged this exact Billing Group.
+
+	Read only, not a booking primitive. Called both by `group_budget` (the public,
+	floored view) and by `_post_entry` (which needs the raw pre-entry sum, under the
+	wallet lock, to decide whether a pending Debit fits)."""
+	cle = frappe.qb.DocType("Credit Ledger Entry")
+	signed = Case().when(cle.entry_type == "Credit", cle.amount).else_(-cle.amount)
+	result = (
+		frappe.qb.from_(cle)
+		.select(Sum(signed))
+		.where((cle.team == team) & (cle.currency == currency) & (cle.billing_group == billing_group))
+		.run()
+	)[0][0]
+	return frappe.utils.flt(result)
+
+
+def group_budget(team: str, currency: str, billing_group: str) -> float:
+	"""Credit earmarked for this Billing Group and not yet spent by its own invoices.
+
+	A computed subset of the ONE (team, currency) wallet — not a separate wallet.
+	Only ledger entries explicitly tagged with this group count; a group invoice's
+	settlement draws from this and ONLY this (see `lifecycle.open_and_collect`) —
+	never the general pool, never another group's budget. Floored at zero: a
+	negative raw sum would mean an entry booked ahead of the guard in `_post_entry`
+	(a bug, not a spendable amount), and "how much can this group's invoice draw"
+	should read 0, not negative.
+	"""
+	return max(0.0, _group_ledger_sum(team, currency, billing_group))
+
+
+def _reserved_balance(team: str, currency: str) -> float:
+	"""Sum of every currently-ENABLED Billing Group's remaining budget for this
+	(team, currency) — the slice of the wallet earmarked and off-limits to the
+	consolidated invoice and to every other group.
+
+	Only enabled groups reserve: a disabled group's leftover tagged credit is
+	excluded here, so it falls back into `general_pool_balance` automatically —
+	no ledger transaction needed to "return" it. Re-enabling a group later starts
+	its budget fresh (old tagged entries stay tagged, but a NEW group reservation
+	begins from whatever fresh entries get tagged to it going forward — this
+	function does not distinguish "was disabled" history, only current `enabled`).
+	"""
+	groups = frappe.get_all("Billing Group", filters={"team": team, "enabled": 1}, pluck="name")
+	return sum(group_budget(team, currency, g) for g in groups)
+
+
+def general_pool_balance(team: str, currency: str) -> float:
+	"""What the team's consolidated invoice — and no group invoice — may draw.
+
+	The (team, currency) wallet's real balance minus every enabled group's reserved
+	budget. Reads the wallet without locking it (a plain read, like `get_balance`);
+	the authoritative, lock-consistent version of this check happens again inside
+	`_post_entry` under the wallet lock at the moment a Debit is actually posted.
+	"""
+	balance = frappe.db.get_value("Credit Wallet", wallet_name(team, currency), "balance")
+	return max(0.0, frappe.utils.flt(balance) - _reserved_balance(team, currency))
+
+
 def _book_entry(
 	team: str,
 	entry_type: str,
@@ -125,6 +184,7 @@ def _book_entry(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	billing_group: str | None = None,
 ):
 	"""Append one ledger entry under the per-wallet lock, retrying on deadlock.
 
@@ -161,6 +221,7 @@ def _book_entry(
 				note,
 				gateway_payment_id,
 				expires_on,
+				billing_group,
 			)
 		except frappe.QueryDeadlockError:
 			# The transaction is already rolled back by InnoDB; sync Frappe's state
@@ -188,6 +249,7 @@ def _book_entry_once(
 	note: str | None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	billing_group: str | None = None,
 ):
 	"""One booking attempt under the per-wallet lock; returns (doc, new_balance)."""
 	_ensure_wallet(team, currency)
@@ -215,6 +277,7 @@ def _book_entry_once(
 		note=note,
 		gateway_payment_id=gateway_payment_id,
 		expires_on=expires_on,
+		billing_group=billing_group,
 	)
 
 
@@ -229,6 +292,7 @@ def _post_entry(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	expires_on=None,
+	billing_group: str | None = None,
 ):
 	"""Append one entry against an already-locked wallet; returns (doc, new_balance).
 
@@ -242,11 +306,39 @@ def _post_entry(
 			f"Debit of {amount} {currency} exceeds wallet balance {balance} for {team}."
 		)
 
+	# A Debit is further scoped to its billing_group's own earmark — the wallet-level
+	# check above only guards the TOTAL pot; it would happily let a group invoice
+	# overdraw into money reserved for a *different* group, since physically it is
+	# all one balance. This is the enforcement point for "isolated, no fallback":
+	# the same trusted layer as the wallet guard, not something every caller must
+	# remember to cap correctly. Reads under the wallet lock already held by
+	# `_book_entry_once`, so no concurrent booking for this (team, currency) —
+	# tagged or not — can be in flight while this reads.
+	if entry_type == "Debit":
+		if billing_group:
+			available = _group_ledger_sum(team, currency, billing_group)
+			if amount > available:
+				raise InsufficientCredits(
+					f"Debit of {amount} {currency} exceeds Billing Group {billing_group}'s "
+					f"own budget {available} for {team} — group invoices draw only their "
+					f"own earmarked credit, never the general pool or another group's."
+				)
+		else:
+			pool = balance - _reserved_balance(team, currency)
+			if amount > pool:
+				raise InsufficientCredits(
+					f"Debit of {amount} {currency} exceeds the general pool {pool} for {team} "
+					"— the consolidated invoice draws only untagged credit, never a Billing "
+					"Group's reserved budget."
+				)
+
 	# Advance the authoritative balance on the locked anchor, then append the
 	# immutable ledger entry mirroring it. Both commit together under the lock.
-	# `set_value` skips the controller, so the guard above is the only application-
-	# level check — the CHECK (balance >= 0) constraint on the column is what makes
-	# a negative balance impossible for callers that never reach this function.
+	# `set_value` skips the controller, so the guards above are the only
+	# application-level checks — the CHECK (balance >= 0) constraint on the column
+	# is what makes a negative TOTAL balance impossible even for a caller that
+	# bypasses this function; the per-scope guards above have no such DB backstop,
+	# since the scoping is a ledger-tag concept the wallet table knows nothing about.
 	frappe.db.set_value(
 		"Credit Wallet",
 		wallet_name(team, currency),
@@ -261,6 +353,7 @@ def _post_entry(
 			"entry_type": entry_type,
 			"amount": amount,
 			"currency": currency,
+			"billing_group": billing_group,
 			"running_balance": new_balance,
 			"reference_type": reference_type,
 			"reference_name": reference_name,
@@ -311,6 +404,7 @@ def purchase(
 	note: str | None = None,
 	gateway_payment_id: str | None = None,
 	gateway: str | None = None,
+	billing_group: str | None = None,
 ) -> dict:
 	"""Top-up: book a credit entry for purchased credits.
 
@@ -322,6 +416,10 @@ def purchase(
 	payment, and the unique-key + under-lock guard ensure it books one credit.
 	`gateway` (the provider/adapter key) namespaces that id so ids only unique within
 	a gateway can't collide across gateways — see `_namespaced_payment_id`.
+
+	`billing_group` earmarks this top-up to that group's budget instead of the
+	general pool — e.g. a partner topping up specifically for one end-customer.
+	Unset (the default) funds the general pool, same as before this existed.
 	"""
 	entry, new_balance = _book_entry(
 		team,
@@ -332,28 +430,51 @@ def purchase(
 		reference_name=payment_method or reference_name,
 		note=note or "Credit top-up",
 		gateway_payment_id=_namespaced_payment_id(gateway, gateway_payment_id),
+		billing_group=billing_group,
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def apply_credit(team, amount, currency=None, reference_type=None, reference_name=None, note=None) -> dict:
+def apply_credit(
+	team, amount, currency=None, reference_type=None, reference_name=None, note=None, billing_group=None
+) -> dict:
 	"""Debit the (team, currency) wallet (e.g. credits applied to an open invoice).
 
 	Raises InsufficientCredits rather than going negative — per currency, since the
 	anchor it debits is the same one the caller read. The waterfall logic that
 	decides *how much* to apply against a card backstop lives in #11; this is the
 	locked primitive it builds on.
+
+	`billing_group` scopes the debit to that group's own earmarked budget — pass
+	the invoice's own `billing_group` (None for the consolidated invoice). See
+	`group_budget` / `general_pool_balance` for what each may draw; `_post_entry`
+	is where that isolation is actually enforced, not this wrapper.
 	"""
-	entry, new_balance = _book_entry(team, "Debit", amount, currency, reference_type, reference_name, note)
+	entry, new_balance = _book_entry(
+		team, "Debit", amount, currency, reference_type, reference_name, note, billing_group=billing_group
+	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
 def refund_to_wallet(
-	team, amount, currency=None, reference_type=None, reference_name=None, note=None
+	team, amount, currency=None, reference_type=None, reference_name=None, note=None, billing_group=None
 ) -> dict:
-	"""Book a credit entry for a partial-overcharge / gateway refund to wallet."""
+	"""Book a credit entry for a partial-overcharge / gateway refund to wallet.
+
+	`billing_group` returns the refund to that group's own budget rather than the
+	general pool — pass the refunded invoice's `billing_group` so a refund on a
+	group's invoice doesn't leak into money reserved for the team's consolidated
+	invoice or another group.
+	"""
 	entry, new_balance = _book_entry(
-		team, "Credit", amount, currency, reference_type, reference_name, note or "Refund to wallet"
+		team,
+		"Credit",
+		amount,
+		currency,
+		reference_type,
+		reference_name,
+		note or "Refund to wallet",
+		billing_group=billing_group,
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -394,13 +515,29 @@ def grant_promotional_credits(team, amount, currency, note=None, expires_on=None
 
 
 def adjust_credits(
-	team: str, amount: float, entry_type: str, currency: str | None = None, note: str | None = None
+	team: str,
+	amount: float,
+	entry_type: str,
+	currency: str | None = None,
+	note: str | None = None,
+	billing_group: str | None = None,
 ) -> dict:
-	"""Admin manual correction — a credit or debit entry with an audit note."""
+	"""Admin manual correction — a credit or debit entry with an audit note.
+
+	`billing_group` moves the correction into (or out of) that group's own budget
+	rather than the general pool — e.g. an operator re-earmarking a mistagged
+	top-up.
+	"""
 	if entry_type not in ("Credit", "Debit"):
 		frappe.throw(_("entry_type must be 'Credit' or 'Debit'."), frappe.ValidationError)
 	entry, new_balance = _book_entry(
-		team, entry_type, amount, currency, reference_type="Admin", note=note or "Admin adjustment"
+		team,
+		entry_type,
+		amount,
+		currency,
+		reference_type="Admin",
+		note=note or "Admin adjustment",
+		billing_group=billing_group,
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -472,23 +609,32 @@ def ledger_balance(team: str, currency: str) -> float:
 # queue, so expiring it is exactly "consume what remains of the front lot".
 
 
-def credit_lots(team: str, currency: str) -> list[dict]:
-	"""Every credit booking on this wallet, with how much of each is left.
+def credit_lots(team: str, currency: str, billing_group: str | None = None) -> list[dict]:
+	"""Every credit booking in one scope of this wallet, with how much of each is left.
 
 	Derived by replaying the ledger: debits are drawn against credits in
 	(expiry, then age) order, so a grant expiring on Friday is spent before one
 	expiring next month, and both before credit that never expires.
 
-	The remainders sum to the wallet balance — this is the same money, sliced by
-	where it came from rather than totalled.
+	Scoped to `billing_group` (None = the general pool) — replaying the WHOLE
+	wallet's entries as one FIFO queue, mixing tagged and untagged, would let a
+	group's debit appear to consume a general-pool grant it never actually touched
+	(`_post_entry` only ever lets a tagged Debit draw against that SAME tag's
+	Credits). Each scope's remainders sum to that scope's own budget — `group_budget`
+	or `general_pool_balance` — not the whole wallet balance.
 	"""
 	import datetime
 
 	cle = frappe.qb.DocType("Credit Ledger Entry")
+	scope = (
+		cle.billing_group.isnull() | (cle.billing_group == "")
+		if not billing_group
+		else cle.billing_group == billing_group
+	)
 	rows = (
 		frappe.qb.from_(cle)
 		.select(cle.name, cle.entry_type, cle.amount, cle.expires_on, cle.creation)
-		.where((cle.team == team) & (cle.currency == currency))
+		.where((cle.team == team) & (cle.currency == currency) & scope)
 		.orderby(cle.creation)
 		.run(as_dict=True)
 	)
@@ -508,7 +654,9 @@ def credit_lots(team: str, currency: str) -> list[dict]:
 	return lots
 
 
-def expiring_credits(team: str, currency: str | None = None, on_date=None) -> list[dict]:
+def expiring_credits(
+	team: str, currency: str | None = None, on_date=None, billing_group: str | None = None
+) -> list[dict]:
 	"""Unspent promotional credit that still has an expiry date ahead of it.
 
 	What the customer is shown as "expiring soon" — one row per grant, soonest first.
@@ -519,13 +667,13 @@ def expiring_credits(team: str, currency: str | None = None, on_date=None) -> li
 	on_date = frappe.utils.getdate(on_date)
 	return [
 		{"amount": lot.remaining, "expires_on": lot.expires_on, "ledger_entry": lot.name}
-		for lot in credit_lots(team, currency)
+		for lot in credit_lots(team, currency, billing_group)
 		if lot.expires_on and lot.remaining > 0 and frappe.utils.getdate(lot.expires_on) > on_date
 	]
 
 
-def expire_credits(team: str, currency: str, on_date=None) -> list[dict]:
-	"""Sweep every expired grant off one wallet; returns what was written off.
+def expire_credits(team: str, currency: str, on_date=None, billing_group: str | None = None) -> list[dict]:
+	"""Sweep every expired grant off one scope of one wallet; returns what was written off.
 
 	Runs under the wallet lock, and the remainders are computed *inside* it: reading
 	them first and booking after would let a concurrent invoice settlement spend the
@@ -538,7 +686,7 @@ def expire_credits(team: str, currency: str, on_date=None) -> list[dict]:
 	on_date = frappe.utils.getdate(on_date)
 	for attempt in range(_DEADLOCK_RETRIES):
 		try:
-			return _expire_credits_once(team, currency, on_date)
+			return _expire_credits_once(team, currency, on_date, billing_group)
 		except frappe.QueryDeadlockError:
 			frappe.db.rollback()
 			if attempt == _DEADLOCK_RETRIES - 1:
@@ -547,13 +695,13 @@ def expire_credits(team: str, currency: str, on_date=None) -> list[dict]:
 	return []
 
 
-def _expire_credits_once(team: str, currency: str, on_date) -> list[dict]:
+def _expire_credits_once(team: str, currency: str, on_date, billing_group: str | None = None) -> list[dict]:
 	"""One sweep attempt: lock the wallet, then write off what has run out of time."""
 	_ensure_wallet(team, currency)
 	balance = _lock_and_read_balance(team, currency)
 
 	expired = []
-	for lot in credit_lots(team, currency):
+	for lot in credit_lots(team, currency, billing_group):
 		if not lot.expires_on or lot.remaining <= 0:
 			continue
 		if frappe.utils.getdate(lot.expires_on) > on_date:
@@ -567,6 +715,7 @@ def _expire_credits_once(team: str, currency: str, on_date) -> list[dict]:
 			reference_type="Expiry",
 			reference_name=lot.name,
 			note=f"Promotional credit expired on {lot.expires_on}",
+			billing_group=billing_group,
 		)
 		expired.append({"ledger_entry": entry.name, "amount": lot.remaining, "expired_grant": lot.name})
 	return expired
@@ -575,35 +724,39 @@ def _expire_credits_once(team: str, currency: str, on_date) -> list[dict]:
 def run_credit_expiry(on_date=None) -> dict:
 	"""Daily: write off promotional credit that has run out of time.
 
-	Scans only wallets that hold a grant already past its date — a team whose credit
-	never expires is never looked at.
+	Scans only (team, currency, billing_group) scopes that hold a grant already past
+	its date — a team whose credit never expires is never looked at. Scoped by
+	billing_group too, not just (team, currency): each scope's grants are swept
+	independently, since `credit_lots` (and so `expire_credits`) only ever replays
+	one scope's own entries.
 	"""
 	on_date = frappe.utils.getdate(on_date)
 	cle = frappe.qb.DocType("Credit Ledger Entry")
-	wallets = (
+	scopes = (
 		frappe.qb.from_(cle)
-		.select(cle.team, cle.currency)
+		.select(cle.team, cle.currency, cle.billing_group)
 		.distinct()
 		.where((cle.entry_type == "Credit") & cle.expires_on.isnotnull() & (cle.expires_on <= on_date))
 		.run(as_dict=True)
 	)
 
 	swept, total = 0, 0.0
-	for wallet in wallets:
+	for scope in scopes:
 		# A wallet with nothing in it has nothing to expire; skip before taking a lock.
 		if (
 			frappe.utils.flt(
-				frappe.db.get_value("Credit Wallet", wallet_name(wallet.team, wallet.currency), "balance")
+				frappe.db.get_value("Credit Wallet", wallet_name(scope.team, scope.currency), "balance")
 			)
 			<= 0
 		):
 			continue
-		for expiry in expire_credits(wallet.team, wallet.currency, on_date):
+		for expiry in expire_credits(scope.team, scope.currency, on_date, scope.billing_group or None):
 			swept += 1
 			total += expiry["amount"]
 			frappe.logger("billing").info(
-				f"expired {expiry['amount']} {wallet.currency} of promotional credit "
-				f"for {wallet.team} (grant {expiry['expired_grant']})"
+				f"expired {expiry['amount']} {scope.currency} of promotional credit "
+				f"for {scope.team} (grant {expiry['expired_grant']})"
+				+ (f" [group {scope.billing_group}]" if scope.billing_group else "")
 			)
 
-	return {"wallets": len(wallets), "entries": swept, "amount": total}
+	return {"wallets": len(scopes), "entries": swept, "amount": total}
