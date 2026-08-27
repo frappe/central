@@ -30,7 +30,7 @@ class ServiceCredential(Document):
 		provider_ref: DF.Data | None
 		service_backend: DF.Link | None
 		site: DF.Link | None
-		status: DF.Literal["Active", "Revoked", "Failed", "Provisioning"]
+		status: DF.Literal["Active", "Revoked", "Failed"]
 		subject_type: DF.Literal["Site", "Team"]
 	# end: auto-generated types
 

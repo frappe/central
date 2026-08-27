@@ -192,7 +192,6 @@ scheduler_events = {
 		# was lost — mark it Succeeded if the mirror already reached the goal, else Timed Out.
 		"*/5 * * * *": [
 			"central.central.doctype.resource_action.resource_action.sweep_stale",
-			"central.services.storage.sweep_stale_provisioning",
 		],
 	},
 	"daily": [

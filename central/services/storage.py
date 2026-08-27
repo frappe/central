@@ -17,7 +17,6 @@ SERVICE = "storage"
 SECRET_LENGTH = 32
 CLUSTER_SECRETS = ("control_api_secret", "metrics_token", "rpc_secret")
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
-STALE_PROVISION_MINUTES = 10
 
 
 def mint_cluster_tokens(region: str, host: str) -> dict:
@@ -93,7 +92,7 @@ def create_service_credential(team: str, bucket: str, backend: ServiceBackend) -
 			"managed_service": managed_service,
 			"service_backend": backend.name,
 			"label": bucket,
-			"status": "Provisioning",
+			"status": "Active",
 		}
 	)
 
@@ -110,9 +109,8 @@ def _config(credential: ServiceCredential) -> dict:
 
 
 def create_bucket(team: str, bucket: str) -> dict:
-	"""Create the team's bucket and mint the key scoped to it. The name goes on last, and
-	only once the record is on disk, so a failure leaves at most a keyless bucket holding
-	no name against a retry."""
+	"""Create the team's bucket and mint the key scoped to it. Nothing is written until
+	the bucket works, and a failure takes back whatever this attempt made."""
 	driver = GarageDriver()
 	backend = get_backend(get_active_service(SERVICE).name)
 	validate_bucket_name(driver, backend, bucket)
@@ -123,6 +121,7 @@ def create_bucket(team: str, bucket: str) -> dict:
 
 	try:
 		key = driver.mint_key(backend, bucket, bucket_id)
+		driver.attach_alias(backend, bucket_id, bucket)
 		credential.update(
 			{
 				"gateway_url": backend.s3_endpoint,
@@ -131,86 +130,33 @@ def create_bucket(team: str, bucket: str) -> dict:
 				"api_key": key["secret_access_key"],
 			}
 		).insert()
-
-		if not frappe.in_test:
-			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- see above
-
-		driver.attach_alias(backend, bucket_id, bucket)
-		credential.db_set("status", "Active")
 	except Exception:
-		_discard(driver, backend, bucket_id, key, credential)
+		_discard(driver, backend, bucket_id, key)
 		raise
 
 	return _config(credential)
 
 
-def _discard(
-	driver: GarageDriver,
-	backend: ServiceBackend,
-	bucket_id: str,
-	key: dict[str] | None = None,
-	credential: ServiceCredential | None = None,
-) -> None:
-	"""Delete the bucket this attempt made, keys and all, and the row if it was committed.
-	Best effort, and never raises over the error being propagated."""
+def _discard(driver: GarageDriver, backend: ServiceBackend, bucket_id: str, key: dict | None = None) -> None:
+	"""Take back what this attempt made, each on its own so one failure does not skip the
+	other. Best effort, and never raises over the error being propagated. The key needs its
+	own call: deleting a bucket does not revoke keys allowed on it."""
+	if key:
+		try:
+			driver.revoke_key(backend, key["access_key_id"])
+		except Exception:
+			frappe.log_error(
+				title="Garage key left behind after a failed provision",
+				message=f"{key['access_key_id']} is still live.\n\n{frappe.get_traceback()}",
+			)
+
 	try:
 		driver.delete_bucket(backend, bucket_id)
-		if key:
-			driver.revoke_key(backend, key["access_key_id"])
 	except Exception:
 		frappe.log_error(
 			title="Garage bucket left behind after a failed provision",
 			message=f"Unnamed bucket {bucket_id}.\n\n{frappe.get_traceback()}",
 		)
-
-	if not credential or not credential.name or not frappe.db.exists("Service Credential", credential.name):
-		return
-
-	try:
-		credential.delete(ignore_permissions=True)
-		if not frappe.in_test:
-			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- undo the committed row
-	except Exception:
-		frappe.log_error(
-			title="Bucket record left behind after a failed provision",
-			message=f"{credential.name} names a deleted bucket.\n\n{frappe.get_traceback()}",
-		)
-
-
-def sweep_stale_provisioning(minutes: int = STALE_PROVISION_MINUTES) -> int:
-	"""Clear what a lost worker left half-made: the key, the bucket, then the row. The key
-	goes first — deleting a bucket does not revoke keys, and a key outliving its row can
-	never be found again. Garage refuses to delete a non-empty bucket, so a half-made
-	bucket someone reached by id keeps its objects and its row for an operator."""
-	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-minutes)
-	stale = frappe.get_all(
-		"Service Credential",
-		filters={"subject_type": "Team", "status": "Provisioning", "modified": ["<", cutoff]},
-		fields=["name", "provider_bucket_id", "provider_ref", "service_backend"],
-	)
-
-	swept = 0
-	for row in stale:
-		try:
-			if row.service_backend:
-				backend = frappe.get_doc("Service Backend", row.service_backend)
-				driver = GarageDriver()
-				if row.provider_ref:
-					driver.revoke_key(backend, row.provider_ref)
-				if row.provider_bucket_id:
-					driver.delete_bucket(backend, row.provider_bucket_id)
-
-			frappe.delete_doc("Service Credential", row.name, force=True, ignore_permissions=True)
-			if not frappe.in_test:
-				frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one row at a time
-			swept += 1
-		except Exception:
-			frappe.log_error(
-				title="Could not sweep a half-made bucket",
-				message=f"{row.name} names bucket {row.provider_bucket_id}.\n\n{frappe.get_traceback()}",
-			)
-
-	return swept
 
 
 def revoke_bucket(name: str) -> dict:
