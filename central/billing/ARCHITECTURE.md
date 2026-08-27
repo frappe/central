@@ -79,6 +79,7 @@ erDiagram
     Team ||--o{ PaymentMethod : owns
     Team ||--o{ CreditLedgerEntry : wallet
     Team ||--|| CreditWallet : balance
+    Team ||--o{ BillingGroup : "partitions its bill"
 
     Plan ||--o{ Subscription : instantiates
     PlanCategory ||--o{ PlanSubCategory : groups
@@ -87,7 +88,10 @@ erDiagram
 
     Subscription ||--o{ SubscriptionChange : "append-only history (locked_rate)"
     Subscription ||--o| Asset : provisions
-    Subscription ||--o{ Invoice : "billed from"
+    BillingGroup ||--o{ Subscription : "tags (optional)"
+    BillingGroup ||--o{ Invoice : "billed on its own"
+    BillingGroup ||--o{ CreditLedgerEntry : "earmarks (optional)"
+    BillingGroup ||--o{ PaymentMethod : "earmarks (optional)"
 
     Invoice ||--o{ InvoiceLineItem : contains
     Invoice ||--o{ PaymentAttempt : "settled by"
@@ -118,18 +122,19 @@ Plan Configurator ─→ Category, Sub-Category, [C]base_rates, [C]rungs(─→P
 **Subscription / state**
 ```
 Subscription ──team, ──plan, ──sub_category, ──includes, ──default_payment_method,
-             ──gateway, ──asset_id─→ Asset
+             ──gateway, ──asset_id─→ Asset, ──billing_group─→ Billing Group
 Subscription Change ──subscription, ──team, ──currency      (append-only history + locked_rate)
 Price Lock ──team, ──plan                                    (RETIRED — see §6; rate now lives on Subscription Change)
+Billing Group ──team, ──title, ──enabled                     (optional bill partition; see §2.1)
 ```
 
 **Invoice / money**
 ```
-Invoice [S] ──team, ──subscription, ──items─→ [C]Invoice Line Item
+Invoice [S] ──team, ──billing_group, ──items─→ [C]Invoice Line Item
 Payment Attempt ──invoice, ──team, ──gateway, ──payment_method
 Refund ──payment_attempt, ──invoice, ──team
-Credit Ledger Entry ──team, ──currency        (append-only)
-Credit Wallet ──team                           (lock anchor / cached balance)
+Credit Ledger Entry ──team, ──currency, ──billing_group     (append-only)
+Credit Wallet ──team                           (lock anchor / cached balance — one per (team,currency), never per group)
 Commitment [S] ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
 ```
@@ -137,7 +142,7 @@ Usage Rollup ──team                            (metered aggregation)
 **Payment plumbing**
 ```
 Billing Profile ──team, ──currency, ──country, ──trust_tier_level   (currency = source of truth, locks after activity)
-Payment Method ──team, ──gateway
+Payment Method ──team, ──gateway, ──billing_group             (optional earmark; see §2.1)
 Payment Gateway ──currencies─→ [C]Payment Gateway Currency
 Gateway Customer ──team, ──gateway             ((team,gateway) → customer_id)
 Tax Profile ──team
@@ -153,6 +158,67 @@ Entitlement Token ──team       (Ed25519-signed cap)
 ```
 Webhook Event ──gateway        | Billing Notification Log ──team
 ```
+
+### 2.1 Billing Group — one team, several bills
+
+A **Billing Group** is a user-defined tag a team applies to its own Subscriptions —
+typically one per end-customer a partner resells to. It partitions **what a team is
+billed for**, never **who owes the money**: the team is always the biller/payer, the
+group only changes how many invoices it receives and how those invoices are settled.
+Three surfaces read the tag, each with its own scoping rule:
+
+**Invoices.** A team's assets bill on its **consolidated invoice** (ungrouped) plus one
+invoice per active Billing Group its assets are tagged into — a team with two groups
+gets three invoices a period, not one. `Invoice.billing_group` (unset = consolidated)
+is part of the grain, not decoration: `period_key` is
+`team|billing_group|period_start|period_end` (ADR 0018, invariant I6), so the unique
+index enforces "one live invoice per **scope** per period," not just per team.
+`revenue/invoicing/generate.py`'s `_active_groups` / `_resource_group_map` /
+`_scope_lines` / `_team_invoice_groups` derive every scope's lines from one map, so a
+scope that gets an invoice is exactly a scope that can carry lines — they cannot
+disagree about what a scope is. Disabling a group folds its assets back onto the
+consolidated invoice from the next generation run (it does not untag them, so
+re-enabling resumes partitioning with no retagging). **No delete** — a group with
+billing history is load-bearing (`Invoice.billing_group` points at it); disabling is
+the retirement path.
+
+**Credits.** No second wallet. `Credit Wallet` stays exactly one per (team, currency) —
+the DB-enforced non-negative anchor is untouched. A group's "budget" is a *computed*
+subset of that one wallet: `Credit Ledger Entry.billing_group` tags a movement, and
+`revenue/credits.group_budget` / `general_pool_balance` sum the tagged/untagged entries
+respectively. Isolation is real, not just convention — `credits._post_entry` enforces
+it under the same wallet lock that already serialises every booking: a group invoice
+may debit **only** its own tagged sum (no fallback to the general pool, no borrowing
+from another group); the consolidated invoice may debit **only** the untagged general
+pool. A disabled group's leftover tagged credit needs no transaction to "return" —
+`general_pool_balance` simply stops excluding it once the group is no longer enabled.
+Because this isolation has no `CHECK` constraint behind it (unlike the wallet's own),
+invariant **C5** (`check_billing_group_budget_not_negative`) is the canary for a write
+that ever bypasses the guard.
+
+**Card routing.** `Payment Method.billing_group` earmarks a card to one group. Charging
+follows the identical own-then-general rule as credits (`collection.scoped_methods`): a
+group's invoice tries its own earmarked card(s) first (priority order), then falls back
+to the team's general cards if those decline or none are set; the consolidated invoice
+never uses a group's earmarked card. Both `collection.collect_invoice` (the real
+auto-charge path — `open_and_collect`, dunning retries, e-mandate) and
+`charges._resolve_method` (the manual "pay now" default) resolve through the same rule,
+though `_resolve_method` deliberately uses `scoped_methods` rather than
+`next_method_for` — it resolves a *default*, not a fallback rotation, so a manual retry
+must land on the same method twice, not silently skip to a different card.
+
+**Dunning / anchor.** An invoice has no subscription to read standing or a default
+payment method off (that link — `Invoice.subscription` — is gone; see §6). Both resolve
+a representative subscription via `catalog.subscriptions.anchor_subscription(team,
+billing_group)` — the scope's earliest-created subscription — so a group's invoice can
+independently go past_due/suspended without moving the team's other scopes.
+
+**Deliberately out of scope today**: a team-level Commitment (volume discount) applies
+only to the consolidated invoice — group invoices bill at full rate, uncommitted
+(`catalog/commitments.py` TODO). Cost projection (`projection/engine.py`) always
+projects the consolidated scope; nothing calls `rate_team_period` with a `billing_group`
+yet. The dashboard/API layer (creating a group, tagging a subscription or card into one)
+does not exist yet — Desk or `bench console` is the only way to do either right now.
 
 ---
 
@@ -349,8 +415,8 @@ Resize: `resize_composed_config → resize_composed_subscription` → new Subscr
 ```mermaid
 flowchart TD
     DRAFTTICK(["1st 01:00 · draft tick"]) --> GDI["draft_monthly_invoices<br/>→ generate_draft_invoices (pages teams)"]
-    GDI --> DTI["draft_team_page → draft_team_invoice<br/>(per team: isolated, committed)"]
-    DTI --> GTI["generate_team_invoice (per team)"]
+    GDI --> DTI["draft_team_page → draft_team_invoice<br/>(per team: every scope, isolated, committed)"]
+    DTI --> GTI["generate_team_invoice<br/>(per team × scope: consolidated + each active Billing Group)"]
     GTI --> RS["reconcile_subscription (fix drift)"]
     GTI --> LINES["lines.compute_line_items<br/>day-weighted from Sub Change segments"]
     GTI --> MET["+ metering.metered_line_items<br/>max(0, qty−allowance)×rate"]
@@ -371,13 +437,16 @@ flowchart TD
 ```
 [1st 01:00]  revenue.invoicing.draft_monthly_invoices
   → generate_draft_invoices (pages teams, enqueues one page job per slice)
-  → draft_team_page → draft_team_invoice (one team = one transaction = one commit)
-    → generate_team_invoice (per team, aggregates clusters)
+  → draft_team_page → draft_team_invoice (one team = one transaction = one commit,
+      drafting EVERY scope for that team: the consolidated bucket + one per active
+      Billing Group — `_team_invoice_groups`, §2.1)
+    → generate_team_invoice (per team × scope, aggregates clusters)
       → reconcile_subscription (correct drift if stale)
       → lines.compute_line_items  (day-weighted, from Subscription Change rate-snapshot segments)
       → + metering.metered_line_items   (max(0, qty−allowance) × rate)
-      → + commitments discount, + tax.resolve_tax (GST additive / SEZ zero / TDS withhold)
-  → Invoice (Draft)
+      → _scope_lines restricts to THIS scope's resources (group-tagged vs ungrouped)
+      → + commitments discount (consolidated scope only — §2.1), + tax.resolve_tax (GST additive / SEZ zero / TDS withhold)
+  → Invoice (Draft) — one per scope, same period, `period_key` keyed on (team, billing_group, period)
 
 [daily]      revenue.invoicing.collect_due_invoices   (sweeps until nothing is owed)
   → open_drafts (pages every Draft with period_end ≤ the closed month, one page job per slice)
@@ -412,6 +481,13 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
   → webhook arrives → apply_webhook → Payment Attempt Paid → Invoice Paid
   → failure → collection.collect_invoice walks primary → backup methods (escalate, don't repeat)
 ```
+Method resolution is billing-group-scoped (`collection.scoped_methods`, §2.1): a group's
+invoice tries its own earmarked Payment Method(s) first, then the team's general
+(untagged) ones; the consolidated invoice only ever uses general methods.
+`charges._resolve_method` (manual "pay now") and `collection.collect_invoice` (the real
+auto-charge path) both resolve through this same rule — but `_resolve_method` skips
+`next_method_for`'s "already failed" exclusion on purpose, since resolving a *default*
+must not silently rotate a manual retry onto a different card.
 
 ### D. Dunning (unpaid invoice)
 ```mermaid
@@ -451,6 +527,14 @@ revenue.credits.purchase → Credit Ledger Entry (append-only) + Credit Wallet (
 settlement.effective_spend_cap = min(trust-tier cap, wallet)   (credits-only mode)
 settlement.can_accept_spend gates money movement; 80% forecast warning
 ```
+`open_and_collect`'s credits leg is billing-group-scoped (§2.1): a group invoice draws
+`credits.group_budget(team, currency, billing_group)` — that group's own tagged
+entries, no fallback to the general pool. The consolidated invoice draws
+`credits.general_pool_balance` — untagged entries only, never a group's earmark. Both
+read under the SAME `Credit Wallet` lock as `purchase`/`apply_credit` — still one
+wallet per (team, currency); a group's "budget" is a computed subset of it, not a
+second anchor. `credits._post_entry` is where the isolation is actually enforced, not
+just hoped for by callers — invariant **C5** audits it.
 
 ### G. Trust tier / entitlement
 ```mermaid
@@ -505,6 +589,12 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 - **billing-owned roles + `platform/security.py` + `billing_team` field** → deleted; uses
   Central capability IAM (`authz.py` → `central.iam`). Team is a `Link(Team)`, not a Data slug.
 - **`billing_mode` field** → removed (v09); Billing Profile currency is the gate.
+- **`Invoice.subscription`** ("the primary subscription", whose payment method funded
+  the auto-charge) → replaced by `Invoice.billing_group` (§2.1). An invoice bills a
+  team+scope, never a subscription. Anything that needs the old link wants
+  `catalog.subscriptions.anchor_subscription(team, billing_group)` instead.
+- **`primary_subscription(team)`** (`revenue/invoicing/generate.py`) → deleted;
+  superseded by `anchor_subscription`, which is scope-aware where this wasn't.
 
 ---
 
@@ -526,6 +616,9 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Tier/cap wrong | `catalog.entitlements` (`get_team_caps`, `evaluate_tier`, per-currency Trust Tier Threshold) |
 | Provisioning failed | `catalog.subscriptions.provision_*`, `composition.validate_composition` bounds, cluster-manager call |
 | Card declined repeatedly | `collection` (escalate don't repeat), `mandates.effective_cap`, dunning Day 1/3/7 |
+| Team billed once when it should get several invoices (or vice versa) | `_team_invoice_groups`/`_resource_group_map` (`generate.py`) — is the asset's Subscription tagged, is its Billing Group `enabled`? A disabled group's assets fold back to consolidated by design (§2.1) |
+| Group invoice charged the wrong card, or the team's general card instead of the group's own | `collection.scoped_methods` — is the intended card's `Payment Method.billing_group` actually set, active, and not `reauth_required`? |
+| Group's credit not applying (or applying from the wrong pool) | `credits.group_budget`/`general_pool_balance` — check the `Credit Ledger Entry.billing_group` tag on the purchase/grant; invariant **C5** catches a budget pushed negative |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
 | Catalog masters missing | `taxonomy_setup.ensure_catalog_masters` (runs on install/migrate/before_tests) |
 | Money rounding off | money is float `Currency` (major units); check the rate field's decimal **precision** holds sub-cent rates, and that minor-unit conversion happens *only* in `gateways/` |
