@@ -7,7 +7,6 @@ import frappe
 import requests
 from frappe import _
 
-from central.services.drivers.base import DriverError
 
 if typing.TYPE_CHECKING:
 	from central.services.doctype.service_backend.service_backend import ServiceBackend
@@ -87,9 +86,7 @@ class GarageDriver:
 	) -> dict:
 		response = self._request(backend, endpoint, method=method, params=params, body=body)
 		if not response.ok:
-			frappe.throw(
-				_(f"Garage request failed ({response.status_code}): {response.text[:200]}"), DriverError
-			)
+			frappe.throw(_(f"Garage request failed ({response.status_code}): {response.text[:200]}"))
 
 		return response.json()
 
