@@ -19,61 +19,6 @@ CLUSTER_SECRETS = ("control_api_secret", "metrics_token", "rpc_secret")
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 
-class BucketProvisioningContext:
-	"""Orchestrates multi-step infrastructure calls with LIFO rollback guarantees."""
-
-	def __init__(self, stored_doc: ServiceCredential):
-		self.doc = stored_doc
-		self.rollbacks: list[tuple[typing.Callable[[], None], str, str]] = []
-
-	def add_rollback(self, action: typing.Callable[[], None], error_title: str, error_msg: str) -> None:
-		"""Register a compensating action to run if downstream steps fail."""
-		self.rollbacks.append((action, error_title, error_msg))
-
-	def __enter__(self):
-		return self
-
-	def __exit__(self, exc_type, exc_val, exc_tb):
-		if exc_type is None:
-			return False  # Success: let execution continue normally
-
-		# Failure: execute rollbacks in reverse order (LIFO)
-		fully_cleaned = True
-		for action, title, message in reversed(self.rollbacks):
-			try:
-				action()
-			except Exception:
-				fully_cleaned = False
-				frappe.log_error(title=title, message=f"{message}\n\n{frappe.get_traceback()}")
-
-		# Nothing here may raise, or it replaces the error the caller is propagating.
-		try:
-			self._settle(fully_cleaned)
-			self._safe_commit()
-		except Exception:
-			frappe.log_error(
-				title="Could not settle a failed bucket reservation",
-				message=f"{self.doc.name} needs reconciling.\n\n{frappe.get_traceback()}",
-			)
-
-		return False  # Propagate the original exception
-
-	def _settle(self, fully_cleaned: bool) -> None:
-		"""What becomes of the reservation. It survives whenever infrastructure does: as
-		Failed when a rollback could not finish, and untouched while it still names a
-		bucket an earlier attempt left behind — that row is the bucket's only record, and
-		the next attempt adopts it. Only a reservation holding nothing is deleted."""
-		if not fully_cleaned:
-			self.doc.db_set("status", "Failed", commit=False)
-		elif not self.doc.provider_bucket_id:
-			self.doc.delete(ignore_permissions=True)
-
-	@staticmethod
-	def _safe_commit() -> None:
-		if not frappe.in_test:
-			frappe.db.commit()
-
-
 def mint_cluster_tokens(region: str, host: str) -> dict:
 	"""A node's `garage.toml` secrets. Idempotent per region: every node in a cluster
 	needs the same `rpc_secret`, and the first host to ask stays the entry node."""
@@ -171,6 +116,7 @@ def create_bucket(team: str, bucket: str) -> dict:
 	driver = GarageDriver()
 	validate_bucket_name(driver, backend, bucket)
 
+	key = None
 	credential = create_service_credential(team, bucket, backend)
 	bucket_id = driver.create_bucket(backend)
 
@@ -187,18 +133,20 @@ def create_bucket(team: str, bucket: str) -> dict:
 			}
 		).insert()
 	except Exception:
-		_discard(driver, backend, bucket_id)
+		_discard(driver, backend, bucket_id, key)
 		raise
 
 	return _config(credential)
 
 
-def _discard(driver: GarageDriver, backend: ServiceBackend, bucket_id: str) -> None:
+def _discard(driver: GarageDriver, backend: ServiceBackend, bucket_id: str, key: str | None = None) -> None:
 	"""Delete the bucket this attempt made, keys and all. Best effort: the cluster that
 	refused the provision can refuse this too, and it must not raise over the error being
 	propagated. What survives is unnamed, so it blocks nothing."""
 	try:
 		driver.delete_bucket(backend, bucket_id)
+		if key:
+			driver.revoke_key(backend, key)
 	except Exception:
 		frappe.log_error(
 			title="Garage bucket left behind after a failed provision",
