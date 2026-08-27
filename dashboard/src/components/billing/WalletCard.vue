@@ -6,7 +6,6 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useBillingSetup } from '@/composables/useBillingSetup'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { formatDate, money } from '@/lib/format'
-import { infoToast } from '@/lib/toast'
 
 // Wallet — the FC v2 prototype's funding card: balance, a one-line coverage
 // verdict, and (once there's a method to charge) the funding actions. The chevron
@@ -51,12 +50,6 @@ const nextExpiry = computed(() => credit.data?.expiring?.[0])
 const showTopup = ref(false)
 function onAddCredit(): void {
 	if (requireSetup()) showTopup.value = true
-}
-
-// GROUNDING GAP (#69): no auto-recharge endpoint yet, so the button answers
-// with the same notice as the wallet panel's toggle.
-function onAutoRecharge(): void {
-	infoToast("Auto-recharge isn't available yet")
 }
 </script>
 
@@ -107,7 +100,7 @@ function onAutoRecharge(): void {
 					class="lucide-triangle-alert size-3.5 shrink-0"
 					aria-hidden="true"
 				/>
-				<template v-if="coverPct != null">
+				<template v-if="coverPct">
 					Covers {{ coverPct }}% of this cycle
 				</template>
 				<template v-else>Insufficient balance</template>
@@ -120,10 +113,10 @@ function onAutoRecharge(): void {
 					class="lucide-credit-card size-3.5 shrink-0 text-ink-gray-4"
 					aria-hidden="true"
 				/>
-				<template v-if="coverPct != null">
-					Covers {{ coverPct }}% of this cycle · card covers the rest
+				<template v-if="coverPct">
+					Covers {{ coverPct }}% · card pays the rest
 				</template>
-				<template v-else>Card covers the rest</template>
+				<template v-else>Card pays this cycle</template>
 			</p>
 			<p v-else class="mt-1.5 text-p-sm text-ink-gray-5">
 				<!-- An empty wallet with nothing owed is a wallet with no credit in it;
@@ -153,19 +146,8 @@ function onAutoRecharge(): void {
 			<!-- Funding actions, once there's a method to charge. -->
 			<div
 				v-if="hasMethod && canManageBilling"
-				class="mt-auto flex items-center justify-between gap-2 pt-4"
+				class="mt-auto flex items-center justify-end gap-2 pt-4"
 			>
-				<Button
-					variant="ghost"
-					size="sm"
-					label="Auto-recharge off"
-					class="-ml-2"
-					@click="onAutoRecharge"
-				>
-					<template #prefix
-						><span class="lucide-zap size-4" aria-hidden="true" /></template
-					>
-				</Button>
 				<Button
 					variant="subtle"
 					size="sm"

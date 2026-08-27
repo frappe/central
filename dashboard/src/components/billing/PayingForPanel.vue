@@ -3,16 +3,11 @@ import { LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import PayingForRow from '@/components/billing/PayingForRow.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
-import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
 import { money } from '@/lib/format'
 
-// Everything being billed this cycle, in full. The card keeps the top few; this
-// is where the long tail goes, so the card never grows its own scrollbar.
 const open = defineModel<boolean>('open', { default: false })
-const { canManageBilling } = useCapabilities()
-const { rows, loading, currency, total, busy, openServer, askPause, onResume } =
-	usePayingFor()
+const { rows, loading, currency, total, openServer } = usePayingFor()
 
 const subtitle = computed(() =>
 	rows.value.length
@@ -22,11 +17,7 @@ const subtitle = computed(() =>
 </script>
 
 <template>
-	<SidePanel
-		v-model:open="open"
-		title="What you're paying for"
-		:subtitle="subtitle"
-	>
+	<SidePanel v-model:open="open" title="Subscriptions" :subtitle="subtitle">
 		<div v-if="loading" class="space-y-3 p-4">
 			<LoadingText :lines="6" />
 		</div>
@@ -36,11 +27,7 @@ const subtitle = computed(() =>
 				:key="row.id"
 				:row="row"
 				:currency="currency"
-				:can-manage="canManageBilling"
-				:busy="busy"
 				@open="openServer"
-				@pause="askPause"
-				@resume="onResume"
 			/>
 		</div>
 	</SidePanel>

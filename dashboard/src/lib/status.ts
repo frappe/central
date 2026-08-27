@@ -1,4 +1,5 @@
 import type { InvitationStatus } from '@/types/api'
+import type { PaymentAttempt } from '@/types/billing'
 import type { Asset } from '@/types/Central/Asset'
 
 // The DocType statuses plus Central's own derived display state (see displayStatus).
@@ -102,4 +103,36 @@ export function paymentAttemptDisplay(status: string | null | undefined): {
 			theme: 'gray',
 		}
 	)
+}
+
+export interface AttemptStory {
+	/** Newest successful capture. */
+	captured: PaymentAttempt | null
+	/** Newest attempt still with the gateway (Initiated/Authorised). */
+	inFlight: PaymentAttempt | null
+	/** Newest refunded attempt. */
+	refunded: PaymentAttempt | null
+	failed: number
+	/** Dunning retries that preceded the capture (all failures when uncaptured). */
+	failedBeforeCapture: number
+}
+
+export function attemptStory(attempts: PaymentAttempt[]): AttemptStory {
+	const sorted = [...attempts].sort((a, b) => b.at.localeCompare(a.at))
+	const captured = sorted.find((a) => a.status === 'Captured') ?? null
+	const inFlight =
+		sorted.find((a) => a.status === 'Initiated' || a.status === 'Authorised') ??
+		null
+	const refunded = sorted.find((a) => a.status === 'Refunded') ?? null
+	const failures = sorted.filter((a) => a.status === 'Failed')
+	const failedBeforeCapture = captured
+		? failures.filter((a) => a.at.localeCompare(captured.at) < 0).length
+		: failures.length
+	return {
+		captured,
+		inFlight,
+		refunded,
+		failed: failures.length,
+		failedBeforeCapture,
+	}
 }

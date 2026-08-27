@@ -59,10 +59,19 @@ const serverGroups = computed(() => {
 	return groups.sort((a, b) => b.total - a.total)
 })
 
-// One machine needs no heading: the section is already called Servers.
 const named = computed(() => serverGroups.value.length > 1)
 const sum = (rows: BillingLine[]): number =>
 	rows.reduce((t, li) => t + Number(li.amount || 0), 0)
+
+const segmented = (group: { lines: BillingLine[] }): boolean =>
+	group.lines.length > 1
+const showAmount = (group: { lines: BillingLine[] }): boolean =>
+	segmented(group) || !named.value
+function showRate(li: BillingLine, group: { lines: BillingLine[] }): boolean {
+	if (!li.rate) return false
+	if (segmented(group)) return true
+	return Math.abs(Number(li.rate) - Number(li.amount || 0)) >= 0.005
+}
 
 function isEstimated(li: BillingLine): boolean {
 	return li.basis === 'Estimated' || li.basis === 'Assumed'
@@ -83,77 +92,80 @@ function isEstimated(li: BillingLine): boolean {
 				</span>
 			</div>
 
-			<div
-				v-for="group in serverGroups"
-				:key="group.key"
-				class="mb-1 last:mb-0"
-			>
+			<div class="divide-y divide-outline-gray-1">
 				<div
-					v-if="named"
-					class="flex items-center justify-between gap-3 pt-1.5"
+					v-for="group in serverGroups"
+					:key="group.key"
+					class="py-2 first:pt-0.5 last:pb-0"
 				>
-					<span class="flex min-w-0 items-baseline gap-2">
-						<span class="truncate text-sm-medium text-ink-gray-8"
-							>{{ group.name }}</span
-						>
-						<span
-							v-if="group.id"
-							class="shrink-0 font-mono text-xs text-ink-gray-4"
-						>
-							{{ group.id }}
+					<div v-if="named" class="flex items-center justify-between gap-3">
+						<span class="flex min-w-0 items-baseline gap-2">
+							<span class="truncate text-sm-medium text-ink-gray-8"
+								>{{ group.name }}</span
+							>
+							<span
+								v-if="group.id"
+								class="shrink-0 font-mono text-xs text-ink-gray-4"
+							>
+								{{ group.id }}
+							</span>
 						</span>
-					</span>
-					<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-6">
-						{{ money(group.total, currency) }}
-					</span>
-				</div>
+						<span class="shrink-0 text-p-sm tabular-nums text-ink-gray-6">
+							{{ money(group.total, currency) }}
+						</span>
+					</div>
 
-				<!-- The connector is only drawn where a machine actually changed during
-				     the period; one row is not a sequence. -->
-				<ul
-					:class="
+					<ul
+						:class="
             named
               ? group.lines.length > 1
                 ? 'ml-[3px] border-l border-outline-gray-2 pl-4'
                 : 'pl-[21px]'
               : ''
           "
-				>
-					<li
-						v-for="(li, idx) in group.lines"
-						:key="idx"
-						class="relative flex items-center justify-between gap-3 py-1.5"
 					>
-						<span
-							v-if="named && group.lines.length > 1"
-							class="absolute -left-[19.5px] top-[14px] size-[7px] rounded-full bg-surface-gray-5 ring-2 ring-surface-white"
-							aria-hidden="true"
-						/>
-						<div class="min-w-0">
-							<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
-							<p
-								v-if="li.detail || li.rate"
-								class="truncate text-p-sm text-ink-gray-5"
-							>
-								{{ li.detail }}
-								<template v-if="li.rate">
-									· {{ money(li.rate, currency) }}/mo</template
-								>
-							</p>
-						</div>
-						<span class="flex shrink-0 items-center gap-2 pl-3">
-							<Badge
-								v-if="showBasis && isEstimated(li)"
-								theme="amber"
-								variant="subtle"
-								label="Estimated"
+						<li
+							v-for="(li, idx) in group.lines"
+							:key="idx"
+							class="relative flex items-center justify-between gap-3 py-1.5"
+						>
+							<span
+								v-if="named && group.lines.length > 1"
+								class="absolute -left-[19.5px] top-[14px] size-[7px] rounded-full bg-surface-gray-5 ring-2 ring-surface-base"
+								aria-hidden="true"
 							/>
-							<span class="text-sm tabular-nums text-ink-gray-8">
-								{{ money(li.amount, currency) }}
+							<div class="min-w-0">
+								<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
+								<p
+									v-if="li.detail || showRate(li, group)"
+									class="truncate text-p-sm text-ink-gray-5"
+								>
+									{{ li.detail }}
+									<template v-if="showRate(li, group)">
+										· {{ money(li.rate, currency) }}/mo</template
+									>
+								</p>
+							</div>
+							<span
+								v-if="showAmount(group) || (showBasis && isEstimated(li))"
+								class="flex shrink-0 items-center gap-2 pl-3"
+							>
+								<Badge
+									v-if="showBasis && isEstimated(li)"
+									theme="amber"
+									variant="subtle"
+									label="Estimated"
+								/>
+								<span
+									v-if="showAmount(group)"
+									class="text-sm tabular-nums text-ink-gray-8"
+								>
+									{{ money(li.amount, currency) }}
+								</span>
 							</span>
-						</span>
-					</li>
-				</ul>
+						</li>
+					</ul>
+				</div>
 			</div>
 		</section>
 
@@ -168,11 +180,11 @@ function isEstimated(li: BillingLine): boolean {
 					{{ money(sum(services), currency) }}
 				</span>
 			</div>
-			<ul>
+			<ul class="divide-y divide-outline-gray-1">
 				<li
 					v-for="(li, idx) in services"
 					:key="idx"
-					class="flex items-center justify-between gap-3 py-1.5"
+					class="flex items-center justify-between gap-3 py-2 first:pt-0.5 last:pb-0"
 				>
 					<div class="min-w-0">
 						<p class="truncate text-sm text-ink-gray-8">{{ li.item }}</p>
