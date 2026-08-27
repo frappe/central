@@ -222,6 +222,58 @@ class TestStorageProvisioning(IntegrationTestCase):
 		):
 			storage.create_bucket(self.team, _BUCKET)
 
+	def test_the_row_is_provisioning_until_the_name_is_on(self):
+		seen = {}
+		with (
+			self._mint(),
+			patch.object(
+				GarageDriver,
+				"attach_alias",
+				side_effect=lambda backend, bucket_id, alias: seen.update(
+					status_while_naming=frappe.db.get_value(
+						"Service Credential", {"provider_bucket_id": bucket_id}, "status"
+					)
+				),
+			),
+		):
+			config = storage.create_bucket(self.team, _BUCKET)
+
+		# Written down before the name goes on, and only usable once it has.
+		self.assertEqual(seen["status_while_naming"], "Provisioning")
+		self.assertEqual(config["status"], "Active")
+		self.assertEqual(frappe.db.get_value("Service Credential", config["credential"], "status"), "Active")
+
+	def test_the_record_is_stored_before_the_name_is_attached(self):
+		order = []
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "attach_alias", side_effect=lambda *a, **k: order.append("alias")),
+			patch.object(
+				frappe.model.document.Document,
+				"insert",
+				autospec=True,
+				side_effect=lambda doc, *a, **k: order.append(f"insert {doc.doctype}"),
+			),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		# A name can only sit on a bucket Central has already written down.
+		self.assertEqual(order, ["insert Service Credential", "alias"])
+
+	def test_a_bucket_named_after_the_record_lands_rolls_both_back(self):
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "attach_alias", side_effect=RuntimeError("alias lost")),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaises(RuntimeError),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		# The row was committed by then, so it goes too: a record naming a deleted
+		# bucket is worse than no record.
+		delete_bucket.assert_called_once()
+		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
+
 	def test_a_credential_that_cannot_be_stored_takes_the_bucket_with_it(self):
 		original_insert = frappe.model.document.Document.insert
 
@@ -239,6 +291,113 @@ class TestStorageProvisioning(IntegrationTestCase):
 			storage.create_bucket(self.team, _BUCKET)
 
 		delete_bucket.assert_called_once()
+
+	# ── Failure at each stage ──────────────────────────────────────────────────────
+
+	def test_a_failure_creating_the_bucket_leaves_nothing(self):
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "create_bucket", side_effect=RuntimeError("garage down")),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaisesRegex(RuntimeError, "garage down"),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		# Nothing was made, so nothing is undone — and no half-built row.
+		delete_bucket.assert_not_called()
+		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
+
+	def test_a_failure_minting_the_key_takes_the_bucket(self):
+		with (
+			self._mint(),
+			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaisesRegex(RuntimeError, "garage down"),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		self.assertEqual(delete_bucket.call_args.args[-1], _BUCKET_ID)
+		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
+
+	def test_a_failure_flipping_to_active_rolls_everything_back(self):
+		original_db_set = frappe.model.document.Document.db_set
+
+		def fail_on_activation(doc, fieldname, value=None, *args, **kwargs):
+			if doc.doctype == "Service Credential" and fieldname == "status":
+				raise RuntimeError("db gone")
+			return original_db_set(doc, fieldname, value, *args, **kwargs)
+
+		with (
+			self._mint(),
+			patch.object(frappe.model.document.Document, "db_set", fail_on_activation),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaisesRegex(RuntimeError, "db gone"),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		# The bucket was named by then, so it must not be left behind wearing the name.
+		delete_bucket.assert_called_once()
+		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
+
+	# ── The sweeper ───────────────────────────────────────────────────────────────
+
+	def _stale_provisioning_row(self, bucket: str = _BUCKET) -> str:
+		credential = storage.create_service_credential(self.team, bucket, self.backend)
+		credential.update({"provider_bucket_id": _BUCKET_ID, "provider_ref": "GKstale"}).insert()
+		frappe.db.set_value(
+			"Service Credential",
+			credential.name,
+			"modified",
+			frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-30),
+			update_modified=False,
+		)
+		return credential.name
+
+	def test_the_sweeper_clears_a_stale_half_made_bucket(self):
+		name = self._stale_provisioning_row()
+
+		with patch.object(GarageDriver, "delete_bucket") as delete_bucket:
+			swept = storage.sweep_stale_provisioning()
+
+		self.assertEqual(swept, 1)
+		self.assertEqual(delete_bucket.call_args.args[-1], _BUCKET_ID)
+		self.assertFalse(frappe.db.exists("Service Credential", name))
+
+	def test_the_sweeper_leaves_a_provision_still_in_flight_alone(self):
+		credential = storage.create_service_credential(self.team, _BUCKET, self.backend)
+		credential.update({"provider_bucket_id": _BUCKET_ID}).insert()
+
+		with patch.object(GarageDriver, "delete_bucket") as delete_bucket:
+			self.assertEqual(storage.sweep_stale_provisioning(), 0)
+
+		delete_bucket.assert_not_called()
+		self.assertTrue(frappe.db.exists("Service Credential", credential.name))
+
+	def test_the_sweeper_never_touches_a_live_bucket(self):
+		with self._mint():
+			config = storage.create_bucket(self.team, _BUCKET)
+		frappe.db.set_value(
+			"Service Credential",
+			config["credential"],
+			"modified",
+			frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-120),
+			update_modified=False,
+		)
+
+		with patch.object(GarageDriver, "delete_bucket") as delete_bucket:
+			self.assertEqual(storage.sweep_stale_provisioning(), 0)
+
+		delete_bucket.assert_not_called()
+		self.assertTrue(frappe.db.exists("Service Credential", config["credential"]))
+
+	def test_the_sweeper_keeps_a_row_whose_bucket_it_could_not_delete(self):
+		name = self._stale_provisioning_row()
+
+		with patch.object(GarageDriver, "delete_bucket", side_effect=RuntimeError("garage down")):
+			self.assertEqual(storage.sweep_stale_provisioning(), 0)
+
+		# Still the only record of that bucket, so the next run can try again.
+		self.assertTrue(frappe.db.exists("Service Credential", name))
 
 	def test_enrolling_a_garage_backend_mints_its_secrets(self):
 		first = self.backend.enroll()
