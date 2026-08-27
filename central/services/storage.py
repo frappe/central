@@ -196,7 +196,8 @@ def sweep_stale_provisioning(minutes: int = STALE_PROVISION_MINUTES) -> int:
 				GarageDriver().delete_bucket(backend, row.provider_bucket_id)
 
 			frappe.delete_doc("Service Credential", row.name, force=True, ignore_permissions=True)
-			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one row at a time
+			if not frappe.in_test:
+				frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one row at a time
 			swept += 1
 		except Exception:
 			frappe.log_error(
