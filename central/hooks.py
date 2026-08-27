@@ -190,9 +190,7 @@ scheduler_events = {
 		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
 		# Resource actions: resolve any action stuck in flight because its confirming event
 		# was lost — mark it Succeeded if the mirror already reached the goal, else Timed Out.
-		"*/5 * * * *": [
-			"central.central.doctype.resource_action.resource_action.sweep_stale",
-		],
+		"*/5 * * * *": ["central.central.doctype.resource_action.resource_action.sweep_stale"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
