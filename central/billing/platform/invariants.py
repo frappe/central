@@ -248,11 +248,15 @@ def check_paid_invoice_is_covered() -> list[Violation]:
 	return violations
 
 
-# --- I6: one live invoice per (team, period) ---------------------------------
+# --- I6: one live invoice per (team, billing group, period) ------------------
 
 
 def check_one_live_invoice_per_period() -> list[Violation]:
-	"""A team is billed at most once for a period.
+	"""A team is billed at most once for a period, per billing scope.
+
+	The scope — the team's consolidated set of ungrouped assets, or one of its Billing
+	Groups — is part of the grain. A team with groups legitimately holds several live
+	invoices for one period; what it may never hold is two for the *same* scope.
 
 	The unique index on `period_key` makes this impossible going forward; the audit
 	is what surfaces the duplicates that predate it (the v28 patch flags them rather
@@ -261,9 +265,15 @@ def check_one_live_invoice_per_period() -> list[Violation]:
 	inv = frappe.qb.DocType("Invoice")
 	rows = (
 		frappe.qb.from_(inv)
-		.select(inv.team, inv.period_start, inv.period_end, Count("*").as_("bills"))
+		.select(
+			inv.team,
+			inv.billing_group,
+			inv.period_start,
+			inv.period_end,
+			Count("*").as_("bills"),
+		)
 		.where(inv.status != "Cancelled")
-		.groupby(inv.team, inv.period_start, inv.period_end)
+		.groupby(inv.team, inv.billing_group, inv.period_start, inv.period_end)
 		.having(Count("*") > 1)
 		.run(as_dict=True)
 	)
@@ -274,7 +284,8 @@ def check_one_live_invoice_per_period() -> list[Violation]:
 			subject_doctype="Invoice",
 			expected=1,
 			actual=r.bills,
-			detail=f"Team billed {r.bills}x for {r.period_start} – {r.period_end}. "
+			detail=f"Team billed {r.bills}x for {r.period_start} – {r.period_end} "
+			f"({'billing group ' + r.billing_group if r.billing_group else 'consolidated'}). "
 			"If any duplicate was paid it needs a refund, not a cancellation.",
 		)
 		for r in rows

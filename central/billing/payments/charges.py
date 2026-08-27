@@ -334,11 +334,14 @@ def _gateway_for_invoice(inv) -> str:
 
 
 def _resolve_method(inv, payment_method, gateway):
-	"""Method + gateway for the charge: explicit args, then subscription default,
-	then currency-based gateway lookup via the resolver."""
+	"""Method + gateway for the charge: explicit args, then the invoice scope's
+	anchor subscription default, then currency-based gateway lookup via the resolver."""
 	if payment_method and gateway:
 		return payment_method, gateway
-	sub = frappe.get_doc("Subscription", inv.subscription) if inv.subscription else None
+	from central.billing.catalog.subscriptions import anchor_subscription
+
+	anchor = anchor_subscription(inv.team, inv.billing_group)
+	sub = frappe.get_doc("Subscription", anchor) if anchor else None
 	method_name = payment_method or (sub and sub.default_payment_method)
 	gateway_name = gateway or (sub and sub.gateway)
 

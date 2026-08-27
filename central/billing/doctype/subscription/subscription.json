@@ -9,6 +9,7 @@
  "field_order": [
   "enabled",
   "team",
+  "billing_group",
   "asset_id",
   "service_subject",
   "cluster",
@@ -36,6 +37,14 @@
    "search_index": 1
   },
   {
+   "description": "Optional: tag this subscription's asset into a Billing Group to bill it on a separate invoice from the team's consolidated one. ",
+   "fieldname": "billing_group",
+   "fieldtype": "Link",
+   "in_preview": 1,
+   "label": "Billing Group",
+   "options": "Billing Group"
+  },
+  {
    "default": "Preset",
    "description": "Preset links a curated Plan at its flat rate; Composed prices a design-your-own config from its parts (ADR 0009).",
    "fieldname": "pricing_mode",
@@ -45,8 +54,8 @@
    "options": "Preset\nComposed"
   },
   {
-   "description": "Requested plan (intent). Set for Preset mode only.",
    "depends_on": "eval:doc.pricing_mode != 'Composed'",
+   "description": "Requested plan (intent). Set for Preset mode only.",
    "fieldname": "plan",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -54,18 +63,18 @@
    "options": "Plan"
   },
   {
-   "description": "Composed mode: the optimisation profile the composition is bounded by (#81), kept for resize re-validation (#82).",
    "depends_on": "eval:doc.pricing_mode == 'Composed'",
+   "description": "Composed mode: the optimisation profile the composition is bounded by (#81), kept for resize re-validation (#82).",
    "fieldname": "sub_category",
    "fieldtype": "Link",
    "label": "Optimisation Profile",
    "options": "Plan Sub-Category"
   },
   {
+   "depends_on": "eval:doc.pricing_mode == 'Composed'",
    "fieldname": "section_break_composition",
    "fieldtype": "Section Break",
-   "label": "Composition",
-   "depends_on": "eval:doc.pricing_mode == 'Composed'"
+   "label": "Composition"
   },
   {
    "description": "Composed mode: the locked composition (qty per Resource Type) Central bills from. Empty for a preset.",
@@ -144,17 +153,12 @@
  "index_web_pages_for_search": 1,
  "links": [
   {
-   "group": "Billing",
-   "link_doctype": "Invoice",
-   "link_fieldname": "subscription"
-  },
-  {
    "group": "Lifecycle",
    "link_doctype": "Subscription Change",
    "link_fieldname": "subscription"
   }
  ],
- "modified": "2026-06-29 17:28:21.472366",
+ "modified": "2026-08-27 11:12:08.568537",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Subscription",

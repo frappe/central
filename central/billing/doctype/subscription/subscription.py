@@ -13,16 +13,18 @@ class Subscription(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
+		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 		from frappe.types import DF
 
 		account_standing: DF.Literal["Current", "Past Due", "Suspended"]
 		asset_id: DF.Link | None
 		billing_cycle: DF.Literal["Monthly", "Annual"]
+		billing_group: DF.Link | None
 		cluster: DF.ReadOnly | None
 		default_payment_method: DF.Link | None
 		enabled: DF.Check
 		gateway: DF.Link | None
-		includes: DF.Table
+		includes: DF.Table[PlanIncludes]
 		plan: DF.Link | None
 		pricing_mode: DF.Literal["Preset", "Composed"]
 		service_subject: DF.Data | None
@@ -34,6 +36,37 @@ class Subscription(Document):
 	def validate(self):
 		self.validate_duplicate_subscription()
 		self.validate_duplicate_service_subject()
+		self.validate_billing_group()
+
+	def validate_billing_group(self):
+		"""A subscription may only be tagged into one of its own team's active groups.
+
+		Generation already filters groups by team, so a foreign group would not misbill
+		anyone — the tag would just be ignored and the asset would land on the
+		consolidated invoice. Both checks are here to refuse a tag that would silently
+		mean nothing, rather than let someone believe an asset bills separately when it
+		does not. A disabled group is refused for the same reason: disabled means "no
+		longer partitioning", so its assets bill on the consolidated invoice.
+		"""
+		if not self.billing_group:
+			return
+
+		group = frappe.db.get_value(
+			"Billing Group", self.billing_group, ["team", "enabled"], as_dict=True
+		)
+		if not group:
+			return  # a broken link — Frappe's own link validation reports it better
+
+		if group.team != self.team:
+			frappe.throw(
+				f"Billing Group {self.billing_group} belongs to team {group.team}, "
+				f"not {self.team}.",
+			)
+		if not group.enabled:
+			frappe.throw(
+				f"Billing Group {self.billing_group} is disabled; its assets bill on "
+				f"{self.team}'s consolidated invoice.",
+			)
 
 	def validate_duplicate_subscription(self):
 		"""Block a second enabled subscription for the same team + asset.

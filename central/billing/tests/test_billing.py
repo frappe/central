@@ -13,6 +13,7 @@ from central.billing.revenue.invoicing import run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
+	ensure_team,
 	make_billing_subscription,
 	make_plan,
 )
@@ -60,7 +61,7 @@ class BillingTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Credit Ledger Entry"):
+		for dt in ("Invoice", "Credit Ledger Entry", "Billing Group"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -159,7 +160,8 @@ class TestDraftGeneration(BillingTestBase):
 		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		second = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertEqual(first, second)
-		self.assertEqual(frappe.db.count("Invoice", {"subscription": self.sub}), 1)
+		team = frappe.db.get_value("Subscription", self.sub, "team")
+		self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 
 	def test_no_runtime_yields_no_invoice(self):
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
@@ -668,7 +670,7 @@ class TestFanOutRun(IntegrationTestCase):
 			) as blocked,
 			patch.object(run, "CONTENTION_BACKOFF", 0),
 		):
-			self.assertIsNone(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"))
+			self.assertEqual(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"), [])
 
 		self.assertEqual(blocked.call_count, run.CONTENTION_RETRIES)
 		self.assertTrue(
@@ -749,3 +751,107 @@ class TestRatingIsSeparableFromWriting(BillingTestBase):
 		)
 		for field in self.MONEY:
 			self.assertEqual(rated.payload[field], inv.get(field), field)
+
+
+class TestBillingGroupPartitioning(BillingTestBase):
+	def test_grouped_asset_bills_on_a_separate_invoice(self):
+		# self.sub is ungrouped -> consolidated. Add a second asset tagged into a group.
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+
+		grouped_sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		group = frappe.get_doc({"doctype": "Billing Group", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", grouped_sub, "billing_group", group)
+		add_segment(grouped_sub, "Created", 2000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group", "subtotal"])
+		by_group = {(i.billing_group or None): i for i in invoices}
+		# One consolidated invoice (ungrouped asset) + one for the group.
+		self.assertEqual(len(invoices), 2)
+		self.assertIn(None, by_group)
+		self.assertIn(group, by_group)
+		# Each invoice bills ONLY its own scope's asset — no cross-leak despite same cluster.
+		self.assertEqual(by_group[None].subtotal, 1000.0)
+		self.assertEqual(by_group[group].subtotal, 2000.0)
+		# Both invoices still bill to the same team.
+		self.assertEqual(frappe.db.get_value("Invoice", by_group[group].name, "team"), TEAM)
+
+	def test_no_groups_yields_single_consolidated_invoice(self):
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+		frappe.db.commit()
+
+		run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group"])
+		self.assertEqual(len(invoices), 1)
+		self.assertIsNone(invoices[0].billing_group or None)
+
+	def test_disabled_group_folds_its_assets_back_into_consolidated(self):
+		"""A disabled group stops partitioning — it must not stop the asset being billed.
+
+		The failure this guards against is silent: if generation stopped drafting the
+		group's invoice but still mapped the asset to the group, the asset would match
+		no scope and drop off every invoice the team receives.
+		"""
+		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
+
+		grouped_sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
+		group = frappe.get_doc(
+			{"doctype": "Billing Group", "title": "Customer X", "team": TEAM}
+		).insert().name
+		frappe.db.set_value("Subscription", grouped_sub, "billing_group", group)
+		add_segment(grouped_sub, "Created", 2000, "2026-06-01 00:00:00")
+		# Tagged while the group was live, disabled afterwards — the real-world order.
+		frappe.db.set_value("Billing Group", group, "enabled", 0)
+		frappe.db.commit()
+
+		run.generate_draft_invoices("2026-06-01", "2026-06-30")
+
+		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group", "subtotal"])
+		self.assertEqual(len(invoices), 1)
+		self.assertIsNone(invoices[0].billing_group or None)
+		# The disabled group's 2000 is ON the consolidated invoice, not lost.
+		self.assertEqual(invoices[0].subtotal, 3000.0)
+
+
+class TestBillingGroupValidation(BillingTestBase):
+	OTHER_TEAM = "team-invoice-other"
+
+	def tearDown(self):
+		frappe.db.delete("Billing Group", {"team": self.OTHER_TEAM})
+		frappe.db.commit()
+		super().tearDown()
+
+	def test_cannot_tag_another_teams_billing_group(self):
+		ensure_team(self.OTHER_TEAM)
+		foreign = frappe.get_doc(
+			{"doctype": "Billing Group", "title": "Someone Else", "team": self.OTHER_TEAM}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.billing_group = foreign
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_cannot_tag_a_disabled_billing_group(self):
+		group = frappe.get_doc(
+			{"doctype": "Billing Group", "title": "Archived", "team": TEAM, "enabled": 0}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.billing_group = group
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_tagging_an_own_active_group_is_allowed(self):
+		group = frappe.get_doc(
+			{"doctype": "Billing Group", "title": "Customer X", "team": TEAM}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.billing_group = group
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "billing_group"), group)

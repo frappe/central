@@ -1,8 +1,7 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "naming_series:",
- "creation": "2026-06-08 00:00:00.000000",
+ "creation": "2026-06-08 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -185,9 +184,14 @@
    "group": "Notifications",
    "link_doctype": "Billing Notification Log",
    "link_fieldname": "team"
+  },
+  {
+   "group": "Billing",
+   "link_doctype": "Billing Group",
+   "link_fieldname": "team"
   }
  ],
- "modified": "2026-06-08 00:00:00.000000",
+ "modified": "2026-08-27 11:08:58.595646",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Team",
@@ -211,10 +215,10 @@
    "read": 1,
    "report": 1,
    "role": "Central User",
-   "share": 0,
    "write": 1
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

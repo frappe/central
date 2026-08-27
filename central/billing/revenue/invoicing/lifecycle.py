@@ -14,7 +14,7 @@ from frappe import _
 
 from central.billing import settings
 from central.billing.revenue import credits
-from central.billing.revenue.invoicing.generate import generate_draft_invoice
+from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.states import transition
 
 
@@ -148,4 +148,4 @@ def reissue_invoice(invoice: str, reason: str | None = None) -> str | None:
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	cancel_invoice(invoice, reason=reason)
-	return generate_draft_invoice(doc.subscription, doc.period_start, doc.period_end)
+	return generate_team_invoice(doc.team, doc.period_start, doc.period_end, billing_group=doc.billing_group)

@@ -15,7 +15,7 @@ from frappe.query_builder.functions import Count
 
 from central.billing.doctype.billing_run.billing_run import snapshot
 from central.billing.platform import metrics
-from central.billing.revenue.invoicing.generate import generate_team_invoice
+from central.billing.revenue.invoicing.generate import _team_invoice_groups, generate_team_invoice
 from central.billing.revenue.invoicing.lifecycle import open_and_collect
 
 # How many teams / invoices one page job is responsible for.
@@ -112,17 +112,23 @@ def _tally(counters: dict | None, key: str) -> None:
 		counters[key] = counters.get(key, 0) + 1
 
 
-def draft_team_invoice(team: str, period_start, period_end, counters: dict | None = None) -> str | None:
-	"""Draft one team's invoice — the unit of work phase 1 fans out.
+def draft_team_invoice(team: str, period_start, period_end, counters: dict | None = None) -> list[str]:
+	"""Draft one team's invoices — the unit of work phase 1 fans out.
 
-	One team = one transaction = one commit, on every path. Failure is contained to
-	the team: a missing rate or a broken tax profile must not take the other 999,999
-	teams' invoices with it. The savepoint undoes only this team's writes, so a
-	caller part-way through a page keeps the teams it already billed.
+	A team drafts one invoice per billing scope this period: its consolidated
+	invoice (ungrouped assets) plus one per active Billing Group its assets are
+	tagged into (`_team_invoice_groups`). Still one team = one transaction = one
+	commit, on every path — a team's several scope-invoices are drafted together and
+	committed together by the caller. Failure is contained to the team: a missing
+	rate or a broken tax profile must not take the other 999,999 teams' invoices
+	with it. The savepoint undoes only this team's writes, so a caller part-way
+	through a page keeps the teams it already billed.
 
 	A contained failure is not re-raised, and needn't be: drafting is idempotent per
-	(team, period), so re-running the phase retries exactly the teams that failed.
-	A partial run is resumable for free.
+	(team, billing_group, period), so re-running the phase retries exactly the teams
+	that failed — including any scope already drafted before the failing one, which
+	simply finds its existing invoice and returns it. A partial run is resumable for
+	free.
 
 	Lock contention is not a failure at all, though, and is retried here rather than
 	contained — see `_CONTENTION`. InnoDB has already rolled the transaction back by
@@ -133,20 +139,25 @@ def draft_team_invoice(team: str, period_start, period_end, counters: dict | Non
 	for attempt in range(CONTENTION_RETRIES):
 		frappe.db.savepoint(_SAVEPOINT)
 		try:
-			return generate_team_invoice(team, period_start, period_end)
+			names = []
+			for billing_group in _team_invoice_groups(team):
+				name = generate_team_invoice(team, period_start, period_end, billing_group)
+				if name:
+					names.append(name)
+			return names
 		except _CONTENTION as error:
 			frappe.db.rollback()
 			if attempt == CONTENTION_RETRIES - 1:
 				# Out of patience: record it and let the next tick pick the team up.
 				_contain(unit, "Team", team, error, undo=False)
 				_tally(counters, "failed")
-				return None
+				return []
 			# Jittered, so a whole page of retriers doesn't re-collide in lockstep.
 			time.sleep(CONTENTION_BACKOFF * (attempt + 1) + random.uniform(0, CONTENTION_BACKOFF))
 		except Exception as error:
 			_contain(unit, "Team", team, error, undo=True)
 			_tally(counters, "failed")
-			return None
+			return []
 
 
 def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
@@ -241,11 +252,14 @@ def draft_team_page(after: str, until: str, period_start, period_end) -> dict:
 
 
 def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> list[str]:
-	"""Phase-1 orchestrator: ONE consolidated draft per team for the period.
+	"""Phase-1 orchestrator: one consolidated draft per team, plus one per Billing Group.
 
 	A team that runs instances across several clusters still gets a single
-	invoice (generate_team_invoice aggregates all its clusters, and picks the
-	team's oldest subscription as the primary that funds the auto-charge).
+	consolidated invoice for its ungrouped assets (generate_team_invoice aggregates
+	all its clusters); each Billing Group its assets are tagged into bills on its own
+	separate invoice for the same period (`draft_team_invoice`). A team with no
+	groups gets just the one consolidated invoice — today's behaviour. All invoices
+	bill to the team.
 
 	With `enqueue` the orchestrator rates nothing itself, and — just as important —
 	enqueues nothing per team. It hands out **page jobs**: at a million teams, a
@@ -275,9 +289,7 @@ def generate_draft_invoices(period_start, period_end, enqueue: bool = False) -> 
 			after = until
 			continue
 		for team in page:
-			name = draft_team_invoice(team, period_start, period_end)
-			if name:
-				created.append(name)
+			created.extend(draft_team_invoice(team, period_start, period_end))
 			# Inline or fanned out, a team is a transaction. It bounds what a
 			# contention rollback can discard, and it stops the run holding the
 			# `tabSeries` row (taken by every Invoice insert) for a whole page —
