@@ -111,8 +111,8 @@ def _config(credential: ServiceCredential) -> dict:
 
 def create_bucket(team: str, bucket: str) -> dict:
 	"""Create the team's bucket and mint the key scoped to it. The name goes on last, and
-	only once the record is on disk, so a failure leaves at most an unnamed, keyless
-	bucket: unreachable, and holding no name against a retry."""
+	only once the record is on disk, so a failure leaves at most a keyless bucket holding
+	no name against a retry."""
 	driver = GarageDriver()
 	backend = get_backend(get_active_service(SERVICE).name)
 	validate_bucket_name(driver, backend, bucket)
@@ -178,22 +178,27 @@ def _discard(
 
 
 def sweep_stale_provisioning(minutes: int = STALE_PROVISION_MINUTES) -> int:
-	"""Clear buckets a lost worker left half-made, and the rows naming them. A Provisioning
-	row never got its alias, so its bucket was never addressable and cannot hold an
-	object — deleting it can lose nothing."""
+	"""Clear what a lost worker left half-made: the key, the bucket, then the row. The key
+	goes first — deleting a bucket does not revoke keys, and a key outliving its row can
+	never be found again. Garage refuses to delete a non-empty bucket, so a half-made
+	bucket someone reached by id keeps its objects and its row for an operator."""
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-minutes)
 	stale = frappe.get_all(
 		"Service Credential",
 		filters={"subject_type": "Team", "status": "Provisioning", "modified": ["<", cutoff]},
-		fields=["name", "provider_bucket_id", "service_backend"],
+		fields=["name", "provider_bucket_id", "provider_ref", "service_backend"],
 	)
 
 	swept = 0
 	for row in stale:
 		try:
-			if row.provider_bucket_id and row.service_backend:
+			if row.service_backend:
 				backend = frappe.get_doc("Service Backend", row.service_backend)
-				GarageDriver().delete_bucket(backend, row.provider_bucket_id)
+				driver = GarageDriver()
+				if row.provider_ref:
+					driver.revoke_key(backend, row.provider_ref)
+				if row.provider_bucket_id:
+					driver.delete_bucket(backend, row.provider_bucket_id)
 
 			frappe.delete_doc("Service Credential", row.name, force=True, ignore_permissions=True)
 			if not frappe.in_test:

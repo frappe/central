@@ -356,12 +356,31 @@ class TestStorageProvisioning(IntegrationTestCase):
 	def test_the_sweeper_clears_a_stale_half_made_bucket(self):
 		name = self._stale_provisioning_row()
 
-		with patch.object(GarageDriver, "delete_bucket") as delete_bucket:
+		with (
+			patch.object(GarageDriver, "revoke_key") as revoke_key,
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+		):
 			swept = storage.sweep_stale_provisioning()
 
 		self.assertEqual(swept, 1)
+		# The key first: deleting a bucket does not revoke keys, and a key outliving its
+		# row could never be found again.
+		self.assertEqual(revoke_key.call_args.args[-1], "GKstale")
 		self.assertEqual(delete_bucket.call_args.args[-1], _BUCKET_ID)
 		self.assertFalse(frappe.db.exists("Service Credential", name))
+
+	def test_the_sweeper_keeps_a_row_whose_key_it_could_not_revoke(self):
+		name = self._stale_provisioning_row()
+
+		with (
+			patch.object(GarageDriver, "revoke_key", side_effect=RuntimeError("garage down")),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+		):
+			self.assertEqual(storage.sweep_stale_provisioning(), 0)
+
+		# The bucket stays too: the row is the only handle on both.
+		delete_bucket.assert_not_called()
+		self.assertTrue(frappe.db.exists("Service Credential", name))
 
 	def test_the_sweeper_leaves_a_provision_still_in_flight_alone(self):
 		credential = storage.create_service_credential(self.team, _BUCKET, self.backend)

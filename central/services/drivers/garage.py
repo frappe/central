@@ -22,7 +22,7 @@ class GarageDriver:
 
 	def create_bucket(self, backend: ServiceBackend) -> str:
 		"""Create an unnamed bucket and return its id. The name goes on last, once the
-		bucket is usable — an abandoned one is then invisible and squats no name."""
+		bucket is usable, so an abandoned one squats no name."""
 		return self._call(backend, "CreateBucket", body={})["id"]
 
 	def attach_alias(self, backend: ServiceBackend, bucket_id: str, alias: str) -> None:
@@ -79,7 +79,8 @@ class GarageDriver:
 
 	def delete_bucket(self, backend: ServiceBackend, bucket_id: str) -> None:
 		"""Destroy a bucket. Garage refuses a non-empty one, which is the backstop that
-		keeps this from ever taking objects with it."""
+		keeps this from ever taking objects with it. Keys allowed on it survive — revoke
+		them separately."""
 		self._call(backend, "DeleteBucket", params={"id": bucket_id})
 
 	def revoke_key(self, backend: ServiceBackend, access_key_id: str) -> None:
