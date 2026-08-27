@@ -156,7 +156,7 @@ def _discard(
 	try:
 		driver.delete_bucket(backend, bucket_id)
 		if key:
-			driver.revoke_key(backend, key)
+			driver.revoke_key(backend, key["access_key_id"])
 	except Exception:
 		frappe.log_error(
 			title="Garage bucket left behind after a failed provision",
