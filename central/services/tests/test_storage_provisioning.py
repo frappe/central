@@ -86,6 +86,7 @@ class TestStorageProvisioning(IntegrationTestCase):
 		return patch.multiple(
 			GarageDriver,
 			get_bucket_id=MagicMock(return_value=existing_bucket),
+			bucket_exists=MagicMock(return_value=bool(existing_bucket)),
 			create_bucket=MagicMock(return_value=_BUCKET_ID),
 			mint_key=MagicMock(return_value=_KEY),
 			delete_bucket=MagicMock(),
@@ -227,6 +228,25 @@ class TestStorageProvisioning(IntegrationTestCase):
 			storage.create_bucket(self.team, _BUCKET)
 
 		delete_bucket.assert_called_once()
+
+	def test_an_adopted_bucket_keeps_its_reservation_when_the_retry_fails(self):
+		# A bucket outlived an earlier attempt (its worker was killed before rollback),
+		# so the row is its only record: deleting it would strand the bucket.
+		reservation = storage._reserve(self.managed.name, _BUCKET, self.backend)
+		reservation.db_set("provider_bucket_id", _BUCKET_ID)
+
+		with (
+			self._mint(existing_bucket=_BUCKET_ID),
+			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("down")),
+			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self.assertRaises(RuntimeError),
+		):
+			storage.create_bucket(self.team, _BUCKET)
+
+		delete_bucket.assert_not_called()
+		kept = frappe.get_doc("Service Credential", reservation.name)
+		self.assertEqual(kept.status, "Provisioning")
+		self.assertEqual(kept.provider_bucket_id, _BUCKET_ID)
 
 	def test_a_row_survives_when_cleanup_could_not_finish(self):
 		# The bucket is still out there, so the row is the only record of it.

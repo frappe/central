@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import typing
+
 import frappe
 from frappe import _
 
 from central.services.drivers.base import get_driver
+
+if typing.TYPE_CHECKING:
+	from central.services.doctype.service_backend.service_backend import ServiceBackend
 
 # The minting core: Central owns entitlement + key issuance + storage. Who triggers a
 # site enable (the bench/Pilot, an operator) is the API layer's concern — this module
@@ -137,7 +142,7 @@ def get_active_service(service: str):
 	return add_on
 
 
-def get_backend(service: str):
+def get_backend(service: str) -> ServiceBackend:
 	name = frappe.db.get_value("Service Backend", {"service": service, "is_active": 1}, "name")
 	if not name:
 		frappe.throw(_("No active backend configured for {0}.").format(service))

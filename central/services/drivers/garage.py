@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import typing
 from typing import NoReturn
 
 import frappe
 import requests
 from frappe import _
-from frappe.model.document import Document
+
+from central.services.drivers.base import DriverError
+
+if typing.TYPE_CHECKING:
+	from central.services.doctype.service_backend.service_backend import ServiceBackend
 
 _TIMEOUT = 30
 
@@ -17,7 +22,7 @@ class GarageDriver:
 
 	key = "storage"
 
-	def create_bucket(self, backend: Document, bucket: str) -> str:
+	def create_bucket(self, backend: ServiceBackend, bucket: str) -> str:
 		"""Create a bucket and return its id. Fails if the name is taken: Garage aliases
 		are cluster-wide, and adopting a bucket Central did not create here would hand a
 		key to whatever already sits under that name."""
@@ -26,18 +31,18 @@ class GarageDriver:
 
 		return self._call(backend, "CreateBucket", body={"globalAlias": bucket})["id"]
 
-	def get_bucket_id(self, backend: Document, bucket: str) -> str | None:
+	def get_bucket_id(self, backend: ServiceBackend, bucket: str) -> str | None:
 		"""The bucket's id, or None when no such alias exists — a 404 is an answer here,
 		not a failure."""
 		response = self._request(backend, "GetBucketInfo", method="GET", params={"globalAlias": bucket})
 
 		return response.json()["id"] if response.ok else None
 
-	def bucket_exists(self, backend: Document, bucket_id: str) -> bool:
+	def bucket_exists(self, backend: ServiceBackend, bucket_id: str) -> bool:
 		"""Whether a bucket still exists, by the id Central recorded when it created it."""
 		return self._request(backend, "GetBucketInfo", method="GET", params={"id": bucket_id}).ok
 
-	def mint_key(self, backend: Document, name: str, bucket_id: str) -> dict:
+	def mint_key(self, backend: ServiceBackend, name: str, bucket_id: str) -> dict:
 		"""Create a key then allow it on that bucket. A key that cannot be granted is
 		deleted rather than left live with no bucket and nothing tracking it."""
 		key = self._call(backend, "CreateKey", body={"name": name})
@@ -57,24 +62,24 @@ class GarageDriver:
 
 		return {"access_key_id": key["accessKeyId"], "secret_access_key": key["secretAccessKey"]}
 
-	def provision_site(self, backend: Document, site: str, options: dict) -> NoReturn:
+	def provision_site(self, backend: ServiceBackend, site: str, options: dict) -> NoReturn:
 		frappe.throw(_("Object storage is issued per bench, not per site."))
 
-	def provision_key(self, backend: Document, name: str, email: str, options: dict) -> NoReturn:
+	def provision_key(self, backend: ServiceBackend, name: str, email: str, options: dict) -> NoReturn:
 		frappe.throw(_("Object storage keys are issued per bench, not per team."))
 
-	def delete_bucket(self, backend: Document, bucket_id: str) -> None:
+	def delete_bucket(self, backend: ServiceBackend, bucket_id: str) -> None:
 		"""Destroy a bucket. Garage refuses a non-empty one, which is the backstop that
 		keeps this from ever taking objects with it."""
 		self._call(backend, "DeleteBucket", params={"id": bucket_id})
 
-	def revoke_key(self, backend: Document, access_key_id: str) -> None:
+	def revoke_key(self, backend: ServiceBackend, access_key_id: str) -> None:
 		"""Revoke key access."""
 		self._call(backend, "DeleteKey", params={"id": access_key_id})
 
 	def _call(
 		self,
-		backend: Document,
+		backend: ServiceBackend,
 		endpoint: str,
 		method: str = "POST",
 		params: dict | None = None,
@@ -83,14 +88,14 @@ class GarageDriver:
 		response = self._request(backend, endpoint, method=method, params=params, body=body)
 		if not response.ok:
 			frappe.throw(
-				_("Garage request failed ({0}): {1}").format(response.status_code, response.text[:200])
+				_(f"Garage request failed ({response.status_code}): {response.text[:200]}"), DriverError
 			)
 
 		return response.json()
 
 	def _request(
 		self,
-		backend: Document,
+		backend: ServiceBackend,
 		endpoint: str,
 		method: str = "POST",
 		params: dict | None = None,
