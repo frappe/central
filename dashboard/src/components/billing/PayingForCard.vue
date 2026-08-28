@@ -19,7 +19,6 @@ const {
 	rows,
 	loading,
 	currency,
-	total,
 	busy,
 	pendingPause,
 	pendingAssignProject,
@@ -68,6 +67,8 @@ function serverTitle(sub: SubscriptionRow): string {
 					:key="row.id"
 					:row="row"
 					:currency="currency"
+					:can-manage="canManageBilling"
+					:busy="busy"
 					@open="openServer"
 					@pause="askPause"
 					@resume="onResume"

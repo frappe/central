@@ -4,6 +4,7 @@ import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { errorToast, successToast } from '@/lib/toast'
 import type {
 	PayingForItem,
 	ServiceRow,
@@ -86,6 +87,24 @@ export function usePayingFor() {
 
 	function openServer(sub: SubscriptionRow): void {
 		if (sub.gateway_url) window.open(sub.gateway_url, '_blank', 'noopener')
+	}
+
+	async function runVerb(
+		sub: SubscriptionRow,
+		call: typeof pause,
+		message: string,
+	): Promise<void> {
+		busy.value = sub.name
+		try {
+			await call.submit({ subscription: sub.name })
+			successToast(message)
+			subscriptions.reload()
+			cycleCosts.reload()
+		} catch (e) {
+			errorToast(e)
+		} finally {
+			busy.value = ''
+		}
 	}
 
 	return {

@@ -3,6 +3,7 @@ import { LoadingText } from 'frappe-ui'
 import { computed } from 'vue'
 import PayingForRow from '@/components/billing/PayingForRow.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
+import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
 import { money } from '@/lib/format'
 
@@ -38,6 +39,8 @@ const subtitle = computed(() =>
 				:key="row.id"
 				:row="row"
 				:currency="currency"
+				:can-manage="canManageBilling"
+				:busy="busy"
 				@open="openServer"
 				@pause="askPause"
 				@resume="onResume"
