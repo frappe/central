@@ -1,3 +1,4 @@
+import { capitalise } from '@/lib/format'
 import type { CapabilityInfo } from '@/types/api'
 
 // Display-only grouping by capability prefix; the slugs sent to the backend are
@@ -24,8 +25,7 @@ export function groupCapabilitiesByCategory(
 	const byLabel = new Map<string, CapabilityInfo[]>()
 	for (const cap of palette) {
 		const prefix = cap.name.split(':')[0]
-		const label =
-			CATEGORY_LABEL[prefix] ?? prefix.charAt(0).toUpperCase() + prefix.slice(1)
+		const label = CATEGORY_LABEL[prefix] ?? capitalise(prefix)
 		const list = byLabel.get(label) ?? []
 		list.push(cap)
 		byLabel.set(label, list)

@@ -1,6 +1,14 @@
+<script lang="ts">
+import type { InjectionKey, Ref } from 'vue'
+
+export const SIDE_PANEL_SWITCHING: InjectionKey<Ref<boolean>> = Symbol(
+	'side-panel-switching',
+)
+</script>
+
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { onBeforeUnmount, watch } from 'vue'
+import { inject, onBeforeUnmount, ref, watch } from 'vue'
 
 // The docked detail panel every page shares — a 24rem column that slides in
 // beside the content (never over it), the billing invoice panel's anatomy made
@@ -12,6 +20,8 @@ import { onBeforeUnmount, watch } from 'vue'
 // own `min-w-0 flex-1 overflow-y-auto` content column.
 defineProps<{ title?: string; subtitle?: string }>()
 const open = defineModel<boolean>('open', { default: false })
+
+const switching = inject(SIDE_PANEL_SWITCHING, ref(false))
 
 // The panel is docked, not modal, so it never holds focus — Esc has to be
 // caught on the document. A stacked dialog owns Esc first: closing both at once
@@ -34,7 +44,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 </script>
 
 <template>
-	<Transition name="slide" appear>
+	<Transition :name="switching ? 'switch' : 'slide'" appear>
 		<aside
 			v-if="open"
 			class="flex w-[24rem] shrink-0 flex-col border-l border-outline-gray-2 bg-surface-base"
@@ -104,5 +114,15 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 	/* -24rem mirrors w-[24rem]: net layout width 0 while hidden. */
 	transform: translateX(100%);
 	margin-inline-end: -24rem;
+}
+
+.switch-leave-active {
+	display: none;
+}
+.switch-enter-active {
+	transition: opacity 150ms ease-out;
+}
+.switch-enter-from {
+	opacity: 0;
 }
 </style>

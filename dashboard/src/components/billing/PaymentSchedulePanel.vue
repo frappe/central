@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LoadingText, useCall } from 'frappe-ui'
+import { Alert, LoadingText, useCall } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import SidePanel from '@/components/common/SidePanel.vue'
@@ -32,6 +32,13 @@ const loading = computed(() => schedule.loading && !schedule.data)
 const data = computed(() => schedule.data)
 const currency = computed(() => data.value?.currency ?? 'INR')
 const amount = computed(() => Number(data.value?.amount ?? 0))
+const blockers = computed(() => data.value?.blockers ?? [])
+const blockerLines = computed(() => {
+	const lead = blockers.value[0]
+	if (!lead) return []
+	const lines = lead.fix ? [lead.fix] : []
+	return lines.concat(blockers.value.slice(1).map((b) => b.title))
+})
 </script>
 
 <template>
@@ -75,21 +82,14 @@ const amount = computed(() => Number(data.value?.amount ?? 0))
 				</div>
 			</div>
 
-			<!-- Anything that stops it, and what to do -->
-			<div
-				v-if="data?.blockers?.length"
-				class="border-b border-outline-gray-2 p-4"
-			>
-				<div
-					v-for="b in data.blockers"
-					:key="b.code"
-					class="rounded-5 border border-outline-amber-2 bg-surface-amber-1 p-3"
-				>
-					<p class="text-base-medium text-ink-gray-9">{{ b.title }}</p>
-					<p v-if="b.fix" class="mt-0.5 text-p-sm text-ink-gray-7">
-						{{ b.fix }}
-					</p>
-				</div>
+			<div v-if="blockers.length" class="border-b border-outline-gray-2 p-4">
+				<Alert theme="amber" :title="blockers[0].title">
+					<template v-if="blockerLines.length" #description>
+						<span v-for="(line, idx) in blockerLines" :key="idx" class="block"
+							>{{ line }}</span
+						>
+					</template>
+				</Alert>
 			</div>
 
 			<!-- The compliance record, made the customer's -->

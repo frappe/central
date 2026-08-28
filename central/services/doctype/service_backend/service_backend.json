@@ -11,10 +11,13 @@
   "service",
   "region",
   "base_url",
+  "s3_endpoint",
   "is_active",
   "control_section",
   "control_api_key",
-  "control_api_secret"
+  "control_api_secret",
+  "metrics_token",
+  "rpc_secret"
  ],
  "fields": [
   {
@@ -39,6 +42,12 @@
    "reqd": 1
   },
   {
+   "description": "Object-storage data endpoint handed to benches (Garage :3900). Base URL is the admin API (:3903).",
+   "fieldname": "s3_endpoint",
+   "fieldtype": "Data",
+   "label": "S3 Endpoint"
+  },
+  {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
@@ -60,6 +69,18 @@
    "fieldtype": "Password",
    "label": "Control API Secret",
    "read_only": 1
+  },
+  {
+   "description": "Garage only: the token its metrics endpoint expects. Minted by Central, seeded into garage.toml.",
+   "fieldname": "metrics_token",
+   "fieldtype": "Password",
+   "label": "Metrics Token"
+  },
+  {
+   "description": "Garage only: the shared secret every node in the cluster uses to talk to its peers. Identical across nodes.",
+   "fieldname": "rpc_secret",
+   "fieldtype": "Password",
+   "label": "RPC Secret"
   }
  ],
  "grid_page_length": 50,

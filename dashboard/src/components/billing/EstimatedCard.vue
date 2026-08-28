@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
+import {
+	Button,
+	Dialog,
+	FormControl,
+	LoadingText,
+	Tooltip,
+	useCall,
+} from 'frappe-ui'
+import type { ChartTooltipItem } from 'frappe-ui/charts'
+import { ChartTooltip } from 'frappe-ui/charts'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -16,11 +25,6 @@ import type { BillingSettings } from '@/types/billing'
 // prototype: the alert is a quiet ghost button pinned to the card's foot that
 // tints amber/red as spend nears/crosses the threshold, and opens a small dialog.
 // Reads get_forecast (+ get_billing_settings).
-//
-// The projection is never quoted as a bare number: the engine already knows which
-// part of it is a locked rate over elapsed days and which is inferred from usage
-// nobody has finished (projection/basis.py), and the customer is owed that split.
-// The bar and its legend are that split; the breakdown tray is the detail.
 defineProps<{ active?: boolean }>()
 defineEmits<{ open: [] }>()
 const { forecast, currency } = useBillingOverview()
@@ -40,7 +44,6 @@ const daysRemaining = computed(() => fc.value?.days_remaining ?? null)
 // a fact an estimate is the less honest failure.
 const measured = computed(() => Number(fc.value?.measured ?? projected.value))
 const estimated = computed(() => Number(fc.value?.estimated ?? 0))
-const hasEstimates = computed(() => Boolean(fc.value?.has_estimates))
 const taxAmount = computed(() => Number(fc.value?.tax_amount ?? 0))
 // Nothing accrued yet: the tray would open on an empty list, so the affordance
 // that opens it is not offered. An action that leads nowhere is worse than no
@@ -59,16 +62,107 @@ const change = computed(() => {
 	const delta = projected.value - previousTotal.value
 	// Under a percent either way is noise, not news.
 	if (Math.abs(delta) < previousTotal.value * 0.01) {
-		return `About the same as ${previousLabel.value}`
+		return {
+			icon: null,
+			amount: null,
+			tint: '',
+			caption: `About the same as ${previousLabel.value}`,
+		}
 	}
-	const direction = delta > 0 ? 'more' : 'less'
-	return `${money(Math.abs(delta), currency.value)} ${direction} than ${previousLabel.value}`
+	const up = delta > 0
+	return {
+		icon: up ? 'lucide-arrow-up-right' : 'lucide-arrow-down-left',
+		amount: money(Math.abs(delta), currency.value),
+		tint: up ? 'text-ink-red-7' : 'text-ink-green-7',
+		caption: `vs ${previousLabel.value}`,
+	}
 })
 const taxLabel = computed(() => fc.value?.tax_type || 'tax')
-const measuredPct = computed(() => {
-	const total = measured.value + estimated.value
-	return total > 0 ? Math.round((measured.value / total) * 100) : 100
+
+const MEASURED_COLOR = 'var(--chart-categorical-1)'
+const ESTIMATED_COLOR = 'var(--chart-categorical-2)'
+const TAX_COLOR = 'var(--chart-categorical-3)'
+const allSegments = computed(() => {
+	const rows = [
+		{ label: 'So far', amount: measured.value, color: MEASURED_COLOR },
+		{
+			label: 'Estimated',
+			amount: estimated.value,
+			color: ESTIMATED_COLOR,
+		},
+	].filter((row) => row.amount > 0)
+	if (taxAmount.value)
+		rows.push({
+			label: taxLabel.value,
+			amount: taxAmount.value,
+			color: TAX_COLOR,
+		})
+	return rows
 })
+
+const hiddenSegments = ref<string[]>([])
+const isHidden = (label: string): boolean =>
+	hiddenSegments.value.includes(label)
+const segments = computed(() => {
+	const visible = allSegments.value.filter((s) => !isHidden(s.label))
+	const total = visible.reduce((t, s) => t + s.amount, 0)
+	if (total <= 0) return []
+	return visible.map((s) => ({ ...s, pct: (s.amount / total) * 100 }))
+})
+const pctByLabel = computed(
+	() => new Map(segments.value.map((s) => [s.label, s.pct])),
+)
+function toggleSegment(label: string): void {
+	if (!isHidden(label)) {
+		if (segments.value.length === 1) return
+		hiddenSegments.value = [...hiddenSegments.value, label]
+	} else {
+		hiddenSegments.value = hiddenSegments.value.filter((l) => l !== label)
+	}
+}
+
+function formatPercent(percent: number): string {
+	if (!percent) return '0%'
+	if (percent < 1) return '<1%'
+	return `${Math.round(percent)}%`
+}
+
+const hovered = ref<string | null>(null)
+const dimmed = (label: string): boolean =>
+	hovered.value !== null && !isHidden(hovered.value) && hovered.value !== label
+
+const tooltipOpen = ref(false)
+const tooltipX = ref(0)
+const tooltipY = ref(0)
+const tooltipItems = computed<ChartTooltipItem[]>(() => {
+	const segment = segments.value.find((s) => s.label === hovered.value)
+	if (!segment) return []
+	return [
+		{
+			name: segment.label,
+			label: segment.label,
+			color: segment.color,
+			value: segment.amount,
+			formattedValue: money(segment.amount, currency.value),
+			percent: segment.pct,
+		},
+	]
+})
+function onSegmentEnter(label: string, event: MouseEvent): void {
+	hovered.value = label
+	tooltipX.value = event.clientX
+	tooltipY.value = event.clientY
+	tooltipOpen.value = true
+}
+function onSegmentMove(event: MouseEvent): void {
+	if (!tooltipOpen.value) return
+	tooltipX.value = event.clientX
+	tooltipY.value = event.clientY
+}
+function onSegmentLeave(): void {
+	hovered.value = null
+	tooltipOpen.value = false
+}
 
 // ── Billing alert (spend-alert threshold) ────────────────────────────────────
 // Notify the team once projected spend crosses this amount (0 = off). Stored on
@@ -118,7 +212,7 @@ const alertLabel = computed(() => {
 	return `Budget alert at ${money(spendAlert.value, currency.value)}`
 })
 const alertTint = computed(() =>
-	crossed.value ? '!text-ink-red-6' : near.value ? '!text-ink-amber-6' : '',
+	crossed.value ? 'text-ink-red-7' : near.value ? 'text-ink-amber-6' : '',
 )
 
 // Dialog: edit against a draft so Cancel leaves the live value untouched.
@@ -159,30 +253,57 @@ async function submitAlert(): Promise<void> {
 				This cycle
 			</button>
 			<span v-else class="text-p-sm text-ink-gray-5">This cycle</span>
-			<Button
-				v-if="hasCycle"
-				variant="ghost"
-				size="sm"
-				label="Breakdown"
-				@click="$emit('open')"
-			>
-				<template #suffix>
+			<div class="flex items-center gap-0.5">
+				<Tooltip v-if="canManageBilling" :text="alertLabel">
+					<button
+						type="button"
+						class="grid size-6 place-items-center rounded-4 transition-colors hover:bg-surface-gray-2"
+						:class="
+							alertTint || 'text-ink-gray-4 hover:text-ink-gray-6'
+						"
+						aria-label="Budget alert"
+						@click="openDialog"
+					>
+						<span class="lucide-bell size-4" aria-hidden="true" />
+					</button>
+				</Tooltip>
+				<button
+					v-if="hasCycle"
+					type="button"
+					class="grid size-6 place-items-center rounded-4 text-ink-gray-4 hover:bg-surface-gray-2 hover:text-ink-gray-6"
+					aria-label="Breakdown"
+					@click="$emit('open')"
+				>
 					<span class="lucide-chevron-right size-4" aria-hidden="true" />
-				</template>
-			</Button>
+				</button>
+			</div>
 		</div>
 
 		<div v-if="loading" class="mt-2 w-40">
 			<LoadingText :lines="2" />
 		</div>
 		<template v-else>
-			<!-- The headline figure of the page. -->
-			<p class="mt-1.5 text-3xl-semibold tabular-nums text-ink-gray-9">
-				{{ money(projected, currency) }}
-			</p>
-			<p v-if="change" class="mt-1 text-p-sm text-ink-gray-6">
-				{{ change }}
-			</p>
+			<div class="mt-1.5 flex flex-wrap items-baseline gap-x-2.5">
+				<span class="text-2xl-semibold tabular-nums text-ink-gray-9">
+					{{ money(projected, currency) }}
+				</span>
+				<span v-if="change" class="flex min-w-0 items-center gap-1 text-sm">
+					<span
+						v-if="change.icon"
+						class="size-4 shrink-0"
+						:class="[change.tint, change.icon]"
+						aria-hidden="true"
+					/>
+					<span
+						v-if="change.amount"
+						class="text-sm-medium tabular-nums"
+						:class="change.tint"
+					>
+						{{ change.amount }}
+					</span>
+					<span class="truncate text-ink-gray-5">{{ change.caption }}</span>
+				</span>
+			</div>
 			<p class="mt-1 text-p-sm text-ink-gray-5">
 				<template v-if="!hasCycle">
 					Nothing has been billed yet this cycle
@@ -195,61 +316,65 @@ async function submitAlert(): Promise<void> {
 				</template>
 			</p>
 
-			<!-- Split bar: solid is owed, hatched is inferred. Only drawn when part
-			     of the figure actually is an estimate — a bill that is entirely fact
-			     should not be given a bar that implies doubt. -->
-			<template v-if="hasEstimates">
-				<div
-					class="mt-4 flex h-1.5 overflow-hidden rounded-full bg-surface-gray-2"
-					aria-hidden="true"
-				>
+			<template v-if="segments.length">
+				<div class="mt-4 flex h-2 gap-0.5" aria-hidden="true">
 					<span
-						class="bg-surface-gray-10"
-						:style="{ width: `${measuredPct}%` }"
+						v-for="segment in segments"
+						:key="segment.label"
+						class="h-full rounded-[4px] transition-[opacity,transform,width] duration-150"
+						:class="[
+							dimmed(segment.label) ? 'opacity-75' : '',
+							hovered === segment.label ? 'scale-y-125' : '',
+						]"
+						:style="{ width: `${segment.pct}%`, backgroundColor: segment.color }"
+						@mouseenter="onSegmentEnter(segment.label, $event)"
+						@mousemove="onSegmentMove"
+						@mouseleave="onSegmentLeave"
 					/>
-					<span class="estimated-fill flex-1" />
 				</div>
-				<div class="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1">
-					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
-						<span
-							class="size-2 shrink-0 rounded-1 bg-surface-gray-10"
-							aria-hidden="true"
-						/>
-						{{ money(measured, currency) }}
-						already owed
-					</span>
-					<span class="flex items-center gap-1.5 text-p-sm text-ink-gray-6">
-						<span
-							class="estimated-fill size-2 shrink-0 rounded-1"
-							aria-hidden="true"
-						/>
-						{{ money(estimated, currency) }}
-						estimated
-					</span>
+				<ChartTooltip
+					:open="tooltipOpen"
+					:x="tooltipX"
+					:y="tooltipY"
+					:items="tooltipItems"
+				/>
+				<div class="mt-1.5 flex flex-wrap items-center gap-x-1 gap-y-0.5">
+					<Button
+						v-for="segment in allSegments"
+						:key="segment.label"
+						variant="ghost"
+						size="xs"
+						:aria-pressed="!isHidden(segment.label)"
+						:label="`${isHidden(segment.label) ? 'Show' : 'Hide'} ${segment.label}`"
+						@click="toggleSegment(segment.label)"
+						@mouseenter="hovered = segment.label"
+						@mouseleave="hovered = null"
+						@focus="hovered = segment.label"
+						@blur="hovered = null"
+					>
+						<span class="flex items-center gap-1.5">
+							<span
+								class="size-2 shrink-0 rounded-full"
+								:class="isHidden(segment.label) ? 'opacity-30' : ''"
+								:style="{ backgroundColor: segment.color }"
+							/>
+							<span
+								:class="
+									isHidden(segment.label) ? 'text-ink-gray-4' : 'text-ink-gray-6'
+								"
+							>
+								{{ segment.label }}
+							</span>
+							<span
+								v-if="!isHidden(segment.label)"
+								class="tabular-nums text-ink-gray-4"
+							>
+								{{ formatPercent(pctByLabel.get(segment.label) ?? 0) }}
+							</span>
+						</span>
+					</Button>
 				</div>
 			</template>
-
-			<div
-				class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-outline-gray-1 pt-3"
-			>
-				<Button
-					v-if="canManageBilling"
-					variant="ghost"
-					size="sm"
-					class="-ml-2"
-					:class="alertTint"
-					:label="alertLabel"
-					@click="openDialog"
-				>
-					<template #prefix
-						><span class="lucide-bell size-4" aria-hidden="true" /></template
-					>
-				</Button>
-				<span v-else />
-				<span v-if="taxAmount" class="text-p-sm text-ink-gray-5">
-					incl. {{ money(taxAmount, currency) }} {{ taxLabel }}
-				</span>
-			</div>
 		</template>
 
 		<Dialog v-model:open="dialogOpen" title="Set a budget alert">
@@ -280,18 +405,3 @@ async function submitAlert(): Promise<void> {
 		</Dialog>
 	</div>
 </template>
-
-<style scoped>
-/* Estimated spend is drawn as a hatch of the SAME ink the measured part uses, not
-   a second hue: it is the same money, differing only in whether it has happened
-   yet. Keeping it monochrome also keeps the card inside the dashboard's meter
-   convention (ink-gray-8 on surface-gray-2), where colour means state, not
-   category. */
-.estimated-fill {
-	background-image: repeating-linear-gradient(
-		45deg,
-		var(--surface-gray-7) 0 3px,
-		var(--surface-gray-3) 3px 6px
-	);
-}
-</style>

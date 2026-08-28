@@ -1,6 +1,8 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
+from urllib.parse import urlparse
+
 import frappe
 from frappe.model.document import Document
 
@@ -18,7 +20,10 @@ class ServiceBackend(Document):
 		control_api_key: DF.Data
 		control_api_secret: DF.Password
 		is_active: DF.Check
+		metrics_token: DF.Password | None
 		region: DF.Data | None
+		rpc_secret: DF.Password | None
+		s3_endpoint: DF.Data | None
 		service: DF.Link
 	# end: auto-generated types
 
@@ -29,20 +34,57 @@ class ServiceBackend(Document):
 		# NULL so re-register lookups match and the unique index (on_doctype_update)
 		# can arbitrate. NULL <> "" in MariaDB, which is what duplicated rows.
 		self.region = self.region or ""
+		self._validate_endpoint("base_url")
+		self._validate_endpoint("s3_endpoint")
+		if self.handler_key == "storage" and not self.s3_endpoint:
+			frappe.throw(frappe._("An object-storage backend needs an S3 endpoint to hand out."))
+
+	def _validate_endpoint(self, fieldname: str) -> None:
+		"""A malformed endpoint surfaces as an opaque requests error on the first call to
+		the provider, far from the typo. Reject it at the row instead."""
+		value = (self.get(fieldname) or "").strip()
+		if not value:
+			return
+
+		parsed = urlparse(value)
+		try:
+			parsed.port
+		except ValueError:
+			parsed = None
+
+		if not parsed or not parsed.scheme or not parsed.hostname:
+			frappe.throw(
+				frappe._("{0} is not a valid URL: {1}").format(
+					self.meta.get_label(fieldname), frappe.bold(value)
+				)
+			)
+
+		self.set(fieldname, value.rstrip("/"))
+
+	@property
+	def handler_key(self) -> str | None:
+		return frappe.db.get_value("Add-on Service", self.service, "handler_key")
 
 	@frappe.whitelist()
-	def enroll(self) -> None:
-		"""Desk entry point. The one-time bootstrap secret is read from the raw request
-		and popped, so it is never recorded as a logged whitelist argument."""
+	def enroll(self) -> dict | None:
+		"""Desk entry point. Garage mints its own cluster secrets and returns them to seed
+		into `garage.toml`; every other backend exchanges a bootstrap secret, popped from
+		the raw request so it is never logged as a whitelist argument."""
+		if self.handler_key == "storage":
+			from central.services.storage import cluster_tokens
+
+			return cluster_tokens(self)
+
 		self.apply_control_credential(pop_bootstrap_secret())
+
+		return None
 
 	def apply_control_credential(self, bootstrap_secret: str) -> None:
 		"""Exchange a bootstrap secret for this backend's own control credential, minted
 		by the executor. Stores it write-only and activates."""
 		from central.services.drivers.base import get_driver
 
-		handler = frappe.db.get_value("Add-on Service", self.service, "handler_key")
-		credentials = get_driver(handler).enroll(self.base_url, bootstrap_secret)
+		credentials = get_driver(self.handler_key).enroll(self.base_url, bootstrap_secret)
 
 		self.control_api_key = credentials["api_key"]
 		self.control_api_secret = credentials["api_secret"]

@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { PaymentMethod } from '@/types/billing'
 
-// The menu for one payment-method row — mirrors SubscriptionRowActions. Which
+// The menu for one payment-method row. Which
 // actions show is gated by capability and the row's position in the fallback
 // order. Presentational: it emits the chosen verb; the card owns the calls.
 const props = defineProps<{

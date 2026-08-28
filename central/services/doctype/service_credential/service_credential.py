@@ -9,8 +9,9 @@ from frappe.model.document import Document
 class ServiceCredential(Document):
 	"""A provider credential Central issued under a team's Managed Service. `subject_type`
 	discriminates the two shapes that share the same billing meter: a per-`Site` credential
-	the bench delivers to one site, or a team-level API key (`Team`) with a `label` for use
-	in the customer's own apps. Each is revocable on its own."""
+	the bench delivers to one site, or a team-level credential (`Team`) with a `label` — an
+	API key for the customer's own apps, or an object-storage bucket and its key. Each is
+	revocable on its own."""
 
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
@@ -25,7 +26,9 @@ class ServiceCredential(Document):
 		label: DF.Data | None
 		last_usage_total: DF.Float
 		managed_service: DF.Link
+		provider_bucket_id: DF.Data | None
 		provider_ref: DF.Data | None
+		service_backend: DF.Link | None
 		site: DF.Link | None
 		status: DF.Literal["Active", "Revoked", "Failed"]
 		subject_type: DF.Literal["Site", "Team"]

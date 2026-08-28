@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import typing
+
 import frappe
 from frappe import _
 
 from central.services.drivers.base import get_driver
+
+if typing.TYPE_CHECKING:
+	from central.services.doctype.add_on_service.add_on_service import AddonService
+	from central.services.doctype.service_backend.service_backend import ServiceBackend
 
 # The minting core: Central owns entitlement + key issuance + storage. Who triggers a
 # site enable (the bench/Pilot, an operator) is the API layer's concern — this module
@@ -60,9 +66,26 @@ def enable_site(managed_service: str, site: str) -> dict:
 			"api_key": result["api_key"],
 		}
 	)
-	credential.save()
+	try:
+		credential.save()
+	except Exception:
+		# The key was minted but nothing records it: its secret never left Central, so
+		# revoke rather than leave it live at the provider, untracked.
+		_revoke_quietly(add_on.handler_key, backend, result["api_key"])
+		raise
 
 	return _config(credential.name, site, result["gateway_url"], result["api_key"])
+
+
+def _revoke_quietly(handler_key: str, backend, api_key: str) -> None:
+	"""Best-effort cleanup: a failed revoke must not replace the error being re-raised."""
+	try:
+		get_driver(handler_key).revoke_site(backend, api_key)
+	except Exception:
+		frappe.log_error(
+			title="Provider key left behind after a failed provision",
+			message=f"A key minted at {backend.name} is still live.\n\n{frappe.get_traceback()}",
+		)
 
 
 def disable_site(managed_service: str, site: str) -> dict:
@@ -106,7 +129,7 @@ def get_managed_service(managed_service: str):
 	return service
 
 
-def get_active_service(service: str):
+def get_active_service(service: str) -> AddonService:
 	add_on = frappe.db.get_value(
 		"Add-on Service",
 		service,
@@ -120,7 +143,7 @@ def get_active_service(service: str):
 	return add_on
 
 
-def get_backend(service: str):
+def get_backend(service: str) -> ServiceBackend:
 	name = frappe.db.get_value("Service Backend", {"service": service, "is_active": 1}, "name")
 	if not name:
 		frappe.throw(_("No active backend configured for {0}.").format(service))
