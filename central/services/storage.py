@@ -19,23 +19,16 @@ CLUSTER_SECRETS = ("control_api_secret", "metrics_token", "rpc_secret")
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 
-def mint_cluster_tokens(region: str, host: str) -> dict:
-	"""A node's `garage.toml` secrets. Idempotent per region: a cluster shares one
-	`rpc_secret`, and the first host to ask stays the entry node."""
+def mint_cluster_tokens(region: str) -> dict:
+	"""A region's `garage.toml` secrets. Idempotent: every node of a cluster shares them,
+	which is what makes them one cluster."""
 	add_on = get_active_service(SERVICE)
 	name = frappe.db.get_value("Service Backend", {"service": add_on.name, "region": region})
 	backend = (
 		frappe.get_doc("Service Backend", name)
 		if name
 		else frappe.get_doc(
-			{
-				"doctype": "Service Backend",
-				"service": add_on.name,
-				"region": region,
-				"base_url": f"http://{host}:3903",
-				"s3_endpoint": f"http://{host}:3900",
-				"is_active": 0,
-			}
+			{"doctype": "Service Backend", "service": add_on.name, "region": region, "is_active": 0}
 		).insert(ignore_permissions=True)
 	)
 
@@ -49,7 +42,6 @@ def cluster_tokens(backend: ServiceBackend) -> dict:
 	if missing:
 		for fieldname in missing:
 			backend.set(fieldname, frappe.generate_hash(length=SECRET_LENGTH))
-		backend.is_active = 1
 		backend.save(ignore_permissions=True)
 
 	return {

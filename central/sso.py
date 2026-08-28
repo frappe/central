@@ -17,7 +17,10 @@ BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
 METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
 LOG_TTL = METRICS_TTL
+CARGO_TTL = 365 * 24 * 60 * 60  # long-lived: Cargo is infrastructure, not a session
 ENROLL_SCOPE = "enroll"
+CARGO_SCOPE = "cargo"
+CARGO_AUDIENCE = "cargo"
 METRICS_SCOPE = "datum"
 LOG_SCOPE = "logs"
 LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
@@ -83,6 +86,39 @@ def verify_bootstrap_token(token: str) -> dict:
 	if claims.get("scope") != ENROLL_SCOPE:
 		frappe.throw(_("Not an enrollment token."), frappe.AuthenticationError)
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
+
+
+def mint_cargo_token() -> str:
+	"""The token Cargo presents to Central when asking for a cluster's secrets.
+
+	One audience for the whole of Cargo: it is trusted infrastructure, not a tenant, and it
+	provisions for every region."""
+	return _mint(CARGO_AUDIENCE, CARGO_SCOPE, CARGO_TTL)
+
+
+def verify_cargo_token(token: str) -> dict:
+	"""Validate Cargo's token against Central's own public key."""
+	from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+	settings = CentralSSOSettings.instance()
+	if not settings.public_key:
+		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
+
+	try:
+		claims = jwt.decode(
+			token,
+			load_pem_public_key(settings.public_key.encode()),
+			algorithms=[ALGORITHM],
+			audience=CARGO_AUDIENCE,
+			options={"require": ["exp", "aud", "jti", "scope"]},
+		)
+	except jwt.InvalidTokenError as exc:
+		frappe.throw(_("Invalid Cargo token: {0}").format(exc), frappe.AuthenticationError)
+
+	if claims.get("scope") != CARGO_SCOPE:
+		frappe.throw(_("Not a Cargo token."), frappe.AuthenticationError)
+
+	return claims
 
 
 def mint_metrics_token(audience: str, resource_id: str) -> str:

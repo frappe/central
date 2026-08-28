@@ -39,7 +39,8 @@
    "fieldname": "base_url",
    "fieldtype": "Data",
    "label": "Base URL",
-   "reqd": 1
+   "reqd": 0,
+   "description": "Filled in by Cargo once the cluster is running."
   },
   {
    "description": "Object-storage data endpoint handed to benches (Garage :3900). Base URL is the admin API (:3903).",
