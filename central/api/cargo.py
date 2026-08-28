@@ -26,7 +26,7 @@ def garage_tokens(region: str, vm_ids: list[str] | None = None) -> dict:
 	from central.services.storage import mint_cluster_tokens
 
 	authenticate()
-	if not region:
+	if not isinstance(region, str) or not region:
 		frappe.throw(_("A region is required to mint a cluster's tokens."), frappe.ValidationError)
 
 	return mint_cluster_tokens(region)
