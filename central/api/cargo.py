@@ -30,3 +30,16 @@ def garage_tokens(region: str, vm_ids: list[str] | None = None) -> dict:
 		frappe.throw(_("A region is required to mint a cluster's tokens."), frappe.ValidationError)
 
 	return mint_cluster_tokens(region)
+
+
+# nosemgrep: guest-whitelisted-method -- authenticate() verifies Cargo's signed token below.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def register_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
+	"""Tell Central a region's cluster is running and where to reach it."""
+	from central.services.storage import activate_cluster
+
+	authenticate()
+	if not (region and base_url and s3_endpoint):
+		frappe.throw(_("A region, admin endpoint and S3 endpoint are required."), frappe.ValidationError)
+
+	return activate_cluster(region, base_url, s3_endpoint)

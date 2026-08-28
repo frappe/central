@@ -35,6 +35,24 @@ def mint_cluster_tokens(region: str) -> dict:
 	return cluster_tokens(backend)
 
 
+def activate_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
+	"""Record where a region's cluster runs and let Central start using it.
+
+	Until this lands the backend has secrets but no address, so `get_backend` skips it and
+	no bucket can be created."""
+	name = frappe.db.get_value(
+		"Service Backend", {"service": get_active_service(SERVICE).name, "region": region}
+	)
+	if not name:
+		frappe.throw(_(f"No {region} cluster has asked for its secrets yet."))
+
+	backend = frappe.get_doc("Service Backend", name)
+	backend.update({"base_url": base_url, "s3_endpoint": s3_endpoint, "is_active": 1})
+	backend.save(ignore_permissions=True)
+
+	return {"backend": backend.name, "region": region, "is_active": 1}
+
+
 def cluster_tokens(backend: ServiceBackend) -> dict:
 	"""Generated on first ask, unchanged after. Per field, so a partly configured row
 	completes."""
