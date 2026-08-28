@@ -53,7 +53,6 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 	let stripe: Stripe | null = null
 	let card: StripeCardElement | null = null
 	let order: GatewayOrder | null = null
-	let billingGroup: string | null = null
 
 	// Create the gateway order, then resolve by rail:
 	//  - Stripe → { card: true }: dialog mounts the card Element.
@@ -66,10 +65,8 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		payMethod?: string,
 		onSheet?: () => void,
 		instrument?: string,
-		group?: string | null,
 	): Promise<BeginResult> {
 		try {
-			billingGroup = group || null
 			await createOrder.submit({
 				team: activeTeam.value,
 				amount,
@@ -77,9 +74,6 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 				// What the customer tapped. The backend resolves the rail from it, so a
 				// card top-up reaches Stripe even though Razorpay owns the INR default.
 				instrument,
-				// Earmarks the credit to one Billing Group's own budget instead of the
-				// general pool (ARCHITECTURE.md §2.1). Validated again in confirm_topup.
-				billing_group: billingGroup,
 			})
 			if (createOrder.error) throw createOrder.error
 			// Capture locally: the shared `order` is nulled by destroy() when the dialog
@@ -102,7 +96,6 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 				team: activeTeam.value,
 				amount: o.amount,
 				gateway: o.gateway,
-				billing_group: billingGroup,
 				...handles,
 			})
 		} catch (e) {
@@ -134,7 +127,6 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 						team: activeTeam.value,
 						amount: o.amount,
 						gateway: o.gateway,
-						billing_group: billingGroup,
 						paypal_order_id: paypalOrderId,
 					})
 				} catch (e) {
@@ -181,7 +173,6 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 				team: activeTeam.value,
 				amount: o.amount,
 				gateway: o.gateway,
-				billing_group: billingGroup,
 				payment_intent: paymentIntent.id,
 			})
 			return confirm.data
@@ -202,7 +193,6 @@ export function useTopup({ onDone }: { onDone?: (res: unknown) => void } = {}) {
 		card = null
 		stripe = null
 		order = null
-		billingGroup = null
 		cardComplete.value = false
 	}
 

@@ -2,13 +2,14 @@
  "actions": [],
  "autoname": "hash",
  "creation": "2026-07-02 00:00:00",
- "description": "A user-defined grouping of a team's assets that is billed on its own invoice. A team's subscriptions tagged with the same Billing Group are consolidated into one invoice per period, separate from the team's ungrouped (default consolidated) invoice. The team always remains the biller/payer; the group only partitions how many invoices the team receives.",
+ "description": "A user-defined grouping of a team's assets, billed on the team's one consolidated invoice but broken out on it line by line (ARCHITECTURE.md §2.1). An optional spending limit caps the project's own committed monthly run-rate: once at the limit, no further asset may be tagged into it. The team always remains the biller/payer.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "title",
   "team",
-  "enabled"
+  "enabled",
+  "spending_limit"
  ],
  "fields": [
   {
@@ -32,30 +33,26 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled"
+  },
+  {
+   "fieldname": "spending_limit",
+   "fieldtype": "Currency",
+   "label": "Spending Limit",
+   "description": "Cap on this project's own committed monthly run-rate (the summed locked_rate of its tagged subscriptions) — in the team's billing currency. 0 or unset = no limit. Once at the limit, tagging another asset into this project is refused; assets already in it keep running untouched."
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [
   {
    "group": "Billing",
-   "link_doctype": "Invoice",
-   "link_fieldname": "billing_group"
-  },
-  {
-   "group": "Billing",
    "link_doctype": "Subscription",
-   "link_fieldname": "billing_group"
-  },
-  {
-   "group": "Payments",
-   "link_doctype": "Payment Method",
-   "link_fieldname": "billing_group"
+   "link_fieldname": "project"
   }
  ],
- "modified": "2026-08-27 11:10:46.832878",
+ "modified": "2026-08-28 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
- "name": "Billing Group",
+ "name": "Project",
  "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [

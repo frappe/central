@@ -7,11 +7,11 @@ are generated once and never updated; corrections are by state (cancel+reissue
 before payment; refund / wallet credit after), never by mutation.
 
 `period_key` enforces the invariant a billing system may not get wrong: **a team is
-billed at most once for a period, per billing scope** (ADR 0018, invariant I6). A
-scope is the team's consolidated set of ungrouped assets, or one of its Billing
-Groups. It is a derived column with a unique index, so a second bill for the same
-(team, group, period) is refused by the database rather than by whoever remembered
-to check first.
+billed at most once for a period** (ADR 0018, invariant I6). It is a derived column
+with a unique index, so a second bill for the same (team, period) is refused by the
+database rather than by whoever remembered to check first. A team's Project tags
+show up as a breakdown on the invoice's own line items (`Invoice Line Item.project`),
+not as separate invoices.
 """
 
 import frappe
@@ -21,14 +21,14 @@ from frappe.model.naming import make_autoname
 CANCELLED = "Cancelled"
 
 
-def period_key_for(team: str, billing_group: str | None, period_start, period_end) -> str:
-	"""The live-invoice slot for a (team, billing group, period).
+def period_key_for(team: str, period_start, period_end) -> str:
+	"""The live-invoice slot for a (team, period).
 
 	The one place the key's format is spelled out — the controller derives it on every
 	save and the backfill patch rewrites history with it, and those two must never
 	disagree about what occupies a slot.
 	"""
-	return f"{team}|{billing_group or ''}|{period_start}|{period_end}"
+	return f"{team}|{period_start}|{period_end}"
 
 
 class Invoice(Document):
@@ -40,14 +40,7 @@ class Invoice(Document):
 		self.set_period_key()
 
 	def set_period_key(self):
-		"""One live invoice per (team, billing group, period); cancelled ones step aside.
-
-		The billing group is part of the slot, not just the team: a team receives its
-		consolidated invoice for ungrouped assets *plus* one per Billing Group its
-		assets are tagged into, all for the same period. Keying on the team alone would
-		let the first of those insert and have the index refuse the rest. The
-		consolidated invoice takes an empty group segment — the key as a whole is still
-		non-empty, so it competes for exactly one slot like any other.
+		"""One live invoice per (team, period); cancelled ones step aside.
 
 		A cancelled invoice takes a per-invoice sentinel rather than NULL. Frappe
 		coerces an unset Data field to the empty string, and empty strings *collide*
@@ -59,6 +52,4 @@ class Invoice(Document):
 		if self.status == CANCELLED:
 			self.period_key = f"{CANCELLED}|{self.name}"
 		else:
-			self.period_key = period_key_for(
-				self.team, self.billing_group, self.period_start, self.period_end
-			)
+			self.period_key = period_key_for(self.team, self.period_start, self.period_end)

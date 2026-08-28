@@ -24,7 +24,6 @@ const emit = defineEmits<{
 	moveUp: [pm: PaymentMethod]
 	moveDown: [pm: PaymentMethod]
 	remove: [pm: PaymentMethod]
-	assignGroup: [pm: PaymentMethod]
 }>()
 
 interface ActionItem {
@@ -58,11 +57,6 @@ const options = computed(() => {
 			icon: 'lucide-arrow-down',
 			onClick: () => emit('moveDown', props.method),
 		})
-	items.push({
-		label: 'Move to billing group',
-		icon: 'lucide-layers',
-		onClick: () => emit('assignGroup', props.method),
-	})
 	items.push({
 		label: 'Remove',
 		icon: 'lucide-trash-2',

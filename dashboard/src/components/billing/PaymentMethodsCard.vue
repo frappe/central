@@ -3,7 +3,6 @@ import { Badge, Button, useCall } from 'frappe-ui'
 import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import AddMethodDialog from '@/components/AddMethodDialog.vue'
-import AssignCardBillingGroupDialog from '@/components/billing/AssignCardBillingGroupDialog.vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PaymentMethodRowActions from '@/components/billing/PaymentMethodRowActions.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -64,7 +63,6 @@ const reorder = useCall<unknown, { team: string; ordered: string[] }>({
 // One row mutates at a time; `busy` holds its name so the row can show a spinner.
 const busy = ref('')
 const pendingRemove = ref<PaymentMethod | null>(null)
-const pendingAssignGroup = ref<PaymentMethod | null>(null)
 
 function methodIcon(pm: PaymentMethod): string {
 	return pm.method_type === 'Card' ? 'lucide-credit-card' : 'lucide-smartphone'
@@ -292,7 +290,6 @@ function onAdd(): void {
 							@move-up="(m) => move(m, -1)"
 							@move-down="(m) => move(m, 1)"
 							@remove="pendingRemove = $event"
-							@assign-group="pendingAssignGroup = $event"
 						/>
 					</div>
 				</div>
@@ -309,9 +306,5 @@ function onAdd(): void {
 			@confirm="confirmRemove"
 		/>
 		<AddMethodDialog v-model="showAdd" @done="reloadMethods" />
-		<AssignCardBillingGroupDialog
-			v-model:method="pendingAssignGroup"
-			@assigned="reloadMethods"
-		/>
 	</BillingCard>
 </template>

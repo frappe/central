@@ -52,29 +52,16 @@ def _require_manage(team: str) -> str:
 	return team
 
 
-def _validate_own_billing_group(team: str, billing_group: str | None) -> None:
-	"""Refuse to earmark a credit movement to another team's Billing Group.
-
-	`Credit Ledger Entry` carries no controller validation of its own on this field
-	(unlike `Subscription`/`Payment Method`, which validate same-team on save) — this
-	is the API-boundary equivalent, checked before any money moves."""
-	if not billing_group:
-		return
-	if frappe.db.get_value("Billing Group", billing_group, "team") != team:
-		frappe.throw(_("That billing group does not belong to this team."), frappe.ValidationError)
-
-
-def _billing_group_titles(names) -> dict:
-	"""name -> title for a batch of Billing Group ids, one query regardless of how
-	many rows reference them (list_subscriptions / list_invoices / list_payment_methods
-	resolve their `billing_group` link to a display title this way instead of one
-	lookup per row)."""
+def _project_titles(names) -> dict:
+	"""name -> title for a batch of Project ids, one query regardless of how many
+	rows reference them (list_subscriptions resolves its `project` link to a
+	display title this way instead of one lookup per row)."""
 	names = [n for n in set(names) if n]
 	if not names:
 		return {}
 	return {
-		g.name: g.title
-		for g in frappe.get_all("Billing Group", filters={"name": ["in", names]}, fields=["name", "title"])
+		p.name: p.title
+		for p in frappe.get_all("Project", filters={"name": ["in", names]}, fields=["name", "title"])
 	}
 
 
@@ -284,6 +271,11 @@ def _describe_line(team: str, li) -> dict:
 		# A projected line knows whether its quantity was observed or inferred; a
 		# stored line item is always a fact by the time it reaches an invoice.
 		"basis": li.get("basis") or MEASURED,
+		# Which Project this resource was tagged into, if any — stamped at generation
+		# time on a real Invoice Line Item, or by the same tagging step on a live
+		# forecast line (generate._tag_projects), so both read identically here.
+		"project": li.get("project"),
+		"project_title": li.get("project_title"),
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None

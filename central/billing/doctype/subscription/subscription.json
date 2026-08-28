@@ -9,7 +9,7 @@
  "field_order": [
   "enabled",
   "team",
-  "billing_group",
+  "project",
   "asset_id",
   "service_subject",
   "cluster",
@@ -37,12 +37,12 @@
    "search_index": 1
   },
   {
-   "description": "Optional: tag this subscription's asset into a Billing Group to bill it on a separate invoice from the team's consolidated one. ",
-   "fieldname": "billing_group",
+   "description": "Optional: tag this subscription's asset into a Project. It still bills on the team's one consolidated invoice, broken out there by project.",
+   "fieldname": "project",
    "fieldtype": "Link",
    "in_preview": 1,
-   "label": "Billing Group",
-   "options": "Billing Group"
+   "label": "Project",
+   "options": "Project"
   },
   {
    "default": "Preset",

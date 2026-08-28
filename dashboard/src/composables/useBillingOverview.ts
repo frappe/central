@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import type {
-	BillingGroup,
 	BillingProfile,
 	CreditBalance,
 	CreditLedgerEntry,
@@ -11,6 +10,7 @@ import type {
 	Forecast,
 	NextPayment,
 	PaymentMethod,
+	Project,
 	SubscriptionRow,
 	TeamOverview,
 } from '@/types/billing'
@@ -64,8 +64,8 @@ const subscriptionsCall = useCall<SubscriptionRow[], { team: string }>({
 	immediate: false,
 	refetch: true,
 })
-const groupsCall = useCall<BillingGroup[], { team: string }>({
-	url: method(API.billingGroups),
+const projectsCall = useCall<Project[], { team: string }>({
+	url: method(API.projects),
 	params,
 	immediate: false,
 	refetch: true,
@@ -92,7 +92,7 @@ whenTeamReady(() => {
 	methodsCall.reload()
 	profileCall.reload()
 	subscriptionsCall.reload()
-	groupsCall.reload()
+	projectsCall.reload()
 	nextPaymentCall.reload()
 	cycleCostsCall.reload()
 })
@@ -106,7 +106,7 @@ export function useBillingOverview() {
 		methods: methodsCall,
 		profile: profileCall,
 		subscriptions: subscriptionsCall,
-		groups: groupsCall,
+		projects: projectsCall,
 		nextPayment: nextPaymentCall,
 		cycleCosts: cycleCostsCall,
 		// The team's billing currency. The Billing Profile is the source of truth
@@ -141,13 +141,14 @@ export function useBillingOverview() {
 			profileCall.reload()
 			overviewCall.reload()
 		},
-		reloadGroups: () => groupsCall.reload(),
-		// Tagging a subscription into/out of a group moves it between invoice
-		// scopes — both reads carry group state (the subscription's badge, the
-		// group's resource_count), so a retag refreshes both at once.
+		reloadProjects: () => projectsCall.reload(),
+		// Tagging a subscription into/out of a project changes its cost-breakdown
+		// grouping — both reads carry project state (the subscription's badge, the
+		// project's resource_count/committed_run_rate), so a retag refreshes both
+		// at once.
 		reloadSubscriptionGrouping(): void {
 			subscriptionsCall.reload()
-			groupsCall.reload()
+			projectsCall.reload()
 		},
 	}
 }

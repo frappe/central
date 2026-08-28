@@ -24,24 +24,17 @@ import frappe
 from central.billing.states import InvalidTransition, transition
 
 
-def anchor_subscription(team: str, billing_group: str | None = None) -> str | None:
+def anchor_subscription(team: str) -> str | None:
 	"""The subscription an invoice's dunning / charge-routing anchors on.
 
-	An invoice bills a scope of the team's assets — a Billing Group, or (when
-	`billing_group` is unset) the team's ungrouped consolidated set. Account
-	standing and the default payment method/gateway live on the Subscription, so
-	dunning and on-charge routing need one representative subscription for the
-	invoice: the earliest-created one in that scope. This mirrors the "primary
-	subscription" the Invoice used to link to directly, before invoices became
-	team/group-scoped rather than subscription-scoped.
+	An invoice bills a team's whole consolidated set of assets. Account standing
+	and the default payment method/gateway live on the Subscription, so dunning
+	and on-charge routing need one representative subscription for the invoice:
+	the team's earliest-created one. This mirrors the "primary subscription" the
+	Invoice used to link to directly, before invoices became team-scoped rather
+	than subscription-scoped.
 	"""
-	filters = {"team": team, "billing_group": billing_group if billing_group else ["in", [None, ""]]}
-	name = frappe.db.get_value("Subscription", filters, "name", order_by="creation asc")
-	if not name and not billing_group:
-		# A team whose every subscription is grouped still needs an anchor for its
-		# (empty) consolidated scope — fall back to any subscription of the team.
-		name = frappe.db.get_value("Subscription", {"team": team}, "name", order_by="creation asc")
-	return name
+	return frappe.db.get_value("Subscription", {"team": team}, "name", order_by="creation asc")
 
 
 # The Subscription Change type that records a move *into* a standing.
@@ -851,6 +844,41 @@ def enforce_headroom(team: str, new_rate, exclude: str | None = None) -> None:
 			frappe._("This configuration ({0}) exceeds your remaining headroom ({1}).").format(
 				frappe.utils.flt(new_rate), frappe.utils.flt(available)
 			)
+		)
+
+
+def project_run_rate(team: str, project: str, exclude: str | None = None) -> float:
+	"""A project's committed monthly run-rate: the summed open-segment locked rate of
+	the team's subscriptions tagged into it. Mirrors `team_run_rate`, scoped to one
+	project's tag instead of the whole team."""
+	return frappe.utils.flt(
+		sum(
+			s.locked_rate
+			for s in active_segments({"team": team, "project": project, "enabled": 1})
+			if s.subscription != exclude
+		)
+	)
+
+
+def enforce_project_headroom(team: str, project: str | None, new_rate, exclude: str | None = None) -> None:
+	"""Reject tagging a new asset into a project that would push its committed
+	run-rate past its `spending_limit` (0/unset = unlimited). Blocks new assets
+	only (the breaking-change spec) — an already-tagged subscription keeps running
+	untouched even if the limit is lowered afterward."""
+	if not project:
+		return
+	limit = frappe.utils.flt(frappe.db.get_value("Project", project, "spending_limit"))
+	if not limit:
+		return
+	if new_rate is None:
+		frappe.throw(frappe._("This configuration cannot be priced in your currency."))
+	available = max(0.0, limit - project_run_rate(team, project, exclude=exclude))
+	if frappe.utils.flt(new_rate) > available:
+		frappe.throw(
+			frappe._(
+				"Tagging this asset into the project would exceed its spending limit "
+				"({0} committed, {1} available)."
+			).format(frappe.utils.flt(new_rate), frappe.utils.flt(available))
 		)
 
 

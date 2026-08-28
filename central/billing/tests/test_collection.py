@@ -55,18 +55,16 @@ class FallbackTestBase(IntegrationTestCase):
 		for dt in ("Payment Attempt", "Invoice"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Payment Method", {"team": TEAM})
-		frappe.db.delete("Billing Group", {"team": TEAM})
 		for we in frappe.get_all("Webhook Event", pluck="name"):
 			frappe.db.delete("Webhook Event", {"name": we})
 		frappe.db.commit()
 
-	def _card(self, label, gw_id, priority, reauth=0, billing_group=None):
+	def _card(self, label, gw_id, priority, reauth=0):
 		return (
 			frappe.get_doc(
 				{
 					"doctype": "Payment Method",
 					"team": TEAM,
-					"billing_group": billing_group,
 					"gateway": GATEWAY,
 					"method_type": "Card",
 					"status": "Active",
@@ -82,13 +80,12 @@ class FallbackTestBase(IntegrationTestCase):
 			.name
 		)
 
-	def _open_invoice(self, total=1000, billing_group=None):
+	def _open_invoice(self, total=1000):
 		return (
 			frappe.get_doc(
 				{
 					"doctype": "Invoice",
 					"team": TEAM,
-					"billing_group": billing_group,
 					"status": "Open",
 					"period_start": "2026-06-01",
 					"period_end": "2026-06-30",
@@ -207,97 +204,3 @@ class TestMethodOrdering(FallbackTestBase):
 		self.assertEqual(frappe.db.get_value("Payment Method", self.backup, "is_default"), 1)
 
 
-class TestBillingGroupCardRouting(FallbackTestBase):
-	"""A group invoice charges its own earmarked card(s) first, falling back to the
-	team's general cards (self.primary / self.backup from setUp) if exhausted or
-	none are set. The consolidated invoice never uses a group's earmarked card."""
-
-	def _group(self, title="Customer X"):
-		return frappe.get_doc({"doctype": "Billing Group", "title": title, "team": TEAM}).insert().name
-
-	def test_group_invoice_charges_its_own_card_first(self):
-		group = self._group()
-		self._card("Group card", "pm_group", priority=2, billing_group=group)
-		inv = self._open_invoice(billing_group=group)
-
-		with stub_charges([(True, "pi_group")]) as adapter:
-			collection.collect_invoice(inv)
-
-		self.assertEqual(adapter.charge.call_count, 1)
-		attempt = self._attempts()[0]
-		self.assertEqual(
-			frappe.db.get_value("Payment Method", attempt.payment_method, "gateway_method_id"), "pm_group"
-		)
-
-	def test_group_invoice_falls_back_to_general_cards_when_its_own_declines(self):
-		group = self._group()
-		self._card("Group card", "pm_group", priority=2, billing_group=group)
-		inv = self._open_invoice(billing_group=group)
-
-		# Group's own card declines, then falls through to the general primary.
-		with stub_charges([(False, None), (True, "pi_primary")]) as adapter:
-			collection.collect_invoice(inv)
-
-		self.assertEqual(adapter.charge.call_count, 2)
-		methods_tried = [a.payment_method for a in self._attempts()]
-		self.assertEqual(
-			[frappe.db.get_value("Payment Method", m, "gateway_method_id") for m in methods_tried],
-			["pm_group", "pm_primary"],
-		)
-
-	def test_group_invoice_with_no_own_card_uses_the_general_pool_directly(self):
-		group = self._group()  # no card earmarked to it
-		inv = self._open_invoice(billing_group=group)
-
-		with stub_charges([(True, "pi_primary")]) as adapter:
-			collection.collect_invoice(inv)
-
-		self.assertEqual(adapter.charge.call_count, 1)
-		attempt = self._attempts()[0]
-		self.assertEqual(
-			frappe.db.get_value("Payment Method", attempt.payment_method, "gateway_method_id"), "pm_primary"
-		)
-
-	def test_consolidated_invoice_never_uses_a_groups_earmarked_card(self):
-		group = self._group()
-		self._card("Group card", "pm_group", priority=-1, billing_group=group)  # would sort first if unscoped
-		inv = self._open_invoice(billing_group=None)
-
-		with stub_charges([(True, "pi_primary")]) as adapter:
-			collection.collect_invoice(inv)
-
-		attempt = self._attempts()[0]
-		self.assertEqual(
-			frappe.db.get_value("Payment Method", attempt.payment_method, "gateway_method_id"), "pm_primary"
-		)
-
-	def test_two_groups_never_use_each_others_earmarked_card(self):
-		x = self._group("Customer X")
-		y = self._group("Customer Y")
-		self._card("X card", "pm_x", priority=2, billing_group=x)
-		inv_y = self._open_invoice(billing_group=y)
-
-		# Y's invoice must skip X's card entirely and land on the general primary.
-		with stub_charges([(True, "pi_primary")]) as adapter:
-			collection.collect_invoice(inv_y)
-
-		attempt = self._attempts()[0]
-		self.assertEqual(
-			frappe.db.get_value("Payment Method", attempt.payment_method, "gateway_method_id"), "pm_primary"
-		)
-
-	def test_manual_pay_now_follows_the_same_routing_rule(self):
-		# charges._resolve_method (the manual "pay now" path) unified onto the same
-		# rule as collection.collect_invoice — same group-first, general-fallback.
-		group = self._group()
-		self._card("Group card", "pm_group", priority=2, billing_group=group)
-		inv = self._open_invoice(billing_group=group)
-
-		with stub_charges([(True, "pi_group")]) as adapter:
-			charges.pay_invoice(inv)
-
-		self.assertEqual(adapter.charge.call_count, 1)
-		attempt = self._attempts()[0]
-		self.assertEqual(
-			frappe.db.get_value("Payment Method", attempt.payment_method, "gateway_method_id"), "pm_group"
-		)

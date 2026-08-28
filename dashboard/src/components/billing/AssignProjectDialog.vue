@@ -6,12 +6,13 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { errorToast } from '@/lib/toast'
 import type { SubscriptionRow } from '@/types/billing'
 
-// Tag a subscription into a Billing Group, or clear it back onto the team's
-// consolidated invoice. Controlled by the card: pass the pending subscription
-// (or null) via v-model:subscription, like PauseBillingDialog. Only the team's
-// currently-enabled groups are offered — a disabled one refuses new tags
-// server-side too (Subscription.validate_billing_group).
-const CONSOLIDATED = ''
+// Tag a subscription into a Project, or clear it back to untagged. Controlled by
+// the card: pass the pending subscription (or null) via v-model:subscription,
+// like PauseBillingDialog. Only the team's currently-enabled projects are
+// offered — a disabled one refuses new tags server-side too
+// (Subscription.validate_project), which also rejects a tag that would push the
+// project's committed run-rate over its spending_limit.
+const UNTAGGED = ''
 
 const props = defineProps<{ subscription: SubscriptionRow | null }>()
 const emit = defineEmits<{
@@ -19,7 +20,7 @@ const emit = defineEmits<{
 	assigned: []
 }>()
 
-const { groups } = useBillingOverview()
+const { projects } = useBillingOverview()
 
 const open = computed({
 	get: () => !!props.subscription,
@@ -28,27 +29,27 @@ const open = computed({
 	},
 })
 
-const selected = ref(CONSOLIDATED)
+const selected = ref(UNTAGGED)
 watch(
 	() => props.subscription,
 	(sub) => {
-		if (sub) selected.value = sub.billing_group || CONSOLIDATED
+		if (sub) selected.value = sub.project || UNTAGGED
 	},
 )
 
 const options = computed(() => [
-	{ label: 'Consolidated (no group)', value: CONSOLIDATED },
-	...(groups.data ?? [])
-		.filter((g) => g.enabled)
-		.map((g) => ({ label: g.title, value: g.name })),
+	{ label: 'No project', value: UNTAGGED },
+	...(projects.data ?? [])
+		.filter((p) => p.enabled)
+		.map((p) => ({ label: p.title, value: p.name })),
 ])
 
 const canSubmit = computed(
-	() => selected.value !== (props.subscription?.billing_group || CONSOLIDATED),
+	() => selected.value !== (props.subscription?.project || UNTAGGED),
 )
 
-const assign = useCall<unknown, { subscription: string; billing_group: string | null }>({
-	url: method(API.setSubscriptionBillingGroup),
+const assign = useCall<unknown, { subscription: string; project: string | null }>({
+	url: method(API.setSubscriptionProject),
 	method: 'POST',
 	immediate: false,
 })
@@ -58,7 +59,7 @@ async function submit(): Promise<void> {
 	try {
 		await assign.submit({
 			subscription: props.subscription.name,
-			billing_group: selected.value || null,
+			project: selected.value || null,
 		})
 		if (assign.error) throw assign.error
 		emit('update:subscription', null)
@@ -69,7 +70,7 @@ async function submit(): Promise<void> {
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Move to billing group',
+	title: 'Move to project',
 	actions: [
 		{
 			label: 'Save',
@@ -93,8 +94,8 @@ const dialogOptions = computed(() => ({
 				type="select"
 				v-model="selected"
 				:options="options"
-				label="Billing group"
-				description="Which invoice this subscription bills on. Consolidated is your default invoice."
+				label="Project"
+				description="Which project this subscription shows under in your cost breakdown. This doesn't change your invoice — every subscription bills on your one consolidated invoice."
 			/>
 		</template>
 	</Dialog>

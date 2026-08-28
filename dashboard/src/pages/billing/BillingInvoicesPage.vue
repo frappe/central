@@ -213,8 +213,6 @@ const eventDetail = (ev: {
 					{{ shown.invoice_type }}
 					·
 					{{ billingPeriod(shown.period_start, shown.period_end) }}
-					·
-					{{ shown.billing_group_title ?? 'Consolidated' }}
 					<span v-if="shown.due_date">
 						· Due {{ shortDate(shown.due_date) }}</span
 					>

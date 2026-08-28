@@ -20,6 +20,11 @@ central.patches.v0_0.configurator_vcpu_dropdown
 # adapter_key. Runs before the sync flips naming to `field:adapter_key`, so the
 # rows are already unique by the time that rule takes effect.
 central.patches.v0_0.one_gateway_per_adapter
+# Billing Group -> Project (breaking rename). Must run before doctype sync, while
+# the "Billing Group" DocType record (and its table) still exist to rename from —
+# sync would otherwise treat the missing billing_group.json as an orphan to delete
+# and create "Project" fresh, losing every tagged row.
+central.patches.v0_0.rename_billing_group_to_project
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
@@ -135,3 +140,14 @@ central.patches.v0_0.seed_provision_teams_as_trial
 # The SSO issuer / JWKS base URL moved from the `central_url` conf key onto Central
 # SSO Settings; carry a deployment's configured value over.
 central.patches.v0_0.seed_central_sso_issuer_url
+# Subscription.billing_group -> Subscription.project, alongside the doctype
+# rename above. Needs the new `project` column already synced (rename_field
+# copies data into it), so this runs post_model_sync, not alongside the rename.
+central.patches.v0_0.rename_subscription_project_field
+# One consolidated invoice per team per period again, never one per project —
+# period_key drops the billing-group segment; the project view moves onto line
+# items instead (breaking change, requested directly).
+central.patches.v0_0.revert_invoice_to_single_consolidated
+# Per-project credit budgets and card earmarking had no invoice left to settle
+# against once billing reverted to one consolidated invoice — drop the columns.
+central.patches.v0_0.drop_project_scoping_from_credits_and_methods

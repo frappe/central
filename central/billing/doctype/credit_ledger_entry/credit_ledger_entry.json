@@ -10,7 +10,6 @@
  "field_order": [
   "team",
   "entry_type",
-  "billing_group",
   "column_break_amount",
   "amount",
   "currency",
@@ -41,14 +40,6 @@
    "label": "Entry Type",
    "options": "Credit\nDebit",
    "reqd": 1
-  },
-  {
-   "description": "Earmarks this movement to one Billing Group's budget — a computed subset of the team's ONE (team, currency) wallet, not a separate wallet. Unset = the general pool, which funds the team's consolidated invoice and is never drawn by a group invoice.",
-   "fieldname": "billing_group",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Billing Group",
-   "options": "Billing Group"
   },
   {
    "fieldname": "column_break_amount",

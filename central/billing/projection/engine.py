@@ -21,7 +21,7 @@ from central.billing.projection import events as injected
 from central.billing.projection.basis import MEASURED, mark, split_totals
 from central.billing.projection.guard import read_only
 from central.billing.revenue.dunning import dunning_clock_start, dunning_policy, dunning_schedule
-from central.billing.revenue.invoicing.generate import ALL_SCOPES, rate_team_period, team_clusters
+from central.billing.revenue.invoicing.generate import rate_team_period, team_clusters
 
 
 def project(
@@ -62,14 +62,10 @@ def _project(
 	end = frappe.utils.getdate(period_end)
 
 	metered = estimate.metered_lines(team, team_clusters(team), start, end, today=today)
-	# ALL_SCOPES: this is "what is the team paying", not one invoice's rating — a
-	# resource tagged into a Billing Group must still show up here, not vanish
-	# because it's no longer part of the (unset-billing_group) consolidated scope.
 	rated = rate_team_period(
 		team,
 		start,
 		end,
-		billing_group=ALL_SCOPES,
 		metered=metered,
 		explain=True,
 		changes=injected.merged_changes(events, start, end),
@@ -302,14 +298,10 @@ def _roll_one(team, carried, period_start, period_end, today, mode, assume, even
 		}
 
 	metered = estimate.metered_lines(team, team_clusters(team), period_start, period_end, today=today)
-	# ALL_SCOPES — see the matching comment in `_project`: a rolled-forward month's
-	# projection must still cover a team's grouped resources, not just its
-	# consolidated scope.
 	rated = rate_team_period(
 		team,
 		period_start,
 		period_end,
-		billing_group=ALL_SCOPES,
 		metered=metered,
 		explain=True,
 		changes=injected.merged_changes(events, period_start, period_end),

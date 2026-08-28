@@ -61,7 +61,7 @@ class BillingTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Credit Ledger Entry", "Billing Group"):
+		for dt in ("Invoice", "Credit Ledger Entry", "Project"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -305,71 +305,6 @@ class TestOpenAndCollect(BillingTestBase):
 			{"team": TEAM, "entry_type": "Debit", "reference_name": name},
 		)
 		self.assertEqual(len(debits), 1)
-
-
-class TestBillingGroupCreditIsolation(BillingTestBase):
-	"""End-to-end: open_and_collect draws a group invoice from ONLY that group's
-	own tagged credit, and the consolidated invoice from ONLY the general pool —
-	credits.py's isolation guard exercised through the real settlement path."""
-
-	def _grouped_invoices(self):
-		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
-		grouped_sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
-		group = frappe.get_doc({"doctype": "Billing Group", "title": "Customer X", "team": TEAM}).insert().name
-		frappe.db.set_value("Subscription", grouped_sub, "billing_group", group)
-		add_segment(grouped_sub, "Created", 2000, "2026-06-01 00:00:00")
-		frappe.db.commit()
-
-		run.generate_draft_invoices("2026-06-01", "2026-06-30")
-		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group"])
-		by_group = {(i.billing_group or None): i.name for i in invoices}
-		return group, by_group[None], by_group[group]
-
-	def test_group_invoice_settles_only_from_its_own_budget(self):
-		group, consolidated, grouped = self._grouped_invoices()
-		credits.purchase(TEAM, 2000, "INR", billing_group=group)  # covers the group invoice in full
-		credits.purchase(TEAM, 1000, "INR")  # covers the consolidated invoice in full
-		frappe.db.commit()
-
-		invoicing.open_and_collect(grouped)
-		invoicing.open_and_collect(consolidated)
-
-		grouped_doc = frappe.get_doc("Invoice", grouped)
-		consolidated_doc = frappe.get_doc("Invoice", consolidated)
-		self.assertEqual(grouped_doc.credit_applied, 2000.0)
-		self.assertEqual(grouped_doc.status, "Paid")
-		self.assertEqual(consolidated_doc.credit_applied, 1000.0)
-		self.assertEqual(consolidated_doc.status, "Paid")
-		# Each invoice's credit came from its own scope, not spillover.
-		self.assertEqual(credits.group_budget(TEAM, "INR", group), 0)
-		self.assertEqual(credits.general_pool_balance(TEAM, "INR"), 0)
-
-	def test_group_invoice_does_not_fall_back_to_the_general_pool_when_short(self):
-		group, _consolidated, grouped = self._grouped_invoices()
-		credits.purchase(TEAM, 500, "INR", billing_group=group)  # short of the 2000 owed
-		credits.purchase(TEAM, 5000, "INR")  # plenty in the general pool, but off-limits
-		frappe.db.commit()
-
-		invoicing.open_and_collect(grouped, collect=False)
-
-		grouped_doc = frappe.get_doc("Invoice", grouped)
-		self.assertEqual(grouped_doc.credit_applied, 500.0)
-		# The remainder is left for card/UPI — NOT quietly pulled from the general pool.
-		self.assertEqual(grouped_doc.expected_collection, 1500.0)
-		self.assertEqual(credits.general_pool_balance(TEAM, "INR"), 5000)
-
-	def test_consolidated_invoice_never_draws_a_groups_reserved_budget(self):
-		group, consolidated, _grouped = self._grouped_invoices()
-		credits.purchase(TEAM, 5000, "INR", billing_group=group)  # reserved for the group only
-		frappe.db.commit()
-
-		invoicing.open_and_collect(consolidated, collect=False)
-
-		consolidated_doc = frappe.get_doc("Invoice", consolidated)
-		self.assertEqual(consolidated_doc.credit_applied, 0.0)
-		self.assertEqual(consolidated_doc.expected_collection, 1000.0)
-		# The group's reservation is untouched.
-		self.assertEqual(credits.group_budget(TEAM, "INR", group), 5000)
 
 
 class TestTerminationCancelsBilling(BillingTestBase):
@@ -818,105 +753,99 @@ class TestRatingIsSeparableFromWriting(BillingTestBase):
 			self.assertEqual(rated.payload[field], inv.get(field), field)
 
 
-class TestBillingGroupPartitioning(BillingTestBase):
-	def test_grouped_asset_bills_on_a_separate_invoice(self):
-		# self.sub is ungrouped -> consolidated. Add a second asset tagged into a group.
-		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
-
-		grouped_sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
-		group = frappe.get_doc({"doctype": "Billing Group", "title": "Customer X", "team": TEAM}).insert().name
-		frappe.db.set_value("Subscription", grouped_sub, "billing_group", group)
-		add_segment(grouped_sub, "Created", 2000, "2026-06-01 00:00:00")
-		frappe.db.commit()
-
-		run.generate_draft_invoices("2026-06-01", "2026-06-30")
-
-		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group", "subtotal"])
-		by_group = {(i.billing_group or None): i for i in invoices}
-		# One consolidated invoice (ungrouped asset) + one for the group.
-		self.assertEqual(len(invoices), 2)
-		self.assertIn(None, by_group)
-		self.assertIn(group, by_group)
-		# Each invoice bills ONLY its own scope's asset — no cross-leak despite same cluster.
-		self.assertEqual(by_group[None].subtotal, 1000.0)
-		self.assertEqual(by_group[group].subtotal, 2000.0)
-		# Both invoices still bill to the same team.
-		self.assertEqual(frappe.db.get_value("Invoice", by_group[group].name, "team"), TEAM)
-
-	def test_no_groups_yields_single_consolidated_invoice(self):
-		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
-		frappe.db.commit()
-
-		run.generate_draft_invoices("2026-06-01", "2026-06-30")
-
-		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group"])
-		self.assertEqual(len(invoices), 1)
-		self.assertIsNone(invoices[0].billing_group or None)
-
-	def test_disabled_group_folds_its_assets_back_into_consolidated(self):
-		"""A disabled group stops partitioning — it must not stop the asset being billed.
-
-		The failure this guards against is silent: if generation stopped drafting the
-		group's invoice but still mapped the asset to the group, the asset would match
-		no scope and drop off every invoice the team receives.
-		"""
-		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
-
-		grouped_sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
-		group = frappe.get_doc(
-			{"doctype": "Billing Group", "title": "Customer X", "team": TEAM}
-		).insert().name
-		frappe.db.set_value("Subscription", grouped_sub, "billing_group", group)
-		add_segment(grouped_sub, "Created", 2000, "2026-06-01 00:00:00")
-		# Tagged while the group was live, disabled afterwards — the real-world order.
-		frappe.db.set_value("Billing Group", group, "enabled", 0)
-		frappe.db.commit()
-
-		run.generate_draft_invoices("2026-06-01", "2026-06-30")
-
-		invoices = frappe.get_all("Invoice", {"team": TEAM}, ["name", "billing_group", "subtotal"])
-		self.assertEqual(len(invoices), 1)
-		self.assertIsNone(invoices[0].billing_group or None)
-		# The disabled group's 2000 is ON the consolidated invoice, not lost.
-		self.assertEqual(invoices[0].subtotal, 3000.0)
-
-
-class TestBillingGroupValidation(BillingTestBase):
+class TestProjectValidation(BillingTestBase):
 	OTHER_TEAM = "team-invoice-other"
 
 	def tearDown(self):
-		frappe.db.delete("Billing Group", {"team": self.OTHER_TEAM})
+		frappe.db.delete("Project", {"team": self.OTHER_TEAM})
 		frappe.db.commit()
 		super().tearDown()
 
-	def test_cannot_tag_another_teams_billing_group(self):
+	def test_cannot_tag_another_teams_project(self):
 		ensure_team(self.OTHER_TEAM)
 		foreign = frappe.get_doc(
-			{"doctype": "Billing Group", "title": "Someone Else", "team": self.OTHER_TEAM}
+			{"doctype": "Project", "title": "Someone Else", "team": self.OTHER_TEAM}
 		).insert().name
 
 		doc = frappe.get_doc("Subscription", self.sub)
-		doc.billing_group = foreign
+		doc.project = foreign
 		with self.assertRaises(frappe.ValidationError):
 			doc.save()
 
-	def test_cannot_tag_a_disabled_billing_group(self):
-		group = frappe.get_doc(
-			{"doctype": "Billing Group", "title": "Archived", "team": TEAM, "enabled": 0}
+	def test_cannot_tag_a_disabled_project(self):
+		project = frappe.get_doc(
+			{"doctype": "Project", "title": "Archived", "team": TEAM, "enabled": 0}
 		).insert().name
 
 		doc = frappe.get_doc("Subscription", self.sub)
-		doc.billing_group = group
+		doc.project = project
 		with self.assertRaises(frappe.ValidationError):
 			doc.save()
 
-	def test_tagging_an_own_active_group_is_allowed(self):
-		group = frappe.get_doc(
-			{"doctype": "Billing Group", "title": "Customer X", "team": TEAM}
+	def test_tagging_an_own_active_project_is_allowed(self):
+		project = frappe.get_doc(
+			{"doctype": "Project", "title": "Customer X", "team": TEAM}
 		).insert().name
 
 		doc = frappe.get_doc("Subscription", self.sub)
-		doc.billing_group = group
+		doc.project = project
 		doc.save()
 
-		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "billing_group"), group)
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+
+class TestProjectSpendingLimit(BillingTestBase):
+	"""A Project's `spending_limit` caps the committed run-rate of the subscriptions
+	tagged into it (`subscriptions.enforce_project_headroom`, via
+	`Subscription.validate_project`). It blocks tagging a NEW asset only — an
+	already-tagged subscription is never un-tagged or stopped."""
+
+	def _project(self, spending_limit=0):
+		return frappe.get_doc(
+			{"doctype": "Project", "title": "Customer X", "team": TEAM, "spending_limit": spending_limit}
+		).insert().name
+
+	def test_tagging_under_the_limit_succeeds(self):
+		# PLAN's locked rate is 3200 INR/mo (DEFAULT_RATES) — comfortably under 5000.
+		project = self._project(spending_limit=5000)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+	def test_tagging_over_the_limit_raises(self):
+		project = self._project(spending_limit=1000)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+		# The refused tag never landed.
+		self.assertIsNone(frappe.db.get_value("Subscription", self.sub, "project"))
+
+	def test_zero_spending_limit_is_unlimited(self):
+		project = self._project(spending_limit=0)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()  # no cap to exceed, regardless of the subscription's rate
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+	def test_lowering_the_limit_later_does_not_affect_already_tagged_subscriptions(self):
+		project = self._project(spending_limit=5000)
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()
+
+		# Lower the limit well below the already-tagged subscription's committed rate.
+		frappe.db.set_value("Project", project, "spending_limit", 100)
+
+		# Re-saving without changing the tag must not raise or un-tag it — the limit
+		# only gates a NEW tag / a project change, never an untouched existing one.
+		doc.reload()
+		doc.save()
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)

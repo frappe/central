@@ -27,41 +27,13 @@ from central.billing.payments import charges, decline
 
 def ordered_methods(team: str) -> list:
 	"""A team's chargeable methods, primary first. Skips non-active and methods
-	whose mandate needs re-authorisation.
-
-	Every method, group-earmarked or general — the whole-team view used by
-	generic/informational callers (projections, the dashboard outlook). Charging
-	one specific invoice wants `scoped_methods` instead, not this."""
+	whose mandate needs re-authorisation."""
 	return frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": "Active", "reauth_required": 0},
 		order_by="priority asc, creation asc",
-		fields=["name", "gateway", "priority", "billing_group"],
+		fields=["name", "gateway", "priority"],
 	)
-
-
-def scoped_methods(team: str, billing_group: str | None) -> list:
-	"""Chargeable methods for one billing scope, own-first then general fallback.
-
-	A group scope tries its own earmarked methods (priority order) first, then the
-	team's general (untagged) methods if those are exhausted or none are set. The
-	consolidated scope (billing_group unset) uses ONLY the general methods — same
-	isolation rule as credits (`credits.general_pool_balance`): a method earmarked
-	to a group is reserved for that group's invoices, never the consolidated one
-	or another group's.
-
-	Public (not `_`-prefixed): `charges._resolve_method` uses this directly for the
-	manual "pay now" default, deliberately WITHOUT the already-failed exclusion
-	`next_method_for` applies below — resolving a default is not the same job as
-	rotating a fallback chain, and `pay_invoice` called twice must resolve to the
-	SAME method both times (a genuine retry), not silently skip to a different card.
-	"""
-	methods = ordered_methods(team)
-	general = [m for m in methods if not m.get("billing_group")]
-	if not billing_group:
-		return general
-	own = [m for m in methods if m.get("billing_group") == billing_group]
-	return own + general
 
 
 def _failed_methods_for(invoice: str) -> set:
@@ -75,11 +47,10 @@ def _failed_methods_for(invoice: str) -> set:
 	)
 
 
-def next_method_for(invoice: str, team: str, billing_group: str | None = None):
-	"""The next untried, chargeable method for this invoice's scope, or None if
-	exhausted. `billing_group` scopes the candidate list — see `scoped_methods`."""
+def next_method_for(invoice: str, team: str):
+	"""The next untried, chargeable method for this invoice, or None if exhausted."""
 	failed = _failed_methods_for(invoice)
-	for method in scoped_methods(team, billing_group):
+	for method in ordered_methods(team):
 		if method.name not in failed:
 			return method
 	return None
@@ -128,7 +99,7 @@ def collect_invoice(invoice: str) -> dict:
 		if in_flight:
 			return {"collected": False, "reason": "attempt_in_flight", "attempt": in_flight[0]}
 
-		method = next_method_for(invoice, inv.team, inv.billing_group)
+		method = next_method_for(invoice, inv.team)
 		if not method:
 			# Every method has failed (or there are none) — leave it for dunning, and
 			# ask the customer for another way to pay. Off-session there is nobody to

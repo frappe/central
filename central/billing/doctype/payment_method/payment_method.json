@@ -9,7 +9,6 @@
  "engine": "InnoDB",
  "field_order": [
   "team",
-  "billing_group",
   "gateway",
   "method_type",
   "column_break_flags",
@@ -41,13 +40,6 @@
    "in_list_view": 1,
    "label": "Team",
    "reqd": 1
-  },
-  {
-   "description": "Optional: earmark this method to one Billing Group. Its invoice tries this group's own tagged methods first, falling back to the team's general (untagged) methods if these are exhausted or none are set. Unset = a general method, available to every scope.",
-   "fieldname": "billing_group",
-   "fieldtype": "Link",
-   "label": "Billing Group",
-   "options": "Billing Group"
   },
   {
    "fieldname": "gateway",

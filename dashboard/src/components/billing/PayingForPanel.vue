@@ -20,7 +20,7 @@ const {
 	openServer,
 	askPause,
 	onResume,
-	askAssignGroup,
+	askAssignProject,
 } = usePayingFor()
 
 const subtitle = computed(() =>
@@ -50,7 +50,7 @@ const subtitle = computed(() =>
 				@open="openServer"
 				@pause="askPause"
 				@resume="onResume"
-				@assign-group="askAssignGroup"
+				@assign-project="askAssignProject"
 			/>
 		</div>
 	</SidePanel>

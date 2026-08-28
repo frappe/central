@@ -5,7 +5,7 @@ import frappe
 from frappe.model.document import Document
 
 
-class BillingGroup(Document):
+class Project(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -15,6 +15,7 @@ class BillingGroup(Document):
 		from frappe.types import DF
 
 		enabled: DF.Check
+		spending_limit: DF.Currency
 		team: DF.Link
 		title: DF.Data
 	# end: auto-generated types

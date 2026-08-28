@@ -19,7 +19,6 @@ class Subscription(Document):
 		account_standing: DF.Literal["Current", "Past Due", "Suspended"]
 		asset_id: DF.Link | None
 		billing_cycle: DF.Literal["Monthly", "Annual"]
-		billing_group: DF.Link | None
 		cluster: DF.ReadOnly | None
 		default_payment_method: DF.Link | None
 		enabled: DF.Check
@@ -36,36 +35,45 @@ class Subscription(Document):
 	def validate(self):
 		self.validate_duplicate_subscription()
 		self.validate_duplicate_service_subject()
-		self.validate_billing_group()
+		self.validate_project()
 
-	def validate_billing_group(self):
-		"""A subscription may only be tagged into one of its own team's active groups.
+	def validate_project(self):
+		"""A subscription may only be tagged into one of its own team's active projects.
 
-		Generation already filters groups by team, so a foreign group would not misbill
-		anyone — the tag would just be ignored and the asset would land on the
-		consolidated invoice. Both checks are here to refuse a tag that would silently
-		mean nothing, rather than let someone believe an asset bills separately when it
-		does not. A disabled group is refused for the same reason: disabled means "no
-		longer partitioning", so its assets bill on the consolidated invoice.
+		Generation already filters projects by team, so a foreign project would not
+		misbill anyone — the tag would just be ignored and the asset would land
+		untagged on the consolidated invoice. Both checks are here to refuse a tag
+		that would silently mean nothing, rather than let someone believe an asset
+		is tracked under a project when it is not. A disabled project is refused for
+		the same reason: disabled means "no longer tracking", so its assets go
+		untagged on the consolidated invoice.
 		"""
-		if not self.billing_group:
+		if not self.project:
 			return
 
-		group = frappe.db.get_value(
-			"Billing Group", self.billing_group, ["team", "enabled"], as_dict=True
+		project = frappe.db.get_value(
+			"Project", self.project, ["team", "enabled", "spending_limit"], as_dict=True
 		)
-		if not group:
+		if not project:
 			return  # a broken link — Frappe's own link validation reports it better
 
-		if group.team != self.team:
+		if project.team != self.team:
 			frappe.throw(
-				f"Billing Group {self.billing_group} belongs to team {group.team}, "
+				f"Project {self.project} belongs to team {project.team}, "
 				f"not {self.team}.",
 			)
-		if not group.enabled:
+		if not project.enabled:
 			frappe.throw(
-				f"Billing Group {self.billing_group} is disabled; its assets bill on "
+				f"Project {self.project} is disabled; its assets bill untagged on "
 				f"{self.team}'s consolidated invoice.",
+			)
+
+		if self.is_new() or self.has_value_changed("project"):
+			from central.billing.catalog.subscriptions import enforce_project_headroom
+
+			rate, _currency = self.resolve_rate_snapshot()
+			enforce_project_headroom(
+				self.team, self.project, rate or 0, exclude=None if self.is_new() else self.name
 			)
 
 	def validate_duplicate_subscription(self):

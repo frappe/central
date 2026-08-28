@@ -103,18 +103,6 @@ const columns = computed<ListViewColumn<InvoiceSummary>[]>(() => [
 			}),
 	},
 	{
-		id: 'billing_group',
-		accessorFn: (inv) => inv.billing_group_title ?? 'Consolidated',
-		header: 'Scope',
-		size: 140,
-		cell: ({ row }) =>
-			h(
-				'span',
-				{ class: 'truncate text-p-sm text-ink-gray-6' },
-				row.original.billing_group_title ?? 'Consolidated',
-			),
-	},
-	{
 		id: 'total',
 		accessorFn: (inv) => inv.total,
 		header: 'Amount',

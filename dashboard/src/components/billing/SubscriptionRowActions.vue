@@ -16,7 +16,7 @@ const emit = defineEmits<{
 	open: [sub: SubscriptionRow]
 	pause: [sub: SubscriptionRow]
 	resume: [sub: SubscriptionRow]
-	assignGroup: [sub: SubscriptionRow]
+	assignProject: [sub: SubscriptionRow]
 }>()
 
 interface ActionItem {
@@ -51,9 +51,9 @@ const options = computed(() => {
 	}
 	if (props.canManage && props.subscription.status !== 'Terminated')
 		items.push({
-			label: 'Move to billing group',
+			label: 'Move to project',
 			icon: 'lucide-layers',
-			onClick: () => emit('assignGroup', props.subscription),
+			onClick: () => emit('assignProject', props.subscription),
 		})
 	return items
 })

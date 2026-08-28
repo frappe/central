@@ -334,12 +334,10 @@ def _gateway_for_invoice(inv) -> str:
 
 
 def _resolve_method(inv, payment_method, gateway):
-	"""Method + gateway for the charge: explicit args, then the invoice scope's
-	top chargeable Payment Method (same scope rule `collection.collect_invoice`
-	charges by — a group's own tagged methods first, falling back to the team's
-	general ones), then currency-based gateway lookup via the resolver.
+	"""Method + gateway for the charge: explicit args, then the team's top
+	chargeable Payment Method, then currency-based gateway lookup via the resolver.
 
-	Deliberately `scoped_methods`, not `next_method_for`: this resolves a
+	Deliberately `ordered_methods`, not `next_method_for`: this resolves a
 	*default*, not a fallback rotation, so it must NOT exclude a method that
 	already failed for this invoice — `pay_invoice` called twice (a manual retry)
 	should resolve to the SAME method both times unless the caller says otherwise.
@@ -348,7 +346,7 @@ def _resolve_method(inv, payment_method, gateway):
 		return payment_method, gateway
 	from central.billing.payments import collection
 
-	methods = collection.scoped_methods(inv.team, inv.billing_group)
+	methods = collection.ordered_methods(inv.team)
 	method = methods[0] if methods else None
 	method_name = payment_method or (method and method.name)
 	gateway_name = gateway or (method and method.gateway)

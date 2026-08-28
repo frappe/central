@@ -200,7 +200,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 
 	from central.billing.catalog.subscriptions import anchor_subscription
 
-	anchor = anchor_subscription(inv.team, inv.billing_group)
+	anchor = anchor_subscription(inv.team)
 	sub = frappe.get_doc("Subscription", anchor) if anchor else None
 	actions = []
 
@@ -215,7 +215,7 @@ def process_invoice_dunning(invoice_name: str, now=None) -> dict:
 	# (ADR 0005). Auto Charge and Prepaid retry iff a method exists.
 	mode = _collection_mode(inv.team)
 	auto_charge = mode not in ("Manual Checkout", "Action Required")
-	if inv.status == "Open" and auto_charge and collection.next_method_for(invoice_name, inv.team, inv.billing_group):
+	if inv.status == "Open" and auto_charge and collection.next_method_for(invoice_name, inv.team):
 		retry_payment(invoice_name)
 		actions.append("retry")
 		inv.reload()

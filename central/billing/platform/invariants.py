@@ -134,46 +134,6 @@ def check_wallet_matches_ledger() -> list[Violation]:
 	return violations
 
 
-# --- C5: no Billing Group's earmarked budget went negative -------------------
-
-
-def check_billing_group_budget_not_negative() -> list[Violation]:
-	"""Σ signed `Credit Ledger Entry` tagged one Billing Group never goes negative.
-
-	Unlike the wallet's `CHECK (balance >= 0)`, this isolation is enforced only at
-	the application layer (`credits._post_entry`) — a group invoice may draw ONLY
-	its own tagged budget, never the general pool or another group's. There is no
-	database constraint backing that promise, so this is the canary for it: a
-	negative sum here means some write bypassed `_post_entry`'s guard (a bug, a
-	direct DB write, or a race the retry loop didn't cover), not that the team's
-	real money went negative — the wallet's own CHECK still holds regardless.
-	"""
-	cle = frappe.qb.DocType("Credit Ledger Entry")
-	signed = Case().when(cle.entry_type == "Credit", cle.amount).else_(-cle.amount)
-	rows = (
-		frappe.qb.from_(cle)
-		.select(cle.team, cle.currency, cle.billing_group, Sum(signed).as_("balance"))
-		.where(cle.billing_group.isnotnull() & (cle.billing_group != ""))
-		.groupby(cle.team, cle.currency, cle.billing_group)
-		.having(Sum(signed) < 0)
-		.run(as_dict=True)
-	)
-	return [
-		Violation(
-			check="C5",
-			team=r.team,
-			currency=r.currency,
-			subject_doctype="Billing Group",
-			subject=r.billing_group,
-			expected=0.0,
-			actual=frappe.utils.flt(r.balance),
-			detail=f"Billing Group {r.billing_group}'s own tagged credit is negative — "
-			"it drew more than was ever earmarked for it.",
-		)
-		for r in rows
-	]
-
-
 # --- C4: the running_balance chain is unbroken -------------------------------
 
 
@@ -288,15 +248,11 @@ def check_paid_invoice_is_covered() -> list[Violation]:
 	return violations
 
 
-# --- I6: one live invoice per (team, billing group, period) ------------------
+# --- I6: one live invoice per (team, period) ---------------------------------
 
 
 def check_one_live_invoice_per_period() -> list[Violation]:
-	"""A team is billed at most once for a period, per billing scope.
-
-	The scope — the team's consolidated set of ungrouped assets, or one of its Billing
-	Groups — is part of the grain. A team with groups legitimately holds several live
-	invoices for one period; what it may never hold is two for the *same* scope.
+	"""A team is billed at most once for a period.
 
 	The unique index on `period_key` makes this impossible going forward; the audit
 	is what surfaces the duplicates that predate it (the v28 patch flags them rather
@@ -307,13 +263,12 @@ def check_one_live_invoice_per_period() -> list[Violation]:
 		frappe.qb.from_(inv)
 		.select(
 			inv.team,
-			inv.billing_group,
 			inv.period_start,
 			inv.period_end,
 			Count("*").as_("bills"),
 		)
 		.where(inv.status != "Cancelled")
-		.groupby(inv.team, inv.billing_group, inv.period_start, inv.period_end)
+		.groupby(inv.team, inv.period_start, inv.period_end)
 		.having(Count("*") > 1)
 		.run(as_dict=True)
 	)
@@ -324,8 +279,7 @@ def check_one_live_invoice_per_period() -> list[Violation]:
 			subject_doctype="Invoice",
 			expected=1,
 			actual=r.bills,
-			detail=f"Team billed {r.bills}x for {r.period_start} – {r.period_end} "
-			f"({'billing group ' + r.billing_group if r.billing_group else 'consolidated'}). "
+			detail=f"Team billed {r.bills}x for {r.period_start} – {r.period_end}. "
 			"If any duplicate was paid it needs a refund, not a cancellation.",
 		)
 		for r in rows
@@ -429,7 +383,6 @@ def check_no_stuck_attempts() -> list[Violation]:
 CHECKS = {
 	"C2": ("Wallet balance equals its ledger", check_wallet_matches_ledger),
 	"C4": ("Ledger running_balance chain is unbroken", check_running_balance_chain),
-	"C5": ("No Billing Group's earmarked budget went negative", check_billing_group_budget_not_negative),
 	"I1": ("Invoice subtotal equals its line items", check_invoice_line_sum),
 	"I5": ("Paid invoice is covered by card + credits", check_paid_invoice_is_covered),
 	"I6": ("One live invoice per team per period", check_one_live_invoice_per_period),

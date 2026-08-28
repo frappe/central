@@ -83,13 +83,7 @@ def partial_overcharge(payment_attempt: str, amount, reason: str | None = None, 
 
 
 def _to_wallet(refund, attempt):
-	"""Book the overcharge as a wallet credit, applied next cycle.
-
-	Tagged with the refunded invoice's own billing_group, so a refund on a group's
-	invoice returns to that group's own budget — never leaking into the general
-	pool or another group's earmark.
-	"""
-	billing_group = frappe.db.get_value("Invoice", attempt.invoice, "billing_group")
+	"""Book the overcharge as a wallet credit, applied next cycle."""
 	credits.refund_to_wallet(
 		attempt.team,
 		refund.amount,
@@ -97,7 +91,6 @@ def _to_wallet(refund, attempt):
 		reference_type="Refund",
 		reference_name=refund.name,
 		note=refund.reason or f"Overcharge refund for {attempt.invoice}",
-		billing_group=billing_group,
 	)
 	transition(
 		refund, "Completed", actor=frappe.session.user, correlation=attempt.invoice, amount=refund.amount

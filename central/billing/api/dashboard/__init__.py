@@ -26,12 +26,6 @@ from central.billing.api.dashboard.account import (
 	set_collection_mode,
 	whoami,
 )
-from central.billing.api.dashboard.billing_groups import (
-	create_billing_group,
-	list_billing_groups,
-	rename_billing_group,
-	set_billing_group_enabled,
-)
 from central.billing.api.dashboard.catalog import (
 	get_eligible_plans,
 )
@@ -52,7 +46,7 @@ from central.billing.api.dashboard.invoices import (
 	pay_invoice,
 	pay_invoice_checkout,
 	resume_subscription,
-	set_subscription_billing_group,
+	set_subscription_project,
 )
 from central.billing.api.dashboard.methods import (
 	add_demo_card,
@@ -64,12 +58,18 @@ from central.billing.api.dashboard.methods import (
 	remove_payment_method,
 	reorder_payment_methods,
 	set_default_payment_method,
-	set_payment_method_billing_group,
 	setup_payment_method_order,
 )
 from central.billing.api.dashboard.outlook import (
 	get_next_payment,
 	get_payment_schedule,
+)
+from central.billing.api.dashboard.projects import (
+	create_project,
+	list_projects,
+	rename_project,
+	set_project_enabled,
+	set_project_spending_limit,
 )
 from central.billing.api.dashboard.reports import (
 	export_csv,
@@ -92,7 +92,7 @@ __all__ = [
 	"confirm_invoice_checkout",
 	"confirm_payment_method_order",
 	"confirm_topup",
-	"create_billing_group",
+	"create_project",
 	"create_topup_order",
 	"credit_ledger",
 	"export_csv",
@@ -117,10 +117,10 @@ __all__ = [
 	"get_topup_options",
 	"get_trust_tier",
 	"initiate_card_setup",
-	"list_billing_groups",
 	"list_invoices",
 	"list_payment_attempts",
 	"list_payment_methods",
+	"list_projects",
 	"list_refunds",
 	"list_subscriptions",
 	"list_switchable_teams",
@@ -128,16 +128,16 @@ __all__ = [
 	"pay_invoice",
 	"pay_invoice_checkout",
 	"remove_payment_method",
-	"rename_billing_group",
+	"rename_project",
 	"reorder_payment_methods",
 	"resume_subscription",
 	"save_billing_profile",
 	"save_billing_settings",
-	"set_billing_group_enabled",
 	"set_collection_mode",
 	"set_default_payment_method",
-	"set_payment_method_billing_group",
-	"set_subscription_billing_group",
+	"set_project_enabled",
+	"set_project_spending_limit",
+	"set_subscription_project",
 	"setup_payment_method_order",
 	"subscribe_metered_service",
 	"whoami",

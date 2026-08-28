@@ -21,7 +21,7 @@ defineEmits<{
 	open: [sub: SubscriptionRow]
 	pause: [sub: SubscriptionRow]
 	resume: [sub: SubscriptionRow]
-	assignGroup: [sub: SubscriptionRow]
+	assignProject: [sub: SubscriptionRow]
 }>()
 
 type BadgeTheme = 'gray' | 'red' | 'blue' | 'green' | 'amber' | 'violet'
@@ -136,7 +136,7 @@ function overAllowance(s: ServiceRow): boolean {
 					@open="$emit('open', $event)"
 					@pause="$emit('pause', $event)"
 					@resume="$emit('resume', $event)"
-					@assign-group="$emit('assignGroup', $event)"
+					@assign-project="$emit('assignProject', $event)"
 				/>
 			</div>
 		</template>

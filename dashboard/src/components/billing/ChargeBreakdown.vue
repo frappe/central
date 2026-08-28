@@ -24,21 +24,22 @@ const props = withDefaults(
 	{ showBasis: false },
 )
 
-// The cycle tray rates every scope at once (ALL_SCOPES — a team's eventual bill
-// isn't one invoice once it has Billing Groups), so its lines can span several of
-// the team's invoices-to-be. Split into a section per scope, but ONLY when more
-// than one is actually present this cycle: a team that has never tagged anything
-// sees exactly the flat breakdown below, unchanged. A stored Invoice's lines never
-// carry more than one scope (get_invoice doesn't set billing_group per line), so
-// this is a no-op there regardless.
+// Purely a cosmetic project-wise breakdown — every line lands on the team's one
+// consolidated invoice regardless of whether it's tagged into a Project, so this
+// is not "which invoice this will land on", just "how to read the total". Split
+// into a section per project, but ONLY when more than one is actually present
+// this cycle: a team that has never tagged anything sees exactly the flat
+// breakdown below, unchanged.
 interface ScopeGroup {
 	label: string
 	lines: BillingLine[]
 	total: number
 }
 
+const UNTAGGED = 'Untagged'
+
 function scopeLabel(li: BillingLine): string {
-	return li.billing_group_title ?? 'Consolidated'
+	return li.project_title ?? UNTAGGED
 }
 
 const scopeGroups = computed<ScopeGroup[] | null>(() => {
@@ -54,10 +55,10 @@ const scopeGroups = computed<ScopeGroup[] | null>(() => {
 		lines,
 		total: lines.reduce((t, li) => t + Number(li.amount || 0), 0),
 	}))
-	// The team's own consolidated invoice leads; its groups follow, biggest first.
+	// Untagged spend leads; the named projects follow, biggest first.
 	groups.sort((a, b) => {
-		if (a.label === 'Consolidated') return -1
-		if (b.label === 'Consolidated') return 1
+		if (a.label === UNTAGGED) return -1
+		if (b.label === UNTAGGED) return 1
 		return b.total - a.total
 	})
 	return groups

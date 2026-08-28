@@ -51,7 +51,7 @@ class OverviewBase(IntegrationTestCase):
 			"Payment Method",
 			"Tax Profile",
 			"Billing Profile",
-			"Billing Group",
+			"Project",
 		):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
@@ -113,52 +113,51 @@ class TestForecastBasis(OverviewBase):
 		self.assertEqual(detail["items"][0]["basis"], "Measured")
 
 
-class TestForecastCoversEveryBillingGroupScope(OverviewBase):
-	"""The forecast rates ALL_SCOPES (every Billing Group's lines combined), so a
-	resource tagged into a group must still show up — and its line must say which
-	group it belongs to, so the dashboard breakdown can tell the team's eventual
-	invoices apart (#billing-group)."""
+class TestForecastCarriesProjectTags(OverviewBase):
+	"""Each forecast line says which Project (if any) its resource is tagged into —
+	stamped by the same `_tag_projects` helper a real invoice generation uses, so a
+	forecast and its eventual invoice always agree on the label (#billing-group)."""
 
-	def test_ungrouped_lines_carry_no_scope(self):
+	def test_untagged_lines_carry_no_project(self):
 		self._provision(rate=3000)
 
 		fc = dashboard.get_forecast(TEAM)
 
 		self.assertTrue(fc["line_items"])
 		for line in fc["line_items"]:
-			self.assertIsNone(line["billing_group"])
-			self.assertIsNone(line["billing_group_title"])
+			self.assertIsNone(line["project"])
+			self.assertIsNone(line["project_title"])
 
-	def test_a_grouped_lines_scope_is_named(self):
+	def test_a_tagged_lines_project_is_named(self):
 		sub = self._provision(rate=3000)
-		group = frappe.get_doc({"doctype": "Billing Group", "title": "Customer X", "team": TEAM}).insert().name
-		frappe.db.set_value("Subscription", sub, "billing_group", group)
+		project = frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM}).insert().name
+		frappe.db.set_value("Subscription", sub, "project", project)
 		frappe.db.commit()
 
 		fc = dashboard.get_forecast(TEAM)
 
 		self.assertTrue(fc["line_items"])
 		for line in fc["line_items"]:
-			self.assertEqual(line["billing_group"], group)
-			self.assertEqual(line["billing_group_title"], "Customer X")
-		# And the total still includes it — the earlier zeroing-out regression.
+			self.assertEqual(line["project"], project)
+			self.assertEqual(line["project_title"], "Customer X")
+		# And the total still includes it — there is only ever one consolidated bill.
 		self.assertEqual(fc["subtotal"], 3000.0)
 
-	def test_a_disabled_groups_lines_read_as_consolidated(self):
-		# Matches real drafting (generate.py _resource_group_map): a disabled group
-		# folds its assets back to consolidated, so the breakdown must not keep
-		# showing a stale group label for money that will actually bill ungrouped.
+	def test_a_disabled_projects_lines_read_as_untagged(self):
+		# Matches real drafting (generate.py _resource_project_map): a disabled
+		# project's resources go untagged, so the breakdown must not keep showing a
+		# stale project label for a line that will actually bill untagged.
 		sub = self._provision(rate=3000)
-		group = frappe.get_doc(
-			{"doctype": "Billing Group", "title": "Customer X", "team": TEAM, "enabled": 0}
+		project = frappe.get_doc(
+			{"doctype": "Project", "title": "Customer X", "team": TEAM, "enabled": 0}
 		).insert().name
-		frappe.db.set_value("Subscription", sub, "billing_group", group)
+		frappe.db.set_value("Subscription", sub, "project", project)
 		frappe.db.commit()
 
 		fc = dashboard.get_forecast(TEAM)
 
 		for line in fc["line_items"]:
-			self.assertIsNone(line["billing_group"])
+			self.assertIsNone(line["project"])
 
 
 class TestNextPayment(OverviewBase):
