@@ -17,7 +17,8 @@
   "control_api_key",
   "control_api_secret",
   "metrics_token",
-  "rpc_secret"
+  "rpc_secret",
+  "last_error"
  ],
  "fields": [
   {
@@ -82,6 +83,14 @@
    "fieldname": "rpc_secret",
    "fieldtype": "Password",
    "label": "RPC Secret"
+  },
+  {
+   "depends_on": "last_error",
+   "description": "Why the provisioning service last failed to bring this cluster up.",
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

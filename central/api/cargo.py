@@ -43,3 +43,16 @@ def register_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
 		frappe.throw(_("A region, admin endpoint and S3 endpoint are required."), frappe.ValidationError)
 
 	return activate_cluster(region, base_url, s3_endpoint)
+
+
+# nosemgrep: guest-whitelisted-method -- authenticate() verifies Cargo's signed token below.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+def report_failure(region: str, step: str, error: str) -> dict:
+	"""Cargo could not bring a region's cluster up. The secrets stay so a retry reuses them."""
+	from central.services.storage import record_cluster_failure
+
+	authenticate()
+	if not region:
+		frappe.throw(_("A region is required."), frappe.ValidationError)
+
+	return record_cluster_failure(region, step or "unknown", error or "")

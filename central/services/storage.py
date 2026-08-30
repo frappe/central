@@ -47,10 +47,26 @@ def activate_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
 		frappe.throw(_(f"No {region} cluster has asked for its secrets yet."))
 
 	backend = frappe.get_doc("Service Backend", name)
-	backend.update({"base_url": base_url, "s3_endpoint": s3_endpoint, "is_active": 1})
+	backend.update({"base_url": base_url, "s3_endpoint": s3_endpoint, "is_active": 1, "last_error": None})
 	backend.save(ignore_permissions=True)
 
 	return {"backend": backend.name, "region": region, "is_active": 1}
+
+
+def record_cluster_failure(region: str, step: str, error: str) -> dict:
+	"""Note that a region's cluster failed to come up. Its secrets are kept, so a retry
+	reuses them and the nodes still recognise each other."""
+	name = frappe.db.get_value(
+		"Service Backend", {"service": get_active_service(SERVICE).name, "region": region}
+	)
+	if not name:
+		frappe.throw(_(f"No {region} cluster has asked for its secrets yet."))
+
+	backend = frappe.get_doc("Service Backend", name)
+	backend.update({"last_error": f"{step}: {error}"[:500], "is_active": 0})
+	backend.save(ignore_permissions=True)
+
+	return {"backend": backend.name, "region": region, "is_active": 0}
 
 
 def cluster_tokens(backend: ServiceBackend) -> dict:
