@@ -10,12 +10,10 @@
   "base_url",
   "column_break_head",
   "status",
-  "reachable",
-  "last_synced_at",
-  "section_break_auth",
-  "api_key",
-  "api_secret",
-  "column_break_auth",
+  "registered_at",
+  "section_break_bootstrap",
+  "bootstrapping_token",
+  "column_break_tokens",
   "central_access_token",
   "atlas_access_token"
  ],
@@ -32,13 +30,13 @@
    "unique": 1
   },
   {
-   "description": "Where this Cargo site is served, e.g. http://10.0.0.5:8000.",
+   "description": "Where this Cargo site is served, e.g. http://10.0.0.5:8000. Recorded when the host enrols.",
    "fieldname": "base_url",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Base URL",
    "options": "URL",
-   "reqd": 1
+   "read_only": 1
   },
   {
    "fieldname": "column_break_head",
@@ -46,7 +44,7 @@
   },
   {
    "default": "Draft",
-   "description": "Registered means Central has pushed this host its settings.",
+   "description": "Registered means the host collected its tokens and is running.",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -56,48 +54,36 @@
    "read_only": 1
   },
   {
-   "fieldname": "reachable",
-   "fieldtype": "Check",
-   "label": "Reachable",
-   "read_only": 1
-  },
-  {
-   "fieldname": "last_synced_at",
+   "fieldname": "registered_at",
    "fieldtype": "Datetime",
-   "label": "Last Synced At",
+   "label": "Registered At",
    "read_only": 1
   },
   {
-   "description": "This Cargo site's API credentials, printed by its setup script. Central needs them once, to push the settings below.",
-   "fieldname": "section_break_auth",
+   "description": "Issue this, then pass it to the host's setup.sh as CENTRAL_BOOTSTRAPPING_TOKEN. It is short-lived and can only be spent once.",
+   "fieldname": "section_break_bootstrap",
    "fieldtype": "Section Break",
-   "label": "Credentials"
+   "label": "Enrolment"
   },
   {
-   "fieldname": "api_key",
-   "fieldtype": "Data",
-   "label": "API Key",
-   "reqd": 1
-  },
-  {
-   "fieldname": "api_secret",
+   "fieldname": "bootstrapping_token",
    "fieldtype": "Password",
-   "label": "API Secret",
-   "reqd": 1
+   "label": "Bootstrapping Token",
+   "read_only": 1
   },
   {
-   "fieldname": "column_break_auth",
+   "fieldname": "column_break_tokens",
    "fieldtype": "Column Break"
   },
   {
-   "description": "Minted for this host's calls to Central.",
+   "description": "Issued to the host when it enrolled.",
    "fieldname": "central_access_token",
    "fieldtype": "Password",
    "label": "Central Access Token",
    "read_only": 1
   },
   {
-   "description": "Minted for this host's calls to Atlas.",
+   "description": "Issued to the host when it enrolled.",
    "fieldname": "atlas_access_token",
    "fieldtype": "Password",
    "label": "Atlas Access Token",

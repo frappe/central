@@ -19,6 +19,7 @@ METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fe
 LOG_TTL = METRICS_TTL
 CARGO_TTL = 365 * 24 * 60 * 60  # long-lived: Cargo is infrastructure, not a session
 ENROLL_SCOPE = "enroll"
+CARGO_BOOTSTRAPPING_SCOPE = "cargo:bootstrap"
 CARGO_CENTRAL_SCOPE = "cargo:central"
 CARGO_ATLAS_SCOPE = "cargo:atlas"
 METRICS_SCOPE = "datum"
@@ -88,7 +89,39 @@ def verify_bootstrap_token(token: str) -> dict:
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
-def mint_cargo_tokens() -> dict[str, str]:
+def mint_cargo_bootstrapping_token(instance: str) -> str:
+	"""A short-lived token a new Cargo host presents once, to collect its real ones.
+
+	`aud` is the Cargo Instance it was minted for, so Central knows which host is calling
+	without the host having to say."""
+	return _mint(instance, CARGO_BOOTSTRAPPING_SCOPE, BOOTSTRAP_TTL)
+
+
+def verify_cargo_bootstrapping_token(token: str) -> str:
+	"""Validate an enrolment token and return the Cargo Instance it names."""
+	from cryptography.hazmat.primitives.serialization import load_pem_public_key
+
+	settings = CentralSSOSettings.instance()
+	if not settings.public_key:
+		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
+
+	try:
+		claims = jwt.decode(
+			token,
+			load_pem_public_key(settings.public_key.encode()),
+			algorithms=[ALGORITHM],
+			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
+		)
+	except jwt.InvalidTokenError as exc:
+		frappe.throw(_("Invalid bootstrapping token: {0}").format(exc), frappe.AuthenticationError)
+
+	if claims.get("scope") != CARGO_BOOTSTRAPPING_SCOPE:
+		frappe.throw(_("Not a Cargo bootstrapping token."), frappe.AuthenticationError)
+
+	return claims["aud"]
+
+
+def mint_cargo_access_tokens() -> dict[str, str]:
 	"""The two tokens a Cargo host carries, one per upstream.
 
 	Both identify Cargo, and both are verified against Central's public keys -- Central
@@ -99,7 +132,7 @@ def mint_cargo_tokens() -> dict[str, str]:
 	}
 
 
-def verify_cargo_token(token: str) -> dict:
+def verify_cargo_access_token(token: str) -> dict:
 	"""Validate the token Cargo presents to Central.
 
 	The scope check is what stops Cargo's Atlas token -- signed by this same key -- from

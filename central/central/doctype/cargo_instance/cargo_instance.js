@@ -5,33 +5,23 @@ frappe.ui.form.on("Cargo Instance", {
 	refresh(frm) {
 		if (frm.is_new()) return;
 
-		frm.add_custom_button(__("Test Connection"), () =>
-			frm.call("test_connection").then(({ message }) => {
-				frappe.msgprint({
-					title: message.reachable ? __("Reachable") : __("Unreachable"),
-					indicator: message.reachable ? "green" : "red",
-					message: message.reachable
-						? __("Configured: {0}, clusters: {1}", [message.configured, message.clusters])
-						: message.error,
-				});
-				frm.reload_doc();
-			})
-		);
-
-		if (frm.doc.status !== "Disabled") {
-			const again = frm.doc.status === "Registered";
-			frm.add_custom_button(again ? __("Re-register") : __("Register"), () =>
-				frappe.confirm(
-					again
-						? __("Mint a new token and overwrite this host's settings? Its current token stops working.")
-						: __("Push settings to {0}?", [frm.doc.base_url]),
-					() =>
-						frm.call("register").then(() => {
-							frappe.show_alert({ message: __("Registered."), indicator: "green" });
-							frm.reload_doc();
-						})
-				)
-			).addClass(again ? "" : "btn-primary");
-		}
+		const label = frm.doc.status === "Registered" ? __("Re-issue Bootstrapping Token") : __("Issue Bootstrapping Token");
+		frm.add_custom_button(label, () =>
+			frappe.confirm(
+				frm.doc.status === "Registered"
+					? __("This host is already registered. Issuing a new token lets it enrol again and replaces its current tokens. Continue?")
+					: __("Issue a short-lived token for this host?"),
+				() =>
+					frm.call("issue_bootstrapping_token").then(({ message }) => {
+						frappe.msgprint({
+							title: __("Pass this to the host's setup.sh"),
+							indicator: "orange",
+							message: `<pre>CENTRAL_BOOTSTRAPPING_TOKEN=${frappe.utils.escape_html(message.bootstrapping_token)}</pre>
+								<p>${__("It is shown once and expires shortly.")}</p>`,
+						});
+						frm.reload_doc();
+					})
+			)
+		).addClass(frm.doc.status === "Registered" ? "" : "btn-primary");
 	},
 });

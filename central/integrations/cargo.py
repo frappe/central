@@ -1,20 +1,15 @@
 from __future__ import annotations
 
 import functools
-import typing
 from collections.abc import Callable
 
 import frappe
 from frappe import _
 
-from central.sso import verify_cargo_token
-
-if typing.TYPE_CHECKING:
-	from frappe.frappeclient import FrappeClient
-
-	from central.central.doctype.cargo_instance.cargo_instance import CargoInstance
+from central.sso import verify_cargo_access_token
 
 TOKEN_HEADER = "X-Cargo-Token"
+BOOTSTRAP_HEADER = "X-Cargo-Bootstrapping-Token"
 
 
 def verify_cargo_request(func: Callable) -> Callable:
@@ -30,6 +25,43 @@ def verify_cargo_request(func: Callable) -> Callable:
 	return wrapper
 
 
+def verify_cargo_bootstrapping_request(func: Callable) -> Callable:
+	"""Authenticates a host enrolling for the first time, stashing the Cargo Instance it
+	named on frappe.local. functools.wraps is required -- Frappe maps request args off the
+	wrapped signature."""
+
+	@functools.wraps(func)
+	def wrapper(*args, **kwargs):
+		frappe.local.cargo_instance = _authenticate_bootstrapping_request()
+		return func(*args, **kwargs)
+
+	return wrapper
+
+
+def _authenticate_bootstrapping_request() -> str:
+	"""The Cargo Instance the presented token was minted for.
+
+	Spent tokens are refused: a host enrols once per token, so a leaked one cannot be
+	replayed to collect a second set of credentials."""
+	from central.sso import verify_cargo_bootstrapping_token
+
+	token = (frappe.get_request_header(BOOTSTRAP_HEADER) or "").strip()
+	if not token:
+		frappe.throw(_("A Cargo bootstrapping token is required."), frappe.AuthenticationError)
+
+	instance = verify_cargo_bootstrapping_token(token)
+	if not frappe.db.exists("Cargo Instance", instance):
+		frappe.throw(_("This token names no known Cargo host."), frappe.AuthenticationError)
+
+	stored = frappe.utils.password.get_decrypted_password(
+		"Cargo Instance", instance, "bootstrapping_token", raise_exception=False
+	)
+	if stored != token:
+		frappe.throw(_("This bootstrapping token has already been used."), frappe.AuthenticationError)
+
+	return instance
+
+
 def _authenticate_cargo_request() -> frappe._dict:
 	"""Central signed the token, so it verifies its own signature -- no shared secret.
 
@@ -39,61 +71,4 @@ def _authenticate_cargo_request() -> frappe._dict:
 	if not token:
 		frappe.throw(_("A Cargo token is required."), frappe.AuthenticationError)
 
-	return frappe._dict(verify_cargo_token(token))
-
-
-def cargo_client(instance) -> "FrappeClient":
-	"""A client bound to one Cargo host, authenticated with its own API credentials."""
-	from frappe.frappeclient import FrappeClient
-
-	client = FrappeClient(instance.base_url.rstrip("/"))
-	client.session.headers.update(
-		{"Authorization": f"token {instance.api_key}:{instance.get_password('api_secret')}"}
-	)
-
-	return client
-
-
-def cargo_status(instance: CargoInstance) -> dict:
-	"""What the host reports about itself."""
-	return cargo_client(instance).get_api("cargo.api.central.status")
-
-
-def register_cargo(instance: CargoInstance) -> dict:
-	"""Mint this host's token and push it, with the upstream URLs, into its settings.
-
-	Re-registering mints a fresh token, so the previous one stops working -- which is how
-	a compromised host is cut off."""
-	from central.sso import central_url, mint_cargo_tokens
-
-	atlas = frappe.db.get_value(
-		"Atlas Instance",
-		{"region": instance.region},
-		["base_url"],
-		as_dict=True,
-	)
-	if not atlas:
-		frappe.throw(_(f"No Atlas is registered for {instance.region}."))
-
-	tokens = mint_cargo_tokens()
-	# Cargo requires central and Atlas URLs along with their access tokens (issued by central) to be able to reach them.
-	cargo_client(instance).post_api(
-		"cargo.api.central.configure",
-		{"central_url": central_url(), "atlas_url": atlas.base_url, **tokens},
-	)
-
-	status = cargo_status(instance)
-	if not status.get("configured"):
-		frappe.throw(_(f"{instance.base_url} accepted its settings but reports itself unconfigured."))
-
-	instance.update(
-		{
-			**tokens,
-			"status": "Registered",
-			"reachable": 1,
-			"last_synced_at": frappe.utils.now_datetime(),
-		}
-	)
-	instance.save(ignore_permissions=True)
-
-	return {"registered": True, "region": instance.region, **status}
+	return frappe._dict(verify_cargo_access_token(token))
