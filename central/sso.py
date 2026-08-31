@@ -19,8 +19,8 @@ METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fe
 LOG_TTL = METRICS_TTL
 CARGO_TTL = 365 * 24 * 60 * 60  # long-lived: Cargo is infrastructure, not a session
 ENROLL_SCOPE = "enroll"
-CARGO_SCOPE = "cargo"
-CARGO_AUDIENCE = "cargo"
+CARGO_CENTRAL_SCOPE = "cargo:central"
+CARGO_ATLAS_SCOPE = "cargo:atlas"
 METRICS_SCOPE = "datum"
 LOG_SCOPE = "logs"
 LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
@@ -88,16 +88,22 @@ def verify_bootstrap_token(token: str) -> dict:
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
-def mint_cargo_token() -> str:
-	"""The token Cargo presents to Central when asking for a cluster's secrets.
+def mint_cargo_tokens() -> dict[str, str]:
+	"""The two tokens a Cargo host carries, one per upstream.
 
-	One audience for the whole of Cargo: it is trusted infrastructure, not a tenant, and it
-	provisions for every region."""
-	return _mint(CARGO_AUDIENCE, CARGO_SCOPE, CARGO_TTL)
+	Both identify Cargo, and both are verified against Central's public keys -- Central
+	verifies its own signature, Atlas fetches the JWKS."""
+	return {
+		"central_access_token": _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL),
+		"atlas_access_token": _mint("atlas", CARGO_ATLAS_SCOPE, CARGO_TTL),
+	}
 
 
 def verify_cargo_token(token: str) -> dict:
-	"""Validate Cargo's token against Central's own public key."""
+	"""Validate the token Cargo presents to Central.
+
+	The scope check is what stops Cargo's Atlas token -- signed by this same key -- from
+	being replayed here."""
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
@@ -109,14 +115,14 @@ def verify_cargo_token(token: str) -> dict:
 			token,
 			load_pem_public_key(settings.public_key.encode()),
 			algorithms=[ALGORITHM],
-			audience=CARGO_AUDIENCE,
+			audience="central",
 			options={"require": ["exp", "aud", "jti", "scope"]},
 		)
 	except jwt.InvalidTokenError as exc:
 		frappe.throw(_("Invalid Cargo token: {0}").format(exc), frappe.AuthenticationError)
 
-	if claims.get("scope") != CARGO_SCOPE:
-		frappe.throw(_("Not a Cargo token."), frappe.AuthenticationError)
+	if claims.get("scope") != CARGO_CENTRAL_SCOPE:
+		frappe.throw(_("Not a Cargo token for Central."), frappe.AuthenticationError)
 
 	return claims
 
