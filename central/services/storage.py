@@ -14,7 +14,7 @@ if typing.TYPE_CHECKING:
 	from central.services.doctype.service_credential.service_credential import ServiceCredential
 
 SERVICE = "storage"
-SECRET_LENGTH = 32
+SECRET_LENGTH = 64
 CLUSTER_SECRETS = ("control_api_secret", "metrics_token", "rpc_secret")
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
