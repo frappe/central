@@ -2,21 +2,25 @@
 import {
 	Avatar,
 	Dropdown,
+	formatShortcutLabel,
+	KeyboardShortcut,
 	Sidebar,
 	SidebarHeader,
 	SidebarItem,
 	SidebarLabel,
+	useShortcut,
 } from 'frappe-ui'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
+import { useIsMobile } from '@/composables/useIsMobile'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useSession } from '@/composables/useSession'
+import { isMac } from '@/lib/platform'
 import { sidebarSections } from './list'
 
-const props = defineProps<{ isMobile?: boolean }>()
-
+const isMobile = useIsMobile()
 const { activeTeamLabel } = useSession()
 const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
 const { profile } = useMyProfile()
@@ -27,17 +31,34 @@ const { profile } = useMyProfile()
 const route = useRoute()
 const inServersSection = (path: string) => path.startsWith('/servers')
 const sidebarCollapsed = ref(
-	props.isMobile ? false : inServersSection(route.path),
+	isMobile.value ? false : inServersSection(route.path),
 )
 watch(
 	() => route.path,
 	(path, previous) => {
-		if (props.isMobile) return
+		if (isMobile.value) return
 		if (inServersSection(path) !== inServersSection(previous)) {
 			sidebarCollapsed.value = inServersSection(path)
 		}
 	},
 )
+
+useShortcut({
+	key: 'b',
+	ctrl: true,
+	description: 'Toggle sidebar',
+	group: 'General',
+	allowInInput: true,
+	allowInDialog: true,
+	condition: () => !isMobile.value,
+	handler: () => {
+		sidebarCollapsed.value = !sidebarCollapsed.value
+	},
+})
+const sidebarShortcut = formatShortcutLabel({ key: 'b', ctrl: true })
+// KeyboardShortcut's showPlus is not platform-aware. Mac reads as ⌘K;
+// Windows/Linux still need the plus so Ctrl+K doesn't run together.
+const showShortcutPlus = !isMac()
 
 // Composition mode has no built-in per-section collapse (that was a Legacy
 // SidebarSection feature) — track collapsed labelled sections by label here.
@@ -117,6 +138,13 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 							:active="!!item.to && item.to === route.path"
 						>
 							<span class="truncate text-sm">{{ item.label }}</span>
+							<template v-if="item.shortcut" #suffix>
+								<KeyboardShortcut
+									:combo="item.shortcut"
+									:show-plus="showShortcutPlus"
+									class="mr-2"
+								/>
+							</template>
 						</SidebarItem>
 					</template>
 				</template>
@@ -189,7 +217,11 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 	<button
 		v-if="!isMobile"
 		class="sb-edge relative z-10 -mx-3 w-6 shrink-0 cursor-pointer"
-		:aria-label="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"
+		:aria-label="
+			sidebarCollapsed
+				? `Expand sidebar (${sidebarShortcut})`
+				: `Collapse sidebar (${sidebarShortcut})`
+		"
 		@mousemove="onEdgeMove"
 		@focus="edgeY = 60"
 		@click="sidebarCollapsed = !sidebarCollapsed"

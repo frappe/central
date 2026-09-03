@@ -16,6 +16,8 @@ type SidebarItem = {
 	class?: string
 	onClick?: () => void
 	component?: Component
+	/** Display combo, e.g. `Mod+K`. */
+	shortcut?: string
 }
 
 type SidebarSection = {
@@ -39,6 +41,7 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					icon: 'lucide-search',
 					onClick: openSearch,
 					condition: !isMobile.value,
+					shortcut: 'Mod+K',
 				},
 				{
 					label: 'Notifications',
