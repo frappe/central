@@ -1,4 +1,5 @@
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useShortcut } from 'frappe-ui'
+import { ref } from 'vue'
 
 export const searchOpen = ref(false)
 
@@ -7,13 +8,13 @@ export const openSearch = (): void => {
 }
 
 export const useSearchShortcut = (): void => {
-	const onKeydown = (event: KeyboardEvent) => {
-		if (event.key === 'k' && (event.metaKey || event.ctrlKey)) {
-			event.preventDefault()
-			searchOpen.value = true
-		}
-	}
-
-	onMounted(() => window.addEventListener('keydown', onKeydown))
-	onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+	useShortcut({
+		key: 'k',
+		ctrl: true,
+		description: 'Search',
+		group: 'General',
+		allowInInput: true,
+		allowInDialog: true,
+		handler: openSearch,
+	})
 }

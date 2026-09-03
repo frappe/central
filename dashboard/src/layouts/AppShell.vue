@@ -51,6 +51,12 @@ watch(
 	},
 )
 
+// The drawer is mobile-only transient state. Leaving mobile must close it, or it
+// survives the breakpoint as an orphaned sheet teleported into <body>.
+watch(isMobile, (mobile) => {
+	if (!mobile) mobileNavDrawer.value = false
+})
+
 const breadcrumbs = computed(
 	() => items.value ?? [{ label: (route.meta.title as string) ?? '' }],
 )
@@ -89,10 +95,6 @@ const breadcrumbs = computed(
 				<MobileNavItem label="Settings" icon="lucide-settings" to="/settings" />
 			</MobileNav>
 		</template>
-
-		<BottomSheet v-model:open="mobileNavDrawer">
-			<Sidebar is-mobile class="p-4" />
-		</BottomSheet>
 	</MobileShell>
 
 	<DesktopShell v-else :scroll="false" class="h-screen">
@@ -111,6 +113,14 @@ const breadcrumbs = computed(
 			<router-view />
 		</div>
 	</DesktopShell>
+
+	<!-- The nav drawer's sheet teleports to <body>, so it lives beside the shells
+	     rather than inside MobileShell, and stays mounted across the breakpoint.
+	     Closing it through `open` lets reka animate out and remove the teleported
+	     node; unmounting it mid-open with the shell would strand that node. -->
+	<BottomSheet v-model:open="mobileNavDrawer">
+		<Sidebar class="p-4" />
+	</BottomSheet>
 
 	<ToastProvider />
 	<!-- Desktop only: on mobile the same tabs are pages (/settings/:tab), so the
