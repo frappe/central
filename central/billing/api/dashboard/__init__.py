@@ -46,6 +46,7 @@ from central.billing.api.dashboard.invoices import (
 	pay_invoice,
 	pay_invoice_checkout,
 	resume_subscription,
+	set_subscription_project,
 )
 from central.billing.api.dashboard.methods import (
 	add_demo_card,
@@ -62,6 +63,13 @@ from central.billing.api.dashboard.methods import (
 from central.billing.api.dashboard.outlook import (
 	get_next_payment,
 	get_payment_schedule,
+)
+from central.billing.api.dashboard.projects import (
+	create_project,
+	list_projects,
+	rename_project,
+	set_project_enabled,
+	set_project_spending_limit,
 )
 from central.billing.api.dashboard.reports import (
 	export_csv,
@@ -84,6 +92,7 @@ __all__ = [
 	"confirm_invoice_checkout",
 	"confirm_payment_method_order",
 	"confirm_topup",
+	"create_project",
 	"create_topup_order",
 	"credit_ledger",
 	"export_csv",
@@ -111,6 +120,7 @@ __all__ = [
 	"list_invoices",
 	"list_payment_attempts",
 	"list_payment_methods",
+	"list_projects",
 	"list_refunds",
 	"list_subscriptions",
 	"list_switchable_teams",
@@ -118,12 +128,16 @@ __all__ = [
 	"pay_invoice",
 	"pay_invoice_checkout",
 	"remove_payment_method",
+	"rename_project",
 	"reorder_payment_methods",
 	"resume_subscription",
 	"save_billing_profile",
 	"save_billing_settings",
 	"set_collection_mode",
 	"set_default_payment_method",
+	"set_project_enabled",
+	"set_project_spending_limit",
+	"set_subscription_project",
 	"setup_payment_method_order",
 	"subscribe_metered_service",
 	"whoami",

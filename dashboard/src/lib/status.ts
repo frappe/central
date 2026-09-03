@@ -81,6 +81,19 @@ export function invoiceTheme(status: string | null | undefined): BadgeTheme {
 	return INVOICE_THEME[String(status ?? '').toLowerCase()] ?? 'gray'
 }
 
+// Subscription account_standing → Badge theme. Current is the normal state and
+// stays gray; Past Due/Suspended need attention (amber) — matches PayingForRow's
+// inline `statusInfo` check for the same field.
+const STANDING_THEME: Record<string, BadgeTheme> = {
+	current: 'gray',
+	'past due': 'amber',
+	suspended: 'amber',
+}
+
+export function standingTheme(standing: string | null | undefined): BadgeTheme {
+	return STANDING_THEME[String(standing ?? '').toLowerCase()] ?? 'gray'
+}
+
 // Payment Attempt status → what a customer calls it, and its Badge theme. Same
 // doctrine as invoices: the ordinary outcome is grey and colour is spent only on
 // the states worth noticing — in-flight (nobody knows yet) and failed.

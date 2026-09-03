@@ -13,6 +13,7 @@ class Subscription(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
+		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 		from frappe.types import DF
 
 		account_standing: DF.Literal["Current", "Past Due", "Suspended"]
@@ -22,7 +23,7 @@ class Subscription(Document):
 		default_payment_method: DF.Link | None
 		enabled: DF.Check
 		gateway: DF.Link | None
-		includes: DF.Table
+		includes: DF.Table[PlanIncludes]
 		plan: DF.Link | None
 		pricing_mode: DF.Literal["Preset", "Composed"]
 		service_subject: DF.Data | None
@@ -34,6 +35,46 @@ class Subscription(Document):
 	def validate(self):
 		self.validate_duplicate_subscription()
 		self.validate_duplicate_service_subject()
+		self.validate_project()
+
+	def validate_project(self):
+		"""A subscription may only be tagged into one of its own team's active projects.
+
+		Generation already filters projects by team, so a foreign project would not
+		misbill anyone — the tag would just be ignored and the asset would land
+		untagged on the consolidated invoice. Both checks are here to refuse a tag
+		that would silently mean nothing, rather than let someone believe an asset
+		is tracked under a project when it is not. A disabled project is refused for
+		the same reason: disabled means "no longer tracking", so its assets go
+		untagged on the consolidated invoice.
+		"""
+		if not self.project:
+			return
+
+		project = frappe.db.get_value(
+			"Project", self.project, ["team", "enabled", "spending_limit"], as_dict=True
+		)
+		if not project:
+			return  # a broken link — Frappe's own link validation reports it better
+
+		if project.team != self.team:
+			frappe.throw(
+				f"Project {self.project} belongs to team {project.team}, "
+				f"not {self.team}.",
+			)
+		if not project.enabled:
+			frappe.throw(
+				f"Project {self.project} is disabled; its assets bill untagged on "
+				f"{self.team}'s consolidated invoice.",
+			)
+
+		if self.is_new() or self.has_value_changed("project"):
+			from central.billing.catalog.subscriptions import enforce_project_headroom
+
+			rate, _currency = self.resolve_rate_snapshot()
+			enforce_project_headroom(
+				self.team, self.project, rate or 0, exclude=None if self.is_new() else self.name
+			)
 
 	def validate_duplicate_subscription(self):
 		"""Block a second enabled subscription for the same team + asset.

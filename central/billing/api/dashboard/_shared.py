@@ -52,6 +52,19 @@ def _require_manage(team: str) -> str:
 	return team
 
 
+def _project_titles(names) -> dict:
+	"""name -> title for a batch of Project ids, one query regardless of how many
+	rows reference them (list_subscriptions resolves its `project` link to a
+	display title this way instead of one lookup per row)."""
+	names = [n for n in set(names) if n]
+	if not names:
+		return {}
+	return {
+		p.name: p.title
+		for p in frappe.get_all("Project", filters={"name": ["in", names]}, fields=["name", "title"])
+	}
+
+
 def _team_resource_count(team: str) -> int:
 	"""How many resources the team is running: its open billing segments (ADR 0010),
 	preset and composed alike (#86)."""
@@ -258,6 +271,11 @@ def _describe_line(team: str, li) -> dict:
 		# A projected line knows whether its quantity was observed or inferred; a
 		# stored line item is always a fact by the time it reaches an invoice.
 		"basis": li.get("basis") or MEASURED,
+		# Which Project this resource was tagged into, if any — stamped at generation
+		# time on a real Invoice Line Item, or by the same tagging step on a live
+		# forecast line (generate._tag_projects), so both read identically here.
+		"project": li.get("project"),
+		"project_title": li.get("project_title"),
 	}
 	if li.resource_type == "bundle":
 		title = frappe.db.get_value("Plan", li.plan, "title") if li.plan else None

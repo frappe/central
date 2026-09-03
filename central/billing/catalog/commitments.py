@@ -67,6 +67,13 @@ def resolve_commitment(team: str, lines: list[dict], on_date=None) -> dict:
 	  discount enjoyed on consumed months; the commitment name is returned so the
 	  caller can mark it Breached.
 	- no active commitment → both zero.
+
+	TODO(billing-group): a commitment is team-level, but with Billing-Group
+	partitioning a team can receive several invoices in a period. Decided for v1:
+	the commitment applies only to the consolidated invoice — group invoices bill
+	at full rate, uncommitted. Revisit if partners need it to allocate across group
+	invoices too. This runs per invoice on that invoice's own lines, so a group
+	invoice's lines simply never see a discount today.
 	"""
 	result = {"discount": 0.0, "clawback": 0.0, "breach": None}
 	commitment = active_commitment(team, on_date)

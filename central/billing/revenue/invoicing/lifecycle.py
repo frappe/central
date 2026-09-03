@@ -14,7 +14,7 @@ from frappe import _
 
 from central.billing import settings
 from central.billing.revenue import credits
-from central.billing.revenue.invoicing.generate import generate_draft_invoice
+from central.billing.revenue.invoicing.generate import generate_team_invoice
 from central.billing.states import transition
 
 
@@ -61,8 +61,8 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 	if collectable > 0:
 		# Draw and debit in the invoice's own currency — a USD team's wallet must be
 		# debited in USD, not the apply_credit default (INR).
-		balance = credits.get_balance(doc.team, doc.currency)["balance"]
-		applied = min(frappe.utils.flt(balance), collectable)
+		available = credits.get_balance(doc.team, doc.currency)["balance"]
+		applied = min(frappe.utils.flt(available), collectable)
 		if applied > 0:
 			credits.apply_credit(
 				doc.team,
@@ -148,4 +148,4 @@ def reissue_invoice(invoice: str, reason: str | None = None) -> str | None:
 	"""
 	doc = frappe.get_doc("Invoice", invoice)
 	cancel_invoice(invoice, reason=reason)
-	return generate_draft_invoice(doc.subscription, doc.period_start, doc.period_end)
+	return generate_team_invoice(doc.team, doc.period_start, doc.period_end)

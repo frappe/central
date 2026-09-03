@@ -25,7 +25,7 @@ from central.billing.revenue.invoicing.lines import compute_line_items, team_lin
 
 
 def _live_invoice(team: str, period_start, period_end, for_update: bool = False) -> str | None:
-	"""The team's existing live (non-cancelled) invoice for the period, if any.
+	"""The team's existing live (non-cancelled) invoice for this period, if any.
 
 	`for_update` is how the loser of an insert race finds the winner: a locking read
 	sees the latest committed row, while a plain one is answered from the snapshot
@@ -42,6 +42,51 @@ def _live_invoice(team: str, period_start, period_end, for_update: bool = False)
 		"name",
 		for_update=for_update,
 	)
+
+
+def _resource_project_map(team: str) -> dict:
+	"""asset_id/service_subject -> (project, project_title) for the team's resources
+	tagged into an *enabled* Project.
+
+	Only resources tagged into one of the team's enabled Projects appear; anything
+	absent — never tagged, or tagged into a disabled or another team's project — is
+	untagged on the invoice. Purely a labelling concern now: every line still bills on
+	the team's one consolidated invoice, whatever it maps to here.
+	"""
+	projects = frappe.get_all(
+		"Project", filters={"team": team, "enabled": 1}, fields=["name", "title"]
+	)
+	titles = {p.name: p.title for p in projects}
+	rows = frappe.get_all(
+		"Subscription",
+		filters={"team": team},
+		fields=["asset_id", "service_subject", "project"],
+	)
+	out = {}
+	for r in rows:
+		if not r.project or r.project not in titles:
+			continue
+		resource_id = r.asset_id or r.service_subject
+		if resource_id:
+			out[resource_id] = (r.project, titles[r.project])
+	return out
+
+
+def _tag_projects(lines: list[dict], team: str) -> None:
+	"""Stamp each billable line with the Project its resource is tagged into, if any.
+
+	Mutates `lines` in place — a stored fact at generation time (real invoice) or at
+	read time (a live forecast), never a live Link a caller has to re-resolve. Called
+	from the one place every line passes through (`_rate`), so a real Invoice Line
+	Item and a projected one are tagged identically.
+	"""
+	resource_project = _resource_project_map(team)
+	if not resource_project:
+		return
+	for line in lines:
+		tag = resource_project.get(line.get("subscription_resource"))
+		if tag:
+			line["project"], line["project_title"] = tag
 
 
 # Frappe surfaces a unique-key conflict two ways: UniqueValidationError from its own
@@ -71,7 +116,10 @@ def _insert_invoice(payload: dict) -> str:
 	except _ALREADY_BILLED:
 		frappe.db.rollback(save_point=_INSERT_SAVEPOINT)
 		existing = _live_invoice(
-			payload["team"], payload["period_start"], payload["period_end"], for_update=True
+			payload["team"],
+			payload["period_start"],
+			payload["period_end"],
+			for_update=True,
 		)
 		if not existing:
 			raise  # a conflict on some other unique key — don't swallow it
@@ -80,18 +128,6 @@ def _insert_invoice(payload: dict) -> str:
 			f"{existing} — yielding to it"
 		)
 		return existing
-
-
-def primary_subscription(team: str) -> str | None:
-	"""The team's earliest subscription — its payment method funds the auto-charge.
-
-	Oldest-first is the contract the run has always billed under; it lives here so
-	the orchestrator can page bare team names and let each job resolve its own.
-	"""
-	names = frappe.get_all(
-		"Subscription", filters={"team": team}, pluck="name", order_by="creation asc", limit=1
-	)
-	return names[0] if names else None
 
 
 def reconcile_subscription(subscription_doc):
@@ -114,9 +150,9 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	sub = frappe.get_doc("Subscription", subscription)
 	reconcile_subscription(sub)
 
-	# Keyed on the TEAM, not the subscription: a team gets one bill per period across
-	# every subscription and cluster it runs (the same grain generate_team_invoice
-	# bills at, and the grain the unique index enforces).
+	# Keyed on the TEAM, not the subscription: a team gets one consolidated bill per
+	# period across every subscription and cluster it runs (the same grain
+	# generate_team_invoice bills at, and the grain the unique index enforces).
 	existing = _live_invoice(sub.team, period_start, period_end)
 	if existing:
 		return existing
@@ -130,13 +166,18 @@ def generate_draft_invoice(subscription: str, period_start, period_end):
 	return name
 
 
-def _rate(team: str, lines: list[dict], period_start, period_end, subscription: str | None):
+def _rate(team: str, lines: list[dict], period_start, period_end):
 	"""Price a set of billable lines into an invoice payload. Reads only.
 
 	The arithmetic every draft shares: gross subtotal, the commitment adjustment,
 	tax on the adjusted base, and what we expect to actually collect. Nothing here
 	writes, so the same call answers "what will this period cost?" for a period that
 	has not happened yet.
+
+	Every line passes through here on its way onto an invoice — real or projected —
+	so this is also the one place a line is tagged with the Project its resource
+	belongs to (`_tag_projects`), keeping a real Invoice Line Item and a forecast
+	line tagged identically.
 
 	Returns the payload alongside the commitment verdict that shaped it. The verdict
 	is handed back rather than acted on because marking a commitment breached is a
@@ -145,6 +186,7 @@ def _rate(team: str, lines: list[dict], period_start, period_end, subscription: 
 	from central.billing.catalog.trials import invoice_type_for
 	from central.billing.revenue.tax import resolve_tax
 
+	_tag_projects(lines, team)
 	subtotal = frappe.utils.flt(sum(line["amount"] for line in lines), 2)
 	# Commitment (#30 discount / #31 clawback) adjusts the taxable base; subtotal
 	# stays gross. Discount reduces it; a breach clawback adds the repaid discount.
@@ -165,7 +207,6 @@ def _rate(team: str, lines: list[dict], period_start, period_end, subscription: 
 		payload={
 			"doctype": "Invoice",
 			"team": team,
-			"subscription": subscription,
 			"invoice_type": invoice_type_for(team),
 			"status": "Draft",
 			"period_start": period_start,
@@ -203,7 +244,7 @@ def rate_subscription_period(subscription: str, period_start, period_end, explai
 	lines += metered_line_items(sub.team, cluster, period_start, period_end, explain=explain)
 	if not lines:
 		return None
-	return _rate(sub.team, lines, period_start, period_end, subscription)
+	return _rate(sub.team, lines, period_start, period_end)
 
 
 def team_clusters(team: str) -> list[str]:
@@ -218,13 +259,11 @@ def rate_team_period(
 	team: str,
 	period_start,
 	period_end,
-	subscription: str | None = None,
 	metered: list[dict] | None = None,
 	explain: bool = False,
 	changes=None,
 ):
-	"""What the team's whole book would bill for the period, across every cluster.
-	Reads only.
+	"""What the team would bill for the period, across every cluster. Reads only.
 
 	The rating half of `generate_team_invoice` — same lines, same commitment, same
 	tax, no insert. Returns None when the team has nothing billable.
@@ -248,31 +287,25 @@ def rate_team_period(
 		lines += list(metered)
 	if not lines:
 		return None
-
-	if subscription is None:
-		subscription = primary_subscription(team)
-	return _rate(team, lines, period_start, period_end, subscription)
+	return _rate(team, lines, period_start, period_end)
 
 
-def _generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
+def _generate_team_invoice(team: str, period_start, period_end):
 	"""One consolidated invoice per team per period, across every cluster it runs in.
 
-	A team that runs instances in several regions should see a SINGLE monthly
-	invoice, not one per region — so this aggregates the day-weighted fixed lines
-	plus metered overage from all of the team's clusters into one Invoice.
-	Idempotent per (team, period) — including under concurrency, which the read below
-	cannot deliver on its own. `generate_draft_invoices` enqueues one job per team, so
-	two workers could both read "no invoice" and both insert; the unique index on
-	`period_key` is what stops the team being billed twice (ADR 0018).
-
-	`subscription` is the primary subscription (its default payment method funds
-	the auto-charge in open_and_collect); defaults to any of the team's subs.
+	A team that runs instances in several regions should see a SINGLE invoice, not
+	one per region — so this aggregates the day-weighted fixed lines plus metered
+	overage from all of the team's clusters into one Invoice. Idempotent per (team,
+	period) — including under concurrency, which the read below cannot deliver on
+	its own. `generate_draft_invoices` enqueues one job per team, so two workers
+	could both read "no invoice" and both insert; the unique index on `period_key`
+	is what stops the team being billed twice for the same period (ADR 0018).
 	"""
 	existing = _live_invoice(team, period_start, period_end)
 	if existing:
 		return existing
 
-	rated = rate_team_period(team, period_start, period_end, subscription)
+	rated = rate_team_period(team, period_start, period_end)
 	if not rated:
 		return None
 
@@ -284,7 +317,7 @@ def _generate_team_invoice(team: str, period_start, period_end, subscription: st
 _INVOICE_DEADLOCK_RETRIES = 5
 
 
-def generate_team_invoice(team: str, period_start, period_end, subscription: str | None = None):
+def generate_team_invoice(team: str, period_start, period_end):
 	"""Generate one team's invoice, yielding cleanly when concurrent workers contend.
 
 	The unique period key still decides the winner. A database deadlock is merely the
@@ -293,7 +326,7 @@ def generate_team_invoice(team: str, period_start, period_end, subscription: str
 	"""
 	for attempt in range(_INVOICE_DEADLOCK_RETRIES):
 		try:
-			return _generate_team_invoice(team, period_start, period_end, subscription)
+			return _generate_team_invoice(team, period_start, period_end)
 		except frappe.QueryDeadlockError:
 			frappe.db.rollback()
 			if attempt == _INVOICE_DEADLOCK_RETRIES - 1:

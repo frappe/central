@@ -15,6 +15,7 @@ from central.billing.api.dashboard._shared import (
 	_enabled_gateway_for_currency,
 	_gateway_for_currency,
 	_paypal_gateway_for_currency,
+	_project_titles,
 	_require_billing_setup,
 	_require_manage,
 	_require_view,
@@ -137,10 +138,12 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			"account_standing",
 			"start_date",
 			"enabled",
+			"project",
 		],
 		order_by="creation desc",
 	)
 	currency = _team_currency(team)
+	project_titles = _project_titles(r.project for r in rows)
 	# Batch the asset lookup so a team with N subscriptions costs one query, not N.
 	asset_ids = list({r.asset_id for r in rows if r.asset_id})
 	assets = (
@@ -210,6 +213,8 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 				"enabled": r.enabled,
 				"monthly_rate": monthly_rate,
 				"currency": currency,
+				"project": r.project,
+				"project_title": project_titles.get(r.project),
 			}
 		)
 	return out
@@ -271,11 +276,24 @@ def resume_subscription(subscription: str, team: str | None = None) -> dict:
 	return {"name": doc.name, "enabled": doc.enabled}
 
 
+@frappe.whitelist(methods=["POST"])
+def set_subscription_project(subscription: str, project: str | None = None) -> dict:
+	"""Tag a subscription into a Project, or clear it (`project=None`) back to
+	untagged. `Subscription.validate_project` is the authority on same-team /
+	enabled / spending-limit headroom — this only gates who may call it."""
+	owner = frappe.db.get_value("Subscription", subscription, "team")
+	_require_manage(owner)
+	doc = frappe.get_doc("Subscription", subscription)
+	doc.project = project or None
+	doc.save(ignore_permissions=True)
+	return {"name": doc.name, "project": doc.project}
+
+
 @frappe.whitelist()
 def list_invoices(team: str | None = None) -> list[dict]:
 	"""Invoice history — summary only (no internal/admin fields)."""
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Invoice",
 		filters={"team": team},
 		fields=[
@@ -291,6 +309,7 @@ def list_invoices(team: str | None = None) -> list[dict]:
 		],
 		order_by="period_start desc",
 	)
+	return rows
 
 
 @frappe.whitelist()

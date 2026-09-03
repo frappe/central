@@ -1,0 +1,77 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-07-02 00:00:00",
+ "description": "A user-defined grouping of a team's assets, billed on the team's one consolidated invoice but broken out on it line by line (ARCHITECTURE.md §2.1). An optional spending limit caps the project's own committed monthly run-rate: once at the limit, no further asset may be tagged into it. The team always remains the biller/payer.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "team",
+  "enabled",
+  "spending_limit"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "in_preview": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "spending_limit",
+   "fieldtype": "Currency",
+   "label": "Spending Limit",
+   "description": "Cap on this project's own committed monthly run-rate (the summed locked_rate of its tagged subscriptions) — in the team's billing currency. 0 or unset = no limit. Once at the limit, tagging another asset into this project is refused; assets already in it keep running untouched."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "group": "Billing",
+   "link_doctype": "Subscription",
+   "link_fieldname": "project"
+  }
+ ],
+ "modified": "2026-08-28 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Billing",
+ "name": "Project",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title"
+}

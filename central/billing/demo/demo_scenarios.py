@@ -571,7 +571,7 @@ def _build_team(team, slug, tier, currency, state, resources, resize):
 	# Historical months — each a consolidated invoice, all settled to Paid (a few via
 	# a dunning-then-capture trail so the invoice Activity + failed_payments report fill).
 	for i, (start, end) in enumerate(periods):
-		inv = invoicing.generate_team_invoice(team, start, end, subscription=primary_sub)
+		inv = invoicing.generate_team_invoice(team, start, end)
 		if not inv:
 			continue
 		# Finalised when the run would actually open it: the 1st after the period
@@ -656,7 +656,7 @@ def _run_overdue_cycle(team, inv, pm, gateway, due):
 def _finish_current_month(team, sub, currency, state, pm, gateway):
 	"""Build the current (June) invoice — one consolidated invoice — in the team's
 	terminal state, exercising one settlement / refund / dunning path each."""
-	inv = invoicing.generate_team_invoice(team, ANCHOR, ANCHOR_END, subscription=sub)
+	inv = invoicing.generate_team_invoice(team, ANCHOR, ANCHOR_END)
 	if not inv:
 		return state
 	# Finalised end of the current month — before this month's settlement/refund events.

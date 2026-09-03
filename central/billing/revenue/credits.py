@@ -244,9 +244,10 @@ def _post_entry(
 
 	# Advance the authoritative balance on the locked anchor, then append the
 	# immutable ledger entry mirroring it. Both commit together under the lock.
-	# `set_value` skips the controller, so the guard above is the only application-
-	# level check — the CHECK (balance >= 0) constraint on the column is what makes
-	# a negative balance impossible for callers that never reach this function.
+	# `set_value` skips the controller, so the guard above is the only
+	# application-level check — the CHECK (balance >= 0) constraint on the column
+	# is what makes a negative balance impossible even for a caller that bypasses
+	# this function.
 	frappe.db.set_value(
 		"Credit Wallet",
 		wallet_name(team, currency),
@@ -348,12 +349,16 @@ def apply_credit(team, amount, currency=None, reference_type=None, reference_nam
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def refund_to_wallet(
-	team, amount, currency=None, reference_type=None, reference_name=None, note=None
-) -> dict:
+def refund_to_wallet(team, amount, currency=None, reference_type=None, reference_name=None, note=None) -> dict:
 	"""Book a credit entry for a partial-overcharge / gateway refund to wallet."""
 	entry, new_balance = _book_entry(
-		team, "Credit", amount, currency, reference_type, reference_name, note or "Refund to wallet"
+		team,
+		"Credit",
+		amount,
+		currency,
+		reference_type,
+		reference_name,
+		note or "Refund to wallet",
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -394,13 +399,22 @@ def grant_promotional_credits(team, amount, currency, note=None, expires_on=None
 
 
 def adjust_credits(
-	team: str, amount: float, entry_type: str, currency: str | None = None, note: str | None = None
+	team: str,
+	amount: float,
+	entry_type: str,
+	currency: str | None = None,
+	note: str | None = None,
 ) -> dict:
 	"""Admin manual correction — a credit or debit entry with an audit note."""
 	if entry_type not in ("Credit", "Debit"):
 		frappe.throw(_("entry_type must be 'Credit' or 'Debit'."), frappe.ValidationError)
 	entry, new_balance = _book_entry(
-		team, entry_type, amount, currency, reference_type="Admin", note=note or "Admin adjustment"
+		team,
+		entry_type,
+		amount,
+		currency,
+		reference_type="Admin",
+		note=note or "Admin adjustment",
 	)
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
@@ -473,14 +487,11 @@ def ledger_balance(team: str, currency: str) -> float:
 
 
 def credit_lots(team: str, currency: str) -> list[dict]:
-	"""Every credit booking on this wallet, with how much of each is left.
+	"""Every credit booking in this wallet, with how much of each is left.
 
 	Derived by replaying the ledger: debits are drawn against credits in
 	(expiry, then age) order, so a grant expiring on Friday is spent before one
 	expiring next month, and both before credit that never expires.
-
-	The remainders sum to the wallet balance — this is the same money, sliced by
-	where it came from rather than totalled.
 	"""
 	import datetime
 
@@ -525,7 +536,7 @@ def expiring_credits(team: str, currency: str | None = None, on_date=None) -> li
 
 
 def expire_credits(team: str, currency: str, on_date=None) -> list[dict]:
-	"""Sweep every expired grant off one wallet; returns what was written off.
+	"""Sweep every expired grant off this wallet; returns what was written off.
 
 	Runs under the wallet lock, and the remainders are computed *inside* it: reading
 	them first and booking after would let a concurrent invoice settlement spend the
@@ -575,12 +586,12 @@ def _expire_credits_once(team: str, currency: str, on_date) -> list[dict]:
 def run_credit_expiry(on_date=None) -> dict:
 	"""Daily: write off promotional credit that has run out of time.
 
-	Scans only wallets that hold a grant already past its date — a team whose credit
-	never expires is never looked at.
+	Scans only (team, currency) wallets that hold a grant already past its date —
+	a team whose credit never expires is never looked at.
 	"""
 	on_date = frappe.utils.getdate(on_date)
 	cle = frappe.qb.DocType("Credit Ledger Entry")
-	wallets = (
+	scopes = (
 		frappe.qb.from_(cle)
 		.select(cle.team, cle.currency)
 		.distinct()
@@ -589,21 +600,21 @@ def run_credit_expiry(on_date=None) -> dict:
 	)
 
 	swept, total = 0, 0.0
-	for wallet in wallets:
+	for scope in scopes:
 		# A wallet with nothing in it has nothing to expire; skip before taking a lock.
 		if (
 			frappe.utils.flt(
-				frappe.db.get_value("Credit Wallet", wallet_name(wallet.team, wallet.currency), "balance")
+				frappe.db.get_value("Credit Wallet", wallet_name(scope.team, scope.currency), "balance")
 			)
 			<= 0
 		):
 			continue
-		for expiry in expire_credits(wallet.team, wallet.currency, on_date):
+		for expiry in expire_credits(scope.team, scope.currency, on_date):
 			swept += 1
 			total += expiry["amount"]
 			frappe.logger("billing").info(
-				f"expired {expiry['amount']} {wallet.currency} of promotional credit "
-				f"for {wallet.team} (grant {expiry['expired_grant']})"
+				f"expired {expiry['amount']} {scope.currency} of promotional credit "
+				f"for {scope.team} (grant {expiry['expired_grant']})"
 			)
 
-	return {"wallets": len(wallets), "entries": swept, "amount": total}
+	return {"wallets": len(scopes), "entries": swept, "amount": total}

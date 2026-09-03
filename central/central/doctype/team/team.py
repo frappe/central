@@ -15,14 +15,15 @@ class Team(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
+		from central.central.doctype.team_member.team_member import TeamMember
 		from frappe.types import DF
 
-		from central.central.doctype.team_member.team_member import TeamMember
-
+		is_staging_trial: DF.Check
 		members: DF.Table[TeamMember]
 		naming_series: DF.Literal["TEAM-.#####"]
 		owner_user: DF.Link
 		status: DF.Literal["Active", "Suspended"]
+		team_logo: DF.AttachImage | None
 		team_name: DF.Data
 	# end: auto-generated types
 

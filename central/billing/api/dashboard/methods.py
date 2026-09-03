@@ -27,7 +27,7 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 	card clears the micro-charge it isn't usable, isn't in the charge order, and
 	would only confuse the list (it has no label/expiry yet)."""
 	team = _resolve_team(team)
-	return frappe.get_all(
+	rows = frappe.get_all(
 		"Payment Method",
 		filters={"team": team, "status": ["not in", ["Cancelled", "Pending Validation"]]},
 		fields=[
@@ -45,6 +45,7 @@ def list_payment_methods(team: str | None = None) -> list[dict]:
 		],
 		order_by="priority asc, creation asc",
 	)
+	return rows
 
 
 @frappe.whitelist()
@@ -297,3 +298,5 @@ def reorder_payment_methods(team: str | None = None, ordered: list | str | None 
 	from central.billing.payments import payments
 
 	return payments.reorder_payment_methods(team, ordered)
+
+

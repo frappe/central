@@ -1,9 +1,10 @@
 import { useCall } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
+import { errorToast, successToast } from '@/lib/toast'
 import type {
 	PayingForItem,
 	ServiceRow,
@@ -20,8 +21,24 @@ const servicesCall = useCall<{ services: ServiceRow[] }, { team: string }>({
 })
 whenTeamReady(() => servicesCall.reload())
 
+const pause = useCall<unknown, { subscription: string }>({
+	url: method(API.pauseSubscription),
+	method: 'POST',
+	immediate: false,
+})
+const resume = useCall<unknown, { subscription: string }>({
+	url: method(API.resumeSubscription),
+	method: 'POST',
+	immediate: false,
+})
+
+const busy = ref('')
+const pendingPause = ref<SubscriptionRow | null>(null)
+const pendingAssignProject = ref<SubscriptionRow | null>(null)
+
 export function usePayingFor() {
-	const { subscriptions, cycleCosts } = useBillingOverview()
+	const { subscriptions, cycleCosts, reloadSubscriptionGrouping } =
+		useBillingOverview()
 
 	const loading = computed(
 		() =>
@@ -72,12 +89,46 @@ export function usePayingFor() {
 		if (sub.gateway_url) window.open(sub.gateway_url, '_blank', 'noopener')
 	}
 
+	async function runVerb(
+		sub: SubscriptionRow,
+		call: typeof pause,
+		message: string,
+	): Promise<void> {
+		busy.value = sub.name
+		try {
+			await call.submit({ subscription: sub.name })
+			successToast(message)
+			subscriptions.reload()
+			cycleCosts.reload()
+		} catch (e) {
+			errorToast(e)
+		} finally {
+			busy.value = ''
+		}
+	}
+
 	return {
 		rows,
 		loading,
 		currency,
 		total,
+		busy,
+		pendingPause,
+		pendingAssignProject,
 		openServer,
+		askPause: (sub: SubscriptionRow) => {
+			pendingPause.value = sub
+		},
+		confirmPause: (sub: SubscriptionRow) => {
+			pendingPause.value = null
+			return runVerb(sub, pause, 'Billing paused, server stopping…')
+		},
+		onResume: (sub: SubscriptionRow) =>
+			runVerb(sub, resume, 'Billing resumed, server starting…'),
+		askAssignProject: (sub: SubscriptionRow) => {
+			pendingAssignProject.value = sub
+		},
+		onAssignedProject: () => reloadSubscriptionGrouping(),
 		reload: () => servicesCall.reload(),
 	}
 }

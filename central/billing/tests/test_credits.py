@@ -419,3 +419,5 @@ class TestCreditExpiry(CreditTestBase):
 
 		self.assertEqual(credits.get_balance(TEAM)["balance"], 0)
 		self.assertGreaterEqual(result["entries"], 1)
+
+

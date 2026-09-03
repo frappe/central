@@ -202,3 +202,5 @@ class TestMethodOrdering(FallbackTestBase):
 		payments.delete_payment_method(self.primary)
 		self.assertEqual(frappe.db.get_value("Payment Method", self.backup, "priority"), 0)
 		self.assertEqual(frappe.db.get_value("Payment Method", self.backup, "is_default"), 1)
+
+

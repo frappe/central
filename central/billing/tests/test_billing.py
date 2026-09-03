@@ -13,6 +13,7 @@ from central.billing.revenue.invoicing import run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	add_segment,
+	ensure_team,
 	make_billing_subscription,
 	make_plan,
 )
@@ -60,7 +61,7 @@ class BillingTestBase(IntegrationTestCase):
 		self._purge()
 
 	def _purge(self):
-		for dt in ("Invoice", "Credit Ledger Entry"):
+		for dt in ("Invoice", "Credit Ledger Entry", "Project"):
 			frappe.db.delete(dt, {"team": TEAM})
 		frappe.db.delete("Credit Wallet", {"team": TEAM})
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
@@ -159,7 +160,8 @@ class TestDraftGeneration(BillingTestBase):
 		first = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		second = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
 		self.assertEqual(first, second)
-		self.assertEqual(frappe.db.count("Invoice", {"subscription": self.sub}), 1)
+		team = frappe.db.get_value("Subscription", self.sub, "team")
+		self.assertEqual(frappe.db.count("Invoice", {"team": team}), 1)
 
 	def test_no_runtime_yields_no_invoice(self):
 		name = invoicing.generate_draft_invoice(self.sub, "2026-06-01", "2026-06-30")
@@ -668,7 +670,7 @@ class TestFanOutRun(IntegrationTestCase):
 			) as blocked,
 			patch.object(run, "CONTENTION_BACKOFF", 0),
 		):
-			self.assertIsNone(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"))
+			self.assertEqual(run.draft_team_invoice("team-fanout-a", "2026-06-01", "2026-06-30"), [])
 
 		self.assertEqual(blocked.call_count, run.CONTENTION_RETRIES)
 		self.assertTrue(
@@ -749,3 +751,101 @@ class TestRatingIsSeparableFromWriting(BillingTestBase):
 		)
 		for field in self.MONEY:
 			self.assertEqual(rated.payload[field], inv.get(field), field)
+
+
+class TestProjectValidation(BillingTestBase):
+	OTHER_TEAM = "team-invoice-other"
+
+	def tearDown(self):
+		frappe.db.delete("Project", {"team": self.OTHER_TEAM})
+		frappe.db.commit()
+		super().tearDown()
+
+	def test_cannot_tag_another_teams_project(self):
+		ensure_team(self.OTHER_TEAM)
+		foreign = frappe.get_doc(
+			{"doctype": "Project", "title": "Someone Else", "team": self.OTHER_TEAM}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = foreign
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_cannot_tag_a_disabled_project(self):
+		project = frappe.get_doc(
+			{"doctype": "Project", "title": "Archived", "team": TEAM, "enabled": 0}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_tagging_an_own_active_project_is_allowed(self):
+		project = frappe.get_doc(
+			{"doctype": "Project", "title": "Customer X", "team": TEAM}
+		).insert().name
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+
+class TestProjectSpendingLimit(BillingTestBase):
+	"""A Project's `spending_limit` caps the committed run-rate of the subscriptions
+	tagged into it (`subscriptions.enforce_project_headroom`, via
+	`Subscription.validate_project`). It blocks tagging a NEW asset only — an
+	already-tagged subscription is never un-tagged or stopped."""
+
+	def _project(self, spending_limit=0):
+		return frappe.get_doc(
+			{"doctype": "Project", "title": "Customer X", "team": TEAM, "spending_limit": spending_limit}
+		).insert().name
+
+	def test_tagging_under_the_limit_succeeds(self):
+		# PLAN's locked rate is 3200 INR/mo (DEFAULT_RATES) — comfortably under 5000.
+		project = self._project(spending_limit=5000)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+	def test_tagging_over_the_limit_raises(self):
+		project = self._project(spending_limit=1000)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+		# The refused tag never landed.
+		self.assertIsNone(frappe.db.get_value("Subscription", self.sub, "project"))
+
+	def test_zero_spending_limit_is_unlimited(self):
+		project = self._project(spending_limit=0)
+
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()  # no cap to exceed, regardless of the subscription's rate
+
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)
+
+	def test_lowering_the_limit_later_does_not_affect_already_tagged_subscriptions(self):
+		project = self._project(spending_limit=5000)
+		doc = frappe.get_doc("Subscription", self.sub)
+		doc.project = project
+		doc.save()
+
+		# Lower the limit well below the already-tagged subscription's committed rate.
+		frappe.db.set_value("Project", project, "spending_limit", 100)
+
+		# Re-saving without changing the tag must not raise or un-tag it — the limit
+		# only gates a NEW tag / a project change, never an untouched existing one.
+		doc.reload()
+		doc.save()
+		self.assertEqual(frappe.db.get_value("Subscription", self.sub, "project"), project)

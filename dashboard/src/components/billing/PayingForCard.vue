@@ -2,24 +2,43 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import AssignProjectDialog from '@/components/billing/AssignProjectDialog.vue'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import PayingForRow from '@/components/billing/PayingForRow.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { usePayingFor } from '@/composables/usePayingFor'
+import type { SubscriptionRow } from '@/types/billing'
 
 const VISIBLE = 5
 
 defineEmits<{ open: [] }>()
 const router = useRouter()
 const { canManageBilling } = useCapabilities()
-const { rows, loading, currency, openServer } = usePayingFor()
+const {
+	rows,
+	loading,
+	currency,
+	busy,
+	pendingPause,
+	pendingAssignProject,
+	openServer,
+	askPause,
+	confirmPause,
+	onResume,
+	askAssignProject,
+	onAssignedProject,
+} = usePayingFor()
 
 const visible = computed(() => rows.value.slice(0, VISIBLE))
 const hidden = computed(() => Math.max(0, rows.value.length - VISIBLE))
 
 function goToAddons(): void {
 	router.push({ name: 'Addons' })
+}
+
+function serverTitle(sub: SubscriptionRow): string {
+	return sub.server || sub.plan_title || sub.name
 }
 </script>
 
@@ -48,7 +67,12 @@ function goToAddons(): void {
 					:key="row.id"
 					:row="row"
 					:currency="currency"
+					:can-manage="canManageBilling"
+					:busy="busy"
 					@open="openServer"
+					@pause="askPause"
+					@resume="onResume"
+					@assign-project="askAssignProject"
 				/>
 			</div>
 			<Button
@@ -75,5 +99,18 @@ function goToAddons(): void {
 				<Button variant="subtle" label="Browse add-ons" @click="goToAddons" />
 			</template>
 		</EmptyState>
+
+		<ConfirmDialog
+			v-model:target="pendingPause"
+			title="Pause billing"
+			:message="`Pause billing for ${pendingPause ? serverTitle(pendingPause) : ''}? This stops the server/VM and the site(s)/services running on it, and stops charges until you resume.`"
+			confirm-label="Pause billing"
+			:loading="busy === pendingPause?.name"
+			@confirm="confirmPause"
+		/>
+		<AssignProjectDialog
+			v-model:subscription="pendingAssignProject"
+			@assigned="onAssignedProject"
+		/>
 	</BillingCard>
 </template>

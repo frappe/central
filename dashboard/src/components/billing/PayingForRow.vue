@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Badge } from 'frappe-ui'
+import SubscriptionRowActions from '@/components/billing/SubscriptionRowActions.vue'
 import { money } from '@/lib/format'
 import type {
 	PayingForItem,
@@ -7,12 +8,20 @@ import type {
 	SubscriptionRow,
 } from '@/types/billing'
 
+// One row of "what you're paying for". Lives in its own component because the
+// card shows the top few and the tray shows all of them — rendering the row twice
+// is how the two quietly drift apart.
 defineProps<{
 	row: PayingForItem
 	currency: string
+	canManage: boolean
+	busy: string
 }>()
 defineEmits<{
 	open: [sub: SubscriptionRow]
+	pause: [sub: SubscriptionRow]
+	resume: [sub: SubscriptionRow]
+	assignProject: [sub: SubscriptionRow]
 }>()
 
 type BadgeTheme = 'gray' | 'red' | 'blue' | 'green' | 'amber' | 'violet'
@@ -126,6 +135,15 @@ function overAllowance(s: ServiceRow): boolean {
 						{{ money(row.sub.monthly_rate, currency, { trimTrailingZeros: true }) }}/mo
 					</span>
 				</div>
+				<SubscriptionRowActions
+					:subscription="row.sub"
+					:can-manage="canManage"
+					:busy="busy === row.sub.name"
+					@open="$emit('open', $event)"
+					@pause="$emit('pause', $event)"
+					@resume="$emit('resume', $event)"
+					@assign-project="$emit('assignProject', $event)"
+				/>
 			</div>
 		</template>
 

@@ -334,13 +334,22 @@ def _gateway_for_invoice(inv) -> str:
 
 
 def _resolve_method(inv, payment_method, gateway):
-	"""Method + gateway for the charge: explicit args, then subscription default,
-	then currency-based gateway lookup via the resolver."""
+	"""Method + gateway for the charge: explicit args, then the team's top
+	chargeable Payment Method, then currency-based gateway lookup via the resolver.
+
+	Deliberately `ordered_methods`, not `next_method_for`: this resolves a
+	*default*, not a fallback rotation, so it must NOT exclude a method that
+	already failed for this invoice — `pay_invoice` called twice (a manual retry)
+	should resolve to the SAME method both times unless the caller says otherwise.
+	"""
 	if payment_method and gateway:
 		return payment_method, gateway
-	sub = frappe.get_doc("Subscription", inv.subscription) if inv.subscription else None
-	method_name = payment_method or (sub and sub.default_payment_method)
-	gateway_name = gateway or (sub and sub.gateway)
+	from central.billing.payments import collection
+
+	methods = collection.ordered_methods(inv.team)
+	method = methods[0] if methods else None
+	method_name = payment_method or (method and method.name)
+	gateway_name = gateway or (method and method.gateway)
 
 	if not gateway_name and inv.currency:
 		from central.billing.gateways.registry import GatewayNotFound, resolve_gateway_for_currency

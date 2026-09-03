@@ -79,6 +79,7 @@ erDiagram
     Team ||--o{ PaymentMethod : owns
     Team ||--o{ CreditLedgerEntry : wallet
     Team ||--|| CreditWallet : balance
+    Team ||--o{ Project : "cost-tags its resources"
 
     Plan ||--o{ Subscription : instantiates
     PlanCategory ||--o{ PlanSubCategory : groups
@@ -87,7 +88,7 @@ erDiagram
 
     Subscription ||--o{ SubscriptionChange : "append-only history (locked_rate)"
     Subscription ||--o| Asset : provisions
-    Subscription ||--o{ Invoice : "billed from"
+    Project ||--o{ Subscription : "tags (optional)"
 
     Invoice ||--o{ InvoiceLineItem : contains
     Invoice ||--o{ PaymentAttempt : "settled by"
@@ -118,18 +119,20 @@ Plan Configurator ─→ Category, Sub-Category, [C]base_rates, [C]rungs(─→P
 **Subscription / state**
 ```
 Subscription ──team, ──plan, ──sub_category, ──includes, ──default_payment_method,
-             ──gateway, ──asset_id─→ Asset
+             ──gateway, ──asset_id─→ Asset, ──project─→ Project
 Subscription Change ──subscription, ──team, ──currency      (append-only history + locked_rate)
 Price Lock ──team, ──plan                                    (RETIRED — see §6; rate now lives on Subscription Change)
+Project ──team, ──title, ──enabled, ──spending_limit          (cost-tag + run-rate cap; see §2.1)
 ```
 
 **Invoice / money**
 ```
-Invoice [S] ──team, ──subscription, ──items─→ [C]Invoice Line Item
+Invoice [S] ──team, ──items─→ [C]Invoice Line Item
+Invoice Line Item ──project, ──project_title                  (snapshot tag, stamped at generation; see §2.1)
 Payment Attempt ──invoice, ──team, ──gateway, ──payment_method
 Refund ──payment_attempt, ──invoice, ──team
-Credit Ledger Entry ──team, ──currency        (append-only)
-Credit Wallet ──team                           (lock anchor / cached balance)
+Credit Ledger Entry ──team, ──currency                        (append-only)
+Credit Wallet ──team                           (lock anchor / cached balance — one per (team,currency))
 Commitment [S] ──team, ──currency              (spend floor)
 Usage Rollup ──team                            (metered aggregation)
 ```
@@ -153,6 +156,50 @@ Entitlement Token ──team       (Ed25519-signed cap)
 ```
 Webhook Event ──gateway        | Billing Notification Log ──team
 ```
+
+### 2.1 Project — cost tagging + a spending limit, one bill
+
+A **Project** is a user-defined tag a team applies to its own Subscriptions — e.g. to
+see what one internal team or customer costs inside an otherwise-shared bill. It is
+**purely a cost-attribution + guardrail concept**: the team is always billed on **one
+consolidated invoice per period**, exactly as if Projects did not exist. Tagging a
+resource into a Project never changes who is billed, when, or on how many invoices.
+
+**Invoice breakdown.** Every billable line (fixed or metered) is stamped with the
+Project its resource is tagged into, if any — `Invoice Line Item.project` /
+`project_title` — a snapshot taken at generation time (`revenue/invoicing/generate.py`'s
+`_tag_projects`, called from `_rate`, the one function every line passes through for
+both a real Invoice and a live forecast/cycle-tray read). An untagged resource, or one
+tagged into a disabled Project, simply carries no project on its lines — it still bills
+normally, just without a label. `Invoice.period_key` is plain
+`team|period_start|period_end` (ADR 0018, invariant I6) — a team is billed at most once
+per period, full stop; Projects add no dimension to that grain.
+
+**Spending limit.** A Project optionally carries `spending_limit` — a cap on its
+**committed monthly run-rate** (the summed `locked_rate` of every subscription tagged
+into it, `catalog.subscriptions.project_run_rate`). `Subscription.validate_project`
+calls `catalog.subscriptions.enforce_project_headroom` whenever a subscription is newly
+tagged into a Project (on insert, or when its `project` field changes), and refuses the
+tag if the addition would push the Project's committed run-rate past its limit. This
+blocks **new tagging only** — an already-tagged, already-running subscription is never
+throttled or stopped by a limit added or lowered later; the same "blocks new, never
+touches existing" shape as trust-tier headroom (`enforce_headroom`), scoped to one
+Project instead of the whole team. 0 or unset = unlimited.
+
+**No delete** — a Project with billing history is load-bearing (past Invoice Line Items
+carry its name/title as a snapshot); disabling (`Project.enabled = 0`) is the retirement
+path. `Subscription.validate_project` refuses a *new* tag onto a disabled Project for
+the same reason it refuses a foreign one: silently tagging something that means nothing
+would be worse than refusing it outright. Disabling does not untag existing
+subscriptions, and re-enabling resumes tracking with no retagging needed.
+
+**Deliberately out of scope**: Projects have no relationship to credits or payment
+methods at all — there is one `Credit Wallet` per (team, currency) and one Payment
+Method fallback order per team, neither scoped by Project in any way (an earlier
+per-group credit-budget / card-earmarking design was tried and removed — see §6). A
+team-level Commitment (volume discount) and cost projection both operate on the team's
+whole set of resources; a Project is never a unit either reasons about, only a label
+lines carry.
 
 ---
 
@@ -349,11 +396,12 @@ Resize: `resize_composed_config → resize_composed_subscription` → new Subscr
 ```mermaid
 flowchart TD
     DRAFTTICK(["1st 01:00 · draft tick"]) --> GDI["draft_monthly_invoices<br/>→ generate_draft_invoices (pages teams)"]
-    GDI --> DTI["draft_team_page → draft_team_invoice<br/>(per team: isolated, committed)"]
-    DTI --> GTI["generate_team_invoice (per team)"]
+    GDI --> DTI["draft_team_page → draft_team_invoice<br/>(per team, isolated, committed)"]
+    DTI --> GTI["generate_team_invoice<br/>(per team: one consolidated invoice)"]
     GTI --> RS["reconcile_subscription (fix drift)"]
     GTI --> LINES["lines.compute_line_items<br/>day-weighted from Sub Change segments"]
     GTI --> MET["+ metering.metered_line_items<br/>max(0, qty−allowance)×rate"]
+    GTI --> TAG["_tag_projects — stamp each line's Project, if any"]
     GTI --> DISC["+ commitments discount"]
     GTI --> TAX["+ tax.resolve_tax<br/>GST / SEZ / TDS"]
     LINES & MET & DISC & TAX --> DRAFT[["Invoice: Draft"]]
@@ -372,12 +420,14 @@ flowchart TD
 [1st 01:00]  revenue.invoicing.draft_monthly_invoices
   → generate_draft_invoices (pages teams, enqueues one page job per slice)
   → draft_team_page → draft_team_invoice (one team = one transaction = one commit)
-    → generate_team_invoice (per team, aggregates clusters)
+    → generate_team_invoice (per team, aggregates every cluster it runs in)
       → reconcile_subscription (correct drift if stale)
       → lines.compute_line_items  (day-weighted, from Subscription Change rate-snapshot segments)
       → + metering.metered_line_items   (max(0, qty−allowance) × rate)
-      → + commitments discount, + tax.resolve_tax (GST additive / SEZ zero / TDS withhold)
-  → Invoice (Draft)
+      → _rate → _tag_projects stamps each line's Project (if its resource is tagged
+        into one that's enabled — §2.1), then + commitments discount, + tax.resolve_tax
+        (GST additive / SEZ zero / TDS withhold)
+  → Invoice (Draft) — one per team, same period, `period_key` keyed on (team, period)
 
 [daily]      revenue.invoicing.collect_due_invoices   (sweeps until nothing is owed)
   → open_drafts (pages every Draft with period_end ≤ the closed month, one page job per slice)
@@ -412,6 +462,12 @@ charges.pay_invoice → create_invoice_payment_order (via gateway adapter)
   → webhook arrives → apply_webhook → Payment Attempt Paid → Invoice Paid
   → failure → collection.collect_invoice walks primary → backup methods (escalate, don't repeat)
 ```
+Method resolution is team-wide, not scoped by anything — `collection.ordered_methods`
+returns the team's active methods, priority order. `charges._resolve_method` (manual
+"pay now") and `collection.next_method_for`/`collect_invoice` (the real auto-charge
+path) both read off this same list, but `_resolve_method` deliberately skips
+`next_method_for`'s "already failed" exclusion — it resolves a *default*, not a fallback
+rotation, so a manual retry must land on the same card twice, not silently rotate.
 
 ### D. Dunning (unpaid invoice)
 ```mermaid
@@ -451,6 +507,9 @@ revenue.credits.purchase → Credit Ledger Entry (append-only) + Credit Wallet (
 settlement.effective_spend_cap = min(trust-tier cap, wallet)   (credits-only mode)
 settlement.can_accept_spend gates money movement; 80% forecast warning
 ```
+`open_and_collect`'s credits leg draws `credits.get_balance(team, currency)` — the
+team's one wallet, no scoping of any kind (Projects have no relationship to credits;
+see §2.1).
 
 ### G. Trust tier / entitlement
 ```mermaid
@@ -505,6 +564,24 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 - **billing-owned roles + `platform/security.py` + `billing_team` field** → deleted; uses
   Central capability IAM (`authz.py` → `central.iam`). Team is a `Link(Team)`, not a Data slug.
 - **`billing_mode` field** → removed (v09); Billing Profile currency is the gate.
+- **`Invoice.subscription`** ("the primary subscription", whose payment method funded
+  the auto-charge) → gone. An invoice bills a team, never a subscription. Anything that
+  needs a representative subscription (dunning, charge routing) wants
+  `catalog.subscriptions.anchor_subscription(team)` instead.
+- **`primary_subscription(team)`** (`revenue/invoicing/generate.py`) → deleted;
+  superseded by `anchor_subscription`.
+- **Billing Group — one team, several invoices** (tried, then reverted). An earlier
+  design let a team split its bill into a consolidated invoice plus one invoice per
+  Billing Group, with `Invoice.billing_group` part of the `period_key` grain, a
+  per-group earmarked slice of the credit wallet (`Credit Ledger Entry.billing_group`,
+  `credits.group_budget`/`general_pool_balance`, invariant **C5**), and a per-group
+  earmarked payment method tried first (`Payment Method.billing_group`,
+  `collection.scoped_methods`). All of it — the multi-invoice partitioning
+  (`generate.ALL_SCOPES`/`_scope_lines`/`_active_groups`/`_resource_group_map`/
+  `_team_invoice_groups`), the credit-budget isolation, and the card-earmarking — was
+  removed outright, not renamed. **Project** (§2.1) is the intentionally smaller
+  replacement: a cost-attribution tag + spending-limit guardrail on one invoice, with no
+  relationship to credits or payment methods at all.
 
 ---
 
@@ -526,6 +603,8 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Tier/cap wrong | `catalog.entitlements` (`get_team_caps`, `evaluate_tier`, per-currency Trust Tier Threshold) |
 | Provisioning failed | `catalog.subscriptions.provision_*`, `composition.validate_composition` bounds, cluster-manager call |
 | Card declined repeatedly | `collection` (escalate don't repeat), `mandates.effective_cap`, dunning Day 1/3/7 |
+| A line's Project breakdown is missing/wrong | `generate._tag_projects`/`_resource_project_map` — is the resource's Subscription tagged, is its Project `enabled`? A disabled Project's lines carry no tag by design (§2.1); check `Invoice Line Item.project`/`project_title` on a real invoice, or the same fields on a forecast line |
+| Tagging a subscription into a Project is refused | `Subscription.validate_project` — same-team? Project `enabled`? `catalog.subscriptions.enforce_project_headroom` — would the tag push the Project's committed run-rate (`project_run_rate`) past its `spending_limit`? (blocks new tagging only, §2.1) |
 | ERPNext out of sync | `erpnext_sync` (async, never rolls back the invoice; check retry backoff) |
 | Catalog masters missing | `taxonomy_setup.ensure_catalog_masters` (runs on install/migrate/before_tests) |
 | Money rounding off | money is float `Currency` (major units); check the rate field's decimal **precision** holds sub-cent rates, and that minor-unit conversion happens *only* in `gateways/` |

@@ -24,6 +24,46 @@ const props = withDefaults(
 	{ showBasis: false },
 )
 
+// Purely a cosmetic project-wise breakdown — every line lands on the team's one
+// consolidated invoice regardless of whether it's tagged into a Project, so this
+// is not "which invoice this will land on", just "how to read the total". Split
+// into a section per project, but ONLY when more than one is actually present
+// this cycle: a team that has never tagged anything sees exactly the flat
+// breakdown below, unchanged.
+interface ScopeGroup {
+	label: string
+	lines: BillingLine[]
+	total: number
+}
+
+const UNTAGGED = 'Untagged'
+
+function scopeLabel(li: BillingLine): string {
+	return li.project_title ?? UNTAGGED
+}
+
+const scopeGroups = computed<ScopeGroup[] | null>(() => {
+	const byLabel = new Map<string, BillingLine[]>()
+	for (const li of props.lines) {
+		const label = scopeLabel(li)
+		if (!byLabel.has(label)) byLabel.set(label, [])
+		byLabel.get(label)!.push(li)
+	}
+	if (byLabel.size <= 1) return null
+	const groups = Array.from(byLabel, ([label, lines]) => ({
+		label,
+		lines,
+		total: lines.reduce((t, li) => t + Number(li.amount || 0), 0),
+	}))
+	// Untagged spend leads; the named projects follow, biggest first.
+	groups.sort((a, b) => {
+		if (a.label === UNTAGGED) return -1
+		if (b.label === UNTAGGED) return 1
+		return b.total - a.total
+	})
+	return groups
+})
+
 const servers = computed(() => props.lines.filter((li) => li.kind === 'Plan'))
 const services = computed(() => props.lines.filter((li) => li.kind !== 'Plan'))
 
@@ -79,7 +119,29 @@ function isEstimated(li: BillingLine): boolean {
 </script>
 
 <template>
-	<div class="space-y-4">
+	<div v-if="scopeGroups" class="space-y-5">
+		<section v-for="group in scopeGroups" :key="group.label">
+			<div class="mb-2 flex items-center justify-between gap-3">
+				<span class="flex items-center gap-1.5 text-sm-medium text-ink-gray-8">
+					<span
+						class="lucide-layers size-3.5 text-ink-gray-4"
+						aria-hidden="true"
+					/>
+					{{ group.label }}
+				</span>
+				<span class="text-p-sm tabular-nums text-ink-gray-5">
+					{{ money(group.total, currency) }}
+				</span>
+			</div>
+			<ChargeBreakdown
+				:lines="group.lines"
+				:currency="currency"
+				:show-basis="showBasis"
+			/>
+		</section>
+	</div>
+
+	<div v-else class="space-y-4">
 		<section v-if="servers.length">
 			<div class="mb-1 flex items-center justify-between gap-3">
 				<span

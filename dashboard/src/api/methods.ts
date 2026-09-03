@@ -99,6 +99,7 @@ export const API = {
 	paymentMethodOptions:
 		'central.billing.api.dashboard.get_payment_method_options',
 	subscriptions: 'central.billing.api.dashboard.list_subscriptions',
+	projects: 'central.billing.api.dashboard.list_projects',
 	nextPayment: 'central.billing.api.dashboard.get_next_payment',
 	paymentSchedule: 'central.billing.api.dashboard.get_payment_schedule',
 	cycleCosts: 'central.billing.api.dashboard.get_cycle_costs',
@@ -144,6 +145,13 @@ export const API = {
 		'central.notification.api.mark_all_notifications_read',
 	pauseSubscription: 'central.billing.api.dashboard.pause_subscription',
 	resumeSubscription: 'central.billing.api.dashboard.resume_subscription',
+	setSubscriptionProject:
+		'central.billing.api.dashboard.set_subscription_project',
+	createProject: 'central.billing.api.dashboard.create_project',
+	renameProject: 'central.billing.api.dashboard.rename_project',
+	setProjectEnabled: 'central.billing.api.dashboard.set_project_enabled',
+	setProjectSpendingLimit:
+		'central.billing.api.dashboard.set_project_spending_limit',
 	subscribeMeteredService:
 		'central.billing.api.dashboard.subscribe_metered_service',
 } as const

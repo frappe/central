@@ -39,6 +39,12 @@ export interface BillingLine {
 	server?: string | null
 	/** Its technical id (what the Asset is named by), for support and logs. */
 	server_id?: string | null
+	/** Which Project this line's resource is tagged into, for the cost breakdown —
+	 *  set only when the resource is tagged into an enabled Project; null/empty for
+	 *  untagged lines. Purely a display grouping: every line lands on the team's
+	 *  one consolidated invoice regardless. */
+	project?: string | null
+	project_title?: string | null
 }
 
 /** get_forecast — current-cycle projection vs wallet. */
@@ -280,6 +286,31 @@ export interface SubscriptionRow {
 	/** Resolved monthly price for the team's currency + region. */
 	monthly_rate: number | null
 	currency: string
+	/** Project this resource is tagged into, for the cost breakdown; null = untagged. */
+	project: string | null
+	project_title: string | null
+}
+
+/** list_projects row — a team-defined cost-breakdown tag (ARCHITECTURE.md). A
+ *  team's subscriptions tagged into the same Project show grouped under it on the
+ *  invoice/forecast line-item breakdown — the team still gets exactly one
+ *  consolidated invoice; a Project changes nothing about how it's billed. */
+export interface Project {
+	name: string
+	title: string
+	enabled: boolean | number
+	/** How many of the team's active subscriptions are currently tagged into it. */
+	resource_count: number
+	/** Account standing of the subscription(s) tagged into it — null only when
+	 *  nothing has been tagged into it yet. */
+	standing: string | null
+	/** Allowed committed monthly run-rate for resources tagged into this project.
+	 *  0/unset = unlimited. Tagging a NEW resource that would push the project's
+	 *  committed_run_rate over this limit is rejected server-side; it never stops
+	 *  resources already tagged in. */
+	spending_limit: number
+	/** The project's current committed monthly run-rate from its tagged resources. */
+	committed_run_rate: number
 }
 
 export type PaymentMethodType = 'Card' | 'UPI Autopay' | (string & {})
