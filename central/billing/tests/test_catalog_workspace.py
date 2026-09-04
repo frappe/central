@@ -4,6 +4,7 @@
 
 import frappe
 
+from central.billing.navigation import ensure_workspace_sidebars
 from central.billing.report.metered_add_ons.metered_add_ons import execute
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import make_metered_plan
@@ -121,3 +122,21 @@ class TestBillingSidebar(IntegrationTestCase):
 		linked = {i.link_to for i in self.sidebar.items if i.type == "Link"}
 		self.assertNotIn("Price Lock", linked)
 		self.assertNotIn("Trust Tier", linked)
+
+	def test_the_seeder_installs_it_on_a_site_that_has_none(self):
+		# A fresh install can come up without the app-level fixture, and Frappe then
+		# auto-generates a sidebar from the workspace shortcuts. The seeder must heal
+		# that, so delete the row and rebuild it the way install/migrate/tests do.
+		frappe.delete_doc("Workspace Sidebar", "Billing", force=True, ignore_permissions=True)
+		self.assertFalse(frappe.db.exists("Workspace Sidebar", "Billing"))
+
+		ensure_workspace_sidebars()
+
+		rebuilt = frappe.get_doc("Workspace Sidebar", "Billing")
+		self.assertTrue(rebuilt.standard)
+		self.assertEqual(len(rebuilt.items), len(self.sidebar.items))
+
+	def test_the_seeder_is_idempotent(self):
+		before = frappe.db.get_value("Workspace Sidebar", "Billing", "modified")
+		ensure_workspace_sidebars()
+		self.assertEqual(frappe.db.get_value("Workspace Sidebar", "Billing", "modified"), before)
