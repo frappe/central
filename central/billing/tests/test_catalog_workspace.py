@@ -4,6 +4,7 @@
 
 import frappe
 
+from central.billing.navigation import ensure_workspace_sidebars
 from central.billing.report.metered_add_ons.metered_add_ons import execute
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import make_metered_plan
@@ -53,27 +54,89 @@ class TestVerbFirstWorkspace(IntegrationTestCase):
 		paragraphs = [b for b in self.content if b["type"] == "paragraph"]
 		self.assertTrue(any("Plan Configurator" in p["data"]["text"] for p in paragraphs))
 
-	def test_metered_add_ons_report_is_surfaced(self):
-		by_label = {link.label: link for link in self.ws.links}
-		self.assertIn("Metered Add-ons", by_label)
-		self.assertEqual(by_label["Metered Add-ons"].link_to, "Metered Add-ons")
-		self.assertEqual(by_label["Metered Add-ons"].link_type, "Report")
+	def test_page_carries_no_link_cards(self):
+		# Navigation lives in the sidebar; the workspace page is a dashboard, not a link farm.
+		self.assertEqual(self.ws.links, [])
+		self.assertFalse([b for b in self.content if b["type"] == "card"])
+
+
+class TestBillingSidebar(IntegrationTestCase):
+	"""The Workspace Sidebar is the navigation surface (Frappe v17)."""
+
+	def setUp(self):
+		self.sidebar = frappe.get_doc("Workspace Sidebar", "Billing")
+
+	def sections(self) -> dict[str, list[str]]:
+		"""Group the sidebar's child items under the Section Break they hang off."""
+		groups: dict[str, list[str]] = {}
+		current = None
+		for item in self.sidebar.items:
+			if item.type == "Section Break":
+				current = item.label
+				groups[current] = []
+			elif current and item.child:
+				groups[current].append(item.link_to)
+		return groups
+
+	def test_is_shipped_by_the_app_not_auto_generated(self):
+		# An auto-generated sidebar just copies the workspace shortcuts, so the three
+		# Configurator verbs show up as three identical links. This one is authored.
+		self.assertTrue(self.sidebar.standard)
+		self.assertEqual(self.sidebar.app, "central")
+
+	def test_opens_with_home_and_the_configurator(self):
+		first_three = [(i.label, i.link_type, i.link_to) for i in self.sidebar.items[:3]]
+		self.assertEqual(
+			first_three,
+			[
+				("Home", "Workspace", "Billing"),
+				("Plan Configurator", "DocType", "Plan Configurator"),
+				("Billing Simulator", "Page", "billing-simulator"),
+			],
+		)
+
+	def test_every_top_level_item_is_distinct_and_carries_an_icon(self):
+		top_level = [i for i in self.sidebar.items if not i.child]
+		targets = [i.link_to for i in top_level if i.type == "Link"]
+		self.assertEqual(len(targets), len(set(targets)), "duplicate top-level destinations")
+		for item in top_level:
+			self.assertTrue(item.icon, f"{item.label} has no icon")
+
+	def test_sections_are_collapsible_and_their_items_nest(self):
+		for item in self.sidebar.items:
+			if item.type == "Section Break":
+				self.assertTrue(item.indent, f"{item.label} must indent to render collapsible")
+				self.assertTrue(item.collapsible)
+		self.assertTrue(all(self.sections().values()), "a section has no items under it")
+
+	def test_masters_are_grouped_under_catalog(self):
+		for master in ("Plan Category", "Plan Sub-Category", "Resource Type", "Catalog Rate"):
+			self.assertIn(master, self.sections()["Catalog"])
+
+	def test_every_billing_report_is_reachable(self):
+		linked = {i.link_to for i in self.sidebar.items if i.link_type == "Report"}
+		shipped = set(frappe.get_all("Report", filters={"module": "Billing"}, pluck="name"))
+		self.assertEqual(shipped - linked, set(), "reports missing from the sidebar")
 
 	def test_retired_doctypes_are_not_linked(self):
-		linked = {l.link_to for l in self.ws.links if l.type == "Link"}
+		linked = {i.link_to for i in self.sidebar.items if i.type == "Link"}
 		self.assertNotIn("Price Lock", linked)
 		self.assertNotIn("Trust Tier", linked)
 
-	def test_masters_are_under_an_advanced_group(self):
-		# Walk the Card Break groups; the catalog masters live under "Advanced".
-		groups: dict[str, list[str]] = {}
-		current = None
-		for l in self.ws.links:
-			if l.type == "Card Break":
-				current = l.label
-				groups[current] = []
-			elif current:
-				groups[current].append(l.link_to)
-		advanced = next((items for label, items in groups.items() if "Advanced" in label), [])
-		for master in ("Plan Category", "Plan Sub-Category", "Resource Type", "Catalog Rate"):
-			self.assertIn(master, advanced)
+	def test_the_seeder_installs_it_on_a_site_that_has_none(self):
+		# A fresh install can come up without the app-level fixture, and Frappe then
+		# auto-generates a sidebar from the workspace shortcuts. The seeder must heal
+		# that, so delete the row and rebuild it the way install/migrate/tests do.
+		frappe.delete_doc("Workspace Sidebar", "Billing", force=True, ignore_permissions=True)
+		self.assertFalse(frappe.db.exists("Workspace Sidebar", "Billing"))
+
+		ensure_workspace_sidebars()
+
+		rebuilt = frappe.get_doc("Workspace Sidebar", "Billing")
+		self.assertTrue(rebuilt.standard)
+		self.assertEqual(len(rebuilt.items), len(self.sidebar.items))
+
+	def test_the_seeder_is_idempotent(self):
+		before = frappe.db.get_value("Workspace Sidebar", "Billing", "modified")
+		ensure_workspace_sidebars()
+		self.assertEqual(frappe.db.get_value("Workspace Sidebar", "Billing", "modified"), before)

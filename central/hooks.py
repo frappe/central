@@ -117,6 +117,7 @@ after_install = [
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
+	"central.billing.navigation.ensure_workspace_sidebars",
 ]
 
 # Uninstallation
@@ -252,6 +253,7 @@ after_migrate = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
+	"central.billing.navigation.ensure_workspace_sidebars",
 ]
 
 # Testing
@@ -264,6 +266,7 @@ before_tests = [
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
+	"central.billing.navigation.ensure_workspace_sidebars",
 ]
 
 # Extend DocType Class
