@@ -1,6 +1,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.billing.tests.utils import ensure_team, purge_teams
 from central.demo.servers import ASSETS, REGIONS, _seed_resource_ids, seed, summary, teardown
 
 
@@ -9,15 +10,33 @@ class TestServerSeed(IntegrationTestCase):
 	running teardown() in cleanup (mirroring how developer_setup tests handle
 	their committed bootstrap rows)."""
 
+	TEAM = "team-server-seed"
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.original_developer_mode = frappe.conf.get("developer_mode")
-		self.addCleanup(self._cleanup)
+		# seed() attaches its fleet to the oldest Active Teams, so one has to exist.
+		# A fresh site has none, so this can't lean on a team some other test happens
+		# to leave behind. No commit needed: the suite shares one connection, so an
+		# uncommitted insert is already visible to seed().
+		ensure_team(self.TEAM)
+		# Registered separately and run LIFO, so a failure in one step still runs the
+		# rest: purge the team, then teardown() — whose commit is what persists the
+		# purge — then restore the flag. Nothing here commits on its own.
+		self.addCleanup(self._restore_developer_mode)
+		self.addCleanup(self._teardown_fleet)
+		self.addCleanup(self._purge_team)
 
-	def _cleanup(self):
+	def _purge_team(self):
+		frappe.set_user("Administrator")
+		purge_teams([self.TEAM])
+
+	def _teardown_fleet(self):
 		frappe.set_user("Administrator")
 		frappe.conf.developer_mode = 1
 		teardown()
+
+	def _restore_developer_mode(self):
 		frappe.conf.developer_mode = self.original_developer_mode
 
 	def test_refuses_without_developer_mode(self):
