@@ -14,32 +14,59 @@ if typing.TYPE_CHECKING:
 	from central.services.doctype.service_credential.service_credential import ServiceCredential
 
 SERVICE = "storage"
-SECRET_LENGTH = 32
+SECRET_LENGTH = 64
 CLUSTER_SECRETS = ("control_api_secret", "metrics_token", "rpc_secret")
 BUCKET_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 
 
-def mint_cluster_tokens(region: str, host: str) -> dict:
-	"""A node's `garage.toml` secrets. Idempotent per region: a cluster shares one
-	`rpc_secret`, and the first host to ask stays the entry node."""
+def mint_cluster_tokens(region: str) -> dict:
+	"""A region's `garage.toml` secrets. Idempotent: every node of a cluster shares them,
+	which is what makes them one cluster."""
 	add_on = get_active_service(SERVICE)
 	name = frappe.db.get_value("Service Backend", {"service": add_on.name, "region": region})
 	backend = (
 		frappe.get_doc("Service Backend", name)
 		if name
 		else frappe.get_doc(
-			{
-				"doctype": "Service Backend",
-				"service": add_on.name,
-				"region": region,
-				"base_url": f"http://{host}:3903",
-				"s3_endpoint": f"http://{host}:3900",
-				"is_active": 0,
-			}
+			{"doctype": "Service Backend", "service": add_on.name, "region": region, "is_active": 0}
 		).insert(ignore_permissions=True)
 	)
 
 	return cluster_tokens(backend)
+
+
+def activate_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
+	"""Record where a region's cluster runs and let Central start using it.
+
+	Until this lands the backend has secrets but no address, so `get_backend` skips it and
+	no bucket can be created."""
+	name = frappe.db.get_value(
+		"Service Backend", {"service": get_active_service(SERVICE).name, "region": region}
+	)
+	if not name:
+		frappe.throw(_(f"No {region} cluster has asked for its secrets yet."))
+
+	backend = frappe.get_doc("Service Backend", name)
+	backend.update({"base_url": base_url, "s3_endpoint": s3_endpoint, "is_active": 1, "last_error": None})
+	backend.save(ignore_permissions=True)
+
+	return {"backend": backend.name, "region": region, "is_active": 1}
+
+
+def record_cluster_failure(region: str, step: str, error: str) -> dict:
+	"""Note that a region's cluster failed to come up. Its secrets are kept, so a retry
+	reuses them and the nodes still recognise each other."""
+	name = frappe.db.get_value(
+		"Service Backend", {"service": get_active_service(SERVICE).name, "region": region}
+	)
+	if not name:
+		frappe.throw(_(f"No {region} cluster has asked for its secrets yet."))
+
+	backend = frappe.get_doc("Service Backend", name)
+	backend.update({"last_error": f"{step}: {error}"[:500], "is_active": 0})
+	backend.save(ignore_permissions=True)
+
+	return {"backend": backend.name, "region": region, "is_active": 0}
 
 
 def cluster_tokens(backend: ServiceBackend) -> dict:
@@ -49,7 +76,6 @@ def cluster_tokens(backend: ServiceBackend) -> dict:
 	if missing:
 		for fieldname in missing:
 			backend.set(fieldname, frappe.generate_hash(length=SECRET_LENGTH))
-		backend.is_active = 1
 		backend.save(ignore_permissions=True)
 
 	return {

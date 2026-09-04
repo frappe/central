@@ -274,12 +274,13 @@ class TestStorageProvisioning(IntegrationTestCase):
 		self.assertNotEqual(first["admin_token"], first["rpc_secret"])
 
 	def test_cluster_tokens_are_minted_once_per_region(self):
-		# Nodes 2 and 3 ask after node 1; identical secrets are what lets them cluster.
+		# A retry must return the same secrets; identical values are what lets nodes cluster.
 		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
-		first = storage.mint_cluster_tokens("test-dc", "10.0.0.1")
-		second = storage.mint_cluster_tokens("test-dc", "10.0.0.2")
+		first = storage.mint_cluster_tokens("test-dc")
+		second = storage.mint_cluster_tokens("test-dc")
 
 		self.assertEqual(first, second)
 		backend = frappe.get_doc("Service Backend", {"service": "storage", "region": "test-dc"})
 		self.assertEqual(backend.get_password("control_api_secret"), first["admin_token"])
-		self.assertEqual(backend.base_url, "http://10.0.0.1:3903")
+		# Cargo fills the endpoint in later, once the cluster is actually running.
+		self.assertFalse(backend.base_url)

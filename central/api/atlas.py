@@ -71,24 +71,3 @@ def images() -> dict:
 def ping() -> dict:
 	"""Reachability + auth check for a registering Atlas."""
 	return {"label": frappe.local.site}
-
-
-# nosemgrep: guest-whitelisted-method -- verify_atlas_webhook authenticates the caller below.
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-@verify_atlas_webhook
-def garage_tokens() -> dict:
-	"""The secrets a Garage node needs seeded into its `garage.toml`, asked for while
-	Atlas provisions the node. Every node of a cluster gets the same ones.
-
-	Read off the signed body, never form_dict: the HMAC covers those bytes."""
-	from central.services.storage import mint_cluster_tokens
-
-	context = frappe.local.atlas_webhook
-	payload = frappe.parse_json(context.raw.decode() if isinstance(context.raw, bytes) else context.raw)
-	host = (payload or {}).get("host")
-	if not host:
-		frappe.throw(_("A Garage node's host is required to mint its tokens."), frappe.ValidationError)
-
-	region = frappe.db.get_value("Atlas Instance", context.cluster, "region")
-
-	return mint_cluster_tokens(region, host)
