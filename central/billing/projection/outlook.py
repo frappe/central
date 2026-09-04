@@ -49,7 +49,6 @@ def unpaid_invoices(filters: dict | None = None) -> list[frappe._dict]:
 			"due_date",
 			"dunning_starts_on",
 			"expected_collection",
-			"subscription",
 		],
 		order_by="due_date asc",
 		limit_page_length=0,
