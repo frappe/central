@@ -57,7 +57,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 	{
 		value: 'profile',
 		group: 'Account',
-		label: 'My profile',
+		label: 'Profile',
 		icon: 'lucide-user',
 		title: 'My profile',
 		description: 'How you appear to everyone you share a team with.',
@@ -86,7 +86,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 	{
 		value: 'teams',
 		group: 'Team',
-		label: 'Your teams',
+		label: 'Teams',
 		icon: 'lucide-users',
 		title: 'Your teams',
 		description: 'Switch between the teams you belong to, or start a new one.',
@@ -95,7 +95,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 	{
 		value: 'team',
 		group: 'Team',
-		label: 'Team settings',
+		label: 'Manage',
 		icon: 'lucide-building-2',
 		title: 'Team settings',
 		description: 'Settings for the team you are working in.',
