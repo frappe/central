@@ -111,11 +111,11 @@ async function onDelete(): Promise<void> {
 		     line with its own explanation. -->
 		<div
 			v-if="canDeleteTeam"
-			class="mt-10 flex items-start gap-4 border-t border-outline-gray-1 pt-6"
+			class="mt-10 flex items-start gap-4 border-t border-outline-gray-1 pt-3.5"
 		>
 			<div class="min-w-0 flex-1">
 				<p class="text-base font-medium text-ink-gray-9">Delete team</p>
-				<p class="mt-0.5 text-p-sm text-ink-gray-5">
+				<p class="mt-1 text-base leading-5 text-ink-gray-6">
 					Permanently removes the team and everyone's access. Servers and sites
 					must be removed first.
 				</p>
