@@ -99,7 +99,12 @@ watch(tabs, (available) => {
 
 		<SettingsContent>
 			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
-				<SettingsHeader :title="tab.title" :description="tab.description" />
+				<SettingsHeader>
+					<h2 class="text-lg font-semibold text-ink-gray-8">{{ tab.title }}</h2>
+					<p v-if="tab.description" class="mt-1 text-p-base text-ink-gray-6">
+						{{ tab.description }}
+					</p>
+				</SettingsHeader>
 				<SettingsBody>
 					<div class="mt-6">
 						<component :is="tab.component" />
