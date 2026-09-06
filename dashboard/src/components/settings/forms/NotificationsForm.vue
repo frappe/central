@@ -126,9 +126,6 @@ async function onSave(): Promise<void> {
 		</div>
 
 		<div class="divide-y divide-outline-gray-1 border-t border-outline-gray-1">
-			<!-- label-for="" opts out of SettingsRow's auto-label: it wires the
-			     title to the first control it finds, and here that would make
-			     clicking "Billing" toggle email only. -->
 			<SettingsRow
 				v-for="cat in CATEGORIES"
 				:key="cat.key"

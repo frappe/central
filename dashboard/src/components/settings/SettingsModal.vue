@@ -62,25 +62,16 @@ watch(tabs, (available) => {
 	     binds a prop nothing reads and the dialog never opens. -->
 	<SettingsDialog v-model:open="settingsOpen" v-model:tab="settingsTab">
 		<SettingsSidebar>
-			<!-- The dialog names itself. aria-hidden because SettingsDialog already
-			     renders a screen-reader-only <h1>Settings</h1> — this is the same
-			     title made visible, not a second one. -->
-			<p
-				aria-hidden="true"
-				class="px-2 pb-1 pt-1 text-base font-semibold text-ink-gray-8"
-			>
-				Settings
-			</p>
+			<SettingsNavGroup v-for="group in groups" :key="group.label">
+				<template #label>
+					<span class="text-p-sm text-ink-gray-5">{{ group.label }}</span>
+				</template>
 
-			<SettingsNavGroup
-				v-for="group in groups"
-				:key="group.label"
-				:label="group.label"
-			>
 				<SettingsNavItem
 					v-for="tab in group.items"
 					:key="tab.value"
 					:value="tab.value"
+					class="!text-p-sm"
 				>
 					<template #prefix>
 						<!-- Your own face on your own tab; everything else takes an icon. -->
@@ -97,20 +88,27 @@ watch(tabs, (available) => {
 			</SettingsNavGroup>
 		</SettingsSidebar>
 
-		<SettingsContent>
+		<SettingsContent class="bg-surface-base">
 			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
-				<SettingsHeader>
-					<h2 class="text-lg font-semibold text-ink-gray-8">{{ tab.title }}</h2>
-					<p v-if="tab.description" class="mt-1 text-p-base text-ink-gray-6">
+				<SettingsHeader class="!px-10 !pt-8">
+					<h2 class="text-lg-semibold text-ink-gray-8">{{ tab.title }}</h2>
+					<p
+						v-if="tab.description"
+						class="mt-1 max-w-md text-p-base text-ink-gray-6"
+					>
 						{{ tab.description }}
 					</p>
 				</SettingsHeader>
-				<SettingsBody>
-					<div class="mt-6">
-						<component :is="tab.component" />
-					</div>
+				<SettingsBody viewport-class="px-10 pb-8 pt-6">
+					<component :is="tab.component" />
 				</SettingsBody>
 			</SettingsPanel>
 		</SettingsContent>
 	</SettingsDialog>
 </template>
+
+<style scoped>
+:deep(.text-base.leading-5.text-ink-gray-6) {
+	@apply text-p-sm;
+}
+</style>

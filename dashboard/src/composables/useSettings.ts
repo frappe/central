@@ -60,7 +60,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		label: 'Profile',
 		icon: 'lucide-user',
 		title: 'My profile',
-		description: 'How you appear to everyone you share a team with.',
+		description: 'How you appear to your teams.',
 		component: ProfileForm,
 	},
 	{
@@ -69,8 +69,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		label: 'Notifications',
 		icon: 'lucide-bell',
 		title: 'Notifications',
-		description:
-			'Choose how each kind of notification reaches you. These apply to your account on this team only.',
+		description: "How you're notified on this team.",
 		component: NotificationsForm,
 		requires: 'member',
 	},
@@ -80,7 +79,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		label: 'Appearance',
 		icon: 'lucide-sun-moon',
 		title: 'Appearance',
-		description: 'How the console looks.',
+		description: 'How the dashboard looks.',
 		component: AppearanceForm,
 	},
 	{
@@ -89,7 +88,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		label: 'Teams',
 		icon: 'lucide-users',
 		title: 'Your teams',
-		description: 'Switch between the teams you belong to, or start a new one.',
+		description: 'Switch teams or create one.',
 		component: TeamsForm,
 	},
 	{
@@ -98,7 +97,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		label: 'Manage',
 		icon: 'lucide-building-2',
 		title: 'Team settings',
-		description: 'Settings for the team you are working in.',
+		description: 'Rename or delete this team.',
 		component: TeamForm,
 		requires: 'teamAdmin',
 	},
