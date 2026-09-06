@@ -117,9 +117,7 @@ function resetPassword(): void {
 					disabled
 				/>
 			</div>
-			<p class="text-p-sm text-ink-gray-5">
-				Photo uploads land in a follow-up.
-			</p>
+
 		</div>
 
 		<div class="flex items-end gap-2">
