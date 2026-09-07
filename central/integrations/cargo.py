@@ -44,7 +44,8 @@ def _authenticate_bootstrapping_request() -> str:
 	"""The Cargo Instance the presented token was minted for.
 
 	Spent tokens are refused: a host enrols once per token, so a leaked one cannot be
-	replayed to collect a second set of credentials."""
+	replayed to collect a second set of credentials. The row is locked for the rest of the
+	request, which is what makes "once" hold when the replay arrives concurrently."""
 	from central.sso import verify_cargo_bootstrapping_token
 
 	token = (frappe.get_request_header(BOOTSTRAP_HEADER) or "").strip()
@@ -52,16 +53,25 @@ def _authenticate_bootstrapping_request() -> str:
 		frappe.throw(_("A Cargo bootstrapping token is required."), frappe.AuthenticationError)
 
 	instance = verify_cargo_bootstrapping_token(token)
-	if not frappe.db.exists("Cargo Instance", instance):
-		frappe.throw(_("This token names no known Cargo host."), frappe.AuthenticationError)
+	status = _lock_awaiting_enrolment(instance)
 
 	stored = frappe.utils.password.get_decrypted_password(
 		"Cargo Instance", instance, "bootstrapping_token", raise_exception=False
 	)
-	if stored != token:
+	# Draft with a different token means the operator re-issued one; this one is stale.
+	if status != "Draft" or stored != token:
 		frappe.throw(_("This bootstrapping token has already been used."), frappe.AuthenticationError)
 
 	return instance
+
+
+def _lock_awaiting_enrolment(instance: str) -> str:
+	"""Just take a lock"""
+	status = frappe.db.get_value("Cargo Instance", instance, "status", for_update=True)
+	if not status:
+		frappe.throw(_("This token names no known Cargo host."), frappe.AuthenticationError)
+
+	return status
 
 
 def _authenticate_cargo_request() -> frappe._dict:

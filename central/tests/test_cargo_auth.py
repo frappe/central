@@ -39,6 +39,13 @@ def _token(token: str):
 		yield
 
 
+@contextmanager
+def _bootstrapping_token(token: str):
+	values = {cargo_module.BOOTSTRAP_HEADER: token}
+	with patch.object(cargo_module.frappe, "get_request_header", side_effect=lambda k: values.get(k)):
+		yield
+
+
 class TestCargoRegionBinding(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
@@ -146,3 +153,63 @@ class TestCargoRegionBinding(IntegrationTestCase):
 	def test_minting_without_a_host_is_refused(self):
 		with self.assertRaises(frappe.ValidationError):
 			mint_cargo_access_tokens("")
+
+
+class TestCargoEnrolment(IntegrationTestCase):
+	"""Trading a bootstrapping token for the two a host runs on. Once per token."""
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		self.instance = ensure_cargo_instance(OWN_REGION, status="Draft")
+		self.token = frappe.get_doc("Cargo Instance", self.instance).issue_bootstrapping_token()[
+			"bootstrapping_token"
+		]
+
+	def test_enrolling_registers_the_host_and_spends_the_token(self):
+		with _bootstrapping_token(self.token):
+			tokens = cargo_api.request_control_credentials(base_url="http://cargo.test:8000/")
+
+		instance = frappe.get_doc("Cargo Instance", self.instance)
+		self.assertEqual(instance.status, "Registered")
+		self.assertEqual(instance.base_url, "http://cargo.test:8000")
+		self.assertIsNone(instance.get_password("bootstrapping_token", raise_exception=False))
+		self.assertEqual(
+			cargo_module.verify_cargo_access_token(tokens["central_access_token"])["instance"],
+			self.instance,
+		)
+
+	def test_replaying_a_spent_token_is_refused(self):
+		with _bootstrapping_token(self.token):
+			cargo_api.request_control_credentials()
+
+		with _bootstrapping_token(self.token), self.assertRaises(frappe.AuthenticationError):
+			cargo_api.request_control_credentials()
+
+	def test_a_reissued_token_makes_the_earlier_one_stale(self):
+		"""Re-issuing puts the host back to Draft, so status alone cannot refuse the old
+		token -- the stored-value check is what does."""
+		stale = self.token
+		frappe.get_doc("Cargo Instance", self.instance).issue_bootstrapping_token()
+
+		with _bootstrapping_token(stale), self.assertRaises(frappe.AuthenticationError):
+			cargo_api.request_control_credentials()
+
+	def test_a_host_no_longer_awaiting_enrolment_is_refused(self):
+		"""The concurrent loser's view: it holds the token the row still stores, and is
+		refused because the winner already moved the row off Draft."""
+		frappe.db.set_value("Cargo Instance", self.instance, "status", "Registered")
+
+		with _bootstrapping_token(self.token), self.assertRaises(frappe.AuthenticationError):
+			cargo_api.request_control_credentials()
+
+	def test_the_row_is_locked_before_the_token_is_read(self):
+		"""Without the locking read the two hosts race: both see Draft, both enrol."""
+		with (
+			patch.object(cargo_module.frappe.db, "get_value", wraps=cargo_module.frappe.db.get_value) as read,
+			_bootstrapping_token(self.token),
+		):
+			cargo_api.request_control_credentials()
+
+		locked = [call for call in read.call_args_list if call.kwargs.get("for_update")]
+		self.assertTrue(locked, "the Cargo Instance row was read without FOR UPDATE")
+		self.assertEqual(locked[0].args[0], "Cargo Instance")
