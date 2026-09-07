@@ -13,6 +13,7 @@ import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
+import SwitchTeamDialog from '@/components/team/SwitchTeamDialog.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
@@ -21,6 +22,8 @@ import {
 	searchOpen,
 	useSearchShortcut,
 } from '@/composables/useSearch'
+import { useSettingsShortcut } from '@/composables/useSettings'
+import { teamSwitcherOpen } from '@/composables/useTeamSwitcher'
 
 // The search palette builds an index off several team-scoped feeds (servers,
 // members, invoices…). Mount it lazily on first open so those fetches never fire
@@ -32,6 +35,7 @@ const searchMounted = ref(false)
 
 useNotificationsRealtime()
 useSearchShortcut()
+useSettingsShortcut()
 
 // Keep it mounted once opened so re-opening is instant and the exit transition plays.
 watch(searchOpen, (isOpen) => {
@@ -127,4 +131,5 @@ const breadcrumbs = computed(
 	     dialog never mounts there. -->
 	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
+	<SwitchTeamDialog v-model:open="teamSwitcherOpen" />
 </template>

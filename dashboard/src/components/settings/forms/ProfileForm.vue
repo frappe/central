@@ -101,23 +101,20 @@ function resetPassword(): void {
 </script>
 
 <template>
-	<div class="space-y-6">
+	<div class="mt-6 space-y-6">
 		<!-- Photo row, no label — the avatar speaks for itself. The control is
 		     disabled until the upload endpoint lands. -->
-		<div class="space-y-1.5">
-			<div class="flex items-center gap-3">
-				<Avatar
-					:image="profile?.user_image ?? undefined"
-					:label="name.trim() || profile?.full_name || profile?.user || ''"
-					size="2xl"
-					class="shrink-0"
-				/>
-				<Button
-					:label="profile?.user_image ? 'Change photo' : 'Upload photo'"
-					disabled
-				/>
-			</div>
-
+		<div class="flex items-center gap-3">
+			<Avatar
+				:image="profile?.user_image ?? undefined"
+				:label="name.trim() || profile?.full_name || profile?.user || ''"
+				size="2xl"
+				class="shrink-0"
+			/>
+			<Button
+				:label="profile?.user_image ? 'Change photo' : 'Upload photo'"
+				disabled
+			/>
 		</div>
 
 		<div class="flex items-end gap-2">

@@ -1,3 +1,4 @@
+import { useKeyboardShortcut } from 'frappe-ui'
 import type { Component } from 'vue'
 import { defineAsyncComponent, ref } from 'vue'
 import { MOBILE_BREAKPOINT } from '@/composables/useIsMobile'
@@ -11,11 +12,8 @@ const ProfileForm = defineAsyncComponent(
 const NotificationsForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/NotificationsForm.vue'),
 )
-const AppearanceForm = defineAsyncComponent(
-	() => import('@/components/settings/forms/AppearanceForm.vue'),
-)
-const TeamsForm = defineAsyncComponent(
-	() => import('@/components/settings/forms/TeamsForm.vue'),
+const PreferencesForm = defineAsyncComponent(
+	() => import('@/components/settings/forms/PreferencesForm.vue'),
 )
 const TeamForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/TeamForm.vue'),
@@ -26,17 +24,12 @@ const TeamForm = defineAsyncComponent(
 // team's settings. Callers name the tab they want and this decides how to show
 // it — a dialog on desktop, a real page on mobile, where a modal over a 375px
 // screen is just a page with the edges shaved off.
-export type SettingsTab =
-	| 'profile'
-	| 'notifications'
-	| 'appearance'
-	| 'teams'
-	| 'team'
+export type SettingsTab = 'profile' | 'notifications' | 'preferences' | 'team'
 
 export interface SettingsTabDef {
 	value: SettingsTab
 	/** Which section of the sidebar the entry sits in. */
-	group: 'Account' | 'Team'
+	group: 'Account' | 'Administration'
 	/** Sidebar entry and mobile row label. */
 	label: string
 	/** Lucide class for the entry; the profile tab uses your avatar instead. */
@@ -74,29 +67,20 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		requires: 'member',
 	},
 	{
-		value: 'appearance',
+		value: 'preferences',
 		group: 'Account',
-		label: 'Appearance',
-		icon: 'lucide-sun-moon',
-		title: 'Appearance',
-		description: 'How the dashboard looks.',
-		component: AppearanceForm,
-	},
-	{
-		value: 'teams',
-		group: 'Team',
-		label: 'Teams',
-		icon: 'lucide-users',
-		title: 'Your teams',
-		description: 'Switch teams or create one.',
-		component: TeamsForm,
+		label: 'Preferences',
+		icon: 'lucide-settings-2',
+		title: 'Preferences',
+		description: 'Manage your personal preferences.',
+		component: PreferencesForm,
 	},
 	{
 		value: 'team',
-		group: 'Team',
-		label: 'Manage',
-		icon: 'lucide-building-2',
-		title: 'Team settings',
+		group: 'Administration',
+		label: 'Team',
+		icon: 'lucide-users',
+		title: 'Team',
 		description: 'Rename or delete this team.',
 		component: TeamForm,
 		requires: 'teamAdmin',
@@ -133,4 +117,14 @@ export const closeSettings = (): void => {
 	if (router.currentRoute.value.path.startsWith('/settings/')) {
 		router.replace('/settings')
 	}
+}
+
+export const useSettingsShortcut = (): void => {
+	useKeyboardShortcut({
+		combo: 'Mod+Comma',
+		description: 'Open settings',
+		group: 'General',
+		allowInInput: true,
+		handler: () => openSettings(),
+	})
 }

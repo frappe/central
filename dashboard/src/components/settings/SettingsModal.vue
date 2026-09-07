@@ -35,10 +35,10 @@ const tabs = computed(() =>
 	}),
 )
 
-// What's yours and what's the team's are different kinds of setting, so they
-// get their own sections rather than one long list.
+// What's yours and what the team's are different kinds of setting, so they get
+// their own sections rather than one long list.
 const groups = computed(() => {
-	const order: SettingsTabDef['group'][] = ['Account', 'Team']
+	const order: SettingsTabDef['group'][] = ['Account', 'Administration']
 	return order
 		.map((group) => ({
 			label: group,
@@ -47,8 +47,7 @@ const groups = computed(() => {
 		.filter((group) => group.items.length > 0)
 })
 
-// Switching to a team you don't administer drops the Team settings tab. If that
-// was the open one, land somewhere real instead of an empty content pane.
+// Losing a tab you can no longer reach shouldn't leave an empty content pane.
 watch(tabs, (available) => {
 	if (!available.some((tab) => tab.value === settingsTab.value)) {
 		settingsTab.value = available[0]?.value ?? 'profile'
@@ -62,16 +61,15 @@ watch(tabs, (available) => {
 	     binds a prop nothing reads and the dialog never opens. -->
 	<SettingsDialog v-model:open="settingsOpen" v-model:tab="settingsTab">
 		<SettingsSidebar>
-			<SettingsNavGroup v-for="group in groups" :key="group.label">
-				<template #label>
-					<span class="text-p-sm text-ink-gray-5">{{ group.label }}</span>
-				</template>
-
+			<SettingsNavGroup
+				v-for="group in groups"
+				:key="group.label"
+				:label="group.label"
+			>
 				<SettingsNavItem
 					v-for="tab in group.items"
 					:key="tab.value"
 					:value="tab.value"
-					class="!text-p-sm"
 				>
 					<template #prefix>
 						<!-- Your own face on your own tab; everything else takes an icon. -->
@@ -90,25 +88,11 @@ watch(tabs, (available) => {
 
 		<SettingsContent class="bg-surface-base">
 			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
-				<SettingsHeader class="!px-10 !pt-8">
-					<h2 class="text-lg-semibold text-ink-gray-8">{{ tab.title }}</h2>
-					<p
-						v-if="tab.description"
-						class="mt-1 max-w-md text-p-base text-ink-gray-6"
-					>
-						{{ tab.description }}
-					</p>
-				</SettingsHeader>
-				<SettingsBody viewport-class="px-10 pb-8 pt-6">
+				<SettingsHeader :title="tab.title" :description="tab.description" />
+				<SettingsBody>
 					<component :is="tab.component" />
 				</SettingsBody>
 			</SettingsPanel>
 		</SettingsContent>
 	</SettingsDialog>
 </template>
-
-<style scoped>
-:deep(.text-base.leading-5.text-ink-gray-6) {
-	@apply text-p-sm;
-}
-</style>

@@ -6,8 +6,8 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useInvoices } from '@/composables/useInvoices'
 import { useServerMapData } from '@/composables/useServerMapData'
 import { useServers } from '@/composables/useServers'
-import { openSettings } from '@/composables/useSettings'
 import { useTeamMembers } from '@/composables/useTeamMembers'
+import { openTeamSwitcher } from '@/composables/useTeamSwitcher'
 import { billingPeriod } from '@/lib/date'
 import { money } from '@/lib/format'
 
@@ -79,7 +79,7 @@ export function useSearchIndex() {
 		actions.push({
 			name: 'Switch team',
 			icon: 'lucide-repeat',
-			onSelect: () => openSettings('teams'),
+			onSelect: openTeamSwitcher,
 		})
 
 		if (actions.length) groups.Actions = { items: actions }

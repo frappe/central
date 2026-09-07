@@ -49,7 +49,7 @@ watch(
 <template>
 	<div v-if="tab && allowed" class="h-full overflow-y-auto">
 		<div class="mx-auto max-w-2xl px-4 py-5 sm:px-6">
-			<header class="mb-6">
+			<header>
 				<h1 class="text-lg-semibold text-ink-gray-8">{{ tab.title }}</h1>
 				<p
 					v-if="tab.description"

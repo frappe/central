@@ -11,14 +11,14 @@ import {
 } from '@/composables/useSettings'
 
 // Mobile's settings hub: the same tabs the desktop dialog lists in its sidebar,
-// in the same two sections, as rows that push a page. Sign out stays here at the
-// bottom — it ends the session rather than settling into a tab.
+// in the same sections, as rows that push a page. Sign out stays here at the bottom — it ends the
+// session rather than settling into a tab.
 const { activeTeamLabel } = useSession()
 const { isMember, canEditTeam, canDeleteTeam } = useCapabilities()
 const { currentUser, logoutAndRedirect } = useAppMenu()
 
-const groups = computed(() => {
-	const available = SETTINGS_TABS.filter((tab) => {
+const available = computed(() =>
+	SETTINGS_TABS.filter((tab) => {
 		if (tab.requires === 'member') return isMember.value
 		if (tab.requires === 'teamAdmin')
 			return canEditTeam.value || canDeleteTeam.value
@@ -30,16 +30,18 @@ const groups = computed(() => {
 		current:
 			tab.value === 'profile'
 				? currentUser.value
-				: tab.value === 'teams'
+				: tab.value === 'team'
 					? activeTeamLabel.value
 					: '',
-	}))
+	})),
+)
 
-	const order: SettingsTabDef['group'][] = ['Account', 'Team']
+const groups = computed(() => {
+	const order: SettingsTabDef['group'][] = ['Account', 'Administration']
 	return order
 		.map((group) => ({
 			label: group,
-			rows: available.filter((row) => row.tab.group === group),
+			rows: available.value.filter((row) => row.tab.group === group),
 		}))
 		.filter((group) => group.rows.length > 0)
 })

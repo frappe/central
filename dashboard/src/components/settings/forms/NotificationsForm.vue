@@ -114,7 +114,7 @@ async function onSave(): Promise<void> {
 </script>
 
 <template>
-	<div>
+	<div class="mt-6">
 		<!-- Column headers, aligned to the switch cells below: with two switches
 		     per row, naming the channel once beats repeating a label against
 		     every toggle. -->
