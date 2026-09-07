@@ -55,7 +55,7 @@ const options: ThemeOption[] = [
 			<span
 				v-for="(pane, index) in option.panes"
 				:key="pane"
-				class="flex overflow-hidden pl-4 pt-3"
+				class="flex overflow-hidden pl-2 pt-2 sm:pl-4 sm:pt-3"
 				:class="[
 						index === 0
 							? 'bg-surface-gray-1'
@@ -66,7 +66,7 @@ const options: ThemeOption[] = [
 					]"
 			>
 				<span
-					class="grid shrink-0 grid-cols-[28%_1fr] grid-rows-[auto_1fr] overflow-hidden rounded-tl-1 hadow-lg"
+					class="grid shrink-0 grid-cols-[28%_1fr] grid-rows-[auto_1fr] overflow-hidden rounded-tl-1 shadow-lg"
 					:class="[tones[pane].page, tones[pane].border]"
 					:style="{ width: `${option.panes.length * 100}%` }"
 				>
@@ -81,7 +81,6 @@ const options: ThemeOption[] = [
 						</svg>
 					</span>
 
-					<!-- sidebar -->
 					<span
 						class="flex flex-col gap-1 border-r p-1"
 						:class="[tones[pane].sidebar, tones[pane].border]"
@@ -94,12 +93,11 @@ const options: ThemeOption[] = [
 						/>
 					</span>
 
-					<!-- main content -->
 					<span class="grid content-start grid-cols-2 gap-1 p-1">
 						<span
 							v-for="card in 4"
 							:key="card"
-							class="h-4 rounded-1 border"
+							class="h-3 rounded-1 border sm:h-4"
 							:class="[tones[pane].card, tones[pane].border]"
 						/>
 					</span>
@@ -107,11 +105,13 @@ const options: ThemeOption[] = [
 			</span>
 
 			<span
-				class="col-span-full flex items-center justify-between border-t border-outline-gray-2 px-2 py-1.5"
+				class="col-span-full flex items-center justify-between border-t border-outline-gray-2 px-1.5 py-1 sm:px-2 sm:py-1.5"
 			>
-				<span class="text-p-sm text-ink-gray-7">{{ option.label }}</span>
+				<span class="text-p-xs sm:text-p-sm text-ink-gray-7">
+					{{ option.label }}
+				</span>
 				<span
-					class="size-3 rounded-full "
+					class="size-3 rounded-full"
 					:class="
 						colorScheme === option.value
 							? 'border-4 border-outline-gray-7'
