@@ -121,14 +121,17 @@ def verify_cargo_bootstrapping_token(token: str) -> str:
 	return claims["aud"]
 
 
-def mint_cargo_access_tokens() -> dict[str, str]:
+def mint_cargo_access_tokens(instance: str) -> dict[str, str]:
 	"""The two tokens a Cargo host carries, one per upstream.
 
 	Both identify Cargo, and both are verified against Central's public keys -- Central
-	verifies its own signature, Atlas fetches the JWKS."""
+	verifies its own signature, Atlas fetches the JWKS. `instance` is the Cargo Instance
+	the tokens are minted for, and it is what binds a host to its own region."""
+	if not instance:
+		frappe.throw(_("Cargo tokens must name the host they are minted for."), frappe.ValidationError)
 	return {
-		"central_access_token": _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL),
-		"atlas_access_token": _mint("atlas", CARGO_ATLAS_SCOPE, CARGO_TTL),
+		"central_access_token": _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL, {"instance": instance}),
+		"atlas_access_token": _mint("atlas", CARGO_ATLAS_SCOPE, CARGO_TTL, {"instance": instance}),
 	}
 
 
@@ -136,7 +139,8 @@ def verify_cargo_access_token(token: str) -> dict:
 	"""Validate the token Cargo presents to Central.
 
 	The scope check is what stops Cargo's Atlas token -- signed by this same key -- from
-	being replayed here."""
+	being replayed here. `instance` is required, so a token minted before hosts were
+	identified is refused rather than treated as belonging to every region."""
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
@@ -149,7 +153,7 @@ def verify_cargo_access_token(token: str) -> dict:
 			load_pem_public_key(settings.public_key.encode()),
 			algorithms=[ALGORITHM],
 			audience="central",
-			options={"require": ["exp", "aud", "jti", "scope"]},
+			options={"require": ["exp", "aud", "jti", "scope", "instance"]},
 		)
 	except jwt.InvalidTokenError as exc:
 		frappe.throw(_("Invalid Cargo token: {0}").format(exc), frappe.AuthenticationError)

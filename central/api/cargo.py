@@ -16,11 +16,9 @@ def garage_tokens(region: str, vm_ids: list[str] | None = None) -> dict:
 	"""The secrets every node of one region's Garage cluster boots with.
 
 	Idempotent per region: asking twice returns the same values, so a retried provision
-	cannot split a cluster into nodes that fail to recognise each other."""
+	cannot split a cluster into nodes that fail to recognise each other. `region` must be
+	the one the caller's token was minted for."""
 	from central.services.storage import mint_cluster_tokens
-
-	if not region:
-		frappe.throw(_("A region is required to mint a cluster's tokens."), frappe.ValidationError)
 
 	return mint_cluster_tokens(region)
 
@@ -32,8 +30,8 @@ def register_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
 	"""Tell Central a region's cluster is running and where to reach it."""
 	from central.services.storage import activate_cluster
 
-	if not (region and base_url and s3_endpoint):
-		frappe.throw(_("A region, admin endpoint and S3 endpoint are required."), frappe.ValidationError)
+	if not (base_url and s3_endpoint):
+		frappe.throw(_("An admin endpoint and S3 endpoint are required."), frappe.ValidationError)
 
 	return activate_cluster(region, base_url, s3_endpoint)
 
@@ -44,9 +42,6 @@ def register_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
 def report_failure(region: str, step: str, error: str) -> dict:
 	"""Cargo could not bring a region's cluster up. The secrets stay so a retry reuses them."""
 	from central.services.storage import record_cluster_failure
-
-	if not region:
-		frappe.throw(_("A region is required."), frappe.ValidationError)
 
 	return record_cluster_failure(region, step or "unknown", error or "")
 
@@ -62,7 +57,7 @@ def request_control_credentials(base_url: str = "") -> dict:
 	from central.sso import mint_cargo_access_tokens
 
 	instance: CargoInstance = frappe.get_doc("Cargo Instance", frappe.local.cargo_instance)
-	tokens = mint_cargo_access_tokens()
+	tokens = mint_cargo_access_tokens(instance.name)
 	instance.record_enrolment(base_url, tokens)
 
 	return tokens
