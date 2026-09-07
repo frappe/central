@@ -12,6 +12,7 @@
   "region",
   "base_url",
   "s3_endpoint",
+  "web_endpoint",
   "is_active",
   "control_section",
   "control_api_key",
@@ -39,13 +40,20 @@
    "fieldname": "base_url",
    "fieldtype": "Data",
    "label": "Base URL",
-   "reqd": 1
+   "reqd": 0,
+   "description": "Filled in by Cargo once the cluster is running."
   },
   {
    "description": "Object-storage data endpoint handed to benches (Garage :3900). Base URL is the admin API (:3903).",
    "fieldname": "s3_endpoint",
    "fieldtype": "Data",
    "label": "S3 Endpoint"
+  },
+  {
+   "description": "Where buckets are served as static sites (Garage :3902).",
+   "fieldname": "web_endpoint",
+   "fieldtype": "Data",
+   "label": "Web Endpoint"
   },
   {
    "default": "1",

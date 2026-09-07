@@ -274,12 +274,53 @@ class TestStorageProvisioning(IntegrationTestCase):
 		self.assertNotEqual(first["admin_token"], first["rpc_secret"])
 
 	def test_cluster_tokens_are_minted_once_per_region(self):
-		# Nodes 2 and 3 ask after node 1; identical secrets are what lets them cluster.
+		# A retry must return the same secrets; identical values are what lets nodes cluster.
 		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
-		first = storage.mint_cluster_tokens("test-dc", "10.0.0.1")
-		second = storage.mint_cluster_tokens("test-dc", "10.0.0.2")
+		first = storage.mint_cluster_tokens("test-dc")
+		second = storage.mint_cluster_tokens("test-dc")
 
 		self.assertEqual(first, second)
 		backend = frappe.get_doc("Service Backend", {"service": "storage", "region": "test-dc"})
 		self.assertEqual(backend.get_password("control_api_secret"), first["admin_token"])
-		self.assertEqual(backend.base_url, "http://10.0.0.1:3903")
+		# Cargo fills the endpoint in later, once the cluster is actually running.
+		self.assertFalse(backend.base_url)
+
+	def test_reporting_active_records_every_endpoint(self):
+		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
+		storage.mint_cluster_tokens("test-dc")
+		storage.record_cluster_status(
+			"test-dc",
+			True,
+			base_url="http://10.0.0.5:3903",
+			s3_endpoint="http://10.0.0.5:3900",
+			web_endpoint="http://10.0.0.5:3902",
+		)
+
+		backend = frappe.get_doc("Service Backend", {"service": "storage", "region": "test-dc"})
+		self.assertEqual(backend.base_url, "http://10.0.0.5:3903")
+		self.assertEqual(backend.s3_endpoint, "http://10.0.0.5:3900")
+		self.assertEqual(backend.web_endpoint, "http://10.0.0.5:3902")
+		self.assertTrue(backend.is_active)
+
+	def test_reporting_down_deactivates_but_keeps_the_endpoints(self):
+		"""A cluster that is down has no endpoints to send; the stored ones are the last
+		known good, and a retry reuses the secrets beside them."""
+		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
+		secrets = storage.mint_cluster_tokens("test-dc")
+		storage.record_cluster_status(
+			"test-dc",
+			True,
+			base_url="http://10.0.0.5:3903",
+			s3_endpoint="http://10.0.0.5:3900",
+			web_endpoint="http://10.0.0.5:3902",
+		)
+		storage.record_cluster_status("test-dc", False)
+
+		backend = frappe.get_doc("Service Backend", {"service": "storage", "region": "test-dc"})
+		self.assertFalse(backend.is_active)
+		self.assertEqual(backend.s3_endpoint, "http://10.0.0.5:3900")
+		self.assertEqual(backend.get_password("rpc_secret"), secrets["rpc_secret"])
+
+	def test_reporting_a_cluster_that_never_asked_for_secrets_is_refused(self):
+		with self.assertRaises(frappe.ValidationError):
+			storage.record_cluster_status("no-such-dc", False)

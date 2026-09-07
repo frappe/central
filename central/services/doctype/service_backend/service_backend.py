@@ -25,6 +25,7 @@ class ServiceBackend(Document):
 		rpc_secret: DF.Password | None
 		s3_endpoint: DF.Data | None
 		service: DF.Link
+		web_endpoint: DF.Data | None
 	# end: auto-generated types
 
 	_DOCTYPE_NAME = "Service Backend"
@@ -36,8 +37,11 @@ class ServiceBackend(Document):
 		self.region = self.region or ""
 		self._validate_endpoint("base_url")
 		self._validate_endpoint("s3_endpoint")
-		if self.handler_key == "storage" and not self.s3_endpoint:
-			frappe.throw(frappe._("An object-storage backend needs an S3 endpoint to hand out."))
+		self._validate_endpoint("web_endpoint")
+		# Only once it is usable: a row exists from the moment Cargo asks for the cluster's
+		# secrets, which is well before the cluster has an endpoint to hand out.
+		if self.is_active and self.handler_key == "storage" and not self.s3_endpoint:
+			frappe.throw(frappe._("An active object-storage backend needs an S3 endpoint to hand out."))
 
 	def _validate_endpoint(self, fieldname: str) -> None:
 		"""A malformed endpoint surfaces as an opaque requests error on the first call to
