@@ -13,13 +13,13 @@ import {
 	ListView as UntypedListView,
 } from 'frappe-ui/experimental'
 import { type Component, computed, ref, watch } from 'vue'
-
 import EmptyState from '@/components/common/EmptyState.vue'
 import type {
 	RevealedBucket,
 	StorageBucket,
 } from '@/composables/useObjectStorage'
 import { useObjectStorage } from '@/composables/useObjectStorage'
+import { copyToClipboard } from '@/lib/clipboard'
 import { errorToast, successToast } from '@/lib/toast'
 
 const props = defineProps<{ managedService: string; canManage: boolean }>()
@@ -165,8 +165,12 @@ const maskedSecret = computed(() => {
 })
 
 const copy = async (value: string, label: string): Promise<void> => {
-	await navigator.clipboard.writeText(value)
-	successToast(`${label} copied`)
+	if (await copyToClipboard(value)) {
+		successToast(`${label} copied`)
+		return
+	}
+
+	errorToast(`${label} could not be copied. Select it and copy by hand.`)
 }
 </script>
 

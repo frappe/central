@@ -17,6 +17,7 @@ import type {
 	ServiceModel,
 } from '@/composables/useServices'
 import { useServices } from '@/composables/useServices'
+import { copyToClipboard } from '@/lib/clipboard'
 import { errorToast, successToast } from '@/lib/toast'
 
 const props = defineProps<{
@@ -129,8 +130,12 @@ const curlTemplate = computed(
 )
 
 const copy = async (value: string, label: string): Promise<void> => {
-	await navigator.clipboard.writeText(value)
-	successToast(`${label} copied`)
+	if (await copyToClipboard(value)) {
+		successToast(`${label} copied`)
+		return
+	}
+
+	errorToast(`${label} could not be copied. Select it and copy by hand.`)
 }
 
 const copyCurl = (): void => {

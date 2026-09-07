@@ -143,9 +143,16 @@ def get_active_service(service: str) -> AddonService:
 	return add_on
 
 
-def get_backend(service: str) -> ServiceBackend:
-	name = frappe.db.get_value("Service Backend", {"service": service, "is_active": 1}, "name")
+def get_backend(service: str, region: str | None = None) -> ServiceBackend:
+	"""The backend serving a service, in one region when the service is regional."""
+	filters = {"service": service, "is_active": 1}
+	if region:
+		filters["region"] = region
+
+	name = frappe.db.get_value("Service Backend", filters, "name")
 	if not name:
+		if region:
+			frappe.throw(_("{0} is not available in {1}.").format(service, region))
 		frappe.throw(_("No active backend configured for {0}.").format(service))
 
 	return frappe.get_doc("Service Backend", name)
