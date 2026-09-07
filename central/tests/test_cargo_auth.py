@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
+from frappe.exceptions import FrappeTypeError
 from frappe.tests import IntegrationTestCase
 
 from central.api import cargo as cargo_api
@@ -74,28 +75,57 @@ class TestCargoRegionBinding(IntegrationTestCase):
 	def test_another_region_cannot_be_repointed(self):
 		with (
 			_token(self.token),
-			patch("central.services.storage.activate_cluster") as activated,
+			patch("central.services.storage.record_cluster_status") as recorded,
 		):
 			with self.assertRaises(frappe.PermissionError):
 				cargo_api.register_cluster(
 					region=OTHER_REGION,
-					base_url="http://attacker.test",
+					base_url="http://attacker.test:3903",
 					s3_endpoint="http://attacker.test:3900",
+					web_endpoint="http://attacker.test:3902",
 				)
-		activated.assert_not_called()
+		recorded.assert_not_called()
 
 	def test_another_region_cannot_be_deactivated(self):
 		with (
 			_token(self.token),
-			patch("central.services.storage.record_cluster_failure") as recorded,
+			patch("central.services.storage.record_cluster_status") as recorded,
 		):
 			with self.assertRaises(frappe.PermissionError):
-				cargo_api.report_failure(region=OTHER_REGION, step="boot", error="x")
+				cargo_api.register_cluster(region=OTHER_REGION, active=False)
+		recorded.assert_not_called()
+
+	def test_a_running_cluster_must_report_every_endpoint(self):
+		"""is_active gates get_backend, so activating without an endpoint strands the service."""
+		with (
+			_token(self.token),
+			patch("central.services.storage.record_cluster_status") as recorded,
+		):
+			with self.assertRaises(frappe.ValidationError):
+				cargo_api.register_cluster(
+					region=OWN_REGION, base_url="http://node:3903", s3_endpoint="http://node:3900"
+				)
 		recorded.assert_not_called()
 
 	def test_a_missing_region_is_refused(self):
 		with _token(self.token), self.assertRaises(frappe.PermissionError):
 			cargo_api.garage_tokens(region="")
+
+	def test_a_complex_region_cannot_become_an_orm_operator(self):
+		"""`region` lands in a Frappe filter, where a list value reads as [operator, value].
+
+		The `region: str` annotation is what refuses one: @frappe.whitelist runs typing
+		validation outside this module's gate. Dropping the annotation would put the
+		filter back in reach, so this pins it."""
+		for injected in (["like", "%"], {"like": "%"}, ["!=", OWN_REGION], [OWN_REGION, OTHER_REGION]):
+			with self.subTest(region=injected):
+				with (
+					_token(self.token),
+					patch("central.services.storage.mint_cluster_tokens") as minted,
+				):
+					with self.assertRaises(FrappeTypeError):
+						cargo_api.garage_tokens(region=injected)
+				minted.assert_not_called()
 
 	def test_a_token_without_a_host_is_refused(self):
 		"""Tokens minted before hosts were identified must fail closed, not match everything."""

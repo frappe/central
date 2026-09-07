@@ -35,38 +35,27 @@ def mint_cluster_tokens(region: str) -> dict:
 	return cluster_tokens(backend)
 
 
-def activate_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
-	"""Record where a region's cluster runs and let Central start using it.
+def record_cluster_status(
+	region: str, is_active: bool, base_url: str = "", s3_endpoint: str = "", web_endpoint: str = ""
+) -> dict:
+	"""Record where a region's cluster runs, and whether Central may use it.
 
-	Until this lands the backend has secrets but no address, so `get_backend` skips it and
-	no bucket can be created."""
+	Until an active report lands the backend has secrets but no address, so `get_backend`
+	skips it and no bucket can be created. A failing cluster reports itself inactive and
+	keeps the endpoints it last had -- it has none to advertise while it is down."""
 	name = frappe.db.get_value(
 		"Service Backend", {"service": get_active_service(SERVICE).name, "region": region}
 	)
 	if not name:
 		frappe.throw(_(f"No {region} cluster has asked for its secrets yet."))
 
-	backend = frappe.get_doc("Service Backend", name)
-	backend.update({"base_url": base_url, "s3_endpoint": s3_endpoint, "is_active": 1, "last_error": None})
+	backend: ServiceBackend = frappe.get_doc("Service Backend", name)
+	backend.is_active = int(is_active)
+	if is_active:
+		backend.update({"base_url": base_url, "s3_endpoint": s3_endpoint, "web_endpoint": web_endpoint})
 	backend.save(ignore_permissions=True)
 
-	return {"backend": backend.name, "region": region, "is_active": 1}
-
-
-def record_cluster_failure(region: str, step: str, error: str) -> dict:
-	"""Note that a region's cluster failed to come up. Its secrets are kept, so a retry
-	reuses them and the nodes still recognise each other."""
-	name = frappe.db.get_value(
-		"Service Backend", {"service": get_active_service(SERVICE).name, "region": region}
-	)
-	if not name:
-		frappe.throw(_(f"No {region} cluster has asked for its secrets yet."))
-
-	backend = frappe.get_doc("Service Backend", name)
-	backend.update({"last_error": f"{step}: {error}"[:500], "is_active": 0})
-	backend.save(ignore_permissions=True)
-
-	return {"backend": backend.name, "region": region, "is_active": 0}
+	return {"backend": backend.name, "region": region, "is_active": backend.is_active}
 
 
 def cluster_tokens(backend: ServiceBackend) -> dict:

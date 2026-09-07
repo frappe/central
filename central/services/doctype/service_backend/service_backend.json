@@ -12,13 +12,13 @@
   "region",
   "base_url",
   "s3_endpoint",
+  "web_endpoint",
   "is_active",
   "control_section",
   "control_api_key",
   "control_api_secret",
   "metrics_token",
-  "rpc_secret",
-  "last_error"
+  "rpc_secret"
  ],
  "fields": [
   {
@@ -48,6 +48,12 @@
    "fieldname": "s3_endpoint",
    "fieldtype": "Data",
    "label": "S3 Endpoint"
+  },
+  {
+   "description": "Where buckets are served as static sites (Garage :3902).",
+   "fieldname": "web_endpoint",
+   "fieldtype": "Data",
+   "label": "Web Endpoint"
   },
   {
    "default": "1",
@@ -83,14 +89,6 @@
    "fieldname": "rpc_secret",
    "fieldtype": "Password",
    "label": "RPC Secret"
-  },
-  {
-   "depends_on": "last_error",
-   "description": "Why the provisioning service last failed to bring this cluster up.",
-   "fieldname": "last_error",
-   "fieldtype": "Small Text",
-   "label": "Last Error",
-   "read_only": 1
   }
  ],
  "grid_page_length": 50,

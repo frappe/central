@@ -26,24 +26,25 @@ def garage_tokens(region: str, vm_ids: list[str] | None = None) -> dict:
 # nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @verify_cargo_request
-def register_cluster(region: str, base_url: str, s3_endpoint: str) -> dict:
-	"""Tell Central a region's cluster is running and where to reach it."""
-	from central.services.storage import activate_cluster
+def register_cluster(
+	region: str,
+	active: bool = True,
+	base_url: str = "",
+	s3_endpoint: str = "",
+	web_endpoint: str = "",
+) -> dict:
+	"""Tell Central whether a region's cluster is running, and where to reach it.
 
-	if not (base_url and s3_endpoint):
-		frappe.throw(_("An admin endpoint and S3 endpoint are required."), frappe.ValidationError)
+	A cluster reporting itself down sends no endpoints: it has none to offer, and the ones
+	Central holds are the last known good."""
+	from central.services.storage import record_cluster_status
 
-	return activate_cluster(region, base_url, s3_endpoint)
+	if active and not (base_url and s3_endpoint and web_endpoint):
+		frappe.throw(
+			_("A running cluster must report its admin, S3 and web endpoints."), frappe.ValidationError
+		)
 
-
-# nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-@verify_cargo_request
-def report_failure(region: str, step: str, error: str) -> dict:
-	"""Cargo could not bring a region's cluster up. The secrets stay so a retry reuses them."""
-	from central.services.storage import record_cluster_failure
-
-	return record_cluster_failure(region, step or "unknown", error or "")
+	return record_cluster_status(region, active, base_url, s3_endpoint, web_endpoint)
 
 
 # nosemgrep: guest-whitelisted-method -- verify_cargo_bootstrapping_request authenticates the caller below.
