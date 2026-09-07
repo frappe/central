@@ -58,6 +58,10 @@ def request_control_credentials(base_url: str = "") -> dict:
 	from central.sso import mint_cargo_access_tokens
 
 	instance: CargoInstance = frappe.get_doc("Cargo Instance", frappe.local.cargo_instance)
+
+	if instance.status == "Disabled":
+		frappe.throw(_("This host has been disabled and cannot be registered."), frappe.AuthenticationError)
+
 	tokens = mint_cargo_access_tokens(instance.name)
 	instance.record_enrolment(base_url, tokens)
 
