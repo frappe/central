@@ -66,6 +66,11 @@ def _authenticate_bootstrapping_request(service_type: str) -> str:
 
 	# Every service shares the bootstrapping scope, so a valid token proves only that some
 	# host is enrolling. What it is enrolling as is decided here.
+	if service.service_type != service_type:
+		frappe.throw(
+			_("A {0} token cannot enrol as {1}.").format(service.service_type, service_type),
+			frappe.AuthenticationError,
+		)
 
 	# The row is what enrolment acts on, so the claims have to still describe it: a row
 	# rebuilt for another region under the same name would otherwise enrol on this token.

@@ -180,6 +180,21 @@ class TestCargoEnrolment(IntegrationTestCase):
 			self.instance,
 		)
 
+	def test_a_datum_token_cannot_collect_cargo_credentials(self):
+		"""Every service bootstraps under one scope, so only the endpoint's service type
+		stops a Datum host walking away with the region's Garage secrets and Atlas access."""
+		datum = frappe.get_doc(
+			{"doctype": "Internal Service", "region": OWN_REGION, "service_type": "Datum"}
+		).insert(ignore_permissions=True)
+		token = datum.issue_bootstrapping_token()["bootstrapping_token"]
+
+		with _bootstrapping_token(token), self.assertRaises(frappe.AuthenticationError):
+			cargo_api.request_control_credentials(base_url="http://datum.test:8000/")
+
+		datum.reload()
+		self.assertEqual(datum.status, "Draft")
+		self.assertIsNone(datum.base_url)
+
 	def test_replaying_a_spent_token_is_refused(self):
 		with _bootstrapping_token(self.token):
 			cargo_api.request_control_credentials()
