@@ -60,7 +60,7 @@ watch(tabs, (available) => {
 	     (`defineModel('open')`) and declares no `modelValue`, so a bare v-model
 	     binds a prop nothing reads and the dialog never opens. -->
 	<SettingsDialog v-model:open="settingsOpen" v-model:tab="settingsTab">
-		<SettingsSidebar>
+		<SettingsSidebar class="!bg-surface-elevation-1">
 			<SettingsNavGroup
 				v-for="group in groups"
 				:key="group.label"

@@ -6,3 +6,8 @@
 body {
 	@apply bg-surface-base text-ink-gray-9 text-base;
 }
+
+.dialog-content,
+.dialog-content .bg-surface-elevation-1 {
+	@apply bg-surface-base;
+}
