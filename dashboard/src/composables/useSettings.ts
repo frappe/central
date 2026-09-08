@@ -4,8 +4,6 @@ import { defineAsyncComponent, ref } from 'vue'
 import { MOBILE_BREAKPOINT } from '@/composables/useIsMobile'
 import { router } from '@/router'
 
-// Forms load on demand. Async also keeps this module free of an import cycle:
-// TeamForm calls closeSettings from here.
 const ProfileForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/ProfileForm.vue'),
 )
@@ -19,11 +17,6 @@ const TeamForm = defineAsyncComponent(
 	() => import('@/components/settings/forms/TeamForm.vue'),
 )
 
-// One settings surface for everything that used to be its own modal: your
-// profile, your notification delivery, the theme, your teams, and the active
-// team's settings. Callers name the tab they want and this decides how to show
-// it — a dialog on desktop, a real page on mobile, where a modal over a 375px
-// screen is just a page with the edges shaved off.
 export type SettingsTab = 'profile' | 'notifications' | 'preferences' | 'team'
 
 export interface SettingsTabDef {
@@ -81,21 +74,14 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		label: 'Team',
 		icon: 'lucide-users',
 		title: 'Team',
-		description: 'Rename or delete this team.',
+		description: 'Your teams, and settings for the active one.',
 		component: TeamForm,
-		requires: 'teamAdmin',
 	},
 ]
 
 export const settingsOpen = ref(false)
 export const settingsTab = ref<SettingsTab>('profile')
 
-// A one-shot read rather than useIsMobile(): openSettings runs from click
-// handlers outside any component scope, where a media-query listener would have
-// no scope to be torn down with. Same breakpoint, so both agree on what mobile
-// means — the dialog only mounts when useIsMobile says desktop, and routing
-// here on a different threshold would strand the caller on a page with no
-// dialog behind it.
 const onMobile = (): boolean =>
 	window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`).matches
 
@@ -108,10 +94,6 @@ export const openSettings = (tab: SettingsTab = 'profile'): void => {
 	settingsOpen.value = true
 }
 
-// Leave settings, whichever presentation you're in: the dialog closes, and a
-// mobile tab page falls back to the list. Callers that navigate somewhere else
-// themselves (deleting a team lands on Servers) should set `settingsOpen`
-// directly instead, or the two pushes race in the same tick.
 export const closeSettings = (): void => {
 	settingsOpen.value = false
 	if (router.currentRoute.value.path.startsWith('/settings/')) {

@@ -7,16 +7,12 @@ import { useSession } from '@/composables/useSession'
 import { settingsOpen } from '@/composables/useSettings'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 
-// The active team's own settings — rename (team:edit) and the delete row
-// (team:delete). Switching teams is its own dialog (SwitchTeamDialog).
-// Ownership transfer is NOT here: it lives on the member's ⋯ menu in the
-// roster, where the new owner is picked in context.
 const router = useRouter()
 const { activeTeamLabel, activeTeamLogo } = useSession()
 const { saving, rename, deleteTeam } = useTeamSettings()
+
 const { canEditTeam, canDeleteTeam } = useCapabilities()
 
-// Switching teams while this is open re-points the form at the new team.
 const name = ref(activeTeamLabel.value)
 watch(activeTeamLabel, (label) => {
 	name.value = label
@@ -30,11 +26,6 @@ async function onSave(): Promise<void> {
 	await rename(name.value.trim())
 }
 
-// — Logo. The row is here but inert: the upload endpoint is held back for a
-// follow-up PR, so the control shows what's coming without pretending to work.
-
-// — Deleting the team. It sits last, under a rule, and the real friction is
-// the confirm step.
 const confirmDelete = ref(false)
 const deleteOptions = computed(() => ({
 	title: 'Delete team',
@@ -62,14 +53,11 @@ async function onDelete(): Promise<void> {
 <template>
 	<div class="mt-6">
 		<div class="space-y-6">
-			<!-- Logo row, no label — the avatar speaks for itself. The control is
-			     disabled until the upload endpoint lands. -->
 			<div class="flex items-center gap-3">
-				<!-- Square: this is the organisation, not a person. -->
 				<Avatar
 					:image="activeTeamLogo ?? undefined"
 					:label="name.trim() || activeTeamLabel"
-					size="2xl"
+					size="xl"
 					shape="square"
 					class="shrink-0"
 				/>
@@ -88,8 +76,6 @@ async function onDelete(): Promise<void> {
 					:disabled="!canEditTeam"
 					@keydown.enter="onSave"
 				/>
-				<!-- Save only exists once there's something to save — an
-				     always-there disabled button is just furniture. -->
 				<Button
 					v-if="canEditTeam && changed"
 					variant="solid"
@@ -103,7 +89,6 @@ async function onDelete(): Promise<void> {
 			</p>
 		</div>
 
-		<!-- Deleting is rare and destructive: it goes last, past a rule. -->
 		<div v-if="canDeleteTeam" class="mt-8 border-t border-outline-gray-1">
 			<SettingsRow
 				title="Delete team"

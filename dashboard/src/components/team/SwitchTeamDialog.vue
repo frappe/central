@@ -1,40 +1,33 @@
 <script setup lang="ts">
-import { Avatar, Dialog, TextInput } from 'frappe-ui'
+import { Avatar, Badge, Button, Dialog, Dialogs, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
-import { useAuth } from '@/composables/useAuth'
+import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
+import Table from '@/components/common/Table.vue'
 import { useSession } from '@/composables/useSession'
-import type { Team } from '@/types/api'
+import { useTeamSettings } from '@/composables/useTeamSettings'
+import { shortDate } from '@/lib/date'
 import CreateTeamDialog from './CreateTeamDialog.vue'
 
-// The team switcher. Every row carries the same two lines — name, then your
-// standing in it — so the list keeps one rhythm and the check alone says where
-// you are. "Create team" is the last row rather than a button below the list:
-// same shape, so it reads as one more place you could go.
 const open = defineModel<boolean>('open')
 
-const { teams, activeTeam, setActiveTeam } = useSession()
-const { currentUser } = useAuth()
+const { teams, activeTeam } = useSession()
+const { teamColumns, teamRowActions } = useTeamSettings()
 
 const query = ref('')
 watch(open, () => {
 	query.value = ''
 })
 
-// Search earns its space only once the list outgrows a glance.
+watch(activeTeam, () => {
+	open.value = false
+})
+
 const searchable = computed(() => teams.value.length > 6)
 const visible = computed(() => {
 	const q = query.value.trim().toLowerCase()
 	if (!q) return teams.value
 	return teams.value.filter((team) => team.label.toLowerCase().includes(q))
 })
-
-const standing = (team: Team) =>
-	team.owner === currentUser.value ? 'Owner' : 'Member'
-
-const selectTeam = (team: Team) => {
-	setActiveTeam(team.name)
-	open.value = false
-}
 
 const createTeamOpen = ref(false)
 const createTeam = () => {
@@ -44,96 +37,86 @@ const createTeam = () => {
 </script>
 
 <template>
-	<Dialog v-model="open" title="Switch team" size="sm">
-		<div class="space-y-3">
-			<TextInput
-				v-if="searchable"
-				v-model="query"
-				size="md"
-				placeholder="Search teams"
-				autofocus
-			>
-				<template #prefix>
-					<span
-						class="lucide-search size-4 text-ink-gray-5"
-						aria-hidden="true"
-					/>
-				</template>
-			</TextInput>
-
-			<!-- Teams sit tight together; "Create team" gets the outer gap so it reads
-			     as a separate offer rather than one more team you belong to. -->
-			<div class="space-y-3">
-				<!-- Negative margin + matching padding so the scrollbar rides the modal
-				     edge instead of floating inside the content column. The create row
-				     sits outside the scroller so it stays reachable at any length. -->
-				<div
-					class="-mr-4 max-h-80 space-y-1 overflow-y-auto pr-4 sm:-mr-6 sm:pr-6"
-				>
-					<button
-						v-for="team in visible"
-						:key="team.name"
-						type="button"
-						class="flex w-full items-center gap-3 rounded-4 border px-3 py-2.5 text-left transition-colors duration-150 ease-in-out"
-						:class="
-							team.name === activeTeam
-								? 'border-outline-gray-3'
-								: 'border-transparent hover:bg-surface-gray-2'
-						"
-						@click="selectTeam(team)"
-					>
-						<Avatar
-							:image="team.logo ?? undefined"
-							:label="team.label"
-							size="xl"
-							shape="square"
-						/>
-
-						<div class="min-w-0 flex-1">
-							<div class="truncate text-base-medium text-ink-gray-8">
-								{{ team.label }}
-							</div>
-							<div class="text-p-sm text-ink-gray-5">{{ standing(team) }}</div>
-						</div>
-
-						<span
-							v-if="team.name === activeTeam"
-							class="lucide-check size-4 shrink-0 text-ink-gray-7"
-							aria-hidden="true"
-						/>
-					</button>
-
-					<p
-						v-if="!visible.length"
-						class="px-3 py-8 text-center text-p-sm text-ink-gray-5"
-					>
-						No team matches “{{ query.trim() }}”
+	<Dialog v-model="open" size="2xl" :show-close-button="false">
+		<template #title>
+			<div class="flex items-start justify-between gap-3">
+				<div>
+					<h3 class="text-2xl-semibold leading-6 text-ink-gray-8">
+						Switch team
+					</h3>
+					<p class="mt-1 text-p-base text-ink-gray-6">
+						Each team keeps its own servers, members and billing.
 					</p>
 				</div>
-
-				<button
-					type="button"
-					class="flex w-full items-center gap-3 rounded-4 border border-transparent px-3 py-2.5 text-left transition-colors duration-150 ease-in-out hover:bg-surface-gray-2"
+				<Button
+					variant="solid"
+					icon-left="lucide-plus"
+					label="Create"
 					@click="createTeam"
-				>
-					<span
-						class="grid size-8 shrink-0 place-items-center rounded-3 bg-surface-gray-2"
-					>
-						<span
-							class="lucide-plus size-4 text-ink-gray-6"
-							aria-hidden="true"
-						/>
-					</span>
-					<div class="min-w-0 flex-1">
-						<div class="text-base-medium text-ink-gray-8">Create team</div>
-						<div class="text-p-sm text-ink-gray-5">
-							Separate servers, members and billing
-						</div>
-					</div>
-				</button>
+				/>
 			</div>
-		</div>
+		</template>
+
+		<TextInput
+			v-if="searchable"
+			v-model="query"
+			class="mb-4"
+			size="md"
+			placeholder="Search teams"
+			autofocus
+		>
+			<template #prefix>
+				<span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
+			</template>
+		</TextInput>
+
+		<Table :columns="teamColumns" :rows="visible" height="max-h-80">
+			<template #label="{ row }">
+				<span class="flex items-center gap-2.5">
+					<Avatar
+						:image="row.logo ?? undefined"
+						:label="row.label"
+						shape="square"
+					/>
+					<span class="truncate text-base text-ink-gray-8"
+						>{{ row.label }}</span
+					>
+					<Badge
+						v-if="row.name === activeTeam"
+						label="Current"
+						theme="green"
+						variant="subtle"
+					/>
+				</span>
+			</template>
+
+			<template #role="{ row }">
+				<Badge :label="row.role ?? 'Member'" theme="gray" variant="subtle" />
+			</template>
+
+			<template #members="{ row }">
+				<span class="text-p-sm text-ink-gray-6">{{ row.members }}</span>
+			</template>
+
+			<template #created="{ row }">
+				<span class="text-p-sm text-ink-gray-5"
+					>{{ shortDate(row.created) }}</span
+				>
+			</template>
+
+			<template #actions="{ row }">
+				<RowActionsMenu :options="teamRowActions(row)" label="Team actions" />
+			</template>
+		</Table>
+
+		<p
+			v-if="!visible.length"
+			class="px-2 py-8 text-center text-p-sm text-ink-gray-5"
+		>
+			No team matches “{{ query.trim() }}”
+		</p>
 	</Dialog>
 
 	<CreateTeamDialog v-model:open="createTeamOpen" />
+	<Dialogs />
 </template>
