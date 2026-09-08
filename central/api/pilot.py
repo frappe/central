@@ -6,6 +6,7 @@ from collections.abc import Callable
 import frappe
 from frappe import _
 
+from central.central.doctype.cargo_instance.cargo_instance import CargoInstance
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 
 # The pilot→Central surface. The pilot (the on-VM agent, ~/pilot) authenticates with
@@ -32,6 +33,18 @@ def pilot_credential_auth(func: Callable) -> Callable:
 		return func(*args, **kwargs)
 
 	return wrapper
+
+
+def get_telemetry_base_url(credential: PilotCredential) -> str | None:
+	"""Where this pilot's region takes metrics and logs, or None until that region's Cargo
+	enrols. `Asset.cluster` is the Atlas Instance, which is named for its region, so the
+	region needs no lookup of its own."""
+	if not credential.asset:
+		return None
+
+	region = frappe.db.get_value("Asset", credential.asset, "cluster", cache=True)
+
+	return CargoInstance.telemetry_url_for(region) if region else None
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
@@ -72,11 +85,12 @@ def metrics_token() -> dict:
 	carry no resource id."""
 	from central.sso import METRICS_TTL, mint_metrics_token
 
-	credential = frappe.local.pilot_credential
+	credential: PilotCredential = frappe.local.pilot_credential
 	return {
 		"token": mint_metrics_token(credential.audience_id, credential.asset),
 		"expires_in": METRICS_TTL,
 		"resource_id": credential.asset,
+		"endpoint": get_telemetry_base_url(credential),
 	}
 
 
@@ -91,11 +105,12 @@ def log_token() -> dict:
 	401 or when the expiry nears, exactly as it does for metrics."""
 	from central.sso import LOG_TTL, mint_log_token
 
-	credential = frappe.local.pilot_credential
+	credential: PilotCredential = frappe.local.pilot_credential
 	return {
 		"token": mint_log_token(credential.audience_id, credential.asset),
 		"expires_in": LOG_TTL,
 		"resource_id": credential.asset,
+		"endpoint": get_telemetry_base_url(credential),
 	}
 
 

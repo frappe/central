@@ -1,13 +1,13 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "format:CARGO-{region}",
- "creation": "2026-08-31 00:00:00.000000",
+ "creation": "2026-08-31 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "region",
   "base_url",
+  "telemetry_base_url",
   "column_break_head",
   "status",
   "registered_at",
@@ -88,15 +88,23 @@
    "fieldtype": "Password",
    "label": "Atlas Access Token",
    "read_only": 1
+  },
+  {
+   "description": "Cargo will set the telemetry base URL once it's ready",
+   "fieldname": "telemetry_base_url",
+   "fieldtype": "Data",
+   "label": "Telemetry Base URL",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-31 00:00:00.000000",
+ "modified": "2026-09-08 15:29:20.254410",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Cargo Instance",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {

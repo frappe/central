@@ -19,12 +19,28 @@ class CargoInstance(Document):
 		region: DF.Link
 		registered_at: DF.Datetime | None
 		status: DF.Literal["Draft", "Registered", "Disabled"]
+		telemetry_base_url: DF.Data | None
 	# end: auto-generated types
 
 	"""One Cargo host, and the region it provisions for.
 
 	Central never calls a Cargo host. It issues a short-lived bootstrapping token, and the
 	host spends it to collect the two tokens it runs on."""
+
+	@staticmethod
+	def telemetry_url_for(region: str) -> str | None:
+		"""Where a region's pilots ship metrics and logs, or None while that region has no
+		enrolled Cargo. Read by name -- the autoname is `CARGO-{region}` -- so it comes off
+		the request cache rather than the database on every token a pilot asks for."""
+		telemetry_base_url = frappe.db.get_value(
+			"Cargo Instance",
+			{"region": region, "status": "Registered"},
+			"telemetry_base_url",
+			as_dict=True,
+			cache=True,
+		)
+
+		return telemetry_base_url or None
 
 	@frappe.whitelist()
 	def issue_bootstrapping_token(self) -> dict:
