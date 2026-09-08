@@ -4,7 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, today
 
-from central.api.identity import my_invitations
+from central.api.identity import my_invitations, my_teams
 from central.api.teams import (
 	create_custom_role,
 	create_team,
@@ -314,6 +314,15 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(team.owner_user, self.admin)
 		self.assertEqual(team._get_member(self.admin).role, "Owner")
 		self.assertEqual(team._get_member(self.owner).role, "Admin")
+
+	def test_my_teams_carries_role_member_count_and_created(self):
+		frappe.set_user(self.admin)
+		rows = [row for row in my_teams() if row["name"] == self.team.name]
+
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]["role"], "Admin")
+		self.assertEqual(rows[0]["members"], 3)
+		self.assertTrue(rows[0]["created"])
 
 	def test_member_leaves_but_owner_cannot(self):
 		frappe.set_user(self.viewer)

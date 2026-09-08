@@ -4,6 +4,7 @@ from typing import Any
 
 import frappe
 from frappe.query_builder import Order
+from frappe.query_builder.functions import Count
 from frappe.utils import escape_html
 
 from central.iam import (
@@ -40,7 +41,8 @@ def my_capabilities(team: str | None = None) -> list[str]:
 @frappe.whitelist(methods=["GET"])
 def my_teams() -> list[dict[str, Any]]:
 	"""Teams the signed-in user can switch between in the console — the teams they
-	are an active member of, each with a display label + the owner email."""
+	are an active member of, each with a display label, the owner email, the
+	caller's own role, how many people are in it, and when it was created."""
 	user = frappe.session.user
 	if not user or user == "Guest":
 		return []
@@ -52,7 +54,7 @@ def my_teams() -> list[dict[str, Any]]:
 		frappe.qb.from_(member)
 		.join(team)
 		.on(team.name == member.parent)
-		.select(team.name, team.team_name, team.team_logo, team.owner_user)
+		.select(team.name, team.team_name, team.team_logo, team.owner_user, team.creation, member.role)
 		.where(
 			(member.parenttype == "Team")
 			& (member.parentfield == "members")
@@ -63,15 +65,53 @@ def my_teams() -> list[dict[str, Any]]:
 		.orderby(team.team_name)
 	).run(as_dict=True)
 
-	return [
-		{
-			"name": r.name,
-			"label": r.team_name or r.owner_user or r.name,
-			"logo": r.team_logo,
-			"owner": r.owner_user,
-		}
-		for r in rows
-	]
+	# One row per role grant, so a member holding two roles in a team lands here
+	# twice. Fold to one entry per team, keeping the strongest role.
+	teams: dict[str, dict[str, Any]] = {}
+	for r in rows:
+		entry = teams.setdefault(
+			r.name,
+			{
+				"name": r.name,
+				"label": r.team_name or r.owner_user or r.name,
+				"logo": r.team_logo,
+				"owner": r.owner_user,
+				"role": r.role,
+				"members": 0,
+				"created": r.creation,
+			},
+		)
+		if _role_rank(r.role) < _role_rank(entry["role"]):
+			entry["role"] = r.role
+
+	if not teams:
+		return []
+
+	counts = (
+		frappe.qb.from_(member)
+		.select(member.parent, Count(member.user).distinct().as_("members"))
+		.where(
+			(member.parenttype == "Team")
+			& (member.parentfield == "members")
+			& (member.status == "Active")
+			& member.parent.isin(list(teams))
+		)
+		.groupby(member.parent)
+	).run(as_dict=True)
+	for row in counts:
+		teams[row.parent]["members"] = row.members
+
+	return list(teams.values())
+
+
+# Owner outranks Admin, and any named role outranks none.
+_ROLE_ORDER = ["Owner", "Admin"]
+
+
+def _role_rank(role: str | None) -> int:
+	if role in _ROLE_ORDER:
+		return _ROLE_ORDER.index(role)
+	return len(_ROLE_ORDER)
 
 
 @frappe.whitelist(methods=["GET"])
