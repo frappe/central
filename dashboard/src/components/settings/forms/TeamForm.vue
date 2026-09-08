@@ -53,19 +53,33 @@ async function onDelete(): Promise<void> {
 <template>
 	<div class="mt-6">
 		<div class="space-y-6">
-			<div class="flex items-center gap-3">
-				<Avatar
-					:image="activeTeamLogo ?? undefined"
-					:label="name.trim() || activeTeamLabel"
-					size="xl"
-					shape="square"
-					class="shrink-0"
-				/>
-				<Button
-					v-if="canEditTeam"
-					:label="activeTeamLogo ? 'Change logo' : 'Upload logo'"
-					disabled
-				/>
+			<div v-if="canEditTeam">
+				<p class="block text-base text-ink-gray-5">Logo</p>
+				<div class="mt-1.5 flex items-center gap-3">
+					<Avatar
+						:image="activeTeamLogo ?? undefined"
+						:label="name.trim() || activeTeamLabel"
+						size="3xl"
+						shape="square"
+						class="size-12 shrink-0"
+					/>
+					<div class="flex flex-col items-start gap-1">
+						<Button
+							size="xs"
+							variant="subtle"
+							icon-left="lucide-upload"
+							:label="activeTeamLogo ? 'Change' : 'Upload'"
+						/>
+						<Button
+							v-if="activeTeamLogo"
+							size="xs"
+							variant="ghost"
+							theme="red"
+							icon-left="lucide-trash-2"
+							label="Delete"
+						/>
+					</div>
+				</div>
 			</div>
 
 			<div class="flex items-end gap-2">
@@ -92,7 +106,7 @@ async function onDelete(): Promise<void> {
 		<div v-if="canDeleteTeam" class="mt-8 border-t border-outline-gray-1">
 			<SettingsRow
 				title="Delete team"
-				description="Permanently removes the team and everyone's access. Servers and sites must be removed first."
+				description="Permanently delete this team. Remove its servers and sites first."
 			>
 				<Button
 					theme="red"

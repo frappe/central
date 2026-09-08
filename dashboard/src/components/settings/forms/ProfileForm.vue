@@ -102,19 +102,32 @@ function resetPassword(): void {
 
 <template>
 	<div class="mt-6 space-y-6">
-		<!-- Photo row, no label — the avatar speaks for itself. The control is
-		     disabled until the upload endpoint lands. -->
-		<div class="flex items-center gap-3">
-			<Avatar
-				:image="profile?.user_image ?? undefined"
-				:label="name.trim() || profile?.full_name || profile?.user || ''"
-				size="2xl"
-				class="shrink-0"
-			/>
-			<Button
-				:label="profile?.user_image ? 'Change photo' : 'Upload photo'"
-				disabled
-			/>
+		<div>
+			<p class="block text-base text-ink-gray-5">Photo</p>
+			<div class="mt-1.5 flex items-center gap-3">
+				<Avatar
+					:image="profile?.user_image ?? undefined"
+					:label="name.trim() || profile?.full_name || profile?.user || ''"
+					size="3xl"
+					class="size-12 shrink-0"
+				/>
+				<div class="flex flex-col items-start gap-1">
+					<Button
+						size="xs"
+						variant="subtle"
+						icon-left="lucide-upload"
+						:label="profile?.user_image ? 'Change' : 'Upload'"
+					/>
+					<Button
+						v-if="profile?.user_image"
+						size="xs"
+						variant="ghost"
+						theme="red"
+						icon-left="lucide-trash-2"
+						label="Delete"
+					/>
+				</div>
+			</div>
 		</div>
 
 		<div class="flex items-end gap-2">
