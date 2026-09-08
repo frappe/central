@@ -91,16 +91,7 @@ class TestPilotAPI(IntegrationTestCase):
 		"""The pilot is told where to ship without being told which region it is in:
 		the Asset's cluster is the region, and the region's Cargo owns the URL."""
 		region = f"tel-{frappe.generate_hash(length=6)}"
-		name = self.enrolled_cargo(region, "https://datum.example.test")
-		print(
-			"RAW:",
-			repr(
-				frappe.db.get_value(
-					"Cargo Instance", name, ["telemetry_base_url", "status"], as_dict=True, cache=True
-				)
-			),
-		)
-		print("CACHE:", repr(dict(frappe.db.value_cache.get("Cargo Instance", {}))))
+		self.enrolled_cargo(region, "https://datum.example.test")
 
 		self.assertEqual(self.call_metrics_token(self.token)["endpoint"], "https://datum.example.test")
 		self.assertEqual(self.call_log_token(self.token)["endpoint"], "https://datum.example.test")
@@ -111,7 +102,6 @@ class TestPilotAPI(IntegrationTestCase):
 		region = f"tel-{frappe.generate_hash(length=6)}"
 		name = self.enrolled_cargo(region, "https://datum.example.test")
 		frappe.db.set_value("Cargo Instance", name, "status", "Disabled")
-		frappe.db.value_cache.clear()
 
 		result = self.call_metrics_token(self.token)
 		self.assertIsNone(result["endpoint"])
