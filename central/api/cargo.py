@@ -3,7 +3,7 @@ import typing
 import frappe
 from frappe import _
 
-from central.integrations.cargo import verify_cargo_bootstrapping_request, verify_cargo_request
+from central.integrations.cargo import verify_cargo_request, verify_service_bootstrapping_request
 
 if typing.TYPE_CHECKING:
 	from central.central.doctype.internal_service.internal_service import InternalService
@@ -47,9 +47,9 @@ def register_cluster(
 	return record_cluster_status(region, active, base_url, s3_endpoint, web_endpoint)
 
 
-# nosemgrep: guest-whitelisted-method -- verify_cargo_bootstrapping_request authenticates the caller below.
+# nosemgrep: guest-whitelisted-method -- verify_service_bootstrapping_request authenticates the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@verify_cargo_bootstrapping_request
+@verify_service_bootstrapping_request("Cargo")
 def request_control_credentials(base_url: str = "") -> dict:
 	"""A newly installed Cargo host trades its bootstrapping token for the two it runs on.
 

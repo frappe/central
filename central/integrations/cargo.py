@@ -27,21 +27,30 @@ def verify_cargo_request(func: Callable) -> Callable:
 	return wrapper
 
 
-def verify_cargo_bootstrapping_request(func: Callable) -> Callable:
-	"""Authenticates a host enrolling for the first time, stashing the Internal Service it
-	named on frappe.local. functools.wraps is required -- Frappe maps request args off the
-	wrapped signature."""
+def verify_service_bootstrapping_request(service_type: str) -> Callable:
+	"""Authenticates a host of one service enrolling for the first time, stashing the Internal
+	Service it named on frappe.local.
 
-	@functools.wraps(func)
-	def wrapper(*args, **kwargs):
-		frappe.local.cargo_instance = _authenticate_bootstrapping_request()
-		return func(*args, **kwargs)
+	Every service bootstraps under the same scope, so the scope cannot say which service is
+	calling: `service_type` is what authorizes the endpoint. It is an argument rather than a
+	check inside each handler because a handler that forgets to make it hands its own
+	credentials to any enrolling host. functools.wraps is required -- Frappe maps request args
+	off the wrapped signature."""
 
-	return wrapper
+	def decorator(func: Callable) -> Callable:
+		@functools.wraps(func)
+		def wrapper(*args, **kwargs):
+			frappe.local.cargo_instance = _authenticate_bootstrapping_request(service_type)
+			return func(*args, **kwargs)
+
+		return wrapper
+
+	return decorator
 
 
-def _authenticate_bootstrapping_request() -> str:
-	"""The Internal Service the presented token was minted for.
+def _authenticate_bootstrapping_request(service_type: str) -> str:
+	"""The Internal Service the presented token was minted for, refused unless it is one this
+	endpoint enrols.
 
 	Spent tokens are refused: a host enrols once per token, so a leaked one cannot be
 	replayed to collect a second set of credentials. The row is locked for the rest of the
@@ -50,10 +59,13 @@ def _authenticate_bootstrapping_request() -> str:
 
 	token = (frappe.get_request_header(BOOTSTRAP_HEADER) or "").strip()
 	if not token:
-		frappe.throw(_("A Cargo bootstrapping token is required."), frappe.AuthenticationError)
+		frappe.throw(_("A bootstrapping token is required."), frappe.AuthenticationError)
 
 	grant = verify_service_bootstrapping_token(token)
 	service = _lock_awaiting_enrolment(grant.name)
+
+	# Every service shares the bootstrapping scope, so a valid token proves only that some
+	# host is enrolling. What it is enrolling as is decided here.
 
 	# The row is what enrolment acts on, so the claims have to still describe it: a row
 	# rebuilt for another region under the same name would otherwise enrol on this token.
