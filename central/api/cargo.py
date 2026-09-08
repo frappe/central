@@ -26,7 +26,7 @@ def garage_tokens(region: str, vm_ids: list[str] | None = None) -> dict:
 # nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @verify_cargo_request
-def register_cluster(
+def register_storage_cluster(
 	region: str,
 	active: bool = True,
 	base_url: str = "",

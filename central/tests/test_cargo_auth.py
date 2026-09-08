@@ -85,7 +85,7 @@ class TestCargoRegionBinding(IntegrationTestCase):
 			patch("central.services.storage.record_cluster_status") as recorded,
 		):
 			with self.assertRaises(frappe.PermissionError):
-				cargo_api.register_cluster(
+				cargo_api.register_storage_cluster(
 					region=OTHER_REGION,
 					base_url="http://attacker.test:3903",
 					s3_endpoint="http://attacker.test:3900",
@@ -99,7 +99,7 @@ class TestCargoRegionBinding(IntegrationTestCase):
 			patch("central.services.storage.record_cluster_status") as recorded,
 		):
 			with self.assertRaises(frappe.PermissionError):
-				cargo_api.register_cluster(region=OTHER_REGION, active=False)
+				cargo_api.register_storage_cluster(region=OTHER_REGION, active=False)
 		recorded.assert_not_called()
 
 	def test_a_running_cluster_must_report_every_endpoint(self):
@@ -109,7 +109,7 @@ class TestCargoRegionBinding(IntegrationTestCase):
 			patch("central.services.storage.record_cluster_status") as recorded,
 		):
 			with self.assertRaises(frappe.ValidationError):
-				cargo_api.register_cluster(
+				cargo_api.register_storage_cluster(
 					region=OWN_REGION, base_url="http://node:3903", s3_endpoint="http://node:3900"
 				)
 		recorded.assert_not_called()
