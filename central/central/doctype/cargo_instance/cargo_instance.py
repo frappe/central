@@ -2,6 +2,10 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+# Both URLs are handed onward -- one to pilots to post telemetry at, one to Central's own
+# callers. Without a scheme allowlist `validate_url` passes `javascript:` and `data:`.
+VALID_SCHEMES = ("http", "https")
+
 
 class CargoInstance(Document):
 	# begin: auto-generated types
@@ -26,6 +30,24 @@ class CargoInstance(Document):
 
 	Central never calls a Cargo host. It issues a short-lived bootstrapping token, and the
 	host spends it to collect the two tokens it runs on."""
+
+	def validate(self) -> None:
+		self.validate_base_url()
+		self.validate_telemetry_url()
+
+	def validate_telemetry_url(self) -> None:
+		"""If a telemetry URL is given, it must be a valid URL. If not given, it is cleared."""
+		self.telemetry_base_url = (self.telemetry_base_url or "").strip().rstrip("/") or None
+		if self.telemetry_base_url and not frappe.utils.validate_url(
+			self.telemetry_base_url, valid_schemes=VALID_SCHEMES
+		):
+			frappe.throw(_("Telemetry URL must be a valid URL."), frappe.ValidationError)
+
+	def validate_base_url(self) -> None:
+		"""If a base URL is given, it must be a valid URL. If not given, it is cleared."""
+		self.base_url = (self.base_url or "").strip().rstrip("/") or None
+		if self.base_url and not frappe.utils.validate_url(self.base_url, valid_schemes=VALID_SCHEMES):
+			frappe.throw(_("Base URL must be a valid URL."), frappe.ValidationError)
 
 	@staticmethod
 	def telemetry_url_for(region: str) -> str | None:
