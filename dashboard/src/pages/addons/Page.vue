@@ -163,14 +163,11 @@ const cards = computed(() =>
 					</div>
 					<Badge
 						v-if="service.comingSoon"
-						theme="gray"
-						variant="subtle"
 						label="Coming soon"
 					/>
 					<Badge
 						v-else
 						:theme="service.on ? 'green' : 'gray'"
-						variant="subtle"
 						:label="service.on ? 'On' : 'Off'"
 					/>
 				</div>

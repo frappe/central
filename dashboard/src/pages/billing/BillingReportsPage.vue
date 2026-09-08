@@ -155,7 +155,6 @@ function exportUrl(report: string): string {
 				>
 					<template #action>
 						<Button
-							variant="subtle"
 							label="Go to billing overview"
 							@click="router.push({ name: 'Billing' })"
 						/>
@@ -169,7 +168,7 @@ function exportUrl(report: string): string {
 					description="Something went wrong on our side."
 				>
 					<template #action>
-						<Button variant="subtle" label="Retry" @click="history.reload()" />
+						<Button label="Retry" @click="history.reload()" />
 					</template>
 				</EmptyState>
 

@@ -238,7 +238,6 @@ watch(open, (isOpen) => {
 					<Button
 						class="ml-auto"
 						variant="ghost"
-						size="sm"
 						label="Change"
 						@click="fixed = false"
 					/>

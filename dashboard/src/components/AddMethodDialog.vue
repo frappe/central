@@ -310,7 +310,6 @@ watch(open, (isOpen) => {
 				>
 					<FormControl
 						v-model="phone"
-						type="text"
 						label="Phone number"
 						placeholder="Mobile number"
 						description="A recurring card on this rail needs a contact number. Saved to your billing profile."
@@ -330,7 +329,7 @@ watch(open, (isOpen) => {
 
 			<div v-else class="space-y-3">
 				<p class="text-p-sm text-ink-gray-5">Couldn't load payment options.</p>
-				<Button variant="subtle" label="Retry" @click="options.reload()" />
+				<Button label="Retry" @click="options.reload()" />
 			</div>
 		</template>
 
@@ -353,7 +352,6 @@ watch(open, (isOpen) => {
 			<div v-else class="flex items-center gap-2">
 				<Button
 					v-if="options.data?.note"
-					variant="subtle"
 					label="Add credit"
 					@click="goToTopup"
 				/>

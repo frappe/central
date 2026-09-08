@@ -60,7 +60,6 @@ function destinationLabel(row: RefundRow): string {
 					<span class="flex justify-end">
 						<Badge
 							:theme="(STATUS_THEME[row.status] as any) || 'gray'"
-							variant="subtle"
 							:label="row.status"
 						/>
 					</span>
@@ -82,7 +81,6 @@ function destinationLabel(row: RefundRow): string {
 			<li v-if="rows.length > shown" class="py-3">
 				<Button
 					variant="ghost"
-					size="sm"
 					class="-ml-2"
 					:label="`Show all ${rows.length}`"
 					@click="shown = rows.length"

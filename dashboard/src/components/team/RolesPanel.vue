@@ -111,7 +111,6 @@ const { selectedKey, selected, select, clear } = useTeamRowSelection(
 		<template #toolbar>
 			<Button
 				v-if="canManageMembers"
-				variant="subtle"
 				label="New role"
 				icon-left="lucide-plus"
 				@click="newRoleDialog = true"

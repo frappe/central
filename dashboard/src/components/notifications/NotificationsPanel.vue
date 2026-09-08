@@ -101,7 +101,6 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 		v-model:open="open"
 		bare
 		:side="isMobile ? 'top' : 'right'"
-		align="start"
 		:offset="isMobile ? 0 : 9"
 		:collision-padding="0"
 	>

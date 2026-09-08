@@ -132,7 +132,6 @@ const activateService = async (): Promise<void> => {
 							<Badge
 								:label="instance?.status ?? 'Active'"
 								:theme="instance?.status === 'Active' ? 'green' : 'amber'"
-								variant="subtle"
 							/>
 						</div>
 

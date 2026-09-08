@@ -134,7 +134,6 @@ function subtitle(p: Project): string {
 			<Button
 				v-if="hidden"
 				variant="ghost"
-				size="sm"
 				class="-ml-2 mt-2"
 				:label="`View all ${rows.length}`"
 				@click="$emit('open')"
@@ -154,7 +153,6 @@ function subtitle(p: Project): string {
 			<template v-if="canManageBilling" #action>
 				<Button
 					variant="solid"
-					theme="gray"
 					label="Create project"
 					@click="showCreate = true"
 				>

@@ -92,7 +92,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 </script>
 
 <template>
-	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''" size="lg">
+	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''">
 		<template #default>
 			<div class="space-y-4">
 				<div v-if="members.length" class="divide-y divide-outline-gray-1">
@@ -136,7 +136,6 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 					</p>
 					<Button
 						v-if="candidates.length"
-						variant="subtle"
 						label="Add"
 						:disabled="!toAdd"
 						@click="addMember"

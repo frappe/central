@@ -57,7 +57,6 @@ const memberCountText = computed(() => {
 					<Button
 						v-if="canEditTeam || canDeleteTeam"
 						class="ml-auto my-auto"
-						variant="subtle"
 						icon="lucide-pencil"
 						label="Edit team"
 						@click="openSettings('team')"

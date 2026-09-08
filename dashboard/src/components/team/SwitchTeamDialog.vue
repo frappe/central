@@ -85,13 +85,12 @@ const createTeam = () => {
 						v-if="row.name === activeTeam"
 						label="Current"
 						theme="green"
-						variant="subtle"
 					/>
 				</span>
 			</template>
 
 			<template #role="{ row }">
-				<Badge :label="row.role ?? 'Member'" theme="gray" variant="subtle" />
+				<Badge :label="row.role ?? 'Member'" />
 			</template>
 
 			<template #members="{ row }">

@@ -254,9 +254,7 @@ function indexOf(ladder: number[], value: number): number {
 				<div class="min-w-0 flex-1">
 					<Slider
 						v-model="vcpuModel"
-						:min="0"
 						:max="Math.max(0, maxVcpuIndex)"
-						:step="1"
 					/>
 				</div>
 				<LadderSelect
@@ -279,9 +277,7 @@ function indexOf(ladder: number[], value: number): number {
 				<div class="min-w-0 flex-1">
 					<Slider
 						v-model="diskModel"
-						:min="0"
 						:max="Math.max(0, maxDiskIndex)"
-						:step="1"
 					/>
 				</div>
 				<button

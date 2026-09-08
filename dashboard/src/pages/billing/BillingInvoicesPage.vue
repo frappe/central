@@ -203,7 +203,6 @@ const eventDetail = (ev: {
 					</span>
 					<Badge
 						:theme="invoiceTheme(shown.status)"
-						variant="subtle"
 						:label="shown.status"
 					/>
 				</div>

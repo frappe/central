@@ -149,8 +149,6 @@ function onAddCredit(): void {
 				class="mt-auto flex items-center justify-end gap-2 pt-4"
 			>
 				<Button
-					variant="subtle"
-					size="sm"
 					label="Add credit"
 					@click="onAddCredit"
 				>

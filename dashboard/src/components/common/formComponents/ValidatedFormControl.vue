@@ -51,7 +51,6 @@ defineExpose({ dirty, valid, validate })
 		:type="type"
 		:error="error"
 		size="md"
-		variant="subtle"
 		v-bind="attrs"
 		:class="attrs.class"
 		@update:model-value="emit('update:modelValue', String($event ?? ''))"

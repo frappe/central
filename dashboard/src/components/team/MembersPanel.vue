@@ -226,7 +226,6 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 				<Avatar
 					:image="row.member?.user_image ?? undefined"
 					:label="row.name"
-					size="md"
 					:class="row.invite ? 'opacity-60' : ''"
 				/>
 				<div class="min-w-0">

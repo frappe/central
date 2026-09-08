@@ -269,7 +269,6 @@ function onAdd(): void {
 								/>
 								<Badge
 									v-else-if="pm.status !== 'Active'"
-									theme="gray"
 									:label="pm.status"
 								/>
 							</div>

@@ -126,7 +126,6 @@ const isFormDisabled = computed(
 					Continue
 				</Button>
 				<Button
-					type="button"
 					variant="outline"
 					size="md"
 					class="w-full"
@@ -166,9 +165,7 @@ const isFormDisabled = computed(
 					>
 						<template #suffix>
 							<Button
-								type="button"
 								variant="ghost"
-								size="sm"
 								:label="showPassword ? 'Hide password' : 'Show password'"
 								:icon="showPassword ? 'lucide-eye-off' : 'lucide-eye'"
 								@click="showPassword = !showPassword"

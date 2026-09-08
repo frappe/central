@@ -177,7 +177,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 
 			<Button
 				v-if="canManage"
-				variant="subtle"
 				icon-left="lucide-plus"
 				label="Create bucket"
 				@click="openCreate"
@@ -211,7 +210,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 		>
 			<template v-if="canManage" #action>
 				<Button
-					variant="subtle"
 					icon-left="lucide-plus"
 					label="Create bucket"
 					@click="openCreate"
@@ -260,7 +258,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 				<Badge
 					v-else-if="column.key === 'status'"
 					:theme="row.status === 'Active' ? 'green' : 'gray'"
-					variant="subtle"
 					:label="row.status"
 				/>
 
@@ -273,7 +270,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 						<template #trigger>
 							<Button
 								variant="ghost"
-								size="sm"
 								icon="lucide-ellipsis-vertical"
 								label="Bucket actions"
 								tooltip="Bucket actions"
@@ -310,7 +306,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 	>
 		<FormControl
 			v-model="newName"
-			type="text"
 			label="Name"
 			placeholder="e.g. acme-backups"
 			description="3-63 characters: lowercase letters, digits, dots and hyphens. Names are shared across all customers, so a taken one is refused."
@@ -362,7 +357,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 				</p>
 
 				<FormControl
-					type="text"
 					label="Endpoint URL"
 					:model-value="details.endpoint_url"
 					readonly
@@ -370,7 +364,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 					<template #suffix>
 						<Button
 							variant="ghost"
-							size="sm"
 							icon="lucide-copy"
 							label="Copy endpoint URL"
 							tooltip="Copy"
@@ -380,7 +373,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 				</FormControl>
 
 				<FormControl
-					type="text"
 					label="Bucket"
 					:model-value="details.bucket"
 					readonly
@@ -388,7 +380,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 					<template #suffix>
 						<Button
 							variant="ghost"
-							size="sm"
 							icon="lucide-copy"
 							label="Copy bucket name"
 							tooltip="Copy"
@@ -398,7 +389,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 				</FormControl>
 
 				<FormControl
-					type="text"
 					label="Access key"
 					:model-value="details.access_key_id"
 					readonly
@@ -406,7 +396,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 					<template #suffix>
 						<Button
 							variant="ghost"
-							size="sm"
 							icon="lucide-copy"
 							label="Copy access key"
 							tooltip="Copy"
@@ -416,7 +405,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 				</FormControl>
 
 				<FormControl
-					type="text"
 					label="Secret key"
 					:model-value="maskedSecret"
 					readonly
@@ -426,7 +414,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 						<div class="flex items-center">
 							<Button
 								variant="ghost"
-								size="sm"
 								:icon="secretRevealed ? 'lucide-eye-off' : 'lucide-eye'"
 								:label="secretRevealed ? 'Hide secret' : 'Reveal secret'"
 								:tooltip="secretRevealed ? 'Hide' : 'Reveal'"
@@ -434,7 +421,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 							/>
 							<Button
 								variant="ghost"
-								size="sm"
 								icon="lucide-copy"
 								label="Copy secret key"
 								tooltip="Copy"

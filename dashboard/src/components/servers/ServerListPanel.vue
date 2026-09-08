@@ -79,7 +79,6 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 			<div class="shrink-0 px-4 pb-3">
 				<FormControl
 					v-model="query"
-					type="text"
 					placeholder="Search"
 					autocomplete="off"
 					class="[&_input]:w-full"
@@ -136,7 +135,6 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 									v-if="row.visual.key !== 'active'"
 									:label="row.visual.label"
 									:theme="row.visual.badgeTheme"
-									variant="subtle"
 									size="sm"
 								/>
 							</span>

@@ -77,7 +77,6 @@ const hidden = computed(() =>
 							<span role="cell" class="flex justify-end">
 								<Badge
 									:theme="invoiceTheme(row.status)"
-									variant="subtle"
 									:label="row.status"
 								/>
 							</span>
@@ -105,7 +104,6 @@ const hidden = computed(() =>
 					<Button
 						v-if="statement && hidden"
 						variant="ghost"
-						size="sm"
 						:label="`View all ${statement.rows.length}`"
 						@click="$emit('open')"
 					>

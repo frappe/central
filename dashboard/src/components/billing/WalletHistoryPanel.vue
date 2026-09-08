@@ -108,7 +108,6 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 		<template v-if="canManageBilling" #footer>
 			<Button
 				variant="solid"
-				theme="gray"
 				label="Add credit"
 				class="w-full"
 				@click="onAddCredit"

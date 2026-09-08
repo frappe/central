@@ -86,7 +86,7 @@ const isIndia = computed(() => country.value === 'India')
 				<dd v-if="gstin" class="text-right font-mono text-ink-gray-8">
 					{{ gstin }}
 				</dd>
-				<Badge v-else theme="gray" label="Not set" />
+				<Badge v-else label="Not set" />
 			</div>
 		</dl>
 	</BillingCard>

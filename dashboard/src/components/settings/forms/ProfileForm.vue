@@ -114,7 +114,6 @@ function resetPassword(): void {
 				<div class="flex flex-col items-start gap-1">
 					<Button
 						size="xs"
-						variant="subtle"
 						icon-left="lucide-upload"
 						:label="profile?.user_image ? 'Change' : 'Upload'"
 					/>
