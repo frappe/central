@@ -61,11 +61,11 @@ watch(tabs, (available) => {
 	     binds a prop nothing reads and the dialog never opens. -->
 	<SettingsDialog v-model:open="settingsOpen" v-model:tab="settingsTab">
 		<SettingsSidebar class="dark:bg-surface-elevation-1">
-			<SettingsNavGroup
-				v-for="group in groups"
-				:key="group.label"
-				:label="group.label"
-			>
+			<SettingsNavGroup v-for="group in groups" :key="group.label">
+				<template #label>
+					<span class="text-sm-medium text-ink-gray-5">{{ group.label }}</span>
+				</template>
+
 				<SettingsNavItem
 					v-for="tab in group.items"
 					:key="tab.value"
@@ -88,11 +88,30 @@ watch(tabs, (available) => {
 
 		<SettingsContent class="bg-surface-base">
 			<SettingsPanel v-for="tab in tabs" :key="tab.value" :value="tab.value">
-				<SettingsHeader :title="tab.title" :description="tab.description" />
-				<SettingsBody>
+				<SettingsHeader
+					class="!px-10 !pt-9"
+					:title="tab.title"
+					:description="tab.description"
+				/>
+				<SettingsBody viewport-class="px-10 pb-16">
 					<component :is="tab.component" />
 				</SettingsBody>
 			</SettingsPanel>
 		</SettingsContent>
 	</SettingsDialog>
 </template>
+
+<!-- NOTE: revert if this merges https://github.com/frappe/frappe-ui/pull/1126 -->
+<style scoped>
+:deep(.text-lg.font-semibold) {
+	@apply text-lg-semibold;
+}
+
+:deep(.text-base.text-ink-gray-6) {
+	@apply text-p-base;
+}
+
+:deep([data-state="active"]) {
+	@apply text-ink-gray-8;
+}
+</style>
