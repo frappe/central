@@ -26,7 +26,7 @@ def garage_tokens(region: str, vm_ids: list[str] | None = None) -> dict:
 # nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @verify_cargo_request
-def register_cluster(
+def register_storage_cluster(
 	region: str,
 	active: bool = True,
 	base_url: str = "",
@@ -45,6 +45,21 @@ def register_cluster(
 		)
 
 	return record_cluster_status(region, active, base_url, s3_endpoint, web_endpoint)
+
+
+# nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@verify_cargo_request
+def register_telemetry_service(region: str, telemetry_base_url: str = "") -> dict:
+	"""Tell Central where a region's telemetry service is, so pilots can ship metrics/logs.
+
+	`region` must be the one the caller's token was minted for. The row is the caller's own,
+	named by its token rather than rebuilt from the region it passed."""
+	instance: CargoInstance = frappe.get_doc("Cargo Instance", frappe.local.cargo_request.instance)
+	instance.telemetry_base_url = telemetry_base_url
+	instance.save(ignore_permissions=True)
+
+	return {"region": region, "telemetry_base_url": instance.telemetry_base_url}
 
 
 # nosemgrep: guest-whitelisted-method -- verify_cargo_bootstrapping_request authenticates the caller below.

@@ -10,6 +10,7 @@ from central.api.pilot import heartbeat, log_token, metrics_token
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import LOG_SCOPE, METRICS_SCOPE
 from central.tests.test_iam import ensure_user
+from central.tests.utils import ensure_atlas_instance
 
 
 class TestPilotAPI(IntegrationTestCase):
@@ -60,6 +61,61 @@ class TestPilotAPI(IntegrationTestCase):
 		bench.db_set("expires_at", add_to_date(now_datetime(), hours=-1))
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call_heartbeat(self.token)
+
+	def enrolled_cargo(self, region: str, telemetry_base_url: str) -> str:
+		"""A region whose Cargo has enrolled and reported where telemetry goes, with an
+		Asset in it bound to this pilot."""
+		ensure_atlas_instance(region)
+		frappe.get_doc(
+			{
+				"doctype": "Cargo Instance",
+				"region": region,
+				"status": "Registered",
+				"telemetry_base_url": telemetry_base_url,
+			}
+		).insert(ignore_permissions=True)
+		asset = frappe.get_doc(
+			{
+				"doctype": "Asset",
+				"resource_id": f"vm-{region}",
+				"team": self.team,
+				"cluster": region,
+				"status": "Running",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", asset.name)
+
+		return f"CARGO-{region}"
+
+	def test_token_names_the_regional_telemetry_endpoint(self):
+		"""The pilot is told where to ship without being told which region it is in:
+		the Asset's cluster is the region, and the region's Cargo owns the URL."""
+		region = f"tel-{frappe.generate_hash(length=6)}"
+		self.enrolled_cargo(region, "https://datum.example.test")
+
+		self.assertEqual(self.call_metrics_token(self.token)["endpoint"], "https://datum.example.test")
+		self.assertEqual(self.call_log_token(self.token)["endpoint"], "https://datum.example.test")
+
+	def test_a_disabled_cargo_hands_out_no_endpoint(self):
+		"""A region whose Cargo is disabled has nowhere to ship. The token is still minted
+		-- it is the endpoint that is missing, not the pilot's right to telemetry."""
+		region = f"tel-{frappe.generate_hash(length=6)}"
+		name = self.enrolled_cargo(region, "https://datum.example.test")
+		frappe.db.set_value("Cargo Instance", name, "status", "Disabled")
+
+		result = self.call_metrics_token(self.token)
+		self.assertIsNone(result["endpoint"])
+		self.assertTrue(result["token"])
+
+	def test_an_unbound_pilot_has_no_endpoint(self):
+		"""No Asset means no region to resolve. Reached only through log_token, which does
+		not gate on the resource the way metrics does."""
+		region = f"tel-{frappe.generate_hash(length=6)}"
+		self.enrolled_cargo(region, "https://datum.example.test")
+		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", None)
+
+		with self.assertRaises(frappe.ValidationError):
+			self.call_metrics_token(self.token)
 
 	def call_metrics_token(self, token: str | None) -> dict:
 		headers = {"X-Pilot-Token": token} if token is not None else {}
