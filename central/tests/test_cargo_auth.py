@@ -26,9 +26,11 @@ def ensure_cargo_instance(region: str, status: str = "Registered") -> str:
 	"""The Cargo host for a region, with its Region master."""
 	ensure_region(region)
 	name = f"CARGO-{region}"
-	if not frappe.db.exists("Cargo Instance", name):
-		frappe.get_doc({"doctype": "Cargo Instance", "region": region}).insert(ignore_permissions=True)
-	frappe.db.set_value("Cargo Instance", name, "status", status)
+	if not frappe.db.exists("Internal Service", name):
+		frappe.get_doc({"doctype": "Internal Service", "region": region, "service_type": "Cargo"}).insert(
+			ignore_permissions=True
+		)
+	frappe.db.set_value("Internal Service", name, "status", status)
 	return name
 
 
@@ -161,7 +163,7 @@ class TestCargoEnrolment(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.instance = ensure_cargo_instance(OWN_REGION, status="Draft")
-		self.token = frappe.get_doc("Cargo Instance", self.instance).issue_bootstrapping_token()[
+		self.token = frappe.get_doc("Internal Service", self.instance).issue_bootstrapping_token()[
 			"bootstrapping_token"
 		]
 
@@ -169,7 +171,7 @@ class TestCargoEnrolment(IntegrationTestCase):
 		with _bootstrapping_token(self.token):
 			tokens = cargo_api.request_control_credentials(base_url="http://cargo.test:8000/")
 
-		instance = frappe.get_doc("Cargo Instance", self.instance)
+		instance = frappe.get_doc("Internal Service", self.instance)
 		self.assertEqual(instance.status, "Registered")
 		self.assertEqual(instance.base_url, "http://cargo.test:8000")
 		self.assertIsNone(instance.get_password("bootstrapping_token", raise_exception=False))
@@ -189,7 +191,7 @@ class TestCargoEnrolment(IntegrationTestCase):
 		"""Re-issuing puts the host back to Draft, so status alone cannot refuse the old
 		token -- the stored-value check is what does."""
 		stale = self.token
-		frappe.get_doc("Cargo Instance", self.instance).issue_bootstrapping_token()
+		frappe.get_doc("Internal Service", self.instance).issue_bootstrapping_token()
 
 		with _bootstrapping_token(stale), self.assertRaises(frappe.AuthenticationError):
 			cargo_api.request_control_credentials()
@@ -197,7 +199,7 @@ class TestCargoEnrolment(IntegrationTestCase):
 	def test_a_host_no_longer_awaiting_enrolment_is_refused(self):
 		"""The concurrent loser's view: it holds the token the row still stores, and is
 		refused because the winner already moved the row off Draft."""
-		frappe.db.set_value("Cargo Instance", self.instance, "status", "Registered")
+		frappe.db.set_value("Internal Service", self.instance, "status", "Registered")
 
 		with _bootstrapping_token(self.token), self.assertRaises(frappe.AuthenticationError):
 			cargo_api.request_control_credentials()
@@ -211,5 +213,5 @@ class TestCargoEnrolment(IntegrationTestCase):
 			cargo_api.request_control_credentials()
 
 		locked = [call for call in read.call_args_list if call.kwargs.get("for_update")]
-		self.assertTrue(locked, "the Cargo Instance row was read without FOR UPDATE")
-		self.assertEqual(locked[0].args[0], "Cargo Instance")
+		self.assertTrue(locked, "the Internal Service row was read without FOR UPDATE")
+		self.assertEqual(locked[0].args[0], "Internal Service")

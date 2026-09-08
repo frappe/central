@@ -1,9 +1,12 @@
+# Copyright (c) 2026, frappe and contributors
+# For license information, please see license.txt
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
 
 
-class CargoInstance(Document):
+class InternalService(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -18,13 +21,23 @@ class CargoInstance(Document):
 		central_access_token: DF.Password | None
 		region: DF.Link
 		registered_at: DF.Datetime | None
+		service_type: DF.Literal["Cargo", "Datum"]
 		status: DF.Literal["Draft", "Registered", "Disabled"]
 	# end: auto-generated types
 
-	"""One Cargo host, and the region it provisions for.
+	"""One service Central runs in one region, and how a host of it is enrolled.
 
-	Central never calls a Cargo host. It issues a short-lived bootstrapping token, and the
-	host spends it to collect the two tokens it runs on."""
+	Central never calls these hosts. Cargo enrols itself: it is issued a short-lived
+	bootstrapping token and spends it to collect the two tokens it runs on. Datum has no
+	enrolment, so its row is written by hand."""
+
+	def autoname(self) -> None:
+		"""`CARGO-<region>`, which is what a Cargo token's `instance` claim names. Renaming
+		a row would stop every token already issued for it from verifying."""
+		self.name = f"{self.service_type.upper()}-{self.region}"
+
+	def validate(self) -> None:
+		self.base_url = (self.base_url or "").rstrip("/") or None
 
 	@frappe.whitelist()
 	def issue_bootstrapping_token(self) -> dict:
@@ -32,14 +45,27 @@ class CargoInstance(Document):
 		`CENTRAL_BOOTSTRAPPING_TOKEN`. Shown once, and spent by the host on enrolment."""
 		if "System Manager" not in frappe.get_roles():
 			frappe.throw(_("Not permitted."), frappe.PermissionError)
-		from central.sso import mint_cargo_bootstrapping_token
+		from central.sso import mint_service_bootstrapping_token
 
-		token = mint_cargo_bootstrapping_token(self.name)
+		token = mint_service_bootstrapping_token(self.name)
 		self.bootstrapping_token = token
 		self.status = "Draft"
 		self.save(ignore_permissions=True)
 
 		return {"bootstrapping_token": token}
+
+	@staticmethod
+	def url_for(region: str, service_type: str) -> str:
+		"""Where a region's service answers. Throws rather than returning a URL nobody set."""
+		url = frappe.db.get_value(
+			"Internal Service",
+			{"region": region, "service_type": service_type, "status": ("!=", "Disabled")},
+			"base_url",
+		)
+		if not url:
+			frappe.throw(_("{0} has no {1} to reach in {2}.").format(service_type, "URL", region))
+
+		return url
 
 	def record_enrolment(self, base_url: str, tokens: dict[str, str]) -> None:
 		"""The host presented its bootstrapping token and collected its own."""

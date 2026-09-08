@@ -10,7 +10,7 @@ from frappe import _
 from central.sso import verify_cargo_access_token
 
 TOKEN_HEADER = "X-Cargo-Token"
-BOOTSTRAP_HEADER = "X-Cargo-Bootstrapping-Token"
+BOOTSTRAP_HEADER = "X-Bootstrapping-Token"
 
 
 def verify_cargo_request(func: Callable) -> Callable:
@@ -28,7 +28,7 @@ def verify_cargo_request(func: Callable) -> Callable:
 
 
 def verify_cargo_bootstrapping_request(func: Callable) -> Callable:
-	"""Authenticates a host enrolling for the first time, stashing the Cargo Instance it
+	"""Authenticates a host enrolling for the first time, stashing the Internal Service it
 	named on frappe.local. functools.wraps is required -- Frappe maps request args off the
 	wrapped signature."""
 
@@ -41,22 +41,22 @@ def verify_cargo_bootstrapping_request(func: Callable) -> Callable:
 
 
 def _authenticate_bootstrapping_request() -> str:
-	"""The Cargo Instance the presented token was minted for.
+	"""The Internal Service the presented token was minted for.
 
 	Spent tokens are refused: a host enrols once per token, so a leaked one cannot be
 	replayed to collect a second set of credentials. The row is locked for the rest of the
 	request, which is what makes "once" hold when the replay arrives concurrently."""
-	from central.sso import verify_cargo_bootstrapping_token
+	from central.sso import verify_service_bootstrapping_token
 
 	token = (frappe.get_request_header(BOOTSTRAP_HEADER) or "").strip()
 	if not token:
 		frappe.throw(_("A Cargo bootstrapping token is required."), frappe.AuthenticationError)
 
-	instance = verify_cargo_bootstrapping_token(token)
+	instance = verify_service_bootstrapping_token(token)
 	status = _lock_awaiting_enrolment(instance)
 
 	stored = frappe.utils.password.get_decrypted_password(
-		"Cargo Instance", instance, "bootstrapping_token", raise_exception=False
+		"Internal Service", instance, "bootstrapping_token", raise_exception=False
 	)
 	# Draft with a different token means the operator re-issued one; this one is stale.
 	if status != "Draft" or stored != token:
@@ -67,9 +67,9 @@ def _authenticate_bootstrapping_request() -> str:
 
 def _lock_awaiting_enrolment(instance: str) -> str:
 	"""Just take a lock"""
-	status = frappe.db.get_value("Cargo Instance", instance, "status", for_update=True)
+	status = frappe.db.get_value("Internal Service", instance, "status", for_update=True)
 	if not status:
-		frappe.throw(_("This token names no known Cargo host."), frappe.AuthenticationError)
+		frappe.throw(_("This token names no known service host."), frappe.AuthenticationError)
 
 	return status
 
@@ -80,16 +80,16 @@ def _authenticate_cargo_request() -> frappe._dict:
 	The token rides its own header: Frappe rejects any two-part `Authorization` header
 	that does not resolve to a user, before a guest endpoint is ever reached.
 
-	The claims come back carrying the region of the Cargo Instance the token names, which
+	The claims come back carrying the region of the Internal Service the token names, which
 	is the region the caller is allowed to act on."""
 	token = (frappe.get_request_header(TOKEN_HEADER) or "").strip()
 	if not token:
 		frappe.throw(_("A Cargo token is required."), frappe.AuthenticationError)
 
 	claims = frappe._dict(verify_cargo_access_token(token))
-	instance = frappe.db.get_value("Cargo Instance", claims.instance, ["region", "status"], as_dict=True)
+	instance = frappe.db.get_value("Internal Service", claims.instance, ["region", "status"], as_dict=True)
 	if not instance:
-		frappe.throw(_("This token names no known Cargo host."), frappe.AuthenticationError)
+		frappe.throw(_("This token names no known service host."), frappe.AuthenticationError)
 	if instance.status == "Disabled":
 		frappe.throw(_("This Cargo host is disabled."), frappe.AuthenticationError)
 

@@ -6,7 +6,7 @@ from frappe import _
 from central.integrations.cargo import verify_cargo_bootstrapping_request, verify_cargo_request
 
 if typing.TYPE_CHECKING:
-	from central.central.doctype.cargo_instance.cargo_instance import CargoInstance
+	from central.central.doctype.internal_service.internal_service import InternalService
 
 
 # nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
@@ -57,7 +57,7 @@ def request_control_credentials(base_url: str = "") -> dict:
 	the only moment it learns the host exists."""
 	from central.sso import mint_cargo_access_tokens
 
-	instance: CargoInstance = frappe.get_doc("Cargo Instance", frappe.local.cargo_instance)
+	instance: InternalService = frappe.get_doc("Internal Service", frappe.local.cargo_instance)
 
 	if instance.status == "Disabled":
 		frappe.throw(_("This host has been disabled and cannot be registered."), frappe.AuthenticationError)
