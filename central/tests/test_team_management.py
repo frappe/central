@@ -12,6 +12,7 @@ from central.api.teams import (
 	delete_custom_role,
 	delete_team,
 	invite_team_member,
+	leave_team,
 	list_team_invitations,
 	rename_team,
 	resend_invitation,
@@ -313,6 +314,21 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(team.owner_user, self.admin)
 		self.assertEqual(team._get_member(self.admin).role, "Owner")
 		self.assertEqual(team._get_member(self.owner).role, "Admin")
+
+	def test_member_leaves_but_owner_cannot(self):
+		frappe.set_user(self.viewer)
+		leave_team(self.team.name)
+
+		team = frappe.get_doc("Team", self.team.name)
+		self.assertFalse(team._get_member_rows(self.viewer))
+		self.assertFalse(can(self.viewer, team.name, "server:view"))
+
+		with self.assertRaises(frappe.ValidationError):
+			leave_team(self.team.name)
+
+		frappe.set_user(self.owner)
+		with self.assertRaises(frappe.ValidationError):
+			leave_team(self.team.name)
 
 	# --- API endpoints (central.api.teams / central.api.identity) ----------------
 

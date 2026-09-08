@@ -143,6 +143,23 @@ class Team(Document):
 			self.remove(row)
 		self.save()
 
+	# Internal; the HTTP surface is central.api.teams.leave_team.
+	def leave(self) -> None:
+		"""Drop your own membership. Leaving is yours to do, so it needs no
+		capability — but the owner can't: transfer ownership or delete the team."""
+		user = frappe.session.user
+		if user == self.owner_user:
+			frappe.throw(_("Transfer ownership before leaving this team."))
+		rows = self._get_member_rows(user)
+		if not rows:
+			frappe.throw(_("You are not a member of this team."))
+		for row in rows:
+			self.remove(row)
+		self.flags.from_member_leaving = True
+		# Being the member on the way out authorizes this write; a plain member
+		# holds neither team:manage_members nor write on the Team doc.
+		self.save(ignore_permissions=True)
+
 	# Internal; the HTTP surface is central.api.teams.transfer_team_ownership.
 	def transfer_ownership(self, user: str) -> None:
 		"""Owner is exclusive: promoting `user` drops every role grant they held
@@ -250,7 +267,12 @@ class Team(Document):
 				frappe.throw(_("Team Role {0} does not belong to this team.").format(member.role))
 
 	def _validate_changes(self) -> None:
-		if self.is_new() or self.flags.from_team_invitation or self._is_operator():
+		if (
+			self.is_new()
+			or self.flags.from_team_invitation
+			or self.flags.from_member_leaving
+			or self._is_operator()
+		):
 			if (
 				self.is_new()
 				and not self.flags.from_user_bootstrap
