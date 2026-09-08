@@ -36,7 +36,6 @@ class CargoInstance(Document):
 			"Cargo Instance",
 			{"region": region, "status": "Registered"},
 			"telemetry_base_url",
-			as_dict=True,
 			cache=True,
 		)
 
