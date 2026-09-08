@@ -89,17 +89,24 @@ def verify_bootstrap_token(token: str) -> dict:
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
-def mint_service_bootstrapping_token(service: str) -> str:
-	"""A short-lived token a new internal service host presents once, to collect its real ones.
+def mint_service_bootstrapping_token(service: str, region: str, service_type: str) -> str:
+	"""A short-lived token a new internal service host presents once, to collect its real ones."""
+	if not (region and service_type):
+		frappe.throw(
+			_("A bootstrapping token must name its region and service type."), frappe.ValidationError
+		)
 
-	One scope for every service: enrolment is the same handshake whoever is enrolling, and
-	`aud` is the Internal Service it was minted for, so Central knows which host is calling
-	without the host having to say."""
-	return _mint(service, SERVICE_BOOTSTRAPPING_SCOPE, BOOTSTRAP_TTL)
+	return _mint(
+		service,
+		SERVICE_BOOTSTRAPPING_SCOPE,
+		BOOTSTRAP_TTL,
+		{"region": region, "service_type": service_type},
+	)
 
 
-def verify_service_bootstrapping_token(token: str) -> str:
-	"""Validate an enrolment token and return the Internal Service it names."""
+def verify_service_bootstrapping_token(token: str) -> frappe._dict:
+	"""Validate an enrolment token and return the Internal Service it names, with the region
+	and service type it was minted for."""
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
@@ -111,7 +118,10 @@ def verify_service_bootstrapping_token(token: str) -> str:
 			token,
 			load_pem_public_key(settings.public_key.encode()),
 			algorithms=[ALGORITHM],
-			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
+			options={
+				"verify_aud": False,
+				"require": ["exp", "aud", "jti", "scope", "region", "service_type"],
+			},
 		)
 	except jwt.InvalidTokenError as exc:
 		frappe.throw(_("Invalid bootstrapping token: {0}").format(exc), frappe.AuthenticationError)
@@ -119,7 +129,7 @@ def verify_service_bootstrapping_token(token: str) -> str:
 	if claims.get("scope") != SERVICE_BOOTSTRAPPING_SCOPE:
 		frappe.throw(_("Not a bootstrapping token."), frappe.AuthenticationError)
 
-	return claims["aud"]
+	return frappe._dict(name=claims["aud"], region=claims["region"], service_type=claims["service_type"])
 
 
 def mint_cargo_access_tokens(instance: str) -> dict[str, str]:

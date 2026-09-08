@@ -52,26 +52,36 @@ def _authenticate_bootstrapping_request() -> str:
 	if not token:
 		frappe.throw(_("A Cargo bootstrapping token is required."), frappe.AuthenticationError)
 
-	instance = verify_service_bootstrapping_token(token)
-	status = _lock_awaiting_enrolment(instance)
+	grant = verify_service_bootstrapping_token(token)
+	service = _lock_awaiting_enrolment(grant.name)
+
+	# The row is what enrolment acts on, so the claims have to still describe it: a row
+	# rebuilt for another region under the same name would otherwise enrol on this token.
+	if (service.region, service.service_type) != (grant.region, grant.service_type):
+		frappe.throw(
+			_("This bootstrapping token no longer describes {0}.").format(grant.name),
+			frappe.AuthenticationError,
+		)
 
 	stored = frappe.utils.password.get_decrypted_password(
-		"Internal Service", instance, "bootstrapping_token", raise_exception=False
+		"Internal Service", grant.name, "bootstrapping_token", raise_exception=False
 	)
 	# Draft with a different token means the operator re-issued one; this one is stale.
-	if status != "Draft" or stored != token:
+	if service.status != "Draft" or stored != token:
 		frappe.throw(_("This bootstrapping token has already been used."), frappe.AuthenticationError)
 
-	return instance
+	return grant.name
 
 
-def _lock_awaiting_enrolment(instance: str) -> str:
-	"""Just take a lock"""
-	status = frappe.db.get_value("Internal Service", instance, "status", for_update=True)
-	if not status:
+def _lock_awaiting_enrolment(name: str) -> frappe._dict:
+	"""Take the lock, and read back what the token has to agree with."""
+	service = frappe.db.get_value(
+		"Internal Service", name, ["status", "region", "service_type"], as_dict=True, for_update=True
+	)
+	if not service:
 		frappe.throw(_("This token names no known service host."), frappe.AuthenticationError)
 
-	return status
+	return service
 
 
 def _authenticate_cargo_request() -> frappe._dict:

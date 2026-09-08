@@ -61,10 +61,36 @@ class IntegrationTestInternalService(IntegrationTestCase):
 
 	def test_datum_can_be_issued_a_bootstrapping_token(self):
 		"""Enrolment is one handshake: the scope no longer names Cargo."""
-		from central.sso import SERVICE_BOOTSTRAPPING_SCOPE, verify_service_bootstrapping_token
+		from central.sso import verify_service_bootstrapping_token
 
 		service = self.service("Datum")
 		token = service.issue_bootstrapping_token()["bootstrapping_token"]
 
-		self.assertEqual(verify_service_bootstrapping_token(token), service.name)
-		self.assertTrue(SERVICE_BOOTSTRAPPING_SCOPE)
+		grant = verify_service_bootstrapping_token(token)
+		self.assertEqual(grant.name, service.name)
+		self.assertEqual(grant.region, self.region)
+		self.assertEqual(grant.service_type, "Datum")
+
+	def test_the_token_carries_the_region_and_service_type(self):
+		"""Claims, not a parsed name: the naming may change, the claims may not."""
+		import jwt
+
+		from central.sso import SERVICE_BOOTSTRAPPING_SCOPE
+
+		service = self.service("Cargo")
+		token = service.issue_bootstrapping_token()["bootstrapping_token"]
+		claims = jwt.decode(token, options={"verify_signature": False})
+
+		self.assertEqual(claims["scope"], SERVICE_BOOTSTRAPPING_SCOPE)
+		self.assertEqual(claims["region"], self.region)
+		self.assertEqual(claims["service_type"], "Cargo")
+
+	def test_a_token_without_the_claims_is_refused(self):
+		"""An older token, or one minted by hand, must not enrol."""
+		from central.sso import SERVICE_BOOTSTRAPPING_SCOPE, _mint, verify_service_bootstrapping_token
+
+		service = self.service("Cargo")
+		token = _mint(service.name, SERVICE_BOOTSTRAPPING_SCOPE, 300)
+
+		with self.assertRaises(frappe.AuthenticationError):
+			verify_service_bootstrapping_token(token)

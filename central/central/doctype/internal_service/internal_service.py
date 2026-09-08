@@ -47,7 +47,7 @@ class InternalService(Document):
 			frappe.throw(_("Not permitted."), frappe.PermissionError)
 		from central.sso import mint_service_bootstrapping_token
 
-		token = mint_service_bootstrapping_token(self.name)
+		token = mint_service_bootstrapping_token(self.name, self.region, self.service_type)
 		self.bootstrapping_token = token
 		self.status = "Draft"
 		self.save(ignore_permissions=True)
