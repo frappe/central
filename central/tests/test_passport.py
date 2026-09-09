@@ -95,6 +95,9 @@ class PassportProvisioningTestCase(IntegrationTestCase):
 		).insert(ignore_permissions=True)
 		return name
 
+	def owner(self) -> str:
+		return frappe.db.get_value("Team", self.team, "owner_user")
+
 	def credentials(self, **overrides) -> dict:
 		return {
 			"site_id": site_id(self.site),
@@ -200,9 +203,6 @@ class TestPassportProvisioning(PassportProvisioningTestCase):
 			on_site_update(document)
 
 		self.assertEqual(enqueue.call_args.kwargs["site_name"], self.site)
-
-	def owner(self) -> str:
-		return frappe.db.get_value("Team", self.team, "owner_user")
 
 
 class TestRegistrationPayload(PassportProvisioningTestCase):
@@ -377,3 +377,72 @@ class TestCentralAsAClient(PassportProvisioningTestCase):
 		frappe.db.set_value("User", user, "enabled", 0)
 
 		self.assertEqual(link_cloud_users([email]), ([], []))
+
+
+class TestTeamMembershipLinking(PassportProvisioningTestCase):
+	"""Entitlement follows team membership: joining a team should let you sign in."""
+
+	LINK = "frappe.integrations.frappe_providers.cloud_passport_memberships.link_users"
+
+	def setUp(self):
+		super().setUp()
+		frappe.db.delete("OpenID Connect Provider")
+		frappe.get_doc(
+			doctype="OpenID Connect Provider",
+			provider_name="Passport",
+			issuer=ISSUER,
+			client_id=str(uuid4()),
+			client_secret="secret",
+			redirect_uri="https://cloud.example/api/method/x",
+			enabled=1,
+		).insert(ignore_permissions=True)
+
+	def test_a_teams_active_members_are_linked(self):
+		from central.integrations.passport import link_team_members
+
+		owner_email = frappe.db.get_value("User", self.owner(), "email")
+
+		with patch(self.LINK, return_value=([owner_email], [])) as link:
+			linked, pending = link_team_members(self.team)
+
+		self.assertEqual(link.call_args.args[0], {owner_email: self.owner()})
+		self.assertEqual(linked, [owner_email])
+		self.assertEqual(pending, [])
+
+	def test_someone_without_a_frappe_identity_waits_rather_than_failing(self):
+		from central.integrations.passport import link_team_members
+
+		owner_email = frappe.db.get_value("User", self.owner(), "email")
+
+		with patch(self.LINK, return_value=([], [owner_email])):
+			linked, pending = link_team_members(self.team)
+
+		self.assertEqual(linked, [])
+		self.assertEqual(pending, [owner_email])
+
+	def test_the_reconcile_links_someone_who_has_since_signed_in(self):
+		"""The team event is the fast path; this is what rescues an earlier pending."""
+		from central.integrations.passport import link_unlinked_members
+
+		owner_email = frappe.db.get_value("User", self.owner(), "email")
+
+		with patch(self.LINK, return_value=([owner_email], [])):
+			self.assertIn(owner_email, link_unlinked_members())
+
+	def test_a_team_change_never_links_inline(self):
+		"""Accepting an invitation must not fail when the identity service is unreachable,
+		so the handler only ever queues work — never calls out itself."""
+		from central.integrations.passport import on_team_update
+
+		with patch(self.LINK, side_effect=AssertionError("must not be called inline")):
+			on_team_update(frappe.get_doc("Team", self.team))
+
+	def test_nothing_is_queued_when_frappe_sign_in_is_off(self):
+		from central.integrations.passport import on_team_update
+
+		frappe.db.delete("OpenID Connect Provider")
+
+		with patch("frappe.enqueue") as enqueue:
+			on_team_update(frappe.get_doc("Team", self.team))
+
+		self.assertEqual(enqueue.call_count, 0)

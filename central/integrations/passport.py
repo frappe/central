@@ -265,7 +265,6 @@ def connect_central() -> dict:
 	return {"provider": provider, "linked": linked, "pending": pending}
 
 
-@frappe.whitelist(methods=["POST"])
 def link_cloud_users(emails: list[str]) -> tuple[list[str], list[str]]:
 	"""Let named Central users sign in with their Frappe identity.
 
@@ -285,3 +284,80 @@ def link_cloud_users(emails: list[str]) -> tuple[list[str], list[str]]:
 			users[address] = user
 
 	return link_users(users) if users else ([], [])
+
+
+def on_team_update(doc, method=None):
+	"""A new team member should be able to sign in with their Frappe identity.
+
+	Enqueued, because linking asks the identity service who someone is and accepting an
+	invitation must not fail when that service is briefly unreachable.
+	"""
+	if not CentralPassportSettings.active() or not frappe.db.exists("OpenID Connect Provider", "Passport"):
+		return
+
+	# Every team save reaches here, and enqueued work runs inline under test — which would
+	# make each one call the identity service. Tests drive link_team_members directly.
+	if frappe.flags.in_test or frappe.flags.in_migrate or frappe.flags.in_install:
+		return
+
+	frappe.enqueue(
+		"central.integrations.passport.link_team_members",
+		queue="short",
+		enqueue_after_commit=True,
+		job_id=f"passport-link-team-{doc.name}",
+		deduplicate=True,
+		team=doc.name,
+	)
+
+
+def link_team_members(team: str) -> tuple[list[str], list[str]]:
+	"""Give a team's active members Frappe sign-in on Central, where they have identities.
+
+	Central never brings an identity into existence. Someone who has not signed in to
+	Frappe ID yet is reported pending and picked up by the reconcile once they have, which
+	is what makes "no Frappe ID yet" a waiting state rather than a dead end.
+	"""
+	member = frappe.qb.DocType("Team Member")
+	user = frappe.qb.DocType("User")
+	emails = (
+		frappe.qb.from_(member)
+		.join(user)
+		.on(user.name == member.user)
+		.select(user.email)
+		.distinct()
+		.where(
+			(member.parenttype == "Team")
+			& (member.parentfield == "members")
+			& (member.parent == team)
+			& (member.status == "Active")
+			& (user.enabled == 1)
+		)
+	).run(pluck=True)
+
+	return link_cloud_users(emails) if emails else ([], [])
+
+
+def link_unlinked_members() -> list[str]:
+	"""Link every active team member who has since gained a Frappe identity.
+
+	The team event is the fast path; this is what eventually links someone who was invited
+	before they had signed in to Frappe ID at all.
+	"""
+	if not CentralPassportSettings.active() or not frappe.db.exists("OpenID Connect Provider", "Passport"):
+		return []
+
+	member = frappe.qb.DocType("Team Member")
+	teams = (
+		frappe.qb.from_(member)
+		.select(member.parent)
+		.distinct()
+		.where(
+			(member.parenttype == "Team") & (member.parentfield == "members") & (member.status == "Active")
+		)
+	).run(pluck=True)
+	linked = []
+
+	for team in teams:
+		linked.extend(link_team_members(team)[0])
+
+	return linked
