@@ -42,12 +42,23 @@ export const useAppMenu = () => {
 		},
 	])
 
+	const sitePicker = window.passport_site_picker
+
 	const footerMenuItems = [
 		{
 			label: 'My profile',
 			icon: 'lucide-user',
 			onClick: () => openSettings('profile'),
 		},
+		...(sitePicker
+			? [
+					{
+						label: 'Your Frappe sites',
+						icon: 'lucide-globe',
+						onClick: () => window.location.assign(sitePicker),
+					},
+				]
+			: []),
 		{ label: 'Sign out', icon: 'lucide-log-out', onClick: logoutAndRedirect },
 	]
 

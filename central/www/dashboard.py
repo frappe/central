@@ -37,6 +37,8 @@ def get_context(context):
 	return context
 
 
+DASHBOARD_HOME = "/dashboard/servers"
+
 # Page-boot auth context — these are dashboard page-load concerns (not an HTTP API),
 # so they live here beside get_context rather than in central.api.auth.
 
@@ -46,6 +48,7 @@ def build_auth_context() -> dict:
 		"user": frappe.session.user or "Guest",
 		"provider_logins": _provider_logins(),
 		"onboarding_complete": _onboarding_complete(),
+		"passport_site_picker": site_picker_url(),
 	}
 
 
@@ -63,6 +66,42 @@ def _onboarding_complete() -> bool:
 
 
 def _provider_logins() -> list[dict[str, str]]:
+	return _social_logins() + _identity_provider_logins()
+
+
+def site_picker_url() -> str | None:
+	from frappe.integrations.openid_connect.directory import site_picker_url as picker
+
+	from central.central.doctype.central_passport_settings.central_passport_settings import (
+		CentralPassportSettings,
+	)
+
+	return picker() if CentralPassportSettings.active() else None
+
+
+def _identity_provider_logins() -> list[dict[str, str]]:
+	"""Sign in with a Frappe identity (Passport), alongside any configured social logins."""
+	from frappe.integrations.openid_connect.directory import login_providers
+
+	from central.central.doctype.central_passport_settings.central_passport_settings import (
+		CentralPassportSettings,
+	)
+
+	if not CentralPassportSettings.active():
+		return []
+
+	return [
+		{
+			"name": provider["name"],
+			"label": provider["provider_name"],
+			"icon": provider["icon"],
+			"auth_url": provider["auth_url"],
+		}
+		for provider in login_providers(DASHBOARD_HOME)
+	]
+
+
+def _social_logins() -> list[dict[str, str]]:
 	providers = frappe.get_all(
 		"Social Login Key",
 		filters={"enable_social_login": 1},
@@ -74,7 +113,7 @@ def _provider_logins() -> list[dict[str, str]]:
 			"name": provider.name,
 			"label": provider.provider_name,
 			"icon": provider.icon or "",
-			"auth_url": get_oauth2_authorize_url(provider.name, "/dashboard/servers"),
+			"auth_url": get_oauth2_authorize_url(provider.name, DASHBOARD_HOME),
 		}
 		for provider in providers
 		if _provider_is_configured(provider)
