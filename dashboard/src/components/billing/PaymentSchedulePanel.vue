@@ -43,9 +43,7 @@ const blockerLines = computed(() => {
 
 <template>
 	<SidePanel v-model:open="open" title="Payment schedule">
-		<div v-if="loading" class="space-y-3 p-4">
-			<LoadingText :lines="5" />
-		</div>
+		<LoadingText v-if="loading" :lines="5" class="p-4" />
 
 		<template v-else>
 			<!-- What we intend to do -->

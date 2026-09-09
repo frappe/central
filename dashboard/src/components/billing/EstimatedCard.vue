@@ -279,9 +279,8 @@ async function submitAlert(): Promise<void> {
 			</div>
 		</div>
 
-		<div v-if="loading" class="mt-2 w-40">
-			<LoadingText :lines="2" />
-		</div>
+		<LoadingText v-if="loading" :lines="2" class="mt-2 w-40" />
+
 		<template v-else>
 			<div class="mt-1.5 flex flex-wrap items-baseline gap-x-2.5">
 				<span class="text-2xl-semibold tabular-nums text-ink-gray-9">

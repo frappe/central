@@ -43,9 +43,7 @@ function rowSubtitle(p: Project): string {
 
 <template>
 	<SidePanel v-model:open="open" title="Projects" :subtitle="subtitle">
-		<div v-if="loading" class="space-y-3 p-4">
-			<LoadingText :lines="6" />
-		</div>
+		<LoadingText v-if="loading" :lines="6" class="p-4" />
 		<div v-else class="divide-y divide-outline-gray-1 px-4">
 			<div
 				v-for="p in rows"

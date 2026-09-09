@@ -46,9 +46,7 @@ const isIndia = computed(() => country.value === 'India')
 			/>
 		</template>
 
-		<div v-if="loading" class="space-y-3">
-			<LoadingText :lines="4" />
-		</div>
+		<LoadingText v-if="loading" :lines="4" />
 
 		<dl v-else class="space-y-4 pt-3 text-base">
 			<div class="flex justify-between gap-3">

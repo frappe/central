@@ -138,58 +138,56 @@ const cards = computed(() =>
 </script>
 
 <template>
-	<div class="mx-auto mt-10 max-w-3xl px-5">
-		<section class="grid gap-3 md:grid-cols-2">
-			<!-- A card is a link only once its page exists, so nothing invites a
-			     click that goes nowhere. -->
-			<component
-				:is="service.linkable ? 'router-link' : 'div'"
-				v-for="service in cards"
-				:key="service.title"
-				:to="service.linkable ? service.to : undefined"
-				class="flex flex-col gap-3 rounded-6 border p-4"
-				:class="[
-					service.comingSoon
-						? 'border-dashed border-outline-gray-3'
-						: 'border-outline-gray-2',
-					service.linkable ? 'transition-colors hover:border-outline-gray-4' : '',
-				]"
-			>
-				<div class="flex items-start justify-between gap-3">
-					<div
-						class="grid size-8 place-items-center rounded-5 bg-surface-gray-2"
-					>
-						<span :class="service.icon" class="size-4 text-ink-gray-6" />
-					</div>
-					<Badge
-						v-if="service.comingSoon"
-						label="Coming soon"
-					/>
-					<Badge
-						v-else
-						:theme="service.on ? 'green' : 'gray'"
-						:label="service.on ? 'On' : 'Off'"
-					/>
+	<section class="mx-auto mt-10 grid max-w-3xl gap-3 px-5 md:grid-cols-2">
+		<!-- A card is a link only once its page exists, so nothing invites a
+		     click that goes nowhere. -->
+		<component
+			:is="service.linkable ? 'router-link' : 'div'"
+			v-for="service in cards"
+			:key="service.title"
+			:to="service.linkable ? service.to : undefined"
+			class="flex flex-col gap-3 rounded-6 border p-4"
+			:class="[
+				service.comingSoon
+					? 'border-dashed border-outline-gray-3'
+					: 'border-outline-gray-2',
+				service.linkable ? 'transition-colors hover:border-outline-gray-4' : '',
+			]"
+		>
+			<div class="flex items-start justify-between gap-3">
+				<div
+					class="grid size-8 place-items-center rounded-5 bg-surface-gray-2"
+				>
+					<span :class="service.icon" class="size-4 text-ink-gray-6" />
 				</div>
+				<Badge
+					v-if="service.comingSoon"
+					label="Coming soon"
+				/>
+				<Badge
+					v-else
+					:theme="service.on ? 'green' : 'gray'"
+					:label="service.on ? 'On' : 'Off'"
+				/>
+			</div>
 
-				<div>
-					<p class="text-base-medium text-ink-gray-9">{{ service.title }}</p>
-					<p class="mt-1 text-p-base text-ink-gray-5">
-						{{ service.description }}
-					</p>
-				</div>
+			<div>
+				<p class="text-base-medium text-ink-gray-9">{{ service.title }}</p>
+				<p class="mt-1 text-p-base text-ink-gray-5">
+					{{ service.description }}
+				</p>
+			</div>
 
-				<div class="mt-auto flex items-center gap-2 text-p-base">
-					<span :class="service.on ? 'text-ink-gray-7' : 'text-ink-gray-5'">
-						{{ service.meta }}
-					</span>
-					<span
-						v-if="service.linkable"
-						class="lucide-arrow-right ml-auto size-4 text-ink-gray-5"
-						aria-hidden="true"
-					/>
-				</div>
-			</component>
-		</section>
-	</div>
+			<div class="mt-auto flex items-center gap-2 text-p-base">
+				<span :class="service.on ? 'text-ink-gray-7' : 'text-ink-gray-5'">
+					{{ service.meta }}
+				</span>
+				<span
+					v-if="service.linkable"
+					class="lucide-arrow-right ml-auto size-4 text-ink-gray-5"
+					aria-hidden="true"
+				/>
+			</div>
+		</component>
+	</section>
 </template>

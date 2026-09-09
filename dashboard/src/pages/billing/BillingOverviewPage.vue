@@ -106,9 +106,7 @@ const advancedOpen = ref(false)
 							/>
 							<h2 class="text-base-medium text-ink-gray-8">Advanced</h2>
 						</button>
-						<div v-if="advancedOpen" class="mt-4">
-							<StopBillingCard />
-						</div>
+						<StopBillingCard v-if="advancedOpen" class="mt-4" />
 					</section>
 				</div>
 			</div>

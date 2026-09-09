@@ -125,9 +125,7 @@ async function submit(): Promise<void> {
 <template>
 	<Dialog v-model:open="open" title="Billing details" size="2xl">
 		<template #default>
-			<div v-if="profile.loading && !profile.data" class="space-y-3">
-				<LoadingText :lines="6" />
-			</div>
+			<LoadingText v-if="profile.loading && !profile.data" :lines="6" />
 
 			<div v-else class="space-y-6">
 				<div class="space-y-3">

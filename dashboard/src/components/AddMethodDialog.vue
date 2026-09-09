@@ -221,9 +221,7 @@ watch(open, (isOpen) => {
 		:show-close-button="!stripeSubmitting"
 	>
 		<template #default>
-			<div v-if="options.loading && !options.data" class="space-y-2">
-				<LoadingText :lines="3" />
-			</div>
+			<LoadingText v-if="options.loading && !options.data" :lines="3" />
 
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-else-if="stripeMode" class="space-y-3">

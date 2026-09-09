@@ -251,12 +251,11 @@ function indexOf(ladder: number[], value: number): number {
 			<!-- Compute: vCPU slider with the derived RAM shown as a pill. -->
 			<div class="flex items-center gap-4">
 				<span class="w-20 shrink-0 text-p-sm text-ink-gray-7">Compute</span>
-				<div class="min-w-0 flex-1">
-					<Slider
-						v-model="vcpuModel"
-						:max="Math.max(0, maxVcpuIndex)"
-					/>
-				</div>
+				<Slider
+					v-model="vcpuModel"
+					:max="Math.max(0, maxVcpuIndex)"
+					class="min-w-0 flex-1"
+				/>
 				<LadderSelect
 					class="shrink-0"
 					:options="vcpuOptions"
@@ -274,12 +273,11 @@ function indexOf(ladder: number[], value: number): number {
 			<!-- Storage: independent ladder slider with rung-by-rung ± steppers. -->
 			<div class="flex items-center gap-4">
 				<span class="w-20 shrink-0 text-p-sm text-ink-gray-7">Storage</span>
-				<div class="min-w-0 flex-1">
-					<Slider
-						v-model="diskModel"
-						:max="Math.max(0, maxDiskIndex)"
-					/>
-				</div>
+				<Slider
+					v-model="diskModel"
+					:max="Math.max(0, maxDiskIndex)"
+					class="min-w-0 flex-1"
+				/>
 				<button
 					type="button"
 					class="shrink-0 rounded-5 bg-surface-gray-2 px-3 py-1.5 text-ink-gray-7 hover:bg-surface-gray-3 disabled:opacity-50"

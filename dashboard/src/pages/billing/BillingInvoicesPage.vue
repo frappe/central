@@ -177,14 +177,13 @@ const eventDetail = (ev: {
 		<!-- LIST — capped and centered so rows stay scannable when the panel is
          closed; the cap matches the Limit tiers page. -->
 		<div class="min-w-0 flex-1 overflow-y-auto">
-			<div class="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6">
-				<InvoiceListView
-					:invoices="invoices"
-					:loading="invoicesLoading && !invoices.length"
-					:active-name="selected?.name"
-					@row-click="selectRow"
-				/>
-			</div>
+			<InvoiceListView
+				:invoices="invoices"
+				:loading="invoicesLoading && !invoices.length"
+				:active-name="selected?.name"
+				class="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6"
+				@row-click="selectRow"
+			/>
 		</div>
 
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
@@ -234,9 +233,7 @@ const eventDetail = (ev: {
 				/>
 			</template>
 
-			<div v-if="detail.loading && !detail.data" class="space-y-3 p-4">
-				<LoadingText :lines="6" />
-			</div>
+			<LoadingText v-if="detail.loading && !detail.data" :lines="6" class="p-4" />
 
 			<!-- Body: the receipt list scrolls on its own; the cost breakdown and
            Activity sit below it, so the totals never shift as the list
@@ -255,12 +252,11 @@ const eventDetail = (ev: {
 				<!-- No inner scroll: the panel already scrolls, and a second scroller
 					     here clipped the receipt mid-row once a team had more than one
 					     machine on the invoice. -->
-				<div class="shrink-0 px-4 pt-4">
-					<ChargeBreakdown
-						:lines="detail.data.items"
-						:currency="detail.data.currency"
-					/>
-				</div>
+				<ChargeBreakdown
+					:lines="detail.data.items"
+					:currency="detail.data.currency"
+					class="shrink-0 px-4 pt-4"
+				/>
 
 				<!-- Cost breakdown + Activity -->
 				<div class="mt-4 border-t border-outline-gray-2 px-4">

@@ -100,18 +100,17 @@ const hidden = computed(() =>
 			</p>
 
 			<div class="mt-2 flex flex-wrap items-center justify-between gap-2">
-				<div class="-ml-2 flex items-center gap-1">
-					<Button
-						v-if="statement && hidden"
-						variant="ghost"
-						:label="`View all ${statement.rows.length}`"
-						@click="$emit('open')"
-					>
-						<template #suffix>
-							<span class="lucide-chevron-right size-4" aria-hidden="true" />
-						</template>
-					</Button>
-				</div>
+				<Button
+					v-if="statement && hidden"
+					variant="ghost"
+					:label="`View all ${statement.rows.length}`"
+					class="-ml-2"
+					@click="$emit('open')"
+				>
+					<template #suffix>
+						<span class="lucide-chevron-right size-4" aria-hidden="true" />
+					</template>
+				</Button>
 				<p class="ml-auto text-p-sm text-ink-gray-5">
 					For reconciling against your own records. Tax invoices are issued
 					separately.

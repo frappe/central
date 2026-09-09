@@ -21,9 +21,7 @@ const rows = computed(() => [...(data.value?.rows ?? [])].reverse())
 		title="Statement of account"
 		:subtitle="data ? billingPeriod(data.from_date, data.to_date) : undefined"
 	>
-		<div v-if="loading" class="space-y-3 p-4">
-			<LoadingText :lines="6" />
-		</div>
+		<LoadingText v-if="loading" :lines="6" class="p-4" />
 		<ul v-else-if="data" class="divide-y divide-outline-gray-1">
 			<li
 				v-for="row in rows"
