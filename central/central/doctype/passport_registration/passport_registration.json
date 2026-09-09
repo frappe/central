@@ -1,0 +1,74 @@
+{
+ "doctype": "DocType",
+ "name": "Passport Registration",
+ "module": "Central",
+ "engine": "InnoDB",
+ "autoname": "field:site",
+ "field_order": [
+  "site",
+  "team",
+  "site_id",
+  "client_id",
+  "origin",
+  "enabled",
+  "registered_at"
+ ],
+ "fields": [
+  {
+   "fieldname": "site",
+   "label": "Site",
+   "fieldtype": "Link",
+   "options": "Site",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "team",
+   "label": "Team",
+   "fieldtype": "Link",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "site_id",
+   "label": "Passport Site ID",
+   "fieldtype": "Data",
+   "reqd": 1
+  },
+  {
+   "fieldname": "client_id",
+   "label": "Client ID",
+   "fieldtype": "Data",
+   "reqd": 1
+  },
+  {
+   "fieldname": "origin",
+   "label": "Registered Origin",
+   "fieldtype": "Data",
+   "reqd": 1
+  },
+  {
+   "fieldname": "enabled",
+   "label": "Enabled",
+   "fieldtype": "Check",
+   "default": "1"
+  },
+  {
+   "fieldname": "registered_at",
+   "label": "Registered At",
+   "fieldtype": "Datetime",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  }
+ ],
+ "track_changes": 1
+}
