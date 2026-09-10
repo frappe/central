@@ -33,7 +33,9 @@ const memberCountText = computed(() => {
 <template>
 	<div class="flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
-			<main class="mx-auto flex flex-col max-w-3xl gap-3 mt-10 px-3 xl:p-0">
+			<main
+				class="mx-auto flex max-w-3xl flex-col gap-3 md:gap-4 p-3 md:p-4 lg:mt-6"
+			>
 				<div class="mb-5 flex items-center gap-3">
 					<!-- Square: this is the organisation, not a person. Circles stay
 					     reserved for people across the console. -->

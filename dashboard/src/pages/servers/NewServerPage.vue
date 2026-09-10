@@ -407,7 +407,7 @@ async function submit() {
 
 		<div class="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
 			<!-- Stepped form (left) -->
-			<div class="w-full overflow-y-auto p-4 lg:w-[40rem] lg:shrink-0">
+			<div class="w-full overflow-y-auto p-3 md:p-4 lg:w-[40rem] lg:shrink-0">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
 					No active regions are available right now.
@@ -536,11 +536,7 @@ async function submit() {
 										>{{ flagEmoji(r.country_code) }}</span
 									>
 									{{ regionLabel(r) }}
-									<Badge
-										v-if="!r.reachable"
-										label="Unreachable"
-										class="ml-1"
-									/>
+									<Badge v-if="!r.reachable" label="Unreachable" class="ml-1" />
 								</Button>
 							</div>
 						</div>

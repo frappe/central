@@ -116,7 +116,7 @@ const activateService = async (): Promise<void> => {
 
 		<template v-else-if="managedService">
 			<div class="min-h-0 flex-1 overflow-y-auto">
-				<div class="mx-auto w-full max-w-5xl px-6 pb-8 pt-8">
+				<div class="mx-auto w-full max-w-5xl p-3 md:p-4 lg:mt-6">
 					<!-- No icon tile: it would indent the heading 52px while every section
 					     below it starts at the container edge. -->
 					<div class="min-w-0">

@@ -181,7 +181,7 @@ const eventDetail = (ev: {
 				:invoices="invoices"
 				:loading="invoicesLoading && !invoices.length"
 				:active-name="selected?.name"
-				class="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6"
+				class="p-3 md:p-4"
 				@row-click="selectRow"
 			/>
 		</div>
@@ -200,10 +200,7 @@ const eventDetail = (ev: {
 					<span class="truncate text-base-semibold text-ink-gray-9">
 						{{ shown.name }}
 					</span>
-					<Badge
-						:theme="invoiceTheme(shown.status)"
-						:label="shown.status"
-					/>
+					<Badge :theme="invoiceTheme(shown.status)" :label="shown.status" />
 				</div>
 			</template>
 			<template #subtitle>
@@ -233,7 +230,11 @@ const eventDetail = (ev: {
 				/>
 			</template>
 
-			<LoadingText v-if="detail.loading && !detail.data" :lines="6" class="p-4" />
+			<LoadingText
+				v-if="detail.loading && !detail.data"
+				:lines="6"
+				class="p-4"
+			/>
 
 			<!-- Body: the receipt list scrolls on its own; the cost breakdown and
            Activity sit below it, so the totals never shift as the list

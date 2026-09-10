@@ -139,8 +139,10 @@ function exportUrl(report: string): string {
 <template>
 	<div class="flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
-			<div class="mx-auto w-full max-w-5xl space-y-5 px-6 py-8">
-				<div v-if="loading" class="space-y-5">
+			<div
+				class="mx-auto w-full max-w-5xl space-y-3 p-3 md:space-y-4 md:p-4 lg:mt-6"
+			>
+				<div v-if="loading" class="space-y-3 md:space-y-4">
 					<BillingCard v-for="i in 2" :key="i" title=" ">
 						<LoadingText :lines="4" />
 					</BillingCard>
