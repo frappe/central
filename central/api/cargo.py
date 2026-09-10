@@ -12,26 +12,13 @@ if typing.TYPE_CHECKING:
 # nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @verify_cargo_request
-def garage_tokens(region: str, vm_ids: list[str] | None = None) -> dict:
-	"""The secrets every node of one region's Garage cluster boots with.
-
-	Idempotent per region: asking twice returns the same values, so a retried provision
-	cannot split a cluster into nodes that fail to recognise each other. `region` must be
-	the one the caller's token was minted for."""
-	from central.services.storage import mint_cluster_tokens
-
-	return mint_cluster_tokens(region)
-
-
-# nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-@verify_cargo_request
 def register_storage_cluster(
 	region: str,
 	active: bool = True,
 	base_url: str = "",
 	s3_endpoint: str = "",
 	web_endpoint: str = "",
+	control_api_secret: str = "",
 ) -> dict:
 	"""Tell Central whether a region's cluster is running, and where to reach it.
 
@@ -44,7 +31,7 @@ def register_storage_cluster(
 			_("A running cluster must report its admin, S3 and web endpoints."), frappe.ValidationError
 		)
 
-	return record_cluster_status(region, active, base_url, s3_endpoint, web_endpoint)
+	return record_cluster_status(region, active, base_url, s3_endpoint, web_endpoint, control_api_secret)
 
 
 # nosemgrep: guest-whitelisted-method -- verify_cargo_request authenticates the caller below.
@@ -77,7 +64,7 @@ def request_control_credentials(base_url: str = "") -> dict:
 	if instance.status == "Disabled":
 		frappe.throw(_("This host has been disabled and cannot be registered."), frappe.AuthenticationError)
 
-	tokens = mint_cargo_access_tokens(instance.name)
+	tokens = mint_cargo_access_tokens(instance)
 	instance.record_enrolment(base_url, tokens)
 
 	return tokens

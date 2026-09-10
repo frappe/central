@@ -16,13 +16,11 @@ class ServiceBackend(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		base_url: DF.Data
-		control_api_key: DF.Data
-		control_api_secret: DF.Password
+		base_url: DF.Data | None
+		control_api_key: DF.Data | None
+		control_api_secret: DF.Password | None
 		is_active: DF.Check
-		metrics_token: DF.Password | None
 		region: DF.Data | None
-		rpc_secret: DF.Password | None
 		s3_endpoint: DF.Data | None
 		service: DF.Link
 		web_endpoint: DF.Data | None
@@ -70,18 +68,13 @@ class ServiceBackend(Document):
 		return frappe.db.get_value("Add-on Service", self.service, "handler_key")
 
 	@frappe.whitelist()
-	def enroll(self) -> dict | None:
-		"""Desk entry point. Garage mints its own cluster secrets and returns them to seed
-		into `garage.toml`; every other backend exchanges a bootstrap secret, popped from
-		the raw request so it is never logged as a whitelist argument."""
+	def enroll(self) -> None:
+		"""Desk entry point. Exchanges a bootstrap secret, popped from the raw request so it
+		is never logged as a whitelist argument."""
 		if self.handler_key == "storage":
-			from central.services.storage import cluster_tokens
-
-			return cluster_tokens(self)
+			frappe.throw(frappe._("A Garage cluster enrols itself: Cargo reports it once it is running."))
 
 		self.apply_control_credential(pop_bootstrap_secret())
-
-		return None
 
 	def apply_control_credential(self, bootstrap_secret: str) -> None:
 		"""Exchange a bootstrap secret for this backend's own control credential, minted
