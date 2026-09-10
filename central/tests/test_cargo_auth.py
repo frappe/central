@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
+import jwt
 from frappe.exceptions import FrappeTypeError
 from frappe.tests import IntegrationTestCase
 
@@ -142,12 +143,23 @@ class TestCargoRegionBinding(IntegrationTestCase):
 		with _token(self.token), self.assertRaises(frappe.AuthenticationError):
 			cargo_api.register_storage_cluster(region=OWN_REGION, active=False)
 
-	def test_minting_for_a_host_without_a_region_is_refused(self):
-		"""The Atlas audience is built from the region, so a host without one cannot be minted for."""
-		instance = frappe.get_doc("Cargo Instance", self.own)
-		instance.region = None
+	def test_the_atlas_token_names_the_region_atlas_knows_itself_by(self):
+		"""Atlas verifies the audience against its own numeric region id, not the region name."""
+		region_id = frappe.db.get_value("Region", OWN_REGION, "atlas_region_id")
+		claims = jwt.decode(
+			mint_cargo_access_tokens(self.instance)["atlas_access_token"],
+			options={"verify_signature": False},
+		)
+
+		self.assertEqual(claims["aud"], f"atlas-{region_id}-admin")
+
+	def test_minting_for_a_region_atlas_does_not_know_is_refused(self):
+		"""Without the id there is no audience Atlas would accept, so fail before issuing one."""
+		unmapped = ensure_cargo_instance("cargo-unmapped")
+		frappe.db.set_value("Region", "cargo-unmapped", "atlas_region_id", 0)
+
 		with self.assertRaises(frappe.ValidationError):
-			mint_cargo_access_tokens(instance)
+			mint_cargo_access_tokens(frappe.get_doc("Cargo Instance", unmapped))
 
 
 class TestCargoEnrolment(IntegrationTestCase):

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import time
+import typing
 
 import frappe
 import jwt
 from frappe import _
 
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
+
+if typing.TYPE_CHECKING:
+	from central.central.doctype.cargo_instance.cargo_instance import CargoInstance
 
 # Central signs every downward token — the bench-login SID and the first-boot enrollment
 # token — with its single RSA key. Benches verify offline against the published JWKS, so a
@@ -121,17 +125,22 @@ def verify_cargo_bootstrapping_token(token: str) -> str:
 	return claims["aud"]
 
 
-def mint_cargo_access_tokens(instance: str) -> dict[str, str]:
-	"""The two tokens a Cargo host carries, one per upstream.
+def mint_cargo_access_tokens(instance: CargoInstance) -> dict[str, str]:
+	"""Two long-lived tokens a Cargo host runs on: one for Central, one for Atlas."""
+	region_id = frappe.db.get_value("Region", instance.region, "atlas_region_id")
+	if not region_id:
+		frappe.throw(
+			_("Region {0} has no Atlas region ID, which Atlas checks in the token audience.").format(
+				instance.region or "(none)"
+			),
+			frappe.ValidationError,
+		)
 
-	Both identify Cargo, and both are verified against Central's public keys -- Central
-	verifies its own signature, Atlas fetches the JWKS. `instance` is the Cargo Instance
-	the tokens are minted for, and it is what binds a host to its own region."""
-	if not instance:
-		frappe.throw(_("Cargo tokens must name the host they are minted for."), frappe.ValidationError)
 	return {
-		"central_access_token": _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL, {"instance": instance}),
-		"atlas_access_token": _mint("atlas", CARGO_ATLAS_SCOPE, CARGO_TTL, {"instance": instance}),
+		"central_access_token": _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL, {"instance": instance.name}),
+		"atlas_access_token": _mint(
+			f"atlas-{region_id}-admin", CARGO_ATLAS_SCOPE, CARGO_TTL, {"instance": instance.name}
+		),
 	}
 
 

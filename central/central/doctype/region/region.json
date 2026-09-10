@@ -9,6 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "region",
+  "atlas_region_id",
   "display_name",
   "provider",
   "country_code",
@@ -24,6 +25,15 @@
    "in_list_view": 1,
    "label": "Region",
    "reqd": 1,
+   "unique": 1
+  },
+  {
+   "description": "Atlas's own numeric region id, from that region's Atlas Settings. Central puts it in the audience of the token Cargo presents to Atlas, so Atlas only accepts it in the region it was minted for. Numbered on insert; correct it to match Atlas.",
+   "fieldname": "atlas_region_id",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Atlas Region ID",
+   "non_negative": 1,
    "unique": 1
   },
   {
