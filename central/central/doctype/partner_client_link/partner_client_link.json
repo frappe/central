@@ -1,0 +1,108 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-09-10 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "partner_team",
+  "client_team",
+  "connect_membership",
+  "status",
+  "column_break_billing",
+  "paid_by_partner",
+  "spend_limit",
+  "buffer"
+ ],
+ "fields": [
+  {
+   "fieldname": "partner_team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Partner Team",
+   "options": "Team",
+   "reqd": 1
+  },
+  {
+   "fieldname": "client_team",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Client Team",
+   "options": "Team",
+   "reqd": 1
+  },
+  {
+   "fieldname": "connect_membership",
+   "fieldtype": "Data",
+   "label": "Connect Membership",
+   "reqd": 1
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Pending\nApproved\nRejected\nDelinked",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_billing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "paid_by_partner",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Paid By Partner"
+  },
+  {
+   "depends_on": "eval:doc.paid_by_partner",
+   "fieldname": "spend_limit",
+   "fieldtype": "Currency",
+   "label": "Spend Limit"
+  },
+  {
+   "depends_on": "eval:doc.paid_by_partner",
+   "fieldname": "buffer",
+   "fieldtype": "Currency",
+   "label": "Buffer"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-09-10 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Partner Client Link",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
