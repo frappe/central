@@ -16,16 +16,12 @@ class ServiceBackend(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		base_url: DF.Data
-		control_api_key: DF.Data
-		control_api_secret: DF.Password
+		control_api_key: DF.Data | None
+		control_api_secret: DF.Password | None
 		is_active: DF.Check
-		metrics_token: DF.Password | None
-		region: DF.Data | None
-		rpc_secret: DF.Password | None
-		s3_endpoint: DF.Data | None
+		region: DF.Link | None
 		service: DF.Link
-		web_endpoint: DF.Data | None
+		service_endpoint: DF.Data | None
 	# end: auto-generated types
 
 	_DOCTYPE_NAME = "Service Backend"
@@ -36,11 +32,10 @@ class ServiceBackend(Document):
 		# can arbitrate. NULL <> "" in MariaDB, which is what duplicated rows.
 		self.region = self.region or ""
 		self._validate_endpoint("base_url")
-		self._validate_endpoint("s3_endpoint")
-		self._validate_endpoint("web_endpoint")
-		# Only once it is usable: a row exists from the moment Cargo asks for the cluster's
-		# secrets, which is well before the cluster has an endpoint to hand out.
-		if self.is_active and self.handler_key == "storage" and not self.s3_endpoint:
+		self._validate_endpoint("service_endpoint")
+		# Only once it is usable: a row exists from the moment Cargo reports the cluster,
+		# which is well before the cluster has an endpoint to hand out.
+		if self.is_active and self.handler_key == "storage" and not self.service_endpoint:
 			frappe.throw(frappe._("An active object-storage backend needs an S3 endpoint to hand out."))
 
 	def _validate_endpoint(self, fieldname: str) -> None:
@@ -70,18 +65,13 @@ class ServiceBackend(Document):
 		return frappe.db.get_value("Add-on Service", self.service, "handler_key")
 
 	@frappe.whitelist()
-	def enroll(self) -> dict | None:
-		"""Desk entry point. Garage mints its own cluster secrets and returns them to seed
-		into `garage.toml`; every other backend exchanges a bootstrap secret, popped from
-		the raw request so it is never logged as a whitelist argument."""
+	def enroll(self) -> None:
+		"""Desk entry point. Exchanges a bootstrap secret, popped from the raw request so it
+		is never logged as a whitelist argument."""
 		if self.handler_key == "storage":
-			from central.services.storage import cluster_tokens
-
-			return cluster_tokens(self)
+			frappe.throw(frappe._("A Garage cluster enrols itself: Cargo reports it once it is running."))
 
 		self.apply_control_credential(pop_bootstrap_secret())
-
-		return None
 
 	def apply_control_credential(self, bootstrap_secret: str) -> None:
 		"""Exchange a bootstrap secret for this backend's own control credential, minted

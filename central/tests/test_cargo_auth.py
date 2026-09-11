@@ -10,10 +10,11 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import frappe
+import jwt
 from frappe.exceptions import FrappeTypeError
 from frappe.tests import IntegrationTestCase
 
-from central.api import cargo as cargo_api
+from central.api import cargo_webhooks as cargo_api
 from central.integrations import cargo as cargo_module
 from central.sso import CARGO_CENTRAL_SCOPE, CARGO_TTL, _mint, mint_cargo_access_tokens
 from central.tests.utils import ensure_region
@@ -51,7 +52,8 @@ class TestCargoRegionBinding(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		self.own = ensure_cargo_instance(OWN_REGION)
 		ensure_cargo_instance(OTHER_REGION)
-		self.token = mint_cargo_access_tokens(self.own)["central_access_token"]
+		self.instance = frappe.get_doc("Cargo Instance", self.own)
+		self.token = mint_cargo_access_tokens(self.instance)["central_access_token"]
 
 	def test_tokens_carry_the_host_they_were_minted_for(self):
 		claims = cargo_module.verify_cargo_access_token(self.token)
@@ -59,25 +61,16 @@ class TestCargoRegionBinding(IntegrationTestCase):
 
 	def test_atlas_token_carries_the_host_too(self):
 		"""Atlas verifies against the JWKS, so the binding has to ride the token itself."""
-		tokens = mint_cargo_access_tokens(self.own)
+		tokens = mint_cargo_access_tokens(self.instance)
 		self.assertNotEqual(tokens["atlas_access_token"], tokens["central_access_token"])
 
 	def test_own_region_reaches_the_handler(self):
 		with (
 			_token(self.token),
-			patch("central.services.storage.mint_cluster_tokens", return_value={"ok": 1}) as minted,
+			patch("central.services.storage.record_cluster_status", return_value={"ok": 1}) as recorded,
 		):
-			self.assertEqual(cargo_api.garage_tokens(region=OWN_REGION), {"ok": 1})
-		minted.assert_called_once_with(OWN_REGION)
-
-	def test_another_region_cannot_read_its_secrets(self):
-		with (
-			_token(self.token),
-			patch("central.services.storage.mint_cluster_tokens") as minted,
-		):
-			with self.assertRaises(frappe.PermissionError):
-				cargo_api.garage_tokens(region=OTHER_REGION)
-		minted.assert_not_called()
+			self.assertEqual(cargo_api.register_storage_cluster(region=OWN_REGION, active=False), {"ok": 1})
+		recorded.assert_called_once()
 
 	def test_another_region_cannot_be_repointed(self):
 		with (
@@ -116,7 +109,7 @@ class TestCargoRegionBinding(IntegrationTestCase):
 
 	def test_a_missing_region_is_refused(self):
 		with _token(self.token), self.assertRaises(frappe.PermissionError):
-			cargo_api.garage_tokens(region="")
+			cargo_api.register_storage_cluster(region="", active=False)
 
 	def test_a_complex_region_cannot_become_an_orm_operator(self):
 		"""`region` lands in a Frappe filter, where a list value reads as [operator, value].
@@ -128,31 +121,45 @@ class TestCargoRegionBinding(IntegrationTestCase):
 			with self.subTest(region=injected):
 				with (
 					_token(self.token),
-					patch("central.services.storage.mint_cluster_tokens") as minted,
+					patch("central.services.storage.record_cluster_status") as recorded,
 				):
 					with self.assertRaises(FrappeTypeError):
-						cargo_api.garage_tokens(region=injected)
-				minted.assert_not_called()
+						cargo_api.register_storage_cluster(region=injected, active=False)
+				recorded.assert_not_called()
 
 	def test_a_token_without_a_host_is_refused(self):
 		"""Tokens minted before hosts were identified must fail closed, not match everything."""
 		legacy = _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL)
 		with _token(legacy), self.assertRaises(frappe.AuthenticationError):
-			cargo_api.garage_tokens(region=OWN_REGION)
+			cargo_api.register_storage_cluster(region=OWN_REGION, active=False)
 
 	def test_a_token_naming_an_unknown_host_is_refused(self):
 		ghost = _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL, {"instance": "CARGO-nowhere"})
 		with _token(ghost), self.assertRaises(frappe.AuthenticationError):
-			cargo_api.garage_tokens(region=OWN_REGION)
+			cargo_api.register_storage_cluster(region=OWN_REGION, active=False)
 
 	def test_a_disabled_host_is_refused(self):
 		ensure_cargo_instance(OWN_REGION, status="Disabled")
 		with _token(self.token), self.assertRaises(frappe.AuthenticationError):
-			cargo_api.garage_tokens(region=OWN_REGION)
+			cargo_api.register_storage_cluster(region=OWN_REGION, active=False)
 
-	def test_minting_without_a_host_is_refused(self):
+	def test_the_atlas_token_names_the_region_atlas_knows_itself_by(self):
+		"""Atlas verifies the audience against its own numeric region id, not the region name."""
+		region_id = frappe.db.get_value("Region", OWN_REGION, "atlas_region_id")
+		claims = jwt.decode(
+			mint_cargo_access_tokens(self.instance)["atlas_access_token"],
+			options={"verify_signature": False},
+		)
+
+		self.assertEqual(claims["aud"], f"atlas-{region_id}-admin")
+
+	def test_minting_for_a_region_atlas_does_not_know_is_refused(self):
+		"""Without the id there is no audience Atlas would accept, so fail before issuing one."""
+		unmapped = ensure_cargo_instance("cargo-unmapped")
+		frappe.db.set_value("Region", "cargo-unmapped", "atlas_region_id", 0)
+
 		with self.assertRaises(frappe.ValidationError):
-			mint_cargo_access_tokens("")
+			mint_cargo_access_tokens(frappe.get_doc("Cargo Instance", unmapped))
 
 
 class TestCargoEnrolment(IntegrationTestCase):
