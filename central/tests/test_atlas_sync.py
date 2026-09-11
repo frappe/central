@@ -322,6 +322,37 @@ class TestAtlasMirror(IntegrationTestCase):
 		self.assertEqual(got["login_url"], f"https://{fqdn}/app?sid=fresh")
 		regen.assert_not_called()
 
+	def test_get_site_withholds_the_login_url_without_server_open(self):
+		# One click into the desk is root on the site. The console hides it from a
+		# viewer; the endpoint handed one to anybody on the team who asked.
+		from central.api import sites
+
+		fqdn = "gated.blr1.frappe.dev"
+		self._push(
+			"site.status_changed",
+			{
+				"name": fqdn,
+				"team": self.team.name,
+				"subdomain": "gated",
+				"status": "Running",
+				"url": f"https://{fqdn}",
+				"login_url": f"https://{fqdn}/app?sid=gated",
+				"login_url_expires_at": "2099-01-01 00:00:00",
+			},
+			"2026-06-18 10:05:00",
+		)
+		frappe.set_user(self.owner)
+		try:
+			with patch("central.api.sites.can", return_value=False):
+				withheld = sites.get_site(fqdn)
+			allowed = sites.get_site(fqdn)
+		finally:
+			frappe.set_user("Administrator")
+
+		self.assertIsNone(withheld["login_url"])
+		self.assertEqual(withheld["url"], f"https://{fqdn}")
+		self.assertEqual(allowed["login_url"], f"https://{fqdn}/app?sid=gated")
+
 	def test_get_site_regenerates_expired_login_url(self):
 		# A Running site whose stored login URL has expired: get_site re-mints it via
 		# Atlas, re-mirrors, and returns the fresh URL.

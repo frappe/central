@@ -10,6 +10,7 @@ Central through their own pilot (see `central.api.passport`).
 
 from __future__ import annotations
 
+from functools import partial
 from uuid import UUID, uuid5
 
 import frappe
@@ -25,6 +26,14 @@ from central.central.doctype.central_passport_settings.central_passport_settings
 # One stable Passport site id per Central site name. Deriving it means registration is
 # idempotent without Central having to mint and remember a UUID before its first call.
 SITE_NAMESPACE = UUID("6cc73c09-0aac-4444-bdc8-f947a6379de0")
+
+# The only states a site never comes back from. Everything else is a moment in a
+# deploy, and taking sign-in away for one of those is an outage we caused.
+GONE = ["Terminated"]
+
+# Connect, then read. Passport is another web app, not a database: without this a hung
+# one holds a Central worker until something else gives up first.
+TIMEOUT = (5, 20)
 
 # Where a site receives sign-out notices. Passport requires it, and validates it against
 # the origin, so Central names it rather than letting Passport guess a core route.
@@ -44,12 +53,20 @@ def registration_for(site: dict) -> dict:
 
 	A site that moved to another address is re-addressed and given a fresh secret, so a
 	stale callback URL can never keep working.
+
+	One caller at a time per site. Re-addressing and rotating are two calls, and two
+	pulls racing through them leave Passport holding the second secret while the site
+	installs the first — sign-in broken until somebody asks again.
 	"""
 	settings = _settings()
 	origin = _origin(site)
 	operator = PassportOperator(settings)
 	record = frappe.db.get_value(
-		"Passport Registration", site["name"], ["name", "client_id", "origin"], as_dict=True
+		"Passport Registration",
+		site["name"],
+		["name", "client_id", "origin"],
+		as_dict=True,
+		for_update=True,
 	)
 
 	if record and record.origin != origin:
@@ -66,12 +83,15 @@ def registration_for(site: dict) -> dict:
 		"client_id": credentials["client_id"],
 		"client_secret": credentials["client_secret"],
 		"origin": origin,
+		# The site validates both endpoints and cannot know a development cluster runs
+		# on plain http. Central already made that call to reach Passport at all.
+		"allow_local_http": int(bool(settings.allow_local_http)),
 	}
 
 
 def on_site_update(doc, method=None):
 	"""A terminated site must stop offering Frappe sign-in."""
-	if doc.status != "Terminated" or not doc.has_value_changed("status"):
+	if doc.status not in GONE or not doc.has_value_changed("status"):
 		return
 	if not frappe.db.exists("Passport Registration", doc.name):
 		return
@@ -87,27 +107,53 @@ def on_site_update(doc, method=None):
 
 
 def reconcile():
-	"""Disable registrations for sites that are no longer running.
+	"""Match every registration to whether its site still exists, both ways.
 
 	The Terminated event is the fast path; this is the backstop that corrects a missed
 	one, the same shape as the Atlas mirror's reconcile.
 
+	Only a gone site closes a registration. Reading "not Running" as gone took sign-in
+	away from every site that was merely mid-deploy, and nothing here turned it back
+	on — a redeploy quietly cost a site its Frappe sign-in for good.
+
 	It deliberately does not re-address a moved site. Re-addressing rotates the secret,
 	and only the site's own pull can install the new one — doing it here would leave the
-	site holding a secret Passport no longer accepts.
+	site holding a secret Passport no longer accepts. Re-enabling rotates nothing.
 	"""
+	for site_name in drifted(enabled=1, status=GONE):
+		disable(site_name)
+
+	for site_name in drifted(enabled=0, status=["Running"]):
+		enable(site_name)
+
+
+def drifted(*, enabled: int, status: list[str]) -> list[str]:
 	registration = frappe.qb.DocType("Passport Registration")
 	site = frappe.qb.DocType("Site")
-	stale = (
+
+	return (
 		frappe.qb.from_(registration)
 		.join(site)
 		.on(site.name == registration.site)
 		.select(registration.site)
-		.where((registration.enabled == 1) & (site.status != "Running"))
+		.where((registration.enabled == enabled) & site.status.isin(status))
 	).run(pluck=True)
 
-	for site_name in stale:
-		disable(site_name)
+
+def enable(site_name: str):
+	"""Reopen a registration for a site that came back. Quiet when it never closed."""
+	record = frappe.db.get_value(
+		"Passport Registration", site_name, ["name", "client_id", "origin", "enabled"], as_dict=True
+	)
+	settings = CentralPassportSettings.active()
+
+	if not record or record.enabled or not settings:
+		return
+
+	PassportOperator(settings).readdress(
+		record.client_id, title=_title({"name": site_name}), origin=record.origin, enabled=True
+	)
+	frappe.db.set_value("Passport Registration", record.name, "enabled", 1)
 
 
 def disable(site_name: str):
@@ -177,11 +223,16 @@ class PassportOperator:
 			frappe.throw(_("Frappe sign-in is unavailable right now."), PassportError)
 
 	def _client(self) -> FrappeClient:
-		return FrappeClient(
+		client = FrappeClient(
 			self.settings.issuer.rstrip("/"),
 			api_key=self.settings.api_key,
 			api_secret=self.settings.get_password("api_secret"),
 		)
+		# FrappeClient has no timeout of its own, and its session is the only place to
+		# put one that every call it makes will honour.
+		client.session.request = partial(client.session.request, timeout=TIMEOUT)
+
+		return client
 
 
 def _settings():
@@ -226,17 +277,12 @@ def _remember(site: dict, origin: str, credentials: dict):
 
 
 def connect_central() -> dict:
-	"""Register Central itself as a Passport client and link the operator doing it.
+	"""Register Central itself as a Passport client.
 
 	Central is a Passport client like any site — the same registration call, aimed at
 	Central's own address. Safe to repeat: an unchanged registration returns the same
-	secret.
-
-	Installing the registration alone put a "Continue with Frappe" button on the sign-in
-	page that then refused every login, because a sign-in needs an identity link and
-	nothing had created one. So this links the operator running it too — and reports what
-	it linked, because Administrator can never hold a Frappe identity and an operator
-	signed in as one still has to name who may sign in, with link_cloud_users.
+	secret. Who may then sign in is Central's own user list, matched on the first
+	sign-in like on any other site.
 	"""
 	from frappe.integrations.frappe_providers.cloud_passport_enrollment import configure
 
@@ -252,112 +298,14 @@ def connect_central() -> dict:
 	credentials = PassportOperator(settings).register(
 		site_id=site_id(frappe.local.site), title="Frappe Cloud", origin=origin
 	)
-	provider = configure(
-		issuer=settings.issuer.rstrip("/"),
-		site_id=credentials["site_id"],
-		client_id=credentials["client_id"],
-		client_secret=credentials["client_secret"],
-		origin=origin,
-		allow_local_http=bool(settings.allow_local_http),
-	)
-	linked, pending = link_cloud_users([frappe.session.user])
 
-	return {"provider": provider, "linked": linked, "pending": pending}
-
-
-def link_cloud_users(emails: list[str]) -> tuple[list[str], list[str]]:
-	"""Let named Central users sign in with their Frappe identity.
-
-	Returns the addresses linked and those with no Frappe identity yet. Links made here
-	are unmanaged: a later sync must never withdraw something an operator did by hand.
-	"""
-	from frappe.integrations.frappe_providers.cloud_passport_memberships import link_users
-
-	frappe.only_for("System Manager")
-	users = {}
-
-	for email in emails or []:
-		address = (email or "").strip().lower()
-		user = frappe.db.get_value("User", {"email": address, "enabled": 1}, "name")
-
-		if user and user not in ("Administrator", "Guest"):
-			users[address] = user
-
-	return link_users(users) if users else ([], [])
-
-
-def on_team_update(doc, method=None):
-	"""A new team member should be able to sign in with their Frappe identity.
-
-	Enqueued, because linking asks the identity service who someone is and accepting an
-	invitation must not fail when that service is briefly unreachable.
-	"""
-	if not CentralPassportSettings.active() or not frappe.db.exists("OpenID Connect Provider", "Passport"):
-		return
-
-	# Every team save reaches here, and enqueued work runs inline under test — which would
-	# make each one call the identity service. Tests drive link_team_members directly.
-	if frappe.flags.in_test or frappe.flags.in_migrate or frappe.flags.in_install:
-		return
-
-	frappe.enqueue(
-		"central.integrations.passport.link_team_members",
-		queue="short",
-		enqueue_after_commit=True,
-		job_id=f"passport-link-team-{doc.name}",
-		deduplicate=True,
-		team=doc.name,
-	)
-
-
-def link_team_members(team: str) -> tuple[list[str], list[str]]:
-	"""Give a team's active members Frappe sign-in on Central, where they have identities.
-
-	Central never brings an identity into existence. Someone who has not signed in to
-	Frappe ID yet is reported pending and picked up by the reconcile once they have, which
-	is what makes "no Frappe ID yet" a waiting state rather than a dead end.
-	"""
-	member = frappe.qb.DocType("Team Member")
-	user = frappe.qb.DocType("User")
-	emails = (
-		frappe.qb.from_(member)
-		.join(user)
-		.on(user.name == member.user)
-		.select(user.email)
-		.distinct()
-		.where(
-			(member.parenttype == "Team")
-			& (member.parentfield == "members")
-			& (member.parent == team)
-			& (member.status == "Active")
-			& (user.enabled == 1)
+	return {
+		"provider": configure(
+			issuer=settings.issuer.rstrip("/"),
+			site_id=credentials["site_id"],
+			client_id=credentials["client_id"],
+			client_secret=credentials["client_secret"],
+			origin=origin,
+			allow_local_http=bool(settings.allow_local_http),
 		)
-	).run(pluck=True)
-
-	return link_cloud_users(emails) if emails else ([], [])
-
-
-def link_unlinked_members() -> list[str]:
-	"""Link every active team member who has since gained a Frappe identity.
-
-	The team event is the fast path; this is what eventually links someone who was invited
-	before they had signed in to Frappe ID at all.
-	"""
-	if not CentralPassportSettings.active() or not frappe.db.exists("OpenID Connect Provider", "Passport"):
-		return []
-
-	member = frappe.qb.DocType("Team Member")
-	teams = (
-		frappe.qb.from_(member)
-		.select(member.parent)
-		.distinct()
-		.where(
-			(member.parenttype == "Team") & (member.parentfield == "members") & (member.status == "Active")
-		)
-	).run(pluck=True)
-	linked = []
-
-	for team in teams:
-		linked.extend(link_team_members(team)[0])
-
-	return linked
+	}

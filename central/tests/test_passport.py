@@ -4,7 +4,7 @@ from uuid import uuid4
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.passport import _members, registration
+from central.api.passport import registration
 from central.integrations.passport import PassportError, on_site_update, site_id
 
 ISSUER = "https://passport.example"
@@ -110,14 +110,17 @@ class PassportProvisioningTestCase(IntegrationTestCase):
 class TestPassportProvisioning(PassportProvisioningTestCase):
 	"""Central registers the sites it hands out, and hands each one only its own."""
 
-	def test_first_ask_registers_the_site_and_names_its_members(self):
+	def test_first_ask_registers_the_site(self):
 		with patch(OPERATOR, return_value=self.credentials()) as call:
 			result = registration(self.site)
 
 		self.assertEqual(call.call_args.args[0], "passport.registration.register_site")
 		self.assertEqual(result["issuer"], ISSUER)
 		self.assertEqual(result["origin"], f"https://{self.site}")
-		self.assertEqual([member["email"] for member in result["members"]], [self.owner()])
+		# Central vouches for an address, not for a guest list.
+		self.assertNotIn("members", result)
+		# Whether plain http is acceptable is the provisioner's call, not the site's.
+		self.assertIn("allow_local_http", result)
 		record = frappe.get_doc("Passport Registration", self.site)
 		self.assertEqual(record.client_id, result["client_id"])
 		self.assertTrue(record.enabled)
@@ -168,29 +171,6 @@ class TestPassportProvisioning(PassportProvisioningTestCase):
 
 		with self.assertRaises(PassportError):
 			registration(self.site)
-
-	def test_members_cover_team_wide_and_site_scoped_entitlements(self):
-		team_wide = self.owner()
-		this_site = self.make_user()
-		other_site = self.make_user()
-		team = frappe.get_doc("Team", self.team)
-		for user, resource in ((this_site, self.site), (other_site, "elsewhere")):
-			team.append(
-				"members",
-				{
-					"user": user,
-					"role": "Admin",
-					"resource_type": "Site",
-					"resource_name": resource,
-					"status": "Active",
-				},
-			)
-		team.save(ignore_permissions=True)
-
-		site = frappe.db.get_value("Site", self.site, ["name", "team"], as_dict=True)
-		entitled = {member["email"] for member in _members(site)}
-
-		self.assertEqual(entitled, {team_wide, this_site})
 
 	def test_terminating_a_site_queues_its_registration_for_removal(self):
 		with patch(OPERATOR, return_value=self.credentials()):
@@ -243,31 +223,61 @@ class TestRegistrationPayload(PassportProvisioningTestCase):
 class TestReconcile(PassportProvisioningTestCase):
 	"""The backstop for a Terminated event that never arrived."""
 
-	def test_a_registration_for_a_site_that_stopped_running_is_withdrawn(self):
-		from central.integrations.passport import reconcile
-
+	def register(self):
 		with patch(OPERATOR, return_value=self.credentials()):
 			registration(self.site)
 
-		# Bypass the doc event, so only reconcile can be what withdraws it.
-		frappe.db.set_value("Site", self.site, "status", "Suspended")
-
-		with patch(OPERATOR, return_value={}):
-			reconcile()
-
-		self.assertEqual(frappe.db.get_value("Passport Registration", self.site, "enabled"), 0)
-
-	def test_a_running_site_keeps_its_registration(self):
+	def settle(self, status: str):
+		"""Move the site behind the doc event's back, so only reconcile can react."""
 		from central.integrations.passport import reconcile
 
-		with patch(OPERATOR, return_value=self.credentials()):
-			registration(self.site)
+		frappe.db.set_value("Site", self.site, "status", status)
 
 		with patch(OPERATOR, return_value={}) as call:
 			reconcile()
 
+		return call
+
+	def enabled(self) -> int:
+		return frappe.db.get_value("Passport Registration", self.site, "enabled")
+
+	def test_a_terminated_site_loses_its_registration(self):
+		self.register()
+
+		self.settle("Terminated")
+
+		self.assertEqual(self.enabled(), 0)
+
+	def test_a_running_site_keeps_its_registration(self):
+		self.register()
+
+		call = self.settle("Running")
+
 		self.assertEqual(call.call_count, 0)
-		self.assertEqual(frappe.db.get_value("Passport Registration", self.site, "enabled"), 1)
+		self.assertEqual(self.enabled(), 1)
+
+	def test_a_site_mid_deploy_keeps_its_registration(self):
+		"""Reading "not Running" as gone took sign-in away from every redeploy, and
+		nothing here gave it back."""
+		self.register()
+
+		for status in ("Pending", "Provisioning", "Deploying", "Failed"):
+			with self.subTest(status=status):
+				self.settle(status)
+
+				self.assertEqual(self.enabled(), 1)
+
+	def test_a_site_that_comes_back_gets_its_registration_back(self):
+		"""Converging one way only leaves a wrongly-closed registration closed."""
+		self.register()
+		self.settle("Terminated")
+		self.assertEqual(self.enabled(), 0)
+
+		call = self.settle("Running")
+
+		self.assertEqual(call.call_args.args[0], "passport.registration.update_site")
+		self.assertTrue(call.call_args.args[1]["enabled"])
+		self.assertEqual(self.enabled(), 1)
 
 
 class TestSettings(IntegrationTestCase):
@@ -321,128 +331,3 @@ class TestCentralAsAClient(PassportProvisioningTestCase):
 
 		self.assertEqual(result["provider"], "Passport")
 		self.assertEqual(configure.call_args.kwargs["origin"], "https://cloud.example")
-
-	def test_connecting_as_administrator_links_nobody(self):
-		"""Administrator can never hold a Frappe identity, so the operator still has to
-		name who may sign in."""
-		from central.integrations import passport
-
-		with (
-			patch(OPERATOR, return_value=self.credentials()),
-			patch("central.sso.central_url", return_value="https://cloud.example"),
-			patch(
-				"frappe.integrations.frappe_providers.cloud_passport_enrollment.configure",
-				return_value="Passport",
-			),
-		):
-			result = passport.connect_central()
-
-		self.assertEqual(result["linked"], [])
-		self.assertEqual(result["pending"], [])
-
-	def test_a_named_user_is_linked_so_they_can_sign_in(self):
-		from central.integrations.passport import link_cloud_users
-
-		user = self.make_user()
-		email = frappe.db.get_value("User", user, "email")
-
-		with patch(
-			"frappe.integrations.frappe_providers.cloud_passport_memberships.link_users",
-			return_value=([email], []),
-		) as link:
-			linked, pending = link_cloud_users([email])
-
-		self.assertEqual(link.call_args.args[0], {email: user})
-		self.assertEqual(linked, [email])
-		self.assertEqual(pending, [])
-
-	def test_linking_skips_addresses_central_does_not_know(self):
-		from central.integrations.passport import link_cloud_users
-
-		# No local user, so there is nothing to link and no call to the provider.
-		self.assertEqual(link_cloud_users([f"{uuid4()}@example.com"]), ([], []))
-
-	def test_linking_never_targets_a_system_account(self):
-		from central.integrations.passport import link_cloud_users
-
-		administrator = frappe.db.get_value("User", "Administrator", "email")
-
-		self.assertEqual(link_cloud_users([administrator, "guest@example.com"]), ([], []))
-
-	def test_a_disabled_user_is_not_linked(self):
-		from central.integrations.passport import link_cloud_users
-
-		user = self.make_user()
-		email = frappe.db.get_value("User", user, "email")
-		frappe.db.set_value("User", user, "enabled", 0)
-
-		self.assertEqual(link_cloud_users([email]), ([], []))
-
-
-class TestTeamMembershipLinking(PassportProvisioningTestCase):
-	"""Entitlement follows team membership: joining a team should let you sign in."""
-
-	LINK = "frappe.integrations.frappe_providers.cloud_passport_memberships.link_users"
-
-	def setUp(self):
-		super().setUp()
-		frappe.db.delete("OpenID Connect Provider")
-		frappe.get_doc(
-			doctype="OpenID Connect Provider",
-			provider_name="Passport",
-			issuer=ISSUER,
-			client_id=str(uuid4()),
-			client_secret="secret",
-			redirect_uri="https://cloud.example/api/method/x",
-			enabled=1,
-		).insert(ignore_permissions=True)
-
-	def test_a_teams_active_members_are_linked(self):
-		from central.integrations.passport import link_team_members
-
-		owner_email = frappe.db.get_value("User", self.owner(), "email")
-
-		with patch(self.LINK, return_value=([owner_email], [])) as link:
-			linked, pending = link_team_members(self.team)
-
-		self.assertEqual(link.call_args.args[0], {owner_email: self.owner()})
-		self.assertEqual(linked, [owner_email])
-		self.assertEqual(pending, [])
-
-	def test_someone_without_a_frappe_identity_waits_rather_than_failing(self):
-		from central.integrations.passport import link_team_members
-
-		owner_email = frappe.db.get_value("User", self.owner(), "email")
-
-		with patch(self.LINK, return_value=([], [owner_email])):
-			linked, pending = link_team_members(self.team)
-
-		self.assertEqual(linked, [])
-		self.assertEqual(pending, [owner_email])
-
-	def test_the_reconcile_links_someone_who_has_since_signed_in(self):
-		"""The team event is the fast path; this is what rescues an earlier pending."""
-		from central.integrations.passport import link_unlinked_members
-
-		owner_email = frappe.db.get_value("User", self.owner(), "email")
-
-		with patch(self.LINK, return_value=([owner_email], [])):
-			self.assertIn(owner_email, link_unlinked_members())
-
-	def test_a_team_change_never_links_inline(self):
-		"""Accepting an invitation must not fail when the identity service is unreachable,
-		so the handler only ever queues work — never calls out itself."""
-		from central.integrations.passport import on_team_update
-
-		with patch(self.LINK, side_effect=AssertionError("must not be called inline")):
-			on_team_update(frappe.get_doc("Team", self.team))
-
-	def test_nothing_is_queued_when_frappe_sign_in_is_off(self):
-		from central.integrations.passport import on_team_update
-
-		frappe.db.delete("OpenID Connect Provider")
-
-		with patch("frappe.enqueue") as enqueue:
-			on_team_update(frappe.get_doc("Team", self.team))
-
-		self.assertEqual(enqueue.call_count, 0)

@@ -179,8 +179,6 @@ doc_events = {
 			# Keep a staging-trial team's billing profile complete so it can create servers
 			# without the setup prompt (the profile gate is otherwise enforced in the console).
 			"central.billing.payments.provisioning.on_team_update",
-			# A new member should be able to sign in to Central with their Frappe identity.
-			"central.integrations.passport.on_team_update",
 		],
 	},
 	"Site": {
@@ -206,9 +204,6 @@ scheduler_events = {
 		# Frappe sign-in: withdraw registrations for sites that are no longer running —
 		# the backstop for a missed Terminated event.
 		"central.integrations.passport.reconcile",
-		# Frappe sign-in: link team members who have since signed in to Frappe ID, so
-		# "no identity yet" is a waiting state rather than a dead end.
-		"central.integrations.passport.link_unlinked_members",
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
 		# Central: prune finished Host Task rows (unbounded stdout/stderr longtext).
 		"central.host_task.prune_host_tasks",
