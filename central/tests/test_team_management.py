@@ -348,7 +348,7 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertFalse(team._get_member_rows(self.viewer))
 		self.assertFalse(can(self.viewer, team.name, "server:view"))
 
-		with self.assertRaises(frappe.ValidationError):
+		with self.assertRaises(frappe.PermissionError):
 			leave_team(self.team.name)
 
 		frappe.set_user(self.owner)
