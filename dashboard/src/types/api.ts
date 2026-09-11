@@ -19,6 +19,9 @@ export interface Team {
 	/** Public file URL of the team's logo, or null for the initial-letter tint. */
 	logo: string | null
 	owner: string | null
+	role: string | null
+	members: number
+	created: string | null
 }
 
 export type MemberStatus = 'Active' | 'Suspended'

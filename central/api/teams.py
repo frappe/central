@@ -236,6 +236,13 @@ def remove_team_member(team: str, user: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@require_team_member
+def leave_team(team: str) -> dict:
+	frappe.get_doc("Team", team).leave()
+	return {"team": team, "left": True}
+
+
+@frappe.whitelist(methods=["POST"])
 @require_capability("team:manage_members", "You can't manage roles for this team.")
 def create_custom_role(team: str, role_name: str, capabilities: list | str) -> dict:
 	"""Create a team-scoped custom Team Role granting exactly `capabilities`."""

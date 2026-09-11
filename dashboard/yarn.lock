@@ -277,13 +277,6 @@
     "@floating-ui/utils" "^0.2.11"
     vue-demi ">=0.13.0"
 
-"@headlessui/vue@^1.7.14":
-  version "1.7.23"
-  resolved "https://registry.yarnpkg.com/@headlessui/vue/-/vue-1.7.23.tgz#7fe19dbeca35de9e6270c82c78c4864e6a6f7391"
-  integrity sha512-JzdCNqurrtuu0YW6QaDtR2PIYCKPUWq28csDyMvN4zmGccmE7lz40Is6hc3LA4HFeCI7sekZ/PQMTNmn9I/4Wg==
-  dependencies:
-    "@tanstack/vue-virtual" "^3.0.0-beta.60"
-
 "@iconify/types@^2.0.0":
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/@iconify/types/-/types-2.0.0.tgz#ab0e9ea681d6c8a1214f30cd741fe3a20cc57f57"
@@ -625,7 +618,7 @@
   dependencies:
     "@tanstack/table-core" "8.21.3"
 
-"@tanstack/vue-virtual@^3.0.0-beta.60", "@tanstack/vue-virtual@^3.12.0":
+"@tanstack/vue-virtual@^3.12.0":
   version "3.13.29"
   resolved "https://registry.yarnpkg.com/@tanstack/vue-virtual/-/vue-virtual-3.13.29.tgz#4ad312ec521a20b7053c069b1a7c97f0d1bb88c1"
   integrity sha512-MWb9tNHjpar3sP34b8+3A4I5j9akveoPXIYqqp7/ipyWd49a/kso+1S1LqEmAVR/+g/k1WWTJC4ktvdCGWgXYQ==
@@ -1482,9 +1475,9 @@ fraction.js@^5.3.4:
   resolved "https://registry.yarnpkg.com/fraction.js/-/fraction.js-5.3.4.tgz#8c0fcc6a9908262df4ed197427bdeef563e0699a"
   integrity sha512-1X1NTtiJphryn/uLQz3whtY6jK3fTqoE3ohKs0tT+Ujr1W59oopxmoEh7Lu5p6vBaPbgoM0bzveAW4Qi5RyWDQ==
 
-"frappe-ui@github:frappe/frappe-ui#v1.0.0-beta.53":
-  version "1.0.0-beta.53"
-  resolved "https://codeload.github.com/frappe/frappe-ui/tar.gz/5cdce197c532adb9212eaa56fb273975b4747e87"
+"frappe-ui@github:frappe/frappe-ui#v1.0.0-beta.56":
+  version "1.0.0-beta.56"
+  resolved "https://codeload.github.com/frappe/frappe-ui/tar.gz/314eb43c085fd157fe8cb4219136f443a3d60907"
   dependencies:
     "@codemirror/lang-css" "^6.3.0"
     "@codemirror/lang-html" "^6.4.9"
@@ -1497,7 +1490,6 @@ fraction.js@^5.3.4:
     "@codemirror/lang-xml" "^6.1.0"
     "@codemirror/lang-yaml" "^6.1.3"
     "@floating-ui/dom" "^1.7.4"
-    "@headlessui/vue" "^1.7.14"
     "@tailwindcss/forms" "^0.5.3"
     "@tailwindcss/line-clamp" "^0.4.4"
     "@tailwindcss/typography" "^0.5.16"
@@ -1547,7 +1539,7 @@ fraction.js@^5.3.4:
     highlight.js "^11.11.1"
     idb-keyval "^6.2.0"
     lowlight "^3.3.0"
-    lucide-static "^1.16.0"
+    lucide-static "^1.31.0"
     magic-string "^0.30.21"
     marked "^15.0.12"
     ora "5.4.1"
@@ -1795,10 +1787,10 @@ lowlight@^3.3.0:
     devlop "^1.0.0"
     highlight.js "~11.11.0"
 
-lucide-static@^1.16.0:
-  version "1.21.0"
-  resolved "https://registry.yarnpkg.com/lucide-static/-/lucide-static-1.21.0.tgz#08812bde7238e206466ba07226e2316f2ab599fe"
-  integrity sha512-6248z2/4sEyKkYAPPUYxOPiB2RCfMmLdMHuoOhsTFnoD40ixAoHmTVhOPux8ADa1NTBmzpEKF7WNePm+Ms503Q==
+lucide-static@^1.31.0:
+  version "1.42.0"
+  resolved "https://registry.yarnpkg.com/lucide-static/-/lucide-static-1.42.0.tgz#03792d91258f1637b30aa97ef871f10be2a2bd79"
+  integrity sha512-S4jgNBM6Tm8TusfIvj2A9KQotIxT8Hsnby3csAVh1LeD3vHgI0li14oCiQmYj+0Jjo/2l7cVzaqgPdwmce338Q==
 
 magic-string@^0.30.17, magic-string@^0.30.21:
   version "0.30.21"

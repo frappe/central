@@ -2,13 +2,12 @@
 import {
 	Avatar,
 	Dropdown,
-	formatShortcutLabel,
 	KeyboardShortcut,
 	Sidebar,
 	SidebarHeader,
 	SidebarItem,
 	SidebarLabel,
-	useShortcut,
+	useKeyboardShortcut,
 } from 'frappe-ui'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -43,19 +42,18 @@ watch(
 	},
 )
 
-useShortcut({
-	key: 'b',
-	ctrl: true,
+useKeyboardShortcut({
+	combo: 'Mod+B',
 	description: 'Toggle sidebar',
 	group: 'General',
 	allowInInput: true,
 	allowInDialog: true,
-	condition: () => !isMobile.value,
+	enabled: () => !isMobile.value,
 	handler: () => {
 		sidebarCollapsed.value = !sidebarCollapsed.value
 	},
 })
-const sidebarShortcut = formatShortcutLabel({ key: 'b', ctrl: true })
+const sidebarShortcut = isMac() ? '⌘B' : 'Ctrl+B'
 // KeyboardShortcut's showPlus is not platform-aware. Mac reads as ⌘K;
 // Windows/Linux still need the plus so Ctrl+K doesn't run together.
 const showShortcutPlus = !isMac()
