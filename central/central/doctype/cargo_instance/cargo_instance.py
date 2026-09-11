@@ -16,24 +16,37 @@ class CargoInstance(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		atlas_access_token: DF.Password | None
 		base_url: DF.Data | None
-		bootstrapping_token: DF.Password | None
-		central_access_token: DF.Password | None
+		cargo_access_token: DF.Password | None
 		region: DF.Link
 		registered_at: DF.Datetime | None
 		status: DF.Literal["Draft", "Registered", "Disabled"]
 		telemetry_base_url: DF.Data | None
+		webhook_secret: DF.Password | None
 	# end: auto-generated types
 
-	"""One Cargo host, and the region it provisions for.
+	"""One per region, Cargo only talks to central via webhooks and the
+	Secret is generated below, Central however can talk to cargo for bucket crud operations.
+	"""
 
-	Central never calls a Cargo host. It issues a short-lived bootstrapping token, and the
-	host spends it to collect the two tokens it runs on."""
+	def before_insert(self) -> None:
+		if not self.webhook_secret:
+			self.webhook_secret = frappe.generate_hash(length=32)
 
 	def validate(self) -> None:
 		self.validate_base_url()
 		self.validate_telemetry_url()
+		self.issue_access_token_if_needed()
+
+	def issue_access_token_if_needed(self) -> None:
+		"""Central reaches a host for bucket work, and only a registered one answers. Minted
+		once and kept: a fresh token is a re-registration, not a save."""
+		if self.status != "Registered" or self.get_password("cargo_access_token", raise_exception=False):
+			return
+
+		from central.sso import mint_cargo_bucket_access_token
+
+		self.cargo_access_token = mint_cargo_bucket_access_token(self)
 
 	def validate_telemetry_url(self) -> None:
 		"""If a telemetry URL is given, it must be a valid URL. If not given, it is cleared."""
@@ -77,16 +90,3 @@ class CargoInstance(Document):
 		self.save(ignore_permissions=True)
 
 		return {"bootstrapping_token": token}
-
-	def record_enrolment(self, base_url: str, tokens: dict[str, str]) -> None:
-		"""The host presented its bootstrapping token and collected its own."""
-		self.update(
-			{
-				**tokens,
-				"base_url": (base_url or "").rstrip("/") or None,
-				"status": "Registered",
-				"registered_at": frappe.utils.now_datetime(),
-				"bootstrapping_token": None,
-			}
-		)
-		self.save(ignore_permissions=True)

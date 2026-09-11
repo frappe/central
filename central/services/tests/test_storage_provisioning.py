@@ -6,18 +6,19 @@ from unittest.mock import MagicMock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from central.integrations.cargo_client import CargoClient
 from central.services import storage
-from central.services.drivers.garage import GarageDriver
 from central.tests.test_iam import ensure_user
 
-_BUCKET_ID = "bucket-1"
 _BUCKET = "acme-backups"
-_KEY = {"access_key_id": "GK31c2f218a2e44f48", "secret_access_key": "b892c0665f0ada8a"}
+_REGION = "test-dc"
+_S3 = "http://garage.localhost:3900"
+_CREDENTIALS = {"access_key": "GK31c2f218a2e44f48", "secret_access_key": "b892c0665f0ada8a"}
 
 
 def _ensure_storage_service():
-	"""The catalog row, with the Garage handler. Set rather than skipped when it already
-	exists: another suite may have left it pointing at a different handler."""
+	"""The catalog row. Set rather than skipped when it already exists: another suite may
+	have left it pointing at a different handler."""
 	if frappe.db.exists("Add-on Service", "storage"):
 		frappe.db.set_value("Add-on Service", "storage", {"handler_key": "storage", "is_active": 1})
 		return
@@ -32,6 +33,13 @@ def _ensure_storage_service():
 			"is_active": 1,
 		}
 	).insert(ignore_permissions=True)
+
+
+def ensure_region(region: str) -> str:
+	if not frappe.db.exists("Region", region):
+		frappe.get_doc({"doctype": "Region", "region": region}).insert(ignore_permissions=True)
+
+	return region
 
 
 class TestStorageProvisioning(IntegrationTestCase):
@@ -53,6 +61,7 @@ class TestStorageProvisioning(IntegrationTestCase):
 		subscription = frappe.get_doc({"doctype": "Subscription", "team": self.team}).insert().name
 
 		_ensure_storage_service()
+		ensure_region(_REGION)
 		# Frappe rolls back only at class teardown; clear our own rows between methods.
 		for managed in frappe.get_all(
 			"Managed Service", {"team": self.team, "add_on_service": "storage"}, pluck="name"
@@ -65,9 +74,8 @@ class TestStorageProvisioning(IntegrationTestCase):
 			{
 				"doctype": "Service Backend",
 				"service": "storage",
-				"base_url": "http://garage.localhost:3903",
-				"s3_endpoint": "http://garage.localhost:3900",
-				"control_api_secret": "admin-token",
+				"region": _REGION,
+				"service_endpoint": _S3,
 				"is_active": 1,
 			}
 		).insert()
@@ -81,35 +89,39 @@ class TestStorageProvisioning(IntegrationTestCase):
 			}
 		).insert()
 
-	def _mint(self, existing_bucket: str | None = None):
-		"""Garage stubbed out; `existing_bucket` is what GetBucketInfo would find."""
+	def _cargo(self):
+		"""The region's Cargo host stubbed out: it owns the cluster, so nothing here talks
+		to Garage."""
 		return patch.multiple(
-			GarageDriver,
-			get_bucket_id=MagicMock(return_value=existing_bucket),
-			create_bucket=MagicMock(return_value=_BUCKET_ID),
-			attach_alias=MagicMock(),
-			mint_key=MagicMock(return_value=_KEY),
+			CargoClient,
+			create_bucket=MagicMock(return_value=_CREDENTIALS),
 			delete_bucket=MagicMock(),
-			revoke_key=MagicMock(),
+			revoke_credentials=MagicMock(),
+			rotate_credentials=MagicMock(return_value=_CREDENTIALS),
 		)
 
 	def test_create_bucket_stores_an_encrypted_credential(self):
-		with self._mint():
+		with self._cargo():
 			config = storage.create_bucket(self.team, _BUCKET)
 
 		self.assertEqual(config["status"], "Active")
 		self.assertEqual(config["bucket"], _BUCKET)
-		self.assertEqual(config["endpoint_url"], "http://garage.localhost:3900")
-		self.assertEqual(config["access_key_id"], _KEY["access_key_id"])
-		self.assertEqual(config["secret_access_key"], _KEY["secret_access_key"])
+		self.assertEqual(config["endpoint_url"], _S3)
+		self.assertEqual(config["access_key_id"], _CREDENTIALS["access_key"])
+		self.assertEqual(config["secret_access_key"], _CREDENTIALS["secret_access_key"])
 
 		credential = frappe.get_doc("Service Credential", config["credential"])
 		self.assertEqual(credential.subject_type, "Team")
-		self.assertEqual(credential.provider_bucket_id, _BUCKET_ID)
-		self.assertEqual(credential.get_password("api_key"), _KEY["secret_access_key"])
+		self.assertEqual(credential.get_password("api_key"), _CREDENTIALS["secret_access_key"])
+
+	def test_the_bucket_is_asked_of_the_backends_own_region(self):
+		with self._cargo(), patch.object(CargoClient, "__init__", return_value=None) as constructed:
+			storage.create_bucket(self.team, _BUCKET)
+
+		self.assertEqual(constructed.call_args.args[0], _REGION)
 
 	def test_a_team_can_hold_many_buckets(self):
-		with self._mint():
+		with self._cargo():
 			first = storage.create_bucket(self.team, _BUCKET)
 			second = storage.create_bucket(self.team, "acme-uploads")
 
@@ -117,36 +129,22 @@ class TestStorageProvisioning(IntegrationTestCase):
 		self.assertEqual(second["bucket"], "acme-uploads")
 
 	def test_the_same_name_twice_is_refused(self):
-		with self._mint():
+		with self._cargo():
 			storage.create_bucket(self.team, _BUCKET)
 			with self.assertRaisesRegex(frappe.ValidationError, "already have a bucket"):
 				storage.create_bucket(self.team, _BUCKET)
 
-	def test_a_name_another_tenant_holds_is_refused(self):
-		# Refused before anything is created: the alias already resolves elsewhere.
-		with self._mint(existing_bucket="someone-elses-bucket"):
-			with self.assertRaisesRegex(frappe.ValidationError, "already taken"):
-				storage.create_bucket(self.team, _BUCKET)
-			GarageDriver.create_bucket.assert_not_called()
-
-	def test_a_name_lost_to_a_concurrent_request_is_refused_cleanly(self):
-		# Both callers passed the availability check; Garage arbitrates at attach time.
-		conflict = MagicMock(ok=False, status_code=400)
-		conflict.text = '{"message": "Bad request: Alias acme-backups already exists and points to different bucket: 578bd02af7bc"}'
-
-		# attach_alias stays real — it is the code under test; only the wire is faked.
+	def test_a_name_cargo_refuses_leaves_nothing(self):
+		"""Whether a name is free is Cargo's answer, and it arrives as a thrown error."""
 		with (
-			patch.object(GarageDriver, "get_bucket_id", return_value=None),
-			patch.object(GarageDriver, "create_bucket", return_value=_BUCKET_ID),
-			patch.object(GarageDriver, "mint_key", return_value=_KEY),
-			patch.object(GarageDriver, "_request", return_value=conflict),
-			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self._cargo(),
+			patch.object(CargoClient, "create_bucket", side_effect=frappe.ValidationError("already taken")),
+			patch.object(CargoClient, "delete_bucket") as delete_bucket,
 			self.assertRaisesRegex(frappe.ValidationError, "already taken"),
 		):
 			storage.create_bucket(self.team, _BUCKET)
 
-		# The loser's bucket goes with it, and Garage's raw text never reaches the user.
-		delete_bucket.assert_called_once()
+		delete_bucket.assert_not_called()
 		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
 
 	def test_an_invalid_bucket_name_is_refused(self):
@@ -156,71 +154,41 @@ class TestStorageProvisioning(IntegrationTestCase):
 
 	def test_creating_requires_an_active_entitlement(self):
 		frappe.db.set_value("Managed Service", self.managed.name, "status", "Draft")
-		with self._mint(), self.assertRaises(frappe.ValidationError):
+		with self._cargo(), self.assertRaises(frappe.ValidationError):
 			storage.create_bucket(self.team, _BUCKET)
 
 	def test_revoke_targets_the_issuing_cluster_not_the_active_one(self):
-		with self._mint():
+		with self._cargo():
 			config = storage.create_bucket(self.team, _BUCKET)
 
 		frappe.db.set_value("Service Backend", self.backend.name, "is_active", 0)
-		newer = frappe.get_doc(
+		frappe.get_doc(
 			{
 				"doctype": "Service Backend",
 				"service": "storage",
-				"region": "newer-dc",
-				"base_url": "http://garage-2.localhost:3903",
-				"s3_endpoint": "http://garage-2.localhost:3900",
-				"control_api_secret": "admin-token",
+				"region": ensure_region("newer-dc"),
+				"service_endpoint": "http://garage-2.localhost:3900",
 				"is_active": 1,
 			}
 		).insert()
 
-		with patch.object(GarageDriver, "revoke_key") as revoke:
+		with (
+			patch.object(CargoClient, "revoke_credentials") as revoke,
+			patch.object(CargoClient, "__init__", return_value=None) as constructed,
+		):
 			result = storage.revoke_bucket(config["credential"])
 
 		self.assertEqual(result["status"], "Revoked")
-		self.assertEqual(revoke.call_args.args[0].name, self.backend.name)
-		self.assertNotEqual(revoke.call_args.args[0].name, newer.name)
+		self.assertEqual(constructed.call_args.args[0], _REGION)
+		revoke.assert_called_once_with(_BUCKET)
 
 	def test_revoking_twice_is_a_no_op(self):
-		with self._mint():
+		with self._cargo():
 			config = storage.create_bucket(self.team, _BUCKET)
 			storage.revoke_bucket(config["credential"])
 			result = storage.revoke_bucket(config["credential"])
 
 		self.assertEqual(result["status"], "Revoked")
-
-	def test_a_bucket_this_attempt_created_is_deleted_on_failure(self):
-		with (
-			self._mint(),
-			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
-			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
-			self.assertRaises(RuntimeError),
-		):
-			storage.create_bucket(self.team, _BUCKET)
-
-		self.assertEqual(delete_bucket.call_args.args[-1], _BUCKET_ID)
-		# Garage is clean, so nothing is left to retry from.
-		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
-
-	def test_the_name_goes_on_only_once_the_bucket_is_usable(self):
-		with self._mint():
-			storage.create_bucket(self.team, _BUCKET)
-
-			# Created unnamed, then keyed, then named: an abandoned attempt holds no name.
-			GarageDriver.create_bucket.assert_called_once()
-			self.assertNotIn(_BUCKET, GarageDriver.create_bucket.call_args.args)
-			self.assertEqual(GarageDriver.attach_alias.call_args.args[-1], _BUCKET)
-
-	def test_a_failed_cleanup_does_not_mask_the_original_error(self):
-		with (
-			self._mint(),
-			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
-			patch.object(GarageDriver, "delete_bucket", side_effect=RuntimeError("delete failed")),
-			self.assertRaisesRegex(RuntimeError, "garage down"),
-		):
-			storage.create_bucket(self.team, _BUCKET)
 
 	def test_a_credential_that_cannot_be_stored_takes_the_bucket_with_it(self):
 		original_insert = frappe.model.document.Document.insert
@@ -231,92 +199,83 @@ class TestStorageProvisioning(IntegrationTestCase):
 			return original_insert(doc, *args, **kwargs)
 
 		with (
-			self._mint(),
-			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
+			self._cargo(),
+			patch.object(CargoClient, "delete_bucket") as delete_bucket,
 			patch.object(frappe.model.document.Document, "insert", fail_on_activation),
 			self.assertRaises(RuntimeError),
 		):
 			storage.create_bucket(self.team, _BUCKET)
 
-		delete_bucket.assert_called_once()
+		delete_bucket.assert_called_once_with(_BUCKET)
+
+	def test_a_failed_cleanup_does_not_mask_the_original_error(self):
+		original_insert = frappe.model.document.Document.insert
+
+		def fail_on_activation(doc, *args, **kwargs):
+			if doc.doctype == "Service Credential":
+				raise RuntimeError("db gone")
+			return original_insert(doc, *args, **kwargs)
+
+		with (
+			self._cargo(),
+			patch.object(CargoClient, "delete_bucket", side_effect=RuntimeError("cargo down")),
+			patch.object(frappe.model.document.Document, "insert", fail_on_activation),
+			self.assertRaisesRegex(RuntimeError, "db gone"),
+		):
+			storage.create_bucket(self.team, _BUCKET)
 
 	def test_a_failure_creating_the_bucket_leaves_nothing(self):
 		with (
-			self._mint(),
-			patch.object(GarageDriver, "create_bucket", side_effect=RuntimeError("garage down")),
-			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
-			self.assertRaisesRegex(RuntimeError, "garage down"),
+			self._cargo(),
+			patch.object(CargoClient, "create_bucket", side_effect=RuntimeError("cargo down")),
+			patch.object(CargoClient, "delete_bucket") as delete_bucket,
+			self.assertRaisesRegex(RuntimeError, "cargo down"),
 		):
 			storage.create_bucket(self.team, _BUCKET)
 
-		# Nothing was made, so nothing is undone — and no half-built row.
+		# Nothing was made, so nothing is undone -- and no half-built row.
 		delete_bucket.assert_not_called()
 		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
 
-	def test_a_failure_minting_the_key_takes_the_bucket(self):
-		with (
-			self._mint(),
-			patch.object(GarageDriver, "mint_key", side_effect=RuntimeError("garage down")),
-			patch.object(GarageDriver, "delete_bucket") as delete_bucket,
-			self.assertRaisesRegex(RuntimeError, "garage down"),
-		):
-			storage.create_bucket(self.team, _BUCKET)
-
-		self.assertEqual(delete_bucket.call_args.args[-1], _BUCKET_ID)
-		self.assertFalse(frappe.db.exists("Service Credential", {"managed_service": self.managed.name}))
-
-	def test_a_garage_backend_cannot_be_enrolled_from_desk(self):
+	def test_a_storage_backend_cannot_be_enrolled_from_desk(self):
 		"""Cargo mints the cluster's secrets and reports them; there is nothing to exchange."""
 		with self.assertRaises(frappe.ValidationError):
 			self.backend.enroll()
 
-	def test_the_first_report_creates_the_backend(self):
-		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
-		storage.record_cluster_status("test-dc", False)
 
-		backend = frappe.get_doc("Service Backend", {"service": "storage", "region": "test-dc"})
-		self.assertFalse(backend.is_active)
-		self.assertFalse(backend.base_url)
+class TestCargoClient(IntegrationTestCase):
+	"""Resolving the host, which is the only part of the client that is not the wire."""
 
-	def test_reporting_active_records_every_endpoint(self):
-		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
-		storage.record_cluster_status(
-			"test-dc",
-			True,
-			base_url="http://10.0.0.5:3903",
-			s3_endpoint="http://10.0.0.5:3900",
-			web_endpoint="http://10.0.0.5:3902",
-			control_api_secret="admin-token",
-		)
+	def setUp(self):
+		frappe.set_user("Administrator")
+		ensure_region(_REGION)
+		frappe.db.delete("Cargo Instance", {"region": _REGION})
 
-		backend = frappe.get_doc("Service Backend", {"service": "storage", "region": "test-dc"})
-		self.assertEqual(backend.get_password("control_api_secret"), "admin-token")
-		self.assertEqual(backend.base_url, "http://10.0.0.5:3903")
-		self.assertEqual(backend.s3_endpoint, "http://10.0.0.5:3900")
-		self.assertEqual(backend.web_endpoint, "http://10.0.0.5:3902")
-		self.assertTrue(backend.is_active)
+	def _instance(self, **values) -> str:
+		instance = frappe.get_doc(
+			{
+				"doctype": "Cargo Instance",
+				"region": _REGION,
+				"base_url": "http://cargo.localhost:8000",
+				"status": "Registered",
+				**values,
+			}
+		).insert(ignore_permissions=True)
 
-	def test_reporting_down_deactivates_but_keeps_the_endpoints(self):
-		"""A cluster that is down has no endpoints to send; the stored ones are the last
-		known good, and the secret beside them still reaches it once it returns."""
-		frappe.db.delete("Service Backend", {"service": "storage", "region": "test-dc"})
-		storage.record_cluster_status(
-			"test-dc",
-			True,
-			base_url="http://10.0.0.5:3903",
-			s3_endpoint="http://10.0.0.5:3900",
-			web_endpoint="http://10.0.0.5:3902",
-			control_api_secret="admin-token",
-		)
-		storage.record_cluster_status("test-dc", False)
+		return instance.name
 
-		backend = frappe.get_doc("Service Backend", {"service": "storage", "region": "test-dc"})
-		self.assertFalse(backend.is_active)
-		self.assertEqual(backend.s3_endpoint, "http://10.0.0.5:3900")
-		self.assertEqual(backend.get_password("control_api_secret"), "admin-token")
+	def test_a_region_with_no_registered_host_is_refused(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "No registered Cargo host"):
+			CargoClient(_REGION).instance
 
-	def test_reporting_an_unknown_region_creates_its_backend(self):
-		frappe.db.delete("Service Backend", {"service": "storage", "region": "no-such-dc"})
-		storage.record_cluster_status("no-such-dc", False)
+	def test_a_draft_host_does_not_serve(self):
+		self._instance(status="Draft")
+		with self.assertRaisesRegex(frappe.ValidationError, "No registered Cargo host"):
+			CargoClient(_REGION).instance
 
-		self.assertTrue(frappe.db.exists("Service Backend", {"service": "storage", "region": "no-such-dc"}))
+	def test_the_registered_host_carries_its_own_token(self):
+		name = self._instance()
+		client = CargoClient(_REGION)
+
+		self.assertEqual(client.instance.name, name)
+		self.assertTrue(client.token)

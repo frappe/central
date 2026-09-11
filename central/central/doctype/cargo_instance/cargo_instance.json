@@ -1,7 +1,7 @@
 {
  "actions": [],
  "autoname": "format:CARGO-{region}",
- "creation": "2026-08-31 00:00:00",
+ "creation": "2026-09-11 11:02:06.435867",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -12,10 +12,10 @@
   "status",
   "registered_at",
   "section_break_bootstrap",
-  "bootstrapping_token",
+  "webhook_secret",
+  "cargo_access_token",
   "column_break_tokens",
-  "central_access_token",
-  "atlas_access_token"
+  "cargo_access_token"
  ],
  "fields": [
   {
@@ -66,9 +66,16 @@
    "label": "Enrolment"
   },
   {
-   "fieldname": "bootstrapping_token",
+   "description": "Shared with the host as CENTRAL_WEBHOOK_SECRET. Cargo signs every report it sends with it, and Central checks the signature against this.",
+   "fieldname": "webhook_secret",
    "fieldtype": "Password",
-   "label": "Bootstrapping Token",
+   "label": "Webhook Secret"
+  },
+  {
+   "description": "Minted when the host registers. Central presents it to Cargo for bucket work; the host never sees it until it is called.",
+   "fieldname": "cargo_access_token",
+   "fieldtype": "Password",
+   "label": "Cargo Access Token",
    "read_only": 1
   },
   {
@@ -76,31 +83,22 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "Issued to the host when it enrolled.",
-   "fieldname": "central_access_token",
-   "fieldtype": "Password",
-   "label": "Central Access Token",
-   "read_only": 1
-  },
-  {
-   "description": "Issued to the host when it enrolled.",
-   "fieldname": "atlas_access_token",
-   "fieldtype": "Password",
-   "label": "Atlas Access Token",
-   "read_only": 1
-  },
-  {
    "description": "Cargo will set the telemetry base URL once it's ready",
    "fieldname": "telemetry_base_url",
    "fieldtype": "Data",
    "label": "Telemetry Base URL",
    "read_only": 1
+  },
+  {
+   "fieldname": "cargo_access_token",
+   "fieldtype": "Password",
+   "label": "Cargo Access Token"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-08 15:29:20.254410",
+ "modified": "2026-09-11 11:33:46.266809",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Cargo Instance",

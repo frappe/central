@@ -173,26 +173,21 @@ def revoke_bucket_key(name: str) -> dict:
 @require_service_capability("service:view")
 def list_buckets(managed_service: str) -> list[dict]:
 	"""The team's object-storage buckets, masked (no raw secrets). service:view."""
-	print(managed_service)
 	rows = frappe.get_all(
 		"Service Credential",
 		filters={"managed_service": managed_service, "subject_type": "Team"},
-		fields=[
-			"name",
-			"label",
-			"status",
-			"gateway_url",
-			"provider_ref",
-			"service_backend",
-			"creation",
-		],
+		fields=["name", "label", "status", "provider_ref", "service_backend", "creation"],
 		order_by="creation desc",
 	)
 	for row in rows:
 		row["masked_key"] = _mask_key(
 			get_decrypted_password("Service Credential", row.name, "api_key", raise_exception=False)
 		)
-		row["region"] = frappe.db.get_value("Service Backend", row.service_backend, "region")
+		backend = frappe.db.get_value(
+			"Service Backend", row.service_backend, ["region", "service_endpoint"], as_dict=True
+		)
+		row["region"] = backend and backend.region
+		row["gateway_url"] = backend and backend.service_endpoint
 
 	return rows
 
@@ -201,6 +196,8 @@ def list_buckets(managed_service: str) -> list[dict]:
 @require_service_capability("service:manage")
 def reveal_bucket_key(name: str) -> dict:
 	"""Reveal one bucket's endpoint and both key halves, for an S3 client. service:manage."""
+	from central.services.storage import endpoint_of
+
 	doc = frappe.get_doc("Service Credential", name)
 	if doc.status != "Active":
 		frappe.throw(_("This bucket's key has been revoked."))
@@ -208,7 +205,7 @@ def reveal_bucket_key(name: str) -> dict:
 	return {
 		"name": doc.name,
 		"bucket": doc.label,
-		"endpoint_url": doc.gateway_url,
+		"endpoint_url": endpoint_of(doc.service_backend),
 		"access_key_id": doc.provider_ref,
 		"secret_access_key": doc.get_password("api_key"),
 	}

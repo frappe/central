@@ -14,7 +14,7 @@ import jwt
 from frappe.exceptions import FrappeTypeError
 from frappe.tests import IntegrationTestCase
 
-from central.api import cargo as cargo_api
+from central.api import cargo_webhooks as cargo_api
 from central.integrations import cargo as cargo_module
 from central.sso import CARGO_CENTRAL_SCOPE, CARGO_TTL, _mint, mint_cargo_access_tokens
 from central.tests.utils import ensure_region

@@ -23,10 +23,8 @@ METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fe
 LOG_TTL = METRICS_TTL
 CARGO_TTL = 365 * 24 * 60 * 60  # long-lived: Cargo is infrastructure, not a session
 ENROLL_SCOPE = "enroll"
-CARGO_BOOTSTRAPPING_SCOPE = "cargo:bootstrap"
-CARGO_CENTRAL_SCOPE = "cargo:central"
-CARGO_ATLAS_SCOPE = "cargo:atlas"
 METRICS_SCOPE = "datum"
+CARGO_BUCKET_SCOPE = "central:cargo-bucket"
 LOG_SCOPE = "logs"
 LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
 
@@ -93,84 +91,17 @@ def verify_bootstrap_token(token: str) -> dict:
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
-def mint_cargo_bootstrapping_token(instance: str) -> str:
-	"""A short-lived token a new Cargo host presents once, to collect its real ones.
-
-	`aud` is the Cargo Instance it was minted for, so Central knows which host is calling
-	without the host having to say."""
-	return _mint(instance, CARGO_BOOTSTRAPPING_SCOPE, BOOTSTRAP_TTL)
-
-
-def verify_cargo_bootstrapping_token(token: str) -> str:
-	"""Validate an enrolment token and return the Cargo Instance it names."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
-
-	try:
-		claims = jwt.decode(
-			token,
-			load_pem_public_key(settings.public_key.encode()),
-			algorithms=[ALGORITHM],
-			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
-		)
-	except jwt.InvalidTokenError as exc:
-		frappe.throw(_("Invalid bootstrapping token: {0}").format(exc), frappe.AuthenticationError)
-
-	if claims.get("scope") != CARGO_BOOTSTRAPPING_SCOPE:
-		frappe.throw(_("Not a Cargo bootstrapping token."), frappe.AuthenticationError)
-
-	return claims["aud"]
-
-
-def mint_cargo_access_tokens(instance: CargoInstance) -> dict[str, str]:
-	"""Two long-lived tokens a Cargo host runs on: one for Central, one for Atlas."""
+def mint_cargo_bucket_access_token(instance: CargoInstance) -> str:
+	"""The long-lived token Central presents to a Cargo host for bucket work."""
 	region_id = frappe.db.get_value("Region", instance.region, "atlas_region_id")
 	if not region_id:
 		frappe.throw(
-			_("Region {0} has no Atlas region ID, which Atlas checks in the token audience.").format(
+			_("Region {0} has no Atlas region ID, which is what the token is audienced to.").format(
 				instance.region or "(none)"
 			),
 			frappe.ValidationError,
 		)
-
-	return {
-		"central_access_token": _mint("central", CARGO_CENTRAL_SCOPE, CARGO_TTL, {"instance": instance.name}),
-		"atlas_access_token": _mint(
-			f"atlas-{region_id}-admin", CARGO_ATLAS_SCOPE, CARGO_TTL, {"instance": instance.name}
-		),
-	}
-
-
-def verify_cargo_access_token(token: str) -> dict:
-	"""Validate the token Cargo presents to Central.
-
-	The scope check is what stops Cargo's Atlas token -- signed by this same key -- from
-	being replayed here. `instance` is required, so a token minted before hosts were
-	identified is refused rather than treated as belonging to every region."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
-
-	try:
-		claims = jwt.decode(
-			token,
-			load_pem_public_key(settings.public_key.encode()),
-			algorithms=[ALGORITHM],
-			audience="central",
-			options={"require": ["exp", "aud", "jti", "scope", "instance"]},
-		)
-	except jwt.InvalidTokenError as exc:
-		frappe.throw(_("Invalid Cargo token: {0}").format(exc), frappe.AuthenticationError)
-
-	if claims.get("scope") != CARGO_CENTRAL_SCOPE:
-		frappe.throw(_("Not a Cargo token for Central."), frappe.AuthenticationError)
-
-	return claims
+	return _mint(f"central-{region_id}-bucket", CARGO_BUCKET_SCOPE, CARGO_TTL, {"instance": instance.name})
 
 
 def mint_metrics_token(audience: str, resource_id: str) -> str:
