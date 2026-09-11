@@ -155,9 +155,8 @@ class Team(Document):
 			frappe.throw(_("You are not a member of this team."))
 		for row in rows:
 			self.remove(row)
-		self.flags.from_member_leaving = True
-		# Being the member on the way out authorizes this write; a plain member
-		# holds neither team:manage_members nor write on the Team doc.
+		# A plain member holds no write permission on the Team doc; _validate_changes
+		# is the real gate and allows this diff only because it is a self-removal.
 		self.save(ignore_permissions=True)
 
 	# Internal; the HTTP surface is central.api.teams.transfer_team_ownership.
@@ -267,12 +266,7 @@ class Team(Document):
 				frappe.throw(_("Team Role {0} does not belong to this team.").format(member.role))
 
 	def _validate_changes(self) -> None:
-		if (
-			self.is_new()
-			or self.flags.from_team_invitation
-			or self.flags.from_member_leaving
-			or self._is_operator()
-		):
+		if self.is_new() or self.flags.from_team_invitation or self._is_operator():
 			if (
 				self.is_new()
 				and not self.flags.from_user_bootstrap
@@ -288,7 +282,7 @@ class Team(Document):
 
 		if self._metadata_changed(previous):
 			self._require_capability("team:edit")
-		if self._members_changed(previous):
+		if self._members_changed(previous) and not self._is_self_removal(previous):
 			self._require_capability("team:manage_members")
 			self._validate_sensitive_member_changes(previous)
 
@@ -299,6 +293,19 @@ class Team(Document):
 		return self.owner_user != previous.owner_user or self._member_state(self) != self._member_state(
 			previous
 		)
+
+	def _is_self_removal(self, previous) -> bool:
+		"""The entire member diff is the caller dropping their own rows: leaving.
+		Anything else rides the normal team:manage_members gate."""
+		user = frappe.session.user
+		if self.owner_user != previous.owner_user or user == previous.owner_user:
+			return False
+		before = self._grants_by_user(previous)
+		after = self._grants_by_user(self)
+		if user not in before or user in after:
+			return False
+		del before[user]
+		return before == after
 
 	def _validate_sensitive_member_changes(self, previous) -> None:
 		before = self._grants_by_user(previous)

@@ -331,6 +331,15 @@ class TestTeamManagement(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			leave_team(self.team.name)
 
+	def test_leaving_cannot_carry_other_member_changes(self):
+		frappe.set_user(self.viewer)
+		team = frappe.get_doc("Team", self.team.name)
+		for row in team._get_member_rows(self.viewer) + team._get_member_rows(self.admin):
+			team.remove(row)
+
+		with self.assertRaises(frappe.PermissionError):
+			team.save(ignore_permissions=True)
+
 	def test_member_leaves_but_owner_cannot(self):
 		frappe.set_user(self.viewer)
 		leave_team(self.team.name)
