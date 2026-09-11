@@ -324,6 +324,13 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertEqual(rows[0]["members"], 3)
 		self.assertTrue(rows[0]["created"])
 
+	def test_leave_team_rejects_a_non_member_before_reading_the_team(self):
+		outsider = create_user("team.outsider@example.test")
+		frappe.set_user(outsider)
+
+		with self.assertRaises(frappe.PermissionError):
+			leave_team(self.team.name)
+
 	def test_member_leaves_but_owner_cannot(self):
 		frappe.set_user(self.viewer)
 		leave_team(self.team.name)

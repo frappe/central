@@ -236,6 +236,7 @@ def remove_team_member(team: str, user: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@require_team_member
 def leave_team(team: str) -> dict:
 	frappe.get_doc("Team", team).leave()
 	return {"team": team, "left": True}
