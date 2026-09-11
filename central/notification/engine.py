@@ -338,6 +338,32 @@ def _email_enabled(user: str, team: str, category: str) -> bool:
 	return pref is None or bool(pref)
 
 
+def _notification_email(event, ctx, message=None) -> tuple[str, str]:
+	"""Subject and branded HTML body for an event with no bespoke Email Template.
+
+	Renders templates/emails/notification.html from the fields the event already
+	carries, so a newly added event type is styled without a new template.
+	"""
+	subject = _render_template(event.in_app_title, ctx) or event.event_type
+	# The reason gets its own line in email rather than trailing the sentence after
+	# a colon, so the body is rendered with it blanked out.
+	reason = message or ctx.get("message") or ""
+	text = _render_template(event.in_app_body, {**ctx, "message": ""}) or ""
+	text = text.strip().rstrip(":").strip()
+	route = _render_template(event.action_route, ctx) if event.action_route else None
+	body = frappe.render_template(
+		"templates/emails/notification.html",
+		{
+			"title": subject,
+			"body": text,
+			"reason": reason,
+			"action_label": event.action_label,
+			"action_url": f"{frappe.utils.get_url()}/dashboard{route}" if route else None,
+		},
+	)
+	return subject, body
+
+
 def _send_member_email(
 	user, team, event, ctx, *, message=None, reference_doctype=None, reference_name=None
 ) -> bool:
@@ -349,9 +375,8 @@ def _send_member_email(
 	Returns True if the email was sent successfully, False if it failed.
 
 	When the Event Type has an ``email_template`` link, the Frappe Email
-	Template DocType is used for subject/body rendering.  Otherwise the
-	in-app Jinja templates are used (with the ``message`` override when
-	provided).
+	Template DocType is used for subject/body rendering.  Otherwise the event's
+	own fields render through templates/emails/notification.html.
 	"""
 	if event.email_template:
 		try:
@@ -363,14 +388,12 @@ def _send_member_email(
 			subject = rendered["subject"]
 			body = rendered["message"]
 		except Exception:
-			# A broken Email Template shouldn't silently downgrade to the in-app copy
-			# with no trace — log why, then fall back.
+			# A broken Email Template shouldn't silently downgrade with no trace —
+			# log why, then fall back to the generic branded template.
 			frappe.log_error(title=f"Notification email template render failed: {event.event_type}")
-			subject = _render_template(event.in_app_title, ctx) or event.event_type
-			body = message or _render_template(event.in_app_body, ctx) or ctx.get("message", "")
+			subject, body = _notification_email(event, ctx, message)
 	else:
-		subject = _render_template(event.in_app_title, ctx) or event.event_type
-		body = message or _render_template(event.in_app_body, ctx) or ctx.get("message", "")
+		subject, body = _notification_email(event, ctx, message)
 
 	try:
 		frappe.sendmail(

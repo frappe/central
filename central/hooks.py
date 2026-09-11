@@ -15,6 +15,8 @@ fixtures = [
 	"Notification Event Type",
 ]
 
+email_css = ["/assets/central/css/email.css"]
+
 # The TypeScript UI owns the product route.
 website_route_rules = [
 	{"from_route": "/dashboard/<path:app_path>", "to_route": "dashboard"},

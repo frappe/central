@@ -1,0 +1,20 @@
+{% extends "templates/emails/base.html" %}
+{% import "templates/emails/macros.html" as ui %}
+
+{% block content %}
+<tr>
+	<td class="fc-body">
+		{{ ui.heading(_("Payment due")) }}
+		{{ ui.paragraph(_("{0} is due on {1}.").format(amount, due_date)) }}
+
+		{% if note %}{{ ui.paragraph(note) }}{% endif %}
+
+		{{ ui.table(
+			[_("Invoice"), _("Amount"), _("Due")],
+			[[invoice_number, amount, due_date]],
+		) }}
+
+		{{ ui.button(_("Pay now"), invoice_url) }}
+	</td>
+</tr>
+{% endblock %}
