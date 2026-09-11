@@ -1,0 +1,49 @@
+{% macro heading(text) %}
+<h1 class="fc-heading">{{ text }}</h1>
+{% endmacro %}
+
+{% macro paragraph(text, tight=false) %}
+<p class="{{ 'fc-text-tight' if tight else 'fc-text' }}">{{ text }}</p>
+{% endmacro %}
+
+{% macro button(label, link, primary=true) %}
+{% set variant = 'fc-btn-primary' if primary else 'fc-btn-secondary' %}
+<a class="fc-btn {{ variant }}" href="{{ link }}" rel="nofollow">
+	<span class="fc-btn-label">{{ label }}</span>
+</a>
+{% endmacro %}
+
+{% macro link(label, href) %}
+<a class="fc-link" href="{{ href }}">
+	<span class="fc-link-label">{{ label }}</span>
+</a>
+{% endmacro %}
+
+{% macro table(columns, rows) %}
+<table class="fc-table" cellpadding="0" cellspacing="0" role="presentation">
+	<thead>
+		<tr>
+			{% for column in columns %}
+			<th>{{ column }}</th>
+			{% endfor %}
+		</tr>
+	</thead>
+	<tbody>
+		{% for row in rows %}
+		<tr>
+			{% for cell in row %}
+			<td>{{ cell }}</td>
+			{% endfor %}
+		</tr>
+		{% endfor %}
+	</tbody>
+</table>
+{% endmacro %}
+
+{% macro separator() %}
+<table class="fc-rule w-full" cellpadding="0" cellspacing="0" role="presentation">
+	<tr>
+		<td></td>
+	</tr>
+</table>
+{% endmacro %}

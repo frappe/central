@@ -1,0 +1,109 @@
+@tailwind components;
+
+@layer components {
+	.fc-page {
+		@apply bg-neutral-100;
+	}
+
+	.fc-page-cell {
+		@apply px-4 py-10;
+	}
+
+	.fc-card {
+		@apply mx-auto max-w-[600px] rounded-xl bg-white;
+	}
+
+	.fc-wordmark {
+		@apply pl-2 align-middle text-base font-semibold text-neutral-900;
+	}
+
+	.fc-brand {
+		@apply px-10 pb-8 pt-10 text-left;
+	}
+
+	.fc-body {
+		@apply px-10 text-left;
+	}
+
+	.fc-footer {
+		@apply px-10 pb-10 pt-8 text-left text-sm leading-relaxed text-neutral-500;
+	}
+
+	.fc-heading {
+		@apply m-0 mb-3 text-2xl font-bold text-neutral-900;
+	}
+
+	.fc-text {
+		@apply m-0 mb-4 text-sm leading-relaxed text-neutral-700;
+	}
+
+	.fc-text-tight {
+		@apply m-0 mb-1 text-sm leading-relaxed text-neutral-700;
+	}
+
+	.fc-muted {
+		@apply m-0 text-xs leading-relaxed text-neutral-500;
+	}
+
+	.fc-btn {
+		@apply mt-6 inline-block rounded-lg px-2 py-1.5 no-underline;
+	}
+
+	.fc-btn-primary {
+		@apply bg-neutral-900;
+	}
+
+	.fc-btn-primary .fc-btn-label {
+		@apply text-sm font-normal text-white;
+	}
+
+	.fc-btn-secondary {
+		@apply bg-white [border:1px_solid_#d4d4d4];
+	}
+
+	.fc-btn-secondary .fc-btn-label {
+		@apply text-sm font-normal text-neutral-800;
+	}
+
+	.fc-link {
+		@apply underline;
+	}
+
+	.fc-link .fc-link-label {
+		@apply text-sm font-medium text-neutral-900;
+	}
+
+	.fc-table {
+		@apply w-full text-left [border-collapse:separate] [border-spacing:0];
+	}
+
+	.fc-table th {
+		@apply bg-neutral-100 p-2 text-sm font-normal text-neutral-500;
+	}
+
+	.fc-table th:first-child {
+		@apply rounded-l-lg;
+	}
+
+	.fc-table th:last-child {
+		@apply rounded-r-lg;
+	}
+
+	.fc-table td {
+		@apply h-10 px-2 text-sm text-neutral-900;
+	}
+
+	.fc-table tr + tr td {
+		@apply [border-top:1px_solid_#e5e5e5];
+	}
+
+	.fc-code {
+		@apply rounded-lg bg-neutral-100 px-4 py-5 text-center font-mono text-3xl font-bold tracking-widest text-neutral-900;
+	}
+
+	.fc-rule td {
+		@apply pt-6 [border-top:1px_solid_#e5e5e5];
+	}
+}
+
+@tailwind utilities;

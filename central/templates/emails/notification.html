@@ -1,0 +1,22 @@
+{% extends "templates/emails/base.html" %}
+{% import "templates/emails/macros.html" as ui %}
+
+{% block content %}
+<tr>
+	<td class="fc-body">
+		{{ ui.heading(title) }}
+
+		{% for paragraph in (body or '').split('\n\n') %}
+			{% if paragraph.strip() %}{{ ui.paragraph(paragraph.strip(), tight=reason) }}{% endif %}
+		{% endfor %}
+
+		{% if reason %}
+		<p class="fc-text"><b>{{ _("Reason") }}:</b> {{ reason }}</p>
+		{% endif %}
+
+		{% if action_label and action_url %}
+		{{ ui.button(action_label, action_url) }}
+		{% endif %}
+	</td>
+</tr>
+{% endblock %}

@@ -63,6 +63,8 @@ central/public/dashboard/
 central/www/dashboard.html
 central/public/node_modules
 
+central/public/css/email.css
+
 # Obsolete pre-migration build output.
 central/public/console/
 central/www/console.html
