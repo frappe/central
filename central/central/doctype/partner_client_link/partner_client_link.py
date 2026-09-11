@@ -6,6 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 
 ACTIVE_STATUSES = ("Pending", "Approved")
+PARTNER_SUPPORT_ROLE = "Partner Support"
 
 
 class PartnerClientLink(Document):
@@ -19,7 +20,7 @@ class PartnerClientLink(Document):
 
 		buffer: DF.Currency
 		client_team: DF.Link
-		connect_membership: DF.Data
+		connect_membership: DF.Data | None
 		paid_by_partner: DF.Check
 		partner_team: DF.Link
 		spend_limit: DF.Currency
@@ -61,3 +62,72 @@ class PartnerClientLink(Document):
 		)
 		if other:
 			frappe.throw(_("{0} already has an active partner link ({1}).").format(self.client_team, other))
+
+	# Internal; the HTTP surface is central.api.connect.approve_partner_link.
+	def approve(self, acting_user: str | None = None) -> None:
+		self._require_status("Pending")
+		self._require_partner_owner(acting_user)
+		self.status = "Approved"
+		self.save(ignore_permissions=True)
+		self._grant_partner_support_membership()
+
+	# Internal; the HTTP surface is central.api.connect.reject_partner_link.
+	def reject(self, acting_user: str | None = None) -> None:
+		self._require_status("Pending")
+		self._require_partner_owner(acting_user)
+		self.status = "Rejected"
+		self.save(ignore_permissions=True)
+
+	# Internal; the HTTP surface is central.api.connect.delink_partner_link.
+	def delink(self, acting_user: str | None = None) -> None:
+		self._require_status("Approved")
+		self._require_partner_or_client_owner(acting_user)
+		self.status = "Delinked"
+		self.save(ignore_permissions=True)
+		self._revoke_partner_support_membership()
+
+	def _require_status(self, expected: str) -> None:
+		if self.status != expected:
+			frappe.throw(_("This action requires the link to be {0}, not {1}.").format(expected, self.status))
+
+	def _require_partner_owner(self, acting_user: str | None) -> None:
+		acting_user = acting_user or frappe.session.user
+		owner = frappe.db.get_value("Team", self.partner_team, "owner_user")
+		if acting_user != owner:
+			frappe.throw(_("Only the partner team's owner can do this."), frappe.PermissionError)
+
+	def _require_partner_or_client_owner(self, acting_user: str | None) -> None:
+		acting_user = acting_user or frappe.session.user
+		owners = frappe.get_all(
+			"Team", filters={"name": ["in", [self.partner_team, self.client_team]]}, pluck="owner_user"
+		)
+		if acting_user not in owners:
+			frappe.throw(_("Only the partner or client team's owner can do this."), frappe.PermissionError)
+
+	def _grant_partner_support_membership(self) -> None:
+		team = frappe.get_doc("Team", self.client_team)
+		partner_owner = frappe.db.get_value("Team", self.partner_team, "owner_user")
+		if any(m.user == partner_owner and m.role == PARTNER_SUPPORT_ROLE for m in team.members):
+			return
+		team.append(
+			"members",
+			{
+				"user": partner_owner,
+				"role": PARTNER_SUPPORT_ROLE,
+				"resource_type": "*",
+				"status": "Active",
+			},
+		)
+		team.flags.from_partner_link_grant = True
+		team.save(ignore_permissions=True)
+
+	def _revoke_partner_support_membership(self) -> None:
+		team = frappe.get_doc("Team", self.client_team)
+		partner_owner = frappe.db.get_value("Team", self.partner_team, "owner_user")
+		rows = [m for m in team.members if m.user == partner_owner and m.role == PARTNER_SUPPORT_ROLE]
+		if not rows:
+			return
+		for row in rows:
+			team.remove(row)
+		team.flags.from_partner_link_grant = True
+		team.save(ignore_permissions=True)

@@ -34,10 +34,10 @@
    "reqd": 1
   },
   {
+   "description": "Connect's Partner Membership.name, once connect exists to create one. TODO: populate/reconcile once connect's request/approve workflow is built — left blank for links created from central today.",
    "fieldname": "connect_membership",
    "fieldtype": "Data",
-   "label": "Connect Membership",
-   "reqd": 1
+   "label": "Connect Membership"
   },
   {
    "default": "Pending",
