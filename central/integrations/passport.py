@@ -23,8 +23,18 @@ from central.central.doctype.central_passport_settings.central_passport_settings
 	CentralPassportSettings,
 )
 
-# One stable Passport site id per Central site name. Deriving it means registration is
-# idempotent without Central having to mint and remember a UUID before its first call.
+# One stable Passport site id per Central site name. Deriving it rather than minting one
+# is what makes registration idempotent: a call whose reply is lost leaves nothing written
+# here, and the retry re-derives the same id, so Passport returns the registration it
+# already made instead of a second one.
+#
+# It is a namespace, not a secret — like the namespaces RFC 4122 publishes. Knowing a site
+# id grants nothing: every registration call is gated on the Passport Manager role.
+#
+# It must never change. A new namespace re-derives every id, so every existing site would
+# look new to Passport and be registered twice. That is why it is a constant and not
+# configuration: there is nothing here to tune, and nothing worth the risk of it differing
+# between two deployments that share one Passport.
 SITE_NAMESPACE = UUID("6cc73c09-0aac-4444-bdc8-f947a6379de0")
 
 # The only states a site never comes back from. Everything else is a moment in a
@@ -34,6 +44,10 @@ GONE = ["Terminated"]
 # Connect, then read. Passport is another web app, not a database: without this a hung
 # one holds a Central worker until something else gives up first.
 TIMEOUT = (5, 20)
+
+# One reconcile pass calls Passport once per drifted site, so it is bounded rather than
+# left to grow into a job that cannot finish.
+RECONCILE_BATCH = 50
 
 # Where a site receives sign-out notices. Passport requires it, and validates it against
 # the origin, so Central names it rather than letting Passport guess a core route.
@@ -107,27 +121,30 @@ def on_site_update(doc, method=None):
 
 
 def reconcile():
-	"""Match every registration to whether its site still exists, both ways.
+	"""Match registrations to whether their site still exists, both ways.
 
-	The Terminated event is the fast path; this is the backstop that corrects a missed
-	one, the same shape as the Atlas mirror's reconcile.
-
-	Only a gone site closes a registration. Reading "not Running" as gone took sign-in
-	away from every site that was merely mid-deploy, and nothing here turned it back
-	on — a redeploy quietly cost a site its Frappe sign-in for good.
+	The Terminated event is the fast path; this is the backstop for a missed one. Only a
+	gone site closes a registration: reading "not Running" as gone took sign-in away
+	from every site that was merely mid-deploy.
 
 	It deliberately does not re-address a moved site. Re-addressing rotates the secret,
-	and only the site's own pull can install the new one — doing it here would leave the
-	site holding a secret Passport no longer accepts. Re-enabling rotates nothing.
+	and only the site's own pull can install the new one.
 	"""
-	for site_name in drifted(enabled=1, status=GONE):
-		disable(site_name)
+	settings = CentralPassportSettings.active()
 
-	for site_name in drifted(enabled=0, status=["Running"]):
-		enable(site_name)
+	if not settings:
+		return
+
+	for record in drifted(enabled=1, status=GONE):
+		set_enabled(record, settings, False)
+
+	for record in drifted(enabled=0, status=["Running"]):
+		set_enabled(record, settings, True)
 
 
-def drifted(*, enabled: int, status: list[str]) -> list[str]:
+def drifted(*, enabled: int, status: list[str]) -> list[frappe._dict]:
+	"""Registrations out of step with their site, capped so one run cannot outlive its
+	queue: each one costs a call to Passport, and the next run picks up the rest."""
 	registration = frappe.qb.DocType("Passport Registration")
 	site = frappe.qb.DocType("Site")
 
@@ -135,25 +152,10 @@ def drifted(*, enabled: int, status: list[str]) -> list[str]:
 		frappe.qb.from_(registration)
 		.join(site)
 		.on(site.name == registration.site)
-		.select(registration.site)
+		.select(registration.name, registration.client_id, registration.origin, site.subdomain)
 		.where((registration.enabled == enabled) & site.status.isin(status))
-	).run(pluck=True)
-
-
-def enable(site_name: str):
-	"""Reopen a registration for a site that came back. Quiet when it never closed."""
-	record = frappe.db.get_value(
-		"Passport Registration", site_name, ["name", "client_id", "origin", "enabled"], as_dict=True
-	)
-	settings = CentralPassportSettings.active()
-
-	if not record or record.enabled or not settings:
-		return
-
-	PassportOperator(settings).readdress(
-		record.client_id, title=_title({"name": site_name}), origin=record.origin, enabled=True
-	)
-	frappe.db.set_value("Passport Registration", record.name, "enabled", 1)
+		.limit(RECONCILE_BATCH)
+	).run(as_dict=True)
 
 
 def disable(site_name: str):
@@ -163,13 +165,20 @@ def disable(site_name: str):
 	)
 	settings = CentralPassportSettings.active()
 
-	if not record or not record.enabled or not settings:
-		return
+	if record and record.enabled and settings:
+		record.subdomain = frappe.db.get_value("Site", site_name, "subdomain")
+		set_enabled(record, settings, False)
 
+
+def set_enabled(record, settings, enabled: bool):
+	"""Open or close one registration, leaving its address and title as they are."""
 	PassportOperator(settings).readdress(
-		record.client_id, title=_title({"name": site_name}), origin=record.origin, enabled=False
+		record.client_id,
+		title=_title({"name": record.name, "subdomain": record.subdomain}),
+		origin=record.origin,
+		enabled=enabled,
 	)
-	frappe.db.set_value("Passport Registration", record.name, "enabled", 0)
+	frappe.db.set_value("Passport Registration", record.name, "enabled", int(enabled))
 
 
 class PassportOperator:
@@ -215,10 +224,10 @@ class PassportOperator:
 	def _call(self, method: str, params: dict, *, action: str) -> dict:
 		try:
 			return self._client().post_api(method, params=params)
-		except FrappeException as exception:
-			frappe.log_error(title=f"Passport {method} failed", message=str(exception))
+		except FrappeException:
+			frappe.log_error(title=f"Passport {method} failed")
 			frappe.throw(_("Frappe sign-in could not {0}.").format(action), PassportError)
-		except Exception:
+		except (OSError, ValueError):
 			frappe.log_error(title=f"Passport {method} unreachable")
 			frappe.throw(_("Frappe sign-in is unavailable right now."), PassportError)
 
@@ -302,7 +311,6 @@ def connect_central() -> dict:
 	return {
 		"provider": configure(
 			issuer=settings.issuer.rstrip("/"),
-			site_id=credentials["site_id"],
 			client_id=credentials["client_id"],
 			client_secret=credentials["client_secret"],
 			origin=origin,

@@ -48,7 +48,7 @@ def build_auth_context() -> dict:
 		"user": frappe.session.user or "Guest",
 		"provider_logins": _provider_logins(),
 		"onboarding_complete": _onboarding_complete(),
-		"passport_site_picker": site_picker_url(),
+		"identity_portal": identity_portal(),
 	}
 
 
@@ -69,14 +69,14 @@ def _provider_logins() -> list[dict[str, str]]:
 	return _social_logins() + _identity_provider_logins()
 
 
-def site_picker_url() -> str | None:
-	from frappe.integrations.openid_connect.directory import site_picker_url as picker
+def identity_portal() -> dict | None:
+	from frappe.integrations.openid_connect.directory import account_portal
 
 	from central.central.doctype.central_passport_settings.central_passport_settings import (
 		CentralPassportSettings,
 	)
 
-	return picker() if CentralPassportSettings.active() else None
+	return account_portal() if CentralPassportSettings.active() else None
 
 
 def _identity_provider_logins() -> list[dict[str, str]]:

@@ -42,7 +42,7 @@ export const useAppMenu = () => {
 		},
 	])
 
-	const sitePicker = window.passport_site_picker
+	const portal = window.identity_portal
 
 	const footerMenuItems = [
 		{
@@ -50,12 +50,12 @@ export const useAppMenu = () => {
 			icon: 'lucide-user',
 			onClick: () => openSettings('profile'),
 		},
-		...(sitePicker
+		...(portal?.url
 			? [
 					{
-						label: 'Your Frappe sites',
+						label: portal.label,
 						icon: 'lucide-globe',
-						onClick: () => window.location.assign(sitePicker),
+						onClick: () => window.location.assign(portal.url),
 					},
 				]
 			: []),
