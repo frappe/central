@@ -407,7 +407,7 @@ async function submit() {
 
 		<div class="flex min-h-0 flex-1 flex-col-reverse lg:flex-row">
 			<!-- Stepped form (left) -->
-			<div class="w-full overflow-y-auto p-4 lg:w-[40rem] lg:shrink-0">
+			<div class="w-full overflow-y-auto p-3 md:p-4 lg:w-[40rem] lg:shrink-0">
 				<p v-if="loading" class="text-p-sm text-ink-gray-5">Loading regions…</p>
 				<p v-else-if="!regions.length" class="text-p-sm text-ink-gray-5">
 					No active regions are available right now.
@@ -428,7 +428,6 @@ async function submit() {
 							</div>
 							<FormControl
 								v-model="name"
-								type="text"
 								placeholder="e.g. Acme Production"
 								:maxlength="60"
 								class="mt-2 max-w-xs auto-f"
@@ -451,7 +450,6 @@ async function submit() {
 								<FormControl
 									id="subdomain"
 									:model-value="subdomain"
-									type="text"
 									placeholder="acme-production"
 									:maxlength="63"
 									autocomplete="off"
@@ -523,7 +521,6 @@ async function submit() {
 								<Button
 									v-for="r in providerRegions"
 									:key="r.region"
-									size="sm"
 									variant="outline"
 									:class="[
 										'!rounded-6 focus-visible:!ring-1 focus-visible:!ring-outline-gray-4',
@@ -539,13 +536,7 @@ async function submit() {
 										>{{ flagEmoji(r.country_code) }}</span
 									>
 									{{ regionLabel(r) }}
-									<Badge
-										v-if="!r.reachable"
-										theme="gray"
-										variant="subtle"
-										label="Unreachable"
-										class="ml-1"
-									/>
+									<Badge v-if="!r.reachable" label="Unreachable" class="ml-1" />
 								</Button>
 							</div>
 						</div>

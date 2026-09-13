@@ -154,7 +154,6 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 			<Dropdown
 				:options="footerMenuItems"
 				side="top"
-				align="start"
 				match-trigger-width
 			>
 				<template #default="{ open }">
@@ -178,7 +177,6 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 						<Avatar
 							:image="profile?.user_image ?? undefined"
 							:label="profile?.full_name || currentUser || ''"
-							size="md"
 						/>
 						<!-- Name first, email beneath — the email alone reads like a
 						     login prompt, not a person. -->

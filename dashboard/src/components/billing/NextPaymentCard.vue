@@ -60,9 +60,7 @@ const instrument = computed(() => {
 			</button>
 		</div>
 
-		<div v-if="loading" class="mt-2 w-32">
-			<LoadingText :lines="1" />
-		</div>
+		<LoadingText v-if="loading" :lines="1" class="mt-2 w-32" />
 
 		<template v-else-if="amount > 0">
 			<p class="mt-1.5 text-2xl-semibold tabular-nums text-ink-gray-9">

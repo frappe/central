@@ -58,9 +58,7 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 
 		<!-- Ledger -->
 		<div class="min-h-0 flex-1 overflow-y-auto">
-			<div v-if="ledger.loading && !ledger.data" class="space-y-3 p-4">
-				<LoadingText :lines="5" />
-			</div>
+			<LoadingText v-if="ledger.loading && !ledger.data" :lines="5" class="p-4" />
 			<div
 				v-else-if="!ledger.data?.length"
 				class="px-4 py-12 text-center text-p-sm text-ink-gray-5"
@@ -108,7 +106,6 @@ function isCredit(entry: CreditLedgerEntry): boolean {
 		<template v-if="canManageBilling" #footer>
 			<Button
 				variant="solid"
-				theme="gray"
 				label="Add credit"
 				class="w-full"
 				@click="onAddCredit"

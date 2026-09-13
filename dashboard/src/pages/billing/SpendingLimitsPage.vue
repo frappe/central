@@ -223,7 +223,9 @@ const levels = computed(() => {
 
 <template>
 	<div class="h-full overflow-y-auto">
-		<div class="mx-auto flex w-full max-w-3xl flex-col gap-8 px-6 py-8">
+		<div
+			class="mx-auto flex w-full max-w-3xl flex-col gap-3 p-3 md:gap-4 md:p-4 lg:mt-6"
+		>
 			<LoadingText v-if="tier.loading && !tier.data" :lines="6" />
 
 			<template v-else-if="levels.length">

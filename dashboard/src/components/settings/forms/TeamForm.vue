@@ -66,7 +66,6 @@ async function onDelete(): Promise<void> {
 					<div class="flex flex-col items-start gap-1">
 						<Button
 							size="xs"
-							variant="subtle"
 							icon-left="lucide-upload"
 							:label="activeTeamLogo ? 'Change' : 'Upload'"
 						/>
@@ -110,7 +109,6 @@ async function onDelete(): Promise<void> {
 			>
 				<Button
 					theme="red"
-					variant="subtle"
 					label="Delete"
 					@click="confirmDelete = true"
 				/>

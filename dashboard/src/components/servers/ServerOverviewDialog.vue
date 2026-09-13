@@ -173,7 +173,6 @@ const planLabel = computed(() =>
 								v-if="visual"
 								:label="visual.label"
 								:theme="visual.badgeTheme"
-								variant="subtle"
 								size="sm"
 							/>
 						</div>
@@ -232,7 +231,6 @@ const planLabel = computed(() =>
 				<Button label="Close" @click="close" />
 				<Button
 					v-if="props.server && canOpen"
-					variant="subtle"
 					label="Open server"
 					icon-right="lucide-arrow-up-right"
 					@click="openServer"

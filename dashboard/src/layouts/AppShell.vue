@@ -63,7 +63,7 @@ const breadcrumbs = computed(
 <template>
 	<MobileShell v-if="isMobile">
 		<header
-			class="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-4"
+			class="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-3"
 		>
 			<button class="flex items-center gap-1" @click="mobileNavDrawer = true">
 				<Breadcrumbs :items="breadcrumbs" />
@@ -101,7 +101,7 @@ const breadcrumbs = computed(
 		</template>
 
 		<header
-			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4 sm:px-6"
+			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4"
 		>
 			<Breadcrumbs :items="breadcrumbs" />
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />

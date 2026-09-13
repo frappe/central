@@ -448,7 +448,6 @@ const showListControls = computed(
 					:key="filter.key"
 					:model-value="query.filters[filter.key] || ''"
 					class="w-40"
-					variant="subtle"
 					:placeholder="filter.allLabel || `All ${filter.label.toLowerCase()}`"
 					:options="[
             {

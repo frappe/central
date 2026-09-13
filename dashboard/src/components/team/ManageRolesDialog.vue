@@ -170,7 +170,7 @@ const dialogOptions = computed(() => ({
 		<template #default>
 			<div v-if="member" class="space-y-4">
 				<div class="flex items-center gap-3">
-					<Avatar :label="member.full_name" size="md" />
+					<Avatar :label="member.full_name" />
 					<div class="min-w-0">
 						<p class="truncate font-medium text-ink-gray-9">
 							{{ member.full_name }}
@@ -227,7 +227,6 @@ const dialogOptions = computed(() => ({
 				</div>
 
 				<Button
-					variant="subtle"
 					icon-left="lucide-plus"
 					label="Add role for a resource"
 					@click="addRow"
