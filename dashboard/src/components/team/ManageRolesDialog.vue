@@ -166,14 +166,16 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<template #default>
-			<div v-if="member" class="space-y-4">
+			<div class="space-y-4">
 				<div class="flex items-center gap-3">
-					<Avatar :label="member.full_name" size="2xl" />
+					<Avatar :label="member?.full_name" size="2xl" />
 					<div class="min-w-0">
 						<p class="truncate font-medium text-ink-gray-9">
-							{{ member.full_name }}
+							{{ member?.full_name }}
 						</p>
-						<p class="truncate text-p-sm text-ink-gray-5">{{ member.user }}</p>
+						<p class="truncate text-p-sm text-ink-gray-5">
+							{{ member?.user }}
+						</p>
 					</div>
 				</div>
 
