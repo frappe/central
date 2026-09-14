@@ -142,12 +142,10 @@ const dialogOptions = computed(() => ({
 	size: 'lg' as const,
 	actions: [
 		{
-			label: 'Back',
-			variant: 'outline' as const,
-			iconLeft: 'lucide-arrow-left',
-			onClick: () => {
-				open.value = false
-			},
+			label: 'Add role',
+			onClick: addRow,
+			class: 'mr-auto',
+			iconLeft: 'lucide-plus',
 		},
 		{
 			label: 'Save',
@@ -170,7 +168,7 @@ const dialogOptions = computed(() => ({
 		<template #default>
 			<div v-if="member" class="space-y-4">
 				<div class="flex items-center gap-3">
-					<Avatar :label="member.full_name" />
+					<Avatar :label="member.full_name" size="2xl" />
 					<div class="min-w-0">
 						<p class="truncate font-medium text-ink-gray-9">
 							{{ member.full_name }}
@@ -225,12 +223,6 @@ const dialogOptions = computed(() => ({
 						/>
 					</div>
 				</div>
-
-				<Button
-					icon-left="lucide-plus"
-					label="Add role for a resource"
-					@click="addRow"
-				/>
 			</div>
 		</template>
 	</Dialog>
