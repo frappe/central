@@ -73,7 +73,7 @@ const columns = computed<ListViewColumn<InvoiceSummary>[]>(() => [
 			h('div', { class: 'min-w-0 py-2.5' }, [
 				h(
 					'p',
-					{ class: 'truncate text-sm-medium text-ink-gray-8' },
+					{ class: 'truncate text-sm-medium leading-normal text-ink-gray-8' },
 					billingPeriod(row.original.period_start, row.original.period_end),
 				),
 				h(

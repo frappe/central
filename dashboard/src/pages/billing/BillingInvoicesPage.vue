@@ -181,7 +181,7 @@ const eventDetail = (ev: {
 				:invoices="invoices"
 				:loading="invoicesLoading && !invoices.length"
 				:active-name="selected?.name"
-				class="p-3 md:p-4"
+				class="mx-auto w-full max-w-3xl p-3 md:p-4"
 				@row-click="selectRow"
 			/>
 		</div>
