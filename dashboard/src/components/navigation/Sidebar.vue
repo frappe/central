@@ -88,7 +88,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 		v-model:collapsed="sidebarCollapsed"
 		:disable-collapse="isMobile"
 		class="border-r"
-		:class="isMobile ? '!w-full !border-r-0 bg-transparent' : ''"
+		:class="isMobile ? '!w-full !border-r-0 bg-transparent pb-4' : ''"
 	>
 		<SidebarHeader
 			v-if="!isMobile"

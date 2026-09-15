@@ -113,7 +113,7 @@ const breadcrumbs = computed(
 	</DesktopShell>
 
 	<BottomSheet v-model:open="mobileNavDrawer">
-		<Sidebar class="p-4" />
+		<Sidebar />
 	</BottomSheet>
 
 	<ToastProvider />
