@@ -1,11 +1,19 @@
 <script setup lang="ts">
-import { Badge, Button, Spinner, useCall } from 'frappe-ui'
+import {
+	Badge,
+	Breadcrumbs,
+	Button,
+	PageHeader,
+	PageHeaderBackButton,
+	PageHeaderMobile,
+	Spinner,
+	useCall,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import StorageBuckets from '@/components/addons/StorageBuckets.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
 import { useSession } from '@/composables/useSession'
@@ -25,7 +33,6 @@ const { canManageServices, canManageBilling } = useCapabilities()
 const { offers, offersLoading, instance, loadInstance, activate } =
 	useServices()
 const { activeTeam } = useSession()
-const { setBreadcrumbs } = useBreadcrumbs()
 
 const offer = computed(
 	() => offers.value.find((o) => o.name === serviceKey) ?? null,
@@ -34,7 +41,6 @@ const managedService = computed(() => offer.value?.managed_service ?? null)
 const title = computed(() => offer.value?.title ?? 'Service')
 const description =
 	'S3-compatible buckets for file uploads, backups and static assets.'
-watch(title, (value) => setBreadcrumbs([{ label: value }]), { immediate: true })
 
 watch(
 	managedService,
@@ -98,6 +104,18 @@ const activateService = async (): Promise<void> => {
 </script>
 
 <template>
+	<!-- The trail is the service's own title, as it was before: this page is only
+	     ever reached from the Services catalog, so that's where Back goes. -->
+	<PageHeaderMobile class="sm:hidden" :title="title">
+		<template #prefix>
+			<PageHeaderBackButton to="/addons" />
+		</template>
+	</PageHeaderMobile>
+
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs :items="[{ label: title }]" />
+	</PageHeader>
+
 	<div class="flex h-full flex-col">
 		<div
 			v-if="offersLoading && !offer"

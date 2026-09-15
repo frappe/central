@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { Button, Spinner, TabButtons } from 'frappe-ui'
+import {
+	Breadcrumbs,
+	Button,
+	PageHeader,
+	PageHeaderBackButton,
+	PageHeaderMobile,
+	Spinner,
+	TabButtons,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import AIApiKeys from '@/components/addons/AIApiKeys.vue'
 import AIOverview from '@/components/addons/AIOverview.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useServices } from '@/composables/useServices'
 import { errorToast, errorToastWithAction } from '@/lib/toast'
@@ -16,7 +23,6 @@ const serviceKey = 'ai'
 const { canManageServices, canManageBilling } = useCapabilities()
 const { offers, offersLoading, instance, loadInstance, activate } =
 	useServices()
-const { setBreadcrumbs } = useBreadcrumbs()
 
 const offer = computed(
 	() => offers.value.find((o) => o.name === serviceKey) ?? null,
@@ -25,7 +31,6 @@ const managedService = computed(() => offer.value?.managed_service ?? null)
 const title = computed(() => offer.value?.title ?? 'Service')
 const description =
 	'Open models on Frappe hardware, through an OpenAI-compatible API.'
-watch(title, (value) => setBreadcrumbs([{ label: value }]), { immediate: true })
 const models = computed(() => instance.value?.models ?? [])
 
 watch(
@@ -63,7 +68,21 @@ const activateService = async (): Promise<void> => {
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
+	<!-- The trail is the service's own title, as it was before: this page is only
+	     ever reached from the Services catalog, so that's where Back goes. -->
+	<PageHeaderMobile class="sm:hidden" :title="title">
+		<template #prefix>
+			<PageHeaderBackButton to="/addons" />
+		</template>
+	</PageHeaderMobile>
+
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs :items="[{ label: title }]" />
+	</PageHeader>
+
+	<!-- Desktop-only column: the tab panels own their overflow there, while on a
+	     phone the page falls through to the shell's scroll. -->
+	<div class="sm:flex sm:h-full sm:flex-col">
 		<div
 			v-if="offersLoading && !offer"
 			class="flex flex-1 justify-center py-16"

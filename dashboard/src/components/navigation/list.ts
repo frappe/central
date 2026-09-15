@@ -48,6 +48,7 @@ export const sidebarSections = computed<SidebarSection[]>(() => {
 					icon: 'lucide-bell',
 					condition: isMember.value && !isMobile.value,
 					component: NotificationsPanel,
+					class: 'mb-3',
 				},
 			],
 		},

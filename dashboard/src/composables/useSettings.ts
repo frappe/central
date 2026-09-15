@@ -26,12 +26,14 @@ const TeamForm = defineAsyncComponent(
 // team's settings. Callers name the tab they want and this decides how to show
 // it — a dialog on desktop, a real page on mobile, where a modal over a 375px
 // screen is just a page with the edges shaved off.
+// These double as URL slugs, so they read as addresses rather than internals:
+// 'team-settings', not 'team', which would sit confusingly beside 'teams'.
 export type SettingsTab =
 	| 'profile'
 	| 'notifications'
 	| 'appearance'
 	| 'teams'
-	| 'team'
+	| 'team-settings'
 
 export interface SettingsTabDef {
 	value: SettingsTab
@@ -93,7 +95,7 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 		component: TeamsForm,
 	},
 	{
-		value: 'team',
+		value: 'team-settings',
 		group: 'Team',
 		label: 'Team settings',
 		icon: 'lucide-building-2',
@@ -107,31 +109,66 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
 export const settingsOpen = ref(false)
 export const settingsTab = ref<SettingsTab>('profile')
 
+// Each presentation owns its own URL space, so a settings address is never
+// ambiguous about which one it means: /settings/:tab is the desktop dialog,
+// /mobile-settings/:tab is the page stack. Both name the tab, so a reload or a
+// shared link reopens exactly where it left off.
+export const SETTINGS_BASE = '/settings'
+export const MOBILE_SETTINGS_BASE = '/mobile-settings'
+
 // A one-shot read rather than useIsMobile(): openSettings runs from click
 // handlers outside any component scope, where a media-query listener would have
 // no scope to be torn down with. Same breakpoint, so both agree on what mobile
-// means — the dialog only mounts when useIsMobile says desktop, and routing
-// here on a different threshold would strand the caller on a page with no
-// dialog behind it.
+// means.
 const onMobile = (): boolean =>
 	window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`).matches
 
+export const settingsPath = (tab: SettingsTab): string =>
+	`${onMobile() ? MOBILE_SETTINGS_BASE : SETTINGS_BASE}/${tab}`
+
+// The dialog covers the page it opened over, and the URL no longer records
+// that page — so remember it here and land back on it when settings close.
+let returnTo: string | null = null
+
+const inSettings = (path: string): boolean =>
+	path.startsWith(SETTINGS_BASE) || path.startsWith(MOBILE_SETTINGS_BASE)
+
 export const openSettings = (tab: SettingsTab = 'profile'): void => {
-	if (onMobile()) {
-		router.push(`/settings/${tab}`)
-		return
-	}
-	settingsTab.value = tab
-	settingsOpen.value = true
+	const path = router.currentRoute.value.path
+	if (!inSettings(path)) returnTo = path
+	router.push(settingsPath(tab))
 }
 
-// Leave settings, whichever presentation you're in: the dialog closes, and a
-// mobile tab page falls back to the list. Callers that navigate somewhere else
-// themselves (deleting a team lands on Servers) should set `settingsOpen`
-// directly instead, or the two pushes race in the same tick.
+/** Leave the desktop dialog for wherever it was opened from. */
+export const returnFromSettings = (): void => {
+	router.replace(returnTo ?? '/servers')
+}
+
+// Leave settings, whichever presentation you're in: a mobile tab page falls
+// back to the hub, and the dialog closes — which the route watches, so the
+// navigation back out happens there rather than racing with this.
 export const closeSettings = (): void => {
-	settingsOpen.value = false
-	if (router.currentRoute.value.path.startsWith('/settings/')) {
-		router.replace('/settings')
+	if (router.currentRoute.value.path.startsWith(`${MOBILE_SETTINGS_BASE}/`)) {
+		router.replace(MOBILE_SETTINGS_BASE)
+		return
 	}
+	settingsOpen.value = false
+}
+
+// Leave settings for somewhere specific instead of back where you came from —
+// deleting a team lands on Servers, not on the team page the pencil opened
+// settings from. Callers must go through this rather than closing and pushing
+// themselves: closing is what triggers the trip back to `returnTo`, and that
+// replace supersedes a push issued alongside it, so the caller's destination
+// silently loses.
+export const closeSettingsTo = (path: string): void => {
+	returnTo = path
+	closeSettings()
+}
+
+// A team switch invalidates wherever settings were opened from: that page
+// belongs to the old team and may not even be readable under the new one.
+// Home is always safe.
+export const forgetSettingsOrigin = (): void => {
+	returnTo = null
 }

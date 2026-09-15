@@ -46,9 +46,11 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 </script>
 
 <template>
+	<!-- The open width (24rem) is wider than a phone, so the panel hung off the
+	     right edge — fill the map instead, keeping the 1rem gutter `left-4` sets. -->
 	<section
 		class="sp-float absolute left-4 top-4 z-30 overflow-hidden rounded-6 border border-outline-gray-2 bg-surface-elevation-1"
-		:class="open && 'sp-float-open'"
+		:class="open && 'sp-float-open max-sm:!w-[calc(100%-2rem)]'"
 		role="region"
 		aria-label="Your servers"
 		@keydown.esc="open = false"

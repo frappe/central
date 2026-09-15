@@ -140,8 +140,16 @@ function resetPassword(): void {
 		</div>
 
 		<!-- Identity, not a setting — disabled (not readonly) so it can't be
-		     focused or clicked into at all. -->
-		<FormControl :model-value="profile?.user ?? ''" label="Email" disabled />
+		     focused or clicked into at all. The disabled surface-gray-1 fill leaves
+		     the value all but invisible in dark mode; gray-2 lifts the field off
+		     the background there and still reads as a filled, inert input in light
+		     mode (elevation-2 goes white in light, which looks editable). -->
+		<FormControl
+			:model-value="profile?.user ?? ''"
+			label="Email"
+			disabled
+			class="[&_input]:!bg-surface-gray-2"
+		/>
 
 		<!-- One button until you mean it; the fields appear in place. The button
 		     and field labels name themselves — no section label. -->

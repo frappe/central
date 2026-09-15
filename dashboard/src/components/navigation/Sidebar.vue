@@ -10,17 +10,30 @@ import {
 	SidebarLabel,
 	useShortcut,
 } from 'frappe-ui'
-import { onScopeDispose, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
-import { useIsMobile } from '@/composables/useIsMobile'
 import { useMyProfile } from '@/composables/useMyProfile'
 import { useSession } from '@/composables/useSession'
 import { isMac } from '@/lib/platform'
 import { sidebarSections } from './list'
 
-const isMobile = useIsMobile()
+const props = defineProps<{ isMobile?: boolean }>()
+const isMobile = computed(() => !!props.isMobile)
+
+// Search and Notifications resolve their own `condition` on mobile, so the
+// drawer shows only what the bottom bar can't reach. A section left empty by
+// that drops out with them.
+const sections = computed(() =>
+	sidebarSections.value
+		.map((section) => ({
+			...section,
+			items: section.items.filter((item) => item.condition !== false),
+		}))
+		.filter((section) => section.items.length > 0),
+)
+
 const { activeTeamLabel } = useSession()
 const { currentUser, headerMenuItems, footerMenuItems } = useAppMenu()
 const { profile } = useMyProfile()
@@ -101,10 +114,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 		/>
 
 		<nav class="flex-1 overflow-y-auto px-2 pt-2">
-			<template
-				v-for="section in sidebarSections"
-				:key="section.label || 'main'"
-			>
+			<template v-for="section in sections" :key="section.label || 'main'">
 				<SidebarLabel
 					v-if="section.label"
 					class="mt-2"
@@ -122,22 +132,33 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 				<template
 					v-if="!section.collapsible || !collapsedSections[section.label]"
 				>
-					<template
-						v-for="item in section.items.filter((i) => i.condition !== false)"
-						:key="item.label"
-					>
+					<template v-for="item in section.items" :key="item.label">
 						<component :is="item.component" v-if="item.component" />
 
+						<!-- In the mobile drawer these rows are the primary nav and get
+						     touched, not clicked: 16px labels, a proportionally larger
+						     icon, and a row tall enough to hit. The desktop rail keeps
+						     its denser sizing. -->
 						<SidebarItem
 							v-else
 							:icon="item.icon"
 							:to="item.to"
 							:onclick="item.onClick"
 							class="mb-0.5"
-							:class="item.class"
+							:class="[item.class, isMobile ? '!h-10' : '']"
 							:active="!!item.to && item.to === route.path"
 						>
-							<span class="truncate text-sm">{{ item.label }}</span>
+							<template v-if="isMobile" #prefix>
+								<span
+									class="size-5 shrink-0 text-ink-gray-6"
+									:class="item.icon"
+									aria-hidden="true"
+								/>
+							</template>
+							<!-- text-lg is 16px in this preset; text-base is 14px. -->
+							<span class="truncate" :class="isMobile ? 'text-lg' : 'text-sm'">
+								{{ item.label }}
+							</span>
 							<template v-if="item.shortcut" #suffix>
 								<KeyboardShortcut
 									:combo="item.shortcut"

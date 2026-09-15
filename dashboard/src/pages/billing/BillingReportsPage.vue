@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { Button, dayjs, LoadingText, TabButtons, useCall } from 'frappe-ui'
+import {
+	Breadcrumbs,
+	Button,
+	dayjs,
+	LoadingText,
+	PageHeader,
+	PageHeaderMobile,
+	TabButtons,
+	useCall,
+} from 'frappe-ui'
 import { NumberCard } from 'frappe-ui/charts'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -12,6 +21,7 @@ import SpendSplitCard from '@/components/billing/SpendSplitCard.vue'
 import StatementCard from '@/components/billing/StatementCard.vue'
 import StatementPanel from '@/components/billing/StatementPanel.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import NavDrawerTitle from '@/components/navigation/NavDrawerTitle.vue'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { useTrayColumn } from '@/composables/useTrayColumn'
@@ -137,8 +147,27 @@ function exportUrl(report: string): string {
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
-		<div class="min-w-0 flex-1 overflow-y-auto">
+	<PageHeaderMobile class="sm:hidden">
+		<NavDrawerTitle title="Reports" />
+	</PageHeaderMobile>
+
+	<!-- 'Billing' is the sidebar group Reports sits in, not a page above it —
+	     Overview is its sibling. So it labels the trail without linking. -->
+	<PageHeader class="hidden sm:flex">
+		<Breadcrumbs
+			:items="[
+				{ label: 'Billing' },
+				{ label: 'Reports', route: { name: 'BillingReports' } },
+			]"
+		/>
+	</PageHeader>
+
+	<!-- The content/tray row is desktop-only scaffolding: DesktopShell doesn't
+	     scroll, so the panes own their overflow there. On mobile MobileShell is
+	     the scroller and the page has to fall through to it, or the bottom nav
+	     eats the last rows. -->
+	<div class="sm:flex sm:h-full sm:min-h-0">
+		<div class="sm:min-w-0 sm:flex-1 sm:overflow-y-auto">
 			<div class="mx-auto w-full max-w-5xl space-y-5 px-6 py-8">
 				<div v-if="loading" class="space-y-5">
 					<BillingCard v-for="i in 2" :key="i" title=" ">
