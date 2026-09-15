@@ -11,6 +11,9 @@
   "client_team",
   "connect_membership",
   "status",
+  "column_break_dates",
+  "approved_on",
+  "delinked_on",
   "column_break_billing",
   "paid_by_partner",
   "spend_limit",
@@ -48,6 +51,24 @@
    "label": "Status",
    "options": "Pending\nApproved\nRejected\nDelinked",
    "reqd": 1
+  },
+  {
+   "fieldname": "column_break_dates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "When this link was Approved — the start of the day-range billed to the partner. Set automatically.",
+   "fieldname": "approved_on",
+   "fieldtype": "Datetime",
+   "label": "Approved On",
+   "read_only": 1
+  },
+  {
+   "description": "When this link was Delinked — the end of the day-range billed to the partner; billing reverts to the client from the next day. Set automatically.",
+   "fieldname": "delinked_on",
+   "fieldtype": "Datetime",
+   "label": "Delinked On",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_billing",

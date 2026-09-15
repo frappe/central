@@ -18,9 +18,11 @@ class PartnerClientLink(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		approved_on: DF.Datetime | None
 		buffer: DF.Currency
 		client_team: DF.Link
 		connect_membership: DF.Data | None
+		delinked_on: DF.Datetime | None
 		paid_by_partner: DF.Check
 		partner_team: DF.Link
 		spend_limit: DF.Currency
@@ -68,6 +70,7 @@ class PartnerClientLink(Document):
 		self._require_status("Pending")
 		self._require_partner_owner(acting_user)
 		self.status = "Approved"
+		self.approved_on = frappe.utils.now_datetime()
 		self.save(ignore_permissions=True)
 		self._grant_partner_support_membership()
 
@@ -83,6 +86,7 @@ class PartnerClientLink(Document):
 		self._require_status("Approved")
 		self._require_partner_or_client_owner(acting_user)
 		self.status = "Delinked"
+		self.delinked_on = frappe.utils.now_datetime()
 		self.save(ignore_permissions=True)
 		self._revoke_partner_support_membership()
 

@@ -15,6 +15,10 @@
   "unit",
   "project",
   "project_title",
+  "source_team",
+  "source_team_name",
+  "covered_by",
+  "covered_by_name",
   "column_break_calc",
   "quantity",
   "rate",
@@ -23,7 +27,8 @@
   "charge_date",
   "period_from",
   "period_to",
-  "amount"
+  "amount",
+  "covered_amount"
  ],
  "fields": [
   {
@@ -65,6 +70,30 @@
    "fieldtype": "Data",
    "label": "Project Title",
    "description": "The Project's title at generation time, so the breakdown still reads correctly after a later rename."
+  },
+  {
+   "fieldname": "source_team",
+   "fieldtype": "Data",
+   "label": "Source Team",
+   "description": "Paid-by-Partner (ADR 0007): set only on a line consolidated onto a partner's invoice from a linked client team's own usage. Immutable snapshot, not a live Link. Empty for a team's own lines."
+  },
+  {
+   "fieldname": "source_team_name",
+   "fieldtype": "Data",
+   "label": "Source Team Name",
+   "description": "The source team's display name at generation time."
+  },
+  {
+   "fieldname": "covered_by",
+   "fieldtype": "Data",
+   "label": "Covered By",
+   "description": "Paid-by-Partner (ADR 0007): set only on a client's own zeroed placeholder line for a day-range a partner paid instead. Immutable snapshot, not a live Link."
+  },
+  {
+   "fieldname": "covered_by_name",
+   "fieldtype": "Data",
+   "label": "Covered By Name",
+   "description": "The covering partner team's display name at generation time."
   },
   {
    "fieldname": "column_break_calc",
@@ -121,6 +150,12 @@
    "in_list_view": 1,
    "label": "Amount",
    "description": "days x (rate / days_in_period), or hours x (rate / (days_in_period x 24)) for an hourly line"
+  },
+  {
+   "fieldname": "covered_amount",
+   "fieldtype": "Currency",
+   "label": "Covered Amount",
+   "description": "Paid-by-Partner (ADR 0007): set only on a `covered_by` placeholder line — what this day-range would have cost, for visibility. Not part of `amount` (which stays 0) and not billed to this team."
   }
  ],
  "index_web_pages_for_search": 1,

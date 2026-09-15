@@ -56,6 +56,12 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		return {"invoice": invoice, "claimed": True, "cost_report": True, "expected_collection": 0}
 
 	# Leg 1 — credits first (only against the collectable amount, gross less TDS).
+	# Paid-by-Partner (ADR 0007) note: no redirection needed here. `doc.total` on a
+	# paid-by-partner team's own invoice already excludes every day-range a partner
+	# covers (zeroed into a `covered_by` placeholder at generation — see generate.py);
+	# the real charge for those same days lands on the partner's own separate
+	# invoice, where `doc.team` already IS the partner. So whatever remains
+	# `collectable` here is always genuinely this team's own to pay.
 	applied = 0
 	collectable = frappe.utils.flt(doc.total) - frappe.utils.flt(doc.tds_amount)
 	if collectable > 0:
