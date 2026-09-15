@@ -31,9 +31,16 @@ import type {
 } from '@/types/api'
 
 const inviteDialog = ref(false)
-const manageAccessFor = ref<TeamMemberRow | null>(null)
-const removeTarget = ref<TeamMemberRow | null>(null)
-const transferTarget = ref<TeamMemberRow | null>(null)
+const selectedMember = ref<TeamMemberRow | null>(null)
+const activeDialog = ref<'manage' | 'remove' | 'transfer' | null>(null)
+
+const openDialog = (
+	dialog: 'manage' | 'remove' | 'transfer',
+	member: TeamMemberRow,
+): void => {
+	selectedMember.value = member
+	activeDialog.value = dialog
+}
 
 const { members, loading, error, busy, reload } = useTeamMembers()
 const {
@@ -262,15 +269,27 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 				:can-manage="canManageMembers"
 				:is-owner="isOwner"
 				:busy="busy === row.member.user"
-				@manage-access="manageAccessFor = $event"
-				@transfer-requested="transferTarget = $event"
-				@remove-requested="removeTarget = $event"
+				@manage-access="openDialog('manage', $event)"
+				@transfer-requested="openDialog('transfer', $event)"
+				@remove-requested="openDialog('remove', $event)"
 			/>
 		</template>
 	</ListView>
 
 	<InviteMemberDialog v-model:open="inviteDialog" @invited="reloadInvites" />
-	<ManageRolesDialog v-model:member="manageAccessFor" />
-	<RemoveMemberDialog v-model:member="removeTarget" />
-	<TransferOwnershipDialog v-model:member="transferTarget" />
+	<ManageRolesDialog
+		:open="activeDialog === 'manage'"
+		:member="selectedMember"
+		@update:open="activeDialog = null"
+	/>
+	<RemoveMemberDialog
+		:open="activeDialog === 'remove'"
+		:member="selectedMember"
+		@update:open="activeDialog = null"
+	/>
+	<TransferOwnershipDialog
+		:open="activeDialog === 'transfer'"
+		:member="selectedMember"
+		@update:open="activeDialog = null"
+	/>
 </template>

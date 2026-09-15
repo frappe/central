@@ -6,22 +6,21 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 import type { TeamMemberRow } from '@/types/api'
 
-const props = defineProps<{ member: TeamMemberRow | null }>()
-const emit = defineEmits<{ 'update:member': [member: TeamMemberRow | null] }>()
+interface Props {
+	member: TeamMemberRow | null
+}
+
+const props = defineProps<Props>()
+const open = defineModel<boolean>('open', { default: false })
 
 const { transferOwnership, saving } = useTeamSettings()
 const { reload } = useTeamMembers()
 const { activeTeamLabel } = useSession()
 
-const open = computed({
-	get: () => !!props.member,
-	set: (v: boolean) => {
-		if (!v) emit('update:member', null)
-	},
-})
-
 const typed = ref('')
-watch(open, () => (typed.value = ''))
+watch(open, (isOpen) => {
+	if (isOpen) typed.value = ''
+})
 
 const expected = computed(() => props.member?.full_name ?? '')
 const confirmed = computed(
@@ -29,7 +28,7 @@ const confirmed = computed(
 		typed.value.trim().toLowerCase() === expected.value.trim().toLowerCase(),
 )
 
-async function confirm(): Promise<void> {
+const confirm = async (): Promise<void> => {
 	if (!props.member || !confirmed.value) return
 	if (await transferOwnership(props.member.user)) {
 		reload()
@@ -38,7 +37,6 @@ async function confirm(): Promise<void> {
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Transfer ownership',
 	actions: [
 		{
 			label: 'Cancel',
@@ -62,7 +60,7 @@ const dialogOptions = computed(() => ({
 <template>
 	<Dialog
 		v-model="open"
-		:title="dialogOptions.title"
+		title="Transfer ownership"
 		size="sm"
 		:actions="dialogOptions.actions"
 	>

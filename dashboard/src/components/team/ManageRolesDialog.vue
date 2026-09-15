@@ -13,8 +13,12 @@ import type {
 	TeamRegistry,
 } from '@/types/api'
 
-const props = defineProps<{ member: TeamMemberRow | null }>()
-const emit = defineEmits<{ 'update:member': [member: TeamMemberRow | null] }>()
+interface Props {
+	member: TeamMemberRow | null
+}
+
+const props = defineProps<Props>()
+const open = defineModel<boolean>('open', { default: false })
 
 const { roles } = useTeamRoles()
 const { setRoles } = useTeamMembers()
@@ -30,13 +34,6 @@ const regionLabel = (
 		: region.display_name
 }
 
-const open = computed({
-	get: () => !!props.member,
-	set: (v: boolean) => {
-		if (!v) emit('update:member', null)
-	},
-})
-
 const rows = ref<TeamMemberRoleAssignment[]>([])
 
 const registryCall = useCall<TeamRegistry, { team: string }>({
@@ -45,14 +42,11 @@ const registryCall = useCall<TeamRegistry, { team: string }>({
 	immediate: false,
 })
 
-watch(
-	() => props.member,
-	(member) => {
-		if (!member) return
-		rows.value = member.roles.map((r) => ({ ...r }))
-		if (!registryCall.data) registryCall.reload()
-	},
-)
+watch(open, (isOpen) => {
+	if (!isOpen || !props.member) return
+	rows.value = props.member.roles.map((r) => ({ ...r }))
+	if (!registryCall.data) registryCall.reload()
+})
 
 const roleOptions = computed(() =>
 	roles.value
@@ -136,7 +130,6 @@ const submit = async (): Promise<void> => {
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Manage access',
 	size: 'lg' as const,
 	actions: [
 		{
@@ -159,7 +152,7 @@ const dialogOptions = computed(() => ({
 <template>
 	<Dialog
 		v-model="open"
-		:title="dialogOptions.title"
+		title="Manage access"
 		:size="dialogOptions.size"
 		:actions="dialogOptions.actions"
 	>
