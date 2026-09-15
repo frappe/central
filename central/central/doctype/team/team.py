@@ -4,8 +4,22 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.model.naming import getseries
+from frappe.utils import cint
 
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
+
+TENANT_ID_SERIES = "TENANT-ID"
+# The mesh address gives the tenant 32 bits; matches atlas.auth.identity.
+MAXIMUM_TENANT_ID = 0xFFFFFFFF
+
+
+def allocate_tenant_id() -> int:
+	"""Return the next tenant identifier. Monotonic, never reused, never 0."""
+	tenant_id = cint(getseries(TENANT_ID_SERIES, 10))
+	if tenant_id > MAXIMUM_TENANT_ID:
+		frappe.throw(_("The tenant identifier space is exhausted."))
+	return tenant_id
 
 
 class Team(Document):
@@ -15,8 +29,9 @@ class Team(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.central.doctype.team_member.team_member import TeamMember
 		from frappe.types import DF
+
+		from central.central.doctype.team_member.team_member import TeamMember
 
 		is_staging_trial: DF.Check
 		members: DF.Table[TeamMember]
@@ -25,6 +40,7 @@ class Team(Document):
 		status: DF.Literal["Active", "Suspended"]
 		team_logo: DF.AttachImage | None
 		team_name: DF.Data
+		tenant_id: DF.LongInt
 	# end: auto-generated types
 
 	def before_validate(self) -> None:
@@ -37,7 +53,12 @@ class Team(Document):
 				{"user": self.owner_user, "role": "Owner", "resource_type": "*", "status": "Active"},
 			)
 
+	def before_insert(self) -> None:
+		# An address field the kernel reads, so a supplied value is not trusted.
+		self.tenant_id = allocate_tenant_id()
+
 	def validate(self) -> None:
+		self._validate_tenant_id()
 		self._absorb_wildcard_grants()
 		self._validate_unique_members()
 		self._validate_owner_membership()
@@ -195,6 +216,13 @@ class Team(Document):
 			event_type="member_joined",
 			message=user,
 		)
+
+	def _validate_tenant_id(self) -> None:
+		"""Refuse a missing or reserved identifier; 0 is the privileged tenant."""
+		if not 1 <= cint(self.tenant_id) <= MAXIMUM_TENANT_ID:
+			frappe.throw(
+				_("Team must carry a tenant identifier between 1 and {0}.").format(MAXIMUM_TENANT_ID)
+			)
 
 	def _absorb_wildcard_grants(self) -> None:
 		"""A role granted on all resources ("*") subsumes the same role on any

@@ -11,6 +11,7 @@
   "team_logo",
   "owner_user",
   "column_break_header",
+  "tenant_id",
   "status",
   "is_staging_trial",
   "members"
@@ -49,6 +50,17 @@
   {
    "fieldname": "column_break_header",
    "fieldtype": "Column Break"
+  },
+  {
+   "description": "The 32-bit network isolation boundary the mesh address carries. Allocated once and never reused.",
+   "fieldname": "tenant_id",
+   "fieldtype": "Long Int",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Tenant ID",
+   "read_only": 1,
+   "set_only_once": 1,
+   "unique": 1
   },
   {
    "default": "Active",
@@ -191,7 +203,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-08-27 11:08:58.595646",
+ "modified": "2026-09-15 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Team",
