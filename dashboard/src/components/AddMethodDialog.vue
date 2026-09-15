@@ -218,6 +218,7 @@ watch(open, (isOpen) => {
 		title="Add payment method"
 		:dismissible="!stripeSubmitting"
 		:show-close-button="!stripeSubmitting"
+		@after-leave="destroyStripe"
 	>
 		<template #default>
 			<LoadingText v-if="options.loading && !options.data" :lines="3" />

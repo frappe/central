@@ -68,6 +68,7 @@ async function onDelete(): Promise<void> {
 							size="xs"
 							icon-left="lucide-upload"
 							:label="activeTeamLogo ? 'Change' : 'Upload'"
+							disabled
 						/>
 						<Button
 							v-if="activeTeamLogo"
@@ -76,6 +77,7 @@ async function onDelete(): Promise<void> {
 							theme="red"
 							icon-left="lucide-trash-2"
 							label="Delete"
+							disabled
 						/>
 					</div>
 				</div>

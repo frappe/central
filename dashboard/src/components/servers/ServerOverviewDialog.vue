@@ -85,6 +85,7 @@ async function load(resourceId: string): Promise<void> {
 		if (overviewCall.error) throw overviewCall.error
 		overview.value = overviewCall.data ?? null
 	} catch (error) {
+		overview.value = null
 		overviewError.value = getErrorMessage(
 			error,
 			"We couldn't load this server. Try again.",

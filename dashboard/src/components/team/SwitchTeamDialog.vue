@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import Table from '@/components/common/Table.vue'
 import { useSession } from '@/composables/useSession'
+import { useTeamRoles } from '@/composables/useTeamRoles'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 import { shortDate } from '@/lib/date'
 import CreateTeamDialog from './CreateTeamDialog.vue'
@@ -12,6 +13,7 @@ const open = defineModel<boolean>('open')
 
 const { teams, activeTeam } = useSession()
 const { teamColumns, teamRowActions } = useTeamSettings()
+const { roleLabel } = useTeamRoles()
 
 const query = ref('')
 watch(open, () => {
@@ -90,7 +92,7 @@ const createTeam = () => {
 			</template>
 
 			<template #role="{ row }">
-				<Badge :label="row.role ?? 'Member'" />
+				<Badge :label="row.role ? roleLabel(row.role) : 'Member'" />
 			</template>
 
 			<template #members="{ row }">

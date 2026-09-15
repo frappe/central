@@ -116,6 +116,7 @@ function resetPassword(): void {
 						size="xs"
 						icon-left="lucide-upload"
 						:label="profile?.user_image ? 'Change' : 'Upload'"
+						disabled
 					/>
 					<Button
 						v-if="profile?.user_image"
@@ -124,6 +125,7 @@ function resetPassword(): void {
 						theme="red"
 						icon-left="lucide-trash-2"
 						label="Delete"
+						disabled
 					/>
 				</div>
 			</div>
