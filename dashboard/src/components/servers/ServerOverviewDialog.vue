@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { Badge, Button, Dialog, useCall } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import ListViewState from '@/components/common/list-view/ListViewState.vue'
-import LoadAverageCard from '@/components/servers/overview/LoadAverageCard.vue'
 import OverviewSkeleton from '@/components/servers/overview/OverviewSkeleton.vue'
 import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.vue'
 import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
@@ -15,6 +14,10 @@ import type { LoadPoint } from '@/lib/loadChart'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getErrorMessage } from '@/lib/toast'
+
+const LoadAverageCard = defineAsyncComponent(
+	() => import('@/components/servers/overview/LoadAverageCard.vue'),
+)
 
 type Overview = {
 	server: AssetRow & {
