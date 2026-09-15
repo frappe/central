@@ -19,6 +19,7 @@ const toggle = useCall<unknown, { name: string; enabled: boolean }>({
 const busy = ref('')
 const pendingRename = ref<Project | null>(null)
 const pendingManageMembers = ref<Project | null>(null)
+const manageMembersOpen = ref(false)
 
 export function useProjects() {
 	const { projects, reloadProjects } = useBillingOverview()
@@ -42,6 +43,7 @@ export function useProjects() {
 
 	function onManageMembers(p: Project): void {
 		pendingManageMembers.value = p
+		manageMembersOpen.value = true
 	}
 
 	return {
@@ -49,6 +51,7 @@ export function useProjects() {
 		busy,
 		pendingRename,
 		pendingManageMembers,
+		manageMembersOpen,
 		onToggle,
 		onRename,
 		onManageMembers,

@@ -60,6 +60,7 @@ async function launchGateway(
 	const res = await run(methodType, contact, instrument, props.afterDecline)
 	if (!res) {
 		open.value = true
+		await nextTick()
 		phone.value = keepPhone
 		selected.value =
 			tiles.value.find((t) => t.instrument === keepInstrument) ?? null
@@ -200,16 +201,14 @@ function cancelStripe(): void {
 }
 
 watch(open, (isOpen) => {
-	if (isOpen) {
-		options.reload()
-		profile.reload()
-	} else {
-		destroyStripe()
-		stripeMode.value = false
-		stripeLoading.value = false
-		phone.value = ''
-		selected.value = null
-	}
+	if (!isOpen) return
+	options.reload()
+	profile.reload()
+	destroyStripe()
+	stripeMode.value = false
+	stripeLoading.value = false
+	phone.value = ''
+	selected.value = null
 })
 </script>
 

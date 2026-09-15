@@ -72,9 +72,11 @@ watch([open, () => props.server?.resource_id], ([isOpen, resourceId]) => {
 })
 
 async function load(resourceId: string): Promise<void> {
-	overview.value = null
+	if (overview.value?.server.resource_id !== resourceId) {
+		overview.value = null
+		hasLoaded.value = false
+	}
 	overviewError.value = ''
-	hasLoaded.value = false
 	try {
 		await overviewCall.submit({
 			team: activeTeam.value!,

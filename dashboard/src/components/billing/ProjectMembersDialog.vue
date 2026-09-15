@@ -12,20 +12,15 @@ import type { Project, SubscriptionRow } from '@/types/billing'
 // here you pick servers for one project). Reuses the same tag/untag endpoint
 // and the team's already-loaded subscriptions — no new reads. Controlled by the
 // card/panel via v-model:project, like RenameProjectDialog.
-const props = defineProps<{ project: Project | null }>()
-const emit = defineEmits<{
-	'update:project': [project: Project | null]
-	changed: []
-}>()
+interface Props {
+	project: Project | null
+}
+
+const props = defineProps<Props>()
+const open = defineModel<boolean>('open', { default: false })
+const emit = defineEmits<{ changed: [] }>()
 
 const { subscriptions, reloadSubscriptionGrouping } = useBillingOverview()
-
-const open = computed({
-	get: () => !!props.project,
-	set: (v: boolean) => {
-		if (!v) emit('update:project', null)
-	},
-})
 
 // Servers only — the same set PayingForCard's row action can tag (a team-level
 // metered service has no "Move to project" entry point yet either).

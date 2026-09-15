@@ -23,11 +23,13 @@ import type { ComposedConfig, Profile } from '@/types/api'
 // One action — the backend power-cycles the VM as needed (Firecracker reconfigures
 // pre-boot), so there's no separate "turn off first" step. Controlled by the page
 // via v-model:server.
-const props = defineProps<{ server: AssetRow | null }>()
-const emit = defineEmits<{
-	'update:server': [server: AssetRow | null]
-	resized: []
-}>()
+interface Props {
+	server: AssetRow | null
+}
+
+const props = defineProps<Props>()
+const model = defineModel<boolean>('open', { default: false })
+const emit = defineEmits<{ resized: [] }>()
 
 const { activeTeam } = useSession()
 const activeTeamId = computed(() => activeTeam.value ?? '')
@@ -95,10 +97,10 @@ const {
 } = usePlans(region, subscription)
 
 const open = computed({
-	get: () => !!props.server,
+	get: () => model.value,
 	set: (v: boolean) => {
 		// Don't let a stray close (Esc / backdrop) abandon an in-flight resize.
-		if (!v && !resizeCall.loading) emit('update:server', null)
+		if (!v && !resizeCall.loading) model.value = false
 	},
 })
 
@@ -177,16 +179,13 @@ watch([() => configCall.data, plans], () => {
 	}
 })
 
-// Reset when the dialog opens on a different server.
-watch(
-	() => props.server,
-	(server) => {
-		selectedPlan.value = null
-		composedConfig.value = null
-		activeTab.value = ''
-		if (server && activeTeamId.value) configCall.reload()
-	},
-)
+watch(open, (isOpen) => {
+	if (!isOpen) return
+	selectedPlan.value = null
+	composedConfig.value = null
+	activeTab.value = ''
+	if (props.server && activeTeamId.value) configCall.reload()
+})
 
 // A confirm is meaningful only when the selection differs from what's running.
 const changed = computed(() => {

@@ -346,6 +346,11 @@ async function confirmTerminate(server: AssetRow): Promise<void> {
 }
 
 const pendingResize = ref<AssetRow | null>(null)
+const resizeOpen = ref(false)
+const openResize = (server: AssetRow): void => {
+	pendingResize.value = server
+	resizeOpen.value = true
+}
 const overviewServer = ref<AssetRow | null>(null)
 const overviewOpen = computed({
 	get: () => !!overviewServer.value,
@@ -473,7 +478,7 @@ async function confirmSiteTerminate(): Promise<void> {
 						@open="open"
 						@start="doStart"
 						@stop="doStop"
-						@resize="pendingResize = $event"
+						@resize="openResize"
 						@terminate="pendingTerminate = $event"
 					/>
 					<SiteRowActions
@@ -522,7 +527,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				@open="open"
 				@start="doStart"
 				@stop="doStop"
-				@resize="pendingResize = $event"
+				@resize="openResize"
 				@terminate="pendingTerminate = $event"
 				@open-site="openSite"
 				@terminate-site="pendingSiteTerminate = { name: $event }"
@@ -588,14 +593,18 @@ async function confirmSiteTerminate(): Promise<void> {
 			</p>
 		</ConfirmDialog>
 
-		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
+		<ResizeServerDialog
+			v-model:open="resizeOpen"
+			:server="pendingResize"
+			@resized="reloadAll"
+		/>
 		<ServerOverviewDialog
 			v-model:open="overviewOpen"
 			:server="overviewServer"
 			:can-open="canOpenServer"
 			:can-resize="canPowerServer"
 			@open="open"
-			@resize="pendingResize = $event"
+			@resize="openResize"
 		/>
 		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>

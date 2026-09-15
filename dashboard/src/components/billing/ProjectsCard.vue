@@ -30,6 +30,7 @@ const {
 	busy,
 	pendingRename,
 	pendingManageMembers,
+	manageMembersOpen,
 	onToggle,
 	onRename,
 	onManageMembers,
@@ -166,7 +167,8 @@ function subtitle(p: Project): string {
 		<CreateProjectDialog v-model="showCreate" @created="reloadProjects" />
 		<RenameProjectDialog v-model:project="pendingRename" @saved="reloadProjects" />
 		<ProjectMembersDialog
-			v-model:project="pendingManageMembers"
+			v-model:open="manageMembersOpen"
+			:project="pendingManageMembers"
 			@changed="reloadProjects"
 		/>
 	</BillingCard>
