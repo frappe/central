@@ -68,7 +68,7 @@ Merge from the bottom. GitHub moves an open pull request onto the merged branch'
 
 ### Patches
 
-Every schema change adds a patch, and `scripts/check_patches.py` runs on each pull request. Patches run in the order of `patches.txt`, and a stack merges from the bottom, so the order is correct. Do not merge a stack out of order.
+Every schema change adds a patch. Patches run in the order of `patches.txt`, and a stack merges from the bottom, so the order is correct. Do not merge a stack out of order.
 
 ## The pull requests
 
@@ -173,7 +173,6 @@ One pull request for each screen group: server creation, server state, onboardin
 
 ```bash
 ../../env/bin/ruff check central
-python3 scripts/check_patches.py
 pilot frappe --site central.localhost run-tests --app central
 ```
 

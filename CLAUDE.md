@@ -223,7 +223,6 @@ From `apps/central`, using the Bench Python environment:
 ```bash
 ../../env/bin/ruff check central
 ../../env/bin/ruff format central
-python3 scripts/check_patches.py
 pre-commit run --all-files
 ```
 
