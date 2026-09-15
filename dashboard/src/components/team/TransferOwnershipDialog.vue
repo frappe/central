@@ -6,9 +6,6 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 import type { TeamMemberRow } from '@/types/api'
 
-// Transfer ownership — the one action an owner can't undo alone: afterwards only
-// the new owner can hand it back. So it asks for the member's name to be typed,
-// the same bar a destructive delete gets.
 const props = defineProps<{ member: TeamMemberRow | null }>()
 const emit = defineEmits<{ 'update:member': [member: TeamMemberRow | null] }>()
 

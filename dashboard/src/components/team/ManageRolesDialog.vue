@@ -102,8 +102,6 @@ const dominatingIndex = computed(() =>
 	rows.value.findIndex((r) => r.role === 'Admin'),
 )
 
-// A role on all resources subsumes the same role on a specific one — flag the
-// narrow rows while editing, and drop them on save (the backend does too).
 const shadowedIndexes = computed(() => {
 	const wildcardRoles = new Set(
 		rows.value

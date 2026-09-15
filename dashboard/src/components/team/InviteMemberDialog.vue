@@ -9,9 +9,6 @@ import { teamParams } from '@/composables/useTeamScope'
 import { errorToast, successToast } from '@/lib/toast'
 import type { ResourceType, TeamRegistry } from '@/types/api'
 
-// Invite a person with a role scoped to all resources or a specific server or
-// site. Owner is excluded — Transfer Ownership assigns that. What a role grants
-// is browsable on the Roles tab, not repeated here.
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [v: boolean]; invited: [] }>()
 
@@ -69,7 +66,6 @@ const resourceOptions = computed(() => {
 	]
 })
 
-// Reset the form each time the dialog opens.
 watch(open, (isOpen) => {
 	if (isOpen) {
 		email.value = ''

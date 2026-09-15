@@ -7,9 +7,6 @@ import {
 	groupCapabilitiesByCategory,
 } from '@/lib/capabilities'
 
-// Build a custom team role: a name + any subset of capabilities. Central closes
-// the set under its implications on save (e.g. server:create pulls in
-// server:view + cluster:view), so the user only ticks what they mean.
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [v: boolean]; created: [] }>()
 
@@ -30,8 +27,6 @@ watch(open, (isOpen) => {
 	}
 })
 
-// Grouped by area (Billing / Team / Services / Servers) with only the plain
-// description shown — the slug is a backend detail the picker doesn't need.
 const groups = computed(() => groupCapabilitiesByCategory(capabilities.value))
 
 function toggle(cap: string, checked: boolean) {
@@ -93,8 +88,6 @@ async function submit() {
 						Pick what this role can do. Any view access it needs is added
 						automatically
 					</p>
-					<!-- Bleeds through the Dialog's right padding (px-4 sm:px-6) so the
-					     scrollbar sits at the modal's edge, not floating mid-content. -->
 					<div
 						class="-mr-4 max-h-[50vh] space-y-4 overflow-y-auto pr-4 sm:-mr-6 sm:pr-6"
 					>
@@ -106,8 +99,6 @@ async function submit() {
 							</h4>
 							<ul class="space-y-2.5">
 								<li v-for="cap in group.caps" :key="cap.name">
-									<!-- Label = the plain-English description; the slug stays a
-									     backend detail. Clicking the text toggles the box. -->
 									<Checkbox
 										:label="capabilityLabel(cap)"
 										:model-value="picked.includes(cap.name)"
