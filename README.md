@@ -123,6 +123,7 @@ See [`e2e/README.md`](e2e/README.md) for setup and commands.
 
 ## Documentation
 
+- [Agent and contributor rules](CLAUDE.md)
 - [IAM](spec/IAM.md)
 - [Capabilities](CAPABILITIES.md)
 - [Atlas tunnel](spec/TUNNEL.md)
