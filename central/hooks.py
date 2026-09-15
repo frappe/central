@@ -2,7 +2,7 @@ app_name = "central"
 app_title = "Central"
 app_publisher = "frappe"
 app_description = "The one stop console for Frappe Cloud"
-app_email = "prathamesh@frappe.io"
+app_email = "developers@frappe.io"
 app_license = "agpl-3.0"
 
 fixtures = [
