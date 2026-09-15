@@ -41,8 +41,8 @@
   {
    "fieldname": "cluster",
    "fieldtype": "Link",
-   "label": "Cluster",
-   "options": "Atlas Instance",
+   "label": "Region",
+   "options": "Region",
    "in_list_view": 1,
    "columns": 1
   },
