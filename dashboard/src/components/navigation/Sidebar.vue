@@ -88,7 +88,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 		v-model:collapsed="sidebarCollapsed"
 		:disable-collapse="isMobile"
 		class="border-r"
-		:class="isMobile ? '!w-full !border-r-0 bg-transparent pb-4' : ''"
+		:class="isMobile ? '!w-full !border-r-0 bg-transparent pb-8' : ''"
 	>
 		<SidebarHeader
 			v-if="!isMobile"
@@ -132,10 +132,10 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 							:to="item.to"
 							:onclick="item.onClick"
 							class="mb-0.5"
-							:class="item.class"
+							:class="[item.class, isMobile ? '!h-10' : '']"
 							:active="!!item.to && item.to === route.path"
 						>
-							<span class="truncate text-sm">{{ item.label }}</span>
+							<span class="truncate md:text-sm">{{ item.label }}</span>
 							<template v-if="item.shortcut" #suffix>
 								<KeyboardShortcut
 									:combo="item.shortcut"

@@ -112,7 +112,7 @@ const breadcrumbs = computed(
 		</div>
 	</DesktopShell>
 
-	<BottomSheet v-model:open="mobileNavDrawer">
+	<BottomSheet v-model:open="mobileNavDrawer" title="Go to">
 		<Sidebar />
 	</BottomSheet>
 
