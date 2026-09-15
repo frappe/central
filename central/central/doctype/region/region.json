@@ -4,37 +4,68 @@
  "allow_rename": 1,
  "autoname": "field:region",
  "creation": "2026-07-05 11:26:36.302438",
+ "description": "One place Central runs machines in: its Atlas, its proxy, and its Cargo host.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "region",
+  "region_id",
   "display_name",
+  "status",
+  "column_break_geo",
   "provider",
   "country_code",
-  "column_break_geo",
   "latitude",
-  "longitude"
+  "longitude",
+  "section_break_atlas",
+  "atlas_base_url",
+  "proxy_control_url",
+  "column_break_atlas",
+  "wildcard_domain",
+  "mesh_address_prefix"
  ],
  "fields": [
   {
-   "description": "Region code, e.g. in-mumbai. One Atlas Instance maps to one Region.",
+   "description": "The region code, matching the one its Atlas is configured with, such as fra-1. It names this record and appears in every automatic site name.",
    "fieldname": "region",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Region",
+   "label": "Region Code",
    "reqd": 1,
    "unique": 1
   },
   {
-   "description": "Human region label shown in the console, e.g. Mumbai, India.",
+   "description": "The 16-bit region number Atlas is configured with. It forms the token audience and bits 96-111 of every mesh address, so it must match that region's own Atlas Settings. A region cannot be reached until this is set.",
+   "fieldname": "region_id",
+   "fieldtype": "Long Int",
+   "in_list_view": 1,
+   "label": "Region ID",
+   "unique": 1
+  },
+  {
+   "description": "What a person sees, such as Frankfurt, Germany.",
    "fieldname": "display_name",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Display Name"
   },
   {
-   "description": "Infrastructure provider hosting this region, shown as the pin's brand mark. Display vocabulary only \u2014 distinct from Atlas's Server.provider_type (DigitalOcean/Scaleway/Self-Managed/Fake); reconcile into a shared source if provider identity ever needs to be authoritative.",
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Active\nDraining\nDisabled",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_geo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Infrastructure provider hosting this region, shown as the pin's brand mark. Display vocabulary only — distinct from Atlas's Server.provider_type (DigitalOcean/Scaleway/Self-Managed/Fake); reconcile into a shared source if provider identity ever needs to be authoritative.",
    "fieldname": "provider",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -49,10 +80,6 @@
    "length": 2
   },
   {
-   "fieldname": "column_break_geo",
-   "fieldtype": "Column Break"
-  },
-  {
    "description": "Region latitude for the console world map. 0/0 keeps the region off the map (it still lists).",
    "fieldname": "latitude",
    "fieldtype": "Float",
@@ -65,12 +92,48 @@
    "fieldtype": "Float",
    "label": "Longitude",
    "precision": "6"
+  },
+  {
+   "fieldname": "section_break_atlas",
+   "fieldtype": "Section Break",
+   "label": "Atlas and Routing"
+  },
+  {
+   "description": "Base URL of this region's Atlas API. Central authenticates with its own signed token, so no credential is stored here.",
+   "fieldname": "atlas_base_url",
+   "fieldtype": "Data",
+   "label": "Atlas Base URL",
+   "options": "URL"
+  },
+  {
+   "description": "Control API of this region's proxy cluster.",
+   "fieldname": "proxy_control_url",
+   "fieldtype": "Data",
+   "label": "Proxy Control URL",
+   "options": "URL"
+  },
+  {
+   "fieldname": "column_break_atlas",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The regional wildcard every automatic site name sits below.",
+   "fieldname": "wildcard_domain",
+   "fieldtype": "Data",
+   "label": "Wildcard Domain"
+  },
+  {
+   "description": "Leading hextets of every mesh address in this region, such as fdaa:1.",
+   "fieldname": "mesh_address_prefix",
+   "fieldtype": "Data",
+   "label": "Mesh Address Prefix",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-05 19:19:22.229140",
+ "modified": "2026-09-15 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Region",
@@ -92,6 +155,8 @@
  ],
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
+ "search_fields": "display_name,region_id",
+ "show_title_field_in_link": 1,
  "sort_field": "region",
  "sort_order": "ASC",
  "states": [],

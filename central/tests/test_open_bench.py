@@ -1,7 +1,7 @@
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
-from jwt.algorithms import RSAAlgorithm
+from jwt.algorithms import OKPAlgorithm
 
 from central.api.jwks import jwks_document
 from central.api.sso import get_bench_link
@@ -103,7 +103,7 @@ class TestOpenBench(IntegrationTestCase):
 		link = self._open(self.dev, asset="vm-open-1")
 		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
 
-		public_key = RSAAlgorithm.from_jwk(jwks_document()["keys"][0])
+		public_key = OKPAlgorithm.from_jwk(jwks_document()["keys"][0])
 		claims = jwt.decode(
 			link["url"].split("sid=", 1)[1],
 			public_key,

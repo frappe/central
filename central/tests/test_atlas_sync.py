@@ -387,7 +387,7 @@ class TestAtlasMirror(IntegrationTestCase):
 		from unittest.mock import MagicMock
 
 		import jwt
-		from jwt.algorithms import RSAAlgorithm
+		from jwt.algorithms import OKPAlgorithm
 
 		from central.api import sites
 		from central.api.jwks import jwks_document
@@ -428,7 +428,7 @@ class TestAtlasMirror(IntegrationTestCase):
 		token = post.call_args.kwargs["headers"]["Authorization"].split(" ", 1)[1]
 		claims = jwt.decode(
 			token,
-			RSAAlgorithm.from_jwk(jwks_document()["keys"][0]),
+			OKPAlgorithm.from_jwk(jwks_document()["keys"][0]),
 			algorithms=[ALGORITHM],
 			audience="pcred-direct",
 			issuer=central_url(),

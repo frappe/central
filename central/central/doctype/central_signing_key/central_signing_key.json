@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-09-15 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "kid",
+  "published_at",
+  "public_key",
+  "private_key"
+ ],
+ "fields": [
+  {
+   "columns": 3,
+   "description": "Namespaced key id stamped into every token header. Atlas refuses a key set whose ids are not namespaced.",
+   "fieldname": "kid",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Key ID",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "description": "When the key entered the published set. It starts signing once consumers have had time to fetch it.",
+   "fieldname": "published_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Published At",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "public_key",
+   "fieldtype": "Code",
+   "label": "Public Key (PEM)",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "private_key",
+   "fieldtype": "Password",
+   "label": "Private Key (PEM)",
+   "no_copy": 1,
+   "read_only": 1,
+   "reqd": 1
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-09-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Central Signing Key",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

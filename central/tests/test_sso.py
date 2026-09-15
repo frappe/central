@@ -1,7 +1,7 @@
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
-from jwt.algorithms import RSAAlgorithm
+from jwt.algorithms import OKPAlgorithm
 
 from central.api.jwks import jwks_document
 from central.api.sso import DEV_AUDIENCE, get_bench_link
@@ -36,7 +36,7 @@ class TestCentralSSO(IntegrationTestCase):
 	def _verify_like_bench(self, token: str, audience: str) -> dict:
 		"""Verify exactly as a bench would: reconstruct the public key from Central's JWKS
 		and check the signature, audience, and issuer."""
-		public_key = RSAAlgorithm.from_jwk(jwks_document()["keys"][0])
+		public_key = OKPAlgorithm.from_jwk(jwks_document()["keys"][0])
 		return jwt.decode(
 			token,
 			public_key,

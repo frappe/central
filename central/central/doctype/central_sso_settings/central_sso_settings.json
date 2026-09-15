@@ -9,9 +9,7 @@
   "issuer_section",
   "issuer_url",
   "signing_section",
-  "kid",
-  "public_key",
-  "private_key"
+  "signing_keys"
  ],
  "fields": [
   {
@@ -28,36 +26,21 @@
   {
    "fieldname": "signing_section",
    "fieldtype": "Section Break",
-   "label": "Signing Key"
+   "label": "Signing Keys"
   },
   {
-   "description": "Key id of the active RSA signing key, stamped into every minted token's header and published in the JWKS.",
-   "fieldname": "kid",
-   "fieldtype": "Data",
-   "label": "Key ID",
-   "read_only": 1
-  },
-  {
-   "description": "PEM public key benches verify Central-minted tokens against. Published (as a JWK) at the JWKS endpoint.",
-   "fieldname": "public_key",
-   "fieldtype": "Code",
-   "label": "Public Key (PEM)",
-   "read_only": 1
-  },
-  {
-   "description": "PEM private key Central signs with. Encrypted at rest; never leaves Central.",
-   "fieldname": "private_key",
-   "fieldtype": "Password",
-   "label": "Private Key (PEM)",
-   "no_copy": 1,
-   "read_only": 1
+   "description": "Every key here is published in the key set. Central signs with the last one. Rotate by adding a key; retire by removing one.",
+   "fieldname": "signing_keys",
+   "fieldtype": "Table",
+   "label": "Signing Keys",
+   "options": "Central Signing Key"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-14 00:00:00.000000",
+ "modified": "2026-09-15 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central SSO Settings",

@@ -8,10 +8,9 @@ from frappe import _
 
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
 
-# Central signs every downward token — the bench-login SID and the first-boot enrollment
-# token — with its single RSA key. Benches verify offline against the published JWKS, so a
-# compromised bench (holding only the public key) can forge nothing. `aud` scopes a token to
-# one deployment (its VM resource_id), so a SID minted for bench A is rejected by bench B.
+# Central signs every downward token with an Ed25519 key from its own key set. A verifier
+# holds only the public half, fetched from the JWKS, so a compromised bench forges nothing.
+# `aud` scopes a token to one deployment, so a token minted for bench A is refused by B.
 
 BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
@@ -25,6 +24,14 @@ CARGO_ATLAS_SCOPE = "cargo:atlas"
 METRICS_SCOPE = "datum"
 LOG_SCOPE = "logs"
 LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
+
+# Atlas resolves the issuer from the key namespace and decodes with `iss` fixed to it, so a
+# token for a region carries the bare service name, not Central's URL.
+SERVICE_ISSUER = "central"
+SERVICE_SUBJECT = "central"
+ATLAS_SCOPE = "*"
+EVERY_TENANT = "*"
+SERVICE_TTL = 5 * 60  # minted per call, so no revocation list is needed
 
 
 def central_url() -> str:
@@ -70,15 +77,10 @@ def verify_bootstrap_token(token: str) -> dict:
 	"""Validate an enrollment token with Central's own public key and return the grant it
 	carries: ``{team, pcid, jti}`` (pcid = the `aud`). Raises on a bad/expired/wrong-scope
 	token."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			_public_key_for(token),
 			algorithms=[ALGORITHM],
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
@@ -99,16 +101,10 @@ def mint_cargo_bootstrapping_token(instance: str) -> str:
 
 def verify_cargo_bootstrapping_token(token: str) -> str:
 	"""Validate an enrolment token and return the Cargo Instance it names."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
-
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			_public_key_for(token),
 			algorithms=[ALGORITHM],
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
@@ -141,16 +137,10 @@ def verify_cargo_access_token(token: str) -> dict:
 	The scope check is what stops Cargo's Atlas token -- signed by this same key -- from
 	being replayed here. `instance` is required, so a token minted before hosts were
 	identified is refused rather than treated as belonging to every region."""
-	from cryptography.hazmat.primitives.serialization import load_pem_public_key
-
-	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
-		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
-
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			_public_key_for(token),
 			algorithms=[ALGORITHM],
 			audience="central",
 			options={"require": ["exp", "aud", "jti", "scope", "instance"]},
@@ -210,7 +200,39 @@ def mint_log_token(audience: str, resource_id: str) -> str:
 	)
 
 
-def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str:
+def mint_region_token(region: str) -> str:
+	"""The bearer token for the Atlas admin API of one region.
+
+	`tenant` is `*`: one Central token serves every tenant, and the `X-Tenant-ID`
+	header picks which one a request acts for."""
+	from central.central.doctype.region.region import Region
+
+	return _mint(
+		Region.admin_audience(region),
+		ATLAS_SCOPE,
+		SERVICE_TTL,
+		{"sub": SERVICE_SUBJECT, "tenant": EVERY_TENANT},
+		issuer=SERVICE_ISSUER,
+	)
+
+
+def mint_proxy_token(region: str) -> str:
+	"""The bearer token for the control API of one region's proxy cluster.
+
+	It carries no `tenant` claim. The proxy routes for every tenant and refuses a
+	token that names one."""
+	from central.central.doctype.region.region import Region
+
+	return _mint(
+		Region.proxy_audience(region),
+		ATLAS_SCOPE,
+		SERVICE_TTL,
+		{"sub": SERVICE_SUBJECT},
+		issuer=SERVICE_ISSUER,
+	)
+
+
+def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None, issuer: str | None = None) -> str:
 	"""Mint a signed assertion. `scope` is a required, first-class claim (not buried
 	in `extra`) so every token declares its purpose and verifiers can assert it —
 	bench-login, enroll, and metrics tokens all share this key, and the scope is what
@@ -218,7 +240,7 @@ def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str
 	private_pem, kid = CentralSSOSettings.instance().signing_key()
 	now = int(time.time())
 	payload = {
-		"iss": central_url(),
+		"iss": issuer or central_url(),
 		"aud": audience,
 		"iat": now,
 		"exp": now + ttl,
@@ -227,3 +249,15 @@ def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str
 		**(extra or {}),
 	}
 	return jwt.encode(payload, private_pem, algorithm=ALGORITHM, headers={"kid": kid})
+
+
+def _public_key_for(token: str):
+	"""The public key that verifies `token`, chosen by its `kid` header. Central
+	publishes more than one key, so the token has to say which one signed it."""
+	try:
+		kid = jwt.get_unverified_header(token).get("kid")
+	except jwt.InvalidTokenError as exc:
+		frappe.throw(_("Invalid token: {0}").format(exc), frappe.AuthenticationError)
+	if not kid:
+		frappe.throw(_("Token names no signing key."), frappe.AuthenticationError)
+	return CentralSSOSettings.instance().verification_key(kid)
