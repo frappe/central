@@ -31,7 +31,7 @@ const memberCountText = computed(() => {
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
+	<div class="relative flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
 			<main
 				class="mx-auto flex max-w-3xl flex-col gap-3 md:gap-4 p-3 md:p-4 lg:mt-6"

@@ -173,7 +173,7 @@ const eventDetail = (ev: {
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
+	<div class="relative flex h-full min-h-0">
 		<!-- LIST — capped and centered so rows stay scannable when the panel is
          closed; the cap matches the Limit tiers page. -->
 		<div class="min-w-0 flex-1 overflow-y-auto">

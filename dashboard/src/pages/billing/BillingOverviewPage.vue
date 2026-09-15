@@ -56,7 +56,7 @@ const advancedOpen = ref(false)
 <template>
 	<!-- Content + docked wallet-history panel (like the invoice tray): the panel
        shares the row, the content stays bright beside it — no modal overlay. -->
-	<div class="flex h-full min-h-0">
+	<div class="relative flex h-full min-h-0">
 		<div
 			class="grid min-w-0 flex-1 grid-cols-[min(48rem,100%)] content-start justify-center gap-3 md:gap-4
       overflow-y-auto p-3 md:p-4 lg:mt-6  [container-type:inline-size]"

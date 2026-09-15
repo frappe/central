@@ -137,7 +137,7 @@ function exportUrl(report: string): string {
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
+	<div class="relative flex h-full min-h-0">
 		<div class="min-w-0 flex-1 overflow-y-auto">
 			<div
 				class="mx-auto w-full max-w-5xl space-y-3 p-3 md:space-y-4 md:p-4 lg:mt-6"
