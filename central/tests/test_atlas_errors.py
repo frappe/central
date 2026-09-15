@@ -109,7 +109,7 @@ class TestRunDocMethod(IntegrationTestCase):
 			status="Active",
 			tunnel_status=None,
 			tunnel_url=None,
-			base_url="https://atlas.example.test",
+			atlas_base_url="https://atlas.example.test",
 			api_key="k",
 		)
 		instance.get_password = lambda field, *a, **k: "s"

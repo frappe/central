@@ -36,12 +36,12 @@ class TestPilotCredentialDelivery(IntegrationTestCase):
 			.name
 		)
 		self.region = ensure_region("blr-delivery")
-		if not frappe.db.exists("Atlas Instance", self.region):
+		if not frappe.db.exists("Region", self.region):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": self.region,
-					"base_url": "https://atlas.example.test",
+					"atlas_base_url": "https://atlas.example.test",
 					"status": "Active",
 					"api_key": "k",
 					"api_secret": "s",

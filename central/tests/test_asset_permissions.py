@@ -29,12 +29,12 @@ class TestAssetPermissions(IntegrationTestCase):
 
 	def _cluster(self, region):
 		ensure_region(region)
-		if not frappe.db.exists("Atlas Instance", region):
+		if not frappe.db.exists("Region", region):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": region,
-					"base_url": "https://atlas.example.test",
+					"atlas_base_url": "https://atlas.example.test",
 					"status": "Active",
 					"api_key": "k",
 					"api_secret": "s",

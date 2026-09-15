@@ -5,30 +5,24 @@
 import frappe
 
 
-def ensure_region(region: str) -> str:
-	"""Create the Region master if it isn't there yet.
-
-	Atlas Instance.region is a required Link to Region, so a test that wants a
-	cluster needs the region to exist first.
-	"""
+def ensure_region(region: str, **overrides) -> str:
+	"""Create the region a test puts resources in, with the fields an Atlas call needs."""
 	if not frappe.db.exists("Region", region):
-		frappe.get_doc({"doctype": "Region", "region": region}).insert(ignore_permissions=True)
-	return region
-
-
-def ensure_atlas_instance(region: str, **overrides) -> str:
-	"""Create the cluster a test wants to put resources in (with its Region)."""
-	ensure_region(region)
-	if not frappe.db.exists("Atlas Instance", region):
 		frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
+				"doctype": "Region",
 				"region": region,
-				"base_url": f"https://{region}.atlas.example.test",
+				"atlas_base_url": f"https://{region}.atlas.example.test",
 				"status": "Active",
 				"api_key": "test-key",
 				"api_secret": "test-secret",
 				**overrides,
 			}
 		).insert(ignore_permissions=True)
+	elif overrides:
+		frappe.db.set_value("Region", region, overrides, update_modified=False)
 	return region
+
+
+# The two used to be separate doctypes; tests still name both.
+ensure_atlas_instance = ensure_region

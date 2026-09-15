@@ -98,15 +98,14 @@ def _server_message(response: requests.Response) -> str | None:
 
 
 def get_atlas_instance(region: str):
-	"""Resolve a region (= cluster) to its `Atlas Instance`, or raise."""
-	name = frappe.db.get_value("Atlas Instance", {"region": region})
-	if not name:
+	"""Resolve a region to its `Region` record, or raise."""
+	if not frappe.db.exists("Region", region):
 		frappe.throw(_("No Atlas registered for region '{0}'.").format(region), AtlasError)
-	return frappe.get_doc("Atlas Instance", name)
+	return frappe.get_doc("Region", region)
 
 
 class AtlasClient:
-	"""A FrappeClient bound to one regional Atlas, built from its Atlas Instance."""
+	"""A FrappeClient bound to one regional Atlas, built from its Region."""
 
 	def __init__(self, instance):
 		self.instance = instance
@@ -127,7 +126,7 @@ class AtlasClient:
 	def _data_url(self) -> str:
 		if self.instance.tunnel_status == "Active" and self.instance.tunnel_url:
 			return self.instance.tunnel_url
-		return self.instance.base_url
+		return self.instance.atlas_base_url
 
 	def _post(self, method: str, params: dict, *, action: str) -> Any:
 		"""POST to Atlas, translating a remote failure into Atlas's own error.
@@ -600,11 +599,11 @@ def _authenticate_atlas_webhook(raw_body: bytes) -> frappe._dict:
 	if not (region and timestamp and signature):
 		_reject_signature("missing signature headers")
 
-	instance = frappe.db.get_value("Atlas Instance", {"region": region, "status": ["!=", "Disabled"]})
+	instance = frappe.db.get_value("Region", {"region": region, "status": ["!=", "Disabled"]})
 	if not instance:
 		_reject_signature(f"unknown or disabled region '{region}'")
 
-	secret = get_decrypted_password("Atlas Instance", instance, "webhook_secret", raise_exception=False)
+	secret = get_decrypted_password("Region", instance, "webhook_secret", raise_exception=False)
 	if not secret:
 		_reject_signature(f"no webhook secret for region '{region}'")
 
@@ -674,9 +673,9 @@ def reconcile(team: str | None = None) -> dict:
 	to the event push (and the scheduler entry point). Fail-soft: an unreachable
 	Atlas is reported in `stale`, its last-known mirror left intact."""
 	synced, stale = [], []
-	for name in frappe.get_all("Atlas Instance", {"status": "Active"}, pluck="name"):
+	for name in frappe.get_all("Region", {"status": "Active"}, pluck="name"):
 		try:
-			reconcile_atlas(frappe.get_doc("Atlas Instance", name), team)
+			reconcile_atlas(frappe.get_doc("Region", name), team)
 			synced.append(name)
 		except Exception:
 			frappe.log_error(title=f"Atlas reconcile failed: {name}")
@@ -713,7 +712,7 @@ def _notify_cluster_degraded(cluster: str) -> None:
 			"cluster_degraded",
 			message=f"Central couldn't reach {cluster} on the last sync. Your servers keep running; "
 			"their status in the console may be delayed until the region recovers.",
-			reference_doctype="Atlas Instance",
+			reference_doctype="Region",
 			reference_name=cluster,
 		)
 
@@ -750,7 +749,7 @@ class TunnelRegistrationError(AtlasError):
 
 
 def register_atlas(instance) -> dict:
-	"""Run the full Central-driven registration handshake for one Atlas Instance.
+	"""Run the full Central-driven registration handshake for one region.
 
 	1. ping over the public base_url (admin auth); 2. ensure the hub is up + allocate
 	tunnel_ip; 3. mint the scoped service user; 4. provision_tunnel over
@@ -777,7 +776,7 @@ def register_atlas(instance) -> dict:
 	client = AtlasClient(instance)
 
 	# 1. Prove the public bootstrap path + admin creds before changing anything.
-	client.admin_ping(instance.base_url)
+	client.admin_ping(instance.atlas_base_url)
 
 	# 2-3. Allocate the tunnel address and mint the scoped service identity. Reuse an
 	# existing allocation/user on re-tunnel so the Atlas keeps a stable address.
@@ -790,7 +789,7 @@ def register_atlas(instance) -> dict:
 	try:
 		# 4. Atlas brings up wg0 + arms its firewall, returns its public key + port.
 		provision = client.provision_tunnel(
-			instance.base_url,
+			instance.atlas_base_url,
 			{
 				"hub_public_key": settings.hub_public_key,
 				"hub_endpoint": settings.hub_endpoint,
@@ -803,7 +802,7 @@ def register_atlas(instance) -> dict:
 			},
 		)
 		peer_public_key = provision["wg_public_key"]
-		peer_endpoint = _peer_endpoint(instance.base_url, provision["listen_port"])
+		peer_endpoint = _peer_endpoint(instance.atlas_base_url, provision["listen_port"])
 
 		instance.tunnel_ip = tunnel_ip
 		instance.peer_public_key = peer_public_key
@@ -840,21 +839,21 @@ def register_atlas(instance) -> dict:
 
 
 def _register_local(instance) -> dict:
-	"""Local-dev registration without a tunnel (Atlas Instance.skip_tunnel). Do only the
+	"""Local-dev registration without a tunnel (Region.skip_tunnel). Do only the
 	identity half — admin_ping, mint the scoped service user + creds — then push those to
 	Atlas with skip_tunnel set so it stores them without bringing up wg0 or locking its
 	firewall. No hub, no tunnel_ip allocation, no peering, no over-the-tunnel confirm.
 	The data path stays on the public base_url (tunnel_url is never set), and tunnel_status
 	stays Inactive. There is nothing host-side to roll back, so a failure just propagates."""
 	client = AtlasClient(instance)
-	client.admin_ping(instance.base_url)
+	client.admin_ping(instance.atlas_base_url)
 
 	service_user = _ensure_service_user(instance)
 	api_key, api_secret = _rotate_service_credentials(service_user)
 	webhook_secret = _rotate_webhook_secret(instance)
 
 	client.link_local(
-		instance.base_url,
+		instance.atlas_base_url,
 		{
 			"central_url": frappe.utils.get_url(),
 			"service_api_key": api_key,
@@ -1021,7 +1020,7 @@ def remove_tunnel(instance) -> dict:
 		over = (
 			instance.tunnel_url
 			if (instance.tunnel_status == "Active" and instance.tunnel_url)
-			else instance.base_url
+			else instance.atlas_base_url
 		)
 		try:
 			client.deprovision_tunnel(over)
@@ -1030,7 +1029,7 @@ def remove_tunnel(instance) -> dict:
 			# the response. Confirm Atlas is reachable publicly again (firewall reverted)
 			# before trusting the teardown; if even that fails, log and finish the cleanup.
 			try:
-				client.admin_ping(instance.base_url)
+				client.admin_ping(instance.atlas_base_url)
 			except Exception:
 				frappe.log_error(title=f"Remove tunnel: {instance.region} unconfirmed after deprovision")
 

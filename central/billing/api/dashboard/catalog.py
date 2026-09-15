@@ -459,7 +459,7 @@ def _gated_capacity(cluster: str | None, fetch, *, log: str) -> dict | None:
 	if not cluster:
 		return None
 	instance = frappe.db.get_value(
-		"Atlas Instance",
+		"Region",
 		{"region": cluster},
 		["name", "validate_capacity", "status"],
 		as_dict=True,
@@ -470,7 +470,7 @@ def _gated_capacity(cluster: str | None, fetch, *, log: str) -> dict | None:
 	from central.integrations.atlas import AtlasClient
 
 	try:
-		raw = fetch(AtlasClient(frappe.get_doc("Atlas Instance", instance.name)))
+		raw = fetch(AtlasClient(frappe.get_doc("Region", instance.name)))
 	except Exception:
 		# Unreachable / timed-out / auth failure — fail soft (show the full menu).
 		frappe.log_error(title=log)

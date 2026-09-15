@@ -41,12 +41,12 @@ class TestFrappeVersion(IntegrationTestCase):
 		self.region = "fv-region-test"
 		if not frappe.db.exists("Region", self.region):
 			frappe.get_doc({"doctype": "Region", "region": self.region}).insert()
-		if not frappe.db.exists("Atlas Instance", self.region):
+		if not frappe.db.exists("Region", self.region):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": self.region,
-					"base_url": f"https://{self.region}.atlas.example.test",
+					"atlas_base_url": f"https://{self.region}.atlas.example.test",
 					"status": "Active",
 					"api_key": "admin-key",
 					"api_secret": "admin-secret",
@@ -129,12 +129,12 @@ class TestVersionSource(IntegrationTestCase):
 		# At least one Active region must exist for the proxy path to be attempted.
 		if not frappe.db.exists("Region", "vs-region-test"):
 			frappe.get_doc({"doctype": "Region", "region": "vs-region-test"}).insert()
-		if not frappe.db.exists("Atlas Instance", "vs-region-test"):
+		if not frappe.db.exists("Region", "vs-region-test"):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": "vs-region-test",
-					"base_url": "https://vs-region-test.atlas.example.test",
+					"atlas_base_url": "https://vs-region-test.atlas.example.test",
 					"status": "Active",
 					"api_key": "k",
 					"api_secret": "s",

@@ -368,7 +368,7 @@ def _seed_notification_feed(slug_to_team: dict):
 			"cluster_degraded",
 			message="Central couldn't reach in-mumbai on the last sync. Your servers keep running; "
 			"their status in the console may be delayed until the region recovers.",
-			reference_doctype="Atlas Instance",
+			reference_doctype="Region",
 			reference_name="in-mumbai",
 		)
 

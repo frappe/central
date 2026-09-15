@@ -59,14 +59,6 @@ def _require_developer_mode() -> None:
 		)
 
 
-def _ensure_region(region: str) -> None:
-	"""Atlas Instance.region links Region, so the region must exist first. Local
-	dev creates a bare Region (no map metadata); the operator or the demo seed
-	fills display_name/provider/coordinates in later."""
-	if not frappe.db.exists("Region", region):
-		frappe.get_doc({"doctype": "Region", "region": region}).insert(ignore_permissions=True)
-
-
 def _upsert_local_atlas_instance(
 	*,
 	region: str,
@@ -74,15 +66,16 @@ def _upsert_local_atlas_instance(
 	api_key: str | None,
 	api_secret: str | None,
 ):
-	_ensure_region(region)
-	if frappe.db.exists("Atlas Instance", region):
-		instance = frappe.get_doc("Atlas Instance", region)
+	"""Local dev leaves the map metadata blank; the operator or the demo seed fills
+	display_name, provider and coordinates in later."""
+	if frappe.db.exists("Region", region):
+		instance = frappe.get_doc("Region", region)
 	else:
 		_require_new_instance_credentials(api_key, api_secret)
-		instance = frappe.new_doc("Atlas Instance")
+		instance = frappe.new_doc("Region")
 		instance.region = region
 
-	instance.base_url = base_url
+	instance.atlas_base_url = base_url
 	instance.status = "Active"
 	instance.skip_tunnel = 1
 	if api_key:
@@ -97,7 +90,7 @@ def _require_new_instance_credentials(api_key: str | None, api_secret: str | Non
 	if api_key and api_secret:
 		return
 	frappe.throw(
-		_("Pass atlas_api_key and atlas_api_secret when creating a new Atlas Instance."),
+		_("Pass atlas_api_key and atlas_api_secret when creating a new region."),
 		frappe.ValidationError,
 	)
 
@@ -114,7 +107,7 @@ def _require_atlas_credentials(instance) -> None:
 def _atlas_result(instance) -> dict:
 	return {
 		"region": instance.region,
-		"base_url": instance.base_url,
+		"atlas_base_url": instance.atlas_base_url,
 		"status": instance.status,
 		"skip_tunnel": cint(instance.skip_tunnel),
 		"tunnel_status": instance.tunnel_status,

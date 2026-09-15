@@ -35,7 +35,6 @@ central.patches.v0_0.cancel_terminated_subscriptions
 central.patches.v0_0.rename_capabilities
 central.patches.v0_0.make_central_users_portal_only
 central.patches.v0_0.strip_capabilities
-central.patches.v0_0.backfill_region
 central.patches.v0_0.seed_welcome_credit_amounts
 central.patches.v0_0.fix_team_role_autoname
 central.patches.v0_0.merge_service_credentials

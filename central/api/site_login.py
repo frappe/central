@@ -77,7 +77,7 @@ def _regenerate_site_login(name: str, cluster: str) -> dict:
 	the Site-mirror shape; we upsert it so the stored URL + expiry stay in lockstep."""
 	from central.central.doctype.site.site import Site
 
-	instance = frappe.get_doc("Atlas Instance", cluster)
+	instance = frappe.get_doc("Region", cluster)
 	fresh = AtlasClient(instance).regenerate_site_login(name)
 	Site.mirror_site(cluster, fresh, synced_at=frappe.utils.now_datetime())
 	return fresh

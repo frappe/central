@@ -23,7 +23,24 @@
   "proxy_control_url",
   "column_break_atlas",
   "wildcard_domain",
-  "mesh_address_prefix"
+  "mesh_address_prefix",
+  "validate_capacity",
+  "column_break_auth",
+  "api_key",
+  "api_secret",
+  "section_break_tunnel",
+  "skip_tunnel",
+  "tunnel_status",
+  "tunnel_ip",
+  "tunnel_url",
+  "service_user",
+  "webhook_secret",
+  "column_break_tunnel",
+  "peer_public_key",
+  "peer_endpoint",
+  "section_break_health",
+  "reachable",
+  "last_synced_at"
  ],
  "fields": [
   {
@@ -127,6 +144,120 @@
    "fieldname": "mesh_address_prefix",
    "fieldtype": "Data",
    "label": "Mesh Address Prefix",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "Only offer plans that fit this region's live capacity when creating/resizing a server.",
+   "fieldname": "validate_capacity",
+   "fieldtype": "Check",
+   "label": "Validate Capacity"
+  },
+  {
+   "fieldname": "column_break_auth",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Atlas admin API key, set when the region is registered; Central authenticates with it for every Central→Atlas call.",
+   "fieldname": "api_key",
+   "fieldtype": "Data",
+   "label": "Admin API Key"
+  },
+  {
+   "description": "Atlas admin API secret, paired with the key (stored encrypted).",
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "Admin API Secret"
+  },
+  {
+   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register — not hand-entered.",
+   "fieldname": "section_break_tunnel",
+   "fieldtype": "Section Break",
+   "label": "Tunnel"
+  },
+  {
+   "default": "0",
+   "description": "Local development only: register without a WireGuard tunnel, leaving the data path on base_url.",
+   "fieldname": "skip_tunnel",
+   "fieldtype": "Check",
+   "label": "Skip Tunnel (Local Dev)"
+  },
+  {
+   "default": "Unregistered",
+   "description": "Unregistered → Provisioning → Active; Inactive = registered but tunnel stripped down.",
+   "fieldname": "tunnel_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Tunnel Status",
+   "options": "Unregistered\nProvisioning\nActive\nInactive",
+   "read_only": 1
+  },
+  {
+   "description": "This Atlas's /32 on wg0 from the pool; unique, guards against a double-allocation race.",
+   "fieldname": "tunnel_ip",
+   "fieldtype": "Data",
+   "label": "Tunnel IP",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "description": "Derived from tunnel_ip; the post-registration data path (base_url is bootstrap-only).",
+   "fieldname": "tunnel_url",
+   "fieldtype": "Data",
+   "label": "Tunnel URL",
+   "read_only": 1
+  },
+  {
+   "description": "The per-Atlas scoped Central service user this Atlas authenticates as when it reports events.",
+   "fieldname": "service_user",
+   "fieldtype": "Link",
+   "label": "Service User",
+   "options": "User",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "description": "HMAC signing secret this Atlas uses to sign outbound webhooks (X-Atlas-Signature).",
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_tunnel",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "The Atlas's WireGuard public key, returned by provision_tunnel and added to the hub as a peer.",
+   "fieldname": "peer_public_key",
+   "fieldtype": "Small Text",
+   "label": "Peer Public Key",
+   "read_only": 1
+  },
+  {
+   "description": "The Atlas's public wg endpoint (host of base_url : listen port) the hub dials.",
+   "fieldname": "peer_endpoint",
+   "fieldtype": "Data",
+   "label": "Peer Endpoint",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_health",
+   "fieldtype": "Section Break",
+   "label": "Health"
+  },
+  {
+   "default": "0",
+   "description": "Result of the last Test Connection (over the current data path — base_url before/after the tunnel, tunnel_url while Active).",
+   "fieldname": "reachable",
+   "fieldtype": "Check",
+   "label": "Reachable",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_synced_at",
+   "fieldtype": "Datetime",
+   "label": "Last Synced At",
    "read_only": 1
   }
  ],

@@ -65,10 +65,10 @@ class TestAtlasRegister(IntegrationTestCase):
 		_set_hub(active=True)
 
 	def _wipe(self, commit: bool = False) -> None:
-		"""Delete every Atlas Instance + per-Atlas service user — instances first to
+		"""Delete every Region + per-Atlas service user — regions first to
 		drop the service_user link, then the users."""
-		for name in frappe.get_all("Atlas Instance", pluck="name"):
-			frappe.delete_doc("Atlas Instance", name, force=True, ignore_permissions=True)
+		for name in frappe.get_all("Region", pluck="name"):
+			frappe.delete_doc("Region", name, force=True, ignore_permissions=True)
 		for name in frappe.get_all("User", filters={"name": ["like", "atlas-%@%"]}, pluck="name"):
 			frappe.delete_doc("User", name, force=True, ignore_permissions=True)
 		if commit:
@@ -76,12 +76,12 @@ class TestAtlasRegister(IntegrationTestCase):
 
 	def make_instance(self, region: str, **overrides):
 		ensure_region(region)
-		if frappe.db.exists("Atlas Instance", region):
-			frappe.delete_doc("Atlas Instance", region, force=True, ignore_permissions=True)
+		if frappe.db.exists("Region", region):
+			frappe.delete_doc("Region", region, force=True, ignore_permissions=True)
 		values = {
-			"doctype": "Atlas Instance",
+			"doctype": "Region",
 			"region": region,
-			"base_url": "https://blr.atlas.example.test",
+			"atlas_base_url": "https://blr.atlas.example.test",
 			"status": "Active",
 			"api_key": "admin_key",
 			"api_secret": "admin_secret",
@@ -166,7 +166,7 @@ class TestAtlasRegister(IntegrationTestCase):
 		self.assertEqual(out, {"ok": True, "tunnel_status": "Inactive", "skip_tunnel": True})
 
 		# Only admin_ping + link_local; no tunnel host work at all.
-		admin_ping.assert_called_once_with(instance.base_url)
+		admin_ping.assert_called_once_with(instance.atlas_base_url)
 		link_local.assert_called_once()
 		provision_tunnel.assert_not_called()
 		confirm_tunnel.assert_not_called()
@@ -285,7 +285,7 @@ class TestAtlasRegister(IntegrationTestCase):
 			out = remove_tunnel(instance)
 
 		self.assertEqual(out["tunnel_status"], "Inactive")
-		admin_ping.assert_called_once_with(instance.base_url)
+		admin_ping.assert_called_once_with(instance.atlas_base_url)
 		instance.reload()
 		self.assertEqual(instance.tunnel_status, "Inactive")
 		# still registered after a messy teardown.

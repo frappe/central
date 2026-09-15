@@ -83,7 +83,6 @@ class BillingTestCase(IntegrationTestCase):
 		"Plan",
 		"Asset",
 		"Team",
-		"Atlas Instance",
 		"Region",
 		"User",
 		"Webhook Event",
@@ -210,14 +209,13 @@ DEFAULT_INCLUDES = [
 
 
 def ensure_atlas_instance(region):
-	"""The cluster a billing test bills against.
+	"""The region a billing test bills against.
 
-	Both Asset.cluster and Catalog Rate.cluster are required Links to Atlas Instance,
-	so any test that creates a subscription or a per-region rate needs the instance
-	(and its Region) to exist first."""
-	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
+	Asset.cluster and Catalog Rate.cluster are required Links to Region, so any test
+	that creates a subscription or a per-region rate needs it to exist first."""
+	from central.tests.utils import ensure_region
 
-	return _ensure_atlas_instance(region)
+	return ensure_region(region)
 
 
 def configure_gateway(adapter_key, currencies, **values):

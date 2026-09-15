@@ -20,12 +20,12 @@ class TestAsset(IntegrationTestCase):
 		).insert()
 		self.cluster = "blr-asset"
 		ensure_region(self.cluster)
-		if not frappe.db.exists("Atlas Instance", self.cluster):
+		if not frappe.db.exists("Region", self.cluster):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": self.cluster,
-					"base_url": "https://atlas.example.test",
+					"atlas_base_url": "https://atlas.example.test",
 					"status": "Active",
 					"api_key": "k",
 					"api_secret": "s",
@@ -66,12 +66,12 @@ class TestAssetSubscriptionSync(IntegrationTestCase):
 		)
 		self.cluster = "blr-asset-sub"
 		ensure_region(self.cluster)
-		if not frappe.db.exists("Atlas Instance", self.cluster):
+		if not frappe.db.exists("Region", self.cluster):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": self.cluster,
-					"base_url": "https://atlas.example.test",
+					"atlas_base_url": "https://atlas.example.test",
 					"status": "Active",
 					"api_key": "k",
 					"api_secret": "s",

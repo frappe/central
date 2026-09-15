@@ -656,7 +656,7 @@ def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
 	_guard_disk_shrink(asset_id, shape)
 	from central.integrations.atlas import AtlasClient
 
-	client = AtlasClient(frappe.get_doc("Atlas Instance", cluster))
+	client = AtlasClient(frappe.get_doc("Region", cluster))
 	was_active = status in ("Running", "Paused")
 	if was_active:
 		client.vm_action(asset_id, "stop")

@@ -40,7 +40,7 @@ SEED_NAMESPACE = uuid.UUID("2f9c31d4-7b6a-4d0e-9c1f-5a8e2d4b6c80")
 
 # region, provider, display_name, country_code, latitude, longitude, status.
 # Coordinates match the FC V2 mockup catalog. Deliberate edge case: sa-jeddah
-# is Draining, so list_instances hides it while its assets remain (exercises
+# is Draining, so the region list hides it while its assets remain (exercises
 # the console's unlisted-region fallback). A region saved without coordinates
 # (0/0 = "not placed") lists but never pins — any hand-made instance covers it.
 REGIONS = (
@@ -88,11 +88,8 @@ def seed() -> dict:
 
 	teams = _demo_teams()
 	synced_at = now_datetime()
-	# Region first — Atlas Instance.region links it (one Atlas = one Region).
 	for region in REGIONS:
 		_upsert_region(region)
-	for region in REGIONS:
-		_upsert_instance(region)
 	for index, asset in enumerate(ASSETS):
 		_mirror_asset(index, asset, teams, synced_at)
 
@@ -106,7 +103,6 @@ def summary() -> dict:
 	regions = [region for region, *_ in REGIONS]
 	return {
 		"regions": frappe.db.count("Region", {"name": ["in", regions]}),
-		"atlas_instances": frappe.db.count("Atlas Instance", {"name": ["in", regions]}),
 		"assets": frappe.db.count("Asset", {"name": ["in", resource_ids]}),
 		"assets_by_status": dict(
 			Counter(frappe.get_all("Asset", filters={"name": ["in", resource_ids]}, pluck="status"))
@@ -128,11 +124,6 @@ def teardown() -> dict:
 		"subscription_changes": _delete_all("Subscription Change", changes),
 		"subscriptions": _delete_all("Subscription", subscriptions),
 		"assets": _delete_all("Asset", [r for r in resource_ids if frappe.db.exists("Asset", r)]),
-		"atlas_instances": _delete_all(
-			"Atlas Instance",
-			[region for region, *_ in REGIONS if frappe.db.exists("Atlas Instance", region)],
-		),
-		# After the instances that link them.
 		"regions": _delete_all(
 			"Region",
 			[region for region, *_ in REGIONS if frappe.db.exists("Region", region)],
@@ -152,7 +143,7 @@ def _demo_teams() -> list[str]:
 
 
 def _upsert_region(region_row: tuple) -> None:
-	region, provider, display_name, country_code, latitude, longitude, _status = region_row
+	region, provider, display_name, country_code, latitude, longitude, status = region_row
 	doc = frappe.get_doc("Region", region) if frappe.db.exists("Region", region) else frappe.new_doc("Region")
 	doc.region = region
 	doc.display_name = display_name
@@ -160,24 +151,14 @@ def _upsert_region(region_row: tuple) -> None:
 	doc.country_code = country_code
 	doc.latitude = latitude
 	doc.longitude = longitude
+	# Unroutable on purpose; the seed never registers a tunnel, so no call ever leaves
+	# this machine. The dummy secret is a placeholder, not a credential.
+	doc.atlas_base_url = f"http://{region}.atlas.localhost:9999"
+	doc.api_key = "dev-seed-key"
+	doc.api_secret = "dev-seed-secret"
+	doc.skip_tunnel = 1
+	doc.status = status
 	doc.save(ignore_permissions=True)
-
-
-def _upsert_instance(region_row: tuple) -> None:
-	region, *_, status = region_row
-	if frappe.db.exists("Atlas Instance", region):
-		instance = frappe.get_doc("Atlas Instance", region)
-	else:
-		instance = frappe.new_doc("Atlas Instance")
-		instance.region = region
-	# Unroutable on purpose; the seed never registers a tunnel, so no call
-	# ever leaves this machine. The dummy secret is a placeholder, not a credential.
-	instance.base_url = f"http://{region}.atlas.localhost:9999"
-	instance.api_key = "dev-seed-key"
-	instance.api_secret = "dev-seed-secret"
-	instance.skip_tunnel = 1
-	instance.status = status
-	instance.save(ignore_permissions=True)
 
 
 def _mirror_asset(index: int, asset_row: tuple, teams: list[str], synced_at) -> None:

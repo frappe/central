@@ -1,21 +1,21 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.servers import INSTANCE_LIVENESS_FIELDS, REGION_DISPLAY_FIELDS, list_instances, registry
+from central.api.servers import REGION_FIELDS, regions, registry
 from central.central.doctype.asset.asset import Asset
 from central.tests.test_iam import ensure_user
 
-# The exact key set list_instances returns: an Active Atlas Instance's liveness
+# The exact key set regions returns: an Active Atlas Instance's liveness
 # merged with its Region's display metadata.
-PUBLIC_FIELDS = INSTANCE_LIVENESS_FIELDS + REGION_DISPLAY_FIELDS
+PUBLIC_FIELDS = REGION_FIELDS
 
-# Fields that must never leave the server. `list_instances` bypasses DocType
+# Fields that must never leave the server. `regions` bypasses DocType
 # RBAC (Atlas Instance is System Manager-only), so reading only the non-secret
 # liveness fields is what keeps the Atlas admin credentials off the wire.
 SECRET_FIELDS = (
 	"api_key",
 	"api_secret",
-	"base_url",
+	"atlas_base_url",
 	"skip_tunnel",
 	"tunnel_status",
 	"tunnel_ip",
@@ -58,24 +58,24 @@ class TestListInstances(IntegrationTestCase):
 					"longitude": 72.87,
 				}
 			).insert()
-		if not frappe.db.exists("Atlas Instance", region):
+		if not frappe.db.exists("Region", region):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": region,
-					"base_url": f"https://{region}.atlas.example.test",
+					"atlas_base_url": f"https://{region}.atlas.example.test",
 					"status": status,
 					"api_key": "admin-key",
 					"api_secret": "admin-secret",
 				}
 			).insert()
 		else:
-			frappe.db.set_value("Atlas Instance", region, "status", status)
+			frappe.db.set_value("Region", region, "status", status)
 		return region
 
 	def test_returns_exactly_the_public_allowlist(self):
 		frappe.set_user(self.owner)
-		rows = list_instances(team=self.team.name)
+		rows = regions(team=self.team.name)
 
 		self.assertTrue(rows)
 		for row in rows:
@@ -92,14 +92,14 @@ class TestListInstances(IntegrationTestCase):
 
 	def test_excludes_non_active_instances(self):
 		frappe.set_user(self.owner)
-		regions = [row.region for row in list_instances(team=self.team.name)]
-		self.assertIn(self.active_region, regions)
-		self.assertNotIn(self.draining_region, regions)
+		placeable = [row.region for row in regions(team=self.team.name)]
+		self.assertIn(self.active_region, placeable)
+		self.assertNotIn(self.draining_region, placeable)
 
 	def test_non_member_is_refused(self):
 		frappe.set_user(self.outsider)
 		with self.assertRaises(frappe.PermissionError):
-			list_instances(team=self.team.name)
+			regions(team=self.team.name)
 
 	def test_registry_returns_console_fields(self):
 		Asset.mirror_vm(

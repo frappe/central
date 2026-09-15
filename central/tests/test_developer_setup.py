@@ -16,8 +16,8 @@ class TestDeveloperSetup(IntegrationTestCase):
 	def _cleanup(self) -> None:
 		frappe.conf.developer_mode = self.original_developer_mode
 		frappe.set_user("Administrator")
-		if frappe.db.exists("Atlas Instance", self.region):
-			frappe.delete_doc("Atlas Instance", self.region, force=True, ignore_permissions=True)
+		if frappe.db.exists("Region", self.region):
+			frappe.delete_doc("Region", self.region, force=True, ignore_permissions=True)
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- cleanup rows committed by setup_local.
 
 	def test_refuses_when_developer_mode_is_off(self) -> None:
@@ -36,8 +36,8 @@ class TestDeveloperSetup(IntegrationTestCase):
 			register_atlas=0,
 		)
 
-		instance = frappe.get_doc("Atlas Instance", self.region)
-		self.assertEqual(instance.base_url, "http://local-dev-setup.atlas.test")
+		instance = frappe.get_doc("Region", self.region)
+		self.assertEqual(instance.atlas_base_url, "http://local-dev-setup.atlas.test")
 		self.assertEqual(instance.status, "Active")
 		self.assertEqual(instance.skip_tunnel, 1)
 		self.assertEqual(instance.api_key, "admin_key")
@@ -48,7 +48,7 @@ class TestDeveloperSetup(IntegrationTestCase):
 	def test_register_delegates_to_atlas_instance(self) -> None:
 		frappe.conf.developer_mode = 1
 		with patch(
-			"central.central.doctype.atlas_instance.atlas_instance.AtlasInstance.register",
+			"central.central.doctype.region.region.Region.register",
 			return_value={"ok": True, "tunnel_status": "Inactive", "skip_tunnel": True},
 		) as register:
 			out = setup_local(

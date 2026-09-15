@@ -36,12 +36,12 @@ class TestAtlasMirror(IntegrationTestCase):
 		# The Atlas authenticates as its scoped service user; the sender (= cluster) is
 		# resolved from that session, so the instance is keyed on service_user.
 		self.service_user = ensure_user("atlas-blr-sync@example.test")
-		if not frappe.db.exists("Atlas Instance", self.region):
+		if not frappe.db.exists("Region", self.region):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": self.region,
-					"base_url": "https://atlas.example.test",
+					"atlas_base_url": "https://atlas.example.test",
 					"status": "Active",
 					"service_user": self.service_user,
 					"api_key": "k",
@@ -49,7 +49,7 @@ class TestAtlasMirror(IntegrationTestCase):
 				}
 			).insert()
 		else:
-			frappe.db.set_value("Atlas Instance", self.region, "service_user", self.service_user)
+			frappe.db.set_value("Region", self.region, "service_user", self.service_user)
 
 		# Neutralise commits: a _fail-path commit would otherwise flush this transaction and
 		# leak fixtures across tests. Every assertion here reads within the test transaction.
@@ -593,7 +593,7 @@ class TestAtlasMirror(IntegrationTestCase):
 
 		from central.integrations.atlas import AtlasClient
 
-		client = AtlasClient(frappe.get_doc("Atlas Instance", self.region))
+		client = AtlasClient(frappe.get_doc("Region", self.region))
 		with patch.object(AtlasClient, "client") as make_client:
 			make_client.return_value.post_api.return_value = "task-9"
 			task = client.resize_vm("vm-x", vcpus=4, memory_megabytes=16384, disk_gigabytes=80)
@@ -753,7 +753,7 @@ class TestAtlasMirror(IntegrationTestCase):
 			{"name": "gone", "team": self.team.name, "status": "Running"},
 			"2026-06-18 10:00:00",
 		)
-		instance = frappe.get_doc("Atlas Instance", self.region)
+		instance = frappe.get_doc("Region", self.region)
 		pulled = [{"name": "vm-3", "team": self.team.name, "status": "Stopped", "gateway_url": None}]
 		with patch("central.integrations.atlas.AtlasClient.central_vms", return_value=pulled):
 			reconcile_atlas(instance, self.team.name)
@@ -1040,12 +1040,12 @@ class TestTerminateIdempotency(IntegrationTestCase):
 			frappe.get_doc(
 				{"doctype": "Region", "region": self.region, "display_name": "Term", "provider": "Fake"}
 			).insert(ignore_permissions=True)
-		if not frappe.db.exists("Atlas Instance", self.region):
+		if not frappe.db.exists("Region", self.region):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": self.region,
-					"base_url": "https://atlas.example.test",
+					"atlas_base_url": "https://atlas.example.test",
 					"status": "Active",
 					"api_key": "k",
 					"api_secret": "s",

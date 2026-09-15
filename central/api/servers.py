@@ -15,12 +15,18 @@ from central.integrations.atlas import AtlasClient, AtlasResourceGone, reconcile
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
 # here). Every call resolves and authorizes a team first.
 
-# `list_instances` merges an Active Atlas Instance's liveness with its Region's
-# display metadata. Only these non-secret Atlas Instance fields are ever read —
-# the credentials/tunnel internals (api_key/api_secret/base_url/tunnel_*/peer_*/
-# service_user) now sit apart from the map metadata, which lives on Region.
-INSTANCE_LIVENESS_FIELDS = ("region", "status", "reachable")
-REGION_DISPLAY_FIELDS = ("display_name", "provider", "country_code", "latitude", "longitude")
+# The non-secret fields the region picker shows. Region also holds the Atlas
+# credentials, so the read names its fields rather than taking the whole document.
+REGION_FIELDS = (
+	"region",
+	"status",
+	"reachable",
+	"display_name",
+	"provider",
+	"country_code",
+	"latitude",
+	"longitude",
+)
 
 # Fallback version list for the new-server form when no Atlas is reachable. The
 # authoritative set is derived live from Atlas's active bench images (which token
@@ -44,9 +50,7 @@ def _available_versions(region: str | None = None) -> list[str]:
 	validating against a different region would reject valid creates or pass ones the
 	target can't provision. Falls back to the first Active region when none is given
 	(the picker's initial load), and to the static set when no Atlas is reachable."""
-	target = region or frappe.db.get_value(
-		"Atlas Instance", {"status": "Active"}, "name", order_by="region asc"
-	)
+	target = region or frappe.db.get_value("Region", {"status": "Active"}, "name", order_by="region asc")
 	if target:
 		try:
 			versions = AtlasClient.for_region(target).available_frappe_versions()
@@ -332,8 +336,9 @@ def _server_monitoring(asset: dict, audience_id: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["GET"])
-def list_instances(team: str | None = None) -> list[dict]:
-	"""List the regions a team can place servers in — every Active Atlas Instance.
+def regions(team: str | None = None) -> list[dict]:
+	"""List the regions a team can place servers in — every Active one.
+
 	A pure read for the console's New Server region picker. Gated on `cluster:view`
 	(same scope as `registry`); the team only resolves the gate, the region set is
 	team-agnostic."""
@@ -341,30 +346,16 @@ def list_instances(team: str | None = None) -> list[dict]:
 	team = resolve_team(user, team)
 	if not can(user, team, "cluster:view"):
 		frappe.throw(_("You can't view clusters for this team."), frappe.PermissionError)
-	# Atlas Instance is global infrastructure holding per-instance API credentials,
-	# so the DocType is locked to System Manager. `cluster:view` already authorizes
-	# this read, so we bypass DocType RBAC and read only the non-secret liveness
-	# fields — otherwise a Central User (e.g. a team Owner) gets an empty list.
-	instances = frappe.get_all(
-		"Atlas Instance",
+	# Region still carries the Atlas admin credentials, so the doctype stays locked to
+	# System Manager and this read bypasses doctype RBAC for the listed fields only.
+	# `cluster:view` is what authorizes it. Once Central signs every Atlas call with its
+	# own key and the credentials go, Region holds no secret and the bypass can go too.
+	return frappe.get_all(
+		"Region",
 		filters={"status": "Active"},
-		fields=list(INSTANCE_LIVENESS_FIELDS),
+		fields=list(REGION_FIELDS),
 		order_by="region asc",
 	)
-	# Merge each region's display metadata (kept on Region, away from the secrets).
-	display = {
-		row.name: row
-		for row in frappe.get_all(
-			"Region",
-			filters={"name": ["in", [i.region for i in instances]]},
-			fields=["name", *REGION_DISPLAY_FIELDS],
-		)
-	}
-	for instance in instances:
-		meta = display.get(instance.region)
-		for field in REGION_DISPLAY_FIELDS:
-			instance[field] = meta.get(field) if meta else None
-	return instances
 
 
 @frappe.whitelist(methods=["POST"])
@@ -642,7 +633,7 @@ def _run_command(
 	if asset.resize_in_progress and action in ("start", "stop"):
 		throw_action_error("SERVER_BUSY_RESIZING", action=action)
 
-	instance = frappe.get_doc("Atlas Instance", asset.cluster)
+	instance = frappe.get_doc("Region", asset.cluster)
 
 	# Open the tracking action only once Atlas accepts the command. A rejection surfaces as
 	# an envelope (via the endpoint's @resource_action) and leaves no row to strand.

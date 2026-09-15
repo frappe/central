@@ -61,13 +61,13 @@ class TestOpenBench(IntegrationTestCase):
 
 	def _cluster(self, region):
 		ensure_region(region)
-		if frappe.db.exists("Atlas Instance", region):
-			frappe.delete_doc("Atlas Instance", region, force=True)
+		if frappe.db.exists("Region", region):
+			frappe.delete_doc("Region", region, force=True)
 		frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
+				"doctype": "Region",
 				"region": region,
-				"base_url": "https://atlas.example.test",
+				"atlas_base_url": "https://atlas.example.test",
 				"status": "Active",
 				"api_key": "k",
 				"api_secret": "s",
@@ -136,6 +136,6 @@ class TestOpenBench(IntegrationTestCase):
 			self._open(self.dev, asset="vm-open-1")
 
 	def test_disabled_cluster_refused(self):
-		frappe.db.set_value("Atlas Instance", self.cluster, "status", "Disabled")
+		frappe.db.set_value("Region", self.cluster, "status", "Disabled")
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, asset="vm-open-1")

@@ -149,10 +149,10 @@ def _atlas_instances():
 		# of the region fails on a site that has no regions yet — which is every
 		# fresh demo site, the one case this seeder exists for.
 		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
-		if not frappe.db.exists("Atlas Instance", cslug):
+		if not frappe.db.exists("Region", cslug):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
+					"doctype": "Region",
 					"region": cslug,
 					"base_url": f"https://{cslug}.atlas.demo",
 					"api_key": "demo",

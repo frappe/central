@@ -52,7 +52,7 @@ class TestServerSeed(IntegrationTestCase):
 		second = seed()
 
 		self.assertEqual(first, second)
-		self.assertEqual(first["atlas_instances"], len(REGIONS))
+		self.assertEqual(first["regions"], len(REGIONS))
 		self.assertEqual(first["assets"], len(ASSETS))
 		# Only Running assets carry a billing contract (Asset.on_update).
 		running = sum(1 for row in ASSETS if row[3] == "Running")
@@ -69,7 +69,7 @@ class TestServerSeed(IntegrationTestCase):
 		teardown()
 
 		leftovers = summary()
-		self.assertEqual(leftovers["atlas_instances"], 0)
+		self.assertEqual(leftovers["regions"], 0)
 		self.assertEqual(leftovers["assets"], 0)
 		self.assertEqual(leftovers["subscriptions"], 0)
 		self.assertFalse(frappe.get_all("Subscription", filters={"asset_id": ["in", _seed_resource_ids()]}))

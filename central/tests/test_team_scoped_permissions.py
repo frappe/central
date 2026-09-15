@@ -69,18 +69,7 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 		return team
 
 	def _cluster(self) -> str:
-		region = ensure_region(f"scope-{self.suffix}")
-		frappe.get_doc(
-			{
-				"doctype": "Atlas Instance",
-				"region": region,
-				"base_url": "https://atlas.example.test",
-				"status": "Active",
-				"api_key": "k",
-				"api_secret": "s",
-			}
-		).insert()
-		return region
+		return ensure_region(f"scope-{self.suffix}", status="Active")
 
 	def _site(self, label: str, team: str):
 		return frappe.get_doc(

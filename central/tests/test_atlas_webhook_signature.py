@@ -71,24 +71,22 @@ class TestGoldenVector(unittest.TestCase):
 class TestVerifyAtlasSignature(IntegrationTestCase):
 	def setUp(self) -> None:
 		ensure_region(REGION)
-		if frappe.db.exists("Atlas Instance", REGION):
-			frappe.delete_doc("Atlas Instance", REGION, force=True, ignore_permissions=True)
+		if frappe.db.exists("Region", REGION):
+			frappe.delete_doc("Region", REGION, force=True, ignore_permissions=True)
 		self.instance = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
+				"doctype": "Region",
 				"region": REGION,
-				"base_url": "https://blr.atlas.example.test",
+				"atlas_base_url": "https://blr.atlas.example.test",
 				"status": "Active",
 				"api_key": "admin_key",
 				"api_secret": "admin_secret",
 			}
 		).insert(ignore_permissions=True)
-		frappe.utils.password.set_encrypted_password(
-			"Atlas Instance", self.instance.name, SECRET, "webhook_secret"
-		)
+		frappe.utils.password.set_encrypted_password("Region", self.instance.name, SECRET, "webhook_secret")
 
 	def tearDown(self) -> None:
-		frappe.delete_doc("Atlas Instance", REGION, force=True, ignore_permissions=True)
+		frappe.delete_doc("Region", REGION, force=True, ignore_permissions=True)
 
 	# ----- happy path --------------------------------------------------------
 
@@ -140,9 +138,7 @@ class TestVerifyAtlasSignature(IntegrationTestCase):
 
 	def test_instance_with_no_webhook_secret_is_rejected(self) -> None:
 		# A not-yet-rotated instance (Phase 2 of rollout not complete for it yet).
-		frappe.utils.password.set_encrypted_password(
-			"Atlas Instance", self.instance.name, "", "webhook_secret"
-		)
+		frappe.utils.password.set_encrypted_password("Region", self.instance.name, "", "webhook_secret")
 		with _headers():
 			with self.assertRaises(frappe.PermissionError):
 				_authenticate_atlas_webhook(BODY)
@@ -183,26 +179,24 @@ class TestEventEndpointSignatureGate(IntegrationTestCase):
 
 	def setUp(self) -> None:
 		ensure_region(REGION)
-		if frappe.db.exists("Atlas Instance", REGION):
-			frappe.delete_doc("Atlas Instance", REGION, force=True, ignore_permissions=True)
+		if frappe.db.exists("Region", REGION):
+			frappe.delete_doc("Region", REGION, force=True, ignore_permissions=True)
 		self.instance = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
+				"doctype": "Region",
 				"region": REGION,
-				"base_url": "https://blr.atlas.example.test",
+				"atlas_base_url": "https://blr.atlas.example.test",
 				"status": "Active",
 				"api_key": "admin_key",
 				"api_secret": "admin_secret",
 			}
 		).insert(ignore_permissions=True)
-		frappe.utils.password.set_encrypted_password(
-			"Atlas Instance", self.instance.name, SECRET, "webhook_secret"
-		)
+		frappe.utils.password.set_encrypted_password("Region", self.instance.name, SECRET, "webhook_secret")
 		frappe.db.delete("Atlas Event", {"cluster": REGION})
 
 	def tearDown(self) -> None:
 		frappe.db.delete("Atlas Event", {"cluster": REGION})
-		frappe.delete_doc("Atlas Instance", REGION, force=True, ignore_permissions=True)
+		frappe.delete_doc("Region", REGION, force=True, ignore_permissions=True)
 
 	def _post(self, body: bytes, region=REGION, timestamp=None, signature=None):
 		from central.api import atlas as atlas_api

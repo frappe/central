@@ -89,6 +89,6 @@ def _used_tunnel_ips() -> set[str]:
 	"""The Atlas peer addresses already allocated, read off `Atlas Instance`. Guarded
 	on the column existing so allocation works before the Step-4 `tunnel_ip` field
 	lands (and degrades to 'no peers yet' rather than erroring)."""
-	if not frappe.db.has_column("Atlas Instance", "tunnel_ip"):
+	if not frappe.db.has_column("Region", "tunnel_ip"):
 		return set()
-	return {ip for ip in frappe.get_all("Atlas Instance", pluck="tunnel_ip") if ip}
+	return {ip for ip in frappe.get_all("Region", pluck="tunnel_ip") if ip}

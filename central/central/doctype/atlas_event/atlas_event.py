@@ -29,9 +29,7 @@ class AtlasEvent(Document):
 
 		from central.integrations.atlas import signature_matches
 
-		secret = get_decrypted_password(
-			"Atlas Instance", self.cluster, "webhook_secret", raise_exception=False
-		)
+		secret = get_decrypted_password("Region", self.cluster, "webhook_secret", raise_exception=False)
 		if not secret:
 			return False
 		return signature_matches(secret, self.signature_timestamp, self.raw_body.encode(), self.signature)

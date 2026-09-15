@@ -73,7 +73,7 @@ class TestCapacityFilter(IntegrationTestCase):
 		make_plan(SMALL, rates=[{"cluster": "", "currency": "INR", "rate": 1000}], includes=_shape(1, 2, 20))
 		make_plan(BIG, rates=[{"cluster": "", "currency": "INR", "rate": 2000}], includes=_shape(8, 32, 500))
 		ensure_atlas_instance(CLUSTER)
-		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 1)
+		frappe.db.set_value("Region", CLUSTER, "validate_capacity", 1)
 		frappe.set_user("Administrator")
 
 	def _capacity(self, vcpus, memory_mb, disk_gb, available=True):
@@ -199,7 +199,7 @@ class TestCapacityFilter(IntegrationTestCase):
 
 	def test_flag_off_skips_the_capacity_call(self):
 		# validate_capacity off → the full priced menu, and Atlas is never asked.
-		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
+		frappe.db.set_value("Region", CLUSTER, "validate_capacity", 0)
 		with patch.object(AtlasClient, "capacity") as mock_capacity:
 			out = get_eligible_plans(cluster=CLUSTER, team=TEAM)
 		mock_capacity.assert_not_called()

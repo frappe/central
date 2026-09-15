@@ -21,9 +21,9 @@ _TERMINAL = {"Running", "Failed", "Terminated"}
 
 
 def _default_region() -> str:
-	"""The region SMB sites land in — the single Active Atlas Instance. Used only
+	"""The region SMB sites land in — the single Active Region. Used only
 	to route the operator call; Atlas itself defaults the site's region/domain."""
-	region = frappe.db.get_value("Atlas Instance", {"status": "Active"}, "region", order_by="region asc")
+	region = frappe.db.get_value("Region", {"status": "Active"}, "region", order_by="region asc")
 	if not region:
 		frappe.throw(_("No region is available — contact your operator."), frappe.ValidationError)
 	return region
@@ -88,7 +88,7 @@ def get_site(name: str) -> dict:
 	if mirror.status not in _TERMINAL:
 		from central.central.doctype.site.site import Site
 
-		instance = frappe.get_doc("Atlas Instance", mirror.cluster)
+		instance = frappe.get_doc("Region", mirror.cluster)
 		fresh = AtlasClient(instance).get_site(name)
 		Site.mirror_site(mirror.cluster, fresh, synced_at=frappe.utils.now_datetime())
 		mirror.status = fresh.get("status") or mirror.status
@@ -137,11 +137,11 @@ def terminate_site(name: str) -> dict:
 	if site.status == "Terminated":
 		return {"name": name, "status": site.status}
 	# A site with no backing region was never placed on Atlas; without this,
-	# get_doc("Atlas Instance", None) below raises an opaque error.
+	# get_doc("Region", None) below raises an opaque error.
 	if not site.cluster:
 		frappe.throw(_("Site {0} has no backing region to terminate.").format(name), frappe.ValidationError)
 
-	instance = frappe.get_doc("Atlas Instance", site.cluster)
+	instance = frappe.get_doc("Region", site.cluster)
 
 	# Open the tracking action only once Atlas accepts. A rejection surfaces as an envelope
 	# (via @resource_action) and leaves no row to strand.

@@ -28,7 +28,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Cluster",
-   "options": "Atlas Instance",
+   "options": "Region",
    "reqd": 1
   },
   {
