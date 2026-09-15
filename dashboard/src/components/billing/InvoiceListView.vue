@@ -173,7 +173,7 @@ const filters: ListViewFilter[] = [
 		<template #filters>
 			<DateRangePicker
 				v-model="range"
-				class="w-44 shrink-0"
+				class="flex-1 md:w-44"
 				size="sm"
 				format="D MMM"
 				placeholder="Any date"
