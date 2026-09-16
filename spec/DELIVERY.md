@@ -13,8 +13,9 @@ Read [Scope](REWRITE_SCOPE.md) for ownership and contracts. Read [Validation](LO
 ```text
 develop
   +-- v0.2
-        ^-- feature/v0.2-plan                    plan review
-        ^-- feature/v0.2-phase-0-staging-config  reviewed PR
+        ^-- feature/v0.2-phase-0-tenant-identity reviewed PR, stage 0A
+        ^-- phase 0 signing PR                  reviewed PR, stage 0B
+        ^-- phase 0 configuration PR            reviewed PR, stage 0C
         ^-- feature/v0.2-phase-1-trial-state     reviewed PR
         ^-- feature/v0.2-phase-2-server-lifecycle reviewed PR
         ^-- feature/v0.2-phase-3-staging-proof   reviewed PR
@@ -25,7 +26,7 @@ user merges accepted v0.2 -> develop
 
 Each phase starts from the latest accepted v0.2. Each PR targets v0.2. Split a phase into smaller review units when needed.
 
-Do not merge without review. The user controls the final merge into develop. Preserve the old branch as reference. PR #321 is closed and PR #322 carries this plan.
+Do not merge without review. The user controls the final merge into develop. Preserve the old branch as reference. PR #321 is closed. The agreed plan is committed directly on v0.2. GitHub marked PR #322 merged when v0.2 received its commits.
 
 Reuse correct code only after checking it against the selected source revisions and existing data. Do not cherry-pick the earlier foundation wholesale.
 
@@ -122,14 +123,22 @@ A VM running event, a green unit test, or a successful API response alone does n
 
 ## Work order for the deadline
 
-| Order | Work | Exit condition |
-|---|---|---|
-| First | Confirm staging region, both images, callbacks, access, and token contracts. | No unknown infrastructure prerequisite on the signup path. |
-| Next | Deliver phase 0 and the phase 1 create-to-login path. | A real customer can enter the trial site. |
-| Then | Complete server creation, power actions, Pilot access, and event recovery. | The dashboard flows work and Ubuntu SSH access is verified. |
-| Friday | Freeze scope and run the staging proof. | Recorded acceptance results or explicit unresolved blockers. |
+Aim to complete implementation on Wednesday and Thursday. Reserve Friday for final verification and fixes, not the first integration run.
 
-These are dependency gates, not promised elapsed times. Review and merge each small PR as it is ready.
+| Stage | Target | Work | Exit condition |
+|---|---|---|---|
+| 0A | Wednesday first | Team tenant identity, allocation, and populated-data patch. | IDs are unique and immutable. Ambiguous existing ownership blocks migration. |
+| 0B | Wednesday | Atlas signing, Pilot authentication, and consumer verification. | Real local verifiers accept the intended tokens and reject wrong audiences. |
+| 0C | Wednesday | Regional configuration and approved Pilot/Ubuntu image profiles. | Central can authenticate to the selected region and validate create inputs. |
+| 1 | Wednesday into Thursday | Trial create, metadata bootstrap, state receiver, and site login. | One signup reaches one working site without duplicate VMs. |
+| 2 | Thursday | Pilot and Ubuntu server creation, Open Pilot, and power actions. | Both server types complete their supported dashboard flows. |
+| 3 | Thursday into Friday | Event recovery, Team isolation, migration rehearsal, and real staging proof. | The agreed journey passes on the prepared staging region. |
+
+Stages 0A, 0B, and 0C are small PRs within phase 0. Review and merge each into v0.2 before starting its dependent implementation branch.
+
+Use blr.atlas.localhost for local contract checks while the regional staging deployment is prepared. Repeat integration checks against staging when it is available.
+
+These are target dates and dependency gates, not promised elapsed times. Record missing regional configuration and images as blockers early.
 
 Cargo is available in the local bench for contract checks. Friday uses existing regional infrastructure and prepared images. New service ordering is deferred.
 

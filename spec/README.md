@@ -10,6 +10,10 @@ Friday covers trial signup, Pilot server creation and access, plain Ubuntu creat
 
 The v0.2 documents distinguish the proposed design from the verified baseline. Each implementation phase updates the current module specifications when its behavior lands.
 
+## Current module specifications
+
+- [Team network identity](../central/central/doctype/team/SPEC.md): allocation, immutability, and migration of tenant IDs.
+
 ## Existing specifications
 
 - [IAM](IAM.md): Central identity and permission model. Its Atlas integration sections need review in phase 0.
