@@ -40,6 +40,10 @@ def get_billing_profile(team: str | None = None) -> dict:
 	- `complete` — required fields (currency + legal name + address) all filled;
 	  the gate for top-ups / buying credits / adding a payment method.
 	- `missing` — required fields still blank.
+	- `credit_headroom` — monthly run-rate the team's credits still fund. Creating a
+	  resource that fits inside it needs no billing details yet (the server applies
+	  the same rule), so the UI can let the create through instead of sending the
+	  customer to a form its credits have already paid for.
 	- `currency_locked` — true once a wallet credit, payment method, or invoice
 	  exists, so the UI disables the currency picker.
 	- `supported_currencies` — the allowed set (gateway-backed; not stored on the
@@ -49,6 +53,7 @@ def get_billing_profile(team: str | None = None) -> dict:
 	the doc for the edit forms; the derived fields drive routing and locking.
 	"""
 	from central.billing.gateways.registry import supported_currencies
+	from central.billing.payments.settlement import credit_funded_headroom
 
 	team = _resolve_team(team)
 	profile = (
@@ -62,6 +67,7 @@ def get_billing_profile(team: str | None = None) -> dict:
 			"complete": not missing,
 			"missing": missing,
 			"missing_labels": _missing_profile_labels(team),
+			"credit_headroom": credit_funded_headroom(team),
 			"currency_locked": _has_money_activity(team),
 			"supported_currencies": supported_currencies(),
 		}

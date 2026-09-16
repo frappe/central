@@ -107,6 +107,14 @@ _BILLING_EVENT_TYPES = {
 		"Add payment method",
 		"/billing",
 	),
+	"billing_details_required": (
+		"Billing details needed",
+		"We need your billing details before we can issue your invoice. Missing: {{ message }}.",
+		"Warning",
+		"billing:view",
+		"Add billing details",
+		"/billing",
+	),
 	"team_suspension": (
 		"Team suspended",
 		"Your team has been suspended due to billing issues.",

@@ -383,6 +383,21 @@ def _is_staging_trial_team(team: str) -> bool:
 	return bool(frappe.db.get_value("Team", team, "is_staging_trial"))
 
 
+def _plan_rate(team: str, plan: str | None, region: str | None):
+	"""The monthly rate a preset plan would lock at for this team, or None when it
+	can't be priced (no plan chosen, no billing currency, no rate for the currency).
+
+	Only the funding gate needs this up front: the authoritative rate is still the
+	one the opening Subscription Change stamps at provision time.
+	"""
+	from central.billing.catalog.pricing import resolve_plan_rate
+
+	currency = frappe.db.get_value("Billing Profile", team, "currency")
+	if not (plan and currency):
+		return None
+	return resolve_plan_rate(plan, currency, region)
+
+
 def _require_trial_provisioning(team: str, plan: str | None) -> None:
 	"""Trial teams provision on free welcome credits instead of a full billing profile:
 	they need a billing currency, an allow-listed plan (so usage meters at that plan's
@@ -465,14 +480,19 @@ def create_server(
 	then reconciles that same Asset (keyed on `resource_id`) instead of racing to
 	create a second one.
 
-	Trial teams (staging) skip the billing-profile gate and pay from free welcome
-	credits; size and price still come from the chosen plan like any other create."""
+	Billing details are asked for only when the team's credits stop covering the bill
+	(`require_billing_profile_or_credit`), so a first server funded by welcome credits
+	is created without an address form in the way. Trial teams (staging) skip the gate
+	outright and pay from free credits; size and price still come from the chosen plan
+	like any other create."""
 	from central.billing.catalog.subscriptions import provision_subscription
 
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
 		throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action="create")
+	if not region:
+		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="Region")
 	if _is_staging_trial_team(team):
 		# Trial: free credits fund it, no full profile. Size comes from the plan, not the
 		# caller, so the VM matches what the plan sells (and its rate).
@@ -481,12 +501,12 @@ def create_server(
 		vcpus, memory_megabytes = size["vcpus"], size["memory_megabytes"]
 		disk_gigabytes, cpu_max_cores = size["disk_gigabytes"], size["cpu_max_cores"]
 	else:
-		# A server bills the team, so it needs a billing profile first.
-		from central.billing.api.dashboard._shared import require_billing_profile
+		# A server bills the team — but only asks for billing details once the team's
+		# credits stop covering it. Welcome credits are granted at signup, so a first
+		# server is usually funded and the address form never interrupts the create.
+		from central.billing.api.dashboard._shared import require_billing_profile_or_credit
 
-		require_billing_profile(team, "create servers")
-	if not region:
-		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="Region")
+		require_billing_profile_or_credit(team, _plan_rate(team, plan, region), "create servers")
 	_validate_frappe_version(frappe_version, region)
 	friendly_title, atlas_title = _server_names(title, subdomain)
 
@@ -539,6 +559,7 @@ def create_composed_server(
 	from its parts. The server is the gate — composition, profile bounds, and headroom
 	are re-validated server-side (#81/#83) *before* the VM is created, so a request the
 	client lets through is still refused and never leaves an orphan VM."""
+	from central.billing.api.dashboard._shared import require_billing_profile_or_credit
 	from central.billing.catalog.composition import (
 		COMPUTE,
 		DISK,
@@ -556,10 +577,6 @@ def create_composed_server(
 	team = resolve_team(user, team)
 	if not can(user, team, "server:create"):
 		throw_action_error("PERMISSION_DENIED", exc=frappe.PermissionError, action="create")
-	# A server bills the team, so it needs a billing profile first.
-	from central.billing.api.dashboard._shared import require_billing_profile
-
-	require_billing_profile(team, "create servers")
 	if not region:
 		throw_action_error("INPUT_REQUIRED", exc=frappe.ValidationError, field="Region")
 	if isinstance(includes, str):
@@ -567,10 +584,15 @@ def create_composed_server(
 	_validate_frappe_version(frappe_version, region)
 	friendly_title, atlas_title = _server_names(title, subdomain)
 
-	# Validate the shape + cost before touching Atlas.
+	# Validate the shape + cost before touching Atlas. The config is priced once and
+	# that one rate answers both questions asked of it: whether the team's credits
+	# fund it (so we needn't ask for billing details yet) and whether it fits the
+	# trust-tier headroom.
 	validate_composition(sub_category, includes)
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	enforce_headroom(team, resolve_config_rate(includes, currency, region))
+	rate = resolve_config_rate(includes, currency, region)
+	require_billing_profile_or_credit(team, rate, "create servers")
+	enforce_headroom(team, rate)
 
 	qty = composition_quantities(includes)
 	client = AtlasClient.for_region(region)

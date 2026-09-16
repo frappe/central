@@ -348,6 +348,13 @@ const price = computed<string | null>(() => {
 const ctaLabel = computed(() =>
 	price.value ? `Create server - ${price.value}` : 'Create server',
 )
+// The same number as `price`, unformatted: the run-rate this create would add, which
+// is what the credit-funding gate compares against the team's remaining credits.
+const monthlyRate = computed<number | null>(() => {
+	if (isCustom.value && composedConfig.value && rateCardComplete(rateCard.value))
+		return estimateConfig(composedConfig.value, rateCard.value)
+	return selectedPlanObj.value?.rate ?? null
+})
 
 const submitting = computed(() => creating.value || creatingComposed.value)
 const canSubmit = computed(() => {
@@ -365,11 +372,12 @@ const canSubmit = computed(() => {
 
 async function submit() {
 	if (!canSubmit.value || !selectedRegion.value) return
-	// A server bills the team, so it needs a billing profile first. If it's
-	// incomplete, send them to Billing, where the flagged dialog opens. The
-	// toast is local because this is a cross-page jump — requireSetup itself
-	// no longer toasts, since in-place callers explain themselves.
-	if (!requireSetup()) {
+	// A server bills the team, so it needs billing details — but only once the
+	// team's credits stop covering it, which is why the rate goes in. If they don't,
+	// send them to Billing, where the flagged dialog opens. The toast is local
+	// because this is a cross-page jump — requireSetup itself no longer toasts,
+	// since in-place callers explain themselves.
+	if (!requireSetup(monthlyRate.value)) {
 		infoToast('Add your billing details to continue')
 		router.push({ name: 'Billing' })
 		return

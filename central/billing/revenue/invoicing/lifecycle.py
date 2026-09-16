@@ -46,6 +46,14 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	doc = frappe.get_doc("Invoice", invoice)
 
+	# A Billable invoice is a statutory sale: it has to be made out to somebody, and
+	# it is pushed to ERPNext as a Sales Invoice once paid. A team that provisioned on
+	# welcome credits may still owe us a legal name and address, so the draft is held
+	# — and the customer asked — rather than issued to nobody. The next daily sweep
+	# picks it up as soon as the profile is complete.
+	if doc.invoice_type == "Billable" and _hold_for_billing_details(doc):
+		return {"invoice": invoice, "claimed": False, "held": "billing_details"}
+
 	# Free/trial: a cost_report is computed, never collected — no credits, no
 	# charge. It is opened as a record of the subsidy cost.
 	if doc.invoice_type == "Cost Report":
@@ -118,6 +126,30 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		"status": "Open",
 		"charge": charge,
 	}
+
+
+def _hold_for_billing_details(doc) -> bool:
+	"""Whether this invoice must wait for the customer's billing details, asking for
+	them if so.
+
+	The ask carries the invoice as its reference, so the notification engine dedupes
+	it per invoice: the sweep may pass over a held draft every day, but the customer
+	is asked once while that ask is unread.
+	"""
+	from central.billing.api.dashboard._shared import _missing_profile_labels
+	from central.billing.platform import notifications
+
+	missing = _missing_profile_labels(doc.team)
+	if not missing:
+		return False
+	notifications.notify(
+		doc.team,
+		"Billing Details Required",
+		message=", ".join(missing),
+		reference_doctype="Invoice",
+		reference_name=doc.name,
+	)
+	return True
 
 
 def cancel_invoice(invoice: str, reason: str | None = None) -> str:

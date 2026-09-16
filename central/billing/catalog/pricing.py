@@ -163,6 +163,16 @@ def resolve_rate(rate_rows, currency: str, cluster: str | None = None):
 	return None
 
 
+def resolve_plan_rate(plan: str, currency: str, cluster: str | None = None):
+	"""The flat rate a preset bundle `Plan` sells for, in this currency + region.
+
+	Returns None when the plan has no rate for the currency — a missing rate is not
+	zero, so a caller that needs the price (a headroom or funding check) refuses
+	rather than waving the request through at nothing.
+	"""
+	return resolve_rate(get_catalog_rates("Plan", plan), currency, cluster)
+
+
 def resolve_component_rate(resource_type: str, currency: str, cluster: str | None = None):
 	"""The per-unit rate card rate for one `Resource Type` (ADR 0009).
 

@@ -348,9 +348,14 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 	make it faster — it would make it rate-limited.
 	"""
 	with metrics.timed("billing.settle_page", cutoff=str(cutoff)) as counters:
-		counters.update(settled=0, failed=0)
+		counters.update(settled=0, held=0, failed=0)
 		for invoice in drafts_in_range(cutoff, after, until):
-			if settle_draft(invoice, counters):
+			# A draft held for missing billing details is neither settled nor failed —
+			# it stays Draft and the next sweep tries it again.
+			result = settle_draft(invoice, counters)
+			if result and result.get("held"):
+				counters["held"] += 1
+			elif result:
 				counters["settled"] += 1
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
 		return {"after": after, "until": until, **counters}
