@@ -49,9 +49,7 @@ class Team(Document):
 		self.tenant_id = allocate_tenant_id()
 
 	def validate(self) -> None:
-		validate_tenant_id(self.tenant_id)
-		if not self.is_new() and self.has_value_changed("tenant_id"):
-			frappe.throw(_("The tenant ID cannot be changed."), frappe.CannotChangeConstantError)
+		self._validate_tenant_id_unchangeable()
 		self._absorb_wildcard_grants()
 		self._validate_unique_members()
 		self._validate_owner_membership()
@@ -283,6 +281,11 @@ class Team(Document):
 		if self._members_changed(previous):
 			self._require_capability("team:manage_members")
 			self._validate_sensitive_member_changes(previous)
+
+	def _validate_tenant_id_unchangeable(self) -> None:
+		validate_tenant_id(self.tenant_id)
+		if not self.is_new() and self.has_value_changed("tenant_id"):
+			frappe.throw(_("The tenant ID cannot be changed."), frappe.CannotChangeConstantError)
 
 	def _metadata_changed(self, previous) -> bool:
 		return self.team_name != previous.team_name or self.status != previous.status
