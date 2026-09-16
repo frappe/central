@@ -1,10 +1,12 @@
 # Central Spec
 
-## v0.2 rewrite
+## v0.2 staging milestone
 
-- [Rewrite scope](REWRITE_SCOPE.md): proposed ownership, contracts, recovery, and data migration rules.
+- [Rewrite scope](REWRITE_SCOPE.md): Friday signup and server lifecycle, later work, ownership, and recovery.
 - [Delivery](DELIVERY.md): phase PRs into `v0.2` and their acceptance checks.
 - [Validation](LOCAL_ENVIRONMENT.md): contract tests, populated migrations, and real-region evidence.
+
+Friday covers trial signup, Pilot server creation and access, plain Ubuntu creation, and server power actions. Rename, custom domains, and Cargo registration follow this milestone.
 
 The v0.2 documents distinguish the proposed design from the verified baseline. Each implementation phase updates the current module specifications when its behavior lands.
 

@@ -2,193 +2,171 @@
 
 ## Purpose
 
-Deliver the [rewrite contract](REWRITE_SCOPE.md) through reviewed phase PRs. The integration branch is `v0.2` in `frappe/central`.
+Prioritize a working staging integration by Friday, September 18, 2026. Complete the wider rewrite after that milestone.
+
+The deadline depends on one ready region, usable Pilot and Ubuntu images, DNS access, and review availability. Record an unmet dependency early. Do not trade authorization or data safety for the date.
+
+Read [Scope](REWRITE_SCOPE.md) for ownership and contracts. Read [Validation](LOCAL_ENVIRONMENT.md) for required proof.
 
 ## Branch workflow
 
 ```text
-frappe/central develop
-    |
-    +-- v0.2
-          ^
-          +-- feature/v0.2-plan                 documentation review
-          +-- feature/v0.2-phase-0-foundation  PR after plan approval
-          +-- feature/v0.2-phase-1-contracts   PR after phase 0
-          +-- feature/v0.2-phase-2-signup      PR after phase 1
-          +-- remaining phase branches
+develop
+  +-- v0.2
+        ^-- feature/v0.2-plan                    plan review
+        ^-- feature/v0.2-phase-0-staging-config  reviewed PR
+        ^-- feature/v0.2-phase-1-trial-state     reviewed PR
+        ^-- feature/v0.2-phase-2-server-lifecycle reviewed PR
+        ^-- feature/v0.2-phase-3-staging-proof   reviewed PR
+        ^-- later rewrite phases
 
 user merges accepted v0.2 -> develop
 ```
 
-Create `v0.2` from the main repository's `develop`, not the superseded rewrite branch. The initial base is `c2565d80`.
+Each phase starts from the latest accepted v0.2. Each PR targets v0.2. Split a phase into smaller review units when needed.
 
-Create each phase branch from the latest accepted `v0.2`. Use `v0.2` as the PR base. Do not build a stack of unreviewed phase branches.
+Do not merge without review. The user controls the final merge into develop. Preserve the old branch as reference. PR #321 is closed and PR #322 carries this plan.
 
-If a phase needs several PRs, number them within that phase. Merge and validate each accepted PR before the dependent PR starts.
+Reuse correct code only after checking it against the selected source revisions and existing data. Do not cherry-pick the earlier foundation wholesale.
 
-Review and merge approval are separate from implementation authorization. Do not merge a phase without review. The user performs the final merge into `develop`.
+## Friday phase 0: configuration and minimum identity
 
-Close superseded PR #321 without deleting its branch. Preserve the unfinished local changes. Use the old work as a reference, not as an automatic cherry-pick list.
+**Result:** Central can authenticate to the selected Atlas and Pilot deployment.
 
-## Reuse from the old branch
+Configure one staging region, proxy, Cargo instance, Pilot and Ubuntu image profiles, and public Central callback URL. Verify region and tenant identity.
 
-| Candidate | Required review before reuse |
+Add required Team tenant IDs, credentials, signer support, and patches. Preserve existing Asset, Atlas Instance, and billing identities.
+
+Check affected token consumers. Reuse the existing dashboard and whitelisted API style. Do not introduce a new public API framework.
+
+Acceptance:
+
+- Existing Teams receive valid tenant IDs without changing verified remote ownership.
+- Another Team cannot read or act on the test VM.
+- Actual Atlas and Pilot accept Central tokens and reject invalid audiences.
+- The Pilot profile records a verified shape, aliases, proxy mode, and runtime versions. The Ubuntu profile supports SSH key setup.
+- Required data patches pass on populated data and on a fresh install.
+- Region endpoints and credentials work without a new Central-to-region SSH tunnel.
+
+## Friday phase 1: trial signup and state delivery
+
+**Result:** A customer creates a trial and enters its site. The interface shows state changes from Framework webhooks.
+
+Implement the thin Atlas create/read/delete adapter, metadata bootstrap, automatic names, Pilot readiness, and login. Reuse existing request and action records.
+
+Configure Atlas's Virtual Machine State Framework webhook. Add the signed Central receiver, durable receipt processing, and the minimum shared state writer.
+
+Add bounded action checks and a low-frequency repair scan. Include deletion cleanup and credential revocation before calling the trial flow complete.
+
+Acceptance:
+
+- One accepted signup request creates one VM and uses the prepared site's existing data.
+- Repeated submissions and uncertain create responses cannot silently create duplicate VMs.
+- An event arriving before the create response is retained and later matched correctly.
+- The receiver rejects bad signatures and unknown sources.
+- Duplicate or older events cannot repeat side effects or regress state.
+- A running VM is followed by successful site readiness and login.
+- A missed event or stopped worker recovers through receipts or a scoped API read.
+- Confirmed deletion revokes the credential and applies required billing effects once.
+- The dashboard shows a useful error or unknown outcome instead of waiting forever.
+
+## Friday phase 2: server creation and lifecycle
+
+**Result:** A customer can create a Pilot server, open Pilot, and create a plain Ubuntu server.
+
+Reuse the Atlas adapter, identity, and state handling from phases 0 and 1. Add explicit image choices and readiness rules.
+
+Connect start, stop, restart, and delete to the current Atlas API. Track each action separately from the last observed VM state.
+
+Acceptance:
+
+- A Pilot server receives its own credential and opens the correct Pilot admin through Central.
+- A plain Ubuntu server receives the requested approved size and SSH keys.
+- Ubuntu creation does not wait for Pilot or create a Site record.
+- The interface shows supported access information and hides Pilot controls for Ubuntu.
+- Start and stop reach the requested state. Customer traffic cannot wake an explicitly stopped VM.
+- Restart uses an authoritative completion signal. A running state alone cannot finish the action.
+- Delete requires confirmation and completes only after a correctly scoped absence check.
+- Deletion revokes Pilot credentials where applicable and applies existing billing effects once.
+- Duplicate requests, remote errors, and uncertain responses leave a recoverable action record.
+- Another Team cannot read, control, delete, or open Pilot for the server.
+
+## Deferred integration work
+
+Site rename, admin-domain rename, custom domains, TLS coordination, and Cargo backend registration follow the Friday milestone.
+
+Their verified contracts and known gaps remain in [Scope](REWRITE_SCOPE.md). They must not block signup or the required server lifecycle.
+
+## Friday phase 3: staging proof
+
+**Result:** The agreed customer journey works on the real staging region.
+
+Freeze the milestone scope after the critical journey works. Spend the remaining time on integration faults, failure recovery, migration rehearsal, and handover.
+
+Acceptance:
+
+- Run signup and site login through the supported UI.
+- Create a Pilot server and open its admin.
+- Create a plain Ubuntu server and verify SSH access through the supported network.
+- Exercise start, stop, restart, and delete for both server types.
+- Observe an idle VM sleep while Central synchronization stays active.
+- Wake the VM with customer traffic and confirm the site works.
+- Stop a receiver worker or reject a delivery, then prove eventual recovery.
+- Replay duplicate and older signed events and verify no repeated effects.
+- Verify two Teams cannot read, mutate, or access each other's resources.
+- Run focused tests, affected billing tests, dashboard checks, and the required build.
+- Rehearse changed data patches on representative staging data.
+- Record dependency revisions, results, remaining defects, and operator recovery steps.
+
+A VM running event, a green unit test, or a successful API response alone does not satisfy this gate.
+
+## Work order for the deadline
+
+| Order | Work | Exit condition |
+|---|---|---|
+| First | Confirm staging region, both images, callbacks, access, and token contracts. | No unknown infrastructure prerequisite on the signup path. |
+| Next | Deliver phase 0 and the phase 1 create-to-login path. | A real customer can enter the trial site. |
+| Then | Complete server creation, power actions, Pilot access, and event recovery. | The dashboard flows work and Ubuntu SSH access is verified. |
+| Friday | Freeze scope and run the staging proof. | Recorded acceptance results or explicit unresolved blockers. |
+
+These are dependency gates, not promised elapsed times. Review and merge each small PR as it is ready.
+
+Cargo is available in the local bench for contract checks. Friday uses existing regional infrastructure and prepared images. New service ordering is deferred.
+
+## After-Friday phases
+
+| Phase | Result |
 |---|---|
-| Tenant ID allocation | Existing-data mapping, sequence safety, immutability, uniqueness, and migration order. |
-| Ed25519 signing | Consumer compatibility, first-use concurrency, operator permission, publication delay, and key retirement. |
-| Region fields | Required data transfer, remote identity validation, endpoint validation, and minimal target fields. |
-| Token tests | Verify against actual consumer code, not only Central's own decoder. |
-| Webhook deletion | Replace credential binding, revocation, operation completion, and failure reporting first. |
-| Billing Link changes | Prove target records exist and preserve stored subscription identities. |
+| 4 | Site/admin rename, domain ownership and routing, Pilot TLS, and Cargo backend registration. |
+| 5 | Typed API core, OpenAPI, generated clients, target Server/Site/Region model, and image catalog with patches. |
+| 6 | Resize and migration progress, console, snapshots, and fleet-scale recovery. |
+| 7 | Services, live health, telemetry, IAM, partners, notifications, and dashboard standards review. |
+| 8 | Full suite, complete migration rehearsal, regional acceptance, and release review for develop. |
 
-Do not copy the removal of the patch guard as part of this rewrite. A change to validation tooling needs its own concrete reason.
+Do not weaken the Friday implementation to create temporary generic abstractions. Extend its domain-owned code in later phases.
 
-## Phase 0: identity, region, and signing foundation
+## PR rules
 
-**Result:** Central has verified Team and Region identities and can authenticate to the selected regional APIs.
+Each PR includes changed behavior, required patches, focused tests, matching UI changes, and current documentation.
 
-Inventory staging data and token consumers. Add tenant IDs with the backfill and constraints. Define Region endpoints and migrate required Atlas Instance data. Implement and test signing-key lifecycle.
+Keep remote calls in integrations and authorization in Central IAM. Enforce list and document permissions. Follow the Desk and error-handling rules in CLAUDE.md.
 
-Update the related Desk forms, permissions, tests, and current specifications. Remove obsolete data only after its references are handled.
+Review every changed line before committing. Use the repository's commit and PR format. Do not add co-author or agent metadata.
 
-Keep the phase small through three review units if needed: Team identity, signing, then Region migration. All PRs target `v0.2`.
+Record any failed check and whether it is a baseline issue. Do not mass-format unrelated code.
 
-Acceptance:
+Documentation-only PRs require content, link, conflict-marker, and diff checks. Implementation PRs use the validation commands in CLAUDE.md.
 
-- A populated migration preserves Team ownership and required Region data. Repeating it is safe.
-- Concurrent Team creation cannot allocate the same committed tenant ID.
-- Tenant ID changes and tenant `0` are denied for customer Teams.
-- Atlas accepts Central keys and tokens. Missing headers and cross-Team resource reads are denied.
-- Proxy tokens have the correct audience and cannot reuse an Atlas tenant token.
-- All existing token consumers pass the agreed cutover checks.
-- Key administration denies non-operators. First use and rotation have concurrency tests.
+## Dependencies that can block Friday
 
-## Phase 1: API contracts and regional reads
-
-**Result:** Central uses typed, versioned contracts for new regional reads and serves a documented customer read API.
-
-Wrap the generated Atlas client under `central/integrations/`. Pin its source artifact or revision. Add timeouts, safe error mapping, tenant headers, and pagination.
-
-Resolve image snapshot fields and release metadata with Atlas and Cargo. Build the image catalog from that contract.
-
-Introduce the minimal typed Central API core and generated TypeScript client. Wire Region and image selection into the dashboard. Define session authentication and CSRF handling.
-
-Acceptance:
-
-- Contract tests validate requests and responses against the selected OpenAPI revision.
-- A tenant with more than one page of resources returns a complete result.
-- Region failures appear as stale or unavailable data, not an empty healthy fleet.
-- Image selection rejects unavailable, incompatible, or incomplete images.
-- Real Atlas and proxy authentication tests pass.
-- API and client generation has a deterministic drift check.
-
-## Phase 2: one complete trial signup
-
-**Result:** A customer creates a trial and enters its site through the Central dashboard.
-
-Introduce the target Server and Site records, stable resource references, durable signup request, and Pilot credential delivery. Migrate the Asset name and links in this phase.
-
-Implement automatic names, prepared-image signup, bounded readiness, site discovery, and login. Include the minimum observation loop and recovery needed by signup.
-
-Preserve the existing billing eligibility rules. Make only required billing reference changes. Replace enrolment when metadata delivery and recovery are ready.
-
-Acceptance:
-
-- One customer Team receives one trial VM and one existing image site for one accepted signup request.
-- Repeated customer submissions do not create duplicate requests or VMs.
-- An uncertain create cannot trigger an automatic second VM.
-- Worker restarts and failures between remote acceptance and local persistence have a tested recovery path.
-- A credential is bound to the right Server. Another Team cannot use the resulting login or read the request.
-- Warm and cold startup work. The UI reports progress and a bounded failure or unknown outcome.
-- A real region proves metadata bootstrap, automatic routing, and site login.
-- Required billing links and migration counts remain valid.
-
-## Phase 3: lifecycle, reconciliation, and sleep
-
-**Result:** Server operations settle correctly and remain recoverable through outages and sleep cycles.
-
-Extend the shared observation path for power, deletion, snapshots, console, and supported resize operations. Add fleet reconciliation, source freshness, work recovery, and operator actions.
-
-Coordinate any missing migration or operation-completion contract with Atlas. Do not infer restart completion from the running state alone.
-
-Move all required webhook effects into the observation path. Remove the webhook, old Atlas client, tunnel registration, and obsolete host scripts after the replacement works.
-
-Retire Atlas Instance after its remaining callers and data references are handled. Do not copy its tunnel credentials into Region during phase 0.
-
-Acceptance:
-
-- Incomplete pagination, delayed reads, wrong-tenant `404`, timeouts, and server errors cannot falsely terminate a resource.
-- Concurrent fleet and focused reads cannot replace a newer observation with an older one.
-- Confirmed deletion revokes credentials and applies required subscription effects once.
-- Actions survive worker restart, settle by their actual effect, and expose an unknown remote outcome when necessary.
-- A sleeping VM remains asleep during fleet synchronization and wakes after customer traffic.
-- Failed wake and stopped-for-maintenance states are not reported as healthy sleep.
-- Resize and migration behavior matches the selected Atlas release. Conflicting controls are disabled or rejected clearly.
-
-## Phase 4: site operations and domains
-
-**Result:** Customers manage supported sites and names through Central with reliable routing and certificate state.
-
-Add friendly regional names and customer domains. Integrate Pilot tasks for rename and supported site operations. Specify the certificate contract before implementing either side.
-
-Support additional same-Team sites for the server product only when that product requires them. Do not reintroduce pooled trials.
-
-Acceptance:
-
-- Automatic, friendly regional, and customer-domain routes use the correct proxy path.
-- Domain ownership and cross-Team uniqueness are enforced.
-- Route success with certificate failure remains recoverable and never reports active.
-- Rename keeps the Central Site identity and the agreed old-hostname behavior.
-- Cleanup and retries are safe after either system restarts.
-- Dashboard and Desk show DNS, route, certificate, and task failures where users act.
-
-## Phase 5: services and remaining non-billing modules
-
-**Result:** The wider non-billing code follows the same ownership, permission, and error rules.
-
-Use separate review units for services and Cargo, telemetry, IAM and partners, notifications, and shared dashboard components. Audit each area in the scope table.
-
-Confirm Cargo bootstrap configuration. Verify Datum labels, token refresh, and credential revocation. Keep monitoring compatible with the sleep policy.
-
-Acceptance:
-
-- Every area has a recorded review result and focused tests for changed behavior.
-- Each changed Team-scoped DocType has list and document permission tests, including cross-Team denial.
-- Thin routes, domain-owned behavior, and integration-only remote calls follow `CLAUDE.md`.
-- Notification and telemetry failures leave useful operator state.
-- Passport and Connect ownership and credentials remain valid.
-- Dashboard components use the pinned Frappe UI version and pass state and accessibility checks.
-
-## Phase 6: staging acceptance
-
-**Result:** The accepted `v0.2` branch is ready for the user's merge into `develop`.
-
-Run the complete app suite, required checks, dashboard build, populated migration rehearsal, and real-region scenarios. Run the full billing suite for integration changes.
-
-Test upgrade from staging's actual schema, including any partially applied earlier rewrite. Record unresolved operational risks and rollback steps.
-
-Acceptance:
-
-- Trial signup, login, idle sleep, wake, upgrade, deletion, and domain flows pass on the selected region release.
-- Central and remote restarts do not lose pending operations or create duplicate resources.
-- Customer permissions and operator recovery work through the supported interfaces.
-- No scheduled task, import, route, generated client, or document refers to removed behavior.
-- The migration report reconciles required records, references, credentials, and remote resource identities.
-- The user reviews the release evidence before merging to `develop`.
-
-## Rules for every PR
-
-1. State the problem, final behavior, scope, and dependency revisions.
-2. Include schema patches with the code that needs them.
-3. Include focused behavior, denial, and failure tests.
-4. Deliver the matching dashboard and Desk controls when the behavior is user-facing.
-5. Update the authoritative module documentation in the same PR.
-6. Review every changed line before committing.
-7. Record checks, failures, and untested dependencies accurately.
-8. Obtain review before merging into `v0.2`.
-
-Use the repository's Conventional Commit format. Do not add co-author or agent metadata.
-
-Run the commands in `CLAUDE.md` from a correctly configured bench. Run the full suite before a broad refactor. Do not mass-format unrelated files to hide baseline failures.
-
-Documentation-only PRs need link, content, conflict-marker, and diff checks. They do not require a database migration or application build.
+| Dependency | Required action |
+|---|---|
+| Test region and DNS | Identify the operator, region, automatic DNS names, and access before phase 0 starts. |
+| Image metadata | Supply verified Pilot and Ubuntu profiles. Do not wait for the full catalog API. |
+| Atlas callback setup | Verify the document event, condition, shared secret, scheduler, and delivery log. |
+| Framework retry revision | Pin deployed Framework behavior and configure retries. Keep repair reads even when retries exist. |
+| Pilot access | Verify automatic admin routing, token audience, and bootstrap on the selected image. |
+| Ubuntu access | Verify SSH key injection and an operator-approved network path for the customer. |
+| Restart result | Verify a completion signal or add the smallest required Atlas contract. |
+| Trial policy | Confirm size, idle timeout, limits, and whether scheduled work may pause during sleep. |
+| Unknown create | Provide an operator recovery action until remote idempotency or lookup is proven. |
