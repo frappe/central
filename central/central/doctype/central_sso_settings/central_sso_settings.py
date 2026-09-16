@@ -27,9 +27,9 @@ class CentralSSOSettings(Document):
 		atlas_private_key: DF.Password | None
 		atlas_public_key: DF.Code | None
 		issuer_url: DF.Data | None
-		kid: DF.Data | None
-		private_key: DF.Password | None
-		public_key: DF.Code | None
+		rsa_key_id: DF.Data | None
+		rsa_private_key: DF.Password | None
+		rsa_public_key: DF.Code | None
 	# end: auto-generated types
 
 	@classmethod
@@ -40,14 +40,14 @@ class CentralSSOSettings(Document):
 		"""The active PEM private key and its `kid`, generating the keypair on first use.
 		Only the (authenticated) minting path calls this, so key generation never rides a
 		guest request."""
-		if not self.kid:
+		if not self.rsa_key_id:
 			self._generate_keypair()
-		return self.get_password("private_key"), self.kid
+		return self.get_password("rsa_private_key"), self.rsa_key_id
 
 	def jwks(self) -> dict:
 		"""The public JWKS document benches verify against. Empty until a key exists — a
 		read never generates one (that stays on the signing path)."""
-		if not self.kid:
+		if not self.rsa_key_id:
 			return {"keys": []}
 		return {"keys": [self._public_jwk()]}
 
@@ -120,9 +120,9 @@ class CentralSSOSettings(Document):
 		from cryptography.hazmat.primitives.serialization import load_pem_public_key
 		from jwt.algorithms import RSAAlgorithm
 
-		public_key = load_pem_public_key(self.public_key.encode())
+		public_key = load_pem_public_key(self.rsa_public_key.encode())
 		jwk = RSAAlgorithm.to_jwk(public_key, as_dict=True)
-		jwk.update({"kid": self.kid, "use": "sig", "alg": ALGORITHM})
+		jwk.update({"kid": self.rsa_key_id, "use": "sig", "alg": ALGORITHM})
 		return jwk
 
 	def _generate_keypair(self) -> None:
@@ -130,12 +130,12 @@ class CentralSSOSettings(Document):
 		from cryptography.hazmat.primitives.asymmetric import rsa
 
 		key = rsa.generate_private_key(public_exponent=65537, key_size=RSA_KEY_SIZE)
-		self.private_key = key.private_bytes(
+		self.rsa_private_key = key.private_bytes(
 			encoding=serialization.Encoding.PEM,
 			format=serialization.PrivateFormat.PKCS8,
 			encryption_algorithm=serialization.NoEncryption(),
 		).decode()
-		self.public_key = (
+		self.rsa_public_key = (
 			key.public_key()
 			.public_bytes(
 				encoding=serialization.Encoding.PEM,
@@ -143,6 +143,6 @@ class CentralSSOSettings(Document):
 			)
 			.decode()
 		)
-		self.kid = frappe.generate_hash(length=16)
+		self.rsa_key_id = frappe.generate_hash(length=16)
 		# Password field → private key is encrypted at rest on save.
 		self.save(ignore_permissions=True)

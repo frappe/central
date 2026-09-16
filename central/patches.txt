@@ -152,3 +152,5 @@ central.patches.v0_0.revert_invoice_to_single_consolidated
 # Per-project credit budgets and card earmarking had no invoice left to settle
 # against once billing reverted to one consolidated invoice — drop the columns.
 central.patches.v0_0.drop_project_scoping_from_credits_and_methods
+
+central.patches.v0_0.rename_sso_rsa_fields

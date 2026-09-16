@@ -95,12 +95,12 @@ def verify_bootstrap_token(token: str) -> dict:
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
+	if not settings.rsa_public_key:
 		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			load_pem_public_key(settings.rsa_public_key.encode()),
 			algorithms=[ALGORITHM],
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
@@ -124,13 +124,13 @@ def verify_cargo_bootstrapping_token(token: str) -> str:
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
+	if not settings.rsa_public_key:
 		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
 
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			load_pem_public_key(settings.rsa_public_key.encode()),
 			algorithms=[ALGORITHM],
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
@@ -166,13 +166,13 @@ def verify_cargo_access_token(token: str) -> dict:
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
+	if not settings.rsa_public_key:
 		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
 
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			load_pem_public_key(settings.rsa_public_key.encode()),
 			algorithms=[ALGORITHM],
 			audience="central",
 			options={"require": ["exp", "aud", "jti", "scope", "instance"]},

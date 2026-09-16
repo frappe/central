@@ -12,7 +12,7 @@ Configure Atlas `central_jwks_url` with `<central-url>/api/method/central.api.jw
 
 Pilot continues to use `<central-url>/api/method/central.api.jwks.get_jwks`. Both endpoints return raw JWKS documents. Neither endpoint generates keys or exposes private key material.
 
-The new fields are optional. Schema synchronization adds them without changing existing RSA data. No data conversion or automatic key initialization runs on migration. Operators must initialize the Atlas key explicitly on each Central deployment.
+The new fields are optional. Schema synchronization adds them without changing existing RSA data. The post-sync patch `rename_sso_rsa_fields` preserves the existing RSA key identifier, public key, and encrypted private key under `rsa_key_id`, `rsa_public_key`, and `rsa_private_key`. It stops if both field sets contain data. No automatic key initialization runs on migration. Operators must initialize the Atlas key explicitly on each Central deployment.
 
 ## Operation
 

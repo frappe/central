@@ -32,7 +32,7 @@ The console (bench) login stays browser-carried; only the site login is a Centra
 
 | What | Stored | Notes |
 |------|--------|-------|
-| Central signing key | `Central SSO Settings` — `private_key` (Password, encrypted), `public_key`, `kid` | Signs RSA login, service, and bootstrap tokens |
+| Central signing key | `Central SSO Settings` — `rsa_private_key` (Password, encrypted), `rsa_public_key`, `rsa_key_id` | Signs RSA login, service, and bootstrap tokens |
 | Bench durable credential | `Pilot Credential.token_hash` (SHA-256) | Plaintext bearer returned once at enroll, never stored |
 | Site → bench binding | `Site.pilot_credential_id` | A reference, not a token |
 | Bench/site login assertions | **nowhere** | Stateless JWTs — minted on demand, handed off, forgotten |

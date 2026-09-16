@@ -7,10 +7,10 @@
  "field_order": [
   "issuer_section",
   "issuer_url",
-  "signing_section",
-  "kid",
-  "public_key",
-  "private_key",
+  "rsa_signing_section",
+  "rsa_key_id",
+  "rsa_public_key",
+  "rsa_private_key",
   "atlas_signing_section",
   "atlas_key_id",
   "atlas_public_key",
@@ -27,33 +27,6 @@
    "fieldname": "issuer_url",
    "fieldtype": "Data",
    "label": "Central Public URL"
-  },
-  {
-   "fieldname": "signing_section",
-   "fieldtype": "Section Break",
-   "label": "Pilot and Service Signing Key"
-  },
-  {
-   "description": "Identifies the RSA key used for Pilot and service tokens. Published with the public key.",
-   "fieldname": "kid",
-   "fieldtype": "Data",
-   "label": "RSA Key ID",
-   "read_only": 1
-  },
-  {
-   "description": "PEM public key benches verify Central-minted tokens against. Published (as a JWK) at the JWKS endpoint.",
-   "fieldname": "public_key",
-   "fieldtype": "Code",
-   "label": "RSA Public Key (PEM)",
-   "read_only": 1
-  },
-  {
-   "description": "PEM private key Central signs with. Encrypted at rest; never leaves Central.",
-   "fieldname": "private_key",
-   "fieldtype": "Password",
-   "label": "RSA Private Key (PEM)",
-   "no_copy": 1,
-   "read_only": 1
   },
   {
    "collapsible": 1,
@@ -85,13 +58,40 @@
    "label": "Atlas Private Key (Ed25519 PEM)",
    "no_copy": 1,
    "read_only": 1
+  },
+  {
+   "fieldname": "rsa_signing_section",
+   "fieldtype": "Section Break",
+   "label": "Pilot and Service Signing Key"
+  },
+  {
+   "description": "Identifies the RSA key used for Pilot and service tokens. Published with the public key.",
+   "fieldname": "rsa_key_id",
+   "fieldtype": "Data",
+   "label": "RSA Key ID",
+   "read_only": 1
+  },
+  {
+   "description": "PEM public key benches verify Central-minted tokens against. Published (as a JWK) at the JWKS endpoint.",
+   "fieldname": "rsa_public_key",
+   "fieldtype": "Code",
+   "label": "RSA Public Key (PEM)",
+   "read_only": 1
+  },
+  {
+   "description": "PEM private key Central signs with. Encrypted at rest; never leaves Central.",
+   "fieldname": "rsa_private_key",
+   "fieldtype": "Password",
+   "label": "RSA Private Key (PEM)",
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-16 14:06:28.026824",
+ "modified": "2026-09-16 14:13:28.011884",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central SSO Settings",
