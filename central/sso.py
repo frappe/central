@@ -6,12 +6,11 @@ import frappe
 import jwt
 from frappe import _
 
-from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM, CentralSSOSettings
-
-# Central signs every downward token — the bench-login SID and the first-boot enrollment
-# token — with its single RSA key. Benches verify offline against the published JWKS, so a
-# compromised bench (holding only the public key) can forge nothing. `aud` scopes a token to
-# one deployment (its VM resource_id), so a SID minted for bench A is rejected by bench B.
+from central.central.doctype.central_sso_settings.central_sso_settings import (
+	ALGORITHM,
+	ATLAS_ALGORITHM,
+	CentralSSOSettings,
+)
 
 BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
@@ -25,6 +24,29 @@ CARGO_ATLAS_SCOPE = "cargo:atlas"
 METRICS_SCOPE = "datum"
 LOG_SCOPE = "logs"
 LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
+ATLAS_TOKEN_TTL = 5 * 60
+
+
+def mint_atlas_token(region_id: int) -> str:
+	"""Mint an internal regional credential after the integration caller authorizes its operation."""
+	if type(region_id) is not int or not 0 <= region_id <= 65535:
+		frappe.throw(_("The Atlas region ID must be a whole number from 0 to 65535."))
+
+	private_key, key_id = CentralSSOSettings.instance().atlas_signing_key()
+	# JWT needs epoch seconds; Frappe helpers return naive datetimes or discard the time of day.
+	now = int(time.time())
+	claims = {
+		"iss": "central",
+		"sub": "central",
+		"aud": f"atlas-admin:{region_id}",
+		"scope": "*",
+		"tenant": "*",
+		"iat": now,
+		"exp": now + ATLAS_TOKEN_TTL,
+		"jti": frappe.generate_hash(length=16),
+	}
+
+	return jwt.encode(claims, private_key, algorithm=ATLAS_ALGORITHM, headers={"kid": key_id})
 
 
 def central_url() -> str:
@@ -73,12 +95,12 @@ def verify_bootstrap_token(token: str) -> dict:
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
+	if not settings.rsa_public_key:
 		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			load_pem_public_key(settings.rsa_public_key.encode()),
 			algorithms=[ALGORITHM],
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
@@ -102,13 +124,13 @@ def verify_cargo_bootstrapping_token(token: str) -> str:
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
+	if not settings.rsa_public_key:
 		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
 
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			load_pem_public_key(settings.rsa_public_key.encode()),
 			algorithms=[ALGORITHM],
 			options={"verify_aud": False, "require": ["exp", "aud", "jti", "scope"]},
 		)
@@ -144,13 +166,13 @@ def verify_cargo_access_token(token: str) -> dict:
 	from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 	settings = CentralSSOSettings.instance()
-	if not settings.public_key:
+	if not settings.rsa_public_key:
 		frappe.throw(_("Central signing key is not initialised."), frappe.ValidationError)
 
 	try:
 		claims = jwt.decode(
 			token,
-			load_pem_public_key(settings.public_key.encode()),
+			load_pem_public_key(settings.rsa_public_key.encode()),
 			algorithms=[ALGORITHM],
 			audience="central",
 			options={"require": ["exp", "aud", "jti", "scope", "instance"]},

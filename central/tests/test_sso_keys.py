@@ -18,9 +18,9 @@ class TestSSOKeys(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		# Start each test from an un-keyed singleton so generation is exercised deterministically.
 		settings = CentralSSOSettings.instance()
-		settings.db_set("kid", None)
-		settings.db_set("public_key", None)
-		settings.db_set("private_key", None)
+		settings.db_set("rsa_key_id", None)
+		settings.db_set("rsa_public_key", None)
+		settings.db_set("rsa_private_key", None)
 
 	def test_jwks_is_empty_until_a_key_exists(self):
 		self.assertEqual(jwks_document(), {"keys": []})

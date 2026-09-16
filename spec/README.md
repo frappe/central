@@ -14,6 +14,8 @@ The v0.2 documents distinguish the proposed design from the verified baseline. E
 
 - [Team network identity](../central/central/doctype/team/SPEC.md): allocation, immutability, and migration of tenant IDs.
 
+- [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md): separate Atlas and Pilot trust, operator initialization, and token verification.
+
 ## Existing specifications
 
 - [IAM](IAM.md): Central identity and permission model. Its Atlas integration sections need review in phase 0.

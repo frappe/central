@@ -26,7 +26,7 @@ user merges accepted v0.2 -> develop
 
 Each phase starts from the latest accepted v0.2. Each PR targets v0.2. Split a phase into smaller review units when needed.
 
-Do not merge without review. The user controls the final merge into develop. Preserve the old branch as reference. PR #321 is closed. The agreed plan is committed directly on v0.2. GitHub marked PR #322 merged when v0.2 received its commits.
+At the end of each stage, leave the changes uncommitted for user review. Commit and push only after the user approves that stage. The user merges each PR into v0.2 and controls the final merge into develop. Preserve the old branch as reference. PR #321 is closed. The agreed plan is committed directly on v0.2. GitHub marked PR #322 merged when v0.2 received its commits.
 
 Reuse correct code only after checking it against the selected source revisions and existing data. Do not cherry-pick the earlier foundation wholesale.
 
@@ -134,7 +134,7 @@ Aim to complete implementation on Wednesday and Thursday. Reserve Friday for fin
 | 2 | Thursday | Pilot and Ubuntu server creation, Open Pilot, and power actions. | Both server types complete their supported dashboard flows. |
 | 3 | Thursday into Friday | Event recovery, Team isolation, migration rehearsal, and real staging proof. | The agreed journey passes on the prepared staging region. |
 
-Stages 0A, 0B, and 0C are small PRs within phase 0. Review and merge each into v0.2 before starting its dependent implementation branch.
+Stages 0A, 0B, and 0C are small PRs within phase 0. Wait for user review and commit approval before moving to the next stage. If the user asks to continue before a PR is merged, base the dependent branch on the approved commit and keep its changes uncommitted until its own review.
 
 Use blr.atlas.localhost for local contract checks while the regional staging deployment is prepared. Repeat integration checks against staging when it is available.
 
