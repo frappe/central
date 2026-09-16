@@ -11,6 +11,7 @@
   "team_logo",
   "owner_user",
   "column_break_header",
+  "tenant_id",
   "status",
   "is_staging_trial",
   "members"
@@ -72,6 +73,16 @@
    "fieldtype": "Table",
    "label": "Members",
    "options": "Team Member"
+  },
+  {
+   "description": "Permanent numeric network identity shared by this Team. Assigned by Central.",
+   "fieldname": "tenant_id",
+   "fieldtype": "Int",
+   "in_standard_filter": 1,
+   "label": "Tenant ID",
+   "length": 20,
+   "no_copy": 1,
+   "read_only": 1
   }
  ],
  "links": [
@@ -191,7 +202,7 @@
    "link_fieldname": "team"
   }
  ],
- "modified": "2026-08-27 11:08:58.595646",
+ "modified": "2026-09-16 12:59:05.324757",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Team",

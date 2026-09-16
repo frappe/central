@@ -5,6 +5,11 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 
+from central.central.doctype.team.tenant import (
+	allocate_tenant_id,
+	prepare_tenant_id_series,
+	validate_tenant_id,
+)
 from central.iam import can, clear_grants_cache, user_has_operator_bypass
 
 
@@ -15,8 +20,9 @@ class Team(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.central.doctype.team_member.team_member import TeamMember
 		from frappe.types import DF
+
+		from central.central.doctype.team_member.team_member import TeamMember
 
 		is_staging_trial: DF.Check
 		members: DF.Table[TeamMember]
@@ -25,6 +31,7 @@ class Team(Document):
 		status: DF.Literal["Active", "Suspended"]
 		team_logo: DF.AttachImage | None
 		team_name: DF.Data
+		tenant_id: DF.Int
 	# end: auto-generated types
 
 	def before_validate(self) -> None:
@@ -37,7 +44,12 @@ class Team(Document):
 				{"user": self.owner_user, "role": "Owner", "resource_type": "*", "status": "Active"},
 			)
 
+	def before_insert(self) -> None:
+		# A caller cannot choose another customer's network identity.
+		self.tenant_id = allocate_tenant_id()
+
 	def validate(self) -> None:
+		self._validate_tenant_id_unchangeable()
 		self._absorb_wildcard_grants()
 		self._validate_unique_members()
 		self._validate_owner_membership()
@@ -270,6 +282,11 @@ class Team(Document):
 			self._require_capability("team:manage_members")
 			self._validate_sensitive_member_changes(previous)
 
+	def _validate_tenant_id_unchangeable(self) -> None:
+		validate_tenant_id(self.tenant_id)
+		if not self.is_new() and self.has_value_changed("tenant_id"):
+			frappe.throw(_("The tenant ID cannot be changed."), frappe.CannotChangeConstantError)
+
 	def _metadata_changed(self, previous) -> bool:
 		return self.team_name != previous.team_name or self.status != previous.status
 
@@ -338,3 +355,10 @@ class Team(Document):
 	@staticmethod
 	def _is_operator() -> bool:
 		return user_has_operator_bypass()
+
+
+def on_doctype_update() -> None:
+	prepare_tenant_id_series()
+	# Model sync precedes the data patch that fills legacy zero values.
+	if not frappe.db.exists("Team", {"tenant_id": 0}):
+		frappe.db.add_unique("Team", ["tenant_id"])
