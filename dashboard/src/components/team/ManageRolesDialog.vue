@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Avatar, Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Alert, Avatar, Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useRegions } from '@/composables/useRegions'
@@ -193,16 +193,14 @@ const dialogOptions = computed(() => ({
 						class="flex items-center gap-2"
 						:class="{ 'opacity-50': dominatingIndex !== -1 && index !== dominatingIndex }"
 					>
-						<FormControl
-							type="select"
+						<Select
 							v-model="row.role"
 							:options="roleOptions"
 							placeholder="Choose a role"
 							class="min-w-0 flex-1"
 						/>
 						<span class="shrink-0 text-p-sm text-ink-gray-5">on</span>
-						<FormControl
-							type="select"
+						<Select
 							:model-value="resourceKey(row.resource_type, row.resource_name)"
 							:options="resourceOptions"
 							class="min-w-0 flex-1"

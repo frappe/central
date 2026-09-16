@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { Alert, Badge, Button, FormControl, Tabs, useCall } from 'frappe-ui'
+import {
+	Alert,
+	Badge,
+	Button,
+	Select,
+	Tabs,
+	TextInput,
+	useCall,
+} from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
@@ -426,7 +434,7 @@ async function submit() {
 							<div class="text-sm font-medium text-ink-gray-7">
 								Name the server
 							</div>
-							<FormControl
+							<TextInput
 								v-model="name"
 								placeholder="e.g. Acme Production"
 								:maxlength="60"
@@ -447,7 +455,7 @@ async function submit() {
 										Reset
 									</button>
 								</div>
-								<FormControl
+								<TextInput
 									id="subdomain"
 									:model-value="subdomain"
 									placeholder="acme-production"
@@ -463,7 +471,7 @@ async function submit() {
 											.{{ serverDomain }}
 										</span>
 									</template>
-								</FormControl>
+								</TextInput>
 							</div>
 						</div>
 					</div>
@@ -632,8 +640,7 @@ async function submit() {
 							/>
 						</div>
 						<div class="min-w-0 flex-1">
-							<FormControl
-								type="select"
+							<Select
 								label="Frappe version"
 								v-model="version"
 								:options="versionOptions"

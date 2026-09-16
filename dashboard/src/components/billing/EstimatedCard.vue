@@ -2,8 +2,8 @@
 import {
 	Button,
 	Dialog,
-	FormControl,
 	LoadingText,
+	TextInput,
 	Tooltip,
 	useCall,
 } from 'frappe-ui'
@@ -378,7 +378,7 @@ async function submitAlert(): Promise<void> {
 
 		<Dialog v-model:open="dialogOpen" title="Set a budget alert">
 			<template #default>
-				<FormControl
+				<TextInput
 					v-model="draft"
 					type="number"
 					:label="`Alert me above (${currencySymbol(currency)})`"

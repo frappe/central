@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog, FormControl, useCall } from 'frappe-ui'
+import { Dialog, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
@@ -15,11 +15,11 @@ const emit = defineEmits<{ created: [name: string] }>()
 const { activeTeam } = useSession()
 
 const title = ref('')
-const spendingLimit = ref<number | null>(null)
+const spendingLimit = ref<number>()
 watch(open, (isOpen) => {
 	if (isOpen) {
 		title.value = ''
-		spendingLimit.value = null
+		spendingLimit.value = undefined
 	}
 })
 
@@ -72,14 +72,14 @@ const dialogOptions = computed(() => ({
 	>
 		<template #default>
 			<div class="space-y-4">
-				<FormControl
+				<TextInput
 					v-model="title"
 					label="Title"
 					placeholder="e.g. Acme Corp"
 					description="Subscriptions tagged into this project show grouped under it in your cost breakdown."
 					@keyup.enter="submit"
 				/>
-				<FormControl
+				<TextInput
 					v-model="spendingLimit"
 					type="number"
 					label="Spending limit"

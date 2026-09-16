@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog, FormControl, useCall } from 'frappe-ui'
+import { Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -48,7 +48,10 @@ const canSubmit = computed(
 	() => selected.value !== (props.subscription?.project || UNTAGGED),
 )
 
-const assign = useCall<unknown, { subscription: string; project: string | null }>({
+const assign = useCall<
+	unknown,
+	{ subscription: string; project: string | null }
+>({
 	url: method(API.setSubscriptionProject),
 	method: 'POST',
 	immediate: false,
@@ -90,8 +93,7 @@ const dialogOptions = computed(() => ({
 		:actions="dialogOptions.actions"
 	>
 		<template #default>
-			<FormControl
-				type="select"
+			<Select
 				v-model="selected"
 				:options="options"
 				label="Project"

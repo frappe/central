@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button, FormControl, useCall } from 'frappe-ui'
+import { Avatar, Button, TextInput, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useMyProfile } from '@/composables/useMyProfile'
@@ -132,7 +132,7 @@ function resetPassword(): void {
 		</div>
 
 		<div class="flex items-end gap-2">
-			<FormControl
+			<TextInput
 				v-model="name"
 				label="Full name"
 				class="flex-1"
@@ -150,7 +150,7 @@ function resetPassword(): void {
 
 		<!-- Identity, not a setting — disabled (not readonly) so it can't be
 		     focused or clicked into at all. -->
-		<FormControl :model-value="profile?.user ?? ''" label="Email" disabled />
+		<TextInput :model-value="profile?.user ?? ''" label="Email" disabled />
 
 		<!-- One button until you mean it; the fields appear in place. The button
 		     and field labels name themselves — no section label. -->
@@ -161,14 +161,14 @@ function resetPassword(): void {
 				@click="editingPassword = true"
 			/>
 			<div v-else class="space-y-3">
-				<FormControl
+				<TextInput
 					ref="currentPasswordRef"
 					v-model="oldPassword"
 					type="password"
 					label="Current password"
 					autocomplete="current-password"
 				/>
-				<FormControl
+				<TextInput
 					v-model="newPassword"
 					type="password"
 					label="New password"

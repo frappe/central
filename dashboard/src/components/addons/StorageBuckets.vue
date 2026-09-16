@@ -5,8 +5,8 @@ import {
 	Dialog,
 	Dropdown,
 	type DropdownOptions,
-	FormControl,
 	Spinner,
+	TextInput,
 } from 'frappe-ui'
 import {
 	ListRowItem,
@@ -183,17 +183,16 @@ const copy = async (value: string, label: string): Promise<void> => {
 			/>
 		</div>
 
-		<FormControl
+		<TextInput
 			v-if="buckets.length > 5"
 			v-model="search"
-			type="text"
 			placeholder="Search buckets"
 			autocomplete="off"
 		>
 			<template #prefix>
 				<span class="lucide-search size-4 text-ink-gray-5" />
 			</template>
-		</FormControl>
+		</TextInput>
 
 		<div
 			v-if="bucketsLoading && !buckets.length"
@@ -304,7 +303,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 			}
 		"
 	>
-		<FormControl
+		<TextInput
 			v-model="newName"
 			label="Name"
 			placeholder="e.g. acme-backups"
@@ -356,7 +355,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 					S3-compatible client. The secret is shown here and nowhere else.
 				</p>
 
-				<FormControl
+				<TextInput
 					label="Endpoint URL"
 					:model-value="details.endpoint_url"
 					readonly
@@ -370,13 +369,9 @@ const copy = async (value: string, label: string): Promise<void> => {
 							@click="copy(details.endpoint_url, 'Endpoint URL')"
 						/>
 					</template>
-				</FormControl>
+				</TextInput>
 
-				<FormControl
-					label="Bucket"
-					:model-value="details.bucket"
-					readonly
-				>
+				<TextInput label="Bucket" :model-value="details.bucket" readonly>
 					<template #suffix>
 						<Button
 							variant="ghost"
@@ -386,9 +381,9 @@ const copy = async (value: string, label: string): Promise<void> => {
 							@click="copy(details.bucket, 'Bucket name')"
 						/>
 					</template>
-				</FormControl>
+				</TextInput>
 
-				<FormControl
+				<TextInput
 					label="Access key"
 					:model-value="details.access_key_id"
 					readonly
@@ -402,9 +397,9 @@ const copy = async (value: string, label: string): Promise<void> => {
 							@click="copy(details.access_key_id, 'Access key')"
 						/>
 					</template>
-				</FormControl>
+				</TextInput>
 
-				<FormControl
+				<TextInput
 					label="Secret key"
 					:model-value="maskedSecret"
 					readonly
@@ -428,7 +423,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 							/>
 						</div>
 					</template>
-				</FormControl>
+				</TextInput>
 			</div>
 		</template>
 	</Dialog>

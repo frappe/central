@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog, FormControl } from 'frappe-ui'
+import { Dialog, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
@@ -71,7 +71,7 @@ const dialogOptions = computed(() => ({
 				<span class="font-medium text-ink-gray-9">{{ activeTeamLabel }}</span>
 				and you drop to Admin. Only the new owner can hand it back.
 			</p>
-			<FormControl
+			<TextInput
 				v-model="typed"
 				label="Type the member's name to confirm"
 				:placeholder="expected"

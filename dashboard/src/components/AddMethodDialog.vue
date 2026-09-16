@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
+import { Button, Dialog, LoadingText, TextInput, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import PaymentNetworkMark, {
@@ -306,7 +306,7 @@ watch(open, (isOpen) => {
 					v-if="askPhone"
 					class="rounded-6 border border-outline-gray-2 px-4 py-3"
 				>
-					<FormControl
+					<TextInput
 						v-model="phone"
 						label="Phone number"
 						placeholder="Mobile number"

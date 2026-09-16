@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button, Dialog, FormControl, SettingsRow } from 'frappe-ui'
+import { Avatar, Button, Dialog, SettingsRow, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCapabilities } from '@/composables/useCapabilities'
@@ -84,7 +84,7 @@ async function onDelete(): Promise<void> {
 			</div>
 
 			<div class="flex items-end gap-2">
-				<FormControl
+				<TextInput
 					v-model="name"
 					label="Team name"
 					class="flex-1"
@@ -109,11 +109,7 @@ async function onDelete(): Promise<void> {
 				title="Delete team"
 				description="Permanently delete this team. Remove its servers and sites first."
 			>
-				<Button
-					theme="red"
-					label="Delete"
-					@click="confirmDelete = true"
-				/>
+				<Button theme="red" label="Delete" @click="confirmDelete = true" />
 			</SettingsRow>
 		</div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Checkbox, Dialog, FormControl } from 'frappe-ui'
+import { Checkbox, Dialog, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useTeamRoles } from '@/composables/useTeamRoles'
 import {
@@ -76,7 +76,7 @@ async function submit() {
 	>
 		<template #default>
 			<div class="space-y-5">
-				<FormControl
+				<TextInput
 					v-model="roleName"
 					label="Role name"
 					placeholder="e.g. Release Manager"

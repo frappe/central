@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
@@ -45,7 +45,10 @@ function serverTitle(sub: SubscriptionRow): string {
 	return sub.server || sub.plan_title || sub.name
 }
 
-const assign = useCall<unknown, { subscription: string; project: string | null }>({
+const assign = useCall<
+	unknown,
+	{ subscription: string; project: string | null }
+>({
 	url: method(API.setSubscriptionProject),
 	method: 'POST',
 	immediate: false,
@@ -58,7 +61,10 @@ async function addMember(): Promise<void> {
 	if (!toAdd.value || !props.project) return
 	busy.value = toAdd.value
 	try {
-		await assign.submit({ subscription: toAdd.value, project: props.project.name })
+		await assign.submit({
+			subscription: toAdd.value,
+			project: props.project.name,
+		})
 		if (assign.error) throw assign.error
 		toAdd.value = NONE
 		reloadSubscriptionGrouping()
@@ -118,9 +124,8 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 				</p>
 
 				<div class="flex items-end gap-2 border-t border-outline-gray-2 pt-4">
-					<FormControl
+					<Select
 						v-if="candidates.length"
-						type="select"
 						v-model="toAdd"
 						:options="[{ label: 'Choose a server…', value: NONE }, ...candidates]"
 						label="Add a server"

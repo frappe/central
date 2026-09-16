@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Button, Dialog, TextInput, useCall } from 'frappe-ui'
 import { computed, nextTick, type Ref, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
@@ -27,7 +27,7 @@ const props = withDefaults(
 const open = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ done: [res?: unknown] }>()
 
-const amount = ref<number | null>(null)
+const amount = ref<number>()
 const presets = [1000, 5000, 10000, 25000]
 
 const { activeTeam } = useSession()
@@ -171,7 +171,7 @@ watch(open, (isOpen) => {
 	}
 	if (!isOpen) {
 		destroy()
-		amount.value = null
+		amount.value = undefined
 		instrument.value = null
 		fixed.value = false
 		payMethod.value = 'card'
@@ -292,7 +292,7 @@ watch(open, (isOpen) => {
 							@click="amount = p"
 						/>
 					</div>
-					<FormControl
+					<TextInput
 						v-model="amount"
 						type="number"
 						label="Amount"

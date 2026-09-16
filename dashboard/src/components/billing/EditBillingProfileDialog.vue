@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
+import {
+	Button,
+	Combobox,
+	Dialog,
+	LoadingText,
+	TextInput,
+	useCall,
+} from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useBillingOverview } from '@/composables/useBillingOverview'
@@ -131,14 +138,14 @@ async function submit(): Promise<void> {
 				<div class="space-y-3">
 					<h3 class="text-sm-medium text-ink-gray-8">Contact</h3>
 					<div class="grid gap-4 sm:grid-cols-2">
-						<FormControl
+						<TextInput
 							v-model="form.legal_name"
 							label="Legal name"
 							placeholder="Acme Technologies Pvt. Ltd."
 							required
 						/>
 						<div>
-							<FormControl
+							<TextInput
 								v-model="form.email"
 								type="email"
 								label="Billing email"
@@ -148,7 +155,7 @@ async function submit(): Promise<void> {
 								{{ emailIssue }}
 							</p>
 						</div>
-						<FormControl
+						<TextInput
 							v-model="form.phone"
 							label="Phone"
 							placeholder="+91 98765 43210"
@@ -164,9 +171,8 @@ async function submit(): Promise<void> {
 					<h3 class="text-sm-medium text-ink-gray-8">Address</h3>
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div class="sm:col-span-2">
-							<FormControl
+							<Combobox
 								v-model="form.country"
-								type="combobox"
 								label="Country"
 								placeholder="Select country"
 								:options="countryOptions"
@@ -177,35 +183,34 @@ async function submit(): Promise<void> {
 										: `Sets your billing currency (${form.currency || 'USD'}).` }}
 							</p>
 						</div>
-						<FormControl
+						<TextInput
 							v-model="form.address_line1"
 							label="Address line 1"
 							placeholder="Street address"
 							required
 						/>
-						<FormControl
+						<TextInput
 							v-model="form.address_line2"
 							label="Address line 2"
 							placeholder="Suite, floor (optional)"
 						/>
-						<FormControl v-model="form.city" label="City" required />
-						<FormControl
+						<TextInput v-model="form.city" label="City" required />
+						<Combobox
 							v-if="isIndia"
 							v-model="form.state"
-							type="combobox"
 							label="State"
 							placeholder="Select state"
 							:options="stateOptions"
 						/>
-						<FormControl v-else v-model="form.state" label="State" />
-						<FormControl v-model="form.pincode" :label="postalLabel" />
+						<TextInput v-else v-model="form.state" label="State" />
+						<TextInput v-model="form.pincode" :label="postalLabel" />
 					</div>
 				</div>
 
 				<div v-if="isIndia" class="space-y-3">
 					<h3 class="text-sm-medium text-ink-gray-8">Tax</h3>
 					<div class="sm:max-w-[calc(50%-0.5rem)]">
-						<FormControl
+						<TextInput
 							v-model="form.gstin"
 							label="GSTIN"
 							placeholder="22AAAAA0000A1Z5"

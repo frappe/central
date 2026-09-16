@@ -5,8 +5,8 @@ import {
 	Dialog,
 	Dropdown,
 	type DropdownOptions,
-	FormControl,
 	Select,
+	TextInput,
 } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
@@ -265,7 +265,7 @@ const confirmRevoke = async (): Promise<void> => {
 		]"
 	>
 		<template #default>
-			<FormControl
+			<TextInput
 				v-model="newLabel"
 				label="Label"
 				placeholder="e.g. n8n prod"
