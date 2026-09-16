@@ -3,6 +3,10 @@
 Central is the signing authority. It mints short-lived RS256 assertions; benches verify them
 offline against Central's published JWKS. Atlas is not in the login path.
 
+## Regional authentication
+
+Atlas regional requests use a separate Ed25519 key and public endpoint. Pilot login uses RSA. Read [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md) for initialization, token authority, and verifier checks.
+
 ## Flows
 
 **Bench (console) login** — `central.api.sso.get_bench_link`
@@ -28,7 +32,7 @@ The console (bench) login stays browser-carried; only the site login is a Centra
 
 | What | Stored | Notes |
 |------|--------|-------|
-| Central signing key | `Central SSO Settings` — `private_key` (Password, encrypted), `public_key`, `kid` | Signs every assertion + bootstrap token |
+| Central signing key | `Central SSO Settings` — `private_key` (Password, encrypted), `public_key`, `kid` | Signs RSA login, service, and bootstrap tokens |
 | Bench durable credential | `Pilot Credential.token_hash` (SHA-256) | Plaintext bearer returned once at enroll, never stored |
 | Site → bench binding | `Site.pilot_credential_id` | A reference, not a token |
 | Bench/site login assertions | **nowhere** | Stateless JWTs — minted on demand, handed off, forgotten |
