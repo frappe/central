@@ -211,8 +211,6 @@ scheduler_events = {
 		# today's invoice before it is swept, so the customer gets the full benefit
 		# of the last day they were given.
 		"central.billing.revenue.credits.run_credit_expiry",
-		# Services (LLM): refresh the model catalog from the Grove backend.
-		"central.services.llm.sync_models",
 		# Assert the money invariants that no DB constraint can hold (they span
 		# tables): wallet == its ledger, invoice == its lines, captured == amount_paid.
 		# Silence is the success case; a violation is logged with its team and amount.
@@ -222,8 +220,6 @@ scheduler_events = {
 	"hourly": [
 		# Billing: ERPNext sync retries whose backoff window has elapsed.
 		"central.billing.revenue.erpnext_sync.retry_failed_syncs",
-		# Services (LLM): reconcile Grove's cumulative token usage into billing.
-		"central.services.llm.pull_usage",
 		# A charge whose outcome we don't know is money in the air: ask the gateway and
 		# settle it. It waits 30 minutes for the webhook first, so a daily sweep left it
 		# hanging for up to a day — and the key it needs to re-send safely expires in
