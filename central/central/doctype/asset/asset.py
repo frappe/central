@@ -148,6 +148,19 @@ class Asset(Document):
 		doc.publish_state_change()
 		return True
 
+	@frappe.whitelist(methods=["POST"])
+	def sync_state(self) -> dict:
+		"""Ask the region what this server is doing now, and record the answer.
+
+		The scheduled reconcile does this on a timer and a region reports changes as they
+		happen. This is the operator's way to ask directly when a record looks stale or a
+		report was missed."""
+		from central.integrations.servers import observe_server
+
+		self.check_permission("read")
+
+		return {"status": observe_server(self)}
+
 	def publish_state_change(self) -> None:
 		"""Tell this team's consoles that one of its servers moved.
 

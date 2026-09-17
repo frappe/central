@@ -75,6 +75,11 @@ class TestServerActions(IntegrationTestCase):
 		self.asset.db_set("status", "Running")
 		self.assertEqual(self.submit("restart")["status"], "Queued")
 
+	def test_an_operator_can_ask_the_region_for_the_current_state(self):
+		"""Desk needs a way to ask the region directly when a record looks stale."""
+		self.assertEqual(self.asset.sync_state(), {"status": "Running"})
+		self.observe.assert_called_once()
+
 	def test_start_is_blocked_while_resizing(self):
 		self.asset.db_set("resize_in_progress", 1)
 		with self.assertRaises(frappe.ValidationError):

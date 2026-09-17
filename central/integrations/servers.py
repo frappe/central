@@ -218,7 +218,7 @@ def _client(asset: Asset) -> AtlasClient:
 	if not asset.atlas_vm_id:
 		frappe.throw(_("This server has no verified regional VM identity."))
 
-	instance = frappe.get_doc("Atlas Instance", asset.cluster)
+	instance = frappe.get_cached_doc("Atlas Instance", asset.cluster)
 	tenant_id = frappe.db.get_value("Team", asset.team, "tenant_id")
 	return AtlasClient(instance, tenant_id)
 
