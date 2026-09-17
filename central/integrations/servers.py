@@ -50,7 +50,7 @@ def observe_server(asset: Asset) -> str:
 
 	if any(
 		type(value) is not int or value <= 0
-		for value in (compute.get("vcpus"), compute.get("memory_mib"), disk.get("size_mib"))
+		for value in (compute.get("cpu_millicores"), compute.get("memory_mib"), disk.get("size_mib"))
 	):
 		raise AtlasConnectionError(_("Atlas returned invalid server resource sizes."))
 
@@ -67,7 +67,7 @@ def observe_server(asset: Asset) -> str:
 		frappe.utils.now_datetime(),
 		{
 			"status": status,
-			"vcpus": compute["vcpus"],
+			"vcpus": compute["cpu_millicores"] // 1000,
 			"memory_megabytes": compute["memory_mib"],
 			"disk_gigabytes": disk["size_mib"] / 1024,
 			"ipv6_address": network.get("mesh_ipv6"),

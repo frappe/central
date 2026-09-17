@@ -100,11 +100,12 @@ def _create_payload(request) -> dict:
 	configuration = request.get_configuration()
 	payload = {
 		"image_id": configuration.image_id,
-		"vcpus": configuration.virtual_cpu_count,
+		"cpu_millicores": configuration.virtual_cpu_count * 1000,
 		"memory_mib": configuration.memory_mib,
 		"disk_mib": configuration.disk_mib,
 		"hostname": configuration.hostname or "",
 		"ssh_keys": configuration.ssh_keys,
+		"firewall": {"enabled": False},
 		"metadata": {"central_action_id": request.name},
 	}
 	if configuration.image_tags.get("purpose") == "pilot":

@@ -48,7 +48,7 @@ class TestServerObservation(IntegrationTestCase):
 			"tenant_id": self.team.tenant_id,
 			"current_state": "running",
 			"error": None,
-			"compute": {"vcpus": 1, "memory_mib": 512},
+			"compute": {"cpu_millicores": 1000, "memory_mib": 512},
 			"disk": {"size_mib": 20480},
 			"network": {"mesh_ipv6": "fdaa:1::1", "public_ipv4": None},
 		}
