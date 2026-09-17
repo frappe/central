@@ -12,6 +12,7 @@ from frappe.utils.password import get_decrypted_password
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.resource_action.resource_action import ResourceAction
 from central.integrations.servers import mark_terminated
+from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 # Central's own clock orders every report, because a report carries the region's clock
 # and a scoped read carries Central's. Ordering by the report would let clock skew
@@ -25,20 +26,24 @@ STATUS_FROM_REPORT = {"running": "Running", "stopped": "Stopped", "paused": "Pau
 STATE_REPORTED = "vm.state"
 SERVER_GONE = "vm.gone"
 
+# What a region may report about itself. Central records these two words and no others.
+SERVICES = ("telemetry", "storage")
+AVAILABILITY = ("Available", "Not Available")
 
-def accept(raw_body: bytes, region: str | None, signature: str | None) -> dict:
-	"""Authenticate one delivery, then queue it when it tells Central something new.
+
+def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | None) -> dict:
+	"""Authenticate one Atlas delivery, then queue it when it tells Central something new.
 
 	The reply is the sender's receipt: `queued` when a job will apply the report, and
 	`ignored` with a reason when there is nothing to do. Only an authentication failure
 	raises, because only that is worth a retry."""
-	cluster = _verified_cluster(region, signature, raw_body)
+	cluster = _verified_atlas_cluster(region, signature, raw_body)
 
 	report = _parsed(raw_body)
 	if report is None:
 		return _ignored("unreadable body")
 
-	server = _server_for(cluster, report.get("virtual_machine"))
+	server = _atlas_server_for(cluster, report.get("virtual_machine"))
 	if not server:
 		return _ignored("unknown server")
 
@@ -47,7 +52,7 @@ def accept(raw_body: bytes, region: str | None, signature: str | None) -> dict:
 		return decision
 
 	frappe.enqueue(
-		"central.integrations.state_delivery.apply_report",
+		"central.integrations.state_delivery.apply_atlas_report",
 		queue="short",
 		cluster=cluster,
 		report=report,
@@ -55,11 +60,32 @@ def accept(raw_body: bytes, region: str | None, signature: str | None) -> dict:
 	return {"queued": True, "resource_id": server.name}
 
 
-def apply_report(cluster: str, report: dict) -> None:
+def accept_cargo_report(raw_body: bytes, region: str | None, signature: str | None) -> dict:
+	"""Record what one region now serves, from a delivery its own secret signed. A repeat
+	still refreshes `last_updated_on`, which reads as "heard from", not as churn."""
+	cargo = _verified_cargo_region(region, signature, raw_body)
+
+	report = _parsed(raw_body)
+	if report is None:
+		return _ignored("unreadable body")
+
+	service = report.get("service")
+	if service not in SERVICES:
+		return _ignored(f"unsupported service '{service}'")
+
+	status = report.get("status")
+	if status not in AVAILABILITY:
+		return _ignored(f"unsupported status '{status}'")
+
+	detail = ServiceDetail.record_report(cargo, service, status, report.get("service_endpoint"))
+	return {"recorded": True, "service_detail": detail}
+
+
+def apply_atlas_report(cluster: str, report: dict) -> None:
 	"""Record one authenticated report. The handler already found it worth applying;
 	this repeats the checks under a row lock, because another worker may have applied a
 	newer report in between."""
-	server = _server_for(cluster, report.get("virtual_machine"))
+	server = _atlas_server_for(cluster, report.get("virtual_machine"))
 	if not server:
 		return
 
@@ -111,7 +137,7 @@ def _parsed(raw_body: bytes) -> dict | None:
 	return report if isinstance(report, dict) else None
 
 
-def _server_for(cluster: str, virtual_machine: str | None) -> frappe._dict | None:
+def _atlas_server_for(cluster: str, virtual_machine: str | None) -> frappe._dict | None:
 	"""The server record this report is about. Ownership comes from Central's own row,
 	never from the report, and the region that signed the delivery scopes the lookup."""
 	if not virtual_machine or not isinstance(virtual_machine, str):
@@ -125,8 +151,8 @@ def _server_for(cluster: str, virtual_machine: str | None) -> frappe._dict | Non
 	)
 
 
-def _verified_cluster(region: str | None, signature: str | None, raw_body: bytes) -> str:
-	"""The region whose secret signed this delivery. `X-Atlas-Region` only selects which
+def _verified_atlas_cluster(region: str | None, signature: str | None, raw_body: bytes) -> str:
+	"""The region whose Atlas secret signed this delivery. `X-Region` only selects which
 	secret to check; it proves nothing on its own."""
 	if not region or not signature:
 		_reject("missing region or signature header")
@@ -138,6 +164,25 @@ def _verified_cluster(region: str | None, signature: str | None, raw_body: bytes
 		_reject(f"no webhook secret for region '{region}'")
 	if not _signature_matches(secret, raw_body, signature):
 		_reject(f"signature mismatch for region '{region}'")
+
+	return region
+
+
+def _verified_cargo_region(region: str | None, signature: str | None, raw_body: bytes) -> str:
+	"""The region whose Cargo secret signed this delivery. `X-Region` only selects the
+	secret; it proves nothing."""
+	if not region or not signature:
+		_reject("missing region or signature header")
+
+	instance = frappe.db.get_value("Cargo Instance", {"region": region}, ["name", "status"], as_dict=True)
+	if not instance or instance.status != "Registered":
+		_reject(f"unknown or unregistered Cargo region '{region}'")
+
+	secret = get_decrypted_password("Cargo Instance", instance.name, "webhook_secret", raise_exception=False)
+	if not secret:
+		_reject(f"no webhook secret for Cargo region '{region}'")
+	if not _signature_matches(secret, raw_body, signature):
+		_reject(f"signature mismatch for Cargo region '{region}'")
 
 	return region
 

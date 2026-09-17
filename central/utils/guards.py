@@ -23,8 +23,7 @@ def _signature(func: Callable) -> inspect.Signature:
 
 def bound_args(func: Callable, args: tuple, kwargs: dict) -> dict:
 	"""All call arguments as a name→value dict, whether passed positionally or by
-	keyword. The one signature resolver shared by the decorators here and the
-	service permission helpers (central.services.permissions)."""
+	keyword. The one signature resolver the decorators here share."""
 	return _signature(func).bind_partial(*args, **kwargs).arguments
 
 

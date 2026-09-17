@@ -11,9 +11,9 @@ EXTRA_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
-class IntegrationTestServiceBackend(IntegrationTestCase):
+class IntegrationTestServiceDetail(IntegrationTestCase):
 	"""
-	Integration tests for ServiceBackend.
+	Integration tests for ServiceDetail.
 	Use this class for testing interactions between multiple components.
 	"""
 

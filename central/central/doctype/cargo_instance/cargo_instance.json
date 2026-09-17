@@ -11,11 +11,8 @@
   "column_break_head",
   "status",
   "registered_at",
-  "section_break_bootstrap",
-  "bootstrapping_token",
-  "column_break_tokens",
-  "central_access_token",
-  "atlas_access_token"
+  "section_break_delivery",
+  "webhook_secret"
  ],
  "fields": [
   {
@@ -61,33 +58,9 @@
   },
   {
    "description": "Issue this, then pass it to the host's setup.sh as CENTRAL_BOOTSTRAPPING_TOKEN. It is short-lived and can only be spent once.",
-   "fieldname": "section_break_bootstrap",
+   "fieldname": "section_break_delivery",
    "fieldtype": "Section Break",
-   "label": "Enrolment"
-  },
-  {
-   "fieldname": "bootstrapping_token",
-   "fieldtype": "Password",
-   "label": "Bootstrapping Token",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_tokens",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Issued to the host when it enrolled.",
-   "fieldname": "central_access_token",
-   "fieldtype": "Password",
-   "label": "Central Access Token",
-   "read_only": 1
-  },
-  {
-   "description": "Issued to the host when it enrolled.",
-   "fieldname": "atlas_access_token",
-   "fieldtype": "Password",
-   "label": "Atlas Access Token",
-   "read_only": 1
+   "label": "Delivery"
   },
   {
    "description": "Cargo will set the telemetry base URL once it's ready",
@@ -95,6 +68,12 @@
    "fieldtype": "Data",
    "label": "Telemetry Base URL",
    "read_only": 1
+  },
+  {
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret",
+   "description": "Signs this region's service reports. Central checks every delivery against it."
   }
  ],
  "grid_page_length": 50,
