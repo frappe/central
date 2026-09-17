@@ -73,6 +73,17 @@ class AtlasClient:
 
 		return self._request("POST", f"{path}/actions/{action}")
 
+	def update_compute(self, name: str, cpu_millicores: int, memory_mib: int) -> dict:
+		"""Set CPU and memory. Atlas accepts it only while the VM is stopped."""
+		payload = {"cpu_millicores": cpu_millicores, "memory_mib": memory_mib}
+		return self._request("PATCH", f"virtual-machines/{quote(name, safe='')}/compute", payload=payload)
+
+	def update_disk(self, name: str, disk_mib: int) -> dict:
+		"""Grow the disk. Atlas refuses a smaller size."""
+		return self._request(
+			"PATCH", f"virtual-machines/{quote(name, safe='')}/disk", payload={"disk_mib": disk_mib}
+		)
+
 	def check_connection(self) -> None:
 		response = self._get("images", params={"limit": 1})
 		if not isinstance(response.get("items"), list) or type(response.get("has_more")) is not bool:
