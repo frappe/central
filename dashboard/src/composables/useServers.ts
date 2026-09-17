@@ -26,7 +26,7 @@ export type AssetRow = Pick<
 	| 'public_ipv4'
 	| 'gateway_url'
 	| 'resize_in_progress'
-	| 'last_synced_at'
+	| 'state_observed_at'
 > & {
 	// Transitional label ("Terminating"/"Provisioning"/…) while an action is in flight.
 	// Overlaid by central.api.servers.registry from the active Resource Action, not an

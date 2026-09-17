@@ -15,7 +15,8 @@ PENDING_LABEL = {
 	"terminate": "Terminating",
 	"resize": "Resizing",
 }
-SUCCESS_MIRROR_STATUS = {
+# The observed status that means an action reached its goal.
+GOAL_STATUS = {
 	"create": "Running",
 	"start": "Running",
 	"stop": "Stopped",

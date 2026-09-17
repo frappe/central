@@ -41,18 +41,12 @@ export interface Asset {
 	ipv6_address?: string
 	/**	Public IPv4 : Data	*/
 	public_ipv4?: string
-	/**	Gateway URL : Data - The URL a bench VM is fronted at, reported by Atlas; empty for a non-bench VM.	*/
+	/**	Gateway URL : Data - The URL a bench server is fronted at; empty until its pilot enrolls.	*/
 	gateway_url?: string
-	/**	Login URL : Small Text - One-click admin sign-in URL Atlas minted after boot; short-lived, regenerated on expiry.	*/
-	login_url?: string
-	/**	Login URL Expires At : Datetime - When login_url stops working (Atlas mint time + token TTL).	*/
-	login_url_expires_at?: string
 	/**	Resize In Progress : Check - Set while a background hardware resize runs; blocks power actions and shows a Resizing state.	*/
 	resize_in_progress?: 0 | 1
-	/**	Last Synced At : Datetime - When the last reconcile (pull) refreshed this row.	*/
-	last_synced_at?: string
-	/**	Last Event At : Datetime - occurred_at of the last applied Atlas event; drives last-writer-wins.	*/
-	last_event_at?: string
+	/**	State Observed At : Datetime - When the region last reported this server's state. An older report is ignored.	*/
+	state_observed_at?: string
 	/**	Atlas VM ID : Data - VM identifier within the linked Atlas region.	*/
 	atlas_vm_id?: string
 	/**	Image Offering : Link - Image Offering	*/

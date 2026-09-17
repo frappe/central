@@ -21,15 +21,12 @@ class Asset(Document):
 		gateway_url: DF.Data | None
 		image_offering: DF.Link | None
 		ipv6_address: DF.Data | None
-		last_event_at: DF.Datetime | None
-		last_synced_at: DF.Datetime | None
-		login_url: DF.SmallText | None
-		login_url_expires_at: DF.Datetime | None
 		memory_megabytes: DF.Int
 		plan: DF.Link | None
 		public_ipv4: DF.Data | None
 		resize_in_progress: DF.Check
 		resource_id: DF.Data
+		state_observed_at: DF.Datetime | None
 		status: DF.Literal[
 			"Pending", "Provisioning", "Deploying", "Running", "Paused", "Stopped", "Failed", "Terminated"
 		]
@@ -46,7 +43,7 @@ class Asset(Document):
 
 	def notify_failure(self):
 		"""Surface a failed server in the team's console feed (a Server-category
-		notification), so a mirror flipping to Failed isn't silent in the UI."""
+		notification), so a server turning Failed is not silent in the console."""
 		from central.notification import engine
 
 		engine.ensure_event_type(
@@ -114,105 +111,73 @@ class Asset(Document):
 			cancel_subscription(existing)
 			frappe.get_doc("Subscription", existing).disable()
 
-	# Asset is a read-only mirror of a VM on some Atlas cluster. These methods are
-	# the mirror's sole writer, called by the integration layer
-	# (central.integrations.atlas) from both the event push and the reconcile pull.
-	# Source of truth stays in Atlas.
+	# Central owns this record. Provisioning opens it, and the fields below are the only
+	# ones a region reports back. Identity, title, plan, image and billing links are
+	# Central's, and no report may touch them.
+	OBSERVED_FIELDS = (
+		"status",
+		"vcpus",
+		"memory_megabytes",
+		"disk_gigabytes",
+		"ipv6_address",
+		"public_ipv4",
+		"gateway_url",
+	)
 
 	@classmethod
-	def mirror_vm(
-		cls,
-		cluster: str,
-		vm: dict,
-		*,
-		occurred_at=None,
-		synced_at=None,
-		friendly_title: str | None = None,
-	) -> None:
-		"""Upsert one VM into the mirror. `occurred_at` (event push) drives LWW;
-		`synced_at` (reconcile pull) just stamps freshness. A VM with no `team`
-		belongs to no mirror and is skipped. A Central-originated provision supplies
-		`friendly_title`; later Atlas syncs preserve that local display label."""
-		from central.mirror import upsert_mirror
+	def record_observed_state(cls, resource_id: str, observed_at, state: dict) -> bool:
+		"""Apply what a region reports about a server Central already owns.
 
-		upsert_mirror(
-			"Asset",
-			vm.get("name"),
-			vm.get("team"),
-			occurred_at,
-			lambda doc: cls._stamp(doc, cluster, vm, occurred_at, synced_at, friendly_title),
-		)
+		Returns False when there is nothing to apply: an unknown server, or a report
+		older than the one already recorded. Only the `OBSERVED_FIELDS` present in
+		`state` are written, so a status-only report cannot blank an address."""
+		try:
+			# Lock first. An unlocked read can miss a report another worker just committed.
+			doc = frappe.get_doc("Asset", resource_id, for_update=True)
+		except frappe.DoesNotExistError:
+			return False
+		if doc.is_report_stale(observed_at):
+			return False
 
-	@staticmethod
-	def _stamp(
-		doc, cluster: str, vm: dict, occurred_at, synced_at, friendly_title: str | None = None
-	) -> None:
-		doc.resource_id = vm.get("name")
-		doc.team = vm.get("team")
-		doc.cluster = cluster
-		for field in ("atlas_vm_id", "atlas_image_id", "image_offering", "plan"):
-			if field in vm:
-				setattr(doc, field, vm[field])
+		for field in cls.OBSERVED_FIELDS:
+			if field in state:
+				setattr(doc, field, state[field])
+		doc.state_observed_at = observed_at
+		# The verified region authorizes these values, not the signed-in user.
+		doc.save(ignore_permissions=True)
+		return True
 
-		doc.status = vm.get("status") or "Pending"
-		# Atlas titles are immutable URL slugs. Preserve the original user-facing
-		# title Central set during provisioning, while discovered VMs use Atlas's.
-		if friendly_title:
-			doc.title = friendly_title
-		elif not doc.title:
-			doc.title = vm.get("title")
-		doc.vcpus = vm.get("vcpus")
-		doc.memory_megabytes = vm.get("memory_megabytes")
-		doc.disk_gigabytes = vm.get("disk_gigabytes")
-		doc.ipv6_address = vm.get("ipv6_address")
-		doc.public_ipv4 = vm.get("public_ipv4")
-		doc.gateway_url = vm.get("gateway_url") or None
-		# Provisioned version Atlas echoes; an event that omits it must not wipe it.
-		doc.frappe_version = vm.get("frappe_version") or doc.get("frappe_version")
-		# Write-once: the bench login URL + its expiry only arrive once the VM is
-		# Running (Atlas gates them on status), so never blank a handoff we've already
-		# stored on a later status-only event. Same rule as Site's login_url.
-		if vm.get("login_url"):
-			doc.login_url = vm["login_url"]
-			doc.login_url_expires_at = vm.get("login_url_expires_at")
-		if occurred_at:
-			doc.last_event_at = occurred_at
-		if synced_at:
-			doc.last_synced_at = synced_at
+	def is_report_stale(self, observed_at) -> bool:
+		"""True when this server already holds a report newer than `observed_at`."""
+		if not observed_at or not self.state_observed_at:
+			return False
+
+		return frappe.utils.get_datetime(self.state_observed_at) > frappe.utils.get_datetime(observed_at)
 
 	@staticmethod
 	def mark_resizing(resource_id: str, resizing: bool) -> None:
-		"""Flag/unflag a VM as mid-resize so the console shows a "Resizing" state and
-		gates power actions while the slow reshape runs in its background job. This is a
-		Central-orchestration write (not an Atlas mirror field), so it's independent of
-		the status the Atlas events drive. `notify=True` pushes the change to Console
-		list subscribers live, without polling."""
+		"""Flag or unflag a server as mid-resize, so the console shows a "Resizing" state
+		and gates power actions while the reshape job runs. This is Central's own
+		orchestration flag, not an observed field, so a region report never clears it.
+		`notify=True` pushes the change to console subscribers without polling."""
 		frappe.get_doc("Asset", resource_id).db_set("resize_in_progress", 1 if resizing else 0, notify=True)
 
 	@staticmethod
-	def mark_terminated(resource_id: str, *, last_event_at=None, last_synced_at=None) -> None:
-		"""Flag a VM that's gone (delete event, or vanished on reconcile) Terminated.
-
-		Locks the row first so LWW sees the committed `last_event_at` — an unlocked
-		read under REPEATABLE READ can miss a newer event and wrongly terminate."""
+	def mark_terminated(resource_id: str, observed_at=None) -> bool:
+		"""Record a server as gone, from a delete event or a scoped read that found it
+		absent. Termination is final, so no later report can outrank it and there is no
+		staleness check to make. Returns False when Central holds no such server."""
 		try:
 			doc = frappe.get_doc("Asset", resource_id, for_update=True)
 		except frappe.DoesNotExistError:
-			return
-		if (
-			last_event_at
-			and doc.last_event_at
-			and frappe.utils.get_datetime(doc.last_event_at) > frappe.utils.get_datetime(last_event_at)
-		):
-			return
-		stamp = {"status": "Terminated"}
-		if last_event_at:
-			stamp["last_event_at"] = last_event_at
-		if last_synced_at:
-			stamp["last_synced_at"] = last_synced_at
-		# db_set(notify=True) emits Frappe's list_update after commit so Console
-		# subscribers see terminal state changes without polling.
-		doc.db_set(stamp, notify=True)
+			return False
+
+		doc.status = "Terminated"
+		doc.state_observed_at = observed_at or frappe.utils.now_datetime()
+		# save(), not db_set(): `on_update` closes the billing segment for a dead server,
+		# and it emits Frappe's list_update so the console sees the terminal state.
+		doc.save(ignore_permissions=True)
+		return True
 
 
 def on_doctype_update() -> None:

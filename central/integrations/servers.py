@@ -5,7 +5,7 @@ from frappe import _
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.central.doctype.resource_action.resource_action import SUCCESS_MIRROR_STATUS
+from central.central.doctype.resource_action.resource_action import GOAL_STATUS
 from central.errors import (
 	AtlasConnectionError,
 	AtlasRequestUncertain,
@@ -20,12 +20,12 @@ CAPABILITY = {"start": "server:power", "stop": "server:power", "terminate": "ser
 
 
 def observe_server(asset: Asset) -> str:
-	"""Read the owning region and update only this Team's existing server mirror."""
+	"""Read the owning region and record what it reports about this Team's server."""
 	client = _client(asset)
 	try:
 		remote = client.get_vm(asset.atlas_vm_id)
 	except AtlasResourceGone:
-		_mark_terminated(asset)
+		mark_terminated(asset)
 		return "Terminated"
 
 	if remote.get("id") != asset.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
@@ -62,11 +62,10 @@ def observe_server(asset: Asset) -> str:
 			network.get("mesh_ipv6")
 		)
 
-	Asset.mirror_vm(
-		asset.cluster,
+	Asset.record_observed_state(
+		asset.name,
+		frappe.utils.now_datetime(),
 		{
-			"name": asset.name,
-			"team": asset.team,
 			"status": status,
 			"vcpus": compute["vcpus"],
 			"memory_megabytes": compute["memory_mib"],
@@ -75,7 +74,6 @@ def observe_server(asset: Asset) -> str:
 			"public_ipv4": network.get("public_ipv4"),
 			"gateway_url": gateway,
 		},
-		synced_at=frappe.utils.now_datetime(),
 	)
 	return status
 
@@ -107,7 +105,7 @@ def process_command(action) -> None:
 			if action.action != "terminate":
 				action.set_error("Failed", to_error_response(error))
 				return
-			_mark_terminated(asset)
+			mark_terminated(asset)
 			action.succeed()
 			return
 		except AtlasConnectionError as error:
@@ -124,7 +122,7 @@ def process_command(action) -> None:
 		action.set_error(action.status, build_envelope("REFRESH_FAILED"))
 		return
 
-	if status == SUCCESS_MIRROR_STATUS[action.action]:
+	if status == GOAL_STATUS[action.action]:
 		action.succeed()
 	elif status in ("Failed", "Terminated"):
 		action.set_error("Failed", build_envelope("ACTION_FAILED", action=action.action))
@@ -133,7 +131,8 @@ def process_command(action) -> None:
 
 
 def reconcile(team: str | None = None) -> dict:
-	"""Enqueue reads for known mirrors; never infer Team ownership from regional lists."""
+	"""Enqueue a scoped read for each server Central owns, oldest report first. Never
+	infer Team ownership from a regional list."""
 	if team and not can(frappe.session.user, team, "server:view"):
 		frappe.throw(_("You cannot refresh this Team's servers."), frappe.PermissionError)
 
@@ -141,7 +140,9 @@ def reconcile(team: str | None = None) -> dict:
 	if team:
 		filters["team"] = team
 
-	assets = frappe.get_all("Asset", filters=filters, pluck="name", limit=100, order_by="last_synced_at asc")
+	assets = frappe.get_all(
+		"Asset", filters=filters, pluck="name", limit=100, order_by="state_observed_at asc"
+	)
 	for name in assets:
 		frappe.enqueue(
 			"central.integrations.servers.refresh_server",
@@ -169,13 +170,10 @@ def _client(asset: Asset) -> AtlasClient:
 	return AtlasClient(instance, tenant_id)
 
 
-def _mark_terminated(asset: Asset) -> None:
+def mark_terminated(asset: Asset) -> None:
+	"""Record a server as gone and revoke the pilot credentials bound to it."""
 	asset.status = "Terminated"
-	Asset.mirror_vm(
-		asset.cluster,
-		{**asset.as_dict(), "name": asset.name, "status": "Terminated"},
-		synced_at=frappe.utils.now_datetime(),
-	)
+	Asset.mark_terminated(asset.name)
 	credentials = frappe.get_all(
 		"Pilot Credential", filters={"team": asset.team, "asset": asset.name}, pluck="name"
 	)

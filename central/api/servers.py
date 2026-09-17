@@ -50,7 +50,7 @@ def registry(team: str | None = None) -> dict:
 			"public_ipv4",
 			"gateway_url",
 			"resize_in_progress",
-			"last_synced_at",
+			"state_observed_at",
 		],
 		order_by="cluster asc, resource_id asc",
 		limit_page_length=0,

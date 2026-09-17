@@ -1,11 +1,10 @@
 """Dev-only demo fleet for the console's map-based server list.
 
-On a local bench there is no Atlas, so the Asset / Atlas Instance mirrors that
-normally fill from Atlas events stay empty and the servers map has nothing to
-show. This module seeds a small fleet through the same write paths Atlas uses
-(`Asset.mirror_vm`, the developer_setup Atlas Instance upsert) so the console
-exercises the real endpoints end-to-end. When a real Atlas is wired up, run
-`teardown` and delete this module — nothing else depends on it.
+On a local bench there is no Atlas, so no server is ever provisioned and the
+servers map has nothing to show. This module seeds a small fleet the same way
+provisioning does, so the console exercises the real endpoints end-to-end. When
+a real Atlas is wired up, run `teardown` and delete this module. Nothing else
+depends on it.
 
     bench --site central.localhost execute central.demo.servers.seed
     bench --site central.localhost execute central.demo.servers.summary
@@ -32,7 +31,6 @@ from frappe import _
 from frappe.utils import now_datetime
 
 from central.api.developer_setup import _require_developer_mode
-from central.central.doctype.asset.asset import Asset
 
 # Fixed namespace so resource_ids are stable across runs (pure upserts) and
 # teardown can derive the exact set of seed-owned rows without bookkeeping.
@@ -87,14 +85,14 @@ def seed() -> dict:
 	_require_developer_mode()
 
 	teams = _demo_teams()
-	synced_at = now_datetime()
+	observed_at = now_datetime()
 	# Region first — Atlas Instance.region links it (one Atlas = one Region).
 	for region in REGIONS:
 		_upsert_region(region)
 	for region in REGIONS:
 		_upsert_instance(region)
 	for index, asset in enumerate(ASSETS):
-		_mirror_asset(index, asset, teams, synced_at)
+		_seed_asset(index, asset, teams, observed_at)
 
 	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- command-style local seed persists demo rows.
 	return summary()
@@ -180,14 +178,19 @@ def _upsert_instance(region_row: tuple) -> None:
 	instance.save(ignore_permissions=True)
 
 
-def _mirror_asset(index: int, asset_row: tuple, teams: list[str], synced_at) -> None:
+def _seed_asset(index: int, asset_row: tuple, teams: list[str], observed_at) -> None:
 	slug, team_index, cluster, status, vcpus, memory_megabytes, disk_gigabytes, frappe_version = asset_row
-	# mirror_vm is the mirror's sole sanctioned writer — same path Atlas events take.
-	Asset.mirror_vm(
-		cluster,
+	resource_id = _resource_id(slug)
+	if frappe.db.exists("Asset", resource_id):
+		return
+
+	# Seeds stand in for servers Central provisioned, so they take the provisioning path.
+	frappe.get_doc(
 		{
-			"name": _resource_id(slug),
+			"doctype": "Asset",
+			"resource_id": resource_id,
 			"team": teams[min(team_index, len(teams) - 1)],
+			"cluster": cluster,
 			"title": slug,
 			"status": status,
 			"vcpus": vcpus,
@@ -196,9 +199,9 @@ def _mirror_asset(index: int, asset_row: tuple, teams: list[str], synced_at) -> 
 			"frappe_version": frappe_version,
 			"public_ipv4": f"192.0.2.{10 + index}",  # TEST-NET-1, never routable
 			"ipv6_address": f"2001:db8::{10 + index:x}",  # documentation range
-		},
-		synced_at=synced_at,
-	)
+			"state_observed_at": observed_at,
+		}
+	).insert(ignore_permissions=True)
 
 
 def _resource_id(slug: str) -> str:
