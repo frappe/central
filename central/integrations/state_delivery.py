@@ -61,10 +61,8 @@ def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | No
 
 
 def accept_cargo_report(raw_body: bytes, region: str | None, signature: str | None) -> dict:
-	"""Record what one region now serves, from a delivery its own secret signed.
-
-	Cargo reports on change, so a report that repeats what Central holds still refreshes
-	`last_updated_on`: an operator reads it as "the region was heard from", not as churn."""
+	"""Record what one region now serves, from a delivery its own secret signed. A repeat
+	still refreshes `last_updated_on`, which reads as "heard from", not as churn."""
 	cargo = _verified_cargo_region(region, signature, raw_body)
 
 	report = _parsed(raw_body)
@@ -171,8 +169,8 @@ def _verified_atlas_cluster(region: str | None, signature: str | None, raw_body:
 
 
 def _verified_cargo_region(region: str | None, signature: str | None, raw_body: bytes) -> str:
-	"""The region whose Cargo secret signed this delivery. `X-Region` only selects which
-	secret to check; it proves nothing on its own."""
+	"""The region whose Cargo secret signed this delivery. `X-Region` only selects the
+	secret; it proves nothing."""
 	if not region or not signature:
 		_reject("missing region or signature header")
 
