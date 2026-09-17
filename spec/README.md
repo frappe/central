@@ -16,6 +16,9 @@ The v0.2 documents distinguish the proposed design from the verified baseline. E
 
 - [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md): separate Atlas and Pilot trust, operator initialization, and token verification.
 
+- [Regional configuration](../central/central/doctype/atlas_instance/SPEC.md): signed connection checks, tenant selection, and regional identity.
+- [Image offerings](../central/central/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
+
 ## Existing specifications
 
 - [IAM](IAM.md): Central identity and permission model. Its Atlas integration sections need review in phase 0.

@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 """Resize a composed config: changed-event re-lock at current rates (#82)."""
 
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import frappe
 from frappe.utils import get_first_day, get_last_day, nowdate
@@ -66,15 +66,8 @@ class TestResizeComposed(IntegrationTestCase):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.delete_doc("Subscription", name, force=True)
 		frappe.db.delete("Invoice", {"team": TEAM})
-		# A resize now drives the real VM on its Atlas (#54) then resumes it. Stub both
-		# outbound calls so these billing-logic tests stay hermetic; tests that care
-		# assert against them.
-		resize_patcher = patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1")
-		action_patcher = patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-2")
-		self.resize_vm = resize_patcher.start()
-		self.vm_action = action_patcher.start()
-		self.addCleanup(resize_patcher.stop)
-		self.addCleanup(action_patcher.stop)
+		# Billing tests stop at the runtime adapter; Atlas owns the resize sequence.
+		self.resize_vm = self.enterContext(patch("central.billing.catalog.subscriptions._reshape_vm"))
 
 	def _ready(self, sub):
 		"""Mark a subscription's VM Stopped — the state a resize requires (Firecracker
@@ -188,15 +181,13 @@ class TestResizeComposed(IntegrationTestCase):
 		self.assertIsNone(result)
 		self.assertEqual(len(self._segments(sub)), 1)
 
-	def test_resize_stops_running_vm_then_starts_it_back(self):
+	def test_successful_runtime_resize_relocks_running_subscription(self):
 		sub = self._provision()
 		asset = frappe.db.get_value("Subscription", sub, "asset_id")
 		frappe.db.set_value("Asset", asset, "status", "Running")
 		subscriptions.resize_composed_subscription(sub, BIG, "General")
-		# A live VM is stopped, resized, then started back up — the power-cycle returns
-		# it to the running state the user found it in (never left silently powered off).
+		# Billing changes only after the runtime adapter succeeds.
 		self.resize_vm.assert_called_once()
-		self.assertEqual(self.vm_action.call_args_list, [call(asset, "stop"), call(asset, "start")])
 		self.assertEqual(len(self._segments(sub)), 2)  # re-priced
 
 	def test_resize_drives_atlas_with_new_shape(self):
@@ -206,44 +197,29 @@ class TestResizeComposed(IntegrationTestCase):
 		self.resize_vm.assert_called_once()
 		# BIG is 4 vCPU / 16 GB RAM / 40 GB disk — memory carried in megabytes.
 		self.assertEqual(
-			self.resize_vm.call_args.kwargs,
+			self.resize_vm.call_args.args[3],
 			{"vcpus": 4, "memory_megabytes": 16 * 1024, "disk_gigabytes": 40},
 		)
-		self.vm_action.assert_not_called()  # already off — no power step
 
 	def test_resize_rejects_disk_shrink_without_touching_vm(self):
 		sub = self._provision()  # SMALL — 40 GB disk
 		asset = self._ready(sub)
 		frappe.db.set_value("Asset", asset, "disk_gigabytes", 100)  # server grew to 100 GB
 		with self.assertRaisesRegex(frappe.ValidationError, "Disk can't shrink"):
-			subscriptions.resize_composed_subscription(sub, BIG, "General")  # BIG is 40 GB < 100
+			subscriptions.begin_resize(sub, includes=BIG, sub_category="General")  # BIG is 40 GB < 100
 		# Refused before any power change — the VM is never stopped or resized.
-		self.vm_action.assert_not_called()
 		self.resize_vm.assert_not_called()
 		self.assertEqual(len(self._segments(sub)), 1)  # no re-price
 
-	def test_failed_reshape_restarts_a_running_vm(self):
+	def test_failed_runtime_resize_preserves_price_lock(self):
 		sub = self._provision()  # 40 GB disk, so BIG (40) is not a shrink
 		asset = frappe.db.get_value("Subscription", sub, "asset_id")
 		frappe.db.set_value("Asset", asset, "status", "Running")
 		self.resize_vm.side_effect = frappe.ValidationError("host boom")
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.resize_composed_subscription(sub, BIG, "General")
-		# Stopped to resize, the resize failed, so it's started back — not left off.
-		self.assertEqual(self.vm_action.call_args_list, [call(asset, "stop"), call(asset, "start")])
+		# A runtime failure must leave the existing price lock intact.
 		self.assertEqual(len(self._segments(sub)), 1)  # no re-price on failure
-
-	def test_restart_failure_after_successful_resize_is_logged_not_raised(self):
-		sub = self._provision()
-		asset = frappe.db.get_value("Subscription", sub, "asset_id")
-		frappe.db.set_value("Asset", asset, "status", "Running")
-		# stop() succeeds, the resize lands, but the auto-restart fails. The resize has
-		# already succeeded, so we log and carry on — the re-price still opens, worst case
-		# a resized-but-stopped VM the user can start by hand (never a lost resize).
-		self.vm_action.side_effect = ["task-stop", frappe.ValidationError("start boom")]
-		subscriptions.resize_composed_subscription(sub, BIG, "General")
-		self.assertEqual(self.vm_action.call_args_list, [call(asset, "stop"), call(asset, "start")])
-		self.assertEqual(len(self._segments(sub)), 2)  # re-priced despite the failed restart
 
 	def test_resize_to_preset_plan_reshapes_and_relocks(self):
 		sub = self._provision()
@@ -253,8 +229,9 @@ class TestResizeComposed(IntegrationTestCase):
 		doc = frappe.get_doc("Subscription", sub)
 		self.assertEqual((doc.pricing_mode, doc.plan), ("Preset", plan))
 		# The bundle's shape (DEFAULT_INCLUDES) drives the VM resize; no power step.
-		self.resize_vm.assert_called_once_with(asset, vcpus=2, memory_megabytes=4096, disk_gigabytes=80)
-		self.vm_action.assert_not_called()
+		self.resize_vm.assert_called_once_with(
+			asset, CLUSTER, "Stopped", {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 80}
+		)
 		self.assertEqual(self._segments(sub)[-1].locked_rate, 1500)
 
 	def test_slide_off_preset_opens_composed_segment(self):
@@ -349,7 +326,7 @@ class TestResizeComposed(IntegrationTestCase):
 			result = subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 		self.assertEqual(result, {"queued": False, "resized": True})
 		enqueue.assert_not_called()  # nothing slow to defer
-		self.resize_vm.assert_not_called()  # no VM to reshape (Pending)
+		self.assertEqual(self.resize_vm.call_args.args[2], "Pending")
 		self.assertEqual(len(self._segments(sub)), 2)  # re-priced inline
 
 	def test_apply_resize_clears_flag_and_reraises_when_the_reshape_fails(self):

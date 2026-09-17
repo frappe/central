@@ -46,6 +46,11 @@ class TestErrorCatalog(IntegrationTestCase):
 	def test_unknown_code_falls_back_to_unexpected(self):
 		self.assertEqual(build_envelope("NOPE")["code"], "UNEXPECTED")
 
+	def test_message_override_is_not_interpreted_as_a_format_template(self):
+		message = 'Invalid value: {"image": "pilot"}'
+		envelope = build_envelope("ATLAS_REJECTED", message=message)
+		self.assertEqual(envelope["message"], message)
+
 
 class TestThrowActionError(IntegrationTestCase):
 	def setUp(self):

@@ -28,6 +28,22 @@ class ResourceActionError(frappe.ValidationError):
 	"""A server-flow failure already shaped into a user-facing envelope."""
 
 
+class AtlasConnectionError(frappe.ValidationError):
+	"""A regional read or authentication/configuration check failed."""
+
+
+class AtlasRejected(AtlasConnectionError):
+	"""Atlas explicitly rejected a mutation before accepting it."""
+
+
+class AtlasResourceGone(AtlasConnectionError):
+	"""A correctly scoped regional resource was not found."""
+
+
+class AtlasRequestUncertain(AtlasConnectionError):
+	"""A remote mutation may have succeeded without a confirmed response."""
+
+
 # code -> user-facing copy. Templates are formatted with the call's context (action,
 # region, resource_id, field); a missing placeholder renders empty rather than crashing
 # the error path. `message` may be overridden at the call site (e.g. Atlas's own sentence).
@@ -58,7 +74,7 @@ ERROR_CATALOG: dict[str, dict] = {
 	},
 	"REGION_UNAVAILABLE": {
 		"title": "Region isn't responding",
-		"message": "We couldn't {action} — the region ({region}) isn't responding right now, and nothing was changed.",
+		"message": "The region is not responding. Central could not refresh this resource.",
 		"remediation": "This is usually temporary. Please try again in a moment; if it keeps happening, contact support.",
 		"retriable": True,
 	},
@@ -77,14 +93,32 @@ ERROR_CATALOG: dict[str, dict] = {
 	"ACTION_FAILED": {
 		"title": "The {action} didn't complete",
 		"message": "Your server reported a failure while trying to {action}, and it's now in a failed state.",
-		"remediation": "Try the action again. If it keeps failing, contact support so we can look into it.",
-		"retriable": True,
+		"remediation": "Review the existing server and contact support before submitting another operation.",
+		"retriable": False,
 	},
 	"ACTION_TIMED_OUT": {
 		"title": "The {action} is taking too long",
 		"message": "We haven't heard back that the {action} finished. It may still complete on its own.",
 		"remediation": "Refresh your server list in a few minutes. If it still looks stuck, contact support.",
-		"retriable": True,
+		"retriable": False,
+	},
+	"OUTCOME_UNKNOWN": {
+		"title": "The operation result is not confirmed",
+		"message": "Atlas may have accepted this operation, but Central did not receive a valid confirmation.",
+		"remediation": "Check this action with support. Do not submit another create request.",
+		"retriable": False,
+	},
+	"REFRESH_FAILED": {
+		"title": "Progress could not be refreshed",
+		"message": "The operation was accepted. Central could not read its current state.",
+		"remediation": "Central will retry the status check. Do not create another server.",
+		"retriable": False,
+	},
+	"FINALIZATION_FAILED": {
+		"title": "Central could not finish the local update",
+		"message": "Atlas accepted this operation, but Central could not finish updating its records.",
+		"remediation": "Contact support with this action ID. The recorded VM will be checked without creating another.",
+		"retriable": False,
 	},
 	"VALIDATION_ERROR": {
 		"title": "Please check and try again",
@@ -94,9 +128,9 @@ ERROR_CATALOG: dict[str, dict] = {
 	},
 	"UNEXPECTED": {
 		"title": "Something went wrong on our end",
-		"message": "We hit an unexpected problem completing that action, and nothing was changed.",
-		"remediation": "Please try again in a moment. If it keeps happening, contact support so we can look into it.",
-		"retriable": True,
+		"message": "Central encountered an unexpected problem processing this action.",
+		"remediation": "Check the action status before trying again. Contact support if the result is unclear.",
+		"retriable": False,
 	},
 }
 
@@ -121,10 +155,8 @@ def build_envelope(
 	return {
 		"code": code if code in ERROR_CATALOG else "UNEXPECTED",
 		"title": _(entry["title"]).format_map(source),
-		"message": (message or _(entry["message"])).format_map(source),
-		"remediation": (remediation if remediation is not None else _(entry["remediation"])).format_map(
-			source
-		),
+		"message": message if message is not None else _(entry["message"]).format_map(source),
+		"remediation": remediation if remediation is not None else _(entry["remediation"]).format_map(source),
 		"retriable": entry["retriable"],
 	}
 
@@ -147,6 +179,15 @@ def to_error_response(exc: Exception) -> dict:
 	for operators and shown a generic, honest message instead of its internals."""
 	if getattr(exc, "envelope", None):
 		return exc.envelope
+
+	if isinstance(exc, AtlasRequestUncertain):
+		return build_envelope("OUTCOME_UNKNOWN")
+	if isinstance(exc, AtlasResourceGone):
+		return build_envelope("RESOURCE_GONE")
+	if isinstance(exc, AtlasRejected):
+		return build_envelope("ATLAS_REJECTED", message=str(exc))
+	if isinstance(exc, AtlasConnectionError):
+		return build_envelope("REGION_UNAVAILABLE", message=str(exc))
 
 	if isinstance(exc, frappe.PermissionError):
 		return build_envelope("PERMISSION_DENIED", message=str(exc) or None)

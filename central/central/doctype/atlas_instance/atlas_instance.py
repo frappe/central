@@ -1,10 +1,16 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
+import ipaddress
 
 import frappe
 from frappe import _
 from frappe.model.document import Document
+
+from central.errors import AtlasConnectionError
+from central.iam import user_has_operator_bypass
+
+BASE36_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
+ADMIN_HOST_PREFIX = "admin-vm-"
 
 
 class AtlasInstance(Document):
@@ -16,72 +22,107 @@ class AtlasInstance(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		api_key: DF.Data
-		api_secret: DF.Password
+		atlas_region_id: DF.Data | None
 		base_url: DF.Data
+		connection_checked_at: DF.Datetime | None
+		connection_error: DF.SmallText | None
 		last_synced_at: DF.Datetime | None
-		peer_endpoint: DF.Data | None
-		peer_public_key: DF.SmallText | None
+		proxy_domain: DF.Data | None
 		reachable: DF.Check
 		region: DF.Link
-		service_user: DF.Link | None
-		skip_tunnel: DF.Check
 		status: DF.Literal["Active", "Draining", "Disabled"]
-		tunnel_ip: DF.Data | None
-		tunnel_status: DF.Literal["Unregistered", "Provisioning", "Active", "Inactive"]
-		tunnel_url: DF.Data | None
-		validate_capacity: DF.Check
 		webhook_secret: DF.Password | None
 	# end: auto-generated types
 
 	def validate(self) -> None:
-		"""Keep `tunnel_url` derived from `tunnel_ip` (the post-registration data path).
-		Computed here so it can never drift from the allocated address."""
-		self.tunnel_url = self._derive_tunnel_url()
+		self.proxy_domain = self._clean_proxy_domain()
+		self.atlas_region_id = str(self.atlas_region_id).strip() if self.atlas_region_id is not None else None
+		self.atlas_region_id = self.atlas_region_id or None
+		if self.atlas_region_id is not None:
+			self.atlas_region_id = str(self.get_atlas_region_id())
 
-	def _derive_tunnel_url(self) -> str | None:
-		"""The data path over wg0, mirroring base_url's scheme + port so it matches how
-		this Atlas is actually served. The WireGuard tunnel already encrypts the hop, so
-		we do NOT assume TLS on the tunnel IP — http base_url -> http tunnel_url. e.g.
-		base_url http://1.2.3.4:8000 -> http://10.88.0.2:8000; https://host -> https://10.88.0.2."""
-		if not self.tunnel_ip:
+		if self.has_value_changed("base_url") or self.has_value_changed("atlas_region_id"):
+			self.reachable = 0
+			self.connection_checked_at = None
+			self.connection_error = None
+
+	def get_vm_gateway_url(self, mesh_address: str | None) -> str | None:
+		"""The bench admin URL the regional proxy routes to this VM, or None when the
+		cluster has no proxy zone or the VM has no mesh address yet."""
+		if not self.proxy_domain or not mesh_address:
 			return None
-		parsed = urlparse(self.base_url or "")
-		scheme = parsed.scheme or "https"
-		port = f":{parsed.port}" if parsed.port else ""
-		return f"{scheme}://{self.tunnel_ip}{port}"
-
-	@frappe.whitelist()
-	def register(self) -> dict:
-		"""Operator action: run the full Central-driven tunnel registration handshake
-		(central/spec/TUNNEL.md § Register Atlas) — ping, allocate, provision, peer,
-		verify over the tunnel, confirm. The orchestration lives in the integration
-		module; this is the thin doctype entry point the form button calls."""
-		from central.integrations.atlas import register_atlas
-
-		return register_atlas(self)
-
-	@frappe.whitelist()
-	def remove_tunnel(self) -> dict:
-		"""Operator action: strip the tunnel + management firewall but keep the Atlas
-		registered — revert the firewall + drop wg0 on the Atlas and remove the hub peer,
-		while retaining the service user and the allocated tunnel_ip. Status
-		goes to Inactive; Register brings the tunnel back up."""
-		from central.integrations.atlas import remove_tunnel
-
-		return remove_tunnel(self)
-
-	@frappe.whitelist()
-	def test_connection(self) -> dict:
-		"""Operator action: ping the Atlas API and record reachability."""
-		if "System Manager" not in frappe.get_roles():
-			frappe.throw(_("Not permitted."), frappe.PermissionError)
-		from central.integrations.atlas import AtlasClient
 
 		try:
-			AtlasClient(self).ping()
-		except Exception as exc:
-			self.db_set("reachable", 0)
-			return {"reachable": False, "error": str(exc)}
-		self.db_set("reachable", 1)
-		return {"reachable": True}
+			label = _proxy_label(mesh_address)
+		except ValueError:
+			frappe.throw(_("Atlas returned an invalid server mesh address."), AtlasConnectionError)
+
+		return f"https://{ADMIN_HOST_PREFIX}{label}.{self.proxy_domain}"
+
+	def _clean_proxy_domain(self) -> str | None:
+		"""A bare zone: no wildcard, no scheme, no path, no trailing dot."""
+		domain = (self.proxy_domain or "").strip().lower().removeprefix("*.").rstrip(".")
+		if not domain:
+			return None
+		if "/" in domain or ":" in domain or "." not in domain:
+			frappe.throw(_("Set the proxy domain to a bare zone, such as par-2.fc.frappe.dev."))
+
+		return domain
+
+	def get_atlas_region_id(self) -> int:
+		value = self.atlas_region_id or ""
+		if not value.isascii() or not value.isdecimal() or not 0 <= int(value) <= 65535:
+			frappe.throw(
+				_("Set the Atlas region ID to a whole number from 0 to 65535."), AtlasConnectionError
+			)
+
+		return int(value)
+
+	@frappe.whitelist(methods=["POST"])
+	def test_connection(self) -> dict:
+		"""Check signed regional access and persist an operator-readable result."""
+		from central.integrations.atlas import AtlasClient
+
+		if not user_has_operator_bypass():
+			frappe.throw(_("Not permitted."), frappe.PermissionError)
+		self.check_permission("write")
+
+		# Keep the saved configuration stable until its remote check finishes.
+		self.flags.for_update = True
+		self.reload()
+
+		try:
+			AtlasClient.for_operator(self).check_connection()
+		except AtlasConnectionError as error:
+			result = {"reachable": False, "error": str(error)}
+		else:
+			result = {"reachable": True, "error": None}
+
+		self.db_set(
+			{
+				"reachable": int(result["reachable"]),
+				"connection_checked_at": frappe.utils.now_datetime(),
+				"connection_error": result["error"],
+			}
+		)
+		return result
+
+
+def _proxy_label(mesh_address: str) -> str:
+	"""Encode a mesh address the way the regional proxy decodes a hostname label: the six
+	hextets after the /32 mesh prefix as one base-36 number, VM identity above tenant."""
+	hextets = ipaddress.IPv6Address(mesh_address).exploded.split(":")
+	value = 0
+	for hextet in (*hextets[4:], *hextets[2:4]):
+		value = value << 16 | int(hextet, 16)
+
+	label = ""
+	while value:
+		value, remainder = divmod(value, 36)
+		label = BASE36_DIGITS[remainder] + label
+
+	return label or "0"
+
+
+def on_doctype_update() -> None:
+	frappe.db.add_unique("Atlas Instance", ["atlas_region_id"])

@@ -6,3 +6,14 @@
 body {
 	@apply bg-surface-base text-ink-gray-9 text-base;
 }
+
+@layer utilities {
+	/* Scroll with no scrollbar chrome. Use it where the cut-off content is itself the
+	   affordance, such as a pane beside a fixed panel. */
+	.scrollbar-none {
+		scrollbar-width: none;
+	}
+	.scrollbar-none::-webkit-scrollbar {
+		display: none;
+	}
+}

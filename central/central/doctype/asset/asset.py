@@ -13,10 +13,13 @@ class Asset(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		atlas_image_id: DF.Data | None
+		atlas_vm_id: DF.Data | None
 		cluster: DF.Link
-		disk_gigabytes: DF.Int
+		disk_gigabytes: DF.Float
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
+		image_offering: DF.Link | None
 		ipv6_address: DF.Data | None
 		last_event_at: DF.Datetime | None
 		last_synced_at: DF.Datetime | None
@@ -147,6 +150,10 @@ class Asset(Document):
 		doc.resource_id = vm.get("name")
 		doc.team = vm.get("team")
 		doc.cluster = cluster
+		for field in ("atlas_vm_id", "atlas_image_id", "image_offering", "plan"):
+			if field in vm:
+				setattr(doc, field, vm[field])
+
 		doc.status = vm.get("status") or "Pending"
 		# Atlas titles are immutable URL slugs. Preserve the original user-facing
 		# title Central set during provisioning, while discovered VMs use Atlas's.
@@ -206,3 +213,8 @@ class Asset(Document):
 		# db_set(notify=True) emits Frappe's list_update after commit so Console
 		# subscribers see terminal state changes without polling.
 		doc.db_set(stamp, notify=True)
+
+
+def on_doctype_update() -> None:
+	frappe.db.add_unique("Asset", ["cluster", "atlas_vm_id"])
+	frappe.db.add_index("Asset", ["team", "status"])

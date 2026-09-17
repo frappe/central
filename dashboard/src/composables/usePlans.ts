@@ -9,6 +9,7 @@ import type {
 	ProvisionablePlans,
 	RateCard,
 } from '@/types/api'
+import type { ImageSelection } from '@/types/serverCreation'
 
 // Ungated fallback while the menu is loading (or on a resize, which isn't capacity-gated).
 const UNGATED: Capacity = {
@@ -29,6 +30,7 @@ const UNGATED: Capacity = {
 export function usePlans(
 	cluster: Ref<string | null>,
 	excludeSubscription?: Ref<string | null>,
+	imageSelection?: Ref<ImageSelection | null>,
 ) {
 	const { activeTeam } = useSession()
 
@@ -36,12 +38,21 @@ export function usePlans(
 	// into the headroom the menu is filtered by (so it can grow into its own budget).
 	const call = useCall<
 		ProvisionablePlans,
-		{ team: string; cluster: string; exclude_subscription?: string }
+		{
+			team: string
+			cluster: string
+			exclude_subscription?: string
+			offering?: string
+			image_id?: string
+		}
 	>({
-		url: method(API.eligiblePlans),
+		url: method(
+			imageSelection ? 'central.api.images.eligible_plans' : API.eligiblePlans,
+		),
 		params: () => ({
 			team: activeTeam.value!,
 			cluster: cluster.value!,
+			...(imageSelection?.value ?? {}),
 			...(excludeSubscription?.value
 				? { exclude_subscription: excludeSubscription.value }
 				: {}),
@@ -50,18 +61,35 @@ export function usePlans(
 	})
 
 	watch(
-		[activeTeam, cluster, () => excludeSubscription?.value],
+		[
+			activeTeam,
+			cluster,
+			() => excludeSubscription?.value,
+			() => imageSelection?.value,
+		],
 		([team, region]) => {
-			if (team && region) call.reload()
+			if (team && region && (!imageSelection || imageSelection.value))
+				call.reload()
 		},
 		{ immediate: true },
 	)
 
 	// The menu arrives grouped by plan class (keys ordered, rows cheapest-first);
 	// `classes` is the tab order, `plans` a flat view for selection lookups.
-	const groups = computed<Record<string, Plan[]>>(() => call.data?.plans ?? {})
+	const current = computed(
+		() =>
+			call.data?.team === activeTeam.value &&
+			call.data?.cluster === cluster.value &&
+			(!imageSelection ||
+				call.data?.image_id === imageSelection.value?.image_id),
+	)
+	const groups = computed<Record<string, Plan[]>>(() =>
+		current.value ? (call.data?.plans ?? {}) : {},
+	)
 
 	return {
+		error: computed(() => call.error),
+		reload: () => call.reload(),
 		groups,
 		classes: computed<string[]>(() => Object.keys(groups.value)),
 		plans: computed<Plan[]>(() => Object.values(groups.value).flat()),
@@ -70,8 +98,12 @@ export function usePlans(
 		// Remaining trust-tier headroom in the team's currency — explains an empty menu.
 		available: computed<number | null>(() => call.data?.available ?? null),
 		// "Design your own" inputs: the per-resource rate card + the profile bounds.
-		rateCard: computed<RateCard>(() => call.data?.rate_card ?? {}),
-		profiles: computed<Profile[]>(() => call.data?.profiles ?? []),
+		rateCard: computed<RateCard>(() =>
+			current.value ? (call.data?.rate_card ?? {}) : {},
+		),
+		profiles: computed<Profile[]>(() =>
+			current.value ? (call.data?.profiles ?? []) : [],
+		),
 		// Live provisioning capacity for this region: caps the custom slider and explains an
 		// empty menu when the region is full (`available` false).
 		capacity: computed<Capacity>(() => call.data?.capacity ?? UNGATED),
@@ -81,7 +113,10 @@ export function usePlans(
 		loading: computed(
 			() =>
 				call.loading ||
-				(!!cluster.value && call.data?.cluster !== cluster.value),
+				(!call.error &&
+					!!cluster.value &&
+					(!imageSelection || !!imageSelection.value) &&
+					!current.value),
 		),
 	}
 }

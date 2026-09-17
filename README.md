@@ -46,14 +46,14 @@ Enable developer mode before running the local bootstrap. It creates sample
 teams, users, billing records, and catalog data.
 
 ```bash
-bench --site central.localhost execute central.api.developer_setup.setup_local
+pilot frappe --site central.localhost execute central.api.developer_setup.setup_local
 ```
 
-To reseed without registering Atlas:
+To seed demo data without a regional connection check:
 
 ```bash
-bench --site central.localhost execute central.api.developer_setup.setup_local \
-  --kwargs '{"register_atlas": 0}'
+pilot frappe --site central.localhost execute central.api.developer_setup.setup_local \
+  --kwargs '{"check_connection": 0}'
 ```
 
 ### Run Atlas locally (optional)
@@ -68,23 +68,14 @@ bench --site mumbai.atlas.localhost install-app atlas
 bench --site mumbai.atlas.localhost migrate
 ```
 
-Generate an Administrator API key and secret in Atlas at
-`User > Administrator > API Access > Generate Keys`, then register the local
-Atlas site with Central:
+Initialize Central's Atlas signing key and configure its public key URL in Atlas Settings. Read the numeric region ID from Atlas Settings, then save the regional connection in Central:
 
 ```bash
-bench --site central.localhost execute central.api.developer_setup.setup_local \
-  --kwargs '{"region":"in-mumbai","atlas_base_url":"http://mumbai.atlas.localhost:8000","atlas_api_key":"<atlas-api-key>","atlas_api_secret":"<atlas-api-secret>"}'
+pilot frappe --site central.localhost execute central.api.developer_setup.setup_local \
+  --kwargs '{"region":"in-mumbai","atlas_base_url":"http://mumbai.atlas.localhost:8000","atlas_region_id":"0","seed_demo_data":0}'
 ```
 
-For a provider-free Atlas demo fleet:
-
-```bash
-bench --site mumbai.atlas.localhost execute atlas.atlas.demo.run --kwargs '{"reset": true}'
-```
-
-See the [Atlas bootstrap guide](https://github.com/frappe/atlas/blob/main/BOOTSTRAP.md)
-for real provider setup. It creates billable infrastructure.
+Replace `0` with the verified Atlas region ID. Local VM tests require an active Metal Server and available System images. Installing Atlas alone does not provide VM capacity. See the [regional configuration](central/central/doctype/atlas_instance/SPEC.md) and [validation requirements](spec/LOCAL_ENVIRONMENT.md).
 
 ## Frontend development
 

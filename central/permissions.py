@@ -95,12 +95,11 @@ def resource_action_query_conditions(user: str | None = None) -> str:
 
 
 def resource_action_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
-	# Read needs server:view; opening an action needs any server-mutating capability on the
-	# team (the endpoint additionally gates the specific action). Outcomes are written by the
-	# Atlas webhook / sweep, not the portal, so tenants get no write/delete here.
-	return _team_field_has_permission(
-		doc, ("server:view",), ("server:create", "server:power", "server:terminate"), user, ptype
-	)
+	"""1. Operators can manage action records.
+	2. Customers can read actions only with server view access.
+	3. Customers cannot create or change action records directly.
+	"""
+	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
 
 
 def site_query_conditions(user: str | None = None) -> str:

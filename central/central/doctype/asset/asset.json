@@ -1,8 +1,7 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "field:resource_id",
- "creation": "2026-06-16 00:00:00.000000",
+ "creation": "2026-06-16 00:00:00",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -23,7 +22,10 @@
   "login_url_expires_at",
   "resize_in_progress",
   "last_synced_at",
-  "last_event_at"
+  "last_event_at",
+  "atlas_vm_id",
+  "image_offering",
+  "atlas_image_id"
  ],
  "fields": [
   {
@@ -104,7 +106,7 @@
   },
   {
    "fieldname": "disk_gigabytes",
-   "fieldtype": "Int",
+   "fieldtype": "Float",
    "label": "Disk (GB)",
    "read_only": 1
   },
@@ -164,21 +166,39 @@
    "fieldtype": "Datetime",
    "label": "Last Event At",
    "read_only": 1
+  },
+  {
+   "description": "VM identifier within the linked Atlas region.",
+   "fieldname": "atlas_vm_id",
+   "fieldtype": "Data",
+   "label": "Atlas VM ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "image_offering",
+   "fieldtype": "Link",
+   "label": "Image Offering",
+   "options": "Image Offering",
+   "read_only": 1
+  },
+  {
+   "fieldname": "atlas_image_id",
+   "fieldtype": "Data",
+   "label": "Atlas Image ID",
+   "read_only": 1
   }
  ],
  "links": [
   {
-   "group": "Billing",
-   "link_doctype": "Subscription",
-   "link_fieldname": "asset_id"
+   "link_doctype": "Resource Action",
+   "link_fieldname": "asset"
   },
   {
-   "group": "Access",
    "link_doctype": "Pilot Credential",
    "link_fieldname": "asset"
   }
  ],
- "modified": "2026-06-22 00:00:00.000000",
+ "modified": "2026-09-16 16:07:25.630041",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Asset",
@@ -204,7 +224,9 @@
    "role": "Central User"
   }
  ],
+ "row_format": "Dynamic",
  "sort_field": "resource_id",
  "sort_order": "ASC",
+ "states": [],
  "title_field": "resource_id"
 }

@@ -24,6 +24,18 @@ A separate source worktree is not automatically installed into a bench. Configur
 
 Use Pilot for Frappe commands. Use the commands in CLAUDE.md for lint, tests, and build. Do not migrate a shared database merely to validate a proposed patch.
 
+## Stage 0C regional configuration
+
+Configure the verified Atlas numeric region ID and direct base URL. Initialize the Atlas signing key and configure regional trust before using **Test Connection**.
+
+Run `central.tests.test_regional_configuration` and `central.tests.test_image_offerings`. Verify customer read access, operator-only edits, cross-Team denial, pagination, disabled offerings, unavailable images, and malformed regional responses.
+
+Use **Preview Regional Images** on the Pilot and Ubuntu offerings. Confirm available System builds against the selected region. Pilot selects `purpose=pilot`. Ubuntu selects `purpose=base` and `os=Ubuntu`. Cargo's Pilot image includes a bench and prepared site for both server and signup flows.
+
+Run the default-offering patch twice and confirm that operator changes remain unchanged. No regional image IDs or versions are stored in offerings.
+
+Record real staging discovery separately from mocked contract tests. Do not invent image IDs or sizes.
+
 ## Identity and bootstrap tests
 
 Use Central tokens with the real Atlas and Pilot verifiers. Check wrong audiences, missing tenant headers, and cross-Team access.
@@ -133,3 +145,39 @@ Record backups, maintenance steps, validation results, and how to restore local 
 Each PR records checks and unresolved dependencies. The Friday report records the real journey results and any remaining blocker.
 
 Do not put credentials, private keys, or raw credential metadata in fixtures, screenshots, delivery payloads, or PR descriptions.
+
+## Current review results
+
+Validation on September 16, 2026:
+
+| Check | Result |
+|---|---|
+| Central full suite | 1,491 tests executed. Six failures remain in untouched notification, IAM fixture, billing batch, projection, and credit aggregate tests. All cutover tests passed. |
+| Changed-file pre-commit checks | Passed. Whole-repository hooks also found unrelated formatting changes; those edits were reverted after inspection. |
+| Local Central migration | Passed through Pilot after the final schema and scheduler changes. |
+| Dashboard production build | Passed through Pilot. |
+| Dashboard type check | No errors reported in `dashboard/src`. The pinned Frappe UI dependency reports type errors. |
+| Atlas unit contracts | 31 tests passed across image response, VM API, and automatic hostname suites. |
+| Atlas image database tests | Blocked by local schema drift: the database requires removed operating-system fields and has stale tag metadata. Do not weaken the tests to fit that schema. |
+| Local console | Logged in to Acme Co. Verified the server form, image failure message, retry control, and disabled creation without a valid build. |
+| Live VM lifecycle | Not run. Local Atlas has no Metal Server, no available image, and no Central public-key URL. |
+
+The six full-suite failures are `test_no_email_when_affected_user_not_set`, `test_fixtures_create_capability_catalog_and_system_roles`, `test_patch_cancels_open_segment_on_terminated_asset`, `test_status_shows_a_half_finished_run`, `test_a_batch_writes_one_scalar_row_per_team`, and `test_applied_credit_split_proportional_to_funding`. Several assert global counts on this populated test site. They need a separate fixture-isolation check; this result does not claim a clean full suite.
+
+Staging must have the matching Atlas schema and API changes, a verified region ID, Central key trust, a healthy Metal Server, available Pilot and Ubuntu System images, and working wildcard DNS. After those dependencies are ready, run creation, start, stop, Pilot access, Ubuntu access, and deletion with the same customer Team. Signup readiness and Framework webhook delivery remain the next phase.
+
+## Staging connection follow-up
+
+On macOS, start the local bench with `NO_PROXY='*' pilot start`. This prevents Python's system proxy lookup from aborting a forked background worker before an Atlas request is sent. This setting applies to the local development process. Pilot builds its own process commands and does not use the old bench-root Procfile environment variables.
+
+If a worker stops while an action is Dispatching, do not repeat creation based only on an empty VM list. Inspect the worker failure and check Atlas. Requeue only when evidence proves the request was not sent; otherwise use the uncertain-action resolution flow.
+
+Local Atlas source is updated to upstream develop `1d7a7b5b`. The uncommitted API additions remain separate from that update and are not deployed to staging.
+
+Local Central authenticates to staging region `par-2` with region ID `2`. The shared public-key endpoint returns the matching public key without private material. Central uses its separate public tunnel URL for Pilot callbacks.
+
+Staging image discovery returns available Pilot `version-16`, Pilot `develop`, Ubuntu 22.04, and Ubuntu 24.04 System images. Central selects each build by its regional image ID. Image maintenance belongs to Atlas and Cargo.
+
+Central does not require image content fingerprints or snapshot configuration. Staging Atlas does not return an automatic proxy hostname, so Central encodes the hostname label from the mirrored mesh address. Region `par-2` uses proxy domain `par-2.fc.frappe.dev`.
+
+The Acme Co Pilot creation completed on staging as `acme-1` (`vm-00005`). Resource Action `9hmuvo8ot0` reached Succeeded, and the console showed the server as Active. The Starter plan's Transfer allowance is retained in the saved configuration without changing the VM size. The console reads action progress through the v1 method endpoint expected by `frappeRequest`. The 10 billing creation tests and 11 Resource Action tests passed. Pilot login, power operations, and signup still require end-to-end validation.

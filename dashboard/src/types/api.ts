@@ -130,6 +130,7 @@ export interface Plan {
  *  sub-category — keys in canonical order, rows cheapest-first, unset sub-category
  *  folded into "General"; a forbidden cluster yields an empty map. */
 export interface ProvisionablePlans {
+	image_id?: string
 	team: string
 	cluster: string | null
 	currency: string

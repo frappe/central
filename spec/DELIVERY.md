@@ -34,7 +34,7 @@ Reuse correct code only after checking it against the selected source revisions 
 
 **Result:** Central can authenticate to the selected Atlas and Pilot deployment.
 
-Configure one staging region, proxy, Cargo instance, Pilot and Ubuntu image profiles, and public Central callback URL. Verify region and tenant identity.
+Configure one staging region, proxy, Cargo instance, Pilot and Ubuntu image offerings, and public Central callback URL. Verify region and tenant identity.
 
 Add required Team tenant IDs, credentials, signer support, and patches. Preserve existing Asset, Atlas Instance, and billing identities.
 
@@ -45,15 +45,21 @@ Acceptance:
 - Existing Teams receive valid tenant IDs without changing verified remote ownership.
 - Another Team cannot read or act on the test VM.
 - Actual Atlas and Pilot accept Central tokens and reject invalid audiences.
-- The Pilot profile records a verified shape, aliases, proxy mode, and runtime versions. The Ubuntu profile supports SSH key setup.
+- Image offerings select regional System images by tags. Cargo's Pilot image includes a prepared site for both server creation and signup. Obtain tested sizes from the image contract before provisioning.
 - Required data patches pass on populated data and on a fresh install.
 - Region endpoints and credentials work without a new Central-to-region SSH tunnel.
+
+### Current phase 0 review scope
+
+This PR includes the signed Atlas client, on-demand regional image selection, whole-CPU plan selection, and the server creation interface. Resource Action is the single operation record. It saves validated intent before dispatch and recovers accepted operations through scoped reads. Start, stop, and termination use the same record. The accepted billing quote survives catalog changes while an action waits.
+
+Review the [operation contract](../central/central/doctype/resource_action/SPEC.md), the [image catalog](../central/central/doctype/image_offering/SPEC.md), and [test coverage](CUTOVER_TEST_COVERAGE.md). Review and merge this phase before beginning signup and Framework webhooks. Do not commit without the user's approval.
 
 ## Friday phase 1: trial signup and state delivery
 
 **Result:** A customer creates a trial and enters its site. The interface shows state changes from Framework webhooks.
 
-Implement the thin Atlas create/read/delete adapter, metadata bootstrap, automatic names, Pilot readiness, and login. Reuse existing request and action records.
+Use the signed Atlas adapter and Resource Action from phase 0. Add prepared-site discovery, signup naming, Pilot readiness, and site login. Use Resource Action as the only operation record.
 
 Configure Atlas's Virtual Machine State Framework webhook. Add the signed Central receiver, durable receipt processing, and the minimum shared state writer.
 
@@ -83,6 +89,7 @@ Acceptance:
 
 - A Pilot server receives its own credential and opens the correct Pilot admin through Central.
 - A plain Ubuntu server receives the requested approved size and SSH keys.
+- Offer only plans with positive whole-vCPU counts. Remove fractional steps from custom configurations and reject fractional CPU requests without rounding.
 - Ubuntu creation does not wait for Pilot or create a Site record.
 - The interface shows supported access information and hides Pilot controls for Ubuntu.
 - Start and stop reach the requested state. Customer traffic cannot wake an explicitly stopped VM.
@@ -129,7 +136,7 @@ Aim to complete implementation on Wednesday and Thursday. Reserve Friday for fin
 |---|---|---|---|
 | 0A | Wednesday first | Team tenant identity, allocation, and populated-data patch. | IDs are unique and immutable. Ambiguous existing ownership blocks migration. |
 | 0B | Wednesday | Atlas signing, Pilot authentication, and consumer verification. | Real local verifiers accept the intended tokens and reject wrong audiences. |
-| 0C | Wednesday | Regional configuration and approved Pilot/Ubuntu image profiles. | Central can authenticate to the selected region and validate create inputs. |
+| 0C | Wednesday | Regional configuration, image offerings, and on-demand Atlas discovery. | Central can authenticate to the region and discover available shared builds. |
 | 1 | Wednesday into Thursday | Trial create, metadata bootstrap, state receiver, and site login. | One signup reaches one working site without duplicate VMs. |
 | 2 | Thursday | Pilot and Ubuntu server creation, Open Pilot, and power actions. | Both server types complete their supported dashboard flows. |
 | 3 | Thursday into Friday | Event recovery, Team isolation, migration rehearsal, and real staging proof. | The agreed journey passes on the prepared staging region. |
@@ -171,7 +178,7 @@ Documentation-only PRs require content, link, conflict-marker, and diff checks. 
 | Dependency | Required action |
 |---|---|
 | Test region and DNS | Identify the operator, region, automatic DNS names, and access before phase 0 starts. |
-| Image metadata | Supply verified Pilot and Ubuntu profiles. Do not wait for the full catalog API. |
+| Image metadata | Use Atlas System image discovery. Expose snapshot shape and tested resource requirements before plan eligibility and provisioning. |
 | Atlas callback setup | Verify the document event, condition, shared secret, scheduler, and delivery log. |
 | Framework retry revision | Pin deployed Framework behavior and configure retries. Keep repair reads even when retries exist. |
 | Pilot access | Verify automatic admin routing, token audience, and bootstrap on the selected image. |

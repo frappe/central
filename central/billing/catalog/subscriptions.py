@@ -73,6 +73,7 @@ def create_subscription(
 	pricing_mode: str = "Preset",
 	includes: list | None = None,
 	sub_category: str | None = None,
+	opening_quote: tuple[float, str] | None = None,
 ):
 	"""Record a subscription INTENT — what the customer asked for — linked to its
 	runtime Asset. The Asset is the resource Central drives on a cluster (it carries
@@ -119,6 +120,8 @@ def create_subscription(
 			"gateway": gateway,
 		}
 	)
+	# A queued creation carries the price accepted before its remote dispatch.
+	doc.flags.opening_quote = opening_quote
 	doc.flags.changed_by = changed_by
 	doc.insert(ignore_permissions=True)
 
@@ -637,56 +640,8 @@ def _guard_disk_shrink(asset_id: str, shape: dict) -> None:
 
 
 def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
-	"""Apply `shape` (vcpus/memory/disk) to the real VM on its Atlas, stopping it first
-	when it's live. Firecracker can't reconfigure a running machine, so a Running/Paused
-	VM is stopped, then resized, then STARTED BACK UP — the stop→resize→start cycle
-	returns the server to the running state the user found it in, so a resize doesn't
-	silently leave it powered off. A VM that was already Stopped stays Stopped (resizing
-	an off server doesn't power it on), and one that isn't provisioned yet (Pending/Failed)
-	has nothing to reshape and is skipped.
-
-	Two guards keep a failed resize from stranding the VM powered off: a disk shrink
-	(which Atlas refuses — a rootfs can only grow) is caught HERE, before anything is
-	stopped; and if the on-host resize fails for any other reason after we've stopped a
-	live VM, we start it back up before re-raising. Atlas's stop/start/resize are
-	synchronous, so each step has finished before the next runs — the VM is Running
-	again by the time this returns, no background job in the loop."""
-	if not shape or status not in ("Running", "Paused", "Stopped"):
-		return
-	_guard_disk_shrink(asset_id, shape)
-	from central.integrations.atlas import AtlasClient
-
-	client = AtlasClient(frappe.get_doc("Atlas Instance", cluster))
-	was_active = status in ("Running", "Paused")
-	if was_active:
-		client.vm_action(asset_id, "stop")
-	try:
-		client.resize_vm(
-			asset_id,
-			vcpus=shape["vcpus"],
-			memory_megabytes=shape["memory_megabytes"],
-			disk_gigabytes=shape["disk_gigabytes"],
-		)
-	except Exception:
-		# Reshape failed after we stopped a live VM — bring it back so a failed resize
-		# doesn't leave it powered off, then surface the original error (a restart that
-		# also fails is logged, not raised, so it can't mask the real cause).
-		if was_active:
-			try:
-				client.vm_action(asset_id, "start")
-			except Exception:
-				frappe.log_error(title=f"Resize recovery: failed to restart {asset_id}")
-		raise
-	# Resize landed. A VM that was live before the resize is started back up so the
-	# server comes back on its own — the whole stop→resize→start cycle is invisible to
-	# the user. The resize itself has already succeeded (and billing will re-lock), so a
-	# start that fails here is logged, not raised: worst case is a resized-but-stopped VM
-	# the user can start manually, exactly the old behaviour — never a lost resize.
-	if was_active:
-		try:
-			client.vm_action(asset_id, "start")
-		except Exception:
-			frappe.log_error(title=f"Resize: reshaped but failed to restart {asset_id}")
+	"""Refuse resize until asynchronous Atlas migration tracking is connected."""
+	frappe.throw(frappe._("Server resize is not available on this Atlas integration yet."))
 
 
 def _is_resizable(doc) -> bool:

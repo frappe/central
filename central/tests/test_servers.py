@@ -5,21 +5,25 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api import servers
+from central.tests.utils import ensure_atlas_instance
 
 
 class TestRegistry(IntegrationTestCase):
 	"""registry() unifies servers (Asset) and sites (Site) — each a VM — in one read."""
 
 	def _team_and_cluster(self) -> tuple[str, str]:
-		base = frappe.get_all("Site", fields=["team", "cluster"], filters={"cluster": ["is", "set"]}, limit=1)
-		if not base:
-			self.skipTest("No Site to derive a team/cluster from.")
-		return base[0].team, base[0].cluster
+		frappe.set_user("Administrator")
+		team = frappe.get_doc(
+			{"doctype": "Team", "team_name": "Registry", "owner_user": "Administrator"}
+		).insert()
+		return team.name, ensure_atlas_instance("test-registry")
 
 	def _make_site(self, name: str, subdomain: str, status: str, team: str, cluster: str) -> None:
 		self.addCleanup(
-			lambda: frappe.db.exists("Site", name)
-			and frappe.delete_doc("Site", name, ignore_permissions=True, force=True)
+			lambda: (
+				frappe.db.exists("Site", name)
+				and frappe.delete_doc("Site", name, ignore_permissions=True, force=True)
+			)
 		)
 		frappe.get_doc(
 			{

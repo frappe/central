@@ -26,8 +26,6 @@ def ensure_atlas_instance(region: str, **overrides) -> str:
 				"region": region,
 				"base_url": f"https://{region}.atlas.example.test",
 				"status": "Active",
-				"api_key": "test-key",
-				"api_secret": "test-secret",
 				**overrides,
 			}
 		).insert(ignore_permissions=True)
