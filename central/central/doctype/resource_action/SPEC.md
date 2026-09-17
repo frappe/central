@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Resource Action owns the durable intent and outcome of server creation, start, stop, and termination. Asset is the observed server mirror. An action is not proof of the server's current state.
+Resource Action owns the durable intent and outcome of server creation, start, stop, and termination. Asset is the server record, and its observed fields hold the last state a region reported. An action is not proof of the server's current state.
 
 ```text
 Customer -> authorized service -> Resource Action -> queued integration worker
@@ -11,7 +11,7 @@ Customer -> authorized service -> Resource Action -> queued integration worker
                                       |                      |
                                 accepted quote       regional VM identity
                                       |                      |
-                                 Subscription <--- Asset mirror
+                                 Subscription <--- Asset record
 ```
 
 ## Request contract
@@ -22,7 +22,7 @@ Central checks the capability, current image selector, image availability, plan 
 
 The request key is unique within a Team. Reusing it with identical inputs returns the same action. Reusing it with changed inputs fails. The saved configuration contains the accepted shape, image identity, currency, and billing cycle. The reserved rate becomes the opening subscription price even if the catalog changes while the request waits.
 
-API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/server_provisioning.py` owns creation policy. `central/resource_actions.py` owns power-operation authorization. Remote calls and mirror writes belong to `central/integrations/`.
+API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/server_provisioning.py` owns creation policy. `central/resource_actions.py` owns power-operation authorization. Remote calls and observed-state writes belong to `central/integrations/`.
 
 ## State and recovery
 
@@ -37,7 +37,7 @@ API routes remain thin. `central/server_models.py` defines input and saved-confi
 | Failed | A definite rejection or observed failure is recorded. The record retains the error and any accepted VM identity. |
 | Timed Out | A historical terminal state. Elapsed time alone does not prove failure or permit a repeated create. |
 
-The worker saves the remote VM identity before billing or mirror finalization. A local failure retains that identity and a readable error. Recovery retries local finalization and regional reads. It does not repeat the create call.
+The worker saves the remote VM identity before billing or local finalization. A local failure retains that identity and a readable error. Recovery retries local finalization and regional reads. It does not repeat the create call.
 
 The scheduled recovery job selects old queued or accepted actions. Unresolved creations without a VM identity do not consume its batch. Redis and database locks serialize workers. Customer retries cannot change an existing action's payload.
 
@@ -57,7 +57,7 @@ Customer status uses one response shape: `action`, `status`, `resource_id`, `tit
 
 Creation requires `server:create`. Start and stop require `server:power`. Termination requires `server:terminate`. Customer status reads require `server:view` for the owning Team. Customers cannot insert or edit Resource Action documents directly. Query conditions and document permissions enforce the same Team boundary.
 
-A scoped not-found response terminates the existing mirror, applies the billing cancellation hook, and revokes that server's Pilot credentials. A response for a different VM or tenant is rejected without updating the mirror.
+A scoped not-found response records the server as terminated, applies the billing cancellation hook, and revokes that server's Pilot credentials. A response for a different VM or tenant is rejected without recording anything.
 
 ## Console and limits
 

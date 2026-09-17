@@ -35,7 +35,7 @@ Pilot      server runtime: benches, sites, apps on a single server.
 
 - Central authors grants. Atlas and each bench enforce them locally.
 - Central reaches Atlas, Pilot, and Cargo only through the clients in `central/integrations/`. Do not call a remote plane from a controller, an API route, or a page.
-- `Asset` and `Site` are read-only mirrors of Atlas state. Only the integration layer writes them, through `central/mirror.py`.
+- `Asset` is Central's server record. Central owns its identity, title, plan, image and billing links. A region only reports state back, and the integration layer applies that through `Asset.record_observed_state`.
 
 ## Scope
 
@@ -44,7 +44,7 @@ Central runs today:
 - Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
 - Regions: Atlas instance registration, the WireGuard tunnel hub, and host tasks on the Central machine.
-- Resource mirrors: `Asset` and `Site`, written only from Atlas events and reconcile.
+- Resources: `Asset` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
 - Provisioning: provisioning requests and resource actions against Atlas and Pilot.
 - Managed services: add-on catalog, LLM models and plan policies, storage backends, and service credentials.
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
@@ -128,7 +128,7 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Group fields into tabs and sections that follow the operator's task, not the table order. A form that is one flat column of 40 fields is a defect.
 - Put identity and state at the top. Put credentials, raw payloads, and debug fields in a collapsed section or a separate tab.
 - Label a field with what it means to a person. Set a description on any field whose meaning is not obvious from the label.
-- Mark a field read-only when only the system writes it. A mirror field must never look editable.
+- Mark a field read-only when only the system writes it. An observed field must never look editable.
 
 ### Make it navigable
 

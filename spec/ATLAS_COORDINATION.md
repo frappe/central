@@ -34,7 +34,7 @@ Central stores each authorized operation in Resource Action before dispatch. Atl
 
 Scoped regional reads confirm VM state and repair interrupted local finalization. A failed read does not prove deletion. A scoped not-found response can confirm deletion and trigger local credential and billing cleanup.
 
-Central builds the automatic management address itself. The regional proxy decodes a VM's mesh address from its hostname label, so Central encodes the same label from the mirrored mesh address and the cluster's proxy domain. The tenant API does not publish the regional zone, so an operator sets `proxy_domain` on [Atlas Instance](../central/central/doctype/atlas_instance/SPEC.md). A management address alone does not prove Pilot readiness. Pilot creation also receives credential-bound `pilot-central` metadata.
+Central builds the automatic management address itself. The regional proxy decodes a VM's mesh address from its hostname label, so Central encodes the same label from the observed mesh address and the cluster's proxy domain. The tenant API does not publish the regional zone, so an operator sets `proxy_domain` on [Atlas Instance](../central/central/doctype/atlas_instance/SPEC.md). A management address alone does not prove Pilot readiness. Pilot creation also receives credential-bound `pilot-central` metadata.
 
 See [Resource Action](../central/central/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
 
