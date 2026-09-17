@@ -93,7 +93,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 		subscription = frappe.get_doc("Subscription", {"asset_id": action.asset})
 		self.assertEqual(subscription.plan, self.plan)
 		size = client.create_vm.call_args.args[0]
-		self.assertEqual((size["vcpus"], size["memory_mib"], size["disk_mib"]), (1, 2048, 10240))
+		self.assertEqual((size["cpu_millicores"], size["memory_mib"], size["disk_mib"]), (1000, 2048, 10240))
 
 	def test_rejects_plan_outside_the_trial_allowlist(self):
 		self._fund()

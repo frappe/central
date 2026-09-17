@@ -67,7 +67,10 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 		transfer = next(row for row in configuration.includes if row.resource_type == "Transfer")
 		self.assertEqual((transfer.quantity, transfer.unit), (100, "GB"))
 		payload = client.create_vm.call_args.args[0]
-		self.assertEqual((payload["vcpus"], payload["memory_mib"], payload["disk_mib"]), (2, 4096, 81920))
+		self.assertEqual(
+			(payload["cpu_millicores"], payload["memory_mib"], payload["disk_mib"]),
+			(2000, 4096, 81920),
+		)
 
 	def test_rejects_invalid_hostname_before_dispatch(self):
 		with self.assertRaises(frappe.ValidationError):
