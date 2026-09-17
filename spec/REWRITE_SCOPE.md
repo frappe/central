@@ -36,7 +36,7 @@ Use existing provisioning and action records where they fit. Add only the state,
 
 ## Confirmed source baseline
 
-The latest fetched revisions are Atlas `7eadeda7`, Pilot `228c46fa`, and Cargo `2b7845d`. The reviewed Framework checkout is `3f96501d86`.
+The latest fetched revisions are Atlas `d6345880`, Pilot `228c46fa`, and Cargo `709177d`. The reviewed Framework checkout is `3f96501d86`.
 
 The requested `pilot admin upgrade` completed. Pilot was already current. Its dependency setup and upgrade patches ran. Local tracked source edits remained unchanged.
 
@@ -86,9 +86,9 @@ Do not reuse committed tenant IDs. Backfill before enforcing constraints. Test c
 
 Store regional VM references with their Region. A VM name alone is not globally unique. Do not change existing Central resource IDs unnecessarily.
 
-Configure one region and two approved image profiles: Pilot and plain Ubuntu. Record supported sizes and architecture. Record the Pilot profile's prepared shape and runtime versions.
+Configure one region and the Pilot and Ubuntu image offerings. Central owns presentation and matching tags. Fetch regional System image builds from Atlas on demand. See [Image offerings](../central/central/doctype/image_offering/SPEC.md).
 
-The reviewed Atlas image response lacks the prepared snapshot shape. An operator-verified image profile can supply that shape for Friday. A complete synchronized image catalog is later work.
+The Atlas image response exposes tags, architecture, availability, and disk size. Extend it with the existing prepared snapshot shape before plan selection and provisioning. Declare and test software resource requirements at the image builder. Do not duplicate regional builds or manually copy runtime metadata into Central.
 
 A matching size permits a warm start but does not guarantee that the selected host has the warm artifact. Cold startup must remain usable.
 
@@ -139,7 +139,7 @@ Use the same authorized Atlas adapter for trial, Pilot-server, and plain-Ubuntu 
 | Resource | Configuration | Completion |
 |---|---|---|
 | Trial | Prepared Pilot image, one existing site, metadata credential, approved idle timeout. | VM accepted, Pilot ready, site reachable, and site login succeeds. |
-| Pilot server | Approved Pilot image and metadata credential. | VM is ready and Central can open the correct Pilot admin. |
+| Pilot server | Cargo Pilot image with its prepared bench and site, plus metadata credential. | VM is ready and Central can open the correct Pilot admin. |
 | Plain Ubuntu | Approved Ubuntu image, allowed size, hostname, and SSH keys. | Atlas confirms the requested running state and the agreed access configuration. No Pilot or Site record is required. |
 
 Show Open Pilot only for a Pilot-managed resource. A plain Ubuntu VM must not fail because it has no Pilot process or site.
@@ -324,7 +324,7 @@ The wider rewrite remains planned, but it is not part of the staging deadline.
 |---|---|
 | API surface | Reusable typed core, OpenAPI, generated Central clients, and migration of remaining routes. |
 | Data model | Asset-to-Server rename, Region consolidation, and focused data patches. |
-| Images | Synchronized catalog, prepared-shape fields, release metadata, and product choices. |
+| Images | Additional application bundles and private Machine image selection. Shared image discovery is part of the foundation. |
 | Lifecycle | Resize/migration, snapshot, console streaming, richer operation progress, and fleet-scale scheduling. |
 | Rename and domains | Site/admin rename, customer domains, certificates through Pilot, broader DNS cases, and multi-site products. |
 | Services | Cargo readiness registration, new service ordering, live health, storage/LLM policy, and telemetry. |
