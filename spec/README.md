@@ -26,6 +26,7 @@ The v0.2 documents distinguish the proposed design from the verified baseline. E
 - [SSO](SSO.md): token flows and consumer contracts to check before the signing cutover.
 - [Tunnel](TUNNEL.md): the tunnel path still present in the baseline Central code.
 - [Atlas coordination](ATLAS_COORDINATION.md): earlier regional contracts that need replacement during the rewrite.
+- [Inbound webhooks](WEBHOOKS.md): the contract a region signs and sends its reports with. Share it with Atlas and Cargo.
 - [Refactor backlog](refactor_todo.md): prior findings to verify during the non-billing audit.
 
 The earlier [execution plan](EXECUTION_PLAN.md) does not define the v0.2 delivery order. Do not use its Atlas OAuth or VM capability assumptions for the new integration. Use the verified contracts in [Rewrite scope](REWRITE_SCOPE.md).
