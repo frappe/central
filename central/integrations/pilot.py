@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import frappe
 import requests
@@ -73,6 +73,48 @@ def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str |
 		frappe.log_error(title=f"Site login relay returned no URL: {site}", message=f"{gateway_url}: {url!r}")
 		return None
 	return url
+
+
+def rename_admin_domain(asset: str, base_url: str | None = None, tls: bool = True) -> dict:
+	"""Ask a server's pilot to serve its admin UI at the proxy hostname Central expects.
+
+	`base_url` reaches the pilot when its current admin hostname differs from the expected one.
+	Pilot queues the change as a task and returns it."""
+	expected = _expected_gateway_url(frappe.get_doc("Asset", asset))
+	payload = {"domain": urlparse(expected).hostname, "tls": tls}
+	return _post_to_pilot(asset, base_url or expected, "/api/v1/settings/admin-domain", payload)
+
+
+def rename_site(
+	asset: str, site: str, new_name: str, keep_old_hostname: bool = True, base_url: str | None = None
+) -> dict:
+	"""Ask a server's pilot to rename one of its sites. Pilot queues the rename as a task."""
+	base_url = base_url or _expected_gateway_url(frappe.get_doc("Asset", asset))
+	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname}
+	return _post_to_pilot(asset, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload)
+
+
+def _expected_gateway_url(server) -> str:
+	url = frappe.get_cached_doc("Atlas Instance", server.cluster).get_vm_gateway_url(server.ipv6_address)
+	if not url:
+		frappe.throw(frappe._("Server {0} has no proxy hostname.").format(server.name))
+	return url
+
+
+def _post_to_pilot(asset: str, base_url: str, path: str, payload: dict) -> dict:
+	audience_id = frappe.db.get_value("Pilot Credential", {"asset": asset, "status": "Active"}, "audience_id")
+	if not audience_id:
+		frappe.throw(frappe._("Server {0} has no enrolled pilot.").format(asset))
+
+	response = requests.post(
+		f"{_gateway_url(base_url)}{path}",
+		headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
+		json=payload,
+		timeout=SITE_LOGIN_TIMEOUT_SECONDS,
+		allow_redirects=False,
+	)
+	response.raise_for_status()
+	return response.json()
 
 
 class PilotMonitoringError(Exception):
