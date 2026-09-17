@@ -64,32 +64,20 @@ async function selectRow(inv: InvoiceSummary): Promise<void> {
 	await detail.submit({ name: inv.name })
 }
 
-// Open the latest invoice expanded on first load — list_invoices is ordered newest
-// first, so that's row 0. A `?invoice=` deep link (from global search) selects
-// that row instead. Only auto-select once: after the user closes the panel (or a
-// refetch arrives), we leave their choice alone.
-let autoSelected = false
 watch(
 	() => invoices.value,
 	(rows) => {
-		if (autoSelected || selected.value || !rows.length) return
-		autoSelected = true
-		const wanted = route.query.invoice
-		const row = (wanted && rows.find((r) => r.name === wanted)) || rows[0]
-		selectRow(row)
+		const row = rows.find((r) => r.name === route.query.invoice)
+		if (row && !selected.value) selectRow(row)
 	},
 	{ immediate: true },
 )
 
-// A team switch invalidates the open receipt — the list refetches on its own
-// (reactive teamParams), but the panel would keep showing the old team's
-// invoice. Close it and let the new team's latest auto-select.
 const { activeTeam } = useSession()
 watch(activeTeam, (team, previous) => {
 	if (!previous || team === previous) return
 	selected.value = null
 	shown.value = null
-	autoSelected = false
 })
 
 // Open OR Overdue is still collectable — an overdue invoice is the one the customer
