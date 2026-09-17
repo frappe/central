@@ -14,6 +14,7 @@ dependencies = [
     # breaks); the adapters use Stripe's global API.
     "stripe>=15,<16",
     "razorpay>=1.4",
+    "dnspython>=2.7",
     "atlas-proxy-client @ git+https://github.com/frappe/atlas.git@abdde5b62bc8ebecbf38c9aa96a72a848c832fc4#subdirectory=clients/atlas-proxy-client",
 ]
 

@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import dns.exception
+import dns.resolver
 import frappe
 import httpx
 from frappe import _
@@ -12,7 +16,16 @@ from frappe.utils import now_datetime
 from central.central.doctype.region.region import REGIONAL_SERVICES, Region
 from central.integrations.proxy import ProxyError
 
+if TYPE_CHECKING:
+	from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+
 MAXIMUM_ATTEMPTS = 5
+VERIFICATION_TTL_SECONDS = 24 * 60 * 60
+VERIFICATION_RECORD = "_frappe-verification"
+
+
+class DomainNotVerifiedError(frappe.ValidationError):
+	http_status_code = 409
 
 
 class SiteDomain(Document):
@@ -43,7 +56,7 @@ class SiteDomain(Document):
 		return self.domain.split(".", 1)[0]
 
 	def before_naming(self) -> None:
-		self.domain = (self.domain or "").strip().strip(".").lower()
+		self.domain = normalize_domain(self.domain)
 
 	def validate(self) -> None:
 		self.route_type = self.get_route_type()
@@ -111,6 +124,106 @@ class SiteDomain(Document):
 
 		self.db_set(values)
 
+	@staticmethod
+	def new_for_pilot(credential: PilotCredential, domain: str) -> SiteDomain:
+		"""An unsaved route to the Pilot's own server. The server never comes from the request."""
+		if not credential.asset:
+			frappe.throw(_("This Pilot has no server yet."))
+
+		route = frappe.get_doc(
+			{
+				"doctype": "Site Domain",
+				"domain": normalize_domain(domain),
+				"team": credential.team,
+				"asset": credential.asset,
+				"region": frappe.db.get_value("Asset", credential.asset, "cluster"),
+			}
+		)
+		route.route_type = route.get_route_type()
+		return route
+
+	@staticmethod
+	def get_dns_records(credential: PilotCredential, domain: str) -> dict:
+		"""DNS records a customer sets before the Pilot registers a custom domain. A site needs none."""
+		route = SiteDomain.new_for_pilot(credential, domain)
+		if route.route_type == "Site":
+			return {}
+
+		key = route.get_verification_key(credential)
+		token = frappe.cache.get_value(key)
+		if not token:
+			token = frappe.generate_hash(length=32)
+			frappe.cache.set_value(key, token, expires_in_sec=VERIFICATION_TTL_SECONDS)
+
+		return {
+			"cname": [
+				{"type": "CNAME", "host": route.domain, "value": route.get_proxy_host()},
+				{"type": "TXT", "host": f"{VERIFICATION_RECORD}.{route.domain}", "value": token},
+			]
+		}
+
+	@staticmethod
+	def register(credential: PilotCredential, domain: str) -> None:
+		"""Route a domain to the Pilot's server once it is verified. Returns only when the route is live."""
+		route = SiteDomain.new_for_pilot(credential, domain)
+		if frappe.db.exists("Site Domain", route.domain):
+			route = frappe.get_doc("Site Domain", route.domain)
+			if route.asset != credential.asset:
+				frappe.throw(_("{0} is already taken.").format(route.domain), frappe.DuplicateEntryError)
+		else:
+			if route.route_type == "Domain":
+				route.verify_ownership(credential)
+			# The Pilot credential already proves the server; the request runs as Guest.
+			route.insert(ignore_permissions=True)
+
+		route.apply()
+		if route.status != "Active":
+			frappe.throw(route.failure_reason, ProxyError)
+
+		frappe.cache.delete_value(route.get_verification_key(credential))
+
+	@staticmethod
+	def deregister(credential: PilotCredential, domain: str) -> None:
+		"""Remove the route of the Pilot's server. A missing route is already removed."""
+		name = normalize_domain(domain)
+		asset = frappe.db.get_value("Site Domain", name, "asset")
+		if not asset:
+			return
+		if asset != credential.asset:
+			frappe.throw(_("{0} belongs to another server.").format(name), frappe.PermissionError)
+
+		# The Pilot credential already proves the server; the request runs as Guest.
+		frappe.delete_doc("Site Domain", name, ignore_permissions=True)
+
+	def get_verification_key(self, credential: PilotCredential) -> str:
+		return f"site-domain||{self.domain}||{credential.pilot_credential_id}||verification-token"
+
+	def get_proxy_host(self) -> str:
+		return f"proxy.{Region.get_zone(self.region)}"
+
+	def verify_ownership(self, credential: PilotCredential) -> None:
+		"""Refuse a custom domain until its DNS proves that the customer controls it."""
+		token = frappe.cache.get_value(self.get_verification_key(credential))
+		if not token:
+			frappe.throw(
+				_("Generate the DNS records for {0} first.").format(self.domain), DomainNotVerifiedError
+			)
+
+		if token not in _resolve(f"{VERIFICATION_RECORD}.{self.domain}", "TXT"):
+			frappe.throw(
+				_("The TXT record for {0} is not set yet.").format(self.domain), DomainNotVerifiedError
+			)
+
+		# An apex cannot hold a CNAME and DNS providers flatten it, so only a subdomain is checked.
+		# TODO: replace this CNAME check with /.well-known/pre-authorize, served by the proxy.
+		if not is_apex(self.domain) and self.get_proxy_host() not in _resolve(self.domain, "CNAME"):
+			frappe.throw(
+				_("The CNAME record for {0} does not point to {1} yet.").format(
+					self.domain, self.get_proxy_host()
+				),
+				DomainNotVerifiedError,
+			)
+
 	@frappe.whitelist()
 	def retry(self) -> None:
 		"""Operator action: reset the attempt count and send the route again."""
@@ -129,6 +242,29 @@ def retry_failed() -> None:
 	for name in names:
 		frappe.get_doc("Site Domain", name).apply()
 		frappe.db.commit()  # keep each outcome if a later route crashes the job
+
+
+def normalize_domain(domain: str | None) -> str:
+	return (domain or "").strip().strip(".").lower()
+
+
+def is_apex(domain: str) -> bool:
+	"""True when the domain is the root of its own DNS zone, such as example.com."""
+	return dns.resolver.zone_for_name(domain).to_text().rstrip(".").lower() == domain
+
+
+def _resolve(name: str, record_type: str) -> list[str]:
+	"""The values of one DNS record set, normalized for comparison. Empty when the name has none."""
+	try:
+		answer = dns.resolver.resolve(name, record_type)
+	except dns.resolver.NXDOMAIN, dns.resolver.NoAnswer:
+		return []
+	except dns.exception.DNSException as exception:
+		frappe.throw(_("Could not look up {0}: {1}").format(name, exception), DomainNotVerifiedError)
+
+	if record_type == "TXT":
+		return [b"".join(record.strings).decode() for record in answer]
+	return [record.to_text().rstrip(".").lower() for record in answer]
 
 
 def on_doctype_update():

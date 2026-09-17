@@ -8,6 +8,7 @@ from frappe import _
 
 from central.central.doctype.cargo_instance.cargo_instance import CargoInstance
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.central.doctype.site_domain.site_domain import SiteDomain
 
 # The pilot→Central surface. The pilot (the on-VM agent, ~/pilot) authenticates with
 # the opaque token Central minted for it (stored in the bench's bench.toml).
@@ -112,6 +113,27 @@ def log_token() -> dict:
 		"resource_id": credential.asset,
 		"endpoint": get_telemetry_base_url(credential),
 	}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@pilot_credential_auth
+def domain_records(domain: str) -> dict:
+	"""DNS records to set before `register_domain`. Empty for a site in the regional zone."""
+	return SiteDomain.get_dns_records(frappe.local.pilot_credential, domain)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def register_domain(domain: str) -> None:
+	"""Route a site or a verified custom domain to this Pilot's server."""
+	SiteDomain.register(frappe.local.pilot_credential, domain)
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@pilot_credential_auth
+def deregister_domain(domain: str) -> None:
+	"""Remove a route of this Pilot's server."""
+	SiteDomain.deregister(frappe.local.pilot_credential, domain)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

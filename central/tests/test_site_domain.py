@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -9,13 +10,21 @@ from atlas_proxy_client.types import Response
 from frappe.tests import IntegrationTestCase
 
 from central.central.doctype.region.region import Region
-from central.central.doctype.site_domain.site_domain import MAXIMUM_ATTEMPTS, retry_failed
+from central.central.doctype.site_domain.site_domain import (
+	MAXIMUM_ATTEMPTS,
+	VERIFICATION_RECORD,
+	DomainNotVerifiedError,
+	SiteDomain,
+	retry_failed,
+)
 from central.integrations.proxy import ProxyClient, ProxyError
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
 WILDCARD = "example.test"
 GET_PROXY_CLIENT = "central.central.doctype.site_domain.site_domain.Region.get_proxy_client"
+RESOLVE = "central.central.doctype.site_domain.site_domain._resolve"
+IS_APEX = "central.central.doctype.site_domain.site_domain.is_apex"
 
 
 class TestSiteDomain(IntegrationTestCase):
@@ -158,6 +167,91 @@ class TestSiteDomain(IntegrationTestCase):
 		self.assertTrue(frappe.has_permission("Site Domain", "read", own.name))
 		self.assertFalse(frappe.has_permission("Site Domain", "read", other.name))
 		self.assertFalse(frappe.has_permission("Site Domain", "write", own.name))
+
+	def test_a_site_needs_no_dns_records_and_registers_directly(self):
+		credential = self._credential(self.asset)
+		domain = f"shop-{self.suffix}.{self.zone}"
+		proxy = MagicMock()
+
+		self.assertEqual(SiteDomain.get_dns_records(credential, domain), {})
+		with patch(GET_PROXY_CLIENT, return_value=proxy):
+			SiteDomain.register(credential, domain)
+
+		proxy.set_site.assert_called_once_with(f"shop-{self.suffix}", "2001:db8::10")
+		self.assertEqual(frappe.db.get_value("Site Domain", domain, "status"), "Active")
+
+	def test_a_domain_registers_after_its_dns_records_match(self):
+		credential = self._credential(self.asset)
+		domain = f"www.shop-{self.suffix}.com"
+		records = SiteDomain.get_dns_records(credential, domain)["cname"]
+		token = records[1]["value"]
+		dns = {
+			(f"{VERIFICATION_RECORD}.{domain}", "TXT"): [token],
+			(domain, "CNAME"): [f"proxy.{self.zone}"],
+		}
+
+		self.assertEqual(records[0], {"type": "CNAME", "host": domain, "value": f"proxy.{self.zone}"})
+		self.assertEqual(SiteDomain.get_dns_records(credential, domain)["cname"][1]["value"], token)
+		with (
+			patch(RESOLVE, side_effect=lambda name, record_type: dns.get((name, record_type), [])),
+			patch(IS_APEX, return_value=False),
+			patch(GET_PROXY_CLIENT, return_value=MagicMock()),
+		):
+			SiteDomain.register(credential, domain)
+
+		self.assertEqual(frappe.db.get_value("Site Domain", domain, "status"), "Active")
+
+	def test_a_domain_is_not_recorded_until_verified(self):
+		credential = self._credential(self.asset)
+		domain = f"www.wait-{self.suffix}.com"
+
+		with self.assertRaises(DomainNotVerifiedError):
+			SiteDomain.register(credential, domain)
+
+		SiteDomain.get_dns_records(credential, domain)
+		with patch(RESOLVE, return_value=[]), self.assertRaises(DomainNotVerifiedError):
+			SiteDomain.register(credential, domain)
+
+		self.assertFalse(frappe.db.exists("Site Domain", domain))
+
+	def test_an_apex_domain_skips_the_cname_check(self):
+		credential = self._credential(self.asset)
+		domain = f"apex-{self.suffix}.com"
+		token = SiteDomain.get_dns_records(credential, domain)["cname"][1]["value"]
+
+		with (
+			patch(RESOLVE, side_effect=lambda name, record_type: [token] if record_type == "TXT" else []),
+			patch(IS_APEX, return_value=True),
+			patch(GET_PROXY_CLIENT, return_value=MagicMock()),
+		):
+			SiteDomain.register(credential, domain)
+
+		self.assertTrue(frappe.db.exists("Site Domain", domain))
+
+	def test_a_route_of_another_server_is_refused(self):
+		route = self._route(f"taken-{self.suffix}.{self.zone}")
+		other = self._credential(self._asset("e", self.team, "2001:db8::13"))
+
+		with self.assertRaises(frappe.DuplicateEntryError):
+			SiteDomain.register(other, route.domain)
+		with self.assertRaises(frappe.PermissionError):
+			SiteDomain.deregister(other, route.domain)
+
+		self.assertTrue(frappe.db.exists("Site Domain", route.name))
+
+	def test_deregister_removes_the_route(self):
+		route = self._route(f"bye-{self.suffix}.com")
+		proxy = MagicMock()
+
+		with patch(GET_PROXY_CLIENT, return_value=proxy):
+			SiteDomain.deregister(self._credential(self.asset), route.domain)
+			SiteDomain.deregister(self._credential(self.asset), route.domain)
+
+		proxy.delete_domain.assert_called_once_with(route.domain)
+		self.assertFalse(frappe.db.exists("Site Domain", route.name))
+
+	def _credential(self, asset):
+		return SimpleNamespace(team=asset.team, asset=asset.name, pilot_credential_id=f"pc-{asset.name}")
 
 	def _route(self, domain: str, asset=None, team: str | None = None):
 		asset = asset or self.asset
