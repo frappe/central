@@ -156,3 +156,4 @@ central.patches.v0_0.drop_project_scoping_from_credits_and_methods
 central.patches.v0_0.rename_sso_rsa_fields
 
 central.patches.v0_0.reset_atlas_connection_checks
+central.patches.v0_0.seed_image_offerings
