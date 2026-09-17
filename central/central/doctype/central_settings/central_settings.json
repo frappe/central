@@ -7,6 +7,7 @@
  "field_order": [
   "general_tab",
   "host_task_retention_days",
+  "wildcard_domain",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -74,13 +75,19 @@
    "fieldtype": "Int",
    "label": "Host Task Retention (Days)",
    "non_negative": 1
+  },
+  {
+   "description": "Base domain of every regional service. Central reaches proxy.<region>.<wildcard domain>, atlas.<region>.<wildcard domain>, and cargo.<region>.<wildcard domain>. Example: frappe.dev",
+   "fieldname": "wildcard_domain",
+   "fieldtype": "Data",
+   "label": "Wildcard Domain"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-10 14:34:38.022938",
+ "modified": "2026-09-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Central Settings",

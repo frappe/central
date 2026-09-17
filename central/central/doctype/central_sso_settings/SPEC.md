@@ -18,7 +18,9 @@ The new fields are optional. Schema synchronization adds them without changing e
 
 `central.sso.mint_atlas_token(region_id)` creates a five-minute internal credential. Its issuer and subject are `central`. Its audience is `atlas-admin:<region_id>`. Its scope and tenant claims are `*`, as required for Central regional authority.
 
-This function is not a public API. An integration caller must authorize the requested operation through Central IAM and select the correct tenant before it sends a regional request. This stage supplies token signing; connecting the regional client follows in stage 0C.
+`central.sso.mint_proxy_token(region_id)` uses the same key for a regional proxy. Its audience is `atlas-proxy:<region_id>` and its scope is `site:* domain:*`. It has no tenant claim, because the proxy refuses a token with one. [Site Domain](../site_domain/SPEC.md) uses it.
+
+These functions are not a public API. An integration caller must authorize the requested operation through Central IAM and select the correct tenant before it sends a regional request. This stage supplies token signing; connecting the regional client follows in stage 0C.
 
 The initializer locks the DocType metadata row because a Single DocType has no parent document row. It then reloads the saved settings with a locking read. This prevents two initializers from publishing different keys. Initialization records an operator comment on the settings document.
 

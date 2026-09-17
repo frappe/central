@@ -29,6 +29,15 @@ ATLAS_TOKEN_TTL = 5 * 60
 
 def mint_atlas_token(region_id: int) -> str:
 	"""Mint an internal regional credential after the integration caller authorizes its operation."""
+	return _mint_regional_token(region_id, f"atlas-admin:{region_id}", "*", {"tenant": "*"})
+
+
+def mint_proxy_token(region_id: int) -> str:
+	"""Mint a credential for the site and domain routes of one regional proxy."""
+	return _mint_regional_token(region_id, f"atlas-proxy:{region_id}", "site:* domain:*")
+
+
+def _mint_regional_token(region_id: int, audience: str, scope: str, extra: dict | None = None) -> str:
 	if type(region_id) is not int or not 0 <= region_id <= 65535:
 		frappe.throw(_("The Atlas region ID must be a whole number from 0 to 65535."))
 
@@ -38,12 +47,12 @@ def mint_atlas_token(region_id: int) -> str:
 	claims = {
 		"iss": "central",
 		"sub": "central",
-		"aud": f"atlas-admin:{region_id}",
-		"scope": "*",
-		"tenant": "*",
+		"aud": audience,
+		"scope": scope,
 		"iat": now,
 		"exp": now + ATLAS_TOKEN_TTL,
 		"jti": frappe.generate_hash(length=16),
+		**(extra or {}),
 	}
 
 	return jwt.encode(claims, private_key, algorithm=ATLAS_ALGORITHM, headers={"kid": key_id})

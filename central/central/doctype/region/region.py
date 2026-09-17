@@ -1,8 +1,14 @@
 # Copyright (c) 2026, frappe and contributors
 # For license information, please see license.txt
 
-# import frappe
+import frappe
+from frappe import _
 from frappe.model.document import Document
+
+from central.integrations.proxy import ProxyClient
+from central.sso import mint_proxy_token
+
+REGIONAL_SERVICES = ("proxy", "atlas", "cargo")
 
 
 class Region(Document):
@@ -25,3 +31,22 @@ class Region(Document):
 	# end: auto-generated types
 
 	_DOCTYPE_NAME = "Region"
+
+	@staticmethod
+	def get_zone(region: str) -> str:
+		"""The DNS zone of one region: `<region>.<wildcard domain>`."""
+		wildcard_domain = frappe.db.get_single_value("Central Settings", "wildcard_domain")
+		if not wildcard_domain:
+			frappe.throw(_("Set the Wildcard Domain in Central Settings."))
+		return f"{region}.{wildcard_domain.strip().strip('.').lower()}"
+
+	@staticmethod
+	def get_service_url(service: str, region: str) -> str:
+		"""The base URL of a regional service, such as `https://proxy.<region>.<wildcard domain>`."""
+		return f"https://{service}.{Region.get_zone(region)}"
+
+	@staticmethod
+	def get_proxy_client(region: str) -> ProxyClient:
+		"""A proxy client for one region, with a freshly minted token."""
+		region_id = frappe.get_doc("Atlas Instance", region).get_atlas_region_id()
+		return ProxyClient(Region.get_service_url("proxy", region), mint_proxy_token(region_id))
