@@ -2,7 +2,7 @@
 
 ## How to review
 
-Review the change in context of the repository. Every rule below applies to lines this pull request adds or rewrites.
+Review the change in context of the PR. Every rule below applies to lines this pull request adds or rewrites.
 
 - Do not flag pre-existing code that the change only moves, reindents, renames, or happens to sit next to.
 - Do not comment when the code is correct. A rule is a reason to look, not a quota to fill.

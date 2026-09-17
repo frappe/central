@@ -78,7 +78,6 @@ Central is in active development and is not deployed to production.
 - Do not preserve backward compatibility unless the task or specification requires it.
 - Prefer the target design over compatibility layers, migration shims, deprecated aliases, or fallback behavior.
 - Do not design for rolling upgrades, mixed-version deployments, or zero-downtime migration unless required.
-- A DocType change still needs a patch in `central/patches/` when data exists in a local or shared site.
 - Revisit these rules before the first production deployment.
 
 ## Permissions
