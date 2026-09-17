@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog, FormControl, useCall } from 'frappe-ui'
+import { Dialog, Select, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useRegions } from '@/composables/useRegions'
@@ -9,9 +9,6 @@ import { teamParams } from '@/composables/useTeamScope'
 import { errorToast, successToast } from '@/lib/toast'
 import type { ResourceType, TeamRegistry } from '@/types/api'
 
-// Invite a person with a role scoped to all resources or a specific server or
-// site. Owner is excluded — Transfer Ownership assigns that. What a role grants
-// is browsable on the Roles tab, not repeated here.
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [v: boolean]; invited: [] }>()
 
@@ -69,7 +66,6 @@ const resourceOptions = computed(() => {
 	]
 })
 
-// Reset the form each time the dialog opens.
 watch(open, (isOpen) => {
 	if (isOpen) {
 		email.value = ''
@@ -152,7 +148,7 @@ async function submit() {
 	>
 		<template #default>
 			<div class="space-y-4">
-				<FormControl
+				<TextInput
 					v-model="email"
 					type="email"
 					label="Email"
@@ -160,24 +156,22 @@ async function submit() {
 					autocomplete="off"
 				/>
 				<div class="flex items-end gap-2">
-					<FormControl
+					<Select
 						v-model="role"
-						type="select"
 						label="Role"
 						:options="roleOptions"
 						placeholder="Choose a role"
 						class="min-w-0 flex-1"
 					/>
 					<span class="mb-1 shrink-0 text-p-sm text-ink-gray-5">on</span>
-					<FormControl
+					<Select
 						v-model="resource"
-						type="select"
 						label="Resource"
 						:options="resourceOptions"
 						class="min-w-0 flex-1"
 					/>
 				</div>
-				<FormControl
+				<TextInput
 					v-model.number="expiresInDays"
 					type="number"
 					label="Invitation expires in (days)"

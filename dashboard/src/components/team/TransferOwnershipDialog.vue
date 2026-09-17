@@ -1,30 +1,26 @@
 <script setup lang="ts">
-import { Dialog, FormControl } from 'frappe-ui'
+import { Dialog, TextInput } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useSession } from '@/composables/useSession'
 import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTeamSettings } from '@/composables/useTeamSettings'
 import type { TeamMemberRow } from '@/types/api'
 
-// Transfer ownership — the one action an owner can't undo alone: afterwards only
-// the new owner can hand it back. So it asks for the member's name to be typed,
-// the same bar a destructive delete gets.
-const props = defineProps<{ member: TeamMemberRow | null }>()
-const emit = defineEmits<{ 'update:member': [member: TeamMemberRow | null] }>()
+interface Props {
+	member: TeamMemberRow | null
+}
+
+const props = defineProps<Props>()
+const open = defineModel<boolean>('open', { default: false })
 
 const { transferOwnership, saving } = useTeamSettings()
 const { reload } = useTeamMembers()
 const { activeTeamLabel } = useSession()
 
-const open = computed({
-	get: () => !!props.member,
-	set: (v: boolean) => {
-		if (!v) emit('update:member', null)
-	},
-})
-
 const typed = ref('')
-watch(open, () => (typed.value = ''))
+watch(open, (isOpen) => {
+	if (isOpen) typed.value = ''
+})
 
 const expected = computed(() => props.member?.full_name ?? '')
 const confirmed = computed(
@@ -32,7 +28,7 @@ const confirmed = computed(
 		typed.value.trim().toLowerCase() === expected.value.trim().toLowerCase(),
 )
 
-async function confirm(): Promise<void> {
+const confirm = async (): Promise<void> => {
 	if (!props.member || !confirmed.value) return
 	if (await transferOwnership(props.member.user)) {
 		reload()
@@ -41,7 +37,6 @@ async function confirm(): Promise<void> {
 }
 
 const dialogOptions = computed(() => ({
-	title: 'Transfer ownership',
 	actions: [
 		{
 			label: 'Cancel',
@@ -65,7 +60,7 @@ const dialogOptions = computed(() => ({
 <template>
 	<Dialog
 		v-model="open"
-		:title="dialogOptions.title"
+		title="Transfer ownership"
 		size="sm"
 		:actions="dialogOptions.actions"
 	>
@@ -76,7 +71,7 @@ const dialogOptions = computed(() => ({
 				<span class="font-medium text-ink-gray-9">{{ activeTeamLabel }}</span>
 				and you drop to Admin. Only the new owner can hand it back.
 			</p>
-			<FormControl
+			<TextInput
 				v-model="typed"
 				label="Type the member's name to confirm"
 				:placeholder="expected"

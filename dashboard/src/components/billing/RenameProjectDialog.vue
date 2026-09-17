@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Dialog, FormControl, useCall } from 'frappe-ui'
+import { Dialog, TextInput, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { errorToast } from '@/lib/toast'
@@ -26,26 +26,28 @@ const open = computed({
 })
 
 const title = ref('')
-const spendingLimit = ref<number | null>(null)
+const spendingLimit = ref<number>()
 watch(
 	() => props.project,
 	(project) => {
 		if (project) {
 			title.value = project.title
-			spendingLimit.value = project.spending_limit || null
+			spendingLimit.value = project.spending_limit || undefined
 		}
 	},
 )
 
 const titleChanged = computed(
 	() =>
-		title.value.trim().length > 0 && title.value.trim() !== props.project?.title,
+		title.value.trim().length > 0 &&
+		title.value.trim() !== props.project?.title,
 )
 const limitChanged = computed(
 	() => (spendingLimit.value || 0) !== (props.project?.spending_limit || 0),
 )
 const canSubmit = computed(
-	() => title.value.trim().length > 0 && (titleChanged.value || limitChanged.value),
+	() =>
+		title.value.trim().length > 0 && (titleChanged.value || limitChanged.value),
 )
 
 const rename = useCall<unknown, { name: string; title: string }>({
@@ -64,7 +66,10 @@ async function submit(): Promise<void> {
 	if (!props.project || !canSubmit.value) return
 	try {
 		if (titleChanged.value)
-			await rename.submit({ name: props.project.name, title: title.value.trim() })
+			await rename.submit({
+				name: props.project.name,
+				title: title.value.trim(),
+			})
 		if (rename.error) throw rename.error
 		if (limitChanged.value)
 			await setLimit.submit({
@@ -101,8 +106,8 @@ const dialogOptions = computed(() => ({
 	>
 		<template #default>
 			<div class="space-y-4">
-				<FormControl v-model="title" label="Title" @keyup.enter="submit" />
-				<FormControl
+				<TextInput v-model="title" label="Title" @keyup.enter="submit" />
+				<TextInput
 					v-model="spendingLimit"
 					type="number"
 					label="Spending limit"

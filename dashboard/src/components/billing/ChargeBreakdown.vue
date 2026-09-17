@@ -215,7 +215,6 @@ function isEstimated(li: BillingLine): boolean {
 								<Badge
 									v-if="showBasis && isEstimated(li)"
 									theme="amber"
-									variant="subtle"
 									label="Estimated"
 								/>
 								<span
@@ -258,7 +257,6 @@ function isEstimated(li: BillingLine): boolean {
 						<Badge
 							v-if="showBasis && isEstimated(li)"
 							theme="amber"
-							variant="subtle"
 							label="Estimated"
 						/>
 						<span class="text-sm tabular-nums text-ink-gray-8">

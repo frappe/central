@@ -75,7 +75,6 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 						<Badge
 							:label="instance?.status ?? 'Active'"
 							:theme="instance?.status === 'Active' ? 'green' : 'amber'"
-							variant="subtle"
 						/>
 					</div>
 
@@ -134,7 +133,6 @@ const enabledSites = computed(() => instance.value?.enabled_sites ?? [])
 				<Button
 					class="-ml-2 mt-3"
 					variant="ghost"
-					size="sm"
 					label="Manage on your servers"
 					icon-right="lucide-arrow-up-right"
 					@click="router.push('/servers')"

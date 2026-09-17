@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button, FormControl } from 'frappe-ui'
+import { Badge, Button, TextInput } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
@@ -77,9 +77,8 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 				/>
 			</div>
 			<div class="shrink-0 px-4 pb-3">
-				<FormControl
+				<TextInput
 					v-model="query"
-					type="text"
 					placeholder="Search"
 					autocomplete="off"
 					class="[&_input]:w-full"
@@ -87,7 +86,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 					<template #prefix
 						><span class="lucide-search size-4 text-ink-gray-5" /></template
 					>
-				</FormControl>
+				</TextInput>
 			</div>
 
 			<div
@@ -136,7 +135,6 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 									v-if="row.visual.key !== 'active'"
 									:label="row.visual.label"
 									:theme="row.visual.badgeTheme"
-									variant="subtle"
 									size="sm"
 								/>
 							</span>

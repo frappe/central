@@ -1,18 +1,13 @@
-// Whitelisted method paths in one place. `method(path)` builds the v2 method URL
-// the data-fetching composables call. These are the live, capability-gated,
-// team-scoped endpoints under central/api/.
 
 export function method(path: string): string {
 	return `/api/v2/method/${path}`
 }
 
 export const API = {
-	// ── Identity / capability IAM (central.api.identity) ──
 	myTeams: 'central.api.identity.my_teams',
 	myCapabilities: 'central.api.identity.my_capabilities',
 	myInvitations: 'central.api.identity.my_invitations',
 
-	// ── Team roster, roles & invitations (central.api.teams) ──
 	listTeamMembers: 'central.api.teams.list_team_members',
 	listTeamRoles: 'central.api.teams.list_team_roles',
 	listCapabilities: 'central.api.teams.list_capabilities',
@@ -24,6 +19,7 @@ export const API = {
 	changePassword: 'central.api.auth.change_password',
 	transferOwnership: 'central.api.teams.transfer_team_ownership',
 	deleteTeam: 'central.api.teams.delete_team',
+	leaveTeam: 'central.api.teams.leave_team',
 	inviteTeamMember: 'central.api.teams.invite_team_member',
 	setTeamMemberRoles: 'central.api.teams.set_team_member_roles',
 	setTeamMemberStatus: 'central.api.teams.set_team_member_status',
@@ -35,7 +31,6 @@ export const API = {
 	acceptInvitation: 'central.api.teams.accept_invitation',
 	declineInvitation: 'central.api.teams.decline_invitation',
 
-	// ── Servers (central.api.servers) ──
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',
 	refreshAssets: 'central.api.servers.refresh_assets',
@@ -47,9 +42,6 @@ export const API = {
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
 
-	// ── Managed add-on services (central.services.api.dashboard) ──
-	// service:view for the reads, service:manage for the mutations + key reveal.
-	// Per-site enable/disable is a bench (Pilot) surface, not a console method.
 	listOffers: 'central.services.api.dashboard.list_offers',
 	serviceInstance: 'central.services.api.dashboard.get_instance',
 	activateService: 'central.services.api.dashboard.activate_service',
@@ -62,31 +54,24 @@ export const API = {
 	revealBucketKey: 'central.services.api.dashboard.reveal_bucket_key',
 	revokeBucketKey: 'central.services.api.dashboard.revoke_bucket_key',
 
-	// ── Auth / SMB signup (central.api.auth) ──
 	signUp: 'central.api.auth.sign_up',
 	verifySignup: 'central.api.auth.verify_signup',
 	resendSignupCode: 'central.api.auth.resend_signup_code',
 
-	// ── Self-serve sites (central.api.sites) ──
 	checkSubdomain: 'central.api.sites.check_subdomain',
 	siteDomain: 'central.api.sites.site_domain',
 	createSite: 'central.api.sites.create_site',
 	getSite: 'central.api.sites.get_site',
 	terminateSite: 'central.api.sites.terminate_site',
 
-	// ── SSO open-in-bench (central.api.sso) ──
 	getBenchLink: 'central.api.sso.get_bench_link',
 
-	// ── Billing catalog (central.billing.api.dashboard.catalog) ──
 	eligiblePlans: 'central.billing.api.dashboard.catalog.get_eligible_plans',
 	composedConfig: 'central.billing.api.dashboard.catalog.get_composed_config',
 	resizeComposedConfig:
 		'central.billing.api.dashboard.catalog.resize_composed_config',
 	resizeServer: 'central.billing.api.dashboard.catalog.resize_server',
 
-	// ── Billing: reads (central.billing.api.dashboard.*, billing:view) ──
-	// The dashboard package re-exports every submodule fn, so these flat paths are
-	// stable regardless of which module (account/invoices/methods) owns them.
 	teamOverview: 'central.billing.api.dashboard.get_team_overview',
 	forecast: 'central.billing.api.dashboard.get_forecast',
 	trustTier: 'central.billing.api.dashboard.get_trust_tier',
@@ -117,7 +102,6 @@ export const API = {
 	notificationBadge: 'central.notification.api.notification_badge',
 	notificationPreferences: 'central.notification.api.get_user_preferences',
 
-	// ── Billing: mutations (POST, billing:manage) ──
 	payInvoice: 'central.billing.api.dashboard.pay_invoice',
 	payInvoiceCheckout: 'central.billing.api.dashboard.pay_invoice_checkout',
 	confirmInvoiceCheckout:

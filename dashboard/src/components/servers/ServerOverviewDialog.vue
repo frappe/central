@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { Badge, Button, Dialog, useCall } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import ListViewState from '@/components/common/list-view/ListViewState.vue'
-import LoadAverageCard from '@/components/servers/overview/LoadAverageCard.vue'
 import OverviewSkeleton from '@/components/servers/overview/OverviewSkeleton.vue'
 import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.vue'
 import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
@@ -15,6 +14,10 @@ import type { LoadPoint } from '@/lib/loadChart'
 import { formatPlanLabel } from '@/lib/planLabel'
 import { statusVisual } from '@/lib/serverMap'
 import { getErrorMessage } from '@/lib/toast'
+
+const LoadAverageCard = defineAsyncComponent(
+	() => import('@/components/servers/overview/LoadAverageCard.vue'),
+)
 
 type Overview = {
 	server: AssetRow & {
@@ -72,9 +75,11 @@ watch([open, () => props.server?.resource_id], ([isOpen, resourceId]) => {
 })
 
 async function load(resourceId: string): Promise<void> {
-	overview.value = null
+	if (overview.value?.server.resource_id !== resourceId) {
+		overview.value = null
+		hasLoaded.value = false
+	}
 	overviewError.value = ''
-	hasLoaded.value = false
 	try {
 		await overviewCall.submit({
 			team: activeTeam.value!,
@@ -83,6 +88,7 @@ async function load(resourceId: string): Promise<void> {
 		if (overviewCall.error) throw overviewCall.error
 		overview.value = overviewCall.data ?? null
 	} catch (error) {
+		overview.value = null
 		overviewError.value = getErrorMessage(
 			error,
 			"We couldn't load this server. Try again.",
@@ -173,7 +179,6 @@ const planLabel = computed(() =>
 								v-if="visual"
 								:label="visual.label"
 								:theme="visual.badgeTheme"
-								variant="subtle"
 								size="sm"
 							/>
 						</div>
@@ -232,7 +237,6 @@ const planLabel = computed(() =>
 				<Button label="Close" @click="close" />
 				<Button
 					v-if="props.server && canOpen"
-					variant="subtle"
 					label="Open server"
 					icon-right="lucide-arrow-up-right"
 					@click="openServer"

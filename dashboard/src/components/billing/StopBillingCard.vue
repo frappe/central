@@ -24,7 +24,6 @@ const { canManageBilling } = useCapabilities()
 		</div>
 		<Button
 			v-if="canManageBilling"
-			variant="subtle"
 			theme="red"
 			label="Suspend all"
 			:disabled="true"

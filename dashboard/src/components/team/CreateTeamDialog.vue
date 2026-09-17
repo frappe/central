@@ -3,9 +3,6 @@ import { Avatar, Dialog, TextInput } from 'frappe-ui'
 import { computed, watch } from 'vue'
 import { useCreateTeam } from '@/composables/useCreateTeam'
 
-// Create a new team from the switcher. The caller becomes its Owner; on success
-// the app switches to the new team (handled in useTeamSettings). Settings has
-// its own inline version of this — both share useCreateTeam.
 const open = defineModel<boolean>('open', { default: false })
 
 const { teamName, name, duplicate, canSubmit, saving, submit, reset } =
@@ -32,10 +29,6 @@ const actions = computed(() => [
 
 <template>
 	<Dialog v-model="open" title="Create a team" size="sm" :actions="actions">
-		<!-- Label and helper span the row so everything shares one left edge; the
-		     avatar matches the input's height, so the two read as one control. It
-		     previews the mark the team will wear in the switcher — the name is a
-		     choice you can see, not just a string you type. -->
 		<div>
 			<label for="team-name" class="block text-xs text-ink-gray-5">
 				Team name

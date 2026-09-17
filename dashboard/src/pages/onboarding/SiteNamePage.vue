@@ -104,7 +104,6 @@ async function createSite() {
 				v-model="subdomain"
 				label="Site address"
 				size="md"
-				variant="subtle"
 				placeholder="yourcompany"
 				autocomplete="off"
 				autocapitalize="off"

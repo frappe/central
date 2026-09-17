@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, useCall } from 'frappe-ui'
+import { Button, Dialog, Select, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
@@ -12,20 +12,15 @@ import type { Project, SubscriptionRow } from '@/types/billing'
 // here you pick servers for one project). Reuses the same tag/untag endpoint
 // and the team's already-loaded subscriptions — no new reads. Controlled by the
 // card/panel via v-model:project, like RenameProjectDialog.
-const props = defineProps<{ project: Project | null }>()
-const emit = defineEmits<{
-	'update:project': [project: Project | null]
-	changed: []
-}>()
+interface Props {
+	project: Project | null
+}
+
+const props = defineProps<Props>()
+const open = defineModel<boolean>('open', { default: false })
+const emit = defineEmits<{ changed: [] }>()
 
 const { subscriptions, reloadSubscriptionGrouping } = useBillingOverview()
-
-const open = computed({
-	get: () => !!props.project,
-	set: (v: boolean) => {
-		if (!v) emit('update:project', null)
-	},
-})
 
 // Servers only — the same set PayingForCard's row action can tag (a team-level
 // metered service has no "Move to project" entry point yet either).
@@ -50,7 +45,10 @@ function serverTitle(sub: SubscriptionRow): string {
 	return sub.server || sub.plan_title || sub.name
 }
 
-const assign = useCall<unknown, { subscription: string; project: string | null }>({
+const assign = useCall<
+	unknown,
+	{ subscription: string; project: string | null }
+>({
 	url: method(API.setSubscriptionProject),
 	method: 'POST',
 	immediate: false,
@@ -63,7 +61,10 @@ async function addMember(): Promise<void> {
 	if (!toAdd.value || !props.project) return
 	busy.value = toAdd.value
 	try {
-		await assign.submit({ subscription: toAdd.value, project: props.project.name })
+		await assign.submit({
+			subscription: toAdd.value,
+			project: props.project.name,
+		})
 		if (assign.error) throw assign.error
 		toAdd.value = NONE
 		reloadSubscriptionGrouping()
@@ -92,7 +93,7 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 </script>
 
 <template>
-	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''" size="lg">
+	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''">
 		<template #default>
 			<div class="space-y-4">
 				<div v-if="members.length" class="divide-y divide-outline-gray-1">
@@ -123,9 +124,8 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 				</p>
 
 				<div class="flex items-end gap-2 border-t border-outline-gray-2 pt-4">
-					<FormControl
+					<Select
 						v-if="candidates.length"
-						type="select"
 						v-model="toAdd"
 						:options="[{ label: 'Choose a server…', value: NONE }, ...candidates]"
 						label="Add a server"
@@ -136,7 +136,6 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 					</p>
 					<Button
 						v-if="candidates.length"
-						variant="subtle"
 						label="Add"
 						:disabled="!toAdd"
 						@click="addMember"

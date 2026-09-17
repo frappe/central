@@ -13,6 +13,7 @@ import { useRoute } from 'vue-router'
 import Sidebar from '@/components/navigation/Sidebar.vue'
 import NotificationsPanel from '@/components/notifications/NotificationsPanel.vue'
 import SettingsModal from '@/components/settings/SettingsModal.vue'
+import SwitchTeamDialog from '@/components/team/SwitchTeamDialog.vue'
 import { useBreadcrumbs } from '@/composables/useBreadcrumbs'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { useNotificationsRealtime } from '@/composables/useNotifications'
@@ -21,10 +22,9 @@ import {
 	searchOpen,
 	useSearchShortcut,
 } from '@/composables/useSearch'
+import { useSettingsShortcut } from '@/composables/useSettings'
+import { teamSwitcherOpen } from '@/composables/useTeamSwitcher'
 
-// The search palette builds an index off several team-scoped feeds (servers,
-// members, invoices…). Mount it lazily on first open so those fetches never fire
-// for a user who never searches; once mounted it stays, so its close animation runs.
 const SearchDialog = defineAsyncComponent(
 	() => import('@/components/search/SearchDialog.vue'),
 )
@@ -32,8 +32,8 @@ const searchMounted = ref(false)
 
 useNotificationsRealtime()
 useSearchShortcut()
+useSettingsShortcut()
 
-// Keep it mounted once opened so re-opening is instant and the exit transition plays.
 watch(searchOpen, (isOpen) => {
 	if (isOpen) searchMounted.value = true
 })
@@ -51,8 +51,6 @@ watch(
 	},
 )
 
-// The drawer is mobile-only transient state. Leaving mobile must close it, or it
-// survives the breakpoint as an orphaned sheet teleported into <body>.
 watch(isMobile, (mobile) => {
 	if (!mobile) mobileNavDrawer.value = false
 })
@@ -65,7 +63,7 @@ const breadcrumbs = computed(
 <template>
 	<MobileShell v-if="isMobile">
 		<header
-			class="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-4"
+			class="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 bg-surface-base px-3"
 		>
 			<button class="flex items-center gap-1" @click="mobileNavDrawer = true">
 				<Breadcrumbs :items="breadcrumbs" />
@@ -103,7 +101,7 @@ const breadcrumbs = computed(
 		</template>
 
 		<header
-			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4 sm:px-6"
+			class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-outline-gray-1 px-4"
 		>
 			<Breadcrumbs :items="breadcrumbs" />
 			<div id="header-actions" class="flex shrink-0 items-center gap-2" />
@@ -114,17 +112,12 @@ const breadcrumbs = computed(
 		</div>
 	</DesktopShell>
 
-	<!-- The nav drawer's sheet teleports to <body>, so it lives beside the shells
-	     rather than inside MobileShell, and stays mounted across the breakpoint.
-	     Closing it through `open` lets reka animate out and remove the teleported
-	     node; unmounting it mid-open with the shell would strand that node. -->
-	<BottomSheet v-model:open="mobileNavDrawer">
-		<Sidebar class="p-4" />
+	<BottomSheet v-model:open="mobileNavDrawer" title="Go to">
+		<Sidebar />
 	</BottomSheet>
 
 	<ToastProvider />
-	<!-- Desktop only: on mobile the same tabs are pages (/settings/:tab), so the
-	     dialog never mounts there. -->
 	<SettingsModal v-if="!isMobile" />
 	<SearchDialog v-if="searchMounted" v-model:open="searchOpen" />
+	<SwitchTeamDialog v-model:open="teamSwitcherOpen" />
 </template>

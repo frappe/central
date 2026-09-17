@@ -201,7 +201,7 @@ function exhausted(row: ServiceRow): boolean {
 			description="Subscribe to a usage-billed service like AI tokens, email, or PDF rendering."
 		>
 			<template v-if="canManageBilling" #action>
-				<Button variant="subtle" label="Subscribe" @click="goToAddons" />
+				<Button label="Subscribe" @click="goToAddons" />
 			</template>
 		</EmptyState>
 	</BillingCard>

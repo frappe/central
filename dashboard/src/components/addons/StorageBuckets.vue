@@ -5,8 +5,8 @@ import {
 	Dialog,
 	Dropdown,
 	type DropdownOptions,
-	FormControl,
 	Spinner,
+	TextInput,
 } from 'frappe-ui'
 import {
 	ListRowItem,
@@ -181,24 +181,22 @@ const copy = async (value: string, label: string): Promise<void> => {
 
 			<Button
 				v-if="canManage"
-				variant="subtle"
 				icon-left="lucide-plus"
 				label="Create bucket"
 				@click="openCreate"
 			/>
 		</div>
 
-		<FormControl
+		<TextInput
 			v-if="buckets.length > 5"
 			v-model="search"
-			type="text"
 			placeholder="Search buckets"
 			autocomplete="off"
 		>
 			<template #prefix>
 				<span class="lucide-search size-4 text-ink-gray-5" />
 			</template>
-		</FormControl>
+		</TextInput>
 
 		<div
 			v-if="bucketsLoading && !buckets.length"
@@ -215,7 +213,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 		>
 			<template v-if="canManage" #action>
 				<Button
-					variant="subtle"
 					icon-left="lucide-plus"
 					label="Create bucket"
 					@click="openCreate"
@@ -264,7 +261,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 				<Badge
 					v-else-if="column.key === 'status'"
 					:theme="row.status === 'Active' ? 'green' : 'gray'"
-					variant="subtle"
 					:label="row.status"
 				/>
 
@@ -277,7 +273,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 						<template #trigger>
 							<Button
 								variant="ghost"
-								size="sm"
 								icon="lucide-ellipsis-vertical"
 								label="Bucket actions"
 								tooltip="Bucket actions"
@@ -312,9 +307,8 @@ const copy = async (value: string, label: string): Promise<void> => {
 			}
 		"
 	>
-		<FormControl
+		<TextInput
 			v-model="newName"
-			type="text"
 			label="Name"
 			placeholder="e.g. acme-backups"
 			description="3-63 characters: lowercase letters, digits, dots and hyphens. Names are shared across all customers, so a taken one is refused."
@@ -365,8 +359,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 					S3-compatible client. The secret is shown here and nowhere else.
 				</p>
 
-				<FormControl
-					type="text"
+				<TextInput
 					label="Endpoint URL"
 					:model-value="details.endpoint_url"
 					readonly
@@ -374,35 +367,27 @@ const copy = async (value: string, label: string): Promise<void> => {
 					<template #suffix>
 						<Button
 							variant="ghost"
-							size="sm"
 							icon="lucide-copy"
 							label="Copy endpoint URL"
 							tooltip="Copy"
 							@click="copy(details.endpoint_url, 'Endpoint URL')"
 						/>
 					</template>
-				</FormControl>
+				</TextInput>
 
-				<FormControl
-					type="text"
-					label="Bucket"
-					:model-value="details.bucket"
-					readonly
-				>
+				<TextInput label="Bucket" :model-value="details.bucket" readonly>
 					<template #suffix>
 						<Button
 							variant="ghost"
-							size="sm"
 							icon="lucide-copy"
 							label="Copy bucket name"
 							tooltip="Copy"
 							@click="copy(details.bucket, 'Bucket name')"
 						/>
 					</template>
-				</FormControl>
+				</TextInput>
 
-				<FormControl
-					type="text"
+				<TextInput
 					label="Access key"
 					:model-value="details.access_key_id"
 					readonly
@@ -410,17 +395,15 @@ const copy = async (value: string, label: string): Promise<void> => {
 					<template #suffix>
 						<Button
 							variant="ghost"
-							size="sm"
 							icon="lucide-copy"
 							label="Copy access key"
 							tooltip="Copy"
 							@click="copy(details.access_key_id, 'Access key')"
 						/>
 					</template>
-				</FormControl>
+				</TextInput>
 
-				<FormControl
-					type="text"
+				<TextInput
 					label="Secret key"
 					:model-value="maskedSecret"
 					readonly
@@ -430,7 +413,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 						<div class="flex items-center">
 							<Button
 								variant="ghost"
-								size="sm"
 								:icon="secretRevealed ? 'lucide-eye-off' : 'lucide-eye'"
 								:label="secretRevealed ? 'Hide secret' : 'Reveal secret'"
 								:tooltip="secretRevealed ? 'Hide' : 'Reveal'"
@@ -438,7 +420,6 @@ const copy = async (value: string, label: string): Promise<void> => {
 							/>
 							<Button
 								variant="ghost"
-								size="sm"
 								icon="lucide-copy"
 								label="Copy secret key"
 								tooltip="Copy"
@@ -446,7 +427,7 @@ const copy = async (value: string, label: string): Promise<void> => {
 							/>
 						</div>
 					</template>
-				</FormControl>
+				</TextInput>
 			</div>
 		</template>
 	</Dialog>

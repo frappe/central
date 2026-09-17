@@ -143,6 +143,22 @@ class Team(Document):
 			self.remove(row)
 		self.save()
 
+	# Internal; the HTTP surface is central.api.teams.leave_team.
+	def leave(self) -> None:
+		"""Drop your own membership. Leaving is yours to do, so it needs no
+		capability — but the owner can't: transfer ownership or delete the team."""
+		user = frappe.session.user
+		if user == self.owner_user:
+			frappe.throw(_("Transfer ownership before leaving this team."))
+		rows = self._get_member_rows(user)
+		if not rows:
+			frappe.throw(_("You are not a member of this team."))
+		for row in rows:
+			self.remove(row)
+		# A plain member holds no write permission on the Team doc; _validate_changes
+		# is the real gate and allows this diff only because it is a self-removal.
+		self.save(ignore_permissions=True)
+
 	# Internal; the HTTP surface is central.api.teams.transfer_team_ownership.
 	def transfer_ownership(self, user: str) -> None:
 		"""Owner is exclusive: promoting `user` drops every role grant they held
@@ -266,7 +282,7 @@ class Team(Document):
 
 		if self._metadata_changed(previous):
 			self._require_capability("team:edit")
-		if self._members_changed(previous):
+		if self._members_changed(previous) and not self._is_self_removal(previous):
 			self._require_capability("team:manage_members")
 			self._validate_sensitive_member_changes(previous)
 
@@ -277,6 +293,19 @@ class Team(Document):
 		return self.owner_user != previous.owner_user or self._member_state(self) != self._member_state(
 			previous
 		)
+
+	def _is_self_removal(self, previous) -> bool:
+		"""The entire member diff is the caller dropping their own rows: leaving.
+		Anything else rides the normal team:manage_members gate."""
+		user = frappe.session.user
+		if self.owner_user != previous.owner_user or user == previous.owner_user:
+			return False
+		before = self._grants_by_user(previous)
+		after = self._grants_by_user(self)
+		if user not in before or user in after:
+			return False
+		del before[user]
+		return before == after
 
 	def _validate_sensitive_member_changes(self, previous) -> None:
 		before = self._grants_by_user(previous)

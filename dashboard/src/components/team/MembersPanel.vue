@@ -31,9 +31,16 @@ import type {
 } from '@/types/api'
 
 const inviteDialog = ref(false)
-const manageAccessFor = ref<TeamMemberRow | null>(null)
-const removeTarget = ref<TeamMemberRow | null>(null)
-const transferTarget = ref<TeamMemberRow | null>(null)
+const selectedMember = ref<TeamMemberRow | null>(null)
+const activeDialog = ref<'manage' | 'remove' | 'transfer' | null>(null)
+
+const openDialog = (
+	dialog: 'manage' | 'remove' | 'transfer',
+	member: TeamMemberRow,
+): void => {
+	selectedMember.value = member
+	activeDialog.value = dialog
+}
 
 const { members, loading, error, busy, reload } = useTeamMembers()
 const {
@@ -48,8 +55,6 @@ const { roles, roleLabel } = useTeamRoles()
 const { canManageMembers } = useCapabilities()
 const { isOwner } = useTeamSettings()
 
-// Grants name concrete resources, so the scope labels need the registry to
-// turn ids into titles. Fetched once the roster is worth labelling.
 const registryCall = useCall<TeamRegistry, { team: string }>({
 	url: method(API.registry),
 	params: teamParams,
@@ -66,9 +71,6 @@ watch(
 
 const registry = computed(() => registryCall.data)
 
-// One roster: people who are in the team, plus the ones on their way. A pending
-// invite is the same shape as a member row so the list sorts, searches and reads
-// as a single thing — it just can't be acted on the same way.
 interface RosterRow {
 	key: string
 	name: string
@@ -91,13 +93,10 @@ const roster = computed<RosterRow[]>(() => [
 		.filter((invite) => invite.status === 'Pending')
 		.map((invite) => ({
 			key: invite.name,
-			// No name until they accept, so the address is the identity.
 			name: invite.email,
 			subtitle: invite.expires_on
 				? `Expires ${formatDate(invite.expires_on)}`
 				: 'Invite sent',
-			// Invitations are resource-scoped too, so the grant carries the
-			// invite's own scope into the Access column.
 			roles: [
 				{
 					role: invite.role,
@@ -119,8 +118,6 @@ const query = ref(
 
 const getRowKey = (row: RosterRow): string => row.key
 
-// Owner first, then Admins, then everyone else — and people who haven't joined
-// yet after all of them.
 const roleNames = (row: RosterRow): string =>
 	row.roles.map((grant) => roleLabel(grant.role)).join(', ')
 
@@ -135,8 +132,6 @@ function memberRank(row: RosterRow): number {
 	return ranks.length ? Math.min(...ranks) : 3
 }
 
-// Columns declare id/header/sorting only — the Member/Access/Actions markup is
-// filled in by the matching slots in the template below.
 const columns = computed<ListViewColumn<RosterRow>[]>(() => [
 	{
 		id: 'member',
@@ -147,9 +142,6 @@ const columns = computed<ListViewColumn<RosterRow>[]>(() => [
 	{
 		id: 'access',
 		header: 'Access',
-		// The accessor is what search and the role filter match on, so it stays
-		// the plain "Role · scope" text; ranking lives in sortingFn instead, or
-		// "1" would find every Admin.
 		accessorFn: (row) =>
 			row.roles
 				.map((grant) =>
@@ -170,9 +162,6 @@ const columns = computed<ListViewColumn<RosterRow>[]>(() => [
 	},
 ])
 
-// Filter the roster by role. Options come from the team's own role list, and
-// the values are the same display labels the access accessor renders, so the
-// (substring) column filter matches multi-role and scoped rows too.
 const roleFilters = computed<ListViewFilter[]>(() => [
 	{
 		key: 'access',
@@ -205,7 +194,6 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 		}"
 		@retry="reload"
 	>
-		<!-- The page's view switcher rides on the controls row, ahead of search. -->
 		<template #controls-start>
 			<slot name="controls-start" />
 		</template>
@@ -222,11 +210,9 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 
 		<template #member="{ row }">
 			<div class="flex min-w-0 items-center gap-3">
-				<!-- An invite has no face yet, so its avatar stays a plain tint. -->
 				<Avatar
 					:image="row.member?.user_image ?? undefined"
 					:label="row.name"
-					size="md"
 					:class="row.invite ? 'opacity-60' : ''"
 				/>
 				<div class="min-w-0">
@@ -283,16 +269,27 @@ const roleFilters = computed<ListViewFilter[]>(() => [
 				:can-manage="canManageMembers"
 				:is-owner="isOwner"
 				:busy="busy === row.member.user"
-				@manage-access="manageAccessFor = $event"
-				@transfer-requested="transferTarget = $event"
-				@remove-requested="removeTarget = $event"
+				@manage-access="openDialog('manage', $event)"
+				@transfer-requested="openDialog('transfer', $event)"
+				@remove-requested="openDialog('remove', $event)"
 			/>
 		</template>
 	</ListView>
 
-	<!-- A fresh invite has to land in the roster right away — that's the point. -->
 	<InviteMemberDialog v-model:open="inviteDialog" @invited="reloadInvites" />
-	<ManageRolesDialog v-model:member="manageAccessFor" />
-	<RemoveMemberDialog v-model:member="removeTarget" />
-	<TransferOwnershipDialog v-model:member="transferTarget" />
+	<ManageRolesDialog
+		:open="activeDialog === 'manage'"
+		:member="selectedMember"
+		@update:open="activeDialog = null"
+	/>
+	<RemoveMemberDialog
+		:open="activeDialog === 'remove'"
+		:member="selectedMember"
+		@update:open="activeDialog = null"
+	/>
+	<TransferOwnershipDialog
+		:open="activeDialog === 'transfer'"
+		:member="selectedMember"
+		@update:open="activeDialog = null"
+	/>
 </template>

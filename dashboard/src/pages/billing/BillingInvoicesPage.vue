@@ -64,32 +64,20 @@ async function selectRow(inv: InvoiceSummary): Promise<void> {
 	await detail.submit({ name: inv.name })
 }
 
-// Open the latest invoice expanded on first load — list_invoices is ordered newest
-// first, so that's row 0. A `?invoice=` deep link (from global search) selects
-// that row instead. Only auto-select once: after the user closes the panel (or a
-// refetch arrives), we leave their choice alone.
-let autoSelected = false
 watch(
 	() => invoices.value,
 	(rows) => {
-		if (autoSelected || selected.value || !rows.length) return
-		autoSelected = true
-		const wanted = route.query.invoice
-		const row = (wanted && rows.find((r) => r.name === wanted)) || rows[0]
-		selectRow(row)
+		const row = rows.find((r) => r.name === route.query.invoice)
+		if (row && !selected.value) selectRow(row)
 	},
 	{ immediate: true },
 )
 
-// A team switch invalidates the open receipt — the list refetches on its own
-// (reactive teamParams), but the panel would keep showing the old team's
-// invoice. Close it and let the new team's latest auto-select.
 const { activeTeam } = useSession()
 watch(activeTeam, (team, previous) => {
 	if (!previous || team === previous) return
 	selected.value = null
 	shown.value = null
-	autoSelected = false
 })
 
 // Open OR Overdue is still collectable — an overdue invoice is the one the customer
@@ -173,18 +161,17 @@ const eventDetail = (ev: {
 </script>
 
 <template>
-	<div class="flex h-full min-h-0">
+	<div class="relative flex h-full min-h-0">
 		<!-- LIST — capped and centered so rows stay scannable when the panel is
          closed; the cap matches the Limit tiers page. -->
 		<div class="min-w-0 flex-1 overflow-y-auto">
-			<div class="mx-auto w-full max-w-3xl px-4 py-5 sm:px-6">
-				<InvoiceListView
-					:invoices="invoices"
-					:loading="invoicesLoading && !invoices.length"
-					:active-name="selected?.name"
-					@row-click="selectRow"
-				/>
-			</div>
+			<InvoiceListView
+				:invoices="invoices"
+				:loading="invoicesLoading && !invoices.length"
+				:active-name="selected?.name"
+				class="mx-auto w-full max-w-3xl p-3 md:p-4"
+				@row-click="selectRow"
+			/>
 		</div>
 
 		<!-- Docked receipt panel — the shared SidePanel, slides in beside the
@@ -201,11 +188,7 @@ const eventDetail = (ev: {
 					<span class="truncate text-base-semibold text-ink-gray-9">
 						{{ shown.name }}
 					</span>
-					<Badge
-						:theme="invoiceTheme(shown.status)"
-						variant="subtle"
-						:label="shown.status"
-					/>
+					<Badge :theme="invoiceTheme(shown.status)" :label="shown.status" />
 				</div>
 			</template>
 			<template #subtitle>
@@ -235,9 +218,11 @@ const eventDetail = (ev: {
 				/>
 			</template>
 
-			<div v-if="detail.loading && !detail.data" class="space-y-3 p-4">
-				<LoadingText :lines="6" />
-			</div>
+			<LoadingText
+				v-if="detail.loading && !detail.data"
+				:lines="6"
+				class="p-4"
+			/>
 
 			<!-- Body: the receipt list scrolls on its own; the cost breakdown and
            Activity sit below it, so the totals never shift as the list
@@ -256,12 +241,11 @@ const eventDetail = (ev: {
 				<!-- No inner scroll: the panel already scrolls, and a second scroller
 					     here clipped the receipt mid-row once a team had more than one
 					     machine on the invoice. -->
-				<div class="shrink-0 px-4 pt-4">
-					<ChargeBreakdown
-						:lines="detail.data.items"
-						:currency="detail.data.currency"
-					/>
-				</div>
+				<ChargeBreakdown
+					:lines="detail.data.items"
+					:currency="detail.data.currency"
+					class="shrink-0 px-4 pt-4"
+				/>
 
 				<!-- Cost breakdown + Activity -->
 				<div class="mt-4 border-t border-outline-gray-2 px-4">

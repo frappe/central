@@ -2,13 +2,12 @@
 import {
 	Avatar,
 	Dropdown,
-	formatShortcutLabel,
 	KeyboardShortcut,
 	Sidebar,
 	SidebarHeader,
 	SidebarItem,
 	SidebarLabel,
-	useShortcut,
+	useKeyboardShortcut,
 } from 'frappe-ui'
 import { onScopeDispose, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -43,19 +42,18 @@ watch(
 	},
 )
 
-useShortcut({
-	key: 'b',
-	ctrl: true,
+useKeyboardShortcut({
+	combo: 'Mod+B',
 	description: 'Toggle sidebar',
 	group: 'General',
 	allowInInput: true,
 	allowInDialog: true,
-	condition: () => !isMobile.value,
+	enabled: () => !isMobile.value,
 	handler: () => {
 		sidebarCollapsed.value = !sidebarCollapsed.value
 	},
 })
-const sidebarShortcut = formatShortcutLabel({ key: 'b', ctrl: true })
+const sidebarShortcut = isMac() ? '⌘B' : 'Ctrl+B'
 // KeyboardShortcut's showPlus is not platform-aware. Mac reads as ⌘K;
 // Windows/Linux still need the plus so Ctrl+K doesn't run together.
 const showShortcutPlus = !isMac()
@@ -90,7 +88,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 		v-model:collapsed="sidebarCollapsed"
 		:disable-collapse="isMobile"
 		class="border-r"
-		:class="isMobile ? '!w-full !border-r-0 bg-transparent' : ''"
+		:class="isMobile ? '!w-full !border-r-0 bg-transparent pb-8' : ''"
 	>
 		<SidebarHeader
 			v-if="!isMobile"
@@ -134,10 +132,10 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 							:to="item.to"
 							:onclick="item.onClick"
 							class="mb-0.5"
-							:class="item.class"
+							:class="[item.class, isMobile ? '!h-10' : '']"
 							:active="!!item.to && item.to === route.path"
 						>
-							<span class="truncate text-sm">{{ item.label }}</span>
+							<span class="truncate md:text-sm">{{ item.label }}</span>
 							<template v-if="item.shortcut" #suffix>
 								<KeyboardShortcut
 									:combo="item.shortcut"
@@ -156,7 +154,6 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 			<Dropdown
 				:options="footerMenuItems"
 				side="top"
-				align="start"
 				match-trigger-width
 			>
 				<template #default="{ open }">
@@ -180,7 +177,6 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 						<Avatar
 							:image="profile?.user_image ?? undefined"
 							:label="profile?.full_name || currentUser || ''"
-							size="md"
 						/>
 						<!-- Name first, email beneath — the email alone reads like a
 						     login prompt, not a person. -->

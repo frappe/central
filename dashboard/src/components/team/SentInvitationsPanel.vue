@@ -89,31 +89,30 @@ function getInvitationKey(invitation: InvitationRow): string {
 </script>
 
 <template>
-	<div class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-		<ListView
-			v-model:query="query"
-			:rows="invitations"
-			:columns="columns"
-			:row-key="getInvitationKey"
-			:loading="loading"
-			:error="error"
-			:filters="filters"
-			searchable
-			search-placeholder="Search invitations..."
-			item-label="invitation"
-			:empty-state="{ title: 'No invitations', description: 'Invitations you send to this team will appear here.' }"
-			@retry="reload"
-		>
-			<template v-if="canManageMembers" #toolbar>
-				<Button
-					variant="solid"
-					label="Invite"
-					icon-left="lucide-user-plus"
-					@click="inviteOpen = true"
-				/>
-			</template>
-		</ListView>
-	</div>
+	<ListView
+	class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6"
+		v-model:query="query"
+		:rows="invitations"
+		:columns="columns"
+		:row-key="getInvitationKey"
+		:loading="loading"
+		:error="error"
+		:filters="filters"
+		searchable
+		search-placeholder="Search invitations..."
+		item-label="invitation"
+		:empty-state="{ title: 'No invitations', description: 'Invitations you send to this team will appear here.' }"
+		@retry="reload"
+	>
+		<template v-if="canManageMembers" #toolbar>
+			<Button
+				variant="solid"
+				label="Invite"
+				icon-left="lucide-user-plus"
+				@click="inviteOpen = true"
+			/>
+		</template>
+	</ListView>
 
 	<InviteMemberDialog v-model:open="inviteOpen" @invited="reload" />
 </template>

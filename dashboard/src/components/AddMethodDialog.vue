@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog, FormControl, LoadingText, useCall } from 'frappe-ui'
+import { Button, Dialog, LoadingText, TextInput, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import PaymentNetworkMark, {
@@ -60,6 +60,7 @@ async function launchGateway(
 	const res = await run(methodType, contact, instrument, props.afterDecline)
 	if (!res) {
 		open.value = true
+		await nextTick()
 		phone.value = keepPhone
 		selected.value =
 			tiles.value.find((t) => t.instrument === keepInstrument) ?? null
@@ -200,16 +201,14 @@ function cancelStripe(): void {
 }
 
 watch(open, (isOpen) => {
-	if (isOpen) {
-		options.reload()
-		profile.reload()
-	} else {
-		destroyStripe()
-		stripeMode.value = false
-		stripeLoading.value = false
-		phone.value = ''
-		selected.value = null
-	}
+	if (!isOpen) return
+	options.reload()
+	profile.reload()
+	destroyStripe()
+	stripeMode.value = false
+	stripeLoading.value = false
+	phone.value = ''
+	selected.value = null
 })
 </script>
 
@@ -219,11 +218,10 @@ watch(open, (isOpen) => {
 		title="Add payment method"
 		:dismissible="!stripeSubmitting"
 		:show-close-button="!stripeSubmitting"
+		@after-leave="destroyStripe"
 	>
 		<template #default>
-			<div v-if="options.loading && !options.data" class="space-y-2">
-				<LoadingText :lines="3" />
-			</div>
+			<LoadingText v-if="options.loading && !options.data" :lines="3" />
 
 			<!-- Stripe card entry: Element renders inside the iframe Stripe hosts. -->
 			<div v-else-if="stripeMode" class="space-y-3">
@@ -308,9 +306,8 @@ watch(open, (isOpen) => {
 					v-if="askPhone"
 					class="rounded-6 border border-outline-gray-2 px-4 py-3"
 				>
-					<FormControl
+					<TextInput
 						v-model="phone"
-						type="text"
 						label="Phone number"
 						placeholder="Mobile number"
 						description="A recurring card on this rail needs a contact number. Saved to your billing profile."
@@ -330,7 +327,7 @@ watch(open, (isOpen) => {
 
 			<div v-else class="space-y-3">
 				<p class="text-p-sm text-ink-gray-5">Couldn't load payment options.</p>
-				<Button variant="subtle" label="Retry" @click="options.reload()" />
+				<Button label="Retry" @click="options.reload()" />
 			</div>
 		</template>
 
@@ -353,7 +350,6 @@ watch(open, (isOpen) => {
 			<div v-else class="flex items-center gap-2">
 				<Button
 					v-if="options.data?.note"
-					variant="subtle"
 					label="Add credit"
 					@click="goToTopup"
 				/>

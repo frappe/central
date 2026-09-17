@@ -5,8 +5,8 @@ import {
 	Dialog,
 	Dropdown,
 	type DropdownOptions,
-	FormControl,
 	Select,
+	TextInput,
 } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
@@ -165,8 +165,6 @@ const confirmRevoke = async (): Promise<void> => {
 
 				<Button
 					v-if="canManage"
-					variant="subtle"
-					size="sm"
 					label="Generate key"
 					icon-left="lucide-plus"
 					class="shrink-0"
@@ -205,7 +203,6 @@ const confirmRevoke = async (): Promise<void> => {
 							>
 							<Badge
 								:theme="key.status === 'Active' ? 'green' : 'gray'"
-								variant="subtle"
 								size="sm"
 								:label="key.status"
 							/>
@@ -250,8 +247,6 @@ const confirmRevoke = async (): Promise<void> => {
 			>
 				<template v-if="canManage" #action>
 					<Button
-						variant="subtle"
-						size="sm"
 						label="Generate key"
 						icon-left="lucide-plus"
 						@click="openGenerate"
@@ -275,7 +270,7 @@ const confirmRevoke = async (): Promise<void> => {
 		]"
 	>
 		<template #default>
-			<FormControl
+			<TextInput
 				v-model="newLabel"
 				label="Label"
 				placeholder="e.g. n8n prod"
@@ -355,7 +350,6 @@ const confirmRevoke = async (): Promise<void> => {
 						v-if="models.length"
 						v-model="selectedModel"
 						:options="modelOptions"
-						size="sm"
 						variant="outline"
 					/>
 				</div>
@@ -369,7 +363,6 @@ const confirmRevoke = async (): Promise<void> => {
 
 					<Button
 						icon="lucide-copy"
-						size="sm"
 						class="sticky top-0 right-0 ml-auto"
 						label="Copy command"
 						@click="copyCurl"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Avatar, Button, FormControl, useCall } from 'frappe-ui'
+import { Avatar, Button, TextInput, useCall } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useMyProfile } from '@/composables/useMyProfile'
@@ -101,29 +101,38 @@ function resetPassword(): void {
 </script>
 
 <template>
-	<div class="space-y-6">
-		<!-- Photo row, no label — the avatar speaks for itself. The control is
-		     disabled until the upload endpoint lands. -->
-		<div class="space-y-1.5">
-			<div class="flex items-center gap-3">
+	<div class="mt-6 space-y-6">
+		<div>
+			<p class="block text-base text-ink-gray-5">Photo</p>
+			<div class="mt-1.5 flex items-center gap-3">
 				<Avatar
 					:image="profile?.user_image ?? undefined"
 					:label="name.trim() || profile?.full_name || profile?.user || ''"
-					size="2xl"
-					class="shrink-0"
+					size="3xl"
+					class="size-12 shrink-0"
 				/>
-				<Button
-					:label="profile?.user_image ? 'Change photo' : 'Upload photo'"
-					disabled
-				/>
+				<div class="flex flex-col items-start gap-1">
+					<Button
+						size="xs"
+						icon-left="lucide-upload"
+						:label="profile?.user_image ? 'Change' : 'Upload'"
+						disabled
+					/>
+					<Button
+						v-if="profile?.user_image"
+						size="xs"
+						variant="ghost"
+						theme="red"
+						icon-left="lucide-trash-2"
+						label="Delete"
+						disabled
+					/>
+				</div>
 			</div>
-			<p class="text-p-sm text-ink-gray-5">
-				Photo uploads land in a follow-up.
-			</p>
 		</div>
 
 		<div class="flex items-end gap-2">
-			<FormControl
+			<TextInput
 				v-model="name"
 				label="Full name"
 				class="flex-1"
@@ -141,7 +150,7 @@ function resetPassword(): void {
 
 		<!-- Identity, not a setting — disabled (not readonly) so it can't be
 		     focused or clicked into at all. -->
-		<FormControl :model-value="profile?.user ?? ''" label="Email" disabled />
+		<TextInput :model-value="profile?.user ?? ''" label="Email" disabled />
 
 		<!-- One button until you mean it; the fields appear in place. The button
 		     and field labels name themselves — no section label. -->
@@ -152,14 +161,14 @@ function resetPassword(): void {
 				@click="editingPassword = true"
 			/>
 			<div v-else class="space-y-3">
-				<FormControl
+				<TextInput
 					ref="currentPasswordRef"
 					v-model="oldPassword"
 					type="password"
 					label="Current password"
 					autocomplete="current-password"
 				/>
-				<FormControl
+				<TextInput
 					v-model="newPassword"
 					type="password"
 					label="New password"
