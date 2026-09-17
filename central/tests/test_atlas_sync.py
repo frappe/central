@@ -114,7 +114,7 @@ class TestServerActions(IntegrationTestCase):
 		_process_locked(name)
 		self.assertEqual(get_status(name)["status"], "Failed")
 
-	def test_refresh_enqueues_only_known_team_mirrors(self):
+	def test_refresh_enqueues_only_known_team_servers(self):
 		self.enqueue.reset_mock()
 		result = reconcile(self.team.name)
 		self.assertEqual(result["queued"], 1)

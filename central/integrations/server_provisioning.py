@@ -6,7 +6,6 @@ import frappe
 from frappe import _
 from redis.exceptions import LockError
 
-from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
@@ -166,12 +165,24 @@ def _finalize(request) -> None:
 
 
 def _create_asset(request, asset_id: str) -> None:
+	"""Open the server record. Central owns every value here; the region only reports
+	state afterwards, through `Asset.record_observed_state`.
+
+	Recovery can reach this again after a local failure, so an already-open record is
+	left alone. The id comes from the request, so a second attempt carries the same
+	values as the first."""
+	if frappe.db.exists("Asset", asset_id):
+		return
+
 	configuration = request.get_configuration()
-	Asset.mirror_vm(
-		request.atlas_instance,
+	# The authorized request is what permits this write, not the requesting user's role.
+	frappe.get_doc(
 		{
-			"name": asset_id,
+			"doctype": "Asset",
+			"resource_id": asset_id,
+			"title": request.title,
 			"team": request.team,
+			"cluster": request.atlas_instance,
 			"status": "Provisioning",
 			"atlas_vm_id": request.remote_vm_id,
 			"atlas_image_id": configuration.image_id,
@@ -181,9 +192,8 @@ def _create_asset(request, asset_id: str) -> None:
 			"memory_megabytes": configuration.memory_mib,
 			"disk_gigabytes": configuration.disk_mib / 1024,
 			"frappe_version": configuration.image_tags.get("frappe_version"),
-		},
-		friendly_title=request.title,
-	)
+		}
+	).insert(ignore_permissions=True)
 
 
 def _create_subscription(request, asset_id: str) -> None:

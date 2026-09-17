@@ -2,7 +2,6 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import INSTANCE_LIVENESS_FIELDS, REGION_DISPLAY_FIELDS, list_instances, registry
-from central.central.doctype.asset.asset import Asset
 from central.tests.test_iam import ensure_user
 
 # The exact key set list_instances returns: an Active Atlas Instance's liveness
@@ -102,19 +101,20 @@ class TestListInstances(IntegrationTestCase):
 			list_instances(team=self.team.name)
 
 	def test_registry_returns_console_fields(self):
-		Asset.mirror_vm(
-			self.active_region,
+		frappe.get_doc(
 			{
-				"name": "li-registry-vm",
+				"doctype": "Asset",
+				"resource_id": "li-registry-vm",
 				"team": self.team.name,
+				"cluster": self.active_region,
 				"title": "registry-vm",
 				"status": "Stopped",
 				"vcpus": 2,
 				"memory_megabytes": 4096,
 				"disk_gigabytes": 40,
 				"frappe_version": "v15",
-			},
-		)
+			}
+		).insert(ignore_permissions=True)
 		frappe.set_user(self.owner)
 		assets = registry(team=self.team.name)["assets"]
 

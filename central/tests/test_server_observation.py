@@ -85,42 +85,80 @@ class TestServerObservation(IntegrationTestCase):
 		self.assertEqual(self.asset.status, "Terminated")
 		self.cancel_billing.assert_called_once()
 
-	def test_cross_tenant_response_is_rejected_without_changing_mirror(self):
+	def test_cross_tenant_response_is_rejected_without_changing_the_record(self):
 		self.client.get_vm.return_value["tenant_id"] += 1
 		with self.assertRaises(AtlasConnectionError):
 			observe_server(self.asset)
 		self.asset.reload()
 		self.assertEqual(self.asset.status, "Provisioning")
 
-	def test_older_mirror_event_cannot_regress_state(self):
+	def test_older_report_cannot_regress_state(self):
 		now = frappe.utils.now_datetime()
-		self.asset.db_set({"status": "Running", "last_event_at": now})
-		Asset.mirror_vm(
-			self.asset.cluster,
-			{"name": self.asset.name, "team": self.team.name, "status": "Stopped"},
-			occurred_at=frappe.utils.add_to_date(now, seconds=-1),
+		self.asset.db_set({"status": "Running", "state_observed_at": now})
+
+		applied = Asset.record_observed_state(
+			self.asset.name, frappe.utils.add_to_date(now, seconds=-1), {"status": "Stopped"}
+		)
+		self.assertFalse(applied)
+		self.assertEqual(self.asset.reload().status, "Running")
+
+	def test_report_for_an_unknown_server_is_ignored(self):
+		self.assertFalse(Asset.record_observed_state("server-absent", None, {"status": "Stopped"}))
+
+	def test_report_writes_only_the_fields_it_carries(self):
+		self.asset.db_set({"public_ipv4": "203.0.113.7"})
+
+		self.assertTrue(
+			Asset.record_observed_state(self.asset.name, frappe.utils.now_datetime(), {"status": "Stopped"})
 		)
 		self.asset.reload()
-		self.assertEqual(self.asset.status, "Running")
-
-	def test_mirror_recovers_when_exists_check_loses_insert_race(self):
-		real_exists = frappe.db.exists
-
-		def missing_asset(doctype, *args, **kwargs):
-			return None if doctype == "Asset" else real_exists(doctype, *args, **kwargs)
-
-		with patch("frappe.db.exists", side_effect=missing_asset):
-			Asset.mirror_vm(
-				self.asset.cluster, {"name": self.asset.name, "team": self.team.name, "status": "Stopped"}
-			)
-		self.asset.reload()
 		self.assertEqual(self.asset.status, "Stopped")
+		self.assertEqual(self.asset.public_ipv4, "203.0.113.7")
 
-	def test_mirror_update_locks_before_loading(self):
-		with patch("frappe.get_doc", wraps=frappe.get_doc) as get_doc:
-			Asset.mirror_vm(
-				self.asset.cluster, {"name": self.asset.name, "team": self.team.name, "status": "Stopped"}
+	def test_report_never_touches_a_field_Central_owns(self):
+		self.asset.db_set({"title": "acme-1", "plan": None})
+
+		Asset.record_observed_state(
+			self.asset.name,
+			frappe.utils.now_datetime(),
+			{"status": "Running", "title": "vm-00001", "team": "another-team"},
+		)
+		self.asset.reload()
+		self.assertEqual(self.asset.title, "acme-1")
+		self.assertEqual(self.asset.team, self.team.name)
+
+	def test_a_recorded_report_reaches_only_the_owning_team(self):
+		"""The console learns about its own servers through its team's room, so one
+		team's traffic never reaches another's browser."""
+		with patch("frappe.publish_realtime") as published:
+			Asset.record_observed_state(self.asset.name, frappe.utils.now_datetime(), {"status": "Stopped"})
+
+		# Frappe's own save() also publishes doc_update and list_update for Desk.
+		published.assert_any_call(
+			"server_state_changed",
+			{"resource_id": self.asset.name},
+			doctype="Team",
+			docname=self.team.name,
+			after_commit=True,
+		)
+
+	def test_a_report_that_changes_nothing_wakes_no_console(self):
+		now = frappe.utils.now_datetime()
+		self.asset.db_set({"state_observed_at": now})
+
+		with patch("frappe.publish_realtime") as published:
+			Asset.record_observed_state(
+				self.asset.name, frappe.utils.add_to_date(now, seconds=-1), {"status": "Stopped"}
 			)
+			Asset.record_observed_state("server-absent", now, {"status": "Stopped"})
+
+		self.assertNotIn(
+			"server_state_changed", [call.args[0] for call in published.call_args_list if call.args]
+		)
+
+	def test_record_locks_before_loading(self):
+		with patch("frappe.get_doc", wraps=frappe.get_doc) as get_doc:
+			Asset.record_observed_state(self.asset.name, frappe.utils.now_datetime(), {"status": "Stopped"})
 		self.assertTrue(
 			any(
 				call.args == ("Asset", self.asset.name) and call.kwargs.get("for_update")

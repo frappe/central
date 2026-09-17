@@ -15,7 +15,8 @@ PENDING_LABEL = {
 	"terminate": "Terminating",
 	"resize": "Resizing",
 }
-SUCCESS_MIRROR_STATUS = {
+# The observed status that means an action reached its goal.
+GOAL_STATUS = {
 	"create": "Running",
 	"start": "Running",
 	"stop": "Stopped",
@@ -85,6 +86,23 @@ class ResourceAction(Document):
 			},
 			notify=True,
 		)
+
+	@classmethod
+	def confirm_observed_status(cls, resource_id: str, status: str) -> None:
+		"""Succeed the action waiting on this server, if the region now reports the state
+		that action was asking for. Any other state leaves the action alone: the scoped
+		read decides what a surprising state means."""
+		waiting = frappe.db.get_value(
+			"Resource Action",
+			{"resource_id": resource_id, "status": ["in", PENDING_STATES]},
+			["name", "action"],
+			as_dict=True,
+			order_by="creation asc",
+		)
+		if not waiting or GOAL_STATUS.get(waiting.action) != status:
+			return
+
+		frappe.get_doc("Resource Action", waiting.name).succeed()
 
 	@frappe.whitelist(methods=["POST"])
 	def check_status(self) -> None:

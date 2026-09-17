@@ -1,17 +1,17 @@
 import { useCall } from 'frappe-ui'
 import { computed, onScopeDispose } from 'vue'
 import { API, method } from '@/api/methods'
-import { useFrappeListInvalidation } from '@/composables/useFrappeRealtime'
+import { useFrappeDocEventListener } from '@/composables/useFrappeRealtime'
 import type { AssetRow } from '@/composables/useServers'
+import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { getErrorMessage, isAbortError } from '@/lib/toast'
 
-// The team's whole fleet in one read — servers (the Asset mirror) and self-serve
-// sites (the Site mirror, each a 1:1-backed VM), so the map/panel unify them from a
-// single call. The map clusters and filters client-side, so unlike the
-// reportview-backed useServers list there is no pagination. Reads go through
-// central.api.servers.registry (server:view gated, unpaginated by design); both
-// mirrors are kept fresh by Atlas's event push + the reconcile pull.
+// The team's whole fleet in one read — its servers and its self-serve sites (each a
+// 1:1-backed VM), so the map/panel unify them from a single call. The map clusters and
+// filters client-side, so unlike the reportview-backed useServers list there is no
+// pagination. Reads go through central.api.servers.registry (server:view gated,
+// unpaginated by design), and a region's state reports keep it fresh.
 
 // A site is a VM peer of an asset: `name` is the FQDN (stable id + terminate key),
 // `subdomain` the user-entered display name (e.g. "demo.in").
@@ -26,6 +26,8 @@ export interface SiteRow {
 }
 
 type RegistryResponse = { team: string; assets: AssetRow[]; sites: SiteRow[] }
+
+const { activeTeam } = useSession()
 
 const registry = useCall<RegistryResponse, { team: string }>({
 	url: method(API.registry),
@@ -46,10 +48,16 @@ function reloadOnce(): void {
 }
 
 export function useServerMapData() {
-	// Either mirror changing reloads the one feed; db_set(..., notify=True) writes
-	// (resize flag, termination) land live. One shared debounce coalesces a burst
-	// that touches both doctypes into a single reload.
-	useFrappeListInvalidation(['Asset', 'Site'], reloadOnce, { debounceMs: 0 })
+	// Central publishes into the active team's room whenever one of its servers moves,
+	// so a state report, a power action or a resize lands here without polling. The
+	// payload is identity only: this feed stays the single source of truth, and the
+	// shared debounce coalesces a burst of events into one reload.
+	useFrappeDocEventListener(
+		'Team',
+		activeTeam,
+		'server_state_changed',
+		reloadOnce,
+	)
 	// The invalidation listener self-disposes per scope; clear the shared debounce
 	// too so a pending reload never fires into a torn-down singleton.
 	onScopeDispose(() => window.clearTimeout(reloadTimer))

@@ -178,6 +178,6 @@ Local Central authenticates to staging region `par-2` with region ID `2`. The sh
 
 Staging image discovery returns available Pilot `version-16`, Pilot `develop`, Ubuntu 22.04, and Ubuntu 24.04 System images. Central selects each build by its regional image ID. Image maintenance belongs to Atlas and Cargo.
 
-Central does not require image content fingerprints or snapshot configuration. Staging Atlas does not return an automatic proxy hostname, so Central encodes the hostname label from the mirrored mesh address. Region `par-2` uses proxy domain `par-2.fc.frappe.dev`.
+Central does not require image content fingerprints or snapshot configuration. Staging Atlas does not return an automatic proxy hostname, so Central encodes the hostname label from the observed mesh address. Region `par-2` uses proxy domain `par-2.fc.frappe.dev`.
 
 The Acme Co Pilot creation completed on staging as `acme-1` (`vm-00005`). Resource Action `9hmuvo8ot0` reached Succeeded, and the console showed the server as Active. The Starter plan's Transfer allowance is retained in the saved configuration without changing the VM size. The console reads action progress through the v1 method endpoint expected by `frappeRequest`. The 10 billing creation tests and 11 Resource Action tests passed. Pilot login, power operations, and signup still require end-to-end validation.
