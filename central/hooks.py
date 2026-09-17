@@ -115,6 +115,7 @@ website_user_home_page = "dashboard"
 # only in a patch would exist on migrated sites and be silently ABSENT on fresh ones.
 # The money invariants are a property of the schema, not of a site's history (ADR 0018).
 after_install = [
+	"central.central.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
@@ -187,13 +188,10 @@ doc_events = {
 # ---------------
 
 scheduler_events = {
+	"all": ["central.integrations.server_provisioning.recover_requests"],
 	"cron": {
-		# Asset mirror: reconcile against every Active Atlas every 10 minutes — the
-		# backstop that corrects drift the event push (central.api.atlas.event) missed.
-		"*/10 * * * *": ["central.integrations.atlas.reconcile"],
-		# Resource actions: resolve any action stuck in flight because its confirming event
-		# was lost — mark it Succeeded if the mirror already reached the goal, else Timed Out.
-		"*/5 * * * *": ["central.central.doctype.resource_action.resource_action.sweep_stale"],
+		# Repair observed state through scoped regional reads.
+		"*/10 * * * *": ["central.integrations.servers.reconcile"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",

@@ -85,6 +85,23 @@ class TestEligiblePlans(IntegrationTestCase):
 		out = get_eligible_plans(cluster=cluster, team=TEAM)
 		return {p["plan"] for p in _flat(out)}, out
 
+	def test_fractional_cpu_plan_is_not_offered(self):
+		make_plan(
+			"bundle-fractional",
+			includes=[
+				{"resource_type": "Compute", "quantity": 0.5, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 2, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 20, "unit": "GB"},
+			],
+			rates=_rates(500),
+		)
+		set_team_tier(TEAM, max_spend=100000)
+
+		plans, _ = self._titles()
+		self.assertNotIn("bundle-fractional", plans)
+		self.assertIn(CHEAP, plans)
+		self.assertTrue(frappe.db.get_value("Plan", "bundle-fractional", "is_active"))
+
 	def _provision(self, plan, rate, cluster=CLUSTER):
 		"""A running subscription that consumes the plan's rate of the team's cap (its
 		opening Created segment on the ledger)."""

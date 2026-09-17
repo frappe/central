@@ -65,8 +65,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 		self.assertEqual(out["rate_card"]["Disk"], {"rate": 10, "unit": "GB"})
 		general = next(p for p in out["profiles"] if p["sub_category"] == "General")
 		self.assertEqual(general["ram_ratio"], 4)
-		# The configurator ladder: fractional vCPUs through powers of two.
-		self.assertEqual(general["vcpu_steps"][:5], [0.125, 0.25, 0.5, 1, 2])
+		self.assertEqual(general["vcpu_steps"][:5], [1, 2, 4, 8, 16])
 		# Storage ladder rungs within [disk_min, disk_max] (10..2000).
 		self.assertEqual(general["disk_steps"], [10, 20, 50, 100, 200, 500, 1000, 2000])
 		self.assertEqual(general["disk_min"], 10)
@@ -166,8 +165,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 			{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
 		]
 		with (
-			patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1"),
-			patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-2"),
+			patch("central.billing.catalog.subscriptions._reshape_vm", return_value="task-1"),
 		):
 			result = resize_composed_config(out["subscription"], bigger, "General")
 		self.assertTrue(result["resized"])
@@ -190,8 +188,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 		# The reshape + re-lock are deferred to a background job; run it inline here to
 		# assert the end-to-end effect (queued path).
 		with (
-			patch("central.integrations.atlas.AtlasClient.resize_vm", return_value="task-1") as resize_vm,
-			patch("central.integrations.atlas.AtlasClient.vm_action", return_value="task-2"),
+			patch("central.billing.catalog.subscriptions._reshape_vm", return_value="task-1") as resize_vm,
 			patch("frappe.enqueue", side_effect=run_enqueued_inline),
 		):
 			result = resize_server(out["subscription"], plan=plan)

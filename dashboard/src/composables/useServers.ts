@@ -52,45 +52,6 @@ const refresh = useCall<RefreshResponse, TeamParams>({
 	immediate: false,
 })
 
-type CreateParams = {
-	team: string
-	region: string
-	title: string
-	subdomain: string
-	plan: string
-	vcpus: number
-	memory_megabytes: number
-	disk_gigabytes: number
-	cpu_max_cores?: number
-	frappe_version?: string
-}
-const createCall = useCall<{ resource_id: string }, CreateParams>({
-	url: method(API.createServer),
-	method: 'POST',
-	immediate: false,
-})
-
-// Design-your-own (composed) provision: the server is built from a composition
-// (qty per resource) + its optimisation profile, billed à la carte (#80/#84).
-type ComposedInclude = { resource_type: string; quantity: number; unit: string }
-type CreateComposedParams = {
-	team: string
-	region: string
-	title: string
-	subdomain: string
-	includes: ComposedInclude[]
-	sub_category: string
-	frappe_version?: string
-}
-const createComposedCall = useCall<
-	{ resource_id: string },
-	CreateComposedParams
->({
-	url: method(API.createComposedServer),
-	method: 'POST',
-	immediate: false,
-})
-
 const startCall = useCall<unknown, CommandParams>({
 	url: method(API.startServer),
 	method: 'POST',
@@ -187,45 +148,14 @@ export function useServers() {
 		}
 	}
 
-	// Provision a new server in a region. Returns the new resource_id on success
-	// (so the caller can navigate), throws on failure (so it can surface the error).
-	async function create(params: Omit<CreateParams, 'team'>): Promise<string> {
-		await createCall.submit({ team: activeTeam.value!, ...params })
-		// useCall surfaces HTTP failures on `.error` rather than throwing — surface
-		// it and re-throw so the page keeps the user on the form.
-		if (createCall.error) {
-			errorToast(createCall.error)
-			throw createCall.error
-		}
-		successToast(`Creating ${params.title} in ${params.region}`)
-		return createCall.data?.resource_id ?? ''
-	}
-
-	// Provision a design-your-own (composed) server. Same contract as create().
-	async function createComposed(
-		params: Omit<CreateComposedParams, 'team'>,
-	): Promise<string> {
-		await createComposedCall.submit({ team: activeTeam.value!, ...params })
-		if (createComposedCall.error) {
-			errorToast(createComposedCall.error)
-			throw createComposedCall.error
-		}
-		successToast(`Creating ${params.title} in ${params.region}`)
-		return createComposedCall.data?.resource_id ?? ''
-	}
-
 	return {
 		refreshing: computed(() => refresh.loading),
-		creating: computed(() => createCall.loading),
-		creatingComposed: computed(() => createComposedCall.loading),
 		// Atlas instances that couldn't be reached on the last refresh — their rows
 		// show last-known data.
 		stale: computed<string[]>(() => refresh.data?.stale ?? []),
 		busy,
 		opening,
 		refreshAssets,
-		create,
-		createComposed,
 		start,
 		stop,
 		terminate,

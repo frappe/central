@@ -1,150 +1,76 @@
-"""Atlas failures must reach the caller as Atlas's own sentence, not a raw traceback.
-
-`FrappeClient` raises `FrappeException` carrying the ENTIRE remote traceback as one
-string, so before `AtlasClient._post` an Atlas-side `frappe.throw` ("region full",
-"image not on any host") surfaced in the console as "FrappeException" over a wall of
-Atlas internals — the actionable sentence buried in the last line.
-"""
-
-from unittest.mock import MagicMock, patch
+import json
+from unittest.mock import Mock, patch
 
 import frappe
 import requests
-from frappe.frappeclient import FrappeException
 from frappe.tests import IntegrationTestCase
 
-from central.integrations.atlas import (
-	AtlasClient,
-	AtlasError,
+from central.errors import (
+	AtlasConnectionError,
+	AtlasRejected,
+	AtlasRequestUncertain,
 	AtlasResourceGone,
-	_remote_error_message,
+	to_error_response,
 )
-
-# A verbatim capture of what FrappeClient raised for a create that hit a full region.
-CONSOLIDATION_TRACEBACK = """FrappeClient Request Failed
-
-Traceback (most recent call last):
-  File "apps/frappe/frappe/app.py", line 121, in application
-    response = frappe.api.handle(request)
-  File "apps/atlas/atlas/atlas/api/provision.py", line 97, in create_vm
-    pilot.insert(ignore_permissions=True)
-  File "apps/atlas/atlas/atlas/placement.py", line 452, in _raise_no_capacity
-    frappe.throw(
-  File "apps/frappe/frappe/utils/messages.py", line 59, in _raise_exception
-    raise exc
-atlas.atlas.placement.ConsolidationInProgressError: Capacity is being freed by \
-migrating small VMs — retry shortly."""
+from central.integrations.atlas import AtlasClient
 
 
-class TestRemoteErrorMessage(IntegrationTestCase):
-	def test_lifts_the_message_off_the_last_traceback_line(self):
-		self.assertEqual(
-			_remote_error_message(FrappeException(CONSOLIDATION_TRACEBACK)),
-			"Capacity is being freed by migrating small VMs — retry shortly.",
-		)
-
-	def test_handles_a_bare_exception_line(self):
-		self.assertEqual(
-			_remote_error_message(FrappeException("atlas.placement.NoCapacityError: Region full.")),
-			"Region full.",
-		)
-
-	def test_returns_none_when_there_is_no_remote_traceback(self):
-		# A connection error carries no "ExcType: message" line, so there is nothing
-		# truthful to show — the caller falls back to its own wording.
-		self.assertIsNone(_remote_error_message(FrappeException("")))
-		self.assertIsNone(_remote_error_message(FrappeException("connection aborted")))
-
-
-class TestAtlasClientPost(IntegrationTestCase):
+class TestAtlasErrors(IntegrationTestCase):
 	def setUp(self):
+		super().setUp()
 		frappe.set_user("Administrator")
-		self.client = AtlasClient(
-			frappe._dict(region="blr-err", status="Active", tunnel_status=None, tunnel_url=None)
-		)
+		self.client = AtlasClient(Mock(), 0)
 
-	def test_remote_throw_becomes_atlas_error_with_only_the_message(self):
-		with patch.object(AtlasClient, "client") as client, patch.object(frappe, "log_error"):
-			client.return_value.post_api.side_effect = FrappeException(CONSOLIDATION_TRACEBACK)
-			with self.assertRaises(AtlasError) as caught:
-				self.client._post("atlas.api.provision.create_vm", {}, action="create this server")
-		rendered = str(caught.exception)
-		self.assertIn("retry shortly", rendered)
-		# The tenant must never see Atlas's frames or file paths.
-		self.assertNotIn("Traceback", rendered)
-		self.assertNotIn("apps/atlas", rendered)
-		self.assertNotIn("FrappeClient Request Failed", rendered)
+	def response(self, status, body):
+		response = requests.Response()
+		response.status_code = status
+		response._content = json.dumps(body).encode()
+		return response
 
-	def test_unreachable_atlas_falls_back_to_a_generic_message(self):
-		with patch.object(AtlasClient, "client") as client, patch.object(frappe, "log_error"):
-			client.return_value.post_api.side_effect = FrappeException("connection aborted")
-			with self.assertRaises(AtlasError) as caught:
-				self.client._post("atlas.api.provision.create_vm", {}, action="create this server")
-		self.assertIn("create this server", str(caught.exception))
+	def test_mutation_server_error_is_uncertain_not_retriable(self):
+		with self.assertRaises(AtlasRequestUncertain) as caught:
+			self.client._read_response(self.response(503, {}), "POST")
+		self.assertEqual(to_error_response(caught.exception)["code"], "OUTCOME_UNKNOWN")
+		self.assertFalse(to_error_response(caught.exception)["retriable"])
 
-	def test_the_full_traceback_still_reaches_the_error_log(self):
-		with patch.object(AtlasClient, "client") as client, patch.object(frappe, "log_error") as log_error:
-			client.return_value.post_api.side_effect = FrappeException(CONSOLIDATION_TRACEBACK)
-			with self.assertRaises(AtlasError):
-				self.client._post("atlas.api.provision.create_vm", {}, action="create this server")
-		self.assertTrue(log_error.called)
-		self.assertIn("apps/atlas", log_error.call_args.kwargs["message"])
+	def test_successful_mutation_with_bad_receipt_is_uncertain(self):
+		for body in ([], "not an object"):
+			with self.subTest(body=body), self.assertRaises(AtlasRequestUncertain):
+				self.client._read_response(self.response(201, body), "POST")
+		response = self.response(201, {})
+		response._content = b"not JSON"
+		with self.assertRaises(AtlasRequestUncertain):
+			self.client._read_response(response, "POST")
 
-	def test_a_successful_post_is_returned_unchanged(self):
-		with patch.object(AtlasClient, "client") as client:
-			client.return_value.post_api.return_value = {"name": "vm-1"}
-			self.assertEqual(
-				self.client._post("atlas.api.provision.create_vm", {}, action="create this server"),
-				{"name": "vm-1"},
+	def test_explicit_rejection_preserves_safe_reason(self):
+		with self.assertRaises(AtlasRejected) as caught:
+			self.client._read_response(
+				self.response(409, {"error": {"message": "No host has capacity."}}), "POST"
 			)
+		self.assertEqual(to_error_response(caught.exception)["message"], "No host has capacity.")
 
+	def test_read_failure_does_not_claim_mutation_acceptance(self):
+		with self.assertRaises(AtlasConnectionError) as caught:
+			self.client._read_response(self.response(503, {}))
+		self.assertNotIsInstance(caught.exception, AtlasRequestUncertain)
 
-class TestRunDocMethod(IntegrationTestCase):
-	"""The lifecycle path reads the real HTTP status, so a missing doc (404) is told apart
-	from an unreachable region — the fix for terminate mislabelling a gone resource."""
+	def test_not_found_has_a_specific_outcome(self):
+		with self.assertRaises(AtlasResourceGone):
+			self.client._read_response(self.response(404, {}))
 
-	def _client(self):
-		instance = frappe._dict(
-			region="blr-rdm",
-			status="Active",
-			tunnel_status=None,
-			tunnel_url=None,
-			base_url="https://atlas.example.test",
-			api_key="k",
-		)
-		instance.get_password = lambda field, *a, **k: "s"
-		return AtlasClient(instance)
+	def test_lost_mutation_reply_never_retries(self):
+		with (
+			patch.object(self.client, "_configuration", return_value=("https://atlas.example.test", 1)),
+			patch("central.integrations.atlas.mint_atlas_token", return_value="test-token"),
+			patch("central.integrations.atlas.requests.request", side_effect=requests.Timeout) as request,
+		):
+			with self.assertRaises(AtlasRequestUncertain):
+				self.client.create_vm({"image_id": "pilot"})
+		request.assert_called_once()
 
-	def test_404_raises_resource_gone(self):
-		response = MagicMock(ok=False, status_code=404, text="{}")
-		with patch("central.integrations.atlas.requests.post", return_value=response):
-			with self.assertRaises(AtlasResourceGone):
-				self._client()._run_doc_method("Site", "x", "terminate", None, action="terminate this site")
-
-	def test_connection_error_reads_as_region_unavailable(self):
-		with patch("central.integrations.atlas.requests.post", side_effect=requests.ConnectionError()):
-			with self.assertRaises(AtlasError) as caught:
-				self._client()._run_doc_method("Site", "x", "terminate", None, action="terminate this site")
-		self.assertNotIsInstance(caught.exception, AtlasResourceGone)
-		self.assertIn("terminate this site", str(caught.exception))
-
-	def test_remote_sentence_surfaces_on_other_error(self):
-		body = {"_server_messages": frappe.as_json([frappe.as_json({"message": "No capacity here."})])}
-		response = MagicMock(ok=False, status_code=417, text=frappe.as_json(body))
-		response.json.return_value = body
-		with patch("central.integrations.atlas.requests.post", return_value=response):
-			with self.assertRaises(AtlasError) as caught:
-				self._client()._run_doc_method(
-					"Virtual Machine", "x", "start", None, action="start this server"
-				)
-		self.assertNotIsInstance(caught.exception, AtlasResourceGone)
-		self.assertIn("No capacity here.", str(caught.exception))
-
-	def test_success_returns_the_message(self):
-		response = MagicMock(ok=True)
-		response.json.return_value = {"message": "task-9"}
-		with patch("central.integrations.atlas.requests.post", return_value=response):
-			out = self._client()._run_doc_method(
-				"Virtual Machine", "x", "start", None, action="start this server"
-			)
-		self.assertEqual(out, "task-9")
+	def test_unknown_error_does_not_claim_nothing_changed(self):
+		with patch("central.errors.frappe.log_error"):
+			error = to_error_response(RuntimeError("private internal detail"))
+		self.assertNotIn("nothing was changed", error["message"])
+		self.assertNotIn("private", error["message"])
+		self.assertFalse(error["retriable"])

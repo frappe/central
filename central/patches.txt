@@ -157,3 +157,5 @@ central.patches.v0_0.rename_sso_rsa_fields
 
 central.patches.v0_0.reset_atlas_connection_checks
 central.patches.v0_0.seed_image_offerings
+
+central.patches.v0_0.initialize_resource_actions

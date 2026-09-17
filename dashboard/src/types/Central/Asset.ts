@@ -35,7 +35,7 @@ export interface Asset {
 	vcpus?: number
 	/**	Memory (MB) : Int	*/
 	memory_megabytes?: number
-	/**	Disk (GB) : Int	*/
+	/**	Disk (GB) : Float	*/
 	disk_gigabytes?: number
 	/**	IPv6 Address : Data	*/
 	ipv6_address?: string
@@ -53,4 +53,10 @@ export interface Asset {
 	last_synced_at?: string
 	/**	Last Event At : Datetime - occurred_at of the last applied Atlas event; drives last-writer-wins.	*/
 	last_event_at?: string
+	/**	Atlas VM ID : Data - VM identifier within the linked Atlas region.	*/
+	atlas_vm_id?: string
+	/**	Image Offering : Link - Image Offering	*/
+	image_offering?: string
+	/**	Atlas Image ID : Data	*/
+	atlas_image_id?: string
 }

@@ -9,24 +9,36 @@ export interface ResourceAction {
 	parentfield?: string
 	parenttype?: string
 	idx?: number
+	/**	Title : Data	*/
+	title?: string
 	/**	Resource Type : Select	*/
 	resource_type: 'Server' | 'Site'
 	/**	Action : Select	*/
 	action: 'create' | 'start' | 'stop' | 'terminate' | 'resize'
 	/**	Team : Link - Team	*/
 	team: string
-	/**	Resource ID : Data - The server (VM id) or site (FQDN) this action targets, snapshotted so the row stays meaningful after the resource is gone.	*/
+	/**	Region : Link - Atlas Instance	*/
+	atlas_instance?: string
+	/**	Server : Link - Asset	*/
+	asset?: string
+	/**	Resource ID : Data - Central resource identifier. The regional VM ID is recorded separately.	*/
 	resource_id?: string
 	/**	Status : Select	*/
 	status:
 		| 'Queued'
+		| 'Dispatching'
 		| 'Sent'
 		| 'In Progress'
 		| 'Succeeded'
 		| 'Failed'
+		| 'Uncertain'
 		| 'Timed Out'
-	/**	Atlas Task : Data - The Atlas Task this action produced, for operator cross-reference.	*/
-	atlas_task?: string
+	/**	Requested By : Link - User	*/
+	requested_by?: string
+	/**	Dispatched At : Datetime	*/
+	dispatched_at?: string
+	/**	Last Checked At : Datetime	*/
+	last_checked_at?: string
 	/**	Completed At : Datetime	*/
 	completed_at?: string
 	/**	Error Code : Data - Stable error code from the failure envelope (central/errors.py).	*/
@@ -37,4 +49,18 @@ export interface ResourceAction {
 	error_message?: string
 	/**	Remediation : Small Text	*/
 	remediation?: string
+	/**	Validated Request : JSON - Validated operation inputs. Contains no credentials or tokens.	*/
+	request_payload?: any
+	/**	Reserved Monthly Rate : Currency	*/
+	reserved_monthly_rate?: number
+	/**	Atlas VM ID : Data	*/
+	remote_vm_id?: string
+	/**	Correlation ID : Data - Stable Central action identifier for logs and support.	*/
+	correlation_id: string
+	/**	Request Key : Data - A repeated request in the same Team returns this action instead of dispatching again.	*/
+	request_key?: string
+	/**	Request Digest : Data	*/
+	request_digest?: string
+	/**	Pilot Credential : Link - Pilot Credential	*/
+	credential?: string
 }

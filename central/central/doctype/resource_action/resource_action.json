@@ -1,27 +1,39 @@
 {
  "actions": [],
- "allow_rename": 0,
  "autoname": "hash",
- "creation": "2026-08-17 00:00:00.000000",
- "description": "One tenant-triggered lifecycle action on a fleet resource (a server or a site) and its outcome. Opened only once Atlas accepts the command, so a synchronous rejection never leaves a row.",
+ "creation": "2026-08-17 00:00:00",
+ "description": "A validated resource operation, persisted before dispatch, with its progress and recoverable outcome.",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "title",
   "resource_type",
   "action",
   "team",
+  "atlas_instance",
+  "asset",
   "resource_id",
-  "correlation_id",
   "column_break_main",
   "status",
-  "atlas_task",
+  "requested_by",
+  "dispatched_at",
+  "last_checked_at",
   "completed_at",
   "section_break_error",
   "error_code",
   "retriable",
   "error_message",
-  "remediation"
+  "remediation",
+  "request_tab",
+  "request_payload",
+  "reserved_monthly_rate",
+  "diagnostics_tab",
+  "remote_vm_id",
+  "correlation_id",
+  "request_key",
+  "request_digest",
+  "credential"
  ],
  "fields": [
   {
@@ -55,7 +67,7 @@
    "reqd": 1
   },
   {
-   "description": "The server (VM id) or site (FQDN) this action targets, snapshotted so the row stays meaningful after the resource is gone.",
+   "description": "Central resource identifier. The regional VM ID is recorded separately.",
    "fieldname": "resource_id",
    "fieldtype": "Data",
    "in_list_view": 1,
@@ -63,7 +75,7 @@
    "read_only": 1
   },
   {
-   "description": "The id Central sends to Atlas with the command; the returning event echoes it so the outcome lands on this row.",
+   "description": "Stable Central action identifier for logs and support.",
    "fieldname": "correlation_id",
    "fieldtype": "Data",
    "label": "Correlation ID",
@@ -76,22 +88,15 @@
    "fieldtype": "Column Break"
   },
   {
-   "default": "Sent",
+   "default": "Queued",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
-   "options": "Sent\nIn Progress\nSucceeded\nFailed\nTimed Out",
+   "options": "Queued\nDispatching\nSent\nIn Progress\nSucceeded\nFailed\nUncertain\nTimed Out",
    "read_only": 1,
    "reqd": 1
-  },
-  {
-   "description": "The Atlas Task this action produced, for operator cross-reference.",
-   "fieldname": "atlas_task",
-   "fieldtype": "Data",
-   "label": "Atlas Task",
-   "read_only": 1
   },
   {
    "fieldname": "completed_at",
@@ -129,11 +134,105 @@
    "fieldtype": "Small Text",
    "label": "Remediation",
    "read_only": 1
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "read_only": 1
+  },
+  {
+   "fieldname": "atlas_instance",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Region",
+   "options": "Atlas Instance",
+   "read_only": 1
+  },
+  {
+   "fieldname": "asset",
+   "fieldtype": "Link",
+   "label": "Server",
+   "options": "Asset",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "dispatched_at",
+   "fieldtype": "Datetime",
+   "label": "Dispatched At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_checked_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Last Checked At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_tab",
+   "fieldtype": "Tab Break",
+   "label": "Request",
+   "read_only": 1
+  },
+  {
+   "description": "Validated operation inputs. Contains no credentials or tokens.",
+   "fieldname": "request_payload",
+   "fieldtype": "JSON",
+   "label": "Validated Request",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reserved_monthly_rate",
+   "fieldtype": "Currency",
+   "label": "Reserved Monthly Rate",
+   "read_only": 1
+  },
+  {
+   "fieldname": "diagnostics_tab",
+   "fieldtype": "Tab Break",
+   "label": "Diagnostics",
+   "read_only": 1
+  },
+  {
+   "fieldname": "remote_vm_id",
+   "fieldtype": "Data",
+   "label": "Atlas VM ID",
+   "read_only": 1
+  },
+  {
+   "description": "A repeated request in the same Team returns this action instead of dispatching again.",
+   "fieldname": "request_key",
+   "fieldtype": "Data",
+   "label": "Request Key",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_digest",
+   "fieldtype": "Data",
+   "label": "Request Digest",
+   "permlevel": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "credential",
+   "fieldtype": "Link",
+   "label": "Pilot Credential",
+   "options": "Pilot Credential",
+   "permlevel": 1,
+   "read_only": 1
   }
  ],
- "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-08-17 00:00:00.000000",
+ "modified": "2026-09-16 15:58:06.797440",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Resource Action",
@@ -142,22 +241,58 @@
   {
    "create": 1,
    "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
    "read": 1,
-   "report": 1,
    "role": "System Manager",
-   "share": 1,
    "write": 1
   },
   {
-   "create": 1,
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
    "read": 1,
    "role": "Central User"
   }
  ],
+ "row_format": "Dynamic",
+ "search_fields": "title,resource_id,remote_vm_id,correlation_id",
  "sort_field": "creation",
  "sort_order": "DESC",
- "states": []
+ "states": [
+  {
+   "color": "Gray",
+   "title": "Queued"
+  },
+  {
+   "color": "Blue",
+   "title": "Dispatching"
+  },
+  {
+   "color": "Blue",
+   "title": "Sent"
+  },
+  {
+   "color": "Blue",
+   "title": "In Progress"
+  },
+  {
+   "color": "Green",
+   "title": "Succeeded"
+  },
+  {
+   "color": "Red",
+   "title": "Failed"
+  },
+  {
+   "color": "Orange",
+   "title": "Uncertain"
+  },
+  {
+   "color": "Orange",
+   "title": "Timed Out"
+  }
+ ],
+ "title_field": "title"
 }
