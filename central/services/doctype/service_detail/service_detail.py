@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
+from frappe.database import savepoint
 from frappe.model.document import Document
 
 
@@ -26,17 +27,9 @@ class ServiceDetail(Document):
 
 	@staticmethod
 	def record_report(region: str, service: str, status: str, service_endpoint: str | None) -> str:
-		"""Record what a region reports about one of its services, and return the row.
-
-		The row is named for the pair it describes, so a region reporting again writes the
-		same row rather than a second one. `activated_on` is the first moment the service
-		was reported available and stays put until it goes away again."""
-		name = f"{region}-{service}"
-		detail = (
-			frappe.get_doc("Service Detail", name)
-			if frappe.db.exists("Service Detail", name)
-			else frappe.new_doc("Service Detail").update({"region": region, "service": service})
-		)
+		"""Record what a region reports about one of its services. `activated_on` marks the
+		first report of an outage ending, not every report."""
+		detail = ServiceDetail._locked_row(region, service)
 
 		became_available = status == "Available" and detail.status != "Available"
 		detail.status = status
@@ -48,3 +41,22 @@ class ServiceDetail(Document):
 		# A region reports as a guest; the delivery's signature is what authorises this write.
 		detail.save(ignore_permissions=True)
 		return detail.name
+
+	@staticmethod
+	def _locked_row(region: str, service: str) -> "ServiceDetail":
+		"""This region's row for one service, locked for the rest of the request. Two
+		deliveries can both find no row; the name is the primary key, so the losing insert
+		is refused and reads the winner's row instead of failing the delivery."""
+		name = f"{region}-{service}"
+		if not frappe.db.exists("Service Detail", name):
+			inserted = None
+			with savepoint(catch=frappe.DuplicateEntryError):
+				inserted = (
+					frappe.new_doc("Service Detail")
+					.update({"region": region, "service": service})
+					.insert(ignore_permissions=True)
+				)
+			if inserted:
+				return inserted
+
+		return frappe.get_doc("Service Detail", name, for_update=True)
