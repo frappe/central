@@ -13,7 +13,7 @@ from frappe.utils.password import remove_encrypted_password
 
 from central.api.jwks import get_atlas_jwks, jwks_document
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
-from central.sso import ATLAS_TOKEN_TTL, mint_atlas_token, mint_bench_login
+from central.sso import ATLAS_TOKEN_TTL, mint_atlas_token, mint_bench_login, mint_proxy_token
 
 
 class TestAtlasSSO(IntegrationTestCase):
@@ -83,6 +83,17 @@ class TestAtlasSSO(IntegrationTestCase):
 
 		self.assertEqual((claims["sub"], claims["scope"], claims["tenant"]), ("central", "*", "*"))
 		self.assertEqual(claims["exp"] - claims["iat"], ATLAS_TOKEN_TTL)
+
+	def test_proxy_token_has_route_authority_for_one_region(self):
+		settings = self.initialize()
+		key = jwt.PyJWK.from_dict(settings.atlas_jwks()["keys"][0])
+		token = mint_proxy_token(42)
+		claims = jwt.decode(token, key.key, algorithms=["EdDSA"], audience="atlas-proxy:42", issuer="central")
+
+		self.assertEqual((claims["sub"], claims["scope"]), ("central", "site:* domain:*"))
+		self.assertNotIn("tenant", claims)
+		with self.assertRaises(jwt.InvalidAudienceError):
+			jwt.decode(token, key.key, algorithms=["EdDSA"], audience="atlas-proxy:7", issuer="central")
 
 	def test_invalid_region_is_rejected_before_signing(self):
 		for value in (-1, 65536, True, "42", None):

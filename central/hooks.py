@@ -192,6 +192,8 @@ scheduler_events = {
 	"cron": {
 		# Repair observed state through scoped regional reads.
 		"*/10 * * * *": ["central.integrations.servers.reconcile"],
+		# Retry proxy routes that failed or never ran, up to the attempt limit.
+		"*/5 * * * *": ["central.central.doctype.site_domain.site_domain.retry_failed"],
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
@@ -345,6 +347,7 @@ permission_query_conditions = {
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
+	"Site Domain": "central.permissions.site_domain_query_conditions",
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
@@ -355,6 +358,7 @@ has_permission = {
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",
+	"Site Domain": "central.permissions.site_domain_has_permission",
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",

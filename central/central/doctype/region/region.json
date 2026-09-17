@@ -69,8 +69,14 @@
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
- "links": [],
- "modified": "2026-07-05 19:19:22.229140",
+ "links": [
+  {
+   "group": "Routing",
+   "link_doctype": "Site Domain",
+   "link_fieldname": "region"
+  }
+ ],
+ "modified": "2026-09-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Region",

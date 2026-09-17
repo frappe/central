@@ -200,9 +200,14 @@
    "group": "Billing",
    "link_doctype": "Project",
    "link_fieldname": "team"
+  },
+  {
+   "group": "Infrastructure",
+   "link_doctype": "Site Domain",
+   "link_fieldname": "team"
   }
  ],
- "modified": "2026-09-16 12:59:05.324757",
+ "modified": "2026-09-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Team",
