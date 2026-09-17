@@ -34,6 +34,7 @@ defineEmits<{
 	open: [server: AssetRow]
 	start: [server: AssetRow]
 	stop: [server: AssetRow]
+	restart: [server: AssetRow]
 	resize: [server: AssetRow]
 	terminate: [server: AssetRow]
 	openSite: [name: string]
@@ -161,6 +162,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 								@open="$emit('open', $event)"
 								@start="$emit('start', $event)"
 								@stop="$emit('stop', $event)"
+								@restart="$emit('restart', $event)"
 								@resize="$emit('resize', $event)"
 								@terminate="$emit('terminate', $event)"
 							/>

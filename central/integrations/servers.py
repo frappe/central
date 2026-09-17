@@ -7,7 +7,7 @@ from frappe import _
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.central.doctype.resource_action.resource_action import GOAL_STATUS, ResourceAction
+from central.central.doctype.resource_action.resource_action import ResourceAction
 from central.errors import (
 	AtlasConnectionError,
 	AtlasRequestUncertain,
@@ -168,9 +168,9 @@ def process_command(action) -> None:
 		action.set_error(action.status, build_envelope("REFRESH_FAILED"))
 		return
 
-	if status == GOAL_STATUS[action.action]:
-		action.succeed()
-	elif status in ("Failed", "Terminated"):
+	if action.record_observed_status(status):
+		return
+	if status in ("Failed", "Terminated"):
 		action.set_error("Failed", build_envelope("ACTION_FAILED", action=action.action))
 	elif _is_command_overdue(action):
 		action.set_error("Timed Out", build_envelope("ACTION_TIMED_OUT", action=action.action))

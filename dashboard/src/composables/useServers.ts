@@ -62,6 +62,11 @@ const stopCall = useCall<unknown, CommandParams>({
 	method: 'POST',
 	immediate: false,
 })
+const restartCall = useCall<unknown, CommandParams>({
+	url: method(API.restartServer),
+	method: 'POST',
+	immediate: false,
+})
 const terminateCall = useCall<unknown, CommandParams>({
 	url: method(API.terminateServer),
 	method: 'POST',
@@ -77,7 +82,7 @@ const benchLink = useCall<BenchLinkResponse, { asset: string }>({
 const busy = ref<string>('')
 const opening = ref<string>('')
 
-type Verb = 'Start' | 'Stop' | 'Terminate'
+type Verb = 'Start' | 'Stop' | 'Restart' | 'Terminate'
 
 async function runCommand(
 	call: typeof startCall,
@@ -123,6 +128,9 @@ export function useServers() {
 	function stop(server: AssetRow) {
 		return runCommand(stopCall, server, 'Stop')
 	}
+	function restart(server: AssetRow) {
+		return runCommand(restartCall, server, 'Restart')
+	}
 	function terminate(server: AssetRow) {
 		return runCommand(terminateCall, server, 'Terminate', 'throw')
 	}
@@ -158,6 +166,7 @@ export function useServers() {
 		refreshAssets,
 		start,
 		stop,
+		restart,
 		terminate,
 		open,
 	}

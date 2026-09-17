@@ -13,6 +13,7 @@ PENDING_LABEL = {
 	"start": "Starting",
 	"stop": "Stopping",
 	"terminate": "Terminating",
+	"restart": "Restarting",
 	"resize": "Resizing",
 }
 # The observed status that means an action reached its goal.
@@ -20,8 +21,13 @@ GOAL_STATUS = {
 	"create": "Running",
 	"start": "Running",
 	"stop": "Stopped",
+	"restart": "Running",
 	"terminate": "Terminated",
 }
+# A restart begins and ends at Running, so arriving at Running proves nothing on its own.
+# The region publishes no restart counter, so the action waits until it reports the server
+# away from the goal once. That report is what shows the restart really began.
+ROUND_TRIP_ACTIONS = ("restart",)
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
 
 
@@ -89,20 +95,31 @@ class ResourceAction(Document):
 
 	@classmethod
 	def confirm_observed_status(cls, resource_id: str, status: str) -> None:
-		"""Succeed the action waiting on this server, if the region now reports the state
-		that action was asking for. Any other state leaves the action alone: the scoped
-		read decides what a surprising state means."""
+		"""Advance the action waiting on this server against what the region reports."""
 		waiting = frappe.db.get_value(
 			"Resource Action",
 			{"resource_id": resource_id, "status": ["in", PENDING_STATES]},
-			["name", "action"],
-			as_dict=True,
+			"name",
 			order_by="creation asc",
 		)
-		if not waiting or GOAL_STATUS.get(waiting.action) != status:
-			return
+		if waiting:
+			frappe.get_doc("Resource Action", waiting).record_observed_status(status)
 
-		frappe.get_doc("Resource Action", waiting.name).succeed()
+	def record_observed_status(self, status: str) -> bool:
+		"""Move this action on from the state the region reports, and return True when it
+		reached its goal. Any other state leaves the action pending: the scoped read
+		decides what a surprising state means."""
+		goal = GOAL_STATUS[self.action]
+		if self.action in ROUND_TRIP_ACTIONS and self.status != "In Progress":
+			if status != goal:
+				self.db_set({"status": "In Progress", "last_checked_at": frappe.utils.now_datetime()})
+			return False
+
+		if status != goal:
+			return False
+
+		self.succeed()
+		return True
 
 	@frappe.whitelist(methods=["POST"])
 	def check_status(self) -> None:

@@ -52,7 +52,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Action",
-   "options": "create\nstart\nstop\nterminate\nresize",
+   "options": "create\nstart\nstop\nrestart\nterminate\nresize",
    "read_only": 1,
    "reqd": 1
   },

@@ -226,6 +226,21 @@ class TestStateDelivery(IntegrationTestCase):
 		self.apply(self.state_report())
 		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Succeeded")
 
+	def test_a_restart_waits_to_see_the_server_leave_running(self):
+		"""A restart begins and ends at Running, so the goal state alone proves nothing.
+		It succeeds only after the region reports the server away from Running."""
+		action = self._action("restart")
+		self.server.db_set("status", "Running")
+
+		self.apply(self.state_report())
+		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Sent")
+
+		self.apply(self.state_report(status="stopped"))
+		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "In Progress")
+
+		self.apply(self.state_report())
+		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Succeeded")
+
 	def test_the_waiting_action_is_left_alone_on_any_other_state(self):
 		action = self._action("stop")
 

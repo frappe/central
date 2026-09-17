@@ -43,6 +43,7 @@ export const API = {
 	createComposedServer: 'central.api.servers.create_composed_server',
 	startServer: 'central.api.servers.start_server',
 	stopServer: 'central.api.servers.stop_server',
+	restartServer: 'central.api.servers.restart_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
 

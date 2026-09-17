@@ -23,6 +23,13 @@ frappe.ui.form.on("Asset", {
 
 		frm.add_custom_button(__("Start"), () => run(__("Start"), "start_server", "green"), __("Server"));
 		frm.add_custom_button(__("Stop"), () => run(__("Stop"), "stop_server", "orange"), __("Server"));
+		if (frm.doc.status === "Running") {
+			frm.add_custom_button(
+				__("Restart"),
+				() => run(__("Restart"), "restart_server", "orange"),
+				__("Server"),
+			);
+		}
 		frm.add_custom_button(
 			__("Terminate"),
 			() =>

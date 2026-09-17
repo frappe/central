@@ -291,6 +291,13 @@ def stop_server(team: str | None = None, resource_id: str | None = None) -> dict
 
 @frappe.whitelist(methods=["POST"])
 @resource_action
+def restart_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Restart a running server. Gated on `server:power`."""
+	return _run_command("restart", team, resource_id)
+
+
+@frappe.whitelist(methods=["POST"])
+@resource_action
 def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Terminate a server. Gated on `server:terminate`."""
 	return _run_command("terminate", team, resource_id)
