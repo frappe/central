@@ -6,25 +6,17 @@
  "engine": "InnoDB",
  "field_order": [
   "region",
-  "base_url",
   "status",
-  "validate_capacity",
-  "column_break_auth",
-  "api_key",
-  "api_secret",
-  "section_break_tunnel",
-  "skip_tunnel",
-  "tunnel_status",
-  "tunnel_ip",
-  "tunnel_url",
-  "service_user",
-  "webhook_secret",
-  "column_break_tunnel",
-  "peer_public_key",
-  "peer_endpoint",
-  "section_break_health",
+  "atlas_region_id",
+  "base_url",
+  "proxy_domain",
+  "connection_section",
   "reachable",
-  "last_synced_at"
+  "connection_checked_at",
+  "connection_error",
+  "last_synced_at",
+  "delivery_section",
+  "webhook_secret"
  ],
  "fields": [
   {
@@ -47,6 +39,12 @@
    "reqd": 1
   },
   {
+   "description": "Wildcard zone the regional proxy serves, without the leading *., e.g. par-2.fc.frappe.dev. Leave blank until the operator confirms it; one-click Open stays unavailable until it is set.",
+   "fieldname": "proxy_domain",
+   "fieldtype": "Data",
+   "label": "Proxy Domain"
+  },
+  {
    "default": "Active",
    "fieldname": "status",
    "fieldtype": "Select",
@@ -57,110 +55,15 @@
    "reqd": 1
   },
   {
-   "default": "1",
-   "description": "Only offer plans that fit this region's live capacity when creating/resizing a server.",
-   "fieldname": "validate_capacity",
-   "fieldtype": "Check",
-   "label": "Validate Capacity"
-  },
-  {
-   "fieldname": "column_break_auth",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "Atlas admin API key; Central authenticates with it for every Central\u2192Atlas call.",
-   "fieldname": "api_key",
-   "fieldtype": "Data",
-   "label": "Admin API Key",
-   "reqd": 1
-  },
-  {
-   "description": "Atlas admin API secret, paired with the key (stored encrypted).",
-   "fieldname": "api_secret",
-   "fieldtype": "Password",
-   "label": "Admin API Secret",
-   "reqd": 1
-  },
-  {
-   "description": "The Central-managed WireGuard tunnel. Every field here is set by Register \u2014 not hand-entered.",
-   "fieldname": "section_break_tunnel",
-   "fieldtype": "Section Break",
-   "label": "Tunnel"
-  },
-  {
-   "default": "0",
-   "description": "Local development only: register without a WireGuard tunnel, leaving the data path on base_url.",
-   "fieldname": "skip_tunnel",
-   "fieldtype": "Check",
-   "label": "Skip Tunnel (Local Dev)"
-  },
-  {
-   "default": "Unregistered",
-   "description": "Unregistered \u2192 Provisioning \u2192 Active; Inactive = registered but tunnel stripped down.",
-   "fieldname": "tunnel_status",
-   "fieldtype": "Select",
-   "in_list_view": 1,
-   "label": "Tunnel Status",
-   "options": "Unregistered\nProvisioning\nActive\nInactive",
-   "read_only": 1
-  },
-  {
-   "description": "This Atlas's /32 on wg0 from the pool; unique, guards against a double-allocation race.",
-   "fieldname": "tunnel_ip",
-   "fieldtype": "Data",
-   "label": "Tunnel IP",
-   "read_only": 1,
-   "unique": 1
-  },
-  {
-   "description": "Derived from tunnel_ip; the post-registration data path (base_url is bootstrap-only).",
-   "fieldname": "tunnel_url",
-   "fieldtype": "Data",
-   "label": "Tunnel URL",
-   "read_only": 1
-  },
-  {
-   "description": "The per-Atlas scoped Central service user this Atlas authenticates as when it reports events.",
-   "fieldname": "service_user",
-   "fieldtype": "Link",
-   "label": "Service User",
-   "options": "User",
-   "read_only": 1,
-   "search_index": 1
-  },
-  {
-   "description": "HMAC signing secret this Atlas uses to sign outbound webhooks (X-Atlas-Signature).",
+   "description": "Shared secret reserved for signed regional state delivery.",
    "fieldname": "webhook_secret",
    "fieldtype": "Password",
    "label": "Webhook Secret",
    "read_only": 1
   },
   {
-   "fieldname": "column_break_tunnel",
-   "fieldtype": "Column Break"
-  },
-  {
-   "description": "The Atlas's WireGuard public key, returned by provision_tunnel and added to the hub as a peer.",
-   "fieldname": "peer_public_key",
-   "fieldtype": "Small Text",
-   "label": "Peer Public Key",
-   "read_only": 1
-  },
-  {
-   "description": "The Atlas's public wg endpoint (host of base_url : listen port) the hub dials.",
-   "fieldname": "peer_endpoint",
-   "fieldtype": "Data",
-   "label": "Peer Endpoint",
-   "read_only": 1
-  },
-  {
-   "fieldname": "section_break_health",
-   "fieldtype": "Section Break",
-   "label": "Health"
-  },
-  {
    "default": "0",
-   "description": "Result of the last Test Connection (over the current data path \u2014 base_url before/after the tunnel, tunnel_url while Active).",
+   "description": "The last signed Atlas tenant API check succeeded. A generic ping is not sufficient.",
    "fieldname": "reachable",
    "fieldtype": "Check",
    "label": "Reachable",
@@ -171,26 +74,47 @@
    "fieldtype": "Datetime",
    "label": "Last Synced At",
    "read_only": 1
+  },
+  {
+   "description": "Numeric region ID from Atlas Settings, from 0 to 65535. Leave blank until the operator confirms it.",
+   "fieldname": "atlas_region_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Atlas Region ID",
+   "length": 5
+  },
+  {
+   "fieldname": "connection_checked_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Connection Checked At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "connection_error",
+   "fieldtype": "Small Text",
+   "label": "Connection Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "connection_section",
+   "fieldtype": "Section Break",
+   "label": "Connection status"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "delivery_section",
+   "fieldtype": "Section Break",
+   "label": "State delivery"
   }
  ],
  "links": [
   {
-   "group": "Hosting",
-   "link_doctype": "Asset",
-   "link_fieldname": "cluster"
-  },
-  {
-   "group": "Hosting",
-   "link_doctype": "Site",
-   "link_fieldname": "cluster"
-  },
-  {
-   "group": "Pricing",
-   "link_doctype": "Catalog Rate",
-   "link_fieldname": "cluster"
+   "link_doctype": "Resource Action",
+   "link_fieldname": "atlas_instance"
   }
  ],
- "modified": "2026-06-22 17:27:10.707891",
+ "modified": "2026-09-16 16:38:40.774114",
  "modified_by": "Administrator",
  "module": "Central",
  "name": "Atlas Instance",
@@ -211,6 +135,7 @@
   }
  ],
  "row_format": "Dynamic",
+ "search_fields": "region,base_url",
  "sort_field": "region",
  "sort_order": "ASC",
  "states": [],
