@@ -2,14 +2,21 @@ import base64
 import hashlib
 import hmac
 import json
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils.password import remove_encrypted_password
 
+from central.api.state_delivery import REGION_HEADER, SENDER_HEADER, receive
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.integrations.state_delivery import accept, apply_report
+from central.integrations.state_delivery import (
+	accept_atlas_report,
+	accept_cargo_report,
+	apply_atlas_report,
+)
 
 SECRET = "delivery-test-secret"
 
@@ -58,7 +65,7 @@ class TestStateDelivery(IntegrationTestCase):
 		"""Sign a report the way Frappe's Webhook does, then hand it to the receiver."""
 		body = json.dumps(report).encode()
 		signature = base64.b64encode(hmac.new(secret.encode(), body, hashlib.sha256).digest()).decode()
-		return accept(
+		return accept_atlas_report(
 			raw_body=body,
 			region=self.cluster.name if region is None else region,
 			signature=signature,
@@ -75,7 +82,7 @@ class TestStateDelivery(IntegrationTestCase):
 		return report
 
 	def apply(self, report: dict) -> None:
-		apply_report(self.cluster.name, report)
+		apply_atlas_report(self.cluster.name, report)
 
 	# — Authentication
 
@@ -85,9 +92,9 @@ class TestStateDelivery(IntegrationTestCase):
 
 	def test_a_missing_header_is_refused(self):
 		with self.assertRaises(frappe.PermissionError):
-			accept(raw_body=b"{}", region=self.cluster.name, signature=None)
+			accept_atlas_report(raw_body=b"{}", region=self.cluster.name, signature=None)
 		with self.assertRaises(frappe.PermissionError):
-			accept(raw_body=b"{}", region=None, signature="signature")
+			accept_atlas_report(raw_body=b"{}", region=None, signature="signature")
 
 	def test_an_unknown_region_is_refused(self):
 		with self.assertRaises(frappe.PermissionError):
@@ -243,3 +250,196 @@ class TestStateDelivery(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 		return action.name
+
+
+class TestDeliveryRouting(IntegrationTestCase):
+	"""One endpoint serves every plane, so the sender header picks the handler."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		self.accepted = self.enterContext(
+			patch("central.api.state_delivery.state_delivery.accept_atlas_report")
+		)
+		self.accepted_cargo = self.enterContext(
+			patch("central.api.state_delivery.state_delivery.accept_cargo_report")
+		)
+		frappe.local.request = SimpleNamespace(get_data=lambda: b"{}")
+		self.addCleanup(delattr, frappe.local, "request")
+
+	def deliver(self, sender: str | None) -> dict:
+		headers = {SENDER_HEADER: sender, REGION_HEADER: "region", "X-Frappe-Webhook-Signature": "s"}
+		with patch("central.api.state_delivery.frappe.get_request_header", headers.get):
+			return receive()
+
+	def test_an_atlas_delivery_reaches_the_state_handler(self):
+		self.deliver("atlas")
+
+		self.assertTrue(self.accepted.called)
+
+	def test_the_header_is_read_whatever_its_case(self):
+		self.deliver("Atlas")
+
+		self.assertTrue(self.accepted.called)
+
+	def test_a_cargo_delivery_reaches_the_service_handler(self):
+		self.deliver("cargo")
+
+		self.assertTrue(self.accepted_cargo.called)
+		self.assertFalse(self.accepted.called)
+
+	def test_a_delivery_that_names_no_sender_is_refused(self):
+		with self.assertRaises(frappe.PermissionError):
+			self.deliver(None)
+
+		self.assertFalse(self.accepted.called)
+
+	def test_an_unknown_sender_is_refused(self):
+		with self.assertRaises(frappe.PermissionError):
+			self.deliver("pilot")
+
+		self.assertFalse(self.accepted.called)
+
+
+class TestCargoServiceDelivery(IntegrationTestCase):
+	"""A region reports what it serves. Central records it only from a delivery its own
+	Cargo secret signed, and only for a service and a state Central knows."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.set_user("Administrator")
+		self.addCleanup(frappe.db.rollback)
+		self.region = frappe.get_doc(
+			{"doctype": "Region", "region": "service-" + frappe.generate_hash(length=8)}
+		).insert()
+		self.cargo = frappe.get_doc(
+			{
+				"doctype": "Cargo Instance",
+				"region": self.region.name,
+				"base_url": "https://cargo.example.test",
+				"status": "Registered",
+			}
+		)
+		self.cargo.webhook_secret = SECRET
+		self.cargo.insert()
+
+	# — Helpers
+
+	def deliver(self, report: dict, *, secret: str = SECRET, region: str | None = None) -> dict:
+		body = json.dumps(report).encode()
+		signature = base64.b64encode(hmac.new(secret.encode(), body, hashlib.sha256).digest()).decode()
+		return accept_cargo_report(
+			raw_body=body,
+			region=self.region.name if region is None else region,
+			signature=signature,
+		)
+
+	def service_report(self, **overrides) -> dict:
+		report = {
+			"region": self.region.name,
+			"service": "storage",
+			"status": "Available",
+			"service_endpoint": "https://s3-svc.example.test",
+		}
+		report.update(overrides)
+		return report
+
+	def detail(self, service: str = "storage"):
+		return frappe.get_doc("Service Detail", f"{self.region.name}-{service}")
+
+	# — Authentication
+
+	def test_a_wrong_signature_is_refused(self):
+		with self.assertRaises(frappe.PermissionError):
+			self.deliver(self.service_report(), secret="not-the-secret")
+
+	def test_a_missing_header_is_refused(self):
+		with self.assertRaises(frappe.PermissionError):
+			self.deliver(self.service_report(), region="")
+
+	def test_an_unregistered_region_is_refused(self):
+		self.cargo.db_set("status", "Draft")
+
+		with self.assertRaises(frappe.PermissionError):
+			self.deliver(self.service_report())
+
+	def test_a_region_without_a_secret_is_refused(self):
+		remove_encrypted_password("Cargo Instance", self.cargo.name, "webhook_secret")
+		frappe.clear_document_cache("Cargo Instance", self.cargo.name)
+
+		with self.assertRaises(frappe.PermissionError):
+			self.deliver(self.service_report())
+
+	def test_one_region_cannot_report_for_another(self):
+		other = frappe.get_doc(
+			{"doctype": "Region", "region": "other-" + frappe.generate_hash(length=8)}
+		).insert()
+
+		with self.assertRaises(frappe.PermissionError):
+			self.deliver(self.service_report(), region=other.name)
+
+	# — What Central records
+
+	def test_a_reported_service_is_recorded_against_its_region(self):
+		self.deliver(self.service_report())
+		detail = self.detail()
+
+		self.assertEqual(detail.region, self.region.name)
+		self.assertEqual(detail.service, "storage")
+		self.assertEqual(detail.status, "Available")
+		self.assertEqual(detail.service_endpoint, "https://s3-svc.example.test")
+
+	def test_each_service_of_a_region_gets_its_own_row(self):
+		self.deliver(self.service_report())
+		self.deliver(self.service_report(service="telemetry"))
+
+		self.assertEqual(self.detail("storage").service, "storage")
+		self.assertEqual(self.detail("telemetry").service, "telemetry")
+
+	def test_reporting_again_rewrites_the_same_row(self):
+		self.deliver(self.service_report())
+		self.deliver(self.service_report(status="Not Available", service_endpoint=None))
+		detail = self.detail()
+
+		self.assertEqual(detail.status, "Not Available")
+		self.assertEqual(frappe.db.count("Service Detail", {"region": self.region.name}), 1)
+
+	def test_the_activation_time_is_the_first_one_reported(self):
+		self.deliver(self.service_report())
+		activated = self.detail().activated_on
+
+		self.deliver(self.service_report())
+
+		self.assertEqual(self.detail().activated_on, activated)
+
+	def test_coming_back_after_an_outage_is_a_new_activation(self):
+		self.deliver(self.service_report())
+		activated = self.detail().activated_on
+		self.deliver(self.service_report(status="Not Available"))
+
+		self.deliver(self.service_report())
+
+		self.assertGreaterEqual(self.detail().activated_on, activated)
+		self.assertEqual(self.detail().status, "Available")
+
+	# — What Central refuses to record
+
+	def test_an_unknown_service_is_ignored(self):
+		reply = self.deliver(self.service_report(service="database"))
+
+		self.assertIn("unsupported service", reply["ignored"])
+		self.assertFalse(frappe.db.exists("Service Detail", {"region": self.region.name}))
+
+	def test_an_unknown_status_is_ignored(self):
+		reply = self.deliver(self.service_report(status="Active"))
+
+		self.assertIn("unsupported status", reply["ignored"])
+		self.assertFalse(frappe.db.exists("Service Detail", {"region": self.region.name}))
+
+	def test_a_body_that_is_not_an_object_is_ignored(self):
+		body = b"[]"
+		signature = base64.b64encode(hmac.new(SECRET.encode(), body, hashlib.sha256).digest()).decode()
+
+		reply = accept_cargo_report(raw_body=body, region=self.region.name, signature=signature)
+
+		self.assertEqual(reply["ignored"], "unreadable body")

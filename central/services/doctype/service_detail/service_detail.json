@@ -1,13 +1,13 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "creation": "2026-09-17 16:28:47.018144",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
   "service_section",
-  "managed_service",
   "region",
+  "service",
   "column_break_service",
   "status",
   "activated_on",
@@ -22,17 +22,6 @@
    "label": "Service"
   },
   {
-   "description": "The service this row reports the state of.",
-   "fieldname": "managed_service",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "in_standard_filter": 1,
-   "label": "Managed Service",
-   "options": "Managed Service",
-   "reqd": 1,
-   "search_index": 1
-  },
-  {
    "description": "The region that runs this service and reports on it.",
    "fieldname": "region",
    "fieldtype": "Link",
@@ -41,7 +30,8 @@
    "label": "Region",
    "options": "Region",
    "reqd": 1,
-   "search_index": 1
+   "search_index": 1,
+   "set_only_once": 1
   },
   {
    "fieldname": "column_break_service",
@@ -85,11 +75,19 @@
    "fieldname": "last_updated_on",
    "fieldtype": "Datetime",
    "label": "Last Updated On"
+  },
+  {
+   "fieldname": "service",
+   "fieldtype": "Select",
+   "label": "Service",
+   "options": "telemetry\nstorage",
+   "reqd": 1,
+   "set_only_once": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-09-17 16:50:01.709031",
+ "modified": "2026-09-17 17:18:37.161735",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service Detail",
@@ -124,5 +122,7 @@
    "title": "Not Available"
   }
  ],
- "title_field": "managed_service"
+ "title_field": "service",
+ "autoname": "format:{region}-{service}",
+ "naming_rule": "Expression"
 }

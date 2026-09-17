@@ -15,7 +15,8 @@
   "bootstrapping_token",
   "column_break_tokens",
   "central_access_token",
-  "atlas_access_token"
+  "atlas_access_token",
+  "webhook_secret"
  ],
  "fields": [
   {
@@ -95,6 +96,12 @@
    "fieldtype": "Data",
    "label": "Telemetry Base URL",
    "read_only": 1
+  },
+  {
+   "fieldname": "webhook_secret",
+   "fieldtype": "Password",
+   "label": "Webhook Secret",
+   "description": "Signs this region's service reports. Central checks every delivery against it."
   }
  ],
  "grid_page_length": 50,

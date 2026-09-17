@@ -24,6 +24,7 @@ class CargoInstance(Document):
 		registered_at: DF.Datetime | None
 		status: DF.Literal["Draft", "Registered", "Disabled"]
 		telemetry_base_url: DF.Data | None
+		webhook_secret: DF.Password | None
 	# end: auto-generated types
 
 	"""One Cargo host, and the region it provisions for.
