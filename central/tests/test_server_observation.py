@@ -127,6 +127,35 @@ class TestServerObservation(IntegrationTestCase):
 		self.assertEqual(self.asset.title, "acme-1")
 		self.assertEqual(self.asset.team, self.team.name)
 
+	def test_a_recorded_report_reaches_only_the_owning_team(self):
+		"""The console learns about its own servers through its team's room, so one
+		team's traffic never reaches another's browser."""
+		with patch("frappe.publish_realtime") as published:
+			Asset.record_observed_state(self.asset.name, frappe.utils.now_datetime(), {"status": "Stopped"})
+
+		# Frappe's own save() also publishes doc_update and list_update for Desk.
+		published.assert_any_call(
+			"server_state_changed",
+			{"resource_id": self.asset.name},
+			doctype="Team",
+			docname=self.team.name,
+			after_commit=True,
+		)
+
+	def test_a_report_that_changes_nothing_wakes_no_console(self):
+		now = frappe.utils.now_datetime()
+		self.asset.db_set({"state_observed_at": now})
+
+		with patch("frappe.publish_realtime") as published:
+			Asset.record_observed_state(
+				self.asset.name, frappe.utils.add_to_date(now, seconds=-1), {"status": "Stopped"}
+			)
+			Asset.record_observed_state("server-absent", now, {"status": "Stopped"})
+
+		self.assertNotIn(
+			"server_state_changed", [call.args[0] for call in published.call_args_list if call.args]
+		)
+
 	def test_record_locks_before_loading(self):
 		with patch("frappe.get_doc", wraps=frappe.get_doc) as get_doc:
 			Asset.record_observed_state(self.asset.name, frappe.utils.now_datetime(), {"status": "Stopped"})

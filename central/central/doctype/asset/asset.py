@@ -145,7 +145,23 @@ class Asset(Document):
 		doc.state_observed_at = observed_at
 		# The verified region authorizes these values, not the signed-in user.
 		doc.save(ignore_permissions=True)
+		doc.publish_state_change()
 		return True
+
+	def publish_state_change(self) -> None:
+		"""Tell this team's consoles that one of its servers moved.
+
+		The payload is identity only. Every consumer re-reads through the team-scoped
+		API, so the socket never becomes a second source of truth for state. The room is
+		this server's Team document, and Frappe checks Team read permission before a
+		client may join it, so one team's traffic never reaches another's console."""
+		frappe.publish_realtime(
+			"server_state_changed",
+			{"resource_id": self.name},
+			doctype="Team",
+			docname=self.team,
+			after_commit=True,
+		)
 
 	def is_report_stale(self, observed_at) -> bool:
 		"""True when this server already holds a report newer than `observed_at`."""
@@ -158,9 +174,10 @@ class Asset(Document):
 	def mark_resizing(resource_id: str, resizing: bool) -> None:
 		"""Flag or unflag a server as mid-resize, so the console shows a "Resizing" state
 		and gates power actions while the reshape job runs. This is Central's own
-		orchestration flag, not an observed field, so a region report never clears it.
-		`notify=True` pushes the change to console subscribers without polling."""
-		frappe.get_doc("Asset", resource_id).db_set("resize_in_progress", 1 if resizing else 0, notify=True)
+		orchestration flag, not an observed field, so a region report never clears it."""
+		doc = frappe.get_doc("Asset", resource_id)
+		doc.db_set("resize_in_progress", 1 if resizing else 0)
+		doc.publish_state_change()
 
 	@staticmethod
 	def mark_terminated(resource_id: str, observed_at=None) -> bool:
@@ -174,9 +191,9 @@ class Asset(Document):
 
 		doc.status = "Terminated"
 		doc.state_observed_at = observed_at or frappe.utils.now_datetime()
-		# save(), not db_set(): `on_update` closes the billing segment for a dead server,
-		# and it emits Frappe's list_update so the console sees the terminal state.
+		# save(), not db_set(): `on_update` closes the billing segment for a dead server.
 		doc.save(ignore_permissions=True)
+		doc.publish_state_change()
 		return True
 
 
