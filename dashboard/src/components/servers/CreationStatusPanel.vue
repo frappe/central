@@ -139,7 +139,5 @@ const checkedAgo = computed(() => {
 				@click="emit('edit')"
 			/>
 		</div>
-
-		<p class="text-p-sm text-ink-gray-4">Action {{ action.action }}</p>
 	</div>
 </template>
