@@ -311,9 +311,6 @@ def resize_composed_config(subscription: str, includes: list | str, sub_category
 	if not team:
 		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
 	authz.require_capability(team, authz.MANAGE)
-	asset = frappe.db.get_value("Subscription", subscription, "asset_id")
-	if asset and frappe.db.get_value("Asset", asset, "atlas_vm_id"):
-		frappe.throw(_("Server resize is not available on this Atlas integration yet."))
 
 	if isinstance(includes, str):
 		includes = frappe.parse_json(includes)
@@ -346,9 +343,6 @@ def resize_server(
 	if not team:
 		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
 	authz.require_capability(team, authz.MANAGE)
-	asset = frappe.db.get_value("Subscription", subscription, "asset_id")
-	if asset and frappe.db.get_value("Asset", asset, "atlas_vm_id"):
-		frappe.throw(_("Server resize is not available on this Atlas integration yet."))
 
 	from central.billing.catalog.subscriptions import begin_resize
 

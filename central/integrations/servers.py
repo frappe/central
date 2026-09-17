@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import time
+
 import frappe
 from frappe import _
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.central.doctype.resource_action.resource_action import GOAL_STATUS
+from central.central.doctype.resource_action.resource_action import GOAL_STATUS, ResourceAction
 from central.errors import (
 	AtlasConnectionError,
 	AtlasRequestUncertain,
@@ -17,6 +19,9 @@ from central.iam import can
 from central.integrations.atlas import AtlasClient
 
 CAPABILITY = {"start": "server:power", "stop": "server:power", "terminate": "server:terminate"}
+POWER_WAIT_SECONDS = 240
+POWER_POLL_SECONDS = 5
+COMMAND_TIMEOUT_SECONDS = 10 * 60
 
 
 def observe_server(asset: Asset) -> str:
@@ -26,6 +31,7 @@ def observe_server(asset: Asset) -> str:
 		remote = client.get_vm(asset.atlas_vm_id)
 	except AtlasResourceGone:
 		mark_terminated(asset)
+		ResourceAction.confirm_observed_status(asset.name, "Terminated")
 		return "Terminated"
 
 	if remote.get("id") != asset.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
@@ -75,7 +81,47 @@ def observe_server(asset: Asset) -> str:
 			"gateway_url": gateway,
 		},
 	)
+
+	ResourceAction.confirm_observed_status(asset.name, status)
 	return status
+
+
+def resize_server(asset: Asset, shape: dict) -> None:
+	"""Apply a new size on Atlas, then start the server.
+
+	Atlas changes CPU and memory only on a stopped VM, so a compute change stops it first.
+	Every call sets an absolute value, so repeating the resize is safe."""
+	client = _client(asset)
+	remote = client.get_vm(asset.atlas_vm_id)
+	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
+	cpu_millicores = shape["vcpus"] * 1000
+	memory_mib = shape["memory_megabytes"]
+	disk_mib = shape["disk_gigabytes"] * 1024
+
+	if (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib):
+		_wait_for_power_state(client, asset.atlas_vm_id, "stop", "stopped")
+		client.update_compute(asset.atlas_vm_id, cpu_millicores, memory_mib)
+
+	if disk_mib > (disk.get("size_mib") or 0):
+		client.update_disk(asset.atlas_vm_id, disk_mib)
+
+	_wait_for_power_state(client, asset.atlas_vm_id, "start", "running")
+	observe_server(asset)
+
+
+def _wait_for_power_state(client: AtlasClient, vm_id: str, action: str, state: str) -> None:
+	"""Request a power state when the VM is not in it, then wait until Atlas observes it."""
+	if client.get_vm(vm_id).get("current_state") == state:
+		return
+
+	client.vm_action(vm_id, action)
+	deadline = time.monotonic() + POWER_WAIT_SECONDS
+	while client.get_vm(vm_id).get("current_state") != state:
+		if time.monotonic() > deadline:
+			frappe.throw(
+				_("The server did not reach the {0} state in time.").format(state), AtlasConnectionError
+			)
+		time.sleep(POWER_POLL_SECONDS)
 
 
 def process_command(action) -> None:
@@ -126,8 +172,15 @@ def process_command(action) -> None:
 		action.succeed()
 	elif status in ("Failed", "Terminated"):
 		action.set_error("Failed", build_envelope("ACTION_FAILED", action=action.action))
+	elif _is_command_overdue(action):
+		action.set_error("Timed Out", build_envelope("ACTION_TIMED_OUT", action=action.action))
 	else:
 		action.db_set({"status": "In Progress", "last_checked_at": frappe.utils.now_datetime()})
+
+
+def _is_command_overdue(action) -> bool:
+	started = action.dispatched_at or action.creation
+	return frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), started) > COMMAND_TIMEOUT_SECONDS
 
 
 def reconcile(team: str | None = None) -> dict:

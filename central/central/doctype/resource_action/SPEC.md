@@ -63,7 +63,7 @@ A scoped not-found response records the server as terminated, applies the billin
 
 The console selects region, offering, exact build, and compatible plan. It retains the original request key and payload in session storage until a response is confirmed. Page reloads resume a known action. An unconfirmed HTTP response can resume only the original request. Switching Teams clears the visible action and ignores late responses from the previous Team.
 
-Restart and resize are not exposed by this action flow. Restart needs an authoritative completion signal. Resize needs Atlas migration tracking before billing can change safely. Framework webhook ingestion and signup site readiness are subsequent delivery phases.
+Restart and resize are not exposed by this action flow. Restart needs an authoritative completion signal. Resize runs as a billing background job instead: `central.integrations.servers.resize_server` stops the VM when CPU or memory changes, sets compute with `PATCH /virtual-machines/<id>/compute`, grows the disk with `PATCH /virtual-machines/<id>/disk`, starts the VM, and waits up to 240 seconds for each power state. Billing re-prices only after these calls succeed. Framework webhook ingestion and signup site readiness are subsequent delivery phases.
 
 ## Validation
 

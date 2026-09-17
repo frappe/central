@@ -53,6 +53,27 @@ class TestServerObservation(IntegrationTestCase):
 			"network": {"mesh_ipv6": "fdaa:1::1", "public_ipv4": None},
 		}
 
+	def test_observation_closes_the_action_waiting_for_that_state(self):
+		action = frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": "stop",
+				"team": self.team.name,
+				"atlas_instance": self.asset.cluster,
+				"asset": self.asset.name,
+				"resource_id": self.asset.name,
+				"remote_vm_id": "vm-00001",
+				"requested_by": "Administrator",
+				"correlation_id": frappe.generate_hash(length=32),
+				"status": "In Progress",
+			}
+		).insert(ignore_permissions=True)
+		self.client.get_vm.return_value["current_state"] = "stopped"
+
+		self.assertEqual(observe_server(self.asset), "Stopped")
+		self.assertEqual(frappe.db.get_value("Resource Action", action.name, "status"), "Succeeded")
+
 	def test_observation_preserves_local_and_regional_identity(self):
 		self.assertEqual(observe_server(self.asset), "Running")
 		self.asset.reload()

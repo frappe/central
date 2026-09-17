@@ -52,6 +52,15 @@ class TestServerActions(IntegrationTestCase):
 		self.assertEqual(get_status(result["action"])["status"], "Succeeded")
 		self.client.vm_action.assert_called_once_with("vm-00001", "start")
 
+	def test_command_that_never_reaches_its_goal_times_out(self):
+		name = self.submit("stop")["action"]
+		_process_locked(name)
+		frappe.db.set_value("Resource Action", name, "dispatched_at", "2020-01-01 00:00:00")
+
+		_process_locked(name)
+
+		self.assertEqual(frappe.db.get_value("Resource Action", name, "status"), "Timed Out")
+
 	def test_duplicate_action_returns_existing_request(self):
 		first = self.submit()
 		self.assertEqual(self.submit()["action"], first["action"])

@@ -640,8 +640,13 @@ def _guard_disk_shrink(asset_id: str, shape: dict) -> None:
 
 
 def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
-	"""Refuse resize until asynchronous Atlas migration tracking is connected."""
-	frappe.throw(frappe._("Server resize is not available on this Atlas integration yet."))
+	"""Apply the new size on the server's region before billing re-prices it."""
+	from central.integrations.servers import resize_server
+
+	if status not in ("Running", "Paused", "Stopped"):
+		frappe.throw(frappe._("Wait until the server is ready before you resize it."))
+	if shape:
+		resize_server(frappe.get_doc("Asset", asset_id), shape)
 
 
 def _is_resizable(doc) -> bool:
