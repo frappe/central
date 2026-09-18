@@ -8,6 +8,32 @@ The deadline depends on one ready region, usable Pilot and Ubuntu images, DNS ac
 
 Read [Scope](REWRITE_SCOPE.md) for ownership and contracts. Read [Validation](LOCAL_ENVIRONMENT.md) for required proof.
 
+## Current status
+
+Updated 2026-09-18, from the integration tracker and a read of the code, after merging `v0.2`. `Done` means the behavior exists in this branch. `Partial` names what is still missing.
+
+| Stage | State | Remaining |
+|---|---|---|
+| 0A Team tenant identity | Done | |
+| 0B Atlas signing and Pilot authentication | Partial | The `pilot-central` metadata does not carry `initial_jwks_cache`, which Pilot already reads. |
+| 0C Regional configuration and image offerings | Done | |
+| 1 Trial signup | Not started | No Central site creation. The console still calls removed `central.api.sites` routes. |
+| 1 State delivery | Partial | The signed Atlas receiver and the repair reads work. Durable receipts, payload digest deduplication, and unmatched receipt retry do not exist. |
+| 2 Server creation and lifecycle | Partial | Create, start, stop, restart, terminate, resize, and Open Pilot work. A failed creation is retried on its own record, an unanswered one settles itself by lookup, and the console reads its open request back from Central. Creation does not send a sleep policy. |
+| 3 Staging proof | Not started | |
+
+A Pilot-registered Site Domain carries a server but no `Site` link, because the Pilot knows its machine and not Central's site record. Linking `Site` to its server is what lets the two producers of a route agree.
+
+Work that landed ahead of its phase: proxy site and custom domain routes, the Pilot rename helpers, the Cargo report receiver, and Pilot-driven domain registration with DNS ownership checks.
+
+Phase 4 is therefore part done. A Pilot registers its own site and custom domains through `central.api.pilot`, and Central verifies a TXT record, and a CNAME for a non-apex name, before it creates the route. Central-driven rename and TLS coordination remain.
+
+Known gaps outside the phase list:
+
+- A terminated server keeps its Site Domain routes. Only its Pilot credentials are revoked.
+- Central has no endpoint for a region to enrol itself. Atlas now accepts `PUT /api/atlas/webhooks` to point its deliveries at a Central, so the sender half exists, but the matching Atlas Instance and Cargo Instance secrets are still entered into Central by hand.
+- Resize accepts a disk change. The agreed product rule is CPU and memory only.
+
 ## Branch workflow
 
 ```text
@@ -185,4 +211,4 @@ Documentation-only PRs require content, link, conflict-marker, and diff checks. 
 | Ubuntu access | Verify SSH key injection and an operator-approved network path for the customer. |
 | Restart result | Verify a completion signal or add the smallest required Atlas contract. |
 | Trial policy | Confirm size, idle timeout, limits, and whether scheduled work may pause during sleep. |
-| Unknown create | Provide an operator recovery action until remote idempotency or lookup is proven. |
+| Unknown create | Met. Central looks the machine up by its action marker, so an unanswered creation settles itself. |
