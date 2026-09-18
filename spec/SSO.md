@@ -69,9 +69,10 @@ Central mints three token types with the same RS256 key, separated **only** by t
 | `enroll` | `mint_bootstrap_token` | `pilot_credential_id` | 30 min | Central (`verify_bootstrap_token`, asserts `scope == enroll`) |
 | `datum` | `mint_datum_token` | `pilot_credential_id` | **7 days** | Datum, for metrics and logs alike |
 
-One `datum` token serves both write paths. Datum is one service that tells them apart by
-the route, not by the credential, so a second token would carry the same `resource_id` and
-the same authority. It is signed with the **regional Ed25519 key**, not the RSA key the
+One `datum` token serves both write paths, handed out by one route,
+`central.api.pilot.datum_token`. Datum is one service that tells metrics from logs by the
+route the pilot posts to, not by the credential it presents, so a second token would carry
+the same `resource_id` and the same authority. It is signed with the **regional Ed25519 key**, not the RSA key the
 bench and enrollment tokens use, because datum verifies against the merged key set Atlas
 publishes and that set carries Ed25519 keys only. `iss` is the literal `central`, and the
 key id is namespaced `central:`, which is how datum binds one to the other.
