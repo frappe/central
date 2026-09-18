@@ -41,6 +41,27 @@ delete --> on_trash --> DELETE route --> record deleted
 - A PATCH and a DELETE are safe to repeat, so a retry never needs cleanup.
 - A delete fails when the proxy call fails. The record stays, so the route and the record cannot drift apart. Fix the cause and delete again.
 
+## Pilot registration
+
+A Pilot uses these endpoints from its `bench-domain-provider`. Each endpoint authenticates with `X-Pilot-Token`. The route always targets the server of the Pilot credential, never a server from the request.
+
+| Endpoint | Method | Pilot verb |
+|---|---|---|
+| `central.api.pilot.domain_records?domain=` | GET | `generate-dns-records` |
+| `central.api.pilot.register_domain` | POST | `register` |
+| `central.api.pilot.deregister_domain` | POST | `deregister` |
+
+A site needs no DNS records. `register_domain` creates the route when no other server holds the name.
+
+A custom domain needs verification before Central creates a record:
+
+1. `domain_records` returns a CNAME from the domain to `proxy.<region>.<wildcard domain>`, and a TXT record `_frappe-verification.<domain>` with a random token.
+2. Central keeps the token in the cache for 24 hours, at `site-domain||<domain>||<pilot credential ID>||verification-token`. A repeat call returns the same token.
+3. `register_domain` looks up the TXT record, and the CNAME when the domain is not an apex. An apex cannot hold a CNAME, so Central does not check it. When a record does not match, Central returns HTTP 409 and creates no record.
+4. When the records match, Central creates the record and sends the route. The call returns only when the route is Active. When the proxy fails, Central keeps no record, so the Pilot can retry.
+
+`deregister_domain` deletes the record and the route. It refuses a route of another server and accepts a route that does not exist.
+
 ## Permissions
 
 A team member with `server:view` can read the records of that team. Only a System Manager creates, retries, or deletes a record.

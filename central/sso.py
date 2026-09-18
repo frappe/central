@@ -12,7 +12,9 @@ from central.central.doctype.central_sso_settings.central_sso_settings import (
 	CentralSSOSettings,
 )
 
-BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
+# Pilot ends an admin session when its login token expires, so this is the session length.
+BENCH_LOGIN_TTL = 60 * 60
+SITE_LOGIN_TTL = 5 * 60  # a single-use assertion that a site exchanges for its own session
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
 METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
 LOG_TTL = METRICS_TTL
@@ -72,7 +74,7 @@ def bench_gateway() -> str:
 
 
 def mint_bench_login(audience: str) -> str:
-	"""A short-lived admin SID that opens a bench. The bench verifies it against the JWKS
+	"""A single-use admin SID that opens a bench. The bench verifies it against the JWKS
 	and checks `aud` equals its own audience id."""
 	return _mint(audience, "bench", BENCH_LOGIN_TTL, {"sub": "admin"})
 
@@ -80,7 +82,7 @@ def mint_bench_login(audience: str) -> str:
 def mint_site_login(audience: str, site: str) -> str:
 	"""A one-time assertion the site's pilot exchanges for an Administrator session, scoped to
 	one site. `aud` is the hosting bench's audience id; the pilot verifies it against the JWKS."""
-	return _mint(audience, "site", BENCH_LOGIN_TTL, {"sub": "admin", "site": site})
+	return _mint(audience, "site", SITE_LOGIN_TTL, {"sub": "admin", "site": site})
 
 
 def mint_bootstrap_token(team: str, pilot_credential_id: str) -> str:
