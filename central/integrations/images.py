@@ -23,8 +23,18 @@ def list_offerings(team: str, flow: str = "Server") -> list[dict]:
 	)
 
 
-def list_images(team: str, atlas_instance: str, offering: str, flow: str = "Server", offset: int = 0) -> dict:
-	"""Read a shared catalog under the caller's authorized Team context."""
+def list_images(
+	team: str,
+	atlas_instance: str,
+	offering: str,
+	flow: str = "Server",
+	offset: int = 0,
+	extra_tags: dict[str, str] | None = None,
+) -> dict:
+	"""Read a shared catalog under the caller's authorized Team context.
+
+	`extra_tags` narrows the offering selector for one flow, such as the site and the Frappe
+	version a trial needs. It comes from Central, never from the request."""
 	validate_catalog_access(team, flow)
 	document = frappe.get_doc("Image Offering", offering)
 	document.check_permission("read")
@@ -36,7 +46,7 @@ def list_images(team: str, atlas_instance: str, offering: str, flow: str = "Serv
 		frappe.throw(_("This region is not accepting new servers."))
 
 	client = AtlasClient.for_team(instance, team)
-	return client.list_system_images(document.get_image_tags(), offset)
+	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
 def preview_images(offering: str, atlas_instance: str, offset: int = 0) -> dict:

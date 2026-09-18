@@ -323,32 +323,33 @@ class TestTrialRegion(IntegrationTestCase):
 
 
 class TestTrialImage(IntegrationTestCase):
-	"""A trial is the site the image carries, so an image without one cannot serve it."""
+	"""A trial is the site the image carries, so the region is asked for that image alone."""
 
-	def images(self, *tags: dict) -> dict:
-		return {
-			"items": [
-				{"id": f"image-{index}", "created_at": index, "tags": tag} for index, tag in enumerate(tags)
-			]
-		}
+	def images(self, count: int) -> dict:
+		return {"items": [{"id": f"image-{index}", "created_at": index} for index in range(count)]}
 
-	def resolve(self, page: dict) -> dict:
+	def resolve(self, page: dict) -> tuple[dict, dict]:
 		with (
 			patch("central.site_provisioning.signup_offering", return_value="pilot"),
 			patch("central.site_provisioning.trial_region_and_plan", return_value=("par-2", "plan-trial")),
-			patch("central.site_provisioning.list_images", return_value=page),
+			patch("central.site_provisioning.list_images", return_value=page) as list_images,
 		):
-			return trial_configuration("any-team")
+			return trial_configuration("any-team"), list_images.call_args.kwargs
 
-	def test_an_image_that_carries_no_site_is_never_chosen(self):
-		page = self.images({"has_site": "1"}, {"has_site": "0"})
+	def test_the_region_is_asked_for_a_site_image_on_the_signup_version(self):
+		"""The tags ride the regional query, so a page of other images cannot hide a match."""
+		_, asked = self.resolve(self.images(1))
 
-		# The site-less image is newer, and still loses.
-		self.assertEqual(self.resolve(page)["image_id"], "image-0")
+		self.assertEqual(asked["extra_tags"], {"has_site": "1", "frappe_version": "develop"})
 
-	def test_an_untagged_image_is_not_taken_for_a_yes(self):
+	def test_the_newest_offered_image_is_chosen(self):
+		configuration, _ = self.resolve(self.images(3))
+
+		self.assertEqual(configuration["image_id"], "image-2")
+
+	def test_a_region_that_offers_none_stops_the_trial(self):
 		with self.assertRaises(frappe.ValidationError):
-			self.resolve(self.images({"purpose": "pilot"}))
+			self.resolve(self.images(0))
 
 
 class TestSiteNaming(SiteOnAMachine):
