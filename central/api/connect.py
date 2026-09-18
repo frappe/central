@@ -3,7 +3,7 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.iam import get_user_team_names
+from central.iam import get_user_team_names, is_active_team_member, user_has_operator_bypass
 from central.utils.guards import require_capability
 
 # Single home for every API method that crosses the central<->connect boundary —
@@ -129,3 +129,22 @@ def delink_partner_link(name: str, acting_user: str | None = None) -> dict:
 	doc = frappe.get_doc("Partner Client Link", name)
 	doc.delink(acting_user)
 	return {"name": doc.name, "status": doc.status}
+
+
+# --- Fetching from connect (central.integrations.connect.ConnectClient) ------
+
+
+@frappe.whitelist(methods=["GET"])
+def fetch_connect_partner(connect_partner: str) -> dict:
+	"""A connect Partner's marketplace listing, for display on that partner's own
+	central dashboard — gated to a member of the Team whose Partner Profile
+	references it (or an operator)."""
+	from central.integrations.connect import ConnectClient
+
+	team = frappe.db.get_value("Partner Profile", {"connect_partner": connect_partner}, "team")
+	if not team:
+		frappe.throw(_("No Partner Profile references {0}.").format(connect_partner))
+	if not user_has_operator_bypass() and not is_active_team_member(frappe.session.user, team):
+		frappe.throw(_("Not permitted for this partner."), frappe.PermissionError)
+
+	return ConnectClient().get_partner(connect_partner)

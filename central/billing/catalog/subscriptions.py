@@ -167,7 +167,9 @@ def provision_composed_subscription(
 	# Re-check the config fits the team's remaining headroom (#83) — the client bounds
 	# are a convenience, the server is the gate.
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
-	enforce_headroom(team, resolve_config_rate(includes, currency, cluster))
+	new_rate = resolve_config_rate(includes, currency, cluster)
+	enforce_headroom(team, new_rate)
+	enforce_partner_spend_headroom(team, new_rate)
 	resource_id = resource_id or f"res-{frappe.generate_hash(length=10)}"
 	sub = create_subscription(
 		team,
@@ -455,6 +457,7 @@ def _plan_resize(doc, asset, plan, includes, sub_category) -> dict | None:
 		shape = _asset_shape(rows)
 		new_rate = resolve_config_rate(rows, currency, cluster)
 	enforce_headroom(doc.team, new_rate, exclude=doc.name)
+	enforce_partner_spend_headroom(doc.team, new_rate, exclude=doc.name)
 	if asset and asset.status in ("Running", "Paused", "Stopped"):
 		_guard_disk_shrink(doc.asset_id, shape)
 	return shape
@@ -560,6 +563,7 @@ def resize_composed_subscription(
 	)
 	new_rate = resolve_config_rate(rows, currency, asset.cluster if asset else None)
 	enforce_headroom(doc.team, new_rate, exclude=subscription)
+	enforce_partner_spend_headroom(doc.team, new_rate, exclude=subscription)
 
 	# Resizing to the identical composition already running is a no-op (no event).
 	if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(
@@ -606,6 +610,7 @@ def resize_to_plan(subscription: str, new_plan: str, changed_by: str | None = No
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
 	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, asset.cluster if asset else None)
 	enforce_headroom(doc.team, new_rate, exclude=subscription)
+	enforce_partner_spend_headroom(doc.team, new_rate, exclude=subscription)
 	if asset:
 		_reshape_vm(doc.asset_id, asset.cluster, asset.status, _plan_shape(new_plan))
 	return change_plan(subscription, new_plan, changed_by=changed_by)
@@ -844,6 +849,58 @@ def enforce_headroom(team: str, new_rate, exclude: str | None = None) -> None:
 			frappe._("This configuration ({0}) exceeds your remaining headroom ({1}).").format(
 				frappe.utils.flt(new_rate), frappe.utils.flt(available)
 			)
+		)
+
+
+def enforce_partner_spend_headroom(client_team: str, new_rate, exclude: str | None = None) -> None:
+	"""Paid-by-Partner (ADR 0007, Phase 4): reject a create/resize that would push a
+	paid-by-partner client's committed monthly run-rate past the partner's
+	`spend_limit + buffer` (0/unset limit = no cap; a team with no active
+	paid-by-partner link is untouched — a no-op for every other team).
+
+	The buffer is never an extra approval step: a create/resize always goes through
+	up to `spend_limit + buffer`, exactly as the product decision specifies — only
+	beyond that ceiling is refused. Notifies the partner once when this action is
+	what crosses `spend_limit`, and again whenever it draws further on the buffer.
+	"""
+	from central.billing.platform import notifications
+	from central.billing.platform.payer import active_paid_by_partner_link
+
+	link = active_paid_by_partner_link(client_team)
+	if not link or not link.spend_limit:
+		return
+	if new_rate is None:
+		frappe.throw(frappe._("This configuration cannot be priced in your currency."))
+
+	limit = frappe.utils.flt(link.spend_limit)
+	buffer = frappe.utils.flt(link.buffer)
+	current = team_run_rate(client_team, exclude=exclude)
+	projected = frappe.utils.flt(current + frappe.utils.flt(new_rate))
+	ceiling = limit + buffer
+
+	if projected > ceiling:
+		frappe.throw(
+			frappe._(
+				"This configuration ({0}) would push {1}'s partner-billed spend to {2}, over "
+				"the {3} limit your partner has set (including the {4} buffer)."
+			).format(frappe.utils.flt(new_rate), client_team, projected, ceiling, buffer)
+		)
+
+	if current <= limit < projected:
+		notifications.notify(
+			link.partner_team,
+			"Partner Spend Limit Reached",
+			message=f"Now committed to {projected} (limit {limit}).",
+			reference_doctype="Team",
+			reference_name=client_team,
+		)
+	if buffer and projected > limit:
+		notifications.notify(
+			link.partner_team,
+			"Partner Spend Buffer Used",
+			message=f"Now committed to {projected}, of a {ceiling} limit+buffer ceiling.",
+			reference_doctype="Team",
+			reference_name=client_team,
 		)
 
 

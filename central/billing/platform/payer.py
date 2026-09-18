@@ -112,6 +112,20 @@ def _merge_adjacent(segments: list[dict]) -> list[dict]:
 	return merged
 
 
+def active_paid_by_partner_link(team: str) -> dict | None:
+	"""The team's currently Approved paid-by-partner link, with its spend cap fields —
+	the "as of right now" read spend-cap enforcement needs at provision/resize time,
+	unlike `payer_segments`/`resolve_billing_team` which answer for an arbitrary date
+	(including past, closed periods)."""
+	rows = frappe.get_all(
+		"Partner Client Link",
+		filters={"client_team": team, "status": "Approved", "paid_by_partner": 1},
+		fields=["name", "partner_team", "spend_limit", "buffer"],
+		limit=1,
+	)
+	return rows[0] if rows else None
+
+
 def paid_by_partner_client_segments(partner_team: str, period_start, period_end) -> list[dict]:
 	"""Every client's partner-attributed day-range within the period, for consolidating
 	onto the partner's own invoice: `{"client_team", "start", "end"}` per contiguous

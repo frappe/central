@@ -1,0 +1,66 @@
+{
+ "actions": [],
+ "creation": "2026-09-15 00:00:00.000000",
+ "description": "The credential central authenticates with for every outbound call to the connect site (central/integrations/connect.py). One row — connect is a single site, unlike Atlas's per-region Atlas Instance.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "base_url",
+  "column_break_creds",
+  "api_key",
+  "api_secret"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "description": "e.g. http://connect.local:8011",
+   "fieldname": "base_url",
+   "fieldtype": "Data",
+   "label": "Connect Base URL"
+  },
+  {
+   "fieldname": "column_break_creds",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "API key of the connect-side User central authenticates as.",
+   "fieldname": "api_key",
+   "fieldtype": "Data",
+   "label": "API Key"
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-09-15 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Central",
+ "name": "Connect Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

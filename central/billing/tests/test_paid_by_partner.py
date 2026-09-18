@@ -4,6 +4,7 @@
 
 import frappe
 
+from central.billing.catalog import subscriptions
 from central.billing.revenue.invoicing import generate
 from central.billing.tests.utils import BillingTestCase, add_segment, ensure_team, make_billing_subscription, make_plan
 
@@ -109,3 +110,86 @@ class TestPaidByPartner(BillingTestCase):
 		frappe.db.delete("Partner Client Link", {"partner_team": PARTNER_TEAM})
 		frappe.db.delete("Partner Client Link", {"client_team": ["in", (CLIENT_TEAM_A, CLIENT_TEAM_B)]})
 		frappe.db.delete("Partner Profile", {"team": PARTNER_TEAM})
+		frappe.db.delete("Billing Notification Log", {"team": PARTNER_TEAM})
+
+
+class TestPartnerSpendHeadroom(BillingTestCase):
+	"""Phase 4: spend_limit + buffer enforcement at provision/resize time."""
+
+	def setUp(self):
+		make_plan(PLAN)
+		ensure_team(PARTNER_TEAM)
+		frappe.get_doc(
+			{"doctype": "Partner Profile", "team": PARTNER_TEAM, "connect_partner": "TEST-PARTNER"}
+		).insert(ignore_permissions=True)
+		# Committed run-rate of 3000 already running before any of these checks fire.
+		# `team_run_rate` (unlike the line-item engine) only counts an *enabled*
+		# Subscription — the plain test helper leaves it 0/disabled by default.
+		self.sub = make_billing_subscription(CLIENT_TEAM_A, CLUSTER, PLAN)
+		add_segment(self.sub, "Created", 3000, "2026-06-01 00:00:00")
+		frappe.db.set_value("Subscription", self.sub, "enabled", 1)
+
+	def _approve_link(self, spend_limit, buffer=0):
+		link = frappe.get_doc(
+			{
+				"doctype": "Partner Client Link",
+				"partner_team": PARTNER_TEAM,
+				"client_team": CLIENT_TEAM_A,
+				"status": "Pending",
+				"paid_by_partner": 1,
+				"spend_limit": spend_limit,
+				"buffer": buffer,
+			}
+		)
+		link.insert(ignore_permissions=True)
+		link.status = "Approved"
+		link.approved_on = frappe.utils.now_datetime()
+		link.save(ignore_permissions=True)
+		return link.name
+
+	def _notification_count(self, event_type):
+		return frappe.db.count(
+			"Billing Notification Log", {"team": PARTNER_TEAM, "event_type": event_type, "reference_name": CLIENT_TEAM_A}
+		)
+
+	def test_no_active_link_is_a_noop(self):
+		subscriptions.enforce_partner_spend_headroom(CLIENT_TEAM_A, 50000)  # would not raise
+
+	def test_unset_limit_is_unlimited(self):
+		self._approve_link(spend_limit=0)
+		subscriptions.enforce_partner_spend_headroom(CLIENT_TEAM_A, 50000)
+
+	def test_under_limit_is_silently_allowed(self):
+		self._approve_link(spend_limit=10000, buffer=0)
+		subscriptions.enforce_partner_spend_headroom(CLIENT_TEAM_A, 2000)  # 3000+2000=5000 < 10000
+		self.assertEqual(self._notification_count("Partner Spend Limit Reached"), 0)
+		self.assertEqual(self._notification_count("Partner Spend Buffer Used"), 0)
+
+	def test_crossing_limit_with_no_buffer_is_rejected(self):
+		self._approve_link(spend_limit=4000, buffer=0)
+		with self.assertRaises(frappe.ValidationError):
+			subscriptions.enforce_partner_spend_headroom(CLIENT_TEAM_A, 2000)  # 3000+2000=5000 > 4000+0
+
+	def test_crossing_limit_within_buffer_is_allowed_and_notifies_both(self):
+		self._approve_link(spend_limit=4000, buffer=2000)
+		subscriptions.enforce_partner_spend_headroom(CLIENT_TEAM_A, 2000)  # 3000+2000=5000, ceiling 6000
+		self.assertEqual(self._notification_count("Partner Spend Limit Reached"), 1)
+		self.assertEqual(self._notification_count("Partner Spend Buffer Used"), 1)
+
+	def test_further_buffer_use_notifies_buffer_only(self):
+		self._approve_link(spend_limit=1000, buffer=5000)
+		# Already over the limit from a prior action; this one only draws further on
+		# the buffer, so only the buffer notice should re-fire, not the limit one.
+		subscriptions.enforce_partner_spend_headroom(CLIENT_TEAM_A, 500)  # 3000+500=3500, ceiling 6000
+		self.assertEqual(self._notification_count("Partner Spend Limit Reached"), 0)
+		self.assertEqual(self._notification_count("Partner Spend Buffer Used"), 1)
+
+	def test_over_limit_plus_buffer_is_rejected(self):
+		self._approve_link(spend_limit=4000, buffer=1000)
+		with self.assertRaises(frappe.ValidationError):
+			subscriptions.enforce_partner_spend_headroom(CLIENT_TEAM_A, 3000)  # 3000+3000=6000 > 5000
+
+	def tearDown(self):
+		frappe.db.delete("Partner Client Link", {"client_team": CLIENT_TEAM_A})
+		frappe.db.delete("Partner Profile", {"team": PARTNER_TEAM})
+		frappe.db.delete("Billing Notification Log", {"team": PARTNER_TEAM})
