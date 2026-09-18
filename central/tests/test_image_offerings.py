@@ -56,6 +56,7 @@ class TestImageOfferings(IntegrationTestCase):
 			"status": "available",
 			"architecture": "amd64",
 			"rootfs_size_mib": 8192,
+			"created_at": 1789000000,
 			"tags": {"purpose": "pilot", "pilot_version": "v1", "frappe_version": "version-16"},
 			**values,
 		}
@@ -95,7 +96,13 @@ class TestImageOfferings(IntegrationTestCase):
 				self.discover()
 
 	def test_malformed_image_and_pagination_fail_closed(self):
-		for image in (None, self.image(id=None), self.image(enabled=1), self.image(rootfs_size_mib=-1)):
+		for image in (
+			None,
+			self.image(id=None),
+			self.image(enabled=1),
+			self.image(rootfs_size_mib=-1),
+			self.image(created_at=0),
+		):
 			self.set_page([image])
 			with self.subTest(image=image), self.assertRaises(AtlasConnectionError):
 				self.discover()

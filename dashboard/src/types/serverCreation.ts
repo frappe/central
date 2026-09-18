@@ -10,6 +10,8 @@ export interface RegionalImage {
 	title: string
 	architecture: string
 	rootfs_size_mib: number
+	/** Unix seconds. Two builds of one version differ by this and little else. */
+	created_at: number
 	tags: Record<string, string>
 }
 
