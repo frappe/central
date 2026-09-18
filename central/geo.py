@@ -14,6 +14,10 @@ import ipaddress
 import frappe
 import requests
 
+# A country rarely changes for an IP, and a stale miss just re-looks-up, so a long
+# TTL is safe and lets Redis evict cold entries.
+IP_COUNTRY_TTL_SECONDS = 30 * 24 * 60 * 60
+
 
 def get_country_from_ip(ip: str | None = None) -> str | None:
 	"""Country name (e.g. "India") for `ip`, or None when it can't be determined.
@@ -30,13 +34,15 @@ def get_country_from_ip(ip: str | None = None) -> str | None:
 
 	# Per-IP key with a TTL rather than one ever-growing `ip_country_map` hash: a
 	# hash field never expires, so it accreted a row per distinct signup IP forever.
-	# A country rarely changes for an IP, and a stale miss just re-looks-up, so a
-	# long TTL is safe and lets Redis evict cold entries.
-	info = frappe.cache().get_value(
-		f"ip_country:{ip}",
-		generator=lambda: _lookup_ip(ip),
-		expires_in_sec=30 * 24 * 60 * 60,  # 30 days
-	)
+	# Only `set_value` takes a TTL, so the read and the write stay separate here.
+	key = f"ip_country:{ip}"
+	info = frappe.cache.get_value(key)
+	if info is None:
+		# A failed lookup is not cached, so a rate-limited answer is not pinned for a month.
+		info = _lookup_ip(ip)
+		if info:
+			frappe.cache.set_value(key, info, expires_in_sec=IP_COUNTRY_TTL_SECONDS)
+
 	return (info or {}).get("country")
 
 
