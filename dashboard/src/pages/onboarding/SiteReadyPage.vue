@@ -16,6 +16,7 @@ type SiteState = {
 	url: string | null
 	ready: boolean
 	login_url: string | null
+	login_pending: boolean
 }
 
 type Creation = {
@@ -28,13 +29,14 @@ type Creation = {
 type OnboardingStatus = { site: SiteState | null; creation: Creation | null }
 
 const POLL_MS = 1000
-const LOGIN_RETRY_MS = 2000
-const MAX_LOGIN_ATTEMPTS = 3
+const LOGIN_RETRY_DELAYS_MS = [
+	2000, 4000, 8000, 16000, 30000, 30000, 30000,
+]
 
 const status = ref<OnboardingStatus | null>(null)
 const error = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
-let loginAttempts = 0
+let loginRetryIndex = 0
 
 const site = computed(() => status.value?.site ?? null)
 const creation = computed(() => status.value?.creation ?? null)
@@ -65,21 +67,27 @@ async function poll() {
 }
 
 // Ready means the site answered. Claiming hands back a way in and schedules the
-// customer's name behind the response. Pilot can need longer than the public site to
-// become ready, so an empty login is retried without starting the rename.
+// customer's name behind the response. A new Pilot can reject Central authentication
+// briefly, so only that state is retried without starting the rename.
 async function claim() {
 	try {
 		const claimed = await postFrappe<SiteState>(methodUrl(API.claimSite), {
 			name: site.value!.name,
 		})
-		if (!claimed.login_url) {
-			loginAttempts += 1
-			if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+		if (claimed.login_pending) {
+			const retryDelay = LOGIN_RETRY_DELAYS_MS[loginRetryIndex]
+			if (retryDelay === undefined) {
 				error.value =
 					'Your site is up, but we could not sign you in automatically.'
 				return
 			}
-			timer = setTimeout(claim, LOGIN_RETRY_MS)
+			loginRetryIndex += 1
+			timer = setTimeout(claim, retryDelay)
+			return
+		}
+		if (!claimed.login_url) {
+			error.value =
+				'Your site is up, but we could not sign you in automatically.'
 			return
 		}
 		window.location.assign(claimed.login_url)

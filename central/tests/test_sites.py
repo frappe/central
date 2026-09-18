@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -8,6 +8,7 @@ from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.site.site import on_host
 from central.errors import AtlasResourceGone
+from central.integrations.pilot import PilotLoginPending, fetch_site_login_url
 from central.integrations.servers import observe_server
 from central.site_provisioning import (
 	signup_offering,
@@ -172,7 +173,7 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.enqueue_doc.assert_called_once()
 		rename.assert_not_called()
 
-	def test_a_blank_login_is_retried_without_claiming_or_renaming(self):
+	def test_a_blank_login_does_not_claim_or_rename(self):
 		self.site().db_set("subdomain", "acme")
 		with (
 			patch("central.api.sites.is_site_reachable", return_value=True),
@@ -181,6 +182,23 @@ class TestSiteRoutes(SiteOnAMachine):
 			state = claim_site(self.site().name)
 
 		self.assertIsNone(state["login_url"])
+		self.assertFalse(state["login_pending"])
+		self.assertIsNone(self.site().claimed_at)
+		self.enqueue_doc.assert_not_called()
+
+	def test_an_unauthorized_login_is_reported_as_pending(self):
+		self.site().db_set("subdomain", "acme")
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				side_effect=PilotLoginPending,
+			),
+		):
+			state = claim_site(self.site().name)
+
+		self.assertIsNone(state["login_url"])
+		self.assertTrue(state["login_pending"])
 		self.assertIsNone(self.site().claimed_at)
 		self.enqueue_doc.assert_not_called()
 
@@ -238,6 +256,15 @@ class TestSiteRoutes(SiteOnAMachine):
 
 
 class TestSiteHandoff(IntegrationTestCase):
+	def test_a_401_login_response_is_retryable(self):
+		response = Mock(status_code=401)
+		with (
+			patch("central.integrations.pilot.mint_site_login", return_value="token"),
+			patch("central.integrations.pilot.requests.post", return_value=response),
+			self.assertRaises(PilotLoginPending),
+		):
+			fetch_site_login_url("https://pilot.example.test", "pilot-1", "site.local")
+
 	def test_a_minted_session_moves_onto_the_public_address(self):
 		self.assertEqual(
 			on_host("http://site.local/desk?sid=abc", "site-1z1.par-2.example.test"),

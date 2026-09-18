@@ -60,7 +60,7 @@ Nothing is provisioned during signup, so readiness is not a build finishing. `ce
 
 ## Sign-in
 
-Every signup image contains `site.local`. Central mints the session for that stable image name and puts the returned session on `Site.url`, because the public name is Central's. A temporary login failure returns no URL, leaves the site unclaimed, and causes the console to retry. Central waits up to 120 seconds for each login request.
+Every signup image contains `site.local`. Central mints the session for that stable image name and puts the returned session on `Site.url`, because the public name is Central's. A Pilot 401 leaves the site unclaimed and tells the console to retry with bounded backoff for up to 120 seconds. Other login failures return no URL and use the manual sign-in fallback. Central waits up to 120 seconds for each login request.
 
 ## Configuration
 

@@ -11,7 +11,7 @@ from central.central.doctype.resource_action.resource_action import (
 from central.central.doctype.site.site import Site
 from central.errors import resource_action
 from central.iam import can, resolve_team
-from central.integrations.pilot import is_site_reachable
+from central.integrations.pilot import PilotLoginPending, is_site_reachable
 
 
 @frappe.whitelist(methods=["GET"])
@@ -131,12 +131,21 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 	minted one would open a session a second and wait on a cold VM to do it."""
 	status = site.status
 	ready = status == "Running" and is_site_reachable(site.url)
+	login_url = None
+	login_pending = False
+	if ready and with_login:
+		try:
+			login_url = site.get_login_url()
+		except PilotLoginPending:
+			login_pending = True
+
 	return {
 		"name": site.name,
 		"status": status,
 		"url": site.url,
 		"ready": ready,
-		"login_url": site.get_login_url() if ready and with_login else None,
+		"login_url": login_url,
+		"login_pending": login_pending,
 	}
 
 

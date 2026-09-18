@@ -17,6 +17,10 @@ SITE_LOGIN_TIMEOUT_SECONDS = 120
 SITE_PING_TIMEOUT_SECONDS = 4
 
 
+class PilotLoginPending(Exception):
+	"""Pilot has not accepted Central authentication for a site login yet."""
+
+
 class PilotMonitoringClient:
 	"""Read a bench's existing, Central-JWKS-authenticated monitoring endpoints."""
 
@@ -57,9 +61,8 @@ class PilotMonitoringClient:
 
 def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str | None:
 	"""Relay a Central-signed site assertion to the bench's login endpoint and return the desk
-	URL it mints (a fresh local session). None on any failure — minting, request, or an unusable
-	response — logged so a consistently-failing bench or Central is diagnosable, then the caller
-	falls back to Atlas."""
+	URL it mints (a fresh local session). A 401 is retryable while Pilot finishes starting. Other
+	failures return None and are logged so a consistently-failing bench or Central is diagnosable."""
 	try:
 		response = requests.post(
 			f"{_gateway_url(gateway_url)}/api/v1/sites/{site}/login",
@@ -67,9 +70,13 @@ def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str |
 			timeout=SITE_LOGIN_TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)
+		if response.status_code == 401:
+			raise PilotLoginPending
 		response.raise_for_status()
 		payload = response.json()
 		url = payload.get("url") if isinstance(payload, dict) else None
+	except PilotLoginPending:
+		raise
 	except Exception:  # minting (signing key / DB / encode) must also fall back, not 500
 		frappe.log_error(
 			title=f"Site login relay failed: {site}",
