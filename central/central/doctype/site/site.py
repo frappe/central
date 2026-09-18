@@ -5,6 +5,8 @@ from urllib.parse import urlsplit, urlunsplit
 import frappe
 from frappe.model.document import Document
 
+IMAGE_SITE_NAME = "site.local"
+
 
 class Site(Document):
 	"""The site a Pilot image already carries, on the machine that runs it.
@@ -26,6 +28,7 @@ class Site(Document):
 		from frappe.types import DF
 
 		asset: DF.Link
+		claimed_at: DF.Datetime | None
 		rename_task: DF.Data | None
 		site_name: DF.Data
 		subdomain: DF.Data | None
@@ -90,6 +93,28 @@ class Site(Document):
 			}
 		).insert(ignore_permissions=True)
 
+	def mark_claimed(self) -> None:
+		"""Record the first successful login handoff and schedule the optional rename."""
+		if not self.claimed_at:
+			self.db_set("claimed_at", frappe.utils.now_datetime())
+
+		self.enqueue_subdomain_rename()
+
+	def enqueue_subdomain_rename(self) -> None:
+		"""Schedule the rename without keeping the login response waiting on Pilot."""
+		if not self.subdomain or self.rename_task:
+			return
+
+		frappe.enqueue_doc(
+			self.doctype,
+			self.name,
+			"apply_subdomain",
+			queue="short",
+			enqueue_after_commit=True,
+			job_id=f"site-rename:{self.name}",
+			deduplicate=True,
+		)
+
 	def apply_subdomain(self) -> None:
 		"""Move the bench onto the name the customer chose, once and never again.
 
@@ -101,34 +126,21 @@ class Site(Document):
 		if not self.subdomain or self.rename_task:
 			return
 
-		current = self.get_bench_site_name()
-		if not current or current == self.rename_target:
-			return
-
-		task = rename_site(self.asset, current, self.rename_target)
+		task = rename_site(self.asset, IMAGE_SITE_NAME, self.rename_target)
 		self.db_set("rename_task", task.get("task_id"))
-
-	def get_bench_site_name(self) -> str | None:
-		"""What the bench calls this site right now. Pilot owns the name; Central asks."""
-		from central.integrations.pilot import get_bench_site_name
-
-		gateway, audience = self.get_pilot_access()
-		return get_bench_site_name(gateway, audience) if gateway else None
 
 	def get_login_url(self) -> str | None:
 		"""A one-click Administrator session, on the address the customer can reach.
 
-		Pilot mints the session against its own name for the site, on a host that resolves
-		nowhere outside the machine. The public name is Central's, so putting the session
-		onto it is Central's to do."""
+		Pilot mints against the stable image alias. The public name is Central's, so putting
+		the session onto that address is Central's to do."""
 		from central.integrations.pilot import fetch_site_login_url
 
 		gateway, audience = self.get_pilot_access()
-		bench_site_name = self.get_bench_site_name()
-		if not gateway or not bench_site_name:
+		if not gateway or not audience:
 			return None
 
-		minted = fetch_site_login_url(gateway, audience, bench_site_name)
+		minted = fetch_site_login_url(gateway, audience, IMAGE_SITE_NAME)
 		return on_host(minted, self.name) if minted else None
 
 	def get_pilot_access(self) -> tuple[str | None, str | None]:

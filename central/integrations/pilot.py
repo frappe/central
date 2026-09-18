@@ -10,10 +10,10 @@ from central.sso import mint_bench_login, mint_site_login
 
 METRICS_CACHE_TTL_SECONDS = 30
 PILOT_TIMEOUT_SECONDS = 3
-# Minting a session starts a Frappe process on the machine, which Pilot gives 30 seconds.
-# Central waits longer than that on purpose: giving up first throws away a session the
-# machine went on to create, and a cold trial VM is exactly where it takes longest.
-SITE_LOGIN_TIMEOUT_SECONDS = 35
+PILOT_TASK_TIMEOUT_SECONDS = 35
+# Minting a session can start a cold Frappe process on the machine. Central waits long
+# enough for that process rather than discarding a session the machine creates later.
+SITE_LOGIN_TIMEOUT_SECONDS = 120
 SITE_PING_TIMEOUT_SECONDS = 4
 
 
@@ -99,28 +99,6 @@ def is_site_reachable(url: str) -> bool:
 	return response.ok and "pong" in response.text
 
 
-def get_bench_site_name(gateway_url: str, audience_id: str) -> str | None:
-	"""The name a machine's bench currently knows its site by, asked rather than remembered.
-
-	Pilot owns this name and a rename changes it, so a copy in Central goes stale the moment
-	a rename succeeds, and wrong the moment one fails. Asking costs one call on a path that
-	is already making one, and it is right in both cases."""
-	try:
-		response = requests.get(
-			f"{_gateway_url(gateway_url)}/api/v1/sites",
-			headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
-			timeout=PILOT_TIMEOUT_SECONDS,
-			allow_redirects=False,
-		)
-		response.raise_for_status()
-		sites = response.json()
-	except requests.RequestException, ValueError, PilotMonitoringError:
-		return None
-
-	# Every Pilot image bakes exactly one site, so one is the only answer that means anything.
-	return sites[0]["name"] if isinstance(sites, list) and len(sites) == 1 else None
-
-
 def rename_admin_domain(asset: str, base_url: str | None = None, tls: bool = True) -> dict:
 	"""Ask a server's pilot to serve its admin UI at the proxy hostname Central expects.
 
@@ -156,7 +134,7 @@ def _post_to_pilot(asset: str, base_url: str, path: str, payload: dict) -> dict:
 		f"{_gateway_url(base_url)}{path}",
 		headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
 		json=payload,
-		timeout=SITE_LOGIN_TIMEOUT_SECONDS,
+		timeout=PILOT_TASK_TIMEOUT_SECONDS,
 		allow_redirects=False,
 	)
 	response.raise_for_status()

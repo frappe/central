@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.sites import get_site, terminate_site
+from central.api.sites import claim_site, get_site, onboarding_status, terminate_site
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.site.site import on_host
@@ -15,6 +15,7 @@ from central.site_provisioning import (
 	trial_configuration,
 	trial_region_and_plan,
 )
+from central.www.dashboard import _onboarding_complete
 
 
 class SiteOnAMachine(IntegrationTestCase):
@@ -26,6 +27,7 @@ class SiteOnAMachine(IntegrationTestCase):
 		self.addCleanup(frappe.set_user, "Administrator")
 		self.addCleanup(frappe.db.rollback)
 		self.enterContext(patch("frappe.enqueue"))
+		self.enqueue_doc = self.enterContext(patch("frappe.enqueue_doc"))
 		self.enterContext(patch.object(Asset, "ensure_subscription_enabled"))
 		self.enterContext(patch.object(Asset, "disable_active_subscription"))
 		self.team = frappe.get_doc(
@@ -153,6 +155,35 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.assertTrue(state["ready"])
 		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/desk?sid=abc")
 
+	def test_a_successful_claim_returns_before_the_rename_runs(self):
+		self.site().db_set("subdomain", "acme")
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				return_value="https://site.local/desk?sid=abc",
+			),
+			patch("central.integrations.pilot.rename_site") as rename,
+		):
+			state = claim_site(self.site().name)
+
+		self.assertTrue(state["login_url"])
+		self.assertTrue(self.site().claimed_at)
+		self.enqueue_doc.assert_called_once()
+		rename.assert_not_called()
+
+	def test_a_blank_login_is_retried_without_claiming_or_renaming(self):
+		self.site().db_set("subdomain", "acme")
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch("central.integrations.pilot.fetch_site_login_url", return_value=None),
+		):
+			state = claim_site(self.site().name)
+
+		self.assertIsNone(state["login_url"])
+		self.assertIsNone(self.site().claimed_at)
+		self.enqueue_doc.assert_not_called()
+
 	def test_terminating_a_site_terminates_the_machine_it_is(self):
 		result = terminate_site(self.site().name)
 
@@ -168,6 +199,42 @@ class TestSiteRoutes(SiteOnAMachine):
 
 		with self.assertRaises(frappe.PermissionError):
 			get_site(self.site().name)
+
+	def test_onboarding_follows_only_a_site_creation(self):
+		server_action = self.creation_action("Server")
+		self.assertEqual(onboarding_status(self.team.name), {"site": None, "creation": None})
+
+		site_action = self.creation_action("Site")
+		state = onboarding_status(self.team.name)
+
+		self.assertEqual(state["site"]["name"], self.site().name)
+		self.assertIsNone(state["creation"])
+		self.assertNotEqual(server_action, site_action)
+
+	def test_onboarding_completes_only_after_a_working_login(self):
+		with patch("central.www.dashboard.get_user_team_names", return_value=[self.team.name]):
+			self.assertFalse(_onboarding_complete())
+			self.site().db_set("claimed_at", frappe.utils.now_datetime())
+			self.assertTrue(_onboarding_complete())
+
+	def creation_action(self, resource_type: str) -> str:
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Resource Action",
+					"resource_type": resource_type,
+					"action": "create",
+					"team": self.team.name,
+					"asset": self.asset.name,
+					"resource_id": self.asset.name,
+					"requested_by": "Administrator",
+					"correlation_id": frappe.generate_hash(length=32),
+					"status": "Succeeded",
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 
 class TestSiteHandoff(IntegrationTestCase):
@@ -273,10 +340,9 @@ class TestSiteNaming(SiteOnAMachine):
 		self.assertEqual(site.rename_target, "acme.par-2.example.test")
 
 	def test_naming_renames_the_bench_onto_their_address_once(self):
-		with (
-			patch("central.integrations.pilot.get_bench_site_name", return_value="site.local"),
-			patch("central.integrations.pilot.rename_site", return_value={"task_id": "task-1"}) as rename,
-		):
+		with patch(
+			"central.integrations.pilot.rename_site", return_value={"task_id": "task-1"}
+		) as rename:
 			self.site().apply_subdomain()
 			self.site().apply_subdomain()
 

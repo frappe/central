@@ -50,7 +50,7 @@ def build_auth_context() -> dict:
 
 
 def _onboarding_complete() -> bool:
-	"""True once the user's team owns a live site — the signal the SPA uses to keep a
+	"""True once the user's team completed a site login handoff — the signal the SPA uses to keep a
 	brand-new user inside the onboarding funnel (and let a returning one skip it).
 	A first-run user (no team or no site yet) is still onboarding."""
 	user = frappe.session.user
@@ -60,10 +60,13 @@ def _onboarding_complete() -> bool:
 	if not teams:
 		return False
 
-	# A site has no status of its own, so "live" is a question about its machine.
-	machines = frappe.get_all("Site", filters={"team": ["in", teams]}, pluck="asset")
-	return bool(machines) and bool(
-		frappe.db.exists("Asset", {"name": ["in", machines], "status": ["!=", "Terminated"]})
+	return bool(
+		frappe.get_list(
+			"Site",
+			filters={"team": ["in", teams], "claimed_at": ["is", "set"]},
+			pluck="name",
+			limit=1,
+		)
 	)
 
 

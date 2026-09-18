@@ -28,10 +28,13 @@ type Creation = {
 type OnboardingStatus = { site: SiteState | null; creation: Creation | null }
 
 const POLL_MS = 1000
+const LOGIN_RETRY_MS = 2000
+const MAX_LOGIN_ATTEMPTS = 3
 
 const status = ref<OnboardingStatus | null>(null)
 const error = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
+let loginAttempts = 0
 
 const site = computed(() => status.value?.site ?? null)
 const creation = computed(() => status.value?.creation ?? null)
@@ -61,18 +64,22 @@ async function poll() {
 	timer = setTimeout(poll, POLL_MS)
 }
 
-// Ready means the site answered. Claiming moves it onto the name the customer chose
-// and hands back a way in; their name comes up behind them, so the sign-in does not
-// wait for it. Without a login URL, fall through to the manual state rather than
-// strand the customer on a spinner.
+// Ready means the site answered. Claiming hands back a way in and schedules the
+// customer's name behind the response. Pilot can need longer than the public site to
+// become ready, so an empty login is retried without starting the rename.
 async function claim() {
 	try {
 		const claimed = await postFrappe<SiteState>(methodUrl(API.claimSite), {
 			name: site.value!.name,
 		})
 		if (!claimed.login_url) {
-			error.value =
-				'Your site is up, but we could not sign you in automatically.'
+			loginAttempts += 1
+			if (loginAttempts >= MAX_LOGIN_ATTEMPTS) {
+				error.value =
+					'Your site is up, but we could not sign you in automatically.'
+				return
+			}
+			timer = setTimeout(claim, LOGIN_RETRY_MS)
 			return
 		}
 		window.location.assign(claimed.login_url)

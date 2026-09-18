@@ -86,7 +86,11 @@ def submit_request(
 	if input.includes and len({row.resource_type for row in input.includes}) != len(input.includes):
 		frappe.throw(_("Each resource type must occur once."))
 
-	settings = {key: value for key, value in values.items() if key != "request_key"}
+	settings = {
+		**{key: value for key, value in values.items() if key != "request_key"},
+		"resource_type": resource_type,
+		"subdomain": subdomain,
+	}
 	digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
 	# Serialize budget reservations and repeated submissions within one Team.
 	frappe.db.get_value("Team", team, "name", for_update=True)

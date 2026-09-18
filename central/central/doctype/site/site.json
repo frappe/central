@@ -10,6 +10,7 @@
   "subdomain",
   "team",
   "asset",
+  "claimed_at",
   "rename_task"
  ],
  "fields": [
@@ -54,6 +55,14 @@
    "read_only": 1,
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "description": "The first time Central created a working login handoff for this site.",
+   "fieldname": "claimed_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Claimed At",
+   "read_only": 1
   },
   {
    "description": "The Pilot task that renamed the bench site onto the customer's subdomain. Set once, when the rename is sent; empty means it never was.",

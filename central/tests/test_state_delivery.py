@@ -126,6 +126,13 @@ class TestStateDelivery(IntegrationTestCase):
 
 		self.apply(report)
 		self.assertEqual(self.server.reload().status, "Running")
+		self.queued.assert_any_call(
+			"central.integrations.servers.refresh_server",
+			name=self.server.name,
+			enqueue_after_commit=True,
+			job_id=f"server-refresh:{self.server.name}",
+			deduplicate=True,
+		)
 
 	def test_a_repeated_delivery_is_ignored(self):
 		"""Frappe retries a failed delivery, so the same report can arrive twice. The

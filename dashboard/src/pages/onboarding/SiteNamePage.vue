@@ -31,19 +31,23 @@ const creating = ref(false)
 const availability = ref<Availability | null>(null)
 const error = ref('')
 
-// One key per visit, so a double click or a reload answers with the request already
-// running instead of starting a second machine.
-const requestKey = crypto.randomUUID()
+const REQUEST_KEY_STORAGE = 'central:onboarding-site-request-key'
+
+let requestKey = savedRequestKey()
 
 let debounce: ReturnType<typeof setTimeout> | undefined
 
 onMounted(async () => {
 	try {
-		const status = await getFrappe<{ site: unknown; creation: unknown }>(
+		const status = await getFrappe<{
+			site: unknown
+			creation: CreationStatus | null
+		}>(
 			methodUrl(API.onboardingStatus),
 		)
-		if (status.site || status.creation)
+		if (status.site || (status.creation && status.creation.status !== 'Failed'))
 			return router.replace('/onboarding/provisioning')
+		if (status.creation?.status === 'Failed') resetRequestKey()
 	} catch {
 		// Non-fatal: the form below starts one, and a repeat is answered with the
 		// request already running.
@@ -102,6 +106,7 @@ async function createSite() {
 		)
 		if (result.error) {
 			error.value = result.error.message
+			resetRequestKey()
 			creating.value = false
 			return
 		}
@@ -110,6 +115,20 @@ async function createSite() {
 		error.value = frappeErrorMessage(exception, 'Could not create your site.')
 		creating.value = false
 	}
+}
+
+function savedRequestKey() {
+	const saved = localStorage.getItem(REQUEST_KEY_STORAGE)
+	if (saved) return saved
+
+	const generated = crypto.randomUUID()
+	localStorage.setItem(REQUEST_KEY_STORAGE, generated)
+	return generated
+}
+
+function resetRequestKey() {
+	localStorage.removeItem(REQUEST_KEY_STORAGE)
+	requestKey = savedRequestKey()
 }
 </script>
 

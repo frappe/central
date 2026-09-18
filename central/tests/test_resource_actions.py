@@ -143,6 +143,18 @@ class TestResourceActions(IntegrationTestCase):
 		second = self.submit(request_key="second-request-key-001", title="Second server")
 		self.assertNotEqual(first["action"], second["action"])
 
+	def test_site_name_and_resource_type_are_part_of_the_request_identity(self):
+		first = self.submit(resource_type="Site", subdomain="alpha")
+		second = self.submit(
+			request_key="second-request-key-001",
+			resource_type="Site",
+			subdomain="beta",
+		)
+		server = self.submit(request_key="third-request-key-0001")
+
+		self.assertNotEqual(first["action"], second["action"])
+		self.assertNotEqual(first["action"], server["action"])
+
 	def test_an_answered_request_does_not_absorb_a_later_one(self):
 		first = self.submit()["action"]
 		_process_locked(first)

@@ -92,6 +92,14 @@ def apply_atlas_report(cluster: str, report: dict) -> None:
 		return
 
 	ResourceAction.confirm_observed_status(server.name, status)
+	if status == "Running":
+		frappe.enqueue(
+			"central.integrations.servers.refresh_server",
+			name=server.name,
+			enqueue_after_commit=True,
+			job_id=f"server-refresh:{server.name}",
+			deduplicate=True,
+		)
 
 
 def _decide(report: dict, server: frappe._dict) -> dict | None:

@@ -3,7 +3,11 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.central.doctype.resource_action.resource_action import ResourceAction
+from central.central.doctype.resource_action.resource_action import (
+	PENDING_STATES,
+	STATUS_FIELDS,
+	action_status,
+)
 from central.central.doctype.site.site import Site
 from central.errors import resource_action
 from central.iam import can, resolve_team
@@ -48,19 +52,19 @@ def create_trial_site(subdomain: str, request_key: str, team: str | None = None)
 @frappe.whitelist(methods=["POST"])
 @resource_action
 def claim_site(name: str) -> dict:
-	"""Hand back a way in, then move the machine onto the names it should answer to.
+	"""Hand back a way in and schedule the customer's hostname behind the response.
 
-	The way in is minted first, and that order is the whole point: the rename changes the
-	very name a session is minted against, so a login asked for while it runs is asked of a
-	machine in the middle of moving. Minting first settles the customer; the rename then
-	runs on Pilot's own task, behind them, with nothing waiting on it.
+	The image name stays a valid Pilot alias after rename, so every login is minted against
+	that stable name. A failed login leaves the site unclaimed for the console to retry. A
+	successful login schedules the rename after commit and returns without waiting for it.
 
 	Nothing here touches the machine's admin hostname. The region routes `admin-vm-*`
 	statically and refuses to register it, so there is nothing for Central to claim."""
 	site = authorized_site(name, "server:create")
 	state = site_state(site)
 
-	site.apply_subdomain()
+	if state["login_url"]:
+		site.mark_claimed()
 	return state
 
 
@@ -82,12 +86,30 @@ def onboarding_status(team: str | None = None) -> dict:
 	if not can(user, team, "server:view"):
 		frappe.throw(_("You can't view this team's sites."), frappe.PermissionError)
 
-	name = frappe.db.get_value("Site", {"team": team}, "name", order_by="creation desc")
+	rows = frappe.get_list(
+		"Resource Action",
+		filters={
+			"team": team,
+			"requested_by": user,
+			"resource_type": "Site",
+			"action": "create",
+		},
+		fields=[*STATUS_FIELDS, "asset"],
+		order_by="creation desc",
+		limit=1,
+	)
+	if not rows:
+		return {"site": None, "creation": None}
+
+	creation = rows[0]
+	name = frappe.db.get_value("Site", {"asset": creation.asset}, "name") if creation.asset else None
 	if name:
 		return {"site": site_state(frappe.get_doc("Site", name), with_login=False), "creation": None}
 
-	creations = ResourceAction.open_creations(team)
-	return {"site": None, "creation": creations[0] if creations else None}
+	return {
+		"site": None,
+		"creation": action_status(creation) if creation.status in (*PENDING_STATES, "Failed") else None,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
