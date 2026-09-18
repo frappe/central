@@ -14,12 +14,10 @@ from central.central.doctype.central_sso_settings.central_sso_settings import (
 
 BENCH_LOGIN_TTL = 5 * 60  # a short-lived, single-use admin SID
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
-METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
-LOG_TTL = METRICS_TTL
+DATUM_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
 ENROLL_SCOPE = "enroll"
-METRICS_SCOPE = "datum"
-LOG_SCOPE = "logs"
-LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
+DATUM_SCOPE = "datum"
+DATUM_ACCESS = ["write"]  # datum serves no reads at all; every caller is a producer
 ATLAS_TOKEN_TTL = 5 * 60
 
 
@@ -121,50 +119,39 @@ def verify_bootstrap_token(token: str) -> dict:
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
 
 
-def mint_metrics_token(audience: str, resource_id: str) -> str:
-	"""A token the pilot presents to Datum's metrics gateway.
+def mint_datum_token(audience: str, resource_id: str) -> str:
+	"""The token a pilot presents to datum, for metrics and for logs alike.
 
-	`scope` keeps bench and enrollment tokens — signed with this same key — from
-	writing metrics. vmauth turns `metrics_extra_labels` into labels the store
-	applies over whatever the producer sent, so a pilot cannot write as another
-	resource."""
+	One token, because datum is one service that tells its write paths apart by the
+	route, not by the credential: same `resource_id`, same authority, no reads. It is
+	signed with the key Atlas publishes for Central, since that merged set is the only
+	one datum fetches.
+
+	Datum stamps every row with `resource_id`, so a token without one is unattributable
+	and is refused here rather than at the far end."""
 	if not resource_id:
 		frappe.throw(
-			_("This pilot has no resource yet; a metrics token would be unattributable."),
+			_("This pilot has no resource yet; a datum token would be unattributable."),
 			frappe.ValidationError,
 		)
-	return _mint(
-		audience,
-		METRICS_SCOPE,
-		METRICS_TTL,
-		{"vm_access": {"metrics_extra_labels": [f"resource_id={resource_id}"]}},
-	)
 
+	private_key, key_id = CentralSSOSettings.instance().atlas_signing_key()
+	now = int(time.time())
+	claims = {
+		# The literal issuer, not the site URL: datum reads the key id's namespace and
+		# holds `iss` to it, the same way Cargo and the regional proxy do.
+		"iss": "central",
+		"sub": "central",
+		"aud": audience,
+		"scope": DATUM_SCOPE,
+		"resource_id": resource_id,
+		"access": DATUM_ACCESS,
+		"iat": now,
+		"exp": now + DATUM_TTL,
+		"jti": frappe.generate_hash(length=16),
+	}
 
-def mint_log_token(audience: str, resource_id: str) -> str:
-	"""A token the pilot presents to Datum's logs gateway.
-
-	Unlike the metrics token, this carries `resource_id` and `access` as
-	top-level claims Datum reads directly (``Identity.from_claims`` looks for
-	``resource_id`` and ``access``) — there is no vmauth bridge in front of
-	the logs path. `scope` keeps bench and enrollment tokens, signed with this
-	same key, from writing logs. Fluent Bit only writes, so `access` is
-	``["write"]``; reads come through the admin-facing path, not from a shipper.
-	"""
-	if not resource_id:
-		frappe.throw(
-			_("This pilot has no resource yet; a log token would be unattributable."),
-			frappe.ValidationError,
-		)
-	return _mint(
-		audience,
-		LOG_SCOPE,
-		LOG_TTL,
-		{
-			"resource_id": resource_id,
-			"access": LOG_ACCESS,
-		},
-	)
+	return jwt.encode(claims, private_key, algorithm=ATLAS_ALGORITHM, headers={"kid": key_id})
 
 
 def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str:
