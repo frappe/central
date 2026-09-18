@@ -33,6 +33,11 @@ def mint_proxy_token(region_id: int) -> str:
 	return _mint_regional_token(region_id, f"atlas-proxy:{region_id}", "site:* domain:*")
 
 
+def mint_cargo_token(region_id: int) -> str:
+	"""Mint a credential for the object storage routes of one regional Cargo host."""
+	return _mint_regional_token(region_id, f"atlas-cargo:{region_id}", "bucket:*")
+
+
 def _mint_regional_token(region_id: int, audience: str, scope: str, extra: dict | None = None) -> str:
 	if type(region_id) is not int or not 0 <= region_id <= 65535:
 		frappe.throw(_("The Atlas region ID must be a whole number from 0 to 65535."))
