@@ -1,0 +1,67 @@
+{
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "issuer_section",
+  "issuer",
+  "allow_local_http",
+  "operator_section",
+  "api_key",
+  "api_secret"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "Offer Passport sign-in on Central and hand registrations to provisioned sites.",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable Frappe Sign-in"
+  },
+  {
+   "fieldname": "issuer_section",
+   "fieldtype": "Section Break",
+   "label": "Passport"
+  },
+  {
+   "description": "Where Frappe identities live, for example https://id.frappe.cloud. Cannot change once sites are registered.",
+   "fieldname": "issuer",
+   "fieldtype": "Data",
+   "label": "Issuer URL"
+  },
+  {
+   "default": "0",
+   "description": "Development only. Permits an http://*.localhost issuer so the local demo can be configured.",
+   "fieldname": "allow_local_http",
+   "fieldtype": "Check",
+   "label": "Allow Local HTTP Issuer"
+  },
+  {
+   "description": "API key and secret of a Passport user holding the Passport Manager role.",
+   "fieldname": "operator_section",
+   "fieldtype": "Section Break",
+   "label": "Operator Credentials"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Data",
+   "label": "API Key"
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret"
+  }
+ ],
+ "issingle": 1,
+ "module": "Central",
+ "name": "Central Passport Settings",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "track_changes": 1
+}

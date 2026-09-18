@@ -43,12 +43,23 @@ export const useAppMenu = () => {
 		},
 	])
 
+	const portal = window.identity_portal
+
 	const footerMenuItems = [
 		{
 			label: 'My profile',
 			icon: 'lucide-user',
 			onClick: () => openSettings('profile'),
 		},
+		...(portal?.url
+			? [
+					{
+						label: portal.label,
+						icon: 'lucide-globe',
+						onClick: () => window.location.assign(portal.url),
+					},
+				]
+			: []),
 		{ label: 'Sign out', icon: 'lucide-log-out', onClick: logoutAndRedirect },
 	]
 

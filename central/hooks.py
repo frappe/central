@@ -177,9 +177,16 @@ doc_events = {
 		"after_insert": "central.users.bootstrap_user_team",
 	},
 	"Team": {
-		# Keep a staging-trial team's billing profile complete so it can create servers
-		# without the setup prompt (the profile gate is otherwise enforced in the console).
-		"on_update": "central.billing.payments.provisioning.on_team_update",
+		"on_update": [
+			# Keep a staging-trial team's billing profile complete so it can create servers
+			# without the setup prompt (the profile gate is otherwise enforced in the console).
+			"central.billing.payments.provisioning.on_team_update",
+		],
+	},
+	"Site": {
+		# A terminated site must stop offering Frappe sign-in, even though the mirror
+		# itself is only ever written by the Atlas event push.
+		"on_update": "central.integrations.passport.on_site_update",
 	},
 }
 
@@ -196,6 +203,9 @@ scheduler_events = {
 		"*/5 * * * *": ["central.central.doctype.resource_action.resource_action.sweep_stale"],
 	},
 	"daily": [
+		# Frappe sign-in: withdraw registrations for sites that are no longer running —
+		# the backstop for a missed Terminated event.
+		"central.integrations.passport.reconcile",
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
 		# Central: prune finished Host Task rows (unbounded stdout/stderr longtext).
 		"central.host_task.prune_host_tasks",
