@@ -13,6 +13,10 @@ from central.integrations.atlas import AtlasClient
 from central.integrations.servers import observe_server
 from central.sso import central_url, jwks_url
 
+# A region stamps its own clock on a machine, so allow for a little drift when deciding
+# which machines are new enough to have come from this request.
+CLOCK_SKEW_SECONDS = 120
+
 
 def process_request(name: str) -> None:
 	"""Dispatch once, then recover accepted creates using reads only."""
@@ -53,7 +57,7 @@ def _process_locked(name: str) -> None:
 		return
 
 	if request.status != "Queued":
-		request.set_error("Uncertain", build_envelope("OUTCOME_UNKNOWN"))
+		recover_unanswered(request)
 		return
 
 	try:
@@ -79,8 +83,8 @@ def _process_locked(name: str) -> None:
 		request.db_set({"remote_vm_id": remote_id, "status": "Sent", "error_message": None})
 		# Retain the remote identity even if local billing or mirror finalization fails.
 		frappe.db.commit()
-	except AtlasRequestUncertain as error:
-		request.set_error("Uncertain", to_error_response(error))
+	except AtlasRequestUncertain:
+		recover_unanswered(request)
 		return
 	except (AtlasConnectionError, frappe.ValidationError, frappe.PermissionError) as error:
 		PilotCredential.revoke_by_id(request.credential)
@@ -88,6 +92,64 @@ def _process_locked(name: str) -> None:
 		return
 
 	_finalize(request)
+
+
+def recover_unanswered(request) -> None:
+	"""Settle a creation the region never answered, by asking it what it built.
+
+	Central marks every create with its action ID, so the region can say whether this
+	request produced a machine. Finding one binds it and the creation carries on. Only a
+	search that completed can say no, and that is a plain failure the customer can send
+	again. A region Central cannot reach proves nothing, so the request stays open for
+	the next sweep."""
+	try:
+		remote_vm_id = find_created_vm(request)
+	except AtlasConnectionError:
+		request.set_error("Uncertain", build_envelope("OUTCOME_UNKNOWN"))
+		return
+
+	if not remote_vm_id:
+		PilotCredential.revoke_by_id(request.credential)
+		request.set_error("Failed", build_envelope("CREATE_NOT_ACCEPTED", action=request.action))
+		return
+
+	request.db_set(
+		{
+			"remote_vm_id": remote_vm_id,
+			"status": "Sent",
+			"error_code": None,
+			"error_message": None,
+			"remediation": None,
+			"retriable": 0,
+		}
+	)
+	frappe.db.commit()
+	_finalize(request)
+
+
+def find_created_vm(request) -> str | None:
+	"""The machine this creation built, or None when the region holds none.
+
+	The region lists newest first, so the search stops at the first machine older than
+	the dispatch. A candidate counts only when its tenant, image and action marker all
+	match, which is what keeps another request's machine from being adopted."""
+	client = _client(request)
+	configuration = request.get_configuration()
+	started = frappe.utils.get_datetime(request.dispatched_at or request.creation).timestamp()
+
+	for row in client.list_vms():
+		created_at = row.get("created_at")
+		if not isinstance(created_at, int) or created_at < started - CLOCK_SKEW_SECONDS:
+			break
+		remote = client.get_vm(row["id"])
+		if (
+			remote.get("tenant_id") == client.tenant_id
+			and remote.get("image_id") == configuration.image_id
+			and remote.get("guest", {}).get("metadata", {}).get("central_action_id") == request.name
+		):
+			return row["id"]
+
+	return None
 
 
 def _client(request) -> AtlasClient:
@@ -220,7 +282,10 @@ def _create_subscription(request, asset_id: str) -> None:
 
 
 def recover_requests() -> None:
-	"""Recover lost queue deliveries and read accepted VMs without repeating a create."""
+	"""Recover lost queue deliveries, and settle creations the region never answered.
+
+	Nothing here repeats a create: an accepted machine is read, and an unanswered request
+	is looked up by its action marker."""
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-3)
 	action = frappe.qb.DocType("Resource Action")
 	rows = (
@@ -228,50 +293,10 @@ def recover_requests() -> None:
 		.select(action.name)
 		.where(
 			(action.modified < cutoff)
-			& (
-				action.status.isin(("Queued", "Dispatching", "Sent", "In Progress"))
-				| (
-					(action.status == "Uncertain")
-					& action.remote_vm_id.isnotnull()
-					& (action.remote_vm_id != "")
-				)
-			)
+			& action.status.isin(("Queued", "Dispatching", "Sent", "In Progress", "Uncertain"))
 		)
 		.orderby(action.modified)
 		.limit(100)
 	).run(as_dict=True)
 	for row in rows:
 		frappe.get_doc("Resource Action", row.name).enqueue()
-
-
-def resolve_created_vm(name: str, remote_vm_id: str) -> None:
-	"""Bind an unknown create only when Atlas confirms its tenant and action marker."""
-	if not isinstance(remote_vm_id, str) or not remote_vm_id:
-		frappe.throw(_("Enter an Atlas VM ID."))
-
-	action = frappe.get_doc("Resource Action", name, for_update=True)
-	if action.action != "create" or action.status != "Uncertain" or action.remote_vm_id:
-		frappe.throw(_("Only an uncertain creation without a VM identity can be resolved."))
-
-	client = _client(action)
-	remote = client.get_vm(remote_vm_id)
-	configuration = action.get_configuration()
-	metadata = remote.get("guest", {}).get("metadata", {})
-	if (
-		remote.get("tenant_id") != client.tenant_id
-		or remote.get("id") != remote_vm_id
-		or remote.get("image_id") != configuration.image_id
-		or metadata.get("central_action_id") != action.name
-	):
-		frappe.throw(_("This VM does not match the Team, image and creation action."))
-
-	action.db_set(
-		{
-			"remote_vm_id": remote_vm_id,
-			"status": "Sent",
-			"error_code": None,
-			"error_message": None,
-			"remediation": None,
-		}
-	)
-	action.enqueue()

@@ -123,10 +123,10 @@ class TestTrialProvisioning(IntegrationTestCase):
 	def test_pending_requests_count_against_trial_cap(self):
 		self._fund()
 		with patch("central.billing.tests.provisioning._process_locked"):
-			for _ in range(3):
-				self._create(self.plan)
+			for index in range(3):
+				self._create(self.plan, title=f"trial-{index}")
 			with self.assertRaises(frappe.ValidationError):
-				self._create(self.plan)
+				self._create(self.plan, title="trial-over-cap")
 
 	def test_terminated_servers_do_not_count_against_cap(self):
 		self._fund()

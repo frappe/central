@@ -62,6 +62,11 @@ def registry(team: str | None = None) -> dict:
 	for asset in assets:
 		asset["pending_action"] = pending.get(asset["resource_id"])
 
+	# A creation has no server row until the region accepts it, so it cannot be overlaid
+	# like the pending actions above. It rides here as its own list: the console picks its
+	# own request back up after a reload, and the fleet can show what is still building.
+	creations = ResourceAction.open_creations(team)
+
 	# A site is a VM too — flat and uncapped, symmetric with servers. `name` is the FQDN
 	# (the stable id + terminate key); `subdomain` is the user-entered display name.
 	sites = frappe.get_list(
@@ -75,7 +80,7 @@ def registry(team: str | None = None) -> dict:
 	for site in sites:
 		site["pending_action"] = pending.get(site["name"])
 
-	return {"team": team, "assets": assets, "sites": sites}
+	return {"team": team, "assets": assets, "sites": sites, "creations": creations}
 
 
 @frappe.whitelist(methods=["GET"])
@@ -372,3 +377,12 @@ def action_status(name: str) -> dict:
 	from central.resource_actions import get_status
 
 	return get_status(name)
+
+
+@frappe.whitelist(methods=["POST"])
+@resource_action
+def retry_action(name: str) -> dict:
+	"""Send a failed creation again on its own record. Gated on `server:create`."""
+	from central.resource_actions import retry
+
+	return retry(name)

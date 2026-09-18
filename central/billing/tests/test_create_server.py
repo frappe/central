@@ -94,10 +94,10 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 	def test_pending_requests_reserve_spending_limit(self):
 		set_team_tier(self.team, max_spend=2000)
 		with patch("central.billing.tests.provisioning._process_locked"):
-			first, _ = self.create()
+			first, _ = self.create(title="web-1")
 			self.assertEqual(first.status, "Queued")
 			with self.assertRaises(frappe.ValidationError):
-				self.create()
+				self.create(title="web-2")
 
 	def test_billing_failure_preserves_remote_identity_for_recovery(self):
 		with (

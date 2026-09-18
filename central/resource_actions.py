@@ -72,3 +72,8 @@ def get_status(name: str) -> ActionStatus:
 	document = frappe.get_doc("Resource Action", name)
 	document.check_permission("read")
 	return document.customer_status()
+
+
+def retry(name: str) -> ActionStatus:
+	"""Re-drive one action. The record owns permission and what is safe to send again."""
+	return frappe.get_doc("Resource Action", name).retry()

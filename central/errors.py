@@ -102,10 +102,16 @@ ERROR_CATALOG: dict[str, dict] = {
 		"remediation": "Refresh your server list in a few minutes. If it still looks stuck, contact support.",
 		"retriable": False,
 	},
+	"CREATE_NOT_ACCEPTED": {
+		"title": "Couldn't {action}",
+		"message": "The region did not take this request, and no server was built.",
+		"remediation": "",
+		"retriable": True,
+	},
 	"OUTCOME_UNKNOWN": {
 		"title": "The operation result is not confirmed",
 		"message": "Atlas may have accepted this operation, but Central did not receive a valid confirmation.",
-		"remediation": "Check this action with support. Do not submit another create request.",
+		"remediation": "Central is checking the region for it and will follow up on its own.",
 		"retriable": False,
 	},
 	"REFRESH_FAILED": {

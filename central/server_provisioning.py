@@ -81,7 +81,8 @@ def submit_request(
 	if input.includes and len({row.resource_type for row in input.includes}) != len(input.includes):
 		frappe.throw(_("Each resource type must occur once."))
 
-	digest = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
+	settings = {key: value for key, value in values.items() if key != "request_key"}
+	digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
 	# Serialize budget reservations and repeated submissions within one Team.
 	frappe.db.get_value("Team", team, "name", for_update=True)
 	existing = frappe.db.get_value(
@@ -92,6 +93,10 @@ def submit_request(
 		if request.request_digest != digest:
 			frappe.throw(_("This request key was already used for different server settings."))
 		return request.customer_status()
+
+	unanswered = unanswered_request(team, digest)
+	if unanswered:
+		return frappe.get_doc("Resource Action", unanswered).customer_status()
 
 	image = selected_image(team, region, offering, image_id, "server:create")
 	composition, rate = validate_purchase(team, region, plan, includes, sub_category)
@@ -138,6 +143,28 @@ def submit_request(
 	# Only this authorized service accepts customer intent; customers cannot write outcomes.
 	request.insert(ignore_permissions=True)
 	return request.customer_status()
+
+
+def unanswered_request(team: str, digest: str) -> str | None:
+	"""The creation this requester already sent with these settings, that no region has
+	answered yet.
+
+	Central saves a request before it calls a region, so a lost reply leaves the record
+	behind while the browser keeps nothing. Answering the repeat with that record is what
+	stops one click, or one click and a reload, from building two servers. A request that
+	already holds a VM identity has been answered and never matches, so a deliberate
+	second server is still a second record."""
+	return frappe.db.get_value(
+		"Resource Action",
+		{
+			"team": team,
+			"action": "create",
+			"requested_by": frappe.session.user,
+			"request_digest": digest,
+			"status": ["in", PENDING_STATES],
+			"remote_vm_id": ["is", "not set"],
+		},
+	)
 
 
 def validate_purchase(
