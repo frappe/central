@@ -68,11 +68,17 @@ A retry requires `server:create` and re-checks the plan, the trial limit and the
 
 ## Pilot and Ubuntu
 
-A Pilot creation issues one credential before dispatch. Atlas receives the `pilot-central` metadata document with the Central endpoint, bearer token, public-key endpoint, and audience ID. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status.
+A Pilot creation issues one credential before dispatch. Atlas receives the `pilot-central` metadata document with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status.
 
 An accepted Pilot VM is linked to its credential during local finalization. Its management gateway uses Atlas's `proxy_hostname_suffix`. A running VM does not prove that Pilot or a site is ready. Site readiness and signup belong to the next phase.
 
 Ubuntu receives its SSH keys and guest hostname. It does not receive a Pilot credential or wait for a site.
+
+## Idle sleep
+
+A trial server sleeps after the idle time on Central Settings, which is 30 minutes by default. Customer traffic wakes it. Zero minutes keeps trial servers awake.
+
+A paid server never sleeps. A resize ends sleep for good, because a server its owner has resized has outgrown the hobby comfort. Atlas takes the idle timeout on its own while the server runs, so ending sleep never stops it.
 
 ## Errors and permissions
 

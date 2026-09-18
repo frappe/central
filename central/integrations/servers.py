@@ -98,9 +98,13 @@ def resize_server(asset: Asset, shape: dict) -> None:
 	memory_mib = shape["memory_megabytes"]
 	disk_mib = shape["disk_gigabytes"] * 1024
 
-	if (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib):
-		_wait_for_power_state(client, asset.atlas_vm_id, "stop", "stopped")
-		client.update_compute(asset.atlas_vm_id, cpu_millicores, memory_mib)
+	# A resized server has outgrown the hobby idle shutdown, so it stops sleeping for good.
+	# Atlas needs a stopped VM for CPU or memory, but not for the timeout on its own.
+	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	if reshaping or compute.get("sleep_after_idle_seconds"):
+		if reshaping:
+			_wait_for_power_state(client, asset.atlas_vm_id, "stop", "stopped")
+		client.update_compute(asset.atlas_vm_id, cpu_millicores, memory_mib, sleep_after_idle_seconds=0)
 
 	if disk_mib > (disk.get("size_mib") or 0):
 		client.update_disk(asset.atlas_vm_id, disk_mib)

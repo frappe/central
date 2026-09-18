@@ -6,6 +6,7 @@ import frappe
 from frappe import _
 from redis.exceptions import LockError
 
+from central.api.jwks import jwks_document
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
@@ -168,6 +169,7 @@ def _create_payload(request) -> dict:
 		"hostname": configuration.hostname or "",
 		"ssh_keys": configuration.ssh_keys,
 		"firewall": {"enabled": False},
+		"sleep_after_idle_seconds": idle_shutdown_seconds(request.team),
 		"metadata": {"central_action_id": request.name},
 	}
 	if configuration.image_tags.get("purpose") == "pilot":
@@ -180,10 +182,26 @@ def _create_payload(request) -> dict:
 				"central_auth_token": token,
 				"jwks_url": jwks_url(),
 				"jwks_audience_id": credential,
+				# The keys, delivered with the credential, so the pilot's first token
+				# needs no fetch and a boot before Central is reachable still verifies.
+				"initial_jwks_cache": jwks_document(),
 			}
 		)
 
 	return payload
+
+
+def idle_shutdown_seconds(team: str) -> int:
+	"""How long a machine may sit idle before its region puts it to sleep.
+
+	Sleep is a hobby comfort: a trial server costs nothing while nobody uses it, and
+	customer traffic wakes it. A paid server stays up, and so does every server once its
+	owner resizes it."""
+	if not frappe.db.get_value("Team", team, "is_staging_trial"):
+		return 0
+
+	minutes = frappe.get_cached_value("Central Settings", "Central Settings", "trial_idle_shutdown_minutes")
+	return max(0, int(minutes or 0)) * 60
 
 
 def _finalize(request) -> None:

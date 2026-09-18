@@ -81,9 +81,16 @@ class AtlasClient:
 
 		return self._request("POST", f"{path}/actions/{action}")
 
-	def update_compute(self, name: str, cpu_millicores: int, memory_mib: int) -> dict:
-		"""Set CPU and memory. Atlas accepts it only while the VM is stopped."""
-		payload = {"cpu_millicores": cpu_millicores, "memory_mib": memory_mib}
+	def update_compute(
+		self, name: str, cpu_millicores: int, memory_mib: int, sleep_after_idle_seconds: int
+	) -> dict:
+		"""Set CPU, memory and the idle shutdown delay. Atlas takes a CPU or memory change
+		only while the VM is stopped. Zero seconds turns idle shutdown off."""
+		payload = {
+			"cpu_millicores": cpu_millicores,
+			"memory_mib": memory_mib,
+			"sleep_after_idle_seconds": sleep_after_idle_seconds,
+		}
 		return self._request("PATCH", f"virtual-machines/{quote(name, safe='')}/compute", payload=payload)
 
 	def update_disk(self, name: str, disk_mib: int) -> dict:

@@ -105,6 +105,34 @@ class TestResourceActions(IntegrationTestCase):
 			self.submit(title="Different")
 		self.purchase.assert_called_once()
 
+	def test_a_paid_server_never_sleeps_and_carries_the_signing_keys(self):
+		name = self.submit()["action"]
+		_process_locked(name)
+
+		payload = self.client.return_value.create_vm.call_args.args[0]
+		self.assertEqual(payload["sleep_after_idle_seconds"], 0)
+		credentials = json.loads(payload["metadata"]["pilot-central"])
+		self.assertIn("keys", credentials["initial_jwks_cache"])
+
+	def test_a_trial_server_sleeps_after_the_configured_idle_time(self):
+		frappe.db.set_value("Team", self.team.name, "is_staging_trial", 1)
+		frappe.db.set_single_value("Central Settings", "trial_idle_shutdown_minutes", 45)
+		frappe.clear_cache(doctype="Central Settings")
+		name = self.submit()["action"]
+		_process_locked(name)
+
+		payload = self.client.return_value.create_vm.call_args.args[0]
+		self.assertEqual(payload["sleep_after_idle_seconds"], 45 * 60)
+
+	def test_a_zero_idle_time_keeps_a_trial_server_awake(self):
+		frappe.db.set_value("Team", self.team.name, "is_staging_trial", 1)
+		frappe.db.set_single_value("Central Settings", "trial_idle_shutdown_minutes", 0)
+		frappe.clear_cache(doctype="Central Settings")
+		name = self.submit()["action"]
+		_process_locked(name)
+
+		self.assertEqual(self.client.return_value.create_vm.call_args.args[0]["sleep_after_idle_seconds"], 0)
+
 	def test_a_repeated_request_under_a_new_key_returns_the_saved_one(self):
 		first = self.submit()
 		self.assertEqual(self.submit(request_key="lost-reply-key-000001")["action"], first["action"])
