@@ -64,20 +64,24 @@ class TestCentralSSO(IntegrationTestCase):
 		self.assertEqual(claims["aud"], DEV_AUDIENCE)
 
 	def test_bootstrap_verifier_rejects_other_scopes(self):
-		# scope is an asserted claim, not a convention: bench-login and metrics tokens
-		# are signed with the same key, so only the scope check stops one from being
-		# accepted as an enrollment token.
+		# scope is an asserted claim, not a convention: bench-login is signed with this
+		# same key, so only the scope check stops it being accepted as an enrollment
+		# token. A datum token is refused earlier, on its algorithm.
+		from central.central.doctype.central_sso_settings.central_sso_settings import (
+			CentralSSOSettings,
+		)
 		from central.sso import (
 			mint_bench_login,
 			mint_bootstrap_token,
-			mint_metrics_token,
+			mint_datum_token,
 			verify_bootstrap_token,
 		)
 
+		CentralSSOSettings.instance().initialize_atlas_signing_key()
 		enroll = mint_bootstrap_token("team-x", "pcred-x")
 		self.assertEqual(verify_bootstrap_token(enroll)["team"], "team-x")
 
-		for other in (mint_bench_login("pcred-x"), mint_metrics_token("pcred-x", "vm-1")):
+		for other in (mint_bench_login("pcred-x"), mint_datum_token(42, "vm-1")):
 			with self.assertRaises(frappe.AuthenticationError):
 				verify_bootstrap_token(other)
 

@@ -13,7 +13,13 @@ from frappe.utils.password import remove_encrypted_password
 
 from central.api.jwks import get_atlas_jwks, jwks_document
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
-from central.sso import ATLAS_TOKEN_TTL, mint_atlas_token, mint_bench_login, mint_proxy_token
+from central.sso import (
+	ATLAS_TOKEN_TTL,
+	mint_atlas_token,
+	mint_bench_login,
+	mint_cargo_token,
+	mint_proxy_token,
+)
 
 
 class TestAtlasSSO(IntegrationTestCase):
@@ -94,6 +100,34 @@ class TestAtlasSSO(IntegrationTestCase):
 		self.assertNotIn("tenant", claims)
 		with self.assertRaises(jwt.InvalidAudienceError):
 			jwt.decode(token, key.key, algorithms=["EdDSA"], audience="atlas-proxy:7", issuer="central")
+
+	def test_cargo_token_has_bucket_authority_for_one_region(self):
+		settings = self.initialize()
+		key = jwt.PyJWK.from_dict(settings.atlas_jwks()["keys"][0])
+		token = mint_cargo_token(42)
+		claims = jwt.decode(token, key.key, algorithms=["EdDSA"], audience="atlas-cargo:42", issuer="central")
+
+		self.assertEqual((claims["sub"], claims["scope"]), ("central", "bucket:*"))
+		self.assertNotIn("tenant", claims)
+		with self.assertRaises(jwt.InvalidAudienceError):
+			jwt.decode(token, key.key, algorithms=["EdDSA"], audience="atlas-cargo:7", issuer="central")
+
+	def test_cargo_token_carries_every_claim_cargo_requires(self):
+		"""Cargo refuses a token missing any of these, and reads the issuer off the key id."""
+		settings = self.initialize()
+		key = jwt.PyJWK.from_dict(settings.atlas_jwks()["keys"][0])
+		token = mint_cargo_token(42)
+
+		self.assertTrue(jwt.get_unverified_header(token)["kid"].startswith("central:"))
+		self.assertEqual(jwt.get_unverified_header(token)["alg"], "EdDSA")
+		jwt.decode(
+			token,
+			key.key,
+			algorithms=["EdDSA"],
+			audience="atlas-cargo:42",
+			issuer="central",
+			options={"require": ["iss", "sub", "aud", "iat", "exp"]},
+		)
 
 	def test_invalid_region_is_rejected_before_signing(self):
 		for value in (-1, 65536, True, "42", None):

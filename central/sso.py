@@ -16,12 +16,10 @@ from central.central.doctype.central_sso_settings.central_sso_settings import (
 BENCH_LOGIN_TTL = 60 * 60
 SITE_LOGIN_TTL = 5 * 60  # a single-use assertion that a site exchanges for its own session
 BOOTSTRAP_TTL = 30 * 60  # the first-boot enrollment window
-METRICS_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
-LOG_TTL = METRICS_TTL
+DATUM_TTL = 7 * 24 * 60 * 60  # short: no revocation list, and the pilot re-fetches on 401 / near expiry
 ENROLL_SCOPE = "enroll"
-METRICS_SCOPE = "datum"
-LOG_SCOPE = "logs"
-LOG_ACCESS = ["write"]  # Fluent Bit only writes; reads come through the admin path, not a shipper
+DATUM_SCOPE = "datum"
+DATUM_ACCESS = ["write"]  # datum serves no reads at all; every caller is a producer
 ATLAS_TOKEN_TTL = 5 * 60
 
 
@@ -35,7 +33,32 @@ def mint_proxy_token(region_id: int) -> str:
 	return _mint_regional_token(region_id, f"atlas-proxy:{region_id}", "site:* domain:*")
 
 
-def _mint_regional_token(region_id: int, audience: str, scope: str, extra: dict | None = None) -> str:
+def mint_cargo_token(region_id: int) -> str:
+	"""Mint a credential for the object storage routes of one regional Cargo host."""
+	return _mint_regional_token(region_id, f"atlas-cargo:{region_id}", "bucket:*")
+
+
+def mint_datum_token(region_id: int, resource_id: str) -> str:
+	"""The token a pilot presents to its region's datum, for metrics and logs alike. The
+	audience names one region, so every other region refuses it."""
+	if not resource_id:
+		frappe.throw(
+			_("This pilot has no resource yet; a datum token would be unattributable."),
+			frappe.ValidationError,
+		)
+
+	return _mint_regional_token(
+		region_id,
+		f"atlas-datum:{region_id}",
+		DATUM_SCOPE,
+		{"resource_id": resource_id, "access": DATUM_ACCESS},
+		ttl=DATUM_TTL,
+	)
+
+
+def _mint_regional_token(
+	region_id: int, audience: str, scope: str, extra: dict | None = None, ttl: int = ATLAS_TOKEN_TTL
+) -> str:
 	if type(region_id) is not int or not 0 <= region_id <= 65535:
 		frappe.throw(_("The Atlas region ID must be a whole number from 0 to 65535."))
 
@@ -48,7 +71,7 @@ def _mint_regional_token(region_id: int, audience: str, scope: str, extra: dict 
 		"aud": audience,
 		"scope": scope,
 		"iat": now,
-		"exp": now + ATLAS_TOKEN_TTL,
+		"exp": now + ttl,
 		"jti": frappe.generate_hash(length=16),
 		**(extra or {}),
 	}
@@ -116,52 +139,6 @@ def verify_bootstrap_token(token: str) -> dict:
 	if claims.get("scope") != ENROLL_SCOPE:
 		frappe.throw(_("Not an enrollment token."), frappe.AuthenticationError)
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
-
-
-def mint_metrics_token(audience: str, resource_id: str) -> str:
-	"""A token the pilot presents to Datum's metrics gateway.
-
-	`scope` keeps bench and enrollment tokens — signed with this same key — from
-	writing metrics. vmauth turns `metrics_extra_labels` into labels the store
-	applies over whatever the producer sent, so a pilot cannot write as another
-	resource."""
-	if not resource_id:
-		frappe.throw(
-			_("This pilot has no resource yet; a metrics token would be unattributable."),
-			frappe.ValidationError,
-		)
-	return _mint(
-		audience,
-		METRICS_SCOPE,
-		METRICS_TTL,
-		{"vm_access": {"metrics_extra_labels": [f"resource_id={resource_id}"]}},
-	)
-
-
-def mint_log_token(audience: str, resource_id: str) -> str:
-	"""A token the pilot presents to Datum's logs gateway.
-
-	Unlike the metrics token, this carries `resource_id` and `access` as
-	top-level claims Datum reads directly (``Identity.from_claims`` looks for
-	``resource_id`` and ``access``) — there is no vmauth bridge in front of
-	the logs path. `scope` keeps bench and enrollment tokens, signed with this
-	same key, from writing logs. Fluent Bit only writes, so `access` is
-	``["write"]``; reads come through the admin-facing path, not from a shipper.
-	"""
-	if not resource_id:
-		frappe.throw(
-			_("This pilot has no resource yet; a log token would be unattributable."),
-			frappe.ValidationError,
-		)
-	return _mint(
-		audience,
-		LOG_SCOPE,
-		LOG_TTL,
-		{
-			"resource_id": resource_id,
-			"access": LOG_ACCESS,
-		},
-	)
 
 
 def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str:
