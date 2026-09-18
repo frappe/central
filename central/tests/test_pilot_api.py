@@ -1,6 +1,8 @@
 # Copyright (c) 2026, frappe and Contributors
 # See license.txt
 
+import random
+
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
@@ -65,16 +67,19 @@ class TestPilotAPI(IntegrationTestCase):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call_heartbeat(self.token)
 
-	def bound_pilot(self, region_id: str = "42") -> str:
-		"""A pilot with an Asset in a region, which is what a datum token is addressed to."""
-		region = f"tel-{frappe.generate_hash(length=6)}"
-		ensure_atlas_instance(region, atlas_region_id=region_id)
+	def bound_pilot(self, region_id: int | None = None) -> str:
+		"""A pilot with an Asset in a region, which is what a datum token is addressed to.
+
+		The region id is unique per Atlas Instance, so each test gets its own rather than
+		colliding with whatever the site already holds."""
+		self.region = f"tel-{frappe.generate_hash(length=6)}"
+		ensure_atlas_instance(self.region, atlas_region_id=str(region_id or random.randint(1, 65535)))
 		asset = frappe.get_doc(
 			{
 				"doctype": "Asset",
-				"resource_id": f"vm-{region}",
+				"resource_id": f"vm-{self.region}",
 				"team": self.team,
-				"cluster": region,
+				"cluster": self.region,
 				"status": "Running",
 			}
 		).insert(ignore_permissions=True)
@@ -82,55 +87,47 @@ class TestPilotAPI(IntegrationTestCase):
 
 		return asset.name
 
-	def enrolled_cargo(self, region: str, telemetry_base_url: str) -> str:
-		"""A region whose Cargo has enrolled and reported where telemetry goes, with an
-		Asset in it bound to this pilot."""
-		ensure_atlas_instance(region)
+	def reporting_region(self, service_endpoint: str, status: str = "Available") -> str:
+		"""A bound pilot whose region has reported where its telemetry host serves."""
+		self.bound_pilot()
 		frappe.get_doc(
 			{
-				"doctype": "Cargo Instance",
-				"region": region,
-				"status": "Registered",
-				"telemetry_base_url": telemetry_base_url,
+				"doctype": "Service Detail",
+				"region": self.region,
+				"service": "telemetry",
+				"status": status,
+				"service_endpoint": service_endpoint,
 			}
 		).insert(ignore_permissions=True)
-		asset = frappe.get_doc(
-			{
-				"doctype": "Asset",
-				"resource_id": f"vm-{region}",
-				"team": self.team,
-				"cluster": region,
-				"status": "Running",
-			}
-		).insert(ignore_permissions=True)
-		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", asset.name)
 
-		return f"CARGO-{region}"
+		return f"{self.region}-telemetry"
 
 	def test_token_names_the_regional_telemetry_endpoint(self):
-		"""The pilot is told where to ship without being told which region it is in:
-		the Asset's cluster is the region, and the region's Cargo owns the URL."""
-		region = f"tel-{frappe.generate_hash(length=6)}"
-		self.enrolled_cargo(region, "https://datum.example.test")
+		"""The pilot is told where to ship without being told which region it is in: the
+		Asset's cluster is the region, and that region's own report names the host."""
+		self.reporting_region("https://datum.example.test")
 
 		self.assertEqual(self.call_datum_token(self.token)["endpoint"], "https://datum.example.test")
 
-	def test_a_disabled_cargo_hands_out_no_endpoint(self):
-		"""A region whose Cargo is disabled has nowhere to ship. The token is still minted
-		-- it is the endpoint that is missing, not the pilot's right to telemetry."""
-		region = f"tel-{frappe.generate_hash(length=6)}"
-		name = self.enrolled_cargo(region, "https://datum.example.test")
-		frappe.db.set_value("Cargo Instance", name, "status", "Disabled")
+	def test_a_region_reporting_itself_down_hands_out_no_endpoint(self):
+		"""Shipping at a host that says it is down only loses the rows. The token is still
+		minted -- it is the endpoint that is missing, not the pilot's right to telemetry."""
+		self.reporting_region("https://datum.example.test", status="Not Available")
 
 		result = self.call_datum_token(self.token)
 		self.assertIsNone(result["endpoint"])
 		self.assertTrue(result["token"])
 
+	def test_a_region_that_has_never_reported_hands_out_no_endpoint(self):
+		"""No row at all, which is where every region starts."""
+		self.bound_pilot()
+
+		self.assertIsNone(self.call_datum_token(self.token)["endpoint"])
+
 	def test_an_unbound_pilot_gets_no_token_at_all(self):
 		"""No Asset means no resource to attribute rows to, so the mint is refused before
 		the region is ever resolved."""
-		region = f"tel-{frappe.generate_hash(length=6)}"
-		self.enrolled_cargo(region, "https://datum.example.test")
+		self.reporting_region("https://datum.example.test")
 		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", None)
 
 		with self.assertRaises(frappe.ValidationError):
@@ -156,7 +153,7 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_the_token_is_addressed_to_the_pilots_own_region(self):
 		"""Every region reads the same key set, so the audience is what keeps a pilot
 		from writing to another region's datum."""
-		self.bound_pilot(region_id="7")
+		self.bound_pilot(region_id=7)
 
 		claims = jwt.decode(self.call_datum_token(self.token)["token"], options={"verify_signature": False})
 

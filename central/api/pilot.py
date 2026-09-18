@@ -6,9 +6,11 @@ from collections.abc import Callable
 import frappe
 from frappe import _
 
-from central.central.doctype.cargo_instance.cargo_instance import CargoInstance
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.site_domain.site_domain import SiteDomain
+from central.services.doctype.service_detail.service_detail import ServiceDetail
+
+TELEMETRY = "telemetry"
 
 # The pilot→Central surface. The pilot (the on-VM agent, ~/pilot) authenticates with
 # the opaque token Central minted for it (stored in the bench's bench.toml).
@@ -47,8 +49,11 @@ def get_pilot_region(credential: PilotCredential) -> str | None:
 
 
 def get_telemetry_base_url(region: str | None) -> str | None:
-	"""Where one region takes metrics and logs, or None until that region's Cargo enrols."""
-	return CargoInstance.telemetry_url_for(region) if region else None
+	"""Where one region takes metrics and logs, or None until its telemetry host reports.
+
+	The region's own report is the only thing that knows this, and it stops being handed
+	out the moment that host reports itself down."""
+	return ServiceDetail.endpoint_for(region, TELEMETRY) if region else None
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])

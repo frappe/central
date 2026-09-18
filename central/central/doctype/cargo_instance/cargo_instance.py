@@ -20,7 +20,6 @@ class CargoInstance(Document):
 		region: DF.Link
 		registered_at: DF.Datetime | None
 		status: DF.Literal["Draft", "Registered", "Disabled"]
-		telemetry_base_url: DF.Data | None
 		webhook_secret: DF.Password | None
 	# end: auto-generated types
 
@@ -31,32 +30,9 @@ class CargoInstance(Document):
 
 	def validate(self) -> None:
 		self.validate_base_url()
-		self.validate_telemetry_url()
-
-	def validate_telemetry_url(self) -> None:
-		"""If a telemetry URL is given, it must be a valid URL. If not given, it is cleared."""
-		self.telemetry_base_url = (self.telemetry_base_url or "").strip().rstrip("/") or None
-		if self.telemetry_base_url and not frappe.utils.validate_url(
-			self.telemetry_base_url, valid_schemes=VALID_SCHEMES
-		):
-			frappe.throw(_("Telemetry URL must be a valid URL."), frappe.ValidationError)
 
 	def validate_base_url(self) -> None:
 		"""If a base URL is given, it must be a valid URL. If not given, it is cleared."""
 		self.base_url = (self.base_url or "").strip().rstrip("/") or None
 		if self.base_url and not frappe.utils.validate_url(self.base_url, valid_schemes=VALID_SCHEMES):
 			frappe.throw(_("Base URL must be a valid URL."), frappe.ValidationError)
-
-	@staticmethod
-	def telemetry_url_for(region: str) -> str | None:
-		"""Where a region's pilots ship metrics and logs, or None while that region has no
-		enrolled Cargo. Read by name -- the autoname is `CARGO-{region}` -- so it comes off
-		the request cache rather than the database on every token a pilot asks for."""
-		telemetry_base_url = frappe.db.get_value(
-			"Cargo Instance",
-			{"region": region, "status": "Registered"},
-			"telemetry_base_url",
-			cache=True,
-		)
-
-		return telemetry_base_url or None

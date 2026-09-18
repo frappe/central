@@ -7,7 +7,6 @@
  "field_order": [
   "region",
   "base_url",
-  "telemetry_base_url",
   "column_break_head",
   "status",
   "registered_at",
@@ -61,13 +60,6 @@
    "fieldname": "section_break_delivery",
    "fieldtype": "Section Break",
    "label": "Delivery"
-  },
-  {
-   "description": "Cargo will set the telemetry base URL once it's ready",
-   "fieldname": "telemetry_base_url",
-   "fieldtype": "Data",
-   "label": "Telemetry Base URL",
-   "read_only": 1
   },
   {
    "fieldname": "webhook_secret",
