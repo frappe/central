@@ -1,11 +1,18 @@
 import { useCall } from 'frappe-ui'
-import { computed, onScopeDispose } from 'vue'
+import { computed, onScopeDispose, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useFrappeDocEventListener } from '@/composables/useFrappeRealtime'
 import type { AssetRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
-import { getErrorMessage, isAbortError } from '@/lib/toast'
+import {
+	errorToast,
+	getErrorMessage,
+	infoToast,
+	isAbortError,
+	successToast,
+} from '@/lib/toast'
+import type { ActionStatus } from '@/types/serverCreation'
 
 // The team's whole fleet in one read — its servers and its self-serve sites (each a
 // 1:1-backed VM), so the map/panel unify them from a single call. The map clusters and
@@ -21,11 +28,22 @@ export interface SiteRow {
 	status: string
 	region: string | null
 	url: string | null
+	/** The machine this site is. Its power and terminate actions act on this. */
+	asset: string | null
 	// Transitional label while a site action is in flight (see AssetRow.pending_action).
 	pending_action?: string | null
 }
 
-type RegistryResponse = { team: string; assets: AssetRow[]; sites: SiteRow[] }
+// A creation Central is still working on. It has no server row until its region accepts
+// one, so it travels beside the fleet rather than inside it.
+export type CreationRow = ActionStatus & { requested_by: string }
+
+type RegistryResponse = {
+	team: string
+	assets: AssetRow[]
+	sites: SiteRow[]
+	creations: CreationRow[]
+}
 
 const { activeTeam } = useSession()
 
@@ -46,6 +64,57 @@ function reloadOnce(): void {
 	window.clearTimeout(reloadTimer)
 	reloadTimer = window.setTimeout(() => registry.reload(), 150)
 }
+
+// What a state is worth telling someone who is not looking at the row. A state left out
+// here is a step on the way somewhere, and announcing it would only be noise.
+const ANNOUNCED: Record<string, (label: string) => void> = {
+	Running: (label) => successToast(`${label} is running.`),
+	Stopped: (label) => infoToast(`${label} is stopped.`),
+	Terminated: (label) => infoToast(`${label} was removed.`),
+	Failed: (label) => errorToast(`${label} failed. Open it to see why.`),
+}
+
+interface SeenState {
+	status: string
+	label: string
+}
+
+// How each server was last seen. Null until the first read for this team lands, because
+// a first sighting is not a change and must not announce itself.
+let lastSeen: Map<string, SeenState> | null = null
+
+function announceStateChanges(data: RegistryResponse | null | undefined): void {
+	if (!data) return
+	const current = new Map<string, SeenState>()
+	for (const asset of data.assets)
+		if (asset.status)
+			current.set(asset.name, {
+				status: asset.status,
+				label: asset.title || asset.name,
+			})
+	for (const site of data.sites)
+		current.set(site.name, {
+			status: site.status,
+			label: site.subdomain || site.name,
+		})
+
+	for (const [name, state] of current) {
+		const previous = lastSeen?.get(name)
+		if (previous && previous.status !== state.status)
+			ANNOUNCED[state.status]?.(state.label)
+	}
+	lastSeen = current
+}
+
+// A different team is a different fleet, so nothing carried over from the last one is a
+// change worth announcing.
+watch(activeTeam, () => {
+	lastSeen = null
+})
+watch(
+	() => registry.data,
+	(data) => announceStateChanges(data),
+)
 
 export function useServerMapData() {
 	// Central publishes into the active team's room whenever one of its servers moves,
@@ -71,6 +140,10 @@ export function useServerMapData() {
 			),
 		),
 		sites: computed<SiteRow[]>(() => registry.data?.sites ?? []),
+		creations: computed<CreationRow[]>(() => registry.data?.creations ?? []),
+		// False only until the first answer for this team lands. A form that must not
+		// start a second creation waits for this before it enables its button.
+		loaded: computed(() => !!registry.data),
 		loading: computed(() => registry.loading),
 		error: computed(() => {
 			if (!registry.error || isAbortError(registry.error)) return null

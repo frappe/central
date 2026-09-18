@@ -14,6 +14,7 @@
   "atlas_instance",
   "asset",
   "resource_id",
+  "subdomain",
   "column_break_main",
   "status",
   "requested_by",
@@ -52,7 +53,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Action",
-   "options": "create\nstart\nstop\nterminate\nresize",
+   "options": "create\nstart\nstop\nrestart\nterminate\nresize",
    "read_only": 1,
    "reqd": 1
   },
@@ -72,6 +73,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Resource ID",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.resource_type=='Site'",
+   "description": "The single label the customer named their site. Held here because the site it will name does not exist until the region builds its machine.",
+   "fieldname": "subdomain",
+   "fieldtype": "Data",
+   "label": "Subdomain",
    "read_only": 1
   },
   {

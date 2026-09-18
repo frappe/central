@@ -456,27 +456,6 @@ export function siteVisual(
 			dot: 'var(--ink-amber-6)',
 			pulse: true,
 		}
-	if (status === 'Running')
-		return {
-			key: 'active',
-			label: 'Running',
-			badgeTheme: 'green',
-			dot: 'var(--ink-green-6)',
-			pulse: false,
-		}
-	if (status === 'Failed')
-		return {
-			key: 'broken',
-			label: 'Failed',
-			badgeTheme: 'red',
-			dot: 'var(--ink-red-6)',
-			pulse: true,
-		}
-	return {
-		key: 'settingUp',
-		label: status,
-		badgeTheme: 'amber',
-		dot: 'var(--ink-amber-6)',
-		pulse: false,
-	}
+	// A site mirrors its machine's status, so the two share one vocabulary.
+	return STATUS_VISUAL[status] ?? VISUALS.settingUp
 }

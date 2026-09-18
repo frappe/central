@@ -10,7 +10,15 @@ from central.sso import mint_bench_login, mint_site_login
 
 METRICS_CACHE_TTL_SECONDS = 30
 PILOT_TIMEOUT_SECONDS = 3
-SITE_LOGIN_TIMEOUT_SECONDS = 10  # the bench spins up a subprocess to mint the session
+PILOT_TASK_TIMEOUT_SECONDS = 35
+# Minting a session can start a cold Frappe process on the machine. Central waits long
+# enough for that process rather than discarding a session the machine creates later.
+SITE_LOGIN_TIMEOUT_SECONDS = 120
+SITE_PING_TIMEOUT_SECONDS = 4
+
+
+class PilotLoginPending(Exception):
+	"""Pilot has not accepted Central authentication for a site login yet."""
 
 
 class PilotMonitoringClient:
@@ -53,9 +61,8 @@ class PilotMonitoringClient:
 
 def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str | None:
 	"""Relay a Central-signed site assertion to the bench's login endpoint and return the desk
-	URL it mints (a fresh local session). None on any failure — minting, request, or an unusable
-	response — logged so a consistently-failing bench or Central is diagnosable, then the caller
-	falls back to Atlas."""
+	URL it mints (a fresh local session). A 401 is retryable while Pilot finishes starting. Other
+	failures return None and are logged so a consistently-failing bench or Central is diagnosable."""
 	try:
 		response = requests.post(
 			f"{_gateway_url(gateway_url)}/api/v1/sites/{site}/login",
@@ -63,16 +70,40 @@ def fetch_site_login_url(gateway_url: str, audience_id: str, site: str) -> str |
 			timeout=SITE_LOGIN_TIMEOUT_SECONDS,
 			allow_redirects=False,
 		)
+		if response.status_code == 401:
+			raise PilotLoginPending
 		response.raise_for_status()
 		payload = response.json()
 		url = payload.get("url") if isinstance(payload, dict) else None
-	except Exception as exc:  # minting (signing key / DB / encode) must also fall back, not 500
-		frappe.log_error(title=f"Site login relay failed: {site}", message=f"{gateway_url}: {exc}")
+	except PilotLoginPending:
+		raise
+	except Exception:  # minting (signing key / DB / encode) must also fall back, not 500
+		frappe.log_error(
+			title=f"Site login relay failed: {site}",
+			message=f"{gateway_url}: {frappe.get_traceback(with_context=True)}",
+		)
 		return None
 	if not isinstance(url, str) or not url:
-		frappe.log_error(title=f"Site login relay returned no URL: {site}", message=f"{gateway_url}: {url!r}")
+		frappe.log_error(
+			title=f"Site login relay returned no URL: {site}", message=f"{gateway_url}: {response.text}"
+		)
 		return None
 	return url
+
+
+def is_site_reachable(url: str) -> bool:
+	"""Whether a site answers on its public address.
+
+	The image ships the site already built, so nothing is being provisioned: the question
+	is only whether the machine is awake and its route is live."""
+	try:
+		response = requests.get(
+			f"{url}/api/method/ping", timeout=SITE_PING_TIMEOUT_SECONDS, allow_redirects=False
+		)
+	except requests.RequestException:
+		return False
+
+	return response.ok and "pong" in response.text
 
 
 def rename_admin_domain(asset: str, base_url: str | None = None, tls: bool = True) -> dict:
@@ -110,7 +141,7 @@ def _post_to_pilot(asset: str, base_url: str, path: str, payload: dict) -> dict:
 		f"{_gateway_url(base_url)}{path}",
 		headers={"Authorization": f"Bearer {mint_bench_login(audience_id)}"},
 		json=payload,
-		timeout=SITE_LOGIN_TIMEOUT_SECONDS,
+		timeout=PILOT_TASK_TIMEOUT_SECONDS,
 		allow_redirects=False,
 	)
 	response.raise_for_status()

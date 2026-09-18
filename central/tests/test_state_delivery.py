@@ -11,7 +11,6 @@ from frappe.utils.password import remove_encrypted_password
 
 from central.api.state_delivery import REGION_HEADER, SENDER_HEADER, receive
 from central.central.doctype.asset.asset import Asset
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.state_delivery import (
 	accept_atlas_report,
 	accept_cargo_report,
@@ -127,6 +126,13 @@ class TestStateDelivery(IntegrationTestCase):
 
 		self.apply(report)
 		self.assertEqual(self.server.reload().status, "Running")
+		self.queued.assert_any_call(
+			"central.integrations.servers.refresh_server",
+			name=self.server.name,
+			enqueue_after_commit=True,
+			job_id=f"server-refresh:{self.server.name}",
+			deduplicate=True,
+		)
 
 	def test_a_repeated_delivery_is_ignored(self):
 		"""Frappe retries a failed delivery, so the same report can arrive twice. The
@@ -195,33 +201,25 @@ class TestStateDelivery(IntegrationTestCase):
 	def test_a_body_that_is_not_an_object_is_ignored(self):
 		self.assertEqual(self.deliver(["vm-00007"]), {"queued": False, "ignored": "unreadable body"})
 
-	# — A deleted server
-
-	def test_a_deleted_server_is_recorded_and_its_credential_revoked(self):
-		PilotCredential.mint(
-			team=self.team.name, pilot_credential_id="pcred-" + self.server.name, asset=self.server.name
-		)
-		report = {"event": "vm.gone", "virtual_machine": "vm-00007"}
-
-		self.assertEqual(self.deliver(report), {"queued": True, "resource_id": self.server.name})
-		self.apply(report)
-		self.assertEqual(self.server.reload().status, "Terminated")
-		self.assertEqual(
-			frappe.db.get_value("Pilot Credential", "pcred-" + self.server.name, "status"), "Revoked"
-		)
-
-	def test_a_delete_report_for_a_dead_server_is_ignored(self):
-		self.server.db_set("status", "Terminated")
-
-		self.assertEqual(
-			self.deliver({"event": "vm.gone", "virtual_machine": "vm-00007"}),
-			{"queued": False, "ignored": "already terminated"},
-		)
-
 	# — The action waiting on the report
 
 	def test_the_waiting_action_succeeds_on_its_goal_state(self):
 		action = self._action("start")
+
+		self.apply(self.state_report())
+		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Succeeded")
+
+	def test_a_restart_waits_to_see_the_server_leave_running(self):
+		"""A restart begins and ends at Running, so the goal state alone proves nothing.
+		It succeeds only after the region reports the server away from Running."""
+		action = self._action("restart")
+		self.server.db_set("status", "Running")
+
+		self.apply(self.state_report())
+		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Sent")
+
+		self.apply(self.state_report(status="stopped"))
+		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "In Progress")
 
 		self.apply(self.state_report())
 		self.assertEqual(frappe.db.get_value("Resource Action", action, "status"), "Succeeded")

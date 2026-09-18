@@ -62,20 +62,38 @@ def registry(team: str | None = None) -> dict:
 	for asset in assets:
 		asset["pending_action"] = pending.get(asset["resource_id"])
 
-	# A site is a VM too — flat and uncapped, symmetric with servers. `name` is the FQDN
-	# (the stable id + terminate key); `subdomain` is the user-entered display name.
-	sites = frappe.get_list(
-		"Site",
-		filters={"team": team, "status": ["!=", "Terminated"]},
-		fields=["name", "subdomain", "status", "url", "region"],
-		order_by="subdomain asc",
-		limit_page_length=0,
-	)
-	# Same overlay for sites; a VM id and a site FQDN never collide, so one map covers both.
-	for site in sites:
-		site["pending_action"] = pending.get(site["name"])
+	# A creation has no server row until the region accepts it, so it cannot be overlaid
+	# like the pending actions above. It rides here as its own list: the console picks its
+	# own request back up after a reload, and the fleet can show what is still building.
+	creations = ResourceAction.open_creations(team)
 
-	return {"team": team, "assets": assets, "sites": sites}
+	rows = frappe.get_list(
+		"Site", filters={"team": team}, fields=["name", "asset"], order_by="name asc", limit_page_length=0
+	)
+	return {"team": team, "assets": assets, "sites": _sites(rows, assets, pending), "creations": creations}
+
+
+def _sites(rows: list[dict], assets: list[dict], pending: dict[str, str]) -> list[dict]:
+	"""A site is a VM too, so it lists beside the servers and reads the same way.
+
+	Its address is its name and its state is its machine's, so both are read here from the
+	machines this call already loaded. A terminated machine is gone, not a state to render,
+	so its site goes with it."""
+	machines = {asset["name"]: asset for asset in assets}
+	return [
+		{
+			"name": row["name"],
+			"subdomain": row["name"].split(".")[0],
+			"asset": row["asset"],
+			"url": f"https://{row['name']}",
+			"status": machine["status"],
+			"region": machine["cluster"],
+			# A site's actions run against its machine, so its in-flight label is the machine's.
+			"pending_action": pending.get(row["asset"]),
+		}
+		for row in rows
+		if (machine := machines.get(row["asset"])) and machine["status"] != "Terminated"
+	]
 
 
 @frappe.whitelist(methods=["GET"])
@@ -291,6 +309,13 @@ def stop_server(team: str | None = None, resource_id: str | None = None) -> dict
 
 @frappe.whitelist(methods=["POST"])
 @resource_action
+def restart_server(team: str | None = None, resource_id: str | None = None) -> dict:
+	"""Restart a running server. Gated on `server:power`."""
+	return _run_command("restart", team, resource_id)
+
+
+@frappe.whitelist(methods=["POST"])
+@resource_action
 def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Terminate a server. Gated on `server:terminate`."""
 	return _run_command("terminate", team, resource_id)
@@ -365,3 +390,12 @@ def action_status(name: str) -> dict:
 	from central.resource_actions import get_status
 
 	return get_status(name)
+
+
+@frappe.whitelist(methods=["POST"])
+@resource_action
+def retry_action(name: str) -> dict:
+	"""Send a failed creation again on its own record. Gated on `server:create`."""
+	from central.resource_actions import retry
+
+	return retry(name)

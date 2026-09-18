@@ -24,8 +24,21 @@ export function useFleetRows(
 		() => new Map(regions.value.map((r) => [r.region, r])),
 	)
 
+	const assetsByName = computed(
+		() => new Map(assets.value.map((asset) => [asset.name, asset])),
+	)
+
+	// One machine is one row. A site IS the machine its image was baked on, so the site
+	// row carries that machine and the machine does not row again — otherwise a trial,
+	// which is one site on one VM, would show up twice.
+	const assetsOwnedBySite = computed(
+		() => new Set(sites.value.map((site) => site.asset).filter(Boolean)),
+	)
+
 	const serverRows = computed<ResourceRow[]>(() =>
-		assets.value.map((asset) => {
+		assets.value
+			.filter((asset) => !assetsOwnedBySite.value.has(asset.name))
+			.map((asset) => {
 			const region = regionsByName.value.get(asset.cluster)
 			return {
 				kind: 'server' as const,
@@ -48,12 +61,18 @@ export function useFleetRows(
 			const region = site.region
 				? regionsByName.value.get(site.region)
 				: undefined
+			const asset = site.asset
+				? assetsByName.value.get(site.asset)
+				: undefined
 			return {
 				kind: 'site' as const,
 				id: site.name,
-				// The user-entered name ("demo.in"); the full FQDN drops to the secondary
-				// line (specs) so a site reads like the VM it is, not a routing string.
+				// The site's own name; the full FQDN drops to the secondary line (specs)
+				// so a site reads like the VM it is, not a routing string.
 				name: site.subdomain || site.name,
+				// The machine it runs on, so the row keeps the power and resize actions
+				// a server row has. Clicking the row still opens the site.
+				asset,
 				visual: siteVisual(site.status, site.pending_action),
 				specs: site.name,
 				cluster: site.region ?? '',

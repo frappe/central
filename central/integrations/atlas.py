@@ -64,6 +64,14 @@ class AtlasClient:
 	def get_vm(self, name: str) -> dict:
 		return self._get(f"virtual-machines/{quote(name, safe='')}")
 
+	def list_vms(self, limit: int = 100) -> list[dict]:
+		"""One page of this tenant's servers, newest first."""
+		page = self._get("virtual-machines", params={"offset": 0, "limit": limit})
+		items = page.get("items")
+		if not isinstance(items, list):
+			frappe.throw(_("Atlas returned an invalid server page."), AtlasConnectionError)
+		return items
+
 	def vm_action(self, name: str, action: str) -> dict:
 		path = f"virtual-machines/{quote(name, safe='')}"
 		if action == "terminate":
@@ -73,9 +81,16 @@ class AtlasClient:
 
 		return self._request("POST", f"{path}/actions/{action}")
 
-	def update_compute(self, name: str, cpu_millicores: int, memory_mib: int) -> dict:
-		"""Set CPU and memory. Atlas accepts it only while the VM is stopped."""
-		payload = {"cpu_millicores": cpu_millicores, "memory_mib": memory_mib}
+	def update_compute(
+		self, name: str, cpu_millicores: int, memory_mib: int, sleep_after_idle_seconds: int
+	) -> dict:
+		"""Set CPU, memory and the idle shutdown delay. Atlas takes a CPU or memory change
+		only while the VM is stopped. Zero seconds turns idle shutdown off."""
+		payload = {
+			"cpu_millicores": cpu_millicores,
+			"memory_mib": memory_mib,
+			"sleep_after_idle_seconds": sleep_after_idle_seconds,
+		}
 		return self._request("PATCH", f"virtual-machines/{quote(name, safe='')}/compute", payload=payload)
 
 	def update_disk(self, name: str, disk_mib: int) -> dict:
@@ -154,8 +169,14 @@ class AtlasClient:
 			or type(image.get("rootfs_size_mib")) is not int
 			or image["rootfs_size_mib"] < 0
 			or (image["status"] == "available" and image["rootfs_size_mib"] == 0)
+			# Build time is what separates two builds of the same Frappe version.
+			or type(image.get("created_at")) is not int
+			or image["created_at"] <= 0
 		):
-			frappe.throw(_("Atlas returned invalid image availability or disk size."), AtlasConnectionError)
+			frappe.throw(
+				_("Atlas returned invalid image availability, disk size, or build time."),
+				AtlasConnectionError,
+			)
 
 		return {
 			field: image.get(field)
@@ -166,6 +187,7 @@ class AtlasClient:
 				"status",
 				"enabled",
 				"rootfs_size_mib",
+				"created_at",
 				"tags",
 			)
 		}

@@ -67,7 +67,10 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 		transfer = next(row for row in configuration.includes if row.resource_type == "Transfer")
 		self.assertEqual((transfer.quantity, transfer.unit), (100, "GB"))
 		payload = client.create_vm.call_args.args[0]
-		self.assertEqual((payload["vcpus"], payload["memory_mib"], payload["disk_mib"]), (2, 4096, 81920))
+		self.assertEqual(
+			(payload["cpu_millicores"], payload["memory_mib"], payload["disk_mib"]),
+			(2000, 4096, 81920),
+		)
 
 	def test_rejects_invalid_hostname_before_dispatch(self):
 		with self.assertRaises(frappe.ValidationError):
@@ -91,10 +94,10 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 	def test_pending_requests_reserve_spending_limit(self):
 		set_team_tier(self.team, max_spend=2000)
 		with patch("central.billing.tests.provisioning._process_locked"):
-			first, _ = self.create()
+			first, _ = self.create(title="web-1")
 			self.assertEqual(first.status, "Queued")
 			with self.assertRaises(frappe.ValidationError):
-				self.create()
+				self.create(title="web-2")
 
 	def test_billing_failure_preserves_remote_identity_for_recovery(self):
 		with (

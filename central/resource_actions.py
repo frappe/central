@@ -7,7 +7,12 @@ from central.central.doctype.resource_action.resource_action import PENDING_STAT
 from central.iam import can, resolve_team
 from central.server_models import ActionStatus
 
-CAPABILITY = {"start": "server:power", "stop": "server:power", "terminate": "server:terminate"}
+CAPABILITY = {
+	"start": "server:power",
+	"stop": "server:power",
+	"restart": "server:power",
+	"terminate": "server:terminate",
+}
 
 
 def submit_command(action: str, team: str | None, resource_id: str | None) -> ActionStatus:
@@ -25,6 +30,8 @@ def submit_command(action: str, team: str | None, resource_id: str | None) -> Ac
 		frappe.throw(_("This server has no verified regional identity."))
 	if asset.resize_in_progress:
 		frappe.throw(_("Wait for the server resize to finish."))
+	if action == "restart" and asset.status != "Running":
+		frappe.throw(_("Only a running server can be restarted."))
 
 	pending = frappe.db.get_value(
 		"Resource Action",
@@ -65,3 +72,8 @@ def get_status(name: str) -> ActionStatus:
 	document = frappe.get_doc("Resource Action", name)
 	document.check_permission("read")
 	return document.customer_status()
+
+
+def retry(name: str) -> ActionStatus:
+	"""Re-drive one action. The record owns permission and what is safe to send again."""
+	return frappe.get_doc("Resource Action", name).retry()

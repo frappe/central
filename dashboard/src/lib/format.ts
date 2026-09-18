@@ -77,3 +77,16 @@ export function formatDate(value: string | null | undefined): string {
 		year: 'numeric',
 	})
 }
+
+/** Unix seconds -> short date and time, e.g. "Sep 17, 10:42 PM". Returns '' when unset. */
+export function formatUnixTime(seconds: number | null | undefined): string {
+	if (!seconds) return ''
+	const date = new Date(seconds * 1000)
+	if (Number.isNaN(date.getTime())) return ''
+	return date.toLocaleString(undefined, {
+		month: 'short',
+		day: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	})
+}

@@ -4,8 +4,9 @@ import json
 
 import frappe
 from frappe import _
-from redis.exceptions import LockError
+from redis.exceptions import LockError, LockNotOwnedError
 
+from central.api.jwks import jwks_document
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
@@ -13,11 +14,20 @@ from central.integrations.atlas import AtlasClient
 from central.integrations.servers import observe_server
 from central.sso import central_url, jwks_url
 
+# A region stamps its own clock on a machine, so allow for a little drift when deciding
+# which machines are new enough to have come from this request.
+CLOCK_SKEW_SECONDS = 120
+# Long enough to cover a region answering a create, so the lock outlives the work it
+# guards rather than expiring under it.
+LOCK_TIMEOUT_SECONDS = 15 * 60
+
 
 def process_request(name: str) -> None:
 	"""Dispatch once, then recover accepted creates using reads only."""
 	try:
-		with frappe.cache.lock(f"server-provisioning:{name}", timeout=180, blocking_timeout=0):
+		with frappe.cache.lock(
+			f"server-provisioning:{name}", timeout=LOCK_TIMEOUT_SECONDS, blocking_timeout=0
+		):
 			try:
 				_process_locked(name)
 			except Exception:
@@ -33,7 +43,13 @@ def process_request(name: str) -> None:
 					action.set_error("Sent", build_envelope("FINALIZATION_FAILED"))
 				else:
 					action.set_error("Uncertain", build_envelope("OUTCOME_UNKNOWN"))
+	except LockNotOwnedError:
+		# Ours expired while the region was still answering. The work ran unguarded and may
+		# be half finished, which is not the same as another worker holding the lock, so it
+		# is recorded rather than passed over in silence.
+		frappe.log_error(title=f"Provisioning lock expired: {name}")
 	except LockError:
+		# Another worker holds it. Theirs to finish.
 		return
 
 
@@ -53,7 +69,7 @@ def _process_locked(name: str) -> None:
 		return
 
 	if request.status != "Queued":
-		request.set_error("Uncertain", build_envelope("OUTCOME_UNKNOWN"))
+		recover_unanswered(request)
 		return
 
 	try:
@@ -79,8 +95,8 @@ def _process_locked(name: str) -> None:
 		request.db_set({"remote_vm_id": remote_id, "status": "Sent", "error_message": None})
 		# Retain the remote identity even if local billing or mirror finalization fails.
 		frappe.db.commit()
-	except AtlasRequestUncertain as error:
-		request.set_error("Uncertain", to_error_response(error))
+	except AtlasRequestUncertain:
+		recover_unanswered(request)
 		return
 	except (AtlasConnectionError, frappe.ValidationError, frappe.PermissionError) as error:
 		PilotCredential.revoke_by_id(request.credential)
@@ -88,6 +104,64 @@ def _process_locked(name: str) -> None:
 		return
 
 	_finalize(request)
+
+
+def recover_unanswered(request) -> None:
+	"""Settle a creation the region never answered, by asking it what it built.
+
+	Central marks every create with its action ID, so the region can say whether this
+	request produced a machine. Finding one binds it and the creation carries on. Only a
+	search that completed can say no, and that is a plain failure the customer can send
+	again. A region Central cannot reach proves nothing, so the request stays open for
+	the next sweep."""
+	try:
+		remote_vm_id = find_created_vm(request)
+	except AtlasConnectionError:
+		request.set_error("Uncertain", build_envelope("OUTCOME_UNKNOWN"))
+		return
+
+	if not remote_vm_id:
+		PilotCredential.revoke_by_id(request.credential)
+		request.set_error("Failed", build_envelope("CREATE_NOT_ACCEPTED", action=request.action))
+		return
+
+	request.db_set(
+		{
+			"remote_vm_id": remote_vm_id,
+			"status": "Sent",
+			"error_code": None,
+			"error_message": None,
+			"remediation": None,
+			"retriable": 0,
+		}
+	)
+	frappe.db.commit()
+	_finalize(request)
+
+
+def find_created_vm(request) -> str | None:
+	"""The machine this creation built, or None when the region holds none.
+
+	The region lists newest first, so the search stops at the first machine older than
+	the dispatch. A candidate counts only when its tenant, image and action marker all
+	match, which is what keeps another request's machine from being adopted."""
+	client = _client(request)
+	configuration = request.get_configuration()
+	started = frappe.utils.get_datetime(request.dispatched_at or request.creation).timestamp()
+
+	for row in client.list_vms():
+		created_at = row.get("created_at")
+		if not isinstance(created_at, int) or created_at < started - CLOCK_SKEW_SECONDS:
+			break
+		remote = client.get_vm(row["id"])
+		if (
+			remote.get("tenant_id") == client.tenant_id
+			and remote.get("image_id") == configuration.image_id
+			and remote.get("guest", {}).get("metadata", {}).get("central_action_id") == request.name
+		):
+			return row["id"]
+
+	return None
 
 
 def _client(request) -> AtlasClient:
@@ -106,6 +180,7 @@ def _create_payload(request) -> dict:
 		"hostname": configuration.hostname or "",
 		"ssh_keys": configuration.ssh_keys,
 		"firewall": {"enabled": False},
+		"sleep_after_idle_seconds": idle_shutdown_seconds(request.team),
 		"metadata": {"central_action_id": request.name},
 	}
 	if configuration.image_tags.get("purpose") == "pilot":
@@ -118,10 +193,26 @@ def _create_payload(request) -> dict:
 				"central_auth_token": token,
 				"jwks_url": jwks_url(),
 				"jwks_audience_id": credential,
+				# The keys, delivered with the credential, so the pilot's first token
+				# needs no fetch and a boot before Central is reachable still verifies.
+				"initial_jwks_cache": jwks_document(),
 			}
 		)
 
 	return payload
+
+
+def idle_shutdown_seconds(team: str) -> int:
+	"""How long a machine may sit idle before its region puts it to sleep.
+
+	Sleep is a hobby comfort: a trial server costs nothing while nobody uses it, and
+	customer traffic wakes it. A paid server stays up, and so does every server once its
+	owner resizes it."""
+	if not frappe.db.get_value("Team", team, "is_staging_trial"):
+		return 0
+
+	minutes = frappe.get_cached_value("Central Settings", "Central Settings", "trial_idle_shutdown_minutes")
+	return max(0, int(minutes or 0)) * 60
 
 
 def _finalize(request) -> None:
@@ -220,7 +311,10 @@ def _create_subscription(request, asset_id: str) -> None:
 
 
 def recover_requests() -> None:
-	"""Recover lost queue deliveries and read accepted VMs without repeating a create."""
+	"""Recover lost queue deliveries, and settle creations the region never answered.
+
+	Nothing here repeats a create: an accepted machine is read, and an unanswered request
+	is looked up by its action marker."""
 	cutoff = frappe.utils.add_to_date(frappe.utils.now_datetime(), minutes=-3)
 	action = frappe.qb.DocType("Resource Action")
 	rows = (
@@ -228,50 +322,10 @@ def recover_requests() -> None:
 		.select(action.name)
 		.where(
 			(action.modified < cutoff)
-			& (
-				action.status.isin(("Queued", "Dispatching", "Sent", "In Progress"))
-				| (
-					(action.status == "Uncertain")
-					& action.remote_vm_id.isnotnull()
-					& (action.remote_vm_id != "")
-				)
-			)
+			& action.status.isin(("Queued", "Dispatching", "Sent", "In Progress", "Uncertain"))
 		)
 		.orderby(action.modified)
 		.limit(100)
 	).run(as_dict=True)
 	for row in rows:
 		frappe.get_doc("Resource Action", row.name).enqueue()
-
-
-def resolve_created_vm(name: str, remote_vm_id: str) -> None:
-	"""Bind an unknown create only when Atlas confirms its tenant and action marker."""
-	if not isinstance(remote_vm_id, str) or not remote_vm_id:
-		frappe.throw(_("Enter an Atlas VM ID."))
-
-	action = frappe.get_doc("Resource Action", name, for_update=True)
-	if action.action != "create" or action.status != "Uncertain" or action.remote_vm_id:
-		frappe.throw(_("Only an uncertain creation without a VM identity can be resolved."))
-
-	client = _client(action)
-	remote = client.get_vm(remote_vm_id)
-	configuration = action.get_configuration()
-	metadata = remote.get("guest", {}).get("metadata", {})
-	if (
-		remote.get("tenant_id") != client.tenant_id
-		or remote.get("id") != remote_vm_id
-		or remote.get("image_id") != configuration.image_id
-		or metadata.get("central_action_id") != action.name
-	):
-		frappe.throw(_("This VM does not match the Team, image and creation action."))
-
-	action.db_set(
-		{
-			"remote_vm_id": remote_vm_id,
-			"status": "Sent",
-			"error_code": None,
-			"error_message": None,
-			"remediation": None,
-		}
-	)
-	action.enqueue()

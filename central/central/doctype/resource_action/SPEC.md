@@ -22,6 +22,8 @@ Central checks the capability, current image selector, image availability, plan 
 
 The request key is unique within a Team. Reusing it with identical inputs returns the same action. Reusing it with changed inputs fails. The saved configuration contains the accepted shape, image identity, currency, and billing cycle. The reserved rate becomes the opening subscription price even if the catalog changes while the request waits.
 
+A repeat under a new key is also answered with the saved action, when the same requester sent the same settings and no region has returned a VM identity yet. Central saves the request before it calls a region, so a lost reply leaves the record while the caller keeps nothing. A request that already holds a VM identity never matches, so a deliberate second server is still a second record. The request digest covers the settings only, not the key.
+
 API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/server_provisioning.py` owns creation policy. `central/resource_actions.py` owns power-operation authorization. Remote calls and observed-state writes belong to `central/integrations/`.
 
 ## State and recovery
@@ -32,24 +34,51 @@ API routes remain thin. `central/server_models.py` defines input and saved-confi
 | Dispatching | The dispatch marker is committed before the remote mutation. A replacement worker must not send it again. |
 | Sent | Atlas accepted the request and Central saved its VM identity. Local finalization or observation can be retried. |
 | In Progress | A scoped read has not confirmed the target state. |
-| Uncertain | The mutation may have succeeded. A known VM can be checked by read. An unknown creation needs operator resolution. |
+| Uncertain | The mutation may have succeeded and the region could not be reached to find out. A creation is looked up again on the next sweep. |
 | Succeeded | A scoped read confirmed the target state, or termination returned a scoped not-found response. |
 | Failed | A definite rejection or observed failure is recorded. The record retains the error and any accepted VM identity. |
 | Timed Out | A historical terminal state. Elapsed time alone does not prove failure or permit a repeated create. |
 
 The worker saves the remote VM identity before billing or local finalization. A local failure retains that identity and a readable error. Recovery retries local finalization and regional reads. It does not repeat the create call.
 
-The scheduled recovery job selects old queued or accepted actions. Unresolved creations without a VM identity do not consume its batch. Redis and database locks serialize workers. Customer retries cannot change an existing action's payload.
+The scheduled recovery job selects old actions that have not finished. Redis and database locks serialize workers. Customer retries cannot change an existing action's payload.
 
-An operator can use **Locate Created VM** for an uncertain creation. Central verifies the VM ID, tenant, selected image, and `central_action_id` metadata before binding it. **Check Progress** queues another safe check. Both operations enforce permissions on the server.
+A creation the region never answered settles itself. Central stamps its action ID into the guest metadata of every create, so it asks the region what that request built. The region lists newest first, and the search stops at the first machine older than the dispatch. A machine counts only when its tenant, image and action marker all match, so another request's machine is never adopted.
+
+| Search result | Outcome |
+|---|---|
+| A matching machine | Central records its identity and the creation carries on. |
+| No matching machine | The creation failed and nothing was built. The customer can send it again. |
+| The region could not be reached | Nothing is decided. The request stays open for the next sweep. |
+
+Only a search that completed can report that nothing was built, so an unreachable region never turns into a false failure. **Check Progress** queues another safe check and enforces permissions on the server.
+
+## Retry
+
+A failed creation is sent again on its own record, through `retry`. The record already holds the validated configuration, the request key and the accepted quote, so nothing about the request changes and no second record opens.
+
+| Condition | Result |
+|---|---|
+| A creation that failed or timed out, with no VM identity | The record returns to Queued and dispatches again. |
+| Any record that already holds a VM identity | Refused. That identity is the region's receipt, and a second dispatch would build a second server. |
+| A creation that is still running, including one waiting on a lookup | Refused. **Check Progress** is the safe read for a request in flight. |
+| Start, stop, restart, and terminate | Refused. These are repeated from the server, which opens a fresh record. |
+
+A retry requires `server:create` and re-checks the plan, the trial limit and the team's remaining spending headroom, because a failed request holds no reserved budget. The reserved rate itself does not change.
 
 ## Pilot and Ubuntu
 
-A Pilot creation issues one credential before dispatch. Atlas receives the `pilot-central` metadata document with the Central endpoint, bearer token, public-key endpoint, and audience ID. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status.
+A Pilot creation issues one credential before dispatch. Atlas receives the `pilot-central` metadata document with the Central endpoint, bearer token, public-key endpoint, audience ID, and the signing key set itself. The keys travel with the credential so the Pilot's first token needs no fetch, and a boot before Central is reachable still verifies. Central stores the token hash, not its plaintext, and keeps credentials outside the saved request payload and customer status.
 
 An accepted Pilot VM is linked to its credential during local finalization. Its management gateway uses Atlas's `proxy_hostname_suffix`. A running VM does not prove that Pilot or a site is ready. Site readiness and signup belong to the next phase.
 
 Ubuntu receives its SSH keys and guest hostname. It does not receive a Pilot credential or wait for a site.
+
+## Idle sleep
+
+A trial server sleeps after the idle time on Central Settings, which is 30 minutes by default. Customer traffic wakes it. Zero minutes keeps trial servers awake.
+
+A paid server never sleeps. A resize ends sleep for good, because a server its owner has resized has outgrown the hobby comfort. Atlas takes the idle timeout on its own while the server runs, so ending sleep never stops it.
 
 ## Errors and permissions
 
@@ -61,9 +90,9 @@ A scoped not-found response records the server as terminated, applies the billin
 
 ## Console and limits
 
-The console selects region, offering, exact build, and compatible plan. It retains the original request key and payload in session storage until a response is confirmed. Page reloads resume a known action. An unconfirmed HTTP response can resume only the original request. Switching Teams clears the visible action and ignores late responses from the previous Team.
+The console selects region, offering, exact build, and compatible plan. It keeps no copy of the request: `central.api.servers.registry` returns the team's unfinished creations, and the form picks up the one this user started. A page reload, a second tab and a lost reply all reach the same record instead of starting another. Switching Teams clears the visible action and ignores late responses from the previous Team.
 
-Restart and resize are not exposed by this action flow. Restart needs an authoritative completion signal. Resize runs as a billing background job instead: `central.integrations.servers.resize_server` stops the VM when CPU or memory changes, sets compute with `PATCH /virtual-machines/<id>/compute`, grows the disk with `PATCH /virtual-machines/<id>/disk`, starts the VM, and waits up to 240 seconds for each power state. Billing re-prices only after these calls succeed. Framework webhook ingestion and signup site readiness are subsequent delivery phases.
+Resize is not exposed by this action flow. It runs as a billing background job instead: `central.integrations.servers.resize_server` stops the VM when CPU or memory changes, sets compute with `PATCH /virtual-machines/<id>/compute`, grows the disk with `PATCH /virtual-machines/<id>/disk`, starts the VM, and waits up to 240 seconds for each power state. Billing re-prices only after these calls succeed. Framework webhook ingestion and signup site readiness are subsequent delivery phases.
 
 ## Validation
 

@@ -20,6 +20,7 @@ from central.billing.tests.utils import (
 from central.billing.tests.utils import (
 	ensure_atlas_instance,
 	ensure_team,
+	isolate_trial_plans,
 	make_plan,
 )
 
@@ -32,6 +33,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 	_TRACKED = (*IntegrationTestCase._TRACKED, "Resource Action", "Pilot Credential")
 
 	def setUp(self):
+		isolate_trial_plans(self)
 		self.team = "test-trial-" + frappe.generate_hash(length=8)
 		ensure_atlas_instance(REGION)
 		ensure_team(self.team)
@@ -93,7 +95,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 		subscription = frappe.get_doc("Subscription", {"asset_id": action.asset})
 		self.assertEqual(subscription.plan, self.plan)
 		size = client.create_vm.call_args.args[0]
-		self.assertEqual((size["vcpus"], size["memory_mib"], size["disk_mib"]), (1, 2048, 10240))
+		self.assertEqual((size["cpu_millicores"], size["memory_mib"], size["disk_mib"]), (1000, 2048, 10240))
 
 	def test_rejects_plan_outside_the_trial_allowlist(self):
 		self._fund()
@@ -123,10 +125,10 @@ class TestTrialProvisioning(IntegrationTestCase):
 	def test_pending_requests_count_against_trial_cap(self):
 		self._fund()
 		with patch("central.billing.tests.provisioning._process_locked"):
-			for _ in range(3):
-				self._create(self.plan)
+			for index in range(3):
+				self._create(self.plan, title=f"trial-{index}")
 			with self.assertRaises(frappe.ValidationError):
-				self._create(self.plan)
+				self._create(self.plan, title="trial-over-cap")
 
 	def test_terminated_servers_do_not_count_against_cap(self):
 		self._fund()

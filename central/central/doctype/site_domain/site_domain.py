@@ -126,7 +126,10 @@ class SiteDomain(Document):
 
 	@staticmethod
 	def new_for_pilot(credential: PilotCredential, domain: str) -> SiteDomain:
-		"""An unsaved route to the Pilot's own server. The server never comes from the request."""
+		"""An unsaved route to the Pilot's own server. The server never comes from the request.
+
+		A Pilot only knows its machine, so the site comes from the machine: one machine runs
+		one site, which is what lets the console show a domain against the site it reaches."""
 		if not credential.asset:
 			frappe.throw(_("This Pilot has no server yet."))
 
@@ -136,6 +139,7 @@ class SiteDomain(Document):
 				"domain": normalize_domain(domain),
 				"team": credential.team,
 				"asset": credential.asset,
+				"site": frappe.db.get_value("Site", {"asset": credential.asset}, "name"),
 				"region": frappe.db.get_value("Asset", credential.asset, "cluster"),
 			}
 		)

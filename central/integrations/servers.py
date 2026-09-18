@@ -7,7 +7,8 @@ from frappe import _
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.central.doctype.resource_action.resource_action import GOAL_STATUS, ResourceAction
+from central.central.doctype.resource_action.resource_action import ResourceAction
+from central.central.doctype.site.site import Site
 from central.errors import (
 	AtlasConnectionError,
 	AtlasRequestUncertain,
@@ -82,6 +83,8 @@ def observe_server(asset: Asset) -> str:
 		},
 	)
 
+	# A Pilot machine carries a site, and this report is where its address arrives.
+	Site.ensure_for(asset.name)
 	ResourceAction.confirm_observed_status(asset.name, status)
 	return status
 
@@ -98,9 +101,13 @@ def resize_server(asset: Asset, shape: dict) -> None:
 	memory_mib = shape["memory_megabytes"]
 	disk_mib = shape["disk_gigabytes"] * 1024
 
-	if (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib):
-		_wait_for_power_state(client, asset.atlas_vm_id, "stop", "stopped")
-		client.update_compute(asset.atlas_vm_id, cpu_millicores, memory_mib)
+	# A resized server has outgrown the hobby idle shutdown, so it stops sleeping for good.
+	# Atlas needs a stopped VM for CPU or memory, but not for the timeout on its own.
+	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
+	if reshaping or compute.get("sleep_after_idle_seconds"):
+		if reshaping:
+			_wait_for_power_state(client, asset.atlas_vm_id, "stop", "stopped")
+		client.update_compute(asset.atlas_vm_id, cpu_millicores, memory_mib, sleep_after_idle_seconds=0)
 
 	if disk_mib > (disk.get("size_mib") or 0):
 		client.update_disk(asset.atlas_vm_id, disk_mib)
@@ -168,9 +175,9 @@ def process_command(action) -> None:
 		action.set_error(action.status, build_envelope("REFRESH_FAILED"))
 		return
 
-	if status == GOAL_STATUS[action.action]:
-		action.succeed()
-	elif status in ("Failed", "Terminated"):
+	if action.record_observed_status(status):
+		return
+	if status in ("Failed", "Terminated"):
 		action.set_error("Failed", build_envelope("ACTION_FAILED", action=action.action))
 	elif _is_command_overdue(action):
 		action.set_error("Timed Out", build_envelope("ACTION_TIMED_OUT", action=action.action))
@@ -218,7 +225,7 @@ def _client(asset: Asset) -> AtlasClient:
 	if not asset.atlas_vm_id:
 		frappe.throw(_("This server has no verified regional VM identity."))
 
-	instance = frappe.get_doc("Atlas Instance", asset.cluster)
+	instance = frappe.get_cached_doc("Atlas Instance", asset.cluster)
 	tenant_id = frappe.db.get_value("Team", asset.team, "tenant_id")
 	return AtlasClient(instance, tenant_id)
 

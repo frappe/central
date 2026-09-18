@@ -58,6 +58,7 @@ const {
 	refreshAssets,
 	start,
 	stop,
+	restart,
 	terminate,
 	open,
 } = useServers()
@@ -322,6 +323,8 @@ async function withReload(action: Promise<unknown>): Promise<void> {
 const doRefresh = (): Promise<void> => withReload(refreshAssets())
 const doStart = (server: AssetRow): Promise<void> => withReload(start(server))
 const doStop = (server: AssetRow): Promise<void> => withReload(stop(server))
+const doRestart = (server: AssetRow): Promise<void> =>
+	withReload(restart(server))
 
 const pendingTerminate = ref<AssetRow | null>(null)
 const terminateError = ref('')
@@ -473,6 +476,7 @@ async function confirmSiteTerminate(): Promise<void> {
 						@open="open"
 						@start="doStart"
 						@stop="doStop"
+						@restart="doRestart"
 						@resize="pendingResize = $event"
 						@terminate="pendingTerminate = $event"
 					/>
@@ -522,6 +526,7 @@ async function confirmSiteTerminate(): Promise<void> {
 				@open="open"
 				@start="doStart"
 				@stop="doStop"
+				@restart="doRestart"
 				@resize="pendingResize = $event"
 				@terminate="pendingTerminate = $event"
 				@open-site="openSite"

@@ -56,12 +56,14 @@ Atlas reports one virtual machine per delivery.
 
 | Field | Required | Value |
 |---|---|---|
-| `event` | Yes | `vm.state` or `vm.gone` |
+| `event` | Yes | `vm.state` |
 | `virtual_machine` | Yes | The Atlas VM ID. Central matches it to an Asset in the signing region. |
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
 | `observed_at` | No | Diagnostic only. Central records its own clock, because a report carries the region's clock. |
 
 Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
+
+Central takes no deletion event. A host reports only a live state, and a removed machine has none, so absence is not something a report can carry. Central learns that a machine is gone from a correctly scoped read that answers not found. See [resource actions](../central/central/doctype/resource_action/SPEC.md).
 
 An accepted report is applied by a background job, not in the request. The reply is a receipt, not a confirmation.
 
@@ -111,7 +113,7 @@ An ignored report is authentic and readable. Central has nothing to do with it. 
 |---|---|---|
 | `unreadable body` | Both | The body is not a JSON object |
 | `unknown server` | Atlas | No Asset in this region carries that VM ID |
-| `unsupported event '<value>'` | Atlas | The event is not `vm.state` or `vm.gone` |
+| `unsupported event '<value>'` | Atlas | The event is not `vm.state` |
 | `unsupported status '<value>'` | Atlas | The status is not `running`, `stopped`, or `paused` |
 | `no change` | Atlas | Central already records this state |
 | `already terminated` | Atlas | Central already recorded this server as gone |

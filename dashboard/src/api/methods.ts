@@ -6,6 +6,15 @@ export function method(path: string): string {
 	return `/api/v2/method/${path}`
 }
 
+/** The v1 method URL, for a raw `frappeRequest`.
+ *
+ *  `frappeRequest` returns `data.message`, which only a v1 response carries: v2 answers
+ *  `{data: ...}` and the call silently resolves to undefined. Use `method()` for the
+ *  data-fetching composables, and this for anything that calls `frappeRequest` itself. */
+export function methodV1(path: string): string {
+	return `/api/method/${path}`
+}
+
 export const API = {
 	// ── Identity / capability IAM (central.api.identity) ──
 	myTeams: 'central.api.identity.my_teams',
@@ -39,10 +48,13 @@ export const API = {
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',
 	refreshAssets: 'central.api.servers.refresh_assets',
+	actionStatus: 'central.api.servers.action_status',
+	retryAction: 'central.api.servers.retry_action',
 	createServer: 'central.api.servers.create_server',
 	createComposedServer: 'central.api.servers.create_composed_server',
 	startServer: 'central.api.servers.start_server',
 	stopServer: 'central.api.servers.stop_server',
+	restartServer: 'central.api.servers.restart_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
 
@@ -67,9 +79,13 @@ export const API = {
 	resendSignupCode: 'central.api.auth.resend_signup_code',
 
 	// ── Self-serve sites (central.api.sites) ──
-	checkSubdomain: 'central.api.sites.check_subdomain',
+	// A site is the machine its Pilot image was baked on, and has no lifecycle of its
+	// own. The customer names it; the address the region derives stays ours.
 	siteDomain: 'central.api.sites.site_domain',
-	createSite: 'central.api.sites.create_site',
+	checkSubdomain: 'central.api.sites.check_subdomain',
+	createTrialSite: 'central.api.sites.create_trial_site',
+	onboardingStatus: 'central.api.sites.onboarding_status',
+	claimSite: 'central.api.sites.claim_site',
 	getSite: 'central.api.sites.get_site',
 	terminateSite: 'central.api.sites.terminate_site',
 

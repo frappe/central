@@ -35,7 +35,9 @@ const routes = [
 		component: () => import('@/pages/onboarding/SiteNamePage.vue'),
 	},
 	{
-		path: '/onboarding/provisioning/:name',
+		// No name in the path: the site's address follows from a machine that does not
+		// exist yet, so the wait asks about the team instead.
+		path: '/onboarding/provisioning',
 		name: 'OnboardingProvisioning',
 		component: () => import('@/pages/onboarding/SiteReadyPage.vue'),
 	},

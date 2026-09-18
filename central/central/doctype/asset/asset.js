@@ -21,8 +21,35 @@ frappe.ui.form.on("Asset", {
 					);
 				});
 
+		if (frm.doc.atlas_vm_id && frm.doc.status !== "Terminated") {
+			frm.add_custom_button(
+				__("Sync state"),
+				async () => {
+					const response = await frm.call({
+						method: "sync_state",
+						freeze: true,
+						freeze_message: __("Asking the region…"),
+					});
+					if (response.exc) return;
+					frappe.show_alert(
+						{ message: __("The region reports {0}", [response.message.status]), indicator: "blue" },
+						5,
+					);
+					await frm.reload_doc();
+				},
+				__("Server"),
+			);
+		}
+
 		frm.add_custom_button(__("Start"), () => run(__("Start"), "start_server", "green"), __("Server"));
 		frm.add_custom_button(__("Stop"), () => run(__("Stop"), "stop_server", "orange"), __("Server"));
+		if (frm.doc.status === "Running") {
+			frm.add_custom_button(
+				__("Restart"),
+				() => run(__("Restart"), "restart_server", "orange"),
+				__("Server"),
+			);
+		}
 		frm.add_custom_button(
 			__("Terminate"),
 			() =>

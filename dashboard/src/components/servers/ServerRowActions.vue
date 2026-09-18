@@ -28,6 +28,7 @@ const emit = defineEmits<{
 	open: [server: AssetRow]
 	start: [server: AssetRow]
 	stop: [server: AssetRow]
+	restart: [server: AssetRow]
 	resize: [server: AssetRow]
 	terminate: [server: AssetRow]
 }>()
@@ -78,6 +79,14 @@ const options = computed(() => {
 			icon: 'lucide-square',
 			disabled: resizing,
 			onClick: () => emit('stop', props.server),
+		})
+	// Only a running server can restart, and the API refuses it in any other state.
+	if (props.canPower && canStop(props.server.status))
+		items.push({
+			label: 'Restart',
+			icon: 'lucide-rotate-ccw',
+			disabled: resizing,
+			onClick: () => emit('restart', props.server),
 		})
 	// Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
 	// custom config.

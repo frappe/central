@@ -11,7 +11,6 @@ from frappe.utils.password import get_decrypted_password
 
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.resource_action.resource_action import ResourceAction
-from central.integrations.servers import mark_terminated
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 # Central's own clock orders every report, because a report carries the region's clock
@@ -24,7 +23,6 @@ from central.services.doctype.service_detail.service_detail import ServiceDetail
 STATUS_FROM_REPORT = {"running": "Running", "stopped": "Stopped", "paused": "Paused"}
 
 STATE_REPORTED = "vm.state"
-SERVER_GONE = "vm.gone"
 
 # What a region may report about itself. Central records these two words and no others.
 SERVICES = ("telemetry", "storage")
@@ -89,23 +87,24 @@ def apply_atlas_report(cluster: str, report: dict) -> None:
 	if not server:
 		return
 
-	if report.get("event") == SERVER_GONE:
-		_record_gone(server.name)
-		return
-
 	status = STATUS_FROM_REPORT[report["status"]]
 	if not Asset.record_observed_state(server.name, frappe.utils.now_datetime(), {"status": status}):
 		return
 
 	ResourceAction.confirm_observed_status(server.name, status)
+	if status == "Running":
+		frappe.enqueue(
+			"central.integrations.servers.refresh_server",
+			name=server.name,
+			enqueue_after_commit=True,
+			job_id=f"server-refresh:{server.name}",
+			deduplicate=True,
+		)
 
 
 def _decide(report: dict, server: frappe._dict) -> dict | None:
 	"""Return the reply for a report Central will not queue, or None to queue it."""
 	event = report.get("event")
-	if event == SERVER_GONE:
-		# Termination is final, so there is no staleness or change to weigh.
-		return None if server.status != "Terminated" else _ignored("already terminated")
 	if event != STATE_REPORTED:
 		return _ignored(f"unsupported event '{event}'")
 
@@ -119,12 +118,6 @@ def _decide(report: dict, server: frappe._dict) -> dict | None:
 		return _ignored("no change")
 
 	return None
-
-
-def _record_gone(resource_id: str) -> None:
-	"""A deleted VM ends its server record, its pilot credentials, and its billing."""
-	mark_terminated(frappe.get_doc("Asset", resource_id))
-	ResourceAction.confirm_observed_status(resource_id, "Terminated")
 
 
 def _parsed(raw_body: bytes) -> dict | None:

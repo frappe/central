@@ -1,6 +1,7 @@
 import { call } from 'frappe-ui'
 import { computed, type Ref, ref, watch } from 'vue'
 import { useSession } from '@/composables/useSession'
+import { formatUnixTime } from '@/lib/format'
 import { getErrorMessage } from '@/lib/toast'
 import type {
 	ImageOffering,
@@ -10,15 +11,20 @@ import type {
 
 // What the build is, in the words a person uses: the Frappe version a Pilot image
 // carries, or the OS version of a plain image. The internal image id says nothing.
-function buildLabel(image: RegionalImage, withArchitecture: boolean): string {
+function versionLabel(image: RegionalImage): string {
 	const frappe = image.tags.frappe_version
-	const version = frappe
-		? frappe === 'develop'
-			? 'Nightly'
-			: `Version ${frappe.replace('version-', '')}`
-		: (image.tags.os_version ?? image.title)
+	if (!frappe) return image.tags.os_version ?? image.title
+	return frappe === 'develop'
+		? 'Nightly'
+		: `Version ${frappe.replace('version-', '')}`
+}
 
-	return withArchitecture ? `${version} · ${image.architecture}` : version
+// A region carries one build per release, so a version on its own names several of them.
+// The build time is what tells them apart and says which one is current.
+function buildLabel(image: RegionalImage, withArchitecture: boolean): string {
+	const parts = [versionLabel(image), formatUnixTime(image.created_at)]
+	if (withArchitecture) parts.push(image.architecture)
+	return parts.filter(Boolean).join(' · ')
 }
 
 export function useRegionalImages(region: Ref<string | null>) {
@@ -95,9 +101,16 @@ export function useRegionalImages(region: Ref<string | null>) {
 		// Architecture only earns its place when the region offers more than one.
 		const mixed =
 			new Set(images.value.map((item) => item.architecture)).size > 1
+		// Versions stay together and the newest build of each leads its group, so the
+		// current build of a version is the first one under its name.
+		const builds = [...images.value].sort(
+			(a, b) =>
+				versionLabel(a).localeCompare(versionLabel(b)) ||
+				b.created_at - a.created_at,
+		)
 		return [
 			{ label: 'Select an image build', value: '' },
-			...images.value.map((item) => ({
+			...builds.map((item) => ({
 				label: buildLabel(item, mixed),
 				value: item.id,
 			})),

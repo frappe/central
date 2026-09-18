@@ -10,6 +10,8 @@ const props = defineProps<{
 	action: ActionStatus
 	regionLabel: string
 	checking: boolean
+	/** Try again is in flight. */
+	retrying: boolean
 	/** Automatic checking has stopped; the outcome now needs a person to ask for it. */
 	stalled: boolean
 	lastCheckedAt: Date | null
@@ -38,6 +40,9 @@ const mode = computed(() => {
 	return props.action.status in STAGE_OF ? 'working' : 'unresolved'
 })
 const stage = computed(() => STAGE_OF[props.action.status] ?? 0)
+// Try again re-drives this same request in Central rather than starting a new one, so
+// it is offered only where another attempt could plausibly help. A failure that already
+// holds a machine is never retriable, so this can never offer to build a second server.
 const canRetry = computed(
 	() => mode.value === 'failed' && !!props.action.error?.retriable,
 )
@@ -120,6 +125,7 @@ const checkedAgo = computed(() => {
 			<Button
 				v-if="canRetry"
 				variant="solid"
+				:loading="retrying"
 				icon-left="lucide-rotate-ccw"
 				label="Try again"
 				@click="emit('retry')"
@@ -139,7 +145,5 @@ const checkedAgo = computed(() => {
 				@click="emit('edit')"
 			/>
 		</div>
-
-		<p class="text-p-sm text-ink-gray-4">Action {{ action.action }}</p>
 	</div>
 </template>

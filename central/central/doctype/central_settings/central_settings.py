@@ -24,6 +24,7 @@ class CentralSettings(Document):
 		enable_object_storage_service: DF.Check
 		enable_pdf_print_service: DF.Check
 		host_task_retention_days: DF.Int
+		trial_idle_shutdown_minutes: DF.Int
 		wildcard_domain: DF.Data | None
 	# end: auto-generated types
 

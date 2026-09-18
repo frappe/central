@@ -10,7 +10,7 @@ import type { ResourceRow } from '@/lib/serverMap'
 // The "Your servers" floating card: the pill IS the panel, collapsed. Opening
 // morphs it in place (see <style>). Renders both kinds indistinguishably — a site
 // is a 1:1-backed VM, so it wears the same provider avatar and lists in the same
-// sorted stream as a server; only its ⋯ actions differ. Presentational.
+// sorted stream as a server, and carries that machine's ⋯ actions. Presentational.
 export type { ResourceRow }
 
 const props = defineProps<{
@@ -34,6 +34,7 @@ defineEmits<{
 	open: [server: AssetRow]
 	start: [server: AssetRow]
 	stop: [server: AssetRow]
+	restart: [server: AssetRow]
 	resize: [server: AssetRow]
 	terminate: [server: AssetRow]
 	openSite: [name: string]
@@ -150,7 +151,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							@click.stop
 						>
 							<ServerRowActions
-								v-if="row.kind === 'server' && row.asset"
+								v-if="row.asset"
 								:server="row.asset"
 								:can-open="canOpen"
 								:can-power="canPower"
@@ -161,6 +162,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 								@open="$emit('open', $event)"
 								@start="$emit('start', $event)"
 								@stop="$emit('stop', $event)"
+								@restart="$emit('restart', $event)"
 								@resize="$emit('resize', $event)"
 								@terminate="$emit('terminate', $event)"
 							/>

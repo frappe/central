@@ -7,6 +7,7 @@
  "field_order": [
   "general_tab",
   "host_task_retention_days",
+  "trial_idle_shutdown_minutes",
   "wildcard_domain",
   "feature_flags_tab",
   "addons_section",
@@ -74,6 +75,14 @@
    "fieldname": "host_task_retention_days",
    "fieldtype": "Int",
    "label": "Host Task Retention (Days)",
+   "non_negative": 1
+  },
+  {
+   "default": "10",
+   "description": "Minutes a trial server may sit idle before its region puts it to sleep. Customer traffic wakes it. Set 0 to keep trial servers awake. A paid server never sleeps, and a resize ends sleep for good.",
+   "fieldname": "trial_idle_shutdown_minutes",
+   "fieldtype": "Int",
+   "label": "Trial Idle Shutdown (Minutes)",
    "non_negative": 1
   },
   {

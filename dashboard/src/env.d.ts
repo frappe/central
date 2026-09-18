@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+/** The bench's Socket.IO port, compiled in by vite.config.ts. Null when no bench config
+ *  was found at build time. */
+declare const __SOCKETIO_PORT__: number | null
+
 declare module '*.vue' {
 	import type { DefineComponent } from 'vue'
 

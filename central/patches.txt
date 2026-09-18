@@ -161,3 +161,7 @@ central.patches.v0_0.seed_image_offerings
 central.patches.v0_0.initialize_resource_actions
 
 central.patches.v0_0.collapse_asset_observation_clock
+
+central.patches.v0_0.seed_trial_idle_shutdown
+
+central.patches.v0_0.mark_existing_sites_claimed

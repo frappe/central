@@ -11,10 +11,15 @@ import {
 	postFrappe,
 } from '@/lib/auth'
 
+type CreationStatus = {
+	status: string
+	error: { message: string } | null
+}
+
 type Availability = {
 	available: boolean
 	reason: string | null
-	fqdn: string | null
+	fqdn: string
 	domain: string
 }
 
@@ -26,16 +31,34 @@ const creating = ref(false)
 const availability = ref<Availability | null>(null)
 const error = ref('')
 
+const REQUEST_KEY_STORAGE = 'central:onboarding-site-request-key'
+
+let requestKey = savedRequestKey()
+
 let debounce: ReturnType<typeof setTimeout> | undefined
 
 onMounted(async () => {
+	try {
+		const status = await getFrappe<{
+			site: unknown
+			creation: CreationStatus | null
+		}>(
+			methodUrl(API.onboardingStatus),
+		)
+		if (status.site || (status.creation && status.creation.status !== 'Failed'))
+			return router.replace('/onboarding/provisioning')
+		if (status.creation?.status === 'Failed') resetRequestKey()
+	} catch {
+		// Non-fatal: the form below starts one, and a repeat is answered with the
+		// request already running.
+	}
 	try {
 		const result = await getFrappe<{ domain: string }>(
 			methodUrl(API.siteDomain),
 		)
 		domain.value = result.domain
 	} catch {
-		// Non-fatal: the suffix is cosmetic until check runs, which returns it too.
+		// Non-fatal: the suffix is cosmetic until the check runs, which returns it too.
 	}
 })
 
@@ -57,9 +80,8 @@ async function check(value: string) {
 			methodUrl(API.checkSubdomain),
 			{ subdomain: value },
 		)
-		// Ignore a stale response if the user kept typing — and leave `checking`
-		// alone: a newer request is in flight and owns the spinner. Clearing it
-		// here (as a `finally` did) flickers the spinner off under the live request.
+		// Ignore a stale response if the user kept typing — and leave `checking` alone:
+		// a newer request is in flight and owns the spinner.
 		if (value !== subdomain.value.trim()) return
 		availability.value = result
 		if (result.domain) domain.value = result.domain
@@ -76,17 +98,37 @@ async function createSite() {
 	creating.value = true
 	error.value = ''
 	try {
-		const result = await postFrappe<{ name: string }>(
-			methodUrl(API.createSite),
-			{
-				subdomain: subdomain.value.trim(),
-			},
+		// Central asks the region inside this call, so a refusal comes back here rather
+		// than stranding the customer on the waiting page.
+		const result = await postFrappe<CreationStatus>(
+			methodUrl(API.createTrialSite),
+			{ subdomain: subdomain.value.trim(), request_key: requestKey },
 		)
-		router.push(`/onboarding/provisioning/${encodeURIComponent(result.name)}`)
+		if (result.error) {
+			error.value = result.error.message
+			resetRequestKey()
+			creating.value = false
+			return
+		}
+		router.push('/onboarding/provisioning')
 	} catch (exception) {
 		error.value = frappeErrorMessage(exception, 'Could not create your site.')
 		creating.value = false
 	}
+}
+
+function savedRequestKey() {
+	const saved = localStorage.getItem(REQUEST_KEY_STORAGE)
+	if (saved) return saved
+
+	const generated = crypto.randomUUID()
+	localStorage.setItem(REQUEST_KEY_STORAGE, generated)
+	return generated
+}
+
+function resetRequestKey() {
+	localStorage.removeItem(REQUEST_KEY_STORAGE)
+	requestKey = savedRequestKey()
 }
 </script>
 
@@ -109,39 +151,36 @@ async function createSite() {
 				autocomplete="off"
 				autocapitalize="off"
 				spellcheck="false"
-				autofocus
-				:error="availability && !availability.available ? availability.reason ?? '' : ''"
 			>
-				<template #suffix>
-					<span v-if="domain" class="text-p-sm text-ink-gray-4"
-						>.{{ domain }}</span
-					>
-				</template>
-				<template v-if="availability?.available" #description>
-					<span class="flex items-center gap-1 text-ink-green-6">
-						<span class="lucide-check size-4" aria-hidden="true" />
-						<span
-							><span class="font-medium">{{ availability.fqdn }}</span>
-							is available</span
-						>
-					</span>
-				</template>
-				<template v-else-if="!availability" #description>
-					Lowercase letters, numbers and hyphens.
+				<template v-if="domain" #suffix>
+					<span class="text-base text-ink-gray-5">.{{ domain }}</span>
 				</template>
 			</TextInput>
 
-			<ErrorMessage v-if="error" :message="error" />
+			<p v-if="checking" class="text-sm text-ink-gray-5">Checking…</p>
+			<p
+				v-else-if="availability && !availability.available"
+				class="text-sm text-ink-red-6"
+			>
+				{{ availability.reason }}
+			</p>
+			<p
+				v-else-if="availability?.available"
+				class="text-sm text-ink-green-7"
+			>
+				{{ availability.fqdn }} is available.
+			</p>
+
 			<Button
 				type="submit"
 				variant="solid"
 				size="md"
 				class="w-full"
+				label="Create my site"
 				:loading="creating"
-				:disabled="!availability?.available || checking"
-			>
-				Continue
-			</Button>
+				:disabled="creating || !availability?.available"
+			/>
+			<ErrorMessage v-if="error" :message="error" />
 		</form>
 	</AuthShell>
 </template>
