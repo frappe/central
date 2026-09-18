@@ -197,5 +197,28 @@
   "name": "Billing",
   "role_name": "Billing",
   "team": null
+ },
+ {
+  "capabilities": [
+   {
+    "capability": "billing:view"
+   },
+   {
+    "capability": "cluster:view"
+   },
+   {
+    "capability": "server:view"
+   },
+   {
+    "capability": "service:view"
+   }
+  ],
+  "docstatus": 0,
+  "doctype": "Team Role",
+  "is_system": 1,
+  "modified": "2026-09-11 00:00:00",
+  "name": "Partner Support",
+  "role_name": "Partner Support",
+  "team": null
  }
 ]

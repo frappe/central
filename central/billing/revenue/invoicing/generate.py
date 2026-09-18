@@ -72,6 +72,53 @@ def _resource_project_map(team: str) -> dict:
 	return out
 
 
+def _payer_group(lines: list[dict], self_team: str) -> tuple[list[dict], dict]:
+	"""Split payer-tagged lines (from `team_line_items(..., split_by_payer=True)`)
+	into this team's own lines and `{other_payer: [lines]}` for the rest. Pops the
+	transient `payer` key either way — it never reaches the Invoice payload."""
+	own = []
+	other: dict[str, list[dict]] = {}
+	for line in lines:
+		payer = line.pop("payer", self_team)
+		(own if payer == self_team else other.setdefault(payer, [])).append(line)
+	return own, other
+
+
+def _covered_by_partner_line(partner_team: str, lines: list[dict]) -> dict:
+	"""A zeroed, informational line replacing a day-range a partner is paying for.
+
+	Paid-by-Partner (ADR 0007): the client is never billed for this — `amount` is 0,
+	so it doesn't add to the invoice total — but per the product decision that the
+	client's own invoice stays visible (not hidden), `covered_amount` carries what it
+	would have cost. The real charge for these same lines lands on the partner's own
+	invoice instead, `source_team`-tagged (see `_tag_source_team`)."""
+	partner_name = frappe.db.get_value("Team", partner_team, "team_name") or partner_team
+	covered_amount = frappe.utils.flt(sum(line.get("amount") or 0 for line in lines), 2)
+	froms = [line["period_from"] for line in lines if line.get("period_from")]
+	tos = [line["period_to"] for line in lines if line.get("period_to")]
+	return {
+		"resource_type": "covered_by_partner",
+		"unit": None,
+		"quantity": 1,
+		"rate": 0,
+		"amount": 0,
+		"period_from": min(froms) if froms else None,
+		"period_to": max(tos) if tos else None,
+		"covered_by": partner_team,
+		"covered_by_name": partner_name,
+		"covered_amount": covered_amount,
+	}
+
+
+def _tag_source_team(lines: list[dict], client_team: str) -> None:
+	"""Stamp each consolidated line with the client team it actually came from — an
+	immutable snapshot on the partner's invoice, mirroring `_tag_projects`."""
+	name = frappe.db.get_value("Team", client_team, "team_name") or client_team
+	for line in lines:
+		line["source_team"] = client_team
+		line["source_team_name"] = name
+
+
 def _tag_projects(lines: list[dict], team: str) -> None:
 	"""Stamp each billable line with the Project its resource is tagged into, if any.
 
@@ -182,6 +229,13 @@ def _rate(team: str, lines: list[dict], period_start, period_end):
 	Returns the payload alongside the commitment verdict that shaped it. The verdict
 	is handed back rather than acted on because marking a commitment breached is a
 	write, and this function does not do those.
+
+	Paid-by-Partner (ADR 0007) note: `lines` may include consolidated, `source_team`-
+	tagged lines from a paid-by-partner client's own usage (see `rate_team_period`).
+	The commitment calculation below runs over the full merged set as-is — a
+	partner's own commitment floor is evaluated against client-inclusive revenue,
+	un-adjusted. Not addressed by this change; flagged for follow-up if that's not
+	the intended interaction.
 	"""
 	from central.billing.catalog.trials import invoice_type_for
 	from central.billing.revenue.tax import resolve_tax
@@ -272,19 +326,69 @@ def rate_team_period(
 	unset and bills the rollups that landed; a projection supplies estimated usage,
 	because a period that has not happened has no rollups and would otherwise be rated
 	as though the team used nothing.
+
+	Paid-by-Partner (ADR 0007): only the real run (`metered is None`) is payer-aware —
+	a projected period hasn't happened yet, so there's nothing to attribute. For the
+	real run, `team`'s own day-ranges under an active paid-by-partner link are zeroed
+	here into a `covered_by` placeholder (see `_covered_by_partner_line`) rather than
+	billed, and if `team` is itself a partner, each linked client's paid-by-partner
+	day-range is pulled in and `source_team`-tagged. `Invoice.team` is always just
+	`team` — this only changes which lines land on it and at what amount.
 	"""
 	from central.billing.revenue.metering import metered_line_items_for_clusters
 
-	# Read the team once, not once per cluster: team_line_items pulls every
-	# subscription's fixed lines in one pass, and the metered rollups for all the
-	# team's clusters come back in a single query.
-	lines = team_line_items(team, period_start, period_end, explain=explain, changes=changes)
-	if metered is None:
-		lines += metered_line_items_for_clusters(
-			team, team_clusters(team), period_start, period_end, explain=explain
-		)
-	else:
+	if metered is not None:
+		# Projection path: unaffected by Paid-by-Partner (out of scope for a
+		# forecast of a period that hasn't happened).
+		lines = team_line_items(team, period_start, period_end, explain=explain, changes=changes)
 		lines += list(metered)
+		if not lines:
+			return None
+		return _rate(team, lines, period_start, period_end)
+
+	from central.billing.platform.payer import paid_by_partner_client_segments, payer_segments
+
+	# --- this team's own usage, split by who paid for which days -------------
+	fixed = team_line_items(
+		team, period_start, period_end, explain=explain, changes=changes, split_by_payer=True
+	)
+	own_lines, other_by_payer = _payer_group(fixed, team)
+
+	# Metered has no shared period denominator (issue #06/metering.py: pure
+	# quantity x rate per rollup), so — unlike the fixed lines above — it's safe to
+	# call once per payer segment directly, rather than tagging after the fact.
+	for seg in payer_segments(team, period_start, period_end):
+		seg_metered = metered_line_items_for_clusters(
+			team, team_clusters(team), seg["start"], seg["end"], explain=explain
+		)
+		if seg["payer"] == team:
+			own_lines += seg_metered
+		else:
+			other_by_payer.setdefault(seg["payer"], []).extend(seg_metered)
+
+	lines = own_lines
+	for partner_team, covered_lines in other_by_payer.items():
+		lines.append(_covered_by_partner_line(partner_team, covered_lines))
+
+	# --- this team as a partner: pull in each linked client's attributed usage -
+	client_segments = paid_by_partner_client_segments(team, period_start, period_end)
+	for client_team in {seg["client_team"] for seg in client_segments}:
+		client_fixed = team_line_items(
+			client_team, period_start, period_end, explain=explain, split_by_payer=True
+		)
+		_client_own, client_other = _payer_group(client_fixed, client_team)
+		consolidated = client_other.get(team, [])
+		for seg in client_segments:
+			if seg["client_team"] == client_team:
+				consolidated += metered_line_items_for_clusters(
+					client_team, team_clusters(client_team), seg["start"], seg["end"], explain=explain
+				)
+		if not consolidated:
+			continue
+		_tag_projects(consolidated, client_team)
+		_tag_source_team(consolidated, client_team)
+		lines += consolidated
+
 	if not lines:
 		return None
 	return _rate(team, lines, period_start, period_end)

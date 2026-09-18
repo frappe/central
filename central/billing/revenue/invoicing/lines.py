@@ -16,6 +16,7 @@ both — the two passes partition the period and the total stays exact.
 """
 
 from datetime import datetime, time, timedelta
+from itertools import groupby
 
 import frappe
 
@@ -39,7 +40,7 @@ def _dates_touched(start_dt: datetime, end_dt: datetime) -> list:
 
 
 def compute_line_items(
-	team: str, cluster: str, period_start, period_end, explain: bool = False, changes=None
+	team: str, cluster: str, period_start, period_end, explain: bool = False, changes=None, split_by_payer=False
 ) -> list[dict]:
 	"""Time-weighted fixed line items for one (team, cluster) over the billing month.
 
@@ -52,6 +53,8 @@ def compute_line_items(
 	Single-cluster entry point — the dashboard forecast asks per cluster. The monthly
 	run bills a whole team at once and uses `team_line_items` instead, which reads the
 	team's subscriptions once rather than once per cluster.
+
+	`split_by_payer` — see `team_line_items`.
 	"""
 	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
 	# Resolve every asset's cluster in one query (not a get_value per subscription),
@@ -66,16 +69,19 @@ def compute_line_items(
 	changes_by_sub = _resolve_changes([s.name for s in subscriptions], changes)
 
 	bounds = _period_bounds(period_start, period_end)
+	day_payer = _day_payer_map(team, bounds) if split_by_payer else None
 	lines = []
 	for sub in subscriptions:
-		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
+		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain, day_payer)
 	# Assembled per subscription in whatever order the query returned them, which is
 	# creation-desc — so a team's newest machine printed first and its oldest last.
 	# One rule for the whole invoice instead.
 	return _ordered(lines)
 
 
-def team_line_items(team: str, period_start, period_end, explain: bool = False, changes=None) -> list[dict]:
+def team_line_items(
+	team: str, period_start, period_end, explain: bool = False, changes=None, split_by_payer=False
+) -> list[dict]:
 	"""Every fixed line item for a team across all the clusters it runs in, from ONE
 	read of its subscriptions, their asset clusters and their changes.
 
@@ -83,21 +89,54 @@ def team_line_items(team: str, period_start, period_end, explain: bool = False, 
 	team's lines together. Looping clusters and calling `compute_line_items` per cluster
 	re-reads the whole team once per cluster; this reads it once and tags each line with
 	its own subscription's cluster. The union of lines is identical either way.
+
+	`split_by_payer` (Paid-by-Partner, ADR 0007): when set, each returned line carries
+	a `payer` key — the team that actually pays for that line's day-range, from
+	`central.billing.platform.payer.payer_segments`. A day-bundled line whose span
+	crosses a payer change (a mid-period approve/delink) is split into one line per
+	payer at that exact boundary, *using the same period-wide day/hour denominator
+	throughout* — splitting the already-priced days, not re-deriving a rate over a
+	shorter window, which would silently change the amount. Default False (and every
+	existing caller) is byte-for-byte unaffected — no `payer` key, no extra lines.
 	"""
 	subscriptions = frappe.get_all("Subscription", filters={"team": team}, fields=["name", "asset_id"])
 	clusters = _asset_clusters([s.asset_id for s in subscriptions])
 	changes_by_sub = _resolve_changes([s.name for s in subscriptions], changes)
 
 	bounds = _period_bounds(period_start, period_end)
+	day_payer = _day_payer_map(team, bounds) if split_by_payer else None
 	lines = []
 	for sub in subscriptions:
 		cluster = clusters.get(sub.asset_id)
 		if not cluster:
 			continue  # no live asset cluster — nothing to bill this subscription against
-		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain)
+		lines += _subscription_lines(sub, cluster, changes_by_sub.get(sub.name, []), bounds, explain, day_payer)
 	# Assembled per subscription in whatever order the query returned them, which is
 	# creation-desc — so a team's newest machine printed first and its oldest last.
 	return _ordered(lines)
+
+
+def _day_payer_map(team: str, b) -> dict:
+	"""Every date in the period mapped to who pays for it — built once per call
+	(not per subscription) and handed to every segment in this team's period."""
+	from central.billing.platform.payer import payer_segments
+
+	day_payer = {}
+	for seg in payer_segments(team, b.ps, b.pe):
+		d = seg["start"]
+		while d <= seg["end"]:
+			day_payer[d] = seg["payer"]
+			d += timedelta(days=1)
+	return day_payer
+
+
+def _grouped_by_payer(billed_dates: list, day_payer: dict | None) -> list:
+	"""`billed_dates` (already date-ascending) split into `(payer, dates)` runs at
+	each payer change. `day_payer=None` (every caller not opting into the split)
+	returns the whole run as one `(None, billed_dates)` group, unchanged."""
+	if day_payer is None:
+		return [(None, billed_dates)]
+	return [(payer, list(group)) for payer, group in groupby(billed_dates, key=lambda d: day_payer[d])]
 
 
 def _ordered(lines: list[dict]) -> list[dict]:
@@ -134,7 +173,9 @@ def _period_bounds(period_start, period_end):
 	)
 
 
-def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = False) -> list[dict]:
+def _subscription_lines(
+	sub, cluster: str, changes: list, b, explain: bool = False, day_payer: dict | None = None
+) -> list[dict]:
 	"""The daily/hourly fixed lines for one subscription in one cluster.
 
 	Splits the subscription's rate-snapshot changes into billable segments, marks the
@@ -196,7 +237,11 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 				billed_dates.append(d)
 			d += timedelta(days=1)
 		if billed_dates:
-			lines.append(_daily_line(s, len(billed_dates), b.day_units, explain, billed_dates))
+			for payer, group in _grouped_by_payer(billed_dates, day_payer):
+				line = _daily_line(s, len(group), b.day_units, explain, group)
+				if day_payer is not None:
+					line["payer"] = payer
+				lines.append(line)
 
 		# Hourly pass — this segment's real hours on each churn date it touches.
 		for cd in _dates_touched(s["start"], s["end"]):
@@ -219,9 +264,13 @@ def _subscription_lines(sub, cluster: str, changes: list, b, explain: bool = Fal
 					for other in segs
 					if cd in _dates_touched(other["start"], other["end"])
 				]
-				lines.append(
-					_hourly_line(s, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end))
-				)
+				hourly = _hourly_line(s, hours, b.hour_units, cd, explain, touching, window=(day_start, day_end))
+				if day_payer is not None:
+					# `s["start"]`/`s["end"]` (and so `cd`, from `_dates_touched` over them)
+					# are already clamped to [b.ps, b.pe] above, which `day_payer` covers
+					# exhaustively — always a hit.
+					hourly["payer"] = day_payer[cd]
+				lines.append(hourly)
 
 	# Grouped by server, chronological within each. A resize chain only means
 	# anything against one machine, so sorting purely by time would shuffle three
