@@ -65,8 +65,6 @@ const {
 	sshRequired,
 	sshProblem,
 	action,
-	pendingRequest,
-	resumeRequest,
 	retry,
 	editSettings,
 	checkNow,
@@ -319,6 +317,7 @@ const selectedRegionName = computed(() =>
 							:action="action"
 							:region-label="selectedRegionName"
 							:checking="checking"
+							:retrying="submitting"
 							:stalled="stalled"
 							:last-checked-at="lastCheckedAt"
 							:check-error="submitError"
@@ -328,19 +327,6 @@ const selectedRegionName = computed(() =>
 						/>
 
 						<template v-else>
-							<div v-if="pendingRequest" class="mb-3 space-y-2">
-								<p class="text-p-sm text-ink-gray-7">
-									Your last request never confirmed. Send it again to pick it
-									up. It cannot create a second server.
-								</p>
-								<Button
-									variant="solid"
-									label="Resume request"
-									:loading="submitting"
-									@click="resumeRequest"
-								/>
-							</div>
-
 							<Alert
 								v-if="submitError"
 								class="mb-3"
@@ -362,7 +348,6 @@ const selectedRegionName = computed(() =>
 							</p>
 
 							<Button
-								v-if="!pendingRequest"
 								variant="solid"
 								:label="ctaLabel"
 								icon-left="lucide-plus"

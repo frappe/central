@@ -1,10 +1,12 @@
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useMyProfile } from '@/composables/useMyProfile'
 import { usePlans } from '@/composables/usePlans'
 import { useProvisioningAction } from '@/composables/useProvisioningAction'
 import { useRegionalImages } from '@/composables/useRegionalImages'
 import { useRegions } from '@/composables/useRegions'
+import { useServerMapData } from '@/composables/useServerMapData'
 import { useSession } from '@/composables/useSession'
 import {
 	configIncludes,
@@ -29,16 +31,34 @@ export function useServerCreation() {
 	const route = useRoute()
 	const { regions, loading } = useRegions()
 	const { activeTeam } = useSession()
-	const operation = useProvisioningAction(activeTeam)
+	const { profile } = useMyProfile()
+	const fleet = useServerMapData()
+
+	// The request Central already holds for this user, if any. A teammate's creation is
+	// theirs to watch, and must not take this form over. Central returns them oldest
+	// first, so the last one is the request this person started most recently: watching
+	// an older stuck one instead would hide the server they are actually waiting for.
+	const openAction = computed(() => {
+		const mine = fleet.creations.value.filter(
+			(creation) => creation.requested_by === profile.value?.user,
+		)
+		return mine[mine.length - 1] ?? null
+	})
+	// Both reads must land before the form can say there is no open request, so Create
+	// stays disabled until then. The fleet is a shared singleton that may still hold
+	// another page's answer, so ask it again on entry.
+	const openActionKnown = computed(() => fleet.loaded.value && !!profile.value)
+	onMounted(() => fleet.reload())
+
+	const operation = useProvisioningAction(activeTeam, openAction)
 	const {
 		action,
-		pending: pendingRequest,
-		resume: resumeRequest,
 		submitting,
 		checking,
 		lastCheckedAt,
 		stalled,
 		error: submitError,
+		retry,
 		refresh: checkNow,
 	} = operation
 	const { canCreateServer } = useCapabilities()
@@ -332,7 +352,7 @@ export function useServerCreation() {
 			plansLoading.value ||
 			!!plansError.value ||
 			!!action.value ||
-			!!pendingRequest.value ||
+			!openActionKnown.value ||
 			!selectedRegion.value ||
 			!name.value.trim() ||
 			!subdomain.value
@@ -373,13 +393,9 @@ export function useServerCreation() {
 				plan: selectedPlanObj.value.plan,
 			})
 		}
-	}
-
-	// A failed create is finished: sending its key again only returns the same failure,
-	// so a retry clears it and submits a fresh request with the settings on screen.
-	async function retry() {
-		operation.reset()
-		await submit()
+		// A lost reply still leaves the request saved in Central. Ask for it, so the
+		// status panel picks it up instead of the user starting a second server.
+		if (submitError.value && !action.value) fleet.reload()
 	}
 
 	function editSettings() {
@@ -453,8 +469,6 @@ export function useServerCreation() {
 		sshRequired,
 		sshProblem,
 		action,
-		pendingRequest,
-		resumeRequest,
 		retry,
 		editSettings,
 		checkNow,

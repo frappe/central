@@ -6,6 +6,15 @@ export function method(path: string): string {
 	return `/api/v2/method/${path}`
 }
 
+/** The v1 method URL, for a raw `frappeRequest`.
+ *
+ *  `frappeRequest` returns `data.message`, which only a v1 response carries: v2 answers
+ *  `{data: ...}` and the call silently resolves to undefined. Use `method()` for the
+ *  data-fetching composables, and this for anything that calls `frappeRequest` itself. */
+export function methodV1(path: string): string {
+	return `/api/method/${path}`
+}
+
 export const API = {
 	// ── Identity / capability IAM (central.api.identity) ──
 	myTeams: 'central.api.identity.my_teams',
@@ -39,6 +48,8 @@ export const API = {
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',
 	refreshAssets: 'central.api.servers.refresh_assets',
+	actionStatus: 'central.api.servers.action_status',
+	retryAction: 'central.api.servers.retry_action',
 	createServer: 'central.api.servers.create_server',
 	createComposedServer: 'central.api.servers.create_composed_server',
 	startServer: 'central.api.servers.start_server',

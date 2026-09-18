@@ -1,14 +1,8 @@
 import { call, frappeRequest } from 'frappe-ui'
 import { onBeforeUnmount, type Ref, ref, watch } from 'vue'
+import { API, methodV1 } from '@/api/methods'
 import { getErrorMessage } from '@/lib/toast'
 import type { ActionStatus } from '@/types/serverCreation'
-
-interface SavedCreation {
-	endpoint: string
-	values: Record<string, unknown>
-	key: string
-	action?: string
-}
 
 // Central has no push channel for action state yet, so the page polls: quickly while a
 // fresh request is moving, then slowly, and it stops rather than poll forever.
@@ -21,9 +15,17 @@ const FINAL = ['Succeeded', 'Failed']
 // Statuses no further read can advance, though the remote outcome stays open.
 const SETTLED = [...FINAL, 'Uncertain', 'Timed Out']
 
-export function useProvisioningAction(team: Ref<string | null>) {
+/** Drive one server creation from the Resource Action that holds it.
+ *
+ *  Central saves the request before it calls a region, so the record is the only thing
+ *  the browser has to remember: `openAction` is the request Central already holds for
+ *  this user, and adopting it is what makes a reload, a second tab and a lost reply all
+ *  land on the same request instead of starting a second one. */
+export function useProvisioningAction(
+	team: Ref<string | null>,
+	openAction: Ref<ActionStatus | null>,
+) {
 	const action = ref<ActionStatus | null>(null)
-	const pending = ref<SavedCreation | null>(null)
 	const submitting = ref(false)
 	const checking = ref(false)
 	const lastCheckedAt = ref<Date | null>(null)
@@ -34,10 +36,6 @@ export function useProvisioningAction(team: Ref<string | null>) {
 	let generation = 0
 	let checks = 0
 
-	function storageKey() {
-		return `central-create:${team.value}`
-	}
-
 	async function refresh() {
 		if (!action.value) return
 		const current = generation
@@ -47,11 +45,15 @@ export function useProvisioningAction(team: Ref<string | null>) {
 		checking.value = true
 		try {
 			const result = await frappeRequest<ActionStatus>({
-				url: '/api/method/central.api.servers.action_status',
+				url: methodV1(API.actionStatus),
 				method: 'GET',
 				params: { name },
 			})
 			if (current !== generation) return
+			// A read this code cannot understand must not erase the request on screen.
+			// Treat it as a failed read, which keeps the panel and says so.
+			if (!result?.status)
+				throw new Error('Central returned no status for this request.')
 			action.value = result
 			error.value = ''
 		} catch (failure) {
@@ -84,6 +86,17 @@ export function useProvisioningAction(team: Ref<string | null>) {
 		stalled.value = !FINAL.includes(status)
 	}
 
+	/** Watch a request that is already running, and start the clock on it. */
+	function follow(found: ActionStatus) {
+		clearTimeout(timer)
+		checks = 0
+		action.value = found
+		error.value = ''
+		stalled.value = false
+		lastCheckedAt.value = new Date()
+		scheduleNextCheck()
+	}
+
 	async function submit(endpoint: string, values: Record<string, unknown>) {
 		if (
 			submitting.value ||
@@ -93,45 +106,45 @@ export function useProvisioningAction(team: Ref<string | null>) {
 		)
 			return
 		const current = generation
-		const key = storageKey()
 		submitting.value = true
 		error.value = ''
 		try {
-			// Keep the original payload after a lost reply; edited fields must not create a second VM.
-			const request = pending.value ?? {
-				endpoint,
-				values,
-				key: crypto.randomUUID(),
-			}
-			sessionStorage.setItem(key, JSON.stringify(request))
-			pending.value = request
-			const result = await call<ActionStatus>(request.endpoint, {
-				...request.values,
-				request_key: request.key,
+			const result = await call<ActionStatus>(endpoint, {
+				...values,
+				request_key: crypto.randomUUID(),
 			})
 			if (current !== generation) return
 			action.value = result
-			pending.value = { ...request, action: result.action }
-			sessionStorage.setItem(key, JSON.stringify(pending.value))
 			await refresh()
 		} catch (failure) {
 			if (current !== generation) return
-			const rejected = failure as { status?: number; exc_type?: string }
-			if (
-				[403, 417].includes(rejected.status ?? 0) &&
-				['ValidationError', 'PermissionError'].includes(rejected.exc_type ?? '')
-			) {
-				pending.value = null
-				sessionStorage.removeItem(key)
-			}
 			error.value = getErrorMessage(failure)
 		} finally {
 			if (current === generation) submitting.value = false
 		}
 	}
 
-	/** Forget a finished request so the form can send a new one. An Uncertain outcome is
-	 *  never cleared here: its VM may exist, and a second create would duplicate it. */
+	/** Send this same request again. Central re-drives its own record, so a retry cannot
+	 *  become a second server: it is refused once a region has accepted a machine. */
+	async function retry() {
+		if (!action.value || submitting.value) return
+		const current = generation
+		const name = action.value.action
+		submitting.value = true
+		error.value = ''
+		try {
+			const result = await call<ActionStatus>(API.retryAction, { name })
+			if (current !== generation) return
+			follow(result)
+		} catch (failure) {
+			if (current !== generation) return
+			error.value = getErrorMessage(failure)
+		} finally {
+			if (current === generation) submitting.value = false
+		}
+	}
+
+	/** Put a finished request out of the way, so the form comes back. */
 	function reset() {
 		if (
 			!action.value ||
@@ -139,66 +152,31 @@ export function useProvisioningAction(team: Ref<string | null>) {
 		)
 			return
 		clearTimeout(timer)
-		sessionStorage.removeItem(storageKey())
 		action.value = null
-		pending.value = null
 		error.value = ''
 		stalled.value = false
 		lastCheckedAt.value = null
 		checks = 0
 	}
 
-	/** Re-send a request whose reply was lost, under its original key, so the region
-	 *  returns the same action instead of building a second server. */
-	async function resume() {
-		if (pending.value)
-			await submit(pending.value.endpoint, pending.value.values)
-	}
+	watch(team, () => {
+		generation += 1
+		clearTimeout(timer)
+		checks = 0
+		action.value = null
+		submitting.value = false
+		checking.value = false
+		stalled.value = false
+		lastCheckedAt.value = null
+		error.value = ''
+	})
 
+	// Central is the authority on what is still running, so its answer wins on arrival,
+	// but never over a request this page is already watching.
 	watch(
-		team,
-		() => {
-			generation += 1
-			clearTimeout(timer)
-			checks = 0
-			action.value = null
-			pending.value = null
-			submitting.value = false
-			checking.value = false
-			stalled.value = false
-			lastCheckedAt.value = null
-			error.value = ''
-			if (!team.value) return
-			try {
-				const raw = sessionStorage.getItem(storageKey())
-				if (!raw) return
-				const saved = JSON.parse(raw) as SavedCreation
-				if (
-					!saved ||
-					typeof saved.key !== 'string' ||
-					![
-						'central.api.servers.create_server',
-						'central.api.servers.create_composed_server',
-					].includes(saved.endpoint) ||
-					saved.values?.team !== team.value
-				)
-					throw new Error(
-						'Saved server request is invalid. Contact support before creating another server.',
-					)
-				pending.value = saved
-				if (saved.action) {
-					action.value = {
-						action: saved.action,
-						status: 'Queued',
-						resource_id: null,
-						title: String(saved.values.title ?? ''),
-						error: null,
-					}
-					void refresh()
-				}
-			} catch (failure) {
-				error.value = getErrorMessage(failure)
-			}
+		openAction,
+		(found) => {
+			if (found && found.action !== action.value?.action) follow(found)
 		},
 		{ immediate: true },
 	)
@@ -209,14 +187,13 @@ export function useProvisioningAction(team: Ref<string | null>) {
 	})
 	return {
 		action,
-		pending,
 		submitting,
 		checking,
 		lastCheckedAt,
 		stalled,
 		error,
 		submit,
-		resume,
+		retry,
 		refresh,
 		reset,
 	}
