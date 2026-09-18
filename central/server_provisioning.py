@@ -41,8 +41,13 @@ def submit_request(
 	sub_category: str | None = None,
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
+	resource_type: str = "Server",
+	subdomain: str | None = None,
 ) -> dict:
-	"""Authorize and persist intent before any remote mutation."""
+	"""Authorize and persist intent before any remote mutation.
+
+	`resource_type` says what the customer asked for, which decides how the request is
+	driven: a server is queued, a site is sent in the request its customer is waiting on."""
 	try:
 		input = CreateServerInput.model_validate(
 			dict(
@@ -126,7 +131,8 @@ def submit_request(
 	request = frappe.get_doc(
 		{
 			"doctype": "Resource Action",
-			"resource_type": "Server",
+			"resource_type": resource_type,
+			"subdomain": subdomain,
 			"action": "create",
 			"team": input.team,
 			"atlas_instance": input.region,

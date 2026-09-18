@@ -1,36 +1,56 @@
 <script setup lang="ts">
 import { Button, ErrorMessage, Spinner } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
 import { API } from '@/api/methods'
 import AuthShell from '@/components/auth/AuthShell.vue'
-import { frappeErrorMessage, getFrappe, methodUrl } from '@/lib/auth'
+import {
+	frappeErrorMessage,
+	getFrappe,
+	methodUrl,
+	postFrappe,
+} from '@/lib/auth'
 
 type SiteState = {
 	name: string
 	status: string
 	url: string | null
+	ready: boolean
 	login_url: string | null
 }
 
+type Creation = {
+	action: string
+	status: string
+	title: string
+	error: { message: string } | null
+}
+
+type OnboardingStatus = { site: SiteState | null; creation: Creation | null }
+
 const POLL_MS = 1000
 
-const route = useRoute()
-const name = String(route.params.name ?? '')
-
-const site = ref<SiteState | null>(null)
+const status = ref<OnboardingStatus | null>(null)
 const error = ref('')
 let timer: ReturnType<typeof setTimeout> | undefined
 
-const isReady = computed(() => site.value?.status === 'Running')
-const isFailed = computed(() => site.value?.status === 'Failed')
+const site = computed(() => status.value?.site ?? null)
+const creation = computed(() => status.value?.creation ?? null)
+const isReady = computed(() => site.value?.ready === true && !error.value)
+const isFailed = computed(
+	() => site.value?.status === 'Failed' || Boolean(creation.value?.error),
+)
+// What the customer is waiting on: the machine being built, then the site answering.
+const waitingOn = computed(
+	() => site.value?.status ?? creation.value?.status ?? 'Pending',
+)
 
 async function poll() {
 	try {
-		const result = await getFrappe<SiteState>(methodUrl(API.getSite), { name })
-		site.value = result
-		if (result.status === 'Running') return signIn()
-		if (result.status === 'Failed') return
+		status.value = await getFrappe<OnboardingStatus>(
+			methodUrl(API.onboardingStatus),
+		)
+		if (isReady.value) return claim()
+		if (isFailed.value) return
 	} catch (exception) {
 		error.value = frappeErrorMessage(
 			exception,
@@ -41,14 +61,31 @@ async function poll() {
 	timer = setTimeout(poll, POLL_MS)
 }
 
-// The site is ready: log the tenant straight in by navigating this tab to the
-// one-click login URL. No button, no password — the poll landing on Running IS
-// the handoff. If the site somehow reported Running without a login URL, fall
-// through to the manual state so the tenant isn't stranded.
-function signIn() {
-	const url = site.value?.login_url
-	if (!url) return
-	window.location.assign(url)
+// Ready means the site answered. Claiming moves it onto the name the customer chose
+// and hands back a way in; their name comes up behind them, so the sign-in does not
+// wait for it. Without a login URL, fall through to the manual state rather than
+// strand the customer on a spinner.
+async function claim() {
+	try {
+		const claimed = await postFrappe<SiteState>(methodUrl(API.claimSite), {
+			name: site.value!.name,
+		})
+		if (!claimed.login_url) {
+			error.value =
+				'Your site is up, but we could not sign you in automatically.'
+			return
+		}
+		window.location.assign(claimed.login_url)
+	} catch (exception) {
+		error.value = frappeErrorMessage(
+			exception,
+			'Your site is up, but we could not sign you in automatically.',
+		)
+	}
+}
+
+function openSite() {
+	if (site.value?.url) window.location.assign(site.value.url)
 }
 
 onMounted(poll)
@@ -77,13 +114,28 @@ onUnmounted(() => clearTimeout(timer))
 			</div>
 		</template>
 
+		<template v-else-if="error && site?.ready">
+			<h1 class="text-2xl font-semibold text-ink-gray-9">Your site is ready</h1>
+			<p class="mt-2 text-p-base text-ink-gray-5">
+				We couldn't sign you in automatically, but your site is up. Open it and
+				sign in as Administrator.
+			</p>
+			<Button
+				class="mt-8 w-full"
+				variant="solid"
+				size="md"
+				label="Open my site"
+				@click="openSite"
+			/>
+			<ErrorMessage class="mt-4" :message="error" />
+		</template>
+
 		<template v-else-if="isFailed">
 			<h1 class="text-2xl font-semibold text-ink-gray-9">
 				Setup didn't finish
 			</h1>
 			<p class="mt-2 text-p-base text-ink-gray-5">
-				We couldn't finish setting up your site. Pick a different name and try
-				again.
+				{{ creation?.error?.message || "We couldn't finish setting up your site." }}
 			</p>
 			<RouterLink to="/onboarding/site" class="mt-8 block">
 				<Button variant="solid" size="md" class="w-full">Try again</Button>
@@ -92,16 +144,21 @@ onUnmounted(() => clearTimeout(timer))
 
 		<template v-else>
 			<h1 class="text-2xl font-semibold text-ink-gray-9">
-				Setting up ERPNext…
+				Setting up your site…
 			</h1>
 			<p class="mt-2 text-p-base text-ink-gray-5">
-				We're provisioning
-				<span class="font-medium text-ink-gray-8">{{ name }}</span>. This takes
-				a moment. Hang tight.
+				<template v-if="site?.url">
+					We're getting
+					<span class="font-medium text-ink-gray-8">{{ site.url }}</span>
+					ready. This takes a moment.
+				</template>
+				<template v-else>
+					We're building the server your site runs on. This takes a moment.
+				</template>
 			</p>
 			<div class="mt-8 flex items-center gap-3 text-ink-gray-5">
 				<Spinner size="lg" />
-				<span class="text-base">{{ site?.status || 'Pending' }}…</span>
+				<span class="text-base">{{ waitingOn }}…</span>
 			</div>
 			<ErrorMessage v-if="error" class="mt-6" :message="error" />
 		</template>

@@ -11,6 +11,7 @@ from central.iam import user_has_operator_bypass
 
 BASE36_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
 ADMIN_HOST_PREFIX = "admin-vm-"
+SITE_HOST_PREFIX = "site-"
 
 
 class AtlasInstance(Document):
@@ -49,6 +50,16 @@ class AtlasInstance(Document):
 	def get_vm_gateway_url(self, mesh_address: str | None) -> str | None:
 		"""The bench admin URL the regional proxy routes to this VM, or None when the
 		cluster has no proxy zone or the VM has no mesh address yet."""
+		host = self._proxy_host(ADMIN_HOST_PREFIX, mesh_address)
+		return f"https://{host}" if host else None
+
+	def get_vm_site_host(self, mesh_address: str | None) -> str | None:
+		"""The public hostname of the site every Pilot image bakes, which the image's own
+		`site-*` alias answers on. It follows from the machine alone, so Central knows the
+		address before the site has ever been reached."""
+		return self._proxy_host(SITE_HOST_PREFIX, mesh_address)
+
+	def _proxy_host(self, prefix: str, mesh_address: str | None) -> str | None:
 		if not self.proxy_domain or not mesh_address:
 			return None
 
@@ -57,7 +68,7 @@ class AtlasInstance(Document):
 		except ValueError:
 			frappe.throw(_("Atlas returned an invalid server mesh address."), AtlasConnectionError)
 
-		return f"https://{ADMIN_HOST_PREFIX}{label}.{self.proxy_domain}"
+		return f"{prefix}{label}.{self.proxy_domain}"
 
 	def _clean_proxy_domain(self) -> str | None:
 		"""A bare zone: no wildcard, no scheme, no path, no trailing dot."""

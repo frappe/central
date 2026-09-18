@@ -233,7 +233,7 @@ pilot frappe --site central.localhost run-tests --app central
 pilot build --apps central
 ```
 
-Run a focused module during development:
+Run a focused module during development and not the entire test suite. If small changes, avoid an entire module and just run the file changes.
 
 ```bash
 pilot frappe --site central.localhost run-tests --app central --module central.tests.test_<name>

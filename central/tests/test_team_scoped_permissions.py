@@ -83,13 +83,21 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 		return region
 
 	def _site(self, label: str, team: str):
+		machine = frappe.get_doc(
+			{
+				"doctype": "Asset",
+				"resource_id": f"server-{label}-{self.suffix}",
+				"team": team,
+				"cluster": self.cluster,
+				"status": "Running",
+			}
+		).insert(ignore_permissions=True)
 		return frappe.get_doc(
 			{
 				"doctype": "Site",
 				"site_name": f"{label}-{self.suffix}.example.test",
 				"team": team,
-				"cluster": self.cluster,
-				"status": "Running",
+				"asset": machine.name,
 			}
 		).insert(ignore_permissions=True)
 

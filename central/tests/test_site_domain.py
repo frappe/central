@@ -180,6 +180,21 @@ class TestSiteDomain(IntegrationTestCase):
 		proxy.set_site.assert_called_once_with(f"shop-{self.suffix}", "2001:db8::10")
 		self.assertEqual(frappe.db.get_value("Site Domain", domain, "status"), "Active")
 
+	def test_a_route_names_the_site_its_server_runs(self):
+		"""A Pilot only knows its machine, so the site comes from the machine."""
+		site = frappe.get_doc(
+			{
+				"doctype": "Site",
+				"site_name": f"site-{self.suffix}.{self.zone}",
+				"team": self.team,
+				"asset": self.asset.name,
+			}
+		).insert(ignore_permissions=True)
+
+		route = SiteDomain.new_for_pilot(self._credential(self.asset), f"www.own-{self.suffix}.com")
+
+		self.assertEqual(route.site, site.name)
+
 	def test_a_domain_registers_after_its_dns_records_match(self):
 		credential = self._credential(self.asset)
 		domain = f"www.shop-{self.suffix}.com"

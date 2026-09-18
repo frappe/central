@@ -4,7 +4,7 @@ import json
 
 import frappe
 from frappe import _
-from redis.exceptions import LockError
+from redis.exceptions import LockError, LockNotOwnedError
 
 from central.api.jwks import jwks_document
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
@@ -17,12 +17,17 @@ from central.sso import central_url, jwks_url
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
 # which machines are new enough to have come from this request.
 CLOCK_SKEW_SECONDS = 120
+# Long enough to cover a region answering a create, so the lock outlives the work it
+# guards rather than expiring under it.
+LOCK_TIMEOUT_SECONDS = 15 * 60
 
 
 def process_request(name: str) -> None:
 	"""Dispatch once, then recover accepted creates using reads only."""
 	try:
-		with frappe.cache.lock(f"server-provisioning:{name}", timeout=180, blocking_timeout=0):
+		with frappe.cache.lock(
+			f"server-provisioning:{name}", timeout=LOCK_TIMEOUT_SECONDS, blocking_timeout=0
+		):
 			try:
 				_process_locked(name)
 			except Exception:
@@ -38,7 +43,13 @@ def process_request(name: str) -> None:
 					action.set_error("Sent", build_envelope("FINALIZATION_FAILED"))
 				else:
 					action.set_error("Uncertain", build_envelope("OUTCOME_UNKNOWN"))
+	except LockNotOwnedError:
+		# Ours expired while the region was still answering. The work ran unguarded and may
+		# be half finished, which is not the same as another worker holding the lock, so it
+		# is recorded rather than passed over in silence.
+		frappe.log_error(title=f"Provisioning lock expired: {name}")
 	except LockError:
+		# Another worker holds it. Theirs to finish.
 		return
 
 

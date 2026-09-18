@@ -8,6 +8,7 @@ from frappe import _
 from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.resource_action.resource_action import ResourceAction
+from central.central.doctype.site.site import Site
 from central.errors import (
 	AtlasConnectionError,
 	AtlasRequestUncertain,
@@ -82,6 +83,8 @@ def observe_server(asset: Asset) -> str:
 		},
 	)
 
+	# A Pilot machine carries a site, and this report is where its address arrives.
+	Site.ensure_for(asset.name)
 	ResourceAction.confirm_observed_status(asset.name, status)
 	return status
 

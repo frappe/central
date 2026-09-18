@@ -64,7 +64,9 @@ class ResourceAction(Document):
 	"""One durable resource operation, from validated intent to confirmed outcome."""
 
 	def after_insert(self) -> None:
-		if self.status == "Queued":
+		# A site is one call out and one read back, with its customer waiting on the answer,
+		# so it is driven inside their request instead of behind a queue.
+		if self.status == "Queued" and self.resource_type != "Site":
 			self.enqueue()
 
 	def enqueue(self) -> None:

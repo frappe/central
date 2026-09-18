@@ -20,6 +20,7 @@ from central.billing.tests.utils import (
 from central.billing.tests.utils import (
 	ensure_atlas_instance,
 	ensure_team,
+	isolate_trial_plans,
 	make_plan,
 )
 
@@ -32,6 +33,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 	_TRACKED = (*IntegrationTestCase._TRACKED, "Resource Action", "Pilot Credential")
 
 	def setUp(self):
+		isolate_trial_plans(self)
 		self.team = "test-trial-" + frappe.generate_hash(length=8)
 		ensure_atlas_instance(REGION)
 		ensure_team(self.team)

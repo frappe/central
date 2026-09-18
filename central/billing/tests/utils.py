@@ -566,3 +566,13 @@ def make_custom_role_team(user, capabilities, team_name=None):
 	team.append("members", {"user": user, "role": role.name, "status": "Active"})
 	team.save(ignore_permissions=True)
 	return team
+
+
+def isolate_trial_plans(case) -> None:
+	"""Take every plan already flagged Available on Trial out of a test's way.
+
+	The trial menu narrows on a global flag, so a plan an operator flagged on this site
+	would otherwise decide what the test sees. Restored on cleanup."""
+	for name in frappe.get_all("Plan", filters={"available_on_trial": 1}, pluck="name"):
+		frappe.db.set_value("Plan", name, "available_on_trial", 0)
+		case.addCleanup(frappe.db.set_value, "Plan", name, "available_on_trial", 1)

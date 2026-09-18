@@ -1,6 +1,6 @@
 import frappe
 
-DEFAULT_MINUTES = 30
+DEFAULT_MINUTES = 10
 
 
 def execute():

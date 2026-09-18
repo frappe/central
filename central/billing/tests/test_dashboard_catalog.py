@@ -11,6 +11,7 @@ from central.billing.tests.utils import (
 	clear_team_tier,
 	complete_billing_profile,
 	ensure_team,
+	isolate_trial_plans,
 	make_metered_plan,
 	make_plan,
 	set_team_tier,
@@ -249,6 +250,7 @@ class TestTrialPlanMenu(IntegrationTestCase):
 	server cap, not the tier."""
 
 	def setUp(self):
+		isolate_trial_plans(self)
 		ensure_team(TEAM)
 		frappe.db.set_value("Team", TEAM, "is_staging_trial", 1)
 		self.addCleanup(frappe.db.set_value, "Team", TEAM, "is_staging_trial", 0)

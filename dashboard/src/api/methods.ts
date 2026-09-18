@@ -79,9 +79,13 @@ export const API = {
 	resendSignupCode: 'central.api.auth.resend_signup_code',
 
 	// ── Self-serve sites (central.api.sites) ──
-	checkSubdomain: 'central.api.sites.check_subdomain',
+	// A site is the machine its Pilot image was baked on, and has no lifecycle of its
+	// own. The customer names it; the address the region derives stays ours.
 	siteDomain: 'central.api.sites.site_domain',
-	createSite: 'central.api.sites.create_site',
+	checkSubdomain: 'central.api.sites.check_subdomain',
+	createTrialSite: 'central.api.sites.create_trial_site',
+	onboardingStatus: 'central.api.sites.onboarding_status',
+	claimSite: 'central.api.sites.claim_site',
 	getSite: 'central.api.sites.get_site',
 	terminateSite: 'central.api.sites.terminate_site',
 

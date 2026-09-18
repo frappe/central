@@ -19,6 +19,7 @@ The v0.2 documents distinguish the proposed design from the verified baseline. E
 - [Regional configuration](../central/central/doctype/atlas_instance/SPEC.md): signed connection checks, tenant selection, and regional identity.
 - [Image offerings](../central/central/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
 - [Proxy routes](../central/central/doctype/site_domain/SPEC.md): site and custom-domain routes on the regional proxy, with retry and delete.
+- [Trial sites](../central/central/doctype/site/SPEC.md): the site a Pilot image carries, its predictable address, and the signup handoff.
 
 ## Existing specifications
 

@@ -59,7 +59,12 @@ def _onboarding_complete() -> bool:
 	teams = get_user_team_names(user)
 	if not teams:
 		return False
-	return bool(frappe.db.exists("Site", {"team": ["in", teams], "status": ["!=", "Terminated"]}))
+
+	# A site has no status of its own, so "live" is a question about its machine.
+	machines = frappe.get_all("Site", filters={"team": ["in", teams]}, pluck="asset")
+	return bool(machines) and bool(
+		frappe.db.exists("Asset", {"name": ["in", machines], "status": ["!=", "Terminated"]})
+	)
 
 
 def _provider_logins() -> list[dict[str, str]]:

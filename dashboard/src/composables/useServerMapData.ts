@@ -28,6 +28,8 @@ export interface SiteRow {
 	status: string
 	region: string | null
 	url: string | null
+	/** The machine this site is. Its power and terminate actions act on this. */
+	asset: string | null
 	// Transitional label while a site action is in flight (see AssetRow.pending_action).
 	pending_action?: string | null
 }
