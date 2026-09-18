@@ -1,7 +1,7 @@
-import { expect, test } from '../billing/fixtures'
+import { expect, test } from '../fixtures'
 
-test('Create a role', async ({ page, billing }) => {
-	await billing.signIn()
+test('Create a role', async ({ page, users }) => {
+	await users.signIn()
 
 	await page.goto('/dashboard/team/members')
 	await page.getByRole('radio', { name: 'Roles' }).click()

@@ -11,8 +11,8 @@ import { test, expect } from './fixtures'
 // TODO: legacy dashboard removed; billing/credits isn't ported to console yet.
 // Un-skip once console has it.
 test.describe.skip('Wallet top-up (Razorpay)', () => {
-  test('opens the real Razorpay sheet for an INR order and credits the wallet', async ({ page, billing }) => {
-    const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
+  test('opens the real Razorpay sheet for an INR order and credits the wallet', async ({ page, users, billing }) => {
+    const { team } = await users.signIn({ scenario: 'ready', currency: 'INR' })
 
     await page.goto('/legacy-dashboard/billing/credits')
     await expect(page.getByText('No credit activity yet.')).toBeVisible()

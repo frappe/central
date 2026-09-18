@@ -10,8 +10,8 @@ import { fillStripeCard } from './helpers/stripe'
 // TODO: legacy dashboard removed; billing/credits isn't ported to console yet.
 // Un-skip once console has it.
 test.describe.skip('Wallet top-up (Stripe)', () => {
-  test('tops up a USD wallet via a real Stripe test-mode PaymentIntent', async ({ page, billing }) => {
-    await billing.signIn({ scenario: 'ready', currency: 'USD' })
+  test('tops up a USD wallet via a real Stripe test-mode PaymentIntent', async ({ page, users }) => {
+    await users.signIn({ scenario: 'ready', currency: 'USD' })
 
     await page.goto('/legacy-dashboard/billing/credits')
 

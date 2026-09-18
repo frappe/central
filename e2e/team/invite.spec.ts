@@ -1,8 +1,8 @@
-import { expect, test } from '../billing/fixtures'
+import { expect, test } from '../fixtures'
 
-test('invite', async ({ page, billing }) => {
-	const invitee = await billing.seed()
-	const owner = await billing.signIn()
+test('invite', async ({ page, users }) => {
+	const invitee = await users.seed()
+	const owner = await users.signIn()
 
 	// send invite dialog
 	await page.goto('/dashboard/team/members')
@@ -15,14 +15,14 @@ test('invite', async ({ page, billing }) => {
 	await expect(page.getByRole('row', { name: invitee.email })).toContainText('Invited')
 
 	// accept invite
-	await billing.login(invitee)
+	await users.login(invitee)
 	await page.goto('/dashboard/invitations')
 	await page.getByRole('button', { name: 'Accept & join' }).click()
 
 	await expect(page.getByText('No invitations')).toBeVisible()
 
 	// verify invitee as member
-	await billing.login(owner)
+	await users.login(owner)
 	await page.goto('/dashboard/team/members')
 
 	const member = page.getByRole('row', { name: invitee.email })

@@ -8,8 +8,8 @@ import { test, expect } from './fixtures'
 // markup (split-view, no `ul.divide-y > li` rows). Rewrite against console's
 // actual DOM and un-skip.
 test.describe.skip('Invoices', () => {
-  test('lists the seeded paid and open invoices', async ({ page, billing }) => {
-    await billing.signIn({ scenario: 'with_invoices', currency: 'USD' })
+  test('lists the seeded paid and open invoices', async ({ page, users }) => {
+    await users.signIn({ scenario: 'with_invoices', currency: 'USD' })
 
     await page.goto('/legacy-dashboard/billing/invoices')
 
@@ -21,8 +21,8 @@ test.describe.skip('Invoices', () => {
     await expect(rows.filter({ hasText: '1,180' })).toHaveCount(2)
   })
 
-  test('opens an invoice to show its line items and tax', async ({ page, billing }) => {
-    await billing.signIn({ scenario: 'with_invoices', currency: 'USD' })
+  test('opens an invoice to show its line items and tax', async ({ page, users }) => {
+    await users.signIn({ scenario: 'with_invoices', currency: 'USD' })
 
     await page.goto('/legacy-dashboard/billing/invoices')
     await page.locator('ul.divide-y > li').filter({ hasText: 'Paid' }).click()

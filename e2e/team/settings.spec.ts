@@ -1,7 +1,7 @@
-import { expect, test } from '../billing/fixtures'
+import { expect, test } from '../fixtures'
 
-test('Rename the team', async ({ page, billing }) => {
-	await billing.signIn()
+test('Rename the team', async ({ page, users }) => {
+	await users.signIn()
 
 	await page.goto('/dashboard/team/members')
 	await page.getByRole('button', { name: 'Edit team' }).click()

@@ -132,8 +132,8 @@ Each spec provisions its own sandbox through the test-only backend endpoints in
   `profile_pending` → `ready` (complete profile) → `with_invoices`.
 - `teardown(team, email)` deletes everything that spec created.
 
-The `billing` fixture in `billing/fixtures.ts` calls these for you
-(`billing.signIn(...)`) and tears down in `afterEach`, so a full run leaves **zero**
+The `users` fixture in `e2e/fixtures.ts` calls these for you
+(`users.signIn(...)`) and tears down after each test, so a full run leaves **zero**
 residue. Seed/teardown run as guest over HTTP and elevate to Administrator behind
 the `allow_tests` gate.
 
@@ -142,7 +142,8 @@ the `allow_tests` gate.
 1. Add a scenario branch to `seed()` in `central/billing/tests/e2e.py` if you need
    new backing data. **Restart the web worker** after editing it (the dev server
    caches imported modules).
-2. Add the spec under `e2e/billing/`. `import { test, expect } from './fixtures'`,
-   call `await billing.signIn({...})`, `page.goto('/dashboard/...')`, and assert on
+2. Add the spec under its area folder, such as `e2e/team/`, and `import { test, expect } from '../fixtures'`.
+   Billing specs import from `./fixtures` instead, which adds the `billing` payment helpers. Then
+   call `await users.signIn({...})`, `page.goto('/dashboard/...')`, and assert on
    user-visible state.
 3. For Stripe card entry, use `fillStripeCard()` from `./helpers/stripe.ts`.

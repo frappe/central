@@ -8,8 +8,8 @@ import { test, expect } from './fixtures'
 // TODO: legacy dashboard removed; these flows (settings/notifications, billing)
 // aren't ported to console yet. Un-skip once console has them.
 test.describe.skip('INR e-mandate collection', () => {
-  test('sends a pre-debit notice for a bill within the ₹15,000 ceiling', async ({ page, billing }) => {
-    const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
+  test('sends a pre-debit notice for a bill within the ₹15,000 ceiling', async ({ page, users, billing }) => {
+    const { team } = await users.signIn({ scenario: 'ready', currency: 'INR' })
     await billing.setCollectionMode({ team, mode: 'E-Mandate' })
 
     const { invoice } = await billing.makeInvoice({ team, total: 5000 })
@@ -22,8 +22,8 @@ test.describe.skip('INR e-mandate collection', () => {
     await expect(page.getByText('Pre-debit Notice').first()).toBeVisible()
   })
 
-  test('forks a bill over the ceiling to the Action Required choice', async ({ page, billing }) => {
-    const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
+  test('forks a bill over the ceiling to the Action Required choice', async ({ page, users, billing }) => {
+    const { team } = await users.signIn({ scenario: 'ready', currency: 'INR' })
     await billing.setCollectionMode({ team, mode: 'E-Mandate' })
 
     const { invoice } = await billing.makeInvoice({ team, total: 20000 }) // over ₹15,000

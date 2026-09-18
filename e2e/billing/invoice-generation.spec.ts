@@ -9,8 +9,8 @@ import { test, expect } from './fixtures'
 // TODO: legacy dashboard removed; console's BillingInvoicesPage has different
 // markup. Rewrite against console's actual DOM and un-skip.
 test.describe.skip('Invoice generation', () => {
-  test('provisions a price-lock and generates the invoice from it', async ({ page, billing }) => {
-    const { team } = await billing.signIn({ scenario: 'ready', currency: 'INR' })
+  test('provisions a price-lock and generates the invoice from it', async ({ page, users, billing }) => {
+    const { team } = await users.signIn({ scenario: 'ready', currency: 'INR' })
 
     // Real pipeline: provision (writes the lock) → generate_draft_invoice.
     const gen = await billing.generateInvoice({ team, monthlyRate: 3000 })
