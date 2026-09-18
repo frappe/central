@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures'
-import { fillStripeCard } from './helpers/stripe.js'
+import { fillStripeCard } from './helpers/stripe'
 
 // The hero no-mock flow: a USD team tops up its wallet through the *real* Stripe
 // test sandbox. The seed completes the billing profile (un-gating money movement)
