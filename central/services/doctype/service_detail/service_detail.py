@@ -26,6 +26,24 @@ class ServiceDetail(Document):
 	# end: auto-generated types
 
 	@staticmethod
+	def endpoint_for(region: str, service: str) -> str | None:
+		"""Where one region serves one service, or None while it does not.
+
+		A region that has never reported has no row, and one reporting `Not Available` has
+		an endpoint that would refuse the caller, so both read as nothing to hand out."""
+		detail = frappe.db.get_value(
+			"Service Detail",
+			f"{region}-{service}",
+			["status", "service_endpoint"],
+			as_dict=True,
+			cache=True,
+		)
+		if not detail or detail.status != "Available":
+			return None
+
+		return detail.service_endpoint or None
+
+	@staticmethod
 	def record_report(region: str, service: str, status: str, service_endpoint: str | None) -> str:
 		"""Record what a region reports about one of its services. `activated_on` marks the
 		first report of an outage ending, not every report."""
