@@ -65,6 +65,23 @@ class TestPilotAPI(IntegrationTestCase):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.call_heartbeat(self.token)
 
+	def bound_pilot(self, region_id: str = "42") -> str:
+		"""A pilot with an Asset in a region, which is what a datum token is addressed to."""
+		region = f"tel-{frappe.generate_hash(length=6)}"
+		ensure_atlas_instance(region, atlas_region_id=region_id)
+		asset = frappe.get_doc(
+			{
+				"doctype": "Asset",
+				"resource_id": f"vm-{region}",
+				"team": self.team,
+				"cluster": region,
+				"status": "Running",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", asset.name)
+
+		return asset.name
+
 	def enrolled_cargo(self, region: str, telemetry_base_url: str) -> str:
 		"""A region whose Cargo has enrolled and reported where telemetry goes, with an
 		Asset in it bound to this pilot."""
@@ -127,18 +144,27 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_the_token_carries_the_scope_resource_and_write_access(self):
 		"""Datum stamps every row with `resource_id` and reads both claims off the token
 		through `Identity.from_claims`. Nothing sits in front of it to translate one."""
-		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", "vm-1")
+		asset = self.bound_pilot()
 
 		claims = jwt.decode(self.call_datum_token(self.token)["token"], options={"verify_signature": False})
 
 		self.assertEqual(claims["scope"], DATUM_SCOPE)
-		self.assertEqual(claims["resource_id"], "vm-1")
+		self.assertEqual(claims["resource_id"], asset)
 		self.assertEqual(claims["access"], ["write"])
 		self.assertNotIn("vm_access", claims)
 
+	def test_the_token_is_addressed_to_the_pilots_own_region(self):
+		"""Every region reads the same key set, so the audience is what keeps a pilot
+		from writing to another region's datum."""
+		self.bound_pilot(region_id="7")
+
+		claims = jwt.decode(self.call_datum_token(self.token)["token"], options={"verify_signature": False})
+
+		self.assertEqual(claims["aud"], "atlas-datum:7")
+
 	def test_the_token_is_signed_for_the_key_set_datum_reads(self):
 		"""Datum fetches the merged set, which carries Ed25519 keys namespaced by issuer."""
-		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", "vm-1")
+		self.bound_pilot()
 
 		token = self.call_datum_token(self.token)["token"]
 
@@ -149,7 +175,7 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_each_mint_is_its_own_credential(self):
 		"""One route, but not one token: a pilot re-fetching gets a fresh credential, so
 		one expiring or being replayed says nothing about the last."""
-		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", "vm-1")
+		self.bound_pilot()
 
 		first = jwt.decode(self.call_datum_token(self.token)["token"], options={"verify_signature": False})
 		second = jwt.decode(self.call_datum_token(self.token)["token"], options={"verify_signature": False})

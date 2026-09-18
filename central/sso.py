@@ -36,7 +36,27 @@ def mint_cargo_token(region_id: int) -> str:
 	return _mint_regional_token(region_id, f"atlas-cargo:{region_id}", "bucket:*")
 
 
-def _mint_regional_token(region_id: int, audience: str, scope: str, extra: dict | None = None) -> str:
+def mint_datum_token(region_id: int, resource_id: str) -> str:
+	"""The token a pilot presents to its region's datum, for metrics and logs alike. The
+	audience names one region, so every other region refuses it."""
+	if not resource_id:
+		frappe.throw(
+			_("This pilot has no resource yet; a datum token would be unattributable."),
+			frappe.ValidationError,
+		)
+
+	return _mint_regional_token(
+		region_id,
+		f"atlas-datum:{region_id}",
+		DATUM_SCOPE,
+		{"resource_id": resource_id, "access": DATUM_ACCESS},
+		ttl=DATUM_TTL,
+	)
+
+
+def _mint_regional_token(
+	region_id: int, audience: str, scope: str, extra: dict | None = None, ttl: int = ATLAS_TOKEN_TTL
+) -> str:
 	if type(region_id) is not int or not 0 <= region_id <= 65535:
 		frappe.throw(_("The Atlas region ID must be a whole number from 0 to 65535."))
 
@@ -49,7 +69,7 @@ def _mint_regional_token(region_id: int, audience: str, scope: str, extra: dict 
 		"aud": audience,
 		"scope": scope,
 		"iat": now,
-		"exp": now + ATLAS_TOKEN_TTL,
+		"exp": now + ttl,
 		"jti": frappe.generate_hash(length=16),
 		**(extra or {}),
 	}
@@ -117,41 +137,6 @@ def verify_bootstrap_token(token: str) -> dict:
 	if claims.get("scope") != ENROLL_SCOPE:
 		frappe.throw(_("Not an enrollment token."), frappe.AuthenticationError)
 	return {"team": claims["team"], "pcid": claims["aud"], "jti": claims["jti"]}
-
-
-def mint_datum_token(audience: str, resource_id: str) -> str:
-	"""The token a pilot presents to datum, for metrics and for logs alike.
-
-	One token, because datum is one service that tells its write paths apart by the
-	route, not by the credential: same `resource_id`, same authority, no reads. It is
-	signed with the key Atlas publishes for Central, since that merged set is the only
-	one datum fetches.
-
-	Datum stamps every row with `resource_id`, so a token without one is unattributable
-	and is refused here rather than at the far end."""
-	if not resource_id:
-		frappe.throw(
-			_("This pilot has no resource yet; a datum token would be unattributable."),
-			frappe.ValidationError,
-		)
-
-	private_key, key_id = CentralSSOSettings.instance().atlas_signing_key()
-	now = int(time.time())
-	claims = {
-		# The literal issuer, not the site URL: datum reads the key id's namespace and
-		# holds `iss` to it, the same way Cargo and the regional proxy do.
-		"iss": "central",
-		"sub": "central",
-		"aud": audience,
-		"scope": DATUM_SCOPE,
-		"resource_id": resource_id,
-		"access": DATUM_ACCESS,
-		"iat": now,
-		"exp": now + DATUM_TTL,
-		"jti": frappe.generate_hash(length=16),
-	}
-
-	return jwt.encode(claims, private_key, algorithm=ATLAS_ALGORITHM, headers={"kid": key_id})
 
 
 def _mint(audience: str, scope: str, ttl: int, extra: dict | None = None) -> str:

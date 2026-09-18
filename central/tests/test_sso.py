@@ -81,7 +81,7 @@ class TestCentralSSO(IntegrationTestCase):
 		enroll = mint_bootstrap_token("team-x", "pcred-x")
 		self.assertEqual(verify_bootstrap_token(enroll)["team"], "team-x")
 
-		for other in (mint_bench_login("pcred-x"), mint_datum_token("pcred-x", "vm-1")):
+		for other in (mint_bench_login("pcred-x"), mint_datum_token(42, "vm-1")):
 			with self.assertRaises(frappe.AuthenticationError):
 				verify_bootstrap_token(other)
 

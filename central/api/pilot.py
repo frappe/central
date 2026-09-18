@@ -35,15 +35,18 @@ def pilot_credential_auth(func: Callable) -> Callable:
 	return wrapper
 
 
-def get_telemetry_base_url(credential: PilotCredential) -> str | None:
-	"""Where this pilot's region takes metrics and logs, or None until that region's Cargo
-	enrols. `Asset.cluster` is the Atlas Instance, which is named for its region, so the
-	region needs no lookup of its own."""
+def get_pilot_region(credential: PilotCredential) -> str | None:
+	"""The region this pilot runs in, or None while Atlas has not bound its Asset.
+	`Asset.cluster` is the Atlas Instance, which is named for its region, so the region
+	needs no lookup of its own."""
 	if not credential.asset:
 		return None
 
-	region = frappe.db.get_value("Asset", credential.asset, "cluster", cache=True)
+	return frappe.db.get_value("Asset", credential.asset, "cluster", cache=True)
 
+
+def get_telemetry_base_url(region: str | None) -> str | None:
+	"""Where one region takes metrics and logs, or None until that region's Cargo enrols."""
 	return CargoInstance.telemetry_url_for(region) if region else None
 
 
@@ -86,12 +89,27 @@ def datum_token() -> dict:
 	from central.sso import DATUM_TTL, mint_datum_token
 
 	credential: PilotCredential = frappe.local.pilot_credential
+	region = get_pilot_region(credential)
+
 	return {
-		"token": mint_datum_token(credential.audience_id, credential.asset),
+		"token": mint_datum_token(region_id_of(region), credential.asset),
 		"expires_in": DATUM_TTL,
 		"resource_id": credential.asset,
-		"endpoint": get_telemetry_base_url(credential),
+		"endpoint": get_telemetry_base_url(region),
 	}
+
+
+# TODO: This hack should goaway once region id is integrated into the region doctype
+def region_id_of(region: str | None) -> int:
+	"""The Atlas region id the token's audience names. A pilot with no region yet has no
+	datum to write to, so it is refused here rather than handed a token nothing accepts."""
+	if not region:
+		frappe.throw(
+			_("This pilot has no region yet; a datum token would name no host."),
+			frappe.ValidationError,
+		)
+
+	return frappe.get_doc("Atlas Instance", region).get_atlas_region_id()
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
