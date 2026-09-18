@@ -25,6 +25,16 @@ Central reaches each regional service at `<service>.<region>.<wildcard domain>`,
 
 Central refuses the regional zone itself, a name 2 or more labels below the zone, a wildcard, and the reserved site names `proxy`, `proxy-*`, `atlas`, and `cargo`. The server must belong to the team and the region of the record.
 
+## Routed names
+
+The regional proxy answers a `site-*` or `*-vm-*` name below the zone from the label alone. It reads the mesh address out of the base-36 token of the label before it reads its site map, and it refuses a map entry for such a name with HTTP 409.
+
+`Atlas Instance.get_vm_admin_host` and `Atlas Instance.get_vm_site_host` build the 2 routed names of one server from `Asset.ipv6_address`. Example: `admin-vm-1z141z4.par-2.frappe.dev` and `site-1z141z4.par-2.frappe.dev`.
+
+- Central keeps no record for a routed name and makes no proxy call for it. `register_domain` returns success, because the name is live already.
+- Central refuses a routed name that belongs to a different server. No record can bring that name to this server.
+- A delete of a record that holds a routed name makes no proxy call.
+
 ## Operation
 
 ```text
@@ -51,7 +61,7 @@ A Pilot uses these endpoints from its `bench-domain-provider`. Each endpoint aut
 | `central.api.pilot.register_domain` | POST | `register` |
 | `central.api.pilot.deregister_domain` | POST | `deregister` |
 
-A site needs no DNS records. `register_domain` creates the route when no other server holds the name.
+A site needs no DNS records. `register_domain` creates the route when no other server holds the name. For a routed name of the Pilot server, it returns success and creates nothing.
 
 A custom domain needs verification before Central creates a record:
 

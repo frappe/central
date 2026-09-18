@@ -32,8 +32,8 @@ class TestSiteDomain(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		frappe.db.set_single_value("Central Settings", "wildcard_domain", WILDCARD)
 		self.suffix = frappe.generate_hash(length=8)
-		self.region = ensure_atlas_instance(f"sd-{self.suffix}")
-		self.zone = f"{self.region}.{WILDCARD}"
+		self.zone = f"sd-{self.suffix}.{WILDCARD}"
+		self.region = ensure_atlas_instance(f"sd-{self.suffix}", proxy_domain=self.zone)
 		self.owner = ensure_user("site.domain.owner@example.test")
 		self.viewer = ensure_user("site.domain.viewer@example.test")
 		self.team = self._team("Site Domain A", self.viewer, "Viewer")
@@ -180,6 +180,41 @@ class TestSiteDomain(IntegrationTestCase):
 		proxy.set_site.assert_called_once_with(f"shop-{self.suffix}", "2001:db8::10")
 		self.assertEqual(frappe.db.get_value("Site Domain", domain, "status"), "Active")
 
+	def test_the_routed_names_of_a_server_need_no_proxy_call(self):
+		"""The region answers `admin-vm-*` and `site-*` from the label itself."""
+		credential = self._credential(self.asset)
+		proxy = MagicMock()
+
+		for domain in self._routed_names():
+			with self.subTest(domain=domain), patch(GET_PROXY_CLIENT, return_value=proxy):
+				SiteDomain.register(credential, domain)
+				SiteDomain.deregister(credential, domain)
+
+			self.assertFalse(frappe.db.exists("Site Domain", domain))
+
+		proxy.set_site.assert_not_called()
+		proxy.delete_site.assert_not_called()
+
+	def test_a_routed_name_takes_no_record(self):
+		for domain in self._routed_names():
+			with self.subTest(domain=domain), self.assertRaises(frappe.ValidationError):
+				self._route(domain)
+
+	def test_a_routed_name_of_another_server_is_refused(self):
+		other = self._asset("f", self.team, "2001:db8::20")
+		domain = self._routed_names(other)[0]
+
+		with self.assertRaises(frappe.ValidationError):
+			SiteDomain.register(self._credential(self.asset), domain)
+
+		self.assertFalse(frappe.db.exists("Site Domain", domain))
+
+	def test_a_routed_name_outside_the_zone_is_a_custom_domain(self):
+		route = self._route(f"admin-vm-{self.suffix}.example.com")
+
+		self.assertEqual(route.route_type, "Domain")
+		self.assertFalse(route.is_auto_routed)
+
 	def test_a_route_names_the_site_its_server_runs(self):
 		"""A Pilot only knows its machine, so the site comes from the machine."""
 		site = frappe.get_doc(
@@ -264,6 +299,15 @@ class TestSiteDomain(IntegrationTestCase):
 
 		proxy.delete_domain.assert_called_once_with(route.domain)
 		self.assertFalse(frappe.db.exists("Site Domain", route.name))
+
+	def _routed_names(self, asset=None) -> tuple[str, str]:
+		"""The admin and site hostnames the region routes to a server without a map entry."""
+		asset = asset or self.asset
+		instance = frappe.get_doc("Atlas Instance", self.region)
+		return (
+			instance.get_vm_admin_host(asset.ipv6_address),
+			instance.get_vm_site_host(asset.ipv6_address),
+		)
 
 	def _credential(self, asset):
 		return SimpleNamespace(team=asset.team, asset=asset.name, pilot_credential_id=f"pc-{asset.name}")

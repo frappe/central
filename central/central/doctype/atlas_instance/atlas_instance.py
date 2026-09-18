@@ -10,7 +10,8 @@ from central.errors import AtlasConnectionError
 from central.iam import user_has_operator_bypass
 
 BASE36_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyz"
-ADMIN_HOST_PREFIX = "admin-vm-"
+VM_HOST_INFIX = "-vm-"
+ADMIN_HOST_PREFIX = f"admin{VM_HOST_INFIX}"
 SITE_HOST_PREFIX = "site-"
 
 
@@ -50,8 +51,12 @@ class AtlasInstance(Document):
 	def get_vm_gateway_url(self, mesh_address: str | None) -> str | None:
 		"""The bench admin URL the regional proxy routes to this VM, or None when the
 		cluster has no proxy zone or the VM has no mesh address yet."""
-		host = self._proxy_host(ADMIN_HOST_PREFIX, mesh_address)
+		host = self.get_vm_admin_host(mesh_address)
 		return f"https://{host}" if host else None
+
+	def get_vm_admin_host(self, mesh_address: str | None) -> str | None:
+		"""The hostname the regional proxy routes to this VM's bench admin."""
+		return self._proxy_host(ADMIN_HOST_PREFIX, mesh_address)
 
 	def get_vm_site_host(self, mesh_address: str | None) -> str | None:
 		"""The public hostname of the site every Pilot image bakes, which the image's own
@@ -117,6 +122,14 @@ class AtlasInstance(Document):
 			}
 		)
 		return result
+
+
+def is_auto_routed_label(label: str) -> bool:
+	"""Report whether the regional proxy routes a hostname from its own label.
+
+	The proxy decodes the mesh address from the base-36 token of a `site-*` or `*-vm-*`
+	label and answers before it reads its site map, so it refuses a map entry for one."""
+	return label.startswith(SITE_HOST_PREFIX) or VM_HOST_INFIX in label
 
 
 def _proxy_label(mesh_address: str) -> str:
