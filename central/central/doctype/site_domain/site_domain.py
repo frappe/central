@@ -13,6 +13,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
+from central.central.doctype.atlas_instance.atlas_instance import is_auto_routed_label
 from central.central.doctype.region.region import REGIONAL_SERVICES, Region
 from central.integrations.proxy import ProxyError
 
@@ -55,17 +56,33 @@ class SiteDomain(Document):
 		"""The site key in the proxy: the first label of the domain."""
 		return self.domain.split(".", 1)[0]
 
+	@property
+	def has_auto_routed_name(self) -> bool:
+		"""True when the region answers this hostname from its label, so the proxy holds no key."""
+		return self.route_type == "Site" and is_auto_routed_label(self.site_label)
+
+	@property
+	def is_auto_routed(self) -> bool:
+		"""True when the region routes this hostname to this server from the label alone."""
+		return self.has_auto_routed_name and self.domain in self.get_auto_routed_hosts()
+
 	def before_naming(self) -> None:
 		self.domain = normalize_domain(self.domain)
 
 	def validate(self) -> None:
 		self.route_type = self.get_route_type()
 		self.validate_targets()
+		self.validate_auto_routed_host()
+		if self.has_auto_routed_name:
+			frappe.throw(_("The region routes {0} already. It needs no route record.").format(self.domain))
 
 	def after_insert(self) -> None:
 		frappe.enqueue_doc(self.doctype, self.name, "apply", enqueue_after_commit=True)
 
 	def on_trash(self) -> None:
+		if self.has_auto_routed_name:
+			return
+
 		client = Region.get_proxy_client(self.region)
 		try:
 			if self.route_type == "Site":
@@ -103,6 +120,22 @@ class SiteDomain(Document):
 			frappe.throw(_("Server {0} is not in region {1}.").format(self.asset, self.region))
 		if self.site and frappe.db.get_value("Site", self.site, "team") != self.team:
 			frappe.throw(_("Site {0} does not belong to team {1}.").format(self.site, self.team))
+
+	def get_auto_routed_hosts(self) -> set[str]:
+		"""The hostnames the region routes to this server with no map entry of their own.
+
+		The proxy reads the mesh address out of the base-36 token in the label, so both names
+		follow from the server itself."""
+		instance = frappe.get_cached_doc("Atlas Instance", self.region)
+		address = frappe.db.get_value("Asset", self.asset, "ipv6_address")
+		hosts = (instance.get_vm_admin_host(address), instance.get_vm_site_host(address))
+		return {host for host in hosts if host}
+
+	def validate_auto_routed_host(self) -> None:
+		"""Refuse a label of the routed shape that names a different server. The proxy answers
+		it from the label, so no record here could ever bring it to this server."""
+		if self.has_auto_routed_name and not self.is_auto_routed:
+			frappe.throw(_("The region routes {0} to another server.").format(self.domain))
 
 	def apply(self) -> None:
 		"""Send this route to the regional proxy and record the outcome. Safe to repeat."""
@@ -168,8 +201,14 @@ class SiteDomain(Document):
 
 	@staticmethod
 	def register(credential: PilotCredential, domain: str) -> None:
-		"""Route a domain to the Pilot's server once it is verified. Returns only when the route is live."""
+		"""Route a domain to the Pilot's server once it is verified. Returns only when the route is live.
+
+		A hostname the region routes from its own label is live already and takes no record."""
 		route = SiteDomain.new_for_pilot(credential, domain)
+		route.validate_auto_routed_host()
+		if route.is_auto_routed:
+			return
+
 		if frappe.db.exists("Site Domain", route.domain):
 			route = frappe.get_doc("Site Domain", route.domain)
 			if route.asset != credential.asset:
