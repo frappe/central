@@ -11,9 +11,10 @@ from central.integrations.images import list_images
 from central.server_provisioning import submit_request
 
 SIGNUP_FLOW = "Signup"
-# A trial is a site the image already carries, so an image that carries none cannot serve
-# one. The region tags what an image holds; an absent tag is not a yes.
-SITE_TAG = "has_site"
+# A trial is a site the image already carries, on the Frappe version a signup runs. The
+# region tags what an image holds, and it matches a tag exactly, so an image that carries
+# no tag is never taken for a yes.
+SIGNUP_IMAGE_TAGS = {"has_site": "1", "frappe_version": "develop"}
 # One DNS label: what a customer may name a site, and all the proxy will route.
 SUBDOMAIN_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 RESERVED_SUBDOMAINS = frozenset({"admin", "atlas", "cargo", "proxy", "site", "www"})
@@ -107,13 +108,9 @@ def trial_configuration(team: str) -> dict:
 	that misses the shape cold-boots instead."""
 	offering = signup_offering()
 	region, plan = trial_region_and_plan(team)
-	images = [
-		image
-		for image in list_images(team, region, offering, SIGNUP_FLOW)["items"]
-		if image["tags"].get(SITE_TAG) == "1"
-	]
+	images = list_images(team, region, offering, SIGNUP_FLOW, extra_tags=SIGNUP_IMAGE_TAGS)["items"]
 	if not images:
-		frappe.throw(_("No trial image carries a site right now. Please try again shortly."))
+		frappe.throw(_("No trial image is available right now. Please try again shortly."))
 
 	newest = max(images, key=lambda image: image["created_at"])
 	return {"region": region, "offering": offering, "image_id": newest["id"], "plan": plan}

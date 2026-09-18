@@ -69,8 +69,11 @@ Every signup image contains `site.local`. Central mints the session for that sta
 | Image site name | Cargo image invariant | `site.local` |
 | Proxy zone | `Atlas Instance.proxy_domain` | `par-2.fc.frappe.dev` |
 | Signup image | `Image Offering.available_in` = `Signup` or `Both` | one offering, lowest title, `Signup` preferred |
+| Signup image tags | `SIGNUP_IMAGE_TAGS` in `central/site_provisioning.py` | `has_site=1`, `frappe_version=develop` |
 | Trial plan | `Plan.available_on_trial` | the cheapest eligible plan in the first Active region |
 
 Cargo must bake the image site as `site.local`, or Pilot does not recognise the site and no login can be minted.
+
+Central asks the region for the offering tags and the signup tags together, and takes the newest image that comes back. Change `SIGNUP_IMAGE_TAGS` to move signups to another Frappe version. The region matches a tag exactly, so an image without the tag never qualifies.
 
 Give the trial plan the shape the image was baked at. A region restores a warm image from memory only when the vCPU count, memory and disk all match, and a trial that misses the shape cold-boots instead. `BUILD_VCPUS`, `BUILD_MEMORY_MIB` and `BUILD_DISK_MIB` in Cargo's `image_builder/builder.py` hold that shape.
