@@ -18,6 +18,7 @@
   "ipv6_address",
   "public_ipv4",
   "gateway_url",
+  "admin_domain_task",
   "resize_in_progress",
   "atlas_vm_id",
   "image_offering",
@@ -125,6 +126,13 @@
    "fieldtype": "Data",
    "label": "Gateway URL",
    "options": "URL"
+  },
+  {
+   "description": "The Pilot task that changed the local admin domain to the routed gateway hostname.",
+   "fieldname": "admin_domain_task",
+   "fieldtype": "Data",
+   "label": "Admin Domain Task",
+   "read_only": 1
   },
   {
    "default": "0",

@@ -407,6 +407,25 @@ class TestAdminHostname(SiteOnAMachine):
 
 		self.assertIsNone(self.asset.reload().admin_domain_task)
 
+	def test_a_response_without_a_task_leaves_it_to_the_next_report(self):
+		self.enroll()
+
+		with patch("central.integrations.pilot.rename_admin_domain", return_value={}) as rename:
+			observe_server(self.asset)
+			observe_server(self.asset)
+
+		self.assertEqual(rename.call_count, 2)
+		self.assertIsNone(self.asset.reload().admin_domain_task)
+
+	def test_a_stopped_machine_does_not_rename_its_admin_domain(self):
+		self.enroll()
+		self.client.get_vm.return_value["current_state"] = "stopped"
+
+		with patch("central.integrations.pilot.rename_admin_domain") as rename:
+			observe_server(self.asset)
+
+		rename.assert_not_called()
+
 
 class TestSubdomainAvailability(SiteOnAMachine):
 	def test_a_name_already_taken_is_refused(self):

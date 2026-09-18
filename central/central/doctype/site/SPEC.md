@@ -47,7 +47,7 @@ claim_site --> mint login for site.local --> sign in at url
 
 - `Site.ensure_for` runs on every report a region makes about a machine, because the address arrives on one of them and nothing says which. It writes once. A machine that already has a site, runs no Pilot, or has no address yet is left alone.
 - The requested name rides on the `Resource Action`, because the site it will rename does not exist until the region answers.
-- `Asset.claim_admin_hostname` points a machine's admin UI at the hostname its region routes. Every Pilot machine needs it, whether or not anyone opens that UI: the bench is baked answering to a name that resolves nowhere. TLS stays off, because the regional proxy terminates it in front. A machine that is running but not yet answering leaves the marker empty, so the next report tries again.
+- `Asset.claim_admin_hostname` tells Pilot to replace its local `admin.local` name with the `admin-vm-*` hostname that the regional proxy already routes. Central does not create or change a proxy route. TLS stays off because the regional proxy terminates it. A machine that is not running, a failed request, or a response without a task ID leaves the marker empty, so the next report tries again.
 - A successful claim records `claimed_at`, returns the login URL, and enqueues the rename after the database commit. The response does not wait for Pilot to accept or finish the rename.
 - `Site.apply_subdomain` creates one Pilot rename task. Pilot keeps the automatic hostname serving while the requested hostname comes up.
 - Terminating the machine terminates the site, with nothing to write: the site reads its state from the machine.
