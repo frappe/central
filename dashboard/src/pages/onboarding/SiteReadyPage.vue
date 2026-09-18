@@ -29,8 +29,11 @@ type Creation = {
 type OnboardingStatus = { site: SiteState | null; creation: Creation | null }
 
 const POLL_MS = 1000
+// A new Pilot accepts Central seconds after it finishes its bootstrap, so the
+// first retries come fast. The schedule still gives up after about 2 minutes.
 const LOGIN_RETRY_DELAYS_MS = [
-	2000, 4000, 8000, 16000, 30000, 30000, 30000,
+	1000, 1000, 1000, 2000, 2000, 2000, 2000, 5000, 5000, 10000, 10000, 15000,
+	15000, 15000, 15000, 20000,
 ]
 
 const status = ref<OnboardingStatus | null>(null)
