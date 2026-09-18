@@ -83,6 +83,10 @@ def observe_server(asset: Asset) -> str:
 		},
 	)
 
+	# The wildcard gateway already routes here. Pilot only needs to replace its local
+	# admin.local hostname with the routed name.
+	frappe.get_doc("Asset", asset.name).claim_admin_hostname()
+
 	# A Pilot machine carries a site, and this report is where its address arrives.
 	Site.ensure_for(asset.name)
 	ResourceAction.confirm_observed_status(asset.name, status)

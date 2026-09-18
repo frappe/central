@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import frappe
 from frappe.model.document import Document
+from requests import RequestException
 
 
 class Asset(Document):
@@ -19,6 +20,7 @@ class Asset(Document):
 		disk_gigabytes: DF.Float
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
+		admin_domain_task: DF.Data | None
 		image_offering: DF.Link | None
 		ipv6_address: DF.Data | None
 		memory_megabytes: DF.Int
@@ -175,6 +177,35 @@ class Asset(Document):
 			docname=self.team,
 			after_commit=True,
 		)
+
+	def claim_admin_hostname(self) -> None:
+		"""Ask Pilot to serve its admin UI at this machine's routed hostname."""
+		if self.admin_domain_task or self.status != "Running" or not self.gateway_url:
+			return
+		if not frappe.db.exists(
+			"Pilot Credential", {"asset": self.name, "team": self.team, "status": "Active"}
+		):
+			return
+
+		from central.integrations.pilot import rename_admin_domain
+
+		try:
+			task = rename_admin_domain(self.name, tls=False)
+		except RequestException, OSError, ValueError:
+			frappe.log_error(
+				title=f"Pilot admin domain rename failed: {self.name}",
+				message=frappe.get_traceback(with_context=True),
+			)
+			return
+
+		task_id = task.get("task_id") if isinstance(task, dict) else None
+		if task_id:
+			self.db_set("admin_domain_task", task_id)
+		else:
+			frappe.log_error(
+				title=f"Pilot admin domain rename returned no task: {self.name}",
+				message=frappe.as_json(task),
+			)
 
 	def is_report_stale(self, observed_at) -> bool:
 		"""True when this server already holds a report newer than `observed_at`."""
