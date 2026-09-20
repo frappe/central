@@ -1,28 +1,17 @@
 import { expect } from '@playwright/test'
 import { test } from '../fixtures'
 
-const api = (method) => `/api/method/central.api.teams.${method}`
-
-const addMember = async (page, users) => {
-	const member = await users.seed()
+const openMemberRow = async (page, users, teams) => {
 	const owner = await users.signIn()
+	const member = await teams.addMember({ owner })
 
-	const invite = await page.request.post(api('invite_team_member'), {
-		form: { team: owner.team, email: member.email, role: 'Developer' },
-	})
-	const invitation = (await invite.json()).message
-
-	await users.login(member)
-	await page.request.post(api('accept_invitation'), { form: { invitation } })
-
-	await users.login(owner)
 	await page.goto('/dashboard/team/members')
 
 	return page.getByRole('row', { name: member.email })
 }
 
-test('Change member role', async ({ page, users }) => {
-	const row = await addMember(page, users)
+test('Change member role', async ({ page, users, teams }) => {
+	const row = await openMemberRow(page, users, teams)
 
 	await row.getByRole('button', { name: 'Member actions' }).click()
 	await page.getByRole('menuitem', { name: 'Manage access' }).click()
@@ -35,8 +24,8 @@ test('Change member role', async ({ page, users }) => {
 	await expect(row).toContainText('Viewer')
 })
 
-test('Remove a member', async ({ page, users }) => {
-	const row = await addMember(page, users)
+test('Remove a member', async ({ page, users, teams }) => {
+	const row = await openMemberRow(page, users, teams)
 
 	await row.getByRole('button', { name: 'Member actions' }).click()
 	await page.getByRole('menuitem', { name: 'Remove from team' }).click()

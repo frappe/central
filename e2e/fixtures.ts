@@ -3,7 +3,24 @@ import { test as base, expect } from '@playwright/test'
 const method = (dotted) => `/api/method/${dotted}`
 
 export const test = base.extend({
-  teams: async ({ request }, use) => {
+  teams: async ({ page, request, users }, use) => {
+    const api = (endpoint) => method(`central.api.teams.${endpoint}`)
+
+    const addMember = async ({ owner, role = 'Developer' }) => {
+      const member = await users.seed()
+
+      const invite = await page.request.post(api('invite_team_member'), {
+        form: { team: owner.team, email: member.email, role },
+      })
+      const invitation = (await invite.json()).message
+
+      await users.login(member)
+      await page.request.post(api('accept_invitation'), { form: { invitation } })
+      await users.login(owner)
+
+      return member
+    }
+
     const setTrustTier = async ({ team, maxSpend = 50000 }) => {
       const res = await request.post(method('central.billing.tests.e2e.set_trust_tier'), {
         form: { team, max_spend: maxSpend },
@@ -12,7 +29,7 @@ export const test = base.extend({
       return (await res.json()).message
     }
 
-    await use({ setTrustTier })
+    await use({ addMember, setTrustTier })
   },
 
   users: async ({ page, request }, use) => {
