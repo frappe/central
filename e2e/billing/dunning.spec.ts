@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // Declined-card dunning (issue #14). A real off-session charge against a card
 // Stripe declines (tok_chargeCustomerFail) fails the Payment Attempt and leaves

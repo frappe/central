@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // Set up a UPI Autopay mandate for an INR team. UPI Autopay authorises through
 // Razorpay's hosted recurring sheet (the same bot-protected Checkout the top-up

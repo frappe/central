@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // First-run setup: a brand-new team (no billing profile) lands on the onboarding
 // wizard and completes the required Billing Profile step against the real

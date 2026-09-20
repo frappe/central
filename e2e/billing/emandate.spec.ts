@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // INR e-mandate collection (ADR 0005 / #50). An e-mandate team may auto-debit
 // silently only up to ₹15,000, and only after an RBI pre-debit notice ≥24h before.

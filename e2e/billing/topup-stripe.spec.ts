@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 import { fillStripeCard } from './helpers/stripe'
 
 // The hero no-mock flow: a USD team tops up its wallet through the *real* Stripe

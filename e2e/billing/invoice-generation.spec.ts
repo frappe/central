@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // Invoice GENERATION through the real agentless pipeline (ADR 0006). Unlike the
 // other specs, this fabricates nothing: provisioning writes a price-lock at the

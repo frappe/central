@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // Invoice settlement through the real credits-then-card waterfall (no mocks). Each
 // test arranges real backend state (wallet credits, a real Stripe test card, a

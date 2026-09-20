@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // Refunds (issue #15). Both paths start from a real charge: a card is charged to a
 // genuine PaymentIntent and the invoice settles via the real webhook. A full

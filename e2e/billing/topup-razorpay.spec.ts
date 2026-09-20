@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // INR wallet top-up over the Razorpay rail. The hosted Razorpay sheet loads
 // hCaptcha + fraud frames and a cross-origin 3DS simulator, so it can't be clicked
