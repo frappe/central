@@ -1,4 +1,5 @@
-import { expect, test } from '../fixtures'
+import { expect } from '@playwright/test'
+import { test } from '../fixtures'
 
 const api = (method) => `/api/method/central.api.teams.${method}`
 

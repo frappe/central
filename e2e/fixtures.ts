@@ -3,6 +3,18 @@ import { test as base, expect } from '@playwright/test'
 const method = (dotted) => `/api/method/${dotted}`
 
 export const test = base.extend({
+  teams: async ({ request }, use) => {
+    const setTrustTier = async ({ team, maxSpend = 50000 }) => {
+      const res = await request.post(method('central.billing.tests.e2e.set_trust_tier'), {
+        form: { team, max_spend: maxSpend },
+      })
+      expect(res.ok(), `set_trust_tier failed: ${res.status()}`).toBeTruthy()
+      return (await res.json()).message
+    }
+
+    await use({ setTrustTier })
+  },
+
   users: async ({ page, request }, use) => {
     const seeded = []
 
@@ -36,5 +48,3 @@ export const test = base.extend({
     }
   },
 })
-
-export { expect }

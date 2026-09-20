@@ -1,4 +1,5 @@
-import { expect, test as base } from '../fixtures'
+import { expect } from '@playwright/test'
+import { test as base } from '../fixtures'
 
 const method = (dotted) => `/api/method/${dotted}`
 
@@ -42,7 +43,6 @@ export const test = base.extend({
     // INR rails (e-mandate + UPI Autopay mandate): give the team a trust tier (the
     // UPI ceiling), switch collection mode, run the pre-debit step, and confirm a
     // mandate at the gateway boundary (its hosted recurring sheet can't be automated).
-    const setTrustTier = ({ team, maxSpend = 50000 }) => backend('set_trust_tier', { team, max_spend: maxSpend })
     const setCollectionMode = ({ team, mode }) => backend('set_collection_mode', { team, mode })
     const predebit = ({ invoice }) => backend('predebit', { invoice })
     const finishMandate = ({ paymentMethod, orderId }) =>
@@ -51,9 +51,7 @@ export const test = base.extend({
     await use({
       finishRazorpay,
       addCredits, saveCard, makeInvoice, settle, deliverWebhook, dun, refund, generateInvoice,
-      setTrustTier, setCollectionMode, predebit, finishMandate,
+      setCollectionMode, predebit, finishMandate,
     })
   },
 })
-
-export { expect }

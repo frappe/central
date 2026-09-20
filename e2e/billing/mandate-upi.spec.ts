@@ -10,9 +10,9 @@ import { test, expect } from './fixtures'
 // TODO: legacy dashboard removed; settings/methods isn't ported to console yet.
 // Un-skip once console has it.
 test.describe.skip('UPI Autopay mandate', () => {
-  test('authorises a mandate via the real Razorpay recurring sheet', async ({ page, users, billing }) => {
+  test('authorises a mandate via the real Razorpay recurring sheet', async ({ page, users, teams, billing }) => {
     const { team } = await users.signIn({ scenario: 'ready', currency: 'INR' })
-    await billing.setTrustTier({ team, maxSpend: 50000 }) // UPI cap, below the ₹1,00,000 limit
+    await teams.setTrustTier({ team, maxSpend: 50000 }) // UPI cap, below the ₹1,00,000 limit
 
     await page.goto('/legacy-dashboard/settings/methods')
     await expect(page.getByText('No payment methods yet.')).toBeVisible()

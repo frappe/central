@@ -1,4 +1,5 @@
-import { expect, test } from '../fixtures'
+import { expect } from '@playwright/test'
+import { test } from '../fixtures'
 
 test('Create a role', async ({ page, users }) => {
 	await users.signIn()
