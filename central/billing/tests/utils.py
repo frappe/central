@@ -83,7 +83,6 @@ class BillingTestCase(IntegrationTestCase):
 		"Plan",
 		"Asset",
 		"Team",
-		"Atlas Instance",
 		"Region",
 		"User",
 		"Webhook Event",
@@ -212,9 +211,9 @@ DEFAULT_INCLUDES = [
 def ensure_atlas_instance(region):
 	"""The cluster a billing test bills against.
 
-	Both Asset.cluster and Catalog Rate.cluster are required Links to Atlas Instance,
-	so any test that creates a subscription or a per-region rate needs the instance
-	(and its Region) to exist first."""
+	Both Asset.cluster and Catalog Rate.cluster are required Links to Region, so any
+	test that creates a subscription or a per-region rate needs the region to exist
+	first, connection-configured."""
 	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
 
 	return _ensure_atlas_instance(region)
@@ -294,7 +293,7 @@ def make_plan(name, rates=None, includes=None, **kwargs):
 
 
 def _ensure_rate_instances(rates):
-	"""Seed the Atlas Instance behind every non-blank cluster a rate row references."""
+	"""Seed the region behind every non-blank cluster a rate row references."""
 	for cluster in {(r.get("cluster") or "").strip() for r in rates}:
 		if cluster:
 			ensure_atlas_instance(cluster)
@@ -436,7 +435,8 @@ def complete_billing_profile(team, currency="INR"):
 
 def make_billing_subscription(team, cluster, plan, start_date=None, clear_changes=True, **kwargs):
 	"""Provision a billable subscription for billing tests under the Asset model:
-	ensure the cluster's Atlas Instance + the team's Billing Profile currency, create
+	ensure the cluster's Region is connection-configured, and the team's Billing
+	Profile currency, create
 	the Asset (carrying the region) + linked Subscription, and (by default) clear the
 	auto 'Created' segment so the test can author its own Subscription Change timeline
 	with `add_segment`. Returns the Subscription name."""

@@ -84,7 +84,7 @@ def trial_zone() -> str:
 	if not regions:
 		frappe.throw(_("No region is offering trial sites right now. Please try again shortly."))
 
-	return frappe.get_cached_value("Atlas Instance", regions[0], "proxy_domain")
+	return frappe.get_cached_value("Region", regions[0], "proxy_domain")
 
 
 def trial_regions() -> list[str]:
@@ -93,7 +93,7 @@ def trial_regions() -> list[str]:
 	A region needs a proxy zone to serve one: a site's address is built from that zone, so
 	a region without one can never give a site an address."""
 	return frappe.get_all(
-		"Atlas Instance",
+		"Region",
 		filters={"status": "Active", "proxy_domain": ["is", "set"]},
 		pluck="name",
 		order_by="name asc",

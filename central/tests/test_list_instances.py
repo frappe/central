@@ -1,27 +1,23 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.servers import INSTANCE_LIVENESS_FIELDS, REGION_DISPLAY_FIELDS, list_instances, registry
+from central.api.servers import REGION_LIST_FIELDS, list_instances, registry
 from central.tests.test_iam import ensure_user
 
-# The exact key set list_instances returns: an Active Atlas Instance's liveness
-# merged with its Region's display metadata.
-PUBLIC_FIELDS = INSTANCE_LIVENESS_FIELDS + REGION_DISPLAY_FIELDS
+# The exact key set list_instances returns: the non-secret fields of an Active Region.
+PUBLIC_FIELDS = REGION_LIST_FIELDS
 
-# Fields that must never leave the server. `list_instances` bypasses DocType
-# RBAC (Atlas Instance is System Manager-only), so reading only the non-secret
-# liveness fields is what keeps the Atlas admin credentials off the wire.
+# Fields that must never leave the server. `list_instances` bypasses DocType RBAC
+# (Region is System Manager-only), so reading only the allowlist above is what
+# keeps Atlas's admin credentials off the wire.
 SECRET_FIELDS = (
-	"api_key",
-	"api_secret",
 	"base_url",
-	"skip_tunnel",
-	"tunnel_status",
-	"tunnel_ip",
-	"tunnel_url",
-	"service_user",
-	"peer_public_key",
-	"peer_endpoint",
+	"atlas_region_id",
+	"proxy_domain",
+	"webhook_secret",
+	"connection_checked_at",
+	"connection_error",
+	"last_synced_at",
 )
 
 
@@ -55,21 +51,12 @@ class TestListInstances(IntegrationTestCase):
 					"country_code": "IN",
 					"latitude": 19.07,
 					"longitude": 72.87,
-				}
-			).insert()
-		if not frappe.db.exists("Atlas Instance", region):
-			frappe.get_doc(
-				{
-					"doctype": "Atlas Instance",
-					"region": region,
 					"base_url": f"https://{region}.atlas.example.test",
 					"status": status,
-					"api_key": "admin-key",
-					"api_secret": "admin-secret",
 				}
 			).insert()
 		else:
-			frappe.db.set_value("Atlas Instance", region, "status", status)
+			frappe.db.set_value("Region", region, "status", status)
 		return region
 
 	def test_returns_exactly_the_public_allowlist(self):

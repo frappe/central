@@ -15,7 +15,7 @@ export interface Asset {
 	title?: string
 	/**	Team : Link - Team - Owning Central team (mirrored from Atlas).	*/
 	team: string
-	/**	Cluster : Link - Atlas Instance - The cluster (Atlas Instance / region) this VM lives in.	*/
+	/**	Cluster : Link - Region - The region this VM lives in.	*/
 	cluster: string
 	/**	Plan : Link - Plan	*/
 	plan?: string

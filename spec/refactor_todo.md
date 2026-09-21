@@ -10,10 +10,7 @@ left so it can be picked up cleanly. See also `spec/ATLAS_COORDINATION.md`.
   ingest + reconcile). Use a package facade
   (`integrations/atlas/__init__.py` re-exporting the public **and test-imported** names —
   `_on_vm`, `_on_vm_deleted`, `_remote_error_message`, etc. — so the ~16 call sites don't
-  change). Collapse `AtlasClient`'s redundant construction paths (`for_region` is redundant —
-  an Atlas Instance is `autoname:field:region`, so `name == region`) and its duplicate
-  transports/auth-header copies. Correctness-sensitive (event ingest) — test against
-  the atlas suites.
+  change). Correctness-sensitive (event ingest) — test against the atlas suites.
 - **Merge `Service API Key` + `Site Service Credential`** into one DocType with a
   `subject_type` discriminator — deletes a table, a controller, a TS type, and the dual loop
   in `services/llm.py`. **Needs a data migration.** If not worth it, record why.
@@ -35,7 +32,7 @@ reportview list.
 
 `CAPABILITIES.md` / `spec/IAM.md` / `spec/EXECUTION_PLAN.md` are materially wrong (capability
 counts, retired `vm:*` vocabulary). Behavioural test gaps on the touched endpoints; fix
-`test_atlas_register._wipe` (deletes every Atlas Instance and commits); freeze the `2099` /
+`test_atlas_register._wipe` (deletes every Region and commits); freeze the `2099` /
 `add_days` clocks; settle the doctype-dir-vs-`tests/` convention.
 
 ## PR 8b — CI hardening

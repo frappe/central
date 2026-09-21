@@ -13,13 +13,13 @@ from central.iam import can, user_has_operator_bypass
 from central.sso import mint_atlas_token
 
 if TYPE_CHECKING:
-	from central.central.doctype.atlas_instance.atlas_instance import AtlasInstance
+	from central.central.doctype.region.region import Region
 
 
 class AtlasClient:
 	"""Use the regional tenant API with explicit identity and mutation outcomes."""
 
-	def __init__(self, instance: AtlasInstance, tenant_id: int):
+	def __init__(self, instance: Region, tenant_id: int):
 		if type(tenant_id) is not int:
 			frappe.throw(_("The tenant ID must be a whole number."), AtlasConnectionError)
 
@@ -33,7 +33,7 @@ class AtlasClient:
 		self.tenant_id = tenant_id
 
 	@classmethod
-	def for_operator(cls, instance: AtlasInstance) -> AtlasClient:
+	def for_operator(cls, instance: Region) -> AtlasClient:
 		"""1. Require the operator bypass before using the system tenant."""
 		if not user_has_operator_bypass():
 			frappe.throw(_("Only an operator can check regional configuration."), frappe.PermissionError)
@@ -41,7 +41,7 @@ class AtlasClient:
 		return cls(instance, 0)
 
 	@classmethod
-	def for_team(cls, instance: AtlasInstance, team: str, capability: str = "server:view") -> AtlasClient:
+	def for_team(cls, instance: Region, team: str, capability: str = "server:view") -> AtlasClient:
 		"""Resolve the regional tenant.
 
 		1. Require server view access.

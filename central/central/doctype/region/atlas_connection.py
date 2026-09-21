@@ -1,10 +1,19 @@
+# Copyright (c) 2026, frappe and contributors
+# For license information, please see license.txt
+"""Everything about a region's Atlas that only Atlas cares about.
+
+Mixed into `Region` (see `region.py`). Nothing here is Cargo's concern: Cargo has no
+VMs to gateway to, and checks its own reachability a different way (a self-report,
+not a polled connection). Keep Cargo-specific fields and logic in `cargo_connection.py`
+instead of here.
+"""
+
 from __future__ import annotations
 
 import ipaddress
 
 import frappe
 from frappe import _
-from frappe.model.document import Document
 
 from central.errors import AtlasConnectionError
 from central.iam import user_has_operator_bypass
@@ -15,28 +24,11 @@ ADMIN_HOST_PREFIX = f"admin{VM_HOST_INFIX}"
 SITE_HOST_PREFIX = "site-"
 
 
-class AtlasInstance(Document):
-	# begin: auto-generated types
-	# This code is auto-generated. Do not modify anything in this block.
+class AtlasConnectionMixin:
+	"""The Atlas half of Region: its endpoint, numeric ID, proxy zone, and signed-access
+	health. `Region` mixes this in alongside `CargoConnectionMixin`."""
 
-	from typing import TYPE_CHECKING
-
-	if TYPE_CHECKING:
-		from frappe.types import DF
-
-		atlas_region_id: DF.Data | None
-		base_url: DF.Data
-		connection_checked_at: DF.Datetime | None
-		connection_error: DF.SmallText | None
-		last_synced_at: DF.Datetime | None
-		proxy_domain: DF.Data | None
-		reachable: DF.Check
-		region: DF.Link
-		status: DF.Literal["Active", "Draining", "Disabled"]
-		webhook_secret: DF.Password | None
-	# end: auto-generated types
-
-	def validate(self) -> None:
+	def validate_atlas_connection(self) -> None:
 		self.proxy_domain = self._clean_proxy_domain()
 		self.atlas_region_id = str(self.atlas_region_id).strip() if self.atlas_region_id is not None else None
 		self.atlas_region_id = self.atlas_region_id or None
@@ -50,7 +42,7 @@ class AtlasInstance(Document):
 
 	def get_vm_gateway_url(self, mesh_address: str | None) -> str | None:
 		"""The bench admin URL the regional proxy routes to this VM, or None when the
-		cluster has no proxy zone or the VM has no mesh address yet."""
+		region has no proxy zone or the VM has no mesh address yet."""
 		host = self.get_vm_admin_host(mesh_address)
 		return f"https://{host}" if host else None
 
@@ -146,7 +138,3 @@ def _proxy_label(mesh_address: str) -> str:
 		label = BASE36_DIGITS[remainder] + label
 
 	return label or "0"
-
-
-def on_doctype_update() -> None:
-	frappe.db.add_unique("Atlas Instance", ["atlas_region_id"])

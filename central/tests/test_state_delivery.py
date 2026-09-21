@@ -33,13 +33,10 @@ class TestStateDelivery(IntegrationTestCase):
 		self.team = frappe.get_doc(
 			{"doctype": "Team", "team_name": "Delivery", "owner_user": "Administrator"}
 		).insert()
-		region = frappe.get_doc(
-			{"doctype": "Region", "region": "delivery-" + frappe.generate_hash(length=8)}
-		).insert()
 		self.cluster = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": region.name,
+				"doctype": "Region",
+				"region": "delivery-" + frappe.generate_hash(length=8),
 				"base_url": "https://atlas.example.test",
 				"status": "Active",
 			}
@@ -165,13 +162,10 @@ class TestStateDelivery(IntegrationTestCase):
 	def test_one_region_cannot_report_on_another_region_server(self):
 		"""A VM id is only unique inside its region, so a signed report from the wrong
 		region must not reach a server of the same id somewhere else."""
-		neighbour = frappe.get_doc(
-			{"doctype": "Region", "region": "delivery-" + frappe.generate_hash(length=8)}
-		).insert()
 		other_cluster = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": neighbour.name,
+				"doctype": "Region",
+				"region": "delivery-" + frappe.generate_hash(length=8),
 				"base_url": "https://atlas.neighbour.test",
 				"status": "Active",
 			}

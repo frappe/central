@@ -55,13 +55,13 @@
    "search_index": 1
   },
   {
-   "description": "The cluster (Atlas Instance / region) this VM lives in.",
+   "description": "The region this VM lives in.",
    "fieldname": "cluster",
    "fieldtype": "Link",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Cluster",
-   "options": "Atlas Instance",
+   "options": "Region",
    "reqd": 1,
    "search_index": 1
   },

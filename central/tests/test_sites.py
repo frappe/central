@@ -35,12 +35,9 @@ class SiteOnAMachine(IntegrationTestCase):
 			{"doctype": "Team", "team_name": "Trial", "owner_user": "Administrator"}
 		).insert()
 		region = frappe.get_doc(
-			{"doctype": "Region", "region": "site-" + frappe.generate_hash(length=8)}
-		).insert()
-		frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": region.name,
+				"doctype": "Region",
+				"region": "site-" + frappe.generate_hash(length=8),
 				"base_url": "https://atlas.example.test",
 				"proxy_domain": "par-2.example.test",
 				"status": "Active",
@@ -332,7 +329,7 @@ class TestTrialRegion(IntegrationTestCase):
 
 	def test_a_region_with_no_proxy_zone_cannot_serve_trials(self):
 		"""A site's address is built from the zone, so without one there is no site."""
-		frappe.db.set_value("Atlas Instance", {"status": "Active"}, "proxy_domain", None)
+		frappe.db.set_value("Region", {"status": "Active"}, "proxy_domain", None)
 
 		with self.assertRaises(frappe.ValidationError):
 			trial_region_and_plan("any-team")
@@ -384,9 +381,7 @@ class TestSiteNaming(SiteOnAMachine):
 		self.assertEqual(site.rename_target, "acme.par-2.example.test")
 
 	def test_naming_renames_the_bench_onto_their_address_once(self):
-		with patch(
-			"central.integrations.pilot.rename_site", return_value={"task_id": "task-1"}
-		) as rename:
+		with patch("central.integrations.pilot.rename_site", return_value={"task_id": "task-1"}) as rename:
 			self.site().apply_subdomain()
 			self.site().apply_subdomain()
 

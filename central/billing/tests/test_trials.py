@@ -33,7 +33,7 @@ class TrialTestBase(IntegrationTestCase):
 		make_ladder()  # t0 (entry, default) / t1 / t2
 		make_plan(PLAN)
 		self._purge()
-		# Asset-model subscription (seeds the cluster's Atlas Instance + the team's
+		# Asset-model subscription (seeds the cluster's Region + the team's
 		# INR Billing Profile, clears the auto 'Created' segment); the trust tier is
 		# then pinned to the entry tier on that profile.
 		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")

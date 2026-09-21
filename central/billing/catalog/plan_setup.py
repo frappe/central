@@ -6,8 +6,8 @@ The taxonomy masters (categories / resource types) and the component rate card a
 seeded elsewhere (taxonomy_setup / rate_card); this adds the preset flat-rate VM
 bundles a team can actually provision on day one — the Starter → Enterprise ladder
 under the `VM Plans` family, each carrying a global (blank-cluster) rate per shipped
-currency. Rates are cluster-agnostic so they resolve on an install with no regional
-Atlas Instances yet; an admin re-prices per region afterwards.
+currency. Rates are cluster-agnostic so they resolve on an install with no
+regions configured yet; an admin re-prices per region afterwards.
 
 Idempotent: a plan is created only when its slug is absent, and each rate is upserted
 only when missing, so re-running (after_install / after_migrate) never clobbers an

@@ -7,7 +7,7 @@ from central.api.servers import server_overview
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.pilot import PilotMonitoringClient, get_cached_monitoring
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_region
+from central.tests.utils import ensure_atlas_instance
 
 
 class TestServerOverview(IntegrationTestCase):
@@ -29,18 +29,7 @@ class TestServerOverview(IntegrationTestCase):
 		self.addCleanup(self.team.delete, ignore_permissions=True, force=True)
 
 		self.region = "blr-overview"
-		ensure_region(self.region)
-		if not frappe.db.exists("Atlas Instance", self.region):
-			frappe.get_doc(
-				{
-					"doctype": "Atlas Instance",
-					"region": self.region,
-					"base_url": "https://atlas.example.test",
-					"status": "Active",
-					"api_key": "k",
-					"api_secret": "s",
-				}
-			).insert()
+		ensure_atlas_instance(self.region)
 
 		self.resource_id = f"vm-overview-{frappe.generate_hash(length=8)}"
 		self.gateway_url = f"https://{self.resource_id}.example.test"

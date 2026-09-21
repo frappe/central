@@ -65,9 +65,7 @@ def observe_server(asset: Asset) -> str:
 	# builds the gateway itself. An unenrolled pilot has nothing to sign into yet.
 	gateway = None
 	if frappe.db.exists("Pilot Credential", {"asset": asset.name, "team": asset.team, "status": "Active"}):
-		gateway = frappe.get_cached_doc("Atlas Instance", asset.cluster).get_vm_gateway_url(
-			network.get("mesh_ipv6")
-		)
+		gateway = frappe.get_cached_doc("Region", asset.cluster).get_vm_gateway_url(network.get("mesh_ipv6"))
 
 	Asset.record_observed_state(
 		asset.name,
@@ -229,7 +227,7 @@ def _client(asset: Asset) -> AtlasClient:
 	if not asset.atlas_vm_id:
 		frappe.throw(_("This server has no verified regional VM identity."))
 
-	instance = frappe.get_cached_doc("Atlas Instance", asset.cluster)
+	instance = frappe.get_cached_doc("Region", asset.cluster)
 	tenant_id = frappe.db.get_value("Team", asset.team, "tenant_id")
 	return AtlasClient(instance, tenant_id)
 

@@ -22,7 +22,7 @@ Updated 2026-09-21, after fetching `upstream/v0.2` in Central, `upstream/develop
 | 2 Server creation and lifecycle | Done | Create, start, stop, restart, terminate, resize, and Open Pilot work. Creation sends the idle sleep policy. |
 | 3 Staging proof | Not started | |
 
-A Pilot-registered Site Domain resolves its `Site` from the credential's Asset, so the two producers of a route agree. A trial's readiness no longer waits for a state report: the `Site` record is created as soon as the machine has an address, and it reads ready once the site answers its own ping.
+A Pilot-registered Site Domain resolves its `Site` from the credential's Asset, so the two producers of a route agree. A trial's readiness no longer waits for a state report: the `Site` record is created as soon as the machine has an address, and it reads ready once the site answers its own ping. `Atlas Instance` is gone: `Region` now carries the connection (`base_url`, `atlas_region_id`, `proxy_domain`, `webhook_secret`, and the signed-access health fields) alongside the geography it already held, so a regional read is one record, not two.
 
 Work that landed ahead of its phase: proxy site and custom domain routes, the Pilot rename helpers, the Cargo report receiver, Pilot-driven domain registration with DNS ownership checks, one regional telemetry token for logs and metrics, and, in Pilot itself, renamed-site token binding and route resolution by hostname (`frappe/pilot#513`).
 
@@ -33,7 +33,6 @@ Phase 4 is therefore part done. A Pilot registers its own site and custom domain
 These were removed from the staging milestone on purpose. They are the next structural work.
 
 - `Asset` is still named `Asset`. The product name is Virtual Machine.
-- `Atlas Instance` and `Region` are still two records. `Region` holds geography and `Atlas Instance` holds the connection, and every regional read goes through `Atlas Instance`.
 
 ### Known gaps outside the phase list
 
@@ -211,9 +210,10 @@ Pilot has now landed the two pieces this needed on its side: a session token bou
 
 Do this as separate PRs, each with its patch, and after items 1 and 4 land.
 
-- Rename `Asset` to `Virtual Machine`. It is a mechanical rename with a wide reach: 74 Python files and 12 doctype JSON files refer to it. Use `frappe.rename_doc` on the DocType and a patch for the links.
-- Merge `Atlas Instance` into `Region`. One region is one endpoint, one proxy zone, one numeric Atlas ID, and one secret. Two records for one thing is what makes the code say `cluster` in one place and `region` in another.
+- Rename `Asset` to `Virtual Machine`. It is a mechanical rename with a wide reach: 74 Python files and 12 doctype JSON files refer to it. Use `frappe.rename_doc` on the DocType and a patch for the links. Keep `Asset.cluster` the field name for now — renaming it to `region` touches `Asset` a second time right after this rename touches it once; do both together or not at all.
+- Merged `Atlas Instance` into `Region` — done. Every regional read is one record now, and the merge patch (`merge_atlas_instance_into_region`) carried existing connection data across losslessly.
 - Link `Site` to its machine and hide a machine that carries a site. A trial customer owns a site, not a VM, and should not see both.
+- Split Central's doctypes out of the one flat `Central` module into `Identity`, `Provisioning` (Asset/Virtual Machine, Resource Action, Region, Image Offering, Site, Site Domain), `Credentials`, and a slimmer `Central`. This is what gives the Desk sidebar the same grouped navigation Atlas has, for free, via Frappe's own per-module tree — no custom sidebar code. Do this once the doctypes above reach their final names, so nothing moves folders twice. Add a Number Card dashboard to Central's own workspace at the same time (servers by status, sites, stuck Resource Actions, regions) — today it holds only IAM shortcuts.
 
 ### 6. Product rules and cleanup
 

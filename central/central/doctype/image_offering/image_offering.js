@@ -12,8 +12,8 @@ frappe.ui.form.on("Image Offering", {
 				{
 					fieldname: "atlas_instance",
 					fieldtype: "Link",
-					options: "Atlas Instance",
-					label: __("Atlas Instance"),
+					options: "Region",
+					label: __("Region"),
 					reqd: 1,
 				},
 				({ atlas_instance }) => show_images(frm, atlas_instance, 0),

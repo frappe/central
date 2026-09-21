@@ -156,7 +156,7 @@
    "fieldtype": "Link",
    "in_standard_filter": 1,
    "label": "Region",
-   "options": "Atlas Instance",
+   "options": "Region",
    "read_only": 1
   },
   {

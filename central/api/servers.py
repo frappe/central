@@ -12,12 +12,18 @@ from central.integrations.servers import reconcile
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
 # here). Every call resolves and authorizes a team first.
 
-# `list_instances` merges an Active Atlas Instance's liveness with its Region's
-# display metadata. Only these non-secret Atlas Instance fields are ever read —
-# the credentials/tunnel internals (api_key/api_secret/base_url/tunnel_*/peer_*/
-# service_user) now sit apart from the map metadata, which lives on Region.
-INSTANCE_LIVENESS_FIELDS = ("region", "status", "reachable")
-REGION_DISPLAY_FIELDS = ("display_name", "provider", "country_code", "latitude", "longitude")
+# `list_instances` reads only these non-secret Region fields — base_url, atlas_region_id
+# and webhook_secret never leave this allowlist for a non-operator caller.
+REGION_LIST_FIELDS = (
+	"region",
+	"status",
+	"reachable",
+	"display_name",
+	"provider",
+	"country_code",
+	"latitude",
+	"longitude",
+)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -150,10 +156,7 @@ def _overview_asset_row(resource_id: str, team: str):
 	pilot = frappe.qb.DocType("Pilot Credential")
 	rows = (
 		frappe.qb.from_(asset)
-		# Asset.cluster links to Atlas Instance, and an Atlas Instance is autonamed
-		# after its region (autoname: field:region), so its name IS the Region name —
-		# hence Region.name == Asset.cluster. This invariant (one Atlas per region,
-		# named for it) is what lets us skip the Asset→Atlas Instance→Region hop.
+		# Asset.cluster links straight to Region.
 		.left_join(region)
 		.on(region.name == asset.cluster)
 		.left_join(team_table)
@@ -247,7 +250,7 @@ def _server_monitoring(asset: dict, audience_id: str | None = None) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 def list_instances(team: str | None = None) -> list[dict]:
-	"""List the regions a team can place servers in — every Active Atlas Instance.
+	"""List the regions a team can place servers in — every Active Region.
 	A pure read for the console's New Server region picker. Gated on `cluster:view`
 	(same scope as `registry`); the team only resolves the gate, the region set is
 	team-agnostic."""
@@ -255,30 +258,16 @@ def list_instances(team: str | None = None) -> list[dict]:
 	team = resolve_team(user, team)
 	if not can(user, team, "cluster:view"):
 		frappe.throw(_("You can't view clusters for this team."), frappe.PermissionError)
-	# Atlas Instance is global infrastructure holding per-instance API credentials,
+	# Region carries Atlas's credentials (base_url, webhook_secret, atlas_region_id),
 	# so the DocType is locked to System Manager. `cluster:view` already authorizes
-	# this read, so we bypass DocType RBAC and read only the non-secret liveness
-	# fields — otherwise a Central User (e.g. a team Owner) gets an empty list.
-	instances = frappe.get_all(
-		"Atlas Instance",
+	# this read, so we bypass DocType RBAC and read only the non-secret allowlist —
+	# otherwise a Central User (e.g. a team Owner) gets an empty list.
+	return frappe.get_all(
+		"Region",
 		filters={"status": "Active"},
-		fields=list(INSTANCE_LIVENESS_FIELDS),
+		fields=list(REGION_LIST_FIELDS),
 		order_by="region asc",
 	)
-	# Merge each region's display metadata (kept on Region, away from the secrets).
-	display = {
-		row.name: row
-		for row in frappe.get_all(
-			"Region",
-			filters={"name": ["in", [i.region for i in instances]]},
-			fields=["name", *REGION_DISPLAY_FIELDS],
-		)
-	}
-	for instance in instances:
-		meta = display.get(instance.region)
-		for field in REGION_DISPLAY_FIELDS:
-			instance[field] = meta.get(field) if meta else None
-	return instances
 
 
 @frappe.whitelist(methods=["POST"])

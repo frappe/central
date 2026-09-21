@@ -20,12 +20,9 @@ class TestServerObservation(IntegrationTestCase):
 			{"doctype": "Team", "team_name": "Mirror", "owner_user": "Administrator"}
 		).insert()
 		region = frappe.get_doc(
-			{"doctype": "Region", "region": "mirror-" + frappe.generate_hash(length=8)}
-		).insert()
-		frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": region.name,
+				"doctype": "Region",
+				"region": "mirror-" + frappe.generate_hash(length=8),
 				"base_url": "https://atlas.example.test",
 				"proxy_domain": "par-2.example.test",
 				"status": "Active",

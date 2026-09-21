@@ -48,13 +48,10 @@ class TestResourceActions(IntegrationTestCase):
 		self.observation = self.enterContext(
 			patch("central.integrations.server_provisioning.observe_server", return_value="Running")
 		)
-		region = frappe.get_doc(
-			{"doctype": "Region", "region": "action-" + frappe.generate_hash(length=8)}
-		).insert()
 		self.region = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": region.name,
+				"doctype": "Region",
+				"region": "action-" + frappe.generate_hash(length=8),
 				"base_url": "https://atlas.example.test",
 				"status": "Active",
 			}

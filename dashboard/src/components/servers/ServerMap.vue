@@ -67,7 +67,7 @@ const emit = defineEmits<{
 	'open-server': [server: NonNullable<MapPin['server']>]
 	/** A site pin/cluster-card row's open-live-site action was chosen. */
 	'open-site': [name: string]
-	/** A + spot was chosen — the Atlas Instance region to create in. */
+	/** A + spot was chosen — the Region to create in. */
 	'new-server': [region: string]
 	/** A cluster was clicked; the page may narrow its list to these servers. */
 	'cluster-open': [payload: { ids: string[]; label: string }]

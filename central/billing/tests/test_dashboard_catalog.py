@@ -75,11 +75,6 @@ class TestEligiblePlans(IntegrationTestCase):
 		make_plan(PRICEY, rates=_rates(5000))
 		# Priced only on CLUSTER (no global INR row) → invisible elsewhere.
 		make_plan(REGIONAL, rates=[{"cluster": CLUSTER, "currency": "INR", "rate": 1500}])
-		# These tests exercise the tier/currency filter, not live capacity — the pricing
-		# above created the CLUSTER Atlas Instance (validate_capacity on by default); turn
-		# it off so get_eligible_plans doesn't reach for the region's capacity API.
-		# The capacity gate has its own suite (test_capacity_filter.py).
-		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
 		frappe.set_user("Administrator")
 
 	def _titles(self, cluster=CLUSTER):
@@ -262,7 +257,6 @@ class TestTrialPlanMenu(IntegrationTestCase):
 		make_plan(CHEAP, rates=_rates(1000))
 		make_plan(MID, rates=_rates(2000))
 		make_plan(PRICEY, rates=_rates(5000))
-		frappe.db.set_value("Atlas Instance", CLUSTER, "validate_capacity", 0)
 		frappe.set_user("Administrator")
 
 	def test_untiered_trial_sees_plans_despite_zero_headroom(self):
