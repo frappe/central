@@ -145,7 +145,7 @@ def _atlas_server_for(cluster: str, virtual_machine: str | None) -> frappe._dict
 
 
 def _verified_atlas_cluster(region: str | None, signature: str | None, raw_body: bytes) -> str:
-	"""The region whose Atlas secret signed this delivery. `X-Region` only selects which
+	"""The region whose Atlas secret signed this delivery. `X-FC-Region` only selects which
 	secret to check; it proves nothing on its own."""
 	if not region or not signature:
 		_reject("missing region or signature header")
@@ -162,7 +162,7 @@ def _verified_atlas_cluster(region: str | None, signature: str | None, raw_body:
 
 
 def _verified_cargo_region(region: str | None, signature: str | None, raw_body: bytes) -> str:
-	"""The region whose Cargo secret signed this delivery. `X-Region` only selects the
+	"""The region whose Cargo secret signed this delivery. `X-FC-Region` only selects the
 	secret; it proves nothing."""
 	if not region or not signature:
 		_reject("missing region or signature header")
