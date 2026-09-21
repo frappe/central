@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test'
+import { expect } from '@playwright/test'
+import { test } from '@playwright/test'
 
 // Signup routing, driven against the real bench with NO MOCKS. It uses the
 // developer_mode OTP bypass (any 6 digits), so no mailbox is needed.

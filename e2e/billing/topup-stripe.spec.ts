@@ -1,5 +1,6 @@
-import { test, expect } from './fixtures'
-import { fillStripeCard } from './helpers/stripe.js'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
+import { fillStripeCard } from './helpers/stripe'
 
 // The hero no-mock flow: a USD team tops up its wallet through the *real* Stripe
 // test sandbox. The seed completes the billing profile (un-gating money movement)
@@ -10,8 +11,8 @@ import { fillStripeCard } from './helpers/stripe.js'
 // TODO: legacy dashboard removed; billing/credits isn't ported to console yet.
 // Un-skip once console has it.
 test.describe.skip('Wallet top-up (Stripe)', () => {
-  test('tops up a USD wallet via a real Stripe test-mode PaymentIntent', async ({ page, billing }) => {
-    await billing.signIn({ scenario: 'ready', currency: 'USD' })
+  test('tops up a USD wallet via a real Stripe test-mode PaymentIntent', async ({ page, users }) => {
+    await users.signIn({ scenario: 'ready', currency: 'USD' })
 
     await page.goto('/legacy-dashboard/billing/credits')
 

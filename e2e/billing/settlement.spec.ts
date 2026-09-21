@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // Invoice settlement through the real credits-then-card waterfall (no mocks). Each
 // test arranges real backend state (wallet credits, a real Stripe test card, a
@@ -12,8 +13,8 @@ const open = (page) => page.locator('ul.divide-y > li')
 // TODO: legacy dashboard removed; these flows (billing/invoices, billing/credits)
 // aren't ported to console yet. Un-skip once console has them.
 test.describe.skip('Invoice settlement', () => {
-  test('settles fully from wallet credits — no card charged', async ({ page, billing }) => {
-    const { team } = await billing.signIn({ scenario: 'ready', currency: 'USD' })
+  test('settles fully from wallet credits — no card charged', async ({ page, users, billing }) => {
+    const { team } = await users.signIn({ scenario: 'ready', currency: 'USD' })
     await billing.addCredits({ team, amount: 2000 })
     const { invoice } = await billing.makeInvoice({ team, total: 1180 })
 
@@ -32,8 +33,8 @@ test.describe.skip('Invoice settlement', () => {
     await expect(page.getByText(new RegExp(`Credit applied to ${invoice}`))).toBeVisible()
   })
 
-  test('settles partly from credits, charges the remainder to the card', async ({ page, billing }) => {
-    const { team } = await billing.signIn({ scenario: 'ready', currency: 'USD' })
+  test('settles partly from credits, charges the remainder to the card', async ({ page, users, billing }) => {
+    const { team } = await users.signIn({ scenario: 'ready', currency: 'USD' })
     await billing.addCredits({ team, amount: 500 })
     await billing.saveCard({ team })
     const { invoice } = await billing.makeInvoice({ team, total: 1180 })
@@ -58,8 +59,8 @@ test.describe.skip('Invoice settlement', () => {
     await expect(page.getByText('$0.00').first()).toBeVisible()
   })
 
-  test('charges a saved card from the invoice "Pay" button', async ({ page, billing }) => {
-    const { team } = await billing.signIn({ scenario: 'ready', currency: 'USD' })
+  test('charges a saved card from the invoice "Pay" button', async ({ page, users, billing }) => {
+    const { team } = await users.signIn({ scenario: 'ready', currency: 'USD' })
     await billing.saveCard({ team })
     // linkCard attaches a subscription pointing at the card, so the Pay button resolves it.
     const { invoice } = await billing.makeInvoice({ team, total: 1180, linkCard: 1 })

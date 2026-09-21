@@ -1,4 +1,5 @@
-import { test, expect } from './fixtures'
+import { expect } from '@playwright/test'
+import { test } from './fixtures'
 
 // Declined-card dunning (issue #14). A real off-session charge against a card
 // Stripe declines (tok_chargeCustomerFail) fails the Payment Attempt and leaves
@@ -10,8 +11,8 @@ import { test, expect } from './fixtures'
 // billing/invoices, billing/subscriptions) aren't ported to console yet.
 // Un-skip once console has them.
 test.describe.skip('Dunning (declined card)', () => {
-  test('a declined charge goes Overdue and Past Due after the retry window', async ({ page, billing }) => {
-    const { team } = await billing.signIn({ scenario: 'ready', currency: 'USD' })
+  test('a declined charge goes Overdue and Past Due after the retry window', async ({ page, users, billing }) => {
+    const { team } = await users.signIn({ scenario: 'ready', currency: 'USD' })
     await billing.saveCard({ team, token: 'tok_chargeCustomerFail' }) // real card that declines on charge
     const { invoice } = await billing.makeInvoice({ team, total: 1180, linkCard: 1 })
 

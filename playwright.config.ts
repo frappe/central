@@ -15,7 +15,7 @@ const BASE_URL = process.env.E2E_BASE_URL || 'http://central.local:8011'
 
 export default defineConfig({
   testDir: './e2e',
-  // e2e/onboarding/smb-signup.spec.js relies on the dev-mode OTP bypass
+  // e2e/onboarding/smb-signup.spec.ts relies on the dev-mode OTP bypass
   // (types a fixed 123456), but e2e.yml runs with developer_mode 0, so it can
   // never pass in that CI shape. Exclude it here rather than let recursive
   // discovery pull it into the billing suite. Give it its own dev-mode project
@@ -25,10 +25,8 @@ export default defineConfig({
   // give specs and assertions generous ceilings so a live API hop never flakes.
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  // Real gateway sandboxes are shared mutable state and rate-limited; run serially
-  // so two specs never confirm against Stripe at the same instant.
-  workers: 1,
-  fullyParallel: false,
+  workers: process.env.CI ? 2 : 4,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',

@@ -90,8 +90,8 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 	users go last."""
 	_enter_test_mode()
 
-	if team and frappe.db.exists("Team", team):
-		owner = frappe.db.get_value("Team", team, "owner_user")
+	owner = team and frappe.db.get_value("Team", team, "owner_user")
+	if _is_seeded_user(owner):
 		for dt in (
 			"Refund",
 			"Invoice",
@@ -105,6 +105,9 @@ def teardown(team: str | None = None, email: str | None = None) -> dict:
 			"Billing Notification Log",
 			"Billing Profile",
 			"Tax Profile",
+			"Project",
+			"Team Notification",
+			"Team Invitation",
 		):
 			_safe(frappe.db.delete, dt, {"team": team})
 		_safe(frappe.delete_doc, "Team", team, force=True, ignore_permissions=True)
@@ -557,6 +560,10 @@ def _safe(fn, *args, **kwargs) -> None:
 		frappe.db.rollback(save_point=sp)
 
 
+def _is_seeded_user(email: str | None) -> bool:
+	return bool(email) and email.startswith("e2e-") and email.endswith("@example.com")
+
+
 def _delete_user(email: str | None) -> None:
-	if email and frappe.db.exists("User", email):
+	if _is_seeded_user(email) and frappe.db.exists("User", email):
 		_safe(frappe.delete_doc, "User", email, force=True, ignore_permissions=True)
