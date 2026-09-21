@@ -183,12 +183,11 @@
    "read_only": 1
   },
   {
-   "description": "Where this region's Cargo site is served, e.g. http://10.0.0.5:8000. Recorded when the host enrols.",
+   "description": "Where this region's Cargo site is served, e.g. http://10.0.0.5:8000. Blank until an operator connects this region to a Cargo host.",
    "fieldname": "cargo_base_url",
    "fieldtype": "Data",
    "label": "Cargo Base URL",
-   "options": "URL",
-   "read_only": 1
+   "options": "URL"
   },
   {
    "fieldname": "cargo_registered_at",
@@ -203,10 +202,11 @@
    "label": "State delivery"
   },
   {
-   "description": "Signs this region's Cargo service reports. Central checks every delivery against it.",
+   "description": "Signs this region's Cargo service reports. Central checks every delivery against it. Set automatically when the host enrols.",
    "fieldname": "cargo_webhook_secret",
    "fieldtype": "Password",
-   "label": "Cargo Webhook Secret"
+   "label": "Cargo Webhook Secret",
+   "read_only": 1
   },
   {
    "fieldname": "column_break_kufp",

@@ -10,7 +10,7 @@ from frappe import _
 from central.central.doctype.team.tenant import validate_tenant_id
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasRequestUncertain, AtlasResourceGone
 from central.iam import can, user_has_operator_bypass
-from central.sso import mint_atlas_token
+from central.sso import central_url, mint_atlas_token
 
 if TYPE_CHECKING:
 	from central.central.doctype.region.region import Region
@@ -103,6 +103,19 @@ class AtlasClient:
 		response = self._get("images", params={"limit": 1})
 		if not isinstance(response.get("items"), list) or type(response.get("has_more")) is not bool:
 			frappe.throw(_("Atlas returned an invalid image list."), AtlasConnectionError)
+
+	def configure_webhooks(self, webhook_secret: str) -> None:
+		"""Point this region's virtual-machine-state webhook deliveries at Central's
+		receiver. Separate from `check_connection`: this mutates Atlas's configuration,
+		it does not just read from it."""
+		central_id = frappe.get_single_value("Central Settings", "central_id")
+		payload = {
+			"request_url": f"{central_url()}/api/method/central.api.state_delivery.receive",
+			"webhook_secret": webhook_secret,
+			"enabled": True,
+			"central_id": central_id or 1,
+		}
+		self._request("PUT", "webhooks", payload=payload)
 
 	def get_image(self, image_id: str) -> dict:
 		if not image_id:

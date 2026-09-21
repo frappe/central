@@ -34,12 +34,20 @@ tenant API at `/api/atlas`. They do not use the admin API key or Central tunnel 
 
 **Test Connection** is an operator action. It calls the image list with a Central token and
 the system tenant header. It requires a valid image-list response. A generic Framework
-ping does not prove regional authentication.
+ping does not prove regional authentication. It only reads from Atlas: it records
+`reachable`, `connection_checked_at`, and `connection_error`, and never changes Atlas's own
+configuration. A timeout, rejected credential, invalid response, or missing regional
+configuration leaves a readable failure on the record. The saved configuration is locked
+during the check so another edit cannot receive a stale result.
 
-The action records `reachable`, `connection_checked_at`, and `connection_error`. A timeout,
-rejected credential, invalid response, or missing regional configuration leaves a readable
-failure on the record. The saved configuration is locked during the check so another edit
-cannot receive a stale result.
+**Enroll Atlas** is a separate operator action, shown only on the Atlas tab. It points
+Atlas's virtual-machine-state deliveries at Central's receiver (`PUT /api/atlas/webhooks`),
+minting `webhook_secret` the first time it runs and reusing it after. The payload's
+`central_id` comes from `Central Settings.central_id` (default 1) and is only worth
+raising where more than one Central environment shares an Atlas — Atlas itself refuses
+anything but 1 outside developer mode. Run it after Test Connection succeeds; it does not
+itself prove Atlas is reachable. A failure raises and shows in the Desk like any other
+action; nothing about it is recorded on the record itself.
 
 Changing the endpoint or numeric region ID clears the connection result. Image offerings
 read the regional catalog on demand.
@@ -57,10 +65,21 @@ non-secret allowlist (`region`, `status`, `reachable`, and the display fields). 
 Cargo also connects through this record, in its own `cargo_*` fields, under the Cargo tab.
 Cargo runs on infrastructure Atlas itself provisions in the region (see
 `atlas/docs/bootstrapping.md`) and holds its own credentials to call Atlas and the Proxy —
-neither of those is Central's concern. What Central needs is narrower: `cargo_base_url` and
-`cargo_status` (set when the host reports itself in, not polled the way Atlas is), and
+neither of those is Central's concern. What Central needs is narrower: `cargo_base_url`
+(operator-entered, the same way Atlas's `base_url` is) and `cargo_status`, plus
 `cargo_webhook_secret`, which verifies its service reports (`central.integrations.
 state_delivery.accept_cargo_report`).
+
+**Enroll Cargo** is the operator action that finishes the connection, once the address is
+in, shown only on the Cargo tab. It checks the Frappe liveness endpoint
+(`/api/method/ping`) of `cargo_base_url` first —
+Cargo has no polled Test Connection of its own, so this is the one place Central checks
+before it acts — then mints a fresh `cargo_webhook_secret` and hands it to Cargo through
+`cargo.api.webhooks.configure` (signed with `mint_cargo_token`), and only then sets
+`cargo_status` to `Registered`. Cargo reports itself in from there, once it and its first
+storage cluster exist; `accept_cargo_report` refuses every report until this has run. A
+failure — Cargo not up yet, or rejecting the configuration — raises and shows in the Desk;
+run the action again once Cargo answers.
 
 Atlas and Cargo are not peers: Cargo is created by Atlas and depends on it being there
 first. That asymmetry is a fact about provisioning, not about where Central keeps its own

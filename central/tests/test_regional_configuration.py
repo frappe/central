@@ -8,6 +8,7 @@ from frappe.tests import IntegrationTestCase
 from central.errors import AtlasConnectionError
 from central.integrations.atlas import AtlasClient
 from central.patches.v0_0.reset_atlas_connection_checks import execute as reset_connection_checks
+from central.sso import central_url
 
 
 class TestRegionalConfiguration(IntegrationTestCase):
@@ -129,6 +130,7 @@ class TestRegionalConfiguration(IntegrationTestCase):
 			lambda: AtlasClient.for_team(self.instance, other.name),
 			lambda: AtlasClient.for_operator(self.instance),
 			self.instance.test_connection,
+			self.instance.enroll_atlas,
 		):
 			with self.assertRaises(frappe.PermissionError):
 				operation()
@@ -180,6 +182,59 @@ class TestRegionalConfiguration(IntegrationTestCase):
 		reset_connection_checks()
 
 		self.assertTrue(self.instance.reload().reachable)
+
+	def test_enroll_atlas_mints_and_sends_a_secret_the_first_time(self):
+		self.request.return_value = self.response({"central_id": 1, "enabled": True, "webhooks": []})
+
+		self.instance.enroll_atlas()
+
+		arguments = self.request.call_args
+		self.assertEqual(arguments.args[0], "PUT")
+		self.assertEqual(arguments.args[1], "https://atlas.example.test/api/atlas/webhooks")
+		payload = arguments.kwargs["json"]
+		self.assertEqual(
+			payload["request_url"], f"{central_url()}/api/method/central.api.state_delivery.receive"
+		)
+		self.assertTrue(payload["enabled"])
+		self.assertEqual(payload["central_id"], 1)
+		self.assertTrue(payload["webhook_secret"])
+
+		self.assertEqual(self.instance.reload().get_password("webhook_secret"), payload["webhook_secret"])
+
+	def test_enroll_atlas_sends_the_configured_central_id(self):
+		self.request.return_value = self.response({})
+
+		with patch("frappe.get_single_value", return_value=4):
+			self.instance.enroll_atlas()
+
+		self.assertEqual(self.request.call_args.kwargs["json"]["central_id"], 4)
+
+	def test_enroll_atlas_reuses_an_existing_secret_on_a_repeated_call(self):
+		self.request.return_value = self.response({})
+		self.instance.enroll_atlas()
+		first_secret = self.instance.reload().get_password("webhook_secret")
+
+		self.instance.enroll_atlas()
+
+		self.assertEqual(self.request.call_args.kwargs["json"]["webhook_secret"], first_secret)
+
+	def test_enroll_atlas_raises_and_does_not_persist_a_rejected_secret(self):
+		self.request.return_value = self.response({}, 403)
+
+		with self.assertRaises(AtlasConnectionError):
+			self.instance.enroll_atlas()
+
+		self.assertIsNone(self.instance.reload().get_password("webhook_secret", raise_exception=False))
+
+	def test_enroll_atlas_never_marks_test_connection_reachable(self):
+		"""The two actions are independent: enrolling Atlas must not touch the fields
+		Test Connection owns, and vice versa."""
+		self.request.return_value = self.response({})
+		self.instance.enroll_atlas()
+
+		self.instance.reload()
+		self.assertFalse(self.instance.reachable)
+		self.assertIsNone(self.instance.connection_checked_at)
 
 
 class TestProxyGateway(IntegrationTestCase):

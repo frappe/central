@@ -44,6 +44,10 @@ class AtlasRequestUncertain(AtlasConnectionError):
 	"""A remote mutation may have succeeded without a confirmed response."""
 
 
+class CargoConnectionError(frappe.ValidationError):
+	"""A regional Cargo health check or webhook configuration call failed."""
+
+
 # code -> user-facing copy. Templates are formatted with the call's context (action,
 # region, resource_id, field); a missing placeholder renders empty rather than crashing
 # the error path. `message` may be overridden at the call site (e.g. Atlas's own sentence).
