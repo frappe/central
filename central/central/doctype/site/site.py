@@ -60,7 +60,7 @@ class Site(Document):
 		return frappe.db.get_value("Asset", self.asset, "status")
 
 	@classmethod
-	def ensure_for(cls, asset: str) -> None:
+	def create_once_addressable(cls, asset: str) -> None:
 		"""Write down the site of a machine that has reached a routable address.
 
 		A region reports on a machine repeatedly and this runs on every report, because
@@ -144,10 +144,11 @@ class Site(Document):
 		return on_host(minted, self.name) if minted else None
 
 	def get_pilot_access(self) -> tuple[str | None, str | None]:
-		"""The running machine's gateway and the audience its Pilot verifies tokens against."""
-		gateway = frappe.db.get_value(
-			"Asset", {"name": self.asset, "team": self.team, "status": "Running"}, "gateway_url"
-		)
+		"""The machine's gateway and the audience its Pilot verifies tokens against.
+
+		Nothing here waits for the machine's mirrored status: the site probe that gates
+		every caller of this method already proved the machine answers."""
+		gateway = frappe.db.get_value("Asset", {"name": self.asset, "team": self.team}, "gateway_url")
 		audience = frappe.db.get_value(
 			"Pilot Credential", {"asset": self.asset, "team": self.team, "status": "Active"}, "audience_id"
 		)
