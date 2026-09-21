@@ -30,7 +30,13 @@ class ServiceDetail(Document):
 		"""Where one region serves one service, or None while it does not.
 
 		A region that has never reported has no row, and one reporting `Not Available` has
-		an endpoint that would refuse the caller, so both read as nothing to hand out."""
+		an endpoint that would refuse the caller, so both read as nothing to hand out.
+
+		NOTE: This is just a endpoint for the service (USER), for services like Object Storage the control communications
+		will go through cargo the cluster's service manager like bucket creation etc.
+		However data path of the service is the services responsibility.
+		~ AT
+		"""
 		detail = frappe.db.get_value(
 			"Service Detail",
 			f"{region}-{service}",
