@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test'
 import { test } from '../fixtures'
 
-test('invite', async ({ page, users }) => {
+test('Invite and accept a team member', async ({ page, users }) => {
 	const invitee = await users.seed()
 	const owner = await users.signIn()
 
