@@ -1,8 +1,7 @@
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.iam import can, expand_capabilities, get_effective_permissions, get_fc_teams_claim
-from central.oauth import install_oauth_claim_patch
+from central.iam import can, expand_capabilities, get_effective_permissions, resolve_user_grants
 
 
 def ensure_user(email: str) -> str:
@@ -127,10 +126,10 @@ class TestCentralIAM(IntegrationTestCase):
 		team_a = self.make_team("IAM Team A", self.viewer, "Viewer")
 		team_b = self.make_team("IAM Team B", self.developer, "Developer")
 
-		viewer_claim = get_fc_teams_claim(self.viewer)
+		viewer_grants = resolve_user_grants(self.viewer)
 
-		self.assertIn(team_a.name, viewer_claim)
-		self.assertNotIn(team_b.name, viewer_claim)
+		self.assertIn(team_a.name, viewer_grants)
+		self.assertNotIn(team_b.name, viewer_grants)
 		self.assertTrue(can(self.viewer, team_a.name, "server:view"))
 		self.assertFalse(can(self.viewer, team_a.name, "server:terminate"))
 
@@ -142,7 +141,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertFalse(can(self.developer, team.name, "team:manage_members"))
 		self.assertFalse(can(self.developer, team.name, "billing:manage"))
 
-	def test_effective_permissions_shape_matches_fc_teams_claim(self):
+	def test_effective_permissions_shape_matches_resolved_grants(self):
 		team = self.make_team("IAM Effective Team", self.viewer, "Viewer")
 
 		effective = get_effective_permissions(self.viewer, team.name)
@@ -168,17 +167,6 @@ class TestCentralIAM(IntegrationTestCase):
 
 		self.assertFalse(probe.allowed)
 		self.assertIn(team.name, probe.resolved_grants)
-
-	def test_oauth_userinfo_patch_adds_fc_teams(self):
-		team = self.make_team("IAM OAuth Team", self.viewer, "Viewer")
-		install_oauth_claim_patch()
-
-		import frappe.oauth as frappe_oauth
-
-		userinfo = frappe_oauth.get_userinfo(frappe.get_doc("User", self.viewer))
-
-		self.assertIn("fc_teams", userinfo)
-		self.assertIn(team.name, userinfo["fc_teams"])
 
 	def test_new_user_gets_default_owner_team(self):
 		email = f"iam.signup.{frappe.generate_hash(length=8)}@example.test"
@@ -212,7 +200,7 @@ class TestCentralIAM(IntegrationTestCase):
 		self.assertEqual(team.members[0].role, "Owner")
 		self.assertEqual(team.members[0].status, "Active")
 
-		claim = get_fc_teams_claim(email)
-		self.assertIn(team.name, claim)
+		grants = resolve_user_grants(email)
+		self.assertIn(team.name, grants)
 		self.assertTrue(can(email, team.name, "team:manage_members"))
 		self.assertTrue(can(email, team.name, "server:terminate"))

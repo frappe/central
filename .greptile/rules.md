@@ -39,7 +39,7 @@ Central is in active development and is not deployed to production. Do not ask f
 
 - Flag an outbound call to Atlas, Pilot, or Cargo made outside `central/integrations/`.
 - Flag a write to the `Asset` or `Site` mirror from outside the integration layer. Mirror upserts belong in `central/mirror.py`.
-- Flag token minting or verification added outside `central/sso.py` and `central/oauth.py`.
+- Flag token minting or verification added outside `central/sso.py`.
 - Flag domain logic added to a `central/api/` route or a `hooks.py` entry. Those layers parse input, authorize, delegate, and return.
 - Flag a Team Member, Team Role, or Role Capability row read directly in a controller, an API route, a page, or a service. Those reads belong in `central/iam.py`.
 

@@ -23,7 +23,7 @@ The v0.2 documents distinguish the proposed design from the verified baseline. E
 
 ## Existing specifications
 
-- [IAM](IAM.md): Central identity and permission model. Its Atlas integration sections need review in phase 0.
+- [IAM](IAM.md): Central identity and permission model.
 - [Capabilities](../CAPABILITIES.md): the capability vocabulary and fixtures contract.
 - [SSO](SSO.md): token flows and consumer contracts to check before the signing cutover.
 - [Atlas coordination](ATLAS_COORDINATION.md): earlier regional contracts that need replacement during the rewrite.

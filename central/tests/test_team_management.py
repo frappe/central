@@ -20,7 +20,7 @@ from central.api.teams import (
 	transfer_team_ownership,
 )
 from central.central.doctype.team_invitation.team_invitation import expire_pending_invitations
-from central.iam import can, get_fc_teams_claim
+from central.iam import can, resolve_user_grants
 
 
 def create_user(email: str) -> str:
@@ -160,7 +160,7 @@ class TestTeamManagement(IntegrationTestCase):
 
 		self.assertTrue(result["accepted"])
 		self.assertTrue(can(self.invitee, self.team.name, "server:create"))
-		self.assertIn(self.team.name, get_fc_teams_claim(self.invitee))
+		self.assertIn(self.team.name, resolve_user_grants(self.invitee))
 
 		invitation = frappe.get_doc("Team Invitation", invitation_name)
 		self.assertEqual(invitation.status, "Accepted")

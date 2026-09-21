@@ -13,7 +13,7 @@ Central is the control plane for Frappe Cloud v2. It owns identity, teams, capab
 
 Read the [README](README.md) for setup and local development. Read [`spec/README.md`](spec/README.md) for the specification router, and read the matching specification before you make a structural change.
 
-- [IAM](spec/IAM.md): identity, permissions, OAuth, and Atlas enforcement.
+- [IAM](spec/IAM.md): identity, permissions, and Atlas enforcement.
 - [Capabilities](CAPABILITIES.md): the authorization vocabulary and its plane split.
 - [Atlas coordination](spec/ATLAS_COORDINATION.md): the cross-repository contract.
 - [Refactor backlog](spec/refactor_todo.md): the remaining pre-1.0 cleanup work.
@@ -32,7 +32,7 @@ Atlas      regional runtime: VMs, network, proxy. One instance per region.
 Pilot      server runtime: benches, sites, apps on a single server.
 ```
 
-- Central authors grants. Atlas and each bench enforce them locally.
+- Central decides every `server:*` capability itself. A region only checks that a signed request's tenant matches the resource's tenant; a bench checks the scope on its own signed token. Neither holds a capability model of its own.
 - Central reaches Atlas, Pilot, and Cargo only through the clients in `central/integrations/`. Do not call a remote plane from a controller, an API route, or a page.
 - `Asset` is Central's server record. Central owns its identity, title, plan, image and billing links. A region only reports state back, and the integration layer applies that through `Asset.record_observed_state`.
 

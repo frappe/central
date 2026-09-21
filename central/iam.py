@@ -229,13 +229,6 @@ def clear_grants_cache() -> None:
 		cache.clear()
 
 
-def get_fc_teams_claim(user: str | None = None) -> dict[str, list[dict[str, Any]]]:
-	user = user or frappe.session.user
-	if not user or user == "Guest":
-		return {}
-	return resolve_user_grants(user)
-
-
 def can(user: str, team: str, capability: str) -> bool:
 	# No pre-flight db.exists probes: resolve_user_grants only returns Active teams
 	# (the join filters team.status), so an inactive/unknown team yields no grants,
