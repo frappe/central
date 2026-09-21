@@ -149,10 +149,10 @@ def _verified_atlas_cluster(region: str | None, signature: str | None, raw_body:
 	secret to check; it proves nothing on its own."""
 	if not region or not signature:
 		_reject("missing region or signature header")
-	if frappe.db.get_value("Atlas Instance", region, "status") in (None, "Disabled"):
+	if frappe.db.get_value("Region", region, "status") in (None, "Disabled"):
 		_reject(f"unknown or disabled region '{region}'")
 
-	secret = get_decrypted_password("Atlas Instance", region, "webhook_secret", raise_exception=False)
+	secret = get_decrypted_password("Region", region, "webhook_secret", raise_exception=False)
 	if not secret:
 		_reject(f"no webhook secret for region '{region}'")
 	if not _signature_matches(secret, raw_body, signature):
@@ -167,11 +167,10 @@ def _verified_cargo_region(region: str | None, signature: str | None, raw_body: 
 	if not region or not signature:
 		_reject("missing region or signature header")
 
-	instance = frappe.db.get_value("Cargo Instance", {"region": region}, ["name", "status"], as_dict=True)
-	if not instance or instance.status != "Registered":
+	if frappe.db.get_value("Region", region, "cargo_status") != "Registered":
 		_reject(f"unknown or unregistered Cargo region '{region}'")
 
-	secret = get_decrypted_password("Cargo Instance", instance.name, "webhook_secret", raise_exception=False)
+	secret = get_decrypted_password("Region", region, "cargo_webhook_secret", raise_exception=False)
 	if not secret:
 		_reject(f"no webhook secret for Cargo region '{region}'")
 	if not _signature_matches(secret, raw_body, signature):

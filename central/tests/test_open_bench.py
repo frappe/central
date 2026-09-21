@@ -9,7 +9,6 @@ from central.central.doctype.central_sso_settings.central_sso_settings import AL
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import central_url
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_region
 
 # Open-in-bench for a real VM (asset) now hands back a Central-signed admin SID as
 # `{gateway}/?sid=<jwt>`. Central mints it locally against its RSA key, scoped to the bench's
@@ -60,17 +59,14 @@ class TestOpenBench(IntegrationTestCase):
 		).insert()
 
 	def _cluster(self, region):
-		ensure_region(region)
-		if frappe.db.exists("Atlas Instance", region):
-			frappe.delete_doc("Atlas Instance", region, force=True)
+		if frappe.db.exists("Region", region):
+			frappe.delete_doc("Region", region, force=True)
 		frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
+				"doctype": "Region",
 				"region": region,
 				"base_url": "https://atlas.example.test",
 				"status": "Active",
-				"api_key": "k",
-				"api_secret": "s",
 			}
 		).insert()
 		return region
@@ -136,6 +132,6 @@ class TestOpenBench(IntegrationTestCase):
 			self._open(self.dev, asset="vm-open-1")
 
 	def test_disabled_cluster_refused(self):
-		frappe.db.set_value("Atlas Instance", self.cluster, "status", "Disabled")
+		frappe.db.set_value("Region", self.cluster, "status", "Disabled")
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, asset="vm-open-1")

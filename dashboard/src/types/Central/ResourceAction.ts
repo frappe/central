@@ -17,7 +17,7 @@ export interface ResourceAction {
 	action: 'create' | 'start' | 'stop' | 'terminate' | 'resize'
 	/**	Team : Link - Team	*/
 	team: string
-	/**	Region : Link - Atlas Instance	*/
+	/**	Region : Link - Region	*/
 	atlas_instance?: string
 	/**	Server : Link - Asset	*/
 	asset?: string

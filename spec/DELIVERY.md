@@ -2,39 +2,37 @@
 
 ## Purpose
 
-Prioritize a working staging integration by Friday, September 18, 2026. Complete the wider rewrite after that milestone.
+Reach a working staging integration for trial signup and the server lifecycle, then continue the wider rewrite.
 
-The deadline depends on one ready region, usable Pilot and Ubuntu images, DNS access, and review availability. Record an unmet dependency early. Do not trade authorization or data safety for the date.
+The Friday, September 18, 2026 target has passed. Signup and server lifecycle now work end to end, at a bare minimum, and Atlas and Pilot have landed supporting work of their own since. The remaining work below has no new fixed date. Do not trade authorization or data safety for speed.
 
 Read [Scope](REWRITE_SCOPE.md) for ownership and contracts. Read [Validation](LOCAL_ENVIRONMENT.md) for required proof.
 
 ## Current status
 
-Updated 2026-09-21, after pulling `upstream/v0.2` and reading the code. `Done` means the behavior exists in this branch. `Partial` names what is still missing. Nothing below is proved on the staging region yet.
+Updated 2026-09-21, after fetching `upstream/v0.2` in Central, `upstream/develop` in Atlas, and `upstream/develop` in Pilot. `Done` means the behavior exists in this branch. `Partial` names what is still missing. Nothing below is proved on the staging region yet.
 
 | Stage | State | Remaining |
 |---|---|---|
 | 0A Team tenant identity | Done | |
-| 0B Atlas signing and Pilot authentication | Done | The `pilot-central` metadata now carries `initial_jwks_cache`. |
+| 0B Atlas signing and Pilot authentication | Done | The `pilot-central` metadata carries `initial_jwks_cache`. Pilot hardened its own bootstrap JWKS verification since (`frappe/pilot#509`). |
 | 0C Regional configuration and image offerings | Done | |
-| 1 Trial signup | Partial | The flow works end to end. It carries no product identity, so a CRM or ERPNext trial looks the same as a plain one. |
+| 1 Trial signup | Partial | The flow works end to end, including readiness by a direct site probe instead of a wait on a state report. It still carries no product identity, so a CRM or ERPNext trial looks the same as a plain one. |
 | 1 State delivery | Partial | The signed Atlas and Cargo receivers work. Durable receipts, region event ordering, payload digest deduplication, and retry of an unmatched report do not exist. |
 | 2 Server creation and lifecycle | Done | Create, start, stop, restart, terminate, resize, and Open Pilot work. Creation sends the idle sleep policy. |
 | 3 Staging proof | Not started | |
 
-A Pilot-registered Site Domain now resolves its `Site` from the credential's Asset, so the two producers of a route agree.
+A Pilot-registered Site Domain resolves its `Site` from the credential's Asset, so the two producers of a route agree. A trial's readiness no longer waits for a state report: the `Site` record is created as soon as the machine has an address, and it reads ready once the site answers its own ping. `Atlas Instance` and `Cargo Instance` are both gone: `Region` now carries the Atlas connection (`base_url`, `atlas_region_id`, `proxy_domain`, `webhook_secret`, the signed-access health fields) and the Cargo connection (`cargo_base_url`, `cargo_status`, `cargo_registered_at`, `cargo_webhook_secret`) as two clearly separated halves of one record — mixed in from `atlas_connection.py` and `cargo_connection.py` in the doctype's own folder, so the two never blur into one pile of fields and logic. A regional read is one record, not three.
 
-Work that landed ahead of its phase: proxy site and custom domain routes, the Pilot rename helpers, the Cargo report receiver, Pilot-driven domain registration with DNS ownership checks, and one regional telemetry token for logs and metrics.
+Work that landed ahead of its phase: proxy site and custom domain routes, the Pilot rename helpers, the Cargo report receiver, Pilot-driven domain registration with DNS ownership checks, one regional telemetry token for logs and metrics, and, in Pilot itself, renamed-site token binding and route resolution by hostname (`frappe/pilot#513`).
 
-Phase 4 is therefore part done. A Pilot registers its own site and custom domains through `central.api.pilot`, and Central verifies a TXT record, and a CNAME for a non-apex name, before it creates the route. Central-driven rename and TLS coordination remain.
+Phase 4 is therefore part done. A Pilot registers its own site and custom domains through `central.api.pilot`, and Central verifies a TXT record, and a CNAME for a non-apex name, before it creates the route. Pilot can now bind a session token to a renamed site and resolve a route by hostname, which is what Central-driven rename needs on the other side. Central-driven rename and TLS coordination remain, and are now unblocked rather than waiting on Pilot.
 
 ### Deferred by design, still open
 
 These were removed from the staging milestone on purpose. They are the next structural work.
 
 - `Asset` is still named `Asset`. The product name is Virtual Machine.
-- `Atlas Instance` and `Region` are still two records. `Region` holds geography and `Atlas Instance` holds the connection, and every regional read goes through `Atlas Instance`.
-- Signup readiness still waits for the region to report `Running` before it probes the site.
 
 ### Known gaps outside the phase list
 
@@ -163,47 +161,13 @@ Acceptance:
 
 A VM running event, a green unit test, or a successful API response alone does not satisfy this gate.
 
-## Work order for the deadline
+## Remaining work, in order
 
-Aim to complete implementation on Wednesday and Thursday. Reserve Friday for final verification and fixes, not the first integration run.
+The Friday target has passed and the critical journey works at a bare minimum. This replaces the day-by-day schedule with a plain priority order for what is left. Each item is one PR into `v0.2` unless it says otherwise.
 
-| Stage | Target | Work | Exit condition |
-|---|---|---|---|
-| 0A | Wednesday first | Team tenant identity, allocation, and populated-data patch. | IDs are unique and immutable. Ambiguous existing ownership blocks migration. |
-| 0B | Wednesday | Atlas signing, Pilot authentication, and consumer verification. | Real local verifiers accept the intended tokens and reject wrong audiences. |
-| 0C | Wednesday | Regional configuration, image offerings, and on-demand Atlas discovery. | Central can authenticate to the region and discover available shared builds. |
-| 1 | Wednesday into Thursday | Trial create, metadata bootstrap, state receiver, and site login. | One signup reaches one working site without duplicate VMs. |
-| 2 | Thursday | Pilot and Ubuntu server creation, Open Pilot, and power actions. | Both server types complete their supported dashboard flows. |
-| 3 | Thursday into Friday | Event recovery, Team isolation, migration rehearsal, and real staging proof. | The agreed journey passes on the prepared staging region. |
+### 1. Product trials
 
-Stages 0A, 0B, and 0C are small PRs within phase 0. Wait for user review and commit approval before moving to the next stage. If the user asks to continue before a PR is merged, base the dependent branch on the approved commit and keep its changes uncommitted until its own review.
-
-Use blr.atlas.localhost for local contract checks while the regional staging deployment is prepared. Repeat integration checks against staging when it is available.
-
-These are target dates and dependency gates, not promised elapsed times. Record missing regional configuration and images as blockers early.
-
-Cargo is available in the local bench for contract checks. Friday uses existing regional infrastructure and prepared images. New service ordering is deferred.
-
-## Work after the staging milestone
-
-Ordered by what unblocks the most. Each item is one PR into `v0.2` unless it says otherwise.
-
-### 1. Signup latency: readiness by probe, not by callback
-
-**Result:** a trial reaches its site without waiting for an Atlas state report.
-
-Atlas derives a VM's mesh address from its region, tenant, and number, so the address is known the moment creation is accepted. `_finalize` already reads the machine back once. Therefore Central can name the site and the Pilot gateway immediately, and it never needs a report to learn where to knock.
-
-- Create the `Site` record from the creation read instead of from `observe_server` alone, so a trial has an address before any report lands.
-- Drop `status == "Running"` as the gate in `site_state` and `Site.get_pilot_access`. Readiness becomes: the site answers its ping, or Pilot answers its health endpoint. A machine that answers is running, whatever the mirror says.
-- Keep the state reports. They still drive the mirror, the console badges, and `Resource Action`, and they now run behind the customer instead of in front of them.
-- Bound the probe. Give it a short timeout and a stop condition, so a dead machine fails with a message instead of polling forever.
-
-Acceptance: a signup on staging reaches the site in under 10 seconds with the state webhook disabled.
-
-### 2. Product trials
-
-**Result:** an ERPNext trial and a CRM trial each look like their own product.
+**Result:** an ERPNext trial and a CRM trial each look like their own product. This is the most visible gap now that signup itself works, and blocks sending customers a real product-specific link.
 
 `product` reaches the signup page as a query parameter and stops there. The backend never sees it.
 
@@ -211,6 +175,15 @@ Acceptance: a signup on staging reaches the site in under 10 seconds with the st
 - Add `product` to `SIGNUP_IMAGE_TAGS` so the region selects that product's prepared image.
 - Show the product's logo, name, and wording on the signup, naming, and ready pages.
 - Refuse a product with no enabled offering, with a readable message.
+
+### 2. State delivery hardening
+
+**Result:** no report is lost, replayed, or applied out of order. Do this before staging proof, not after: it is exactly what a proof run would otherwise catch late.
+
+- Order by the region's own event time, not by Central's arrival time. `apply_atlas_report` stamps `now_datetime()`, so two reports processed out of order can regress state. Carry the region's timestamp in the payload and pass it to `record_observed_state`.
+- Store a receipt before replying `queued`. Today the reply promises work that only a queue holds, and a lost job is found only by the ten-minute reconcile.
+- Deduplicate by payload digest. The `no change` short-circuit catches a repeat of the current state. It does not catch a replayed A to B to A.
+- Retain an unmatched report. A report for a machine Central does not own yet is dropped as `unknown server`. Retain it and match it when the creation settles.
 
 ### 3. Region self-enrolment
 
@@ -220,40 +193,41 @@ Acceptance: a signup on staging reaches the site in under 10 seconds with the st
 - Cargo needs the matching route before its half can work. Until it exists, keep the Cargo secret manual and say so on the record.
 - Remove `db_set` from the Atlas `VM State` doctype, so it only raises events. This is Atlas-side work.
 
-### 4. State delivery hardening
+### 4. Central-driven site and admin rename, with TLS
 
-**Result:** no report is lost, replayed, or applied out of order.
+**Result:** a customer's chosen name and a custom domain both take over cleanly, with TLS.
 
-- Order by the region's own event time, not by Central's arrival time. `apply_atlas_report` stamps `now_datetime()`, so two reports processed out of order can regress state. Carry the region's timestamp in the payload and pass it to `record_observed_state`.
-- Store a receipt before replying `queued`. Today the reply promises work that only a queue holds, and a lost job is found only by the ten-minute reconcile.
-- Deduplicate by payload digest. The `no change` short-circuit catches a repeat of the current state. It does not catch a replayed A to B to A.
-- Retain an unmatched report. A report for a machine Central does not own yet is dropped as `unknown server`. Retain it and match it when the creation settles.
+Pilot has now landed the two pieces this needed on its side: a session token bound to the renamed site, and route resolution by hostname after a rename (`frappe/pilot#513`). This item was blocked on that; it is not anymore.
+
+- Drive the admin-domain and site rename from Central instead of leaving it to the Pilot-side helpers alone.
+- Tell Pilot it is behind TLS termination, so the admin domain stops serving plain `http`.
+- Generate TLS for a non-wildcard custom domain.
+- Run `clear-cache` after a rename so a site's in-app cloud window shows the new URL without a manual step.
 
 ### 5. Model cleanup
 
 **Result:** the records are named and shaped the way the product talks about them.
 
-Do this as separate PRs, each with its patch, and after items 1 and 2 land.
+Do this as separate PRs, each with its patch, and after items 1 and 4 land.
 
-- Rename `Asset` to `Virtual Machine`. It is a mechanical rename with a wide reach: 74 Python files and 12 doctype JSON files refer to it. Use `frappe.rename_doc` on the DocType and a patch for the links.
-- Merge `Atlas Instance` into `Region`. One region is one endpoint, one proxy zone, one numeric Atlas ID, and one secret. Two records for one thing is what makes the code say `cluster` in one place and `region` in another.
+- Rename `Asset` to `Virtual Machine`. It is a mechanical rename with a wide reach: 74 Python files and 12 doctype JSON files refer to it. Use `frappe.rename_doc` on the DocType and a patch for the links. Keep `Asset.cluster` the field name for now — renaming it to `region` touches `Asset` a second time right after this rename touches it once; do both together or not at all.
+- Merged `Atlas Instance` and `Cargo Instance` into `Region` — done. Every regional read is one record now, each service behind its own mixin (`atlas_connection.py`, `cargo_connection.py`) so the two stay separated in code and never share a field, and both merge patches carried existing connection data across losslessly.
 - Link `Site` to its machine and hide a machine that carries a site. A trial customer owns a site, not a VM, and should not see both.
+- Split Central's doctypes out of the one flat `Central` module into `Identity`, `Provisioning` (Asset/Virtual Machine, Resource Action, Region, Image Offering, Site, Site Domain), `Credentials`, and a slimmer `Central`. This is what gives the Desk sidebar the same grouped navigation Atlas has, for free, via Frappe's own per-module tree — no custom sidebar code. Do this once the doctypes above reach their final names, so nothing moves folders twice. Add a Number Card dashboard to Central's own workspace at the same time (servers by status, sites, stuck Resource Actions, regions) — today it holds only IAM shortcuts.
 
 ### 6. Product rules and cleanup
 
 - Resize must offer CPU and memory only. Remove the disk change from `resize_server`, the API, and the console.
 - Remove a terminated server's Site Domain routes, or refuse termination while a site still holds a route.
 - Delete `Central Tunnel Settings`, `Connect Credential`, and `Passport Registration`, with a patch each. Nothing reads them.
-
-### 7. Pilot and domain remainders
-
-Reported from staging use and not yet verified in code.
-
-- The admin domain serves `http` behind the proxy. Pilot needs to be told it is behind TLS termination.
-- A site needs `clear-cache` before its in-app cloud window shows the new URL.
-- TLS for a non-wildcard custom domain needs a rework.
-- The new-site modal is too narrow for a long wildcard suffix.
+- Increase the wildcard-domain suffix length allowed in New Site, and widen that dialog to fit it.
 - Confirm the Frappe `Asia/Calcutta` timezone fault and where it comes from.
+
+### 7. Staging proof
+
+**Result:** the agreed customer journey is proved on the real staging region, not just in tests.
+
+Hold this until items 1 through 3 land: proving the journey before state delivery is hardened would just rediscover the same gaps by hand. Use the acceptance list already in [Friday phase 3](#friday-phase-3-staging-proof).
 
 ## PR rules
 
@@ -266,17 +240,3 @@ Review every changed line before committing. Use the repository's commit and PR 
 Record any failed check and whether it is a baseline issue. Do not mass-format unrelated code.
 
 Documentation-only PRs require content, link, conflict-marker, and diff checks. Implementation PRs use the validation commands in CLAUDE.md.
-
-## Dependencies that can block Friday
-
-| Dependency | Required action |
-|---|---|
-| Test region and DNS | Identify the operator, region, automatic DNS names, and access before phase 0 starts. |
-| Image metadata | Use Atlas System image discovery. Expose snapshot shape and tested resource requirements before plan eligibility and provisioning. |
-| Atlas callback setup | Verify the document event, condition, shared secret, scheduler, and delivery log. |
-| Framework retry revision | Pin deployed Framework behavior and configure retries. Keep repair reads even when retries exist. |
-| Pilot access | Verify automatic admin routing, token audience, and bootstrap on the selected image. |
-| Ubuntu access | Verify SSH key injection and an operator-approved network path for the customer. |
-| Restart result | Verify a completion signal or add the smallest required Atlas contract. |
-| Trial policy | Confirm size, idle timeout, limits, and whether scheduled work may pause during sleep. |
-| Unknown create | Met. Central looks the machine up by its action marker, so an unanswered creation settles itself. |

@@ -13,7 +13,7 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import now_datetime
 
-from central.central.doctype.atlas_instance.atlas_instance import is_auto_routed_label
+from central.central.doctype.region.atlas_connection import is_auto_routed_label
 from central.central.doctype.region.region import REGIONAL_SERVICES, Region
 from central.integrations.proxy import ProxyError
 
@@ -126,7 +126,7 @@ class SiteDomain(Document):
 
 		The proxy reads the mesh address out of the base-36 token in the label, so both names
 		follow from the server itself."""
-		instance = frappe.get_cached_doc("Atlas Instance", self.region)
+		instance = frappe.get_cached_doc("Region", self.region)
 		address = frappe.db.get_value("Asset", self.asset, "ipv6_address")
 		hosts = (instance.get_vm_admin_host(address), instance.get_vm_site_host(address))
 		return {host for host in hosts if host}

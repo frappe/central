@@ -303,7 +303,7 @@ class TestSiteDomain(IntegrationTestCase):
 	def _routed_names(self, asset=None) -> tuple[str, str]:
 		"""The admin and site hostnames the region routes to a server without a map entry."""
 		asset = asset or self.asset
-		instance = frappe.get_doc("Atlas Instance", self.region)
+		instance = frappe.get_doc("Region", self.region)
 		return (
 			instance.get_vm_admin_host(asset.ipv6_address),
 			instance.get_vm_site_host(asset.ipv6_address),
@@ -366,7 +366,7 @@ class TestRegionProxyClient(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			Region.get_proxy_client(self.region)
 
-		frappe.db.set_value("Atlas Instance", self.region, "atlas_region_id", "65001")
+		frappe.db.set_value("Region", self.region, "atlas_region_id", "65001")
 		with patch("central.central.doctype.region.region.mint_proxy_token", return_value="token") as mint:
 			client = Region.get_proxy_client(self.region)
 

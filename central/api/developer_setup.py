@@ -57,9 +57,8 @@ def _require_developer_mode() -> None:
 
 
 def _ensure_region(region: str) -> None:
-	"""Atlas Instance.region links Region, so the region must exist first. Local
-	dev creates a bare Region (no map metadata); the operator or the demo seed
-	fills display_name/provider/coordinates in later."""
+	"""Local dev creates a bare Region (no map metadata, no Atlas connection); the
+	operator or the demo seed fills the rest in later."""
 	if not frappe.db.exists("Region", region):
 		frappe.get_doc({"doctype": "Region", "region": region}).insert(ignore_permissions=True)
 
@@ -71,12 +70,7 @@ def _upsert_local_atlas_instance(
 	atlas_region_id: str | None,
 ):
 	_ensure_region(region)
-	instance = (
-		frappe.get_doc("Atlas Instance", region)
-		if frappe.db.exists("Atlas Instance", region)
-		else frappe.new_doc("Atlas Instance")
-	)
-	instance.region = region
+	instance = frappe.get_doc("Region", region)
 	instance.base_url = base_url
 	instance.atlas_region_id = atlas_region_id
 	instance.status = "Active"

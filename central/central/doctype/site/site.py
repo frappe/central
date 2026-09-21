@@ -76,7 +76,7 @@ class Site(Document):
 		if not frappe.db.exists("Pilot Credential", {"asset": asset, "status": "Active"}):
 			return
 
-		host = frappe.get_cached_doc("Atlas Instance", machine.cluster).get_vm_site_host(machine.ipv6_address)
+		host = frappe.get_cached_doc("Region", machine.cluster).get_vm_site_host(machine.ipv6_address)
 		if not host:
 			return
 

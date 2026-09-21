@@ -202,7 +202,7 @@ export interface ResourceRow {
 
 /** An empty Active region — a "+" affordance on the map. */
 export interface MapSpot {
-	/** The Atlas Instance region code (what new-server routes on). */
+	/** The Region code (what new-server routes on). */
 	id: string
 	lat: number
 	lng: number
@@ -215,7 +215,7 @@ export interface MapSpot {
 //   viewport (pan/zoom/RAF); everything here is deterministic from its inputs.
 
 // Equirectangular projection matching the WorldDots asset, generated on this exact
-// frame — lat/lng from Atlas Instances line up with the dots.
+// frame — lat/lng from Regions line up with the dots.
 export const MAP_WIDTH = 879
 export const MAP_HEIGHT = 443
 const LAT_TOP = 83

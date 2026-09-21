@@ -87,7 +87,7 @@ def create_subscription(
 	Type) as its locked composition and `sub_category` as its optimisation profile;
 	billing reads the summed config rate off its Subscription Change (ADR 0009/0010).
 
-	The cluster must be a registered Atlas Instance (Asset.cluster is a reqd Link)."""
+	The cluster must be a registered Region (Asset.cluster is a reqd Link)."""
 	resource_id = resource_id or f"vm-{frappe.generate_hash(length=10)}"
 	if not frappe.db.exists("Asset", resource_id):
 		# Pending — not Running — so the Asset status-sync does not race us to create

@@ -2,7 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_region
+from central.tests.utils import ensure_atlas_instance
 
 
 class TestAssetPermissions(IntegrationTestCase):
@@ -28,19 +28,7 @@ class TestAssetPermissions(IntegrationTestCase):
 		).insert()
 
 	def _cluster(self, region):
-		ensure_region(region)
-		if not frappe.db.exists("Atlas Instance", region):
-			frappe.get_doc(
-				{
-					"doctype": "Atlas Instance",
-					"region": region,
-					"base_url": "https://atlas.example.test",
-					"status": "Active",
-					"api_key": "k",
-					"api_secret": "s",
-				}
-			).insert()
-		return region
+		return ensure_atlas_instance(region)
 
 	def _asset(self, rid, team):
 		if frappe.db.exists("Asset", rid):

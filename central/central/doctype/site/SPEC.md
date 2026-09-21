@@ -28,7 +28,7 @@ The regional proxy decodes a VM's mesh address from the hostname label, so Centr
 | Bench admin | `admin-vm-<label>.<proxy domain>` | the bench admin UI |
 | Site | `site-<label>.<proxy domain>` | the baked site |
 
-`Atlas Instance.get_vm_site_host` builds the second one. `<label>` is the base-36 encoding of the mesh address, and `<proxy domain>` is `Atlas Instance.proxy_domain`.
+`Region.get_vm_site_host` builds the second one. `<label>` is the base-36 encoding of the mesh address, and `<proxy domain>` is `Region.proxy_domain`.
 
 ## Operation
 
@@ -67,7 +67,7 @@ Every signup image contains `site.local`. Central mints the session for that sta
 | Setting | Location | Example |
 |---|---|---|
 | Image site name | Cargo image invariant | `site.local` |
-| Proxy zone | `Atlas Instance.proxy_domain` | `par-2.fc.frappe.dev` |
+| Proxy zone | `Region.proxy_domain` | `par-2.fc.frappe.dev` |
 | Signup image | `Image Offering.available_in` = `Signup` or `Both` | one offering, lowest title, `Signup` preferred |
 | Signup image tags | `SIGNUP_IMAGE_TAGS` in `central/site_provisioning.py` | `has_site=1`, `frappe_version=develop` |
 | Trial plan | `Plan.available_on_trial` | the cheapest eligible plan in the first Active region |

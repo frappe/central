@@ -42,7 +42,7 @@
    "fieldname": "cluster",
    "fieldtype": "Link",
    "label": "Cluster",
-   "options": "Atlas Instance",
+   "options": "Region",
    "in_list_view": 1,
    "columns": 1
   },

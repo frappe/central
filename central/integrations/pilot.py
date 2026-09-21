@@ -126,7 +126,7 @@ def rename_site(
 
 
 def _expected_gateway_url(server) -> str:
-	url = frappe.get_cached_doc("Atlas Instance", server.cluster).get_vm_gateway_url(server.ipv6_address)
+	url = frappe.get_cached_doc("Region", server.cluster).get_vm_gateway_url(server.ipv6_address)
 	if not url:
 		frappe.throw(frappe._("Server {0} has no proxy hostname.").format(server.name))
 	return url

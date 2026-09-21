@@ -17,7 +17,7 @@ from frappe.utils.password import update_password
 
 # (slug, label, billing currency of the region)
 # Demo runs against the one real region we operate (blr.atlas.localhost = the
-# `in-bengaluru` Atlas Instance), billed in INR. Kept single-region on purpose.
+# `in-bengaluru` Region), billed in INR. Kept single-region on purpose.
 CLUSTERS = [
 	("in-bengaluru", "India — Bengaluru", "INR"),
 	("in-mumbai", "India — Mumbai", "INR"),
@@ -140,25 +140,22 @@ _CLUSTER_REGION = {
 }
 
 
-def _atlas_instances():
-	"""Each demo cluster needs an Atlas Instance (Catalog Rate scopes its regional
-	rates to one) and a Region (the map's display metadata). A pre-existing, real
-	Atlas Instance is left untouched — only its Region metadata is (re)seeded."""
+def _regions():
+	"""Each demo cluster needs a Region (Catalog Rate scopes its regional rates to
+	one; the map reads its display metadata off the same row). A pre-existing,
+	really-connected Region (base_url already set by an operator) keeps its
+	connection untouched — only display metadata is (re)seeded, and a demo
+	base_url is filled in only when the row is new."""
 	for cslug, _label, _cur in CLUSTERS:
-		# Region first: an Atlas Instance LINKS to it, so seeding the instance ahead
-		# of the region fails on a site that has no regions yet — which is every
-		# fresh demo site, the one case this seeder exists for.
-		_upsert("Region", cslug, {"region": cslug, **_CLUSTER_REGION.get(cslug, {})})
-		if not frappe.db.exists("Atlas Instance", cslug):
-			frappe.get_doc(
-				{
-					"doctype": "Atlas Instance",
-					"region": cslug,
-					"base_url": f"https://{cslug}.atlas.demo",
-					"api_key": "demo",
-					"api_secret": "demo",
-				}
-			).insert(ignore_permissions=True)
+		region = (
+			frappe.get_doc("Region", cslug) if frappe.db.exists("Region", cslug) else frappe.new_doc("Region")
+		)
+		region.region = cslug
+		region.update(_CLUSTER_REGION.get(cslug, {}))
+		if not region.base_url:
+			region.base_url = f"https://{cslug}.atlas.demo"
+			region.status = "Active"
+		region.save(ignore_permissions=True)
 
 
 # Plans are autonamed by hash, so map the readable demo key to the generated
@@ -175,7 +172,7 @@ def plan_name(key: str) -> str:
 def _catalog():
 	from central.billing.catalog.taxonomy_setup import ensure_catalog_masters
 
-	_atlas_instances()
+	_regions()
 	# Seed the taxonomy masters (Plan Category / Resource Type) through the canonical
 	# seeder — the demo authors plans against these families, it does not invent them.
 	ensure_catalog_masters()

@@ -16,11 +16,10 @@ class TestImageOfferings(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.set_user, "Administrator")
 		self.addCleanup(frappe.db.rollback)
-		region = frappe.get_doc({"doctype": "Region", "region": frappe.generate_hash(length=8)}).insert()
 		self.instance = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": region.name,
+				"doctype": "Region",
+				"region": frappe.generate_hash(length=8),
 				"base_url": "https://atlas.example.test",
 				"atlas_region_id": "43",
 				"status": "Active",

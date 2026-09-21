@@ -23,9 +23,9 @@ _SELECT_LEGACY_ATLAS_COLUMNS = (
 
 
 def execute():
-	# Fresh install (or already migrated): the old columns never existed, so there
-	# is nothing to lift onto Region.
-	if not frappe.db.has_column("Atlas Instance", "latitude"):
+	# Fresh install (Atlas Instance is retired and its JSON is gone, so the table
+	# was never created) or already migrated: nothing to lift onto Region either way.
+	if not frappe.db.table_exists("Atlas Instance") or not frappe.db.has_column("Atlas Instance", "latitude"):
 		return
 
 	rows = frappe.db.sql(_SELECT_LEGACY_ATLAS_COLUMNS, as_dict=True)

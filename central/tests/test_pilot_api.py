@@ -70,7 +70,7 @@ class TestPilotAPI(IntegrationTestCase):
 	def bound_pilot(self, region_id: int | None = None) -> str:
 		"""A pilot with an Asset in a region, which is what a datum token is addressed to.
 
-		The region id is unique per Atlas Instance, so each test gets its own rather than
+		The region id is unique per Region, so each test gets its own rather than
 		colliding with whatever the site already holds."""
 		self.region = f"tel-{frappe.generate_hash(length=6)}"
 		ensure_atlas_instance(self.region, atlas_region_id=str(region_id or random.randint(1, 65535)))

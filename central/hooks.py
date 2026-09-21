@@ -197,8 +197,6 @@ scheduler_events = {
 	},
 	"daily": [
 		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
-		# Central: prune finished Host Task rows (unbounded stdout/stderr longtext).
-		"central.host_task.prune_host_tasks",
 		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
 		# and pruning Payment Attempt / Webhook Event logs.
 		"central.billing.revenue.dunning.run_dunning",
@@ -303,8 +301,6 @@ override_doctype_dashboards = {
 
 # Request Events
 # ----------------
-# TODO: This needs to be removed once we have a first-class claim hook in Frappe framework.
-before_request = ["central.oauth.install_oauth_claim_patch"]
 # after_request = ["central.utils.after_request"]
 
 # Job Events
@@ -360,9 +356,6 @@ has_permission = {
 	"Team Role": "central.permissions.team_role_has_permission",
 }
 
-override_whitelisted_methods = {
-	"frappe.integrations.oauth2.openid_profile": "central.oauth.openid_profile",
-}
 # --------------------------------
 
 # auth_hooks = [

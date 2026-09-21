@@ -33,13 +33,10 @@ class TestStateDelivery(IntegrationTestCase):
 		self.team = frappe.get_doc(
 			{"doctype": "Team", "team_name": "Delivery", "owner_user": "Administrator"}
 		).insert()
-		region = frappe.get_doc(
-			{"doctype": "Region", "region": "delivery-" + frappe.generate_hash(length=8)}
-		).insert()
 		self.cluster = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": region.name,
+				"doctype": "Region",
+				"region": "delivery-" + frappe.generate_hash(length=8),
 				"base_url": "https://atlas.example.test",
 				"status": "Active",
 			}
@@ -165,13 +162,10 @@ class TestStateDelivery(IntegrationTestCase):
 	def test_one_region_cannot_report_on_another_region_server(self):
 		"""A VM id is only unique inside its region, so a signed report from the wrong
 		region must not reach a server of the same id somewhere else."""
-		neighbour = frappe.get_doc(
-			{"doctype": "Region", "region": "delivery-" + frappe.generate_hash(length=8)}
-		).insert()
 		other_cluster = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": neighbour.name,
+				"doctype": "Region",
+				"region": "delivery-" + frappe.generate_hash(length=8),
 				"base_url": "https://atlas.neighbour.test",
 				"status": "Active",
 			}
@@ -308,18 +302,15 @@ class TestCargoServiceDelivery(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
 		self.region = frappe.get_doc(
-			{"doctype": "Region", "region": "service-" + frappe.generate_hash(length=8)}
-		).insert()
-		self.cargo = frappe.get_doc(
 			{
-				"doctype": "Cargo Instance",
-				"region": self.region.name,
-				"base_url": "https://cargo.example.test",
-				"status": "Registered",
+				"doctype": "Region",
+				"region": "service-" + frappe.generate_hash(length=8),
+				"cargo_base_url": "https://cargo.example.test",
+				"cargo_status": "Registered",
 			}
 		)
-		self.cargo.webhook_secret = SECRET
-		self.cargo.insert()
+		self.region.cargo_webhook_secret = SECRET
+		self.region.insert()
 
 	# — Helpers
 
@@ -356,14 +347,14 @@ class TestCargoServiceDelivery(IntegrationTestCase):
 			self.deliver(self.service_report(), region="")
 
 	def test_an_unregistered_region_is_refused(self):
-		self.cargo.db_set("status", "Draft")
+		self.region.db_set("cargo_status", "Draft")
 
 		with self.assertRaises(frappe.PermissionError):
 			self.deliver(self.service_report())
 
 	def test_a_region_without_a_secret_is_refused(self):
-		remove_encrypted_password("Cargo Instance", self.cargo.name, "webhook_secret")
-		frappe.clear_document_cache("Cargo Instance", self.cargo.name)
+		remove_encrypted_password("Region", self.region.name, "cargo_webhook_secret")
+		frappe.clear_document_cache("Region", self.region.name)
 
 		with self.assertRaises(frappe.PermissionError):
 			self.deliver(self.service_report())

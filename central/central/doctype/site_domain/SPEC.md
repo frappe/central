@@ -9,7 +9,7 @@ A `Site Domain` record routes one domain to the IPv6 address of a VM through the
 | Setting | Location | Example |
 |---|---|---|
 | Wildcard domain | `Central Settings.wildcard_domain` | `frappe.dev` |
-| Region ID | `Atlas Instance.atlas_region_id` | `42` |
+| Region ID | `Region.atlas_region_id` | `42` |
 | Signing key | [Central SSO Settings](../central_sso_settings/SPEC.md), with **Initialize Atlas Signing Key** | `central:<hash>` |
 
 Central reaches each regional service at `<service>.<region>.<wildcard domain>`, such as `https://proxy.in-mumbai.frappe.dev`. `Region.get_service_url(service, region)` builds the URL for `proxy`, `atlas`, and `cargo`. `Region.get_proxy_client(region)` returns a `ProxyClient` with a fresh proxy token from `central.sso.mint_proxy_token`. The token uses the Atlas signing key, the audience `atlas-proxy:<region ID>`, and the scope `site:* domain:*`.
@@ -29,7 +29,7 @@ Central refuses the regional zone itself, a name 2 or more labels below the zone
 
 The regional proxy answers a `site-*` or `*-vm-*` name below the zone from the label alone. It reads the mesh address out of the base-36 token of the label before it reads its site map, and it refuses a map entry for such a name with HTTP 409.
 
-`Atlas Instance.get_vm_admin_host` and `Atlas Instance.get_vm_site_host` build the 2 routed names of one server from `Asset.ipv6_address`. Example: `admin-vm-1z141z4.par-2.frappe.dev` and `site-1z141z4.par-2.frappe.dev`.
+`Region.get_vm_admin_host` and `Region.get_vm_site_host` build the 2 routed names of one server from `Asset.ipv6_address`. Example: `admin-vm-1z141z4.par-2.frappe.dev` and `site-1z141z4.par-2.frappe.dev`.
 
 - Central keeps no record for a routed name and makes no proxy call for it. `register_domain` returns success, because the name is live already.
 - Central refuses a routed name that belongs to a different server. No record can bring that name to this server.

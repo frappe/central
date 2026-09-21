@@ -6,7 +6,6 @@
  "engine": "InnoDB",
  "field_order": [
   "general_tab",
-  "host_task_retention_days",
   "trial_idle_shutdown_minutes",
   "wildcard_domain",
   "feature_flags_tab",
@@ -68,14 +67,6 @@
    "fieldname": "general_tab",
    "fieldtype": "Tab Break",
    "label": "General"
-  },
-  {
-   "default": "30",
-   "description": "Days a finished Host Task (privileged host/hub script run) log is kept before daily pruning. Live tasks are kept regardless.",
-   "fieldname": "host_task_retention_days",
-   "fieldtype": "Int",
-   "label": "Host Task Retention (Days)",
-   "non_negative": 1
   },
   {
    "default": "10",

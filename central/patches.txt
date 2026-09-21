@@ -165,3 +165,7 @@ central.patches.v0_0.collapse_asset_observation_clock
 central.patches.v0_0.seed_trial_idle_shutdown
 
 central.patches.v0_0.mark_existing_sites_claimed
+
+central.patches.v0_0.merge_atlas_instance_into_region
+
+central.patches.v0_0.merge_cargo_instance_into_region

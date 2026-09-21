@@ -15,11 +15,10 @@ class TestRegionalConfiguration(IntegrationTestCase):
 		super().setUp()
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
-		region = frappe.get_doc({"doctype": "Region", "region": frappe.generate_hash(length=8)}).insert()
 		self.instance = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": region.name,
+				"doctype": "Region",
+				"region": frappe.generate_hash(length=8),
 				"base_url": "https://atlas.example.test",
 				"atlas_region_id": "42",
 				"status": "Active",
@@ -38,8 +37,6 @@ class TestRegionalConfiguration(IntegrationTestCase):
 		return response
 
 	def test_signed_connection_uses_direct_endpoint_and_explicit_tenant(self):
-		self.instance.tunnel_url = "https://obsolete.example.test"
-		self.instance.tunnel_status = "Active"
 		AtlasClient.for_operator(self.instance).check_connection()
 
 		arguments = self.request.call_args
@@ -164,13 +161,15 @@ class TestRegionalConfiguration(IntegrationTestCase):
 		self.assertIn("signing key", self.instance.reload().connection_error)
 		self.request.assert_not_called()
 
-	def test_region_identity_is_unique(self):
-		region = frappe.get_doc({"doctype": "Region", "region": frappe.generate_hash(length=8)}).insert()
+	def test_atlas_region_id_is_unique(self):
+		"""Two Regions can't claim the same numeric Atlas region ID — that number is
+		the token audience, and a shared audience would let one region's token pass
+		for another's."""
 		with self.assertRaises(frappe.UniqueValidationError):
 			frappe.get_doc(
 				{
-					"doctype": "Atlas Instance",
-					"region": region.name,
+					"doctype": "Region",
+					"region": frappe.generate_hash(length=8),
 					"base_url": "https://other.example.test",
 					"atlas_region_id": "00042",
 				}
@@ -192,11 +191,10 @@ class TestProxyGateway(IntegrationTestCase):
 		super().setUp()
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
-		region = frappe.get_doc({"doctype": "Region", "region": frappe.generate_hash(length=8)}).insert()
 		self.instance = frappe.get_doc(
 			{
-				"doctype": "Atlas Instance",
-				"region": region.name,
+				"doctype": "Region",
+				"region": frappe.generate_hash(length=8),
 				"base_url": "https://atlas.par-2.example.test",
 				"proxy_domain": "par-2.example.test",
 				"status": "Active",

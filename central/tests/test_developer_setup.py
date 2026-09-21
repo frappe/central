@@ -23,7 +23,7 @@ class TestDeveloperSetup(IntegrationTestCase):
 	def test_signed_region_setup_and_check(self):
 		frappe.conf.developer_mode = 1
 		with patch(
-			"central.central.doctype.atlas_instance.atlas_instance.AtlasInstance.test_connection",
+			"central.central.doctype.region.region.Region.test_connection",
 			return_value={"reachable": True},
 		) as check:
 			result = setup_local(

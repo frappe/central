@@ -40,8 +40,7 @@ def pilot_credential_auth(func: Callable) -> Callable:
 
 def get_pilot_region(credential: PilotCredential) -> str | None:
 	"""The region this pilot runs in, or None while Atlas has not bound its Asset.
-	`Asset.cluster` is the Atlas Instance, which is named for its region, so the region
-	needs no lookup of its own."""
+	`Asset.cluster` is a Region, so the region needs no lookup of its own."""
 	if not credential.asset:
 		return None
 
@@ -115,7 +114,7 @@ def region_id_of(region: str | None) -> int:
 			frappe.ValidationError,
 		)
 
-	return frappe.get_doc("Atlas Instance", region).get_atlas_region_id()
+	return frappe.get_doc("Region", region).get_atlas_region_id()
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])

@@ -41,7 +41,7 @@ def list_images(
 	if not document.enabled or document.available_in not in (flow, "Both"):
 		frappe.throw(_("This image offering is not available for this flow."))
 
-	instance = frappe.get_doc("Atlas Instance", atlas_instance)
+	instance = frappe.get_doc("Region", atlas_instance)
 	if instance.status != "Active":
 		frappe.throw(_("This region is not accepting new servers."))
 
@@ -51,7 +51,7 @@ def list_images(
 
 def preview_images(offering: str, atlas_instance: str, offset: int = 0) -> dict:
 	"""Check an operator's saved selector without creating a regional resource."""
-	instance = frappe.get_doc("Atlas Instance", atlas_instance)
+	instance = frappe.get_doc("Region", atlas_instance)
 	client = AtlasClient.for_operator(instance)
 	document = frappe.get_doc("Image Offering", offering)
 	document.check_permission("write")
@@ -80,7 +80,7 @@ def selected_image(
 	if not document.enabled or document.available_in not in ("Server", "Both"):
 		frappe.throw(_("This offering is not available for server creation."))
 
-	instance = frappe.get_doc("Atlas Instance", region)
+	instance = frappe.get_doc("Region", region)
 	if instance.status != "Active":
 		frappe.throw(_("This region is not accepting new servers."))
 

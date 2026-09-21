@@ -13,9 +13,8 @@ Central is the control plane for Frappe Cloud v2. It owns identity, teams, capab
 
 Read the [README](README.md) for setup and local development. Read [`spec/README.md`](spec/README.md) for the specification router, and read the matching specification before you make a structural change.
 
-- [IAM](spec/IAM.md): identity, permissions, OAuth, and Atlas enforcement.
+- [IAM](spec/IAM.md): identity, permissions, and Atlas enforcement.
 - [Capabilities](CAPABILITIES.md): the authorization vocabulary and its plane split.
-- [Tunnel](spec/TUNNEL.md): Central as the WireGuard hub and the Atlas registration flow.
 - [Atlas coordination](spec/ATLAS_COORDINATION.md): the cross-repository contract.
 - [Refactor backlog](spec/refactor_todo.md): the remaining pre-1.0 cleanup work.
 
@@ -33,7 +32,7 @@ Atlas      regional runtime: VMs, network, proxy. One instance per region.
 Pilot      server runtime: benches, sites, apps on a single server.
 ```
 
-- Central authors grants. Atlas and each bench enforce them locally.
+- Central decides every `server:*` capability itself. A region only checks that a signed request's tenant matches the resource's tenant; a bench checks the scope on its own signed token. Neither holds a capability model of its own.
 - Central reaches Atlas, Pilot, and Cargo only through the clients in `central/integrations/`. Do not call a remote plane from a controller, an API route, or a page.
 - `Asset` is Central's server record. Central owns its identity, title, plan, image and billing links. A region only reports state back, and the integration layer applies that through `Asset.record_observed_state`.
 
@@ -43,7 +42,7 @@ Central runs today:
 
 - Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
-- Regions: Atlas instance registration, the WireGuard tunnel hub, and host tasks on the Central machine.
+- Regions: Atlas instance registration.
 - Resources: `Asset` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
 - Provisioning: provisioning requests and resource actions against Atlas and Pilot.
 - Managed services: add-on catalog, LLM models and plan policies, storage backends, and service credentials.
@@ -178,6 +177,44 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Do not reach for `ignore_permissions=True`. Model the roles and capabilities correctly instead. When a call must bypass permissions, put one comment line above it that states why.
 - Use `frappe.qb` with a join when a read spans more than 2 tables. Do not loop a query per row. No N+1 queries.
 - Add indexes and unique constraints in the controller's `on_doctype_update`, not in a patch.
+
+#### Prefer controller lifecycle hooks over API wiring
+
+Read the [Frappe controller docs](https://docs.frappe.io/framework/user/en/basics/doctypes/controllers) before adding a step that reacts to a document reaching a state. When a document follows a lifecycle, put each step in the controller hook that owns that point in the lifecycle, not as a sequence of calls an API route or integration function makes by hand. The common hooks, in the order Frappe calls them:
+
+| Hook | Runs | Use it for |
+|---|---|---|
+| `before_validate` | Before `validate`, on every save | Normalize input before it is checked |
+| `validate` | Before every save | Enforce invariants; block the save on failure |
+| `before_insert` | Once, before the first save | Set a field a fresh document alone needs |
+| `after_insert` | Once, right after the first save | Kick off what only a newly created document triggers |
+| `on_update` | After every save | React to any change, not only creation |
+| `on_trash` | Before delete | Clean up what the document owns |
+
+A route stays a thin trigger: it builds the document and calls `insert()` or `save()`, and the controller's hooks do the rest. This keeps a lifecycle step discoverable from the doctype that owns it instead of buried in whichever route happened to create the document, and it means every path that creates the document (an API route, a patch, a test) gets the same behavior for free.
+
+```python
+# Before: the API route wires each step it thinks a new Site needs.
+@frappe.whitelist()
+def create_trial_site(subdomain: str, team: str) -> dict:
+    site = frappe.get_doc({"doctype": "Site", "subdomain": subdomain, "team": team})
+    site.insert()
+    notify_team_of_new_site(site)  # easy to forget on the next caller
+    return {"name": site.name}
+
+
+# After: Site.after_insert owns it. Any caller that inserts a Site gets the
+# same behavior, and the route no longer needs to know what a new Site does.
+class Site(Document):
+    def after_insert(self) -> None:
+        notify_team_of_new_site(self)
+
+
+@frappe.whitelist()
+def create_trial_site(subdomain: str, team: str) -> dict:
+    site = frappe.get_doc({"doctype": "Site", "subdomain": subdomain, "team": team}).insert()
+    return {"name": site.name}
+```
 
 ### Dashboard
 

@@ -16,17 +16,16 @@ The v0.2 documents distinguish the proposed design from the verified baseline. E
 
 - [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md): separate Atlas and Pilot trust, operator initialization, and token verification.
 
-- [Regional configuration](../central/central/doctype/atlas_instance/SPEC.md): signed connection checks, tenant selection, and regional identity.
+- [Regional configuration](../central/central/doctype/region/SPEC.md): signed connection checks, tenant selection, and regional identity.
 - [Image offerings](../central/central/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
 - [Proxy routes](../central/central/doctype/site_domain/SPEC.md): site and custom-domain routes on the regional proxy, with retry and delete.
 - [Trial sites](../central/central/doctype/site/SPEC.md): the site a Pilot image carries, its predictable address, and the signup handoff.
 
 ## Existing specifications
 
-- [IAM](IAM.md): Central identity and permission model. Its Atlas integration sections need review in phase 0.
+- [IAM](IAM.md): Central identity and permission model.
 - [Capabilities](../CAPABILITIES.md): the capability vocabulary and fixtures contract.
 - [SSO](SSO.md): token flows and consumer contracts to check before the signing cutover.
-- [Tunnel](TUNNEL.md): the tunnel path still present in the baseline Central code.
 - [Atlas coordination](ATLAS_COORDINATION.md): earlier regional contracts that need replacement during the rewrite.
 - [Inbound webhooks](WEBHOOKS.md): the contract a region signs and sends its reports with. Share it with Atlas and Cargo.
 - [Refactor backlog](refactor_todo.md): prior findings to verify during the non-billing audit.

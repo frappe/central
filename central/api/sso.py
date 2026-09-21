@@ -50,7 +50,7 @@ def _asset_login_link(asset: str, team: str | None, user: str) -> dict:
 		frappe.throw(_("You can't open servers for this team."), frappe.PermissionError)
 	if doc.status != "Running":
 		frappe.throw(_("Server is {0}, not running.").format(doc.status.lower()), frappe.ValidationError)
-	if frappe.db.get_value("Atlas Instance", doc.cluster, "status") != "Active":
+	if frappe.db.get_value("Region", doc.cluster, "status") != "Active":
 		frappe.throw(_("That cluster is not active."), frappe.ValidationError)
 	gateway = (doc.gateway_url or "").rstrip("/")
 	if not gateway:

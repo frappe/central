@@ -158,7 +158,7 @@ export interface LargestVm {
 
 /** Live-capacity summary for the create-server menu (get_eligible_plans). */
 export interface Capacity {
-	/** Whether live capacity narrowed this menu (Atlas Instance.validate_capacity). */
+	/** Whether live capacity narrowed this menu. Capacity is never gated today. */
 	gated: boolean
 	/** Whether the region can seat any new VM right now — False → show "region is full". */
 	available: boolean

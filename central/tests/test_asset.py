@@ -3,7 +3,7 @@ from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import make_plan
 from central.tests.test_iam import ensure_user
-from central.tests.utils import ensure_region
+from central.tests.utils import ensure_atlas_instance
 
 
 class TestAsset(IntegrationTestCase):
@@ -19,18 +19,7 @@ class TestAsset(IntegrationTestCase):
 			}
 		).insert()
 		self.cluster = "blr-asset"
-		ensure_region(self.cluster)
-		if not frappe.db.exists("Atlas Instance", self.cluster):
-			frappe.get_doc(
-				{
-					"doctype": "Atlas Instance",
-					"region": self.cluster,
-					"base_url": "https://atlas.example.test",
-					"status": "Active",
-					"api_key": "k",
-					"api_secret": "s",
-				}
-			).insert()
+		ensure_atlas_instance(self.cluster)
 
 	def test_asset_named_by_resource_id_and_links(self):
 		asset = frappe.get_doc(
@@ -65,18 +54,7 @@ class TestAssetSubscriptionSync(IntegrationTestCase):
 			.name
 		)
 		self.cluster = "blr-asset-sub"
-		ensure_region(self.cluster)
-		if not frappe.db.exists("Atlas Instance", self.cluster):
-			frappe.get_doc(
-				{
-					"doctype": "Atlas Instance",
-					"region": self.cluster,
-					"base_url": "https://atlas.example.test",
-					"status": "Active",
-					"api_key": "k",
-					"api_secret": "s",
-				}
-			).insert()
+		ensure_atlas_instance(self.cluster)
 		self.plan_a = make_plan("plan-asset-sub-a")
 		self.plan_b = make_plan("plan-asset-sub-b")
 		self._assets = []
