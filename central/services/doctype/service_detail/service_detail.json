@@ -80,14 +80,14 @@
    "fieldname": "service",
    "fieldtype": "Select",
    "label": "Service",
-   "options": "telemetry\nstorage",
+   "options": "Telemetry\nStorage",
    "reqd": 1,
    "set_only_once": 1
   }
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-09-21 14:12:22.899398",
+ "modified": "2026-09-21 16:25:49.071261",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service Detail",

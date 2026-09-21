@@ -6,7 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 
 
-class ManagedService(Document):
+class TeamService(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -16,7 +16,7 @@ class ManagedService(Document):
 		from frappe.types import DF
 
 		add_on_service: DF.Link
-		provider_ref: DF.Data | None
+		region: DF.Link
 		status: DF.Literal["Draft", "Provisioning", "Active", "Failed", "Suspended"]
 		subscription: DF.Link
 		team: DF.Link

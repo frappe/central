@@ -11,8 +11,8 @@
   "team",
   "add_on_service",
   "subscription",
-  "status",
-  "provider_ref"
+  "region",
+  "status"
  ],
  "fields": [
   {
@@ -50,19 +50,20 @@
    "search_index": 1
   },
   {
-   "fieldname": "provider_ref",
-   "fieldtype": "Data",
-   "label": "Provider Reference",
-   "read_only": 1
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-15 21:08:26.723548",
+ "modified": "2026-09-21 16:41:24.016720",
  "modified_by": "Administrator",
  "module": "Services",
- "name": "Managed Service",
+ "name": "Team Service",
  "naming_rule": "Random",
  "owner": "Administrator",
  "permissions": [
