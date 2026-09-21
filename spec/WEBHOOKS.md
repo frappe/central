@@ -46,7 +46,7 @@ A Frappe Webhook produces this when `enable_security` is set and `webhook_secret
 | Sender | Secret Central checks against | Required state |
 |---|---|---|
 | `atlas` | `Region.webhook_secret` for the named region | Status is not `Disabled` |
-| `cargo` | `Cargo Instance.webhook_secret` for the named region | Status is `Registered` |
+| `cargo` | `Region.cargo_webhook_secret` for the named region | `cargo_status` is `Registered` |
 
 Central answers every failed check with the same sentence, `Invalid signature.`, and HTTP 403. The reason is written to the Error Log for the operator. A sender cannot learn from the reply whether the region was unknown, the secret was missing, or the signature was wrong.
 

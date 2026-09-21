@@ -48,4 +48,12 @@ export interface Region {
 	last_synced_at?: string
 	/**	Webhook Secret : Password - Shared secret reserved for signed regional state delivery.	*/
 	webhook_secret?: string
+	/**	Cargo Status : Select - Registered means the host collected its tokens and is running.	*/
+	cargo_status?: 'Draft' | 'Registered' | 'Disabled'
+	/**	Cargo Base URL : Data - Where this region's Cargo site is served, e.g. http://10.0.0.5:8000. Recorded when the host enrols.	*/
+	cargo_base_url?: string
+	/**	Cargo Registered At : Datetime	*/
+	cargo_registered_at?: string
+	/**	Cargo Webhook Secret : Password - Signs this region's Cargo service reports. Central checks every delivery against it.	*/
+	cargo_webhook_secret?: string
 }

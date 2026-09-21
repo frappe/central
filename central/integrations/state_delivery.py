@@ -167,11 +167,10 @@ def _verified_cargo_region(region: str | None, signature: str | None, raw_body: 
 	if not region or not signature:
 		_reject("missing region or signature header")
 
-	instance = frappe.db.get_value("Cargo Instance", {"region": region}, ["name", "status"], as_dict=True)
-	if not instance or instance.status != "Registered":
+	if frappe.db.get_value("Region", region, "cargo_status") != "Registered":
 		_reject(f"unknown or unregistered Cargo region '{region}'")
 
-	secret = get_decrypted_password("Cargo Instance", instance.name, "webhook_secret", raise_exception=False)
+	secret = get_decrypted_password("Region", region, "cargo_webhook_secret", raise_exception=False)
 	if not secret:
 		_reject(f"no webhook secret for Cargo region '{region}'")
 	if not _signature_matches(secret, raw_body, signature):

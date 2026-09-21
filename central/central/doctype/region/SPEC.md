@@ -52,10 +52,22 @@ that selects system tenant zero.
 non-secret allowlist (`region`, `status`, `reachable`, and the display fields). `base_url`,
 `atlas_region_id`, and `webhook_secret` never leave a System Manager session.
 
-## Code organization
+## Scope and Cargo
 
-The Atlas connection here is behind `AtlasConnectionMixin` (`atlas_connection.py`), kept
-apart from `Region`'s own identity/geography code, so the two stay easy to tell apart.
+Cargo also connects through this record, in its own `cargo_*` fields, under the Cargo tab.
+Cargo runs on infrastructure Atlas itself provisions in the region (see
+`atlas/docs/bootstrapping.md`) and holds its own credentials to call Atlas and the Proxy —
+neither of those is Central's concern. What Central needs is narrower: `cargo_base_url` and
+`cargo_status` (set when the host reports itself in, not polled the way Atlas is), and
+`cargo_webhook_secret`, which verifies its service reports (`central.integrations.
+state_delivery.accept_cargo_report`).
+
+Atlas and Cargo are not peers: Cargo is created by Atlas and depends on it being there
+first. That asymmetry is a fact about provisioning, not about where Central keeps its own
+bookkeeping — both connections live on Region, each behind its own mixin
+(`AtlasConnectionMixin` in `atlas_connection.py`, `CargoConnectionMixin` in
+`cargo_connection.py`), so the two stay easy to tell apart in the code and never share a
+field.
 
 ## Migration
 
@@ -66,6 +78,7 @@ Repeating the patch preserves checks with a timestamp.
 Region absorbed the connection fields that used to live on the separate `Atlas Instance`
 doctype. `Asset.cluster`, `Resource Action.atlas_instance`, and the billing `cluster` Link
 fields all point at Region directly now; there is no second doctype to join through.
+`Cargo Instance` folded in the same way, into the `cargo_*` fields.
 
 ## Scope and validation
 

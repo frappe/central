@@ -27,7 +27,13 @@
   "connection_error",
   "last_synced_at",
   "delivery_section",
-  "webhook_secret"
+  "webhook_secret",
+  "cargo_tab",
+  "cargo_status",
+  "cargo_base_url",
+  "cargo_registered_at",
+  "cargo_delivery_section",
+  "cargo_webhook_secret"
  ],
  "fields": [
   {
@@ -161,6 +167,48 @@
    "read_only": 1
   },
   {
+   "fieldname": "cargo_tab",
+   "fieldtype": "Tab Break",
+   "label": "Cargo"
+  },
+  {
+   "default": "Draft",
+   "description": "Registered means the host collected its tokens and is running.",
+   "fieldname": "cargo_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Cargo Status",
+   "options": "Draft\nRegistered\nDisabled",
+   "read_only": 1
+  },
+  {
+   "description": "Where this region's Cargo site is served, e.g. http://10.0.0.5:8000. Recorded when the host enrols.",
+   "fieldname": "cargo_base_url",
+   "fieldtype": "Data",
+   "label": "Cargo Base URL",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cargo_registered_at",
+   "fieldtype": "Datetime",
+   "label": "Cargo Registered At",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "cargo_delivery_section",
+   "fieldtype": "Section Break",
+   "label": "State delivery"
+  },
+  {
+   "description": "Signs this region's Cargo service reports. Central checks every delivery against it.",
+   "fieldname": "cargo_webhook_secret",
+   "fieldtype": "Password",
+   "label": "Cargo Webhook Secret"
+  },
+  {
    "fieldname": "column_break_kufp",
    "fieldtype": "Column Break"
   }
@@ -181,6 +229,11 @@
   {
    "group": "Routing",
    "link_doctype": "Site Domain",
+   "link_fieldname": "region"
+  },
+  {
+   "group": "Cargo",
+   "link_doctype": "Service Detail",
    "link_fieldname": "region"
   }
  ],
