@@ -10,29 +10,38 @@ Read [Scope](REWRITE_SCOPE.md) for ownership and contracts. Read [Validation](LO
 
 ## Current status
 
-Updated 2026-09-18, from the integration tracker and a read of the code, after merging `v0.2`. `Done` means the behavior exists in this branch. `Partial` names what is still missing.
+Updated 2026-09-21, after pulling `upstream/v0.2` and reading the code. `Done` means the behavior exists in this branch. `Partial` names what is still missing. Nothing below is proved on the staging region yet.
 
 | Stage | State | Remaining |
 |---|---|---|
 | 0A Team tenant identity | Done | |
-| 0B Atlas signing and Pilot authentication | Partial | The `pilot-central` metadata does not carry `initial_jwks_cache`, which Pilot already reads. |
+| 0B Atlas signing and Pilot authentication | Done | The `pilot-central` metadata now carries `initial_jwks_cache`. |
 | 0C Regional configuration and image offerings | Done | |
-| 1 Trial signup | Not started | No Central site creation. The console still calls removed `central.api.sites` routes. |
-| 1 State delivery | Partial | The signed Atlas receiver and the repair reads work. Durable receipts, payload digest deduplication, and unmatched receipt retry do not exist. |
-| 2 Server creation and lifecycle | Partial | Create, start, stop, restart, terminate, resize, and Open Pilot work. A failed creation is retried on its own record, an unanswered one settles itself by lookup, and the console reads its open request back from Central. Creation does not send a sleep policy. |
+| 1 Trial signup | Partial | The flow works end to end. It carries no product identity, so a CRM or ERPNext trial looks the same as a plain one. |
+| 1 State delivery | Partial | The signed Atlas and Cargo receivers work. Durable receipts, region event ordering, payload digest deduplication, and retry of an unmatched report do not exist. |
+| 2 Server creation and lifecycle | Done | Create, start, stop, restart, terminate, resize, and Open Pilot work. Creation sends the idle sleep policy. |
 | 3 Staging proof | Not started | |
 
-A Pilot-registered Site Domain carries a server but no `Site` link, because the Pilot knows its machine and not Central's site record. Linking `Site` to its server is what lets the two producers of a route agree.
+A Pilot-registered Site Domain now resolves its `Site` from the credential's Asset, so the two producers of a route agree.
 
-Work that landed ahead of its phase: proxy site and custom domain routes, the Pilot rename helpers, the Cargo report receiver, and Pilot-driven domain registration with DNS ownership checks.
+Work that landed ahead of its phase: proxy site and custom domain routes, the Pilot rename helpers, the Cargo report receiver, Pilot-driven domain registration with DNS ownership checks, and one regional telemetry token for logs and metrics.
 
 Phase 4 is therefore part done. A Pilot registers its own site and custom domains through `central.api.pilot`, and Central verifies a TXT record, and a CNAME for a non-apex name, before it creates the route. Central-driven rename and TLS coordination remain.
 
-Known gaps outside the phase list:
+### Deferred by design, still open
+
+These were removed from the staging milestone on purpose. They are the next structural work.
+
+- `Asset` is still named `Asset`. The product name is Virtual Machine.
+- `Atlas Instance` and `Region` are still two records. `Region` holds geography and `Atlas Instance` holds the connection, and every regional read goes through `Atlas Instance`.
+- Signup readiness still waits for the region to report `Running` before it probes the site.
+
+### Known gaps outside the phase list
 
 - A terminated server keeps its Site Domain routes. Only its Pilot credentials are revoked.
-- Central has no endpoint for a region to enrol itself. Atlas now accepts `PUT /api/atlas/webhooks` to point its deliveries at a Central, so the sender half exists, but the matching Atlas Instance and Cargo Instance secrets are still entered into Central by hand.
+- Central cannot enrol a region. Atlas accepts `PUT /api/atlas/webhooks`, so the receiving half exists and Central never calls it. Cargo has no such route at all, and its Central URL and secret are typed into Cargo Settings by hand.
 - Resize accepts a disk change. The agreed product rule is CPU and memory only.
+- `Central Tunnel Settings`, `Connect Credential`, and `Passport Registration` have no reader in this app or its siblings.
 
 ## Branch workflow
 
@@ -175,17 +184,76 @@ These are target dates and dependency gates, not promised elapsed times. Record 
 
 Cargo is available in the local bench for contract checks. Friday uses existing regional infrastructure and prepared images. New service ordering is deferred.
 
-## After-Friday phases
+## Work after the staging milestone
 
-| Phase | Result |
-|---|---|
-| 4 | Site/admin rename, domain ownership and routing, Pilot TLS, and Cargo backend registration. |
-| 5 | Typed API core, OpenAPI, generated clients, target Server/Site/Region model, and image catalog with patches. |
-| 6 | Resize and migration progress, console, snapshots, and fleet-scale recovery. |
-| 7 | Services, live health, telemetry, IAM, partners, notifications, and dashboard standards review. |
-| 8 | Full suite, complete migration rehearsal, regional acceptance, and release review for develop. |
+Ordered by what unblocks the most. Each item is one PR into `v0.2` unless it says otherwise.
 
-Do not weaken the Friday implementation to create temporary generic abstractions. Extend its domain-owned code in later phases.
+### 1. Signup latency: readiness by probe, not by callback
+
+**Result:** a trial reaches its site without waiting for an Atlas state report.
+
+Atlas derives a VM's mesh address from its region, tenant, and number, so the address is known the moment creation is accepted. `_finalize` already reads the machine back once. Therefore Central can name the site and the Pilot gateway immediately, and it never needs a report to learn where to knock.
+
+- Create the `Site` record from the creation read instead of from `observe_server` alone, so a trial has an address before any report lands.
+- Drop `status == "Running"` as the gate in `site_state` and `Site.get_pilot_access`. Readiness becomes: the site answers its ping, or Pilot answers its health endpoint. A machine that answers is running, whatever the mirror says.
+- Keep the state reports. They still drive the mirror, the console badges, and `Resource Action`, and they now run behind the customer instead of in front of them.
+- Bound the probe. Give it a short timeout and a stop condition, so a dead machine fails with a message instead of polling forever.
+
+Acceptance: a signup on staging reaches the site in under 10 seconds with the state webhook disabled.
+
+### 2. Product trials
+
+**Result:** an ERPNext trial and a CRM trial each look like their own product.
+
+`product` reaches the signup page as a query parameter and stops there. The backend never sees it.
+
+- Carry `product` from signup through to `create_trial_site` and store it on the `Resource Action` and the `Site`.
+- Add `product` to `SIGNUP_IMAGE_TAGS` so the region selects that product's prepared image.
+- Show the product's logo, name, and wording on the signup, naming, and ready pages.
+- Refuse a product with no enabled offering, with a readable message.
+
+### 3. Region self-enrolment
+
+**Result:** an operator adds a region without editing two sites by hand.
+
+- Add a **Configure Deliveries** action on `Atlas Instance`. It calls `PUT /api/atlas/webhooks` with Central's receiver URL, the stored `webhook_secret`, and `enabled`. It records the result on the record, like Test Connection does.
+- Cargo needs the matching route before its half can work. Until it exists, keep the Cargo secret manual and say so on the record.
+- Remove `db_set` from the Atlas `VM State` doctype, so it only raises events. This is Atlas-side work.
+
+### 4. State delivery hardening
+
+**Result:** no report is lost, replayed, or applied out of order.
+
+- Order by the region's own event time, not by Central's arrival time. `apply_atlas_report` stamps `now_datetime()`, so two reports processed out of order can regress state. Carry the region's timestamp in the payload and pass it to `record_observed_state`.
+- Store a receipt before replying `queued`. Today the reply promises work that only a queue holds, and a lost job is found only by the ten-minute reconcile.
+- Deduplicate by payload digest. The `no change` short-circuit catches a repeat of the current state. It does not catch a replayed A to B to A.
+- Retain an unmatched report. A report for a machine Central does not own yet is dropped as `unknown server`. Retain it and match it when the creation settles.
+
+### 5. Model cleanup
+
+**Result:** the records are named and shaped the way the product talks about them.
+
+Do this as separate PRs, each with its patch, and after items 1 and 2 land.
+
+- Rename `Asset` to `Virtual Machine`. It is a mechanical rename with a wide reach: 74 Python files and 12 doctype JSON files refer to it. Use `frappe.rename_doc` on the DocType and a patch for the links.
+- Merge `Atlas Instance` into `Region`. One region is one endpoint, one proxy zone, one numeric Atlas ID, and one secret. Two records for one thing is what makes the code say `cluster` in one place and `region` in another.
+- Link `Site` to its machine and hide a machine that carries a site. A trial customer owns a site, not a VM, and should not see both.
+
+### 6. Product rules and cleanup
+
+- Resize must offer CPU and memory only. Remove the disk change from `resize_server`, the API, and the console.
+- Remove a terminated server's Site Domain routes, or refuse termination while a site still holds a route.
+- Delete `Central Tunnel Settings`, `Connect Credential`, and `Passport Registration`, with a patch each. Nothing reads them.
+
+### 7. Pilot and domain remainders
+
+Reported from staging use and not yet verified in code.
+
+- The admin domain serves `http` behind the proxy. Pilot needs to be told it is behind TLS termination.
+- A site needs `clear-cache` before its in-app cloud window shows the new URL.
+- TLS for a non-wildcard custom domain needs a rework.
+- The new-site modal is too narrow for a long wildcard suffix.
+- Confirm the Frappe `Asia/Calcutta` timezone fault and where it comes from.
 
 ## PR rules
 
