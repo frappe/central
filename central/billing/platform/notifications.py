@@ -115,6 +115,22 @@ _BILLING_EVENT_TYPES = {
 		None,
 		None,
 	),
+	"partner_spend_limit_reached": (
+		"A client reached their spend limit",
+		"{{ reference_name }} has reached the spend limit you set for them. {{ message }}",
+		"Warning",
+		"billing:view",
+		"View client",
+		"/billing",
+	),
+	"partner_spend_buffer_used": (
+		"A client is spending into their emergency buffer",
+		"{{ reference_name }} is now spending into the buffer you set for them. {{ message }}",
+		"Error",
+		"billing:view",
+		"View client",
+		"/billing",
+	),
 }
 
 

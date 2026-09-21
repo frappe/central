@@ -266,7 +266,12 @@ class Team(Document):
 				frappe.throw(_("Team Role {0} does not belong to this team.").format(member.role))
 
 	def _validate_changes(self) -> None:
-		if self.is_new() or self.flags.from_team_invitation or self._is_operator():
+		if (
+			self.is_new()
+			or self.flags.from_team_invitation
+			or self.flags.from_partner_link_grant
+			or self._is_operator()
+		):
 			if (
 				self.is_new()
 				and not self.flags.from_user_bootstrap
