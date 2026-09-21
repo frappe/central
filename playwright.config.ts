@@ -25,10 +25,8 @@ export default defineConfig({
   // give specs and assertions generous ceilings so a live API hop never flakes.
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  // Real gateway sandboxes are shared mutable state and rate-limited; run serially
-  // so two specs never confirm against Stripe at the same instant.
-  workers: 1,
-  fullyParallel: false,
+  workers: process.env.CI ? 2 : 4,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
