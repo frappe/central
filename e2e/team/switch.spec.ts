@@ -8,11 +8,14 @@ const switchTo = async (page, role) => {
 	const dialog = page.getByRole('dialog')
 	await expect(dialog.getByRole('row').filter({ hasText: "Cust's Team" })).toHaveCount(2)
 
-	await dialog
-		.getByRole('row')
-		.filter({ hasText: role })
-		.getByRole('button', { name: 'Team actions' })
-		.click()
+	const row = dialog.getByRole('row').filter({ hasText: role })
+
+	if (await row.getByText('Current').isVisible()) {
+		await page.keyboard.press('Escape')
+		return
+	}
+
+	await row.getByRole('button', { name: 'Team actions' }).click()
 	await page.getByRole('menuitem', { name: 'Switch team' }).click()
 }
 

@@ -36,7 +36,10 @@ test('Save notification preferences', async ({ page, users }) => {
 	const me = await users.signIn()
 
 	await openSettings(page, me, 'Notifications')
-	await page.getByLabel('Email notifications for Billing').click()
+	const billingEmails = page.getByLabel('Email notifications for Billing').getByRole('switch')
+	await expect(billingEmails).toBeChecked()
+	await billingEmails.click()
+	await expect(billingEmails).not.toBeChecked()
 	await page.getByRole('button', { name: 'Save preferences' }).click()
 
 	await expect(page.getByText('Notification preferences saved')).toBeVisible()
