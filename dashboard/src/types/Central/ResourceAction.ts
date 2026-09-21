@@ -19,8 +19,8 @@ export interface ResourceAction {
 	team: string
 	/**	Region : Link - Region	*/
 	atlas_instance?: string
-	/**	Server : Link - Asset	*/
-	asset?: string
+	/**	Server : Link - Virtual Machine	*/
+	server?: string
 	/**	Resource ID : Data - Central resource identifier. The regional VM ID is recorded separately.	*/
 	resource_id?: string
 	/**	Status : Select	*/

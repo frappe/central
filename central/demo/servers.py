@@ -16,8 +16,8 @@ Notes:
   — expected.
 - Idempotent: resource_ids are uuid5 of a fixed namespace, so re-running seed
   upserts the same rows and `teardown` can recompute exactly what it owns.
-- Running assets mint a Subscription via `Asset.on_update`; teardown removes
-  those too (Subscription Change -> Subscription -> Asset -> Region, in
+- Running servers mint a Subscription via `VirtualMachine.on_update`; teardown removes
+  those too (Subscription Change -> Subscription -> VirtualMachine -> Region, in
   Link-integrity order).
 """
 
@@ -38,7 +38,7 @@ SEED_NAMESPACE = uuid.UUID("2f9c31d4-7b6a-4d0e-9c1f-5a8e2d4b6c80")
 
 # region, provider, display_name, country_code, latitude, longitude, status.
 # Coordinates match the FC V2 mockup catalog. Deliberate edge case: sa-jeddah
-# is Draining, so list_instances hides it while its assets remain (exercises
+# is Draining, so list_instances hides it while its servers remain (exercises
 # the console's unlisted-region fallback). A region saved without coordinates
 # (0/0 = "not placed") lists but never pins — any hand-made instance covers it.
 REGIONS = (
@@ -56,7 +56,7 @@ REGIONS = (
 # memory_megabytes, disk_gigabytes, frappe_version. Statuses cover every console
 # visual: Running (green), Pending (setting up), Stopped/Paused (gray), Failed
 # (broken, red pulse) and one Terminated row that must never render.
-ASSETS = (
+SERVERS = (
 	("web-01", 0, "in-mumbai", "Running", 4, 8192, 75, "v15"),
 	("web-02", 0, "in-mumbai", "Running", 2, 4096, 40, "v15"),
 	("worker-01", 0, "in-navimumbai", "Pending", 2, 4096, 40, "v16"),
@@ -88,8 +88,8 @@ def seed() -> dict:
 	observed_at = now_datetime()
 	for region in REGIONS:
 		_upsert_region(region)
-	for index, asset in enumerate(ASSETS):
-		_seed_asset(index, asset, teams, observed_at)
+	for index, server in enumerate(SERVERS):
+		_seed_server(index, server, teams, observed_at)
 
 	frappe.db.commit()  # nosemgrep: frappe-manual-commit -- command-style local seed persists demo rows.
 	return summary()
@@ -101,11 +101,11 @@ def summary() -> dict:
 	regions = [region for region, *_ in REGIONS]
 	return {
 		"regions": frappe.db.count("Region", {"name": ["in", regions]}),
-		"assets": frappe.db.count("Asset", {"name": ["in", resource_ids]}),
-		"assets_by_status": dict(
-			Counter(frappe.get_all("Asset", filters={"name": ["in", resource_ids]}, pluck="status"))
+		"servers": frappe.db.count("Virtual Machine", {"name": ["in", resource_ids]}),
+		"servers_by_status": dict(
+			Counter(frappe.get_all("Virtual Machine", filters={"name": ["in", resource_ids]}, pluck="status"))
 		),
-		"subscriptions": frappe.db.count("Subscription", {"asset_id": ["in", resource_ids]}),
+		"subscriptions": frappe.db.count("Subscription", {"server_id": ["in", resource_ids]}),
 	}
 
 
@@ -114,14 +114,16 @@ def teardown() -> dict:
 	_require_developer_mode()
 
 	resource_ids = _seed_resource_ids()
-	subscriptions = frappe.get_all("Subscription", filters={"asset_id": ["in", resource_ids]}, pluck="name")
+	subscriptions = frappe.get_all("Subscription", filters={"server_id": ["in", resource_ids]}, pluck="name")
 	changes = frappe.get_all(
 		"Subscription Change", filters={"subscription": ["in", subscriptions]}, pluck="name"
 	)
 	removed = {
 		"subscription_changes": _delete_all("Subscription Change", changes),
 		"subscriptions": _delete_all("Subscription", subscriptions),
-		"assets": _delete_all("Asset", [r for r in resource_ids if frappe.db.exists("Asset", r)]),
+		"servers": _delete_all(
+			"Virtual Machine", [r for r in resource_ids if frappe.db.exists("Virtual Machine", r)]
+		),
 		"regions": _delete_all(
 			"Region",
 			[region for region, *_ in REGIONS if frappe.db.exists("Region", region)],
@@ -155,16 +157,16 @@ def _upsert_region(region_row: tuple) -> None:
 	doc.save(ignore_permissions=True)
 
 
-def _seed_asset(index: int, asset_row: tuple, teams: list[str], observed_at) -> None:
-	slug, team_index, cluster, status, vcpus, memory_megabytes, disk_gigabytes, frappe_version = asset_row
+def _seed_server(index: int, server_row: tuple, teams: list[str], observed_at) -> None:
+	slug, team_index, cluster, status, vcpus, memory_megabytes, disk_gigabytes, frappe_version = server_row
 	resource_id = _resource_id(slug)
-	if frappe.db.exists("Asset", resource_id):
+	if frappe.db.exists("Virtual Machine", resource_id):
 		return
 
 	# Seeds stand in for servers Central provisioned, so they take the provisioning path.
 	frappe.get_doc(
 		{
-			"doctype": "Asset",
+			"doctype": "Virtual Machine",
 			"resource_id": resource_id,
 			"team": teams[min(team_index, len(teams) - 1)],
 			"cluster": cluster,
@@ -186,7 +188,7 @@ def _resource_id(slug: str) -> str:
 
 
 def _seed_resource_ids() -> list[str]:
-	return [_resource_id(slug) for slug, *_ in ASSETS]
+	return [_resource_id(slug) for slug, *_ in SERVERS]
 
 
 def _delete_all(doctype: str, names: list[str]) -> int:

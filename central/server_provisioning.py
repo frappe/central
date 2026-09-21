@@ -219,7 +219,7 @@ def reserved_rate(team: str) -> float:
 		.where(
 			(request.team == team)
 			& request.status.isin(PENDING_STATES)
-			& (request.asset.isnull() | (request.asset == ""))
+			& (request.server.isnull() | (request.server == ""))
 		)
 	).run()
 	return float(rows[0][0] or 0)
@@ -230,12 +230,12 @@ def validate_trial(team: str) -> None:
 
 	if get_balance(team).get("balance", 0) <= 0:
 		frappe.throw(_("Your trial credits are used up. Add a payment method to continue."))
-	assets = frappe.db.count("Asset", {"team": team, "status": ["!=", "Terminated"]})
+	servers = frappe.db.count("Virtual Machine", {"team": team, "status": ["!=", "Terminated"]})
 	pending = frappe.db.count(
 		"Resource Action",
-		{"team": team, "status": ["in", PENDING_STATES], "asset": ["is", "not set"]},
+		{"team": team, "status": ["in", PENDING_STATES], "server": ["is", "not set"]},
 	)
-	if assets + pending >= 3:
+	if servers + pending >= 3:
 		frappe.throw(_("Trial Teams can have at most three active or pending servers."))
 
 

@@ -4,7 +4,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import SiteRowActions from '@/components/servers/SiteRowActions.vue'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import type { ResourceRow } from '@/lib/serverMap'
 
 // The "Your servers" floating card: the pill IS the panel, collapsed. Opening
@@ -30,13 +30,13 @@ defineEmits<{
 	/** Row click — the page opens the resource itself (bench/site/overview). */
 	openRow: [row: ResourceRow]
 	clearLocation: []
-	overview: [server: AssetRow]
-	open: [server: AssetRow]
-	start: [server: AssetRow]
-	stop: [server: AssetRow]
-	restart: [server: AssetRow]
-	resize: [server: AssetRow]
-	terminate: [server: AssetRow]
+	overview: [server: VirtualMachineRow]
+	open: [server: VirtualMachineRow]
+	start: [server: VirtualMachineRow]
+	stop: [server: VirtualMachineRow]
+	restart: [server: VirtualMachineRow]
+	resize: [server: VirtualMachineRow]
+	terminate: [server: VirtualMachineRow]
 	openSite: [name: string]
 	terminateSite: [name: string]
 }>()
@@ -151,8 +151,8 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							@click.stop
 						>
 							<ServerRowActions
-								v-if="row.asset"
-								:server="row.asset"
+								v-if="row.server"
+								:server="row.server"
 								:can-open="canOpen"
 								:can-power="canPower"
 								:can-terminate="canTerminate"

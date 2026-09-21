@@ -126,25 +126,25 @@ class TestServerFailureFeed(TeamNotificationBase):
 	def setUp(self):
 		super().setUp()
 		ensure_atlas_instance(self.CLUSTER)
-		frappe.db.delete("Asset", {"resource_id": "vm-feed-1"})
+		frappe.db.delete("Virtual Machine", {"resource_id": "vm-feed-1"})
 
-	def test_asset_failed_emits_server_notification(self):
+	def test_a_failed_server_emits_a_notification(self):
 		# A mirror flipping to Failed drops a Server-category error into the feed.
-		asset = frappe.get_doc(
+		server = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": "vm-feed-1",
 				"team": TEAM,
 				"cluster": self.CLUSTER,
 				"status": "Pending",
 			}
 		).insert(ignore_permissions=True)
-		asset.status = "Failed"
-		asset.save(ignore_permissions=True)
+		server.status = "Failed"
+		server.save(ignore_permissions=True)
 		rows = frappe.get_all(
 			"Team Notification", {"team": TEAM, "event_type": "server_failed"}, ["severity", "category"]
 		)
 		self.assertEqual(len(rows), 1)
 		self.assertEqual(rows[0].severity, "Error")
 		self.assertEqual(rows[0].category, "Server")
-		frappe.db.delete("Asset", {"resource_id": "vm-feed-1"})
+		frappe.db.delete("Virtual Machine", {"resource_id": "vm-feed-1"})

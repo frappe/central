@@ -27,7 +27,7 @@ from central.billing.states import InvalidTransition, transition
 def anchor_subscription(team: str) -> str | None:
 	"""The subscription an invoice's dunning / charge-routing anchors on.
 
-	An invoice bills a team's whole consolidated set of assets. Account standing
+	An invoice bills a team's whole consolidated set of servers. Account standing
 	and the default payment method/gateway live on the Subscription, so dunning
 	and on-charge routing need one representative subscription for the invoice:
 	the team's earliest-created one. This mirrors the "primary subscription" the
@@ -76,31 +76,31 @@ def create_subscription(
 	opening_quote: tuple[float, str] | None = None,
 ):
 	"""Record a subscription INTENT — what the customer asked for — linked to its
-	runtime Asset. The Asset is the resource Central drives on a cluster (it carries
+	runtime VirtualMachine. The VirtualMachine is the resource Central drives on a cluster (it carries
 	the region); the Subscription is the billing contract that links to it via
-	`asset_id`. Billing resolves the region (and so the rate snapshot) through the
-	Asset (ADR 0006, cdea38e). The actual provisioning (calling the cluster manager
+	`server_id`. Billing resolves the region (and so the rate snapshot) through the
+	VirtualMachine (ADR 0006, cdea38e). The actual provisioning (calling the cluster manager
 	and writing the price-lock) is `provision_subscription`; this captures the
-	contract + its asset only, so it stays usable for fixtures and intent-only flows.
+	contract + its server only, so it stays usable for fixtures and intent-only flows.
 
 	A `Composed` subscription mints no Plan: it carries `includes` (qty per Resource
 	Type) as its locked composition and `sub_category` as its optimisation profile;
 	billing reads the summed config rate off its Subscription Change (ADR 0009/0010).
 
-	The cluster must be a registered Region (Asset.cluster is a reqd Link)."""
+	The cluster must be a registered Region (VirtualMachine.cluster is a reqd Link)."""
 	resource_id = resource_id or f"vm-{frappe.generate_hash(length=10)}"
-	if not frappe.db.exists("Asset", resource_id):
-		# Pending — not Running — so the Asset status-sync does not race us to create
-		# a second Subscription for this asset.
+	if not frappe.db.exists("Virtual Machine", resource_id):
+		# Pending — not Running — so the VirtualMachine status-sync does not race us to create
+		# a second Subscription for this server.
 		frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": resource_id,
 				"team": team,
 				"cluster": cluster,
 				"plan": plan,
 				"status": "Pending",
-				**_asset_shape(includes),
+				**_server_shape(includes),
 			}
 		).insert(ignore_permissions=True)
 
@@ -108,7 +108,7 @@ def create_subscription(
 		{
 			"doctype": "Subscription",
 			"team": team,
-			"asset_id": resource_id,
+			"server_id": resource_id,
 			"pricing_mode": pricing_mode,
 			"plan": plan,
 			"sub_category": sub_category,
@@ -128,8 +128,8 @@ def create_subscription(
 	return doc
 
 
-def _asset_shape(includes) -> dict:
-	"""Record a composed config's real shape on its Asset so the running machine
+def _server_shape(includes) -> dict:
+	"""Record a composed config's real shape on its VirtualMachine so the running machine
 	reflects what was provisioned. Empty for a preset (the Plan carries the shape)."""
 	if not includes:
 		return {}
@@ -259,7 +259,7 @@ def provision_service_subscription(
 ):
 	"""Subscribe a team to a team-level metered service (ADR 0013/0015).
 
-	Unlike a VM subscription, this mints no Asset and calls no cluster manager: it
+	Unlike a VM subscription, this mints no VirtualMachine and calls no cluster manager: it
 	synthesizes a virtual subject per `(team, plan, cluster)`, records the intent, and
 	opens the authoritative billing segment (the `Created` Subscription Change — the
 	price-lock itself, ADR 0010) inline. A service subject is always alive while
@@ -395,29 +395,31 @@ def begin_resize(
 	doc = frappe.get_doc("Subscription", subscription)
 	if not _is_resizable(doc):
 		return {"queued": False, "resized": False}
-	asset = (
-		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status", "resize_in_progress"], as_dict=True)
-		if doc.asset_id
+	server = (
+		frappe.db.get_value(
+			"Virtual Machine", doc.server_id, ["cluster", "status", "resize_in_progress"], as_dict=True
+		)
+		if doc.server_id
 		else None
 	)
-	if asset and asset.resize_in_progress:
+	if server and server.resize_in_progress:
 		frappe.throw(frappe._("This server is already resizing — wait for it to finish."))
 
-	shape = _plan_resize(doc, asset, plan, includes, sub_category)
+	shape = _plan_resize(doc, server, plan, includes, sub_category)
 	if shape is None:
 		return {"queued": False, "resized": False}  # same config — nothing to do
 
 	# No live VM to reshape → re-lock the contract inline (nothing slow to defer).
-	if not asset or asset.status not in ("Running", "Paused", "Stopped"):
+	if not server or server.status not in ("Running", "Paused", "Stopped"):
 		_apply_resize(
 			subscription, plan=plan, includes=includes, sub_category=sub_category, changed_by=changed_by
 		)
 		return {"queued": False, "resized": True}
 
 	# Slow path: flag the VM Resizing (pushed live to the Console) and defer the reshape.
-	from central.central.doctype.asset.asset import Asset
+	from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 
-	Asset.mark_resizing(doc.asset_id, True)
+	VirtualMachine.mark_resizing(doc.server_id, True)
 	frappe.enqueue(
 		_apply_resize,
 		queue="long",
@@ -428,19 +430,19 @@ def begin_resize(
 		includes=includes,
 		sub_category=sub_category,
 		changed_by=changed_by,
-		asset_id=doc.asset_id,
+		server_id=doc.server_id,
 	)
 	return {"queued": True, "resized": True}
 
 
-def _plan_resize(doc, asset, plan, includes, sub_category) -> dict | None:
+def _plan_resize(doc, server, plan, includes, sub_category) -> dict | None:
 	"""Decide a resize synchronously: return the target VM shape (vcpus/memory/disk), or
 	None when it's a no-op (same config). Runs the VM-free checks — no-op detection,
 	headroom, and the disk-shrink guard — so the user gets these errors immediately,
 	before anything is queued; the worker re-runs them authoritatively when it applies
 	the resize. (Composition validity is left to the worker.)"""
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
-	cluster = asset.cluster if asset else None
+	cluster = server.cluster if server else None
 	if plan:
 		if doc.pricing_mode == "Preset" and doc.plan == plan:
 			return None
@@ -455,11 +457,11 @@ def _plan_resize(doc, asset, plan, includes, sub_category) -> dict | None:
 			rows
 		):
 			return None
-		shape = _asset_shape(rows)
+		shape = _server_shape(rows)
 		new_rate = resolve_config_rate(rows, currency, cluster)
 	enforce_headroom(doc.team, new_rate, exclude=doc.name)
-	if asset and asset.status in ("Running", "Paused", "Stopped"):
-		_guard_disk_shrink(doc.asset_id, shape)
+	if server and server.status in ("Running", "Paused", "Stopped"):
+		_guard_disk_shrink(doc.server_id, shape)
 	return shape
 
 
@@ -470,7 +472,7 @@ def _apply_resize(
 	includes: list | None = None,
 	sub_category: str | None = None,
 	changed_by: str | None = None,
-	asset_id: str | None = None,
+	server_id: str | None = None,
 ) -> None:
 	"""Apply a resize through the existing synchronous functions — reshape the real VM
 	(slow) then re-lock billing. Runs in a background job for a live VM (so the request
@@ -479,7 +481,7 @@ def _apply_resize(
 	own committed write so the Console can't wedge on a stuck "Resizing" state, and
 	re-raises so the job is recorded as failed (billing stays on the old segment — we
 	never re-price to a shape the host didn't apply)."""
-	from central.central.doctype.asset.asset import Asset
+	from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 
 	try:
 		if plan:
@@ -487,17 +489,17 @@ def _apply_resize(
 		else:
 			resize_composed_subscription(subscription, includes or [], sub_category, changed_by=changed_by)
 	except Exception:
-		if asset_id:
+		if server_id:
 			frappe.db.rollback()
-			Asset.mark_resizing(asset_id, False)
-			_notify_resize_failed(subscription, asset_id)
+			VirtualMachine.mark_resizing(server_id, False)
+			_notify_resize_failed(subscription, server_id)
 			frappe.db.commit()
 		raise
-	if asset_id:
-		Asset.mark_resizing(asset_id, False)
+	if server_id:
+		VirtualMachine.mark_resizing(server_id, False)
 
 
-def _notify_resize_failed(subscription: str, asset_id: str) -> None:
+def _notify_resize_failed(subscription: str, server_id: str) -> None:
 	"""Feed a failed background resize into the team's console notifications, so a
 	resize that couldn't be applied on the host isn't silent once the flag clears."""
 	team = frappe.db.get_value("Subscription", subscription, "team")
@@ -518,10 +520,10 @@ def _notify_resize_failed(subscription: str, asset_id: str) -> None:
 	engine.dispatch(
 		team,
 		"resize_failed",
-		message=f"The resize of server {asset_id} could not be applied and was rolled back. "
+		message=f"The resize of server {server_id} could not be applied and was rolled back. "
 		"Billing stayed on the previous plan. You can retry the resize.",
-		reference_doctype="Asset",
-		reference_name=asset_id,
+		reference_doctype="Virtual Machine",
+		reference_name=server_id,
 	)
 
 
@@ -556,12 +558,12 @@ def resize_composed_subscription(
 	validate_composition(profile, rows)
 
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
-	asset = (
-		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status"], as_dict=True)
-		if doc.asset_id
+	server = (
+		frappe.db.get_value("Virtual Machine", doc.server_id, ["cluster", "status"], as_dict=True)
+		if doc.server_id
 		else None
 	)
-	new_rate = resolve_config_rate(rows, currency, asset.cluster if asset else None)
+	new_rate = resolve_config_rate(rows, currency, server.cluster if server else None)
 	enforce_headroom(doc.team, new_rate, exclude=subscription)
 
 	# Resizing to the identical composition already running is a no-op (no event).
@@ -570,12 +572,12 @@ def resize_composed_subscription(
 	):
 		return doc
 
-	if asset:
+	if server:
 		# Reshape the real VM on its Atlas BEFORE re-pricing (the Atlas seam, #54): if
 		# the host rejects the resize we must not open a new — mis-priced — billing
 		# segment. Central's mirror picks up the new shape from the vm.resized event
 		# Atlas emits, so we no longer write it here.
-		_reshape_vm(doc.asset_id, asset.cluster, asset.status, _asset_shape(rows))
+		_reshape_vm(doc.server_id, server.cluster, server.status, _server_shape(rows))
 
 	doc.pricing_mode = "Composed"
 	doc.plan = None
@@ -597,9 +599,9 @@ def resize_to_plan(subscription: str, new_plan: str, changed_by: str | None = No
 		return None
 	if doc.pricing_mode == "Preset" and doc.plan == new_plan:
 		return doc
-	asset = (
-		frappe.db.get_value("Asset", doc.asset_id, ["cluster", "status"], as_dict=True)
-		if doc.asset_id
+	server = (
+		frappe.db.get_value("Virtual Machine", doc.server_id, ["cluster", "status"], as_dict=True)
+		if doc.server_id
 		else None
 	)
 	# Refuse a resize that would push the team past its trust-tier headroom — the same
@@ -607,30 +609,30 @@ def resize_to_plan(subscription: str, new_plan: str, changed_by: str | None = No
 	# spend cap. Authoritative here (covers every caller, incl. the background job);
 	# begin_resize also checks it synchronously for immediate feedback.
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
-	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, asset.cluster if asset else None)
+	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, server.cluster if server else None)
 	enforce_headroom(doc.team, new_rate, exclude=subscription)
-	if asset:
-		_reshape_vm(doc.asset_id, asset.cluster, asset.status, _plan_shape(new_plan))
+	if server:
+		_reshape_vm(doc.server_id, server.cluster, server.status, _plan_shape(new_plan))
 	return change_plan(subscription, new_plan, changed_by=changed_by)
 
 
 def _plan_shape(plan: str) -> dict:
-	"""A preset Plan's bundled size as the _asset_shape dict (vcpus/memory/disk)."""
+	"""A preset Plan's bundled size as the _server_shape dict (vcpus/memory/disk)."""
 	includes = frappe.get_all(
 		"Plan Includes",
 		filters={"parenttype": "Plan", "parent": plan},
 		fields=["resource_type", "quantity"],
 	)
-	return _asset_shape(includes)
+	return _server_shape(includes)
 
 
-def _guard_disk_shrink(asset_id: str, shape: dict) -> None:
+def _guard_disk_shrink(server_id: str, shape: dict) -> None:
 	"""Refuse a resize that would shrink the disk — Atlas can only grow a rootfs. Cheap
 	and VM-free, so `begin_resize` runs it synchronously to surface the error to the user
 	before the slow reshape is ever queued (and `_reshape_vm` re-checks as a backstop)."""
 	if not shape:
 		return
-	current_disk = frappe.utils.cint(frappe.db.get_value("Asset", asset_id, "disk_gigabytes"))
+	current_disk = frappe.utils.cint(frappe.db.get_value("Virtual Machine", server_id, "disk_gigabytes"))
 	if shape["disk_gigabytes"] < current_disk:
 		frappe.throw(
 			frappe._(
@@ -639,14 +641,14 @@ def _guard_disk_shrink(asset_id: str, shape: dict) -> None:
 		)
 
 
-def _reshape_vm(asset_id: str, cluster: str, status: str, shape: dict) -> None:
+def _reshape_vm(server_id: str, cluster: str, status: str, shape: dict) -> None:
 	"""Apply the new size on the server's region before billing re-prices it."""
 	from central.integrations.servers import resize_server
 
 	if status not in ("Running", "Paused", "Stopped"):
 		frappe.throw(frappe._("Wait until the server is ready before you resize it."))
 	if shape:
-		resize_server(frappe.get_doc("Asset", asset_id), shape)
+		resize_server(frappe.get_doc("Virtual Machine", server_id), shape)
 
 
 def _is_resizable(doc) -> bool:
@@ -661,7 +663,7 @@ def _is_resizable(doc) -> bool:
 	)
 	if not latest or latest[0] == "Cancelled":
 		return False
-	if doc.asset_id and frappe.db.get_value("Asset", doc.asset_id, "status") == "Terminated":
+	if doc.server_id and frappe.db.get_value("Virtual Machine", doc.server_id, "status") == "Terminated":
 		return False
 	return True
 
@@ -692,14 +694,14 @@ def _latest_segment_by_subscription(subscription_names: list[str]) -> dict:
 	return latest
 
 
-def _asset_clusters(asset_ids) -> dict:
-	"""Map asset_id -> cluster in one query (cluster lives on the Asset, cdea38e)."""
-	ids = [a for a in set(asset_ids) if a]
+def _server_clusters(server_ids) -> dict:
+	"""Map server_id -> cluster in one query (cluster lives on the VirtualMachine, cdea38e)."""
+	ids = [a for a in set(server_ids) if a]
 	if not ids:
 		return {}
 	return {
 		r.name: r.cluster
-		for r in frappe.get_all("Asset", filters={"name": ["in", ids]}, fields=["name", "cluster"])
+		for r in frappe.get_all("Virtual Machine", filters={"name": ["in", ids]}, fields=["name", "cluster"])
 	}
 
 
@@ -714,25 +716,25 @@ def active_segments(filters: dict | None = None) -> list:
 
 	`filters` narrows the underlying Subscriptions (e.g. `{"team": t}` or
 	`{"plan": p}`). Each row is a `frappe._dict`: subscription, team, plan,
-	pricing_mode, asset_id, resource_id, cluster, currency, locked_rate."""
+	pricing_mode, server_id, resource_id, cluster, currency, locked_rate."""
 	subs = frappe.get_all(
 		"Subscription",
 		filters=filters or {},
-		fields=["name", "team", "plan", "pricing_mode", "asset_id", "service_subject", "cluster"],
+		fields=["name", "team", "plan", "pricing_mode", "server_id", "service_subject", "cluster"],
 	)
 	if not subs:
 		return []
 	latest = _latest_segment_by_subscription([s.name for s in subs])
-	clusters = _asset_clusters([s.asset_id for s in subs])
+	clusters = _server_clusters([s.server_id for s in subs])
 	out = []
 	for s in subs:
 		seg = latest.get(s.name)
 		if not seg or seg.change_type == "Cancelled":
 			continue
-		# A VM subscription is subjected by its Asset (cluster off the Asset); a
-		# team-level service subject has no Asset — its id and cluster live on the
+		# A VM subscription is subjected by its VirtualMachine (cluster off the VirtualMachine); a
+		# team-level service subject has no VirtualMachine — its id and cluster live on the
 		# Subscription itself (ADR 0013). Either way the resource_id keys metering.
-		resource_id = s.asset_id or s.service_subject
+		resource_id = s.server_id or s.service_subject
 		out.append(
 			frappe._dict(
 				{
@@ -740,10 +742,10 @@ def active_segments(filters: dict | None = None) -> list:
 					"team": s.team,
 					"plan": s.plan,
 					"pricing_mode": s.pricing_mode,
-					"asset_id": s.asset_id,
+					"server_id": s.server_id,
 					"service_subject": s.service_subject,
 					"resource_id": resource_id,
-					"cluster": clusters.get(s.asset_id) or s.cluster,
+					"cluster": clusters.get(s.server_id) or s.cluster,
 					"currency": seg.currency,
 					"locked_rate": frappe.utils.flt(seg.locked_rate),
 				}
@@ -759,10 +761,10 @@ def team_active_segments(team: str) -> list:
 
 def active_segment_for_resource(resource_id: str):
 	"""The open priced segment for a metered subject, or None. A VM resource is named
-	by its Asset (`asset_id`); a team-level service subject is named by the synthesized
+	by its VirtualMachine (`server_id`); a team-level service subject is named by the synthesized
 	`service_subject` (ADR 0013). Either maps to at most one subscription. Used by
 	metering to grandfather a subject's terms off the ledger (#86)."""
-	segs = active_segments({"asset_id": resource_id})
+	segs = active_segments({"server_id": resource_id})
 	if not segs:
 		segs = active_segments({"service_subject": resource_id})
 	return segs[0] if segs else None
@@ -821,8 +823,8 @@ def project_run_rate(team: str, project: str, exclude: str | None = None) -> flo
 
 
 def enforce_project_headroom(team: str, project: str | None, new_rate, exclude: str | None = None) -> None:
-	"""Reject tagging a new asset into a project that would push its committed
-	run-rate past its `spending_limit` (0/unset = unlimited). Blocks new assets
+	"""Reject tagging a new server into a project that would push its committed
+	run-rate past its `spending_limit` (0/unset = unlimited). Blocks new servers
 	only (the breaking-change spec) — an already-tagged subscription keeps running
 	untouched even if the limit is lowered afterward."""
 	if not project:
@@ -836,7 +838,7 @@ def enforce_project_headroom(team: str, project: str | None, new_rate, exclude: 
 	if frappe.utils.flt(new_rate) > available:
 		frappe.throw(
 			frappe._(
-				"Tagging this asset into the project would exceed its spending limit "
+				"Tagging this server into the project would exceed its spending limit "
 				"({0} committed, {1} available)."
 			).format(frappe.utils.flt(new_rate), frappe.utils.flt(available))
 		)
@@ -899,17 +901,17 @@ def _control_subscription_server(sub, action: str) -> None:
 	pausing a subscription stops its VM and resuming starts it back. Skips when there
 	is no provisioned resource, or when its mirrored status means the action wouldn't
 	apply (e.g. stopping an already-stopped server)."""
-	if not sub.asset_id:
+	if not sub.server_id:
 		return
-	asset = frappe.db.get_value("Asset", sub.asset_id, ["resource_id", "status"], as_dict=True)
-	if not asset or not asset.resource_id:
+	server = frappe.db.get_value("Virtual Machine", sub.server_id, ["resource_id", "status"], as_dict=True)
+	if not server or not server.resource_id:
 		return
-	if asset.status not in _SERVER_ACTION_FROM.get(action, set()):
+	if server.status not in _SERVER_ACTION_FROM.get(action, set()):
 		return
 	from central.api import servers
 
 	command = servers.stop_server if action == "stop" else servers.start_server
-	command(team=sub.team, resource_id=asset.resource_id)
+	command(team=sub.team, resource_id=server.resource_id)
 
 
 def set_standing(subscription: str, new_standing: str, changed_by: str | None = None, reason=None):
@@ -962,13 +964,13 @@ reconcile_with_agent_event = reconcile_subscription_resource
 
 
 def backfill_missing_subscriptions():
-	"""Daily job: create a Subscription for any Running Asset that lacks an
-	active one (e.g. the Asset's status was set Running outside the normal flow).
+	"""Daily job: create a Subscription for any Running VirtualMachine that lacks an
+	active one (e.g. the VirtualMachine's status was set Running outside the normal flow).
 	"""
 	from central.billing.doctype.subscription.subscription import create_subscription
 
-	running_assets = frappe.get_all("Asset", filters={"status": "Running"}, pluck="name")
-	for asset_id in running_assets:
-		has_active_subscription = frappe.db.exists("Subscription", {"asset_id": asset_id, "enabled": 1})
+	running_servers = frappe.get_all("Virtual Machine", filters={"status": "Running"}, pluck="name")
+	for server_id in running_servers:
+		has_active_subscription = frappe.db.exists("Subscription", {"server_id": server_id, "enabled": 1})
 		if not has_active_subscription:
-			create_subscription(asset_id)
+			create_subscription(server_id)

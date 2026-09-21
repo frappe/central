@@ -18,11 +18,11 @@ class PilotCredential(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		asset: DF.Link | None
 		audience_id: DF.Data | None
-		pilot_credential_id: DF.Data
 		expires_at: DF.Datetime | None
 		last_used_at: DF.Datetime | None
+		pilot_credential_id: DF.Data
+		server: DF.Link | None
 		status: DF.Literal["Active", "Revoked"]
 		team: DF.Link
 		token_hash: DF.Data | None
@@ -44,7 +44,7 @@ class PilotCredential(Document):
 		cls,
 		team: str,
 		pilot_credential_id: str,
-		asset: str | None = None,
+		server: str | None = None,
 		expires_at=None,
 		audience_id: str | None = None,
 	) -> str:
@@ -56,7 +56,7 @@ class PilotCredential(Document):
 
 		doc.pilot_credential_id = pcid
 		doc.team = team
-		doc.asset = asset
+		doc.server = server
 		doc.audience_id = audience_id
 		doc.expires_at = expires_at
 
@@ -66,7 +66,7 @@ class PilotCredential(Document):
 	def reserve(cls, team: str, pilot_credential_id: str, audience_id: str) -> None:
 		"""Create the credential row at provision time WITHOUT issuing a token. The token is
 		issued only at enrollment, so the durable secret is never injected during
-		provisioning. Reserving early lets the `vm.*` events bind the Asset link (which
+		provisioning. Reserving early lets the `vm.*` events bind the Virtual Machine link (which
 		billing reads) no matter when the pilot boots and enrols."""
 		name = cls._DOCTYPE_NAME
 		doc = (
@@ -84,7 +84,7 @@ class PilotCredential(Document):
 	@classmethod
 	def issue_for(cls, team: str, pilot_credential_id: str, audience_id: str) -> str:
 		"""Issue (or re-issue) the token for a pilot at enrollment and return the plaintext
-		once. Upserts identity fields but deliberately leaves `asset` untouched — the VM
+		once. Upserts identity fields but deliberately leaves `server` untouched — the VM
 		events own that link, and enrollment may land after they do."""
 		name = cls._DOCTYPE_NAME
 		doc = (
@@ -140,13 +140,13 @@ class PilotCredential(Document):
 	# --- lifecycle joins: driven by the Atlas VM events once they echo the id back ---
 
 	@classmethod
-	def link_asset(cls, pilot_credential_id: str | None, asset: str | None) -> None:
+	def link_server(cls, pilot_credential_id: str | None, server: str | None) -> None:
 		"""
-		Bind a credential to the VM (Asset) it runs on. Called from the VM mirror once
+		Bind a credential to the VM (Virtual Machine) it runs on. Called from the VM mirror once
 		Atlas echoes the id back; idempotent and a no-op until both are known.
 		"""
-		if pilot_credential_id and asset and frappe.db.exists(cls._DOCTYPE_NAME, pilot_credential_id):
-			frappe.db.set_value(cls._DOCTYPE_NAME, pilot_credential_id, "asset", asset)
+		if pilot_credential_id and server and frappe.db.exists(cls._DOCTYPE_NAME, pilot_credential_id):
+			frappe.db.set_value(cls._DOCTYPE_NAME, pilot_credential_id, "server", server)
 
 	@classmethod
 	def revoke_by_id(cls, pilot_credential_id: str | None) -> None:

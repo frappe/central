@@ -161,7 +161,7 @@ def delete_team(team: str) -> dict[str, Any]:
 	"""Delete a team, once it owns no servers or sites (those must be torn down
 	deliberately). Invitations and custom roles are cleared first so their Link
 	references don't block the delete."""
-	for doctype in ("Asset", "Site"):
+	for doctype in ("Virtual Machine", "Site"):
 		if frappe.db.exists(doctype, {"team": team}):
 			frappe.throw(
 				_("Remove this team's servers and sites before deleting it."), frappe.ValidationError

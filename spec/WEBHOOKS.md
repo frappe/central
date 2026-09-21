@@ -57,7 +57,7 @@ Atlas reports one virtual machine per delivery.
 | Field | Required | Value |
 |---|---|---|
 | `event` | Yes | `vm.state` |
-| `virtual_machine` | Yes | The Atlas VM ID. Central matches it to an Asset in the signing region. |
+| `virtual_machine` | Yes | The Atlas VM ID. Central matches it to a Virtual Machine in the signing region. |
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
 | `observed_at` | No | Diagnostic only. Central records its own clock, because a report carries the region's clock. |
 
@@ -112,7 +112,7 @@ An ignored report is authentic and readable. Central has nothing to do with it. 
 | Reason | Sender | Meaning |
 |---|---|---|
 | `unreadable body` | Both | The body is not a JSON object |
-| `unknown server` | Atlas | No Asset in this region carries that VM ID |
+| `unknown server` | Atlas | No Virtual Machine in this region carries that VM ID |
 | `unsupported event '<value>'` | Atlas | The event is not `vm.state` |
 | `unsupported status '<value>'` | Atlas | The status is not `running`, `stopped`, or `paused` |
 | `no change` | Atlas | Central already records this state |

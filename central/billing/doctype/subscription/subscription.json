@@ -10,7 +10,7 @@
   "enabled",
   "team",
   "project",
-  "asset_id",
+  "server_id",
   "service_subject",
   "cluster",
   "pricing_mode",
@@ -37,7 +37,7 @@
    "search_index": 1
   },
   {
-   "description": "Optional: tag this subscription's asset into a Project. It still bills on the team's one consolidated invoice, broken out there by project.",
+   "description": "Optional: tag this subscription's server into a Project. It still bills on the team's one consolidated invoice, broken out there by project.",
    "fieldname": "project",
    "fieldtype": "Link",
    "in_preview": 1,
@@ -130,20 +130,20 @@
    "label": "Enabled"
   },
   {
-   "fieldname": "asset_id",
+   "fieldname": "server_id",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Asset ID",
-   "options": "Asset"
+   "label": "Server ID",
+   "options": "Virtual Machine"
   },
   {
-   "fetch_from": "asset_id.cluster",
+   "fetch_from": "server_id.cluster",
    "fieldname": "cluster",
    "fieldtype": "Read Only",
    "label": "Cluster"
   },
   {
-   "description": "A team-level metered service's synthesized subject (ADR 0013/0015); mutually exclusive with asset_id.",
+   "description": "A team-level metered service's synthesized subject (ADR 0013/0015); mutually exclusive with server_id.",
    "fieldname": "service_subject",
    "fieldtype": "Data",
    "label": "Service Subject",

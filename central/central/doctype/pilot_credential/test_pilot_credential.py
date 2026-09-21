@@ -87,12 +87,12 @@ class IntegrationTestPilotCredential(IntegrationTestCase):
 		PilotCredential.revoke_by_id("does-not-exist")  # must not raise
 		PilotCredential.revoke_by_id(None)
 
-	def test_link_asset_binds_and_is_noop_without_ids(self):
+	def test_link_server_binds_and_is_noop_without_ids(self):
 		self.mint()
-		PilotCredential.link_asset("pilot-1", "vm-resource-1")
-		self.assertEqual(frappe.db.get_value("Pilot Credential", "pilot-1", "asset"), "vm-resource-1")
-		PilotCredential.link_asset("pilot-1", None)  # no-op, keeps prior link
-		self.assertEqual(frappe.db.get_value("Pilot Credential", "pilot-1", "asset"), "vm-resource-1")
+		PilotCredential.link_server("pilot-1", "vm-resource-1")
+		self.assertEqual(frappe.db.get_value("Pilot Credential", "pilot-1", "server"), "vm-resource-1")
+		PilotCredential.link_server("pilot-1", None)  # no-op, keeps prior link
+		self.assertEqual(frappe.db.get_value("Pilot Credential", "pilot-1", "server"), "vm-resource-1")
 
 	def test_rotate_by_id_issues_new_working_token(self):
 		old = self.mint()

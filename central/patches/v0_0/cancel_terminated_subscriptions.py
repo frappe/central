@@ -5,10 +5,10 @@
 Until now termination only disabled the subscription (enabled=0) — it never recorded
 a `Cancelled` Subscription Change, so the open billing segment stayed open (ADR 0010).
 A terminated VM therefore kept counting toward its team's run-rate and consumed its
-trust-tier headroom (blocking new VMs). The Asset controller now cancels on
+trust-tier headroom (blocking new VMs). The Virtual Machine controller now cancels on
 termination; this backfills the ones terminated before that fix.
 
-For every Subscription whose Asset is Terminated but whose latest segment is still
+For every Subscription whose Virtual Machine is Terminated but whose latest segment is still
 open (Created / Plan Changed), append a `Cancelled` change to close it, and disable
 the subscription if it somehow wasn't. Idempotent: a subscription already closed
 (latest segment Cancelled) or without a segment is skipped, so re-running is a no-op.
@@ -27,14 +27,14 @@ def execute():
 
 
 def cancel_terminated_subscriptions() -> int:
-	"""Close the open segment of every subscription on a Terminated Asset. Returns the
-	number of segments closed."""
-	terminated_assets = frappe.get_all("Asset", filters={"status": "Terminated"}, pluck="name")
+	"""Close the open segment of every subscription on a Terminated Virtual Machine.
+	Returns the number of segments closed."""
+	terminated_assets = frappe.get_all("Virtual Machine", filters={"status": "Terminated"}, pluck="name")
 	if not terminated_assets:
 		return 0
 
 	subs = frappe.get_all(
-		"Subscription", filters={"asset_id": ["in", terminated_assets]}, fields=["name", "enabled"]
+		"Subscription", filters={"server_id": ["in", terminated_assets]}, fields=["name", "enabled"]
 	)
 	if not subs:
 		return 0

@@ -7,18 +7,18 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api import servers
-from central.central.doctype.asset.asset import Asset
+from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.tests.utils import ensure_atlas_instance
 
 
 class TestRegistry(IntegrationTestCase):
-	"""registry() unifies servers (Asset) and sites (Site) — each a VM — in one read."""
+	"""registry() unifies servers (VirtualMachine) and sites (Site) — each a VM — in one read."""
 
 	def setUp(self):
 		super().setUp()
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
-		self.enterContext(patch.object(Asset, "ensure_subscription_enabled"))
+		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
 		self.team = (
 			frappe.get_doc({"doctype": "Team", "team_name": "Registry", "owner_user": "Administrator"})
 			.insert()
@@ -29,7 +29,7 @@ class TestRegistry(IntegrationTestCase):
 	def make_site(self, label: str, status: str) -> str:
 		machine = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": f"server-{label}",
 				"team": self.team,
 				"cluster": self.cluster,
@@ -42,7 +42,7 @@ class TestRegistry(IntegrationTestCase):
 					"doctype": "Site",
 					"site_name": f"{label}.example.dev",
 					"team": self.team,
-					"asset": machine.name,
+					"server": machine.name,
 				}
 			)
 			.insert(ignore_permissions=True)

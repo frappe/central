@@ -71,10 +71,10 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def _ready(self, sub):
 		"""Mark a subscription's VM Stopped — the state a resize requires (Firecracker
-		can't reconfigure a running machine). Returns the asset id."""
-		asset = frappe.db.get_value("Subscription", sub, "asset_id")
-		frappe.db.set_value("Asset", asset, "status", "Stopped")
-		return asset
+		can't reconfigure a running machine). Returns the server id."""
+		server = frappe.db.get_value("Subscription", sub, "server_id")
+		frappe.db.set_value("Virtual Machine", server, "status", "Stopped")
+		return server
 
 	def _segments(self, sub):
 		return frappe.get_all(
@@ -175,16 +175,16 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def test_resize_records_nothing_on_terminated(self):
 		sub = self._provision()
-		asset = frappe.db.get_value("Subscription", sub, "asset_id")
-		frappe.db.set_value("Asset", asset, "status", "Terminated")
+		server = frappe.db.get_value("Subscription", sub, "server_id")
+		frappe.db.set_value("Virtual Machine", server, "status", "Terminated")
 		result = subscriptions.resize_composed_subscription(sub, BIG, "General")
 		self.assertIsNone(result)
 		self.assertEqual(len(self._segments(sub)), 1)
 
 	def test_successful_runtime_resize_relocks_running_subscription(self):
 		sub = self._provision()
-		asset = frappe.db.get_value("Subscription", sub, "asset_id")
-		frappe.db.set_value("Asset", asset, "status", "Running")
+		server = frappe.db.get_value("Subscription", sub, "server_id")
+		frappe.db.set_value("Virtual Machine", server, "status", "Running")
 		subscriptions.resize_composed_subscription(sub, BIG, "General")
 		# Billing changes only after the runtime adapter succeeds.
 		self.resize_vm.assert_called_once()
@@ -203,8 +203,8 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def test_resize_rejects_disk_shrink_without_touching_vm(self):
 		sub = self._provision()  # SMALL — 40 GB disk
-		asset = self._ready(sub)
-		frappe.db.set_value("Asset", asset, "disk_gigabytes", 100)  # server grew to 100 GB
+		server = self._ready(sub)
+		frappe.db.set_value("Virtual Machine", server, "disk_gigabytes", 100)  # server grew to 100 GB
 		with self.assertRaisesRegex(frappe.ValidationError, "Disk can't shrink"):
 			subscriptions.begin_resize(sub, includes=BIG, sub_category="General")  # BIG is 40 GB < 100
 		# Refused before any power change — the VM is never stopped or resized.
@@ -213,8 +213,8 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def test_failed_runtime_resize_preserves_price_lock(self):
 		sub = self._provision()  # 40 GB disk, so BIG (40) is not a shrink
-		asset = frappe.db.get_value("Subscription", sub, "asset_id")
-		frappe.db.set_value("Asset", asset, "status", "Running")
+		server = frappe.db.get_value("Subscription", sub, "server_id")
+		frappe.db.set_value("Virtual Machine", server, "status", "Running")
 		self.resize_vm.side_effect = frappe.ValidationError("host boom")
 		with self.assertRaises(frappe.ValidationError):
 			subscriptions.resize_composed_subscription(sub, BIG, "General")
@@ -223,14 +223,14 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def test_resize_to_preset_plan_reshapes_and_relocks(self):
 		sub = self._provision()
-		asset = self._ready(sub)  # Stopped
+		server = self._ready(sub)  # Stopped
 		plan = make_plan("resize-target", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
 		subscriptions.resize_to_plan(sub, plan)
 		doc = frappe.get_doc("Subscription", sub)
 		self.assertEqual((doc.pricing_mode, doc.plan), ("Preset", plan))
 		# The bundle's shape (DEFAULT_INCLUDES) drives the VM resize; no power step.
 		self.resize_vm.assert_called_once_with(
-			asset, CLUSTER, "Stopped", {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 80}
+			server, CLUSTER, "Stopped", {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 80}
 		)
 		self.assertEqual(self._segments(sub)[-1].locked_rate, 1500)
 
@@ -262,23 +262,23 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def test_begin_resize_flags_the_vm_and_defers_the_reshape(self):
 		sub = self._provision()
-		asset = self._ready(sub)
+		server = self._ready(sub)
 		with patch("frappe.enqueue") as enqueue:
 			result = subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 		self.assertEqual(result, {"queued": True, "resized": True})
 		enqueue.assert_called_once()  # the slow reshape is deferred, not run in-request
 		self.resize_vm.assert_not_called()
 		# The VM is flagged Resizing so the console shows it and blocks power actions.
-		self.assertEqual(frappe.db.get_value("Asset", asset, "resize_in_progress"), 1)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", server, "resize_in_progress"), 1)
 		self.assertEqual(len(self._segments(sub)), 1)  # billing re-locks only in the job
 
 	def test_begin_resize_job_reshapes_relocks_and_clears_flag(self):
 		sub = self._provision()
-		asset = self._ready(sub)
+		server = self._ready(sub)
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 		self.resize_vm.assert_called_once()  # the deferred job drove the real resize
-		self.assertEqual(frappe.db.get_value("Asset", asset, "resize_in_progress"), 0)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", server, "resize_in_progress"), 0)
 		self.assertEqual(len(self._segments(sub)), 2)  # re-priced once the job landed
 
 	def test_begin_resize_is_a_noop_on_the_same_config(self):
@@ -292,36 +292,36 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def test_begin_resize_rejects_disk_shrink_synchronously(self):
 		sub = self._provision()  # SMALL — 40 GB disk
-		asset = self._ready(sub)
-		frappe.db.set_value("Asset", asset, "disk_gigabytes", 100)  # server grew to 100 GB
+		server = self._ready(sub)
+		frappe.db.set_value("Virtual Machine", server, "disk_gigabytes", 100)  # server grew to 100 GB
 		with patch("frappe.enqueue") as enqueue:
 			with self.assertRaisesRegex(frappe.ValidationError, "Disk can't shrink"):
 				subscriptions.begin_resize(sub, includes=BIG, sub_category="General")  # BIG is 40 GB
 		enqueue.assert_not_called()  # refused before anything is queued
-		self.assertEqual(frappe.db.get_value("Asset", asset, "resize_in_progress"), 0)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", server, "resize_in_progress"), 0)
 
 	def test_begin_resize_rejects_over_headroom_preset_synchronously(self):
 		sub = self._provision()
-		asset = self._ready(sub)
+		server = self._ready(sub)
 		set_team_tier(TEAM, max_spend=4000)
 		plan = make_plan("over-headroom-sync", rates=[{"cluster": "", "currency": "INR", "rate": 5000}])
 		with patch("frappe.enqueue") as enqueue:
 			with self.assertRaises(frappe.ValidationError):
 				subscriptions.begin_resize(sub, plan=plan)
 		enqueue.assert_not_called()  # rejected up front, nothing queued
-		self.assertEqual(frappe.db.get_value("Asset", asset, "resize_in_progress"), 0)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", server, "resize_in_progress"), 0)
 
 	def test_begin_resize_refuses_a_second_resize_while_one_is_running(self):
 		sub = self._provision()
-		asset = self._ready(sub)
-		frappe.db.set_value("Asset", asset, "resize_in_progress", 1)  # already resizing
+		server = self._ready(sub)
+		frappe.db.set_value("Virtual Machine", server, "resize_in_progress", 1)  # already resizing
 		with patch("frappe.enqueue") as enqueue:
 			with self.assertRaisesRegex(frappe.ValidationError, "already resizing"):
 				subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 		enqueue.assert_not_called()
 
 	def test_begin_resize_relocks_inline_when_there_is_no_live_vm(self):
-		sub = self._provision()  # asset defaults to Pending (never started)
+		sub = self._provision()  # server defaults to Pending (never started)
 		with patch("frappe.enqueue") as enqueue:
 			result = subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 		self.assertEqual(result, {"queued": False, "resized": True})
@@ -331,13 +331,13 @@ class TestResizeComposed(IntegrationTestCase):
 
 	def test_apply_resize_clears_flag_and_reraises_when_the_reshape_fails(self):
 		sub = self._provision()
-		asset = self._ready(sub)
-		frappe.db.set_value("Asset", asset, "resize_in_progress", 1)
+		server = self._ready(sub)
+		frappe.db.set_value("Virtual Machine", server, "resize_in_progress", 1)
 		self.resize_vm.side_effect = frappe.ValidationError("host boom")
 		# The job rolls back + commits the flag clear; mock those so the test transaction
 		# stays isolated while we assert the flag-clearing + re-raise behaviour.
 		with patch("frappe.db.rollback"), patch("frappe.db.commit"):
 			with self.assertRaises(frappe.ValidationError):
-				subscriptions._apply_resize(sub, includes=BIG, sub_category="General", asset_id=asset)
-		self.assertEqual(frappe.db.get_value("Asset", asset, "resize_in_progress"), 0)
+				subscriptions._apply_resize(sub, includes=BIG, sub_category="General", server_id=server)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", server, "resize_in_progress"), 0)
 		self.assertEqual(len(self._segments(sub)), 1)  # billing stayed on the old segment

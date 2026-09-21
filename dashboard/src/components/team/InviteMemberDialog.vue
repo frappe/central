@@ -52,11 +52,11 @@ const regionLabel = (
 }
 
 const resourceOptions = computed(() => {
-	const assets = registryCall.data?.assets ?? []
+	const servers = registryCall.data?.servers ?? []
 	const sites = registryCall.data?.sites ?? []
 	return [
 		{ label: 'All resources', value: '*::' },
-		...assets.map((a) => ({
+		...servers.map((a) => ({
 			label: a.title || a.resource_id,
 			value: `Server::${a.name}`,
 			description: regionLabel(a.cluster),

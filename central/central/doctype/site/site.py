@@ -27,7 +27,7 @@ class Site(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		asset: DF.Link
+		server: DF.Link
 		claimed_at: DF.Datetime | None
 		rename_task: DF.Data | None
 		site_name: DF.Data
@@ -57,23 +57,25 @@ class Site(Document):
 	@property
 	def status(self) -> str | None:
 		"""A site has no lifecycle of its own, so its machine's state is its state."""
-		return frappe.db.get_value("Asset", self.asset, "status")
+		return frappe.db.get_value("Virtual Machine", self.server, "status")
 
 	@classmethod
-	def create_once_addressable(cls, asset: str) -> None:
+	def create_once_addressable(cls, server: str) -> None:
 		"""Write down the site of a machine that has reached a routable address.
 
 		A region reports on a machine repeatedly and this runs on every report, because
 		the address arrives on one of them and nothing says which. It writes once: a
 		machine that already has a site, runs no Pilot, or has no address yet is left
 		alone."""
-		if frappe.db.exists("Site", {"asset": asset}):
+		if frappe.db.exists("Site", {"server": server}):
 			return
 
-		machine = frappe.db.get_value("Asset", asset, ["team", "cluster", "ipv6_address"], as_dict=True)
+		machine = frappe.db.get_value(
+			"Virtual Machine", server, ["team", "cluster", "ipv6_address"], as_dict=True
+		)
 		if not machine or not machine.ipv6_address:
 			return
-		if not frappe.db.exists("Pilot Credential", {"asset": asset, "status": "Active"}):
+		if not frappe.db.exists("Pilot Credential", {"server": server, "status": "Active"}):
 			return
 
 		host = frappe.get_cached_doc("Region", machine.cluster).get_vm_site_host(machine.ipv6_address)
@@ -86,10 +88,10 @@ class Site(Document):
 				"doctype": "Site",
 				"site_name": host,
 				"subdomain": frappe.db.get_value(
-					"Resource Action", {"asset": asset, "action": "create"}, "subdomain"
+					"Resource Action", {"server": server, "action": "create"}, "subdomain"
 				),
 				"team": machine.team,
-				"asset": asset,
+				"server": server,
 			}
 		).insert(ignore_permissions=True)
 
@@ -126,7 +128,7 @@ class Site(Document):
 		if not self.subdomain or self.rename_task:
 			return
 
-		task = rename_site(self.asset, IMAGE_SITE_NAME, self.rename_target)
+		task = rename_site(self.server, IMAGE_SITE_NAME, self.rename_target)
 		self.db_set("rename_task", task.get("task_id"))
 
 	def get_login_url(self) -> str | None:
@@ -148,9 +150,11 @@ class Site(Document):
 
 		Nothing here waits for the machine's mirrored status: the site probe that gates
 		every caller of this method already proved the machine answers."""
-		gateway = frappe.db.get_value("Asset", {"name": self.asset, "team": self.team}, "gateway_url")
+		gateway = frappe.db.get_value(
+			"Virtual Machine", {"name": self.server, "team": self.team}, "gateway_url"
+		)
 		audience = frappe.db.get_value(
-			"Pilot Credential", {"asset": self.asset, "team": self.team, "status": "Active"}, "audience_id"
+			"Pilot Credential", {"server": self.server, "team": self.team, "status": "Active"}, "audience_id"
 		)
 		return (gateway.rstrip("/") if gateway else None), audience
 
@@ -164,4 +168,4 @@ def on_host(url: str, host: str) -> str:
 
 def on_doctype_update():
 	# The fleet reads a team's sites, then drops the machine each one already stands for.
-	frappe.db.add_index("Site", ["team", "asset"])
+	frappe.db.add_index("Site", ["team", "server"])

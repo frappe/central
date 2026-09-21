@@ -23,7 +23,7 @@ _CHANGE_TYPE = {"subscribed": "Created", "changed": "Plan Changed", "Cancelled":
 
 def push_event(event_id, resource_id, rate, effective_from, event_type="subscribed", team=TEAM):
 	"""Author a run-segment for the team's subscription (the unit billing
-	day-weights over in the Asset model). Kept under the old event-shaped signature
+	day-weights over in the Virtual Machine model). Kept under the old event-shaped signature
 	so the test bodies read unchanged."""
 	sub = frappe.db.get_value("Subscription", {"team": team}, "name")
 	change_type = _CHANGE_TYPE[event_type]

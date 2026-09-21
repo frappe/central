@@ -37,7 +37,7 @@ def _assert_owns(team_of_record: str | None) -> None:
 @contextmanager
 def _as_operator():
 	"""Run a delegated capability-gated call as Administrator — the pilot is a Guest
-	session and the team/asset are fixed by the verified credential. Restores the
+	session and the team/server are fixed by the verified credential. Restores the
 	prior user on exit, so nothing later in the request keeps operator rights."""
 	user = frappe.session.user
 	frappe.set_user("Administrator")
@@ -47,23 +47,23 @@ def _as_operator():
 		frappe.set_user(user)
 
 
-def _asset() -> str:
-	"""The asset (server) the authenticated pilot credential is bound to — the default
-	target for asset-scoped calls, so the pilot never has to know its own asset id."""
-	return frappe.local.pilot_credential.asset
+def _server() -> str:
+	"""The server (server) the authenticated pilot credential is bound to — the default
+	target for server-scoped calls, so the pilot never has to know its own server id."""
+	return frappe.local.pilot_credential.server
 
 
 def _money(amount, currency: str) -> str:
 	return frappe.utils.fmt_money(frappe.utils.flt(amount), currency=currency)
 
 
-def _asset_specs(asset_row) -> dict:
+def _server_specs(server_row) -> dict:
 	"""The three meter labels from the provisioned VM's live specs."""
-	ram_gb = round(frappe.utils.flt(asset_row.memory_megabytes) / 1024)
+	ram_gb = round(frappe.utils.flt(server_row.memory_megabytes) / 1024)
 	return {
-		"cpu": f"{int(frappe.utils.flt(asset_row.vcpus))} vCPU",
+		"cpu": f"{int(frappe.utils.flt(server_row.vcpus))} vCPU",
 		"memory": f"{ram_gb} GB RAM",
-		"storage": f"{int(frappe.utils.flt(asset_row.disk_gigabytes))} GB SSD",
+		"storage": f"{int(frappe.utils.flt(server_row.disk_gigabytes))} GB SSD",
 	}
 
 
@@ -83,7 +83,7 @@ _METER_SUFFIX = {"cpu": "vCPU", "memory": "GB RAM", "storage": "GB SSD"}
 
 
 def _specs_from_includes(includes: list[dict]) -> dict:
-	"""Meter labels derived from a plan's includes — the fallback for an asset with
+	"""Meter labels derived from a plan's includes — the fallback for a server with
 	no live specs yet (Pending / not-provisioned)."""
 	out = {"cpu": None, "memory": None, "storage": None}
 	for item in includes or []:
@@ -93,10 +93,10 @@ def _specs_from_includes(includes: list[dict]) -> dict:
 	return out
 
 
-def _resolve_specs(asset_row, plan: str | None) -> dict:
+def _resolve_specs(server_row, plan: str | None) -> dict:
 	"""The VM's live specs when known, else the plan's intended specs."""
-	if any(frappe.utils.flt(asset_row.get(f)) for f in ("vcpus", "memory_megabytes", "disk_gigabytes")):
-		return _asset_specs(asset_row)
+	if any(frappe.utils.flt(server_row.get(f)) for f in ("vcpus", "memory_megabytes", "disk_gigabytes")):
+		return _server_specs(server_row)
 	includes = (
 		frappe.get_all("Plan Includes", {"parent": plan}, ["resource_type", "quantity", "unit"])
 		if plan
@@ -464,14 +464,14 @@ def reconcile_payment_setup() -> dict:
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @pilot_credential_auth
 def get_available_plans() -> dict:
-	"""Active plans the credential's asset can switch to — priced for the team's currency
-	on the asset's cluster, admitted by the trust tier, within remaining headroom.
-	Grouped by sub-category. The asset is resolved from the credential (a pilot only sees
+	"""Active plans the credential's server can switch to — priced for the team's currency
+	on the server's cluster, admitted by the trust tier, within remaining headroom.
+	Grouped by sub-category. The server is resolved from the credential (a pilot only sees
 	its own server's options)."""
 	from central.billing.api.dashboard.catalog import get_eligible_plans
 
 	team = _team()
-	cluster = frappe.db.get_value("Asset", _asset(), "cluster")
+	cluster = frappe.db.get_value("Virtual Machine", _server(), "cluster")
 	# No provisioned cluster → offer nothing; a cluster-less menu skips the
 	# allowed-clusters guard and would leak plans from other regions.
 	if not cluster:
@@ -487,18 +487,18 @@ def get_available_plans() -> dict:
 @pilot_credential_auth
 def change_plan(plan: str | None = None) -> dict:
 	"""Switch this bench's server onto a preset `plan`: validates + re-locks the rate at
-	the current rate card and queues the VM reshape (stop→resize→start). The asset is
+	the current rate card and queues the VM reshape (stop→resize→start). The server is
 	resolved from the credential — a pilot can only resize its own server, never another
-	asset on the same team. Returns `{queued, resized}`."""
+	server on the same team. Returns `{queued, resized}`."""
 	from central.billing.api.dashboard.catalog import resize_server
 
-	asset = _asset()
+	server = _server()
 	if not plan:
 		frappe.throw(frappe._("A plan is required."), frappe.ValidationError)
-	subscription = frappe.db.get_value("Subscription", {"team": _team(), "asset_id": asset}, "name")
+	subscription = frappe.db.get_value("Subscription", {"team": _team(), "server_id": server}, "name")
 	if not subscription:
 		frappe.throw(
-			frappe._("No subscription for asset {0} on this team.").format(asset), frappe.ValidationError
+			frappe._("No subscription for server {0} on this team.").format(server), frappe.ValidationError
 		)
 	# resize_server gates on the session user's capability; act as operator (team is
 	# fixed by the subscription lookup above, which is already scoped to the credential).
@@ -708,11 +708,11 @@ def get_billing_summary() -> dict:
 	from central.billing.api.dashboard.invoices import get_forecast
 	from central.billing.revenue import credits
 
-	team, asset = _team(), _asset()
-	with _as_operator():  # team + asset fixed by credential
+	team, server = _team(), _server()
+	with _as_operator():  # team + server fixed by credential
 		currency = _team_currency(team)
 		fields = ["title", "plan", "vcpus", "memory_megabytes", "disk_gigabytes"]
-		row = frappe.db.get_value("Asset", asset, fields, as_dict=True) or frappe._dict()
+		row = frappe.db.get_value("Virtual Machine", server, fields, as_dict=True) or frappe._dict()
 		specs = _resolve_specs(row, row.plan)
 		subtitle = " · ".join(value for value in specs.values() if value)
 		plan_title = frappe.db.get_value("Plan", row.plan, "title") if row.plan else None
@@ -755,11 +755,11 @@ def get_plan_options() -> dict:
 	list, plus the provider/region header and an insufficient-headroom flag."""
 	from central.billing.api.dashboard.catalog import get_eligible_plans
 
-	team, asset = _team(), _asset()
-	row = frappe.db.get_value("Asset", asset, ["cluster", "plan"], as_dict=True) or frappe._dict()
-	subscription = frappe.db.get_value("Subscription", {"team": team, "asset_id": asset}, "name")
+	team, server = _team(), _server()
+	row = frappe.db.get_value("Virtual Machine", server, ["cluster", "plan"], as_dict=True) or frappe._dict()
+	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
 
-	# No provisioned asset/cluster → offer nothing. A cluster-less menu would skip
+	# No provisioned server/cluster → offer nothing. A cluster-less menu would skip
 	# get_eligible_plans' allowed-clusters guard and leak plans from other regions.
 	if not row.cluster:
 		return {
@@ -796,9 +796,12 @@ def get_plan_options() -> dict:
 				"name": row.plan,
 				"title": frappe.db.get_value("Plan", row.plan, "title") or row.plan,
 				"subtitle": " · ".join(
-					_asset_specs(
+					_server_specs(
 						frappe.db.get_value(
-							"Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
+							"Virtual Machine",
+							server,
+							["vcpus", "memory_megabytes", "disk_gigabytes"],
+							as_dict=True,
 						)
 						or frappe._dict()
 					).values()

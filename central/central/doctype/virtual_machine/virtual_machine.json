@@ -173,21 +173,21 @@
  "links": [
   {
    "link_doctype": "Resource Action",
-   "link_fieldname": "asset"
+   "link_fieldname": "server"
   },
   {
    "link_doctype": "Pilot Credential",
-   "link_fieldname": "asset"
+   "link_fieldname": "server"
   },
   {
    "link_doctype": "Site Domain",
-   "link_fieldname": "asset"
+   "link_fieldname": "server"
   }
  ],
  "modified": "2026-09-17 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Central",
- "name": "Asset",
+ "name": "Virtual Machine",
  "naming_rule": "By fieldname",
  "owner": "Administrator",
  "permissions": [

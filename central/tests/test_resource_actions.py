@@ -6,8 +6,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import make_plan
-from central.central.doctype.asset.asset import Asset
 from central.central.doctype.resource_action.resource_action import ResourceAction
+from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.errors import AtlasConnectionError, AtlasRequestUncertain
 from central.integrations.server_provisioning import _process_locked
 from central.resource_actions import get_status
@@ -28,7 +28,7 @@ class TestResourceActions(IntegrationTestCase):
 		self.addCleanup(frappe.db.rollback)
 		self.enterContext(patch("frappe.enqueue"))
 		self.enterContext(patch("frappe.db.commit"))
-		self.enterContext(patch.object(Asset, "ensure_subscription_enabled"))
+		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
 		self.subscription = self.enterContext(
 			patch("central.integrations.server_provisioning._create_subscription")
 		)
@@ -187,7 +187,7 @@ class TestResourceActions(IntegrationTestCase):
 		# One record and one accepted machine. The first dispatch never reached a region,
 		# so sending it again is the retry, not a second server.
 		self.assertEqual(frappe.db.count("Resource Action", {"team": self.team.name}), 1)
-		self.assertEqual(frappe.db.count("Asset", {"team": self.team.name}), 1)
+		self.assertEqual(frappe.db.count("Virtual Machine", {"team": self.team.name}), 1)
 		self.assertEqual(self.client.return_value.create_vm.call_count, 2)
 
 	def test_retry_is_refused_without_a_saved_configuration(self):
@@ -225,7 +225,7 @@ class TestResourceActions(IntegrationTestCase):
 		action = frappe.get_doc("Resource Action", name)
 		self.assertEqual(action.status, "Succeeded")
 		self.assertEqual(action.remote_vm_id, "vm-00001")
-		self.assertTrue(action.asset)
+		self.assertTrue(action.server)
 		payload = self.client.return_value.create_vm.call_args.args[0]
 		self.assertEqual(payload["cpu_millicores"], 1000)
 		self.assertEqual(payload["firewall"], {"enabled": False})

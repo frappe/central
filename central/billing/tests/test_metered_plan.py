@@ -27,7 +27,7 @@ def _seed_running_purge(team):
 	for sub in frappe.get_all("Subscription", {"team": team}, pluck="name"):
 		frappe.db.delete("Subscription Change", {"subscription": sub})
 		frappe.db.delete("Subscription", {"name": sub})
-	frappe.db.delete("Asset", {"team": team})
+	frappe.db.delete("Virtual Machine", {"team": team})
 	frappe.db.commit()
 
 

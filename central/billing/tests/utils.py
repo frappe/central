@@ -81,7 +81,7 @@ class BillingTestCase(IntegrationTestCase):
 		"Team Role",
 		"Catalog Rate",
 		"Plan",
-		"Asset",
+		"Virtual Machine",
 		"Team",
 		"Region",
 		"User",
@@ -211,7 +211,7 @@ DEFAULT_INCLUDES = [
 def ensure_atlas_instance(region):
 	"""The cluster a billing test bills against.
 
-	Both Asset.cluster and Catalog Rate.cluster are required Links to Region, so any
+	Both VirtualMachine.cluster and Catalog Rate.cluster are required Links to Region, so any
 	test that creates a subscription or a per-region rate needs the region to exist
 	first, connection-configured."""
 	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
@@ -434,10 +434,10 @@ def complete_billing_profile(team, currency="INR"):
 
 
 def make_billing_subscription(team, cluster, plan, start_date=None, clear_changes=True, **kwargs):
-	"""Provision a billable subscription for billing tests under the Asset model:
+	"""Provision a billable subscription for billing tests under the VirtualMachine model:
 	ensure the cluster's Region is connection-configured, and the team's Billing
 	Profile currency, create
-	the Asset (carrying the region) + linked Subscription, and (by default) clear the
+	the VirtualMachine (carrying the region) + linked Subscription, and (by default) clear the
 	auto 'Created' segment so the test can author its own Subscription Change timeline
 	with `add_segment`. Returns the Subscription name."""
 	from central.billing.catalog import subscriptions
@@ -459,7 +459,7 @@ def seed_running_resource(
 	team, resource_id, cluster, plan, rate=1000, currency="INR", effective_at="2026-06-01 00:00:00"
 ):
 	"""Seed a provisioned, running resource on the Subscription Change ledger (ADR 0010):
-	its Asset (named by `resource_id`) + Subscription + an open `Created` segment at
+	its VirtualMachine (named by `resource_id`) + Subscription + an open `Created` segment at
 	`rate`/`currency`. The ledger replacement for the retired price-lock event seeding
 	(#86) — metering and every 'what is running' reader resolve the resource through this
 	open segment. Returns the Subscription name."""

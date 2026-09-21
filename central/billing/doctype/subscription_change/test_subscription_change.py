@@ -21,17 +21,17 @@ class IntegrationTestSubscriptionChange(IntegrationTestCase):
 		self.plan = make_plan("plan-sub-change-a")
 		self.plan_b = make_plan("plan-sub-change-b")
 		ensure_atlas_instance("ap-south-1")
-		if not frappe.db.exists("Asset", "vm-sub-change"):
+		if not frappe.db.exists("Virtual Machine", "vm-sub-change"):
 			frappe.get_doc(
 				{
-					"doctype": "Asset",
+					"doctype": "Virtual Machine",
 					"resource_id": "vm-sub-change",
 					"team": self.team,
 					"cluster": "ap-south-1",
 					"status": "Pending",
 				}
 			).insert()
-		self.asset = "vm-sub-change"
+		self.server = "vm-sub-change"
 		self._cleanup_subscriptions()
 
 	def tearDown(self):
@@ -48,7 +48,7 @@ class IntegrationTestSubscriptionChange(IntegrationTestCase):
 			{
 				"doctype": "Subscription",
 				"team": self.team,
-				"asset_id": self.asset,
+				"server_id": self.server,
 				"plan": plan or self.plan,
 				"enabled": 1,
 			}

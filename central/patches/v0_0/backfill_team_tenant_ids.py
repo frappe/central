@@ -36,7 +36,7 @@ def validate_existing_mappings(teams: list[frappe._dict]) -> None:
 def validate_unassigned_teams(teams: list[str]) -> None:
 	if not teams:
 		return
-	for doctype in ("Asset", "Site"):
+	for doctype in ("Virtual Machine", "Site"):
 		resources = frappe.get_all(
 			doctype,
 			filters={"team": ["in", teams], "status": ["!=", "Terminated"]},

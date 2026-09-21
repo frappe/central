@@ -9,8 +9,8 @@ import frappe
 from frappe import _
 from frappe.utils.password import get_decrypted_password
 
-from central.central.doctype.asset.asset import Asset
 from central.central.doctype.resource_action.resource_action import ResourceAction
+from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 # Central's own clock orders every report, because a report carries the region's clock
@@ -88,7 +88,7 @@ def apply_atlas_report(cluster: str, report: dict) -> None:
 		return
 
 	status = STATUS_FROM_REPORT[report["status"]]
-	if not Asset.record_observed_state(server.name, frappe.utils.now_datetime(), {"status": status}):
+	if not VirtualMachine.record_observed_state(server.name, frappe.utils.now_datetime(), {"status": status}):
 		return
 
 	ResourceAction.confirm_observed_status(server.name, status)
@@ -137,7 +137,7 @@ def _atlas_server_for(cluster: str, virtual_machine: str | None) -> frappe._dict
 		return None
 
 	return frappe.db.get_value(
-		"Asset",
+		"Virtual Machine",
 		{"cluster": cluster, "atlas_vm_id": virtual_machine},
 		["name", "status"],
 		as_dict=True,

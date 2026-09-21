@@ -46,7 +46,7 @@ class TestCentralIAM(IntegrationTestCase):
 
 	def test_fixtures_create_capability_catalog_and_system_roles(self):
 		# 15 capabilities across two live planes: central (7) + atlas (8). v3 makes
-		# server the atomic unit — the bench plane and asset:view are dropped.
+		# server the atomic unit — the bench plane and server:view are dropped.
 		self.assertEqual(frappe.db.count("Capability"), 15)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "central"}), 7)
 		self.assertEqual(frappe.db.count("Capability", {"plane": "atlas"}), 8)

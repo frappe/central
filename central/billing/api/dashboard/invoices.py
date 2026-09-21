@@ -132,7 +132,7 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 			"pricing_mode",
 			"sub_category",
 			"cluster",
-			"asset_id",
+			"server_id",
 			"service_subject",
 			"billing_cycle",
 			"account_standing",
@@ -144,18 +144,18 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 	)
 	currency = _team_currency(team)
 	project_titles = _project_titles(r.project for r in rows)
-	# Batch the asset lookup so a team with N subscriptions costs one query, not N.
-	asset_ids = list({r.asset_id for r in rows if r.asset_id})
-	assets = (
+	# Batch the server lookup so a team with N subscriptions costs one query, not N.
+	server_ids = list({r.server_id for r in rows if r.server_id})
+	servers = (
 		{
 			a.name: a
 			for a in frappe.get_all(
-				"Asset",
-				filters={"name": ["in", asset_ids]},
+				"Virtual Machine",
+				filters={"name": ["in", server_ids]},
 				fields=["name", "title", "gateway_url", "status"],
 			)
 		}
-		if asset_ids
+		if server_ids
 		else {}
 	)
 	# A composed config carries no Plan: its price is the locked rate of its open
@@ -173,7 +173,7 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 	rate_cache: dict[tuple, float | None] = {}
 	out = []
 	for r in rows:
-		asset = assets.get(r.asset_id) or frappe._dict()
+		server = servers.get(r.server_id) or frappe._dict()
 		if r.pricing_mode == "Composed":
 			plan_title = _composed_label(r.sub_category, includes_by_sub.get(r.name, []))
 			monthly_rate = segment_rate.get(r.name)
@@ -192,18 +192,18 @@ def list_subscriptions(team: str | None = None) -> list[dict]:
 		out.append(
 			{
 				"name": r.name,
-				# What metering and the cycle-cost read key on: an Asset-backed
-				# subscription by its asset, a team-level service by its synthesized
+				# What metering and the cycle-cost read key on: a Virtual Machine-backed
+				# subscription by its server, a team-level service by its synthesized
 				# subject (ADR 0013). Lets the card join a row to what it cost.
-				"resource_id": r.asset_id or r.service_subject,
-				"server": asset.title or None,
-				# Asset-backed = a real server; a subscription without one is a
+				"resource_id": r.server_id or r.service_subject,
+				"server": server.title or None,
+				# VirtualMachine-backed = a real server; a subscription without one is a
 				# team-level metered service (the dashboard lists those separately).
-				"has_server": bool(r.asset_id),
-				"gateway_url": asset.gateway_url or None,
+				"has_server": bool(r.server_id),
+				"gateway_url": server.gateway_url or None,
 				# The VM's operational state (Running/Stopped/Terminated/…) — the list shows
 				# it distinctly from the billing-paused flag, and gates resume on it.
-				"status": asset.status or None,
+				"status": server.status or None,
 				"plan": r.plan,
 				"plan_title": plan_title,
 				"cluster": r.cluster,

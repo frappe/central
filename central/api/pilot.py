@@ -39,12 +39,12 @@ def pilot_credential_auth(func: Callable) -> Callable:
 
 
 def get_pilot_region(credential: PilotCredential) -> str | None:
-	"""The region this pilot runs in, or None while Atlas has not bound its Asset.
-	`Asset.cluster` is a Region, so the region needs no lookup of its own."""
-	if not credential.asset:
+	"""The region this pilot runs in, or None while Atlas has not bound its VirtualMachine.
+	`VirtualMachine.cluster` is a Region, so the region needs no lookup of its own."""
+	if not credential.server:
 		return None
 
-	return frappe.db.get_value("Asset", credential.asset, "cluster", cache=True)
+	return frappe.db.get_value("Virtual Machine", credential.server, "cluster", cache=True)
 
 
 def get_telemetry_base_url(region: str | None) -> str | None:
@@ -89,7 +89,7 @@ def datum_token() -> dict:
 	"""The JWT this pilot presents to Datum, for metrics and for logs alike.
 
 	Separate from `config` because it expires: the pilot re-fetches on a 401 or when
-	the expiry nears. Refused until Atlas binds the Asset, since the rows would carry
+	the expiry nears. Refused until Atlas binds the VirtualMachine, since the rows would carry
 	no resource id."""
 	from central.sso import DATUM_TTL, mint_datum_token
 
@@ -97,9 +97,9 @@ def datum_token() -> dict:
 	region = get_pilot_region(credential)
 
 	return {
-		"token": mint_datum_token(region_id_of(region), credential.asset),
+		"token": mint_datum_token(region_id_of(region), credential.server),
 		"expires_in": DATUM_TTL,
-		"resource_id": credential.asset,
+		"resource_id": credential.server,
 		"endpoint": get_telemetry_base_url(region),
 	}
 
@@ -159,7 +159,7 @@ def enroll(bootstrap_token: str) -> dict:
 
 	# The pilot_credential_id is this bench's audience id: every downward token Central mints
 	# for it carries `aud = pcid`, and the bench verifies against it. issue_for preserves any
-	# Asset link the VM events already bound (billing reads it) — enrollment only mints the token.
+	# VirtualMachine link the VM events already bound (billing reads it) — enrollment only mints the token.
 	token = PilotCredential.issue_for(
 		team=grant["team"], pilot_credential_id=grant["pcid"], audience_id=grant["pcid"]
 	)

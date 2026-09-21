@@ -52,7 +52,7 @@ class BillingTestBase(IntegrationTestCase):
 	def setUp(self):
 		make_plan(PLAN)
 		self._purge()
-		# Asset-model subscription; the auto 'Created' segment is cleared so each test
+		# VirtualMachine-model subscription; the auto 'Created' segment is cleared so each test
 		# authors its own run-segment timeline with add_segment.
 		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
 		frappe.db.commit()
@@ -263,7 +263,7 @@ class TestOpenAndCollect(BillingTestBase):
 			"Credit Ledger Entry",
 			"Credit Wallet",
 			"Subscription",
-			"Asset",
+			"Virtual Machine",
 			"Billing Profile",
 			"Invoice",
 		):
@@ -318,20 +318,20 @@ class TestTerminationCancelsBilling(BillingTestBase):
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)
 
 	def test_terminate_cancels_segment_and_frees_run_rate(self):
-		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")
-		# The VM comes up Running — that enables the subscription (Asset controller).
-		asset = frappe.get_doc("Asset", asset_id)
-		asset.status = "Running"
-		asset.save(ignore_permissions=True)
+		server_id = frappe.db.get_value("Subscription", self.sub, "server_id")
+		# The VM comes up Running — that enables the subscription (VirtualMachine controller).
+		server = frappe.get_doc("Virtual Machine", server_id)
+		server.status = "Running"
+		server.save(ignore_permissions=True)
 		self.assertTrue(frappe.db.get_value("Subscription", self.sub, "enabled"))
 
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)  # it counts while alive
 
 		# The mirror flips to Terminated (Atlas vm.terminated / reconcile).
-		asset.reload()
-		asset.status = "Terminated"
-		asset.save(ignore_permissions=True)
+		server.reload()
+		server.status = "Terminated"
+		server.save(ignore_permissions=True)
 
 		# A Cancelled change closed the segment; the sub is disabled and stops counting.
 		changes = frappe.get_all("Subscription Change", {"subscription": self.sub}, pluck="change_type")
@@ -344,17 +344,17 @@ class TestTerminationCancelsBilling(BillingTestBase):
 class TestCancelTerminatedPatch(BillingTestBase):
 	"""v26 backfill: close the open segment of VMs terminated before the runtime fix."""
 
-	def test_patch_cancels_open_segment_on_terminated_asset(self):
+	def test_patch_cancels_open_segment_on_terminated_server(self):
 		from central.patches.v0_0.cancel_terminated_subscriptions import (
 			cancel_terminated_subscriptions,
 		)
 
-		asset_id = frappe.db.get_value("Subscription", self.sub, "asset_id")
+		server_id = frappe.db.get_value("Subscription", self.sub, "server_id")
 		frappe.db.set_value("Subscription", self.sub, "enabled", 1)
 		add_segment(self.sub, "Created", 1000, "2026-06-01 00:00:00")
 		# Legacy bug state: the mirror was flipped to Terminated WITHOUT the controller
 		# cancelling — a direct write leaves the segment open.
-		frappe.db.set_value("Asset", asset_id, "status", "Terminated")
+		frappe.db.set_value("Virtual Machine", server_id, "status", "Terminated")
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)
 
 		self.assertEqual(cancel_terminated_subscriptions(), 1)
@@ -763,9 +763,11 @@ class TestProjectValidation(BillingTestBase):
 
 	def test_cannot_tag_another_teams_project(self):
 		ensure_team(self.OTHER_TEAM)
-		foreign = frappe.get_doc(
-			{"doctype": "Project", "title": "Someone Else", "team": self.OTHER_TEAM}
-		).insert().name
+		foreign = (
+			frappe.get_doc({"doctype": "Project", "title": "Someone Else", "team": self.OTHER_TEAM})
+			.insert()
+			.name
+		)
 
 		doc = frappe.get_doc("Subscription", self.sub)
 		doc.project = foreign
@@ -773,9 +775,11 @@ class TestProjectValidation(BillingTestBase):
 			doc.save()
 
 	def test_cannot_tag_a_disabled_project(self):
-		project = frappe.get_doc(
-			{"doctype": "Project", "title": "Archived", "team": TEAM, "enabled": 0}
-		).insert().name
+		project = (
+			frappe.get_doc({"doctype": "Project", "title": "Archived", "team": TEAM, "enabled": 0})
+			.insert()
+			.name
+		)
 
 		doc = frappe.get_doc("Subscription", self.sub)
 		doc.project = project
@@ -783,9 +787,7 @@ class TestProjectValidation(BillingTestBase):
 			doc.save()
 
 	def test_tagging_an_own_active_project_is_allowed(self):
-		project = frappe.get_doc(
-			{"doctype": "Project", "title": "Customer X", "team": TEAM}
-		).insert().name
+		project = frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM}).insert().name
 
 		doc = frappe.get_doc("Subscription", self.sub)
 		doc.project = project
@@ -797,13 +799,17 @@ class TestProjectValidation(BillingTestBase):
 class TestProjectSpendingLimit(BillingTestBase):
 	"""A Project's `spending_limit` caps the committed run-rate of the subscriptions
 	tagged into it (`subscriptions.enforce_project_headroom`, via
-	`Subscription.validate_project`). It blocks tagging a NEW asset only — an
+	`Subscription.validate_project`). It blocks tagging a NEW server only — an
 	already-tagged subscription is never un-tagged or stopped."""
 
 	def _project(self, spending_limit=0):
-		return frappe.get_doc(
-			{"doctype": "Project", "title": "Customer X", "team": TEAM, "spending_limit": spending_limit}
-		).insert().name
+		return (
+			frappe.get_doc(
+				{"doctype": "Project", "title": "Customer X", "team": TEAM, "spending_limit": spending_limit}
+			)
+			.insert()
+			.name
+		)
 
 	def test_tagging_under_the_limit_succeeds(self):
 		# PLAN's locked rate is 3200 INR/mo (DEFAULT_RATES) — comfortably under 5000.

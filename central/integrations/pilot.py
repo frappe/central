@@ -106,23 +106,23 @@ def is_site_reachable(url: str) -> bool:
 	return response.ok and "pong" in response.text
 
 
-def rename_admin_domain(asset: str, base_url: str | None = None, tls: bool = True) -> dict:
+def rename_admin_domain(server: str, base_url: str | None = None, tls: bool = True) -> dict:
 	"""Ask a server's pilot to serve its admin UI at the proxy hostname Central expects.
 
 	`base_url` reaches the pilot when its current admin hostname differs from the expected one.
 	Pilot queues the change as a task and returns it."""
-	expected = _expected_gateway_url(frappe.get_doc("Asset", asset))
+	expected = _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
 	payload = {"domain": urlparse(expected).hostname, "tls": tls}
-	return _post_to_pilot(asset, base_url or expected, "/api/v1/settings/admin-domain", payload)
+	return _post_to_pilot(server, base_url or expected, "/api/v1/settings/admin-domain", payload)
 
 
 def rename_site(
-	asset: str, site: str, new_name: str, keep_old_hostname: bool = True, base_url: str | None = None
+	server: str, site: str, new_name: str, keep_old_hostname: bool = True, base_url: str | None = None
 ) -> dict:
 	"""Ask a server's pilot to rename one of its sites. Pilot queues the rename as a task."""
-	base_url = base_url or _expected_gateway_url(frappe.get_doc("Asset", asset))
+	base_url = base_url or _expected_gateway_url(frappe.get_doc("Virtual Machine", server))
 	payload = {"new_name": new_name, "keep_old_hostname": keep_old_hostname}
-	return _post_to_pilot(asset, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload)
+	return _post_to_pilot(server, base_url, f"/api/v1/sites/{quote(site, safe='')}/actions/rename", payload)
 
 
 def _expected_gateway_url(server) -> str:
@@ -132,10 +132,12 @@ def _expected_gateway_url(server) -> str:
 	return url
 
 
-def _post_to_pilot(asset: str, base_url: str, path: str, payload: dict) -> dict:
-	audience_id = frappe.db.get_value("Pilot Credential", {"asset": asset, "status": "Active"}, "audience_id")
+def _post_to_pilot(server: str, base_url: str, path: str, payload: dict) -> dict:
+	audience_id = frappe.db.get_value(
+		"Pilot Credential", {"server": server, "status": "Active"}, "audience_id"
+	)
 	if not audience_id:
-		frappe.throw(frappe._("Server {0} has no enrolled pilot.").format(asset))
+		frappe.throw(frappe._("Server {0} has no enrolled pilot.").format(server))
 
 	response = requests.post(
 		f"{_gateway_url(base_url)}{path}",

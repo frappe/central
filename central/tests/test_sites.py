@@ -4,9 +4,9 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.sites import claim_site, get_site, onboarding_status, terminate_site
-from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.site.site import on_host
+from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.errors import AtlasResourceGone
 from central.integrations.pilot import PilotLoginPending, fetch_site_login_url
 from central.integrations.servers import observe_server
@@ -29,8 +29,8 @@ class SiteOnAMachine(IntegrationTestCase):
 		self.addCleanup(frappe.db.rollback)
 		self.enterContext(patch("frappe.enqueue"))
 		self.enqueue_doc = self.enterContext(patch("frappe.enqueue_doc"))
-		self.enterContext(patch.object(Asset, "ensure_subscription_enabled"))
-		self.enterContext(patch.object(Asset, "disable_active_subscription"))
+		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
+		self.enterContext(patch.object(VirtualMachine, "disable_active_subscription"))
 		self.team = frappe.get_doc(
 			{"doctype": "Team", "team_name": "Trial", "owner_user": "Administrator"}
 		).insert()
@@ -43,9 +43,9 @@ class SiteOnAMachine(IntegrationTestCase):
 				"status": "Active",
 			}
 		).insert()
-		self.asset = frappe.get_doc(
+		self.server = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
 				"cluster": region.name,
@@ -67,22 +67,22 @@ class SiteOnAMachine(IntegrationTestCase):
 
 	def enroll(self) -> str:
 		"""Enrol a Pilot the way provisioning does, audience and all."""
-		credential = "pcred-" + self.asset.name
+		credential = "pcred-" + self.server.name
 		return PilotCredential.mint(
 			team=self.team.name,
 			pilot_credential_id=credential,
-			asset=self.asset.name,
+			server=self.server.name,
 			audience_id=credential,
 		)
 
 	def site(self):
-		return frappe.get_doc("Site", {"asset": self.asset.name})
+		return frappe.get_doc("Site", {"server": self.server.name})
 
 
 class TestSiteMirror(SiteOnAMachine):
 	def test_an_enrolled_machine_carries_the_site_its_image_baked(self):
 		self.enroll()
-		observe_server(self.asset)
+		observe_server(self.server)
 
 		site = self.site()
 		self.assertEqual(site.name, "site-1z141z4.par-2.example.test")
@@ -92,33 +92,33 @@ class TestSiteMirror(SiteOnAMachine):
 
 	def test_the_site_address_and_the_admin_address_name_the_same_machine(self):
 		self.enroll()
-		observe_server(self.asset)
+		observe_server(self.server)
 
-		self.assertEqual(self.asset.reload().gateway_url, "https://admin-vm-1z141z4.par-2.example.test")
+		self.assertEqual(self.server.reload().gateway_url, "https://admin-vm-1z141z4.par-2.example.test")
 		self.assertEqual(self.site().url, "https://site-1z141z4.par-2.example.test")
 
 	def test_a_machine_with_no_enrolled_pilot_has_no_site(self):
-		observe_server(self.asset)
+		observe_server(self.server)
 
-		self.assertFalse(frappe.db.exists("Site", {"asset": self.asset.name}))
+		self.assertFalse(frappe.db.exists("Site", {"server": self.server.name}))
 
 	def test_a_site_reads_its_state_from_the_machine_it_is(self):
 		self.enroll()
-		observe_server(self.asset)
+		observe_server(self.server)
 		self.client.get_vm.return_value["current_state"] = "stopped"
 
-		observe_server(self.asset)
+		observe_server(self.server)
 
 		# Nothing was written to the site: its state was never its own to write.
 		self.assertEqual(self.site().status, "Stopped")
-		self.assertEqual(frappe.db.count("Site", {"asset": self.asset.name}), 1)
+		self.assertEqual(frappe.db.count("Site", {"server": self.server.name}), 1)
 
 	def test_a_terminated_machine_takes_its_site_with_it(self):
 		self.enroll()
-		observe_server(self.asset)
+		observe_server(self.server)
 		self.client.get_vm.side_effect = AtlasResourceGone("gone")
 
-		self.assertEqual(observe_server(self.asset), "Terminated")
+		self.assertEqual(observe_server(self.server), "Terminated")
 
 		self.assertEqual(self.site().status, "Terminated")
 
@@ -127,7 +127,7 @@ class TestSiteRoutes(SiteOnAMachine):
 	def setUp(self):
 		super().setUp()
 		self.enroll()
-		observe_server(self.asset)
+		observe_server(self.server)
 
 	def test_a_site_is_ready_only_once_it_answers_on_its_own_address(self):
 		with patch("central.api.sites.is_site_reachable", return_value=False) as reachable:
@@ -155,7 +155,7 @@ class TestSiteRoutes(SiteOnAMachine):
 
 	def test_a_site_is_ready_before_the_machine_reports_running(self):
 		"""The mirrored status still says Provisioning: only the site's own answer gates readiness."""
-		self.asset.db_set("status", "Provisioning")
+		self.server.db_set("status", "Provisioning")
 		with (
 			patch("central.api.sites.is_site_reachable", return_value=True),
 			patch(
@@ -220,7 +220,7 @@ class TestSiteRoutes(SiteOnAMachine):
 
 		action = frappe.get_doc("Resource Action", result["action"])
 		self.assertEqual(action.action, "terminate")
-		self.assertEqual(action.asset, self.asset.name)
+		self.assertEqual(action.server, self.server.name)
 
 	def test_another_team_cannot_reach_this_site(self):
 		other = frappe.get_doc(
@@ -256,8 +256,8 @@ class TestSiteRoutes(SiteOnAMachine):
 					"resource_type": resource_type,
 					"action": "create",
 					"team": self.team.name,
-					"asset": self.asset.name,
-					"resource_id": self.asset.name,
+					"server": self.server.name,
+					"resource_id": self.server.name,
 					"requested_by": "Administrator",
 					"correlation_id": frappe.generate_hash(length=32),
 					"status": "Succeeded",
@@ -371,7 +371,7 @@ class TestSiteNaming(SiteOnAMachine):
 	def setUp(self):
 		super().setUp()
 		self.enroll()
-		observe_server(self.asset)
+		observe_server(self.server)
 		self.site().db_set("subdomain", "acme")
 
 	def test_the_address_stays_ours_and_theirs_is_only_a_rename_target(self):
@@ -385,7 +385,7 @@ class TestSiteNaming(SiteOnAMachine):
 			self.site().apply_subdomain()
 			self.site().apply_subdomain()
 
-		rename.assert_called_once_with(self.asset.name, "site.local", "acme.par-2.example.test")
+		rename.assert_called_once_with(self.server.name, "site.local", "acme.par-2.example.test")
 		self.assertEqual(self.site().rename_task, "task-1")
 
 	def test_a_site_nobody_named_is_never_renamed(self):
@@ -405,36 +405,36 @@ class TestAdminHostname(SiteOnAMachine):
 		with patch(
 			"central.integrations.pilot.rename_admin_domain", return_value={"task_id": "task-2"}
 		) as rename:
-			observe_server(self.asset)
-			observe_server(self.asset)
+			observe_server(self.server)
+			observe_server(self.server)
 
-		rename.assert_called_once_with(self.asset.name, tls=False)
-		self.assertEqual(self.asset.reload().admin_domain_task, "task-2")
+		rename.assert_called_once_with(self.server.name, tls=False)
+		self.assertEqual(self.server.reload().admin_domain_task, "task-2")
 
 	def test_a_failure_leaves_it_to_the_next_report(self):
 		self.enroll()
 
 		with patch("central.integrations.pilot.rename_admin_domain", side_effect=OSError("unreachable")):
-			observe_server(self.asset)
+			observe_server(self.server)
 
-		self.assertIsNone(self.asset.reload().admin_domain_task)
+		self.assertIsNone(self.server.reload().admin_domain_task)
 
 	def test_a_response_without_a_task_leaves_it_to_the_next_report(self):
 		self.enroll()
 
 		with patch("central.integrations.pilot.rename_admin_domain", return_value={}) as rename:
-			observe_server(self.asset)
-			observe_server(self.asset)
+			observe_server(self.server)
+			observe_server(self.server)
 
 		self.assertEqual(rename.call_count, 2)
-		self.assertIsNone(self.asset.reload().admin_domain_task)
+		self.assertIsNone(self.server.reload().admin_domain_task)
 
 	def test_a_stopped_machine_does_not_rename_its_admin_domain(self):
 		self.enroll()
 		self.client.get_vm.return_value["current_state"] = "stopped"
 
 		with patch("central.integrations.pilot.rename_admin_domain") as rename:
-			observe_server(self.asset)
+			observe_server(self.server)
 
 		rename.assert_not_called()
 
@@ -442,7 +442,7 @@ class TestAdminHostname(SiteOnAMachine):
 class TestSubdomainAvailability(SiteOnAMachine):
 	def test_a_name_already_taken_is_refused(self):
 		self.enroll()
-		observe_server(self.asset)
+		observe_server(self.server)
 		self.site().db_set("subdomain", "acme")
 
 		self.assertFalse(subdomain_availability("acme")["available"])

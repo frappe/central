@@ -24,7 +24,7 @@ servers; a server *is* a bench host. The **bench plane** — site-level capabili
 plus the bench-internal `server:config` — is **deferred**: the plane, the
 `bench`-caps SSO mint, and the implication map all remain, so site capabilities can
 return under the bench plane later with no change to the token contract or to any
-deployed bench. `asset:view` was dropped as redundant — the Asset registry is gated
+deployed bench. `asset:view` was dropped as redundant — the Virtual Machine registry is gated
 on `server:view`.
 
 ## Vocabulary vs. roles

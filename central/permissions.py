@@ -82,11 +82,11 @@ def team_invitation_has_permission(doc, user: str | None = None, ptype: str | No
 	return doc.email == user or can(user, doc.team, "team:manage_members")
 
 
-def asset_query_conditions(user: str | None = None) -> str:
-	return _team_field_query_conditions("Asset", "server:view", user)
+def server_query_conditions(user: str | None = None) -> str:
+	return _team_field_query_conditions("Virtual Machine", "server:view", user)
 
 
-def asset_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
+def server_has_permission(doc, user: str | None = None, ptype: str | None = None, **kwargs) -> bool:
 	return _team_field_has_permission(doc, ("server:view",), (), user, ptype)
 
 

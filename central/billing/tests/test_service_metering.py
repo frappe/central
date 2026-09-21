@@ -114,7 +114,7 @@ class TestPlanCategoryModes(IntegrationTestCase):
 
 
 class TestServiceSubjectProvisioning(IntegrationTestCase):
-	"""A team-level service is subscribed with a synthesized subject and no Asset
+	"""A team-level service is subscribed with a synthesized subject and no Virtual Machine
 	(ADR 0013): the segment opens inline and metering resolves it like any resource."""
 
 	TEAM = "svc-team-a"
@@ -135,7 +135,7 @@ class TestServiceSubjectProvisioning(IntegrationTestCase):
 
 		sub = frappe.get_doc("Subscription", res["subscription"])
 		self.assertEqual(sub.service_subject, res["service_subject"])
-		self.assertFalse(sub.asset_id)  # no VM Asset for a team-level service
+		self.assertFalse(sub.server_id)  # no VM for a team-level service
 		self.assertEqual(sub.cluster, "mumbai")
 
 		# Metering resolves the subject off the ledger, just like a VM resource.

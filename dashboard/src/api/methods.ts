@@ -47,7 +47,7 @@ export const API = {
 	// ── Servers (central.api.servers) ──
 	registry: 'central.api.servers.registry',
 	listInstances: 'central.api.servers.list_instances',
-	refreshAssets: 'central.api.servers.refresh_assets',
+	refreshServers: 'central.api.servers.refresh_servers',
 	actionStatus: 'central.api.servers.action_status',
 	retryAction: 'central.api.servers.retry_action',
 	createServer: 'central.api.servers.create_server',

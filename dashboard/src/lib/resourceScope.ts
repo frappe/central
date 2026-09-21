@@ -14,8 +14,10 @@ export function resourceScopeLabel(
 
 	if (registry) {
 		if (grant.resource_type === 'Server') {
-			const asset = registry.assets.find((a) => a.name === grant.resource_name)
-			if (asset) return asset.title || asset.resource_id
+			const server = registry.servers.find(
+				(s) => s.name === grant.resource_name,
+			)
+			if (server) return server.title || server.resource_id
 		}
 		if (grant.resource_type === 'Site') {
 			const site = registry.sites.find((s) => s.name === grant.resource_name)

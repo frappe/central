@@ -218,12 +218,12 @@ def idle_shutdown_seconds(team: str) -> int:
 def _finalize(request) -> None:
 	try:
 		frappe.db.get_value("Team", request.team, "name", for_update=True)
-		asset_id = request.asset or f"server-{request.name}"
-		if not request.asset:
-			_create_asset(request, asset_id)
-			_create_subscription(request, asset_id)
-			PilotCredential.link_asset(request.credential, asset_id)
-			request.db_set({"asset": asset_id, "resource_id": asset_id})
+		server_id = request.server or f"server-{request.name}"
+		if not request.server:
+			_create_server(request, server_id)
+			_create_subscription(request, server_id)
+			PilotCredential.link_server(request.credential, server_id)
+			request.db_set({"server": server_id, "resource_id": server_id})
 		# Finalize local ownership and billing together, independently of the next remote read.
 		frappe.db.commit()
 	except Exception:
@@ -234,7 +234,7 @@ def _finalize(request) -> None:
 		return
 
 	try:
-		status = observe_server(frappe.get_doc("Asset", asset_id))
+		status = observe_server(frappe.get_doc("Virtual Machine", server_id))
 	except AtlasConnectionError:
 		request.set_error("Sent", build_envelope("REFRESH_FAILED"))
 		return
@@ -256,22 +256,22 @@ def _finalize(request) -> None:
 		)
 
 
-def _create_asset(request, asset_id: str) -> None:
+def _create_server(request, server_id: str) -> None:
 	"""Open the server record. Central owns every value here; the region only reports
-	state afterwards, through `Asset.record_observed_state`.
+	state afterwards, through `VirtualMachine.record_observed_state`.
 
 	Recovery can reach this again after a local failure, so an already-open record is
 	left alone. The id comes from the request, so a second attempt carries the same
 	values as the first."""
-	if frappe.db.exists("Asset", asset_id):
+	if frappe.db.exists("Virtual Machine", server_id):
 		return
 
 	configuration = request.get_configuration()
 	# The authorized request is what permits this write, not the requesting user's role.
 	frappe.get_doc(
 		{
-			"doctype": "Asset",
-			"resource_id": asset_id,
+			"doctype": "Virtual Machine",
+			"resource_id": server_id,
 			"title": request.title,
 			"team": request.team,
 			"cluster": request.atlas_instance,
@@ -288,11 +288,11 @@ def _create_asset(request, asset_id: str) -> None:
 	).insert(ignore_permissions=True)
 
 
-def _create_subscription(request, asset_id: str) -> None:
+def _create_subscription(request, server_id: str) -> None:
 	from central.billing.catalog.subscriptions import create_subscription
 
 	configuration = request.get_configuration()
-	if frappe.db.exists("Subscription", {"team": request.team, "asset_id": asset_id}):
+	if frappe.db.exists("Subscription", {"team": request.team, "server_id": server_id}):
 		return
 
 	# The reservation already passed policy and budget checks before dispatch.
@@ -301,7 +301,7 @@ def _create_subscription(request, asset_id: str) -> None:
 		request.atlas_instance,
 		plan=configuration.plan,
 		billing_cycle=configuration.billing_cycle,
-		resource_id=asset_id,
+		resource_id=server_id,
 		changed_by=request.requested_by,
 		pricing_mode="Preset" if configuration.plan else "Composed",
 		includes=None if configuration.plan else [row.model_dump() for row in configuration.includes],
