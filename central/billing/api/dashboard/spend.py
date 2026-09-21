@@ -21,7 +21,7 @@ def get_cycle_costs(team: str | None = None) -> dict:
 	"""Everything being billed this cycle, with its month-to-date cost.
 
 	Servers and team-level metered services in one list, because a customer asking
-	"what am I paying for" does not care that one has an Asset behind it and the
+	"what am I paying for" does not care that one has a Virtual Machine behind it and the
 	other is a synthesized subject (ADR 0013).
 	"""
 	team = _resolve_team(team)
@@ -111,10 +111,10 @@ def _metered_usage(team: str) -> dict:
 
 
 def _title_for(resource_id: str, segment) -> str:
-	"""What to call the thing on screen: the Asset's own name for a server, the plan
+	"""What to call the thing on screen: the VirtualMachine's own name for a server, the plan
 	title for a team-level service, and the raw subject only as a last resort."""
-	if segment and segment.asset_id:
-		title = frappe.db.get_value("Asset", segment.asset_id, "title")
+	if segment and segment.server_id:
+		title = frappe.db.get_value("Virtual Machine", segment.server_id, "title")
 		if title:
 			return title
 	if segment and segment.plan:

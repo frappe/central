@@ -1,4 +1,4 @@
-export interface Asset {
+export interface VirtualMachine {
 	name: string
 	creation: string
 	modified: string

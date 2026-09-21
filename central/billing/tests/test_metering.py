@@ -35,7 +35,7 @@ def meter(key_suffix, qty, resource_type="Transfer", meter_type="Counter"):
 
 
 def provision(rate=1000):
-	"""Open the resource's billing segment on the ledger (ADR 0010) — its Asset +
+	"""Open the resource's billing segment on the ledger (ADR 0010) — its VirtualMachine +
 	Subscription + Created segment — so metering can grandfather its terms. Returns the
 	Subscription name."""
 	return seed_running_resource(TEAM, RESOURCE, CLUSTER, PLAN, rate=rate, currency="INR")
@@ -66,7 +66,7 @@ class MeteringTestBase(IntegrationTestCase):
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
-		frappe.db.delete("Asset", {"team": TEAM})
+		frappe.db.delete("Virtual Machine", {"team": TEAM})
 		frappe.db.commit()
 
 
@@ -141,7 +141,7 @@ class TestMultiClusterConsolidation(IntegrationTestCase):
 		make_plan(self.PLAN, includes=[{"resource_type": "Transfer", "quantity": 100, "unit": "GB"}])
 		self._purge()
 		# One running resource per cluster: each seeds a full-June ₹1000/mo fixed segment
-		# and an Asset in that cluster, plus a grandfathered metered rollup over its 100 GB
+		# and a Virtual Machine in that cluster, plus a grandfathered metered rollup over its 100 GB
 		# allowance. The two clusters carry different overage so a swapped/dropped cluster
 		# shows up. The rollup's terms are seeded directly (locked_rate already stamped, as
 		# a real grandfathered rollup is at ingest) so the test exercises the aggregation
@@ -179,13 +179,15 @@ class TestMultiClusterConsolidation(IntegrationTestCase):
 		for sub in frappe.get_all("Subscription", {"team": self.TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
-		frappe.db.delete("Asset", {"team": self.TEAM})
+		frappe.db.delete("Virtual Machine", {"team": self.TEAM})
 		frappe.db.commit()
 
 	def _team_clusters(self):
-		"""The same asset-cluster set generate_team_invoice derives."""
-		asset_ids = frappe.get_all("Subscription", {"team": self.TEAM}, pluck="asset_id")
-		return sorted({c for c in frappe.get_all("Asset", {"name": ["in", asset_ids]}, pluck="cluster") if c})
+		"""The same server-cluster set generate_team_invoice derives."""
+		server_ids = frappe.get_all("Subscription", {"team": self.TEAM}, pluck="server_id")
+		return sorted(
+			{c for c in frappe.get_all("Virtual Machine", {"name": ["in", server_ids]}, pluck="cluster") if c}
+		)
 
 	@staticmethod
 	def _bag(lines):

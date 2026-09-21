@@ -12,7 +12,7 @@
   "action",
   "team",
   "atlas_instance",
-  "asset",
+  "server",
   "resource_id",
   "subdomain",
   "column_break_main",
@@ -160,10 +160,10 @@
    "read_only": 1
   },
   {
-   "fieldname": "asset",
+   "fieldname": "server",
    "fieldtype": "Link",
    "label": "Server",
-   "options": "Asset",
+   "options": "Virtual Machine",
    "read_only": 1
   },
   {

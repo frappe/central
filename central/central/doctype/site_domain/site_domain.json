@@ -13,7 +13,7 @@
   "status",
   "region",
   "target_section",
-  "asset",
+  "server",
   "site",
   "column_break_target",
   "ipv6_address",
@@ -86,10 +86,10 @@
    "label": "Target"
   },
   {
-   "fieldname": "asset",
+   "fieldname": "server",
    "fieldtype": "Link",
    "label": "Server",
-   "options": "Asset",
+   "options": "Virtual Machine",
    "reqd": 1,
    "set_only_once": 1,
    "description": "The VM that receives the traffic. It must belong to the same team and region."
@@ -171,7 +171,7 @@
   }
  ],
  "row_format": "Dynamic",
- "search_fields": "team,asset,site",
+ "search_fields": "team,server,site",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],

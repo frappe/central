@@ -9,7 +9,7 @@ import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.v
 import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import { useRegions } from '@/composables/useRegions'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import type { LoadPoint } from '@/lib/loadChart'
 import { formatPlanLabel } from '@/lib/planLabel'
@@ -17,7 +17,7 @@ import { statusVisual } from '@/lib/serverMap'
 import { getErrorMessage } from '@/lib/toast'
 
 type Overview = {
-	server: AssetRow & {
+	server: VirtualMachineRow & {
 		creation: string
 		plan_title: string | null
 		plan_rate: number | null
@@ -40,14 +40,14 @@ type Overview = {
 }
 
 const props = defineProps<{
-	server: AssetRow | null
+	server: VirtualMachineRow | null
 	canOpen: boolean
 	canResize?: boolean
 }>()
 
 const emit = defineEmits<{
-	open: [server: AssetRow]
-	resize: [server: AssetRow]
+	open: [server: VirtualMachineRow]
+	resize: [server: VirtualMachineRow]
 }>()
 
 const open = defineModel<boolean>('open', { required: true })

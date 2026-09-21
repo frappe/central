@@ -90,7 +90,7 @@ class TestListInstances(IntegrationTestCase):
 	def test_registry_returns_console_fields(self):
 		frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": "li-registry-vm",
 				"team": self.team.name,
 				"cluster": self.active_region,
@@ -103,10 +103,10 @@ class TestListInstances(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 		frappe.set_user(self.owner)
-		assets = registry(team=self.team.name)["assets"]
+		servers = registry(team=self.team.name)["servers"]
 
-		self.assertEqual(len(assets), 1)
+		self.assertEqual(len(servers), 1)
 		for field in ("name", "resource_id", "plan", "resize_in_progress", "status", "cluster"):
-			self.assertIn(field, assets[0])
-		self.assertEqual(assets[0].name, assets[0].resource_id)
-		self.assertEqual(assets[0].frappe_version, "v15")
+			self.assertIn(field, servers[0])
+		self.assertEqual(servers[0].name, servers[0].resource_id)
+		self.assertEqual(servers[0].frappe_version, "v15")

@@ -5,7 +5,7 @@ from frappe.model.document import Document
 from requests import RequestException
 
 
-class Asset(Document):
+class VirtualMachine(Document):
 	# begin: auto-generated types
 	# This code is auto-generated. Do not modify anything in this block.
 
@@ -62,7 +62,7 @@ class Asset(Document):
 			self.team,
 			"server_failed",
 			message=f"Your server in {self.cluster} entered a Failed state. Review it in the console.",
-			reference_doctype="Asset",
+			reference_doctype="Virtual Machine",
 			reference_name=self.name,
 		)
 
@@ -76,7 +76,7 @@ class Asset(Document):
 	def ensure_subscription_enabled(self):
 		"""Create the subscription if missing, else enable it if disabled."""
 		existing = frappe.db.get_value(
-			"Subscription", {"team": self.team, "asset_id": self.name}, "name", order_by="creation desc"
+			"Subscription", {"team": self.team, "server_id": self.name}, "name", order_by="creation desc"
 		)
 		if existing:
 			sub = frappe.get_doc("Subscription", existing)
@@ -90,14 +90,14 @@ class Asset(Document):
 				{
 					"doctype": "Subscription",
 					"team": self.team,
-					"asset_id": self.name,
+					"server_id": self.name,
 					"plan": self.plan,
 					"enabled": 1,
 				}
 			).insert(ignore_permissions=True)
 
 	def disable_active_subscription(self):
-		"""Terminated: cancel the team's active subscription for this asset, if any.
+		"""Terminated: cancel the team's active subscription for this server, if any.
 
 		Termination is an END, not a billing pause — so we record a `Cancelled`
 		Subscription Change to CLOSE the open billing segment (ADR 0010). That drops the
@@ -105,7 +105,7 @@ class Asset(Document):
 		bill estimate stops counting a dead VM and the team can provision again. Then we
 		disable it (the `enabled: 1` filter makes this idempotent on a repeated event)."""
 		existing = frappe.db.get_value(
-			"Subscription", {"team": self.team, "asset_id": self.name, "enabled": 1}, "name"
+			"Subscription", {"team": self.team, "server_id": self.name, "enabled": 1}, "name"
 		)
 		if existing:
 			from central.billing.catalog.subscriptions import cancel_subscription
@@ -135,7 +135,7 @@ class Asset(Document):
 		`state` are written, so a status-only report cannot blank an address."""
 		try:
 			# Lock first. An unlocked read can miss a report another worker just committed.
-			doc = frappe.get_doc("Asset", resource_id, for_update=True)
+			doc = frappe.get_doc("Virtual Machine", resource_id, for_update=True)
 		except frappe.DoesNotExistError:
 			return False
 		if doc.is_report_stale(observed_at):
@@ -183,7 +183,7 @@ class Asset(Document):
 		if self.admin_domain_task or self.status != "Running" or not self.gateway_url:
 			return
 		if not frappe.db.exists(
-			"Pilot Credential", {"asset": self.name, "team": self.team, "status": "Active"}
+			"Pilot Credential", {"server": self.name, "team": self.team, "status": "Active"}
 		):
 			return
 
@@ -219,7 +219,7 @@ class Asset(Document):
 		"""Flag or unflag a server as mid-resize, so the console shows a "Resizing" state
 		and gates power actions while the reshape job runs. This is Central's own
 		orchestration flag, not an observed field, so a region report never clears it."""
-		doc = frappe.get_doc("Asset", resource_id)
+		doc = frappe.get_doc("Virtual Machine", resource_id)
 		doc.db_set("resize_in_progress", 1 if resizing else 0)
 		doc.publish_state_change()
 
@@ -229,7 +229,7 @@ class Asset(Document):
 		absent. Termination is final, so no later report can outrank it and there is no
 		staleness check to make. Returns False when Central holds no such server."""
 		try:
-			doc = frappe.get_doc("Asset", resource_id, for_update=True)
+			doc = frappe.get_doc("Virtual Machine", resource_id, for_update=True)
 		except frappe.DoesNotExistError:
 			return False
 
@@ -242,5 +242,5 @@ class Asset(Document):
 
 
 def on_doctype_update() -> None:
-	frappe.db.add_unique("Asset", ["cluster", "atlas_vm_id"])
-	frappe.db.add_index("Asset", ["team", "status"])
+	frappe.db.add_unique("Virtual Machine", ["cluster", "atlas_vm_id"])
+	frappe.db.add_index("Virtual Machine", ["team", "status"])

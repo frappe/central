@@ -21,17 +21,17 @@ class IntegrationTestSubscription(IntegrationTestCase):
 		self.plan = make_plan("plan-sub-doctype-a")
 		self.plan_b = make_plan("plan-sub-doctype-b")
 		ensure_atlas_instance("ap-south-1")
-		if not frappe.db.exists("Asset", "vm-sub-doctype"):
+		if not frappe.db.exists("Virtual Machine", "vm-sub-doctype"):
 			frappe.get_doc(
 				{
-					"doctype": "Asset",
+					"doctype": "Virtual Machine",
 					"resource_id": "vm-sub-doctype",
 					"team": self.team,
 					"cluster": "ap-south-1",
 					"status": "Pending",
 				}
 			).insert()
-		self.asset = "vm-sub-doctype"
+		self.server = "vm-sub-doctype"
 		self._cleanup_subscriptions()
 
 	def tearDown(self):
@@ -48,13 +48,13 @@ class IntegrationTestSubscription(IntegrationTestCase):
 			{
 				"doctype": "Subscription",
 				"team": self.team,
-				"asset_id": self.asset,
+				"server_id": self.server,
 				"plan": plan or self.plan,
 				"enabled": enabled,
 			}
 		).insert()
 
-	def test_blocks_duplicate_enabled_subscription_for_same_team_and_asset(self):
+	def test_blocks_duplicate_enabled_subscription_for_same_team_and_server(self):
 		self._make_subscription(enabled=1)
 		with self.assertRaises(frappe.DuplicateEntryError):
 			self._make_subscription(enabled=1)

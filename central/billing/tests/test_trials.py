@@ -33,7 +33,7 @@ class TrialTestBase(IntegrationTestCase):
 		make_ladder()  # t0 (entry, default) / t1 / t2
 		make_plan(PLAN)
 		self._purge()
-		# Asset-model subscription (seeds the cluster's Region + the team's
+		# VirtualMachine-model subscription (seeds the cluster's Region + the team's
 		# INR Billing Profile, clears the auto 'Created' segment); the trust tier is
 		# then pinned to the entry tier on that profile.
 		self.sub = make_billing_subscription(TEAM, CLUSTER, PLAN, billing_cycle="Monthly")
@@ -50,7 +50,7 @@ class TrialTestBase(IntegrationTestCase):
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
-		frappe.db.delete("Asset", {"team": TEAM})
+		frappe.db.delete("Virtual Machine", {"team": TEAM})
 		frappe.db.delete("Entitlement Token", {"team": TEAM})
 		frappe.db.commit()
 

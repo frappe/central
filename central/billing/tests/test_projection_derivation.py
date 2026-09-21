@@ -48,7 +48,7 @@ class DerivationTestBase(IntegrationTestCase):
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
-		frappe.db.delete("Asset", {"team": TEAM})
+		frappe.db.delete("Virtual Machine", {"team": TEAM})
 		frappe.db.commit()
 
 	def _lines(self, explain=True):
@@ -141,7 +141,7 @@ class TestMeteredLines(DerivationTestBase):
 		frappe.get_doc(
 			{
 				"doctype": "Usage Rollup",
-				"resource_id": frappe.db.get_value("Subscription", self.sub, "asset_id"),
+				"resource_id": frappe.db.get_value("Subscription", self.sub, "server_id"),
 				"team": TEAM,
 				"cluster": CLUSTER,
 				"resource_type": "Transfer",

@@ -8,7 +8,7 @@ from central.errors import resource_action
 from central.iam import can, resolve_team
 from central.integrations.servers import reconcile
 
-# Server endpoints for the console. Reads come from the Asset mirror; commands go
+# Server endpoints for the console. Reads come from the VirtualMachine mirror; commands go
 # to Atlas as the operator (Atlas stays policy-unaware — capability gating happens
 # here). Every call resolves and authorizes a team first.
 
@@ -28,18 +28,18 @@ REGION_LIST_FIELDS = (
 
 @frappe.whitelist(methods=["GET"])
 def registry(team: str | None = None) -> dict:
-	"""List a team's VMs — servers (the Asset mirror) and self-serve sites (the Site
+	"""List a team's VMs — servers (the VirtualMachine mirror) and self-serve sites (the Site
 	mirror, each a 1:1-backed VM) — in one read, so the console's map/panel unify them
 	from a single call. A pure read; gated on `server:view`. Terminated sites are gone,
-	not a state to render, so they're excluded here (Terminated assets are filtered by
+	not a state to render, so they're excluded here (Terminated servers are filtered by
 	the map feed client-side)."""
 	user = frappe.session.user
 	team = resolve_team(user, team)
 	if not can(user, team, "server:view"):
 		frappe.throw(_("You can't view this team's servers."), frappe.PermissionError)
 
-	assets = frappe.get_list(
-		"Asset",
+	servers = frappe.get_list(
+		"Virtual Machine",
 		filters={"team": team},
 		fields=[
 			"name",
@@ -65,8 +65,8 @@ def registry(team: str | None = None) -> dict:
 	# start/stop/terminate (or a still-provisioning create) reads as "…ing" until the
 	# mirror catches up — instead of looking like nothing happened.
 	pending = ResourceAction.pending_labels(team)
-	for asset in assets:
-		asset["pending_action"] = pending.get(asset["resource_id"])
+	for server in servers:
+		server["pending_action"] = pending.get(server["resource_id"])
 
 	# A creation has no server row until the region accepts it, so it cannot be overlaid
 	# like the pending actions above. It rides here as its own list: the console picks its
@@ -74,31 +74,31 @@ def registry(team: str | None = None) -> dict:
 	creations = ResourceAction.open_creations(team)
 
 	rows = frappe.get_list(
-		"Site", filters={"team": team}, fields=["name", "asset"], order_by="name asc", limit_page_length=0
+		"Site", filters={"team": team}, fields=["name", "server"], order_by="name asc", limit_page_length=0
 	)
-	return {"team": team, "assets": assets, "sites": _sites(rows, assets, pending), "creations": creations}
+	return {"team": team, "servers": servers, "sites": _sites(rows, servers, pending), "creations": creations}
 
 
-def _sites(rows: list[dict], assets: list[dict], pending: dict[str, str]) -> list[dict]:
+def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> list[dict]:
 	"""A site is a VM too, so it lists beside the servers and reads the same way.
 
 	Its address is its name and its state is its machine's, so both are read here from the
 	machines this call already loaded. A terminated machine is gone, not a state to render,
 	so its site goes with it."""
-	machines = {asset["name"]: asset for asset in assets}
+	machines = {server["name"]: server for server in servers}
 	return [
 		{
 			"name": row["name"],
 			"subdomain": row["name"].split(".")[0],
-			"asset": row["asset"],
+			"server": row["server"],
 			"url": f"https://{row['name']}",
 			"status": machine["status"],
 			"region": machine["cluster"],
 			# A site's actions run against its machine, so its in-flight label is the machine's.
-			"pending_action": pending.get(row["asset"]),
+			"pending_action": pending.get(row["server"]),
 		}
 		for row in rows
-		if (machine := machines.get(row["asset"])) and machine["status"] != "Terminated"
+		if (machine := machines.get(row["server"])) and machine["status"] != "Terminated"
 	]
 
 
@@ -112,11 +112,11 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 	if not resource_id:
 		frappe.throw(_("resource_id is required."), frappe.ValidationError)
 
-	row = _overview_asset_row(resource_id, team)
+	row = _overview_server_row(resource_id, team)
 	if not row:
 		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
 
-	asset = frappe._dict(
+	server = frappe._dict(
 		{
 			"resource_id": row.resource_id,
 			"title": row.title,
@@ -135,65 +135,65 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 	)
 	return {
 		"server": {
-			**asset,
-			**_overview_plan(asset, team),
+			**server,
+			**_overview_plan(server, team),
 			"team_name": row.team_name or team,
 			"region": {
-				"display_name": row.region_display_name or asset.cluster,
+				"display_name": row.region_display_name or server.cluster,
 				"provider": row.region_provider,
 				"country_code": row.region_country_code,
 			},
 		},
-		"monitoring": _server_monitoring(asset, audience_id=row.audience_id),
+		"monitoring": _server_monitoring(server, audience_id=row.audience_id),
 	}
 
 
-def _overview_asset_row(resource_id: str, team: str):
-	"""Asset + region + team + active Pilot audience in one query."""
-	asset = frappe.qb.DocType("Asset")
+def _overview_server_row(resource_id: str, team: str):
+	"""VirtualMachine + region + team + active Pilot audience in one query."""
+	server = frappe.qb.DocType("Virtual Machine")
 	region = frappe.qb.DocType("Region")
 	team_table = frappe.qb.DocType("Team")
 	pilot = frappe.qb.DocType("Pilot Credential")
 	rows = (
-		frappe.qb.from_(asset)
-		# Asset.cluster links straight to Region.
+		frappe.qb.from_(server)
+		# VirtualMachine.cluster links straight to Region.
 		.left_join(region)
-		.on(region.name == asset.cluster)
+		.on(region.name == server.cluster)
 		.left_join(team_table)
-		.on(team_table.name == asset.team)
+		.on(team_table.name == server.team)
 		.left_join(pilot)
-		.on((pilot.asset == asset.name) & (pilot.status == "Active"))
+		.on((pilot.server == server.name) & (pilot.status == "Active"))
 		.select(
-			asset.resource_id,
-			asset.title,
-			asset.cluster,
-			asset.status,
-			asset.plan,
-			asset.frappe_version,
-			asset.vcpus,
-			asset.memory_megabytes,
-			asset.disk_gigabytes,
-			asset.ipv6_address,
-			asset.public_ipv4,
-			asset.gateway_url,
-			asset.creation,
+			server.resource_id,
+			server.title,
+			server.cluster,
+			server.status,
+			server.plan,
+			server.frappe_version,
+			server.vcpus,
+			server.memory_megabytes,
+			server.disk_gigabytes,
+			server.ipv6_address,
+			server.public_ipv4,
+			server.gateway_url,
+			server.creation,
 			region.display_name.as_("region_display_name"),
 			region.provider.as_("region_provider"),
 			region.country_code.as_("region_country_code"),
 			team_table.team_name.as_("team_name"),
 			pilot.audience_id.as_("audience_id"),
 		)
-		.where((asset.resource_id == resource_id) & (asset.team == team))
+		.where((server.resource_id == resource_id) & (server.team == team))
 		.limit(1)
 		.run(as_dict=True)
 	)
 	return rows[0] if rows else None
 
 
-def _overview_plan(asset: dict, team: str) -> dict:
-	"""Tier name + billed rate — scoped to this asset, not the team's full run-rate.
+def _overview_plan(server: dict, team: str) -> dict:
+	"""Tier name + billed rate — scoped to this server, not the team's full run-rate.
 
-	Reads the asset's open priced segment through the billing seam
+	Reads the server's open priced segment through the billing seam
 	(`active_segment_for_resource`) rather than querying Subscription / Subscription
 	Change and re-deriving the ledger's open-segment rule here — servers does not own
 	how a segment resolves from the billing ledger."""
@@ -203,12 +203,12 @@ def _overview_plan(asset: dict, team: str) -> dict:
 	billing_cycle = "Monthly"
 	title = None
 	rate = None
-	plan_name = asset.plan
+	plan_name = server.plan
 
-	segment = active_segment_for_resource(asset.resource_id)
+	segment = active_segment_for_resource(server.resource_id)
 	if segment:
 		plan_name = segment.plan or plan_name
-		# Only adopt the segment's currency/rate once a plan is attached: an Asset can
+		# Only adopt the segment's currency/rate once a plan is attached: a Virtual Machine can
 		# open a Subscription during bootstrap before a plan exists, and that segment
 		# has no meaningful price to show (keep the profile-default currency then).
 		if plan_name:
@@ -225,9 +225,9 @@ def _overview_plan(asset: dict, team: str) -> dict:
 			billing_cycle = plan.billing_cycle or "Monthly"
 			if rate is None:
 				# Local import: Plan.get_rate pulls billing catalog; keep servers import-light.
-				rate = frappe.get_cached_doc("Plan", plan_name).get_rate(currency, asset.cluster)
+				rate = frappe.get_cached_doc("Plan", plan_name).get_rate(currency, server.cluster)
 	else:
-		# Asset bootstrap may open a Subscription before a plan is attached — no rate to show.
+		# VirtualMachine bootstrap may open a Subscription before a plan is attached — no rate to show.
 		rate = None
 
 	return {
@@ -238,14 +238,14 @@ def _overview_plan(asset: dict, team: str) -> dict:
 	}
 
 
-def _server_monitoring(asset: dict, audience_id: str | None = None) -> dict:
+def _server_monitoring(server: dict, audience_id: str | None = None) -> dict:
 	"""Pilot metrics are meaningful only for a live, enrolled bench VM."""
-	if asset.status != "Running" or not asset.gateway_url or not audience_id:
+	if server.status != "Running" or not server.gateway_url or not audience_id:
 		return {"available": False}
 
 	from central.integrations.pilot import get_cached_monitoring
 
-	return get_cached_monitoring(asset.resource_id, asset.gateway_url, audience_id)
+	return get_cached_monitoring(server.resource_id, server.gateway_url, audience_id)
 
 
 @frappe.whitelist(methods=["GET"])
@@ -271,7 +271,7 @@ def list_instances(team: str | None = None) -> list[dict]:
 
 
 @frappe.whitelist(methods=["POST"])
-def refresh_assets(team: str | None = None) -> dict:
+def refresh_servers(team: str | None = None) -> dict:
 	"""Manually reconcile this team's mirror from every Active Atlas — the on-demand
 	twin of the scheduled reconcile. Gated on `server:view`."""
 	user = frappe.session.user

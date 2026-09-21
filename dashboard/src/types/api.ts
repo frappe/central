@@ -5,7 +5,7 @@ export interface ProviderLogin {
 	auth_url: string
 }
 
-/** central.api.servers.refresh_assets response (the reconcile result). */
+/** central.api.servers.refresh_servers response (the reconcile result). */
 export interface RefreshResponse {
 	synced: string[]
 	/** Atlas instances that couldn't be reached this pass; their mirror is stale. */
@@ -69,7 +69,7 @@ export interface CapabilityInfo {
 /** central.api.servers.registry response. */
 export interface TeamRegistry {
 	team: string
-	assets: {
+	servers: {
 		name: string
 		resource_id: string
 		title: string

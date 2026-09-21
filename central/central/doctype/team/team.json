@@ -158,7 +158,7 @@
   },
   {
    "group": "Infrastructure",
-   "link_doctype": "Asset",
+   "link_doctype": "Virtual Machine",
    "link_fieldname": "team"
   },
   {

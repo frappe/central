@@ -38,7 +38,7 @@ class TestSiteDomain(IntegrationTestCase):
 		self.viewer = ensure_user("site.domain.viewer@example.test")
 		self.team = self._team("Site Domain A", self.viewer, "Viewer")
 		self.other_team = self._team("Site Domain B", self.owner, "Owner")
-		self.asset = self._asset("a", self.team, "2001:db8::10")
+		self.server = self._server("a", self.team, "2001:db8::10")
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -67,10 +67,10 @@ class TestSiteDomain(IntegrationTestCase):
 				self._route(domain)
 
 	def test_server_of_another_team_is_refused(self):
-		other_asset = self._asset("b", self.other_team, "2001:db8::11")
+		other_asset = self._server("b", self.other_team, "2001:db8::11")
 
 		with self.assertRaises(frappe.ValidationError):
-			self._route(f"x-{self.suffix}.com", asset=other_asset, team=self.team)
+			self._route(f"x-{self.suffix}.com", server=other_asset, team=self.team)
 
 	def test_apply_routes_the_server_address(self):
 		route = self._route(f"erp-{self.suffix}.{self.zone}")
@@ -110,8 +110,8 @@ class TestSiteDomain(IntegrationTestCase):
 		self.assertIn("connection refused", route.failure_reason)
 
 	def test_apply_fails_without_a_server_address(self):
-		asset = self._asset("c", self.team, None)
-		route = self._route(f"noip-{self.suffix}.com", asset=asset)
+		server = self._server("c", self.team, None)
+		route = self._route(f"noip-{self.suffix}.com", server=server)
 
 		with patch(GET_PROXY_CLIENT) as get_proxy_client:
 			route.apply()
@@ -156,7 +156,7 @@ class TestSiteDomain(IntegrationTestCase):
 	def test_team_members_read_only_their_team_routes(self):
 		own = self._route(f"own-{self.suffix}.com")
 		other = self._route(
-			f"other-{self.suffix}.com", asset=self._asset("d", self.other_team, "2001:db8::12")
+			f"other-{self.suffix}.com", server=self._server("d", self.other_team, "2001:db8::12")
 		)
 
 		frappe.set_user(self.viewer)
@@ -169,7 +169,7 @@ class TestSiteDomain(IntegrationTestCase):
 		self.assertFalse(frappe.has_permission("Site Domain", "write", own.name))
 
 	def test_a_site_needs_no_dns_records_and_registers_directly(self):
-		credential = self._credential(self.asset)
+		credential = self._credential(self.server)
 		domain = f"shop-{self.suffix}.{self.zone}"
 		proxy = MagicMock()
 
@@ -182,7 +182,7 @@ class TestSiteDomain(IntegrationTestCase):
 
 	def test_the_routed_names_of_a_server_need_no_proxy_call(self):
 		"""The region answers `admin-vm-*` and `site-*` from the label itself."""
-		credential = self._credential(self.asset)
+		credential = self._credential(self.server)
 		proxy = MagicMock()
 
 		for domain in self._routed_names():
@@ -201,11 +201,11 @@ class TestSiteDomain(IntegrationTestCase):
 				self._route(domain)
 
 	def test_a_routed_name_of_another_server_is_refused(self):
-		other = self._asset("f", self.team, "2001:db8::20")
+		other = self._server("f", self.team, "2001:db8::20")
 		domain = self._routed_names(other)[0]
 
 		with self.assertRaises(frappe.ValidationError):
-			SiteDomain.register(self._credential(self.asset), domain)
+			SiteDomain.register(self._credential(self.server), domain)
 
 		self.assertFalse(frappe.db.exists("Site Domain", domain))
 
@@ -222,16 +222,16 @@ class TestSiteDomain(IntegrationTestCase):
 				"doctype": "Site",
 				"site_name": f"site-{self.suffix}.{self.zone}",
 				"team": self.team,
-				"asset": self.asset.name,
+				"server": self.server.name,
 			}
 		).insert(ignore_permissions=True)
 
-		route = SiteDomain.new_for_pilot(self._credential(self.asset), f"www.own-{self.suffix}.com")
+		route = SiteDomain.new_for_pilot(self._credential(self.server), f"www.own-{self.suffix}.com")
 
 		self.assertEqual(route.site, site.name)
 
 	def test_a_domain_registers_after_its_dns_records_match(self):
-		credential = self._credential(self.asset)
+		credential = self._credential(self.server)
 		domain = f"www.shop-{self.suffix}.com"
 		records = SiteDomain.get_dns_records(credential, domain)["cname"]
 		token = records[1]["value"]
@@ -252,7 +252,7 @@ class TestSiteDomain(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Site Domain", domain, "status"), "Active")
 
 	def test_a_domain_is_not_recorded_until_verified(self):
-		credential = self._credential(self.asset)
+		credential = self._credential(self.server)
 		domain = f"www.wait-{self.suffix}.com"
 
 		with self.assertRaises(DomainNotVerifiedError):
@@ -265,7 +265,7 @@ class TestSiteDomain(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Site Domain", domain))
 
 	def test_an_apex_domain_skips_the_cname_check(self):
-		credential = self._credential(self.asset)
+		credential = self._credential(self.server)
 		domain = f"apex-{self.suffix}.com"
 		token = SiteDomain.get_dns_records(credential, domain)["cname"][1]["value"]
 
@@ -280,7 +280,7 @@ class TestSiteDomain(IntegrationTestCase):
 
 	def test_a_route_of_another_server_is_refused(self):
 		route = self._route(f"taken-{self.suffix}.{self.zone}")
-		other = self._credential(self._asset("e", self.team, "2001:db8::13"))
+		other = self._credential(self._server("e", self.team, "2001:db8::13"))
 
 		with self.assertRaises(frappe.DuplicateEntryError):
 			SiteDomain.register(other, route.domain)
@@ -294,33 +294,33 @@ class TestSiteDomain(IntegrationTestCase):
 		proxy = MagicMock()
 
 		with patch(GET_PROXY_CLIENT, return_value=proxy):
-			SiteDomain.deregister(self._credential(self.asset), route.domain)
-			SiteDomain.deregister(self._credential(self.asset), route.domain)
+			SiteDomain.deregister(self._credential(self.server), route.domain)
+			SiteDomain.deregister(self._credential(self.server), route.domain)
 
 		proxy.delete_domain.assert_called_once_with(route.domain)
 		self.assertFalse(frappe.db.exists("Site Domain", route.name))
 
-	def _routed_names(self, asset=None) -> tuple[str, str]:
+	def _routed_names(self, server=None) -> tuple[str, str]:
 		"""The admin and site hostnames the region routes to a server without a map entry."""
-		asset = asset or self.asset
+		server = server or self.server
 		instance = frappe.get_doc("Region", self.region)
 		return (
-			instance.get_vm_admin_host(asset.ipv6_address),
-			instance.get_vm_site_host(asset.ipv6_address),
+			instance.get_vm_admin_host(server.ipv6_address),
+			instance.get_vm_site_host(server.ipv6_address),
 		)
 
-	def _credential(self, asset):
-		return SimpleNamespace(team=asset.team, asset=asset.name, pilot_credential_id=f"pc-{asset.name}")
+	def _credential(self, server):
+		return SimpleNamespace(team=server.team, server=server.name, pilot_credential_id=f"pc-{server.name}")
 
-	def _route(self, domain: str, asset=None, team: str | None = None):
-		asset = asset or self.asset
+	def _route(self, domain: str, server=None, team: str | None = None):
+		server = server or self.server
 		return frappe.get_doc(
 			{
 				"doctype": "Site Domain",
 				"domain": domain,
-				"team": team or asset.team,
+				"team": team or server.team,
 				"region": self.region,
-				"asset": asset.name,
+				"server": server.name,
 			}
 		).insert(ignore_permissions=True)
 
@@ -338,10 +338,10 @@ class TestSiteDomain(IntegrationTestCase):
 		)
 		return team.insert().name
 
-	def _asset(self, label: str, team: str, ipv6_address: str | None):
+	def _server(self, label: str, team: str, ipv6_address: str | None):
 		return frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": f"vm-sd-{label}-{self.suffix}",
 				"team": team,
 				"cluster": self.region,

@@ -20,7 +20,7 @@ import { useCapabilities } from '@/composables/useCapabilities'
 import { useFleetRows } from '@/composables/useFleetRows'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import {
@@ -37,7 +37,7 @@ import { errorToast, getErrorMessage, successToast } from '@/lib/toast'
 import type { Region } from '@/types/Central/Region'
 import signingInHtml from './signing-in.html?raw'
 
-// The servers page: the world map is the list (FC V2). Servers (the Asset mirror)
+// The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
 // together, indistinguishable — same provider avatar, same pin, one sorted list.
 // Lifecycle actions reuse useServers so the map, panel, and ⋯ menus share one path.
@@ -45,7 +45,7 @@ import signingInHtml from './signing-in.html?raw'
 const router = useRouter()
 const route = useRoute()
 
-const { assets, sites, loading, error, reload } = useServerMapData()
+const { servers, sites, loading, error, reload } = useServerMapData()
 const { regions } = useRegions()
 const { canPowerServer, canTerminateServer, canOpenServer, canCreateServer } =
 	useCapabilities()
@@ -55,7 +55,7 @@ const {
 	stale,
 	busy,
 	opening,
-	refreshAssets,
+	refreshServers,
 	start,
 	stop,
 	restart,
@@ -83,7 +83,7 @@ const { activeTeam, loading: sessionLoading } = useSession()
 const createTeamOpen = ref(false)
 const hasNoTeam = computed(() => !sessionLoading.value && !activeTeam.value)
 
-// First-run onboarding nudge — shown until the team has an asset or the user
+// First-run onboarding nudge — shown until the team has a server or the user
 // dismisses it (remembered across visits so it never nags).
 const ONBOARDING_KEY = 'central.console.serverOnboardingDismissed'
 const onboardingDismissed = ref(localStorage.getItem(ONBOARDING_KEY) === '1')
@@ -109,7 +109,7 @@ const hoverId = ref<string | null>(null)
 const panelOpen = ref(false)
 
 // Servers and sites decorated into one sorted ResourceRow list (useFleetRows).
-const { rows } = useFleetRows(assets, sites, regions)
+const { rows } = useFleetRows(servers, sites, regions)
 
 // — Filters. Status and region scope the map and the panel; search only
 //   narrows the panel rows.
@@ -203,7 +203,7 @@ const pins = computed<MapPin[]>(() =>
 	filtered.value
 		.filter(
 			(row) =>
-				(row.asset || row.site) && row.region && hasMapCoords(row.region),
+				(row.server || row.site) && row.region && hasMapCoords(row.region),
 		)
 		.map((row) => {
 			const base = {
@@ -222,10 +222,10 @@ const pins = computed<MapPin[]>(() =>
 				? {
 						...base,
 						kind: 'server' as const,
-						publicIpv4: row.asset!.public_ipv4 ?? null,
-						plan: row.asset!.plan ?? null,
-						frappeVersion: row.asset!.frappe_version ?? null,
-						server: row.asset!,
+						publicIpv4: row.server!.public_ipv4 ?? null,
+						plan: row.server!.plan ?? null,
+						frappeVersion: row.server!.frappe_version ?? null,
+						server: row.server!,
 					}
 				: { ...base, kind: 'site' as const, site: row.site! }
 		}),
@@ -234,7 +234,7 @@ const pins = computed<MapPin[]>(() =>
 // Regions with no servers show as + spots — everywhere you could deploy next.
 const spots = computed<MapSpot[]>(() => {
 	if (!canCreateServer.value) return []
-	const occupied = new Set(assets.value.map((asset) => asset.cluster))
+	const occupied = new Set(servers.value.map((server) => server.cluster))
 	return regions.value
 		.filter((r) => !occupied.has(r.region) && hasMapCoords(r))
 		.filter(
@@ -258,7 +258,7 @@ const spots = computed<MapSpot[]>(() => {
 
 // — Wiring. Pin / cluster-row clicks go straight to the live site or server.
 //   If the side panel is open, keep its location filter in step.
-function canOpenBench(server: AssetRow): boolean {
+function canOpenBench(server: VirtualMachineRow): boolean {
 	return (
 		canOpenServer.value && server.status === 'Running' && !!server.gateway_url
 	)
@@ -268,13 +268,13 @@ function openResource(row: ResourceRow): void {
 		if (canOpenServer.value && row.site?.url) openSite(row.site.name)
 		return
 	}
-	if (!row.asset) return
-	if (canOpenBench(row.asset)) {
-		open(row.asset)
+	if (!row.server) return
+	if (canOpenBench(row.server)) {
+		open(row.server)
 		return
 	}
 	// Not openable yet (still provisioning, stopped, …) — show the overview.
-	overviewServer.value = row.asset
+	overviewServer.value = row.server
 }
 function onOpen(id: string): void {
 	const row = rows.value.find((r) => r.id === id)
@@ -320,19 +320,21 @@ async function withReload(action: Promise<unknown>): Promise<void> {
 	await action
 	reload()
 }
-const doRefresh = (): Promise<void> => withReload(refreshAssets())
-const doStart = (server: AssetRow): Promise<void> => withReload(start(server))
-const doStop = (server: AssetRow): Promise<void> => withReload(stop(server))
-const doRestart = (server: AssetRow): Promise<void> =>
+const doRefresh = (): Promise<void> => withReload(refreshServers())
+const doStart = (server: VirtualMachineRow): Promise<void> =>
+	withReload(start(server))
+const doStop = (server: VirtualMachineRow): Promise<void> =>
+	withReload(stop(server))
+const doRestart = (server: VirtualMachineRow): Promise<void> =>
 	withReload(restart(server))
 
-const pendingTerminate = ref<AssetRow | null>(null)
+const pendingTerminate = ref<VirtualMachineRow | null>(null)
 const terminateError = ref('')
 // Reset the inline error whenever the dialog opens on a different server or closes.
 watch(pendingTerminate, () => {
 	terminateError.value = ''
 })
-async function confirmTerminate(server: AssetRow): Promise<void> {
+async function confirmTerminate(server: VirtualMachineRow): Promise<void> {
 	terminateError.value = ''
 	try {
 		// Destructive: keep the dialog open and show the reason inline on failure, rather
@@ -348,8 +350,8 @@ async function confirmTerminate(server: AssetRow): Promise<void> {
 	}
 }
 
-const pendingResize = ref<AssetRow | null>(null)
-const overviewServer = ref<AssetRow | null>(null)
+const pendingResize = ref<VirtualMachineRow | null>(null)
+const overviewServer = ref<VirtualMachineRow | null>(null)
 const overviewOpen = computed({
 	get: () => !!overviewServer.value,
 	set: (isOpen: boolean) => {

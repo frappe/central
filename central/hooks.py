@@ -15,7 +15,7 @@ fixtures = [
 	"Notification Event Type",
 ]
 
-email_css = ["/assets/central/css/email.css"]
+email_css = ["/servers/central/css/email.css"]
 
 # The TypeScript UI owns the product route.
 website_route_rules = [
@@ -35,7 +35,7 @@ website_user_home_page = "dashboard"
 # add_to_apps_screen = [
 # 	{
 # 		"name": "central",
-# 		"logo": "/assets/central/logo.png",
+# 		"logo": "/servers/central/logo.png",
 # 		"title": "Central",
 # 		"route": "/central",
 # 		"has_permission": "central.api.permission.has_app_permission"
@@ -46,12 +46,12 @@ website_user_home_page = "dashboard"
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/central/css/central.css"
-# app_include_js = "/assets/central/js/central.js"
+# app_include_css = "/servers/central/css/central.css"
+# app_include_js = "/servers/central/js/central.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/central/css/central.css"
-# web_include_js = "/assets/central/js/central.js"
+# web_include_css = "/servers/central/css/central.css"
+# web_include_js = "/servers/central/js/central.js"
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "central/public/scss/website"
@@ -204,7 +204,7 @@ scheduler_events = {
 		"central.billing.projection.batch.prune",
 		# E-mandate (INR ≤₹15k): send the pre-debit notice, then debit after 24h.
 		"central.billing.payments.emandate.run_emandate_cycle",
-		# Backfill Subscriptions for any Running Asset missing an active one.
+		# Backfill Subscriptions for any Running VirtualMachine missing an active one.
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
 		# Write off promotional credit that has run out of time. Ordered after
 		# collection on purpose: credit that was still good this morning settles
@@ -335,7 +335,7 @@ override_doctype_dashboards = {
 # Authentication and authorization
 
 permission_query_conditions = {
-	"Asset": "central.permissions.asset_query_conditions",
+	"Virtual Machine": "central.permissions.server_query_conditions",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
@@ -346,7 +346,7 @@ permission_query_conditions = {
 }
 
 has_permission = {
-	"Asset": "central.permissions.asset_has_permission",
+	"Virtual Machine": "central.permissions.server_has_permission",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",

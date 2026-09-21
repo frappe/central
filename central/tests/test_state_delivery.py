@@ -10,7 +10,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils.password import remove_encrypted_password
 
 from central.api.state_delivery import REGION_HEADER, SENDER_HEADER, receive
-from central.central.doctype.asset.asset import Asset
+from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.state_delivery import (
 	accept_atlas_report,
 	accept_cargo_report,
@@ -28,8 +28,8 @@ class TestStateDelivery(IntegrationTestCase):
 		super().setUp()
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
-		self.enterContext(patch.object(Asset, "ensure_subscription_enabled"))
-		self.enterContext(patch.object(Asset, "disable_active_subscription"))
+		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
+		self.enterContext(patch.object(VirtualMachine, "disable_active_subscription"))
 		self.team = frappe.get_doc(
 			{"doctype": "Team", "team_name": "Delivery", "owner_user": "Administrator"}
 		).insert()
@@ -45,7 +45,7 @@ class TestStateDelivery(IntegrationTestCase):
 		self.cluster.insert()
 		self.server = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
 				"cluster": self.cluster.name,
@@ -234,7 +234,7 @@ class TestStateDelivery(IntegrationTestCase):
 				"team": self.team.name,
 				"atlas_instance": self.cluster.name,
 				"resource_id": self.server.name,
-				"asset": self.server.name,
+				"server": self.server.name,
 				"remote_vm_id": self.server.atlas_vm_id,
 				"requested_by": "Administrator",
 				"correlation_id": frappe.generate_hash(length=32),

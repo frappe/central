@@ -34,7 +34,7 @@ Pilot      server runtime: benches, sites, apps on a single server.
 
 - Central decides every `server:*` capability itself. A region only checks that a signed request's tenant matches the resource's tenant; a bench checks the scope on its own signed token. Neither holds a capability model of its own.
 - Central reaches Atlas, Pilot, and Cargo only through the clients in `central/integrations/`. Do not call a remote plane from a controller, an API route, or a page.
-- `Asset` is Central's server record. Central owns its identity, title, plan, image and billing links. A region only reports state back, and the integration layer applies that through `Asset.record_observed_state`.
+- `Virtual Machine` is Central's server record. Central owns its identity, title, plan, image and billing links. A region only reports state back, and the integration layer applies that through `VirtualMachine.record_observed_state`.
 
 ## Scope
 
@@ -43,7 +43,7 @@ Central runs today:
 - Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
 - Regions: Atlas instance registration.
-- Resources: `Asset` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
+- Resources: `Virtual Machine` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
 - Provisioning: provisioning requests and resource actions against Atlas and Pilot.
 - Managed services: add-on catalog, LLM models and plan policies, storage backends, and service credentials.
 - Notifications: event types, team notifications, user preferences, and the delivery engine.
@@ -130,7 +130,7 @@ The console serves customers. Desk serves the operator who has to answer a page 
 
 ### Make it navigable
 
-- Add dashboard connections to every DocType an operator would follow next. From a Team reach its sites, servers, and invitations. From an Asset reach its actions, tasks, and events. An empty `links` array on a hub DocType is a gap.
+- Add dashboard connections to every DocType an operator would follow next. From a Team reach its sites, servers, and invitations. From a Virtual Machine reach its actions, tasks, and events. An empty `links` array on a hub DocType is a gap.
 - Link related records with a Link field rather than a plain text identifier, so the connection is reachable in both directions.
 
 ### Make it actionable

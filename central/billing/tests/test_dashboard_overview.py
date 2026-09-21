@@ -148,9 +148,11 @@ class TestForecastCarriesProjectTags(OverviewBase):
 		# project's resources go untagged, so the breakdown must not keep showing a
 		# stale project label for a line that will actually bill untagged.
 		sub = self._provision(rate=3000)
-		project = frappe.get_doc(
-			{"doctype": "Project", "title": "Customer X", "team": TEAM, "enabled": 0}
-		).insert().name
+		project = (
+			frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM, "enabled": 0})
+			.insert()
+			.name
+		)
 		frappe.db.set_value("Subscription", sub, "project", project)
 		frappe.db.commit()
 
@@ -642,9 +644,9 @@ class TestResizeLockDisclosure(OverviewBase):
 		from central.billing.api.dashboard.catalog import get_composed_config
 
 		sub = self._server(2000)
-		asset = frappe.db.get_value("Subscription", sub, "asset_id")
+		server = frappe.db.get_value("Subscription", sub, "server_id")
 
-		config = get_composed_config(asset, TEAM)
+		config = get_composed_config(server, TEAM)
 
 		self.assertTrue(config["resizable"])
 		self.assertEqual(config["lock"]["gives_up"], 1000.0)

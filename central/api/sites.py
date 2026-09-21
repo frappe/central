@@ -94,7 +94,7 @@ def onboarding_status(team: str | None = None) -> dict:
 			"resource_type": "Site",
 			"action": "create",
 		},
-		fields=[*STATUS_FIELDS, "asset"],
+		fields=[*STATUS_FIELDS, "server"],
 		order_by="creation desc",
 		limit=1,
 	)
@@ -102,7 +102,7 @@ def onboarding_status(team: str | None = None) -> dict:
 		return {"site": None, "creation": None}
 
 	creation = rows[0]
-	name = frappe.db.get_value("Site", {"asset": creation.asset}, "name") if creation.asset else None
+	name = frappe.db.get_value("Site", {"server": creation.server}, "name") if creation.server else None
 	if name:
 		return {"site": site_state(frappe.get_doc("Site", name), with_login=False), "creation": None}
 
@@ -119,7 +119,7 @@ def terminate_site(name: str) -> dict:
 	from central.resource_actions import submit_command
 
 	site = authorized_site(name, "server:terminate")
-	return submit_command("terminate", site.team, site.asset)
+	return submit_command("terminate", site.team, site.server)
 
 
 def site_state(site: Site, with_login: bool = True) -> dict:

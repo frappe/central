@@ -23,14 +23,14 @@ def submit_command(action: str, team: str | None, resource_id: str | None) -> Ac
 	if not isinstance(resource_id, str) or not resource_id:
 		frappe.throw(_("Select a server."))
 
-	asset = frappe.get_doc("Asset", resource_id, for_update=True)
-	if asset.team != team:
+	server = frappe.get_doc("Virtual Machine", resource_id, for_update=True)
+	if server.team != team:
 		frappe.throw(_("This server belongs to another Team."), frappe.PermissionError)
-	if not asset.atlas_vm_id:
+	if not server.atlas_vm_id:
 		frappe.throw(_("This server has no verified regional identity."))
-	if asset.resize_in_progress:
+	if server.resize_in_progress:
 		frappe.throw(_("Wait for the server resize to finish."))
-	if action == "restart" and asset.status != "Running":
+	if action == "restart" and server.status != "Running":
 		frappe.throw(_("Only a running server can be restarted."))
 
 	pending = frappe.db.get_value(
@@ -53,11 +53,11 @@ def submit_command(action: str, team: str | None, resource_id: str | None) -> Ac
 			"resource_type": "Server",
 			"action": action,
 			"team": team,
-			"atlas_instance": asset.cluster,
-			"asset": asset.name,
-			"resource_id": asset.name,
-			"remote_vm_id": asset.atlas_vm_id,
-			"title": asset.title or asset.name,
+			"atlas_instance": server.cluster,
+			"server": server.name,
+			"resource_id": server.name,
+			"remote_vm_id": server.atlas_vm_id,
+			"title": server.title or server.name,
 			"requested_by": frappe.session.user,
 			"correlation_id": frappe.generate_hash(length=32),
 			"status": "Queued",

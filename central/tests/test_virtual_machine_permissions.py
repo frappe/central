@@ -5,16 +5,16 @@ from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
 
-class TestAssetPermissions(IntegrationTestCase):
+class TestVirtualMachinePermissions(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
-		self.owner = ensure_user("assetperm.owner@example.test")
-		self.viewer = ensure_user("assetperm.viewer@example.test")
-		self.team_a = self._team("Asset Perm A", self.viewer, "Viewer")
-		self.team_b = self._team("Asset Perm B", self.owner, "Owner")
+		self.owner = ensure_user("serverperm.owner@example.test")
+		self.viewer = ensure_user("serverperm.viewer@example.test")
+		self.team_a = self._team("VM Perm A", self.viewer, "Viewer")
+		self.team_b = self._team("VM Perm B", self.owner, "Owner")
 		self.cluster = self._cluster("blr-perm")
-		self.asset_a = self._asset("vm-perm-a", self.team_a.name)
-		self.asset_b = self._asset("vm-perm-b", self.team_b.name)
+		self.server_a = self._server("vm-perm-a", self.team_a.name)
+		self.server_b = self._server("vm-perm-b", self.team_b.name)
 
 	def _team(self, name, user, role):
 		existing = frappe.db.get_value("Team", {"team_name": name})
@@ -30,12 +30,12 @@ class TestAssetPermissions(IntegrationTestCase):
 	def _cluster(self, region):
 		return ensure_atlas_instance(region)
 
-	def _asset(self, rid, team):
-		if frappe.db.exists("Asset", rid):
-			frappe.delete_doc("Asset", rid, force=True, ignore_permissions=True)
+	def _server(self, rid, team):
+		if frappe.db.exists("Virtual Machine", rid):
+			frappe.delete_doc("Virtual Machine", rid, force=True, ignore_permissions=True)
 		return frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": rid,
 				"team": team,
 				"cluster": self.cluster,
@@ -43,10 +43,10 @@ class TestAssetPermissions(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
-	def test_member_sees_only_their_team_assets(self):
+	def test_member_sees_only_their_team_servers(self):
 		frappe.set_user(self.viewer)
 		try:
-			names = set(frappe.get_list("Asset", pluck="name"))
+			names = set(frappe.get_list("Virtual Machine", pluck="name"))
 		finally:
 			frappe.set_user("Administrator")
 		self.assertIn("vm-perm-a", names)
@@ -55,12 +55,12 @@ class TestAssetPermissions(IntegrationTestCase):
 	def test_member_can_read_but_not_write(self):
 		frappe.set_user(self.viewer)
 		try:
-			self.assertTrue(frappe.has_permission("Asset", "read", self.asset_a.name))
-			self.assertFalse(frappe.has_permission("Asset", "write", self.asset_a.name))
+			self.assertTrue(frappe.has_permission("Virtual Machine", "read", self.server_a.name))
+			self.assertFalse(frappe.has_permission("Virtual Machine", "write", self.server_a.name))
 		finally:
 			frappe.set_user("Administrator")
 
-	def test_operator_sees_all_assets(self):
-		names = set(frappe.get_list("Asset", pluck="name"))
+	def test_operator_sees_all_servers(self):
+		names = set(frappe.get_list("Virtual Machine", pluck="name"))
 		self.assertIn("vm-perm-a", names)
 		self.assertIn("vm-perm-b", names)

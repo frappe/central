@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import {
 	canStart,
 	canStop,
@@ -15,7 +15,7 @@ import {
 // in central/api/servers.py, so we never offer a button that would 403. The component
 // is presentational: it emits the chosen verb; the page owns the calls.
 const props = defineProps<{
-	server: AssetRow
+	server: VirtualMachineRow
 	canOpen: boolean
 	canPower: boolean
 	canTerminate: boolean
@@ -24,13 +24,13 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-	overview: [server: AssetRow]
-	open: [server: AssetRow]
-	start: [server: AssetRow]
-	stop: [server: AssetRow]
-	restart: [server: AssetRow]
-	resize: [server: AssetRow]
-	terminate: [server: AssetRow]
+	overview: [server: VirtualMachineRow]
+	open: [server: VirtualMachineRow]
+	start: [server: VirtualMachineRow]
+	stop: [server: VirtualMachineRow]
+	restart: [server: VirtualMachineRow]
+	resize: [server: VirtualMachineRow]
+	terminate: [server: VirtualMachineRow]
 }>()
 
 interface ActionItem {

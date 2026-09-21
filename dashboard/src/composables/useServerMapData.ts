@@ -2,7 +2,7 @@ import { useCall } from 'frappe-ui'
 import { computed, onScopeDispose, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import { useFrappeDocEventListener } from '@/composables/useFrappeRealtime'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import {
@@ -20,7 +20,7 @@ import type { ActionStatus } from '@/types/serverCreation'
 // pagination. Reads go through central.api.servers.registry (server:view gated,
 // unpaginated by design), and a region's state reports keep it fresh.
 
-// A site is a VM peer of an asset: `name` is the FQDN (stable id + terminate key),
+// A site is a VM peer of a server: `name` is the FQDN (stable id + terminate key),
 // `subdomain` the user-entered display name (e.g. "demo.in").
 export interface SiteRow {
 	name: string
@@ -29,8 +29,8 @@ export interface SiteRow {
 	region: string | null
 	url: string | null
 	/** The machine this site is. Its power and terminate actions act on this. */
-	asset: string | null
-	// Transitional label while a site action is in flight (see AssetRow.pending_action).
+	server: string | null
+	// Transitional label while a site action is in flight (see VirtualMachineRow.pending_action).
 	pending_action?: string | null
 }
 
@@ -40,7 +40,7 @@ export type CreationRow = ActionStatus & { requested_by: string }
 
 type RegistryResponse = {
 	team: string
-	assets: AssetRow[]
+	servers: VirtualMachineRow[]
 	sites: SiteRow[]
 	creations: CreationRow[]
 }
@@ -86,11 +86,11 @@ let lastSeen: Map<string, SeenState> | null = null
 function announceStateChanges(data: RegistryResponse | null | undefined): void {
 	if (!data) return
 	const current = new Map<string, SeenState>()
-	for (const asset of data.assets)
-		if (asset.status)
-			current.set(asset.name, {
-				status: asset.status,
-				label: asset.title || asset.name,
+	for (const server of data.servers)
+		if (server.status)
+			current.set(server.name, {
+				status: server.status,
+				label: server.title || server.name,
 			})
 	for (const site of data.sites)
 		current.set(site.name, {
@@ -134,9 +134,9 @@ export function useServerMapData() {
 	return {
 		// Terminated servers are gone, not a state to render — excluded here so no
 		// consumer has to remember to. (Sites exclude Terminated server-side.)
-		assets: computed<AssetRow[]>(() =>
-			(registry.data?.assets ?? []).filter(
-				(asset) => asset.status !== 'Terminated',
+		servers: computed<VirtualMachineRow[]>(() =>
+			(registry.data?.servers ?? []).filter(
+				(server) => server.status !== 'Terminated',
 			),
 		),
 		sites: computed<SiteRow[]>(() => registry.data?.sites ?? []),

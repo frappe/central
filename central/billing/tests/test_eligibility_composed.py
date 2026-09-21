@@ -137,9 +137,9 @@ class TestEligibilityComposed(IntegrationTestCase):
 		sub = subscriptions.create_subscription(TEAM, CLUSTER, plan=plan)
 		# A preset carries its shape on the mirrored VM (Atlas fills these on vm.created).
 		frappe.db.set_value(
-			"Asset", sub.asset_id, {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 25}
+			"Virtual Machine", sub.server_id, {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 25}
 		)
-		got = get_composed_config(sub.asset_id, team=TEAM)
+		got = get_composed_config(sub.server_id, team=TEAM)
 		self.assertTrue(got["resizable"])
 		self.assertFalse(got["composed"])  # sliding it will make it composed
 		self.assertIsNone(got["sub_category"])  # designer defaults to the first profile
@@ -153,7 +153,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
 		# A resize needs a Stopped VM and drives the real machine on its Atlas; mark it
 		# stopped and stub the outbound call so this stays an endpoint-logic test.
-		frappe.db.set_value("Asset", out["resource_id"], "status", "Stopped")
+		frappe.db.set_value("Virtual Machine", out["resource_id"], "status", "Stopped")
 		bigger = [
 			{"resource_type": "Compute", "quantity": 4, "unit": "vCPU"},
 			{"resource_type": "Memory", "quantity": 16, "unit": "GB"},
@@ -178,7 +178,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 		from central.billing.tests.utils import make_plan
 
 		out = subscriptions.provision_composed_subscription(TEAM, CLUSTER, GENERAL, "General")
-		frappe.db.set_value("Asset", out["resource_id"], "status", "Stopped")
+		frappe.db.set_value("Virtual Machine", out["resource_id"], "status", "Stopped")
 		plan = make_plan("resize-bundle", rates=[{"cluster": "", "currency": "INR", "rate": 1500}])
 		# The reshape + re-lock are deferred to a background job; run it inline here to
 		# assert the end-to-end effect (queued path).
@@ -193,4 +193,4 @@ class TestEligibilityComposed(IntegrationTestCase):
 		doc = frappe.get_doc("Subscription", out["subscription"])
 		self.assertEqual((doc.pricing_mode, doc.plan), ("Preset", plan))
 		# The Resizing flag is set for the job and cleared when it finishes.
-		self.assertEqual(frappe.db.get_value("Asset", out["resource_id"], "resize_in_progress"), 0)
+		self.assertEqual(frappe.db.get_value("Virtual Machine", out["resource_id"], "resize_in_progress"), 0)

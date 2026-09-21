@@ -38,7 +38,7 @@ class SiteDomain(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
-		asset: DF.Link
+		server: DF.Link
 		attempts: DF.Int
 		domain: DF.Data
 		failure_reason: DF.SmallText | None
@@ -113,11 +113,11 @@ class SiteDomain(Document):
 
 	def validate_targets(self) -> None:
 		"""The server and site must belong to this team, and the server to this region."""
-		asset = frappe.db.get_value("Asset", self.asset, ["team", "cluster"], as_dict=True)
-		if not asset or asset.team != self.team:
-			frappe.throw(_("Server {0} does not belong to team {1}.").format(self.asset, self.team))
-		if asset.cluster != self.region:
-			frappe.throw(_("Server {0} is not in region {1}.").format(self.asset, self.region))
+		server = frappe.db.get_value("Virtual Machine", self.server, ["team", "cluster"], as_dict=True)
+		if not server or server.team != self.team:
+			frappe.throw(_("Server {0} does not belong to team {1}.").format(self.server, self.team))
+		if server.cluster != self.region:
+			frappe.throw(_("Server {0} is not in region {1}.").format(self.server, self.region))
 		if self.site and frappe.db.get_value("Site", self.site, "team") != self.team:
 			frappe.throw(_("Site {0} does not belong to team {1}.").format(self.site, self.team))
 
@@ -127,7 +127,7 @@ class SiteDomain(Document):
 		The proxy reads the mesh address out of the base-36 token in the label, so both names
 		follow from the server itself."""
 		instance = frappe.get_cached_doc("Region", self.region)
-		address = frappe.db.get_value("Asset", self.asset, "ipv6_address")
+		address = frappe.db.get_value("Virtual Machine", self.server, "ipv6_address")
 		hosts = (instance.get_vm_admin_host(address), instance.get_vm_site_host(address))
 		return {host for host in hosts if host}
 
@@ -139,11 +139,11 @@ class SiteDomain(Document):
 
 	def apply(self) -> None:
 		"""Send this route to the regional proxy and record the outcome. Safe to repeat."""
-		address = frappe.db.get_value("Asset", self.asset, "ipv6_address")
+		address = frappe.db.get_value("Virtual Machine", self.server, "ipv6_address")
 		values = {"attempts": self.attempts + 1, "last_attempt_at": now_datetime()}
 		try:
 			if not address:
-				raise ProxyError(_("Server {0} has no IPv6 address yet.").format(self.asset))
+				raise ProxyError(_("Server {0} has no IPv6 address yet.").format(self.server))
 			client = Region.get_proxy_client(self.region)
 			if self.route_type == "Site":
 				client.set_site(self.site_label, address)
@@ -163,7 +163,7 @@ class SiteDomain(Document):
 
 		A Pilot only knows its machine, so the site comes from the machine: one machine runs
 		one site, which is what lets the console show a domain against the site it reaches."""
-		if not credential.asset:
+		if not credential.server:
 			frappe.throw(_("This Pilot has no server yet."))
 
 		route = frappe.get_doc(
@@ -171,9 +171,9 @@ class SiteDomain(Document):
 				"doctype": "Site Domain",
 				"domain": normalize_domain(domain),
 				"team": credential.team,
-				"asset": credential.asset,
-				"site": frappe.db.get_value("Site", {"asset": credential.asset}, "name"),
-				"region": frappe.db.get_value("Asset", credential.asset, "cluster"),
+				"server": credential.server,
+				"site": frappe.db.get_value("Site", {"server": credential.server}, "name"),
+				"region": frappe.db.get_value("Virtual Machine", credential.server, "cluster"),
 			}
 		)
 		route.route_type = route.get_route_type()
@@ -211,7 +211,7 @@ class SiteDomain(Document):
 
 		if frappe.db.exists("Site Domain", route.domain):
 			route = frappe.get_doc("Site Domain", route.domain)
-			if route.asset != credential.asset:
+			if route.server != credential.server:
 				frappe.throw(_("{0} is already taken.").format(route.domain), frappe.DuplicateEntryError)
 		else:
 			if route.route_type == "Domain":
@@ -229,10 +229,10 @@ class SiteDomain(Document):
 	def deregister(credential: PilotCredential, domain: str) -> None:
 		"""Remove the route of the Pilot's server. A missing route is already removed."""
 		name = normalize_domain(domain)
-		asset = frappe.db.get_value("Site Domain", name, "asset")
-		if not asset:
+		server = frappe.db.get_value("Site Domain", name, "server")
+		if not server:
 			return
-		if asset != credential.asset:
+		if server != credential.server:
 			frappe.throw(_("{0} belongs to another server.").format(name), frappe.PermissionError)
 
 		# The Pilot credential already proves the server; the request runs as Guest.

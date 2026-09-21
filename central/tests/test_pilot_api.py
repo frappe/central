@@ -68,24 +68,24 @@ class TestPilotAPI(IntegrationTestCase):
 			self.call_heartbeat(self.token)
 
 	def bound_pilot(self, region_id: int | None = None) -> str:
-		"""A pilot with an Asset in a region, which is what a datum token is addressed to.
+		"""A pilot with a Virtual Machine in a region, which is what a datum token is addressed to.
 
 		The region id is unique per Region, so each test gets its own rather than
 		colliding with whatever the site already holds."""
 		self.region = f"tel-{frappe.generate_hash(length=6)}"
 		ensure_atlas_instance(self.region, atlas_region_id=str(region_id or random.randint(1, 65535)))
-		asset = frappe.get_doc(
+		server = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": f"vm-{self.region}",
 				"team": self.team,
 				"cluster": self.region,
 				"status": "Running",
 			}
 		).insert(ignore_permissions=True)
-		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", asset.name)
+		frappe.db.set_value("Pilot Credential", "api-pilot-1", "server", server.name)
 
-		return asset.name
+		return server.name
 
 	def reporting_region(self, service_endpoint: str, status: str = "Available") -> str:
 		"""A bound pilot whose region has reported where its telemetry host serves."""
@@ -104,7 +104,7 @@ class TestPilotAPI(IntegrationTestCase):
 
 	def test_token_names_the_regional_telemetry_endpoint(self):
 		"""The pilot is told where to ship without being told which region it is in: the
-		Asset's cluster is the region, and that region's own report names the host."""
+		VirtualMachine's cluster is the region, and that region's own report names the host."""
 		self.reporting_region("https://datum.example.test")
 
 		self.assertEqual(self.call_datum_token(self.token)["endpoint"], "https://datum.example.test")
@@ -125,10 +125,10 @@ class TestPilotAPI(IntegrationTestCase):
 		self.assertIsNone(self.call_datum_token(self.token)["endpoint"])
 
 	def test_an_unbound_pilot_gets_no_token_at_all(self):
-		"""No Asset means no resource to attribute rows to, so the mint is refused before
+		"""No VirtualMachine means no resource to attribute rows to, so the mint is refused before
 		the region is ever resolved."""
 		self.reporting_region("https://datum.example.test")
-		frappe.db.set_value("Pilot Credential", "api-pilot-1", "asset", None)
+		frappe.db.set_value("Pilot Credential", "api-pilot-1", "server", None)
 
 		with self.assertRaises(frappe.ValidationError):
 			self.call_datum_token(self.token)
@@ -141,12 +141,12 @@ class TestPilotAPI(IntegrationTestCase):
 	def test_the_token_carries_the_scope_resource_and_write_access(self):
 		"""Datum stamps every row with `resource_id` and reads both claims off the token
 		through `Identity.from_claims`. Nothing sits in front of it to translate one."""
-		asset = self.bound_pilot()
+		server = self.bound_pilot()
 
 		claims = jwt.decode(self.call_datum_token(self.token)["token"], options={"verify_signature": False})
 
 		self.assertEqual(claims["scope"], DATUM_SCOPE)
-		self.assertEqual(claims["resource_id"], asset)
+		self.assertEqual(claims["resource_id"], server)
 		self.assertEqual(claims["access"], ["write"])
 		self.assertNotIn("vm_access", claims)
 
@@ -182,7 +182,7 @@ class TestPilotAPI(IntegrationTestCase):
 			self.assertEqual(first[claim], second[claim])
 
 	def test_the_token_waits_for_the_resource(self):
-		"""Atlas binds the Asset after provisioning; before that the rows would carry
+		"""Atlas binds the VirtualMachine after provisioning; before that the rows would carry
 		no resource id."""
 		with self.assertRaises(frappe.ValidationError):
 			self.call_datum_token(self.token)

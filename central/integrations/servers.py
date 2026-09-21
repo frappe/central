@@ -5,10 +5,10 @@ import time
 import frappe
 from frappe import _
 
-from central.central.doctype.asset.asset import Asset
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.central.doctype.resource_action.resource_action import ResourceAction
 from central.central.doctype.site.site import Site
+from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.errors import (
 	AtlasConnectionError,
 	AtlasRequestUncertain,
@@ -25,17 +25,17 @@ POWER_POLL_SECONDS = 5
 COMMAND_TIMEOUT_SECONDS = 10 * 60
 
 
-def observe_server(asset: Asset) -> str:
+def observe_server(server: VirtualMachine) -> str:
 	"""Read the owning region and record what it reports about this Team's server."""
-	client = _client(asset)
+	client = _client(server)
 	try:
-		remote = client.get_vm(asset.atlas_vm_id)
+		remote = client.get_vm(server.atlas_vm_id)
 	except AtlasResourceGone:
-		mark_terminated(asset)
-		ResourceAction.confirm_observed_status(asset.name, "Terminated")
+		mark_terminated(server)
+		ResourceAction.confirm_observed_status(server.name, "Terminated")
 		return "Terminated"
 
-	if remote.get("id") != asset.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
+	if remote.get("id") != server.atlas_vm_id or remote.get("tenant_id") != client.tenant_id:
 		raise AtlasConnectionError(_("Atlas returned a different server or Team."))
 
 	state = remote.get("current_state")
@@ -64,11 +64,11 @@ def observe_server(asset: Asset) -> str:
 	# The regional proxy derives a VM's admin hostname from its mesh address, so Central
 	# builds the gateway itself. An unenrolled pilot has nothing to sign into yet.
 	gateway = None
-	if frappe.db.exists("Pilot Credential", {"asset": asset.name, "team": asset.team, "status": "Active"}):
-		gateway = frappe.get_cached_doc("Region", asset.cluster).get_vm_gateway_url(network.get("mesh_ipv6"))
+	if frappe.db.exists("Pilot Credential", {"server": server.name, "team": server.team, "status": "Active"}):
+		gateway = frappe.get_cached_doc("Region", server.cluster).get_vm_gateway_url(network.get("mesh_ipv6"))
 
-	Asset.record_observed_state(
-		asset.name,
+	VirtualMachine.record_observed_state(
+		server.name,
 		frappe.utils.now_datetime(),
 		{
 			"status": status,
@@ -83,21 +83,21 @@ def observe_server(asset: Asset) -> str:
 
 	# The wildcard gateway already routes here. Pilot only needs to replace its local
 	# admin.local hostname with the routed name.
-	frappe.get_doc("Asset", asset.name).claim_admin_hostname()
+	frappe.get_doc("Virtual Machine", server.name).claim_admin_hostname()
 
 	# A Pilot machine carries a site, and this report is where its address arrives.
-	Site.create_once_addressable(asset.name)
-	ResourceAction.confirm_observed_status(asset.name, status)
+	Site.create_once_addressable(server.name)
+	ResourceAction.confirm_observed_status(server.name, status)
 	return status
 
 
-def resize_server(asset: Asset, shape: dict) -> None:
+def resize_server(server: VirtualMachine, shape: dict) -> None:
 	"""Apply a new size on Atlas, then start the server.
 
 	Atlas changes CPU and memory only on a stopped VM, so a compute change stops it first.
 	Every call sets an absolute value, so repeating the resize is safe."""
-	client = _client(asset)
-	remote = client.get_vm(asset.atlas_vm_id)
+	client = _client(server)
+	remote = client.get_vm(server.atlas_vm_id)
 	compute, disk = remote.get("compute") or {}, remote.get("disk") or {}
 	cpu_millicores = shape["vcpus"] * 1000
 	memory_mib = shape["memory_megabytes"]
@@ -108,14 +108,14 @@ def resize_server(asset: Asset, shape: dict) -> None:
 	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
 	if reshaping or compute.get("sleep_after_idle_seconds"):
 		if reshaping:
-			_wait_for_power_state(client, asset.atlas_vm_id, "stop", "stopped")
-		client.update_compute(asset.atlas_vm_id, cpu_millicores, memory_mib, sleep_after_idle_seconds=0)
+			_wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
+		client.update_compute(server.atlas_vm_id, cpu_millicores, memory_mib, sleep_after_idle_seconds=0)
 
 	if disk_mib > (disk.get("size_mib") or 0):
-		client.update_disk(asset.atlas_vm_id, disk_mib)
+		client.update_disk(server.atlas_vm_id, disk_mib)
 
-	_wait_for_power_state(client, asset.atlas_vm_id, "start", "running")
-	observe_server(asset)
+	_wait_for_power_state(client, server.atlas_vm_id, "start", "running")
+	observe_server(server)
 
 
 def _wait_for_power_state(client: AtlasClient, vm_id: str, action: str, state: str) -> None:
@@ -134,11 +134,11 @@ def _wait_for_power_state(client: AtlasClient, vm_id: str, action: str, state: s
 
 
 def process_command(action) -> None:
-	asset = frappe.get_doc("Asset", action.asset, for_update=True)
+	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
 	if (
-		asset.team != action.team
-		or asset.cluster != action.atlas_instance
-		or asset.atlas_vm_id != action.remote_vm_id
+		server.team != action.team
+		or server.cluster != action.atlas_instance
+		or server.atlas_vm_id != action.remote_vm_id
 	):
 		action.set_error("Failed", build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id))
 		return
@@ -148,7 +148,7 @@ def process_command(action) -> None:
 			action.set_error("Failed", build_envelope("PERMISSION_DENIED", action=action.action))
 			return
 
-		client = _client(asset)
+		client = _client(server)
 		action.db_set({"status": "Dispatching", "dispatched_at": frappe.utils.now_datetime()})
 		# The remote command can outlive this worker; recovery must never redispatch it.
 		frappe.db.commit()
@@ -160,7 +160,7 @@ def process_command(action) -> None:
 			if action.action != "terminate":
 				action.set_error("Failed", to_error_response(error))
 				return
-			mark_terminated(asset)
+			mark_terminated(server)
 			action.succeed()
 			return
 		except AtlasConnectionError as error:
@@ -172,7 +172,7 @@ def process_command(action) -> None:
 		frappe.db.commit()
 
 	try:
-		status = observe_server(asset)
+		status = observe_server(server)
 	except AtlasConnectionError:
 		action.set_error(action.status, build_envelope("REFRESH_FAILED"))
 		return
@@ -202,10 +202,10 @@ def reconcile(team: str | None = None) -> dict:
 	if team:
 		filters["team"] = team
 
-	assets = frappe.get_all(
-		"Asset", filters=filters, pluck="name", limit=100, order_by="state_observed_at asc"
+	servers = frappe.get_all(
+		"Virtual Machine", filters=filters, pluck="name", limit=100, order_by="state_observed_at asc"
 	)
-	for name in assets:
+	for name in servers:
 		frappe.enqueue(
 			"central.integrations.servers.refresh_server",
 			name=name,
@@ -214,30 +214,30 @@ def reconcile(team: str | None = None) -> dict:
 			deduplicate=True,
 		)
 
-	return {"synced": [], "stale": [], "queued": len(assets)}
+	return {"synced": [], "stale": [], "queued": len(servers)}
 
 
 def refresh_server(name: str) -> None:
-	asset = frappe.get_doc("Asset", name, for_update=True)
-	if asset.status != "Terminated":
-		observe_server(asset)
+	server = frappe.get_doc("Virtual Machine", name, for_update=True)
+	if server.status != "Terminated":
+		observe_server(server)
 
 
-def _client(asset: Asset) -> AtlasClient:
-	if not asset.atlas_vm_id:
+def _client(server: VirtualMachine) -> AtlasClient:
+	if not server.atlas_vm_id:
 		frappe.throw(_("This server has no verified regional VM identity."))
 
-	instance = frappe.get_cached_doc("Region", asset.cluster)
-	tenant_id = frappe.db.get_value("Team", asset.team, "tenant_id")
+	instance = frappe.get_cached_doc("Region", server.cluster)
+	tenant_id = frappe.db.get_value("Team", server.team, "tenant_id")
 	return AtlasClient(instance, tenant_id)
 
 
-def mark_terminated(asset: Asset) -> None:
+def mark_terminated(server: VirtualMachine) -> None:
 	"""Record a server as gone and revoke the pilot credentials bound to it."""
-	asset.status = "Terminated"
-	Asset.mark_terminated(asset.name)
+	server.status = "Terminated"
+	VirtualMachine.mark_terminated(server.name)
 	credentials = frappe.get_all(
-		"Pilot Credential", filters={"team": asset.team, "asset": asset.name}, pluck="name"
+		"Pilot Credential", filters={"team": server.team, "server": server.name}, pluck="name"
 	)
 	for name in credentials:
 		PilotCredential.revoke_by_id(name)

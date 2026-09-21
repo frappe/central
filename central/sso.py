@@ -91,7 +91,7 @@ def jwks_url() -> str:
 
 
 def bench_gateway() -> str:
-	"""The dev bench's gateway base, used when opening by explicit gateway (no Asset). The
+	"""The dev bench's gateway base, used when opening by explicit gateway (no Virtual Machine). The
 	SID rides `/?sid=`, which the bench SPA consumes and exchanges at POST /api/login."""
 	return (frappe.conf.get("bench_sso_redirect") or "http://localhost:3030").rstrip("/")
 
