@@ -3,9 +3,9 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.central.doctype.resource_action.resource_action import ResourceAction
 from central.errors import resource_action
 from central.iam import can, resolve_team
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
 from central.integrations.servers import reconcile
 
 # Server endpoints for the console. Reads come from the VirtualMachine mirror; commands go

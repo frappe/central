@@ -19,8 +19,8 @@ from central.api.teams import (
 	set_team_member_roles,
 	transfer_team_ownership,
 )
-from central.central.doctype.team_invitation.team_invitation import expire_pending_invitations
 from central.iam import can, resolve_user_grants
+from central.identity.doctype.team_invitation.team_invitation import expire_pending_invitations
 
 
 def create_user(email: str) -> str:
@@ -366,7 +366,7 @@ class TestTeamManagement(IntegrationTestCase):
 		name = invite_team_member(self.team.name, self.invitee, "Developer")
 		frappe.db.set_value("Team Invitation", name, "expires_on", add_days(today(), 1))
 
-		with patch("central.central.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
+		with patch("central.identity.doctype.team_invitation.team_invitation.frappe.sendmail") as sendmail:
 			result = resend_invitation(name)
 
 		sendmail.assert_called_once()
@@ -493,8 +493,8 @@ class TestTeamsSurfaceStaysSingleDoor(IntegrationTestCase):
 	double surface (the bug this guards)."""
 
 	def test_delegated_doc_methods_are_not_whitelisted(self):
-		from central.central.doctype.team.team import Team
-		from central.central.doctype.team_invitation.team_invitation import TeamInvitation
+		from central.identity.doctype.team.team import Team
+		from central.identity.doctype.team_invitation.team_invitation import TeamInvitation
 
 		for method in (Team.invite_member, TeamInvitation.accept, TeamInvitation.revoke):
 			with self.subTest(method=method.__qualname__), self.assertRaises(frappe.PermissionError):

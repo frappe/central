@@ -9,8 +9,8 @@ from atlas_proxy_client.api.sites import patch_site
 from atlas_proxy_client.types import Response
 from frappe.tests import IntegrationTestCase
 
-from central.central.doctype.region.region import Region
-from central.central.doctype.site_domain.site_domain import (
+from central.infrastructure.doctype.region.region import Region
+from central.infrastructure.doctype.site_domain.site_domain import (
 	MAXIMUM_ATTEMPTS,
 	VERIFICATION_RECORD,
 	DomainNotVerifiedError,
@@ -22,9 +22,9 @@ from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
 WILDCARD = "example.test"
-GET_PROXY_CLIENT = "central.central.doctype.site_domain.site_domain.Region.get_proxy_client"
-RESOLVE = "central.central.doctype.site_domain.site_domain._resolve"
-IS_APEX = "central.central.doctype.site_domain.site_domain.is_apex"
+GET_PROXY_CLIENT = "central.infrastructure.doctype.site_domain.site_domain.Region.get_proxy_client"
+RESOLVE = "central.infrastructure.doctype.site_domain.site_domain._resolve"
+IS_APEX = "central.infrastructure.doctype.site_domain.site_domain.is_apex"
 
 
 class TestSiteDomain(IntegrationTestCase):
@@ -367,7 +367,9 @@ class TestRegionProxyClient(IntegrationTestCase):
 			Region.get_proxy_client(self.region)
 
 		frappe.db.set_value("Region", self.region, "atlas_region_id", "65001")
-		with patch("central.central.doctype.region.region.mint_proxy_token", return_value="token") as mint:
+		with patch(
+			"central.infrastructure.doctype.region.region.mint_proxy_token", return_value="token"
+		) as mint:
 			client = Region.get_proxy_client(self.region)
 
 		mint.assert_called_once_with(65001)

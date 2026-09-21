@@ -4,10 +4,10 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.sites import claim_site, get_site, onboarding_status, terminate_site
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.central.doctype.site.site import on_host
-from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.errors import AtlasResourceGone
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.site.site import on_host
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.pilot import PilotLoginPending, fetch_site_login_url
 from central.integrations.servers import observe_server
 from central.site_provisioning import (

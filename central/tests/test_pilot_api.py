@@ -10,7 +10,7 @@ from frappe.utils import add_to_date, now_datetime, set_request
 
 from central.api.pilot import datum_token, heartbeat
 from central.central.doctype.central_sso_settings.central_sso_settings import CentralSSOSettings
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import DATUM_SCOPE
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance

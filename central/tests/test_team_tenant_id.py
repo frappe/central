@@ -4,7 +4,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.central.doctype.team.tenant import (
+from central.identity.doctype.team.tenant import (
 	MAXIMUM_TENANT_ID,
 	allocate_tenant_id,
 	prepare_tenant_id_series,
@@ -85,7 +85,7 @@ class TestTeamTenantId(IntegrationTestCase):
 
 	def test_allocator_refuses_exhausted_range(self):
 		with (
-			patch("central.central.doctype.team.tenant.getseries", return_value=str(MAXIMUM_TENANT_ID + 1)),
+			patch("central.identity.doctype.team.tenant.getseries", return_value=str(MAXIMUM_TENANT_ID + 1)),
 			self.assertRaises(frappe.ValidationError),
 		):
 			allocate_tenant_id()

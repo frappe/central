@@ -10,7 +10,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils.password import remove_encrypted_password
 
 from central.api.state_delivery import REGION_HEADER, SOURCE_HEADER, receive
-from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.state_delivery import (
 	accept_atlas_report,
 	accept_cargo_report,

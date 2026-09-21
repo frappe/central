@@ -4,7 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import server_overview
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.pilot import PilotMonitoringClient, get_cached_monitoring
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance

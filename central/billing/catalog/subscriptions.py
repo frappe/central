@@ -417,7 +417,7 @@ def begin_resize(
 		return {"queued": False, "resized": True}
 
 	# Slow path: flag the VM Resizing (pushed live to the Console) and defer the reshape.
-	from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
+	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
 	VirtualMachine.mark_resizing(doc.server_id, True)
 	frappe.enqueue(
@@ -481,7 +481,7 @@ def _apply_resize(
 	own committed write so the Console can't wedge on a stuck "Resizing" state, and
 	re-raises so the job is recorded as failed (billing stays on the old segment — we
 	never re-price to a shape the host didn't apply)."""
-	from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
+	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 
 	try:
 		if plan:

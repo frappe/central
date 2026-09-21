@@ -9,8 +9,8 @@ import frappe
 from frappe import _
 from frappe.utils.password import get_decrypted_password
 
-from central.central.doctype.resource_action.resource_action import ResourceAction
-from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 # Central's own clock orders every report, because a report carries the region's clock

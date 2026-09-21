@@ -1,8 +1,8 @@
 import frappe
 from frappe import _
 
-from central.central.doctype.team.team import on_doctype_update
-from central.central.doctype.team.tenant import (
+from central.identity.doctype.team.team import on_doctype_update
+from central.identity.doctype.team.tenant import (
 	allocate_tenant_id,
 	prepare_tenant_id_series,
 	validate_tenant_id,
