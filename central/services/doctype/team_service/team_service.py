@@ -15,31 +15,41 @@ class TeamService(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		access_key: DF.Data | None
 		add_on_service: DF.Link
+		bucket_name: DF.Data | None
+		endpoint_url: DF.Data | None
 		region: DF.Link
+		secret_access_key: DF.Password | None
 		status: DF.Literal["Draft", "Provisioning", "Active", "Failed", "Suspended"]
 		subscription: DF.Link
 		team: DF.Link
 	# end: auto-generated types
 
-	_DOCTYPE_NAME = "Managed Service"
+	_DOCTYPE_NAME = "Team Service"
 
-	# A team activates a given add-on at most once. The DB carries the race-safe
-	# composite unique index; this only gives a readable error first.
 	def validate(self) -> None:
 		duplicate = frappe.db.exists(
 			self._DOCTYPE_NAME,
-			{"team": self.team, "add_on_service": self.add_on_service, "name": ("!=", self.name or "")},
+			{
+				"team": self.team,
+				"add_on_service": self.add_on_service,
+				"region": self.region,
+				"name": ("!=", self.name or ""),
+			},
 		)
 
 		if duplicate:
-			frappe.throw(_("Team {0} already has the {1} service.").format(self.team, self.add_on_service))
+			frappe.throw(
+				_("Team {0} already has the {1} service in {2}.").format(
+					self.team, self.add_on_service, self.region
+				)
+			)
 
 
 def on_doctype_update():
-	# Race-safe arbiter for the one-add-on-per-team invariant; runs on migrate.
 	frappe.db.add_unique(
-		"Managed Service",
+		"Team Service",
 		["team", "add_on_service", "region"],
 		constraint_name="unique_team_add_on_in_region",
 	)
