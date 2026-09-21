@@ -178,6 +178,44 @@ The console serves customers. Desk serves the operator who has to answer a page 
 - Use `frappe.qb` with a join when a read spans more than 2 tables. Do not loop a query per row. No N+1 queries.
 - Add indexes and unique constraints in the controller's `on_doctype_update`, not in a patch.
 
+#### Prefer controller lifecycle hooks over API wiring
+
+Read the [Frappe controller docs](https://docs.frappe.io/framework/user/en/basics/doctypes/controllers) before adding a step that reacts to a document reaching a state. When a document follows a lifecycle, put each step in the controller hook that owns that point in the lifecycle, not as a sequence of calls an API route or integration function makes by hand. The common hooks, in the order Frappe calls them:
+
+| Hook | Runs | Use it for |
+|---|---|---|
+| `before_validate` | Before `validate`, on every save | Normalize input before it is checked |
+| `validate` | Before every save | Enforce invariants; block the save on failure |
+| `before_insert` | Once, before the first save | Set a field a fresh document alone needs |
+| `after_insert` | Once, right after the first save | Kick off what only a newly created document triggers |
+| `on_update` | After every save | React to any change, not only creation |
+| `on_trash` | Before delete | Clean up what the document owns |
+
+A route stays a thin trigger: it builds the document and calls `insert()` or `save()`, and the controller's hooks do the rest. This keeps a lifecycle step discoverable from the doctype that owns it instead of buried in whichever route happened to create the document, and it means every path that creates the document (an API route, a patch, a test) gets the same behavior for free.
+
+```python
+# Before: the API route wires each step it thinks a new Site needs.
+@frappe.whitelist()
+def create_trial_site(subdomain: str, team: str) -> dict:
+    site = frappe.get_doc({"doctype": "Site", "subdomain": subdomain, "team": team})
+    site.insert()
+    notify_team_of_new_site(site)  # easy to forget on the next caller
+    return {"name": site.name}
+
+
+# After: Site.after_insert owns it. Any caller that inserts a Site gets the
+# same behavior, and the route no longer needs to know what a new Site does.
+class Site(Document):
+    def after_insert(self) -> None:
+        notify_team_of_new_site(self)
+
+
+@frappe.whitelist()
+def create_trial_site(subdomain: str, team: str) -> dict:
+    site = frappe.get_doc({"doctype": "Site", "subdomain": subdomain, "team": team}).insert()
+    return {"name": site.name}
+```
+
 ### Dashboard
 
 Use Vue 3, TypeScript, and Frappe UI with the Espresso design system.
