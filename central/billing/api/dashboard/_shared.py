@@ -125,15 +125,14 @@ def _missing_profile_fields(team: str) -> list[str]:
 
 
 def missing_profile_fields_in(row) -> list[str]:
-	"""The same verdict against an already-loaded profile row (doc or dict), so a
-	caller holding many rows needn't re-read each one. An absent row is all-missing."""
+	"""Missing required fields on an already-loaded profile row. No row means all."""
 	if row is None:
 		return list(_REQUIRED_PROFILE_FIELDS)
 	return [f for f in _REQUIRED_PROFILE_FIELDS if not str(row.get(f) or "").strip()]
 
 
 def profile_field_labels(fields) -> list[str]:
-	"""Required field names as the customer-facing words the ask is written with."""
+	"""Required field names as the labels shown to the customer."""
 	return [_PROFILE_FIELD_LABELS.get(field, field) for field in fields]
 
 
@@ -163,21 +162,9 @@ def require_billing_profile(team: str, action: str):
 
 
 def require_billing_profile_or_credit(team: str, new_rate, action: str):
-	"""Refuse `action` until the billing profile is complete — unless credits fund it.
+	"""Refuse `action` until the billing profile is complete, unless credits fund it.
 
-	A team is granted welcome credits at signup, before it has given us a legal name
-	or an address (`provision_signup_billing`), and asking for those at the moment it
-	creates its first server interrupts the one flow that matters. While its wallet
-	covers the run-rate the action adds, nobody needs to be asked: whatever it earns
-	is settled from those credits.
-
-	The ask is not dropped, only moved to where it is genuinely needed — ahead of the
-	invoice (`run_billing_details_reminder`) and required before that invoice can be
-	issued (`open_and_collect`), because an invoice is a statutory sale that has to be
-	made out to somebody.
-
-	`new_rate` is the monthly run-rate `action` would add; None (a config that cannot
-	be priced) is never funded and falls through to the full requirement.
+	`new_rate` is the monthly run-rate `action` adds; None is never funded.
 	"""
 	from central.billing.payments.settlement import wallet_funds
 

@@ -350,8 +350,7 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 	with metrics.timed("billing.settle_page", cutoff=str(cutoff)) as counters:
 		counters.update(settled=0, held=0, failed=0)
 		for invoice in drafts_in_range(cutoff, after, until):
-			# A draft held for missing billing details is neither settled nor failed —
-			# it stays Draft and the next sweep tries it again.
+			# A held draft is neither settled nor failed: it stays Draft for the next sweep.
 			result = settle_draft(invoice, counters)
 			if result and result.get("held"):
 				counters["held"] += 1

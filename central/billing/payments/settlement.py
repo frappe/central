@@ -13,11 +13,8 @@ balance and, at ~80%, prompts a top-up; the next token refresh shrinks the cap
 *before* an overspend. Running resources are never stopped for this — only the
 residual shortfall at settlement flows into dunning.
 
-The same wallet rule is what lets a brand-new team provision before it has given
-us a legal name and an address: `credit_funded_headroom` is the run-rate its
-credits still cover, and while a request fits inside it nobody is asked for
-billing details. They are asked ahead of the invoice those credits will settle
-(`run_billing_details_reminder`) and required before it is issued.
+The same wallet rule lets a new team provision on credits before it has given us
+its billing details; those are asked for once the credits stop covering the bill.
 """
 
 import frappe
@@ -101,10 +98,8 @@ def can_accept_spend(team: str, projected_spend, source=None) -> bool:
 def credit_funded_headroom(team: str) -> float:
 	"""How much *more* monthly run-rate the team's own credits can fund.
 
-	The wallet balance, held under the trust-tier ceiling, less what the team
-	already runs. Unlike `effective_spend_cap` this is always wallet-bound: a team
-	with no credits has no headroom rather than falling back to the tier cap, which
-	is only safe as a ceiling when a card backs it.
+	Wallet balance under the tier ceiling, less what the team already runs. Always
+	wallet-bound: no credits means no headroom, not the bare tier cap.
 	"""
 	from central.billing.catalog.subscriptions import team_run_rate
 
@@ -113,11 +108,7 @@ def credit_funded_headroom(team: str) -> float:
 
 
 def wallet_funds(team: str, new_rate) -> bool:
-	"""Whether the team's credits cover `new_rate` of additional monthly run-rate.
-
-	A config that cannot be priced (`new_rate` None) is never funded — a missing
-	rate is not a free one.
-	"""
+	"""Whether credits cover `new_rate` of extra monthly run-rate. None is never funded."""
 	if new_rate is None:
 		return False
 	return frappe.utils.flt(new_rate) <= credit_funded_headroom(team)
@@ -161,13 +152,7 @@ def _notify_top_up(team: str, balance, projected, utilisation):
 def run_billing_details_reminder() -> int:
 	"""Daily: ask every team that is billable but has no billing details on file.
 
-	A team provisions on welcome credits without a legal name or address
-	(`require_billing_profile_or_credit`), but an invoice is a statutory sale and
-	cannot be issued without them — so the invoice is held at Draft until they
-	arrive. Asking daily from the moment the team has something billable running
-	turns that hold into something it was warned about for weeks. The notification
-	engine dedupes on unread, so this is one standing ask, not a daily nag.
-
+	The ask is deduped on unread, so it is one standing ask, not a daily nag.
 	Returns how many teams were asked.
 	"""
 	from central.billing.platform import notifications
@@ -182,8 +167,7 @@ def run_billing_details_reminder() -> int:
 
 
 def _teams_missing_details(teams: list[str]) -> dict[str, list[str]]:
-	"""Which of these teams still owe us billing details, and which ones — read in one
-	query for the whole page rather than a profile load per team."""
+	"""Which of these teams still owe us billing details, and which ones."""
 	from central.billing.api.dashboard._shared import (
 		_REQUIRED_PROFILE_FIELDS,
 		missing_profile_fields_in,

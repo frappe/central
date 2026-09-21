@@ -46,11 +46,8 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	doc = frappe.get_doc("Invoice", invoice)
 
-	# A Billable invoice is a statutory sale: it has to be made out to somebody, and
-	# it is pushed to ERPNext as a Sales Invoice once paid. A team that provisioned on
-	# welcome credits may still owe us a legal name and address, so the draft is held
-	# — and the customer asked — rather than issued to nobody. The next daily sweep
-	# picks it up as soon as the profile is complete.
+	# An invoice has to be made out to somebody, so a draft is held until the team's
+	# billing details are on file. The next daily sweep picks it up.
 	if doc.invoice_type == "Billable" and _hold_for_billing_details(doc):
 		return {"invoice": invoice, "claimed": False, "held": "billing_details"}
 
@@ -129,12 +126,9 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 
 def _hold_for_billing_details(doc) -> bool:
-	"""Whether this invoice must wait for the customer's billing details, asking for
-	them if so.
+	"""Whether this invoice must wait for billing details, asking for them if so.
 
-	The ask carries the invoice as its reference, so the notification engine dedupes
-	it per invoice: the sweep may pass over a held draft every day, but the customer
-	is asked once while that ask is unread.
+	The ask references the invoice, so it is deduped per invoice, not per sweep.
 	"""
 	from central.billing.api.dashboard._shared import _missing_profile_labels
 	from central.billing.platform import notifications

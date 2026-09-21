@@ -2,11 +2,8 @@
 # For license information, please see license.txt
 """Billing details are asked for when credits stop covering the bill, not before.
 
-A team is granted welcome credits at signup, before it has given us a legal name or
-an address. Demanding those at the moment it creates its first server interrupted the
-one flow that mattered, so the gate moved: provisioning is allowed while the wallet
-funds it, the customer is asked ahead of the invoice, and the invoice — a statutory
-sale that has to be made out to somebody — is held until the details arrive.
+Provisioning is allowed while the wallet funds it; the invoice is held until the
+details arrive.
 """
 
 from unittest.mock import MagicMock, patch
@@ -160,8 +157,7 @@ class TestCreditFundedHeadroom(CreditFundedTestBase):
 
 
 class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
-	"""An invoice is a statutory sale: it is held at Draft until we can make it out
-	to somebody, rather than issued to a team we have no legal name for."""
+	"""An invoice is held at Draft until we have a legal name to make it out to."""
 
 	def _draft(self, total=1000, invoice_type="Billable"):
 		return (

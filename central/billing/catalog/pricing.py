@@ -164,11 +164,9 @@ def resolve_rate(rate_rows, currency: str, cluster: str | None = None):
 
 
 def resolve_plan_rate(plan: str, currency: str, cluster: str | None = None):
-	"""The flat rate a preset bundle `Plan` sells for, in this currency + region.
+	"""Flat rate a preset bundle `Plan` sells for in this currency + region.
 
-	Returns None when the plan has no rate for the currency — a missing rate is not
-	zero, so a caller that needs the price (a headroom or funding check) refuses
-	rather than waving the request through at nothing.
+	None when the currency has no rate — a missing rate is not a zero one.
 	"""
 	return resolve_rate(get_catalog_rates("Plan", plan), currency, cluster)
 
