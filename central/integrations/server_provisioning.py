@@ -12,11 +12,7 @@ from central.central.doctype.pilot_credential.pilot_credential import PilotCrede
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.integrations.atlas import AtlasClient
-from central.integrations.object_storage import (
-	ObjectStorageClient,
-	ObjectStorageRejected,
-	ObjectStorageRequestUncertain,
-)
+from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
 from central.integrations.servers import observe_server
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 from central.sso import central_url, jwks_url
@@ -27,6 +23,10 @@ CLOCK_SKEW_SECONDS = 120
 # Long enough to cover a region answering a create, so the lock outlives the work it
 # guards rather than expiring under it.
 LOCK_TIMEOUT_SECONDS = 15 * 60
+# One team's storage in one region is provisioned, reconciled and activated under this
+# lock, so a second request cannot rotate credentials a first request is still storing.
+STORAGE_LOCK_TIMEOUT_SECONDS = 15 * 60
+STORAGE_LOCK_WAIT_SECONDS = 60
 STORAGE_SERVICE = "storage"
 STORAGE_PLAN = {
 	"title": "Object Storage Plan",
@@ -192,13 +192,16 @@ def _get_team_storage_service(request) -> dict:
 	"""Return the team's regional storage configuration, provisioning it once when absent."""
 	region = request.atlas_instance
 	filters = {"team": request.team, "add_on_service": STORAGE_SERVICE, "region": region}
-	frappe.db.get_value("Team", request.team, "name", for_update=True)
+	with frappe.cache.lock(
+		f"team-storage:{request.team}:{region}",
+		timeout=STORAGE_LOCK_TIMEOUT_SECONDS,
+		blocking_timeout=STORAGE_LOCK_WAIT_SECONDS,
+	):
+		service = _existing_team_storage_service(request, filters)
+		if not service:
+			service = _provision_team_storage_service(request, region)
 
-	service = _existing_team_storage_service(request, filters)
-	if not service:
-		service = _provision_team_storage_service(request, region)
-
-	return _team_storage_configuration(service)
+		return _team_storage_configuration(service)
 
 
 def _existing_team_storage_service(request, filters: dict):
@@ -218,12 +221,15 @@ def _existing_team_storage_service(request, filters: dict):
 
 def _reconcile_team_storage_service(request, name: str):
 	"""Settle a bucket whose creation Cargo never confirmed, by asking it to rotate the
-	credentials. An answer proves the bucket exists and completes the record."""
+	credentials. An answer proves the bucket exists and completes the record. Only Cargo
+	saying the bucket is not there drops the record, so the caller provisions again. Any
+	other rejection, and any uncertain answer, keeps the record and is raised, because
+	creating again would leave an existing bucket untracked."""
 	service = frappe.get_doc("Team Service", name)
 	client = ObjectStorageClient.from_region(service.region)
 	try:
 		receipt = client.rotate_credentials(service.bucket_name)
-	except ObjectStorageRejected:
+	except ObjectStorageNotFound:
 		service.delete(ignore_permissions=True)
 		frappe.db.commit()
 		return None
@@ -249,16 +255,9 @@ def _provision_team_storage_service(request, region: str):
 		request.team, region, f"team-{tenant_id}-{region}-backups", endpoint_url
 	)
 
-	try:
-		receipt = client.create_bucket(service.bucket_name)
-	except ObjectStorageRequestUncertain:
-		# The record stays behind, so the next request reconciles this bucket instead of
-		# asking Cargo to create a second one.
-		raise
-	except Exception:
-		service.delete(ignore_permissions=True)
-		frappe.db.commit()
-		raise
+	# A failure here keeps the committed record, so the next request reconciles this
+	# bucket instead of asking Cargo to create a second one.
+	receipt = client.create_bucket(service.bucket_name)
 
 	return _activate_team_storage_service(request, service, receipt["credentials"])
 

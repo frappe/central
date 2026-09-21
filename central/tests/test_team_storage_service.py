@@ -4,7 +4,11 @@ from unittest.mock import Mock, patch
 
 import frappe
 
-from central.integrations.object_storage import ObjectStorageRejected, ObjectStorageRequestUncertain
+from central.integrations.object_storage import (
+	ObjectStorageNotFound,
+	ObjectStorageRejected,
+	ObjectStorageRequestUncertain,
+)
 from central.integrations.server_provisioning import _create_payload, _get_team_storage_service
 
 MODULE = "central.integrations.server_provisioning"
@@ -68,7 +72,7 @@ def lookup(team_service):
 
 	def get_value(doctype, filters, fieldname=None, **kwargs):
 		if doctype == "Team":
-			return "TEAM-00001" if fieldname == "name" else 42
+			return 42
 		if doctype == "Team Service":
 			return team_service
 		if doctype == "Plan":
@@ -94,10 +98,8 @@ class TestTeamStorageService(TestCase):
 
 		self.assertEqual(configuration, STORAGE_CONFIG)
 		client_class.from_region.assert_not_called()
-		self.assertEqual(get_value.call_args_list[0].args, ("Team", "TEAM-00001", "name"))
-		self.assertTrue(get_value.call_args_list[0].kwargs["for_update"])
 		self.assertEqual(
-			get_value.call_args_list[1].args,
+			get_value.call_args_list[0].args,
 			(
 				"Team Service",
 				{"team": "TEAM-00001", "add_on_service": "storage", "region": "in-mumbai"},
@@ -177,7 +179,22 @@ class TestTeamStorageService(TestCase):
 		service.delete.assert_not_called()
 		subscribe.assert_not_called()
 
-	def test_drops_the_record_when_cargo_rejects_the_bucket(self):
+	def test_holds_one_lock_for_the_team_and_region(self):
+		with (
+			patch(
+				f"{MODULE}.frappe.db.get_value",
+				side_effect=lookup(frappe._dict(name="service-1", status="Active")),
+			),
+			patch(f"{MODULE}.frappe.get_doc", return_value=storage_service("service-1")),
+			patch(f"{MODULE}.frappe.cache") as cache,
+		):
+			_get_team_storage_service(provisioning_request())
+
+		cache.lock.assert_called_once_with(
+			"team-storage:TEAM-00001:in-mumbai", timeout=15 * 60, blocking_timeout=60
+		)
+
+	def test_keeps_the_record_when_cargo_rejects_the_bucket(self):
 		service = storage_service(status="Provisioning", subscription=None)
 		storage_client = Mock()
 		storage_client.create_bucket.side_effect = ObjectStorageRejected("bucket exists")
@@ -195,7 +212,28 @@ class TestTeamStorageService(TestCase):
 			service_detail.endpoint_for.return_value = ENDPOINT
 			_get_team_storage_service(provisioning_request())
 
-		service.delete.assert_called_once_with(ignore_permissions=True)
+		service.delete.assert_not_called()
+
+	def test_keeps_the_record_when_a_rotation_is_rejected_for_another_reason(self):
+		service = storage_service("service-1", status="Provisioning", subscription=None)
+		storage_client = Mock()
+		storage_client.rotate_credentials.side_effect = ObjectStorageRejected("rate limited")
+
+		with (
+			patch(
+				f"{MODULE}.frappe.db.get_value",
+				side_effect=lookup(frappe._dict(name="service-1", status="Provisioning")),
+			),
+			patch(f"{MODULE}.frappe.db.commit"),
+			patch(f"{MODULE}.ObjectStorageClient") as client_class,
+			patch(f"{MODULE}.frappe.get_doc", return_value=service),
+			self.assertRaises(ObjectStorageRejected),
+		):
+			client_class.from_region.return_value = storage_client
+			_get_team_storage_service(provisioning_request())
+
+		service.delete.assert_not_called()
+		storage_client.create_bucket.assert_not_called()
 
 	def test_reconciles_an_unconfirmed_bucket_instead_of_creating_another(self):
 		service = storage_service("service-1", status="Provisioning", subscription=None)
@@ -225,7 +263,7 @@ class TestTeamStorageService(TestCase):
 		unconfirmed = storage_service("service-1", status="Provisioning", subscription=None)
 		fresh = storage_service("service-2", status="Provisioning", subscription=None)
 		storage_client = Mock()
-		storage_client.rotate_credentials.side_effect = ObjectStorageRejected("no such bucket")
+		storage_client.rotate_credentials.side_effect = ObjectStorageNotFound("no such bucket")
 		storage_client.create_bucket.return_value = receipt()
 
 		with (

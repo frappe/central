@@ -14,6 +14,10 @@ class ObjectStorageRejected(ObjectStorageConnectionError):
 	"""Cargo explicitly rejected an object-storage operation."""
 
 
+class ObjectStorageNotFound(ObjectStorageRejected):
+	"""Cargo says the bucket does not exist."""
+
+
 class ObjectStorageRequestUncertain(ObjectStorageConnectionError):
 	"""Cargo may have completed a mutation without returning a usable receipt."""
 
@@ -81,6 +85,8 @@ class ObjectStorageClient:
 	def _read_response(response: requests.Response) -> dict:
 		if not 200 <= response.status_code < 300:
 			frappe.logger().warning("Cargo object-storage request returned HTTP %s.", response.status_code)
+			if response.status_code == 404:
+				raise ObjectStorageNotFound(_("The bucket does not exist."))
 			if 400 <= response.status_code < 500:
 				raise ObjectStorageRejected(_("Object storage request was rejected."))
 			raise ObjectStorageRequestUncertain()

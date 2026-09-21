@@ -7,6 +7,7 @@ import requests
 
 from central.integrations.object_storage import (
 	ObjectStorageClient,
+	ObjectStorageNotFound,
 	ObjectStorageRejected,
 	ObjectStorageRequestUncertain,
 )
@@ -160,6 +161,20 @@ class TestObjectStorageClient(TestCase):
 		logger.return_value.warning.assert_called_once_with(
 			"Cargo object-storage request returned HTTP %s.", 409
 		)
+
+	def test_a_missing_bucket_is_reported_as_such(self):
+		with (
+			patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),
+			patch("central.integrations.object_storage.frappe.logger"),
+			patch(
+				"central.integrations.object_storage.requests.post",
+				return_value=self.response(404, {"exception": "no such bucket"}),
+			),
+			self.assertRaises(ObjectStorageNotFound) as caught,
+		):
+			self.client().rotate_credentials("pilot-action-1")
+
+		self.assertEqual(str(caught.exception), "The bucket does not exist.")
 
 	def test_malformed_success_receipt_is_uncertain(self):
 		for body in ({}, {"message": []}):
