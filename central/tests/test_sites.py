@@ -156,6 +156,22 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.assertTrue(state["ready"])
 		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/desk?sid=abc")
 
+	def test_a_site_is_ready_before_the_machine_reports_running(self):
+		"""The mirrored status still says Provisioning: only the site's own answer gates readiness."""
+		self.asset.db_set("status", "Provisioning")
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				return_value="https://site.local/desk?sid=abc",
+			),
+		):
+			state = get_site(self.site().name)
+
+		self.assertEqual(state["status"], "Provisioning")
+		self.assertTrue(state["ready"])
+		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/desk?sid=abc")
+
 	def test_a_successful_claim_returns_before_the_rename_runs(self):
 		self.site().db_set("subdomain", "acme")
 		with (

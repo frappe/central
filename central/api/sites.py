@@ -130,7 +130,7 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 	Frappe process on the machine and creates a real Administrator session, so a poll that
 	minted one would open a session a second and wait on a cold VM to do it."""
 	status = site.status
-	ready = status == "Running" and is_site_reachable(site.url)
+	ready = is_site_reachable(site.url)
 	login_url = None
 	login_pending = False
 	if ready and with_login:

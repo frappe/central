@@ -88,7 +88,7 @@ def observe_server(asset: Asset) -> str:
 	frappe.get_doc("Asset", asset.name).claim_admin_hostname()
 
 	# A Pilot machine carries a site, and this report is where its address arrives.
-	Site.ensure_for(asset.name)
+	Site.create_once_addressable(asset.name)
 	ResourceAction.confirm_observed_status(asset.name, status)
 	return status
 
