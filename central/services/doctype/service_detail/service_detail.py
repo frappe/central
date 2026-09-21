@@ -20,7 +20,7 @@ class ServiceDetail(Document):
 		activated_on: DF.Datetime | None
 		last_updated_on: DF.Datetime | None
 		region: DF.Link
-		service: DF.Literal["Telemetry", "Storage"]
+		service: DF.Literal["telemetry", "storage"]
 		service_endpoint: DF.Data | None
 		status: DF.Literal["Available", "Not Available"]
 	# end: auto-generated types

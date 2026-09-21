@@ -19,8 +19,11 @@ class TestObjectStorageClient(TestCase):
 		response._content = json.dumps(body).encode()
 		return response
 
+	def region(self) -> frappe._dict:
+		return frappe._dict(name="par-2", cargo_base_url="https://cargo.par-2.example.test", region_id=7)
+
 	def client(self) -> ObjectStorageClient:
-		return ObjectStorageClient("https://cargo.par-2.example.test", "par-2", 7)
+		return ObjectStorageClient(self.region())
 
 	def test_create_bucket_uses_the_cargo_method_contract(self):
 		response = Mock(status_code=200)
@@ -36,9 +39,7 @@ class TestObjectStorageClient(TestCase):
 			patch("central.integrations.object_storage.mint_cargo_token", return_value="cargo-token"),
 			patch("central.integrations.object_storage.requests.post", return_value=response) as post,
 		):
-			result = ObjectStorageClient("https://cargo.par-2.example.test", "par-2", 7).create_bucket(
-				"pilot-action-1"
-			)
+			result = self.client().create_bucket("pilot-action-1")
 
 		self.assertEqual(
 			result,
@@ -79,23 +80,21 @@ class TestObjectStorageClient(TestCase):
 					f"https://cargo.par-2.example.test/api/method/cargo.object_storage.api.bucket.{method}",
 				)
 
-	def test_from_region_builds_the_cargo_url_for_available_storage(self):
+	def test_from_region_reads_the_cargo_url_of_a_region_with_available_storage(self):
 		with (
 			patch("central.integrations.object_storage.frappe.db.exists", return_value=True) as exists,
 			patch(
-				"central.central.doctype.region.region.Region.get_service_url",
-				return_value="https://cargo.par-2.example.test",
-			) as get_service_url,
-			patch("central.integrations.object_storage.frappe.db.get_value", return_value=7),
+				"central.integrations.object_storage.frappe.get_doc", return_value=self.region()
+			) as get_doc,
 		):
 			client = ObjectStorageClient.from_region("par-2")
 
+		get_doc.assert_called_once_with("Region", "par-2")
 		exists.assert_called_once_with(
 			"Service Detail",
 			{"service": "storage", "region": "par-2", "status": "Available"},
 			cache=False,
 		)
-		get_service_url.assert_called_once_with("cargo", "par-2")
 		self.assertEqual(client.cargo_endpoint, "https://cargo.par-2.example.test")
 		self.assertEqual(client.region, "par-2")
 		self.assertEqual(client.region_id, 7)
@@ -103,11 +102,10 @@ class TestObjectStorageClient(TestCase):
 	def test_from_region_requires_available_storage(self):
 		with (
 			patch("central.integrations.object_storage.frappe.db.exists", return_value=False),
-			patch("central.integrations.object_storage.frappe.db.get_single_value") as get_single_value,
+			patch("central.integrations.object_storage.frappe.get_doc", return_value=self.region()),
 			self.assertRaisesRegex(frappe.ValidationError, "No available storage service"),
 		):
 			ObjectStorageClient.from_region("par-2")
-		get_single_value.assert_not_called()
 
 	def test_lost_reply_is_uncertain_and_is_not_retried(self):
 		with (

@@ -18,32 +18,32 @@ class ObjectStorageRequestUncertain(ObjectStorageConnectionError):
 	"""Cargo may have completed a mutation without returning a usable receipt."""
 
 	def __init__(self, *args):
-		self.message = _("Something went wrong in fetching the status of this action.")
-		super().__init__(*args)
+		super().__init__(
+			*(args or (_("Could not confirm the object storage operation. Do not retry automatically."),))
+		)
 
 
 class ObjectStorageClient:
 	"""Call one region's Cargo bucket-control API."""
 
-	def __init__(self, cargo_endpoint: str, region: str, region_id: int):
-		self.cargo_endpoint = cargo_endpoint.rstrip("/")
-		self.region = region
-		self.region_id = region_id
+	def __init__(self, region: Region):
+		self.cargo_endpoint = region.cargo_base_url
+		self.region = region.name
+		self.region_id = region.get_atlas_region_id()
 
 	@classmethod
-	def from_region(cls, region: str) -> "ObjectStorageClient":
+	def from_region(cls, region: str | Region) -> "ObjectStorageClient":
+		region = frappe.get_doc("Region", region) if isinstance(region, str) else region
 		if not frappe.db.exists(
 			"Service Detail",
-			{"service": "storage", "region": region, "status": "Available"},
+			{"service": "storage", "region": region.name, "status": "Available"},
 			cache=False,
 		):
 			frappe.throw(
-				_("No available storage service in region {0}.").format(region), frappe.ValidationError
+				_("No available storage service in region {0}.").format(region.name), frappe.ValidationError
 			)
 
-		region_id = frappe.db.get_value("Region", region, "region_id", cache=True)
-		cargo_base_url = Region.get_service_url("cargo", region)
-		return cls(cargo_base_url, region, region_id)
+		return cls(region)
 
 	def _call(self, method: str, name: str) -> dict:
 		try:
@@ -79,9 +79,10 @@ class ObjectStorageClient:
 
 	@staticmethod
 	def _read_response(response: requests.Response) -> dict:
-		if 400 <= response.status_code < 500:
-			raise ObjectStorageRejected(_("Object storage request was rejected."))
 		if not 200 <= response.status_code < 300:
+			frappe.logger().warning("Cargo object-storage request returned HTTP %s.", response.status_code)
+			if 400 <= response.status_code < 500:
+				raise ObjectStorageRejected(_("Object storage request was rejected."))
 			raise ObjectStorageRequestUncertain()
 
 		try:
