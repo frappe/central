@@ -42,11 +42,11 @@
    "search_index": 1
   },
   {
+   "description": "Set once the service is billed. A service being provisioned has none yet.",
    "fieldname": "subscription",
    "fieldtype": "Link",
    "label": "Subscription",
-   "options": "Subscription",
-   "reqd": 1
+   "options": "Subscription"
   },
   {
    "default": "Draft",

@@ -22,13 +22,16 @@ class TeamService(Document):
 		region: DF.Link
 		secret_access_key: DF.Password | None
 		status: DF.Literal["Draft", "Provisioning", "Active", "Failed", "Suspended"]
-		subscription: DF.Link
+		subscription: DF.Link | None
 		team: DF.Link
 	# end: auto-generated types
 
 	_DOCTYPE_NAME = "Team Service"
 
 	def validate(self) -> None:
+		if self.status == "Active" and not self.subscription:
+			frappe.throw(_("An active service must have a subscription."))
+
 		duplicate = frappe.db.exists(
 			self._DOCTYPE_NAME,
 			{

@@ -19,8 +19,11 @@ class TestObjectStorageClient(TestCase):
 		response._content = json.dumps(body).encode()
 		return response
 
-	def region(self) -> frappe._dict:
-		return frappe._dict(name="par-2", cargo_base_url="https://cargo.par-2.example.test", region_id=7)
+	def region(self) -> Mock:
+		region = Mock(cargo_base_url="https://cargo.par-2.example.test")
+		region.name = "par-2"
+		region.get_atlas_region_id.return_value = 7
+		return region
 
 	def client(self) -> ObjectStorageClient:
 		return ObjectStorageClient(self.region())

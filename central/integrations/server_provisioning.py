@@ -12,7 +12,11 @@ from central.central.doctype.pilot_credential.pilot_credential import PilotCrede
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.integrations.atlas import AtlasClient
-from central.integrations.object_storage import ObjectStorageClient
+from central.integrations.object_storage import (
+	ObjectStorageClient,
+	ObjectStorageRejected,
+	ObjectStorageRequestUncertain,
+)
 from central.integrations.servers import observe_server
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 from central.sso import central_url, jwks_url
@@ -98,7 +102,6 @@ def _process_locked(name: str) -> None:
 			frappe.db.commit()
 		except Exception:
 			frappe.db.rollback()
-			_reconcile_new_storage(request)
 			raise
 		response = client.create_vm(payload)
 		remote_id = response.get("id")
@@ -190,31 +193,47 @@ def _get_team_storage_service(request) -> dict:
 	region = request.atlas_instance
 	filters = {"team": request.team, "add_on_service": STORAGE_SERVICE, "region": region}
 	frappe.db.get_value("Team", request.team, "name", for_update=True)
-	if existing := _existing_team_storage_service(filters):
-		return _team_storage_configuration(existing)
 
-	return _team_storage_configuration(_provision_team_storage_service(request, region))
+	service = _existing_team_storage_service(request, filters)
+	if not service:
+		service = _provision_team_storage_service(request, region)
+
+	return _team_storage_configuration(service)
 
 
-def _existing_team_storage_service(filters: dict) -> str | None:
+def _existing_team_storage_service(request, filters: dict):
+	"""The team's storage service in this region, after an unsettled creation is settled."""
 	service = frappe.db.get_value("Team Service", filters, ["name", "status"], as_dict=True)
 	if not service:
 		return None
 	if service.status == "Active":
 		return service.name
+	if service.status == "Provisioning":
+		return _reconcile_team_storage_service(request, service.name)
 	if service.status == "Suspended":
 		frappe.throw(_("This team's storage service is suspended. Please contact support."))
 
 	frappe.throw(_("This team's storage service is not ready. Please contact support."))
 
 
+def _reconcile_team_storage_service(request, name: str):
+	"""Settle a bucket whose creation Cargo never confirmed, by asking it to rotate the
+	credentials. An answer proves the bucket exists and completes the record."""
+	service = frappe.get_doc("Team Service", name)
+	client = ObjectStorageClient.from_region(service.region)
+	try:
+		receipt = client.rotate_credentials(service.bucket_name)
+	except ObjectStorageRejected:
+		service.delete(ignore_permissions=True)
+		frappe.db.commit()
+		return None
+
+	return _activate_team_storage_service(request, service, receipt["credentials"])
+
+
 def _provision_team_storage_service(request, region: str):
 	if not frappe.db.exists("Add-on Service", {"name": STORAGE_SERVICE, "is_active": 1}):
 		frappe.throw(_("The Object Storage service is not configured."))
-
-	plan = frappe.db.get_value("Plan", STORAGE_PLAN, "name")
-	if not plan:
-		frappe.throw(_("The Object Storage Plan is not configured."))
 
 	endpoint_url = ServiceDetail.endpoint_for(region, STORAGE_SERVICE)
 	if not endpoint_url:
@@ -224,45 +243,71 @@ def _provision_team_storage_service(request, region: str):
 	if not tenant_id:
 		frappe.throw(_("This team has no tenant ID."))
 
-	bucket_name = f"team-{tenant_id}-{region}-backups"
+	_storage_plan()
 	client = ObjectStorageClient.from_region(region)
-	frappe.db.savepoint("team_storage_provisioning")
-	receipt = client.create_bucket(bucket_name)
+	service = _pending_team_storage_service(
+		request.team, region, f"team-{tenant_id}-{region}-backups", endpoint_url
+	)
 
 	try:
-		subscription = provision_service_subscription(
-			request.team,
-			plan,
-			cluster=request.atlas_instance,
-			changed_by=request.requested_by,
-		)
-		credentials = receipt["credentials"]
-		# The authorized provisioning request owns this system-created service record.
-		service = frappe.get_doc(
-			{
-				"doctype": "Team Service",
-				"team": request.team,
-				"add_on_service": STORAGE_SERVICE,
-				"subscription": subscription["subscription"],
-				"region": region,
-				"status": "Active",
-				"bucket_name": bucket_name,
-				"endpoint_url": endpoint_url,
-				"access_key": credentials["access_key"],
-				"secret_access_key": credentials["secret_access_key"],
-			}
-		).insert(ignore_permissions=True)
+		receipt = client.create_bucket(service.bucket_name)
+	except ObjectStorageRequestUncertain:
+		# The record stays behind, so the next request reconciles this bucket instead of
+		# asking Cargo to create a second one.
+		raise
 	except Exception:
-		frappe.db.rollback(save_point="team_storage_provisioning")
-		_cleanup_storage_bucket(client, bucket_name)
+		service.delete(ignore_permissions=True)
+		frappe.db.commit()
 		raise
 
-	request.flags.new_storage_bucket = frappe._dict(
-		client=client,
-		bucket_name=bucket_name,
-		region=region,
-	)
+	return _activate_team_storage_service(request, service, receipt["credentials"])
+
+
+def _pending_team_storage_service(team: str, region: str, bucket_name: str, endpoint_url: str):
+	"""Record the bucket Central is about to ask Cargo for, in its own transaction, so a
+	lost reply leaves a record to reconcile and not an untracked bucket. The unique
+	constraint on team, service and region keeps a second worker from creating one too."""
+	# The authorized provisioning request owns this system-created service record.
+	service = frappe.get_doc(
+		{
+			"doctype": "Team Service",
+			"team": team,
+			"add_on_service": STORAGE_SERVICE,
+			"region": region,
+			"status": "Provisioning",
+			"bucket_name": bucket_name,
+			"endpoint_url": endpoint_url,
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()
 	return service
+
+
+def _activate_team_storage_service(request, service, credentials: dict):
+	"""Bill the service, store the credentials Cargo returned, and commit the result."""
+	if not service.subscription:
+		subscription = provision_service_subscription(
+			service.team,
+			_storage_plan(),
+			cluster=service.region,
+			changed_by=request.requested_by,
+		)
+		service.subscription = subscription["subscription"]
+
+	service.access_key = credentials["access_key"]
+	service.secret_access_key = credentials["secret_access_key"]
+	service.status = "Active"
+	service.save(ignore_permissions=True)
+	frappe.db.commit()
+	return service
+
+
+def _storage_plan() -> str:
+	plan = frappe.db.get_value("Plan", STORAGE_PLAN, "name")
+	if not plan:
+		frappe.throw(_("The Object Storage Plan is not configured."))
+
+	return plan
 
 
 def _team_storage_configuration(service) -> dict:
@@ -281,41 +326,6 @@ def _team_storage_configuration(service) -> dict:
 		frappe.throw(_("This team's storage credentials are incomplete. Please contact support."))
 
 	return configuration
-
-
-def _cleanup_storage_bucket(client: ObjectStorageClient, bucket_name: str) -> None:
-	try:
-		client.delete_bucket(bucket_name)
-	except Exception:
-		frappe.log_error(
-			title="Object storage cleanup failed",
-			message=f"Bucket {bucket_name} may need manual cleanup.\n\n{frappe.get_traceback()}",
-		)
-
-
-def _reconcile_new_storage(request) -> None:
-	pending = request.flags.get("new_storage_bucket")
-	if not pending:
-		return
-
-	try:
-		persisted = frappe.db.exists(
-			"Team Service",
-			{
-				"team": request.team,
-				"add_on_service": STORAGE_SERVICE,
-				"region": pending.region,
-			},
-		)
-	except Exception:
-		frappe.log_error(
-			title="Object storage reconciliation failed",
-			message=f"Bucket {pending.bucket_name} may need manual reconciliation.\n\n{frappe.get_traceback()}",
-		)
-		return
-
-	if not persisted:
-		_cleanup_storage_bucket(pending.client, pending.bucket_name)
 
 
 def _create_payload(request) -> dict:
