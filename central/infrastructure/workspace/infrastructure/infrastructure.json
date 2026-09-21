@@ -1,0 +1,189 @@
+{
+ "app": "central",
+ "charts": [],
+ "content": "[{\"id\": \"in-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Health</b></span>\", \"col\": 12}}, {\"id\": \"in-nc0\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Virtual Machines Running\", \"col\": 3}}, {\"id\": \"in-nc1\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Virtual Machines Failed\", \"col\": 3}}, {\"id\": \"in-nc2\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Resource Actions Needing Attention\", \"col\": 3}}, {\"id\": \"in-nc3\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Resource Actions In Flight\", \"col\": 3}}, {\"id\": \"in-nc4\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Regions\", \"col\": 3}}, {\"id\": \"in-nc5\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Cargo-Registered Regions\", \"col\": 3}}, {\"id\": \"in-nc6\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Failed Site Domains\", \"col\": 3}}, {\"id\": \"in-sp\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"in-m-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Manage</b></span>\", \"col\": 12}}, {\"id\": \"in-sc0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Virtual Machine\", \"col\": 3}}, {\"id\": \"in-sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Site\", \"col\": 3}}, {\"id\": \"in-sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Site Domain\", \"col\": 3}}, {\"id\": \"in-sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Region\", \"col\": 3}}, {\"id\": \"in-sc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Resource Action\", \"col\": 3}}, {\"id\": \"in-sc5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Image Offering\", \"col\": 3}}, {\"id\": \"in-sc6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Image Offering Tag\", \"col\": 3}}]",
+ "creation": "2026-09-21 00:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "server",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Infrastructure",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Infrastructure",
+   "link_count": 7,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Virtual Machine",
+   "link_count": 0,
+   "link_to": "Virtual Machine",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Site",
+   "link_count": 0,
+   "link_to": "Site",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Site Domain",
+   "link_count": 0,
+   "link_to": "Site Domain",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Region",
+   "link_count": 0,
+   "link_to": "Region",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Resource Action",
+   "link_count": 0,
+   "link_to": "Resource Action",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Image Offering",
+   "link_count": 0,
+   "link_to": "Image Offering",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Image Offering Tag",
+   "link_count": 0,
+   "link_to": "Image Offering Tag",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-09-21 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "Infrastructure",
+ "number_cards": [
+  {
+   "label": "Virtual Machines Running",
+   "number_card_name": "Virtual Machines Running"
+  },
+  {
+   "label": "Virtual Machines Failed",
+   "number_card_name": "Virtual Machines Failed"
+  },
+  {
+   "label": "Resource Actions Needing Attention",
+   "number_card_name": "Resource Actions Needing Attention"
+  },
+  {
+   "label": "Resource Actions In Flight",
+   "number_card_name": "Resource Actions In Flight"
+  },
+  {
+   "label": "Active Regions",
+   "number_card_name": "Active Regions"
+  },
+  {
+   "label": "Cargo-Registered Regions",
+   "number_card_name": "Cargo-Registered Regions"
+  },
+  {
+   "label": "Failed Site Domains",
+   "number_card_name": "Failed Site Domains"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [],
+ "sequence_id": 2.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Virtual Machine",
+   "link_to": "Virtual Machine",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Site",
+   "link_to": "Site",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Site Domain",
+   "link_to": "Site Domain",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Region",
+   "link_to": "Region",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Resource Action",
+   "link_to": "Resource Action",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Image Offering",
+   "link_to": "Image Offering",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Image Offering Tag",
+   "link_to": "Image Offering Tag",
+   "type": "DocType"
+  }
+ ],
+ "title": "Infrastructure",
+ "type": "Workspace"
+}
