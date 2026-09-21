@@ -9,7 +9,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils.password import remove_encrypted_password
 
-from central.api.state_delivery import REGION_HEADER, SENDER_HEADER, receive
+from central.api.state_delivery import REGION_HEADER, SOURCE_HEADER, receive
 from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.state_delivery import (
 	accept_atlas_report,
@@ -245,7 +245,7 @@ class TestStateDelivery(IntegrationTestCase):
 
 
 class TestDeliveryRouting(IntegrationTestCase):
-	"""One endpoint serves every plane, so the sender header picks the handler."""
+	"""One endpoint serves every plane, so the source header picks the handler."""
 
 	def setUp(self):
 		super().setUp()
@@ -259,8 +259,8 @@ class TestDeliveryRouting(IntegrationTestCase):
 		frappe.local.request = SimpleNamespace(get_data=lambda: b"{}")
 		self.addCleanup(delattr, frappe.local, "request")
 
-	def deliver(self, sender: str | None) -> dict:
-		headers = {SENDER_HEADER: sender, REGION_HEADER: "region", "X-Frappe-Webhook-Signature": "s"}
+	def deliver(self, source: str | None) -> dict:
+		headers = {SOURCE_HEADER: source, REGION_HEADER: "region", "X-Frappe-Webhook-Signature": "s"}
 		with patch("central.api.state_delivery.frappe.get_request_header", headers.get):
 			return receive()
 
