@@ -15,7 +15,6 @@ Read the [README](README.md) for setup and local development. Read [`spec/README
 
 - [IAM](spec/IAM.md): identity, permissions, OAuth, and Atlas enforcement.
 - [Capabilities](CAPABILITIES.md): the authorization vocabulary and its plane split.
-- [Tunnel](spec/TUNNEL.md): Central as the WireGuard hub and the Atlas registration flow.
 - [Atlas coordination](spec/ATLAS_COORDINATION.md): the cross-repository contract.
 - [Refactor backlog](spec/refactor_todo.md): the remaining pre-1.0 cleanup work.
 
@@ -43,7 +42,7 @@ Central runs today:
 
 - Identity and access: teams, members, invitations, team roles, capabilities, and the permission probe.
 - Tokens: SSO and OAuth minting for Atlas, for a Pilot bench, and for Cargo, Datum and for any other future services, plus site login.
-- Regions: Atlas instance registration, the WireGuard tunnel hub, and host tasks on the Central machine.
+- Regions: Atlas instance registration.
 - Resources: `Asset` for a provisioned server, `Site` for a self-serve site. Only the integration layer records observed state on them.
 - Provisioning: provisioning requests and resource actions against Atlas and Pilot.
 - Managed services: add-on catalog, LLM models and plan policies, storage backends, and service credentials.

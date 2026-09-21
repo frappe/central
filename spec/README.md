@@ -26,7 +26,6 @@ The v0.2 documents distinguish the proposed design from the verified baseline. E
 - [IAM](IAM.md): Central identity and permission model. Its Atlas integration sections need review in phase 0.
 - [Capabilities](../CAPABILITIES.md): the capability vocabulary and fixtures contract.
 - [SSO](SSO.md): token flows and consumer contracts to check before the signing cutover.
-- [Tunnel](TUNNEL.md): the tunnel path still present in the baseline Central code.
 - [Atlas coordination](ATLAS_COORDINATION.md): earlier regional contracts that need replacement during the rewrite.
 - [Inbound webhooks](WEBHOOKS.md): the contract a region signs and sends its reports with. Share it with Atlas and Cargo.
 - [Refactor backlog](refactor_todo.md): prior findings to verify during the non-billing audit.
