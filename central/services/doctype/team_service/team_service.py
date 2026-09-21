@@ -38,4 +38,8 @@ class TeamService(Document):
 
 def on_doctype_update():
 	# Race-safe arbiter for the one-add-on-per-team invariant; runs on migrate.
-	frappe.db.add_unique("Managed Service", ["team", "add_on_service"], constraint_name="unique_team_add_on")
+	frappe.db.add_unique(
+		"Managed Service",
+		["team", "add_on_service", "region"],
+		constraint_name="unique_team_add_on_in_region",
+	)
