@@ -18,6 +18,7 @@ class CentralSettings(Document):
 	if TYPE_CHECKING:
 		from frappe.types import DF
 
+		central_id: DF.Int
 		enable_addons: DF.Check
 		enable_email_delivery_service: DF.Check
 		enable_llm_service: DF.Check

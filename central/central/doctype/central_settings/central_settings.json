@@ -8,6 +8,7 @@
   "general_tab",
   "trial_idle_shutdown_minutes",
   "wildcard_domain",
+  "central_id",
   "feature_flags_tab",
   "addons_section",
   "enable_addons",
@@ -81,6 +82,14 @@
    "fieldname": "wildcard_domain",
    "fieldtype": "Data",
    "label": "Wildcard Domain"
+  },
+  {
+   "default": "1",
+   "description": "This Central's id in Atlas's Configure Webhooks call. Atlas refuses anything but 1 unless its developer mode is on or it allows multiple Central webhooks -- raise this only where more than one Central environment shares an Atlas.",
+   "fieldname": "central_id",
+   "fieldtype": "Int",
+   "label": "Central ID",
+   "non_negative": 1
   }
  ],
  "grid_page_length": 50,
