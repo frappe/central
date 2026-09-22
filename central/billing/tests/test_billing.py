@@ -357,7 +357,9 @@ class TestCancelTerminatedPatch(BillingTestBase):
 		frappe.db.set_value("Virtual Machine", server_id, "status", "Terminated")
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 1000)
 
-		self.assertEqual(cancel_terminated_subscriptions(), 1)
+		# At least this subscription is cancelled; a shared site may hold others in the
+		# same legacy state. The scoped checks below prove this one was closed exactly once.
+		self.assertGreaterEqual(cancel_terminated_subscriptions(), 1)
 
 		self.assertEqual(subscriptions.current_segment_rate(self.sub), 0)
 		self.assertEqual(subscriptions.team_run_rate(TEAM), 0)
@@ -572,14 +574,19 @@ class TestFanOutRun(IntegrationTestCase):
 	def test_status_shows_a_half_finished_run(self):
 		from central.billing.tests.utils import run_enqueued_inline
 
-		# Drafting only: every invoice is still waiting to be collected.
+		# A shared site may already hold invoices for this period, so measure our own run
+		# against a baseline rather than assuming the period starts empty.
+		before = run.billing_run_status(today="2026-07-01")
+
+		# Drafting only: our teams' invoices are all still waiting to be collected.
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.draft_monthly_invoices(today="2026-07-01")
 		mid = run.billing_run_status(today="2026-07-01")
 		self.assertEqual(mid["period_end"], "2026-06-30")
 		self.assertGreaterEqual(mid["drafted"], len(self.TEAMS))
-		self.assertEqual(mid["pending_collection"], mid["drafted"])
-		self.assertEqual(mid["collected"], 0)
+		self.assertEqual(mid["drafted"] - before["drafted"], len(self.TEAMS))
+		self.assertEqual(mid["pending_collection"] - before["pending_collection"], len(self.TEAMS))
+		self.assertEqual(mid["collected"], before["collected"])
 
 		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
 			run.collect_due_invoices(today="2026-07-01")

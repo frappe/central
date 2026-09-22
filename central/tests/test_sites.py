@@ -454,10 +454,13 @@ class TestSubdomainAvailability(SiteOnAMachine):
 				self.assertFalse(subdomain_availability(name)["available"])
 
 	def test_a_name_typed_in_capitals_is_taken_as_written(self):
-		answer = subdomain_availability("  AcMe  ")
+		# A unique base keeps the availability check independent of subdomains a shared
+		# site already holds, while still exercising the trim-and-lowercase normalization.
+		unique = "acme" + frappe.generate_hash(length=6).lower()
+		answer = subdomain_availability(f"  {unique.upper()}  ")
 
 		self.assertTrue(answer["available"])
-		self.assertEqual(answer["subdomain"], "acme")
+		self.assertEqual(answer["subdomain"], unique)
 
 
 class TestTrialCreationIsSentInTheRequest(IntegrationTestCase):
