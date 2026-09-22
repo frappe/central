@@ -1,4 +1,4 @@
-import { computed, provide, ref, type Ref, type WritableComputedRef } from 'vue'
+import { computed, provide, type Ref, ref, type WritableComputedRef } from 'vue'
 import { SIDE_PANEL_SWITCHING } from '@/components/common/SidePanel.vue'
 
 export function useTrayColumn<Name extends string>(): {

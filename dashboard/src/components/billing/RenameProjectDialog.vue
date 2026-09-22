@@ -39,13 +39,15 @@ watch(
 
 const titleChanged = computed(
 	() =>
-		title.value.trim().length > 0 && title.value.trim() !== props.project?.title,
+		title.value.trim().length > 0 &&
+		title.value.trim() !== props.project?.title,
 )
 const limitChanged = computed(
 	() => (spendingLimit.value || 0) !== (props.project?.spending_limit || 0),
 )
 const canSubmit = computed(
-	() => title.value.trim().length > 0 && (titleChanged.value || limitChanged.value),
+	() =>
+		title.value.trim().length > 0 && (titleChanged.value || limitChanged.value),
 )
 
 const rename = useCall<unknown, { name: string; title: string }>({
@@ -64,7 +66,10 @@ async function submit(): Promise<void> {
 	if (!props.project || !canSubmit.value) return
 	try {
 		if (titleChanged.value)
-			await rename.submit({ name: props.project.name, title: title.value.trim() })
+			await rename.submit({
+				name: props.project.name,
+				title: title.value.trim(),
+			})
 		if (rename.error) throw rename.error
 		if (limitChanged.value)
 			await setLimit.submit({
