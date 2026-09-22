@@ -23,6 +23,7 @@ class VirtualMachine(Document):
 		admin_domain_task: DF.Data | None
 		image_offering: DF.Link | None
 		ipv6_address: DF.Data | None
+		last_reported_at: DF.Datetime | None
 		memory_megabytes: DF.Int
 		plan: DF.Link | None
 		public_ipv4: DF.Data | None
@@ -127,25 +128,24 @@ class VirtualMachine(Document):
 	)
 
 	@classmethod
-	def record_observed_state(cls, resource_id: str, observed_at, state: dict) -> bool:
-		"""Apply what a region reports about a server Central already owns.
-
-		Returns False when there is nothing to apply: an unknown server, or a report
-		older than the one already recorded. Only the `OBSERVED_FIELDS` present in
-		`state` are written, so a status-only report cannot blank an address."""
+	def record_observed_state(cls, resource_id: str, observed_at, state: dict, *, reported_at=None) -> bool:
+		"""Apply a region's report. `reported_at` is the region's own timestamp for a
+		webhook; a report not newer than the last is dropped (reconcile omits it and always
+		applies). Returns False when nothing is applied."""
 		try:
-			# Lock first. An unlocked read can miss a report another worker just committed.
+			# Lock first, so a concurrent worker's write is not missed.
 			doc = frappe.get_doc("Virtual Machine", resource_id, for_update=True)
 		except frappe.DoesNotExistError:
 			return False
-		if doc.is_report_stale(observed_at):
+		if reported_at is not None and not doc.is_newer_report(reported_at):
 			return False
 
 		for field in cls.OBSERVED_FIELDS:
 			if field in state:
 				setattr(doc, field, state[field])
 		doc.state_observed_at = observed_at
-		# The verified region authorizes these values, not the signed-in user.
+		if reported_at is not None:
+			doc.last_reported_at = reported_at
 		doc.save(ignore_permissions=True)
 		doc.publish_state_change()
 		return True
@@ -210,12 +210,13 @@ class VirtualMachine(Document):
 				message=frappe.as_json(task),
 			)
 
-	def is_report_stale(self, observed_at) -> bool:
-		"""True when this server already holds a report newer than `observed_at`."""
-		if not observed_at or not self.state_observed_at:
-			return False
+	def is_newer_report(self, reported_at) -> bool:
+		"""True when `reported_at` is newer than the last applied report. A missing
+		timestamp, or a first report, is allowed through."""
+		if not reported_at or not self.last_reported_at:
+			return True
 
-		return frappe.utils.get_datetime(self.state_observed_at) > frappe.utils.get_datetime(observed_at)
+		return frappe.utils.get_datetime(reported_at) > frappe.utils.get_datetime(self.last_reported_at)
 
 	@staticmethod
 	def mark_resizing(resource_id: str, resizing: bool) -> None:

@@ -112,10 +112,13 @@ class TestServerObservation(IntegrationTestCase):
 
 	def test_older_report_cannot_regress_state(self):
 		now = frappe.utils.now_datetime()
-		self.server.db_set({"status": "Running", "state_observed_at": now})
+		self.server.db_set({"status": "Running", "last_reported_at": now})
 
 		applied = VirtualMachine.record_observed_state(
-			self.server.name, frappe.utils.add_to_date(now, seconds=-1), {"status": "Stopped"}
+			self.server.name,
+			now,
+			{"status": "Stopped"},
+			reported_at=frappe.utils.add_to_date(now, seconds=-1),
 		)
 		self.assertFalse(applied)
 		self.assertEqual(self.server.reload().status, "Running")
@@ -166,11 +169,15 @@ class TestServerObservation(IntegrationTestCase):
 
 	def test_a_report_that_changes_nothing_wakes_no_console(self):
 		now = frappe.utils.now_datetime()
-		self.server.db_set({"state_observed_at": now})
+		self.server.db_set({"last_reported_at": now})
 
 		with patch("frappe.publish_realtime") as published:
+			# A stale (older) report and an unknown server both change nothing.
 			VirtualMachine.record_observed_state(
-				self.server.name, frappe.utils.add_to_date(now, seconds=-1), {"status": "Stopped"}
+				self.server.name,
+				now,
+				{"status": "Stopped"},
+				reported_at=frappe.utils.add_to_date(now, seconds=-1),
 			)
 			VirtualMachine.record_observed_state("server-absent", now, {"status": "Stopped"})
 

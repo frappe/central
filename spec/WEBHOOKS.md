@@ -59,7 +59,7 @@ Atlas reports one virtual machine per delivery.
 | `event` | Yes | `vm.state` |
 | `virtual_machine` | Yes | The Atlas VM ID. Central matches it to a Virtual Machine in the signing region. |
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
-| `observed_at` | No | Diagnostic only. Central records its own clock, because a report carries the region's clock. |
+| `observed_at` | Yes | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
 
 Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
 

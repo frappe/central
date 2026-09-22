@@ -141,6 +141,22 @@ class TestStateDelivery(IntegrationTestCase):
 		self.assertEqual(self.deliver(report), {"queued": False, "ignored": "no change"})
 		self.assertEqual(self.server.reload().status, "Running")
 
+	def test_a_report_older_than_the_last_is_dropped(self):
+		"""An older observed_at is a reorder or replay and must not overwrite a newer state."""
+		self.apply(self.state_report(status="running", observed_at="2026-06-02 00:00:00"))
+		self.assertEqual(self.server.reload().status, "Running")
+
+		self.apply(self.state_report(status="stopped", observed_at="2026-06-01 00:00:00"))
+		self.assertEqual(self.server.reload().status, "Running")
+
+	def test_a_newer_report_overwrites_an_earlier_one(self):
+		"""A newer observed_at is applied, so a genuine later change still lands."""
+		self.apply(self.state_report(status="running", observed_at="2026-06-01 00:00:00"))
+		self.assertEqual(self.server.reload().status, "Running")
+
+		self.apply(self.state_report(status="stopped", observed_at="2026-06-02 00:00:00"))
+		self.assertEqual(self.server.reload().status, "Stopped")
+
 	def test_an_unchanged_state_is_ignored(self):
 		self.server.db_set("status", "Running")
 
