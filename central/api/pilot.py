@@ -6,8 +6,8 @@ from collections.abc import Callable
 import frappe
 from frappe import _
 
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.central.doctype.site_domain.site_domain import SiteDomain
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.site_domain.site_domain import SiteDomain
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
 TELEMETRY = "telemetry"
@@ -144,7 +144,7 @@ def enroll(bootstrap_token: str) -> dict:
 	pilot's long-lived credential plus its discovery config — in one call. The bootstrap
 	token (signed by Central, short-lived, single-use) is the only authentication; the
 	pilot has no credential yet."""
-	from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+	from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 	from central.sso import BOOTSTRAP_TTL, central_url, jwks_url, verify_bootstrap_token
 
 	grant = verify_bootstrap_token(bootstrap_token)

@@ -29,6 +29,10 @@ central.patches.v0_0.rename_billing_group_to_project
 # -- run before sync, while the "Asset" DocType record and table still exist to
 # rename from.
 central.patches.v0_0.rename_asset_to_virtual_machine
+# Split the overloaded Central module: move the identity and infrastructure
+# DocTypes into the new Identity and Infrastructure modules. Must run before
+# sync so it finds the JSONs at their new module paths.
+central.patches.v0_0.split_central_module
 
 [post_model_sync]
 # asset/asset_id -> server, on every doctype that links to a Virtual Machine.

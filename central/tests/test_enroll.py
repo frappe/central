@@ -6,7 +6,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import set_request
 
 from central.api.pilot import config, enroll
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import jwks_url, mint_bootstrap_token
 from central.tests.test_iam import ensure_user
 

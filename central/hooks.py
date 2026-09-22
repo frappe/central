@@ -115,7 +115,7 @@ website_user_home_page = "dashboard"
 # only in a patch would exist on migrated sites and be silently ABSENT on fresh ones.
 # The money invariants are a property of the schema, not of a site's history (ADR 0018).
 after_install = [
-	"central.central.doctype.image_offering.image_offering.ensure_default_offerings",
+	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
@@ -193,10 +193,10 @@ scheduler_events = {
 		# Repair observed state through scoped regional reads.
 		"*/10 * * * *": ["central.integrations.servers.reconcile"],
 		# Retry proxy routes that failed or never ran, up to the attempt limit.
-		"*/5 * * * *": ["central.central.doctype.site_domain.site_domain.retry_failed"],
+		"*/5 * * * *": ["central.infrastructure.doctype.site_domain.site_domain.retry_failed"],
 	},
 	"daily": [
-		"central.central.doctype.team_invitation.team_invitation.expire_pending_invitations",
+		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
 		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
 		# and pruning Payment Attempt / Webhook Event logs.
 		"central.billing.revenue.dunning.run_dunning",

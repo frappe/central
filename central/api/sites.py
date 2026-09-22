@@ -3,14 +3,14 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.central.doctype.resource_action.resource_action import (
+from central.errors import resource_action
+from central.iam import can, resolve_team
+from central.infrastructure.doctype.resource_action.resource_action import (
 	PENDING_STATES,
 	STATUS_FIELDS,
 	action_status,
 )
-from central.central.doctype.site.site import Site
-from central.errors import resource_action
-from central.iam import can, resolve_team
+from central.infrastructure.doctype.site.site import Site
 from central.integrations.pilot import PilotLoginPending, is_site_reachable
 
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
-from central.central.doctype.resource_action.resource_action import PENDING_STATES
 from central.iam import can, resolve_team
+from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
 from central.server_models import ActionStatus
 
 CAPABILITY = {

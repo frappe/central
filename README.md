@@ -75,7 +75,7 @@ pilot frappe --site central.localhost execute central.api.developer_setup.setup_
   --kwargs '{"region":"in-mumbai","atlas_base_url":"http://mumbai.atlas.localhost:8000","atlas_region_id":"0","seed_demo_data":0}'
 ```
 
-Replace `0` with the verified Atlas region ID. Local VM tests require an active Metal Server and available System images. Installing Atlas alone does not provide VM capacity. See the [regional configuration](central/central/doctype/region/SPEC.md) and [validation requirements](spec/LOCAL_ENVIRONMENT.md).
+Replace `0` with the verified Atlas region ID. Local VM tests require an active Metal Server and available System images. Installing Atlas alone does not provide VM capacity. See the [regional configuration](central/infrastructure/doctype/region/SPEC.md) and [validation requirements](spec/LOCAL_ENVIRONMENT.md).
 
 ## Frontend development
 

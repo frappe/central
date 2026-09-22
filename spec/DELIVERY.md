@@ -83,7 +83,7 @@ Acceptance:
 
 This PR includes the signed Atlas client, on-demand regional image selection, whole-CPU plan selection, and the server creation interface. Resource Action is the single operation record. It saves validated intent before dispatch and recovers accepted operations through scoped reads. Start, stop, and termination use the same record. The accepted billing quote survives catalog changes while an action waits.
 
-Review the [operation contract](../central/central/doctype/resource_action/SPEC.md), the [image catalog](../central/central/doctype/image_offering/SPEC.md), and [test coverage](CUTOVER_TEST_COVERAGE.md). Review and merge this phase before beginning signup and Framework webhooks. Do not commit without the user's approval.
+Review the [operation contract](../central/infrastructure/doctype/resource_action/SPEC.md), the [image catalog](../central/infrastructure/doctype/image_offering/SPEC.md), and [test coverage](CUTOVER_TEST_COVERAGE.md). Review and merge this phase before beginning signup and Framework webhooks. Do not commit without the user's approval.
 
 ## Friday phase 1: trial signup and state delivery
 

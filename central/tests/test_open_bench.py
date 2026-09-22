@@ -6,7 +6,7 @@ from jwt.algorithms import RSAAlgorithm
 from central.api.jwks import jwks_document
 from central.api.sso import get_bench_link
 from central.central.doctype.central_sso_settings.central_sso_settings import ALGORITHM
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.sso import central_url
 from central.tests.test_iam import ensure_user
 

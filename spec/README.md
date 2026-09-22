@@ -12,14 +12,14 @@ The v0.2 documents distinguish the proposed design from the verified baseline. E
 
 ## Current module specifications
 
-- [Team network identity](../central/central/doctype/team/SPEC.md): allocation, immutability, and migration of tenant IDs.
+- [Team network identity](../central/identity/doctype/team/SPEC.md): allocation, immutability, and migration of tenant IDs.
 
 - [Signing keys](../central/central/doctype/central_sso_settings/SPEC.md): separate Atlas and Pilot trust, operator initialization, and token verification.
 
-- [Regional configuration](../central/central/doctype/region/SPEC.md): signed connection checks, tenant selection, and regional identity.
-- [Image offerings](../central/central/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
-- [Proxy routes](../central/central/doctype/site_domain/SPEC.md): site and custom-domain routes on the regional proxy, with retry and delete.
-- [Trial sites](../central/central/doctype/site/SPEC.md): the site a Pilot image carries, its predictable address, and the signup handoff.
+- [Regional configuration](../central/infrastructure/doctype/region/SPEC.md): signed connection checks, tenant selection, and regional identity.
+- [Image offerings](../central/infrastructure/doctype/image_offering/SPEC.md): presentation records and on-demand regional System image discovery.
+- [Proxy routes](../central/infrastructure/doctype/site_domain/SPEC.md): site and custom-domain routes on the regional proxy, with retry and delete.
+- [Trial sites](../central/infrastructure/doctype/site/SPEC.md): the site a Pilot image carries, its predictable address, and the signup handoff.
 
 ## Existing specifications
 

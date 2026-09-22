@@ -4,8 +4,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import registry
-from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, AtlasResourceGone
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.server_provisioning import _process_locked
 from central.integrations.servers import reconcile
 from central.resource_actions import get_status, submit_command

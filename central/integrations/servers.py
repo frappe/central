@@ -5,10 +5,6 @@ import time
 import frappe
 from frappe import _
 
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.central.doctype.resource_action.resource_action import ResourceAction
-from central.central.doctype.site.site import Site
-from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.errors import (
 	AtlasConnectionError,
 	AtlasRequestUncertain,
@@ -17,6 +13,10 @@ from central.errors import (
 	to_error_response,
 )
 from central.iam import can
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.site.site import Site
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
 
 CAPABILITY = {"start": "server:power", "stop": "server:power", "terminate": "server:terminate"}

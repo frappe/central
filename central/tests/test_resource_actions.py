@@ -6,9 +6,9 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import make_plan
-from central.central.doctype.resource_action.resource_action import ResourceAction
-from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.errors import AtlasConnectionError, AtlasRequestUncertain
+from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.server_provisioning import _process_locked
 from central.resource_actions import get_status
 from central.server_provisioning import submit_request
@@ -377,7 +377,8 @@ class TestResourceActions(IntegrationTestCase):
 		)
 		frappe.db.set_value("Resource Action", queued, "modified", old, update_modified=False)
 		with patch(
-			"central.central.doctype.resource_action.resource_action.ResourceAction.enqueue", autospec=True
+			"central.infrastructure.doctype.resource_action.resource_action.ResourceAction.enqueue",
+			autospec=True,
 		) as enqueue:
 			recover_requests()
 			names = [call.args[0].name for call in enqueue.call_args_list]

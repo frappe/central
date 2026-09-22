@@ -7,9 +7,9 @@ from frappe import _
 from redis.exceptions import LockError, LockNotOwnedError
 
 from central.api.jwks import jwks_document
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.atlas import AtlasClient
 from central.integrations.servers import observe_server
 from central.sso import central_url, jwks_url

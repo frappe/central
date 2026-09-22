@@ -3,9 +3,9 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.errors import AtlasResourceGone
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.servers import observe_server
 from central.tests.utils import ensure_atlas_instance
 

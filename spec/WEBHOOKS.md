@@ -63,7 +63,7 @@ Atlas reports one virtual machine per delivery.
 
 Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
 
-Central takes no deletion event. A host reports only a live state, and a removed machine has none, so absence is not something a report can carry. Central learns that a machine is gone from a correctly scoped read that answers not found. See [resource actions](../central/central/doctype/resource_action/SPEC.md).
+Central takes no deletion event. A host reports only a live state, and a removed machine has none, so absence is not something a report can carry. Central learns that a machine is gone from a correctly scoped read that answers not found. See [resource actions](../central/infrastructure/doctype/resource_action/SPEC.md).
 
 An accepted report is applied by a background job, not in the request. The reply is a receipt, not a confirmation.
 

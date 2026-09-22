@@ -7,7 +7,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api import servers
-from central.central.doctype.virtual_machine.virtual_machine import VirtualMachine
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.tests.utils import ensure_atlas_instance
 
 

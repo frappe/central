@@ -10,7 +10,7 @@ from central.errors import CargoConnectionError
 from central.sso import central_url, mint_cargo_token
 
 if TYPE_CHECKING:
-	from central.central.doctype.region.region import Region
+	from central.infrastructure.doctype.region.region import Region
 
 PING_PATH = "/api/method/ping"
 CONFIGURE_WEBHOOKS_PATH = "/api/method/cargo.api.webhooks.configure"
