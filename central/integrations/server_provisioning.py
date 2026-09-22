@@ -7,14 +7,12 @@ from frappe import _
 from redis.exceptions import LockError, LockNotOwnedError
 
 from central.api.jwks import jwks_document
-from central.billing.catalog.subscriptions import provision_service_subscription
 from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_envelope, to_error_response
 from central.iam import can
 from central.integrations.atlas import AtlasClient
-from central.integrations.object_storage import ObjectStorageClient, ObjectStorageNotFound
+from central.integrations.bucket_provisioning import BucketProvisioning
 from central.integrations.servers import observe_server
-from central.services.doctype.service_detail.service_detail import ServiceDetail
 from central.sso import central_url, jwks_url
 
 # A region stamps its own clock on a machine, so allow for a little drift when deciding
@@ -23,17 +21,6 @@ CLOCK_SKEW_SECONDS = 120
 # Long enough to cover a region answering a create, so the lock outlives the work it
 # guards rather than expiring under it.
 LOCK_TIMEOUT_SECONDS = 15 * 60
-# One team's storage in one region is provisioned, reconciled and activated under this
-# lock, so a second request cannot rotate credentials a first request is still storing.
-STORAGE_LOCK_TIMEOUT_SECONDS = 15 * 60
-STORAGE_LOCK_WAIT_SECONDS = 60
-STORAGE_SERVICE = "storage"
-STORAGE_PLAN = {
-	"title": "Object Storage Plan",
-	"category": "Remote Storage",
-	"sub_category": "Backups",
-	"is_active": 1,
-}
 
 
 def process_request(name: str) -> None:
@@ -188,145 +175,6 @@ def _client(request) -> AtlasClient:
 	return AtlasClient(instance, tenant_id)
 
 
-def _get_team_storage_service(request) -> dict:
-	"""Return the team's regional storage configuration, provisioning it once when absent."""
-	region = request.atlas_instance
-	filters = {"team": request.team, "add_on_service": STORAGE_SERVICE, "region": region}
-	with frappe.cache.lock(
-		f"team-storage:{request.team}:{region}",
-		timeout=STORAGE_LOCK_TIMEOUT_SECONDS,
-		blocking_timeout=STORAGE_LOCK_WAIT_SECONDS,
-	):
-		service = _existing_team_storage_service(request, filters)
-		if not service:
-			service = _provision_team_storage_service(request, region)
-
-		return _team_storage_configuration(service)
-
-
-def _existing_team_storage_service(request, filters: dict):
-	"""The team's storage service in this region, after an unsettled creation is settled."""
-	service = frappe.db.get_value("Team Service", filters, ["name", "status"], as_dict=True)
-	if not service:
-		return None
-	if service.status == "Active":
-		return service.name
-	if service.status == "Provisioning":
-		return _reconcile_team_storage_service(request, service.name)
-	if service.status == "Suspended":
-		frappe.throw(_("This team's storage service is suspended. Please contact support."))
-
-	frappe.throw(_("This team's storage service is not ready. Please contact support."))
-
-
-def _reconcile_team_storage_service(request, name: str):
-	"""Settle a bucket whose creation Cargo never confirmed, by asking it to rotate the
-	credentials. An answer proves the bucket exists and completes the record. Only Cargo
-	saying the bucket is not there drops the record, so the caller provisions again. Any
-	other rejection, and any uncertain answer, keeps the record and is raised, because
-	creating again would leave an existing bucket untracked."""
-	service = frappe.get_doc("Team Service", name)
-	client = ObjectStorageClient.from_region(service.region)
-	try:
-		receipt = client.rotate_credentials(service.bucket_name)
-	except ObjectStorageNotFound:
-		service.delete(ignore_permissions=True)
-		frappe.db.commit()
-		return None
-
-	return _activate_team_storage_service(request, service, receipt["credentials"])
-
-
-def _provision_team_storage_service(request, region: str):
-	if not frappe.db.exists("Add-on Service", {"name": STORAGE_SERVICE, "is_active": 1}):
-		frappe.throw(_("The Object Storage service is not configured."))
-
-	endpoint_url = ServiceDetail.endpoint_for(region, STORAGE_SERVICE)
-	if not endpoint_url:
-		frappe.throw(_("Object storage is not available in region {0}.").format(region))
-
-	tenant_id = frappe.db.get_value("Team", request.team, "tenant_id")
-	if not tenant_id:
-		frappe.throw(_("This team has no tenant ID."))
-
-	_storage_plan()
-	client = ObjectStorageClient.from_region(region)
-	service = _pending_team_storage_service(
-		request.team, region, f"team-{tenant_id}-{region}-backups", endpoint_url
-	)
-
-	# A failure here keeps the committed record, so the next request reconciles this
-	# bucket instead of asking Cargo to create a second one.
-	receipt = client.create_bucket(service.bucket_name)
-
-	return _activate_team_storage_service(request, service, receipt["credentials"])
-
-
-def _pending_team_storage_service(team: str, region: str, bucket_name: str, endpoint_url: str):
-	"""Record the bucket Central is about to ask Cargo for, in its own transaction, so a
-	lost reply leaves a record to reconcile and not an untracked bucket. The unique
-	constraint on team, service and region keeps a second worker from creating one too."""
-	# The authorized provisioning request owns this system-created service record.
-	service = frappe.get_doc(
-		{
-			"doctype": "Team Service",
-			"team": team,
-			"add_on_service": STORAGE_SERVICE,
-			"region": region,
-			"status": "Provisioning",
-			"bucket_name": bucket_name,
-			"endpoint_url": endpoint_url,
-		}
-	).insert(ignore_permissions=True)
-	frappe.db.commit()
-	return service
-
-
-def _activate_team_storage_service(request, service, credentials: dict):
-	"""Bill the service, store the credentials Cargo returned, and commit the result."""
-	if not service.subscription:
-		subscription = provision_service_subscription(
-			service.team,
-			_storage_plan(),
-			cluster=service.region,
-			changed_by=request.requested_by,
-		)
-		service.subscription = subscription["subscription"]
-
-	service.access_key = credentials["access_key"]
-	service.secret_access_key = credentials["secret_access_key"]
-	service.status = "Active"
-	service.save(ignore_permissions=True)
-	frappe.db.commit()
-	return service
-
-
-def _storage_plan() -> str:
-	plan = frappe.db.get_value("Plan", STORAGE_PLAN, "name")
-	if not plan:
-		frappe.throw(_("The Object Storage Plan is not configured."))
-
-	return plan
-
-
-def _team_storage_configuration(service) -> dict:
-	if isinstance(service, str):
-		service = frappe.get_doc("Team Service", service)
-
-	configuration = {
-		"access_key": service.access_key,
-		"secret_key": service.get_password("secret_access_key"),
-		"bucket": service.bucket_name,
-		"provider": "garage",
-		"region": service.region,
-		"endpoint_url": service.endpoint_url,
-	}
-	if not all(configuration.values()):
-		frappe.throw(_("This team's storage credentials are incomplete. Please contact support."))
-
-	return configuration
-
-
 def _create_payload(request) -> dict:
 	configuration = request.get_configuration()
 	payload = {
@@ -354,7 +202,7 @@ def _create_payload(request) -> dict:
 			"initial_jwks_cache": jwks_document(),
 		}
 		try:
-			bootstrap["s3"] = _get_team_storage_service(request)
+			bootstrap["s3"] = BucketProvisioning(request).get_configuration()
 		except Exception:
 			frappe.log_error(
 				title="Pilot object storage provisioning failed",

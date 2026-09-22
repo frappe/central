@@ -21,7 +21,7 @@ class TeamService(Document):
 		endpoint_url: DF.Data | None
 		region: DF.Link
 		secret_access_key: DF.Password | None
-		status: DF.Literal["Draft", "Provisioning", "Active", "Failed", "Suspended"]
+		status: DF.Literal["Active", "Suspended"]
 		subscription: DF.Link | None
 		team: DF.Link
 	# end: auto-generated types
@@ -32,27 +32,30 @@ class TeamService(Document):
 		if self.status == "Active" and not self.subscription:
 			frappe.throw(_("An active service must have a subscription."))
 
+		self.validate_bucket_is_unclaimed()
+
+	def validate_bucket_is_unclaimed(self) -> None:
+		"""A readable error ahead of the unique constraint, which is what enforces this.
+		Two records over one bucket would each hold a key the other has rotated away."""
+		if not self.bucket_name:
+			return
+
 		duplicate = frappe.db.exists(
 			self._DOCTYPE_NAME,
 			{
 				"team": self.team,
-				"add_on_service": self.add_on_service,
-				"region": self.region,
+				"bucket_name": self.bucket_name,
 				"name": ("!=", self.name or ""),
 			},
 		)
 
 		if duplicate:
 			frappe.throw(
-				_("Team {0} already has the {1} service in {2}.").format(
-					self.team, self.add_on_service, self.region
-				)
+				_("Team {0} already has a service for bucket {1}.").format(self.team, self.bucket_name)
 			)
 
 
 def on_doctype_update():
 	frappe.db.add_unique(
-		"Team Service",
-		["team", "add_on_service", "region"],
-		constraint_name="unique_team_add_on_in_region",
+		"Team Service", ["team", "bucket_name"], constraint_name="unique_team_service_bucket"
 	)
