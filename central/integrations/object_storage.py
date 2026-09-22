@@ -1,9 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import frappe
 import requests
 from frappe import _
 
-from central.central.doctype.region.region import Region
 from central.sso import mint_cargo_token
+
+if TYPE_CHECKING:
+	from central.infrastructure.doctype.region.region import Region
 
 
 class ObjectStorageConnectionError(frappe.ValidationError):
@@ -36,7 +42,7 @@ class ObjectStorageClient:
 		self.region_id = region.get_atlas_region_id()
 
 	@classmethod
-	def from_region(cls, region: str | Region) -> "ObjectStorageClient":
+	def from_region(cls, region: str | Region) -> ObjectStorageClient:
 		region = frappe.get_doc("Region", region) if isinstance(region, str) else region
 		if not frappe.db.exists(
 			"Service Detail",
@@ -45,6 +51,13 @@ class ObjectStorageClient:
 		):
 			frappe.throw(
 				_("No available storage service in region {0}.").format(region.name), frappe.ValidationError
+			)
+
+		# Region clears a blank Cargo base URL to None, so a region whose Cargo was never
+		# enrolled reaches here with nothing to call.
+		if not region.cargo_base_url:
+			frappe.throw(
+				_("Region {0} has no Cargo endpoint.").format(region.name), ObjectStorageConnectionError
 			)
 
 		return cls(region)

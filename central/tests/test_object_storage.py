@@ -7,6 +7,7 @@ import requests
 
 from central.integrations.object_storage import (
 	ObjectStorageClient,
+	ObjectStorageConnectionError,
 	ObjectStorageNotFound,
 	ObjectStorageRejected,
 	ObjectStorageRequestUncertain,
@@ -108,6 +109,19 @@ class TestObjectStorageClient(TestCase):
 			patch("central.integrations.object_storage.frappe.db.exists", return_value=False),
 			patch("central.integrations.object_storage.frappe.get_doc", return_value=self.region()),
 			self.assertRaisesRegex(frappe.ValidationError, "No available storage service"),
+		):
+			ObjectStorageClient.from_region("par-2")
+
+	def test_from_region_requires_a_cargo_endpoint(self):
+		"""Region nulls a blank Cargo base URL, so a region whose Cargo was never enrolled
+		has nothing to call."""
+		region = self.region()
+		region.cargo_base_url = None
+
+		with (
+			patch("central.integrations.object_storage.frappe.db.exists", return_value=True),
+			patch("central.integrations.object_storage.frappe.get_doc", return_value=region),
+			self.assertRaisesRegex(ObjectStorageConnectionError, "no Cargo endpoint"),
 		):
 			ObjectStorageClient.from_region("par-2")
 
