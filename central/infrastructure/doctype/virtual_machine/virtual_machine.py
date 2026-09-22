@@ -182,8 +182,11 @@ class VirtualMachine(Document):
 		"""Ask Pilot to serve its admin UI at this machine's routed hostname."""
 		if self.admin_domain_task or self.status != "Running" or not self.gateway_url:
 			return
+		# A reserved pilot is Active before enrollment issues its audience; only a fully
+		# enrolled pilot (audience set) has an identity to sign the admin-domain call.
 		if not frappe.db.exists(
-			"Pilot Credential", {"server": self.name, "team": self.team, "status": "Active"}
+			"Pilot Credential",
+			{"server": self.name, "team": self.team, "status": "Active", "audience_id": ["is", "set"]},
 		):
 			return
 
