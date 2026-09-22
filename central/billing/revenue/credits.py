@@ -349,7 +349,9 @@ def apply_credit(team, amount, currency=None, reference_type=None, reference_nam
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def refund_to_wallet(team, amount, currency=None, reference_type=None, reference_name=None, note=None) -> dict:
+def refund_to_wallet(
+	team, amount, currency=None, reference_type=None, reference_name=None, note=None
+) -> dict:
 	"""Book a credit entry for a partial-overcharge / gateway refund to wallet."""
 	entry, new_balance = _book_entry(
 		team,

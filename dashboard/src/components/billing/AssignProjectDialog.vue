@@ -48,7 +48,10 @@ const canSubmit = computed(
 	() => selected.value !== (props.subscription?.project || UNTAGGED),
 )
 
-const assign = useCall<unknown, { subscription: string; project: string | null }>({
+const assign = useCall<
+	unknown,
+	{ subscription: string; project: string | null }
+>({
 	url: method(API.setSubscriptionProject),
 	method: 'POST',
 	immediate: false,

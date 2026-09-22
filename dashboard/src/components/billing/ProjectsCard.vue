@@ -11,8 +11,8 @@ import { useBillingOverview } from '@/composables/useBillingOverview'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useProjects } from '@/composables/useProjects'
 import { money } from '@/lib/format'
-import { standingTheme } from '@/lib/status'
 import type { BadgeTheme } from '@/lib/status'
+import { standingTheme } from '@/lib/status'
 import type { Project } from '@/types/billing'
 
 // Projects — a team's own cost-breakdown tags: subscriptions tagged into the
@@ -55,7 +55,8 @@ function statusInfo(p: Project): { label: string; theme: BadgeTheme } | null {
 }
 
 function subtitle(p: Project): string {
-	const resources = p.resource_count === 1 ? '1 resource' : `${p.resource_count} resources`
+	const resources =
+		p.resource_count === 1 ? '1 resource' : `${p.resource_count} resources`
 	if (!p.spending_limit) return resources
 	return `${resources} · ${money(p.committed_run_rate, currency.value)} of ${money(p.spending_limit, currency.value)}/mo`
 }
@@ -166,7 +167,10 @@ function subtitle(p: Project): string {
 		</EmptyState>
 
 		<CreateProjectDialog v-model="showCreate" @created="reloadProjects" />
-		<RenameProjectDialog v-model:project="pendingRename" @saved="reloadProjects" />
+		<RenameProjectDialog
+			v-model:project="pendingRename"
+			@saved="reloadProjects"
+		/>
 		<ProjectMembersDialog
 			v-model:project="pendingManageMembers"
 			@changed="reloadProjects"

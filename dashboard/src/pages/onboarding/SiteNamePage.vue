@@ -42,9 +42,7 @@ onMounted(async () => {
 		const status = await getFrappe<{
 			site: unknown
 			creation: CreationStatus | null
-		}>(
-			methodUrl(API.onboardingStatus),
-		)
+		}>(methodUrl(API.onboardingStatus))
 		if (status.site || (status.creation && status.creation.status !== 'Failed'))
 			return router.replace('/onboarding/provisioning')
 		if (status.creation?.status === 'Failed') resetRequestKey()
@@ -164,11 +162,9 @@ function resetRequestKey() {
 			>
 				{{ availability.reason }}
 			</p>
-			<p
-				v-else-if="availability?.available"
-				class="text-sm text-ink-green-7"
-			>
-				{{ availability.fqdn }} is available.
+			<p v-else-if="availability?.available" class="text-sm text-ink-green-7">
+				{{ availability.fqdn }}
+				is available.
 			</p>
 
 			<Button
