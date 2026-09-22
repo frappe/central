@@ -45,18 +45,7 @@ export function formatMemory(megabytes: number): string {
 	return `${megabytes} MB`
 }
 
-/** ISO datetime → short relative-ish label. Returns '' when unset. */
-export function formatSyncedAt(value: string | null | undefined): string {
-	if (!value) return ''
-	const date = new Date(value.replace(' ', 'T'))
-	if (Number.isNaN(date.getTime())) return ''
-	return date.toLocaleString(undefined, {
-		month: 'short',
-		day: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit',
-	})
-}
+export { formatDateTime as formatSyncedAt } from '@/lib/datetime'
 
 export function capitalise(s: string | null | undefined): string {
 	return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''

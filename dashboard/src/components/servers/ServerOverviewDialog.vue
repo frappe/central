@@ -43,6 +43,8 @@ const props = defineProps<{
 	server: VirtualMachineRow | null
 	canOpen: boolean
 	canResize?: boolean
+	/** This machine carries a site. Open goes there instead of the bench. */
+	opensSite?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -216,7 +218,10 @@ const planLabel = computed(() =>
 						:created-on="server.creation"
 						:owned-by="server.team_name"
 					/>
-					<LoadAverageCard :points="loadPoints" />
+					<LoadAverageCard
+						:points="loadPoints"
+						:available="overview.monitoring.available"
+					/>
 				</div>
 			</div>
 
@@ -233,7 +238,7 @@ const planLabel = computed(() =>
 				<Button
 					v-if="props.server && canOpen"
 					variant="subtle"
-					label="Open server"
+					:label="opensSite ? 'Open' : 'Open server'"
 					icon-right="lucide-arrow-up-right"
 					@click="openServer"
 				/>

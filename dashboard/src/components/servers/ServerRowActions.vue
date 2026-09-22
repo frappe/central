@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownSide } from 'frappe-ui'
 import { computed } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
@@ -21,6 +22,10 @@ const props = defineProps<{
 	canTerminate: boolean
 	busy?: boolean
 	opening?: boolean
+	/** This machine carries a site. Open goes to that site, not the bench. */
+	opensSite?: boolean
+	/** Where the menu opens. The map card uses `right` so it sits beside the card. */
+	side?: DropdownSide
 }>()
 
 const emit = defineEmits<{
@@ -63,7 +68,7 @@ const options = computed(() => {
 			disabled:
 				resizing ||
 				props.server.status !== 'Running' ||
-				!props.server.gateway_url,
+				!(props.opensSite || props.server.gateway_url),
 			onClick: () => emit('open', props.server),
 		})
 	if (props.canPower && canStart(props.server.status))
@@ -113,5 +118,7 @@ const options = computed(() => {
 		:options="options"
 		label="Server actions"
 		:busy="busy || opening"
+		:side="side"
+		:align="side === 'right' ? 'start' : 'end'"
 	/>
 </template>

@@ -33,6 +33,11 @@ def get_context(context):
 	if frappe.conf.developer_mode:
 		boot["socketio_port"] = frappe.conf.socketio_port
 	boot["site_name"] = frappe.local.site
+	# Frappe stores datetimes as a naive clock in this zone. The dashboard parses
+	# them here, then shows the viewer's local time. Asia/Calcutta is the old name
+	# for Asia/Kolkata, and browsers do not know the old one.
+	zone = frappe.utils.get_system_timezone()
+	boot["system_timezone"] = "Asia/Kolkata" if zone == "Asia/Calcutta" else zone
 	context.boot = boot
 	return context
 

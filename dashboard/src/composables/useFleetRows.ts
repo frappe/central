@@ -67,14 +67,14 @@ export function useFleetRows(
 			return {
 				kind: 'site' as const,
 				id: site.name,
-				// The site's own name; the full FQDN drops to the secondary line (specs)
-				// so a site reads like the VM it is, not a routing string.
-				name: site.subdomain || site.name,
-				// The machine it runs on, so the row keeps the power and resize actions
-				// a server row has. Clicking the row still opens the site.
+				// The machine's name, the same one the overview shows. The hostname is
+				// where Open goes, not what the row is called.
+				name: server?.title || site.subdomain || site.name,
 				server,
-				visual: siteVisual(site.status, site.pending_action),
-				specs: site.name,
+				visual: server
+					? statusVisual(server)
+					: siteVisual(site.status, site.pending_action),
+				specs: server ? specLine(server) : '',
 				cluster: site.region ?? '',
 				region,
 				regionLabel: region ? regionLabel(region) : (site.region ?? ''),
