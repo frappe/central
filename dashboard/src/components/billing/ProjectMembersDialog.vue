@@ -50,7 +50,10 @@ function serverTitle(sub: SubscriptionRow): string {
 	return sub.server || sub.plan_title || sub.name
 }
 
-const assign = useCall<unknown, { subscription: string; project: string | null }>({
+const assign = useCall<
+	unknown,
+	{ subscription: string; project: string | null }
+>({
 	url: method(API.setSubscriptionProject),
 	method: 'POST',
 	immediate: false,
@@ -63,7 +66,10 @@ async function addMember(): Promise<void> {
 	if (!toAdd.value || !props.project) return
 	busy.value = toAdd.value
 	try {
-		await assign.submit({ subscription: toAdd.value, project: props.project.name })
+		await assign.submit({
+			subscription: toAdd.value,
+			project: props.project.name,
+		})
 		if (assign.error) throw assign.error
 		toAdd.value = NONE
 		reloadSubscriptionGrouping()
@@ -92,7 +98,11 @@ async function removeMember(sub: SubscriptionRow): Promise<void> {
 </script>
 
 <template>
-	<Dialog v-model="open" :title="project ? `${project.title} — servers` : ''" size="lg">
+	<Dialog
+		v-model="open"
+		:title="project ? `${project.title} — servers` : ''"
+		size="lg"
+	>
 		<template #default>
 			<div class="space-y-4">
 				<div v-if="members.length" class="divide-y divide-outline-gray-1">
