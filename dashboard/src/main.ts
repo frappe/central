@@ -1,4 +1,4 @@
-import { FrappeUI } from 'frappe-ui'
+import { FrappeUI, setConfig } from 'frappe-ui'
 import { io } from 'socket.io-client'
 import { createApp } from 'vue'
 import App from '@/App.vue'
@@ -11,6 +11,8 @@ import './style.css'
 const app = createApp(App)
 app.use(router)
 app.use(FrappeUI)
+
+if (window.system_timezone) setConfig('systemTimezone', window.system_timezone)
 
 // Where Socket.IO listens: what Frappe put on the page when it served it, else the
 // bench's own `socketio_port`, compiled in by vite.config.ts. Never a guess — a wrong

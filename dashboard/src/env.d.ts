@@ -20,6 +20,8 @@ interface Window {
 	provider_logins?: import('@/types/api').ProviderLogin[]
 	site_name?: string
 	socketio_port?: number
+	/** Site timezone Frappe stores naive datetimes in. See dashboard.py. */
+	system_timezone?: string
 	onboarding_complete?: boolean
 	features?: {
 		addons?: boolean
