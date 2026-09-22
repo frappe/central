@@ -206,7 +206,7 @@ def _create_payload(request) -> dict:
 		except Exception:
 			frappe.log_error(
 				title="Pilot object storage provisioning failed",
-				message=frappe.get_traceback(with_context=False),
+				message=frappe.get_traceback(with_context=True),
 			)
 		payload["metadata"]["pilot-central"] = json.dumps(bootstrap)
 

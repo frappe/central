@@ -57,7 +57,7 @@ class BucketProvisioning:
 		if not tenant_id:
 			frappe.throw(_("This team has no tenant ID."))
 
-		return f"team-{tenant_id}-{self.region}-backups"
+		return f"team-{tenant_id}-{self.region.casefold()}-backups"
 
 	def get_existing(self) -> BucketConfiguration | None:
 		name = frappe.db.get_value(
