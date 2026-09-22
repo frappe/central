@@ -208,6 +208,9 @@ scheduler_events = {
 		"central.billing.payments.emandate.run_emandate_cycle",
 		# Backfill Subscriptions for any Running Asset missing an active one.
 		"central.billing.catalog.subscriptions.backfill_missing_subscriptions",
+		# Ask teams running on credits for the billing details their invoice will
+		# need, so the hold at issue time is never the first they hear of it.
+		"central.billing.payments.settlement.run_billing_details_reminder",
 		# Write off promotional credit that has run out of time. Ordered after
 		# collection on purpose: credit that was still good this morning settles
 		# today's invoice before it is swept, so the customer gets the full benefit

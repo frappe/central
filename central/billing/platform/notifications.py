@@ -107,6 +107,14 @@ _BILLING_EVENT_TYPES = {
 		"Add payment method",
 		"/billing",
 	),
+	"billing_details_required": (
+		"Billing details needed",
+		"We need your billing details before we can issue your invoice. Missing: {{ message }}.",
+		"Warning",
+		"billing:view",
+		"Add billing details",
+		"/billing",
+	),
 	"team_suspension": (
 		"Team suspended",
 		"Your team has been suspended due to billing issues.",
@@ -190,13 +198,17 @@ def notify(
 
 	body = _render_log_body(slug, ref, msg)
 	created = result.get("created", False)
+	# An ask the engine deduped reached nobody. It is still logged — the attempt is
+	# the audit — but as Suppressed, and it does not comment on the document again:
+	# a sweep that passes the same held invoice every month would otherwise bury it.
+	duplicate = result.get("reason") == "duplicate"
 	log = frappe.get_doc(
 		{
 			"doctype": "Billing Notification Log",
 			"team": team,
 			"event_type": event_type,
 			"channel": "email",
-			"status": "Sent",
+			"status": "Suppressed" if duplicate else "Sent",
 			"subject": result.get("title") or event_type,
 			"message": message or body,
 			"reference_doctype": reference_doctype,
@@ -205,7 +217,7 @@ def notify(
 		}
 	).insert(ignore_permissions=True)
 
-	if reference_doctype and ref:
+	if reference_doctype and ref and not duplicate:
 		try:
 			frappe.get_doc(reference_doctype, ref).add_comment(
 				"Info",

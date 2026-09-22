@@ -84,7 +84,12 @@ def create_project(title: str, team: str | None = None, spending_limit: float = 
 			"spending_limit": frappe.utils.flt(spending_limit),
 		}
 	).insert(ignore_permissions=True)
-	return {"name": doc.name, "title": doc.title, "enabled": doc.enabled, "spending_limit": doc.spending_limit}
+	return {
+		"name": doc.name,
+		"title": doc.title,
+		"enabled": doc.enabled,
+		"spending_limit": doc.spending_limit,
+	}
 
 
 @frappe.whitelist(methods=["POST"])

@@ -42,8 +42,14 @@ export function useBillingSetup() {
 	// returns true when it's safe to proceed. No toast: the dialog opens in place
 	// and explains itself — a caller that redirects across pages instead should
 	// show its own explanation (see NewServerPage.submit).
-	function requireSetup(): boolean {
+	//
+	// `fundedRate` is the monthly run-rate a provisioning action adds: it goes
+	// through while the team's credits cover it. Money movement passes nothing and
+	// stays strict.
+	function requireSetup(fundedRate?: number | null): boolean {
 		if (state.data?.complete) return true
+		const headroom = state.data?.credit_headroom ?? 0
+		if (fundedRate != null && fundedRate <= headroom) return true
 		setupDialogOpen.value = true
 		return false
 	}
@@ -57,6 +63,7 @@ export function useBillingSetup() {
 	return {
 		complete: computed(() => !!state.data?.complete),
 		missing: computed(() => state.data?.missing ?? []),
+		creditHeadroom: computed(() => state.data?.credit_headroom ?? 0),
 		currency: computed(() => state.data?.currency ?? null),
 		currencyLocked: computed(() => !!state.data?.currency_locked),
 		supportedCurrencies: computed(() => state.data?.supported_currencies ?? []),

@@ -385,6 +385,8 @@ export interface BillingProfile {
 	complete: boolean
 	missing: string[]
 	missing_labels?: string[]
+	/** Monthly run-rate the team's credits still fund. */
+	credit_headroom?: number
 	currency_locked: boolean
 	supported_currencies: Currency[]
 }

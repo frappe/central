@@ -90,7 +90,7 @@ function getInvitationKey(invitation: InvitationRow): string {
 
 <template>
 	<ListView
-	class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6"
+		class="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6"
 		v-model:query="query"
 		:rows="invitations"
 		:columns="columns"

@@ -46,6 +46,12 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 
 	doc = frappe.get_doc("Invoice", invoice)
 
+	# An invoice has to be made out to somebody, so a draft is held until the team's
+	# billing details are on file. Completing the profile releases it; the monthly
+	# run picks up anything that release missed.
+	if doc.invoice_type == "Billable" and _hold_for_billing_details(doc):
+		return {"invoice": invoice, "claimed": False, "held": "billing_details"}
+
 	# Free/trial: a cost_report is computed, never collected — no credits, no
 	# charge. It is opened as a record of the subsidy cost.
 	if doc.invoice_type == "Cost Report":
@@ -118,6 +124,49 @@ def open_and_collect(invoice: str, collect: bool = True) -> dict:
 		"status": "Open",
 		"charge": charge,
 	}
+
+
+def _hold_for_billing_details(doc) -> bool:
+	"""Whether this invoice must wait for billing details, asking for them if so.
+
+	The ask references the invoice, so it is deduped per invoice, not per sweep.
+	"""
+	from central.billing.api.dashboard._shared import _missing_profile_labels
+	from central.billing.platform import notifications
+
+	missing = _missing_profile_labels(doc.team)
+	if not missing:
+		return False
+	notifications.notify(
+		doc.team,
+		"Billing Details Required",
+		message=", ".join(missing),
+		reference_doctype="Invoice",
+		reference_name=doc.name,
+	)
+	return True
+
+
+def held_drafts(team: str | None = None, held_before=None, limit: int | None = None) -> list[dict]:
+	"""Billable drafts waiting on billing details — one team's, or everybody's.
+
+	`held_before` keeps only those whose period closed on or before that date, which
+	is how long the invoice has been waiting.
+	"""
+	filters = [
+		["status", "=", "Draft"],
+		["invoice_type", "=", "Billable"],
+		["period_end", "<=", held_before or frappe.utils.nowdate()],
+	]
+	if team:
+		filters.append(["team", "=", team])
+	return frappe.get_all(
+		"Invoice",
+		filters=filters,
+		fields=["name", "team", "total", "currency", "period_end"],
+		order_by="period_end asc",
+		limit=limit,
+	)
 
 
 def cancel_invoice(invoice: str, reason: str | None = None) -> str:

@@ -298,5 +298,3 @@ def reorder_payment_methods(team: str | None = None, ordered: list | str | None 
 	from central.billing.payments import payments
 
 	return payments.reorder_payment_methods(team, ordered)
-
-

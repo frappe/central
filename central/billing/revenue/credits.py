@@ -115,6 +115,19 @@ def _lock_and_read_balance(team: str, currency: str) -> float:
 	return frappe.utils.flt(rows[0]) if rows else 0.0
 
 
+def lock_team_wallet(team: str, currency: str | None = None) -> float:
+	"""Take the team's wallet lock and return the balance it commits against.
+
+	For a caller that must decide something against the wallet and then write —
+	provisioning against credit, not just reading it. Holding the lock to the end of
+	the request serialises those decisions per team, and the locking read returns the
+	latest committed balance rather than this transaction's snapshot.
+	"""
+	currency = _resolve_currency(team, currency)
+	_ensure_wallet(team, currency)
+	return _lock_and_read_balance(team, currency)
+
+
 def _book_entry(
 	team: str,
 	entry_type: str,
@@ -349,7 +362,9 @@ def apply_credit(team, amount, currency=None, reference_type=None, reference_nam
 	return {"ledger_entry": entry.name, "new_balance": new_balance}
 
 
-def refund_to_wallet(team, amount, currency=None, reference_type=None, reference_name=None, note=None) -> dict:
+def refund_to_wallet(
+	team, amount, currency=None, reference_type=None, reference_name=None, note=None
+) -> dict:
 	"""Book a credit entry for a partial-overcharge / gateway refund to wallet."""
 	entry, new_balance = _book_entry(
 		team,

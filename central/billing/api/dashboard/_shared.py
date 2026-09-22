@@ -121,8 +121,19 @@ def _missing_profile_fields(team: str) -> list[str]:
 	"""Required billing-profile fields the team has not filled in yet."""
 	if not frappe.db.exists("Billing Profile", team):
 		return list(_REQUIRED_PROFILE_FIELDS)
-	doc = frappe.get_doc("Billing Profile", team)
-	return [f for f in _REQUIRED_PROFILE_FIELDS if not str(doc.get(f) or "").strip()]
+	return missing_profile_fields_in(frappe.get_doc("Billing Profile", team))
+
+
+def missing_profile_fields_in(row) -> list[str]:
+	"""Missing required fields on an already-loaded profile row. No row means all."""
+	if row is None:
+		return list(_REQUIRED_PROFILE_FIELDS)
+	return [f for f in _REQUIRED_PROFILE_FIELDS if not str(row.get(f) or "").strip()]
+
+
+def profile_field_labels(fields) -> list[str]:
+	"""Required field names as the labels shown to the customer."""
+	return [_PROFILE_FIELD_LABELS.get(field, field) for field in fields]
 
 
 def _profile_complete(team: str) -> bool:
@@ -130,7 +141,7 @@ def _profile_complete(team: str) -> bool:
 
 
 def _missing_profile_labels(team: str) -> list[str]:
-	return [_PROFILE_FIELD_LABELS.get(field, field) for field in _missing_profile_fields(team)]
+	return profile_field_labels(_missing_profile_fields(team))
 
 
 def require_billing_profile(team: str, action: str):
@@ -148,6 +159,18 @@ def require_billing_profile(team: str, action: str):
 			),
 			frappe.ValidationError,
 		)
+
+
+def require_billing_profile_or_credit(team: str, new_rate, action: str):
+	"""Refuse `action` until the billing profile is complete, unless credits fund it.
+
+	`new_rate` is the monthly run-rate `action` adds; None is never funded.
+	"""
+	from central.billing.payments.settlement import wallet_funds
+
+	if wallet_funds(team, new_rate):
+		return
+	require_billing_profile(team, action)
 
 
 def _require_billing_setup(team: str):

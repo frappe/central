@@ -146,10 +146,7 @@ function onAddCredit(): void {
 				v-if="hasMethod && canManageBilling"
 				class="mt-auto flex items-center justify-end gap-2 pt-4"
 			>
-				<Button
-					label="Add credit"
-					@click="onAddCredit"
-				>
+				<Button label="Add credit" @click="onAddCredit">
 					<template #prefix
 						><span class="lucide-plus size-4" aria-hidden="true" /></template
 					>

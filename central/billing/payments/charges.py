@@ -519,13 +519,14 @@ def _mark_invoice_paid(invoice: str, amount) -> bool:
 
 
 def cleanup_payment_logs(now=None) -> dict:
-	"""Daily: prune Payment Attempt + Webhook Event logs past the retention window.
+	"""Daily: prune the append-only billing logs past the retention window.
 
-	These are high-volume append-only logs (one row per charge / per inbound
-	callback). They are kept on a rolling window — Billing Settings'
+	These are high-volume logs (one row per charge, per inbound callback, per
+	notification attempt — and a standing daily ask writes one every day it is
+	repeated). They are kept on a rolling window — Billing Settings'
 	`payment_log_retention_days`, default 90 (~3 months) — and older rows are
 	dropped. Statutory amounts live on the Invoice / ERPNext Sales Invoice (the
-	SOR), so pruning the gateway log loses no money trail.
+	SOR), so pruning these loses no money trail.
 
 	A *live* record is never pruned: a non-terminal attempt (initiated/
 	authorised), an attempt on an unsettled invoice (Open/Overdue), or one
@@ -536,7 +537,13 @@ def cleanup_payment_logs(now=None) -> dict:
 
 	attempts = _prune_payment_attempts(cutoff)
 	events = _prune_webhook_events(cutoff)
-	return {"cutoff": str(cutoff), "payment_attempts": attempts, "webhook_events": events}
+	notifications = _prune_notification_logs(cutoff)
+	return {
+		"cutoff": str(cutoff),
+		"payment_attempts": attempts,
+		"webhook_events": events,
+		"notification_logs": notifications,
+	}
 
 
 def _prune_payment_attempts(cutoff) -> int:
@@ -573,6 +580,19 @@ def _prune_webhook_events(cutoff) -> int:
 	for name in stale:
 		frappe.delete_doc("Webhook Event", name, ignore_permissions=True, force=True, delete_permanently=True)
 	return len(stale)
+
+
+def _prune_notification_logs(cutoff) -> int:
+	"""Delete Billing Notification Log rows older than cutoff.
+
+	The row is a record that we tried, not the notification itself — what the
+	customer sees lives on Team Notification — so nothing readable is lost.
+	"""
+	filters = {"creation": ["<", cutoff]}
+	stale = frappe.db.count("Billing Notification Log", filters)
+	if stale:
+		frappe.db.delete("Billing Notification Log", filters)
+	return stale
 
 
 def _extract_transaction_id(adapter_key: str, payload: dict):

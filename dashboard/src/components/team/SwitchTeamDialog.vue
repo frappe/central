@@ -83,11 +83,7 @@ const createTeam = () => {
 					<span class="truncate text-base text-ink-gray-8"
 						>{{ row.label }}</span
 					>
-					<Badge
-						v-if="row.name === activeTeam"
-						label="Current"
-						theme="green"
-					/>
+					<Badge v-if="row.name === activeTeam" label="Current" theme="green" />
 				</span>
 			</template>
 
