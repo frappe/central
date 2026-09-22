@@ -2,7 +2,7 @@
  "actions": [],
  "autoname": "hash",
  "creation": "2026-07-02 00:00:00",
- "description": "A user-defined grouping of a team's assets, billed on the team's one consolidated invoice but broken out on it line by line (ARCHITECTURE.md §2.1). An optional spending limit caps the project's own committed monthly run-rate: once at the limit, no further asset may be tagged into it. The team always remains the biller/payer.",
+ "description": "A user-defined grouping of a team's servers, billed on the team's one consolidated invoice but broken out on it line by line (ARCHITECTURE.md §2.1). An optional spending limit caps the project's own committed monthly run-rate: once at the limit, no further server may be tagged into it. The team always remains the biller/payer.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -38,7 +38,7 @@
    "fieldname": "spending_limit",
    "fieldtype": "Currency",
    "label": "Spending Limit",
-   "description": "Cap on this project's own committed monthly run-rate (the summed locked_rate of its tagged subscriptions) — in the team's billing currency. 0 or unset = no limit. Once at the limit, tagging another asset into this project is refused; assets already in it keep running untouched."
+   "description": "Cap on this project's own committed monthly run-rate (the summed locked_rate of its tagged subscriptions) — in the team's billing currency. 0 or unset = no limit. Once at the limit, tagging another server into this project is refused; servers already in it keep running untouched."
   }
  ],
  "index_web_pages_for_search": 1,

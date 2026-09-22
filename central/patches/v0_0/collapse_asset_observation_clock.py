@@ -11,14 +11,14 @@ def execute():
 	This runs after the model sync, where the new column exists and the two removed
 	fields survive as orphan columns. Both guards below keep it safe on a fresh install
 	and on a site whose orphan columns are already trimmed."""
-	if not frappe.db.has_column("Asset", "state_observed_at"):
+	if not frappe.db.has_column("Virtual Machine", "state_observed_at"):
 		return
 
 	for column in ("last_event_at", "last_synced_at"):
-		if not frappe.db.has_column("Asset", column):
+		if not frappe.db.has_column("Virtual Machine", column):
 			continue
 
-		asset = frappe.qb.DocType("Asset")
+		asset = frappe.qb.DocType("Virtual Machine")
 		(
 			frappe.qb.update(asset)
 			.set(asset.state_observed_at, asset[column])

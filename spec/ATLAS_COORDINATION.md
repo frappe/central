@@ -12,7 +12,7 @@ Region stores the direct regional URL and numeric region ID, alongside its geogr
 
 System images form a shared regional catalog. The tenant header identifies the authorized caller. It does not make those images Team-owned. Operator connection checks use the system tenant.
 
-See [Regional configuration](../central/central/doctype/region/SPEC.md) for trust setup and connection checks.
+See [Regional configuration](../central/infrastructure/doctype/region/SPEC.md) for trust setup and connection checks.
 
 ## Image contract
 
@@ -26,7 +26,7 @@ Atlas must return the following fields with each build:
 | Enabled flag and availability state | Show only usable builds. |
 | Root filesystem size in MiB | Reject plans whose disk cannot hold the image. |
 
-Cargo's current Pilot image contains `default-bench` and `site.local`. Server and signup flows use that image layout. Ubuntu uses a base image and requires SSH keys. See [Image Offering](../central/central/doctype/image_offering/SPEC.md) for selectors and pagination.
+Cargo's current Pilot image contains `default-bench` and `site.local`. Server and signup flows use that image layout. Ubuntu uses a base image and requires SSH keys. See [Image Offering](../central/infrastructure/doctype/image_offering/SPEC.md) for selectors and pagination.
 
 ## Server operation contract
 
@@ -34,9 +34,9 @@ Central stores each authorized operation in Resource Action before dispatch. Atl
 
 Scoped regional reads confirm VM state and repair interrupted local finalization. A failed read does not prove deletion. A scoped not-found response can confirm deletion and trigger local credential and billing cleanup.
 
-Central builds the automatic management address itself. The regional proxy decodes a VM's mesh address from its hostname label, so Central encodes the same label from the observed mesh address and the cluster's proxy domain. The tenant API does not publish the regional zone, so an operator sets `proxy_domain` on [Region](../central/central/doctype/region/SPEC.md). A management address alone does not prove Pilot readiness. Pilot creation also receives credential-bound `pilot-central` metadata.
+Central builds the automatic management address itself. The regional proxy decodes a VM's mesh address from its hostname label, so Central encodes the same label from the observed mesh address and the cluster's proxy domain. The tenant API does not publish the regional zone, so an operator sets `proxy_domain` on [Region](../central/infrastructure/doctype/region/SPEC.md). A management address alone does not prove Pilot readiness. Pilot creation also receives credential-bound `pilot-central` metadata.
 
-See [Resource Action](../central/central/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
+See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md) for states, authorization, recovery, accepted quotes, and customer responses.
 
 ## Delivery dependencies
 

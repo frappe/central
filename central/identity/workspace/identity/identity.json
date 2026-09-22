@@ -1,0 +1,165 @@
+{
+ "app": "central",
+ "charts": [],
+ "content": "[{\"id\": \"id-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>At a glance</b></span>\", \"col\": 12}}, {\"id\": \"id-nc-teams\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"Active Teams\", \"col\": 3}}, {\"id\": \"id-sp\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"id-m-h\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Identity and access</b></span>\", \"col\": 12}}, {\"id\": \"id-sc0\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Team\", \"col\": 3}}, {\"id\": \"id-sc1\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Team Member\", \"col\": 3}}, {\"id\": \"id-sc2\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Team Invitation\", \"col\": 3}}, {\"id\": \"id-sc3\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Team Role\", \"col\": 3}}, {\"id\": \"id-sc4\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Role Capability\", \"col\": 3}}, {\"id\": \"id-sc5\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Capability\", \"col\": 3}}, {\"id\": \"id-sc6\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"IAM Permission Probe\", \"col\": 3}}]",
+ "creation": "2026-09-21 00:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "users",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Identity",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Identity and access",
+   "link_count": 7,
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Team",
+   "link_count": 0,
+   "link_to": "Team",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Team Member",
+   "link_count": 0,
+   "link_to": "Team Member",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Team Invitation",
+   "link_count": 0,
+   "link_to": "Team Invitation",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Team Role",
+   "link_count": 0,
+   "link_to": "Team Role",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Role Capability",
+   "link_count": 0,
+   "link_to": "Role Capability",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Capability",
+   "link_count": 0,
+   "link_to": "Capability",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "IAM Permission Probe",
+   "link_count": 0,
+   "link_to": "IAM Permission Probe",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-09-21 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Identity",
+ "name": "Identity",
+ "number_cards": [
+  {
+   "label": "Active Teams",
+   "number_card_name": "Active Teams"
+  }
+ ],
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [],
+ "sequence_id": 3.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Team",
+   "link_to": "Team",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Team Member",
+   "link_to": "Team Member",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Team Invitation",
+   "link_to": "Team Invitation",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Team Role",
+   "link_to": "Team Role",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Role Capability",
+   "link_to": "Role Capability",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Capability",
+   "link_to": "Capability",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "IAM Permission Probe",
+   "link_to": "IAM Permission Probe",
+   "type": "DocType"
+  }
+ ],
+ "title": "Identity",
+ "type": "Workspace"
+}

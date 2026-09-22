@@ -3,8 +3,7 @@ import { Badge, Button, FormControl } from 'frappe-ui'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
-import SiteRowActions from '@/components/servers/SiteRowActions.vue'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import type { ResourceRow } from '@/lib/serverMap'
 
 // The "Your servers" floating card: the pill IS the panel, collapsed. Opening
@@ -13,7 +12,7 @@ import type { ResourceRow } from '@/lib/serverMap'
 // sorted stream as a server, and carries that machine's ⋯ actions. Presentational.
 export type { ResourceRow }
 
-const props = defineProps<{
+defineProps<{
 	pillLabel: string
 	rows: ResourceRow[]
 	hasRows: boolean
@@ -21,6 +20,7 @@ const props = defineProps<{
 	canOpen: boolean
 	canPower: boolean
 	canTerminate: boolean
+	canCreate: boolean
 	busy: string | null
 	opening: string | null
 	openingSite: string | null
@@ -30,15 +30,14 @@ defineEmits<{
 	/** Row click — the page opens the resource itself (bench/site/overview). */
 	openRow: [row: ResourceRow]
 	clearLocation: []
-	overview: [server: AssetRow]
-	open: [server: AssetRow]
-	start: [server: AssetRow]
-	stop: [server: AssetRow]
-	restart: [server: AssetRow]
-	resize: [server: AssetRow]
-	terminate: [server: AssetRow]
-	openSite: [name: string]
-	terminateSite: [name: string]
+	overview: [server: VirtualMachineRow]
+	open: [server: VirtualMachineRow]
+	start: [server: VirtualMachineRow]
+	stop: [server: VirtualMachineRow]
+	restart: [server: VirtualMachineRow]
+	resize: [server: VirtualMachineRow]
+	terminate: [server: VirtualMachineRow]
+	create: []
 }>()
 
 const open = defineModel<boolean>('open', { required: true })
@@ -151,13 +150,17 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							@click.stop
 						>
 							<ServerRowActions
-								v-if="row.asset"
-								:server="row.asset"
+								v-if="row.server"
+								:server="row.server"
 								:can-open="canOpen"
 								:can-power="canPower"
 								:can-terminate="canTerminate"
-								:busy="busy === row.id"
-								:opening="opening === row.id"
+								:opens-site="!!row.site"
+								:busy="busy === row.server.resource_id"
+								:opening="
+									opening === row.server.resource_id ||
+									openingSite === row.site?.name
+								"
 								@overview="$emit('overview', $event)"
 								@open="$emit('open', $event)"
 								@start="$emit('start', $event)"
@@ -165,15 +168,6 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 								@restart="$emit('restart', $event)"
 								@resize="$emit('resize', $event)"
 								@terminate="$emit('terminate', $event)"
-							/>
-							<SiteRowActions
-								v-else-if="row.site"
-								:site="row.site"
-								:can-open="canOpen"
-								:can-terminate="canTerminate"
-								:busy="busy === row.id || openingSite === row.id"
-								@open="$emit('openSite', $event)"
-								@terminate="$emit('terminateSite', $event)"
 							/>
 						</span>
 					</div>
@@ -189,7 +183,16 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 							? 'Try a different search or clear the filters.'
 							: 'Create your first server to host your sites.'
 					"
-				/>
+				>
+					<template v-if="canCreate && !hasRows" #action>
+						<Button
+							variant="solid"
+							label="New server"
+							icon-left="lucide-plus"
+							@click="$emit('create')"
+						/>
+					</template>
+				</EmptyState>
 			</div>
 		</div>
 	</section>

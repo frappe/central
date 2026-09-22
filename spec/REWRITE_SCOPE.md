@@ -86,7 +86,7 @@ Do not reuse committed tenant IDs. Backfill before enforcing constraints. Test c
 
 Store regional VM references with their Region. A VM name alone is not globally unique. Do not change existing Central resource IDs unnecessarily.
 
-Configure one region and the Pilot and Ubuntu image offerings. Central owns presentation and matching tags. Fetch regional System image builds from Atlas on demand. See [Image offerings](../central/central/doctype/image_offering/SPEC.md).
+Configure one region and the Pilot and Ubuntu image offerings. Central owns presentation and matching tags. Fetch regional System image builds from Atlas on demand. See [Image offerings](../central/infrastructure/doctype/image_offering/SPEC.md).
 
 The Atlas image response exposes tags, architecture, availability, and disk size. Extend it with the existing prepared snapshot shape before plan selection and provisioning. Declare and test software resource requirements at the image builder. Do not duplicate regional builds or manually copy runtime metadata into Central.
 

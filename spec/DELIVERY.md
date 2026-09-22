@@ -32,12 +32,9 @@ Phase 4 is therefore part done. A Pilot registers its own site and custom domain
 
 These were removed from the staging milestone on purpose. They are the next structural work.
 
-- `Asset` is still named `Asset`. The product name is Virtual Machine.
-
 ### Known gaps outside the phase list
 
 - A terminated server keeps its Site Domain routes. Only its Pilot credentials are revoked.
-- Central cannot enrol a region. Atlas accepts `PUT /api/atlas/webhooks`, so the receiving half exists and Central never calls it. Cargo has no such route at all, and its Central URL and secret are typed into Cargo Settings by hand.
 - Resize accepts a disk change. The agreed product rule is CPU and memory only.
 - `Central Tunnel Settings`, `Connect Credential`, and `Passport Registration` have no reader in this app or its siblings.
 
@@ -86,7 +83,7 @@ Acceptance:
 
 This PR includes the signed Atlas client, on-demand regional image selection, whole-CPU plan selection, and the server creation interface. Resource Action is the single operation record. It saves validated intent before dispatch and recovers accepted operations through scoped reads. Start, stop, and termination use the same record. The accepted billing quote survives catalog changes while an action waits.
 
-Review the [operation contract](../central/central/doctype/resource_action/SPEC.md), the [image catalog](../central/central/doctype/image_offering/SPEC.md), and [test coverage](CUTOVER_TEST_COVERAGE.md). Review and merge this phase before beginning signup and Framework webhooks. Do not commit without the user's approval.
+Review the [operation contract](../central/infrastructure/doctype/resource_action/SPEC.md), the [image catalog](../central/infrastructure/doctype/image_offering/SPEC.md), and [test coverage](CUTOVER_TEST_COVERAGE.md). Review and merge this phase before beginning signup and Framework webhooks. Do not commit without the user's approval.
 
 ## Friday phase 1: trial signup and state delivery
 
@@ -210,7 +207,7 @@ Pilot has now landed the two pieces this needed on its side: a session token bou
 
 Do this as separate PRs, each with its patch, and after items 1 and 4 land.
 
-- Rename `Asset` to `Virtual Machine`. It is a mechanical rename with a wide reach: 74 Python files and 12 doctype JSON files refer to it. Use `frappe.rename_doc` on the DocType and a patch for the links. Keep `Asset.cluster` the field name for now — renaming it to `region` touches `Asset` a second time right after this rename touches it once; do both together or not at all.
+- Renamed `Asset` to `Virtual Machine` — done, via `frappe.rename_doc` and a patch. `cluster` stays the field name for now — renaming it to `region` would touch the doctype a second time right after this rename touched it once.
 - Merged `Atlas Instance` and `Cargo Instance` into `Region` — done. Every regional read is one record now, each service behind its own mixin (`atlas_connection.py`, `cargo_connection.py`) so the two stay separated in code and never share a field, and both merge patches carried existing connection data across losslessly.
 - Link `Site` to its machine and hide a machine that carries a site. A trial customer owns a site, not a VM, and should not see both.
 - Split Central's doctypes out of the one flat `Central` module into `Identity`, `Provisioning` (Asset/Virtual Machine, Resource Action, Region, Image Offering, Site, Site Domain), `Credentials`, and a slimmer `Central`. This is what gives the Desk sidebar the same grouped navigation Atlas has, for free, via Frappe's own per-module tree — no custom sidebar code. Do this once the doctypes above reach their final names, so nothing moves folders twice. Add a Number Card dashboard to Central's own workspace at the same time (servers by status, sites, stuck Resource Actions, regions) — today it holds only IAM shortcuts.

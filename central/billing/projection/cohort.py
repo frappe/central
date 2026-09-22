@@ -61,7 +61,7 @@ def _filtered_teams_query(filters: dict):
 	"""The cohort as a query over teams holding a subscription, narrowed by profile.
 
 	Currency, country and trust tier live on Billing Profile; cluster lives on the
-	asset a subscription provisions. Everything here is a filter on data we already
+	server a subscription provisions. Everything here is a filter on data we already
 	index — none of it costs a projection.
 	"""
 	filters = filters or {}
@@ -77,9 +77,9 @@ def _filtered_teams_query(filters: dict):
 				query = query.where(profile[key] == filters[key])
 
 	if filters.get("cluster"):
-		asset = frappe.qb.DocType("Asset")
-		query = query.join(asset).on(asset.name == sub.asset_id)
-		query = query.where(asset.cluster == filters["cluster"])
+		server = frappe.qb.DocType("Virtual Machine")
+		query = query.join(server).on(server.name == sub.server_id)
+		query = query.where(server.cluster == filters["cluster"])
 
 	if filters.get("account_standing"):
 		query = query.where(sub.account_standing == filters["account_standing"])

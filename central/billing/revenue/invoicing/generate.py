@@ -45,7 +45,7 @@ def _live_invoice(team: str, period_start, period_end, for_update: bool = False)
 
 
 def _resource_project_map(team: str) -> dict:
-	"""asset_id/service_subject -> (project, project_title) for the team's resources
+	"""server_id/service_subject -> (project, project_title) for the team's resources
 	tagged into an *enabled* Project.
 
 	Only resources tagged into one of the team's enabled Projects appear; anything
@@ -53,20 +53,18 @@ def _resource_project_map(team: str) -> dict:
 	untagged on the invoice. Purely a labelling concern now: every line still bills on
 	the team's one consolidated invoice, whatever it maps to here.
 	"""
-	projects = frappe.get_all(
-		"Project", filters={"team": team, "enabled": 1}, fields=["name", "title"]
-	)
+	projects = frappe.get_all("Project", filters={"team": team, "enabled": 1}, fields=["name", "title"])
 	titles = {p.name: p.title for p in projects}
 	rows = frappe.get_all(
 		"Subscription",
 		filters={"team": team},
-		fields=["asset_id", "service_subject", "project"],
+		fields=["server_id", "service_subject", "project"],
 	)
 	out = {}
 	for r in rows:
 		if not r.project or r.project not in titles:
 			continue
-		resource_id = r.asset_id or r.service_subject
+		resource_id = r.server_id or r.service_subject
 		if resource_id:
 			out[resource_id] = (r.project, titles[r.project])
 	return out
@@ -239,7 +237,7 @@ def rate_subscription_period(subscription: str, period_start, period_end, explai
 	from central.billing.revenue.metering import metered_line_items
 
 	sub = frappe.get_doc("Subscription", subscription)
-	cluster = frappe.db.get_value("Asset", sub.asset_id, "cluster") if sub.asset_id else None
+	cluster = frappe.db.get_value("Virtual Machine", sub.server_id, "cluster") if sub.server_id else None
 	lines = compute_line_items(sub.team, cluster, period_start, period_end, explain=explain)
 	lines += metered_line_items(sub.team, cluster, period_start, period_end, explain=explain)
 	if not lines:
@@ -248,10 +246,14 @@ def rate_subscription_period(subscription: str, period_start, period_end, explai
 
 
 def team_clusters(team: str) -> list[str]:
-	"""Every cluster the team runs an asset in, resolved in one pass."""
-	asset_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="asset_id")
+	"""Every cluster the team runs a server in, resolved in one pass."""
+	server_ids = frappe.get_all("Subscription", filters={"team": team}, pluck="server_id")
 	return sorted(
-		{c for c in frappe.get_all("Asset", filters={"name": ["in", asset_ids]}, pluck="cluster") if c}
+		{
+			c
+			for c in frappe.get_all("Virtual Machine", filters={"name": ["in", server_ids]}, pluck="cluster")
+			if c
+		}
 	)
 
 

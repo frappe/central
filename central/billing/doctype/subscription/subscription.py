@@ -18,7 +18,7 @@ class Subscription(Document):
 		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 
 		account_standing: DF.Literal["Current", "Past Due", "Suspended"]
-		asset_id: DF.Link | None
+		server_id: DF.Link | None
 		billing_cycle: DF.Literal["Monthly", "Annual"]
 		cluster: DF.ReadOnly | None
 		default_payment_method: DF.Link | None
@@ -42,11 +42,11 @@ class Subscription(Document):
 		"""A subscription may only be tagged into one of its own team's active projects.
 
 		Generation already filters projects by team, so a foreign project would not
-		misbill anyone — the tag would just be ignored and the asset would land
+		misbill anyone — the tag would just be ignored and the server would land
 		untagged on the consolidated invoice. Both checks are here to refuse a tag
-		that would silently mean nothing, rather than let someone believe an asset
+		that would silently mean nothing, rather than let someone believe a server
 		is tracked under a project when it is not. A disabled project is refused for
-		the same reason: disabled means "no longer tracking", so its assets go
+		the same reason: disabled means "no longer tracking", so its servers go
 		untagged on the consolidated invoice.
 		"""
 		if not self.project:
@@ -64,7 +64,7 @@ class Subscription(Document):
 			)
 		if not project.enabled:
 			frappe.throw(
-				f"Project {self.project} is disabled; its assets bill untagged on "
+				f"Project {self.project} is disabled; its servers bill untagged on "
 				f"{self.team}'s consolidated invoice.",
 			)
 
@@ -77,13 +77,13 @@ class Subscription(Document):
 			)
 
 	def validate_duplicate_subscription(self):
-		"""Block a second enabled subscription for the same team + asset.
+		"""Block a second enabled subscription for the same team + server.
 
-		A team can hold at most one active subscription per asset; re-subscribing
-		the same asset must go through `change_plan`/`cancel_subscription`, not a
+		A team can hold at most one active subscription per server; re-subscribing
+		the same server must go through `change_plan`/`cancel_subscription`, not a
 		second Subscription doc.
 		"""
-		if not (self.enabled and self.team and self.asset_id):
+		if not (self.enabled and self.team and self.server_id):
 			return
 
 		duplicate = frappe.db.exists(
@@ -91,14 +91,14 @@ class Subscription(Document):
 			{
 				"name": ["!=", self.name],
 				"team": self.team,
-				"asset_id": self.asset_id,
+				"server_id": self.server_id,
 				"enabled": 1,
 			},
 		)
 		if duplicate:
 			frappe.throw(
-				_("Team {0} already has an active subscription ({1}) for asset {2}.").format(
-					self.team, duplicate, self.asset_id
+				_("Team {0} already has an active subscription ({1}) for server {2}.").format(
+					self.team, duplicate, self.server_id
 				),
 				frappe.DuplicateEntryError,
 			)
@@ -218,10 +218,10 @@ class Subscription(Document):
 		currency = frappe.db.get_value("Billing Profile", self.team, "currency")
 		if not currency:
 			return None, None
-		# A VM subscription resolves its cluster off the Asset; a team-level service
-		# subject (no Asset) carries its cluster on the Subscription itself (ADR 0013).
+		# A VM subscription resolves its cluster off the VirtualMachine; a team-level service
+		# subject (no VirtualMachine) carries its cluster on the Subscription itself (ADR 0013).
 		cluster = (
-			frappe.db.get_value("Asset", self.asset_id, "cluster") if self.asset_id else None
+			frappe.db.get_value("Virtual Machine", self.server_id, "cluster") if self.server_id else None
 		) or self.cluster
 
 		if self.pricing_mode == "Composed":
@@ -245,15 +245,15 @@ class Subscription(Document):
 		self.save(ignore_permissions=True)
 
 
-def create_subscription(asset_id: str):
-	"""Create an enabled Subscription for an Asset, using its team + plan."""
-	asset = frappe.get_doc("Asset", asset_id)
+def create_subscription(server_id: str):
+	"""Create an enabled Subscription for a Virtual Machine, using its team + plan."""
+	server = frappe.get_doc("Virtual Machine", server_id)
 	return frappe.get_doc(
 		{
 			"doctype": "Subscription",
-			"team": asset.team,
-			"asset_id": asset.name,
-			"plan": asset.plan,
+			"team": server.team,
+			"server_id": server.name,
+			"plan": server.plan,
 			"enabled": 1,
 		}
 	).insert(ignore_permissions=True)

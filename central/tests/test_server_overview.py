@@ -4,7 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import server_overview
-from central.central.doctype.pilot_credential.pilot_credential import PilotCredential
+from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.pilot import PilotMonitoringClient, get_cached_monitoring
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
@@ -34,9 +34,9 @@ class TestServerOverview(IntegrationTestCase):
 		self.resource_id = f"vm-overview-{frappe.generate_hash(length=8)}"
 		self.gateway_url = f"https://{self.resource_id}.example.test"
 		self.audience_id = f"pcred-{self.resource_id}"
-		self.asset = frappe.get_doc(
+		self.server = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": self.resource_id,
 				"title": "Overview server",
 				"team": self.team.name,
@@ -49,12 +49,12 @@ class TestServerOverview(IntegrationTestCase):
 				"gateway_url": self.gateway_url,
 			}
 		).insert()
-		self.addCleanup(self.asset.delete, ignore_permissions=True, force=True)
+		self.addCleanup(self.server.delete, ignore_permissions=True, force=True)
 
 		PilotCredential.mint(
 			team=self.team.name,
 			pilot_credential_id=self.audience_id,
-			asset=self.asset.name,
+			server=self.server.name,
 			audience_id=self.audience_id,
 		)
 		self.addCleanup(
@@ -76,7 +76,7 @@ class TestServerOverview(IntegrationTestCase):
 		frappe.set_user(self.viewer)
 		try:
 			with patch("central.integrations.pilot.get_cached_monitoring", return_value=monitoring) as get:
-				result = server_overview(team=self.team.name, resource_id=self.asset.name)
+				result = server_overview(team=self.team.name, resource_id=self.server.name)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -89,11 +89,11 @@ class TestServerOverview(IntegrationTestCase):
 		get.assert_called_once_with(self.resource_id, self.gateway_url, self.audience_id)
 
 	def test_stopped_server_returns_static_data_without_calling_pilot(self):
-		self.asset.db_set("status", "Stopped")
+		self.server.db_set("status", "Stopped")
 		frappe.set_user(self.viewer)
 		try:
 			with patch("central.integrations.pilot.get_cached_monitoring") as get:
-				result = server_overview(team=self.team.name, resource_id=self.asset.name)
+				result = server_overview(team=self.team.name, resource_id=self.server.name)
 		finally:
 			frappe.set_user("Administrator")
 

@@ -70,11 +70,11 @@ const applyResourceKey = (row: TeamMemberRoleAssignment, key: string): void => {
 }
 
 const resourceOptions = computed(() => {
-	const assets = registryCall.data?.assets ?? []
+	const servers = registryCall.data?.servers ?? []
 	const sites = registryCall.data?.sites ?? []
 	return [
 		{ label: 'All resources', value: resourceKey('*', null) },
-		...assets.map((a) => ({
+		...servers.map((a) => ({
 			label: a.title || a.resource_id,
 			value: resourceKey('Server', a.name),
 			description: regionLabel(a.cluster),

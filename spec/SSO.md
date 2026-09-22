@@ -15,7 +15,7 @@ Atlas regional requests use a separate Ed25519 key and public endpoint. Pilot lo
 
 **Site login** — `central.api.sites.get_site` → `_pilot_site_login_url`
 1. Central resolves the site's hosting bench (audience + gateway) from `Site.pilot_credential_id`
-   → `Pilot Credential` → `Asset.gateway_url`, then mints `mint_site_login(aud, site)` —
+   → `Pilot Credential` → `VirtualMachine.gateway_url`, then mints `mint_site_login(aud, site)` —
    `scope=site`, `site` claim, 5 min.
 2. Central POSTs it to `{gateway}/api/v1/sites/<site>/login` as the `Bearer`
    (`central.integrations.pilot.fetch_site_login_url`).

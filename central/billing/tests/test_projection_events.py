@@ -43,7 +43,7 @@ class EventTestBase(IntegrationTestCase):
 		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": sub})
 			frappe.db.delete("Subscription", {"name": sub})
-		frappe.db.delete("Asset", {"team": TEAM})
+		frappe.db.delete("Virtual Machine", {"team": TEAM})
 		frappe.db.commit()
 
 	def _project(self, events_list, **kw):

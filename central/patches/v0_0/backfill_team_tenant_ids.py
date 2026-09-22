@@ -1,8 +1,8 @@
 import frappe
 from frappe import _
 
-from central.central.doctype.team.team import on_doctype_update
-from central.central.doctype.team.tenant import (
+from central.identity.doctype.team.team import on_doctype_update
+from central.identity.doctype.team.tenant import (
 	allocate_tenant_id,
 	prepare_tenant_id_series,
 	validate_tenant_id,
@@ -36,7 +36,7 @@ def validate_existing_mappings(teams: list[frappe._dict]) -> None:
 def validate_unassigned_teams(teams: list[str]) -> None:
 	if not teams:
 		return
-	for doctype in ("Asset", "Site"):
+	for doctype in ("Virtual Machine", "Site"):
 		resources = frappe.get_all(
 			doctype,
 			filters={"team": ["in", teams], "status": ["!=", "Terminated"]},

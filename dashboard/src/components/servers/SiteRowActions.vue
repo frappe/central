@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 
-// The actions menu for one site row in the unified assets list. A site is a
+// The actions menu for one site row in the unified servers list. A site is a
 // 1:1-backed VM, so it reuses the server capabilities (site-level caps are
 // deferred). Presentational — it emits the verb; the page owns the calls.
 const props = defineProps<{

@@ -22,7 +22,7 @@ left so it can be picked up cleanly. See also `spec/ATLAS_COORDINATION.md`.
 One `RowActions` / `ConfirmDialog` / mutation-runner / empty-state / spec+memory formatter;
 dedupe `get_billing_profile` (four concurrent fetchers) and reshape `useBillingOverview`'s
 return; split `ServerMap.vue` (912 LOC) and extract `useFleetRows`; fix stale enums
-(`Asset.status` missing `Resizing`, `InvoiceStatus`); make `gateway.ts` a discriminated union
+(`Virtual Machine.status` missing `Resizing`, `InvoiceStatus`); make `gateway.ts` a discriminated union
 on `adapter_key`; structure cleanup (`utils/`→`lib/`, flatten `composables/common/`, renames).
 Plus the behavioural items: lazy-load the search index, feature-flag the addons page, wire
 `/team/settings` + `/team/invitations` into the nav, drop the discarded `useServers`
@@ -42,7 +42,7 @@ Flip the deferred gates on once the cleanup above lands green: `vue-tsc --noEmit
 
 ## Deferred / needs a decision
 
-- **Rest of the schema pass:** composite indexes (`Asset(team, status)`, `Asset(cluster,
+- **Rest of the schema pass:** composite indexes (`Virtual Machine(team, status)`, `Virtual Machine(cluster,
   status)`, `Team Invitation(email, status)`) via `on_doctype_update`; `Site.pilot_credential_id`
   Data→Link; regenerate drifted DocType type blocks; collapse the two `Region` TS types.
 - **Scoped grants + `CAPABILITY_VERSION` bump** — needs bench-side coordination

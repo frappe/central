@@ -13,7 +13,7 @@ its name.
 No delete endpoint: a project a team has already billed against is load-bearing
 history (past Invoice Line Items carry its name/title as a snapshot) —
 disabling is the customer-facing retirement path. `Subscription.validate_project`
-already refuses new tags onto a disabled project, and its assets simply go
+already refuses new tags onto a disabled project, and its servers simply go
 untagged (still billed, just without a project label) on future invoices.
 """
 
@@ -84,7 +84,12 @@ def create_project(title: str, team: str | None = None, spending_limit: float = 
 			"spending_limit": frappe.utils.flt(spending_limit),
 		}
 	).insert(ignore_permissions=True)
-	return {"name": doc.name, "title": doc.title, "enabled": doc.enabled, "spending_limit": doc.spending_limit}
+	return {
+		"name": doc.name,
+		"title": doc.title,
+		"enabled": doc.enabled,
+		"spending_limit": doc.spending_limit,
+	}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -103,7 +108,7 @@ def rename_project(name: str, title: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def set_project_enabled(name: str, enabled: bool | int) -> dict:
-	"""Enable/disable a Project. Disabling stops new assets from being tagged into
+	"""Enable/disable a Project. Disabling stops new servers from being tagged into
 	it (`Subscription.validate_project`); it does not untag existing ones, so
 	re-enabling resumes tracking without retagging anything."""
 	team = frappe.db.get_value("Project", name, "team")
@@ -118,8 +123,8 @@ def set_project_enabled(name: str, enabled: bool | int) -> dict:
 def set_project_spending_limit(name: str, spending_limit: float) -> dict:
 	"""Set a Project's monthly committed-run-rate spending limit (0 = unlimited).
 
-	Lowering it below what is already committed does not touch running assets —
-	the limit only blocks tagging a *new* asset into the project going forward.
+	Lowering it below what is already committed does not touch running servers —
+	the limit only blocks tagging a *new* server into the project going forward.
 	"""
 	team = frappe.db.get_value("Project", name, "team")
 	_require_manage(team)

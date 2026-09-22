@@ -243,8 +243,8 @@ def _lock_disclosure(team: str, subscription: str, currency: str) -> dict | None
 
 
 @frappe.whitelist()
-def get_composed_config(asset: str, team: str | None = None) -> dict:
-	"""The config running on `asset`, pre-filling the resize slider (#84): its
+def get_composed_config(server: str, team: str | None = None) -> dict:
+	"""The config running on `server`, pre-filling the resize slider (#84): its
 	subscription, current shape, and the resize headroom — the cap minus the team's
 	*other* run-rate, so the running config's own spend is available to it.
 
@@ -256,7 +256,7 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 	team = _resolve_team(team)
 	sub = frappe.db.get_value(
 		"Subscription",
-		{"asset_id": asset, "team": team},
+		{"server_id": server, "team": team},
 		["name", "pricing_mode", "sub_category", "plan"],
 		as_dict=True,
 	)
@@ -278,7 +278,9 @@ def get_composed_config(asset: str, team: str | None = None) -> dict:
 	else:
 		# A preset carries no composition — its shape lives on the mirrored VM.
 		shape = (
-			frappe.db.get_value("Asset", asset, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True)
+			frappe.db.get_value(
+				"Virtual Machine", server, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
+			)
 			or frappe._dict()
 		)
 		vcpus = shape.vcpus or 0

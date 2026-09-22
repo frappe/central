@@ -7,13 +7,13 @@ import frappe
 import requests
 from frappe import _
 
-from central.central.doctype.team.tenant import validate_tenant_id
 from central.errors import AtlasConnectionError, AtlasRejected, AtlasRequestUncertain, AtlasResourceGone
 from central.iam import can, user_has_operator_bypass
+from central.identity.doctype.team.tenant import validate_tenant_id
 from central.sso import central_url, mint_atlas_token
 
 if TYPE_CHECKING:
-	from central.central.doctype.region.region import Region
+	from central.infrastructure.doctype.region.region import Region
 
 
 class AtlasClient:

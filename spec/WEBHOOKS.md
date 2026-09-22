@@ -25,17 +25,17 @@ The route is open to guests because the caller is a region, not a user. Do not s
 
 ## Required headers
 
-Each header has one meaning. Central does not infer a sender from any other header.
+Each header has one meaning. Central does not infer a source from any other header.
 
 | Header | Value | Use |
 |---|---|---|
-| `X-Sender` | `atlas` or `cargo` | Selects the handler. Case is ignored. |
-| `X-Region` | The region name, as Central names it | Selects the secret to check the signature against. |
+| `X-FC-Source` | `atlas` or `cargo` | Selects the handler. Case is ignored. |
+| `X-FC-Region` | The region name, as Central names it | Selects the secret to check the signature against. |
 | `X-Frappe-Webhook-Signature` | Base64 HMAC-SHA256 of the exact bytes sent | Proves the delivery. |
 
-A request without `X-Sender`, or with any other value, is refused with HTTP 403. A request without `X-Region` or without a signature is refused with HTTP 403.
+A request without `X-FC-Source`, or with any other value, is refused with HTTP 403. A request without `X-FC-Region` or without a signature is refused with HTTP 403.
 
-`X-Sender` and `X-Region` are selectors only. They prove nothing. The signature is the only trusted part of the request.
+`X-FC-Source` and `X-FC-Region` are selectors only. They prove nothing. The signature is the only trusted part of the request.
 
 ## Signature
 
@@ -57,13 +57,13 @@ Atlas reports one virtual machine per delivery.
 | Field | Required | Value |
 |---|---|---|
 | `event` | Yes | `vm.state` |
-| `virtual_machine` | Yes | The Atlas VM ID. Central matches it to an Asset in the signing region. |
+| `virtual_machine` | Yes | The Atlas VM ID. Central matches it to a Virtual Machine in the signing region. |
 | `status` | For `vm.state` | `running`, `stopped`, or `paused` |
-| `observed_at` | No | Diagnostic only. Central records its own clock, because a report carries the region's clock. |
+| `observed_at` | Yes | The region's own timestamp. Central orders reports by it and drops one that is not newer. |
 
 Central records `running` as `Running`, `stopped` as `Stopped`, and `paused` as `Paused`. Central never records a status it was not told.
 
-Central takes no deletion event. A host reports only a live state, and a removed machine has none, so absence is not something a report can carry. Central learns that a machine is gone from a correctly scoped read that answers not found. See [resource actions](../central/central/doctype/resource_action/SPEC.md).
+Central takes no deletion event. A host reports only a live state, and a removed machine has none, so absence is not something a report can carry. Central learns that a machine is gone from a correctly scoped read that answers not found. See [resource actions](../central/infrastructure/doctype/resource_action/SPEC.md).
 
 An accepted report is applied by a background job, not in the request. The reply is a receipt, not a confirmation.
 
@@ -83,7 +83,7 @@ Cargo reports one service per delivery.
 
 Cargo must map its own lifecycle states before it sends. Central records availability, not a Cargo state name. A cluster or host that is `Active` reports `Available`. Any other settled state reports `Not Available`.
 
-A body may also carry `region` and `region_id`. Central ignores both. The region comes from `X-Region`, which the signature covers.
+A body may also carry `region` and `region_id`. Central ignores both. The region comes from `X-FC-Region`, which the signature covers.
 
 Central writes one Service Detail row per region and service, named `<region>-<service>`. A repeated report rewrites that row. It does not make a second one.
 
@@ -95,8 +95,8 @@ Central writes one Service Detail row per region and service, named `<region>-<s
 
 | Condition | Answer |
 |---|---|
-| No `X-Sender`, or a value other than `atlas` or `cargo` | HTTP 403 |
-| No `X-Region` or no signature | HTTP 403 |
+| No `X-FC-Source`, or a value other than `atlas` or `cargo` | HTTP 403 |
+| No `X-FC-Region` or no signature | HTTP 403 |
 | Unknown region, disabled or unregistered region, no stored secret, or a signature mismatch | HTTP 403, `Invalid signature.` |
 
 Retrying a refused delivery does not help. An operator must correct the region record or the shared secret first.
@@ -112,7 +112,7 @@ An ignored report is authentic and readable. Central has nothing to do with it. 
 | Reason | Sender | Meaning |
 |---|---|---|
 | `unreadable body` | Both | The body is not a JSON object |
-| `unknown server` | Atlas | No Asset in this region carries that VM ID |
+| `unknown server` | Atlas | No Virtual Machine in this region carries that VM ID |
 | `unsupported event '<value>'` | Atlas | The event is not `vm.state` |
 | `unsupported status '<value>'` | Atlas | The status is not `running`, `stopped`, or `paused` |
 | `no change` | Atlas | Central already records this state |
@@ -134,8 +134,8 @@ Do not retry a 403. Do not retry a 200, including an ignored one.
 POST /api/method/central.api.state_delivery.receive HTTP/1.1
 Host: central.example.com
 Content-Type: application/json
-X-Sender: cargo
-X-Region: ap-south-1
+X-FC-Source: cargo
+X-FC-Region: ap-south-1
 X-Frappe-Webhook-Signature: 9Xq0k1m2n3o4p5q6r7s8t9u0v1w2x3y4z5A6B7C8D9E=
 
 {"service": "storage", "status": "Available", "service_endpoint": "https://s3-svc.ap-south-1.example.com"}

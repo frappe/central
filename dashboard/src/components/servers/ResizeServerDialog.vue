@@ -11,7 +11,7 @@ import { computed, ref, watch } from 'vue'
 import { API, method } from '@/api/methods'
 import PlanGroup from '@/components/servers/PlanGroup.vue'
 import { usePlans } from '@/composables/usePlans'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import { configIncludes, rateCardComplete } from '@/lib/composed'
 import { money } from '@/lib/format'
@@ -23,9 +23,9 @@ import type { ComposedConfig, Profile } from '@/types/api'
 // One action — the backend power-cycles the VM as needed (Firecracker reconfigures
 // pre-boot), so there's no separate "turn off first" step. Controlled by the page
 // via v-model:server.
-const props = defineProps<{ server: AssetRow | null }>()
+const props = defineProps<{ server: VirtualMachineRow | null }>()
 const emit = defineEmits<{
-	'update:server': [server: AssetRow | null]
+	'update:server': [server: VirtualMachineRow | null]
 	resized: []
 }>()
 
@@ -63,11 +63,11 @@ type ComposedConfigResponse = {
 }
 const configCall = useCall<
 	ComposedConfigResponse,
-	{ asset: string; team: string }
+	{ server: string; team: string }
 >({
 	url: method(API.composedConfig),
 	params: () => ({
-		asset: props.server?.resource_id ?? '',
+		server: props.server?.resource_id ?? '',
 		team: activeTeamId.value,
 	}),
 	immediate: false,

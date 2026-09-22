@@ -38,22 +38,22 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 	def test_bundle_provision_records_subscription_and_lock(self):
 		action, client = self.create()
 		self.assertEqual(action.status, "Succeeded")
-		subscription = frappe.get_doc("Subscription", {"asset_id": action.asset})
+		subscription = frappe.get_doc("Subscription", {"server_id": action.server})
 		self.assertEqual(
 			(subscription.team, subscription.plan, subscription.pricing_mode),
 			(self.team, self.plan, "Preset"),
 		)
 		self.assertEqual(subscriptions.current_segment_rate(subscription.name), 1500)
-		self.assertEqual(frappe.db.count("Subscription", {"team": self.team, "asset_id": action.asset}), 1)
-		asset = frappe.get_doc("Asset", action.asset)
-		self.assertEqual(asset.plan, self.plan)
-		self.assertEqual(asset.atlas_vm_id, "vm-billing-test")
-		self.assertEqual((asset.vcpus, asset.memory_megabytes, asset.disk_gigabytes), (2, 4096, 80))
+		self.assertEqual(frappe.db.count("Subscription", {"team": self.team, "server_id": action.server}), 1)
+		server = frappe.get_doc("Virtual Machine", action.server)
+		self.assertEqual(server.plan, self.plan)
+		self.assertEqual(server.atlas_vm_id, "vm-billing-test")
+		self.assertEqual((server.vcpus, server.memory_megabytes, server.disk_gigabytes), (2, 4096, 80))
 		client.create_vm.assert_called_once()
 
 	def test_friendly_title_and_guest_hostname_are_separate(self):
 		action, client = self.create(title="Acme Production 01", hostname="customer-portal")
-		self.assertEqual(frappe.db.get_value("Asset", action.asset, "title"), "Acme Production 01")
+		self.assertEqual(frappe.db.get_value("Virtual Machine", action.server, "title"), "Acme Production 01")
 		self.assertEqual(client.create_vm.call_args.args[0]["hostname"], "customer-portal")
 
 	def test_plan_transfer_allowance_survives_provisioning(self):
@@ -119,7 +119,7 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 			_process_locked(action.name)
 		self.assertEqual(action.reload().status, "Succeeded")
 		client.create_vm.assert_called_once()
-		self.assertEqual(frappe.db.count("Subscription", {"team": self.team, "asset_id": action.asset}), 1)
+		self.assertEqual(frappe.db.count("Subscription", {"team": self.team, "server_id": action.server}), 1)
 
 	def test_queued_creation_keeps_accepted_price_after_catalog_change(self):
 		from central.billing.catalog.pricing import set_catalog_rate
@@ -135,5 +135,5 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 			_process_locked(action.name)
 		action.reload()
 		self.assertEqual(action.status, "Succeeded")
-		subscription = frappe.db.get_value("Subscription", {"asset_id": action.asset})
+		subscription = frappe.db.get_value("Subscription", {"server_id": action.server})
 		self.assertEqual(subscriptions.current_segment_rate(subscription), 1500)

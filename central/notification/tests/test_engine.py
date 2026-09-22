@@ -754,11 +754,14 @@ class TestDirectRecipientsAffectedUser(EngineTestBase):
 
 		from central.notification.engine import dispatch
 
-		dispatch(
+		result = dispatch(
 			TEAM, "server_down2", message="Server is down", reference_doctype="Server", reference_name="srv-2"
 		)
 
-		self.assertEqual(mock_sendmail.call_count, 0)
+		# Assert on the dispatch's own accounting, not the global sendmail mock: Frappe
+		# core Notification fixtures can call frappe.sendmail during the same request.
+		self.assertEqual(result["email_attempted"], 0)
+		self.assertEqual(result["emails_sent"], 0)
 
 	@patch("central.notification.engine.frappe.sendmail")
 	def test_affected_user_bypasses_capability(self, mock_sendmail):

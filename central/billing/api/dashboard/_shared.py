@@ -285,7 +285,7 @@ def _describe_line(team: str, li) -> dict:
 		# sets of lines, and on the same plan they are otherwise indistinguishable —
 		# the plan title alone says what was billed but never what it was billed for.
 		row["server"] = _server_name(li.subscription_resource)
-		# The machine's technical id — what an Asset is actually named by, and what
+		# The machine's technical id — what a Virtual Machine is actually named by, and what
 		# support and the cluster logs know it as. A friendly name is optional and
 		# may be absent or duplicated; this never is.
 		row["server_id"] = li.subscription_resource
@@ -329,7 +329,7 @@ def _server_name(resource_id: str | None) -> str | None:
 	"""The server's own name, falling back to the id metering keys it by."""
 	if not resource_id:
 		return None
-	return frappe.db.get_value("Asset", resource_id, "title") or resource_id
+	return frappe.db.get_value("Virtual Machine", resource_id, "title") or resource_id
 
 
 def _billed_window(li) -> str | None:

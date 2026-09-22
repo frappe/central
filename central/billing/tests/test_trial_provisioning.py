@@ -72,14 +72,20 @@ class TestTrialProvisioning(IntegrationTestCase):
 		for name in frappe.get_all("Subscription", filters={"team": self.team}, pluck="name"):
 			frappe.db.delete("Subscription Change", {"subscription": name})
 			frappe.delete_doc("Subscription", name, force=True)
-		frappe.db.delete("Asset", {"team": self.team})
+		frappe.db.delete("Virtual Machine", {"team": self.team})
 
 	def _fund(self, amount=2500):
 		credits.grant_promotional_credits(self.team, amount, "INR")
 
-	def _seed_asset(self, resource_id, status="Running"):
+	def _seed_server(self, resource_id, status="Running"):
 		doc = frappe.get_doc(
-			{"doctype": "Asset", "team": self.team, "cluster": REGION, "title": resource_id, "status": status}
+			{
+				"doctype": "Virtual Machine",
+				"team": self.team,
+				"cluster": REGION,
+				"title": resource_id,
+				"status": status,
+			}
 		)
 		doc.flags.name_set = True
 		doc.name = resource_id
@@ -92,7 +98,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 		self._fund()
 		action, client = self._create(self.plan)
 		self.assertEqual(action.status, "Succeeded")
-		subscription = frappe.get_doc("Subscription", {"asset_id": action.asset})
+		subscription = frappe.get_doc("Subscription", {"server_id": action.server})
 		self.assertEqual(subscription.plan, self.plan)
 		size = client.create_vm.call_args.args[0]
 		self.assertEqual((size["cpu_millicores"], size["memory_mib"], size["disk_mib"]), (1000, 2048, 10240))
@@ -118,7 +124,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 	def test_enforces_trial_server_cap(self):
 		self._fund()
 		for i in range(3):
-			self._seed_asset(f"trial-seed-{i}")
+			self._seed_server(f"trial-seed-{i}")
 		with self.assertRaises(frappe.ValidationError):
 			self._create(self.plan)
 
@@ -133,7 +139,7 @@ class TestTrialProvisioning(IntegrationTestCase):
 	def test_terminated_servers_do_not_count_against_cap(self):
 		self._fund()
 		for i in range(3):
-			self._seed_asset(f"dead-{i}", status="Terminated")
+			self._seed_server(f"dead-{i}", status="Terminated")
 		action, _ = self._create(self.plan)
 		self.assertEqual(action.status, "Succeeded")
 

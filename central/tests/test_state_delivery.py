@@ -9,8 +9,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils.password import remove_encrypted_password
 
-from central.api.state_delivery import REGION_HEADER, SENDER_HEADER, receive
-from central.central.doctype.asset.asset import Asset
+from central.api.state_delivery import REGION_HEADER, SOURCE_HEADER, receive
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.state_delivery import (
 	accept_atlas_report,
 	accept_cargo_report,
@@ -28,8 +28,8 @@ class TestStateDelivery(IntegrationTestCase):
 		super().setUp()
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
-		self.enterContext(patch.object(Asset, "ensure_subscription_enabled"))
-		self.enterContext(patch.object(Asset, "disable_active_subscription"))
+		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
+		self.enterContext(patch.object(VirtualMachine, "disable_active_subscription"))
 		self.team = frappe.get_doc(
 			{"doctype": "Team", "team_name": "Delivery", "owner_user": "Administrator"}
 		).insert()
@@ -45,7 +45,7 @@ class TestStateDelivery(IntegrationTestCase):
 		self.cluster.insert()
 		self.server = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
 				"cluster": self.cluster.name,
@@ -141,6 +141,22 @@ class TestStateDelivery(IntegrationTestCase):
 		self.assertEqual(self.deliver(report), {"queued": False, "ignored": "no change"})
 		self.assertEqual(self.server.reload().status, "Running")
 
+	def test_a_report_older_than_the_last_is_dropped(self):
+		"""An older observed_at is a reorder or replay and must not overwrite a newer state."""
+		self.apply(self.state_report(status="running", observed_at="2026-06-02 00:00:00"))
+		self.assertEqual(self.server.reload().status, "Running")
+
+		self.apply(self.state_report(status="stopped", observed_at="2026-06-01 00:00:00"))
+		self.assertEqual(self.server.reload().status, "Running")
+
+	def test_a_newer_report_overwrites_an_earlier_one(self):
+		"""A newer observed_at is applied, so a genuine later change still lands."""
+		self.apply(self.state_report(status="running", observed_at="2026-06-01 00:00:00"))
+		self.assertEqual(self.server.reload().status, "Running")
+
+		self.apply(self.state_report(status="stopped", observed_at="2026-06-02 00:00:00"))
+		self.assertEqual(self.server.reload().status, "Stopped")
+
 	def test_an_unchanged_state_is_ignored(self):
 		self.server.db_set("status", "Running")
 
@@ -234,7 +250,7 @@ class TestStateDelivery(IntegrationTestCase):
 				"team": self.team.name,
 				"atlas_instance": self.cluster.name,
 				"resource_id": self.server.name,
-				"asset": self.server.name,
+				"server": self.server.name,
 				"remote_vm_id": self.server.atlas_vm_id,
 				"requested_by": "Administrator",
 				"correlation_id": frappe.generate_hash(length=32),
@@ -245,7 +261,7 @@ class TestStateDelivery(IntegrationTestCase):
 
 
 class TestDeliveryRouting(IntegrationTestCase):
-	"""One endpoint serves every plane, so the sender header picks the handler."""
+	"""One endpoint serves every plane, so the source header picks the handler."""
 
 	def setUp(self):
 		super().setUp()
@@ -259,8 +275,8 @@ class TestDeliveryRouting(IntegrationTestCase):
 		frappe.local.request = SimpleNamespace(get_data=lambda: b"{}")
 		self.addCleanup(delattr, frappe.local, "request")
 
-	def deliver(self, sender: str | None) -> dict:
-		headers = {SENDER_HEADER: sender, REGION_HEADER: "region", "X-Frappe-Webhook-Signature": "s"}
+	def deliver(self, source: str | None) -> dict:
+		headers = {SOURCE_HEADER: source, REGION_HEADER: "region", "X-Frappe-Webhook-Signature": "s"}
 		with patch("central.api.state_delivery.frappe.get_request_header", headers.get):
 			return receive()
 

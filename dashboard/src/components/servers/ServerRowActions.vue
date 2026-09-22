@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { DropdownSide } from 'frappe-ui'
 import { computed } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import {
 	canStart,
 	canStop,
@@ -15,22 +16,26 @@ import {
 // in central/api/servers.py, so we never offer a button that would 403. The component
 // is presentational: it emits the chosen verb; the page owns the calls.
 const props = defineProps<{
-	server: AssetRow
+	server: VirtualMachineRow
 	canOpen: boolean
 	canPower: boolean
 	canTerminate: boolean
 	busy?: boolean
 	opening?: boolean
+	/** This machine carries a site. Open goes to that site, not the bench. */
+	opensSite?: boolean
+	/** Where the menu opens. The map card uses `right` so it sits beside the card. */
+	side?: DropdownSide
 }>()
 
 const emit = defineEmits<{
-	overview: [server: AssetRow]
-	open: [server: AssetRow]
-	start: [server: AssetRow]
-	stop: [server: AssetRow]
-	restart: [server: AssetRow]
-	resize: [server: AssetRow]
-	terminate: [server: AssetRow]
+	overview: [server: VirtualMachineRow]
+	open: [server: VirtualMachineRow]
+	start: [server: VirtualMachineRow]
+	stop: [server: VirtualMachineRow]
+	restart: [server: VirtualMachineRow]
+	resize: [server: VirtualMachineRow]
+	terminate: [server: VirtualMachineRow]
 }>()
 
 interface ActionItem {
@@ -63,7 +68,7 @@ const options = computed(() => {
 			disabled:
 				resizing ||
 				props.server.status !== 'Running' ||
-				!props.server.gateway_url,
+				!(props.opensSite || props.server.gateway_url),
 			onClick: () => emit('open', props.server),
 		})
 	if (props.canPower && canStart(props.server.status))
@@ -113,5 +118,7 @@ const options = computed(() => {
 		:options="options"
 		label="Server actions"
 		:busy="busy || opening"
+		:side="side"
+		:align="side === 'right' ? 'start' : 'end'"
 	/>
 </template>

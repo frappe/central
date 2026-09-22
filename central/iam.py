@@ -12,7 +12,7 @@ OPERATOR_BYPASS_ROLE = "System Manager"
 # Bumped whenever the capability taxonomy changes. Stamped into the SSO assertion
 # (`cap_version`) so a bench can detect drift from its own `BENCH_CAPS` mirror.
 # v3: server is the atomic unit — the bench plane (site:* + server:config) and the
-# redundant asset:view are dropped; role capabilities live at team + server level
+# redundant server:view are dropped; role capabilities live at team + server level
 # only. The plane field and the bench-caps SSO mint stay, so site caps can return
 # under the bench plane later with no contract change.
 CAPABILITY_VERSION = 4
@@ -174,7 +174,7 @@ def _get_membership_capability_rows(user: str) -> list[dict[str, Any]]:
 def resolve_user_grants(user: str) -> dict[str, list[dict[str, Any]]]:
 	"""Resolve Team Member -> Team Role -> Capability into token-ready grants.
 
-	Request-cached: `can()` (via permission_query_conditions on every Asset/Site/
+	Request-cached: `can()` (via permission_query_conditions on every Virtual Machine/Site/
 	Team Invitation list query) and the notification feed call this per row/member,
 	so within one request the 4-table join runs once per user, not per call."""
 	grants_by_team: dict[str, list[dict[str, Any]]] = defaultdict(list)

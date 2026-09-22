@@ -798,7 +798,7 @@ def _wipe_all():
 		"Entitlement Token",
 		"Webhook Event",
 		"Subscription",
-		"Asset",
+		"Virtual Machine",
 	)
 	config = ("Tax Profile", "Billing Profile")
 	catalog = ("Plan Configurator", "Plan", "Payment Gateway", "Trust Tier Level")
@@ -1056,16 +1056,16 @@ def make_refund(team, invoice, attempt, amount, currency, destination, reason, c
 # --- activation, composed configs, metered services -------------------------
 
 
-def activate_team_assets(team):
-	"""Flip the team's Pending VM Assets to Running. The Asset.on_update hook then
+def activate_team_servers(team):
+	"""Flip the team's Pending VMs to Running. The VirtualMachine.on_update hook then
 	enables the linked Subscription (ensure_subscription_enabled) — the same path a
 	real provisioned+running VM takes. Without this every subscription stays Disabled."""
-	for name in frappe.get_all("Asset", filters={"team": team, "status": "Pending"}, pluck="name"):
+	for name in frappe.get_all("Virtual Machine", filters={"team": team, "status": "Pending"}, pluck="name"):
 		# Change status ON the doc (not via set_value first) so has_value_changed sees
 		# Pending→Running and on_update fires ensure_subscription_enabled.
-		asset = frappe.get_doc("Asset", name)
-		asset.status = "Running"
-		asset.save(ignore_permissions=True)
+		server = frappe.get_doc("Virtual Machine", name)
+		server.status = "Running"
+		server.save(ignore_permissions=True)
 
 
 # A valid design-your-own config on the "General" profile (ram = 4×vcpu, disk in range),

@@ -4,14 +4,14 @@ import { API, method } from '@/api/methods'
 import { useSession } from '@/composables/useSession'
 import { errorToast, successToast } from '@/lib/toast'
 import type { RefreshResponse } from '@/types/api'
-import type { Asset } from '@/types/Central/Asset'
+import type { VirtualMachine } from '@/types/Central/VirtualMachine'
 
 type BenchLinkResponse = {
 	url: string
 }
 
-export type AssetRow = Pick<
-	Asset,
+export type VirtualMachineRow = Pick<
+	VirtualMachine,
 	| 'name'
 	| 'resource_id'
 	| 'title'
@@ -30,7 +30,7 @@ export type AssetRow = Pick<
 > & {
 	// Transitional label ("Terminating"/"Provisioning"/…) while an action is in flight.
 	// Overlaid by central.api.servers.registry from the active Resource Action, not an
-	// Asset field — so the row reads as "…ing" until the mirror catches up.
+	// VirtualMachine field — so the row reads as "…ing" until the mirror catches up.
 	pending_action?: string | null
 }
 
@@ -47,7 +47,7 @@ type CommandParams = { team: string; resource_id: string }
 
 // Re-pulls the mirror from every Active Atlas.
 const refresh = useCall<RefreshResponse, TeamParams>({
-	url: method(API.refreshAssets),
+	url: method(API.refreshServers),
 	method: 'POST',
 	immediate: false,
 })
@@ -72,7 +72,7 @@ const terminateCall = useCall<unknown, CommandParams>({
 	method: 'POST',
 	immediate: false,
 })
-const benchLink = useCall<BenchLinkResponse, { asset: string }>({
+const benchLink = useCall<BenchLinkResponse, { server: string }>({
 	url: method(API.getBenchLink),
 	immediate: false,
 })
@@ -86,7 +86,7 @@ type Verb = 'Start' | 'Stop' | 'Restart' | 'Terminate'
 
 async function runCommand(
 	call: typeof startCall,
-	server: AssetRow,
+	server: VirtualMachineRow,
 	verb: Verb,
 	// A quick, reversible power action toasts on failure; a destructive one (terminate)
 	// throws so the caller can hold its confirm dialog open and show the reason inline.
@@ -113,7 +113,7 @@ async function runCommand(
 }
 
 export function useServers() {
-	async function refreshAssets(): Promise<void> {
+	async function refreshServers(): Promise<void> {
 		try {
 			await refresh.submit({ team: activeTeam.value! })
 			if (refresh.error) throw refresh.error
@@ -122,27 +122,27 @@ export function useServers() {
 		}
 	}
 
-	function start(server: AssetRow) {
+	function start(server: VirtualMachineRow) {
 		return runCommand(startCall, server, 'Start')
 	}
-	function stop(server: AssetRow) {
+	function stop(server: VirtualMachineRow) {
 		return runCommand(stopCall, server, 'Stop')
 	}
-	function restart(server: AssetRow) {
+	function restart(server: VirtualMachineRow) {
 		return runCommand(restartCall, server, 'Restart')
 	}
-	function terminate(server: AssetRow) {
+	function terminate(server: VirtualMachineRow) {
 		return runCommand(terminateCall, server, 'Terminate', 'throw')
 	}
 
 	// Open the VM's bench via a scoped SSO assertion. The tab is opened
 	// synchronously inside the click so it isn't popup-blocked, then pointed at the
 	// minted URL once it resolves.
-	async function open(server: AssetRow): Promise<void> {
+	async function open(server: VirtualMachineRow): Promise<void> {
 		opening.value = server.resource_id
 		const tab = window.open('', '_blank')
 		try {
-			await benchLink.submit({ asset: server.resource_id })
+			await benchLink.submit({ server: server.resource_id })
 			if (benchLink.error) throw benchLink.error
 			const url = benchLink.data?.url
 			if (url && tab) tab.location.href = url
@@ -163,7 +163,7 @@ export function useServers() {
 		stale: computed<string[]>(() => refresh.data?.stale ?? []),
 		busy,
 		opening,
-		refreshAssets,
+		refreshServers,
 		start,
 		stop,
 		restart,

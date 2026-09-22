@@ -14,13 +14,12 @@ import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
-import SiteRowActions from '@/components/servers/SiteRowActions.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useFleetRows } from '@/composables/useFleetRows'
 import { useRegions } from '@/composables/useRegions'
 import { useServerMapData } from '@/composables/useServerMapData'
-import type { AssetRow } from '@/composables/useServers'
+import type { VirtualMachineRow } from '@/composables/useServers'
 import { useServers } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
 import {
@@ -33,11 +32,10 @@ import {
 	type ServerVisual,
 	STATUS_FILTERS,
 } from '@/lib/serverMap'
-import { errorToast, getErrorMessage, successToast } from '@/lib/toast'
-import type { Region } from '@/types/Central/Region'
+import { errorToast, getErrorMessage } from '@/lib/toast'
 import signingInHtml from './signing-in.html?raw'
 
-// The servers page: the world map is the list (FC V2). Servers (the Asset mirror)
+// The servers page: the world map is the list (FC V2). Servers (the Virtual Machine mirror)
 // and sites (the Site mirror — each a 1:1-backed VM) come from one feed and list
 // together, indistinguishable — same provider avatar, same pin, one sorted list.
 // Lifecycle actions reuse useServers so the map, panel, and ⋯ menus share one path.
@@ -45,7 +43,7 @@ import signingInHtml from './signing-in.html?raw'
 const router = useRouter()
 const route = useRoute()
 
-const { assets, sites, loading, error, reload } = useServerMapData()
+const { servers, sites, loading, error, reload } = useServerMapData()
 const { regions } = useRegions()
 const { canPowerServer, canTerminateServer, canOpenServer, canCreateServer } =
 	useCapabilities()
@@ -55,19 +53,13 @@ const {
 	stale,
 	busy,
 	opening,
-	refreshAssets,
+	refreshServers,
 	start,
 	stop,
 	restart,
 	terminate,
 	open,
 } = useServers()
-
-const terminateSiteCall = useCall<unknown, { name: string }>({
-	url: method(API.terminateSite),
-	immediate: false,
-	method: 'POST',
-})
 
 const getSiteCall = useCall<
 	{ url: string | null; login_url: string | null },
@@ -83,7 +75,7 @@ const { activeTeam, loading: sessionLoading } = useSession()
 const createTeamOpen = ref(false)
 const hasNoTeam = computed(() => !sessionLoading.value && !activeTeam.value)
 
-// First-run onboarding nudge — shown until the team has an asset or the user
+// First-run onboarding nudge — shown until the team has a server or the user
 // dismisses it (remembered across visits so it never nags).
 const ONBOARDING_KEY = 'central.console.serverOnboardingDismissed'
 const onboardingDismissed = ref(localStorage.getItem(ONBOARDING_KEY) === '1')
@@ -109,7 +101,7 @@ const hoverId = ref<string | null>(null)
 const panelOpen = ref(false)
 
 // Servers and sites decorated into one sorted ResourceRow list (useFleetRows).
-const { rows } = useFleetRows(assets, sites, regions)
+const { rows } = useFleetRows(servers, sites, regions)
 
 // — Filters. Status and region scope the map and the panel; search only
 //   narrows the panel rows.
@@ -118,28 +110,27 @@ const statusOptions = computed(() => [
 	...STATUS_FILTERS.map((s) => ({ label: s.label, value: s.key, dot: s.dot })),
 ])
 
-const providerGroups = computed(() => {
-	const groups = new Map<string, Region[]>()
-	for (const region of regions.value) {
-		const provider = region.provider || 'Other'
-		if (!groups.has(provider)) groups.set(provider, [])
-		groups.get(provider)!.push(region)
-	}
-	return [...groups.entries()].map(([provider, list]) => ({
-		provider,
-		regions: list,
-	}))
-})
+// A place a customer can filter by: a name, a country, and a spot on the map.
+// Internal and test regions never reach this list.
+const placeableRegions = computed(() =>
+	regions.value
+		.filter(
+			(region) =>
+				region.display_name?.trim() &&
+				region.country_code &&
+				hasMapCoords(region) &&
+				region.display_name !== region.region,
+		)
+		.slice()
+		.sort((a, b) => regionLabel(a).localeCompare(regionLabel(b))),
+)
 
 const regionOptions = computed(() => [
 	{ label: 'All regions', value: '' },
-	...providerGroups.value.flatMap((group) => [
-		{ label: `All ${group.provider} regions`, value: `p:${group.provider}` },
-		...group.regions.map((r) => ({
-			label: `${flagEmoji(r.country_code)} ${regionLabel(r)}`.trim(),
-			value: `r:${group.provider}|${r.region}`,
-		})),
-	]),
+	...placeableRegions.value.map((region) => ({
+		label: `${flagEmoji(region.country_code)} ${regionLabel(region)}`.trim(),
+		value: `r:${region.provider || ''}|${region.region}`,
+	})),
 ])
 const regionSelection = computed({
 	get(): string {
@@ -203,7 +194,7 @@ const pins = computed<MapPin[]>(() =>
 	filtered.value
 		.filter(
 			(row) =>
-				(row.asset || row.site) && row.region && hasMapCoords(row.region),
+				(row.server || row.site) && row.region && hasMapCoords(row.region),
 		)
 		.map((row) => {
 			const base = {
@@ -218,23 +209,24 @@ const pins = computed<MapPin[]>(() =>
 				flag: row.flag,
 				specs: row.specs,
 			}
-			return row.kind === 'server'
+			const machine = row.server
 				? {
-						...base,
-						kind: 'server' as const,
-						publicIpv4: row.asset!.public_ipv4 ?? null,
-						plan: row.asset!.plan ?? null,
-						frappeVersion: row.asset!.frappe_version ?? null,
-						server: row.asset!,
+						publicIpv4: row.server.public_ipv4 ?? null,
+						plan: row.server.plan ?? null,
+						frappeVersion: row.server.frappe_version ?? null,
+						server: row.server,
 					}
-				: { ...base, kind: 'site' as const, site: row.site! }
+				: {}
+			return row.kind === 'server'
+				? { ...base, kind: 'server' as const, ...machine }
+				: { ...base, kind: 'site' as const, site: row.site!, ...machine }
 		}),
 )
 
 // Regions with no servers show as + spots — everywhere you could deploy next.
 const spots = computed<MapSpot[]>(() => {
 	if (!canCreateServer.value) return []
-	const occupied = new Set(assets.value.map((asset) => asset.cluster))
+	const occupied = new Set(servers.value.map((server) => server.cluster))
 	return regions.value
 		.filter((r) => !occupied.has(r.region) && hasMapCoords(r))
 		.filter(
@@ -258,30 +250,49 @@ const spots = computed<MapSpot[]>(() => {
 
 // — Wiring. Pin / cluster-row clicks go straight to the live site or server.
 //   If the side panel is open, keep its location filter in step.
-function canOpenBench(server: AssetRow): boolean {
+function canOpenBench(server: VirtualMachineRow): boolean {
 	return (
 		canOpenServer.value && server.status === 'Running' && !!server.gateway_url
 	)
 }
-function openResource(row: ResourceRow): void {
-	if (row.kind === 'site') {
-		if (canOpenServer.value && row.site?.url) openSite(row.site.name)
+function siteFor(server: VirtualMachineRow) {
+	return sites.value.find((site) => site.server === server.name)
+}
+function openServer(server: VirtualMachineRow): void {
+	const site = siteFor(server)
+	if (site) {
+		void openSite(site.name)
 		return
 	}
-	if (!row.asset) return
-	if (canOpenBench(row.asset)) {
-		open(row.asset)
+	open(server)
+}
+function openResource(row: ResourceRow): void {
+	if (!row.server) return
+	// A site is the same machine. Open goes to the site. Everything else opens the bench.
+	if (row.site) {
+		if (
+			canOpenServer.value &&
+			row.server.status === 'Running' &&
+			row.site.url
+		) {
+			void openSite(row.site.name)
+			return
+		}
+		overviewServer.value = row.server
+		return
+	}
+	if (canOpenBench(row.server)) {
+		open(row.server)
 		return
 	}
 	// Not openable yet (still provisioning, stopped, …) — show the overview.
-	overviewServer.value = row.asset
+	overviewServer.value = row.server
 }
 function onOpen(id: string): void {
 	const row = rows.value.find((r) => r.id === id)
 	if (!row) return
-	if (panelOpen.value) {
-		locationFilter.value = { ids: [id], label: row.name }
-	}
+	// Opening one server is not a filter. A cluster click still narrows the
+	// list to that place, because that click is "show me these".
 	openResource(row)
 }
 function onClusterOpen(payload: { ids: string[]; label: string }): void {
@@ -320,19 +331,27 @@ async function withReload(action: Promise<unknown>): Promise<void> {
 	await action
 	reload()
 }
-const doRefresh = (): Promise<void> => withReload(refreshAssets())
-const doStart = (server: AssetRow): Promise<void> => withReload(start(server))
-const doStop = (server: AssetRow): Promise<void> => withReload(stop(server))
-const doRestart = (server: AssetRow): Promise<void> =>
-	withReload(restart(server))
+const doRefresh = (): Promise<void> => withReload(refreshServers())
+const doStart = (server: VirtualMachineRow): Promise<void> =>
+	withReload(start(server))
+const doStop = (server: VirtualMachineRow): Promise<void> =>
+	withReload(stop(server))
+const pendingRestart = ref<VirtualMachineRow | null>(null)
+async function confirmRestart(server: VirtualMachineRow): Promise<void> {
+	try {
+		await withReload(restart(server))
+	} finally {
+		pendingRestart.value = null
+	}
+}
 
-const pendingTerminate = ref<AssetRow | null>(null)
+const pendingTerminate = ref<VirtualMachineRow | null>(null)
 const terminateError = ref('')
 // Reset the inline error whenever the dialog opens on a different server or closes.
 watch(pendingTerminate, () => {
 	terminateError.value = ''
 })
-async function confirmTerminate(server: AssetRow): Promise<void> {
+async function confirmTerminate(server: VirtualMachineRow): Promise<void> {
 	terminateError.value = ''
 	try {
 		// Destructive: keep the dialog open and show the reason inline on failure, rather
@@ -348,8 +367,11 @@ async function confirmTerminate(server: AssetRow): Promise<void> {
 	}
 }
 
-const pendingResize = ref<AssetRow | null>(null)
-const overviewServer = ref<AssetRow | null>(null)
+const pendingResize = ref<VirtualMachineRow | null>(null)
+const overviewServer = ref<VirtualMachineRow | null>(null)
+const overviewOpensSite = computed(
+	() => !!overviewServer.value && !!siteFor(overviewServer.value),
+)
 const overviewOpen = computed({
 	get: () => !!overviewServer.value,
 	set: (isOpen: boolean) => {
@@ -392,19 +414,6 @@ async function openSite(name: string): Promise<void> {
 		openingSite.value = null
 	}
 }
-const pendingSiteTerminate = ref<{ name: string } | null>(null)
-async function confirmSiteTerminate(): Promise<void> {
-	const name = pendingSiteTerminate.value?.name
-	pendingSiteTerminate.value = null
-	if (!name) return
-	try {
-		await terminateSiteCall.submit({ name })
-		successToast('Site scheduled for termination.')
-		reload()
-	} catch (e) {
-		errorToast(e)
-	}
-}
 </script>
 
 <template>
@@ -420,7 +429,12 @@ async function confirmSiteTerminate(): Promise<void> {
 			<!-- Hidden while the onboarding card is up — that card carries the single
              primary action then, so there's never two New-server buttons at once. -->
 			<Button
-				v-if="activeTeam && canCreateServer && !showOnboarding"
+				v-if="
+					activeTeam &&
+					canCreateServer &&
+					!showOnboarding &&
+					!(panelOpen && !rows.length)
+				"
 				variant="solid"
 				label="New server"
 				icon-left="lucide-plus"
@@ -465,29 +479,25 @@ async function confirmSiteTerminate(): Promise<void> {
 			>
 				<template #card-actions="{ pin }">
 					<ServerRowActions
-						v-if="pin.kind === 'server' && pin.server"
+						v-if="pin.server"
 						:server="pin.server"
 						:can-open="canOpenServer"
 						:can-power="canPowerServer"
 						:can-terminate="canTerminateServer"
+						:opens-site="!!pin.site"
+						side="right"
 						:busy="busy === pin.server.resource_id"
-						:opening="opening === pin.server.resource_id"
+						:opening="
+							opening === pin.server.resource_id ||
+							openingSite === pin.site?.name
+						"
 						@overview="overviewServer = $event"
-						@open="open"
+						@open="openServer"
 						@start="doStart"
 						@stop="doStop"
-						@restart="doRestart"
+						@restart="pendingRestart = $event"
 						@resize="pendingResize = $event"
 						@terminate="pendingTerminate = $event"
-					/>
-					<SiteRowActions
-						v-else-if="pin.site"
-						:site="pin.site"
-						:can-open="canOpenServer"
-						:can-terminate="canTerminateServer"
-						:busy="openingSite === pin.site.name"
-						@open="openSite"
-						@terminate="pendingSiteTerminate = { name: $event }"
 					/>
 				</template>
 			</ServerMap>
@@ -517,20 +527,20 @@ async function confirmSiteTerminate(): Promise<void> {
 				:can-open="canOpenServer"
 				:can-power="canPowerServer"
 				:can-terminate="canTerminateServer"
+				:can-create="canCreateServer"
 				:busy="busy"
 				:opening="opening"
 				:opening-site="openingSite"
 				@open-row="openResource"
 				@clear-location="locationFilter = null"
 				@overview="overviewServer = $event"
-				@open="open"
+				@open="openServer"
 				@start="doStart"
 				@stop="doStop"
-				@restart="doRestart"
+				@restart="pendingRestart = $event"
 				@resize="pendingResize = $event"
 				@terminate="pendingTerminate = $event"
-				@open-site="openSite"
-				@terminate-site="pendingSiteTerminate = { name: $event }"
+				@create="$router.push('/servers/new')"
 			/>
 
 			<!-- Initial load / hard failure / first run — centered over the map -->
@@ -553,11 +563,26 @@ async function confirmSiteTerminate(): Promise<void> {
 			</MapMessageCard>
 			<!-- First-run onboarding: a dismissible nudge toward the one right action. -->
 			<ServerOnboarding
-				v-else-if="showOnboarding"
+				v-else-if="showOnboarding && !panelOpen"
 				@create="$router.push('/servers/new')"
 				@dismiss="dismissOnboarding"
 			/>
 		</div>
+
+		<ConfirmDialog
+			v-model:target="pendingRestart"
+			title="Restart server"
+			confirm-label="Restart"
+			:loading="busy === pendingRestart?.resource_id"
+			@confirm="confirmRestart"
+		>
+			<p class="text-p-base text-ink-gray-7">
+				Restart
+				<span class="font-semibold text-ink-gray-9"
+					>{{ pendingRestart?.title || pendingRestart?.resource_id }}</span
+				>? It will be unavailable for a moment.
+			</p>
+		</ConfirmDialog>
 
 		<ConfirmDialog
 			v-model:target="pendingTerminate"
@@ -576,30 +601,14 @@ async function confirmSiteTerminate(): Promise<void> {
 			</p>
 		</ConfirmDialog>
 
-		<ConfirmDialog
-			v-model:target="pendingSiteTerminate"
-			title="Terminate site"
-			confirm-label="Yes, terminate"
-			theme="red"
-			:loading="terminateSiteCall.loading"
-			@confirm="confirmSiteTerminate"
-		>
-			<p class="text-p-base text-ink-gray-7">
-				Terminate
-				<span class="font-semibold text-ink-gray-9"
-					>{{ pendingSiteTerminate?.name }}</span
-				>? This permanently deletes the site and its backing VM. This can't be
-				undone.
-			</p>
-		</ConfirmDialog>
-
 		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
 		<ServerOverviewDialog
 			v-model:open="overviewOpen"
 			:server="overviewServer"
 			:can-open="canOpenServer"
 			:can-resize="canPowerServer"
-			@open="open"
+			:opens-site="overviewOpensSite"
+			@open="openServer"
 			@resize="pendingResize = $event"
 		/>
 		<CreateTeamDialog v-model:open="createTeamOpen" />

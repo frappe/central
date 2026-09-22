@@ -1,9 +1,11 @@
 import type { InvitationStatus } from '@/types/api'
 import type { PaymentAttempt } from '@/types/billing'
-import type { Asset } from '@/types/Central/Asset'
+import type { VirtualMachine } from '@/types/Central/VirtualMachine'
 
 // The DocType statuses plus Central's own derived display state (see displayStatus).
-export type AssetStatus = NonNullable<Asset['status']> | 'Resizing'
+export type VirtualMachineStatus =
+	| NonNullable<VirtualMachine['status']>
+	| 'Resizing'
 
 export type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue' | 'violet'
 
@@ -17,7 +19,7 @@ export function isResizing(server: { resize_in_progress?: 0 | 1 }): boolean {
 /** The status to show for a row: a live action's transitional label ("Terminating"…)
  *  takes precedence, then "Resizing" while a reshape job runs, else the mirror status. */
 export function displayStatus(server: {
-	status?: AssetStatus
+	status?: VirtualMachineStatus
 	resize_in_progress?: 0 | 1
 	pending_action?: string | null
 }): string {
@@ -26,28 +28,32 @@ export function displayStatus(server: {
 }
 
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */
-export const POWER_ON_STATES: AssetStatus[] = ['Stopped', 'Paused', 'Failed']
+export const POWER_ON_STATES: VirtualMachineStatus[] = [
+	'Stopped',
+	'Paused',
+	'Failed',
+]
 
-export function canStart(status?: AssetStatus): boolean {
+export function canStart(status?: VirtualMachineStatus): boolean {
 	return status !== undefined && POWER_ON_STATES.includes(status)
 }
 
-export function canStop(status?: AssetStatus): boolean {
+export function canStop(status?: VirtualMachineStatus): boolean {
 	return status === 'Running'
 }
 
-export function isTerminated(status?: AssetStatus): boolean {
+export function isTerminated(status?: VirtualMachineStatus): boolean {
 	return status === 'Terminated'
 }
 
 /** Atlas is still provisioning the VM — power/open/terminate aren't available yet. */
-const SETTING_UP_STATES: AssetStatus[] = [
+const SETTING_UP_STATES: VirtualMachineStatus[] = [
 	'Pending',
 	'Provisioning',
 	'Deploying',
 ]
 
-export function isSettingUp(status?: AssetStatus): boolean {
+export function isSettingUp(status?: VirtualMachineStatus): boolean {
 	return status === undefined || SETTING_UP_STATES.includes(status)
 }
 

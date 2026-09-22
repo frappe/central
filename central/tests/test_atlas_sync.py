@@ -4,8 +4,8 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.api.servers import registry
-from central.central.doctype.asset.asset import Asset
 from central.errors import AtlasConnectionError, AtlasRequestUncertain, AtlasResourceGone
+from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.server_provisioning import _process_locked
 from central.integrations.servers import reconcile
 from central.resource_actions import get_status, submit_command
@@ -20,15 +20,15 @@ class TestServerActions(IntegrationTestCase):
 		self.addCleanup(frappe.db.rollback)
 		self.enterContext(patch("frappe.db.commit"))
 		self.enqueue = self.enterContext(patch("frappe.enqueue"))
-		self.enterContext(patch.object(Asset, "ensure_subscription_enabled"))
-		self.cancel = self.enterContext(patch.object(Asset, "disable_active_subscription"))
+		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
+		self.cancel = self.enterContext(patch.object(VirtualMachine, "disable_active_subscription"))
 		self.team = frappe.get_doc(
 			{"doctype": "Team", "team_name": "Actions", "owner_user": "Administrator"}
 		).insert()
 		ensure_atlas_instance("test-actions")
-		self.asset = frappe.get_doc(
+		self.server = frappe.get_doc(
 			{
-				"doctype": "Asset",
+				"doctype": "Virtual Machine",
 				"resource_id": "action-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
 				"atlas_vm_id": "vm-00001",
@@ -42,7 +42,7 @@ class TestServerActions(IntegrationTestCase):
 		)
 
 	def submit(self, action="start"):
-		return submit_command(action, self.team.name, self.asset.name)
+		return submit_command(action, self.team.name, self.server.name)
 
 	def test_start_persists_intent_before_dispatch_and_confirms_by_read(self):
 		result = self.submit()
@@ -72,16 +72,16 @@ class TestServerActions(IntegrationTestCase):
 			self.submit("restart")
 		self.enqueue.assert_not_called()
 
-		self.asset.db_set("status", "Running")
+		self.server.db_set("status", "Running")
 		self.assertEqual(self.submit("restart")["status"], "Queued")
 
 	def test_an_operator_can_ask_the_region_for_the_current_state(self):
 		"""Desk needs a way to ask the region directly when a record looks stale."""
-		self.assertEqual(self.asset.sync_state(), {"status": "Running"})
+		self.assertEqual(self.server.sync_state(), {"status": "Running"})
 		self.observe.assert_called_once()
 
 	def test_start_is_blocked_while_resizing(self):
-		self.asset.db_set("resize_in_progress", 1)
+		self.server.db_set("resize_in_progress", 1)
 		with self.assertRaises(frappe.ValidationError):
 			self.submit()
 		self.assertFalse(frappe.db.exists("Resource Action", {"team": self.team.name}))
@@ -127,7 +127,7 @@ class TestServerActions(IntegrationTestCase):
 		self.client.vm_action.side_effect = AtlasResourceGone("gone")
 		_process_locked(name)
 		self.assertEqual(get_status(name)["status"], "Succeeded")
-		self.assertEqual(self.asset.reload().status, "Terminated")
+		self.assertEqual(self.server.reload().status, "Terminated")
 		self.cancel.assert_called_once()
 
 	def test_start_fails_on_scoped_absence(self):
@@ -140,4 +140,4 @@ class TestServerActions(IntegrationTestCase):
 		self.enqueue.reset_mock()
 		result = reconcile(self.team.name)
 		self.assertEqual(result["queued"], 1)
-		self.assertEqual(self.enqueue.call_args.kwargs["name"], self.asset.name)
+		self.assertEqual(self.enqueue.call_args.kwargs["name"], self.server.name)

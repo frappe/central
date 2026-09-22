@@ -309,7 +309,9 @@ function closestOf(e: Event, selector: string): Element | null {
 function onDown(e: PointerEvent): void {
 	if (e.button !== 0 || !props.interactive) return
 	// A locked card (its ⋯ menu was opened) closes on any press outside it.
-	if (cardLocked.value && !closestOf(e, '[data-map-card]')) hideCard()
+	// The ⋯ menu is portaled outside the card. A press on it is still the card.
+	if (cardLocked.value && !closestOf(e, '[data-map-card], [data-slot="content"]'))
+		hideCard()
 	// if (zoom.value <= 1) return
 	// if (closestOf(e, '[data-map-card],[data-map-controls]')) return
 	// drag = {
@@ -463,7 +465,7 @@ function leaveNode(): void {
 	if (cardLocked.value) return
 	window.clearTimeout(showT)
 	window.clearTimeout(hideT)
-	hideT = window.setTimeout(() => (hoverKey.value = null), 140)
+	hideT = window.setTimeout(() => (hoverKey.value = null), 280)
 }
 function cancelHide(): void {
 	window.clearTimeout(hideT)
@@ -710,7 +712,7 @@ function clickNode(n: MapNode): void {
 				:style="card.style"
 				@mouseenter="cancelHide"
 				@mouseleave="leaveNode"
-				@click.capture="cardLocked = true"
+				@pointerdown.capture="cardLocked = true"
 			>
 				<MapHoverCard
 					:node="card.node"

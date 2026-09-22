@@ -12,7 +12,7 @@ SHAPE = {"vcpus": 2, "memory_megabytes": 4096, "disk_gigabytes": 50}
 
 class TestServerResize(UnitTestCase):
 	def setUp(self):
-		self.asset = SimpleNamespace(atlas_vm_id="vm-00001")
+		self.server = SimpleNamespace(atlas_vm_id="vm-00001")
 		self.client = MagicMock()
 		self.enterContext(patch("central.integrations.servers._client", return_value=self.client))
 		self.observe = self.enterContext(patch("central.integrations.servers.observe_server"))
@@ -45,19 +45,19 @@ class TestServerResize(UnitTestCase):
 			self.remote("running"),
 		]
 
-		resize_server(self.asset, SHAPE)
+		resize_server(self.server, SHAPE)
 
 		self.assertEqual(
 			self.client.vm_action.call_args_list, [call("vm-00001", "stop"), call("vm-00001", "start")]
 		)
 		self.client.update_compute.assert_called_once_with("vm-00001", 2000, 4096, sleep_after_idle_seconds=0)
 		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
-		self.observe.assert_called_once_with(self.asset)
+		self.observe.assert_called_once_with(self.server)
 
 	def test_disk_only_change_keeps_a_running_server_up(self):
 		self.client.get_vm.return_value = self.remote("running", 2000, 4096)
 
-		resize_server(self.asset, SHAPE)
+		resize_server(self.server, SHAPE)
 
 		self.client.vm_action.assert_not_called()
 		self.client.update_compute.assert_not_called()
@@ -68,7 +68,7 @@ class TestServerResize(UnitTestCase):
 		its own while the server runs."""
 		self.client.get_vm.return_value = self.remote("running", 2000, 4096, sleep_after_idle_seconds=1800)
 
-		resize_server(self.asset, SHAPE)
+		resize_server(self.server, SHAPE)
 
 		self.client.vm_action.assert_not_called()
 		self.client.update_compute.assert_called_once_with("vm-00001", 2000, 4096, sleep_after_idle_seconds=0)
@@ -81,7 +81,7 @@ class TestServerResize(UnitTestCase):
 			self.remote("running"),
 		]
 
-		resize_server(self.asset, SHAPE)
+		resize_server(self.server, SHAPE)
 
 		self.client.vm_action.assert_called_once_with("vm-00001", "start")
 		self.client.update_compute.assert_called_once_with("vm-00001", 2000, 4096, sleep_after_idle_seconds=0)
@@ -93,7 +93,7 @@ class TestServerResize(UnitTestCase):
 			patch("central.integrations.servers.time.monotonic", side_effect=[0, 1000]),
 			self.assertRaises(AtlasConnectionError),
 		):
-			resize_server(self.asset, SHAPE)
+			resize_server(self.server, SHAPE)
 
 		self.client.update_compute.assert_not_called()
 		self.client.update_disk.assert_not_called()

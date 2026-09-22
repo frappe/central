@@ -2,7 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from central.billing.tests.utils import ensure_team, purge_teams
-from central.demo.servers import ASSETS, REGIONS, _seed_resource_ids, seed, summary, teardown
+from central.demo.servers import REGIONS, SERVERS, _seed_resource_ids, seed, summary, teardown
 
 
 class TestServerSeed(IntegrationTestCase):
@@ -53,13 +53,13 @@ class TestServerSeed(IntegrationTestCase):
 
 		self.assertEqual(first, second)
 		self.assertEqual(first["regions"], len(REGIONS))
-		self.assertEqual(first["assets"], len(ASSETS))
-		# Only Running assets carry a billing contract (Asset.on_update).
-		running = sum(1 for row in ASSETS if row[3] == "Running")
+		self.assertEqual(first["servers"], len(SERVERS))
+		# Only Running servers carry a billing contract (VirtualMachine.on_update).
+		running = sum(1 for row in SERVERS if row[3] == "Running")
 		self.assertEqual(first["subscriptions"], running)
 		# Every seeded VM records the version it was "provisioned" with.
 		versions = frappe.get_all(
-			"Asset", filters={"name": ["in", _seed_resource_ids()]}, pluck="frappe_version"
+			"Virtual Machine", filters={"name": ["in", _seed_resource_ids()]}, pluck="frappe_version"
 		)
 		self.assertTrue(all(versions))
 
@@ -70,6 +70,6 @@ class TestServerSeed(IntegrationTestCase):
 
 		leftovers = summary()
 		self.assertEqual(leftovers["regions"], 0)
-		self.assertEqual(leftovers["assets"], 0)
+		self.assertEqual(leftovers["servers"], 0)
 		self.assertEqual(leftovers["subscriptions"], 0)
-		self.assertFalse(frappe.get_all("Subscription", filters={"asset_id": ["in", _seed_resource_ids()]}))
+		self.assertFalse(frappe.get_all("Subscription", filters={"server_id": ["in", _seed_resource_ids()]}))
