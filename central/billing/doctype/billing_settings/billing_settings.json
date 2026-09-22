@@ -13,6 +13,7 @@
   "provision_teams_as_trial",
   "section_break_invoicing",
   "invoice_due_days",
+  "billing_details_grace_days",
   "column_break_invoicing",
   "forecast_notify_percent",
   "section_break_dunning",
@@ -82,6 +83,14 @@
    "fieldname": "invoice_due_days",
    "fieldtype": "Int",
    "label": "Due Days",
+   "non_negative": 1
+  },
+  {
+   "default": "30",
+   "description": "How long an invoice may wait for a team's billing details before the operators are paged and the team stops being funded on credit.",
+   "fieldname": "billing_details_grace_days",
+   "fieldtype": "Int",
+   "label": "Billing Details Grace (Days)",
    "non_negative": 1
   },
   {

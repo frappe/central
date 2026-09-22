@@ -16,7 +16,7 @@ from frappe.query_builder.functions import Count
 from central.billing.doctype.billing_run.billing_run import snapshot
 from central.billing.platform import metrics
 from central.billing.revenue.invoicing.generate import generate_team_invoice
-from central.billing.revenue.invoicing.lifecycle import open_and_collect
+from central.billing.revenue.invoicing.lifecycle import held_drafts, open_and_collect
 
 # How many teams / invoices one page job is responsible for.
 PAGE_SIZE = 500
@@ -172,6 +172,24 @@ def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
 		return None
 
 
+def settle_held_drafts(team: str) -> dict:
+	"""Settle the drafts held back for this team's billing details, now they are in.
+
+	Called when a profile is completed, so the customer is billed the same day
+	instead of waiting for the next monthly run. Each invoice re-checks the hold
+	itself, so this is safe to call whether or not the profile is really complete.
+	"""
+	settled, held = 0, 0
+	for draft in held_drafts(team):
+		result = settle_draft(draft.name) or {}
+		if result.get("held"):
+			held += 1
+		elif result.get("claimed"):
+			settled += 1
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
+	return {"team": team, "settled": settled, "held": held}
+
+
 def team_pages(page_size: int = PAGE_SIZE):
 	"""Yield the teams holding a subscription, one bounded page at a time.
 
@@ -180,17 +198,27 @@ def team_pages(page_size: int = PAGE_SIZE):
 	seen`, ordered) walks the `Subscription(team)` index in fixed-size pages, so
 	memory is flat in team count.
 	"""
+	yield from _team_pages(page_size)
+
+
+def active_team_pages(page_size: int = PAGE_SIZE):
+	"""The same pages, narrowed to teams still running something.
+
+	A team whose subscriptions are all disabled has closed periods left to bill but
+	nothing accruing, so anything addressed to teams that are *currently* costing
+	money asks for these.
+	"""
+	yield from _team_pages(page_size, enabled_only=True)
+
+
+def _team_pages(page_size: int, enabled_only: bool = False):
 	sub = frappe.qb.DocType("Subscription")
 	after = ""
 	while True:
-		page = (
-			frappe.qb.from_(sub)
-			.select(sub.team)
-			.distinct()
-			.where(sub.team > after)
-			.orderby(sub.team)
-			.limit(page_size)
-		).run(pluck=True)
+		query = frappe.qb.from_(sub).select(sub.team).distinct().where(sub.team > after)
+		if enabled_only:
+			query = query.where(sub.enabled == 1)
+		page = query.orderby(sub.team).limit(page_size).run(pluck=True)
 		if not page:
 			return
 		yield page
@@ -350,11 +378,12 @@ def settle_draft_page(cutoff, after: str, until: str) -> dict:
 	with metrics.timed("billing.settle_page", cutoff=str(cutoff)) as counters:
 		counters.update(settled=0, held=0, failed=0)
 		for invoice in drafts_in_range(cutoff, after, until):
-			# A held draft is neither settled nor failed: it stays Draft for the next sweep.
-			result = settle_draft(invoice, counters)
-			if result and result.get("held"):
+			# Only a claimed invoice settled. A held draft stays Draft for the next
+			# run, and one another worker took is neither ours to count nor a failure.
+			result = settle_draft(invoice, counters) or {}
+			if result.get("held"):
 				counters["held"] += 1
-			elif result:
+			elif result.get("claimed"):
 				counters["settled"] += 1
 			frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
 		return {"after": after, "until": until, **counters}

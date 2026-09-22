@@ -11,14 +11,19 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 from central.api import servers
+from central.billing import settings
+from central.billing.api.dashboard import account
 from central.billing.payments import settlement
+from central.billing.platform import alerts as billing_alerts
 from central.billing.revenue import credits, invoicing
+from central.billing.revenue.invoicing import run
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
 	ensure_team,
 	make_plan,
+	run_enqueued_inline,
 	set_team_tier,
 )
 
@@ -60,6 +65,26 @@ class CreditFundedTestBase(IntegrationTestCase):
 
 	def _grant(self, amount):
 		credits.grant_promotional_credits(TEAM, amount, "INR")
+
+	def _draft(self, total=1000, invoice_type="Billable", period_end="2026-06-30"):
+		return (
+			frappe.get_doc(
+				{
+					"doctype": "Invoice",
+					"team": TEAM,
+					"invoice_type": invoice_type,
+					"status": "Draft",
+					"period_start": "2026-06-01",
+					"period_end": period_end,
+					"currency": "INR",
+					"subtotal": total,
+					"total": total,
+					"expected_collection": total,
+				}
+			)
+			.insert(ignore_permissions=True)
+			.name
+		)
 
 	def _create_server(self, vm_id="vm-credit-funded"):
 		"""Call the endpoint with Atlas stubbed, returning the created VM id."""
@@ -159,26 +184,6 @@ class TestCreditFundedHeadroom(CreditFundedTestBase):
 class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 	"""An invoice is held at Draft until we have a legal name to make it out to."""
 
-	def _draft(self, total=1000, invoice_type="Billable"):
-		return (
-			frappe.get_doc(
-				{
-					"doctype": "Invoice",
-					"team": TEAM,
-					"invoice_type": invoice_type,
-					"status": "Draft",
-					"period_start": "2026-06-01",
-					"period_end": "2026-06-30",
-					"currency": "INR",
-					"subtotal": total,
-					"total": total,
-					"expected_collection": total,
-				}
-			)
-			.insert(ignore_permissions=True)
-			.name
-		)
-
 	def test_a_billable_invoice_is_held_and_the_customer_asked(self):
 		self._grant(5000)
 		invoice = self._draft()
@@ -207,6 +212,37 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 		self.assertEqual(result["status"], "Paid")  # covered by the credits in full
 		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Paid")
 
+	def test_a_held_draft_is_not_counted_as_settled(self):
+		self._grant(5000)
+		invoice = self._draft()
+
+		counters = run.settle_draft_page("2026-07-01", "", "zzzz")
+
+		self.assertEqual(counters["held"], 1)
+		self.assertEqual(counters["settled"], 0)
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Draft")
+
+	def test_completing_the_profile_settles_what_was_held(self):
+		# Otherwise the customer waits for the next monthly run to be billed for
+		# credits they have already been provisioned against.
+		self._grant(5000)
+		invoice = self._draft()
+		invoicing.open_and_collect(invoice)
+
+		with patch.object(frappe, "enqueue", run_enqueued_inline):
+			complete_billing_profile(TEAM)
+			account._release_held_invoices(TEAM)
+
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Paid")
+
+	def test_a_complete_profile_with_nothing_held_enqueues_nothing(self):
+		complete_billing_profile(TEAM)
+
+		with patch.object(frappe, "enqueue") as enqueue:
+			account._release_held_invoices(TEAM)
+
+		enqueue.assert_not_called()
+
 	def test_a_cost_report_is_never_held(self):
 		# A cost report is a record of what we subsidised, not a bill — there is
 		# nobody to make it out to.
@@ -216,6 +252,43 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 
 		self.assertTrue(result["cost_report"])
 		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Open")
+
+
+class TestBillingDetailsEscalation(CreditFundedTestBase):
+	"""A bill that waits too long stops being funded and starts paging the operators."""
+
+	def _overdue_draft(self):
+		grace = settings.billing_details_grace_days()
+		return self._draft(period_end=frappe.utils.add_days(frappe.utils.nowdate(), -grace - 1))
+
+	def test_credit_stops_funding_once_a_bill_has_waited_too_long(self):
+		self._grant(5000)
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 5000)
+
+		self._overdue_draft()
+
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 0)
+		with self.assertRaises(frappe.ValidationError):
+			self._create_server()
+
+	def test_a_bill_still_inside_the_grace_period_funds_as_before(self):
+		self._grant(5000)
+		self._draft(period_end=frappe.utils.nowdate())
+
+		self.assertEqual(settlement.credit_funded_headroom(TEAM), 5000)
+
+	def test_a_long_held_invoice_pages_the_operators(self):
+		invoice = self._overdue_draft()
+
+		alerts = [a for a in billing_alerts.held_invoices() if a["team"] == TEAM]
+
+		self.assertEqual(len(alerts), 1)
+		self.assertEqual(alerts[0]["subject"], invoice)
+
+	def test_a_recent_hold_does_not_page_anybody(self):
+		self._draft(period_end=frappe.utils.nowdate())
+
+		self.assertFalse([a for a in billing_alerts.held_invoices() if a["team"] == TEAM])
 
 
 class TestBillingDetailsReminder(CreditFundedTestBase):
@@ -231,6 +304,53 @@ class TestBillingDetailsReminder(CreditFundedTestBase):
 				"Billing Notification Log", {"team": TEAM, "event_type": "Billing Details Required"}
 			)
 		)
+
+	def test_a_team_running_nothing_is_left_alone(self):
+		# Its subscriptions are all disabled: no bill is coming, so there is nothing
+		# to ask for. Asking anyway is a daily nag about an invoice that never arrives.
+		self._grant(5000)
+		self._create_server()
+		frappe.db.set_value("Subscription", {"team": TEAM}, "enabled", 0)
+
+		settlement.run_billing_details_reminder()
+
+		self.assertFalse(
+			frappe.db.exists(
+				"Billing Notification Log", {"team": TEAM, "event_type": "Billing Details Required"}
+			)
+		)
+
+	def test_a_team_is_not_asked_again_the_next_day(self):
+		# The engine only suppresses a repeat for an hour, so a daily sweep would
+		# mail every member of the team every day about the same missing field.
+		self._grant(5000)
+		self._create_server()
+
+		settlement.run_billing_details_reminder()
+		asked_again = settlement.run_billing_details_reminder()
+
+		self.assertEqual(asked_again, 0)
+		self.assertEqual(
+			frappe.db.count(
+				"Billing Notification Log", {"team": TEAM, "event_type": "Billing Details Required"}
+			),
+			1,
+		)
+
+	def test_a_team_asked_long_enough_ago_is_asked_again(self):
+		self._grant(5000)
+		self._create_server()
+		settlement.run_billing_details_reminder()
+		stale = frappe.utils.add_days(frappe.utils.now_datetime(), -settlement.REMINDER_EVERY_DAYS - 1)
+		frappe.db.set_value(
+			"Billing Notification Log",
+			{"team": TEAM},
+			"creation",
+			stale,
+			update_modified=False,
+		)
+
+		self.assertEqual(settlement.run_billing_details_reminder(), 1)
 
 	def test_a_team_with_details_is_left_alone(self):
 		complete_billing_profile(TEAM)

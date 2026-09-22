@@ -25,6 +25,14 @@ from central.billing.revenue import credits
 
 AUTOPAY_METHODS = ("Card", "UPI Autopay")
 
+BILLING_DETAILS_ASK = "Billing Details Required"
+
+# How often one team is reminded. Daily would be a daily email to every member.
+REMINDER_EVERY_DAYS = 7
+
+# Per-team undo point for the reminder sweep, so one team's failure costs only its own ask.
+_REMINDER_SAVEPOINT = "billing_details_reminder"
+
 
 def settlement_sources(team: str, source=None) -> dict:
 	"""What the team can settle with: active autopay method and/or wallet credit.
@@ -99,12 +107,31 @@ def credit_funded_headroom(team: str) -> float:
 	"""How much *more* monthly run-rate the team's own credits can fund.
 
 	Wallet balance under the tier ceiling, less what the team already runs. Always
-	wallet-bound: no credits means no headroom, not the bare tier cap.
+	wallet-bound: no credits means no headroom, not the bare tier cap. Nothing is
+	funded once a bill has waited out the grace period for the team's details.
 	"""
 	from central.billing.catalog.subscriptions import team_run_rate
 
+	if details_overdue(team):
+		return 0.0
 	balance = frappe.utils.flt(credits.get_balance(team)["balance"])
 	return max(0.0, min(_tier_cap(team), balance) - team_run_rate(team))
+
+
+def details_overdue(team: str) -> bool:
+	"""Whether a bill has waited longer than the grace period for this team's details.
+
+	Credit is extended on the promise of an invoice we can issue. Past the grace
+	period that promise has not been kept, so the team funds nothing new until it
+	is — what is already running is left alone.
+	"""
+	from central.billing.api.dashboard._shared import _missing_profile_fields
+	from central.billing.revenue.invoicing.lifecycle import held_drafts
+
+	cutoff = frappe.utils.add_days(frappe.utils.nowdate(), -settings.billing_details_grace_days())
+	if not held_drafts(team, held_before=cutoff, limit=1):
+		return False
+	return bool(_missing_profile_fields(team))
 
 
 def wallet_funds(team: str, new_rate) -> bool:
@@ -150,20 +177,66 @@ def _notify_top_up(team: str, balance, projected, utilisation):
 
 
 def run_billing_details_reminder() -> int:
-	"""Daily: ask every team that is billable but has no billing details on file.
+	"""Daily: ask every team that is running something but has no details on file.
 
-	The ask is deduped on unread, so it is one standing ask, not a daily nag.
-	Returns how many teams were asked.
+	The sweep runs daily so a team that starts running something is asked within a
+	day, but each team is asked at most once a week — the notification engine only
+	suppresses repeats for an hour, which for a standing ask is a daily nag and a
+	daily email to every member. Returns how many teams were asked.
 	"""
-	from central.billing.platform import notifications
-	from central.billing.revenue.invoicing.run import team_pages
+	from central.billing.revenue.invoicing.run import active_team_pages
 
 	asked = 0
-	for page in team_pages():
-		for team, missing in _teams_missing_details(page).items():
-			notifications.notify(team, "Billing Details Required", message=", ".join(missing))
-			asked += 1
+	for page in active_team_pages():
+		missing = _teams_missing_details(page)
+		for team in _asked_recently(list(missing)):
+			missing.pop(team, None)
+		for team, fields in missing.items():
+			asked += _ask_for_details(team, fields)
+		# One page, one transaction: a team we could not reach must not cost the
+		# rest of the run the asks it already made.
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one page, one transaction
 	return asked
+
+
+def _asked_recently(teams: list[str]) -> set[str]:
+	"""Which of these teams we have already asked inside the reminder window — read
+	in one query for the whole page."""
+	if not teams:
+		return set()
+	since = frappe.utils.add_days(frappe.utils.now_datetime(), -REMINDER_EVERY_DAYS)
+	return set(
+		frappe.get_all(
+			"Billing Notification Log",
+			filters={
+				"team": ["in", teams],
+				"event_type": BILLING_DETAILS_ASK,
+				"creation": [">=", since],
+			},
+			pluck="team",
+			distinct=True,
+		)
+	)
+
+
+def _ask_for_details(team: str, missing: list[str]) -> int:
+	"""Ask one team, returning 1 if we did.
+
+	One team we cannot reach is not the end of the sweep: its half-written ask is
+	rolled back to the savepoint so the rest of the page still commits.
+	"""
+	from central.billing.platform import notifications
+
+	frappe.db.savepoint(_REMINDER_SAVEPOINT)
+	try:
+		notifications.notify(team, BILLING_DETAILS_ASK, message=", ".join(missing))
+		return 1
+	except Exception:
+		frappe.db.rollback(save_point=_REMINDER_SAVEPOINT)
+		frappe.log_error(
+			title=f"Billing details reminder failed: {team}", message=frappe.get_traceback()
+		)
+		return 0
 
 
 def _teams_missing_details(teams: list[str]) -> dict[str, list[str]]:
