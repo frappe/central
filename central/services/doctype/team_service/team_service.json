@@ -10,9 +10,9 @@
  "field_order": [
   "team",
   "add_on_service",
-  "subscription",
   "region",
   "status",
+  "subscription",
   "storage_section",
   "bucket_name",
   "endpoint_url",
@@ -49,13 +49,13 @@
    "options": "Subscription"
   },
   {
-   "default": "Draft",
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Status",
    "options": "Active\nSuspended",
+   "reqd": 1,
    "search_index": 1
   },
   {
@@ -110,7 +110,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-21 16:41:24.016720",
+ "modified": "2026-09-22 15:20:45.896244",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Team Service",
