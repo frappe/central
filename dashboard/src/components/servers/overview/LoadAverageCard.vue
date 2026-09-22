@@ -10,6 +10,8 @@ import {
 
 const props = defineProps<{
 	points: LoadPoint[]
+	/** False when the metrics read itself failed, not when the series is short. */
+	available?: boolean
 }>()
 
 const peak = computed(() => peakLoad(props.points))
@@ -65,8 +67,12 @@ const chartConfig = computed(() => ({
 		<div v-if="hasSeries" class="load-chart h-44">
 			<AxisChart :config="chartConfig" />
 		</div>
-		<p v-else class="grid h-44 place-items-center text-sm text-ink-gray-5">
-			Monitoring has not collected enough history yet.
+		<p v-else class="grid h-44 place-items-center text-center text-sm text-ink-gray-5">
+			{{
+				available
+					? 'Monitoring has not collected enough history yet.'
+					: 'Live metrics are unavailable for this server right now.'
+			}}
 		</p>
 	</section>
 </template>

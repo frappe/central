@@ -137,8 +137,8 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 				v-if="m.kind === 'server' && m.server"
 				class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
 				:disabled="!canOpenBench(m.server)"
-				title="Open bench"
-				aria-label="Open bench"
+				title="Open"
+				aria-label="Open"
 				@click.stop="emit('open-server', m.server)"
 			>
 				<span class="lucide-arrow-up-right size-3.5" />
@@ -147,9 +147,14 @@ function canOpenBench(server: NonNullable<MapPin['server']>): boolean {
 				v-else-if="m.site"
 				class="grid size-7 shrink-0 place-items-center rounded-4 text-ink-gray-5 transition-opacity disabled:cursor-default disabled:opacity-30 enabled:opacity-0 enabled:hover:text-ink-gray-8 group-hover:enabled:opacity-100"
 				:class="{ '!opacity-100': openingSite === m.site.name }"
-				:disabled="!allowOpen || !m.site.url || openingSite === m.site.name"
-				title="Open site"
-				aria-label="Open site"
+				:disabled="
+					!allowOpen ||
+					!m.site.url ||
+					m.server?.status !== 'Running' ||
+					openingSite === m.site.name
+				"
+				title="Open"
+				aria-label="Open"
 				@click.stop="m.site.url && emit('open-site', m.site.name)"
 			>
 				<span
