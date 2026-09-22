@@ -13,10 +13,9 @@ from central.infrastructure.doctype.resource_action.resource_action import Resou
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.services.doctype.service_detail.service_detail import ServiceDetail
 
-# Central's own clock orders every report, because a report carries the region's clock
-# and a scoped read carries Central's. Ordering by the report would let clock skew
-# between the two silently suppress events. `observed_at` therefore stays diagnostic:
-# what Central records is when it heard, and a repeat is caught by the state itself.
+# Webhooks are ordered by the region's own `observed_at` (stored as `last_reported_at`):
+# a delivery that is not newer is a reorder or a replay and is dropped. A lost delivery
+# is corrected by the scheduled reconcile, which reads regional truth directly.
 
 # What a region calls a state, and what Central records for it. A report carrying
 # anything else is ignored: Central never invents a status it was not told.
@@ -88,7 +87,9 @@ def apply_atlas_report(cluster: str, report: dict) -> None:
 		return
 
 	status = STATUS_FROM_REPORT[report["status"]]
-	if not VirtualMachine.record_observed_state(server.name, frappe.utils.now_datetime(), {"status": status}):
+	if not VirtualMachine.record_observed_state(
+		server.name, frappe.utils.now_datetime(), {"status": status}, reported_at=report.get("observed_at")
+	):
 		return
 
 	ResourceAction.confirm_observed_status(server.name, status)

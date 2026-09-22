@@ -23,7 +23,8 @@
   "atlas_vm_id",
   "image_offering",
   "atlas_image_id",
-  "state_observed_at"
+  "state_observed_at",
+  "last_reported_at"
  ],
  "fields": [
   {
@@ -163,10 +164,17 @@
    "read_only": 1
   },
   {
-   "description": "When the region last reported this server's state. An older report is ignored.",
+   "description": "When Central last recorded this server's state.",
    "fieldname": "state_observed_at",
    "fieldtype": "Datetime",
    "label": "State Observed At",
+   "read_only": 1
+  },
+  {
+   "description": "The region's observed_at of the last applied report; a report that is not newer is ignored.",
+   "fieldname": "last_reported_at",
+   "fieldtype": "Datetime",
+   "label": "Last Reported At",
    "read_only": 1
   }
  ],
