@@ -1,6 +1,6 @@
 {
  "actions": [],
- "allow_rename": 0,
+ "autoname": "format:{region}-{service}",
  "creation": "2026-09-17 16:28:47.018144",
  "doctype": "DocType",
  "engine": "InnoDB",
@@ -87,10 +87,11 @@
  ],
  "grid_page_length": 50,
  "links": [],
- "modified": "2026-09-17 17:18:37.161735",
+ "modified": "2026-09-21 22:31:34.074786",
  "modified_by": "Administrator",
  "module": "Services",
  "name": "Service Detail",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {
@@ -122,7 +123,5 @@
    "title": "Not Available"
   }
  ],
- "title_field": "service",
- "autoname": "format:{region}-{service}",
- "naming_rule": "Expression"
+ "title_field": "service"
 }

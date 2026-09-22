@@ -9,6 +9,7 @@
  "engine": "InnoDB",
  "field_order": [
   "region",
+  "region_id",
   "display_name",
   "provider",
   "country_code",
@@ -211,6 +212,11 @@
   {
    "fieldname": "column_break_kufp",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "region_id",
+   "fieldtype": "Int",
+   "label": "Region ID"
   }
  ],
  "grid_page_length": 50,
@@ -237,7 +243,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-09-21 14:33:10.682362",
+ "modified": "2026-09-21 15:17:24.924163",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",

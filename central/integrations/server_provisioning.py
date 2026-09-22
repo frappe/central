@@ -11,6 +11,7 @@ from central.errors import AtlasConnectionError, AtlasRequestUncertain, build_en
 from central.iam import can
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.integrations.atlas import AtlasClient
+from central.integrations.bucket_provisioning import BucketProvisioning
 from central.integrations.servers import observe_server
 from central.sso import central_url, jwks_url
 
@@ -84,7 +85,11 @@ def _process_locked(name: str) -> None:
 		payload = _create_payload(request)
 		request.db_set({"status": "Dispatching", "dispatched_at": frappe.utils.now_datetime()})
 		# Persist the dispatch marker and credential before a remote mutation can succeed.
-		frappe.db.commit()
+		try:
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			raise
 		response = client.create_vm(payload)
 		remote_id = response.get("id")
 		if not isinstance(remote_id, str) or not remote_id or response.get("tenant_id") != client.tenant_id:
@@ -187,17 +192,23 @@ def _create_payload(request) -> dict:
 		credential = f"pilot-{request.name}"
 		token = PilotCredential.mint(request.team, credential, audience_id=credential)
 		request.db_set("credential", credential)
-		payload["metadata"]["pilot-central"] = json.dumps(
-			{
-				"central_endpoint": central_url(),
-				"central_auth_token": token,
-				"jwks_url": jwks_url(),
-				"jwks_audience_id": credential,
-				# The keys, delivered with the credential, so the pilot's first token
-				# needs no fetch and a boot before Central is reachable still verifies.
-				"initial_jwks_cache": jwks_document(),
-			}
-		)
+		bootstrap = {
+			"central_endpoint": central_url(),
+			"central_auth_token": token,
+			"jwks_url": jwks_url(),
+			"jwks_audience_id": credential,
+			# The keys, delivered with the credential, so the pilot's first token
+			# needs no fetch and a boot before Central is reachable still verifies.
+			"initial_jwks_cache": jwks_document(),
+		}
+		try:
+			bootstrap["s3"] = BucketProvisioning(request).get_configuration()
+		except Exception:
+			frappe.log_error(
+				title="Pilot object storage provisioning failed",
+				message=frappe.get_traceback(with_context=True),
+			)
+		payload["metadata"]["pilot-central"] = json.dumps(bootstrap)
 
 	return payload
 
