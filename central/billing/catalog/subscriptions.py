@@ -572,25 +572,28 @@ def _apply_resize(
 			resize_composed_subscription(
 				subscription, includes or [], sub_category, changed_by=changed_by, override_rate=override_rate
 			)
-	except Exception:
+	except Exception as error:
 		if server_id:
 			frappe.db.rollback()
 			VirtualMachine.mark_resizing(server_id, False)
-			_notify_resize_failed(subscription, server_id)
+			_notify_resize_failed(subscription, server_id, error)
 			frappe.db.commit()
 		raise
 	if server_id:
 		VirtualMachine.mark_resizing(server_id, False)
 
 
-def _notify_resize_failed(subscription: str, server_id: str) -> None:
+def _notify_resize_failed(subscription: str, server_id: str, error: Exception | None = None) -> None:
 	"""Feed a failed background resize into the team's console notifications, so a
-	resize that couldn't be applied on the host isn't silent once the flag clears."""
+	resize that couldn't be applied on the host isn't silent once the flag clears. The
+	region's own reason (for example no host has capacity) rides along when it has one."""
 	team = frappe.db.get_value("Subscription", subscription, "team")
 	if not team:
 		return
+	from central.errors import to_error_response
 	from central.notification import engine
 
+	reason = to_error_response(error)["message"] if error else frappe._("The resize could not be applied.")
 	engine.ensure_event_type(
 		"resize_failed",
 		category="Server",
@@ -604,8 +607,7 @@ def _notify_resize_failed(subscription: str, server_id: str) -> None:
 	engine.dispatch(
 		team,
 		"resize_failed",
-		message=f"The resize of server {server_id} could not be applied and was rolled back. "
-		"Billing stayed on the previous plan. You can retry the resize.",
+		message=f"{reason} Billing stayed on the previous plan; you can retry the resize.",
 		reference_doctype="Virtual Machine",
 		reference_name=server_id,
 	)

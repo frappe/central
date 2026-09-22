@@ -280,6 +280,15 @@ class AtlasClient:
 		if parsed.scheme != "https" and not local_http:
 			frappe.throw(_("Atlas requires HTTPS except for local development hosts."), AtlasConnectionError)
 
+	def _error_message(self, response: requests.Response) -> str | None:
+		"""The `error.message` an Atlas error body carries, escaped and bounded, or None."""
+		try:
+			error = response.json().get("error", {})
+		except (ValueError, AttributeError):
+			return None
+		message = error.get("message") if isinstance(error, dict) else None
+		return frappe.utils.escape_html(message[:1000]) if isinstance(message, str) else None
+
 	def _read_response(self, response: requests.Response, method: str = "GET") -> dict:
 		if response.status_code in (401, 403):
 			frappe.throw(
@@ -289,6 +298,13 @@ class AtlasClient:
 
 		if response.status_code == 404:
 			raise AtlasResourceGone(_("The regional resource was not found."))
+
+		# A 503 that names why (for example out_of_capacity when no host can hold the new shape)
+		# is a definite refusal, not an uncertain outcome, so surface its reason to the customer.
+		if response.status_code == 503:
+			reason = self._error_message(response)
+			if reason:
+				raise AtlasRejected(reason)
 
 		if method != "GET" and response.status_code >= 500:
 			raise AtlasRequestUncertain(_("Atlas could not confirm the operation result."))
@@ -301,15 +317,10 @@ class AtlasClient:
 			)
 			if method != "GET" and response.status_code < 400:
 				error_type = AtlasRequestUncertain
-			message = _("Atlas returned HTTP {0} for the regional request.").format(response.status_code)
-			if response.status_code in (400, 409, 422):
-				try:
-					error = response.json().get("error", {})
-				except ValueError, AttributeError:
-					error = {}
-				if isinstance(error, dict) and isinstance(error.get("message"), str):
-					message = frappe.utils.escape_html(error["message"][:1000])
-			raise error_type(message)
+			raise error_type(
+				self._error_message(response)
+				or _("Atlas returned HTTP {0} for the regional request.").format(response.status_code)
+			)
 
 		if response.status_code == 204:
 			return {}
