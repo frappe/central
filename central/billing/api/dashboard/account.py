@@ -149,7 +149,6 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 		from central.billing.payments.provisioning import provision_billing_profile
 
 		provision_billing_profile(team)
-		_release_held_invoices(team)
 
 	return {
 		"saved": True,
@@ -160,25 +159,6 @@ def save_billing_profile(team: str | None = None, **fields) -> dict:
 		"missing": _missing_profile_fields(team),
 		"missing_labels": _missing_profile_labels(team),
 	}
-
-
-def _release_held_invoices(team: str) -> None:
-	"""Settle whatever was waiting on these details, in the background.
-
-	An invoice held for a missing legal name is otherwise stuck until the next
-	monthly run, which is up to a month of the customer's credits not being drawn.
-	Enqueued, not inline: the customer is waiting on a form, not on a charge.
-	"""
-	from central.billing.revenue.invoicing.lifecycle import held_drafts
-
-	if not held_drafts(team, limit=1):
-		return
-	frappe.enqueue(
-		"central.billing.revenue.invoicing.run.settle_held_drafts",
-		queue="long",
-		team=team,
-		enqueue_after_commit=True,
-	)
 
 
 @frappe.whitelist()

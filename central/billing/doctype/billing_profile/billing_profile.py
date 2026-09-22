@@ -28,6 +28,22 @@ class BillingProfile(Document):
 		self.validate_india_state()
 		self.lock_country_and_currency_after_invoicing()
 
+	def on_update(self):
+		self.release_held_invoices()
+
+	def release_held_invoices(self):
+		"""Settle anything held back for these details once they are on file.
+
+		On the doctype rather than one endpoint: the profile is completed from the
+		dashboard, from the bench's own billing tab and from Desk, and an invoice
+		stuck for a missing legal name must not depend on which door it came through.
+		"""
+		from central.billing.api.dashboard._shared import _profile_complete
+		from central.billing.revenue.invoicing.run import release_held_drafts
+
+		if _profile_complete(self.team):
+			release_held_drafts(self.team)
+
 	def lock_country_and_currency_after_invoicing(self):
 		"""Freeze country and currency once the team has been invoiced.
 

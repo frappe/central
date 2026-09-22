@@ -179,24 +179,36 @@ def _notify_top_up(team: str, balance, projected, utilisation):
 def run_billing_details_reminder() -> int:
 	"""Daily: ask every team that is running something but has no details on file.
 
-	The sweep runs daily so a team that starts running something is asked within a
-	day, but each team is asked at most once a week — the notification engine only
-	suppresses repeats for an hour, which for a standing ask is a daily nag and a
-	daily email to every member. Returns how many teams were asked.
+	Fans the teams out in bounded pages, one job each, the way the billing run does:
+	a page is the unit a worker owns and the transaction it commits, so the sweep
+	needs no commit of its own. Returns how many pages were queued.
 	"""
-	from central.billing.revenue.invoicing.run import active_team_pages
+	from central.billing.revenue.invoicing.run import active_team_pages, billing_queue
 
-	asked = 0
+	pages = 0
 	for page in active_team_pages():
-		missing = _teams_missing_details(page)
-		for team in _asked_recently(list(missing)):
-			missing.pop(team, None)
-		for team, fields in missing.items():
-			asked += _ask_for_details(team, fields)
-		# One page, one transaction: a team we could not reach must not cost the
-		# rest of the run the asks it already made.
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one page, one transaction
-	return asked
+		frappe.enqueue(
+			"central.billing.payments.settlement.remind_team_page",
+			queue=billing_queue(),
+			job_id=f"billing-details-ask::{page[-1]}",
+			deduplicate=True,
+			teams=page,
+		)
+		pages += 1
+	return pages
+
+
+def remind_team_page(teams: list[str]) -> int:
+	"""Ask one page of teams for the billing details their invoice will need.
+
+	A team is asked at most once a week: the notification engine only suppresses a
+	repeat for an hour, which for a standing ask is a daily nag and a daily email to
+	every member. Returns how many teams were asked.
+	"""
+	missing = _teams_missing_details(teams)
+	for team in _asked_recently(list(missing)):
+		missing.pop(team, None)
+	return sum(_ask_for_details(team, fields) for team, fields in missing.items())
 
 
 def _asked_recently(teams: list[str]) -> set[str]:
@@ -233,9 +245,7 @@ def _ask_for_details(team: str, missing: list[str]) -> int:
 		return 1
 	except Exception:
 		frappe.db.rollback(save_point=_REMINDER_SAVEPOINT)
-		frappe.log_error(
-			title=f"Billing details reminder failed: {team}", message=frappe.get_traceback()
-		)
+		frappe.log_error(title=f"Billing details reminder failed: {team}", message=frappe.get_traceback())
 		return 0
 
 

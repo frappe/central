@@ -12,8 +12,7 @@ import frappe
 
 from central.api import servers
 from central.billing import settings
-from central.billing.api.dashboard import account
-from central.billing.payments import settlement
+from central.billing.payments import profile, settlement
 from central.billing.platform import alerts as billing_alerts
 from central.billing.revenue import credits, invoicing
 from central.billing.revenue.invoicing import run
@@ -231,7 +230,24 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 
 		with patch.object(frappe, "enqueue", run_enqueued_inline):
 			complete_billing_profile(TEAM)
-			account._release_held_invoices(TEAM)
+
+		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Paid")
+
+	def test_any_writer_of_the_profile_releases_the_hold(self):
+		# The bench's own billing tab saves through this helper and never touched
+		# the dashboard's release path — the hold has to come off the doctype.
+		self._grant(5000)
+		invoice = self._draft()
+		invoicing.open_and_collect(invoice)
+
+		with patch.object(frappe, "enqueue", run_enqueued_inline):
+			profile.create_or_update_billing_profile(
+				TEAM,
+				legal_name="Acme Pvt Ltd",
+				address_line1="1 Main Street",
+				city="Pune",
+				country="India",
+			)
 
 		self.assertEqual(frappe.db.get_value("Invoice", invoice, "status"), "Paid")
 
@@ -239,7 +255,7 @@ class TestInvoiceHeldForBillingDetails(CreditFundedTestBase):
 		complete_billing_profile(TEAM)
 
 		with patch.object(frappe, "enqueue") as enqueue:
-			account._release_held_invoices(TEAM)
+			frappe.get_doc("Billing Profile", TEAM).save(ignore_permissions=True)
 
 		enqueue.assert_not_called()
 
@@ -292,74 +308,62 @@ class TestBillingDetailsEscalation(CreditFundedTestBase):
 
 
 class TestBillingDetailsReminder(CreditFundedTestBase):
-	def test_a_billable_team_without_details_is_asked_daily(self):
+	def _log_count(self):
+		return frappe.db.count(
+			"Billing Notification Log", {"team": TEAM, "event_type": settlement.BILLING_DETAILS_ASK}
+		)
+
+	def test_a_billable_team_without_details_is_asked(self):
 		self._grant(5000)
 		self._create_server()
 
-		asked = settlement.run_billing_details_reminder()
+		self.assertEqual(settlement.remind_team_page([TEAM]), 1)
+		self.assertEqual(self._log_count(), 1)
 
-		self.assertGreaterEqual(asked, 1)
-		self.assertTrue(
-			frappe.db.exists(
-				"Billing Notification Log", {"team": TEAM, "event_type": "Billing Details Required"}
-			)
-		)
-
-	def test_a_team_running_nothing_is_left_alone(self):
-		# Its subscriptions are all disabled: no bill is coming, so there is nothing
-		# to ask for. Asking anyway is a daily nag about an invoice that never arrives.
-		self._grant(5000)
+	def test_a_team_with_details_is_left_alone(self):
+		complete_billing_profile(TEAM)
 		self._create_server()
-		frappe.db.set_value("Subscription", {"team": TEAM}, "enabled", 0)
 
-		settlement.run_billing_details_reminder()
-
-		self.assertFalse(
-			frappe.db.exists(
-				"Billing Notification Log", {"team": TEAM, "event_type": "Billing Details Required"}
-			)
-		)
+		self.assertEqual(settlement.remind_team_page([TEAM]), 0)
+		self.assertEqual(self._log_count(), 0)
 
 	def test_a_team_is_not_asked_again_the_next_day(self):
 		# The engine only suppresses a repeat for an hour, so a daily sweep would
 		# mail every member of the team every day about the same missing field.
 		self._grant(5000)
 		self._create_server()
+		settlement.remind_team_page([TEAM])
 
-		settlement.run_billing_details_reminder()
-		asked_again = settlement.run_billing_details_reminder()
-
-		self.assertEqual(asked_again, 0)
-		self.assertEqual(
-			frappe.db.count(
-				"Billing Notification Log", {"team": TEAM, "event_type": "Billing Details Required"}
-			),
-			1,
-		)
+		self.assertEqual(settlement.remind_team_page([TEAM]), 0)
+		self.assertEqual(self._log_count(), 1)
 
 	def test_a_team_asked_long_enough_ago_is_asked_again(self):
 		self._grant(5000)
 		self._create_server()
-		settlement.run_billing_details_reminder()
+		settlement.remind_team_page([TEAM])
 		stale = frappe.utils.add_days(frappe.utils.now_datetime(), -settlement.REMINDER_EVERY_DAYS - 1)
 		frappe.db.set_value(
-			"Billing Notification Log",
-			{"team": TEAM},
-			"creation",
-			stale,
-			update_modified=False,
+			"Billing Notification Log", {"team": TEAM}, "creation", stale, update_modified=False
 		)
 
-		self.assertEqual(settlement.run_billing_details_reminder(), 1)
+		self.assertEqual(settlement.remind_team_page([TEAM]), 1)
 
-	def test_a_team_with_details_is_left_alone(self):
-		complete_billing_profile(TEAM)
+	def test_the_sweep_queues_a_team_that_is_running_something(self):
+		self._grant(5000)
 		self._create_server()
 
-		settlement.run_billing_details_reminder()
+		self.assertIn(TEAM, self._queued_teams())
 
-		self.assertFalse(
-			frappe.db.exists(
-				"Billing Notification Log", {"team": TEAM, "event_type": "Billing Details Required"}
-			)
-		)
+	def test_the_sweep_skips_a_team_running_nothing(self):
+		# Its subscriptions are all disabled: no bill is coming, so there is nothing
+		# to ask for. Asking anyway is a nag about an invoice that never arrives.
+		self._grant(5000)
+		self._create_server()
+		frappe.db.set_value("Subscription", {"team": TEAM}, "enabled", 0)
+
+		self.assertNotIn(TEAM, self._queued_teams())
+
+	def _queued_teams(self):
+		with patch.object(frappe, "enqueue") as enqueue:
+			settlement.run_billing_details_reminder()
+		return [team for call in enqueue.call_args_list for team in call.kwargs["teams"]]

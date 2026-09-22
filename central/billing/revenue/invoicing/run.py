@@ -172,11 +172,28 @@ def settle_draft(invoice: str, counters: dict | None = None) -> dict | None:
 		return None
 
 
+def release_held_drafts(team: str) -> None:
+	"""Queue the settlement of whatever was held for this team's billing details.
+
+	Enqueued, not inline: the customer is waiting on a form, not on a charge. A team
+	with nothing held queues nothing.
+	"""
+	if not held_drafts(team, limit=1):
+		return
+	frappe.enqueue(
+		"central.billing.revenue.invoicing.run.settle_held_drafts",
+		queue=billing_queue(),
+		job_id=f"billing-release::{team}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+		team=team,
+	)
+
+
 def settle_held_drafts(team: str) -> dict:
 	"""Settle the drafts held back for this team's billing details, now they are in.
 
-	Called when a profile is completed, so the customer is billed the same day
-	instead of waiting for the next monthly run. Each invoice re-checks the hold
+	One team's invoices, one job, one transaction. Each invoice re-checks the hold
 	itself, so this is safe to call whether or not the profile is really complete.
 	"""
 	settled, held = 0, 0
@@ -186,7 +203,6 @@ def settle_held_drafts(team: str) -> dict:
 			held += 1
 		elif result.get("claimed"):
 			settled += 1
-		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- one invoice, one transaction
 	return {"team": team, "settled": settled, "held": held}
 
 
