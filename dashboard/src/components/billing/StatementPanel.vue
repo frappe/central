@@ -38,10 +38,7 @@ const rows = computed(() => [...(data.value?.rows ?? [])].reverse())
 					</p>
 				</div>
 				<div class="flex shrink-0 items-center gap-3">
-					<Badge
-						:theme="invoiceTheme(row.status)"
-						:label="row.status"
-					/>
+					<Badge :theme="invoiceTheme(row.status)" :label="row.status" />
 					<span class="w-24 text-right text-p-sm tabular-nums text-ink-gray-9">
 						{{ money(row.total, currency) }}
 					</span>

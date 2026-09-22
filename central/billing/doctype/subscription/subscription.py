@@ -13,8 +13,9 @@ class Subscription(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 		from frappe.types import DF
+
+		from central.billing.doctype.plan_includes.plan_includes import PlanIncludes
 
 		account_standing: DF.Literal["Current", "Past Due", "Suspended"]
 		asset_id: DF.Link | None
@@ -59,8 +60,7 @@ class Subscription(Document):
 
 		if project.team != self.team:
 			frappe.throw(
-				f"Project {self.project} belongs to team {project.team}, "
-				f"not {self.team}.",
+				f"Project {self.project} belongs to team {project.team}, not {self.team}.",
 			)
 		if not project.enabled:
 			frappe.throw(

@@ -350,7 +350,11 @@ const ctaLabel = computed(() =>
 )
 // `price` unformatted: the run-rate this create adds, which the credit gate checks.
 const monthlyRate = computed<number | null>(() => {
-	if (isCustom.value && composedConfig.value && rateCardComplete(rateCard.value))
+	if (
+		isCustom.value &&
+		composedConfig.value &&
+		rateCardComplete(rateCard.value)
+	)
 		return estimateConfig(composedConfig.value, rateCard.value)
 	return selectedPlanObj.value?.rate ?? null
 })

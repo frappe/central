@@ -53,9 +53,7 @@ def _resource_project_map(team: str) -> dict:
 	untagged on the invoice. Purely a labelling concern now: every line still bills on
 	the team's one consolidated invoice, whatever it maps to here.
 	"""
-	projects = frappe.get_all(
-		"Project", filters={"team": team, "enabled": 1}, fields=["name", "title"]
-	)
+	projects = frappe.get_all("Project", filters={"team": team, "enabled": 1}, fields=["name", "title"])
 	titles = {p.name: p.title for p in projects}
 	rows = frappe.get_all(
 		"Subscription",

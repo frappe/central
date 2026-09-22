@@ -35,7 +35,11 @@ const options = computed<ActionItem[]>(() => {
 			icon: 'lucide-server',
 			onClick: () => emit('manageMembers', props.project),
 		},
-		{ label: 'Edit', icon: 'lucide-pencil', onClick: () => emit('rename', props.project) },
+		{
+			label: 'Edit',
+			icon: 'lucide-pencil',
+			onClick: () => emit('rename', props.project),
+		},
 		{
 			label: props.project.enabled ? 'Disable' : 'Enable',
 			icon: props.project.enabled ? 'lucide-pause' : 'lucide-play',

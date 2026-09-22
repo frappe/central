@@ -1,4 +1,3 @@
-
 export function method(path: string): string {
 	return `/api/v2/method/${path}`
 }

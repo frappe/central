@@ -763,9 +763,11 @@ class TestProjectValidation(BillingTestBase):
 
 	def test_cannot_tag_another_teams_project(self):
 		ensure_team(self.OTHER_TEAM)
-		foreign = frappe.get_doc(
-			{"doctype": "Project", "title": "Someone Else", "team": self.OTHER_TEAM}
-		).insert().name
+		foreign = (
+			frappe.get_doc({"doctype": "Project", "title": "Someone Else", "team": self.OTHER_TEAM})
+			.insert()
+			.name
+		)
 
 		doc = frappe.get_doc("Subscription", self.sub)
 		doc.project = foreign
@@ -773,9 +775,11 @@ class TestProjectValidation(BillingTestBase):
 			doc.save()
 
 	def test_cannot_tag_a_disabled_project(self):
-		project = frappe.get_doc(
-			{"doctype": "Project", "title": "Archived", "team": TEAM, "enabled": 0}
-		).insert().name
+		project = (
+			frappe.get_doc({"doctype": "Project", "title": "Archived", "team": TEAM, "enabled": 0})
+			.insert()
+			.name
+		)
 
 		doc = frappe.get_doc("Subscription", self.sub)
 		doc.project = project
@@ -783,9 +787,7 @@ class TestProjectValidation(BillingTestBase):
 			doc.save()
 
 	def test_tagging_an_own_active_project_is_allowed(self):
-		project = frappe.get_doc(
-			{"doctype": "Project", "title": "Customer X", "team": TEAM}
-		).insert().name
+		project = frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM}).insert().name
 
 		doc = frappe.get_doc("Subscription", self.sub)
 		doc.project = project
@@ -801,9 +803,13 @@ class TestProjectSpendingLimit(BillingTestBase):
 	already-tagged subscription is never un-tagged or stopped."""
 
 	def _project(self, spending_limit=0):
-		return frappe.get_doc(
-			{"doctype": "Project", "title": "Customer X", "team": TEAM, "spending_limit": spending_limit}
-		).insert().name
+		return (
+			frappe.get_doc(
+				{"doctype": "Project", "title": "Customer X", "team": TEAM, "spending_limit": spending_limit}
+			)
+			.insert()
+			.name
+		)
 
 	def test_tagging_under_the_limit_succeeds(self):
 		# PLAN's locked rate is 3200 INR/mo (DEFAULT_RATES) — comfortably under 5000.

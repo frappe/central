@@ -267,10 +267,7 @@ function onAdd(): void {
 									theme="amber"
 									label="Re-auth needed"
 								/>
-								<Badge
-									v-else-if="pm.status !== 'Active'"
-									:label="pm.status"
-								/>
+								<Badge v-else-if="pm.status !== 'Active'" :label="pm.status" />
 							</div>
 							<div v-if="detail(pm)" class="truncate text-p-sm text-ink-gray-5">
 								{{ detail(pm) }}

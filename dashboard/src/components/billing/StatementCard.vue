@@ -75,10 +75,7 @@ const hidden = computed(() =>
 								{{ billingPeriod(row.period_start, row.period_end) }}
 							</span>
 							<span role="cell" class="flex justify-end">
-								<Badge
-									:theme="invoiceTheme(row.status)"
-									:label="row.status"
-								/>
+								<Badge :theme="invoiceTheme(row.status)" :label="row.status" />
 							</span>
 							<span
 								role="cell"

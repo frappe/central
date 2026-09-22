@@ -15,8 +15,9 @@ class Team(Document):
 	from typing import TYPE_CHECKING
 
 	if TYPE_CHECKING:
-		from central.central.doctype.team_member.team_member import TeamMember
 		from frappe.types import DF
+
+		from central.central.doctype.team_member.team_member import TeamMember
 
 		is_staging_trial: DF.Check
 		members: DF.Table[TeamMember]

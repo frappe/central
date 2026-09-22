@@ -151,11 +151,7 @@ onScopeDispose(() => cancelAnimationFrame(edgeRaf))
 
 		<!-- user profile dropdown -->
 		<div class="mt-auto px-2 pb-2" v-if="!isMobile">
-			<Dropdown
-				:options="footerMenuItems"
-				side="top"
-				match-trigger-width
-			>
+			<Dropdown :options="footerMenuItems" side="top" match-trigger-width>
 				<template #default="{ open }">
 					<!-- No transition on the button itself: `duration-*` alone animates
 					     ALL properties, so the open state's white card faded in over

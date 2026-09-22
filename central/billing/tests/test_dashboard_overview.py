@@ -148,9 +148,11 @@ class TestForecastCarriesProjectTags(OverviewBase):
 		# project's resources go untagged, so the breakdown must not keep showing a
 		# stale project label for a line that will actually bill untagged.
 		sub = self._provision(rate=3000)
-		project = frappe.get_doc(
-			{"doctype": "Project", "title": "Customer X", "team": TEAM, "enabled": 0}
-		).insert().name
+		project = (
+			frappe.get_doc({"doctype": "Project", "title": "Customer X", "team": TEAM, "enabled": 0})
+			.insert()
+			.name
+		)
 		frappe.db.set_value("Subscription", sub, "project", project)
 		frappe.db.commit()
 
