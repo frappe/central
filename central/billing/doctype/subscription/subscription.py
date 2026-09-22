@@ -176,7 +176,9 @@ class Subscription(Document):
 		today's rate (ADR 0010). Used by both a preset plan change and a composed
 		resize / mode switch (#82)."""
 		previous = self.get_doc_before_save()
-		rate, currency = self.resolve_rate_snapshot()
+		# A resize that keeps a preset's bundle price and only adds for extra disk passes the
+		# rate explicitly, since it is not the à-la-carte composition total.
+		rate, currency = self.flags.locked_rate_override or self.resolve_rate_snapshot()
 		frappe.get_doc(
 			{
 				"doctype": "Subscription Change",

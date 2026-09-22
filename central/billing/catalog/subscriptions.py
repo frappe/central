@@ -377,6 +377,7 @@ def begin_resize(
 	plan: str | None = None,
 	includes: list | None = None,
 	sub_category: str | None = None,
+	disk_gigabytes: int | None = None,
 	changed_by: str | None = None,
 ) -> dict:
 	"""Console's resize front door (#84). A real Firecracker resize is slow — the host
@@ -405,14 +406,28 @@ def begin_resize(
 	if server and server.resize_in_progress:
 		frappe.throw(frappe._("This server is already resizing — wait for it to finish."))
 
-	shape = _plan_resize(doc, server, plan, includes, sub_category)
+	# A plan's own disk is what a new server is created with. Resize keeps the
+	# current disk, or grows it, and refuses a plan whose disk is smaller.
+	original_plan = plan
+	plan, includes, sub_category = _resize_disk_choice(doc, plan, includes, sub_category, disk_gigabytes)
+	# A preset grown past its own disk is now billed as a composed shape, but keeps the bundle
+	# price plus the disk rate for the extra GB — never the cheaper à-la-carte total.
+	override_rate = (
+		_preset_plus_disk_rate(doc, original_plan, disk_gigabytes) if original_plan and plan is None else None
+	)
+	shape = _plan_resize(doc, server, plan, includes, sub_category, override_rate)
 	if shape is None:
 		return {"queued": False, "resized": False}  # same config — nothing to do
 
 	# No live VM to reshape → re-lock the contract inline (nothing slow to defer).
 	if not server or server.status not in ("Running", "Paused", "Stopped"):
 		_apply_resize(
-			subscription, plan=plan, includes=includes, sub_category=sub_category, changed_by=changed_by
+			subscription,
+			plan=plan,
+			includes=includes,
+			sub_category=sub_category,
+			override_rate=override_rate,
+			changed_by=changed_by,
 		)
 		return {"queued": False, "resized": True}
 
@@ -429,13 +444,14 @@ def begin_resize(
 		plan=plan,
 		includes=includes,
 		sub_category=sub_category,
+		override_rate=override_rate,
 		changed_by=changed_by,
 		server_id=doc.server_id,
 	)
 	return {"queued": True, "resized": True}
 
 
-def _plan_resize(doc, server, plan, includes, sub_category) -> dict | None:
+def _plan_resize(doc, server, plan, includes, sub_category, override_rate=None) -> dict | None:
 	"""Decide a resize synchronously: return the target VM shape (vcpus/memory/disk), or
 	None when it's a no-op (same config). Runs the VM-free checks — no-op detection,
 	headroom, and the disk-shrink guard — so the user gets these errors immediately,
@@ -459,10 +475,75 @@ def _plan_resize(doc, server, plan, includes, sub_category) -> dict | None:
 			return None
 		shape = _server_shape(rows)
 		new_rate = resolve_config_rate(rows, currency, cluster)
-	enforce_headroom(doc.team, new_rate, exclude=doc.name)
+	if override_rate is not None:
+		new_rate = override_rate
+	_enforce_resize_headroom(doc.team, new_rate, exclude=doc.name)
 	if server and server.status in ("Running", "Paused", "Stopped"):
 		_guard_disk_shrink(doc.server_id, shape)
 	return shape
+
+
+def _resize_disk_choice(doc, plan, includes, sub_category, disk_gigabytes):
+	"""Apply the console's disk choice to a preset target.
+
+	`disk_gigabytes` is omitted for an unchanged plan bundle. When it differs from
+	the plan's disk, the resize becomes the plan's CPU and memory plus that disk,
+	so a kept disk is not grown in passing and a grown disk is not stuck on the
+	bundle price. A plan with less disk than the server already has is refused:
+	storage cannot shrink, so that plan is no longer a resize target."""
+	if not plan or disk_gigabytes is None:
+		return plan, includes, sub_category
+	disk_gigabytes = frappe.utils.cint(disk_gigabytes)
+	plan_disk = _plan_shape(plan)["disk_gigabytes"]
+	current_disk = (
+		frappe.utils.cint(frappe.db.get_value("Virtual Machine", doc.server_id, "disk_gigabytes"))
+		if doc.server_id
+		else 0
+	)
+	if plan_disk < current_disk:
+		frappe.throw(
+			frappe._(
+				"Disk can't shrink: this server has a {0} GB disk, so it cannot move to a smaller plan."
+			).format(current_disk)
+		)
+	if disk_gigabytes == plan_disk:
+		return plan, includes, sub_category
+	rows = _plan_includes(plan)
+	replaced = False
+	for row in rows:
+		if row["resource_type"] == "Disk":
+			row["quantity"] = disk_gigabytes
+			replaced = True
+	if not replaced:
+		rows.append({"resource_type": "Disk", "quantity": disk_gigabytes, "unit": "GB"})
+	profile = frappe.db.get_value("Plan", plan, "sub_category") or sub_category
+	return None, [dict(row) for row in rows], profile
+
+
+def _plan_includes(plan: str) -> list:
+	return frappe.get_all(
+		"Plan Includes",
+		filters={"parenttype": "Plan", "parent": plan},
+		fields=["resource_type", "quantity", "unit"],
+		order_by="idx asc",
+	)
+
+
+def _preset_plus_disk_rate(doc, plan: str, disk_gigabytes) -> float | None:
+	"""A preset's bundle price plus the disk rate for the GB grown beyond the plan's own disk.
+	Growing disk on a preset therefore always adds to the price, instead of dropping to the
+	cheaper à-la-carte total. Returns None if the plan has no rate in the team's currency."""
+	from central.billing.catalog.pricing import resolve_component_rate
+
+	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
+	cluster = frappe.db.get_value("Virtual Machine", doc.server_id, "cluster") if doc.server_id else None
+	base = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
+	if base is None:
+		return None
+	extra = max(0, frappe.utils.cint(disk_gigabytes) - _plan_shape(plan)["disk_gigabytes"])
+	if not extra:
+		return base
+	return base + extra * frappe.utils.flt(resolve_component_rate("Disk", currency, cluster) or 0)
 
 
 def _apply_resize(
@@ -471,6 +552,7 @@ def _apply_resize(
 	plan: str | None = None,
 	includes: list | None = None,
 	sub_category: str | None = None,
+	override_rate: float | None = None,
 	changed_by: str | None = None,
 	server_id: str | None = None,
 ) -> None:
@@ -487,7 +569,9 @@ def _apply_resize(
 		if plan:
 			resize_to_plan(subscription, plan, changed_by=changed_by)
 		else:
-			resize_composed_subscription(subscription, includes or [], sub_category, changed_by=changed_by)
+			resize_composed_subscription(
+				subscription, includes or [], sub_category, changed_by=changed_by, override_rate=override_rate
+			)
 	except Exception:
 		if server_id:
 			frappe.db.rollback()
@@ -532,6 +616,7 @@ def resize_composed_subscription(
 	includes: list,
 	sub_category: str | None = None,
 	changed_by: str | None = None,
+	override_rate: float | None = None,
 ):
 	"""Resize a composed config — or slide a preset onto a custom shape — as the
 	`changed`-event re-lock (#82, ADR 0010).
@@ -552,10 +637,10 @@ def resize_composed_subscription(
 		frappe.throw(frappe._("A composed config needs an optimisation profile."))
 
 	rows = [dict(r) for r in includes]
-	from central.billing.catalog.composition import composition_quantities, validate_composition
+	from central.billing.catalog.composition import composition_quantities
 	from central.billing.catalog.pricing import resolve_config_rate
 
-	validate_composition(profile, rows)
+	_validate_resize_shape(profile, rows, doc.server_id)
 
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
 	server = (
@@ -563,8 +648,14 @@ def resize_composed_subscription(
 		if doc.server_id
 		else None
 	)
-	new_rate = resolve_config_rate(rows, currency, server.cluster if server else None)
-	enforce_headroom(doc.team, new_rate, exclude=subscription)
+	# A preset grown past its own disk keeps the bundle price plus the extra disk; a genuine
+	# composed shape is priced à la carte. The headroom check uses whichever will be billed.
+	new_rate = (
+		override_rate
+		if override_rate is not None
+		else resolve_config_rate(rows, currency, server.cluster if server else None)
+	)
+	_enforce_resize_headroom(doc.team, new_rate, exclude=subscription)
 
 	# Resizing to the identical composition already running is a no-op (no event).
 	if doc.pricing_mode == "Composed" and composition_quantities(doc.includes) == composition_quantities(
@@ -584,6 +675,9 @@ def resize_composed_subscription(
 	doc.sub_category = profile
 	doc.set("includes", rows)
 	doc.flags.changed_by = changed_by
+	# Lock the new segment at the bundle-plus-disk price rather than the à-la-carte total.
+	if override_rate is not None:
+		doc.flags.locked_rate_override = (override_rate, currency)
 	doc.save(ignore_permissions=True)  # controller appends the Plan Changed re-lock
 	return doc
 
@@ -610,7 +704,7 @@ def resize_to_plan(subscription: str, new_plan: str, changed_by: str | None = No
 	# begin_resize also checks it synchronously for immediate feedback.
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
 	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, server.cluster if server else None)
-	enforce_headroom(doc.team, new_rate, exclude=subscription)
+	_enforce_resize_headroom(doc.team, new_rate, exclude=subscription)
 	if server:
 		_reshape_vm(doc.server_id, server.cluster, server.status, _plan_shape(new_plan))
 	return change_plan(subscription, new_plan, changed_by=changed_by)
@@ -624,6 +718,62 @@ def _plan_shape(plan: str) -> dict:
 		fields=["resource_type", "quantity"],
 	)
 	return _server_shape(includes)
+
+
+def _validate_resize_shape(profile: str, rows: list, server_id: str | None) -> None:
+	"""Validate a resize shape. A disk the server already has may sit below the
+	profile minimum, and a disk-only change keeps the CPU and memory it runs now
+	even when that shape is not what a new config would be allowed to design."""
+	from central.billing.catalog.composition import (
+		COMPUTE,
+		DISK,
+		MEMORY,
+		composition_quantities,
+		validate_composition,
+	)
+
+	if not server_id:
+		validate_composition(profile, rows)
+		return
+	current = (
+		frappe.db.get_value(
+			"Virtual Machine", server_id, ["vcpus", "memory_megabytes", "disk_gigabytes"], as_dict=True
+		)
+		or frappe._dict()
+	)
+	qty = composition_quantities(rows)
+	current_disk = frappe.utils.cint(current.disk_gigabytes)
+	new_disk = frappe.utils.flt(qty.get(DISK, 0))
+	same_compute = frappe.utils.flt(qty.get(COMPUTE, 0)) == frappe.utils.flt(current.vcpus) and (
+		frappe.utils.flt(qty.get(MEMORY, 0)) == frappe.utils.flt(current.memory_megabytes) / 1024
+	)
+	if same_compute:
+		_guard_disk_shrink(server_id, {"disk_gigabytes": int(new_disk)})
+		disk_max = frappe.utils.flt(frappe.db.get_value("Plan Sub-Category", profile, "disk_max"))
+		if disk_max and new_disk > disk_max:
+			frappe.throw(
+				frappe._("Disk {0} GB exceeds the {1} maximum of {2} GB.").format(
+					frappe.utils.flt(new_disk), profile, disk_max
+				)
+			)
+		return
+	disk_min = frappe.utils.flt(frappe.db.get_value("Plan Sub-Category", profile, "disk_min"))
+	check_rows = rows
+	if new_disk == current_disk and disk_min and new_disk < disk_min:
+		check_rows = [
+			{**row, "quantity": disk_min} if row.get("resource_type") == DISK else dict(row) for row in rows
+		]
+	validate_composition(profile, check_rows)
+
+
+def _enforce_resize_headroom(team: str, new_rate, exclude: str | None = None) -> None:
+	"""Staging trials are not spend-capped on resize. The menu already shows the
+	full catalog, and the trial is bounded by credits rather than trust-tier headroom."""
+	if frappe.db.get_value("Team", team, "is_staging_trial"):
+		if new_rate is None:
+			frappe.throw(frappe._("This configuration cannot be priced in your currency."))
+		return
+	enforce_headroom(team, new_rate, exclude=exclude)
 
 
 def _guard_disk_shrink(server_id: str, shape: dict) -> None:

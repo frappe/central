@@ -305,6 +305,53 @@ def restart_server(team: str | None = None, resource_id: str | None = None) -> d
 
 @frappe.whitelist(methods=["POST"])
 @resource_action
+def resize_server(
+	team: str | None = None,
+	resource_id: str | None = None,
+	plan: str | None = None,
+	includes: list | str | None = None,
+	sub_category: str | None = None,
+	disk_gigabytes: int | None = None,
+) -> dict:
+	"""Resize a server's CPU, memory, and disk.
+
+	Gated on `server:resize`. Billing re-locks the rate and Atlas applies the
+	shape: a compute change stops the server first, a larger disk does not, and
+	a smaller disk is refused. Atlas moves the server if this host cannot fit it."""
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "server:resize"):
+		frappe.throw(_("You can't resize this team's servers."), frappe.PermissionError)
+	if not resource_id:
+		frappe.throw(_("A server is required."))
+
+	server = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
+	if not server:
+		frappe.throw(_("Server {0} was not found.").format(resource_id), frappe.DoesNotExistError)
+	subscription = frappe.db.get_value("Subscription", {"team": team, "server_id": server}, "name")
+	if not subscription:
+		frappe.throw(_("This server has no subscription to resize."))
+
+	from central.billing.catalog.subscriptions import begin_resize
+
+	if isinstance(includes, str):
+		includes = frappe.parse_json(includes)
+	if disk_gigabytes is not None and disk_gigabytes != "":
+		disk_gigabytes = frappe.utils.cint(disk_gigabytes)
+	else:
+		disk_gigabytes = None
+	result = begin_resize(
+		subscription,
+		plan=plan or None,
+		includes=includes,
+		sub_category=sub_category or None,
+		disk_gigabytes=disk_gigabytes,
+	)
+	return {"subscription": subscription, **result}
+
+
+@frappe.whitelist(methods=["POST"])
+@resource_action
 def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
 	"""Terminate a server. Gated on `server:terminate`."""
 	return _run_command("terminate", team, resource_id)

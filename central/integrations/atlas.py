@@ -81,20 +81,30 @@ class AtlasClient:
 
 		return self._request("POST", f"{path}/actions/{action}")
 
-	def update_compute(
-		self, name: str, cpu_millicores: int, memory_mib: int, sleep_after_idle_seconds: int
+	def resize(
+		self,
+		name: str,
+		cpu_millicores: int,
+		memory_mib: int,
+		disk_mib: int,
+		sleep_after_idle_seconds: int = 0,
 	) -> dict:
-		"""Set CPU, memory and the idle shutdown delay. Atlas takes a CPU or memory change
-		only while the VM is stopped. Zero seconds turns idle shutdown off."""
+		"""Set CPU, memory and disk in one call. Atlas takes a CPU or memory change only on a
+		stopped VM, resizes it in place or moves it to a host that fits (reporting a `migrating`
+		state meanwhile), and never shrinks the disk. Zero seconds turns idle shutdown off,
+		since a resized server has outgrown the hobby sleep."""
 		payload = {
 			"cpu_millicores": cpu_millicores,
 			"memory_mib": memory_mib,
+			"disk_mib": disk_mib,
 			"sleep_after_idle_seconds": sleep_after_idle_seconds,
 		}
-		return self._request("PATCH", f"virtual-machines/{quote(name, safe='')}/compute", payload=payload)
+		return self._request(
+			"POST", f"virtual-machines/{quote(name, safe='')}/actions/resize", payload=payload
+		)
 
 	def update_disk(self, name: str, disk_mib: int) -> dict:
-		"""Grow the disk. Atlas refuses a smaller size."""
+		"""Grow the disk online, without stopping the VM. Atlas refuses a smaller size."""
 		return self._request(
 			"PATCH", f"virtual-machines/{quote(name, safe='')}/disk", payload={"disk_mib": disk_mib}
 		)
