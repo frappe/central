@@ -17,6 +17,7 @@ writes an append-only Subscription Change.
 """
 
 import frappe
+from frappe.query_builder import Order
 
 # The account-standing state machine (which moves are legal) now lives in the one
 # transition authority; re-exported so callers that catch `subscriptions.InvalidTransition`
@@ -712,22 +713,31 @@ def _is_resizable(doc) -> bool:
 _SEGMENT_CHANGE_TYPES = ["Created", "Plan Changed", "Cancelled"]
 
 
-def _latest_segment_by_subscription(subscription_names: list[str]) -> dict:
+def _latest_segment_by_subscription(subscription_names: list[str], for_update: bool = False) -> dict:
 	"""The most-recent rate-bearing change per subscription, in ONE batched query.
 
 	Ordered newest-first so the first row seen per subscription is its latest segment
 	marker; this replaces the per-subscription query that made `team_run_rate` an N+1
-	on a hot read (review notes #2)."""
+	on a hot read (review notes #2).
+
+	`for_update` reads the rows under a lock, which a caller deciding whether to
+	provision needs: a plain read is answered from its transaction's snapshot, taken
+	before a concurrent create committed."""
 	if not subscription_names:
 		return {}
-	rows = frappe.get_all(
-		"Subscription Change",
-		filters={"subscription": ["in", subscription_names], "change_type": ["in", _SEGMENT_CHANGE_TYPES]},
-		fields=["subscription", "change_type", "locked_rate", "currency"],
-		order_by="effective_at desc, creation desc",
+	change = frappe.qb.DocType("Subscription Change")
+	query = (
+		frappe.qb.from_(change)
+		.select(change.subscription, change.change_type, change.locked_rate, change.currency)
+		.where(change.subscription.isin(subscription_names))
+		.where(change.change_type.isin(list(_SEGMENT_CHANGE_TYPES)))
+		.orderby(change.effective_at, order=Order.desc)
+		.orderby(change.creation, order=Order.desc)
 	)
+	if for_update:
+		query = query.for_update()
 	latest: dict = {}
-	for r in rows:
+	for r in query.run(as_dict=True):
 		latest.setdefault(r.subscription, r)
 	return latest
 
@@ -829,16 +839,39 @@ def team_run_rate(team: str, exclude: str | None = None) -> float:
 	)
 
 
-def enforce_headroom(team: str, new_rate, exclude: str | None = None) -> None:
+def locked_team_run_rate(team: str, exclude: str | None = None) -> float:
+	"""`team_run_rate` read under a lock, for a caller about to provision against it.
+
+	Two creates that read the same run rate both pass, and the team ends up running
+	more than it was cleared for. Reading the rows under a lock makes the second
+	caller wait for the first and then see what it committed.
+	"""
+	sub = frappe.qb.DocType("Subscription")
+	names = (
+		frappe.qb.from_(sub)
+		.select(sub.name)
+		.where((sub.team == team) & (sub.enabled == 1))
+		.for_update()
+		.run(pluck=True)
+	)
+	latest = _latest_segment_by_subscription([n for n in names if n != exclude], for_update=True)
+	return frappe.utils.flt(sum(seg.locked_rate for seg in latest.values() if seg.change_type != "Cancelled"))
+
+
+def enforce_headroom(team: str, new_rate, exclude: str | None = None, for_update: bool = False) -> None:
 	"""Reject a config that can't be priced, or that would push the team past its
 	remaining trust-tier headroom (the spend cap minus its other running run-rate).
-	The authoritative server-side gate reused by provision (#83) and resize (#82)."""
+	The authoritative server-side gate reused by provision (#83) and resize (#82).
+
+	`for_update` is for the caller that goes on to provision: it reads the run rate
+	under a lock so two creates cannot clear the same headroom."""
 	from central.billing.catalog.entitlements import get_team_caps
 
 	if new_rate is None:
 		frappe.throw(frappe._("This configuration cannot be priced in your currency."))
 	cap = frappe.utils.flt(get_team_caps(team).max_spend)
-	available = max(0.0, cap - team_run_rate(team, exclude=exclude))
+	running = locked_team_run_rate(team, exclude) if for_update else team_run_rate(team, exclude=exclude)
+	available = max(0.0, cap - running)
 	if frappe.utils.flt(new_rate) > available:
 		frappe.throw(
 			frappe._("This configuration ({0}) exceeds your remaining headroom ({1}).").format(

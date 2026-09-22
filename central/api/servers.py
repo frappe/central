@@ -581,7 +581,7 @@ def create_composed_server(
 	currency = frappe.db.get_value("Billing Profile", team, "currency")
 	rate = resolve_config_rate(includes, currency, region)
 	require_billing_profile_or_credit(team, rate, "create servers")
-	enforce_headroom(team, rate)
+	enforce_headroom(team, rate, for_update=True)
 
 	qty = composition_quantities(includes)
 	client = AtlasClient.for_region(region)

@@ -6,6 +6,7 @@ Provisioning is allowed while the wallet funds it; the invoice is held until the
 details arrive.
 """
 
+import threading
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -16,6 +17,7 @@ from central.billing.payments import profile, settlement
 from central.billing.platform import alerts as billing_alerts
 from central.billing.revenue import credits, invoicing
 from central.billing.revenue.invoicing import run
+from central.billing.tests.test_credits import run_workers
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
 from central.billing.tests.utils import (
 	complete_billing_profile,
@@ -152,6 +154,59 @@ class TestCreditFundedProvisioning(CreditFundedTestBase):
 		)
 
 		self.assertFalse(settlement.wallet_funds(TEAM, servers._plan_rate(TEAM, unpriced, REGION)))
+
+
+class TestConcurrentFunding(CreditFundedTestBase):
+	"""Two creates at once must not both spend the same credit."""
+
+	def _purge_committed(self):
+		# The workers commit, so the test rollback cannot undo them.
+		for sub in frappe.get_all("Subscription", {"team": TEAM}, pluck="name"):
+			frappe.db.delete("Subscription Change", {"subscription": sub})
+			frappe.db.delete("Subscription", {"name": sub})
+		frappe.db.delete("Asset", {"team": TEAM})
+		frappe.db.delete("Credit Ledger Entry", {"team": TEAM})
+		frappe.db.delete("Credit Wallet", {"team": TEAM})
+		frappe.db.commit()
+
+	def test_only_one_of_four_racing_creates_is_funded(self):
+		# Credit for one server at RATE, four callers asking at the same moment.
+		self._grant(RATE + 500)
+		frappe.db.commit()  # the workers are on their own connections
+
+		vm_ids = iter([f"vm-race-{i}" for i in range(4)])
+		lock = threading.Lock()
+
+		def create_vm(**kwargs):
+			with lock:
+				vm_id = next(vm_ids)
+			return {
+				"name": vm_id,
+				"team": TEAM,
+				"title": vm_id,
+				"status": "Running",
+				"vcpus": 2,
+				"memory_megabytes": 4096,
+				"disk_gigabytes": 40,
+			}
+
+		client = MagicMock()
+		client.create_vm.side_effect = create_vm
+		try:
+			with patch.object(servers.AtlasClient, "for_region", return_value=client):
+				results = run_workers(
+					4,
+					lambda i: servers.create_server(
+						team=TEAM, region=REGION, title=f"web-{i}", plan=self.plan
+					),
+				)
+
+			frappe.db.rollback()  # refresh this connection's snapshot
+			funded = [r for r in results.values() if r == "ok"]
+			self.assertEqual(len(funded), 1, results)
+			self.assertEqual(frappe.db.count("Subscription", {"team": TEAM}), 1)
+		finally:
+			self._purge_committed()
 
 
 class TestCreditFundedHeadroom(CreditFundedTestBase):

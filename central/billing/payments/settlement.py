@@ -103,19 +103,31 @@ def can_accept_spend(team: str, projected_spend, source=None) -> bool:
 	return frappe.utils.flt(projected_spend) <= effective_spend_cap(team, source)
 
 
-def credit_funded_headroom(team: str) -> float:
+def credit_funded_headroom(team: str, for_update: bool = False) -> float:
 	"""How much *more* monthly run-rate the team's own credits can fund.
 
 	Wallet balance under the tier ceiling, less what the team already runs. Always
 	wallet-bound: no credits means no headroom, not the bare tier cap. Nothing is
 	funded once a bill has waited out the grace period for the team's details.
+
+	`for_update` is for the caller that will act on the answer: it takes the team's
+	wallet lock and reads the run rate through it. Without it two creates read the
+	same numbers at once and both provision. The dashboard asks without the lock —
+	there it is a figure on a card, not a decision.
 	"""
-	from central.billing.catalog.subscriptions import team_run_rate
+	from central.billing.catalog.subscriptions import locked_team_run_rate, team_run_rate
 
 	if details_overdue(team):
 		return 0.0
-	balance = frappe.utils.flt(credits.get_balance(team)["balance"])
-	return max(0.0, min(_tier_cap(team), balance) - team_run_rate(team))
+	if for_update:
+		# Wallet first, then the subscriptions: one order everywhere, so a booking
+		# and a provision can never hold each other's next lock.
+		balance = credits.lock_team_wallet(team)
+		running = locked_team_run_rate(team)
+	else:
+		balance = frappe.utils.flt(credits.get_balance(team)["balance"])
+		running = team_run_rate(team)
+	return max(0.0, min(_tier_cap(team), balance) - running)
 
 
 def details_overdue(team: str) -> bool:
@@ -135,10 +147,14 @@ def details_overdue(team: str) -> bool:
 
 
 def wallet_funds(team: str, new_rate) -> bool:
-	"""Whether credits cover `new_rate` of extra monthly run-rate. None is never funded."""
+	"""Whether credits cover `new_rate` of extra monthly run-rate. None is never funded.
+
+	The answer is held: the team's wallet stays locked until the caller's request
+	commits, so the create it clears is counted before the next one is judged.
+	"""
 	if new_rate is None:
 		return False
-	return frappe.utils.flt(new_rate) <= credit_funded_headroom(team)
+	return frappe.utils.flt(new_rate) <= credit_funded_headroom(team, for_update=True)
 
 
 def credit_forecast(team: str, projected_spend, notify: bool = True, source=None) -> dict:

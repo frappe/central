@@ -319,6 +319,12 @@ consistent reads, which under InnoDB MVCC take **no locks at all**, so no number
 workers can make them block each other. Credit Wallet *is* locked `FOR UPDATE`, but the
 key is (team, currency): a team only ever contends with its own concurrent top-up.
 
+Provisioning is the one path that does lock those tables: deciding whether credit covers
+a new server is a read the caller then acts on, so it takes the wallet anchor and reads
+Subscription + Subscription Change `FOR UPDATE` behind it — otherwise two creates clear
+the same balance. Both reads are index ranges scoped to the one team, and the order is
+always wallet first. The run is unaffected: a plain consistent read never waits on them.
+
 There is exactly one **global** lock in the run, and it is not a data table. Every
 Invoice insert calls `make_autoname("INV-YYYY-MM-.#####")`, which takes the `tabSeries`
 row `FOR UPDATE` and holds it **until the transaction commits** — so every worker in
@@ -592,6 +598,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 | Invoice never generated | `billing_run_status()` — is the team in `pending_draft`? then Error Log `Billing Run Failure` for that team, the long queue for stuck jobs, and `lines.compute_line_items` for empty segments |
 | Half the teams billed, half not | a partial run: read `billing_run_status()`, fix the cause, re-fire `draft_monthly_invoices` — both phases are idempotent and resume |
 | Billing run never starts / jobs pile up | is there a worker on the `billing` queue? (`common_site_config.workers.billing` + `bench worker --queue billing`); the billing log warns and falls back to `long` if the queue is undeclared |
+| Two creates both cleared the same credit, or a create waits on a lock | `settlement.wallet_funds` takes the team's Credit Wallet anchor `FOR UPDATE` and reads the run rate through `subscriptions.locked_team_run_rate`; the lock is held to the end of the request, so one team's concurrent creates queue. Check nothing on the create path takes Subscription before Credit Wallet |
 | Lock wait timeouts during the run | check the per-unit `frappe.db.commit()` in `draft_team_page`/`settle_draft_page` is still there — without it the `tabSeries` lock is held for a whole page; then check nothing new writes a shared row inside the unit |
 | Run is far too slow | `background_workers` on the billing queue is the only throughput dial — but it is also the gateway concurrency cap; check for 429s (`Billing Run Failure` Error Logs, `dunning_starts_on` deferrals) before raising it |
 | Customer dunned during a backlog | should be impossible: `dunning_starts_on` is pushed by `dunning.defer_dunning` on every failure of ours. If it happened, find the collection path that failed without calling it |
