@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Alert, Button, Switch } from 'frappe-ui'
 import { computed, ref } from 'vue'
+import ServerSnapshotsCardSkeleton from '@/components/snapshots/ServerSnapshotsCardSkeleton.vue'
 import { useSnapshots } from '@/composables/useSnapshots'
 import { getErrorMessage } from '@/lib/feedback'
 import { formatDate } from '@/lib/format'
@@ -51,7 +52,8 @@ defineExpose({ reload })
 </script>
 
 <template>
-	<section class="rounded-7 border border-outline-gray-2 p-5">
+	<ServerSnapshotsCardSkeleton v-if="loading && !server" />
+	<section v-else class="rounded-7 border border-outline-gray-2 p-5">
 		<div class="mb-5 flex items-center justify-between gap-3">
 			<h3 class="text-base font-semibold text-ink-gray-9">Snapshots</h3>
 			<div class="flex items-center gap-2">
@@ -71,10 +73,7 @@ defineExpose({ reload })
 			</div>
 		</div>
 
-		<p v-if="loading && !server" class="text-sm text-ink-gray-5">
-			Loading snapshots…
-		</p>
-		<p v-else-if="error" class="text-sm text-ink-red-7">{{ error }}</p>
+		<p v-if="error" class="text-sm text-ink-red-7">{{ error }}</p>
 		<div v-else class="space-y-3.5">
 			<Alert v-if="mutationError" theme="red" :title="mutationError" />
 			<dl class="space-y-3.5 text-sm">
