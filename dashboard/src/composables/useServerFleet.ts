@@ -150,9 +150,7 @@ export function useServerFleet() {
 
 	const spots = computed<MapSpot[]>(() => {
 		if (!capabilities.canCreateServer.value) return []
-		const occupied = new Set(
-			fleet.servers.value.map((server) => server.cluster),
-		)
+		const occupied = new Set(fleet.servers.value.map((server) => server.region))
 		return regions.value
 			.filter((region) => !occupied.has(region.region) && hasMapCoords(region))
 			.filter(

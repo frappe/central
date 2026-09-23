@@ -182,7 +182,7 @@ def _create_resource_action(
 			"subdomain": subdomain,
 			"action": "create",
 			"team": server_input.team,
-			"atlas_instance": server_input.region,
+			"region": server_input.region,
 			"title": server_input.title,
 			"request_payload": configuration.model_dump(),
 			"correlation_id": frappe.generate_hash(length=32),

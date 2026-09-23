@@ -27,7 +27,7 @@ const target = computed({
 	get: () => props.server,
 	set: (value: VirtualMachineRow | null) => emit('update:server', value),
 })
-const region = computed(() => props.server?.cluster ?? null)
+const region = computed(() => props.server?.region ?? null)
 const { rate, currency, freePerServer } = useSnapshotPricing(region)
 const title = ref('')
 const loading = ref(false)

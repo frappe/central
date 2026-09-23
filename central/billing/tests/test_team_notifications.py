@@ -145,7 +145,7 @@ class TestServerFailureFeed(TeamNotificationBase):
 				"doctype": "Virtual Machine",
 				"resource_id": "vm-feed-1",
 				"team": TEAM,
-				"cluster": self.CLUSTER,
+				"region": self.CLUSTER,
 				"status": "Pending",
 			}
 		).insert(ignore_permissions=True)

@@ -227,7 +227,7 @@ class Subscription(Document):
 		# A VM subscription resolves its cluster off the VirtualMachine; a team-level service
 		# subject (no VirtualMachine) carries its cluster on the Subscription itself (ADR 0013).
 		cluster = (
-			frappe.db.get_value("Virtual Machine", self.server_id, "cluster") if self.server_id else None
+			frappe.db.get_value("Virtual Machine", self.server_id, "region") if self.server_id else None
 		) or self.cluster
 
 		if self.pricing_mode == "Composed":

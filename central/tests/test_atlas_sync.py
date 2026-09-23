@@ -32,7 +32,7 @@ class TestServerActions(IntegrationTestCase):
 				"resource_id": "action-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
 				"atlas_vm_id": "vm-00001",
-				"cluster": "test-actions",
+				"region": "test-actions",
 				"status": "Stopped",
 			}
 		).insert()
@@ -103,7 +103,7 @@ class TestServerActions(IntegrationTestCase):
 				"resource_type": "Server",
 				"action": "resize",
 				"team": self.team.name,
-				"atlas_instance": self.server.cluster,
+				"region": self.server.region,
 				"server": self.server.name,
 				"resource_id": self.server.name,
 				"remote_vm_id": self.server.atlas_vm_id,

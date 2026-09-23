@@ -34,13 +34,13 @@ def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | No
 	The reply is the sender's receipt: `queued` when a job will apply the report, and
 	`ignored` with a reason when there is nothing to do. Only an authentication failure
 	raises, because only that is worth a retry."""
-	cluster = _verified_atlas_cluster(region, signature, raw_body)
+	verified_region = _verified_atlas_region(region, signature, raw_body)
 
 	report = _parsed(raw_body)
 	if report is None:
 		return _ignored("unreadable body")
 
-	server = _atlas_server_for(cluster, report.get("virtual_machine"))
+	server = _atlas_server_for(verified_region, report.get("virtual_machine"))
 	if not server:
 		return _ignored("unknown server")
 
@@ -51,7 +51,7 @@ def accept_atlas_report(raw_body: bytes, region: str | None, signature: str | No
 	frappe.enqueue(
 		"central.integrations.state_delivery.apply_atlas_report",
 		queue="short",
-		cluster=cluster,
+		region=verified_region,
 		report=report,
 	)
 	return {"queued": True, "resource_id": server.name}
@@ -78,11 +78,11 @@ def accept_cargo_report(raw_body: bytes, region: str | None, signature: str | No
 	return {"recorded": True, "service_detail": detail}
 
 
-def apply_atlas_report(cluster: str, report: dict) -> None:
+def apply_atlas_report(region: str, report: dict) -> None:
 	"""Record one authenticated report. The handler already found it worth applying;
 	this repeats the checks under a row lock, because another worker may have applied a
 	newer report in between."""
-	server = _atlas_server_for(cluster, report.get("virtual_machine"))
+	server = _atlas_server_for(region, report.get("virtual_machine"))
 	if not server:
 		return
 
@@ -155,7 +155,7 @@ def _reported_at(report: dict):
 		return None
 
 
-def _atlas_server_for(cluster: str, virtual_machine: str | None) -> frappe._dict | None:
+def _atlas_server_for(region: str, virtual_machine: str | None) -> frappe._dict | None:
 	"""The server record this report is about. Ownership comes from Central's own row,
 	never from the report, and the region that signed the delivery scopes the lookup."""
 	if not virtual_machine or not isinstance(virtual_machine, str):
@@ -163,13 +163,13 @@ def _atlas_server_for(cluster: str, virtual_machine: str | None) -> frappe._dict
 
 	return frappe.db.get_value(
 		"Virtual Machine",
-		{"cluster": cluster, "atlas_vm_id": virtual_machine},
+		{"region": region, "atlas_vm_id": virtual_machine},
 		["name", "status", "last_reported_at"],
 		as_dict=True,
 	)
 
 
-def _verified_atlas_cluster(region: str | None, signature: str | None, raw_body: bytes) -> str:
+def _verified_atlas_region(region: str | None, signature: str | None, raw_body: bytes) -> str:
 	"""The region whose Atlas secret signed this delivery. `X-FC-Region` only selects which
 	secret to check; it proves nothing on its own."""
 	if not region or not signature:

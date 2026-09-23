@@ -40,11 +40,11 @@ def pilot_credential_auth(func: Callable) -> Callable:
 
 def get_pilot_region(credential: PilotCredential) -> str | None:
 	"""The region this pilot runs in, or None while Atlas has not bound its VirtualMachine.
-	`VirtualMachine.cluster` is a Region, so the region needs no lookup of its own."""
+	`VirtualMachine.region` links directly to Region, so no separate lookup is needed."""
 	if not credential.server:
 		return None
 
-	return frappe.db.get_value("Virtual Machine", credential.server, "cluster", cache=True)
+	return frappe.get_cached_value("Virtual Machine", credential.server, "region")
 
 
 def get_telemetry_base_url(region: str | None) -> str | None:

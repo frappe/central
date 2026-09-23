@@ -39,7 +39,7 @@ export function useFleetRows(
 		servers.value
 			.filter((server) => !serversOwnedBySite.value.has(server.name))
 			.map((server) => {
-				const region = regionsByName.value.get(server.cluster)
+				const region = regionsByName.value.get(server.region)
 				return {
 					kind: 'server' as const,
 					id: server.resource_id,
@@ -47,9 +47,9 @@ export function useFleetRows(
 					server,
 					visual: statusVisual(server),
 					specs: specLine(server),
-					cluster: server.cluster,
+					cluster: server.region,
 					region,
-					regionLabel: region ? regionLabel(region) : server.cluster,
+					regionLabel: region ? regionLabel(region) : server.region,
 					flag: flagEmoji(region?.country_code),
 					provider: region?.provider || null,
 				}

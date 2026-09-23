@@ -186,7 +186,7 @@ class TestMultiClusterConsolidation(IntegrationTestCase):
 		"""The same server-cluster set generate_team_invoice derives."""
 		server_ids = frappe.get_all("Subscription", {"team": self.TEAM}, pluck="server_id")
 		return sorted(
-			{c for c in frappe.get_all("Virtual Machine", {"name": ["in", server_ids]}, pluck="cluster") if c}
+			{c for c in frappe.get_all("Virtual Machine", {"name": ["in", server_ids]}, pluck="region") if c}
 		)
 
 	@staticmethod

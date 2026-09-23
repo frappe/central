@@ -41,7 +41,7 @@ class BucketProvisioning:
 
 	def __init__(self, request):
 		self.team = request.team
-		self.region = request.atlas_instance
+		self.region = request.region
 		self.requested_by = request.requested_by
 		self.bucket_name = self.get_bucket_name()
 

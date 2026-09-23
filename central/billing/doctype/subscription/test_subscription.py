@@ -27,7 +27,7 @@ class IntegrationTestSubscription(IntegrationTestCase):
 					"doctype": "Virtual Machine",
 					"resource_id": "vm-sub-doctype",
 					"team": self.team,
-					"cluster": "ap-south-1",
+					"region": "ap-south-1",
 					"status": "Pending",
 				}
 			).insert()

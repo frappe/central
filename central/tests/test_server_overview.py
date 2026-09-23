@@ -40,7 +40,7 @@ class TestServerOverview(IntegrationTestCase):
 				"resource_id": self.resource_id,
 				"title": "Overview server",
 				"team": self.team.name,
-				"cluster": self.region,
+				"region": self.region,
 				"status": "Running",
 				"vcpus": 2,
 				"memory_megabytes": 4096,
@@ -81,6 +81,8 @@ class TestServerOverview(IntegrationTestCase):
 			frappe.set_user("Administrator")
 
 		self.assertEqual(result["server"]["title"], "Overview server")
+		self.assertEqual(result["server"]["region"], self.region)
+		self.assertEqual(result["server"]["region_details"]["display_name"], self.region)
 		self.assertEqual(result["server"]["public_ipv4"], "203.0.113.10")
 		self.assertIsNone(result["server"]["plan_title"])
 		self.assertIsNone(result["server"]["plan_rate"])

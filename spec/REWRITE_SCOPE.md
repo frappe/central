@@ -30,7 +30,7 @@ Do not make rename, custom domains, Cargo registration, resize, migration, snaps
 
 Do not make a new API framework, generated Central client, catalog redesign, broad rename, or general code cleanup a dependency for Friday.
 
-Keep `Asset` as the persisted server record for this milestone. Keep its existing commercial identity and subscription links. Rename it to `Server` after staging works.
+Keep `Virtual Machine` as Central's persisted server record. Keep its commercial identity and subscription links.
 
 Use existing provisioning and action records where they fit. Add only the state, remote references, and receipt data needed for correctness.
 
@@ -104,7 +104,7 @@ A public key-set read must not rotate keys. Keep private keys and bootstrap cred
 
 Keep unrelated Cargo and Datum token paths unchanged if they are not required by the milestone. A signer change must not break them indirectly.
 
-Do not require the Atlas Instance-to-Region merge for staging. Keep one explicit configuration owner and defer structural consolidation. Add required endpoint fields and data patches only.
+Use Region as the single owner of regional identity and connection configuration. Add required endpoint fields and data patches only.
 
 ## Trial flow
 
@@ -312,7 +312,7 @@ Inventory partially applied earlier rewrite data. Preserve verified tenant mappi
 
 Back up the database and private files before cutover. Pause affected mutations and workers. Validate records and regional calls before resuming them.
 
-Do not migrate unrelated schemas, rename Asset, merge Atlas Instance, or redesign subscriptions for Friday.
+Do not migrate unrelated schemas or redesign subscriptions for the staging milestone.
 
 Remove obsolete regional mutation paths when their replacements land. Do not leave a dashboard control that calls a removed endpoint or reports false success.
 
@@ -323,7 +323,7 @@ The wider rewrite remains planned, but it is not part of the staging deadline.
 | Area | Later work |
 |---|---|
 | API surface | Reusable typed core, OpenAPI, generated Central clients, and migration of remaining routes. |
-| Data model | Asset-to-Server rename, Region consolidation, and focused data patches. |
+| Data model | Focused data patches for changes to current infrastructure records. |
 | Images | Additional application bundles and private Machine image selection. Shared image discovery is part of the foundation. |
 | Lifecycle | Resize/migration, snapshot, console streaming, richer operation progress, and fleet-scale scheduling. |
 | Rename and domains | Site/admin rename, customer domains, certificates through Pilot, broader DNS cases, and multi-site products. |

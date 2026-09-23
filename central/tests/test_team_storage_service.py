@@ -48,7 +48,7 @@ def receipt():
 
 
 def provisioning_request():
-	return Mock(team="TEAM-00001", atlas_instance="in-mumbai", requested_by="Administrator")
+	return Mock(team="TEAM-00001", region="in-mumbai", requested_by="Administrator")
 
 
 def pilot_request():

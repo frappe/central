@@ -25,10 +25,10 @@ const UNGATED: Capacity = {
 // admitted by the trust tier's allow-lists, and within the team's remaining
 // trust-tier headroom (spend cap minus current run-rate). Plans are priced and
 // gated per region, so this refetches whenever the picked region changes — and
-// stays empty until a region is picked (no cluster, nothing to price).
+// stays empty until a region is picked.
 
 export function usePlans(
-	cluster: Ref<string | null>,
+	region: Ref<string | null>,
 	excludeSubscription?: Ref<string | null>,
 	imageSelection?: Ref<ImageSelection | null>,
 ) {
@@ -40,7 +40,8 @@ export function usePlans(
 		ProvisionablePlans,
 		{
 			team: string
-			cluster: string
+			cluster?: string
+			region?: string
 			exclude_subscription?: string
 			for_resize?: number
 			offering?: string
@@ -52,7 +53,9 @@ export function usePlans(
 		),
 		params: () => ({
 			team: activeTeam.value!,
-			cluster: cluster.value!,
+			...(imageSelection
+				? { region: region.value! }
+				: { cluster: region.value! }),
 			...(imageSelection?.value ?? {}),
 			...(excludeSubscription?.value
 				? {
@@ -67,7 +70,7 @@ export function usePlans(
 	watch(
 		[
 			activeTeam,
-			cluster,
+			region,
 			() => excludeSubscription?.value,
 			() => imageSelection?.value,
 		],
@@ -83,7 +86,7 @@ export function usePlans(
 	const current = computed(
 		() =>
 			call.data?.team === activeTeam.value &&
-			call.data?.cluster === cluster.value &&
+			call.data?.cluster === region.value &&
 			(!imageSelection ||
 				call.data?.image_id === imageSelection.value?.image_id),
 	)
@@ -112,13 +115,13 @@ export function usePlans(
 		// empty menu when the region is full (`available` false).
 		capacity: computed<Capacity>(() => call.data?.capacity ?? UNGATED),
 		// Loading until the response *echo* matches the picked region — the fetch
-		// starts a tick after `cluster` changes, and without this gate the previous
+		// starts a tick after `region` changes, and without this gate the previous
 		// region's menu flashes through in that gap.
 		loading: computed(
 			() =>
 				call.loading ||
 				(!call.error &&
-					!!cluster.value &&
+					!!region.value &&
 					(!imageSelection || !!imageSelection.value) &&
 					!current.value),
 		),

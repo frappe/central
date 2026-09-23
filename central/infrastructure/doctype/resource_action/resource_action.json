@@ -11,7 +11,7 @@
   "resource_type",
   "action",
   "team",
-  "atlas_instance",
+  "region",
   "server",
   "resource_id",
   "subdomain",
@@ -155,7 +155,7 @@
    "read_only": 1
   },
   {
-   "fieldname": "atlas_instance",
+   "fieldname": "region",
    "fieldtype": "Link",
    "in_standard_filter": 1,
    "label": "Region",

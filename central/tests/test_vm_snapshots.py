@@ -61,7 +61,7 @@ class SnapshotTestCase(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": f"vm-snap-{label}-{self.suffix}",
 				"team": team,
-				"cluster": self.region,
+				"region": self.region,
 				"status": status,
 				"atlas_vm_id": f"atlas-{label}-{self.suffix}",
 			}

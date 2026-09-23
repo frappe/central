@@ -52,7 +52,7 @@ def submit_command(
 			"resource_type": "Server",
 			"action": action,
 			"team": team,
-			"atlas_instance": server.cluster,
+			"region": server.region,
 			"server": server.name,
 			"resource_id": server.name,
 			"remote_vm_id": server.atlas_vm_id,

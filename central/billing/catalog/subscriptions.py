@@ -87,7 +87,7 @@ def create_subscription(
 	Type) as its locked composition and `sub_category` as its optimisation profile;
 	billing reads the summed config rate off its Subscription Change (ADR 0009/0010).
 
-	The cluster must be a registered Region (VirtualMachine.cluster is a reqd Link)."""
+	The cluster must be a registered Region (VirtualMachine.region is a required Link)."""
 	resource_id = resource_id or f"vm-{frappe.generate_hash(length=10)}"
 	if not frappe.db.exists("Virtual Machine", resource_id):
 		# Pending — not Running — so the VirtualMachine status-sync does not race us to create
@@ -97,7 +97,7 @@ def create_subscription(
 				"doctype": "Virtual Machine",
 				"resource_id": resource_id,
 				"team": team,
-				"cluster": cluster,
+				"region": cluster,
 				"plan": plan,
 				"status": "Pending",
 				**_server_shape(includes),
@@ -137,7 +137,7 @@ def create_server_subscription(action, resource_id: str):
 	configuration = action.get_configuration()
 	return create_subscription(
 		action.team,
-		action.atlas_instance,
+		action.region,
 		plan=configuration.plan,
 		billing_cycle=configuration.billing_cycle,
 		resource_id=resource_id,
@@ -409,7 +409,7 @@ def begin_resize(
 		frappe.db.get_value(
 			"Virtual Machine",
 			doc.server_id,
-			["cluster", "status", "atlas_vm_id", "title"],
+			["region", "status", "atlas_vm_id", "title"],
 			as_dict=True,
 			for_update=True,
 		)
@@ -480,7 +480,7 @@ def begin_resize(
 			"resource_type": "Server",
 			"action": "resize",
 			"team": doc.team,
-			"atlas_instance": server.cluster,
+			"region": server.region,
 			"server": doc.server_id,
 			"resource_id": doc.server_id,
 			"remote_vm_id": server.atlas_vm_id,
@@ -523,7 +523,7 @@ def _plan_resize(doc, server, plan, includes, sub_category, override_rate=None) 
 	before anything is queued; the worker re-runs them authoritatively when it applies
 	the resize. (Composition validity is left to the worker.)"""
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
-	cluster = server.cluster if server else None
+	cluster = server.region if server else None
 	if plan:
 		if doc.pricing_mode == "Preset" and doc.plan == plan:
 			return None
@@ -601,7 +601,7 @@ def _preset_plus_disk_rate(doc, plan: str, disk_gigabytes) -> float | None:
 	from central.billing.catalog.pricing import resolve_component_rate
 
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
-	cluster = frappe.db.get_value("Virtual Machine", doc.server_id, "cluster") if doc.server_id else None
+	cluster = frappe.db.get_value("Virtual Machine", doc.server_id, "region") if doc.server_id else None
 	base = frappe.get_doc("Plan", plan).get_rate(currency, cluster)
 	if base is None:
 		return None
@@ -646,7 +646,7 @@ def resize_composed_subscription(
 
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
 	server = (
-		frappe.db.get_value("Virtual Machine", doc.server_id, ["cluster"], as_dict=True)
+		frappe.db.get_value("Virtual Machine", doc.server_id, ["region"], as_dict=True)
 		if doc.server_id
 		else None
 	)
@@ -655,7 +655,7 @@ def resize_composed_subscription(
 	new_rate = (
 		override_rate
 		if override_rate is not None
-		else resolve_config_rate(rows, currency, server.cluster if server else None)
+		else resolve_config_rate(rows, currency, server.region if server else None)
 	)
 	_enforce_resize_headroom(doc.team, new_rate, exclude=subscription)
 
@@ -689,7 +689,7 @@ def resize_to_plan(
 	if doc.pricing_mode == "Preset" and doc.plan == new_plan:
 		return doc
 	server = (
-		frappe.db.get_value("Virtual Machine", doc.server_id, ["cluster"], as_dict=True)
+		frappe.db.get_value("Virtual Machine", doc.server_id, ["region"], as_dict=True)
 		if doc.server_id
 		else None
 	)
@@ -698,7 +698,7 @@ def resize_to_plan(
 	# spend cap. Authoritative here (covers every caller, incl. the background job);
 	# begin_resize also checks it synchronously for immediate feedback.
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
-	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, server.cluster if server else None)
+	new_rate = frappe.get_doc("Plan", new_plan).get_rate(currency, server.region if server else None)
 	_enforce_resize_headroom(doc.team, new_rate, exclude=subscription)
 	return change_plan(subscription, new_plan, changed_by=changed_by)
 
@@ -831,13 +831,13 @@ def _latest_segment_by_subscription(subscription_names: list[str]) -> dict:
 
 
 def _server_clusters(server_ids) -> dict:
-	"""Map server_id -> cluster in one query (cluster lives on the VirtualMachine, cdea38e)."""
+	"""Map server_id to its billing cluster from the Virtual Machine region."""
 	ids = [a for a in set(server_ids) if a]
 	if not ids:
 		return {}
 	return {
-		r.name: r.cluster
-		for r in frappe.get_all("Virtual Machine", filters={"name": ["in", ids]}, fields=["name", "cluster"])
+		r.name: r.region
+		for r in frappe.get_all("Virtual Machine", filters={"name": ["in", ids]}, fields=["name", "region"])
 	}
 
 
@@ -867,7 +867,7 @@ def active_segments(filters: dict | None = None) -> list:
 		seg = latest.get(s.name)
 		if not seg or seg.change_type == "Cancelled":
 			continue
-		# A VM subscription is subjected by its VirtualMachine (cluster off the VirtualMachine); a
+		# A VM subscription gets its billing cluster from the Virtual Machine region; a
 		# team-level service subject has no VirtualMachine — its id and cluster live on the
 		# Subscription itself (ADR 0013). Either way the resource_id keys metering.
 		resource_id = s.server_id or s.service_subject

@@ -26,6 +26,22 @@ A repeat under a new key is also answered with the saved action, when the same r
 
 API routes remain thin. `central/server_models.py` defines input and saved-configuration models. `central/server_provisioning.py` owns creation policy. `central/resource_actions.py` owns power-operation authorization. Billing catalog modules own purchase and repricing policy. Remote calls and observed-state writes belong to `central/integrations/`. Resource Action queues every server and trial-site operation after the request transaction commits.
 
+## Console API
+
+| Operation | Method and inputs | Capability | Result |
+|---|---|---|---|
+| List the fleet | `GET central.api.servers.registry(team)` | `server:view` | Servers include `region`. Sites include their machine region. Unfinished creations are returned separately. |
+| Read one server | `GET central.api.servers.server_overview(team, resource_id)` | `server:view` | The server contains its `region`; `region_details` contains its display name, provider, and country code. |
+| Create a preset server | `POST central.api.servers.create_server(team, region, title, request_key, plan, offering, image_id, ...)` | `server:create` | A queued Action Status. |
+| Create a custom server | `POST central.api.servers.create_composed_server(team, region, title, request_key, includes, sub_category, offering, image_id, ...)` | `server:create` | A queued Action Status. |
+| Start, stop, or restart | `POST central.api.servers.<action>_server(team, resource_id)` | `server:power` | A queued Action Status. |
+| Resize | `POST central.api.servers.resize_server(team, resource_id, plan or includes, ...)` | `server:resize` | A queued Action Status and subscription identity. |
+| Terminate | `POST central.api.servers.terminate_server(team, resource_id, take_snapshot)` | `server:terminate`; also `server:snapshot` when requested | A queued Action Status. |
+| Read progress | `GET central.api.servers.action_status(name)` | `server:view` on the action's Team | Current Action Status. |
+| Retry a failed creation | `POST central.api.servers.retry_action(name)` | `server:create` on the action's Team | The same action returned to Queued. |
+
+Action Status contains `action`, `status`, `resource_id`, `title`, and an optional customer-safe error. Mutations are asynchronous. A successful HTTP response means Central saved the operation, not that the region completed it. The caller reads progress from the action or the fleet. The action's Team is the ownership boundary for both the route and direct document access.
+
 ## State and recovery
 
 | State | Meaning and next action |

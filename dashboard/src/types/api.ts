@@ -73,7 +73,7 @@ export interface TeamRegistry {
 		name: string
 		resource_id: string
 		title: string
-		cluster: string
+		region: string
 	}[]
 	sites: { name: string; subdomain: string; region: string }[]
 }

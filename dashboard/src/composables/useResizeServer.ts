@@ -26,7 +26,7 @@ export function useResizeServer(
 	const { activeTeam } = useSession()
 	const activeTeamId = computed(() => activeTeam.value ?? '')
 
-	const region = computed(() => server.value?.cluster ?? null)
+	const region = computed(() => server.value?.region ?? null)
 	const serverIsLive = computed(
 		() =>
 			server.value?.status === 'Running' || server.value?.status === 'Paused',

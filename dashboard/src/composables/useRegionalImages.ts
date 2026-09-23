@@ -142,7 +142,7 @@ export function useRegionalImages(
 				const page: { items: RegionalImage[]; next_offset: number | null } =
 					await call('central.api.images.list_images', {
 						team,
-						atlas_instance: atlas,
+						region: atlas,
 						offering: offering.value,
 						offset,
 					})

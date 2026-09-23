@@ -48,7 +48,7 @@ class SiteOnAMachine(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
-				"cluster": region.name,
+				"region": region.name,
 				"atlas_vm_id": "vm-00001",
 				"status": "Provisioning",
 			}

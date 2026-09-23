@@ -60,12 +60,12 @@ class ImageOffering(Document):
 		return tags
 
 	@frappe.whitelist(methods=["POST"])
-	def preview_images(self, atlas_instance: str, offset: int = 0) -> dict:
+	def preview_images(self, region: str, offset: int = 0) -> dict:
 		"""1. Require operator write access before previewing regional System images."""
 		from central.integrations.images import preview_images
 
 		self.check_permission("write")
-		return preview_images(self.name, atlas_instance, offset)
+		return preview_images(self.name, region, offset)
 
 
 def on_doctype_update() -> None:

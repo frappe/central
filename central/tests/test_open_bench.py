@@ -13,7 +13,7 @@ from central.tests.test_iam import ensure_user
 # Open-in-bench for a real VM (server) now hands back a Central-signed admin SID as
 # `{gateway}/?sid=<jwt>`. Central mints it locally against its RSA key, scoped to the bench's
 # audience id (its pilot_credential_id); the bench verifies it offline against the JWKS. No
-# Atlas round-trip: opening a Running VM on an Active cluster just needs a gateway + an
+# Atlas round-trip: opening a Running VM in an active region just needs a gateway + an
 # enrolled pilot. The SID is single-use (jti + short TTL), so a fresh one is minted on every Open.
 
 GATEWAY = "https://vm-open-1.blr1.frappe.dev"
@@ -90,7 +90,7 @@ class TestOpenBench(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": rid,
 				"team": self.team.name,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": status,
 				"gateway_url": gateway or None,
 			}

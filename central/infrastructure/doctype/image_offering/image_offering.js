@@ -10,23 +10,23 @@ frappe.ui.form.on("Image Offering", {
 
 			frappe.prompt(
 				{
-					fieldname: "atlas_instance",
+					fieldname: "region",
 					fieldtype: "Link",
 					options: "Region",
 					label: __("Region"),
 					reqd: 1,
 				},
-				({ atlas_instance }) => show_images(frm, atlas_instance, 0),
+				({ region }) => show_images(frm, region, 0),
 				__("Preview Regional Images"),
 			);
 		});
 	},
 });
 
-async function show_images(frm, atlas_instance, offset) {
+async function show_images(frm, region, offset) {
 	const { message } = await frm.call({
 		method: "preview_images",
-		args: { atlas_instance, offset },
+		args: { region, offset },
 		freeze: true,
 	});
 	const rows = message.items.map((image) =>
@@ -42,7 +42,7 @@ async function show_images(frm, atlas_instance, offset) {
 			label: __("Next Page"),
 			action() {
 				frappe.hide_msgprint();
-				show_images(frm, atlas_instance, message.next_offset);
+				show_images(frm, region, message.next_offset);
 			},
 		};
 	}

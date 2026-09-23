@@ -15,8 +15,8 @@ export interface VirtualMachine {
 	title?: string
 	/**	Team : Link - Team - Owning Central team (mirrored from Atlas).	*/
 	team: string
-	/**	Cluster : Link - Region - The region this VM lives in.	*/
-	cluster: string
+	/**	Region : Link - Region - The region this VM lives in.	*/
+	region: string
 	/**	Plan : Link - Plan	*/
 	plan?: string
 	/**	Frappe Version : Data - Frappe version the VM was provisioned with — requested at create, resolved to a bench image and echoed back by Atlas (an unbuilt version falls back to the default).	*/

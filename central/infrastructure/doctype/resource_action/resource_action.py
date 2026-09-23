@@ -230,7 +230,7 @@ class ResourceAction(Document):
 		configuration = self.get_configuration()
 		validate_purchase(
 			self.team,
-			self.atlas_instance,
+			self.region,
 			configuration.plan,
 			[row.model_dump() for row in configuration.includes],
 			configuration.sub_category,
@@ -270,4 +270,3 @@ def on_doctype_update() -> None:
 	frappe.db.add_index("Resource Action", ["team", "status"])
 	frappe.db.add_index("Resource Action", ["resource_id", "status"])
 	frappe.db.add_index("Resource Action", ["status", "modified"])
-	frappe.db.add_index("Resource Action", ["atlas_instance", "remote_vm_id"])

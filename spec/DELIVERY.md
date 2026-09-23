@@ -22,7 +22,7 @@ Updated 2026-09-21, after fetching `upstream/v0.2` in Central, `upstream/develop
 | 2 Server creation and lifecycle | Done | Create, start, stop, restart, terminate, resize, and Open Pilot work. Creation sends the idle sleep policy. |
 | 3 Staging proof | Not started | |
 
-A Pilot-registered Site Domain resolves its `Site` from the credential's Asset, so the two producers of a route agree. A trial's readiness no longer waits for a state report: the `Site` record is created as soon as the machine has an address, and it reads ready once the site answers its own ping. `Atlas Instance` and `Cargo Instance` are both gone: `Region` now carries the Atlas connection (`base_url`, `atlas_region_id`, `proxy_domain`, `webhook_secret`, the signed-access health fields) and the Cargo connection (`cargo_base_url`, `cargo_status`, `cargo_registered_at`, `cargo_webhook_secret`) as two clearly separated halves of one record — mixed in from `atlas_connection.py` and `cargo_connection.py` in the doctype's own folder, so the two never blur into one pile of fields and logic. A regional read is one record, not three.
+A Pilot-registered Site Domain resolves its `Site` from the credential's Virtual Machine, so the two producers of a route agree. A trial's readiness no longer waits for a state report: the `Site` record is created as soon as the machine has an address, and it reads ready once the site answers its own ping. `Region` carries the Atlas connection (`base_url`, `atlas_region_id`, `proxy_domain`, `webhook_secret`, and signed-access health fields) and the Cargo connection (`cargo_base_url`, `cargo_status`, `cargo_registered_at`, and `cargo_webhook_secret`) through separate controller mixins. A regional read uses one record.
 
 Work that landed ahead of its phase: proxy site and custom domain routes, the Pilot rename helpers, the Cargo report receiver, Pilot-driven domain registration with DNS ownership checks, one regional telemetry token for logs and metrics, and, in Pilot itself, renamed-site token binding and route resolution by hostname (`frappe/pilot#513`).
 
@@ -65,7 +65,7 @@ Reuse correct code only after checking it against the selected source revisions 
 
 Configure one staging region, proxy, Cargo instance, Pilot and Ubuntu image offerings, and public Central callback URL. Verify region and tenant identity.
 
-Add required Team tenant IDs, credentials, signer support, and patches. Preserve existing Asset, Atlas Instance, and billing identities.
+Add required Team tenant IDs, credentials, signer support, and patches. Preserve existing Virtual Machine, Region, and billing identities.
 
 Check affected token consumers. Reuse the existing dashboard and whitelisted API style. Do not introduce a new public API framework.
 
@@ -185,7 +185,7 @@ The Friday target has passed and the critical journey works at a bare minimum. T
 
 **Result:** an operator adds a region without editing two sites by hand.
 
-- Add a **Configure Deliveries** action on `Atlas Instance`. It calls `PUT /api/atlas/webhooks` with Central's receiver URL, the stored `webhook_secret`, and `enabled`. It records the result on the record, like Test Connection does.
+- Add a **Configure Deliveries** action on `Region`. It calls `PUT /api/atlas/webhooks` with Central's receiver URL, the stored `webhook_secret`, and `enabled`. It records the result on the record, like Test Connection does.
 - Cargo needs the matching route before its half can work. Until it exists, keep the Cargo secret manual and say so on the record.
 - Remove `db_set` from the Atlas `VM State` doctype, so it only raises events. This is Atlas-side work.
 
@@ -193,12 +193,12 @@ The Friday target has passed and the critical journey works at a bare minimum. T
 
 **Result:** the records are named and shaped the way the product talks about them.
 
-Do this as separate PRs, each with its patch, and after item 1 lands.
+Each schema change includes its data patch and focused tests.
 
-- Renamed `Asset` to `Virtual Machine` — done, via `frappe.rename_doc` and a patch. `cluster` stays the field name for now — renaming it to `region` would touch the doctype a second time right after this rename touched it once.
+- Renamed `Asset` to `Virtual Machine` and its regional link from `cluster` to `region`. Both changes include data patches.
 - Merged `Atlas Instance` and `Cargo Instance` into `Region` — done. Every regional read is one record now, each service behind its own mixin (`atlas_connection.py`, `cargo_connection.py`) so the two stay separated in code and never share a field, and both merge patches carried existing connection data across losslessly.
 - Link `Site` to its machine and hide a machine that carries a site. A trial customer owns a site, not a VM, and should not see both.
-- Split Central's doctypes out of the one flat `Central` module into `Identity`, `Provisioning` (Asset/Virtual Machine, Resource Action, Region, Image Offering, Site, Site Domain), `Credentials`, and a slimmer `Central`. This is what gives the Desk sidebar the same grouped navigation Atlas has, for free, via Frappe's own per-module tree — no custom sidebar code. Do this once the doctypes above reach their final names, so nothing moves folders twice. Add a Number Card dashboard to Central's own workspace at the same time (servers by status, sites, stuck Resource Actions, regions) — today it holds only IAM shortcuts.
+- Central's DocTypes are grouped into domain modules. The Infrastructure module owns Virtual Machine, Resource Action, Region, Image Offering, Site, and Site Domain.
 
 ### 5. Product rules and cleanup
 

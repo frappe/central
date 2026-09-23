@@ -25,7 +25,7 @@ def list_offerings(team: str, flow: str = "Server") -> list[dict]:
 
 def list_images(
 	team: str,
-	atlas_instance: str,
+	region: str,
 	offering: str,
 	flow: str = "Server",
 	offset: int = 0,
@@ -41,7 +41,7 @@ def list_images(
 	if not document.enabled or document.available_in not in (flow, "Both"):
 		frappe.throw(_("This image offering is not available for this flow."))
 
-	instance = frappe.get_doc("Region", atlas_instance)
+	instance = frappe.get_doc("Region", region)
 	if instance.status != "Active":
 		frappe.throw(_("This region is not accepting new servers."))
 
@@ -49,9 +49,9 @@ def list_images(
 	return client.list_system_images({**document.get_image_tags(), **(extra_tags or {})}, offset)
 
 
-def preview_images(offering: str, atlas_instance: str, offset: int = 0) -> dict:
+def preview_images(offering: str, region: str, offset: int = 0) -> dict:
 	"""Check an operator's saved selector without creating a regional resource."""
-	instance = frappe.get_doc("Region", atlas_instance)
+	instance = frappe.get_doc("Region", region)
 	client = AtlasClient.for_operator(instance)
 	document = frappe.get_doc("Image Offering", offering)
 	document.check_permission("write")
@@ -143,9 +143,7 @@ def _restorable_snapshot(team: str, snapshot: str):
 	return row
 
 
-def eligible_plans(
-	team: str, cluster: str, offering: str, image_id: str, snapshot: str | None = None
-) -> dict:
+def eligible_plans(team: str, region: str, offering: str, image_id: str, snapshot: str | None = None) -> dict:
 	"""Combine billing eligibility with the selected image's disk requirement. A restore
 	passes `snapshot` instead of an offering and image."""
 	from math import ceil
@@ -154,11 +152,11 @@ def eligible_plans(
 	from central.billing.catalog.server_plans import get_server_plans
 
 	image = (
-		snapshot_image(team, cluster, snapshot)
+		snapshot_image(team, region, snapshot)
 		if snapshot
-		else selected_image(team, cluster, offering, image_id)
+		else selected_image(team, region, offering, image_id)
 	)
-	catalog = get_server_plans(team, cluster=cluster)
+	catalog = get_server_plans(team, cluster=region)
 	minimum_disk = image["rootfs_size_mib"]
 	groups = {}
 	for name, plans in catalog["plans"].items():

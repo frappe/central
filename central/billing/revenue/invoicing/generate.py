@@ -237,7 +237,7 @@ def rate_subscription_period(subscription: str, period_start, period_end, explai
 	from central.billing.revenue.metering import metered_line_items
 
 	sub = frappe.get_doc("Subscription", subscription)
-	cluster = frappe.db.get_value("Virtual Machine", sub.server_id, "cluster") if sub.server_id else None
+	cluster = frappe.db.get_value("Virtual Machine", sub.server_id, "region") if sub.server_id else None
 	lines = compute_line_items(sub.team, cluster, period_start, period_end, explain=explain)
 	lines += metered_line_items(sub.team, cluster, period_start, period_end, explain=explain)
 	if not lines:
@@ -251,7 +251,7 @@ def team_clusters(team: str) -> list[str]:
 	return sorted(
 		{
 			c
-			for c in frappe.get_all("Virtual Machine", filters={"name": ["in", server_ids]}, pluck="cluster")
+			for c in frappe.get_all("Virtual Machine", filters={"name": ["in", server_ids]}, pluck="region")
 			if c
 		}
 	)

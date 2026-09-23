@@ -25,7 +25,7 @@ class TestPilotCredentialRevocation(IntegrationTestCase):
 					"resource_id": "credential-" + frappe.generate_hash(length=8),
 					"team": team.name,
 					"atlas_vm_id": "vm-00001",
-					"cluster": "test-credentials",
+					"region": "test-credentials",
 					"status": "Running",
 				}
 			).insert()

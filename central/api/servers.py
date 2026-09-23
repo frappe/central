@@ -41,7 +41,7 @@ def registry(team: str | None = None) -> dict:
 			"name",
 			"resource_id",
 			"title",
-			"cluster",
+			"region",
 			"status",
 			"plan",
 			"frappe_version",
@@ -53,7 +53,7 @@ def registry(team: str | None = None) -> dict:
 			"gateway_url",
 			"state_observed_at",
 		],
-		order_by="cluster asc, resource_id asc",
+		order_by="region asc, resource_id asc",
 		limit_page_length=0,
 	)
 	# Overlay the transitional label of any in-flight action, so a just-clicked
@@ -88,7 +88,7 @@ def _sites(rows: list[dict], servers: list[dict], pending: dict[str, str]) -> li
 			"server": row["server"],
 			"url": f"https://{row['name']}",
 			"status": machine["status"],
-			"region": machine["cluster"],
+			"region": machine["region"],
 			# A site's actions run against its machine, so its in-flight label is the machine's.
 			"pending_action": pending.get(row["server"]),
 		}
@@ -112,7 +112,7 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 		{
 			"resource_id": row.resource_id,
 			"title": row.title,
-			"cluster": row.cluster,
+			"region": row.region,
 			"status": row.status,
 			"plan": row.plan,
 			"frappe_version": row.frappe_version,
@@ -130,8 +130,8 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 			**server,
 			**_overview_plan(server, team),
 			"team_name": row.team_name or team,
-			"region": {
-				"display_name": row.region_display_name or server.cluster,
+			"region_details": {
+				"display_name": row.region_display_name or server.region,
 				"provider": row.region_provider,
 				"country_code": row.region_country_code,
 			},
@@ -173,9 +173,9 @@ def _overview_server_row(resource_id: str, team: str):
 	pilot = frappe.qb.DocType("Pilot Credential")
 	rows = (
 		frappe.qb.from_(server)
-		# VirtualMachine.cluster links straight to Region.
+		# VirtualMachine.region links straight to Region.
 		.left_join(region)
-		.on(region.name == server.cluster)
+		.on(region.name == server.region)
 		.left_join(team_table)
 		.on(team_table.name == server.team)
 		.left_join(pilot)
@@ -183,7 +183,7 @@ def _overview_server_row(resource_id: str, team: str):
 		.select(
 			server.resource_id,
 			server.title,
-			server.cluster,
+			server.region,
 			server.status,
 			server.plan,
 			server.frappe_version,
@@ -242,7 +242,7 @@ def _overview_plan(server: dict, team: str) -> dict:
 			billing_cycle = plan.billing_cycle or "Monthly"
 			if rate is None:
 				# Local import: Plan.get_rate pulls billing catalog; keep servers import-light.
-				rate = frappe.get_cached_doc("Plan", plan_name).get_rate(currency, server.cluster)
+				rate = frappe.get_cached_doc("Plan", plan_name).get_rate(currency, server.region)
 	else:
 		# VirtualMachine bootstrap may open a Subscription before a plan is attached — no rate to show.
 		rate = None

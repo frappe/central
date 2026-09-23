@@ -75,14 +75,14 @@ class Site(Document):
 			return
 
 		machine = frappe.db.get_value(
-			"Virtual Machine", server, ["team", "cluster", "ipv6_address"], as_dict=True
+			"Virtual Machine", server, ["team", "region", "ipv6_address"], as_dict=True
 		)
 		if not machine or not machine.ipv6_address:
 			return
 		if not frappe.db.exists("Pilot Credential", {"server": server, "status": "Active"}):
 			return
 
-		host = frappe.get_cached_doc("Region", machine.cluster).get_vm_site_host(machine.ipv6_address)
+		host = frappe.get_cached_doc("Region", machine.region).get_vm_site_host(machine.ipv6_address)
 		if not host:
 			return
 

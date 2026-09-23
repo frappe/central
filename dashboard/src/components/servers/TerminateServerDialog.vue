@@ -42,7 +42,7 @@ watch(
 	},
 )
 const { rate, currency, freePerServer } = useSnapshotPricing(
-	computed(() => props.target?.cluster ?? null),
+	computed(() => props.target?.region ?? null),
 )
 const snapshotNote = computed(() => {
 	if (rate.value == null)

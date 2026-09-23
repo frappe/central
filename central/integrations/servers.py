@@ -73,7 +73,7 @@ def observe_server(server: VirtualMachine) -> str:
 	# builds the gateway itself. An unenrolled pilot has nothing to sign into yet.
 	gateway = None
 	if frappe.db.exists("Pilot Credential", {"server": server.name, "team": server.team, "status": "Active"}):
-		gateway = frappe.get_cached_doc("Region", server.cluster).get_vm_gateway_url(network.get("mesh_ipv6"))
+		gateway = frappe.get_cached_doc("Region", server.region).get_vm_gateway_url(network.get("mesh_ipv6"))
 
 	VirtualMachine.record_observed_state(
 		server.name,
@@ -133,7 +133,7 @@ def process_resize(action) -> None:
 	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
 	if (
 		server.team != action.team
-		or server.cluster != action.atlas_instance
+		or server.region != action.region
 		or server.atlas_vm_id != action.remote_vm_id
 	):
 		action.transition(
@@ -230,7 +230,7 @@ def process_command(action) -> None:
 	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
 	if (
 		server.team != action.team
-		or server.cluster != action.atlas_instance
+		or server.region != action.region
 		or server.atlas_vm_id != action.remote_vm_id
 	):
 		action.transition(
@@ -404,7 +404,7 @@ def _client(server: VirtualMachine) -> AtlasClient:
 	if not server.atlas_vm_id:
 		frappe.throw(_("This server has no verified regional VM identity."))
 
-	instance = frappe.get_cached_doc("Region", server.cluster)
+	instance = frappe.get_cached_doc("Region", server.region)
 	tenant_id = frappe.db.get_value("Team", server.team, "tenant_id")
 	return AtlasClient(instance, tenant_id)
 

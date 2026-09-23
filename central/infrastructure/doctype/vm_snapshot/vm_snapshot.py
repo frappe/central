@@ -50,7 +50,7 @@ class VMSnapshot(Document):
 		server = frappe.db.get_value(
 			"Virtual Machine",
 			self.server,
-			["team", "cluster", "status", "atlas_vm_id", "image_offering"],
+			["team", "region", "status", "atlas_vm_id", "image_offering"],
 			as_dict=True,
 		)
 		if not server or server.team != self.team:
@@ -62,7 +62,7 @@ class VMSnapshot(Document):
 		if frappe.db.exists("VM Snapshot", {"server": self.server, "status": "Pending"}):
 			frappe.throw(_("A snapshot of this server is already in progress."))
 
-		self.region = server.cluster
+		self.region = server.region
 		self.image_offering = server.image_offering
 		self.is_restorable = not is_pilot_offering(server.image_offering)
 		self.status = "Pending"
@@ -279,7 +279,7 @@ def take_automatic_snapshots() -> None:
 	servers = frappe.get_all(
 		"Virtual Machine",
 		filters={
-			"cluster": ["in", regions],
+			"region": ["in", regions],
 			"status": "Running",
 			"skip_automatic_snapshot": 0,
 			"atlas_vm_id": ["is", "set"],

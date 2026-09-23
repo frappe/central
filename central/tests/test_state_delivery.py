@@ -48,7 +48,7 @@ class TestStateDelivery(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
-				"cluster": self.cluster.name,
+				"region": self.cluster.name,
 				"atlas_vm_id": "vm-00007",
 				"status": "Stopped",
 			}
@@ -271,7 +271,7 @@ class TestStateDelivery(IntegrationTestCase):
 				"resource_type": "Server",
 				"action": verb,
 				"team": self.team.name,
-				"atlas_instance": self.cluster.name,
+				"region": self.cluster.name,
 				"resource_id": self.server.name,
 				"server": self.server.name,
 				"remote_vm_id": self.server.atlas_vm_id,

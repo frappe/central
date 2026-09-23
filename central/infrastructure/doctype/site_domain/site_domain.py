@@ -114,10 +114,10 @@ class SiteDomain(Document):
 
 	def validate_targets(self) -> None:
 		"""The server and site must belong to this team, and the server to this region."""
-		server = frappe.db.get_value("Virtual Machine", self.server, ["team", "cluster"], as_dict=True)
+		server = frappe.db.get_value("Virtual Machine", self.server, ["team", "region"], as_dict=True)
 		if not server or server.team != self.team:
 			frappe.throw(_("Server {0} does not belong to team {1}.").format(self.server, self.team))
-		if server.cluster != self.region:
+		if server.region != self.region:
 			frappe.throw(_("Server {0} is not in region {1}.").format(self.server, self.region))
 		if self.site and frappe.db.get_value("Site", self.site, "team") != self.team:
 			frappe.throw(_("Site {0} does not belong to team {1}.").format(self.site, self.team))
@@ -219,7 +219,7 @@ class SiteDomain(Document):
 				"team": credential.team,
 				"server": credential.server,
 				"site": frappe.db.get_value("Site", {"server": credential.server}, "name"),
-				"region": frappe.db.get_value("Virtual Machine", credential.server, "cluster"),
+				"region": frappe.db.get_value("Virtual Machine", credential.server, "region"),
 			}
 		)
 		route.route_type = route.get_route_type()

@@ -33,7 +33,7 @@ class TestRegistry(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": f"server-{label}",
 				"team": self.team,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": status,
 			}
 		).insert()
@@ -87,7 +87,7 @@ class TestServerHostnames(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "server-hostnames",
 				"team": self.team,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": "Running",
 			}
 		).insert()

@@ -142,7 +142,7 @@ def _automatic_setting(team: str, resource_id: str) -> dict:
 	return {
 		"resource_id": server.name,
 		"automatic": not server.skip_automatic_snapshot,
-		"region_automatic": bool(frappe.db.get_value("Region", server.cluster, "automatic_snapshots")),
+		"region_automatic": bool(frappe.db.get_value("Region", server.region, "automatic_snapshots")),
 	}
 
 

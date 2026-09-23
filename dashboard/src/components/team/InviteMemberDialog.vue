@@ -60,7 +60,7 @@ const resourceOptions = computed(() => {
 		...servers.map((a) => ({
 			label: a.title || a.resource_id,
 			value: `Server::${a.name}`,
-			description: regionLabel(a.cluster),
+			description: regionLabel(a.region),
 		})),
 		...sites.map((s) => ({
 			label: s.subdomain || s.name,

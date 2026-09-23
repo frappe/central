@@ -411,7 +411,7 @@ class TestSiteDomain(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": f"vm-sd-{label}-{self.suffix}",
 				"team": team,
-				"cluster": self.region,
+				"region": self.region,
 				"status": "Running",
 				"ipv6_address": ipv6_address,
 			}

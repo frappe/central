@@ -145,7 +145,7 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": f"server-{label}-{self.suffix}",
 				"team": team,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": "Running",
 			}
 		).insert(ignore_permissions=True)

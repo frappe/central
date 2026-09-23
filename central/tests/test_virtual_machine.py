@@ -29,14 +29,14 @@ class TestVirtualMachine(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "vm-xyz",
 				"team": self.team.name,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": "Running",
 				"gateway_url": "http://localhost:3030",
 			}
 		).insert()
 		self.assertEqual(server.name, "vm-xyz")
 		self.assertEqual(server.team, self.team.name)
-		self.assertEqual(server.cluster, self.cluster)
+		self.assertEqual(server.region, self.cluster)
 
 	def test_operator_can_queue_route_removal_for_a_terminated_server(self):
 		server = self._server("vm-routes-gone", "Terminated")
@@ -91,7 +91,7 @@ class TestVirtualMachine(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": resource_id,
 				"team": self.team.name,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": status,
 			}
 		).insert()
@@ -149,7 +149,7 @@ class TestVirtualMachineSubscriptionSync(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": resource_id,
 				"team": self.team,
-				"cluster": self.cluster,
+				"region": self.cluster,
 				"status": status,
 				"plan": plan or self.plan_a,
 			}

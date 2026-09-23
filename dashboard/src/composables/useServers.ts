@@ -25,7 +25,7 @@ export type VirtualMachineRow = Pick<
 	| 'name'
 	| 'resource_id'
 	| 'title'
-	| 'cluster'
+	| 'region'
 	| 'status'
 	| 'plan'
 	| 'frappe_version'

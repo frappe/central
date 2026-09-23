@@ -17,7 +17,7 @@ class VirtualMachine(Document):
 
 		atlas_image_id: DF.Data | None
 		atlas_vm_id: DF.Data | None
-		cluster: DF.Link
+		region: DF.Link
 		disk_gigabytes: DF.Float
 		frappe_version: DF.Data | None
 		gateway_url: DF.Data | None
@@ -54,7 +54,7 @@ class VirtualMachine(Document):
 				"resource_id": resource_id,
 				"title": action.title,
 				"team": action.team,
-				"cluster": action.atlas_instance,
+				"region": action.region,
 				"status": "Provisioning",
 				"atlas_vm_id": action.remote_vm_id,
 				"atlas_image_id": configuration.image_id,
@@ -306,5 +306,5 @@ class VirtualMachine(Document):
 
 
 def on_doctype_update() -> None:
-	frappe.db.add_unique("Virtual Machine", ["cluster", "atlas_vm_id"])
+	frappe.db.add_unique("Virtual Machine", ["region", "atlas_vm_id"])
 	frappe.db.add_index("Virtual Machine", ["team", "status"])

@@ -100,7 +100,7 @@ def _process_locked(name: str) -> None:
 				_("The requester no longer has permission to create this server."), frappe.PermissionError
 			)
 
-		if frappe.db.get_value("Region", request.atlas_instance, "status") != "Active":
+		if frappe.db.get_value("Region", request.region, "status") != "Active":
 			frappe.throw(_("This region is not accepting server creation."))
 		client = _client(request)
 		payload = _create_payload(request)
@@ -196,7 +196,7 @@ def find_created_vm(request) -> str | None:
 
 
 def _client(request) -> AtlasClient:
-	instance = frappe.get_doc("Region", request.atlas_instance)
+	instance = frappe.get_doc("Region", request.region)
 	tenant_id = frappe.db.get_value("Team", request.team, "tenant_id")
 	return AtlasClient(instance, tenant_id)
 

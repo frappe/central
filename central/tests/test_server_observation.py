@@ -33,7 +33,7 @@ class TestServerObservation(IntegrationTestCase):
 				"doctype": "Virtual Machine",
 				"resource_id": "server-" + frappe.generate_hash(length=8),
 				"team": self.team.name,
-				"cluster": region.name,
+				"region": region.name,
 				"atlas_vm_id": "vm-00001",
 				"status": "Provisioning",
 			}
@@ -57,7 +57,7 @@ class TestServerObservation(IntegrationTestCase):
 				"resource_type": "Server",
 				"action": "stop",
 				"team": self.team.name,
-				"atlas_instance": self.server.cluster,
+				"region": self.server.region,
 				"server": self.server.name,
 				"resource_id": self.server.name,
 				"remote_vm_id": "vm-00001",

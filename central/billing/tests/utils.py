@@ -211,7 +211,7 @@ DEFAULT_INCLUDES = [
 def ensure_atlas_instance(region):
 	"""The cluster a billing test bills against.
 
-	Both VirtualMachine.cluster and Catalog Rate.cluster are required Links to Region, so any
+	Both VirtualMachine.region and Catalog Rate.cluster are required Links to Region, so any
 	test that creates a subscription or a per-region rate needs the region to exist
 	first, connection-configured."""
 	from central.tests.utils import ensure_atlas_instance as _ensure_atlas_instance
