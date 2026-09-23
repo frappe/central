@@ -14,6 +14,7 @@ import ServerMap from '@/components/servers/ServerMap.vue'
 import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
+import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useFleetRows } from '@/composables/useFleetRows'
@@ -584,22 +585,12 @@ async function openSite(name: string): Promise<void> {
 			</p>
 		</ConfirmDialog>
 
-		<ConfirmDialog
+		<TerminateServerDialog
 			v-model:target="pendingTerminate"
-			title="Terminate server"
-			confirm-label="Yes, terminate"
-			theme="red"
 			:loading="busy === pendingTerminate?.resource_id"
 			:error="terminateError"
 			@confirm="confirmTerminate"
-		>
-			<p class="text-p-base text-ink-gray-7">
-				Permanently destroy
-				<span class="font-semibold text-ink-gray-9"
-					>{{ pendingTerminate?.title || pendingTerminate?.resource_id }}</span
-				>? This can't be undone.
-			</p>
-		</ConfirmDialog>
+		/>
 
 		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
 		<ServerOverviewDialog

@@ -148,6 +148,35 @@ def server_overview(team: str | None = None, resource_id: str | None = None) -> 
 	}
 
 
+@frappe.whitelist(methods=["GET"])
+def server_hostnames(team: str | None = None, resource_id: str | None = None) -> list[dict]:
+	"""The site and custom-domain hostnames a server answers. They stop working when the
+	server is terminated, so the console lists them before it asks. Gated on `server:view`."""
+	user = frappe.session.user
+	team = resolve_team(user, team)
+	if not can(user, team, "server:view"):
+		frappe.throw(_("You can't view this team's servers."), frappe.PermissionError)
+
+	server = frappe.db.get_value("Virtual Machine", {"team": team, "resource_id": resource_id}, "name")
+	if not server:
+		frappe.throw(_("No server '{0}' for this team.").format(resource_id), frappe.DoesNotExistError)
+
+	sites = frappe.get_list("Site", filters={"team": team, "server": server}, pluck="name")
+	routes = frappe.get_list(
+		"Site Domain",
+		filters={"team": team, "server": server},
+		fields=["domain", "route_type"],
+		order_by="domain asc",
+	)
+	hostnames = [{"hostname": site, "kind": "Site"} for site in sites]
+	hostnames += [
+		{"hostname": route.domain, "kind": "Site" if route.route_type == "Site" else "Custom domain"}
+		for route in routes
+		if route.domain not in sites
+	]
+	return hostnames
+
+
 def _overview_server_row(resource_id: str, team: str):
 	"""VirtualMachine + region + team + active Pilot audience in one query."""
 	server = frappe.qb.DocType("Virtual Machine")
