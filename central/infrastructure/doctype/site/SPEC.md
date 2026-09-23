@@ -14,8 +14,12 @@ Only what belongs to the site. Its address is its name and its state is the mach
 |---|---|
 | `site_name` | the public address, which is also the record's name |
 | `team` | the owning team |
-| `asset` | the machine the site is |
+| `server` | the Virtual Machine the site runs on |
+| `ready_at` | the first successful public readiness probe |
 | `claimed_at` | the first successful login handoff |
+| `rename_task` | the Pilot task that accepted the requested rename |
+| `rename_error` | a safe reason when Pilot did not accept the rename |
+| `rename_error_log` | the related operator Error Log |
 
 `Site.url` is `https://` and the name. `Site.status` reads the machine's status. Neither is a column.
 
@@ -53,11 +57,12 @@ login_site --> mint a fresh login for site.local
 - `VirtualMachine.claim_admin_hostname` tells Pilot to replace its local `admin.local` name with the `admin-vm-*` hostname that the regional proxy already routes. Central does not create or change a proxy route. TLS stays off because the regional proxy terminates it. A machine that is not running, a failed request, or a response without a task ID leaves the marker empty, so the next report tries again.
 - A successful claim records `claimed_at`, returns the login URL, and enqueues the rename after the database commit. The response does not wait for Pilot to accept or finish the rename.
 - `Site.apply_subdomain` creates one Pilot rename task. Pilot keeps the automatic hostname serving while the requested hostname comes up.
+- A rename failure stays on the Site with a safe reason and an Error Log link. A System Manager can use **Retry Site Rename** until Pilot accepts a task.
 - Terminating the machine terminates the site, with nothing to write: the site reads its state from the machine.
 
 ## Readiness
 
-Nothing is provisioned during signup, so readiness is not a build finishing. `central.api.sites.get_site` reports `ready` when one request to `<url>/api/method/ping` answers. It does not create a login session. The console polls this read and calls the POST-only `central.api.sites.login_site` operation when the user opens the site.
+Nothing is provisioned during signup, so readiness is not a build finishing. `central.api.sites.get_site` reports `ready` when one request to `<url>/api/method/ping` answers. The first successful probe records `ready_at` and queues one `site_ready` notification after commit. It does not create a login session. The console polls this read and calls the POST-only `central.api.sites.login_site` operation when the user opens the site.
 
 `central.api.sites.onboarding_status` follows the latest Site creation requested by the current user. It does not adopt a normal server creation or another team member's request. A Running state report schedules a full server refresh, so the Site record does not wait for the periodic reconciliation job.
 

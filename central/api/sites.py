@@ -126,6 +126,8 @@ def site_state(site: Site, with_login: bool = True) -> dict:
 	minted one would open a session a second and wait on a cold VM to do it."""
 	status = site.status
 	ready = is_site_reachable(site.url)
+	if ready:
+		site.record_ready()
 	login_url = None
 	login_pending = False
 	if ready and with_login:

@@ -185,6 +185,23 @@ class TestServerObservation(IntegrationTestCase):
 			"server_state_changed", [call.args[0] for call in published.call_args_list if call.args]
 		)
 
+	def test_a_newer_same_state_report_updates_only_the_watermark(self):
+		now = frappe.utils.now_datetime()
+		self.server.db_set({"status": "Stopped", "last_reported_at": now})
+		later = frappe.utils.add_to_date(now, seconds=1)
+
+		with patch("frappe.publish_realtime") as published:
+			self.assertTrue(
+				VirtualMachine.record_observed_state(
+					self.server.name, later, {"status": "Stopped"}, reported_at=later
+				)
+			)
+
+		self.assertEqual(frappe.utils.get_datetime(self.server.reload().last_reported_at), later)
+		self.assertNotIn(
+			"server_state_changed", [call.args[0] for call in published.call_args_list if call.args]
+		)
+
 	def test_record_locks_before_loading(self):
 		with patch("frappe.get_doc", wraps=frappe.get_doc) as get_doc:
 			VirtualMachine.record_observed_state(

@@ -137,6 +137,23 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.assertFalse(state["ready"])
 		self.assertIsNone(state["login_url"])
 
+	def test_first_successful_probe_records_and_announces_readiness(self):
+		site = self.site()
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch("central.notification.engine.queue_event") as queue_event,
+		):
+			get_site(site.name)
+			get_site(site.name)
+
+		self.assertTrue(site.reload().ready_at)
+		queue_event.assert_called_once_with(
+			site.team,
+			"site_ready",
+			reference_doctype="Site",
+			reference_name=site.name,
+		)
+
 	def test_status_read_does_not_create_a_login(self):
 		with (
 			patch("central.api.sites.is_site_reachable", return_value=True),
@@ -413,6 +430,20 @@ class TestSiteNaming(SiteOnAMachine):
 
 		rename.assert_not_called()
 
+	def test_a_failed_rename_is_traceable_and_retryable(self):
+		site = self.site()
+		with patch("central.integrations.pilot.rename_site", side_effect=OSError("pilot unavailable")):
+			site.apply_subdomain()
+
+		self.assertIn("Retry", site.rename_error)
+		self.assertIn("pilot unavailable", frappe.db.get_value("Error Log", site.rename_error_log, "error"))
+
+		self.enqueue_doc.reset_mock()
+		site.retry_subdomain_rename()
+
+		self.enqueue_doc.assert_called_once()
+		self.assertIsNone(site.rename_error)
+
 
 class TestAdminHostname(SiteOnAMachine):
 	def test_a_running_pilot_machine_claims_its_admin_hostname_once(self):
@@ -434,7 +465,10 @@ class TestAdminHostname(SiteOnAMachine):
 		with patch("central.integrations.pilot.rename_admin_domain", side_effect=OSError("unreachable")):
 			observe_server(self.server)
 
-		self.assertIsNone(self.server.reload().admin_domain_task)
+		server = self.server.reload()
+		self.assertIsNone(server.admin_domain_task)
+		self.assertIn("retry", server.admin_domain_error)
+		self.assertIn("unreachable", frappe.db.get_value("Error Log", server.admin_domain_error_log, "error"))
 
 	def test_a_response_without_a_task_leaves_it_to_the_next_report(self):
 		self.enroll()

@@ -67,6 +67,24 @@ class TestVirtualMachine(IntegrationTestCase):
 
 		enqueue.assert_not_called()
 
+	def test_failed_and_terminated_states_queue_notifications(self):
+		server = self._server("vm-state-events", "Pending")
+
+		with (
+			patch.object(server, "sync_subscription_on_status_change"),
+			patch("central.notification.engine.queue_event") as queue_event,
+			patch.object(server, "enqueue_route_removal"),
+		):
+			server.status = "Failed"
+			server.save()
+			server.status = "Terminated"
+			server.save()
+
+		self.assertEqual(
+			[call.args[1] for call in queue_event.call_args_list],
+			["server_failed", "server_terminated"],
+		)
+
 	def _server(self, resource_id: str, status: str):
 		return frappe.get_doc(
 			{

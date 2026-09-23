@@ -19,6 +19,8 @@
   "public_ipv4",
   "gateway_url",
   "admin_domain_task",
+  "admin_domain_error",
+  "admin_domain_error_log",
   "skip_automatic_snapshot",
   "atlas_vm_id",
   "image_offering",
@@ -133,6 +135,21 @@
    "fieldname": "admin_domain_task",
    "fieldtype": "Data",
    "label": "Admin Domain Task",
+   "read_only": 1
+  },
+  {
+   "description": "A safe summary of the latest admin hostname failure.",
+   "fieldname": "admin_domain_error",
+   "fieldtype": "Small Text",
+   "label": "Admin Domain Error",
+   "read_only": 1
+  },
+  {
+   "description": "The Error Log for the latest admin hostname failure.",
+   "fieldname": "admin_domain_error_log",
+   "fieldtype": "Link",
+   "label": "Admin Domain Error Log",
+   "options": "Error Log",
    "read_only": 1
   },
   {

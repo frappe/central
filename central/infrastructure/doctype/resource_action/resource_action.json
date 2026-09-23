@@ -37,7 +37,6 @@
   "request_key",
   "request_digest",
   "credential",
-  "diagnostic_detail",
   "error_log"
  ],
  "fields": [
@@ -255,14 +254,6 @@
    "fieldtype": "Link",
    "label": "Pilot Credential",
    "options": "Pilot Credential",
-   "permlevel": 1,
-   "read_only": 1
-  },
-  {
-   "description": "Latest Atlas failure detail or local traceback. Visible only to System Managers.",
-   "fieldname": "diagnostic_detail",
-   "fieldtype": "Long Text",
-   "label": "Diagnostic Detail",
    "permlevel": 1,
    "read_only": 1
   },

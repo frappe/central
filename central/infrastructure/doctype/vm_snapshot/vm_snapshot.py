@@ -30,6 +30,7 @@ class VMSnapshot(Document):
 
 		atlas_image_id: DF.Data | None
 		error_detail: DF.LongText | None
+		error_log: DF.Link | None
 		expires_at: DF.Datetime | None
 		image_offering: DF.Link | None
 		is_free: DF.Check
@@ -81,6 +82,19 @@ class VMSnapshot(Document):
 			self.stop_billing()
 		if self.status in ("Available", "Deleted"):
 			apply_free_allowance(self.server)
+		if self.has_value_changed("status") and self.status == "Failed":
+			self.queue_failure_notification()
+
+	def queue_failure_notification(self) -> None:
+		from central.notification.engine import queue_event
+
+		queue_event(
+			self.team,
+			"snapshot_failure",
+			message=self.error_detail,
+			reference_doctype=self.doctype,
+			reference_name=self.name,
+		)
 
 	def send_to_region(self) -> None:
 		"""Ask the region to image the server. The image carries this record's name as a tag,
@@ -93,8 +107,11 @@ class VMSnapshot(Document):
 			image = self.get_client().create_snapshot(vm_id, self.title, self.name)
 		except AtlasRequestUncertain:
 			return  # The region may have it; `sync` looks it up by tag.
-		except AtlasConnectionError as error:
-			self.fail(str(error))
+		except AtlasConnectionError:
+			self.fail(
+				_("The region could not start this snapshot."),
+				diagnostic=frappe.get_traceback(with_context=False),
+			)
 			return
 
 		self.db_set("atlas_image_id", image.get("id"))
@@ -113,7 +130,10 @@ class VMSnapshot(Document):
 			else:
 				image = client.find_snapshot_image(self.name)
 		except AtlasResourceGone:
-			self.fail(_("The region no longer has this snapshot."))
+			self.fail(
+				_("The region no longer has this snapshot."),
+				diagnostic=frappe.get_traceback(with_context=False),
+			)
 			return
 
 		if image is None:
@@ -126,7 +146,11 @@ class VMSnapshot(Document):
 		if outcome == "Available":
 			self.size_mib = image.get("rootfs_size_mib") or 0
 		elif outcome == "Failed":
-			self.error_detail = image.get("transfer_error") or _("The region could not finish this snapshot.")
+			self.fail(
+				_("The region could not finish this snapshot."),
+				diagnostic=image.get("transfer_error"),
+			)
+			return
 		self.status = outcome or "Pending"
 		# The region's answer is system state; no user writes it.
 		self.save(ignore_permissions=True)
@@ -140,11 +164,20 @@ class VMSnapshot(Document):
 	def size_gib(self) -> int:
 		return math.ceil((self.size_mib or 0) / 1024)
 
-	def fail(self, reason: str) -> None:
+	def fail(self, reason: str, *, diagnostic: str | None = None) -> None:
 		self.status = "Failed"
 		self.error_detail = reason
+		self.update(self.diagnostic_values(diagnostic or reason, "Snapshot failed"))
 		# A failed region call is system state; no user writes it.
 		self.save(ignore_permissions=True)
+
+	def record_diagnostic(self, reason: str, diagnostic: str, title: str) -> None:
+		"""Leave a safe reason and linked operator detail on this snapshot."""
+		self.db_set({"error_detail": reason, **self.diagnostic_values(diagnostic, title)})
+
+	def diagnostic_values(self, diagnostic: str, title: str) -> dict:
+		error_log = self.log_error(title=title, message=diagnostic)
+		return {"error_log": error_log.name}
 
 	def keep(self) -> None:
 		"""Stop the automatic deletion of a daily snapshot. It is billed only while it is not
@@ -223,7 +256,11 @@ def apply_free_allowance(server: str) -> None:
 			snapshot.set_free(position < free)
 		except frappe.ValidationError as error:
 			# A region with no Snapshot rate cannot bill yet; the next change tries again.
-			snapshot.db_set("error_detail", str(error))
+			snapshot.record_diagnostic(
+				_("Central could not update billing for this snapshot."),
+				str(error),
+				"Snapshot billing update failed",
+			)
 
 
 def is_pilot_offering(offering: str | None) -> bool:
@@ -263,7 +300,7 @@ def take_automatic_snapshots() -> None:
 
 def _take_automatic_snapshot(server) -> None:
 	try:
-		frappe.get_doc(
+		snapshot = frappe.get_doc(
 			{
 				"doctype": "VM Snapshot",
 				"title": _("Daily {0}").format(today()),
@@ -272,7 +309,9 @@ def _take_automatic_snapshot(server) -> None:
 				"snapshot_type": "Automatic",
 				"requested_by": "Administrator",
 			}
-		).insert(ignore_permissions=True)  # A system schedule, not a user, takes it.
+		)
+		# A system schedule, not a user, takes this snapshot.
+		snapshot.insert(ignore_permissions=True)
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each snapshot if a later server fails
 	except frappe.ValidationError:
 		frappe.db.rollback()
@@ -311,7 +350,11 @@ def _delete_expired(name: str) -> None:
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each outcome if a later one fails
 	except frappe.ValidationError as error:
 		frappe.db.rollback()
-		frappe.db.set_value("VM Snapshot", name, "error_detail", str(error))
+		frappe.get_doc("VM Snapshot", name).record_diagnostic(
+			_("Central could not delete this expired snapshot."),
+			str(error),
+			"Expired snapshot deletion failed",
+		)
 		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- leave the reason where the operator looks
 
 

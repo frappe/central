@@ -86,7 +86,9 @@ def apply_atlas_report(cluster: str, report: dict) -> None:
 	if not server:
 		return
 
-	status = STATUS_FROM_REPORT[report["status"]]
+	status = STATUS_FROM_REPORT.get(report.get("status"))
+	if not status or not _reported_at(report):
+		return
 	if not VirtualMachine.record_observed_state(
 		server.name, frappe.utils.now_datetime(), {"status": status}, reported_at=report.get("observed_at")
 	):
@@ -112,11 +114,22 @@ def _decide(report: dict, server: frappe._dict) -> dict | None:
 	status = STATUS_FROM_REPORT.get(report.get("status"))
 	if not status:
 		return _ignored(f"unsupported status '{report.get('status')}'")
+	reported_at = _reported_at(report)
+	if not reported_at:
+		return _ignored("invalid observed_at")
 	if server.status == status:
-		# Two cases in one: the region reports on a timer rather than on change, and a
-		# retried delivery repeats a state Central already recorded. Neither moves
-		# anything, so nothing is written and no console is woken.
+		# A same-state report still advances the regional watermark. This prevents an
+		# older state change arriving later from regressing the server.
+		if not server.last_reported_at or reported_at > frappe.utils.get_datetime(server.last_reported_at):
+			VirtualMachine.record_observed_state(
+				server.name,
+				frappe.utils.now_datetime(),
+				{"status": status},
+				reported_at=reported_at,
+			)
 		return _ignored("no change")
+	if server.last_reported_at and reported_at <= frappe.utils.get_datetime(server.last_reported_at):
+		return _ignored("stale report")
 
 	return None
 
@@ -131,6 +144,17 @@ def _parsed(raw_body: bytes) -> dict | None:
 	return report if isinstance(report, dict) else None
 
 
+def _reported_at(report: dict):
+	"""Return the source timestamp, or None when Atlas did not send a valid value."""
+	value = report.get("observed_at")
+	if not isinstance(value, str) or not value.strip():
+		return None
+	try:
+		return frappe.utils.get_datetime(value)
+	except TypeError, ValueError:
+		return None
+
+
 def _atlas_server_for(cluster: str, virtual_machine: str | None) -> frappe._dict | None:
 	"""The server record this report is about. Ownership comes from Central's own row,
 	never from the report, and the region that signed the delivery scopes the lookup."""
@@ -140,7 +164,7 @@ def _atlas_server_for(cluster: str, virtual_machine: str | None) -> frappe._dict
 	return frappe.db.get_value(
 		"Virtual Machine",
 		{"cluster": cluster, "atlas_vm_id": virtual_machine},
-		["name", "status"],
+		["name", "status", "last_reported_at"],
 		as_dict=True,
 	)
 

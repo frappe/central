@@ -21,7 +21,8 @@
   "attempts",
   "last_attempt_at",
   "column_break_sync",
-  "failure_reason"
+  "failure_reason",
+  "error_log"
  ],
  "fields": [
   {
@@ -140,6 +141,14 @@
    "fieldname": "failure_reason",
    "fieldtype": "Small Text",
    "label": "Failure Reason",
+   "read_only": 1
+  },
+  {
+   "description": "The Error Log for the latest route failure.",
+   "fieldname": "error_log",
+   "fieldtype": "Link",
+   "label": "Error Log",
+   "options": "Error Log",
    "read_only": 1
   }
  ],

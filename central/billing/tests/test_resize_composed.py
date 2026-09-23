@@ -374,7 +374,7 @@ class TestResizeComposed(IntegrationTestCase):
 			result = subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 		action = frappe.get_doc("Resource Action", result["action"])
 		self.assertEqual(action.status, "Uncertain")
-		self.assertIn("host unavailable", action.diagnostic_detail)
+		self.assertIn("host unavailable", frappe.db.get_value("Error Log", action.error_log, "error"))
 		self.assertEqual(len(self._segments(sub)), 1)  # billing stayed on the old segment
 
 	def test_unconfirmed_remote_shape_does_not_relock_billing(self):
@@ -388,7 +388,10 @@ class TestResizeComposed(IntegrationTestCase):
 
 		action = frappe.get_doc("Resource Action", result["action"])
 		self.assertEqual(action.status, "Uncertain")
-		self.assertIn("did not report the requested server size", action.diagnostic_detail)
+		self.assertIn(
+			"did not report the requested server size",
+			frappe.db.get_value("Error Log", action.error_log, "error"),
+		)
 		self.assertEqual(len(self._segments(sub)), 1)
 
 	def test_billing_failure_recovers_without_repeating_the_remote_resize(self):
@@ -409,7 +412,7 @@ class TestResizeComposed(IntegrationTestCase):
 
 		action = frappe.get_doc("Resource Action", result["action"])
 		self.assertEqual(action.status, "Sent")
-		self.assertIn("billing unavailable", action.diagnostic_detail)
+		self.assertIn("billing unavailable", frappe.db.get_value("Error Log", action.error_log, "error"))
 		self.assertEqual(len(self._segments(sub)), 1)
 
 		with patch("central.integrations.servers.observe_server"):

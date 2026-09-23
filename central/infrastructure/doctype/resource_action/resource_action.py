@@ -106,6 +106,7 @@ class ResourceAction(Document):
 		if status not in ACTION_STATES:
 			frappe.throw(_("Unknown resource action status {0}.").format(frappe.bold(status)))
 
+		previous_status = self.status
 		now = frappe.utils.now_datetime()
 		values = {
 			"status": status,
@@ -120,6 +121,25 @@ class ResourceAction(Document):
 			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
 
 		self.db_set(values, notify=notify)
+		if status != previous_status and status in ("Failed", "Timed Out"):
+			self.queue_attention_notification(envelope)
+
+	def queue_attention_notification(self, envelope: dict | None) -> None:
+		"""Notify once when an action reaches a terminal state that needs attention."""
+		from central.notification.engine import queue_event
+
+		event_type = {
+			"create": "provision_failure",
+			"resize": "resize_failed",
+		}.get(self.action, "server_action_required")
+		queue_event(
+			self.team,
+			event_type,
+			message=envelope["message"] if envelope else _("The operation did not finish."),
+			context={"action": self.action, "title": self.title or self.resource_id or self.name},
+			reference_doctype=self.doctype,
+			reference_name=self.name,
+		)
 
 	def record_diagnostic(self, detail: str, title: str = "Resource action diagnostic") -> None:
 		"""Keep Atlas detail or a local traceback where a Desk operator investigates it."""
@@ -127,7 +147,7 @@ class ResourceAction(Document):
 
 	def _diagnostic_values(self, detail: str, title: str) -> dict:
 		error_log = self.log_error(title=title, message=detail)
-		return {"diagnostic_detail": detail, "error_log": error_log.name}
+		return {"error_log": error_log.name}
 
 	@classmethod
 	def confirm_observed_status(cls, resource_id: str, status: str) -> None:

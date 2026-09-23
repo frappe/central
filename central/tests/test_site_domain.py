@@ -96,7 +96,15 @@ class TestSiteDomain(IntegrationTestCase):
 
 		route.reload()
 		self.assertEqual((route.status, route.attempts), ("Failed", 1))
-		self.assertIn("HTTP 503", route.failure_reason)
+		self.assertEqual(
+			route.failure_reason,
+			"Central could not update this route. It will retry automatically.",
+		)
+		self.assertIn("HTTP 503", frappe.db.get_value("Error Log", route.error_log, "error"))
+		self.assertEqual(
+			frappe.db.get_value("Error Log", route.error_log, ["reference_doctype", "reference_name"]),
+			("Site Domain", route.name),
+		)
 
 	def test_apply_records_an_unreachable_proxy(self):
 		route = self._route(f"down-{self.suffix}.com")
@@ -108,7 +116,7 @@ class TestSiteDomain(IntegrationTestCase):
 
 		route.reload()
 		self.assertEqual(route.status, "Failed")
-		self.assertIn("connection refused", route.failure_reason)
+		self.assertIn("connection refused", frappe.db.get_value("Error Log", route.error_log, "error"))
 
 	def test_apply_fails_without_a_server_address(self):
 		server = self._server("c", self.team, None)
@@ -183,7 +191,11 @@ class TestSiteDomain(IntegrationTestCase):
 
 		route.reload()
 		self.assertEqual((route.status, route.attempts), ("Failed", 1))
-		self.assertIn("HTTP 503", route.failure_reason)
+		self.assertEqual(
+			route.failure_reason,
+			"Central could not remove this route. It will retry automatically.",
+		)
+		self.assertIn("HTTP 503", frappe.db.get_value("Error Log", route.error_log, "error"))
 
 		proxy.delete_domain.side_effect = None
 		with patch(GET_PROXY_CLIENT, return_value=proxy), patch.object(frappe.db, "commit"):
@@ -408,7 +420,7 @@ class TestSiteDomain(IntegrationTestCase):
 
 def _run_route_removal(method, **kwargs):
 	"""Run the route-removal job inline, as the worker would after commit."""
-	if method.endswith("remove_server_routes"):
+	if isinstance(method, str) and method.endswith("remove_server_routes"):
 		remove_server_routes(kwargs["server"])
 
 

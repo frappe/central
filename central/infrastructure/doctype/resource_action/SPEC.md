@@ -84,7 +84,9 @@ A paid server never sleeps. A resize ends sleep for good, because a server its o
 
 Customer status uses one response shape: `action`, `status`, `resource_id`, `title`, and an optional structured `error`. Errors include a stable code, message, remediation, and retry indication. Network loss after mutation is an unknown outcome. A failed read never means the VM was deleted.
 
-Desk shows a restricted diagnostic detail and a link to the latest Error Log. Atlas failures store the exception type and safe response message. Unexpected local failures store the traceback. A later incident replaces the detail on the action, while linked Error Log records retain the history. Customer responses never include this operator detail.
+Desk links the action to its latest Error Log. Atlas failures and unexpected local failures store their full diagnostic in Error Log, while the action keeps only its customer-safe error envelope. Linked Error Log records retain the incident history. Customer responses never include operator diagnostics.
+
+The request digest, Pilot credential, and Error Log link use permission level 1 for System Manager. This boundary is required because a Central User can read an authorized Resource Action through the standard document API even when that user has no Desk access.
 
 Creation requires `server:create`. Start, stop, and restart require `server:power`. Resize requires `server:resize`. Termination requires `server:terminate`. A terminate with `take_snapshot` also requires `server:snapshot`, and it destroys the server only after its final snapshot is Available. See [VM snapshots](../vm_snapshot/SPEC.md#terminate-with-a-snapshot). Customer status reads require `server:view` for the owning Team. Customers cannot insert or edit Resource Action documents directly. Query conditions and document permissions enforce the same Team boundary.
 
