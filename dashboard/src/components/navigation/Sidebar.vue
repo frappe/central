@@ -2,15 +2,15 @@
 import {
 	Avatar,
 	Dropdown,
+	formatShortcutLabel,
 	KeyboardShortcut,
 	Sidebar,
-	SidebarCollapseToggle,
 	SidebarHeader,
 	SidebarItem,
 	SidebarLabel,
 	useShortcut,
 } from 'frappe-ui'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import frappeCloudLogo from '@/assets/fc-logo.svg'
 import { useAppMenu } from '@/composables/useAppMenu'
@@ -56,6 +56,11 @@ useShortcut({
 		sidebarCollapsed.value = !sidebarCollapsed.value
 	},
 })
+const sidebarShortcut = formatShortcutLabel({ key: 'b', ctrl: true })
+const toggleLabel = computed(
+	() =>
+		`${sidebarCollapsed.value ? 'Expand' : 'Collapse'} sidebar (${sidebarShortcut})`,
+)
 // KeyboardShortcut's showPlus is not platform-aware. Mac reads as ⌘K;
 // Windows/Linux still need the plus so Ctrl+K doesn't run together.
 const showShortcutPlus = !isMac()
@@ -134,13 +139,8 @@ const toggleSection = (label: string) => {
 			</template>
 		</nav>
 
-		<!-- The framework's collapse row stays in one place; Ctrl/Cmd+B toggles it too. -->
-		<div v-if="!isMobile" class="mt-auto px-2">
-			<SidebarCollapseToggle />
-		</div>
-
 		<!-- user profile dropdown -->
-		<div class="px-2 pb-2" v-if="!isMobile">
+		<div class="mt-auto px-2 pb-2" v-if="!isMobile">
 			<Dropdown
 				:options="footerMenuItems"
 				side="top"
@@ -200,4 +200,22 @@ const toggleSection = (label: string) => {
 			</Dropdown>
 		</div>
 	</Sidebar>
+
+	<!-- The collapse knob sits at the middle of the sidebar edge and never moves. -->
+	<div
+		v-if="!isMobile"
+		class="pointer-events-none relative z-10 -mx-3 w-6 shrink-0"
+	>
+		<button
+			class="pointer-events-auto absolute left-1/2 top-1/2 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-outline-gray-2 bg-surface-elevation-1 text-ink-gray-6 shadow-sm hover:text-ink-gray-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
+			:aria-label="toggleLabel"
+			:title="toggleLabel"
+			@click="sidebarCollapsed = !sidebarCollapsed"
+		>
+			<lucide-chevron-left
+				class="size-3.5"
+				:class="sidebarCollapsed ? 'rotate-180' : ''"
+			/>
+		</button>
+	</div>
 </template>
