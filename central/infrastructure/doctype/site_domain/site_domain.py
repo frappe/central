@@ -138,8 +138,13 @@ class SiteDomain(Document):
 			frappe.throw(_("The region routes {0} to another server.").format(self.domain))
 
 	def apply(self) -> None:
-		"""Send this route to the regional proxy and record the outcome. Safe to repeat."""
-		address = frappe.db.get_value("Virtual Machine", self.server, "ipv6_address")
+		"""Send this route to the regional proxy and record the outcome. Safe to repeat.
+		A terminated server's route is removed instead."""
+		address, status = frappe.db.get_value("Virtual Machine", self.server, ["ipv6_address", "status"])
+		if status == "Terminated":
+			self.remove()
+			return
+
 		values = {"attempts": self.attempts + 1, "last_attempt_at": now_datetime()}
 		try:
 			if not address:
@@ -156,6 +161,23 @@ class SiteDomain(Document):
 			values.update(status="Active", failure_reason=None, attempts=0, ipv6_address=address)
 
 		self.db_set(values)
+
+	def remove(self) -> None:
+		"""Delete this route and its proxy entry. A proxy failure stays on the record, and
+		`retry_failed` tries again."""
+		try:
+			# The server is gone, so the system removes its routes; no user acts here.
+			frappe.delete_doc("Site Domain", self.name, ignore_permissions=True)
+		# ProxyError and missing regional config are both ValidationErrors.
+		except frappe.ValidationError as exception:
+			self.db_set(
+				{
+					"status": "Failed",
+					"failure_reason": str(exception),
+					"attempts": self.attempts + 1,
+					"last_attempt_at": now_datetime(),
+				}
+			)
 
 	@staticmethod
 	def new_for_pilot(credential: PilotCredential, domain: str) -> SiteDomain:
@@ -284,6 +306,13 @@ def retry_failed() -> None:
 	)
 	for name in names:
 		frappe.get_doc("Site Domain", name).apply()
+		frappe.db.commit()  # keep each outcome if a later route crashes the job
+
+
+def remove_server_routes(server: str) -> None:
+	"""Background job: remove every route of a terminated server."""
+	for name in frappe.get_all("Site Domain", filters={"server": server}, pluck="name"):
+		frappe.get_doc("Site Domain", name).remove()
 		frappe.db.commit()  # keep each outcome if a later route crashes the job
 
 

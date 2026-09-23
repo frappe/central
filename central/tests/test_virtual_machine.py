@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -35,6 +37,46 @@ class TestVirtualMachine(IntegrationTestCase):
 		self.assertEqual(server.name, "vm-xyz")
 		self.assertEqual(server.team, self.team.name)
 		self.assertEqual(server.cluster, self.cluster)
+
+	def test_operator_can_queue_route_removal_for_a_terminated_server(self):
+		server = self._server("vm-routes-gone", "Terminated")
+
+		with patch("frappe.enqueue") as enqueue:
+			server.remove_routes()
+
+		enqueue.assert_called_once()
+		self.assertEqual(enqueue.call_args.kwargs["server"], server.name)
+
+	def test_route_removal_is_refused_for_a_live_server(self):
+		server = self._server("vm-routes-live", "Running")
+
+		with patch("frappe.enqueue") as enqueue, self.assertRaises(frappe.ValidationError):
+			server.remove_routes()
+
+		enqueue.assert_not_called()
+
+	def test_a_team_member_cannot_queue_route_removal(self):
+		server = self._server("vm-routes-member", "Terminated")
+
+		frappe.set_user(self.owner)
+		try:
+			with patch("frappe.enqueue") as enqueue, self.assertRaises(frappe.PermissionError):
+				server.remove_routes()
+		finally:
+			frappe.set_user("Administrator")
+
+		enqueue.assert_not_called()
+
+	def _server(self, resource_id: str, status: str):
+		return frappe.get_doc(
+			{
+				"doctype": "Virtual Machine",
+				"resource_id": resource_id,
+				"team": self.team.name,
+				"cluster": self.cluster,
+				"status": status,
+			}
+		).insert()
 
 
 class TestVirtualMachineSubscriptionSync(IntegrationTestCase):

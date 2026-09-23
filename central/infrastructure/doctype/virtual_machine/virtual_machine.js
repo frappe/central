@@ -16,7 +16,7 @@ frappe.ui.form.on("Virtual Machine", {
 				.then((r) => {
 					if (r.exc) return;
 					frappe.show_alert(
-						{ message: __("{0} requested (task {1})", [label, r.message.task]), indicator },
+						{ message: __("{0} requested: {1}", [label, r.message.status]), indicator },
 						5,
 					);
 				});
@@ -39,6 +39,18 @@ frappe.ui.form.on("Virtual Machine", {
 				},
 				__("Server"),
 			);
+		}
+
+		if (frm.doc.status === "Terminated") {
+			frm.add_custom_button(__("Remove routes"), () =>
+				frappe.confirm(__("Remove every site and domain route of {0}?", [frm.doc.resource_id]), () =>
+					frm.call({ method: "remove_routes", freeze: true }).then((r) => {
+						if (r.exc) return;
+						frappe.show_alert({ message: __("Route removal queued"), indicator: "blue" }, 5);
+					}),
+				),
+			);
+			return;
 		}
 
 		frm.add_custom_button(__("Start"), () => run(__("Start"), "start_server", "green"), __("Server"));

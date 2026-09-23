@@ -15,6 +15,7 @@ from central.infrastructure.doctype.site_domain.site_domain import (
 	VERIFICATION_RECORD,
 	DomainNotVerifiedError,
 	SiteDomain,
+	remove_server_routes,
 	retry_failed,
 )
 from central.integrations.proxy import ProxyClient, ProxyError
@@ -152,6 +153,60 @@ class TestSiteDomain(IntegrationTestCase):
 			route.delete()
 
 		self.assertTrue(frappe.db.exists("Site Domain", route.name))
+
+	def test_terminating_a_server_removes_its_routes(self):
+		site = self._route(f"erp-{self.suffix}.{self.zone}")
+		domain = self._route(f"shop-{self.suffix}.com")
+		proxy = MagicMock()
+		server = frappe.get_doc("Virtual Machine", self.server.name)
+		server.status = "Terminated"
+
+		with (
+			patch(GET_PROXY_CLIENT, return_value=proxy),
+			patch.object(frappe.db, "commit"),
+			patch("frappe.enqueue", side_effect=_run_route_removal),
+		):
+			server.save(ignore_permissions=True)
+
+		proxy.delete_site.assert_called_once_with(site.site_label)
+		proxy.delete_domain.assert_called_once_with(domain.domain)
+		self.assertFalse(frappe.db.exists("Site Domain", {"server": self.server.name}))
+
+	def test_a_failed_route_removal_stays_until_a_retry_removes_it(self):
+		route = self._route(f"stuck-{self.suffix}.com")
+		self.server.db_set("status", "Terminated")
+		proxy = MagicMock()
+		proxy.delete_domain.side_effect = ProxyError("HTTP 503: not ready")
+
+		with patch(GET_PROXY_CLIENT, return_value=proxy), patch.object(frappe.db, "commit"):
+			remove_server_routes(self.server.name)
+
+		route.reload()
+		self.assertEqual((route.status, route.attempts), ("Failed", 1))
+		self.assertIn("HTTP 503", route.failure_reason)
+
+		proxy.delete_domain.side_effect = None
+		with patch(GET_PROXY_CLIENT, return_value=proxy), patch.object(frappe.db, "commit"):
+			retry_failed()
+
+		proxy.set_domain.assert_not_called()
+		self.assertFalse(frappe.db.exists("Site Domain", route.name))
+
+	def test_route_removal_runs_as_the_user_that_queued_it(self):
+		"""A region report runs as Guest, and a console terminate as a team member. Neither may
+		delete a route, yet the job they queue must still remove it."""
+		self.server.db_set("status", "Terminated")
+		proxy = MagicMock()
+
+		for label, user in (("guest", "Guest"), ("member", self.viewer)):
+			with self.subTest(user=user):
+				route = self._route(f"{label}-{self.suffix}.com")
+				frappe.set_user(user)
+				with patch(GET_PROXY_CLIENT, return_value=proxy), patch.object(frappe.db, "commit"):
+					remove_server_routes(self.server.name)
+
+				frappe.set_user("Administrator")
+				self.assertFalse(frappe.db.exists("Site Domain", route.name))
 
 	def test_team_members_read_only_their_team_routes(self):
 		own = self._route(f"own-{self.suffix}.com")
@@ -349,6 +404,12 @@ class TestSiteDomain(IntegrationTestCase):
 				"ipv6_address": ipv6_address,
 			}
 		).insert(ignore_permissions=True)
+
+
+def _run_route_removal(method, **kwargs):
+	"""Run the route-removal job inline, as the worker would after commit."""
+	if method.endswith("remove_server_routes"):
+		remove_server_routes(kwargs["server"])
 
 
 class TestRegionProxyClient(IntegrationTestCase):
