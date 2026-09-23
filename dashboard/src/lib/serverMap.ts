@@ -1,6 +1,6 @@
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { formatMemory } from '@/lib/format'
-import { displayStatus, isResizing } from '@/lib/status'
+import { displayStatus } from '@/lib/status'
 import type { Region } from '@/types/Region'
 
 // Display mapping for the servers map: one place that turns a Virtual Machine's mirror
@@ -81,6 +81,8 @@ export function statusVisual(server: VirtualMachineRow): ServerVisual {
 	// A live action wins: show its transitional label, pulsing to read as "working now",
 	// from the click until the mirror confirms — so the row never looks like nothing happened.
 	if (server.pending_action) {
+		if (server.pending_action === 'Resizing')
+			return { ...VISUALS.resizing, pulse: true }
 		return {
 			key: 'settingUp',
 			label: server.pending_action,
@@ -89,7 +91,6 @@ export function statusVisual(server: VirtualMachineRow): ServerVisual {
 			pulse: true,
 		}
 	}
-	if (isResizing(server)) return VISUALS.resizing
 	return STATUS_VISUAL[displayStatus(server)] ?? VISUALS.settingUp
 }
 

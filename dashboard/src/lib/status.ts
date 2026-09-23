@@ -9,22 +9,13 @@ export type VirtualMachineStatus =
 
 export type BadgeTheme = 'green' | 'gray' | 'amber' | 'red' | 'blue' | 'violet'
 
-// A server mid-resize reads as "Resizing" regardless of the raw Atlas status (which
-// flips Running→Stopped→Running under it as the host power-cycles the VM). The flag is
-// Central's own, set for the length of the background reshape job (#84).
-export function isResizing(server: { resize_in_progress?: 0 | 1 }): boolean {
-	return server.resize_in_progress === 1
-}
-
-/** The status to show for a row: a live action's transitional label ("Terminating"…)
- *  takes precedence, then "Resizing" while a reshape job runs, else the mirror status. */
+/** The status to show for a row: a live action's transitional label takes precedence. */
 export function displayStatus(server: {
 	status?: VirtualMachineStatus
-	resize_in_progress?: 0 | 1
 	pending_action?: string | null
 }): string {
 	if (server.pending_action) return server.pending_action
-	return isResizing(server) ? 'Resizing' : (server.status ?? 'Pending')
+	return server.status ?? 'Pending'
 }
 
 /** States a stopped server can be powered on from (mirrors central/api/servers.py). */

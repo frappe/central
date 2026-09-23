@@ -27,7 +27,6 @@ class VirtualMachine(Document):
 		memory_megabytes: DF.Int
 		plan: DF.Link | None
 		public_ipv4: DF.Data | None
-		resize_in_progress: DF.Check
 		resource_id: DF.Data
 		skip_automatic_snapshot: DF.Check
 		state_observed_at: DF.Datetime | None
@@ -38,6 +37,34 @@ class VirtualMachine(Document):
 		title: DF.Data | None
 		vcpus: DF.Int
 	# end: auto-generated types
+
+	@classmethod
+	def create_from_action(cls, action, resource_id: str) -> VirtualMachine:
+		"""Create Central's server record from one accepted creation action."""
+		if frappe.db.exists("Virtual Machine", resource_id):
+			return frappe.get_doc("Virtual Machine", resource_id)
+
+		configuration = action.get_configuration()
+		server = frappe.get_doc(
+			{
+				"doctype": "Virtual Machine",
+				"resource_id": resource_id,
+				"title": action.title,
+				"team": action.team,
+				"cluster": action.atlas_instance,
+				"status": "Provisioning",
+				"atlas_vm_id": action.remote_vm_id,
+				"atlas_image_id": configuration.image_id,
+				"image_offering": configuration.offering,
+				"plan": configuration.plan,
+				"vcpus": configuration.virtual_cpu_count,
+				"memory_megabytes": configuration.memory_mib,
+				"disk_gigabytes": configuration.disk_mib / 1024,
+				"frappe_version": configuration.image_tags.get("frappe_version"),
+			}
+		)
+		# The authorized Resource Action permits this system-owned mirror write.
+		return server.insert(ignore_permissions=True)
 
 	def on_update(self):
 		if self.has_value_changed("status") or self.has_value_changed("plan"):
@@ -240,15 +267,6 @@ class VirtualMachine(Document):
 			return True
 
 		return frappe.utils.get_datetime(reported_at) > frappe.utils.get_datetime(self.last_reported_at)
-
-	@staticmethod
-	def mark_resizing(resource_id: str, resizing: bool) -> None:
-		"""Flag or unflag a server as mid-resize, so the console shows a "Resizing" state
-		and gates power actions while the reshape job runs. This is Central's own
-		orchestration flag, not an observed field, so a region report never clears it."""
-		doc = frappe.get_doc("Virtual Machine", resource_id)
-		doc.db_set("resize_in_progress", 1 if resizing else 0)
-		doc.publish_state_change()
 
 	@staticmethod
 	def mark_terminated(resource_id: str, observed_at=None) -> bool:

@@ -33,6 +33,8 @@ class TestOpenBench(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
+		self._clear_team(self.team.name)
+		frappe.delete_doc("Team", self.team.name, force=True, ignore_permissions=True)
 
 	def _credential(self, pcid, rid):
 		"""An enrolled pilot bound to the VM — its audience_id is what SIDs are minted for."""
@@ -44,6 +46,7 @@ class TestOpenBench(IntegrationTestCase):
 		name = "Open Bench Team"
 		existing = frappe.db.get_value("Team", {"team_name": name})
 		if existing:
+			self._clear_team(existing)
 			frappe.delete_doc("Team", existing, force=True, ignore_permissions=True)
 		return frappe.get_doc(
 			{
@@ -57,6 +60,14 @@ class TestOpenBench(IntegrationTestCase):
 				],
 			}
 		).insert()
+
+	def _clear_team(self, team):
+		for credential in frappe.get_all("Pilot Credential", filters={"team": team}, pluck="name"):
+			frappe.delete_doc("Pilot Credential", credential, force=True, ignore_permissions=True)
+		for site in frappe.get_all("Site", filters={"team": team}, pluck="name"):
+			frappe.delete_doc("Site", site, force=True, ignore_permissions=True)
+		for server in frappe.get_all("Virtual Machine", filters={"team": team}, pluck="name"):
+			frappe.delete_doc("Virtual Machine", server, force=True, ignore_permissions=True)
 
 	def _cluster(self, region):
 		if frappe.db.exists("Region", region):
@@ -117,9 +128,9 @@ class TestOpenBench(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			self._open(self.dev, server="vm-open-1")
 
-	def test_viewer_without_vm_open_is_blocked(self):
-		with self.assertRaises(frappe.PermissionError):
-			self._open(self.viewer, server="vm-open-1")
+	def test_viewer_with_server_view_can_open(self):
+		link = self._open(self.viewer, server="vm-open-1")
+		self.assertTrue(link["url"].startswith(f"{GATEWAY}/?sid="))
 
 	def test_stopped_vm_refused(self):
 		self._server("vm-open-1", "Stopped")

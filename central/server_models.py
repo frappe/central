@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
+
+SSHKey = Annotated[str, Field(min_length=1, max_length=16_384)]
 
 
 class ResourceQuantity(BaseModel):
@@ -35,7 +37,7 @@ class CreateServerInput(BaseModel):
 	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=3)
 	sub_category: str | None = None
 	hostname: str = Field(default="", max_length=63)
-	ssh_keys: list[str] = Field(default_factory=list, max_length=20)
+	ssh_keys: list[SSHKey] = Field(default_factory=list, max_length=20)
 
 
 class ServerCreation(BaseModel):
@@ -51,11 +53,33 @@ class ServerCreation(BaseModel):
 	includes: list[ResourceQuantity]
 	sub_category: str | None
 	hostname: str
-	ssh_keys: list[str]
+	ssh_keys: list[SSHKey]
 	image_tags: dict[str, str]
-	virtual_cpu_count: PositiveInt
+	virtual_cpu_count: int = Field(gt=0, le=32)
 	memory_mib: PositiveInt
 	disk_mib: PositiveInt
+
+
+class ServerShape(BaseModel):
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	vcpus: int = Field(gt=0, le=32)
+	memory_megabytes: PositiveInt
+	disk_gigabytes: PositiveInt
+
+
+class ResizeConfiguration(BaseModel):
+	"""Validated resize target saved on Resource Action."""
+
+	model_config = ConfigDict(extra="forbid", strict=True)
+
+	subscription: str = Field(min_length=1)
+	plan: str | None = None
+	includes: list[ResourceQuantity] = Field(default_factory=list, max_length=3)
+	sub_category: str | None = None
+	override_rate: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+	preset_plan: str | None = None
+	shape: ServerShape
 
 
 class ActionStatus(TypedDict):

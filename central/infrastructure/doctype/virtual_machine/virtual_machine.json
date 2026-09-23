@@ -19,7 +19,6 @@
   "public_ipv4",
   "gateway_url",
   "admin_domain_task",
-  "resize_in_progress",
   "skip_automatic_snapshot",
   "atlas_vm_id",
   "image_offering",
@@ -134,14 +133,6 @@
    "fieldname": "admin_domain_task",
    "fieldtype": "Data",
    "label": "Admin Domain Task",
-   "read_only": 1
-  },
-  {
-   "default": "0",
-   "description": "Set while a background hardware resize runs; blocks power actions and shows a Resizing state.",
-   "fieldname": "resize_in_progress",
-   "fieldtype": "Check",
-   "label": "Resize In Progress",
    "read_only": 1
   },
   {

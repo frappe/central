@@ -25,7 +25,6 @@ export type VirtualMachineRow = Pick<
 	| 'ipv6_address'
 	| 'public_ipv4'
 	| 'gateway_url'
-	| 'resize_in_progress'
 	| 'state_observed_at'
 > & {
 	// Transitional label ("Terminating"/"Provisioning"/…) while an action is in flight.

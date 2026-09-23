@@ -43,8 +43,6 @@ export interface VirtualMachine {
 	public_ipv4?: string
 	/**	Gateway URL : Data - The URL a bench server is fronted at; empty until its pilot enrolls.	*/
 	gateway_url?: string
-	/**	Resize In Progress : Check - Set while a background hardware resize runs; blocks power actions and shows a Resizing state.	*/
-	resize_in_progress?: 0 | 1
 	/**	State Observed At : Datetime - When the region last reported this server's state. An older report is ignored.	*/
 	state_observed_at?: string
 	/**	Atlas VM ID : Data - VM identifier within the linked Atlas region.	*/

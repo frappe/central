@@ -174,16 +174,3 @@ class TestConsoleResize(UnitTestCase):
 
 		with self.assertRaises(frappe.PermissionError):
 			resize_server(team="TEAM-1", resource_id="server-1", plan="plan-2vcpu", disk_gigabytes=20)
-
-
-class TestReshapeVm(UnitTestCase):
-	def test_server_that_is_not_ready_is_refused(self):
-		from central.billing.catalog.subscriptions import _reshape_vm
-
-		with (
-			patch("central.integrations.servers.resize_server") as resize,
-			self.assertRaises(frappe.ValidationError),
-		):
-			_reshape_vm("server-1", "par-2", "Provisioning", SHAPE)
-
-		resize.assert_not_called()

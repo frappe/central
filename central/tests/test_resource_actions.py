@@ -29,9 +29,7 @@ class TestResourceActions(IntegrationTestCase):
 		self.enterContext(patch("frappe.enqueue"))
 		self.enterContext(patch("frappe.db.commit"))
 		self.enterContext(patch.object(VirtualMachine, "ensure_subscription_enabled"))
-		self.subscription = self.enterContext(
-			patch("central.integrations.server_provisioning._create_subscription")
-		)
+		self.enterContext(patch("central.billing.catalog.subscriptions.create_server_subscription"))
 		self.enterContext(
 			patch(
 				"central.integrations.server_provisioning.central_url",
@@ -264,6 +262,7 @@ class TestResourceActions(IntegrationTestCase):
 		action = frappe.get_doc("Resource Action", name)
 		self.assertEqual(action.remote_vm_id, "vm-00009")
 		self.assertEqual(action.status, "Succeeded")
+		self.assertIn("AtlasRequestUncertain: lost reply", action.diagnostic_detail)
 		self.client.return_value.create_vm.assert_called_once()
 
 	def test_a_lost_reply_that_built_nothing_is_a_retriable_failure(self):
@@ -395,9 +394,14 @@ class TestResourceActions(IntegrationTestCase):
 				side_effect=RuntimeError("worker failure"),
 			),
 			patch("frappe.db.rollback"),
-			patch("frappe.log_error"),
 		):
 			process_request(name)
-		self.assertEqual(get_status(name)["status"], "Failed")
-		self.assertEqual(get_status(name)["error"]["code"], "UNEXPECTED")
+		action = frappe.get_doc("Resource Action", name)
+		self.assertEqual(action.status, "Failed")
+		self.assertEqual(action.error_code, "UNEXPECTED")
+		self.assertIn("RuntimeError: worker failure", action.diagnostic_detail)
+		self.assertEqual(
+			frappe.db.get_value("Error Log", action.error_log, ["reference_doctype", "reference_name"]),
+			("Resource Action", action.name),
+		)
 		self.client.return_value.create_vm.assert_not_called()

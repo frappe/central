@@ -29,8 +29,6 @@ def submit_command(
 		frappe.throw(_("This server belongs to another Team."), frappe.PermissionError)
 	if not server.atlas_vm_id:
 		frappe.throw(_("This server has no verified regional identity."))
-	if server.resize_in_progress:
-		frappe.throw(_("Wait for the server resize to finish."))
 	if action == "restart" and server.status != "Running":
 		frappe.throw(_("Only a running server can be restarted."))
 

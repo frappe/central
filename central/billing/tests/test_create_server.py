@@ -102,7 +102,7 @@ class TestCreateServerRecordsSubscription(BillingTestCase):
 	def test_billing_failure_preserves_remote_identity_for_recovery(self):
 		with (
 			patch(
-				"central.integrations.server_provisioning._create_subscription",
+				"central.billing.catalog.subscriptions.create_server_subscription",
 				side_effect=RuntimeError("billing unavailable"),
 			),
 			patch("frappe.db.rollback"),

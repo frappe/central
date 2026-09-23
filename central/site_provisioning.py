@@ -5,7 +5,7 @@ import re
 import frappe
 from frappe import _
 
-from central.billing.api.dashboard.catalog import get_eligible_plans
+from central.billing.catalog.server_plans import get_server_plans
 from central.iam import resolve_team
 from central.integrations.images import list_images
 from central.server_provisioning import submit_request
@@ -28,15 +28,13 @@ def create_trial_site(team: str | None, subdomain: str, request_key: str) -> dic
 	trial the same record, retry and error handling. The name rides on the request,
 	because the site it will rename does not exist until the region answers.
 
-	The region is asked inside the request the customer is waiting on, rather than behind a
-	queue. A trial is one call out and one read back, so there is nothing to wait for that
-	they should not simply be shown, including a refusal."""
-	from central.integrations.server_provisioning import process_request
+	The durable action queues the regional work after the request commits. The customer can
+	return to the same action while Central finishes or recovers the operation."""
 
 	team = resolve_team(frappe.session.user, team)
 	subdomain = validated_subdomain(subdomain)
 	configuration = trial_configuration(team)
-	status = submit_request(
+	return submit_request(
 		team=team,
 		request_key=request_key,
 		title=subdomain,
@@ -44,9 +42,6 @@ def create_trial_site(team: str | None, subdomain: str, request_key: str) -> dic
 		subdomain=subdomain,
 		**configuration,
 	)
-
-	process_request(status["action"])
-	return frappe.get_doc("Resource Action", status["action"]).customer_status()
 
 
 def validated_subdomain(subdomain: str) -> str:
@@ -140,9 +135,7 @@ def trial_region_and_plan(team: str) -> tuple[str, str]:
 	The catalog decides which plans qualify, because it already narrows a trial team's
 	menu to the ones an operator flagged Available on Trial."""
 	for region in trial_regions():
-		plans = [
-			row for rows in get_eligible_plans(cluster=region, team=team)["plans"].values() for row in rows
-		]
+		plans = [row for rows in get_server_plans(team, cluster=region)["plans"].values() for row in rows]
 		if plans:
 			return region, min(plans, key=lambda plan: plan["rate"])["plan"]
 

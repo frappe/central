@@ -390,7 +390,7 @@ api/dashboard/catalog.provision_composed_config
       → creates Subscription (intent) + Subscription Change row (carries locked_rate)
       → cluster-manager API provisions the Asset
 ```
-Resize: `resize_composed_config → resize_composed_subscription` → new Subscription Change (re-prices).
+Resize: `central.api.servers.resize_server → Resource Action → Atlas observation → resize_composed_subscription` → new Subscription Change (re-prices).
 
 ### B. Bill a period (draft → open → collect)
 ```mermaid
@@ -536,7 +536,7 @@ get_team_caps resolves caps live (no per-team Trust Tier doctype — dropped)
 
 **`api/dashboard/`** (customer, team-scoped)
 - `account.py`: whoami, get/save_billing_profile, billing_geo, get/save_billing_settings, get/set_collection_status/mode, team_overview, trust_tier, switchable_teams, notifications + preferences.
-- `catalog.py`: get_eligible_plans, provision/get/resize_composed_config.
+- `catalog.py`: get_eligible_plans and provision/get_composed_config.
 - `invoices.py`: get_forecast, list/pause/resume_subscription, list/get_invoice, payment_attempts, credit_balance/ledger, purchase_credits, pay_invoice(+checkout/confirm), topup order/confirm.
 - `methods.py`: list/options, card setup + confirm, add_demo_card, fallback-order setup/confirm/reorder, set_default, remove.
 

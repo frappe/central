@@ -51,7 +51,6 @@ def registry(team: str | None = None) -> dict:
 			"ipv6_address",
 			"public_ipv4",
 			"gateway_url",
-			"resize_in_progress",
 			"state_observed_at",
 		],
 		order_by="cluster asc, resource_id asc",

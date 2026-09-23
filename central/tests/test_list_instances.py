@@ -106,7 +106,7 @@ class TestListInstances(IntegrationTestCase):
 		servers = registry(team=self.team.name)["servers"]
 
 		self.assertEqual(len(servers), 1)
-		for field in ("name", "resource_id", "plan", "resize_in_progress", "status", "cluster"):
+		for field in ("name", "resource_id", "plan", "status", "cluster"):
 			self.assertIn(field, servers[0])
 		self.assertEqual(servers[0].name, servers[0].resource_id)
 		self.assertEqual(servers[0].frappe_version, "v15")

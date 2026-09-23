@@ -6,7 +6,7 @@ from frappe.model.document import Document
 
 from central.errors import build_envelope
 from central.iam import can
-from central.server_models import ActionStatus, ServerCreation
+from central.server_models import ActionStatus, ResizeConfiguration, ServerCreation
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
 PENDING_LABEL = {
@@ -36,6 +36,7 @@ GOAL_STATUS = {
 # away from the goal once. That report is what shows the restart really began.
 ROUND_TRIP_ACTIONS = ("restart",)
 TERMINAL_STATES = ("Succeeded", "Failed", "Timed Out")
+ACTION_STATES = (*PENDING_STATES, *TERMINAL_STATES)
 # What `action_status` reads, so a list query can build the same shape as a document.
 STATUS_FIELDS = (
 	"name",
@@ -70,9 +71,7 @@ class ResourceAction(Document):
 	"""One durable resource operation, from validated intent to confirmed outcome."""
 
 	def after_insert(self) -> None:
-		# A site is one call out and one read back, with its customer waiting on the answer,
-		# so it is driven inside their request instead of behind a queue.
-		if self.status == "Queued" and self.resource_type != "Site":
+		if self.status == "Queued":
 			self.enqueue()
 
 	def enqueue(self) -> None:
@@ -88,35 +87,47 @@ class ResourceAction(Document):
 	def get_configuration(self) -> ServerCreation:
 		return ServerCreation.model_validate(frappe.parse_json(self.request_payload))
 
+	def get_resize_configuration(self) -> ResizeConfiguration:
+		return ResizeConfiguration.model_validate(frappe.parse_json(self.request_payload))
+
 	def customer_status(self) -> ActionStatus:
 		return action_status(self)
 
-	def set_error(self, status: str, envelope: dict) -> None:
-		self.db_set(
-			{
-				"status": status,
-				"error_code": envelope["code"],
-				"error_message": envelope["message"],
-				"remediation": envelope["remediation"],
-				"retriable": int(envelope["retriable"]),
-				"last_checked_at": frappe.utils.now_datetime(),
-				"completed_at": frappe.utils.now_datetime() if status in TERMINAL_STATES else None,
-			},
-			notify=True,
-		)
+	def transition(
+		self,
+		status: str,
+		*,
+		envelope: dict | None = None,
+		diagnostic: str | None = None,
+		diagnostic_title: str = "Resource action failed",
+		notify: bool = True,
+	) -> None:
+		"""Record one action state and keep operator diagnostics on the same record."""
+		if status not in ACTION_STATES:
+			frappe.throw(_("Unknown resource action status {0}.").format(frappe.bold(status)))
 
-	def succeed(self) -> None:
-		self.db_set(
-			{
-				"status": "Succeeded",
-				"completed_at": frappe.utils.now_datetime(),
-				"error_code": None,
-				"error_message": None,
-				"remediation": None,
-				"retriable": 0,
-			},
-			notify=True,
-		)
+		now = frappe.utils.now_datetime()
+		values = {
+			"status": status,
+			"last_checked_at": now,
+			"completed_at": now if status in TERMINAL_STATES else None,
+			"error_code": envelope["code"] if envelope else None,
+			"error_message": envelope["message"] if envelope else None,
+			"remediation": envelope["remediation"] if envelope else None,
+			"retriable": int(envelope["retriable"]) if envelope else 0,
+		}
+		if diagnostic:
+			values.update(self._diagnostic_values(diagnostic, diagnostic_title))
+
+		self.db_set(values, notify=notify)
+
+	def record_diagnostic(self, detail: str, title: str = "Resource action diagnostic") -> None:
+		"""Keep Atlas detail or a local traceback where a Desk operator investigates it."""
+		self.db_set(self._diagnostic_values(detail, title), notify=True)
+
+	def _diagnostic_values(self, detail: str, title: str) -> dict:
+		error_log = self.log_error(title=title, message=detail)
+		return {"diagnostic_detail": detail, "error_log": error_log.name}
 
 	@classmethod
 	def confirm_observed_status(cls, resource_id: str, status: str) -> None:
@@ -134,16 +145,19 @@ class ResourceAction(Document):
 		"""Move this action on from the state the region reports, and return True when it
 		reached its goal. Any other state leaves the action pending: the scoped read
 		decides what a surprising state means."""
+		if self.action == "resize":
+			return False
+
 		goal = GOAL_STATUS[self.action]
 		if self.action in ROUND_TRIP_ACTIONS and self.status != "In Progress":
 			if status != goal:
-				self.db_set({"status": "In Progress", "last_checked_at": frappe.utils.now_datetime()})
+				self.transition("In Progress", notify=False)
 			return False
 
 		if status != goal:
 			return False
 
-		self.succeed()
+		self.transition("Succeeded")
 		return True
 
 	@frappe.whitelist(methods=["POST"])
@@ -179,18 +193,8 @@ class ResourceAction(Document):
 			frappe.throw(_("This request holds no saved configuration. Create the server again."))
 
 		self.revalidate_purchase()
-		self.db_set(
-			{
-				"status": "Queued",
-				"dispatched_at": None,
-				"completed_at": None,
-				"error_code": None,
-				"error_message": None,
-				"remediation": None,
-				"retriable": 0,
-			},
-			notify=True,
-		)
+		self.transition("Queued")
+		self.db_set("dispatched_at", None, notify=True)
 		self.enqueue()
 		return self.customer_status()
 
@@ -202,6 +206,7 @@ class ResourceAction(Document):
 		eligibility and trial limits are checked again."""
 		from central.server_provisioning import validate_purchase
 
+		frappe.db.get_value("Team", self.team, "name", for_update=True)
 		configuration = self.get_configuration()
 		validate_purchase(
 			self.team,
@@ -243,5 +248,6 @@ class ResourceAction(Document):
 def on_doctype_update() -> None:
 	frappe.db.add_unique("Resource Action", ["team", "request_key"])
 	frappe.db.add_index("Resource Action", ["team", "status"])
+	frappe.db.add_index("Resource Action", ["resource_id", "status"])
 	frappe.db.add_index("Resource Action", ["status", "modified"])
 	frappe.db.add_index("Resource Action", ["atlas_instance", "remote_vm_id"])

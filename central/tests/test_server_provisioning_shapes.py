@@ -3,7 +3,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.billing.api.dashboard.catalog import _profiles
+from central.billing.catalog.server_plans import _profiles
 from central.server_provisioning import image_shape
 
 
@@ -25,7 +25,7 @@ class TestServerProvisioningShapes(IntegrationTestCase):
 		self.assertEqual(shape, {"virtual_cpu_count": 1, "memory_mib": 512, "disk_mib": 20480})
 
 	def test_invalid_cpu_numbers_fail_as_validation_errors(self):
-		for value in (0, -1, float("nan"), float("inf")):
+		for value in (0, -1, 33, float("nan"), float("inf")):
 			with self.subTest(value=value), self.assertRaises(frappe.ValidationError):
 				image_shape(self.composition(value), {"rootfs_size_mib": 8192})
 

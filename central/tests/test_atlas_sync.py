@@ -75,14 +75,21 @@ class TestServerActions(IntegrationTestCase):
 		self.server.db_set("status", "Running")
 		self.assertEqual(self.submit("restart")["status"], "Queued")
 
-	def test_restart_reaches_the_worker_with_the_shared_capability_policy(self):
+	def test_restart_needs_evidence_that_it_left_running(self):
 		self.server.db_set("status", "Running")
 		name = self.submit("restart")["action"]
 
 		_process_locked(name)
-
 		self.client.vm_action.assert_called_once_with("vm-00001", "restart")
-		self.assertEqual(get_status(name)["status"], "In Progress")
+		self.assertEqual(get_status(name)["status"], "Sent")
+
+		_process_locked(name)
+		self.client.vm_action.assert_called_once()
+		self.assertEqual(get_status(name)["status"], "Sent")
+
+		frappe.get_doc("Resource Action", name).record_observed_status("Stopped")
+		_process_locked(name)
+		self.assertEqual(get_status(name)["status"], "Succeeded")
 
 	def test_an_operator_can_ask_the_region_for_the_current_state(self):
 		"""Desk needs a way to ask the region directly when a record looks stale."""
@@ -90,10 +97,24 @@ class TestServerActions(IntegrationTestCase):
 		self.observe.assert_called_once()
 
 	def test_start_is_blocked_while_resizing(self):
-		self.server.db_set("resize_in_progress", 1)
+		frappe.get_doc(
+			{
+				"doctype": "Resource Action",
+				"resource_type": "Server",
+				"action": "resize",
+				"team": self.team.name,
+				"atlas_instance": self.server.cluster,
+				"server": self.server.name,
+				"resource_id": self.server.name,
+				"remote_vm_id": self.server.atlas_vm_id,
+				"requested_by": "Administrator",
+				"correlation_id": frappe.generate_hash(length=32),
+				"status": "Sent",
+			}
+		).insert(ignore_permissions=True)
 		with self.assertRaises(frappe.ValidationError):
 			self.submit()
-		self.assertFalse(frappe.db.exists("Resource Action", {"team": self.team.name}))
+		self.assertEqual(frappe.db.count("Resource Action", {"team": self.team.name}), 1)
 
 	def test_cross_team_commands_and_registry_are_denied(self):
 		frappe.set_user(ensure_user("action-outsider@example.test"))

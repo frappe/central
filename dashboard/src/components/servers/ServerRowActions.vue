@@ -3,13 +3,7 @@ import type { DropdownSide } from 'frappe-ui'
 import { computed } from 'vue'
 import RowActionsMenu from '@/components/common/RowActionsMenu.vue'
 import type { VirtualMachineRow } from '@/composables/useServers'
-import {
-	canStart,
-	canStop,
-	isResizing,
-	isSettingUp,
-	isTerminated,
-} from '@/lib/status'
+import { canStart, canStop, isSettingUp, isTerminated } from '@/lib/status'
 
 // The lifecycle menu for one server row. Which actions show is gated by both the
 // server's status and the user's capabilities — the same rules the API enforces
@@ -59,9 +53,6 @@ const options = computed(() => {
 	// An action is in flight (Provisioning/Starting/Terminating/…): offer nothing else until
 	// it settles, mirroring the API which rejects a second command mid-flight.
 	if (props.server.pending_action) return items
-	// Mid-resize the VM is power-cycling in the background: power + resize actions are
-	// blocked (the API rejects them too) until the reshape job clears the flag.
-	const resizing = isResizing(props.server)
 	// Still provisioning — Open/Resize/Terminate wait until the VM leaves Setting up.
 	const settingUp = isSettingUp(props.server.status)
 	if (props.canOpen && !settingUp)
@@ -69,7 +60,6 @@ const options = computed(() => {
 			label: 'Open',
 			icon: 'lucide-external-link',
 			disabled:
-				resizing ||
 				props.server.status !== 'Running' ||
 				!(props.opensSite || props.server.gateway_url),
 			onClick: () => emit('open', props.server),
@@ -78,14 +68,12 @@ const options = computed(() => {
 		items.push({
 			label: 'Start',
 			icon: 'lucide-play',
-			disabled: resizing,
 			onClick: () => emit('start', props.server),
 		})
 	if (props.canPower && canStop(props.server.status))
 		items.push({
 			label: 'Stop',
 			icon: 'lucide-square',
-			disabled: resizing,
 			onClick: () => emit('stop', props.server),
 		})
 	// Only a running server can restart, and the API refuses it in any other state.
@@ -93,7 +81,6 @@ const options = computed(() => {
 		items.push({
 			label: 'Restart',
 			icon: 'lucide-rotate-ccw',
-			disabled: resizing,
 			onClick: () => emit('restart', props.server),
 		})
 	// Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
@@ -102,14 +89,12 @@ const options = computed(() => {
 		items.push({
 			label: 'Resize',
 			icon: 'lucide-sliders-horizontal',
-			disabled: resizing,
 			onClick: () => emit('resize', props.server),
 		})
 	if (props.canSnapshot && !isTerminated(props.server.status) && !settingUp)
 		items.push({
 			label: 'Take snapshot',
 			icon: 'lucide-camera',
-			disabled: resizing,
 			onClick: () => emit('snapshot', props.server),
 		})
 	if (props.canTerminate && !isTerminated(props.server.status) && !settingUp)

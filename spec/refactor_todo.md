@@ -140,6 +140,8 @@ Do not add a creation timeout that releases budget or permits resend while Atlas
 
 **Gate:** action, observation, provisioning-shape, resize, snapshot, Pilot credential, site, and affected billing creation/trial/resize tests pass. Include duplicate workers, callback races, revoked requester permissions, remote failure, and local recovery. No new remote contract is assumed.
 
+**Completed on 2026-09-23.** Resource Action now queues every create, site, power, terminate, and resize operation after commit and owns state transitions, timestamps, customer-safe errors, current diagnostics, and Error Log links. Creation uses billing catalog entry points instead of dashboard routes. Virtual Machine owns mirror creation, and billing owns subscription creation and repricing. Trial creation returns its queued action. Resize stores one validated target, serializes against other actions, confirms the regional shape before repricing, and recovers a local billing failure without repeating a confirmed resize. The separate `resize_in_progress` state and the unused synchronous dashboard resize endpoint are removed. Restart waits for an observed state change before Running can complete it. The focused suites passed. The full app suite passed 1,646 tests with one skip. Migration, patch validation, live index verification through `frappectl`, and the dashboard production build also passed.
+
 ## Phase 3: finish domain ownership and failure handling
 
 ### Observation, services, and credentials
@@ -153,9 +155,7 @@ Do not add a creation timeout that releases budget or permits resend while Atlas
 
 ### Errors that support recovery
 
-- Keep the customer-safe envelope in `central/errors.py`. Separate pending diagnostics from terminal failure. Uncertain or finalizing actions still need customer-visible explanations; do not prohibit all pending-state errors.
-- Add a restricted Long Text diagnostics field to Resource Action. Store the sanitized Atlas error response for Atlas failures and the traceback for unexpected local failures. Replace the value when a later attempt fails so the record shows the current incident; keep linked Error Logs for history. Customers receive only the safe envelope.
-- Persist actionable failures on the action, site, snapshot, or service that owns recovery. Link support detail through Error Logs. Do not store raw regional responses, bootstrap metadata, credentials, or tracebacks with local variables in customer-readable fields.
+- Keep the customer-safe Resource Action envelope and restricted diagnostics pattern for other resources. Persist actionable failures on the site, snapshot, or service that owns recovery. Link support detail through Error Logs. Do not store raw regional responses, bootstrap metadata, credentials, or tracebacks with local variables in customer-readable fields.
 - Review broad catches at worker recovery, finalization, optional storage, hostname rename, and notification delivery. Keep them only where that boundary can record and recover the failure. Catch specific expected failures elsewhere.
 - Preserve optional storage behavior initially, but make degraded setup visible and recoverable. Making storage mandatory changes the product contract and needs a decision.
 - Use standard `frappe.log_error` with record references and safe detail. Frappe already supplies a traceback when no message is given; repeating that at every call is not simplification.

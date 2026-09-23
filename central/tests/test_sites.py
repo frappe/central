@@ -480,22 +480,21 @@ class TestSubdomainAvailability(SiteOnAMachine):
 		self.assertEqual(answer["subdomain"], unique)
 
 
-class TestTrialCreationIsSentInTheRequest(IntegrationTestCase):
-	"""A trial is one call out and one read back, so the customer is shown the outcome."""
+class TestTrialCreationIsQueued(IntegrationTestCase):
+	"""A trial returns durable intent while the regional operation runs after commit."""
 
 	def setUp(self):
 		super().setUp()
 		frappe.set_user("Administrator")
 		self.addCleanup(frappe.db.rollback)
 
-	def start(self, drive):
+	def start(self):
 		from central.site_provisioning import create_trial_site
 
 		with (
 			patch("central.site_provisioning.validated_subdomain", return_value="acme"),
 			patch("central.site_provisioning.trial_configuration", return_value={}),
 			patch("central.site_provisioning.submit_request") as submit,
-			patch("central.integrations.server_provisioning.process_request", side_effect=drive),
 		):
 			action = frappe.get_doc(
 				{
@@ -512,34 +511,19 @@ class TestTrialCreationIsSentInTheRequest(IntegrationTestCase):
 					"status": "Queued",
 				}
 			).insert(ignore_permissions=True)
-			submit.return_value = {"action": action.name}
+			submit.return_value = action.customer_status()
 			self.action = action
 			return create_trial_site(None, "acme", "key-" + frappe.generate_hash(length=8))
 
-	def test_a_refusal_comes_back_to_the_caller(self):
-		def refuse(name):
-			frappe.db.set_value(
-				"Resource Action", name, {"status": "Failed", "error_code": "CREATE_NOT_ACCEPTED"}
-			)
+	def test_creation_returns_the_queued_action(self):
+		status = self.start()
 
-		status = self.start(refuse)
+		self.assertEqual(status["status"], "Queued")
+		self.assertEqual(status["action"], self.action.name)
 
-		self.assertEqual(status["status"], "Failed")
-		self.assertEqual(status["error"]["code"], "CREATE_NOT_ACCEPTED")
-
-	def test_a_machine_that_started_comes_back_without_an_error(self):
-		def accept(name):
-			frappe.db.set_value("Resource Action", name, "status", "In Progress")
-
-		status = self.start(accept)
-
-		self.assertEqual(status["status"], "In Progress")
-		self.assertIsNone(status["error"])
-
-	def test_a_site_request_is_never_put_on_a_queue(self):
-		"""The customer is waiting on the answer, so nothing defers it to a worker."""
+	def test_site_and_server_requests_use_the_same_queue(self):
 		team = frappe.get_doc(
-			{"doctype": "Team", "team_name": "Unqueued", "owner_user": "Administrator"}
+			{"doctype": "Team", "team_name": "Queued", "owner_user": "Administrator"}
 		).insert()
 
 		with patch("frappe.enqueue") as enqueue:
@@ -556,5 +540,4 @@ class TestTrialCreationIsSentInTheRequest(IntegrationTestCase):
 					}
 				).insert(ignore_permissions=True)
 
-		# Only the server was queued.
-		self.assertEqual(enqueue.call_count, 1)
+		self.assertEqual(enqueue.call_count, 2)

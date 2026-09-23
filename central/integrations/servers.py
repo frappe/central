@@ -7,6 +7,7 @@ from frappe import _
 
 from central.errors import (
 	AtlasConnectionError,
+	AtlasRejected,
 	AtlasRequestUncertain,
 	AtlasResourceGone,
 	build_envelope,
@@ -14,7 +15,12 @@ from central.errors import (
 )
 from central.iam import can
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.infrastructure.doctype.resource_action.resource_action import ACTION_CAPABILITIES, ResourceAction
+from central.infrastructure.doctype.resource_action.resource_action import (
+	ACTION_CAPABILITIES,
+	ROUND_TRIP_ACTIONS,
+	TERMINAL_STATES,
+	ResourceAction,
+)
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
@@ -122,6 +128,84 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	observe_server(server)
 
 
+def process_resize(action) -> None:
+	"""Apply one durable resize, then re-lock billing after the shape is confirmed."""
+	server = frappe.get_doc("Virtual Machine", action.server, for_update=True)
+	if (
+		server.team != action.team
+		or server.cluster != action.atlas_instance
+		or server.atlas_vm_id != action.remote_vm_id
+	):
+		action.transition(
+			"Failed", envelope=build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id)
+		)
+		return
+
+	first_dispatch = action.status == "Queued"
+	if first_dispatch:
+		if not can(action.requested_by, action.team, "server:resize"):
+			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action="resize"))
+			return
+		action.transition("Dispatching", notify=False)
+		action.db_set("dispatched_at", frappe.utils.now_datetime())
+		frappe.db.commit()
+
+	configuration = action.get_resize_configuration()
+	target = configuration.shape.model_dump()
+	try:
+		if not first_dispatch:
+			observe_server(server)
+			server.reload()
+		if not _matches_shape(server, target):
+			resize_server(server, target)
+			server.reload()
+		if not _matches_shape(server, target):
+			raise AtlasConnectionError(_("Atlas did not report the requested server size."))
+	except AtlasRejected as error:
+		action.transition(
+			"Failed",
+			envelope=to_error_response(error),
+			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic_title="Atlas resize was rejected",
+		)
+		return
+	except AtlasConnectionError as error:
+		action.transition(
+			"Uncertain",
+			envelope=build_envelope("OUTCOME_UNKNOWN"),
+			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic_title="Atlas resize result was uncertain",
+		)
+		return
+
+	action.transition("Sent", notify=False)
+	frappe.db.commit()
+	try:
+		from central.billing.catalog.subscriptions import apply_resize_billing
+
+		apply_resize_billing(action)
+		server.db_set("plan", configuration.plan, notify=False)
+	except Exception:
+		diagnostic = frappe.get_traceback(with_context=False)
+		frappe.db.rollback()
+		action.reload()
+		action.transition(
+			"Sent",
+			envelope=build_envelope("FINALIZATION_FAILED"),
+			diagnostic=diagnostic,
+			diagnostic_title="Resize billing finalization failed",
+		)
+		return
+
+	action.transition("Succeeded")
+
+
+def _matches_shape(server: VirtualMachine, shape: dict) -> bool:
+	return all(
+		frappe.utils.flt(server.get(field)) == frappe.utils.flt(value) for field, value in shape.items()
+	)
+
+
 def _wait_for_power_state(client: AtlasClient, vm_id: str, action: str, state: str) -> None:
 	"""Wait until Atlas observes the VM in `state`, sending the power action once the VM is in
 	a stable state. A `migrating` or `pending` VM is left to settle first — Atlas may be moving
@@ -149,56 +233,87 @@ def process_command(action) -> None:
 		or server.cluster != action.atlas_instance
 		or server.atlas_vm_id != action.remote_vm_id
 	):
-		action.set_error("Failed", build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id))
+		action.transition(
+			"Failed", envelope=build_envelope("SERVER_NOT_FOUND", resource_id=action.resource_id)
+		)
 		return
 
 	if action.status == "Queued":
 		if not can(action.requested_by, action.team, ACTION_CAPABILITIES[action.action]) or (
 			action.take_snapshot and not can(action.requested_by, action.team, "server:snapshot")
 		):
-			action.set_error("Failed", build_envelope("PERMISSION_DENIED", action=action.action))
+			action.transition("Failed", envelope=build_envelope("PERMISSION_DENIED", action=action.action))
 			return
 
 		client = _client(server)
 		if action.take_snapshot and not is_final_snapshot_ready(action, server, client):
 			return
 
-		action.db_set({"status": "Dispatching", "dispatched_at": frappe.utils.now_datetime()})
+		action.transition("Dispatching", notify=False)
+		action.db_set("dispatched_at", frappe.utils.now_datetime())
 		# The remote command can outlive this worker; recovery must never redispatch it.
 		frappe.db.commit()
 		try:
 			client.vm_action(action.remote_vm_id, action.action)
 		except AtlasRequestUncertain as error:
-			action.set_error("Uncertain", to_error_response(error))
+			action.transition(
+				"Uncertain",
+				envelope=to_error_response(error),
+				diagnostic=f"{type(error).__name__}: {error}",
+				diagnostic_title="Atlas command result was uncertain",
+			)
 		except AtlasResourceGone as error:
 			if action.action != "terminate":
-				action.set_error("Failed", to_error_response(error))
+				action.transition(
+					"Failed",
+					envelope=to_error_response(error),
+					diagnostic=f"{type(error).__name__}: {error}",
+					diagnostic_title="Atlas resource was not found",
+				)
 				return
 			mark_terminated(server)
-			action.succeed()
+			action.record_diagnostic(
+				f"{type(error).__name__}: {error}", "Atlas confirmed the terminated resource was gone"
+			)
+			action.transition("Succeeded")
 			return
 		except AtlasConnectionError as error:
-			action.set_error("Failed", to_error_response(error))
+			action.transition(
+				"Failed",
+				envelope=to_error_response(error),
+				diagnostic=f"{type(error).__name__}: {error}",
+				diagnostic_title="Atlas command failed",
+			)
 			return
 		else:
-			action.db_set("status", "Sent")
+			action.transition("Sent", notify=False)
 
 		frappe.db.commit()
 
 	try:
 		status = observe_server(server)
-	except AtlasConnectionError:
-		action.set_error(action.status, build_envelope("REFRESH_FAILED"))
+	except AtlasConnectionError as error:
+		action.transition(
+			action.status,
+			envelope=build_envelope("REFRESH_FAILED"),
+			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic_title="Atlas server refresh failed",
+		)
 		return
 
+	action.reload()
+	if action.status in TERMINAL_STATES:
+		return
 	if action.record_observed_status(status):
 		return
 	if status in ("Failed", "Terminated"):
-		action.set_error("Failed", build_envelope("ACTION_FAILED", action=action.action))
+		action.transition("Failed", envelope=build_envelope("ACTION_FAILED", action=action.action))
 	elif _is_command_overdue(action):
-		action.set_error("Timed Out", build_envelope("ACTION_TIMED_OUT", action=action.action))
+		action.transition("Timed Out", envelope=build_envelope("ACTION_TIMED_OUT", action=action.action))
+	elif action.action in ROUND_TRIP_ACTIONS:
+		return
 	else:
-		action.db_set({"status": "In Progress", "last_checked_at": frappe.utils.now_datetime()})
+		action.transition("In Progress", notify=False)
 
 
 def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient) -> bool:
@@ -213,7 +328,7 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 		if status == "Pending":
 			action.db_set("last_checked_at", frappe.utils.now_datetime())
 		else:
-			action.set_error("Failed", build_envelope("SNAPSHOT_FAILED", action="terminate"))
+			action.transition("Failed", envelope=build_envelope("SNAPSHOT_FAILED", action="terminate"))
 		return False
 
 	# One snapshot runs per server; a daily one already running is waited out first.
@@ -224,7 +339,12 @@ def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient)
 	try:
 		_wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
 	except AtlasConnectionError as error:
-		action.set_error("Failed", to_error_response(error))
+		action.transition(
+			"Failed",
+			envelope=to_error_response(error),
+			diagnostic=f"{type(error).__name__}: {error}",
+			diagnostic_title="Atlas snapshot preparation failed",
+		)
 		return False
 
 	snapshot = frappe.get_doc(
