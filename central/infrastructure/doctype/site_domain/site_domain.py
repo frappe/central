@@ -313,7 +313,7 @@ def remove_server_routes(server: str) -> None:
 	"""Background job: remove every route of a terminated server."""
 	for name in frappe.get_all("Site Domain", filters={"server": server}, pluck="name"):
 		frappe.get_doc("Site Domain", name).remove()
-		frappe.db.commit()  # nosemgrep: keep each outcome if a later route crashes the job
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- keep each outcome if a later route crashes the job
 
 
 def normalize_domain(domain: str | None) -> str:
