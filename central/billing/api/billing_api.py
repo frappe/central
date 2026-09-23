@@ -490,7 +490,7 @@ def change_plan(plan: str | None = None) -> dict:
 	the current rate card and queues the VM reshape (stop→resize→start). The server is
 	resolved from the credential — a pilot can only resize its own server, never another
 	server on the same team. Returns `{queued, resized}`."""
-	from central.billing.api.dashboard.catalog import resize_server
+	from central.billing.catalog.subscriptions import begin_resize
 
 	server = _server()
 	if not plan:
@@ -500,10 +500,9 @@ def change_plan(plan: str | None = None) -> dict:
 		frappe.throw(
 			frappe._("No subscription for server {0} on this team.").format(server), frappe.ValidationError
 		)
-	# resize_server gates on the session user's capability; act as operator (team is
-	# fixed by the subscription lookup above, which is already scoped to the credential).
+	# The subscription lookup above is scoped to the credential's own server.
 	with _as_operator():
-		return resize_server(subscription, plan=plan)
+		return {"subscription": subscription, **begin_resize(subscription, plan=plan)}
 
 
 # ── Metered services (team-level: AI tokens, email, PDF, …) ──────────────────

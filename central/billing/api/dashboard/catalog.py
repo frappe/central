@@ -333,44 +333,6 @@ def resize_composed_config(subscription: str, includes: list | str, sub_category
 	return {"subscription": subscription, "resized": after > before}
 
 
-@frappe.whitelist(methods=["POST"])
-def resize_server(
-	subscription: str,
-	plan: str | None = None,
-	includes: list | str | None = None,
-	sub_category: str | None = None,
-	disk_gigabytes: int | None = None,
-) -> dict:
-	"""Resize a server to a preset bundle (`plan`) or a custom shape (`includes` +
-	`sub_category`). `disk_gigabytes` keeps or grows the disk instead of taking the
-	plan's disk. Validates synchronously,
-	then hands the slow VM reshape (stop→resize→start on the host) plus the current-rate
-	re-lock to a background job, marking the server "Resizing" for the console meanwhile.
-	Returns `{queued, resized}`: `queued` when a live VM is being reshaped in the
-	background, `resized` False only for a no-op or non-resizable config."""
-	team = frappe.db.get_value("Subscription", subscription, "team")
-	if not team:
-		frappe.throw(_("Unknown subscription {0}.").format(frappe.bold(subscription)))
-	authz.require_capability(team, authz.MANAGE)
-
-	from central.billing.catalog.subscriptions import begin_resize
-
-	if isinstance(includes, str):
-		includes = frappe.parse_json(includes)
-	if disk_gigabytes is not None and disk_gigabytes != "":
-		disk_gigabytes = frappe.utils.cint(disk_gigabytes)
-	else:
-		disk_gigabytes = None
-	result = begin_resize(
-		subscription,
-		plan=plan,
-		includes=includes,
-		sub_category=sub_category,
-		disk_gigabytes=disk_gigabytes,
-	)
-	return {"subscription": subscription, **result}
-
-
 def _rates_by_plan(names: list[str]) -> dict[str, list]:
 	"""Every Plan's `Catalog Rate` rows in one query, grouped by plan name."""
 	if not names:

@@ -10,7 +10,6 @@ from central.billing.api.dashboard.catalog import (
 	get_eligible_plans,
 	provision_composed_config,
 	resize_composed_config,
-	resize_server,
 )
 from central.billing.catalog.pricing import set_catalog_rate
 from central.billing.tests.utils import BillingTestCase as IntegrationTestCase
@@ -171,7 +170,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 			1,
 		)
 
-	def test_resize_server_onto_preset_bundle(self):
+	def test_begin_resize_onto_preset_bundle(self):
 		from unittest.mock import patch
 
 		from central.billing.catalog import subscriptions
@@ -186,7 +185,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 			patch("central.billing.catalog.subscriptions._reshape_vm", return_value="task-1") as resize_vm,
 			patch("frappe.enqueue", side_effect=run_enqueued_inline),
 		):
-			result = resize_server(out["subscription"], plan=plan)
+			result = subscriptions.begin_resize(out["subscription"], plan=plan)
 		self.assertTrue(result["resized"])
 		self.assertTrue(result["queued"])  # a live VM was reshaped in the background
 		resize_vm.assert_called_once()  # the bundle's shape drove a real VM resize

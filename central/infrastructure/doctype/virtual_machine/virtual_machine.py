@@ -43,6 +43,18 @@ class VirtualMachine(Document):
 			self.sync_subscription_on_status_change()
 		if self.has_value_changed("status") and self.status == "Failed":
 			self.notify_failure()
+		if self.has_value_changed("status") and self.status == "Terminated":
+			self.enqueue_route_removal()
+
+	def enqueue_route_removal(self) -> None:
+		"""A terminated server serves nothing, so its site and custom-domain routes go too."""
+		frappe.enqueue(
+			"central.infrastructure.doctype.site_domain.site_domain.remove_server_routes",
+			server=self.name,
+			enqueue_after_commit=True,
+			job_id=f"server-routes-removal:{self.name}",
+			deduplicate=True,
+		)
 
 	def notify_failure(self):
 		"""Surface a failed server in the team's console feed (a Server-category
@@ -149,6 +161,16 @@ class VirtualMachine(Document):
 		doc.save(ignore_permissions=True)
 		doc.publish_state_change()
 		return True
+
+	@frappe.whitelist(methods=["POST"])
+	def remove_routes(self) -> None:
+		"""Operator action: queue the route removal again, for a terminated server whose
+		routes outlived a lost or failed job."""
+		self.check_permission("write")
+		if self.status != "Terminated":
+			frappe.throw(frappe._("Only a terminated server's routes can be removed."))
+
+		self.enqueue_route_removal()
 
 	@frappe.whitelist(methods=["POST"])
 	def sync_state(self) -> dict:

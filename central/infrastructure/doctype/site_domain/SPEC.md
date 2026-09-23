@@ -44,12 +44,17 @@ insert --> after_insert job --> apply() --> PATCH route --> Active
 Failed or lost Pending --> retry_failed (every 5 minutes, while attempts < 5) --> apply()
 delete --> on_trash --> DELETE route --> record deleted
                            '--> error --> delete refused
+server Terminated --> remove_server_routes job --> remove() each route --> record deleted
+                                                        '--> error --> Failed + failure_reason
 ```
 
 - `apply()` reads the current `Asset.ipv6_address`, sends it, and stores it in `ipv6_address`. A success resets `attempts` to 0.
 - The desk **Retry** button resets `attempts` and runs `apply()` again. It shows for a record that is not Active.
 - A PATCH and a DELETE are safe to repeat, so a retry never needs cleanup.
 - A delete fails when the proxy call fails. The record stays, so the route and the record cannot drift apart. Fix the cause and delete again.
+- When a server becomes Terminated, `Virtual Machine.on_update` queues `remove_server_routes`. It removes every route of that server. A removal that fails stays on the record as Failed with its reason.
+- `apply()` on a route of a Terminated server removes the route instead of sending it. So `retry_failed` and the **Retry** button also finish a failed removal.
+- A route of a Terminated server that is still Active means the removal job did not run. The **Remove routes** button on the Virtual Machine form queues it again. Only a System Manager sees it.
 
 ## Pilot registration
 

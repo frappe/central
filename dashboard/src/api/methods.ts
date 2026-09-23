@@ -58,6 +58,7 @@ export const API = {
 	resizeServer: 'central.api.servers.resize_server',
 	terminateServer: 'central.api.servers.terminate_server',
 	serverOverview: 'central.api.servers.server_overview',
+	serverHostnames: 'central.api.servers.server_hostnames',
 
 	// ── Managed add-on services (central.services.api.dashboard) ──
 	// service:view for the reads, service:manage for the mutations + key reveal.
