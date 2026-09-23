@@ -92,14 +92,72 @@ def selected_image(
 	return image
 
 
-def eligible_plans(team: str, cluster: str, offering: str, image_id: str) -> dict:
-	"""Combine billing eligibility with the selected image's disk requirement."""
+def snapshot_source(team: str, snapshot: str) -> tuple[str, str]:
+	"""The offering and Atlas image a team's snapshot restores from."""
+	row = _restorable_snapshot(team, snapshot)
+	return row.image_offering, row.atlas_image_id
+
+
+def snapshot_image(team: str, region: str, snapshot: str, capability: str = "server:view") -> dict:
+	"""Resolve a team's snapshot into the image a new server boots from, in the shape
+	`selected_image` returns. Its tags are the source offering's, so the new server is of
+	the same kind."""
+	row = _restorable_snapshot(team, snapshot)
+	if row.region != region:
+		frappe.throw(_("A snapshot restores only in the region it was taken in."))
+
+	instance = frappe.get_doc("Region", region)
+	if instance.status != "Active":
+		frappe.throw(_("This region is not accepting new servers."))
+
+	image = AtlasClient.for_team(instance, team, capability).get_machine_image(row.atlas_image_id)
+	if not image.get("enabled") or image.get("status") != "available":
+		frappe.throw(_("This snapshot is no longer available in its region."))
+
+	return {
+		**{field: image.get(field) for field in ("id", "title", "architecture", "status", "created_at")},
+		"enabled": True,
+		"rootfs_size_mib": image.get("rootfs_size_mib") or 0,
+		"tags": frappe.get_cached_doc("Image Offering", row.image_offering).get_image_tags(),
+	}
+
+
+def _restorable_snapshot(team: str, snapshot: str):
+	"""1. Require server:snapshot in the team.
+	2. The snapshot must belong to the team, be Available, and not come from a Pilot server."""
+	if not can(frappe.session.user, team, "server:snapshot"):
+		frappe.throw(_("You cannot restore snapshots for this Team."), frappe.PermissionError)
+
+	row = frappe.db.get_value(
+		"VM Snapshot",
+		snapshot,
+		["team", "region", "status", "atlas_image_id", "image_offering", "is_restorable"],
+		as_dict=True,
+	)
+	if not row or row.team != team:
+		frappe.throw(_("No snapshot '{0}' for this team.").format(snapshot), frappe.DoesNotExistError)
+	if row.status != "Available":
+		frappe.throw(_("Only an available snapshot can be restored."))
+	if not row.is_restorable or not row.image_offering:
+		frappe.throw(_("A snapshot of a Pilot server cannot be restored yet."))
+	return row
+
+
+def eligible_plans(
+	team: str, cluster: str, offering: str, image_id: str, snapshot: str | None = None
+) -> dict:
+	"""Combine billing eligibility with the selected image's disk requirement. A restore
+	passes `snapshot` instead of an offering and image."""
 	from math import ceil
 
 	from central.billing.api.dashboard.catalog import get_eligible_plans
 	from central.billing.catalog.composition import DISK, composition_quantities
 
-	image = selected_image(team, cluster, offering, image_id)
+	image = (
+		snapshot_image(team, cluster, snapshot)
+		if snapshot
+		else selected_image(team, cluster, offering, image_id)
+	)
 	catalog = get_eligible_plans(cluster=cluster, team=team)
 	minimum_disk = image["rootfs_size_mib"]
 	groups = {}

@@ -401,13 +401,15 @@ def create_server(
 	team: str,
 	region: str,
 	title: str,
-	offering: str,
-	image_id: str,
 	request_key: str,
 	plan: str,
+	offering: str = "",
+	image_id: str = "",
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
+	snapshot: str | None = None,
 ) -> dict:
+	"""Create a server from an image, or restore one from a `snapshot`."""
 	from central.server_provisioning import submit_request
 
 	return submit_request(
@@ -420,6 +422,7 @@ def create_server(
 		plan=plan,
 		hostname=hostname,
 		ssh_keys=ssh_keys,
+		snapshot=snapshot,
 	)
 
 
@@ -429,14 +432,16 @@ def create_composed_server(
 	team: str,
 	region: str,
 	title: str,
-	offering: str,
-	image_id: str,
 	request_key: str,
 	includes: list[dict],
 	sub_category: str,
+	offering: str = "",
+	image_id: str = "",
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
+	snapshot: str | None = None,
 ) -> dict:
+	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
 	from central.server_provisioning import submit_request
 
 	return submit_request(
@@ -450,6 +455,7 @@ def create_composed_server(
 		sub_category=sub_category,
 		hostname=hostname,
 		ssh_keys=ssh_keys,
+		snapshot=snapshot,
 	)
 
 

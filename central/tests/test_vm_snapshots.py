@@ -8,9 +8,11 @@ from central.api import snapshots as api
 from central.billing.revenue.invoicing.lines import team_line_items
 from central.billing.settings import ensure_snapshot_settings
 from central.errors import AtlasRejected, AtlasRequestUncertain, AtlasResourceGone
+from central.infrastructure.doctype.image_offering.image_offering import ensure_default_offerings
 from central.infrastructure.doctype.vm_snapshot import vm_snapshot
 from central.infrastructure.doctype.vm_snapshot.vm_snapshot import VMSnapshot
 from central.integrations.atlas import AtlasClient
+from central.integrations.images import snapshot_image, snapshot_source
 from central.integrations.servers import process_command
 from central.resource_actions import submit_command
 from central.tests.test_iam import ensure_user
@@ -345,6 +347,35 @@ class TestTerminateWithSnapshot(SnapshotTestCase):
 		frappe.set_user(self.viewer)
 		with self.assertRaises(frappe.PermissionError):
 			submit_command("terminate", self.team, self.server.name, take_snapshot=True)
+
+
+class TestSnapshotRestore(SnapshotTestCase):
+	def setUp(self):
+		super().setUp()
+		ensure_default_offerings()
+		self.server.db_set("image_offering", "ubuntu")
+		self.snapshot = self._available()
+		frappe.set_user(self.owner)
+
+	def test_an_available_snapshot_restores_in_its_own_region(self):
+		self.assertEqual(snapshot_source(self.team, self.snapshot.name), ("ubuntu", "img-1"))
+
+		with self.assertRaises(frappe.ValidationError):
+			snapshot_image(self.team, ensure_atlas_instance(f"elsewhere-{self.suffix}"), self.snapshot.name)
+
+	def test_a_pilot_or_unfinished_snapshot_is_refused(self):
+		self.snapshot.db_set("is_restorable", 0)
+		with self.assertRaises(frappe.ValidationError):
+			snapshot_source(self.team, self.snapshot.name)
+
+		self.snapshot.db_set({"is_restorable": 1, "status": "Deleted"})
+		with self.assertRaises(frappe.ValidationError):
+			snapshot_source(self.team, self.snapshot.name)
+
+	def test_a_viewer_cannot_restore(self):
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			snapshot_source(self.team, self.snapshot.name)
 
 
 class TestSnapshotInvoicing(SnapshotTestCase):
