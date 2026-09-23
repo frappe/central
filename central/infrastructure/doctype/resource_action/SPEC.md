@@ -84,7 +84,7 @@ A paid server never sleeps. A resize ends sleep for good, because a server its o
 
 Customer status uses one response shape: `action`, `status`, `resource_id`, `title`, and an optional structured `error`. Errors include a stable code, message, remediation, and retry indication. Network loss after mutation is an unknown outcome. A failed read never means the VM was deleted.
 
-Creation requires `server:create`. Start and stop require `server:power`. Termination requires `server:terminate`. Customer status reads require `server:view` for the owning Team. Customers cannot insert or edit Resource Action documents directly. Query conditions and document permissions enforce the same Team boundary.
+Creation requires `server:create`. Start and stop require `server:power`. Termination requires `server:terminate`. A terminate with `take_snapshot` also requires `server:snapshot`, and it destroys the server only after its final snapshot is Available. See [VM snapshots](../vm_snapshot/SPEC.md#terminate-with-a-snapshot). Customer status reads require `server:view` for the owning Team. Customers cannot insert or edit Resource Action documents directly. Query conditions and document permissions enforce the same Team boundary.
 
 A scoped not-found response records the server as terminated, applies the billing cancellation hook, and revokes that server's Pilot credentials. A response for a different VM or tenant is rejected without recording anything.
 

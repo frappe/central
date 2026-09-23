@@ -35,6 +35,7 @@ These were removed from the staging milestone on purpose. They are the next stru
 ### Known gaps outside the phase list
 
 - `Central Tunnel Settings`, `Connect Credential`, and `Passport Registration` have no reader in this app or its siblings.
+- A snapshot of a Pilot server cannot be restored. Pilot applies its first-boot setup only once, so a restored disk keeps the old server's identity. See [VM snapshots](../central/infrastructure/doctype/vm_snapshot/SPEC.md#restore).
 
 ## Branch workflow
 
