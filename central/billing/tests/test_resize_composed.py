@@ -20,6 +20,7 @@ from central.billing.tests.utils import (
 	run_enqueued_inline,
 	set_team_tier,
 )
+from central.integrations.servers import POWER_WAIT_SECONDS
 
 TEAM = "team-resize"
 CLUSTER = "ap-south-1"
@@ -288,6 +289,8 @@ class TestResizeComposed(IntegrationTestCase):
 			result = subscriptions.begin_resize(sub, includes=BIG, sub_category="General")
 		self.assertEqual(result, {"queued": True, "resized": True})
 		enqueue.assert_called_once()  # the slow reshape is deferred, not run in-request
+		# The job waits for a stop and a start, so it must outlive both waits.
+		self.assertGreater(enqueue.call_args.kwargs["timeout"], 2 * POWER_WAIT_SECONDS)
 		self.resize_vm.assert_not_called()
 		# The VM is flagged Resizing so the console shows it and blocks power actions.
 		self.assertEqual(frappe.db.get_value("Virtual Machine", server, "resize_in_progress"), 1)
@@ -301,6 +304,32 @@ class TestResizeComposed(IntegrationTestCase):
 		self.resize_vm.assert_called_once()  # the deferred job drove the real resize
 		self.assertEqual(frappe.db.get_value("Virtual Machine", server, "resize_in_progress"), 0)
 		self.assertEqual(len(self._segments(sub)), 2)  # re-priced once the job landed
+
+	def test_begin_resize_onto_a_preset_with_a_larger_disk(self):
+		"""A preset's CPU and memory pass even off the profile ratio, since the preset sells them."""
+		sub = self._provision()
+		self._ready(sub)
+		plan = make_plan(
+			"resize-preset-off-ratio",
+			rates=[{"cluster": "", "currency": "INR", "rate": 5000}],
+			includes=[
+				{"resource_type": "Compute", "quantity": 6, "unit": "vCPU"},
+				{"resource_type": "Memory", "quantity": 6, "unit": "GB"},
+				{"resource_type": "Disk", "quantity": 40, "unit": "GB"},
+			],
+			sub_category="General",
+		)
+
+		with patch("frappe.enqueue", side_effect=run_enqueued_inline):
+			subscriptions.begin_resize(sub, plan=plan, disk_gigabytes=80)
+
+		self.resize_vm.assert_called_once()
+		doc = frappe.get_doc("Subscription", sub)
+		self.assertEqual(doc.pricing_mode, "Composed")
+		self.assertEqual(
+			{row.resource_type: row.quantity for row in doc.includes},
+			{"Compute": 6, "Memory": 6, "Disk": 80},
+		)
 
 	def test_begin_resize_is_a_noop_on_the_same_config(self):
 		sub = self._provision()

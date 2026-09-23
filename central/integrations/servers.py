@@ -22,6 +22,8 @@ from central.integrations.atlas import AtlasClient
 CAPABILITY = {"start": "server:power", "stop": "server:power", "terminate": "server:terminate"}
 # A resize may move the VM to another host, so the wait is generous enough to cover a migration.
 POWER_WAIT_SECONDS = 15 * 60
+# A resize waits for a stop and a start, so its job must outlive both waits.
+RESIZE_JOB_TIMEOUT_SECONDS = 2 * POWER_WAIT_SECONDS + 5 * 60
 POWER_POLL_SECONDS = 5
 COMMAND_TIMEOUT_SECONDS = 10 * 60
 
@@ -106,14 +108,16 @@ def resize_server(server: VirtualMachine, shape: dict) -> None:
 	memory_mib = shape["memory_megabytes"]
 	disk_mib = shape["disk_gigabytes"] * 1024
 
-	# A resized server has outgrown the hobby idle shutdown, so it stops sleeping for good.
 	reshaping = (compute.get("cpu_millicores"), compute.get("memory_mib")) != (cpu_millicores, memory_mib)
-	if reshaping or compute.get("sleep_after_idle_seconds"):
-		if reshaping:
-			_wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
-		client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
-	elif disk_mib > (disk.get("size_mib") or 0):
+	if not reshaping and disk_mib > (disk.get("size_mib") or 0):
 		client.update_disk(server.atlas_vm_id, disk_mib)
+	if reshaping:
+		_wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
+
+	# A resized server has outgrown the hobby idle shutdown, so it stops sleeping for good.
+	# Atlas takes a resize with unchanged resources on a running VM as a sleep change only.
+	if reshaping or compute.get("sleep_after_idle_seconds"):
+		client.resize(server.atlas_vm_id, cpu_millicores, memory_mib, disk_mib)
 
 	_wait_for_power_state(client, server.atlas_vm_id, "start", "running")
 	observe_server(server)

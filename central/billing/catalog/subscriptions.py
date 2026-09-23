@@ -412,9 +412,8 @@ def begin_resize(
 	plan, includes, sub_category = _resize_disk_choice(doc, plan, includes, sub_category, disk_gigabytes)
 	# A preset grown past its own disk is now billed as a composed shape, but keeps the bundle
 	# price plus the disk rate for the extra GB — never the cheaper à-la-carte total.
-	override_rate = (
-		_preset_plus_disk_rate(doc, original_plan, disk_gigabytes) if original_plan and plan is None else None
-	)
+	preset_plan = original_plan if original_plan and plan is None else None
+	override_rate = _preset_plus_disk_rate(doc, preset_plan, disk_gigabytes) if preset_plan else None
 	shape = _plan_resize(doc, server, plan, includes, sub_category, override_rate)
 	if shape is None:
 		return {"queued": False, "resized": False}  # same config — nothing to do
@@ -427,24 +426,27 @@ def begin_resize(
 			includes=includes,
 			sub_category=sub_category,
 			override_rate=override_rate,
+			preset_plan=preset_plan,
 			changed_by=changed_by,
 		)
 		return {"queued": False, "resized": True}
 
 	# Slow path: flag the VM Resizing (pushed live to the Console) and defer the reshape.
 	from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
+	from central.integrations.servers import RESIZE_JOB_TIMEOUT_SECONDS
 
 	VirtualMachine.mark_resizing(doc.server_id, True)
 	frappe.enqueue(
 		_apply_resize,
 		queue="long",
-		timeout=600,
+		timeout=RESIZE_JOB_TIMEOUT_SECONDS,
 		enqueue_after_commit=True,
 		subscription=subscription,
 		plan=plan,
 		includes=includes,
 		sub_category=sub_category,
 		override_rate=override_rate,
+		preset_plan=preset_plan,
 		changed_by=changed_by,
 		server_id=doc.server_id,
 	)
@@ -553,6 +555,7 @@ def _apply_resize(
 	includes: list | None = None,
 	sub_category: str | None = None,
 	override_rate: float | None = None,
+	preset_plan: str | None = None,
 	changed_by: str | None = None,
 	server_id: str | None = None,
 ) -> None:
@@ -570,7 +573,12 @@ def _apply_resize(
 			resize_to_plan(subscription, plan, changed_by=changed_by)
 		else:
 			resize_composed_subscription(
-				subscription, includes or [], sub_category, changed_by=changed_by, override_rate=override_rate
+				subscription,
+				includes or [],
+				sub_category,
+				changed_by=changed_by,
+				override_rate=override_rate,
+				preset_plan=preset_plan,
 			)
 	except Exception as error:
 		if server_id:
@@ -619,6 +627,7 @@ def resize_composed_subscription(
 	sub_category: str | None = None,
 	changed_by: str | None = None,
 	override_rate: float | None = None,
+	preset_plan: str | None = None,
 ):
 	"""Resize a composed config — or slide a preset onto a custom shape — as the
 	`changed`-event re-lock (#82, ADR 0010).
@@ -628,7 +637,8 @@ def resize_composed_subscription(
 	*unchanged* config. The new shape is validated against its profile (#81) and the
 	team's remaining headroom before anything is written. A no-op on an identical
 	composition (matching #54), and records nothing on a never-provisioned or
-	terminated config.
+	terminated config. `preset_plan` names the preset whose CPU and memory the shape
+	keeps with a larger disk.
 	"""
 	doc = frappe.get_doc("Subscription", subscription)
 	if not _is_resizable(doc):
@@ -642,7 +652,7 @@ def resize_composed_subscription(
 	from central.billing.catalog.composition import composition_quantities
 	from central.billing.catalog.pricing import resolve_config_rate
 
-	_validate_resize_shape(profile, rows, doc.server_id)
+	_validate_resize_shape(profile, rows, doc.server_id, preset_plan)
 
 	currency = frappe.db.get_value("Billing Profile", doc.team, "currency")
 	server = (
@@ -722,10 +732,13 @@ def _plan_shape(plan: str) -> dict:
 	return _server_shape(includes)
 
 
-def _validate_resize_shape(profile: str, rows: list, server_id: str | None) -> None:
+def _validate_resize_shape(
+	profile: str, rows: list, server_id: str | None, preset_plan: str | None = None
+) -> None:
 	"""Validate a resize shape. A disk the server already has may sit below the
-	profile minimum, and a disk-only change keeps the CPU and memory it runs now
-	even when that shape is not what a new config would be allowed to design."""
+	profile minimum. CPU and memory the server runs now, or that `preset_plan` sells,
+	need only the disk checks, even when that shape is not what a new config would
+	be allowed to design."""
 	from central.billing.catalog.composition import (
 		COMPUTE,
 		DISK,
@@ -749,7 +762,7 @@ def _validate_resize_shape(profile: str, rows: list, server_id: str | None) -> N
 	same_compute = frappe.utils.flt(qty.get(COMPUTE, 0)) == frappe.utils.flt(current.vcpus) and (
 		frappe.utils.flt(qty.get(MEMORY, 0)) == frappe.utils.flt(current.memory_megabytes) / 1024
 	)
-	if same_compute:
+	if same_compute or preset_plan:
 		_guard_disk_shrink(server_id, {"disk_gigabytes": int(new_disk)})
 		disk_max = frappe.utils.flt(frappe.db.get_value("Plan Sub-Category", profile, "disk_max"))
 		if disk_max and new_disk > disk_max:

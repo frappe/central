@@ -203,26 +203,6 @@ const currentPlanKey = computed(() => {
 })
 const currentDisk = computed(() => configCall.data?.disk_gb ?? 0)
 
-const largerDisks = computed(() => {
-	const fromProfiles = profiles.value.flatMap((profile) => profile.disk_steps)
-	const fromPlans = plans.value.map(
-		(plan) =>
-			plan.includes.find((inc) => inc.resource_type === 'Disk')?.quantity ?? 0,
-	)
-	return [...new Set([...fromProfiles, ...fromPlans])]
-		.filter((gb) => gb > currentDisk.value)
-		.sort((a, b) => a - b)
-})
-watch(largerDisks, (steps) => {
-	if (!steps.length) {
-		selectedDisk.value = null
-		growDisk.value = false
-		return
-	}
-	if (selectedDisk.value == null || !steps.includes(selectedDisk.value))
-		selectedDisk.value = steps[0]
-})
-
 const targetCompute = computed<ComposedConfig | null>(() => {
 	const current = initial.value
 	if (isCustomSel.value) return composedConfig.value
@@ -237,6 +217,30 @@ const targetCompute = computed<ComposedConfig | null>(() => {
 		disk_gb: current?.disk_gb ?? qty('Disk'),
 	}
 })
+
+const largerDisks = computed(() => {
+	const fromProfiles = profiles.value.flatMap((profile) => profile.disk_steps)
+	const fromPlans = plans.value.map(
+		(plan) =>
+			plan.includes.find((inc) => inc.resource_type === 'Disk')?.quantity ?? 0,
+	)
+	// The backend refuses a disk above the target profile's maximum, so don't offer one.
+	const target = targetCompute.value ?? initial.value
+	const diskMax = profileFor(target?.sub_category ?? '')?.disk_max || Infinity
+	return [...new Set([...fromProfiles, ...fromPlans])]
+		.filter((gb) => gb > currentDisk.value && gb <= diskMax)
+		.sort((a, b) => a - b)
+})
+watch(largerDisks, (steps) => {
+	if (!steps.length) {
+		selectedDisk.value = null
+		growDisk.value = false
+		return
+	}
+	if (selectedDisk.value == null || !steps.includes(selectedDisk.value))
+		selectedDisk.value = steps[0]
+})
+
 const targetDisk = computed(() =>
 	growDisk.value && selectedDisk.value != null
 		? selectedDisk.value

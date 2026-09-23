@@ -92,7 +92,7 @@ A scoped not-found response records the server as terminated, applies the billin
 
 The console selects region, offering, exact build, and compatible plan. It keeps no copy of the request: `central.api.servers.registry` returns the team's unfinished creations, and the form picks up the one this user started. A page reload, a second tab and a lost reply all reach the same record instead of starting another. Switching Teams clears the visible action and ignores late responses from the previous Team.
 
-Resize is not exposed by this action flow. It runs as a billing background job instead: `central.integrations.servers.resize_server` stops the VM when CPU or memory changes, sets compute with `PATCH /virtual-machines/<id>/compute`, grows the disk with `PATCH /virtual-machines/<id>/disk`, starts the VM, and waits up to 240 seconds for each power state. Billing re-prices only after these calls succeed. Framework webhook ingestion and signup site readiness are subsequent delivery phases.
+Resize is not exposed by this action flow. It runs as a billing background job instead: `central.integrations.servers.resize_server` grows the disk online with `PATCH /virtual-machines/<id>/disk` when CPU and memory stay the same. When CPU or memory changes, it stops the VM and sends CPU, memory, and disk in one `POST /virtual-machines/<id>/actions/resize`. A server with idle sleep on also gets that resize call, which turns the sleep off. It then starts the VM and waits up to 15 minutes for each power state. The job timeout covers both waits. Billing re-prices only after these calls succeed. Framework webhook ingestion and signup site readiness are subsequent delivery phases.
 
 ## Validation
 

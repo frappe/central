@@ -42,7 +42,7 @@ See [Resource Action](../central/infrastructure/doctype/resource_action/SPEC.md)
 
 The current creation flow requires the Atlas VM API and automatic management hostname. Staging also needs current schema, key trust, a healthy host, available images, and wildcard DNS.
 
-Framework webhook ingestion, signup readiness, restart completion, and migration-backed resize remain subsequent phases. Their delivery order is in [Delivery](DELIVERY.md). Framework state webhooks will supplement repair reads. They must not replace durable intent or make a callback the only recovery path.
+Framework webhook ingestion, signup readiness, and restart completion remain subsequent phases. Their delivery order is in [Delivery](DELIVERY.md). Resize uses the Atlas resize API, which moves a VM to another host when its host cannot fit the new size. Framework state webhooks will supplement repair reads. They must not replace durable intent or make a callback the only recovery path.
 
 Domain and TLS operations belong to Atlas and Pilot. Central will authorize and track those operations when the domain phase starts.
 

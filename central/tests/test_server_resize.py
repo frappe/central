@@ -77,6 +77,19 @@ class TestServerResize(UnitTestCase):
 		self.client.vm_action.assert_not_called()
 		self.client.resize.assert_called_once_with("vm-00001", 2000, 4096, 51200)
 
+	def test_disk_only_grow_on_a_sleeping_server_stays_online(self):
+		"""The disk grows online first, so the resize that ends idle sleep changes no resources
+		and Atlas takes it on a running server."""
+		self.client.get_vm.return_value = self.remote("running", 2000, 4096, sleep_after_idle_seconds=1800)
+
+		resize_server(self.server, SHAPE)
+
+		self.client.vm_action.assert_not_called()
+		self.client.update_disk.assert_called_once_with("vm-00001", 51200)
+		self.client.resize.assert_called_once_with("vm-00001", 2000, 4096, 51200)
+		calls = [name for name, _, _ in self.client.mock_calls if name in ("update_disk", "resize")]
+		self.assertEqual(calls, ["update_disk", "resize"])
+
 	def test_stopped_server_is_resized_then_started(self):
 		self.client.get_vm.side_effect = [
 			self.remote("stopped"),
