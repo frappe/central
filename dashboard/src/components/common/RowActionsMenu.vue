@@ -21,7 +21,12 @@ withDefaults(
 		align?: DropdownAlign
 		side?: DropdownSide
 	}>(),
-	{ busy: false, icon: 'lucide-ellipsis-vertical', align: 'end', side: 'bottom' },
+	{
+		busy: false,
+		icon: 'lucide-ellipsis-vertical',
+		align: 'end',
+		side: 'bottom',
+	},
 )
 </script>
 
