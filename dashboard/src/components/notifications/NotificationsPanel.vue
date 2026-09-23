@@ -169,7 +169,7 @@ const onRowClick = async (notification: TeamNotification): Promise<void> => {
 					:key="n.name"
 					type="button"
 					class="flex w-full cursor-pointer items-start gap-4 p-4 text-left hover:bg-surface-gray-1"
-					:class="i == items.length - 1 ? '' : 'border-b'"
+					:class="i === items.length - 1 ? '' : 'border-b'"
 					@click="onRowClick(n)"
 				>
 					<!-- severity square badge -->

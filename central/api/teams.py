@@ -91,44 +91,6 @@ def list_team_roles(team: str) -> list[dict[str, Any]]:
 	return list(roles.values())
 
 
-@frappe.whitelist(methods=["GET"])
-def list_capabilities() -> list[dict[str, Any]]:
-	"""Every capability in the system — the palette the role builder picks from."""
-	return frappe.get_all(
-		"Capability",
-		fields=["name", "plane", "resource", "description"],
-		order_by="name asc",
-	)
-
-
-@frappe.whitelist(methods=["GET"])
-@require_capability("team:manage_members", "You can't manage invitations for this team.")
-def list_team_invitations(team: str, status: str | None = None) -> list[dict[str, Any]]:
-	"""Invitations for a team — the manager's view."""
-	filters: dict[str, Any] = {"team": team}
-	if status:
-		filters["status"] = status
-	return frappe.get_list(
-		"Team Invitation",
-		filters=filters,
-		fields=[
-			"name",
-			"email",
-			"role",
-			"resource_type",
-			"resource_name",
-			"status",
-			"invited_by",
-			"expires_on",
-			"accepted_by",
-			"accepted_at",
-			"creation",
-		],
-		order_by="creation desc",
-		limit=100,
-	)
-
-
 @frappe.whitelist(methods=["POST"])
 def create_team(team_name: str) -> dict[str, Any]:
 	"""Create a new team owned by the caller. The Team doc seeds the active Owner

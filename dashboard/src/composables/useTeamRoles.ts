@@ -1,4 +1,4 @@
-import { useCall } from 'frappe-ui'
+import { useCall, useList } from 'frappe-ui'
 import { computed } from 'vue'
 import { API, method } from '@/api/methods'
 import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
@@ -24,8 +24,11 @@ const rolesCall = useCall<TeamRoleRow[], { team: string }>({
 })
 
 // The palette is team-independent — every capability in the system.
-const capabilitiesCall = useCall<CapabilityInfo[]>({
-	url: method(API.listCapabilities),
+const capabilitiesCall = useList<CapabilityInfo>({
+	doctype: 'Capability',
+	fields: ['name', 'plane', 'resource', 'description'],
+	orderBy: 'name asc',
+	limit: 100,
 	immediate: false,
 })
 

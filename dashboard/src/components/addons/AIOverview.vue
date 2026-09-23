@@ -1,33 +1,16 @@
 <script setup lang="ts">
-import { Badge, Button, Spinner, useCall } from 'frappe-ui'
+import { Badge, Button, Spinner } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { API, method } from '@/api/methods'
+import { useMeteredServices } from '@/composables/useMeteredServices'
 import { useServices } from '@/composables/useServices'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
-
-interface MeteredRow {
-	resource_type: string | null
-	settlement_mode: string
-	period_usage: number
-}
 
 const router = useRouter()
 const { instance, instanceLoading } = useServices()
-const { activeTeam } = useSession()
-
-const metered = useCall<{ services: MeteredRow[] }, { team: string }>({
-	url: method(API.meteredServices),
-	params: () => ({ team: activeTeam.value! }),
-	immediate: false,
-	refetch: true,
-})
-
-whenTeamReady(() => metered.reload())
+const { services } = useMeteredServices()
 
 const tokenRow = computed(() =>
-	metered.data?.services.find((s) => s.resource_type === 'Tokens'),
+	services.value.find((service) => service.resource_type === 'Tokens'),
 )
 
 const tokensThisCycle = computed(() => {

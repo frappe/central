@@ -24,8 +24,6 @@ export const API = {
 	// ── Team roster, roles & invitations (central.api.teams) ──
 	listTeamMembers: 'central.api.teams.list_team_members',
 	listTeamRoles: 'central.api.teams.list_team_roles',
-	listCapabilities: 'central.api.teams.list_capabilities',
-	listTeamInvitations: 'central.api.teams.list_team_invitations',
 	createTeam: 'central.api.teams.create_team',
 	renameTeam: 'central.api.teams.rename_team',
 	myProfile: 'central.api.identity.my_profile',

@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { Button, dayjs, LoadingText, TabButtons, useCall } from 'frappe-ui'
+import { Button, LoadingText, TabButtons } from 'frappe-ui'
 import { NumberCard } from 'frappe-ui/charts'
-import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { API, method } from '@/api/methods'
 import BillingCard from '@/components/billing/BillingCard.vue'
 import OutstandingAlert from '@/components/billing/OutstandingAlert.vue'
 import RefundsCard from '@/components/billing/RefundsCard.vue'
@@ -12,128 +10,36 @@ import SpendSplitCard from '@/components/billing/SpendSplitCard.vue'
 import StatementCard from '@/components/billing/StatementCard.vue'
 import StatementPanel from '@/components/billing/StatementPanel.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { useSession } from '@/composables/useSession'
-import { whenTeamReady } from '@/composables/useTeamScope'
+import {
+	BILLING_REPORT_MONTHS,
+	useBillingReports,
+} from '@/composables/useBillingReports'
 import { useTrayColumn } from '@/composables/useTrayColumn'
-import { currencySymbol, money, plural } from '@/lib/format'
-import type {
-	PaymentAttempt,
-	SpendHistory,
-	Statement,
-	TaxSummary,
-} from '@/types/billing'
 
-const { activeTeam } = useSession()
 const router = useRouter()
+const {
+	months,
+	history,
+	statement,
+	tax,
+	attempts,
+	symbol,
+	creditsSymbol,
+	taxSymbol,
+	average,
+	invoiceCaption,
+	taxCaption,
+	loading,
+	statementLoading,
+	taxLoading,
+	neverBilled,
+	exportUrl,
+} = useBillingReports()
 
-const MONTH_OPTIONS = [
-	{ label: '3 months', value: 3 },
-	{ label: '6 months', value: 6 },
-	{ label: '12 months', value: 12 },
-]
-const months = ref(12)
-
-const fromDate = computed(() =>
-	dayjs()
-		.subtract(months.value - 1, 'month')
-		.startOf('month')
-		.format('YYYY-MM-DD'),
-)
-
-const history = useCall<SpendHistory, { team: string; months: number }>({
-	url: method(API.spendHistory),
-	params: () => ({ team: activeTeam.value!, months: months.value }),
-	immediate: false,
-	refetch: true,
-})
-const statement = useCall<Statement, { team: string; from_date: string }>({
-	url: method(API.statement),
-	params: () => ({ team: activeTeam.value!, from_date: fromDate.value }),
-	immediate: false,
-	refetch: true,
-})
-const tax = useCall<TaxSummary, { team: string; from_date: string }>({
-	url: method(API.taxSummary),
-	params: () => ({ team: activeTeam.value!, from_date: fromDate.value }),
-	immediate: false,
-	refetch: true,
-})
-const attempts = useCall<PaymentAttempt[], { team: string; limit: number }>({
-	url: method(API.paymentAttempts),
-	params: () => ({ team: activeTeam.value!, limit: 1000 }),
-	immediate: false,
-	refetch: true,
-})
-
-whenTeamReady(() => {
-	history.reload()
-	statement.reload()
-	tax.reload()
-	attempts.reload()
-})
-
-const currency = computed(() => history.data?.currency ?? 'INR')
-const symbol = computed(() => currencySymbol(currency.value))
-const creditsSymbol = computed(() =>
-	currencySymbol(statement.data?.currency ?? currency.value),
-)
-const taxSymbol = computed(() =>
-	currencySymbol(tax.data?.currency ?? currency.value),
-)
-
-const average = computed(() => {
-	const billed = (history.data?.months ?? []).filter((m) => m.total > 0)
-	if (!billed.length) return 0
-	return billed.reduce((sum, m) => sum + m.total, 0) / billed.length
-})
-
-const invoiceCaption = computed(
-	() => `across ${plural(history.data?.invoice_count ?? 0, 'invoice')}`,
-)
-
-const taxCaption = computed(() => {
-	const d = tax.data
-	if (!d) return ''
-	if (d.total_withheld > 0)
-		return `plus ${money(d.total_withheld, d.currency)} withheld at source`
-	if ((d.total_tax ?? 0) <= 0) return 'none charged in this period'
-	const charged = d.by_type.filter(
-		(t) => t.tax_type !== 'No tax' && t.tax_type !== 'Zero-rated',
-	)
-	if (charged.length === 1) {
-		const t = charged[0]
-		return `${t.tax_type} on ${money(t.taxable, d.currency)}`
-	}
-	return `across ${charged.length} tax types`
-})
-
+const MONTH_OPTIONS = BILLING_REPORT_MONTHS
 type Tray = 'statement'
 const { trayModel } = useTrayColumn<Tray>()
 const showStatement = trayModel('statement')
-
-const loading = computed(() => history.loading && !history.data)
-const statementLoading = computed(() => statement.loading && !statement.data)
-const taxLoading = computed(() => tax.loading && !tax.data)
-const hasDebt = computed(() => {
-	const s = statement.data
-	if (!s) return false
-	return (
-		Number(s.closing_outstanding ?? 0) + Number(s.opening_outstanding ?? 0) > 0
-	)
-})
-const neverBilled = computed(
-	() =>
-		!loading.value &&
-		!!history.data &&
-		months.value === 12 &&
-		history.data.invoice_count === 0 &&
-		!hasDebt.value,
-)
-
-function exportUrl(report: string): string {
-	const team = encodeURIComponent(activeTeam.value ?? '')
-	return `/api/method/${API.exportCsv}?report=${report}&team=${team}&from_date=${fromDate.value}`
-}
 </script>
 
 <template>

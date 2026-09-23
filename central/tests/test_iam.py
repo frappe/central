@@ -120,6 +120,14 @@ class TestCentralIAM(IntegrationTestCase):
 		closed = ["server:view", "cluster:view"]
 		self.assertEqual(expand_capabilities(closed), closed)
 
+	def test_central_user_can_read_capability_catalog(self):
+		frappe.set_user(self.viewer)
+		names = frappe.get_list("Capability", pluck="name")
+
+		self.assertIn("server:view", names)
+		self.assertTrue(frappe.has_permission("Capability", "read", "server:view"))
+		self.assertFalse(frappe.has_permission("Capability", "write", "server:view"))
+
 	def test_multiple_roles_in_one_team_resolve_one_default_team(self):
 		member = f"iam.multi.{frappe.generate_hash(length=8)}@example.test"
 		frappe.get_doc(

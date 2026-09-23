@@ -6,6 +6,7 @@ import BillingCard from '@/components/billing/BillingCard.vue'
 import { useSession } from '@/composables/useSession'
 import { whenTeamReady } from '@/composables/useTeamScope'
 import { formatDate, money } from '@/lib/format'
+import type { BadgeTheme } from '@/lib/status'
 import type { RefundRow } from '@/types/billing'
 
 const { activeTeam } = useSession()
@@ -31,7 +32,7 @@ const description = computed(() =>
 		: 'Every refund on this account.',
 )
 
-const STATUS_THEME: Record<string, string> = {
+const STATUS_THEME: Record<string, BadgeTheme> = {
 	Completed: 'green',
 	Initiated: 'blue',
 	Failed: 'red',
@@ -59,7 +60,7 @@ function destinationLabel(row: RefundRow): string {
 					</span>
 					<span class="flex justify-end">
 						<Badge
-							:theme="(STATUS_THEME[row.status] as any) || 'gray'"
+							:theme="STATUS_THEME[row.status] || 'gray'"
 							variant="subtle"
 							:label="row.status"
 						/>

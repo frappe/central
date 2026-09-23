@@ -1,24 +1,18 @@
 <script setup lang="ts">
-import { Badge, Button, LoadingText, Spinner, useCall } from 'frappe-ui'
+import { Badge, Button, LoadingText, Spinner } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { API, method } from '@/api/methods'
 import InvoiceListView from '@/components/billing/InvoiceListView.vue'
 import SidePanel from '@/components/common/SidePanel.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
+import { useInvoiceDetail } from '@/composables/useInvoiceDetail'
 import { useInvoices } from '@/composables/useInvoices'
 import { usePayInvoice } from '@/composables/usePayInvoice'
 import { usePayInvoiceCheckout } from '@/composables/usePayInvoiceCheckout'
-import { useSession } from '@/composables/useSession'
-import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 import { billingPeriod, shortDate } from '@/lib/date'
 import { money } from '@/lib/format'
 import { invoiceTheme } from '@/lib/status'
-import type {
-	CollectionStatus,
-	InvoiceDetail,
-	InvoiceSummary,
-} from '@/types/billing'
+import type { InvoiceSummary } from '@/types/billing'
 
 // Billing › Invoices (#70) — list (left) + docked 24rem receipt panel (right)
 // that slides in, mirroring the FC V2 prototype's invoice anatomy. Invoices come
@@ -32,20 +26,21 @@ const {
 	reload: reloadInvoices,
 } = useInvoices()
 
-const collection = useCall<CollectionStatus, { team: string }>({
-	url: method(API.collectionStatus),
-	params: teamParams,
-	immediate: false,
-	refetch: true,
-})
-whenTeamReady(() => collection.reload())
-
 // ── Detail panel ──
 const selected = ref<InvoiceSummary | null>(null)
-const detail = useCall<InvoiceDetail, { name: string }>({
-	url: method(API.invoice),
-	immediate: false,
-})
+const {
+	activeTeam,
+	detail,
+	isPayable,
+	isOverdue,
+	settling,
+	hasDue,
+	manualMode,
+	paidWithIcon,
+	load,
+	reload: reloadDetail,
+	eventDetail,
+} = useInvoiceDetail()
 
 // Activity is folded away by default — for a settled invoice the log is
 // reference, not news. Fold it again when switching invoices.
@@ -61,7 +56,7 @@ watch(selected, (invoice) => {
 async function selectRow(inv: InvoiceSummary): Promise<void> {
 	selected.value = inv
 	activityExpanded.value = false
-	await detail.submit({ name: inv.name })
+	await load(inv.name)
 }
 
 // Open the latest invoice expanded on first load — list_invoices is ordered newest
@@ -84,7 +79,6 @@ watch(
 // A team switch invalidates the open receipt — the list refetches on its own
 // (reactive teamParams), but the panel would keep showing the old team's
 // invoice. Close it and let the new team's latest auto-select.
-const { activeTeam } = useSession()
 watch(activeTeam, (team, previous) => {
 	if (!previous || team === previous) return
 	selected.value = null
@@ -94,24 +88,6 @@ watch(activeTeam, (team, previous) => {
 
 // Open OR Overdue is still collectable — an overdue invoice is the one the customer
 // most needs to settle (dunning failed on the card), so it must offer Pay too.
-const isPayable = computed(() =>
-	['open', 'overdue'].includes(String(detail.data?.status).toLowerCase()),
-)
-// The panel's one pre-items line, and only in the problem state — its single
-// use of color above the fold.
-const isOverdue = computed(
-	() =>
-		String(detail.data?.status).toLowerCase() === 'overdue' &&
-		!!detail.data?.due_date,
-)
-// A charge already in flight (or captured, awaiting the settlement webhook) means
-// the money is moving — show a "settling" status, never a second Pay button.
-const settling = computed(
-	() => isPayable.value && !!detail.data?.payment_in_progress,
-)
-// Only offer Pay when something is actually collectable — a zero-due invoice
-// (e.g. a trial Cost Report) must never render a "Pay 0.00" button.
-const hasDue = computed(() => Number(detail.data?.expected_collection) > 0)
 const canPay = computed(
 	() =>
 		canManageBilling.value &&
@@ -122,7 +98,7 @@ const canPay = computed(
 
 function refresh(): void {
 	reloadInvoices()
-	if (selected.value) detail.submit({ name: selected.value.name })
+	reloadDetail(selected.value?.name)
 }
 const { run: payInvoice, loading: paying } = usePayInvoice({ onDone: refresh })
 const { run: payCheckout, loading: payingCheckout } = usePayInvoiceCheckout({
@@ -131,9 +107,6 @@ const { run: payCheckout, loading: payingCheckout } = usePayInvoiceCheckout({
 
 // manual_checkout teams settle on-session (any amount, no ₹15k limit); everyone
 // else uses the off-session charge against their saved method.
-const manualMode = computed(
-	() => collection.data?.collection_mode === 'Manual Checkout',
-)
 const payBusy = computed(() => paying.value || payingCheckout.value)
 function pay(name: string): Promise<unknown> {
 	return manualMode.value ? payCheckout(name) : payInvoice(name)
@@ -148,28 +121,9 @@ const DOTS: Record<string, string> = {
 const dotClass = (theme: string): string =>
 	DOTS[theme] || 'bg-[var(--ink-gray-4)]'
 
-const paidWithIcon = computed(() =>
-	/upi/i.test(detail.data?.paid_with?.method_type ?? '')
-		? 'lucide-smartphone'
-		: 'lucide-credit-card',
-)
-
 // "31 May 2026, 09:00" → "31 May 2026": the date carries the story; the
 // clock time is noise at timeline granularity.
 const eventDate = (at: string | null): string => String(at ?? '').split(',')[0]
-
-// One gray sentence under the label: amount first, then the backend's detail.
-const eventDetail = (ev: {
-	detail: string | null
-	amount: number
-	currency?: string
-}): string => {
-	const parts: string[] = []
-	if (ev.amount)
-		parts.push(money(ev.amount, ev.currency || detail.data?.currency))
-	if (ev.detail) parts.push(ev.detail)
-	return parts.join(' · ')
-}
 </script>
 
 <template>
