@@ -60,6 +60,12 @@ const routes = [
 				meta: { title: 'Servers' },
 			},
 			{
+				path: 'servers/snapshots',
+				name: 'Snapshots',
+				component: () => import('@/pages/servers/SnapshotsPage.vue'),
+				meta: { title: 'Snapshots' },
+			},
+			{
 				path: 'servers/new',
 				name: 'NewServer',
 				component: () => import('@/pages/servers/NewServerPage.vue'),

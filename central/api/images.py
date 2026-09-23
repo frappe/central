@@ -14,5 +14,7 @@ def list_images(team: str, atlas_instance: str, offering: str, flow: str = "Serv
 
 
 @frappe.whitelist(methods=["GET"])
-def eligible_plans(team: str, cluster: str, offering: str, image_id: str) -> dict:
-	return images.eligible_plans(team, cluster, offering, image_id)
+def eligible_plans(
+	team: str, cluster: str, offering: str = "", image_id: str = "", snapshot: str | None = None
+) -> dict:
+	return images.eligible_plans(team, cluster, offering, image_id, snapshot)

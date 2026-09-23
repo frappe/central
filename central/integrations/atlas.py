@@ -16,6 +16,10 @@ if TYPE_CHECKING:
 	from central.infrastructure.doctype.region.region import Region
 
 
+# The tag that ties a region's Machine image to the Central snapshot it holds.
+SNAPSHOT_TAG = "central_snapshot"
+
+
 class AtlasClient:
 	"""Use the regional tenant API with explicit identity and mutation outcomes."""
 
@@ -136,6 +140,36 @@ class AtlasClient:
 			frappe.throw(_("Atlas returned a different image."), AtlasConnectionError)
 
 		return image
+
+	def create_snapshot(self, vm_id: str, title: str, snapshot: str) -> dict:
+		"""Image the VM disk into a tenant Machine image, tagged with Central's snapshot name.
+		The image stays pending until the region finishes it, and the region sends no
+		event, so the caller reads it back."""
+		return self._request(
+			"POST",
+			f"virtual-machines/{quote(vm_id, safe='')}/actions/snapshot",
+			payload={"title": title, "image_type": "machine", "tags": {SNAPSHOT_TAG: snapshot}},
+		)
+
+	def find_snapshot_image(self, snapshot: str) -> dict | None:
+		"""The Machine image tagged with Central's snapshot name, or None when the region has none."""
+		page = self._get("images", params={"image_type": "machine", "tag": f"{SNAPSHOT_TAG}:{snapshot}"})
+		items = page.get("items")
+		if not isinstance(items, list):
+			frappe.throw(_("Atlas returned an invalid image page."), AtlasConnectionError)
+		return items[0] if items else None
+
+	def get_machine_image(self, image_id: str) -> dict:
+		"""One of this tenant's Machine images. A shared System image is refused."""
+		image = self.get_image(image_id)
+		if image.get("image_type") != "machine" or image.get("tenant_id") != self.tenant_id:
+			frappe.throw(_("Atlas returned an image of another kind or tenant."), AtlasConnectionError)
+
+		return image
+
+	def delete_image(self, image_id: str) -> None:
+		"""Retire a Machine image. The region removes its stored data later."""
+		self._request("DELETE", f"images/{quote(image_id, safe='')}")
 
 	def list_system_images(self, tags: dict[str, str], offset: int = 0) -> dict:
 		"""Return one regional page, preserving pagination after availability filtering."""

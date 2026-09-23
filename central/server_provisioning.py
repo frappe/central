@@ -22,7 +22,7 @@ from central.billing.catalog.composition import (
 )
 from central.billing.catalog.pricing import resolve_config_rate
 from central.iam import can
-from central.integrations.images import selected_image
+from central.integrations.images import selected_image, snapshot_image, snapshot_source
 from central.server_models import CreateServerInput, ServerCreation
 
 PENDING_STATES = ("Queued", "Dispatching", "Sent", "In Progress", "Uncertain")
@@ -43,11 +43,15 @@ def submit_request(
 	ssh_keys: list[str] | None = None,
 	resource_type: str = "Server",
 	subdomain: str | None = None,
+	snapshot: str | None = None,
 ) -> dict:
 	"""Authorize and persist intent before any remote mutation.
 
 	`resource_type` says what the customer asked for, which decides how the request is
-	driven: a server is queued, a site is sent in the request its customer is waiting on."""
+	driven: a server is queued, a site is sent in the request its customer is waiting on.
+	A restore passes `snapshot`; its offering and image come from the snapshot."""
+	if snapshot:
+		offering, image_id = snapshot_source(team, snapshot)
 	try:
 		input = CreateServerInput.model_validate(
 			dict(
@@ -107,7 +111,11 @@ def submit_request(
 	if unanswered:
 		return frappe.get_doc("Resource Action", unanswered).customer_status()
 
-	image = selected_image(team, region, offering, image_id, "server:create")
+	image = (
+		snapshot_image(team, region, snapshot, "server:create")
+		if snapshot
+		else selected_image(team, region, offering, image_id, "server:create")
+	)
 	composition, rate = validate_purchase(team, region, plan, includes, sub_category)
 	shape = image_shape(composition, image)
 	validate_guest_input(values, image)

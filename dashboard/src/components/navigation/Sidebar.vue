@@ -29,7 +29,8 @@ const { profile } = useMyProfile()
 // there and expanded everywhere else. Only crossing that boundary re-applies
 // the default — toggling by hand sticks while you stay within a section.
 const route = useRoute()
-const inServersSection = (path: string) => path.startsWith('/servers')
+const inServersSection = (path: string) =>
+	path.startsWith('/servers') && !path.startsWith('/servers/snapshots')
 const sidebarCollapsed = ref(
 	isMobile.value ? false : inServersSection(route.path),
 )

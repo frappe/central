@@ -12,6 +12,7 @@
   "project",
   "server_id",
   "service_subject",
+  "vm_snapshot",
   "cluster",
   "pricing_mode",
   "plan",
@@ -148,6 +149,14 @@
    "fieldtype": "Data",
    "label": "Service Subject",
    "read_only": 1
+  },
+  {
+   "fieldname": "vm_snapshot",
+   "fieldtype": "Link",
+   "label": "VM Snapshot",
+   "options": "VM Snapshot",
+   "read_only": 1,
+   "description": "The snapshot a storage subscription bills. Mutually exclusive with server_id."
   }
  ],
  "index_web_pages_for_search": 1,
@@ -158,7 +167,7 @@
    "link_fieldname": "subscription"
   }
  ],
- "modified": "2026-08-27 11:12:08.568537",
+ "modified": "2026-09-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Billing",
  "name": "Subscription",

@@ -28,6 +28,7 @@ class Subscription(Document):
 		plan: DF.Link | None
 		pricing_mode: DF.Literal["Preset", "Composed"]
 		service_subject: DF.Data | None
+		vm_snapshot: DF.Link | None
 		start_date: DF.Date | None
 		sub_category: DF.Link | None
 		team: DF.Link
@@ -202,6 +203,9 @@ class Subscription(Document):
 		"""A segment's description: the Plan for a preset, the composition for a
 		composed config (e.g. 'Custom: 2 vCPU · 4 GB RAM · 40 GB disk'). Stored on the
 		change row's `new_value`, which the invoice line surfaces as its description."""
+		if doc.get("vm_snapshot"):
+			size = sum(row.quantity for row in doc.includes)
+			return f"Snapshot storage: {size:g} GB"
 		if doc.pricing_mode == "Composed":
 			from central.billing.catalog.composition import config_summary
 

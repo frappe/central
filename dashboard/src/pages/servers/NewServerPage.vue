@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Alert, Badge, Button, FormControl, Tabs } from 'frappe-ui'
+import { Alert, Badge, Button, FormControl, TabButtons, Tabs } from 'frappe-ui'
 import { computed } from 'vue'
 import ChoiceCards from '@/components/common/ChoiceCards.vue'
 import FormStep from '@/components/common/FormStep.vue'
@@ -52,6 +52,12 @@ const {
 	ctaLabel,
 	canSubmit,
 	submit,
+	source,
+	snapshotName,
+	snapshotOptions,
+	snapshotsLoading,
+	snapshotsError,
+	reloadSnapshots,
 	offering,
 	offeringOptions,
 	offeringDescription,
@@ -189,42 +195,83 @@ const selectedRegionName = computed(() =>
 
 					<FormStep title="Select an image">
 						<div class="space-y-3">
-							<ImageOfferingSelector
-								v-model="offering"
-								:options="offeringOptions"
-								:disabled="imagesLoading || !selectedRegion"
+							<TabButtons
+								v-model="source"
+								:buttons="[
+									{ label: 'Image', value: 'image' },
+									{ label: 'Snapshot', value: 'snapshot' },
+								]"
 							/>
-							<p v-if="offeringDescription" class="text-p-sm text-ink-gray-5">
-								{{ offeringDescription }}
-							</p>
-							<p
-								v-if="imagesLoading"
-								role="status"
-								class="text-p-sm text-ink-gray-5"
-							>
-								Loading regional images…
-							</p>
-							<div v-else-if="imagesError">
-								<Alert theme="red" :description="imagesError" />
-								<Button
-									class="mt-2"
-									label="Retry images"
-									@click="reloadImages"
-								/>
-							</div>
-							<template v-else-if="imageOptions.length < 2">
-								<p class="text-p-sm text-ink-gray-5">
-									This image has no build in this region. Select another image
-									or region.
+							<template v-if="source === 'snapshot'">
+								<p
+									v-if="snapshotsLoading"
+									role="status"
+									class="text-p-sm text-ink-gray-5"
+								>
+									Loading snapshots…
 								</p>
+								<div v-else-if="snapshotsError">
+									<Alert theme="red" :description="snapshotsError" />
+									<Button
+										class="mt-2"
+										label="Retry snapshots"
+										@click="reloadSnapshots"
+									/>
+								</div>
+								<p
+									v-else-if="snapshotOptions.length < 2"
+									class="text-p-sm text-ink-gray-5"
+								>
+									No snapshot in this region can be restored. A snapshot
+									restores only in the region it was taken in, and a Pilot
+									server snapshot cannot be restored yet.
+								</p>
+								<FormControl
+									v-else
+									v-model="snapshotName"
+									type="select"
+									label="Snapshot"
+									:options="snapshotOptions"
+								/>
 							</template>
-							<FormControl
-								v-else
-								v-model="imageId"
-								type="select"
-								label="Image build"
-								:options="imageOptions"
-							/>
+							<template v-else>
+								<ImageOfferingSelector
+									v-model="offering"
+									:options="offeringOptions"
+									:disabled="imagesLoading || !selectedRegion"
+								/>
+								<p v-if="offeringDescription" class="text-p-sm text-ink-gray-5">
+									{{ offeringDescription }}
+								</p>
+								<p
+									v-if="imagesLoading"
+									role="status"
+									class="text-p-sm text-ink-gray-5"
+								>
+									Loading regional images…
+								</p>
+								<div v-else-if="imagesError">
+									<Alert theme="red" :description="imagesError" />
+									<Button
+										class="mt-2"
+										label="Retry images"
+										@click="reloadImages"
+									/>
+								</div>
+								<template v-else-if="imageOptions.length < 2">
+									<p class="text-p-sm text-ink-gray-5">
+										This image has no build in this region. Select another image
+										or region.
+									</p>
+								</template>
+								<FormControl
+									v-else
+									v-model="imageId"
+									type="select"
+									label="Image build"
+									:options="imageOptions"
+								/>
+							</template>
 							<SshKeysField
 								v-if="image"
 								v-model="sshKeys"

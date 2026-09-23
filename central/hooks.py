@@ -117,6 +117,7 @@ website_user_home_page = "dashboard"
 after_install = [
 	"central.infrastructure.doctype.image_offering.image_offering.ensure_default_offerings",
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
@@ -193,8 +194,19 @@ scheduler_events = {
 		# Repair observed state through scoped regional reads.
 		"*/10 * * * *": ["central.integrations.servers.reconcile"],
 		# Retry proxy routes that failed or never ran, up to the attempt limit.
-		"*/5 * * * *": ["central.infrastructure.doctype.site_domain.site_domain.retry_failed"],
+		"*/5 * * * *": [
+			"central.infrastructure.doctype.site_domain.site_domain.retry_failed",
+			# Snapshots have no region event, so Central reads each one until it settles.
+			"central.infrastructure.doctype.vm_snapshot.vm_snapshot.sync_pending_snapshots",
+		],
 	},
+	# Maintenance jobs run once per period at a time Frappe spreads across sites.
+	"hourly_maintenance": [
+		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.delete_expired_snapshots",
+	],
+	"daily_long": [
+		"central.infrastructure.doctype.vm_snapshot.vm_snapshot.take_automatic_snapshots",
+	],
 	"daily": [
 		"central.identity.doctype.team_invitation.team_invitation.expire_pending_invitations",
 		# Billing (module): retry/dunning + staged suspension for unpaid invoices,
@@ -247,6 +259,7 @@ scheduler_events = {
 # for someone to notice the balance went negative (ADR 0018).
 after_migrate = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.gateways.setup.ensure_gateway_records",
 	"central.billing.navigation.ensure_workspace_sidebars",
@@ -259,6 +272,7 @@ after_migrate = [
 # fixtures depend on — and apply the money constraints — before the suite runs.
 before_tests = [
 	"central.billing.catalog.taxonomy_setup.ensure_catalog_masters",
+	"central.billing.settings.ensure_snapshot_settings",
 	"central.billing.platform.constraints.ensure_constraints",
 	"central.billing.settings.ensure_welcome_credit_amounts",
 	"central.billing.gateways.setup.ensure_gateway_records",
@@ -343,6 +357,7 @@ permission_query_conditions = {
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
+	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
 }
 
 has_permission = {
@@ -354,6 +369,7 @@ has_permission = {
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
+	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
 }
 
 # --------------------------------

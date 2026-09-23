@@ -15,11 +15,16 @@ CAPABILITY = {
 }
 
 
-def submit_command(action: str, team: str | None, resource_id: str | None) -> ActionStatus:
-	"""Authorize the specific operation and persist it before dispatch."""
+def submit_command(
+	action: str, team: str | None, resource_id: str | None, take_snapshot: bool = False
+) -> ActionStatus:
+	"""Authorize the specific operation and persist it before dispatch. Only a terminate can
+	take a final snapshot first."""
 	team = resolve_team(frappe.session.user, team)
 	if action not in CAPABILITY or not can(frappe.session.user, team, CAPABILITY[action]):
 		frappe.throw(_("You cannot perform this server action."), frappe.PermissionError)
+	if take_snapshot and (action != "terminate" or not can(frappe.session.user, team, "server:snapshot")):
+		frappe.throw(_("You cannot take a snapshot of this server."), frappe.PermissionError)
 	if not isinstance(resource_id, str) or not resource_id:
 		frappe.throw(_("Select a server."))
 
@@ -60,6 +65,7 @@ def submit_command(action: str, team: str | None, resource_id: str | None) -> Ac
 			"title": server.title or server.name,
 			"requested_by": frappe.session.user,
 			"correlation_id": frappe.generate_hash(length=32),
+			"take_snapshot": int(take_snapshot),
 			"status": "Queued",
 		}
 	)

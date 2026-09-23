@@ -112,6 +112,12 @@ ERROR_CATALOG: dict[str, dict] = {
 		"remediation": "",
 		"retriable": True,
 	},
+	"SNAPSHOT_FAILED": {
+		"title": "The final snapshot didn't complete",
+		"message": "The region could not finish the snapshot, so Central did not destroy the server. It is stopped.",
+		"remediation": "Start the server again, or terminate it without a snapshot.",
+		"retriable": True,
+	},
 	"OUTCOME_UNKNOWN": {
 		"title": "The operation result is not confirmed",
 		"message": "Atlas may have accepted this operation, but Central did not receive a valid confirmation.",

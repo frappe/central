@@ -29,6 +29,7 @@ class VirtualMachine(Document):
 		public_ipv4: DF.Data | None
 		resize_in_progress: DF.Check
 		resource_id: DF.Data
+		skip_automatic_snapshot: DF.Check
 		state_observed_at: DF.Datetime | None
 		status: DF.Literal[
 			"Pending", "Provisioning", "Deploying", "Running", "Paused", "Stopped", "Failed", "Terminated"

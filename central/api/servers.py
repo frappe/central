@@ -381,15 +381,18 @@ def resize_server(
 
 @frappe.whitelist(methods=["POST"])
 @resource_action
-def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
-	"""Terminate a server. Gated on `server:terminate`."""
-	return _run_command("terminate", team, resource_id)
+def terminate_server(
+	team: str | None = None, resource_id: str | None = None, take_snapshot: bool | int | str = False
+) -> dict:
+	"""Terminate a server. Gated on `server:terminate`. With `take_snapshot`, it first takes
+	a final snapshot, which also needs `server:snapshot`."""
+	return _run_command("terminate", team, resource_id, take_snapshot=bool(frappe.utils.cint(take_snapshot)))
 
 
-def _run_command(action: str, team: str | None, resource_id: str | None) -> dict:
+def _run_command(action: str, team: str | None, resource_id: str | None, take_snapshot: bool = False) -> dict:
 	from central.resource_actions import submit_command
 
-	return submit_command(action, team, resource_id)
+	return submit_command(action, team, resource_id, take_snapshot=take_snapshot)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -398,13 +401,15 @@ def create_server(
 	team: str,
 	region: str,
 	title: str,
-	offering: str,
-	image_id: str,
 	request_key: str,
 	plan: str,
+	offering: str = "",
+	image_id: str = "",
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
+	snapshot: str | None = None,
 ) -> dict:
+	"""Create a server from an image, or restore one from a `snapshot`."""
 	from central.server_provisioning import submit_request
 
 	return submit_request(
@@ -417,6 +422,7 @@ def create_server(
 		plan=plan,
 		hostname=hostname,
 		ssh_keys=ssh_keys,
+		snapshot=snapshot,
 	)
 
 
@@ -426,14 +432,16 @@ def create_composed_server(
 	team: str,
 	region: str,
 	title: str,
-	offering: str,
-	image_id: str,
 	request_key: str,
 	includes: list[dict],
 	sub_category: str,
+	offering: str = "",
+	image_id: str = "",
 	hostname: str | None = None,
 	ssh_keys: list[str] | None = None,
+	snapshot: str | None = None,
 ) -> dict:
+	"""Create a custom-sized server from an image, or restore one from a `snapshot`."""
 	from central.server_provisioning import submit_request
 
 	return submit_request(
@@ -447,6 +455,7 @@ def create_composed_server(
 		sub_category=sub_category,
 		hostname=hostname,
 		ssh_keys=ssh_keys,
+		snapshot=snapshot,
 	)
 
 

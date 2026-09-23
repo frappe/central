@@ -32,12 +32,21 @@ STARTER_RATE_CARD = {
 }
 
 
+# Snapshot storage per GB per month. It is not a slider dimension, so it stays out of
+# COMPONENT_UNITS; it is priced the same way, so an admin re-prices it in Catalog Rate.
+STARTER_SNAPSHOT_RATES = {"INR": 6.5, "USD": 0.08}
+
+
 def ensure_component_rate_card():
 	"""Seed the starter component rate card if absent. Safe to call repeatedly."""
 	for currency, rates in STARTER_RATE_CARD.items():
 		for resource_type, rate in rates.items():
 			if not _has_rate(resource_type, currency):
 				set_catalog_rate("Resource Type", resource_type, currency, rate)
+
+	for currency, rate in STARTER_SNAPSHOT_RATES.items():
+		if not _has_rate("Snapshot", currency):
+			set_catalog_rate("Resource Type", "Snapshot", currency, rate)
 
 
 def _has_rate(resource_type: str, currency: str, cluster: str | None = None) -> bool:

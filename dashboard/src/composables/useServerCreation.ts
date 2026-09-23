@@ -174,6 +174,12 @@ export function useServerCreation() {
 	// — Plan step (unchanged mechanics: presets + scoped Custom, tabs per profile).
 	// A preset name, or `custom:<profile>` for a designed config in that profile.
 	const {
+		source,
+		snapshotName,
+		snapshotOptions,
+		snapshotsLoading,
+		snapshotsError,
+		reloadSnapshots,
 		offerings,
 		offering,
 		imageId,
@@ -183,7 +189,10 @@ export function useServerCreation() {
 		loading: imagesLoading,
 		error: imagesError,
 		reload: reloadImages,
-	} = useRegionalImages(selectedRegion)
+	} = useRegionalImages(
+		selectedRegion,
+		typeof route.query.snapshot === 'string' ? route.query.snapshot : '',
+	)
 	const offeringOptions = computed(() =>
 		offerings.value.map((item) => ({
 			label: item.title,
@@ -377,8 +386,7 @@ export function useServerCreation() {
 			region: selectedRegion.value,
 			title: name.value.trim(),
 			hostname: subdomain.value,
-			offering: offering.value,
-			image_id: image.value.id,
+			...selection.value,
 			ssh_keys: parseSshKeys(sshKeys.value),
 		}
 		if (isCustom.value && composedConfig.value) {
@@ -417,6 +425,12 @@ export function useServerCreation() {
 	)
 
 	return {
+		source,
+		snapshotName,
+		snapshotOptions,
+		snapshotsLoading,
+		snapshotsError,
+		reloadSnapshots,
 		router,
 		regions,
 		loading,

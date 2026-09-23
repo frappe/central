@@ -27,6 +27,8 @@
   "connection_checked_at",
   "connection_error",
   "last_synced_at",
+  "snapshot_section",
+  "automatic_snapshots",
   "delivery_section",
   "webhook_secret",
   "cargo_tab",
@@ -155,6 +157,18 @@
    "read_only": 1
   },
   {
+   "fieldname": "snapshot_section",
+   "fieldtype": "Section Break",
+   "label": "Snapshots"
+  },
+  {
+   "default": "0",
+   "fieldname": "automatic_snapshots",
+   "fieldtype": "Check",
+   "label": "Automatic Snapshots",
+   "description": "Take one free snapshot of each running server every day. Leave it off until the region's hosts and storage can carry the load."
+  },
+  {
    "collapsible": 1,
    "fieldname": "delivery_section",
    "fieldtype": "Section Break",
@@ -243,7 +257,7 @@
    "link_fieldname": "region"
   }
  ],
- "modified": "2026-09-21 15:17:24.924163",
+ "modified": "2026-09-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Infrastructure",
  "name": "Region",

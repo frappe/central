@@ -1,0 +1,221 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-09-23 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "team",
+  "server",
+  "region",
+  "column_break_identity",
+  "status",
+  "snapshot_type",
+  "size_mib",
+  "lifecycle_section",
+  "expires_at",
+  "is_free",
+  "column_break_lifecycle",
+  "subscription",
+  "requested_by",
+  "region_section",
+  "atlas_image_id",
+  "image_offering",
+  "is_restorable",
+  "column_break_region",
+  "error_detail"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "reqd": 1,
+   "in_list_view": 1,
+   "description": "The name the customer sees, such as Daily 2026-09-23."
+  },
+  {
+   "fieldname": "team",
+   "fieldtype": "Link",
+   "label": "Team",
+   "options": "Team",
+   "reqd": 1,
+   "search_index": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "set_only_once": 1
+  },
+  {
+   "fieldname": "server",
+   "fieldtype": "Link",
+   "label": "Server",
+   "options": "Virtual Machine",
+   "reqd": 1,
+   "search_index": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "set_only_once": 1,
+   "description": "The server the snapshot was taken from. It can be terminated since."
+  },
+  {
+   "fieldname": "region",
+   "fieldtype": "Link",
+   "label": "Region",
+   "options": "Region",
+   "read_only": 1,
+   "in_standard_filter": 1,
+   "description": "A snapshot restores only in the region it was taken in."
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nAvailable\nFailed\nDeleted",
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Pending until the region finishes the image. Deleted once the region is told to remove it."
+  },
+  {
+   "fieldname": "snapshot_type",
+   "fieldtype": "Select",
+   "label": "Type",
+   "options": "Automatic\nManual\nTerminate",
+   "reqd": 1,
+   "set_only_once": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "description": "Automatic is the daily free snapshot. Terminate is the final snapshot taken before a server is destroyed."
+  },
+  {
+   "fieldname": "size_mib",
+   "fieldtype": "Int",
+   "label": "Size (MiB)",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "lifecycle_section",
+   "fieldtype": "Section Break",
+   "label": "Lifecycle"
+  },
+  {
+   "fieldname": "expires_at",
+   "fieldtype": "Datetime",
+   "label": "Deleted At",
+   "read_only": 1,
+   "search_index": 1,
+   "description": "When Central deletes a daily snapshot. Empty for any other snapshot, and for a daily one the customer keeps."
+  },
+  {
+   "default": "0",
+   "fieldname": "is_free",
+   "fieldtype": "Check",
+   "label": "Free",
+   "read_only": 1,
+   "in_list_view": 1,
+   "description": "On while this is one of its server's newest snapshots within the free count. Billing follows it."
+  },
+  {
+   "fieldname": "column_break_lifecycle",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "subscription",
+   "fieldtype": "Link",
+   "label": "Subscription",
+   "options": "Subscription",
+   "read_only": 1,
+   "description": "The billing record of a paid snapshot."
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "region_section",
+   "fieldtype": "Section Break",
+   "label": "Region",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "atlas_image_id",
+   "fieldtype": "Data",
+   "label": "Atlas Image ID",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "image_offering",
+   "fieldtype": "Link",
+   "label": "Image Offering",
+   "options": "Image Offering",
+   "read_only": 1,
+   "description": "The offering of the source server. A restore creates a server of the same kind."
+  },
+  {
+   "default": "0",
+   "fieldname": "is_restorable",
+   "fieldtype": "Check",
+   "label": "Restorable",
+   "read_only": 1,
+   "description": "Off for a Pilot server: a restored Pilot disk keeps the old server's identity."
+  },
+  {
+   "fieldname": "column_break_region",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "error_detail",
+   "fieldtype": "Long Text",
+   "label": "Error Detail",
+   "read_only": 1,
+   "description": "What the region answered when the snapshot failed."
+  }
+ ],
+ "links": [],
+ "modified": "2026-09-23 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Infrastructure",
+ "name": "VM Snapshot",
+ "naming_rule": "Random",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Central User"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "team,server,atlas_image_id",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "show_title_field_in_link": 1,
+ "track_changes": 1
+}

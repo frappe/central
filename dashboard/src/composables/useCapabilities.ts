@@ -30,6 +30,7 @@ export function useCapabilities() {
 		canCreateServer: computed(() => has('server:create')),
 		canPowerServer: computed(() => has('server:power')),
 		canTerminateServer: computed(() => has('server:terminate')),
+		canSnapshotServer: computed(() => has('server:snapshot')),
 		canOpenServer: computed(() => has('server:open')),
 		canViewClusters: computed(() => has('cluster:view')),
 		canViewBilling: computed(() => has('billing:view')),

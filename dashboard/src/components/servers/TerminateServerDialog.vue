@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { Badge, LoadingIndicator } from 'frappe-ui'
-import { computed } from 'vue'
+import { Badge, Checkbox, LoadingIndicator } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { useServerHostnames } from '@/composables/useServerHostnames'
 import type { VirtualMachineRow } from '@/composables/useServers'
+import { useSnapshotPricing } from '@/composables/useSnapshots'
+import { money } from '@/lib/format'
 
 interface TerminateServerDialogProps {
 	target: VirtualMachineRow | null
 	loading?: boolean
 	error?: string
+	/** The viewer holds server:snapshot, so a final snapshot can be offered. */
+	canSnapshot?: boolean
 }
 
 // Lists what stops working before the customer confirms. The list is advice: a failed
@@ -16,7 +20,7 @@ interface TerminateServerDialogProps {
 const props = defineProps<TerminateServerDialogProps>()
 const emit = defineEmits<{
 	'update:target': [value: VirtualMachineRow | null]
-	confirm: [value: VirtualMachineRow]
+	confirm: [value: VirtualMachineRow, takeSnapshot: boolean]
 }>()
 
 const target = computed({
@@ -29,6 +33,23 @@ const {
 	error: listError,
 } = useServerHostnames(computed(() => props.target))
 const name = computed(() => props.target?.title || props.target?.resource_id)
+
+const takeSnapshot = ref(false)
+watch(
+	() => props.target,
+	() => {
+		takeSnapshot.value = false
+	},
+)
+const { rate, currency, freePerServer } = useSnapshotPricing(
+	computed(() => props.target?.cluster ?? null),
+)
+const snapshotNote = computed(() => {
+	if (rate.value == null)
+		return 'Snapshot storage has no price in this region yet.'
+	const perGb = money(rate.value, currency.value, { trimTrailingZeros: true })
+	return `The server stops first. The snapshot is free while it is one of this server's ${freePerServer.value} newest snapshots. After that it costs ${perGb} per GB per month until you delete it.`
+})
 </script>
 
 <template>
@@ -40,7 +61,7 @@ const name = computed(() => props.target?.title || props.target?.resource_id)
 		size="md"
 		:loading="loading"
 		:error="error"
-		@confirm="emit('confirm', $event)"
+		@confirm="emit('confirm', $event, takeSnapshot)"
 	>
 		<div class="space-y-3">
 			<p class="text-p-base text-ink-gray-7">
@@ -78,6 +99,14 @@ const name = computed(() => props.target?.title || props.target?.resource_id)
 						<Badge :label="entry.kind" theme="gray" size="sm" />
 					</li>
 				</ul>
+			</div>
+
+			<div
+				v-if="canSnapshot"
+				class="space-y-1 border-t border-outline-gray-2 pt-3"
+			>
+				<Checkbox v-model="takeSnapshot" label="Take a final snapshot first" />
+				<p class="text-p-sm text-ink-gray-5">{{ snapshotNote }}</p>
 			</div>
 		</div>
 	</ConfirmDialog>

@@ -18,6 +18,8 @@ export interface RegionalImage {
 export interface ImageSelection {
 	offering: string
 	image_id: string
+	/** A restore names the VM Snapshot; Central reads its offering and image from it. */
+	snapshot?: string
 }
 
 export interface ActionStatus {
