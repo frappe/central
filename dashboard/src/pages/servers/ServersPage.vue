@@ -15,6 +15,7 @@ import ServerOnboarding from '@/components/servers/ServerOnboarding.vue'
 import ServerOverviewDialog from '@/components/servers/ServerOverviewDialog.vue'
 import ServerRowActions from '@/components/servers/ServerRowActions.vue'
 import TerminateServerDialog from '@/components/servers/TerminateServerDialog.vue'
+import TakeSnapshotDialog from '@/components/snapshots/TakeSnapshotDialog.vue'
 import CreateTeamDialog from '@/components/team/CreateTeamDialog.vue'
 import { useCapabilities } from '@/composables/useCapabilities'
 import { useFleetRows } from '@/composables/useFleetRows'
@@ -46,8 +47,13 @@ const route = useRoute()
 
 const { servers, sites, loading, error, reload } = useServerMapData()
 const { regions } = useRegions()
-const { canPowerServer, canTerminateServer, canOpenServer, canCreateServer } =
-	useCapabilities()
+const {
+	canPowerServer,
+	canTerminateServer,
+	canSnapshotServer,
+	canOpenServer,
+	canCreateServer,
+} = useCapabilities()
 // Actions only — list reads come from useServerMapData.
 const {
 	refreshing,
@@ -352,12 +358,15 @@ const terminateError = ref('')
 watch(pendingTerminate, () => {
 	terminateError.value = ''
 })
-async function confirmTerminate(server: VirtualMachineRow): Promise<void> {
+async function confirmTerminate(
+	server: VirtualMachineRow,
+	takeSnapshot: boolean,
+): Promise<void> {
 	terminateError.value = ''
 	try {
 		// Destructive: keep the dialog open and show the reason inline on failure, rather
 		// than closing and firing a toast the user may miss. The row then shows "Terminating…".
-		await terminate(server)
+		await terminate(server, takeSnapshot)
 		pendingTerminate.value = null
 		reload()
 	} catch (e) {
@@ -369,6 +378,7 @@ async function confirmTerminate(server: VirtualMachineRow): Promise<void> {
 }
 
 const pendingResize = ref<VirtualMachineRow | null>(null)
+const pendingSnapshot = ref<VirtualMachineRow | null>(null)
 const overviewServer = ref<VirtualMachineRow | null>(null)
 const overviewOpensSite = computed(
 	() => !!overviewServer.value && !!siteFor(overviewServer.value),
@@ -485,6 +495,7 @@ async function openSite(name: string): Promise<void> {
 						:can-open="canOpenServer"
 						:can-power="canPowerServer"
 						:can-terminate="canTerminateServer"
+						:can-snapshot="canSnapshotServer"
 						:opens-site="!!pin.site"
 						side="right"
 						:busy="busy === pin.server.resource_id"
@@ -498,6 +509,7 @@ async function openSite(name: string): Promise<void> {
 						@stop="doStop"
 						@restart="pendingRestart = $event"
 						@resize="pendingResize = $event"
+						@snapshot="pendingSnapshot = $event"
 						@terminate="pendingTerminate = $event"
 					/>
 				</template>
@@ -528,6 +540,7 @@ async function openSite(name: string): Promise<void> {
 				:can-open="canOpenServer"
 				:can-power="canPowerServer"
 				:can-terminate="canTerminateServer"
+				:can-snapshot="canSnapshotServer"
 				:can-create="canCreateServer"
 				:busy="busy"
 				:opening="opening"
@@ -540,6 +553,7 @@ async function openSite(name: string): Promise<void> {
 				@stop="doStop"
 				@restart="pendingRestart = $event"
 				@resize="pendingResize = $event"
+				@snapshot="pendingSnapshot = $event"
 				@terminate="pendingTerminate = $event"
 				@create="$router.push('/servers/new')"
 			/>
@@ -589,8 +603,10 @@ async function openSite(name: string): Promise<void> {
 			v-model:target="pendingTerminate"
 			:loading="busy === pendingTerminate?.resource_id"
 			:error="terminateError"
+			:can-snapshot="canSnapshotServer"
 			@confirm="confirmTerminate"
 		/>
+		<TakeSnapshotDialog v-model:server="pendingSnapshot" />
 
 		<ResizeServerDialog v-model:server="pendingResize" @resized="reloadAll" />
 		<ServerOverviewDialog
@@ -599,8 +615,10 @@ async function openSite(name: string): Promise<void> {
 			:can-open="canOpenServer"
 			:can-resize="canPowerServer"
 			:opens-site="overviewOpensSite"
+			:can-snapshot="canSnapshotServer"
 			@open="openServer"
 			@resize="pendingResize = $event"
+			@snapshot="pendingSnapshot = $event"
 		/>
 		<CreateTeamDialog v-model:open="createTeamOpen" />
 	</div>

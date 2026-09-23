@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Badge, Button, Dialog, useCall } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { API, method } from '@/api/methods'
 import ListViewState from '@/components/common/list-view/ListViewState.vue'
 import LoadAverageCard from '@/components/servers/overview/LoadAverageCard.vue'
@@ -8,6 +9,7 @@ import OverviewSkeleton from '@/components/servers/overview/OverviewSkeleton.vue
 import ResourceUsageCard from '@/components/servers/overview/ResourceUsageCard.vue'
 import ServerInfoCard from '@/components/servers/overview/ServerInfoCard.vue'
 import ProviderAvatar from '@/components/servers/ProviderAvatar.vue'
+import ServerSnapshotsCard from '@/components/snapshots/ServerSnapshotsCard.vue'
 import { useRegions } from '@/composables/useRegions'
 import type { VirtualMachineRow } from '@/composables/useServers'
 import { useSession } from '@/composables/useSession'
@@ -45,14 +47,22 @@ const props = defineProps<{
 	canResize?: boolean
 	/** This machine carries a site. Open goes there instead of the bench. */
 	opensSite?: boolean
+	canSnapshot?: boolean
 }>()
 
 const emit = defineEmits<{
 	open: [server: VirtualMachineRow]
 	resize: [server: VirtualMachineRow]
+	snapshot: [server: VirtualMachineRow]
 }>()
 
 const open = defineModel<boolean>('open', { required: true })
+const router = useRouter()
+
+function viewSnapshots() {
+	open.value = false
+	router.push('/servers/snapshots')
+}
 const { activeTeam } = useSession()
 const { regions } = useRegions()
 const overview = ref<Overview | null>(null)
@@ -223,6 +233,14 @@ const planLabel = computed(() =>
 						:available="overview.monitoring.available"
 					/>
 				</div>
+
+				<ServerSnapshotsCard
+					v-if="props.server"
+					:resource-id="props.server.resource_id"
+					:can-manage="!!canSnapshot"
+					@take="props.server && emit('snapshot', props.server)"
+					@view-all="viewSnapshots"
+				/>
 			</div>
 
 			<ListViewState

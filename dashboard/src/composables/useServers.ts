@@ -43,7 +43,11 @@ const { activeTeam } = useSession()
 
 // Param shapes for the lifecycle/SSO methods (central/api/servers.py, central/sso.py).
 type TeamParams = { team: string }
-type CommandParams = { team: string; resource_id: string }
+type CommandParams = {
+	team: string
+	resource_id: string
+	take_snapshot?: number
+}
 
 // Re-pulls the mirror from every Active Atlas.
 const refresh = useCall<RefreshResponse, TeamParams>({
@@ -91,6 +95,7 @@ async function runCommand(
 	// A quick, reversible power action toasts on failure; a destructive one (terminate)
 	// throws so the caller can hold its confirm dialog open and show the reason inline.
 	surface: 'toast' | 'throw' = 'toast',
+	extra: Record<string, unknown> = {},
 ): Promise<void> {
 	busy.value = server.resource_id
 	try {
@@ -98,6 +103,7 @@ async function runCommand(
 		await call.submit({
 			team: activeTeam.value!,
 			resource_id: server.resource_id,
+			...extra,
 		})
 		if (call.error) throw call.error
 		if (surface === 'toast')
@@ -131,8 +137,12 @@ export function useServers() {
 	function restart(server: VirtualMachineRow) {
 		return runCommand(restartCall, server, 'Restart')
 	}
-	function terminate(server: VirtualMachineRow) {
-		return runCommand(terminateCall, server, 'Terminate', 'throw')
+	// With `takeSnapshot`, Central stops the server and destroys it only once its final
+	// snapshot is ready.
+	function terminate(server: VirtualMachineRow, takeSnapshot = false) {
+		return runCommand(terminateCall, server, 'Terminate', 'throw', {
+			take_snapshot: takeSnapshot ? 1 : 0,
+		})
 	}
 
 	// Open the VM's bench via a scoped SSO assertion. The tab is opened

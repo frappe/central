@@ -60,6 +60,15 @@ export const API = {
 	serverOverview: 'central.api.servers.server_overview',
 	serverHostnames: 'central.api.servers.server_hostnames',
 
+	// ── Snapshots (central.api.snapshots) ──
+	// server:view reads them and their price; server:snapshot takes, keeps and deletes.
+	listSnapshots: 'central.api.snapshots.list_snapshots',
+	snapshotPricing: 'central.api.snapshots.snapshot_pricing',
+	takeSnapshot: 'central.api.snapshots.take_snapshot',
+	keepSnapshot: 'central.api.snapshots.keep_snapshot',
+	deleteSnapshots: 'central.api.snapshots.delete_snapshots',
+	setAutomaticSnapshots: 'central.api.snapshots.set_automatic_snapshots',
+
 	// ── Managed add-on services (central.services.api.dashboard) ──
 	// service:view for the reads, service:manage for the mutations + key reveal.
 	// Per-site enable/disable is a bench (Pilot) surface, not a console method.

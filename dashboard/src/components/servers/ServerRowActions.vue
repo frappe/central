@@ -20,6 +20,7 @@ const props = defineProps<{
 	canOpen: boolean
 	canPower: boolean
 	canTerminate: boolean
+	canSnapshot?: boolean
 	busy?: boolean
 	opening?: boolean
 	/** This machine carries a site. Open goes to that site, not the bench. */
@@ -35,6 +36,7 @@ const emit = defineEmits<{
 	stop: [server: VirtualMachineRow]
 	restart: [server: VirtualMachineRow]
 	resize: [server: VirtualMachineRow]
+	snapshot: [server: VirtualMachineRow]
 	terminate: [server: VirtualMachineRow]
 }>()
 
@@ -101,6 +103,13 @@ const options = computed(() => {
 			icon: 'lucide-sliders-horizontal',
 			disabled: resizing,
 			onClick: () => emit('resize', props.server),
+		})
+	if (props.canSnapshot && !isTerminated(props.server.status) && !settingUp)
+		items.push({
+			label: 'Take snapshot',
+			icon: 'lucide-camera',
+			disabled: resizing,
+			onClick: () => emit('snapshot', props.server),
 		})
 	if (props.canTerminate && !isTerminated(props.server.status) && !settingUp)
 		items.push({
