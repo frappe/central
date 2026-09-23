@@ -16,6 +16,7 @@ from central.billing.tests.utils import (
 	complete_billing_profile,
 	ensure_atlas_instance,
 	ensure_team,
+	ensure_trust_tier_level,
 	run_enqueued_inline,
 	set_team_tier,
 )
@@ -36,6 +37,7 @@ class TestEligibilityComposed(IntegrationTestCase):
 		ensure_atlas_instance(CLUSTER)
 		ensure_atlas_instance(OTHER)
 		ensure_team(TEAM)
+		ensure_trust_tier_level()
 		complete_billing_profile(TEAM, currency="INR")
 		set_team_tier(TEAM, max_spend=100000)
 		# Baseline: a global-only INR component card (drop any regional row a prior

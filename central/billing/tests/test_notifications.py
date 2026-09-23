@@ -18,6 +18,12 @@ class NotificationTestBase(IntegrationTestCase):
 	def setUp(self):
 		ensure_team(TEAM)
 		self._purge()
+		self.enterContext(
+			patch(
+				"central.notification.engine._fan_out_emails",
+				return_value={"queued": 1, "attempted": 1, "failed": 0},
+			)
+		)
 
 	def tearDown(self):
 		self._purge()

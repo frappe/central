@@ -485,11 +485,28 @@ def add_segment(subscription, change_type, rate, effective_at, plan=None, curren
 	).insert(ignore_permissions=True)
 
 
+def ensure_trust_tier_level(level="t1"):
+	"""Create the link target used when a billing test pins a team's trust tier."""
+	if not frappe.db.exists("Trust Tier Level", level):
+		frappe.get_doc(
+			{
+				"doctype": "Trust Tier Level",
+				"__newname": level,
+				"tier": level,
+				"sequence": 0,
+				"max_resource_count": 50,
+			}
+		).insert(ignore_permissions=True)
+	return level
+
+
 def set_team_tier(team, level="t1", max_spend=None, manual_override=1):
 	"""Pin a team's trust tier on its Billing Profile — the per-team tier carrier
-	since the standalone Trust Tier doctype was folded in (#62). Ensures a profile
-	exists; an explicit `max_spend` is stored as a bespoke `override_max_spend` so
-	get_team_caps returns exactly it regardless of the level's currency thresholds."""
+	since the standalone Trust Tier doctype was folded in (#62). Ensures the level
+	and profile exist; an explicit `max_spend` is stored as a bespoke
+	`override_max_spend` so get_team_caps returns exactly it regardless of the
+	level's currency thresholds."""
+	ensure_trust_tier_level(level)
 	if not frappe.db.exists("Billing Profile", team):
 		frappe.get_doc({"doctype": "Billing Profile", "team": team, "currency": "INR"}).insert(
 			ignore_permissions=True
