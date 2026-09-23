@@ -49,9 +49,10 @@ const { servers, sites, loading, error, reload } = useServerMapData()
 const { regions } = useRegions()
 const {
 	canPowerServer,
+	canResizeServer,
 	canTerminateServer,
 	canSnapshotServer,
-	canOpenServer,
+	canViewServers,
 	canCreateServer,
 } = useCapabilities()
 // Actions only — list reads come from useServerMapData.
@@ -68,11 +69,11 @@ const {
 	open,
 } = useServers()
 
-const getSiteCall = useCall<
+const loginSiteCall = useCall<
 	{ url: string | null; login_url: string | null },
 	{ name: string }
 >({
-	url: method(API.getSite),
+	url: method(API.loginSite),
 	immediate: false,
 })
 
@@ -259,7 +260,7 @@ const spots = computed<MapSpot[]>(() => {
 //   If the side panel is open, keep its location filter in step.
 function canOpenBench(server: VirtualMachineRow): boolean {
 	return (
-		canOpenServer.value && server.status === 'Running' && !!server.gateway_url
+		canViewServers.value && server.status === 'Running' && !!server.gateway_url
 	)
 }
 function siteFor(server: VirtualMachineRow) {
@@ -278,7 +279,7 @@ function openResource(row: ResourceRow): void {
 	// A site is the same machine. Open goes to the site. Everything else opens the bench.
 	if (row.site) {
 		if (
-			canOpenServer.value &&
+			canViewServers.value &&
 			row.server.status === 'Running' &&
 			row.site.url
 		) {
@@ -405,9 +406,9 @@ async function openSite(name: string): Promise<void> {
 	)
 	const tab = window.open(loadingUrl, '_blank')
 	try {
-		await getSiteCall.submit({ name })
-		if (getSiteCall.error) throw getSiteCall.error
-		const url = getSiteCall.data?.login_url || getSiteCall.data?.url
+		await loginSiteCall.submit({ name })
+		if (loginSiteCall.error) throw loginSiteCall.error
+		const url = loginSiteCall.data?.login_url || loginSiteCall.data?.url
 		if (url && tab) tab.location.href = url
 		else if (url) window.location.href = url
 		else {
@@ -480,7 +481,7 @@ async function openSite(name: string): Promise<void> {
 				:spots="spots"
 				:highlight-id="hoverId"
 				:allow-create="canCreateServer"
-				:allow-open="canOpenServer"
+				:allow-open="canViewServers"
 				:opening-site="openingSite"
 				@open="onOpen"
 				@open-server="open"
@@ -492,8 +493,9 @@ async function openSite(name: string): Promise<void> {
 					<ServerRowActions
 						v-if="pin.server"
 						:server="pin.server"
-						:can-open="canOpenServer"
+						:can-open="canViewServers"
 						:can-power="canPowerServer"
+						:can-resize="canResizeServer"
 						:can-terminate="canTerminateServer"
 						:can-snapshot="canSnapshotServer"
 						:opens-site="!!pin.site"
@@ -537,8 +539,9 @@ async function openSite(name: string): Promise<void> {
 				:rows="panelRows"
 				:has-rows="rows.length > 0"
 				:location-filter="locationFilter"
-				:can-open="canOpenServer"
+				:can-open="canViewServers"
 				:can-power="canPowerServer"
+				:can-resize="canResizeServer"
 				:can-terminate="canTerminateServer"
 				:can-snapshot="canSnapshotServer"
 				:can-create="canCreateServer"
@@ -612,8 +615,8 @@ async function openSite(name: string): Promise<void> {
 		<ServerOverviewDialog
 			v-model:open="overviewOpen"
 			:server="overviewServer"
-			:can-open="canOpenServer"
-			:can-resize="canPowerServer"
+			:can-open="canViewServers"
+			:can-resize="canResizeServer"
 			:opens-site="overviewOpensSite"
 			:can-snapshot="canSnapshotServer"
 			@open="openServer"

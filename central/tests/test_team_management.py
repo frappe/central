@@ -476,13 +476,12 @@ class TestTeamManagement(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Team", fresh))
 
 	def test_delete_team_clears_invitations_that_would_block_it(self):
-		# An invitation Links to the Team; without cleanup the delete raised
-		# LinkExistsError. delete_team clears invitations + custom roles first.
+		# The controller owns cleanup, so Desk and API deletion behave the same.
 		frappe.set_user(self.owner)
 		team = create_team("Team With Invite")["name"]
 		invite = invite_team_member(team, "blocks.delete@example.test", "Viewer")
 
-		self.assertTrue(delete_team(team)["deleted"])
+		frappe.delete_doc("Team", team)
 		self.assertFalse(frappe.db.exists("Team", team))
 		self.assertFalse(frappe.db.exists("Team Invitation", invite))
 

@@ -4,15 +4,11 @@ import frappe
 from frappe import _
 
 from central.iam import can, resolve_team
-from central.infrastructure.doctype.resource_action.resource_action import PENDING_STATES
+from central.infrastructure.doctype.resource_action.resource_action import (
+	ACTION_CAPABILITIES,
+	PENDING_STATES,
+)
 from central.server_models import ActionStatus
-
-CAPABILITY = {
-	"start": "server:power",
-	"stop": "server:power",
-	"restart": "server:power",
-	"terminate": "server:terminate",
-}
 
 
 def submit_command(
@@ -21,7 +17,7 @@ def submit_command(
 	"""Authorize the specific operation and persist it before dispatch. Only a terminate can
 	take a final snapshot first."""
 	team = resolve_team(frappe.session.user, team)
-	if action not in CAPABILITY or not can(frappe.session.user, team, CAPABILITY[action]):
+	if action not in ACTION_CAPABILITIES or not can(frappe.session.user, team, ACTION_CAPABILITIES[action]):
 		frappe.throw(_("You cannot perform this server action."), frappe.PermissionError)
 	if take_snapshot and (action != "terminate" or not can(frappe.session.user, team, "server:snapshot")):
 		frappe.throw(_("You cannot take a snapshot of this server."), frappe.PermissionError)

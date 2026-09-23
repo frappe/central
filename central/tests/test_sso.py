@@ -85,20 +85,15 @@ class TestCentralSSO(IntegrationTestCase):
 			with self.assertRaises(frappe.AuthenticationError):
 				verify_bootstrap_token(other)
 
-	def test_server_open_gates_the_handoff(self):
-		# server:open is the console gate, distinct from server:view (which only lists).
-		# A Developer carries it and can open; a Viewer sees servers but cannot open one.
+	def test_server_view_gates_the_handoff(self):
+		# Viewing and opening are one capability. Developer and Viewer can both open.
 		dev_team = self.make_team(self.developer, "Developer")
 		link = self._open(self.developer, team=dev_team.name, gateway_url="http://localhost:3030")
 		self.assertIn("/?sid=", link["url"])
 
 		view_team = self.make_team(self.viewer, "Viewer")
-		frappe.set_user(self.viewer)
-		try:
-			with self.assertRaises(frappe.PermissionError):
-				get_bench_link(team=view_team.name, gateway_url="http://localhost:3030")
-		finally:
-			frappe.set_user("Administrator")
+		link = self._open(self.viewer, team=view_team.name, gateway_url="http://localhost:3030")
+		self.assertIn("/?sid=", link["url"])
 
 
 class TestCentralUrl(IntegrationTestCase):

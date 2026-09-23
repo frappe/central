@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from central.api.sites import claim_site, get_site, onboarding_status, terminate_site
+from central.api.sites import claim_site, get_site, login_site, onboarding_status, terminate_site
 from central.errors import AtlasResourceGone
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
 from central.infrastructure.doctype.site.site import on_host
@@ -137,7 +137,7 @@ class TestSiteRoutes(SiteOnAMachine):
 		self.assertFalse(state["ready"])
 		self.assertIsNone(state["login_url"])
 
-	def test_a_reachable_site_hands_back_a_sign_in_URL(self):
+	def test_status_read_does_not_create_a_login(self):
 		with (
 			patch("central.api.sites.is_site_reachable", return_value=True),
 			patch(
@@ -147,10 +147,21 @@ class TestSiteRoutes(SiteOnAMachine):
 		):
 			state = get_site(self.site().name)
 
-		# Pilot is asked for the site's bench name, and the session comes back on the
-		# public address the customer's browser can actually reach.
-		self.assertEqual(login.call_args.args[2], "site.local")
 		self.assertTrue(state["ready"])
+		self.assertIsNone(state["login_url"])
+		login.assert_not_called()
+
+	def test_explicit_login_hands_back_a_sign_in_url(self):
+		with (
+			patch("central.api.sites.is_site_reachable", return_value=True),
+			patch(
+				"central.integrations.pilot.fetch_site_login_url",
+				return_value="https://site.local/desk?sid=abc",
+			) as login,
+		):
+			state = login_site(self.site().name)
+
+		self.assertEqual(login.call_args.args[2], "site.local")
 		self.assertEqual(state["login_url"], "https://site-1z141z4.par-2.example.test/desk?sid=abc")
 
 	def test_a_site_is_ready_before_the_machine_reports_running(self):
@@ -163,7 +174,7 @@ class TestSiteRoutes(SiteOnAMachine):
 				return_value="https://site.local/desk?sid=abc",
 			),
 		):
-			state = get_site(self.site().name)
+			state = login_site(self.site().name)
 
 		self.assertEqual(state["status"], "Provisioning")
 		self.assertTrue(state["ready"])
@@ -230,6 +241,12 @@ class TestSiteRoutes(SiteOnAMachine):
 
 		with self.assertRaises(frappe.PermissionError):
 			get_site(self.site().name)
+		with self.assertRaises(frappe.PermissionError):
+			login_site(self.site().name)
+
+	def test_status_is_get_and_login_is_post_only(self):
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[get_site], ("GET", "QUERY"))
+		self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[login_site], ("POST",))
 
 	def test_onboarding_follows_only_a_site_creation(self):
 		server_action = self.creation_action("Server")

@@ -38,9 +38,6 @@
     "capability": "server:terminate"
    },
    {
-    "capability": "server:open"
-   },
-   {
     "capability": "service:view"
    },
    {
@@ -91,9 +88,6 @@
     "capability": "server:terminate"
    },
    {
-    "capability": "server:open"
-   },
-   {
     "capability": "service:view"
    },
    {
@@ -130,9 +124,6 @@
    },
    {
     "capability": "server:terminate"
-   },
-   {
-    "capability": "server:open"
    },
    {
     "capability": "service:view"

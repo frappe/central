@@ -19,6 +19,7 @@ defineProps<{
 	locationFilter: { ids: string[]; label: string } | null
 	canOpen: boolean
 	canPower: boolean
+	canResize: boolean
 	canTerminate: boolean
 	canSnapshot?: boolean
 	canCreate: boolean
@@ -156,6 +157,7 @@ const hoverId = defineModel<string | null>('hoverId', { required: true })
 								:server="row.server"
 								:can-open="canOpen"
 								:can-power="canPower"
+								:can-resize="canResize"
 								:can-terminate="canTerminate"
 								:can-snapshot="canSnapshot"
 								:opens-site="!!row.site"

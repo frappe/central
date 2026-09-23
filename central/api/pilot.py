@@ -160,12 +160,16 @@ def enroll(bootstrap_token: str) -> dict:
 	# The pilot_credential_id is this bench's audience id: every downward token Central mints
 	# for it carries `aud = pcid`, and the bench verifies against it. issue_for preserves any
 	# VirtualMachine link the VM events already bound (billing reads it) — enrollment only mints the token.
-	token = PilotCredential.issue_for(
-		team=grant["team"], pilot_credential_id=grant["pcid"], audience_id=grant["pcid"]
-	)
-	# Commit before returning: a rollback of this request must not strand the pilot with a
-	# token Central will not recognise.
-	frappe.db.commit()
+	try:
+		token = PilotCredential.issue_for(
+			team=grant["team"], pilot_credential_id=grant["pcid"], audience_id=grant["pcid"]
+		)
+		# Commit before returning: a rollback of this request must not strand the pilot with a
+		# token Central will not recognise.
+		frappe.db.commit()  # nosemgrep: frappe-manual-commit -- commit before returning
+	except Exception:
+		frappe.cache.delete(consumed_key)
+		raise
 
 	return {
 		"auth_token": token,

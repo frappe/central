@@ -75,6 +75,15 @@ class TestServerActions(IntegrationTestCase):
 		self.server.db_set("status", "Running")
 		self.assertEqual(self.submit("restart")["status"], "Queued")
 
+	def test_restart_reaches_the_worker_with_the_shared_capability_policy(self):
+		self.server.db_set("status", "Running")
+		name = self.submit("restart")["action"]
+
+		_process_locked(name)
+
+		self.client.vm_action.assert_called_once_with("vm-00001", "restart")
+		self.assertEqual(get_status(name)["status"], "In Progress")
+
 	def test_an_operator_can_ask_the_region_for_the_current_state(self):
 		"""Desk needs a way to ask the region directly when a record looks stale."""
 		self.assertEqual(self.server.sync_state(), {"status": "Running"})

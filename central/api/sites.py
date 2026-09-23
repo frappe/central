@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 
 from central.errors import resource_action
-from central.iam import can, resolve_team
+from central.iam import can
 from central.infrastructure.doctype.resource_action.resource_action import (
 	PENDING_STATES,
 	STATUS_FIELDS,
@@ -12,30 +12,23 @@ from central.infrastructure.doctype.resource_action.resource_action import (
 )
 from central.infrastructure.doctype.site.site import Site
 from central.integrations.pilot import PilotLoginPending, is_site_reachable
+from central.utils.guards import require_capability
 
 
 @frappe.whitelist(methods=["GET"])
+@require_capability("server:create", "You can't create sites for this Team.")
 def site_domain(team: str | None = None) -> dict:
 	"""The zone a new site is named in, so the console can show the suffix as they type."""
 	from central.site_provisioning import trial_zone
-
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, "server:create"):
-		frappe.throw(_("You can't create sites for this Team."), frappe.PermissionError)
 
 	return {"domain": trial_zone()}
 
 
 @frappe.whitelist(methods=["GET"])
+@require_capability("server:create", "You can't create sites for this Team.")
 def check_subdomain(subdomain: str, team: str | None = None) -> dict:
 	"""Whether a name is free, while the customer is still typing it."""
 	from central.site_provisioning import subdomain_availability
-
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, "server:create"):
-		frappe.throw(_("You can't create sites for this Team."), frappe.PermissionError)
 
 	return subdomain_availability(subdomain)
 
@@ -60,7 +53,7 @@ def claim_site(name: str) -> dict:
 
 	Nothing here touches the machine's admin hostname. The region routes `admin-vm-*`
 	statically and refuses to register it, so there is nothing for Central to claim."""
-	site = authorized_site(name, "server:create")
+	site = authorized_site(name, "server:view")
 	state = site_state(site)
 
 	if state["login_url"]:
@@ -70,27 +63,29 @@ def claim_site(name: str) -> dict:
 
 @frappe.whitelist(methods=["GET"])
 def get_site(name: str) -> dict:
-	"""One site's state, and the sign-in URL once it answers on its own address."""
-	return site_state(authorized_site(name, "server:view"))
+	"""Return one site's state without creating a remote Administrator session."""
+	return site_state(authorized_site(name, "server:view"), with_login=False)
+
+
+@frappe.whitelist(methods=["POST"])
+def login_site(name: str) -> dict:
+	"""Create a one-time site login for a caller who can view the site."""
+	return site_state(authorized_site(name, "server:view"), with_login=True)
 
 
 @frappe.whitelist(methods=["GET"])
+@require_capability("server:view", "You can't view this team's sites.")
 def onboarding_status(team: str | None = None) -> dict:
 	"""What the signup funnel waits on: the team's site, or the creation still building it.
 
 	The funnel cannot name the site it waits for, because the address follows from a
 	machine the region has not built yet. So it asks about the team instead, which also
 	lets a customer who reloads, or comes back later, rejoin the same wait."""
-	user = frappe.session.user
-	team = resolve_team(user, team)
-	if not can(user, team, "server:view"):
-		frappe.throw(_("You can't view this team's sites."), frappe.PermissionError)
-
 	rows = frappe.get_list(
 		"Resource Action",
 		filters={
 			"team": team,
-			"requested_by": user,
+			"requested_by": frappe.session.user,
 			"resource_type": "Site",
 			"action": "create",
 		},

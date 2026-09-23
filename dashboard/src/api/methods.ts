@@ -98,6 +98,7 @@ export const API = {
 	onboardingStatus: 'central.api.sites.onboarding_status',
 	claimSite: 'central.api.sites.claim_site',
 	getSite: 'central.api.sites.get_site',
+	loginSite: 'central.api.sites.login_site',
 	terminateSite: 'central.api.sites.terminate_site',
 
 	// ── SSO open-in-bench (central.api.sso) ──

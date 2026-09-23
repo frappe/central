@@ -43,6 +43,9 @@ onboarding_status --> GET <url>/api/method/ping --> ready
 claim_site --> mint login for site.local --> sign in at url
                                       |
                                       +--> enqueue rename_site
+
+get_site --> read readiness only
+login_site --> mint a fresh login for site.local
 ```
 
 - `Site.ensure_for` runs on every report a region makes about a machine, because the address arrives on one of them and nothing says which. It writes once. A machine that already has a site, runs no Pilot, or has no address yet is left alone.
@@ -54,7 +57,7 @@ claim_site --> mint login for site.local --> sign in at url
 
 ## Readiness
 
-Nothing is provisioned during signup, so readiness is not a build finishing. `central.api.sites.get_site` reports `ready` only when the machine is `Running` and one request to `<url>/api/method/ping` answers. The console polls that and hands the customer over the moment it turns true.
+Nothing is provisioned during signup, so readiness is not a build finishing. `central.api.sites.get_site` reports `ready` when one request to `<url>/api/method/ping` answers. It does not create a login session. The console polls this read and calls the POST-only `central.api.sites.login_site` operation when the user opens the site.
 
 `central.api.sites.onboarding_status` follows the latest Site creation requested by the current user. It does not adopt a normal server creation or another team member's request. A Running state report schedules a full server refresh, so the Site record does not wait for the periodic reconciliation job.
 

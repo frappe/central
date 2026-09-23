@@ -351,24 +351,32 @@ override_doctype_dashboards = {
 permission_query_conditions = {
 	"Virtual Machine": "central.permissions.server_query_conditions",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_query_conditions",
+	"Pilot Credential": "central.permissions.pilot_credential_query_conditions",
 	"Resource Action": "central.permissions.resource_action_query_conditions",
 	"Site": "central.permissions.site_query_conditions",
 	"Site Domain": "central.permissions.site_domain_query_conditions",
 	"Team": "central.permissions.team_query_conditions",
 	"Team Invitation": "central.permissions.team_invitation_query_conditions",
+	"Team Notification": "central.permissions.team_notification_query_conditions",
 	"Team Role": "central.permissions.team_role_query_conditions",
+	"Team Service": "central.permissions.team_service_query_conditions",
+	"User Notification Preference": "central.permissions.user_notification_preference_query_conditions",
 	"VM Snapshot": "central.permissions.vm_snapshot_query_conditions",
 }
 
 has_permission = {
 	"Virtual Machine": "central.permissions.server_has_permission",
 	"IAM Permission Probe": "central.permissions.iam_permission_probe_has_permission",
+	"Pilot Credential": "central.permissions.pilot_credential_has_permission",
 	"Resource Action": "central.permissions.resource_action_has_permission",
 	"Site": "central.permissions.site_has_permission",
 	"Site Domain": "central.permissions.site_domain_has_permission",
 	"Team": "central.permissions.team_has_permission",
 	"Team Invitation": "central.permissions.team_invitation_has_permission",
+	"Team Notification": "central.permissions.team_notification_has_permission",
 	"Team Role": "central.permissions.team_role_has_permission",
+	"Team Service": "central.permissions.team_service_has_permission",
+	"User Notification Preference": "central.permissions.user_notification_preference_has_permission",
 	"VM Snapshot": "central.permissions.vm_snapshot_has_permission",
 }
 

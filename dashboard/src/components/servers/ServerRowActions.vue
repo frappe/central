@@ -19,6 +19,7 @@ const props = defineProps<{
 	server: VirtualMachineRow
 	canOpen: boolean
 	canPower: boolean
+	canResize: boolean
 	canTerminate: boolean
 	canSnapshot?: boolean
 	busy?: boolean
@@ -97,7 +98,7 @@ const options = computed(() => {
 		})
 	// Resize compute; the dialog gates on a Stopped VM and slides a preset onto a
 	// custom config.
-	if (props.canPower && !isTerminated(props.server.status) && !settingUp)
+	if (props.canResize && !isTerminated(props.server.status) && !settingUp)
 		items.push({
 			label: 'Resize',
 			icon: 'lucide-sliders-horizontal',

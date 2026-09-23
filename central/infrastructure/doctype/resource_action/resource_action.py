@@ -17,6 +17,12 @@ PENDING_LABEL = {
 	"restart": "Restarting",
 	"resize": "Resizing",
 }
+ACTION_CAPABILITIES = {
+	"start": "server:power",
+	"stop": "server:power",
+	"restart": "server:power",
+	"terminate": "server:terminate",
+}
 # The observed status that means an action reached its goal.
 GOAL_STATUS = {
 	"create": "Running",

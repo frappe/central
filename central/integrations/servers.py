@@ -14,12 +14,11 @@ from central.errors import (
 )
 from central.iam import can
 from central.infrastructure.doctype.pilot_credential.pilot_credential import PilotCredential
-from central.infrastructure.doctype.resource_action.resource_action import ResourceAction
+from central.infrastructure.doctype.resource_action.resource_action import ACTION_CAPABILITIES, ResourceAction
 from central.infrastructure.doctype.site.site import Site
 from central.infrastructure.doctype.virtual_machine.virtual_machine import VirtualMachine
 from central.integrations.atlas import AtlasClient
 
-CAPABILITY = {"start": "server:power", "stop": "server:power", "terminate": "server:terminate"}
 # A resize may move the VM to another host, so the wait is generous enough to cover a migration.
 POWER_WAIT_SECONDS = 15 * 60
 # A resize waits for a stop and a start, so its job must outlive both waits.
@@ -154,7 +153,7 @@ def process_command(action) -> None:
 		return
 
 	if action.status == "Queued":
-		if not can(action.requested_by, action.team, CAPABILITY[action.action]) or (
+		if not can(action.requested_by, action.team, ACTION_CAPABILITIES[action.action]) or (
 			action.take_snapshot and not can(action.requested_by, action.team, "server:snapshot")
 		):
 			action.set_error("Failed", build_envelope("PERMISSION_DENIED", action=action.action))

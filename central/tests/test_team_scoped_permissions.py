@@ -2,6 +2,14 @@ import frappe
 from frappe.desk.reportview import execute as reportview_execute
 from frappe.tests import IntegrationTestCase
 
+from central.permissions import (
+	pilot_credential_has_permission,
+	pilot_credential_query_conditions,
+	team_notification_has_permission,
+	team_notification_query_conditions,
+	team_service_has_permission,
+	team_service_query_conditions,
+)
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -51,6 +59,66 @@ class TestTeamScopedPermissions(IntegrationTestCase):
 		self.assertNotIn(other_probe.name, reportview_names)
 		self.assertTrue(frappe.has_permission("IAM Permission Probe", "read", viewer_probe.name))
 		self.assertFalse(frappe.has_permission("IAM Permission Probe", "read", other_probe.name))
+
+	def test_notification_preferences_are_owned_and_team_scoped(self):
+		team = self._team("Preference Scoped", self.viewer, "Viewer")
+		other_team = self._team("Other Preference Scoped", self.other_user, "Viewer")
+
+		frappe.set_user(self.viewer)
+		preference = frappe.get_doc(
+			{
+				"doctype": "User Notification Preference",
+				"user": self.viewer,
+				"team": team.name,
+				"category": "Server",
+			}
+		).insert()
+		other_preference = frappe.get_doc(
+			{
+				"doctype": "User Notification Preference",
+				"user": self.other_user,
+				"team": other_team.name,
+				"category": "Server",
+			}
+		).insert(ignore_permissions=True)
+
+		self.assertEqual(frappe.get_list("User Notification Preference", pluck="name"), [preference.name])
+		self.assertTrue(frappe.has_permission("User Notification Preference", "read", preference.name))
+		self.assertFalse(frappe.has_permission("User Notification Preference", "read", other_preference.name))
+
+		preference.user = self.other_user
+		with self.assertRaises(frappe.PermissionError):
+			preference.save()
+		with self.assertRaises(frappe.PermissionError):
+			frappe.get_doc(
+				{
+					"doctype": "User Notification Preference",
+					"user": self.viewer,
+					"team": other_team.name,
+					"category": "Billing",
+				}
+			).insert()
+
+	def test_internal_team_records_remain_operator_only(self):
+		frappe.set_user(self.viewer)
+		for query_conditions, has_permission in (
+			(pilot_credential_query_conditions, pilot_credential_has_permission),
+			(team_notification_query_conditions, team_notification_has_permission),
+			(team_service_query_conditions, team_service_has_permission),
+		):
+			with self.subTest(query_conditions=query_conditions.__name__):
+				self.assertEqual(query_conditions(), "1 = 0")
+				self.assertFalse(has_permission(frappe._dict(team="any-team")))
+
+		frappe.set_user("Administrator")
+		for query_conditions, has_permission in (
+			(pilot_credential_query_conditions, pilot_credential_has_permission),
+			(team_notification_query_conditions, team_notification_has_permission),
+			(team_service_query_conditions, team_service_has_permission),
+		):
+			with self.subTest(query_conditions=query_conditions.__name__):
+				self.assertEqual(query_conditions(), "")
+				self.assertTrue(has_permission(frappe._dict(team="any-team")))
 
 	def _team(self, label: str, user: str, role: str):
 		members = [{"user": self.owner, "role": "Owner", "status": "Active"}]

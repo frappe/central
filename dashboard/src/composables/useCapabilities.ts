@@ -8,7 +8,7 @@ import { teamParams, whenTeamReady } from '@/composables/useTeamScope'
 // 403 — the server re-checks every call. Re-fetches whenever the active team
 // changes. The lifecycle gates map one-to-one to the server-side checks in
 // central/api/servers.py: power drives start/stop, terminate destroys, open mints the
-// bench SSO link.
+// bench SSO link. Viewing and opening a server use the same authority.
 
 const capsCall = useCall<string[], { team: string }>({
 	url: method(API.myCapabilities),
@@ -29,9 +29,9 @@ export function useCapabilities() {
 		canViewServers: computed(() => has('server:view')),
 		canCreateServer: computed(() => has('server:create')),
 		canPowerServer: computed(() => has('server:power')),
+		canResizeServer: computed(() => has('server:resize')),
 		canTerminateServer: computed(() => has('server:terminate')),
 		canSnapshotServer: computed(() => has('server:snapshot')),
-		canOpenServer: computed(() => has('server:open')),
 		canViewClusters: computed(() => has('cluster:view')),
 		canViewBilling: computed(() => has('billing:view')),
 		canManageBilling: computed(() => has('billing:manage')),
