@@ -171,6 +171,8 @@ Do not add a creation timeout that releases budget or permits resend while Atlas
 
 **Gate:** ordering, malformed receipts, service recovery, token isolation, notification visibility, bulk/concurrent marking, duplicate events, and delivery failure tests pass. Desk shows safe errors, related records, and valid recovery actions.
 
+**Completed on 2026-09-23.** Regional reports now advance their source watermark even when the state is unchanged, so a delayed older state cannot regress a server. Site rename, admin hostname, route, snapshot, and Resource Action failures keep a safe reason on the owning record and link full detail through Error Log. Resource lifecycle owners queue deduplicated notifications after commit. Event types come only from fixtures, all notification email uses the shared branded template, billing records queued delivery accurately, and read markers use bounded bulk inserts with database uniqueness. SSO and credential callers retain their distinct policy boundaries. Bucket, Cargo, and storage provisioning refactors are deferred by product direction. Migration, patch validation, pre-commit, the dashboard production build, and 1,659 tests passed with one skip. The repository-wide format check retains seven pre-existing findings outside this phase.
+
 ## Phase 4: consolidate the dashboard
 
 Keep Vue 3, TypeScript, Frappe UI, Espresso, and the existing singleton composable pattern. Do not add Pinia or another request framework.
