@@ -154,11 +154,16 @@ def process_command(action) -> None:
 		return
 
 	if action.status == "Queued":
-		if not can(action.requested_by, action.team, CAPABILITY[action.action]):
+		if not can(action.requested_by, action.team, CAPABILITY[action.action]) or (
+			action.take_snapshot and not can(action.requested_by, action.team, "server:snapshot")
+		):
 			action.set_error("Failed", build_envelope("PERMISSION_DENIED", action=action.action))
 			return
 
 		client = _client(server)
+		if action.take_snapshot and not is_final_snapshot_ready(action, server, client):
+			return
+
 		action.db_set({"status": "Dispatching", "dispatched_at": frappe.utils.now_datetime()})
 		# The remote command can outlive this worker; recovery must never redispatch it.
 		frappe.db.commit()
@@ -195,6 +200,48 @@ def process_command(action) -> None:
 		action.set_error("Timed Out", build_envelope("ACTION_TIMED_OUT", action=action.action))
 	else:
 		action.db_set({"status": "In Progress", "last_checked_at": frappe.utils.now_datetime()})
+
+
+def is_final_snapshot_ready(action, server: VirtualMachine, client: AtlasClient) -> bool:
+	"""Stop the server, take its final snapshot, and return True once it is Available.
+
+	The action stays Queued meanwhile, so the recovery loop runs it again until the snapshot
+	settles. A failed snapshot fails the terminate and leaves the server stopped."""
+	if action.vm_snapshot:
+		status = frappe.db.get_value("VM Snapshot", action.vm_snapshot, "status")
+		if status == "Available":
+			return True
+		if status == "Pending":
+			action.db_set("last_checked_at", frappe.utils.now_datetime())
+		else:
+			action.set_error("Failed", build_envelope("SNAPSHOT_FAILED", action="terminate"))
+		return False
+
+	# One snapshot runs per server; a daily one already running is waited out first.
+	if frappe.db.exists("VM Snapshot", {"server": server.name, "status": "Pending"}):
+		action.db_set("last_checked_at", frappe.utils.now_datetime())
+		return False
+
+	try:
+		_wait_for_power_state(client, server.atlas_vm_id, "stop", "stopped")
+	except AtlasConnectionError as error:
+		action.set_error("Failed", to_error_response(error))
+		return False
+
+	snapshot = frappe.get_doc(
+		{
+			"doctype": "VM Snapshot",
+			"title": _("Final snapshot of {0}").format(server.title or server.name),
+			"team": server.team,
+			"server": server.name,
+			"snapshot_type": "Terminate",
+			"requested_by": action.requested_by,
+		}
+	)
+	# The terminate already checked server:snapshot for the requester.
+	snapshot.insert(ignore_permissions=True)
+	action.db_set({"vm_snapshot": snapshot.name, "last_checked_at": frappe.utils.now_datetime()})
+	return False
 
 
 def _is_command_overdue(action) -> bool:

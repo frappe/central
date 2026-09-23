@@ -381,15 +381,18 @@ def resize_server(
 
 @frappe.whitelist(methods=["POST"])
 @resource_action
-def terminate_server(team: str | None = None, resource_id: str | None = None) -> dict:
-	"""Terminate a server. Gated on `server:terminate`."""
-	return _run_command("terminate", team, resource_id)
+def terminate_server(
+	team: str | None = None, resource_id: str | None = None, take_snapshot: bool | int | str = False
+) -> dict:
+	"""Terminate a server. Gated on `server:terminate`. With `take_snapshot`, it first takes
+	a final snapshot, which also needs `server:snapshot`."""
+	return _run_command("terminate", team, resource_id, take_snapshot=bool(frappe.utils.cint(take_snapshot)))
 
 
-def _run_command(action: str, team: str | None, resource_id: str | None) -> dict:
+def _run_command(action: str, team: str | None, resource_id: str | None, take_snapshot: bool = False) -> dict:
 	from central.resource_actions import submit_command
 
-	return submit_command(action, team, resource_id)
+	return submit_command(action, team, resource_id, take_snapshot=take_snapshot)
 
 
 @frappe.whitelist(methods=["POST"])

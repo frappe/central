@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -11,6 +11,8 @@ from central.errors import AtlasRejected, AtlasRequestUncertain, AtlasResourceGo
 from central.infrastructure.doctype.vm_snapshot import vm_snapshot
 from central.infrastructure.doctype.vm_snapshot.vm_snapshot import VMSnapshot
 from central.integrations.atlas import AtlasClient
+from central.integrations.servers import process_command
+from central.resource_actions import submit_command
 from central.tests.test_iam import ensure_user
 from central.tests.utils import ensure_atlas_instance
 
@@ -300,6 +302,49 @@ class TestSnapshotAccess(SnapshotTestCase):
 		frappe.set_user(self.owner)
 		with self.assertRaises(frappe.DoesNotExistError):
 			api.keep_snapshot(self.team, other.name)
+
+
+class TestTerminateWithSnapshot(SnapshotTestCase):
+	def setUp(self):
+		super().setUp()
+		self.client = MagicMock()
+		self.enterContext(patch("central.integrations.servers._client", return_value=self.client))
+		self.enterContext(patch("central.integrations.servers._wait_for_power_state"))
+		self.enterContext(patch("central.integrations.servers.observe_server", return_value="Terminated"))
+		self.enterContext(patch("frappe.enqueue"))
+		frappe.set_user(self.owner)
+		status = submit_command("terminate", self.team, self.server.name, take_snapshot=True)
+		frappe.set_user("Administrator")
+		self.action = frappe.get_doc("Resource Action", status["action"])
+
+	def test_the_server_is_destroyed_only_after_its_snapshot_is_available(self):
+		process_command(self.action)
+		self.action.reload()
+
+		snapshot = frappe.get_doc("VM Snapshot", self.action.vm_snapshot)
+		self.assertEqual((snapshot.snapshot_type, self.action.status), ("Terminate", "Queued"))
+		self.client.vm_action.assert_not_called()
+
+		snapshot.db_set("status", "Available")
+		process_command(self.action)
+
+		self.client.vm_action.assert_called_once_with(self.server.atlas_vm_id, "terminate")
+
+	def test_a_failed_snapshot_keeps_the_server(self):
+		process_command(self.action)
+		self.action.reload()
+		frappe.db.set_value("VM Snapshot", self.action.vm_snapshot, "status", "Failed")
+
+		process_command(self.action)
+		self.action.reload()
+
+		self.assertEqual((self.action.status, self.action.error_code), ("Failed", "SNAPSHOT_FAILED"))
+		self.client.vm_action.assert_not_called()
+
+	def test_a_snapshot_needs_the_snapshot_capability(self):
+		frappe.set_user(self.viewer)
+		with self.assertRaises(frappe.PermissionError):
+			submit_command("terminate", self.team, self.server.name, take_snapshot=True)
 
 
 class TestSnapshotInvoicing(SnapshotTestCase):
